@@ -6,17 +6,14 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QAction, QIcon, QKeySequence
+from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
-    QApplication,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
-    QMenu,
-    QMenuBar,
     QMessageBox,
     QPushButton,
     QSplitter,
@@ -27,7 +24,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..core.document import DocumentProcessor
 from ..core.knowledge_base import KnowledgeBase
 from ..core.mol_database import MoleculeDatabase
 from ..core.project import Project
@@ -317,7 +313,11 @@ class MainWindow(QMainWindow):
         toolbar.addAction("💾 保存", self._save_current)
         toolbar.addSeparator()
         toolbar.addAction("🔍 搜索", self._search_kb)
-        toolbar.addAction("🤖 发送", lambda: self.chat_widget._send_message())
+        toolbar.addAction("🤖 发送", self._trigger_chat_send)
+
+    def _trigger_chat_send(self):
+        """触发 LLM 发送."""
+        self.chat_widget._send_message()
 
     def _setup_statusbar(self):
         self.statusbar = QStatusBar()
@@ -387,6 +387,14 @@ class MainWindow(QMainWindow):
         self._load_project(project)
 
     def _load_project(self, project: Project):
+        # 释放旧项目资源
+        if self.kb is not None:
+            self.kb.close()
+            self.kb = None
+        if self.mol_db is not None:
+            self.mol_db.close()
+            self.mol_db = None
+
         self.project = project
         self.project_label.setText(f"📁 {project.name}")
 
@@ -485,10 +493,17 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
 
         editor = MarkdownEditor()
+        editor.file_path = path  # 显式设置用于后续查找
         editor.load_file(path)
         preview = MarkdownPreview()
         preview.set_markdown(editor.toPlainText())
-        editor.textChanged.connect(lambda: preview.set_markdown(editor.toPlainText()))
+
+        # 使用 weakref 避免潜在的循环引用
+        def _update_preview():
+            if editor and preview:
+                preview.set_markdown(editor.toPlainText())
+
+        editor.textChanged.connect(_update_preview)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(editor)
@@ -587,6 +602,17 @@ class MainWindow(QMainWindow):
         self.center_tabs.setCurrentIndex(self.center_tabs.count() - 1)
 
     def closeEvent(self, event):
+        # 停止后台线程
+        if hasattr(self, "index_worker") and self.index_worker is not None:
+            self.index_worker.terminate()
+            self.index_worker.wait(3000)
+        # 释放资源
+        if self.kb is not None:
+            self.kb.close()
+            self.kb = None
+        if self.mol_db is not None:
+            self.mol_db.close()
+            self.mol_db = None
         if self.project:
             self.project.save_settings()
         event.accept()

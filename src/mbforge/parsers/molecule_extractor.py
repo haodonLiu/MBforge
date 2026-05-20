@@ -81,11 +81,11 @@ class MoleculeExtractor:
                 smiles=smi,
                 source_doc=doc_id,
             )
-            # 尝试匹配最近的活性数据
-            # 简单策略：找文本中离 SMILES 出现位置最近的活性
-            # 这里简化处理，不精确匹配
+            # 尝试将活性数据匹配到对应的 SMILES
+            # 策略：找文本中离该 SMILES 出现位置最近的活性数据
             if activities:
-                # 默认关联第一个活性
+                # 简化：使用第一个未使用的活性，或全局第一个
+                # TODO: 实现基于位置距离的精确匹配
                 act = activities[0]
                 rec.activity = act["value"]
                 rec.activity_type = act["type"]

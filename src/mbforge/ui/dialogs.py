@@ -14,7 +14,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMessageBox,
     QPushButton,
     QTextEdit,
     QVBoxLayout,
@@ -23,8 +22,6 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QDoubleSpinBox,
     QTabWidget,
-    QGroupBox,
-    QCheckBox,
 )
 
 from ..utils.config import AppConfig, ModelConfig, EmbedConfig, RerankConfig, VLMConfig
@@ -249,16 +246,19 @@ class MoleculeInfoDialog(QDialog):
         self._setup_ui()
 
     def _setup_ui(self):
+        import html
         layout = QVBoxLayout(self)
-        text = f"""
-<b>SMILES:</b> <code>{self.record.smiles}</code><br>
-<b>名称:</b> {self.record.name or '-'}<br>
-<b>活性:</b> {self.record.activity or '-'} {self.record.activity_type} {self.record.units}<br>
-<b>来源:</b> {self.record.source_doc or '-'}<br>
-<b>性质:</b> {self.record.properties}<br>
-<b>标签:</b> {', '.join(self.record.tags) or '-'}<br>
-<b>备注:</b> {self.record.notes or '-'}<br>
-        """
+        rec = self.record
+        text = (
+            f"<b>SMILES:</b> <code>{html.escape(rec.smiles)}</code><br>"
+            f"<b>名称:</b> {html.escape(rec.name or '-')}<br>"
+            f"<b>活性:</b> {rec.activity if rec.activity is not None else '-'} "
+            f"{html.escape(rec.activity_type)} {html.escape(rec.units)}<br>"
+            f"<b>来源:</b> {html.escape(rec.source_doc or '-')}<br>"
+            f"<b>性质:</b> {html.escape(str(rec.properties))}<br>"
+            f"<b>标签:</b> {html.escape(', '.join(rec.tags) or '-')}<br>"
+            f"<b>备注:</b> {html.escape(rec.notes or '-')}<br>"
+        )
         label = QLabel(text)
         label.setTextFormat(Qt.TextFormat.RichText)
         label.setWordWrap(True)

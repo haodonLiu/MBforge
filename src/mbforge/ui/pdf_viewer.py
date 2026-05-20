@@ -44,20 +44,27 @@ class PDFViewer(QWidget):
     def load_pdf(self, path: Path):
         if self.doc:
             self.doc.close()
-        self.doc = fitz.open(str(path))
-        self.current_page = 0
-        self._render_page()
+            self.doc = None
+        try:
+            self.doc = fitz.open(str(path))
+            self.current_page = 0
+            self._render_page()
+        except Exception as e:
+            self.label.setText(f"无法加载 PDF: {e}")
 
     def _render_page(self):
-        if self.doc is None:
+        if self.doc is None or self.current_page >= len(self.doc):
             return
-        page = self.doc[self.current_page]
-        mat = fitz.Matrix(self._scale, self._scale)
-        pix = page.get_pixmap(matrix=mat)
-        img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888)
-        self.label.setPixmap(QPixmap.fromImage(img))
-        self.label.setFixedSize(pix.width, pix.height)
-        self.page_changed.emit(self.current_page + 1, len(self.doc))
+        try:
+            page = self.doc[self.current_page]
+            mat = fitz.Matrix(self._scale, self._scale)
+            pix = page.get_pixmap(matrix=mat)
+            img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888)
+            self.label.setPixmap(QPixmap.fromImage(img))
+            self.label.setFixedSize(pix.width, pix.height)
+            self.page_changed.emit(self.current_page + 1, len(self.doc))
+        except Exception as e:
+            self.label.setText(f"渲染页面失败: {e}")
 
     def next_page(self):
         if self.doc and self.current_page < len(self.doc) - 1:

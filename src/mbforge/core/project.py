@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -50,9 +49,14 @@ class DocumentEntry:
         return "text"
 
     def to_dict(self) -> Dict:
+        try:
+            rel_path = str(self.path.relative_to(self.path.anchor))
+        except ValueError:
+            # 不同驱动器或无法相对化时使用绝对路径
+            rel_path = str(self.path)
         return {
             "doc_id": self.doc_id,
-            "path": str(self.path.relative_to(self.path.anchor)),
+            "path": rel_path,
             "doc_type": self.doc_type,
             "title": self.title,
             "indexed": self.indexed,
@@ -123,6 +127,9 @@ class Project:
     def scan_files(self) -> List[DocumentEntry]:
         """扫描项目目录，更新索引."""
         found_ids = set()
+        # 构建 path -> entry 映射，避免 O(n²) 查找
+        path_to_entry = {e.path.resolve(): e for e in self._index.values()}
+
         for file_path in self.root.rglob("*"):
             # 跳过隐藏目录和元数据目录
             if PROJECT_META_DIR in file_path.parts:
@@ -130,15 +137,12 @@ class Project:
             if file_path.name.startswith("."):
                 continue
             if file_path.is_file() and file_path.suffix.lower() in (SUPPORTED_DOC_EXTS | SUPPORTED_MOL_EXTS):
-                # 查找或创建条目
-                entry = None
-                for e in self._index.values():
-                    if e.path.resolve() == file_path.resolve():
-                        entry = e
-                        break
+                resolved = file_path.resolve()
+                entry = path_to_entry.get(resolved)
                 if entry is None:
                     entry = DocumentEntry(path=file_path)
                     self._index[entry.doc_id] = entry
+                    path_to_entry[resolved] = entry
                 # 更新 hash
                 try:
                     new_hash = sha256_file(file_path)

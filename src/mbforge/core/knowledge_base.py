@@ -7,16 +7,14 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import chromadb
 from chromadb.config import Settings
 
-from .document import DocumentProcessor, ExtractedContent
+from .document import ExtractedContent
 from ..utils.constants import KB_COLLECTION_DOCS, PROJECT_META_DIR
-from ..utils.helpers import generate_uuid
 
 
 class KnowledgeBase:
@@ -81,12 +79,17 @@ class KnowledgeBase:
             except Exception as e:
                 print(f"Embedding failed: {e}")
 
-        self._collection.add(
-            ids=chunk_ids,
-            documents=documents,
-            metadatas=metadatas,
-            embeddings=embeddings,
-        )
+        # 如果 embedder 不可用，不传入 embeddings，让 ChromaDB 使用内置默认
+        # 但会触发模型下载；生产环境应确保 embedder 正常配置
+        add_kwargs = {
+            "ids": chunk_ids,
+            "documents": documents,
+            "metadatas": metadatas,
+        }
+        if embeddings is not None:
+            add_kwargs["embeddings"] = embeddings
+
+        self._collection.add(**add_kwargs)
 
     def remove_document(self, doc_id: str) -> None:
         """移除文档的所有索引."""

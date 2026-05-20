@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import threading
 from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
@@ -16,11 +15,10 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QVBoxLayout,
     QWidget,
-    QSplitter,
     QFrame,
 )
 
-from ..models.base import BaseLLM, Message, StreamChunk
+from ..models.base import BaseLLM, Message
 
 
 class ChatMessage(QWidget):
@@ -182,9 +180,16 @@ class ChatWidget(QWidget):
         self.messages = [Message(role="system", content=prompt)]
 
     def add_context(self, context: str):
-        """添加知识库检索结果作为上下文."""
+        """添加知识库检索结果作为上下文.
+
+        会清理之前的检索上下文，避免消息列表无限膨胀。
+        """
         if not context:
             return
+        # 清理旧的检索上下文，避免消息列表无限膨胀
+        self.messages = [m for m in self.messages if not (
+            m.role == "system" and m.content.startswith("[知识库检索结果]")
+        )]
         self.messages.append(Message(role="system", content=f"[知识库检索结果]\n{context}"))
 
     def _send_message(self):
@@ -199,6 +204,14 @@ class ChatWidget(QWidget):
         self._add_message("user", text)
         self.messages.append(Message(role="user", content=text))
 
+        # 限制历史消息长度，避免OOM（保留system + 最近20轮）
+        MAX_HISTORY = 20
+        system_msgs = [m for m in self.messages if m.role == "system"]
+        non_system = [m for m in self.messages if m.role != "system"]
+        if len(non_system) > MAX_HISTORY * 2:
+            non_system = non_system[-MAX_HISTORY * 2:]
+        self.messages = system_msgs + non_system
+
         # 创建回复气泡
         self._current_reply_widget = ChatMessage("assistant", "")
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, self._current_reply_widget)
@@ -206,6 +219,12 @@ class ChatWidget(QWidget):
 
         self.send_btn.setVisible(False)
         self.stop_btn.setVisible(True)
+
+        # 确保旧worker已停止
+        if self._worker is not None:
+            self._worker.stop()
+            self._worker.wait(2000)
+            self._worker = None
 
         self._worker = StreamWorker(self.llm, list(self.messages))
         self._worker.chunk_received.connect(self._on_chunk)
@@ -229,6 +248,7 @@ class ChatWidget(QWidget):
         self._current_reply_widget = None
         self.send_btn.setVisible(True)
         self.stop_btn.setVisible(False)
+        # 只清理引用，不deleteLater，让Qt自动管理
         self._worker = None
 
     def _on_stream_error(self, error: str):

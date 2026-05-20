@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import os
-from typing import AsyncGenerator, Iterator, List, Optional
+from typing import AsyncGenerator, Iterator, List
 
 import openai
 
@@ -59,6 +58,8 @@ class OpenAILLM(BaseLLM):
             stream=True,
         )
         for chunk in response:
+            if not chunk.choices:
+                continue
             delta = chunk.choices[0].delta.content or ""
             finish = chunk.choices[0].finish_reason
             yield StreamChunk(delta=delta, finish_reason=finish)

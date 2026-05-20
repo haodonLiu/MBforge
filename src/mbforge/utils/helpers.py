@@ -65,7 +65,7 @@ def split_text_chunks(text: str, chunk_size: int = 512, overlap: int = 128) -> L
         start = end - overlap
         if start < 0:
             start = 0
-        if start == end:
+        if start >= end or start >= text_len:
             break
     return [c for c in chunks if c]
 

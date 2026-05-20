@@ -226,7 +226,7 @@ class SettingsDialog(QDialog):
         layout.addRow("Model:", self.llm_model)
 
         self.llm_max_tokens = QSpinBox()
-        self.llm_max_tokens.setRange(256, 32768)
+        self.llm_max_tokens.setRange(256, 99999)
         self.llm_max_tokens.setSingleStep(256)
         layout.addRow("Max Tokens:", self.llm_max_tokens)
 

@@ -65,7 +65,8 @@ class MarkdownEditor(QPlainTextEdit):
             self._modified = False
             return True
         except Exception as e:
-            print(f"保存失败: {e}")
+            from ..utils.logger import get_logger
+            get_logger(__name__).error(f"保存失败: {e}")
             return False
 
     def is_modified(self) -> bool:

@@ -13,6 +13,10 @@ try:
 except ImportError:
     pass
 
+from .utils.logger import get_logger, setup_logging
+
+logger = get_logger(__name__)
+
 
 def main() -> int:
     """CLI 主入口."""
@@ -62,17 +66,19 @@ def _cmd_gui(args) -> int:
 
 
 def _cmd_init(args) -> int:
+    setup_logging()
     from .core.project import Project
 
     root = Path(args.path).resolve()
     name = args.name or root.name
     project = Project.create(root, name=name)
-    print(f"项目已创建: {project.root}")
-    print(f"名称: {project.name}")
+    logger.info(f"项目已创建: {project.root}")
+    logger.info(f"名称: {project.name}")
     return 0
 
 
 def _cmd_index(args) -> int:
+    setup_logging()
     from .core.project import Project
     from .core.knowledge_base import KnowledgeBase
     from .core.mol_database import MoleculeDatabase
@@ -83,7 +89,7 @@ def _cmd_index(args) -> int:
     root = Path(args.path).resolve()
     project = Project.open(root)
     if project is None:
-        print(f"错误: {root} 不是有效的 MBForge 项目")
+        logger.error(f"{root} 不是有效的 MBForge 项目")
         return 1
 
     config = load_global_config()
@@ -101,18 +107,18 @@ def _cmd_index(args) -> int:
 
     entries = project.scan_files()
     to_index = [e for e in entries if not e.indexed]
-    print(f"发现 {len(entries)} 个文件，待索引 {len(to_index)} 个")
+    logger.info(f"发现 {len(entries)} 个文件，待索引 {len(to_index)} 个")
 
     for entry in to_index:
         if entry.doc_type == "pdf":
-            print(f"索引: {entry.path.name}")
+            logger.info(f"索引: {entry.path.name}")
             try:
                 pipeline.parse(entry.path, doc_id=entry.doc_id)
                 entry.indexed = True
             except Exception as e:
-                print(f"  失败: {e}")
+                logger.error(f"索引失败: {entry.path.name} - {e}")
 
-    print("索引完成")
+    logger.info("索引完成")
     return 0
 
 

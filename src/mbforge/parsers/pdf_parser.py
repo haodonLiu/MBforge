@@ -13,6 +13,9 @@ from ..core.document import DocumentProcessor, ExtractedContent
 from ..core.knowledge_base import KnowledgeBase
 from ..core.mol_database import MoleculeDatabase, MoleculeRecord
 from ..utils.helpers import generate_uuid
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class PDFParserPipeline:
@@ -74,7 +77,7 @@ class PDFParserPipeline:
                         )
                         img_descriptions.append(f"[Image {img_path.name}]: {desc}")
                     except Exception as e:
-                        print(f"VLM analysis failed for {img_path}: {e}")
+                        logger.warning(f"VLM analysis failed for {img_path}: {e}")
                 if img_descriptions:
                     content.text += "\n\n## Image Analysis\n\n" + "\n\n".join(img_descriptions)
                     # 重新分块
@@ -87,7 +90,7 @@ class PDFParserPipeline:
                 summary = self._summarize(content.text)
                 content.summary = summary
             except Exception as e:
-                print(f"Summarization failed: {e}")
+                logger.warning(f"Summarization failed: {e}")
 
         # 5. 分子提取
         if extract_molecules and self.mol_db is not None:
@@ -99,7 +102,7 @@ class PDFParserPipeline:
             try:
                 self.kb.index_document(doc_id, content, metadata={"source": str(pdf_path)})
             except Exception as e:
-                print(f"KB indexing failed: {e}")
+                logger.warning(f"KB indexing failed: {e}")
 
         return content
 

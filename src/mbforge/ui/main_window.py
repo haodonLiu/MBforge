@@ -96,19 +96,21 @@ class MainWindow(QMainWindow):
     # ---- 初始化 ----
 
     def _setup_models(self):
+        from ..utils.logger import get_logger
+        log = get_logger(__name__)
         config = load_global_config()
         try:
             self.embedder = create_embedder_from_config(config.embed)
         except Exception as e:
-            print(f"Embedder init failed: {e}")
+            log.warning(f"Embedder init failed: {e}")
         try:
             self.llm = create_llm_from_config(config.llm)
         except Exception as e:
-            print(f"LLM init failed: {e}")
+            log.warning(f"LLM init failed: {e}")
         try:
             self.reranker = create_reranker_from_config(config.rerank)
         except Exception as e:
-            print(f"Reranker init failed: {e}")
+            log.warning(f"Reranker init failed: {e}")
 
     def _setup_ui(self):
         central = QWidget()

@@ -15,6 +15,9 @@ from chromadb.config import Settings
 
 from .document import ExtractedContent
 from ..utils.constants import KB_COLLECTION_DOCS, PROJECT_META_DIR
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class KnowledgeBase:
@@ -77,7 +80,7 @@ class KnowledgeBase:
             try:
                 embeddings = self.embedder.embed(documents)
             except Exception as e:
-                print(f"Embedding failed: {e}")
+                logger.warning(f"Embedding failed: {e}")
 
         # 如果 embedder 不可用，不传入 embeddings，让 ChromaDB 使用内置默认
         # 但会触发模型下载；生产环境应确保 embedder 正常配置
@@ -108,7 +111,7 @@ class KnowledgeBase:
             try:
                 query_embedding = self.embedder.embed([query])[0]
             except Exception as e:
-                print(f"Query embedding failed: {e}")
+                logger.warning(f"Query embedding failed: {e}")
 
         results = self._collection.query(
             query_embeddings=[query_embedding] if query_embedding else None,

@@ -15,6 +15,7 @@ except ImportError:
     pass
 
 from .ui.main_window import MainWindow
+from .utils.logger import setup_logging
 
 
 def run_app(argv: list[str] | None = None) -> int:
@@ -26,6 +27,9 @@ def run_app(argv: list[str] | None = None) -> int:
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
+
+    # 初始化日志
+    setup_logging()
 
     app = QApplication(argv)
     app.setApplicationName("MBForge")

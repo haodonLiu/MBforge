@@ -121,8 +121,8 @@ class LayeredContext:
     # ---- 工具结果 ----
 
     def add_tool_result(self, tool_name: str, result: str, tool_call_id: str = "") -> None:
-        """添加工具调用结果（临时层，不持久化）."""
-        self._tools.add(
+        """添加工具调用结果到历史层（紧跟 assistant 的 tool_use 消息之后）."""
+        self._history.add(
             "tool",
             f'[工具调用结果: {tool_name}]\n{result[:4000]}',
             name=tool_name,

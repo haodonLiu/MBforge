@@ -30,6 +30,7 @@ from ..core.knowledge_base import KnowledgeBase
 from ..core.memory import ProjectMemory
 from ..core.mol_database import MoleculeDatabase
 from ..core.project import Project
+from ..core.todo_manager import TodoManager
 from ..models import create_embedder_from_config, create_llm_from_config, create_reranker_from_config
 from ..parsers.pdf_parser import PDFParserPipeline
 from ..utils.config import load_global_config
@@ -84,6 +85,7 @@ class MainWindow(QMainWindow):
         self.project: Optional[Project] = None
         self.kb: Optional[KnowledgeBase] = None
         self.mol_db: Optional[MoleculeDatabase] = None
+        self.todo_manager: Optional[TodoManager] = None
         self.llm = None
         self.embedder = None
         self.reranker = None
@@ -325,6 +327,11 @@ class MainWindow(QMainWindow):
         import_action.triggered.connect(self._import_files)
         file_menu.addAction(import_action)
 
+        process_action = QAction("处理 TODO 队列", self)
+        process_action.setShortcut(QKeySequence("Ctrl+Shift+P"))
+        process_action.triggered.connect(self._start_process_todo)
+        file_menu.addAction(process_action)
+
         save_action = QAction("保存", self)
         save_action.setShortcut(QKeySequence("Ctrl+S"))
         save_action.triggered.connect(self._save_current)
@@ -392,6 +399,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addAction("💾 保存", self._save_current)
         toolbar.addAction("📥 导入", self._import_files)
+        toolbar.addAction("⚡ 处理", self._start_process_todo)
         toolbar.addSeparator()
         toolbar.addAction("🔍 搜索", self._search_kb)
         toolbar.addAction("🤖 发送", self._trigger_chat_send)
@@ -623,6 +631,7 @@ class MainWindow(QMainWindow):
         # 初始化知识库和分子库
         self.kb = KnowledgeBase(project.root, embedder=self.embedder)
         self.mol_db = MoleculeDatabase(project.root)
+        self.todo_manager = TodoManager(project.root)
 
         # 更新 PDF 流水线
         self.pdf_pipeline = PDFParserPipeline(
@@ -771,7 +780,7 @@ class MainWindow(QMainWindow):
             self._open_file(Path(path))
 
     def _import_files(self):
-        """导入文件到项目 raw 目录."""
+        """导入文件到项目 raw 目录，并加入 TODO 队列."""
         if self.project is None:
             QMessageBox.warning(self, "提示", "请先打开项目")
             return
@@ -798,6 +807,8 @@ class MainWindow(QMainWindow):
                 shutil.copy2(src, dst)
                 self.project.add_file(dst)
                 imported.append(src.name)
+                # 加入 TODO 队列
+                self.todo_manager.add_file(src.name, f"raw/{src.name}")
             except Exception as e:
                 failed.append(f"{src.name}: {e}")
 
@@ -811,6 +822,10 @@ class MainWindow(QMainWindow):
         logger = get_logger(__name__)
         logger.info(msg)
 
+        # 自动处理（如果启用）
+        if imported and self._should_auto_process():
+            self._start_process_todo()
+
     def _close_tab(self, index: int):
         widget = self.center_tabs.widget(index)
         if isinstance(widget, PDFViewer):
@@ -818,6 +833,36 @@ class MainWindow(QMainWindow):
         self.center_tabs.removeTab(index)
         if widget:
             widget.deleteLater()
+
+    def _should_auto_process(self) -> bool:
+        """检查是否自动处理导入的文件."""
+        from ..core.settings import ProjectSettings
+        settings = ProjectSettings.load(self.project.root)
+        return settings.auto_process
+
+    def _start_process_todo(self):
+        """启动 TODO 处理（后台线程）."""
+        from ..parsers.file_processor import process_file
+
+        def _on_progress(current, total, entry):
+            self.statusbar.showMessage(f"处理中: {current}/{total} - {entry.filename}")
+
+        def _on_done():
+            self.statusbar.showMessage("所有文件处理完成")
+            self.file_tree.set_project(self.project)
+
+        self.todo_manager.process_all_async(
+            file_processor=lambda e, s, o: process_file(
+                e, s, o,
+                llm=self.llm,
+                embedder=self.embedder,
+                knowledge_base=self.kb,
+                mol_db=self.mol_db,
+            ),
+            on_progress=_on_progress,
+            on_done=_on_done,
+        )
+        self.statusbar.showMessage("开始处理导入的文件...")
 
     def _save_current(self):
         current = self.center_tabs.currentWidget()

@@ -1,6 +1,7 @@
 """MBForge 工具模块."""
 
 from .config import load_global_config, save_global_config, AppConfig, ModelConfig, EmbedConfig, RerankConfig, VLMConfig
+from .error_logger import record_error
 from .helpers import (
     generate_uuid,
     sha256_file,
@@ -26,4 +27,5 @@ __all__ = [
     "EmbedConfig",
     "RerankConfig",
     "VLMConfig",
+    "record_error",
 ]

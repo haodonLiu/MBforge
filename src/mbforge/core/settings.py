@@ -20,6 +20,7 @@ class ProjectSettings:
     llm_model: str = "default"
     embed_model: str = "default"
     auto_index: bool = True  # 自动索引新文档
+    auto_process: bool = True  # 导入文件后自动处理（False = 手动触发）
     pdf_ocr_enabled: bool = True
     pdf_extract_molecules: bool = True
     # 工作流开关
@@ -44,6 +45,7 @@ class ProjectSettings:
             llm_model=data.get("llm_model", "default"),
             embed_model=data.get("embed_model", "default"),
             auto_index=data.get("auto_index", True),
+            auto_process=data.get("auto_process", True),
             pdf_ocr_enabled=data.get("pdf_ocr_enabled", True),
             pdf_extract_molecules=data.get("pdf_extract_molecules", True),
             workflows_enabled=data.get(

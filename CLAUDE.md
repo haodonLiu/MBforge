@@ -2,118 +2,95 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Repository Overview
+## What MBForge Is
 
-MBForge 是一个整合 UniParser-Tools 和 openSAR 的自动化 SAR 分析流水线项目。
+PyQt6 桌面应用，用于分子科学/药物发现研究。核心流程：PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询。
 
-```
-PDF → UniParser → Agent整理 → openSAR SAR分析 → 报告
-```
-
-### 模块结构
-
-| 模块 | 用途 | 目录 |
-|------|------|------|
-| **parser_io** | PDF 解析 IO、配置管理、数据模型 | `src/parser_io/` |
-| **openSAR** | SAR 分析工具箱（聚类、MCS、可视化） | `openSAR/` |
-| **UniParser-Tools** | 文档解析 SDK | `UniParser-Tools/` |
-
-### 统一环境配置
-
-项目使用 `.venv` 虚拟环境，由 `uv` 管理：
+## Build / Test / Lint Commands
 
 ```bash
-# 创建虚拟环境
-uv venv .venv --python 3.12
+# 安装依赖（uv workspace，包含 openSAR 和 UniParser-Tools）
+uv sync --dev
 
-# 安装所有依赖（清华镜像）
-UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
-uv pip install -e openSAR/ -e UniParser-Tools/ --python .venv/Scripts/python.exe
+# 启动 GUI
+mbforge
+# 或
+uv run mbforge gui
 
-# 设置 PYTHONPATH（用于 src/ 下的模块）
-export PYTHONPATH=src
+# 新建项目
+mbforge init ./my-project --name "MyProject"
+
+# 索引项目 PDF
+mbforge index ./my-project
+
+# 运行测试
+uv run pytest tests/ -v
+
+# 运行单个测试文件
+uv run pytest tests/unit/test_project.py -v
+
+# 格式化
+uv run ruff format src/
+
+# Lint
+uv run ruff check src/
+
+# 打包 EXE
+uv run python build.py
 ```
 
-## 快速参考
+## Architecture
 
-### parser_io 模块
+### Data Flow (Central Pipeline)
 
-```python
-from parser_io import ParserClient, load_config
-
-# 从 .env 加载配置
-config = load_config()
-
-# 解析 PDF
-client = ParserClient(config)
-result = client.parse_pdf("document.pdf")
-print(f"Token: {result.token}")
-
-# 获取结果
-raw = client.get_result(result.token)
+```
+PDF → DocumentProcessor (PyMuPDF text/image)
+  → MoleculeExtractor (regex + LLM SMILES extraction)
+  → DocumentSummarizer (L0/L1/L2 layered summaries via LLM)
+  → KnowledgeBase (ChromaDB vector store)
+  → MoleculeDatabase (SQLite + RDKit, auto-computed properties)
 ```
 
-### openSAR
+This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, invoked by both CLI `index` command and GUI `IndexWorker`.
+
+### Module Layout
+
+| 包 | 职责 |
+|---|---|
+| `core/` | 数据模型：`Project`（vault 隐喻，`.mbforge/` 隐藏目录）、`KnowledgeBase`（ChromaDB 封装 + rerank）、`MoleculeDatabase`（SQLite + FTS5）、`DocumentProcessor`、`DocumentSummarizer` |
+| `models/` | AI 模型抽象层：`BaseLLM`/`BaseEmbedder`/`BaseReranker`/`BaseVLM` 基类 + OpenAI/Anthropic/本地实现。`create_llm_from_config()` 按 provider 字符串分发 |
+| `parsers/` | PDF 解析与分子提取。`PDFParserPipeline` 串联全部解析步骤 |
+| `ui/` | PyQt6 界面：`MainWindow`（主窗口，组装所有组件）、`ChatWidget`、`PDFViewer`、`MolPanel`、`FileTree` 等 |
+| `agent/` | ReAct 循环 Agent：`ProjectAgent` + `LayeredContext` + `ToolExecutor`（10 个工具，OpenAI function-calling schema）+ `MemoryManager` + `TrajectoryTracker` |
+| `workflow/` | 占位模块：`generation`、`docking`、`qsar`、`md` — 仅 toggle 开关，尚未实现 |
+| `utils/` | 配置（`AppConfig`）、日志、常量、辅助函数 |
+
+### Workspace Layout
+
+```
+MBForge/                  # uv workspace root
+├── src/mbforge/          # 主应用
+├── openSAR/              # uv workspace member，装为 csar（SAR 分析工具箱）
+├── UniParser-Tools/      # uv workspace member，装为 uniparser-tools（远程 PDF 解析 API）
+└── tests/
+```
+
+`openSAR` 和 `UniParser-Tools` 作为 uv workspace 成员安装，但当前核心代码直接用本地 PyMuPDF，未接入 UniParser API。openSAR 尚未集成到 mbforge 核心模块中。
+
+### Config System (Two Tiers)
+
+- **全局**: `~/.config/MBForge/config.json`（`AppConfig`）— LLM、embedding、rerank、VLM 设置，支持 `MBFORGE_LLM_*` 环境变量覆盖
+- **项目级**: `.mbforge/settings.json`（`ProjectSettings`）— 模型覆盖、workflow toggle
+
+### AI Model Layer
+
+`src/mbforge/models/` 提供统一抽象。实现类：`OpenAILLM`（OpenAI 兼容 API）、`AnthropicLLM`、`SentenceTransformerEmbedder`、`APIEmbedder`、`SentenceTransformerReranker`、`APIVLM`。工厂函数 `create_llm_from_config()` 根据配置中的 provider 字段选择实现。
+
+## Environment
 
 ```bash
-cd openSAR
-pip install -e ".[dev]"
-pytest tests/
-csar input.xlsx -o output/
-```
-
-### UniParser-Tools
-
-```bash
-cd UniParser-Tools
-uv pip install -e .
-```
-
-## 项目架构
-
-### parser_io 模块
-
-```
-src/parser_io/
-  __init__.py    # 导出 ParserClient, ParseResult, MoleculeData, SARTask
-  config.py      # ParserConfig, load_config(), validate_config()
-  models.py      # ParseResult, MoleculeData, SARTask
-  client.py      # ParserClient（封装 UniParserClient）
-```
-
-### openSAR Pipeline
-
-`MoleculeReader` → `MolecularClusterer`/`ScaffoldClusterer` → `MCSFinder` → `SARAnalyzer` → `SARRenderer`
-
-Key modules:
-- `src/io/` — SDF/Excel/CSV reading
-- `src/clustering/` — Morgan/MACCS/RDKit fingerprints
-- `src/mcs/` — Maximum Common Substructure finder
-- `src/sar/` — Activity preprocessor, SAR analyzer
-- `src/visualization/` — SAR summaries, similarity heatmaps
-
-### UniParser-Tools
-
-Token-based workflow: `trigger_*` (submit) → `get_result`/`get_formatted` (fetch)
-
-Key modules:
-- `uniparser_tools/api/clients.py` — UniParserClient HTTP wrapper
-- `uniparser_tools/common/constant.py` — ParseMode/FormatFlag enums
-- `uniparser_tools/common/dataclass.py` — Result dataclasses
-
-## 环境变量
-
-```bash
-# .env 文件模板
 cp .env.template .env
-# 编辑配置
-UNIPARSER_HOST=https://your-server.com
-UNIPARSER_API_KEY=your-key
+# 编辑 UNIPARSER_HOST、UNIPARSER_API_KEY 等
 ```
 
-## Shared Patterns
-
-- 使用 `uv` 管理虚拟环境和包安装
-- 使用 `ruff` 进行 lint/format（88 字符行长）
-- 使用 `pytest` 进行测试
-- openSAR 使用 `mypy` 进行严格类型检查
+`pyproject.toml` 中 `[tool.uv]` 使用清华镜像源，并 override 了 pandas/numpy 版本约束。

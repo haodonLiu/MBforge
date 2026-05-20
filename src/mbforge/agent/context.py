@@ -100,13 +100,33 @@ class LayeredContext:
     def clear_project_context(self) -> None:
         self._project.clear()
 
+    def inject_memory(self, memory_text: str) -> None:
+        """注入用户记忆到项目上下文（OpenViking / TencentDB）."""
+        if not memory_text:
+            return
+        self._project.add("system", f"[用户记忆]\n{memory_text}")
+
+    def inject_agent_memory(self, memory_text: str) -> None:
+        """注入 Agent 学习记忆到项目上下文."""
+        if not memory_text:
+            return
+        self._project.add("system", f"[Agent 经验]\n{memory_text}")
+
+    def inject_retrieval_trajectory(self, trajectory_text: str) -> None:
+        """注入检索轨迹到项目上下文（临时，不持久化）."""
+        if not trajectory_text:
+            return
+        self._tools.add("system", f"[检索轨迹]\n{trajectory_text}")
+
     # ---- 工具结果 ----
 
-    def add_tool_result(self, tool_name: str, result: str) -> None:
+    def add_tool_result(self, tool_name: str, result: str, tool_call_id: str = "") -> None:
         """添加工具调用结果（临时层，不持久化）."""
         self._tools.add(
-            "system",
+            "tool",
             f'[工具调用结果: {tool_name}]\n{result[:4000]}',
+            name=tool_name,
+            tool_call_id=tool_call_id,
         )
 
     def clear_tool_results(self) -> None:

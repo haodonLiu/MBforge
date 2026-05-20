@@ -9,7 +9,9 @@
 from .agent import ProjectAgent
 from .context import LayeredContext
 from .executor import ToolExecutor
+from .memory_manager import MemoryManager, MemoryEntry
 from .tools import ToolRegistry, tool
+from .trajectory import TrajectoryTracker, TrajectoryStep
 
 __all__ = [
     "ProjectAgent",
@@ -17,4 +19,8 @@ __all__ = [
     "ToolExecutor",
     "ToolRegistry",
     "tool",
+    "MemoryManager",
+    "MemoryEntry",
+    "TrajectoryTracker",
+    "TrajectoryStep",
 ]

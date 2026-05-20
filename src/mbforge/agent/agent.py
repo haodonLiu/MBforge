@@ -6,15 +6,23 @@
 3. 如调用工具，执行并将结果加入上下文
 4. 回到步骤 1，最多循环 5 次
 5. 返回最终回复给用户
+
+集成 OpenViking 和 TencentDB-Agent-Memory：
+- 记忆注入（L1 project 层）
+- 检索轨迹记录
+- 对话结束后的记忆自迭代提取
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .context import LayeredContext
 from .executor import ToolExecutor
+from .memory_manager import MemoryManager
+from .trajectory import TrajectoryTracker
 from ..models.base import BaseLLM, Message
 from ..utils.logger import get_logger
 
@@ -28,6 +36,8 @@ class ProjectAgent:
     - 独立的 LayeredContext（分层上下文）
     - 绑定项目资源的 ToolExecutor
     - 持久的对话记忆（可选）
+    - 6 类记忆管理（MemoryManager）
+    - 检索轨迹跟踪（TrajectoryTracker）
     """
 
     DEFAULT_SYSTEM_PROMPT = (
@@ -42,15 +52,25 @@ class ProjectAgent:
         tool_executor: Optional[ToolExecutor] = None,
         system_prompt: str = "",
         max_iterations: int = 5,
+        project_root: Optional[Path] = None,
     ):
         self.llm = llm
         self.tool_executor = tool_executor
         self.max_iterations = max_iterations
+        self.project_root = project_root
 
         self.context = LayeredContext(
             system_prompt=system_prompt or self.DEFAULT_SYSTEM_PROMPT,
             max_history_rounds=20,
         )
+
+        # 记忆与轨迹
+        self.memory_manager: Optional[MemoryManager] = None
+        self.trajectory_tracker: Optional[TrajectoryTracker] = None
+        if project_root is not None:
+            self.memory_manager = MemoryManager(project_root)
+            self.trajectory_tracker = TrajectoryTracker(project_root)
+            self._inject_memories()
 
         if tool_executor is not None:
             # 在系统提示中追加可用工具说明
@@ -73,6 +93,17 @@ class ProjectAgent:
             self.context.set_system_prompt(original + desc)
         else:
             self.context.set_system_prompt(self.DEFAULT_SYSTEM_PROMPT + desc)
+
+    def _inject_memories(self) -> None:
+        """将用户画像和 Agent 经验注入项目上下文."""
+        if self.memory_manager is None:
+            return
+        user_profile = self.memory_manager.get_user_profile_text()
+        if user_profile:
+            self.context.inject_memory(user_profile)
+        agent_memory = self.memory_manager.get_agent_memory_text()
+        if agent_memory:
+            self.context.inject_agent_memory(agent_memory)
 
     def set_project_context(self, project_name: str, project_path: str) -> None:
         """设置当前项目上下文."""
@@ -111,7 +142,16 @@ class ProjectAgent:
                 self.context.add_assistant_message(content or "")
                 for tc in tool_calls:
                     result = self._execute_tool_call(tc)
-                    self.context.add_tool_result(tc["name"], result)
+                    self.context.add_tool_result(
+                        tc["name"], result, tool_call_id=tc.get("id", "")
+                    )
+                    # 记录轨迹
+                    if self.trajectory_tracker is not None:
+                        self.trajectory_tracker.record_tool(
+                            tc["name"],
+                            tc.get("arguments", {}),
+                            result[:200],
+                        )
                 continue
             else:
                 # 直接回复
@@ -147,15 +187,23 @@ class ProjectAgent:
                 self.context.add_assistant_message(content or "")
                 for tc in tool_calls:
                     result = self._execute_tool_call(tc)
-                    self.context.add_tool_result(tc["name"], result)
+                    self.context.add_tool_result(
+                        tc["name"], result, tool_call_id=tc.get("id", "")
+                    )
+                    if self.trajectory_tracker is not None:
+                        self.trajectory_tracker.record_tool(
+                            tc["name"],
+                            tc.get("arguments", {}),
+                            result[:200],
+                        )
 
                 # 再请求最终回复并流式输出
                 final_messages = self.context.build_messages()
+                full_text = ""
                 for chunk in self.llm.chat_stream(final_messages):
                     yield chunk.delta
-                self.context.add_assistant_message(
-                    self._collect_stream_chunks(self.llm.chat_stream(final_messages))
-                )
+                    full_text += chunk.delta
+                self.context.add_assistant_message(full_text)
                 self.context.clear_tool_results()
                 return
 
@@ -167,6 +215,13 @@ class ProjectAgent:
             full_text += chunk.delta
         self.context.add_assistant_message(full_text)
         self.context.clear_tool_results()
+
+    def extract_memory(self) -> None:
+        """从当前对话历史中自动提取记忆（TencentDB 记忆自迭代）."""
+        if self.memory_manager is None or self.llm is None:
+            return
+        messages = self.context.build_messages(include_tools=False)
+        self.memory_manager.extract_from_conversation(messages, self.llm)
 
     # ---- 内部方法 ----
 
@@ -180,15 +235,26 @@ class ProjectAgent:
         注意：这里使用 openai client 的原生 tools 参数。
         如果 LLM provider 不支持 function calling，会 fallback 到普通调用。
         """
+        logger.debug(f"_call_llm_with_tools: llm type = {type(self.llm).__name__}")
         try:
-            # 尝试使用底层 client 的 tools 参数
+            from ..models.anthropic_llm import AnthropicLLM
             from ..models.llm import OpenAILLM
+
+            if isinstance(self.llm, AnthropicLLM):
+                return self.llm.call_with_tools(
+                    messages,
+                    tools,
+                    max_tokens=self.llm.max_tokens,
+                    temperature=self.llm.temperature,
+                )
+
             if isinstance(self.llm, OpenAILLM):
+                # MiniMax OpenAI 兼容接口可能不支持 tool_choice="auto"，
+                # 因此不显式传入，使用 API 默认行为
                 return self.llm.client.chat.completions.create(
                     model=self.llm.model_name,
                     messages=self.llm._convert_messages(messages),
                     tools=tools,
-                    tool_choice="auto",
                     max_tokens=self.llm.max_tokens,
                     temperature=self.llm.temperature,
                 )
@@ -207,6 +273,19 @@ class ProjectAgent:
         content = ""
         tool_calls = []
 
+        # Anthropic response object (MiniMax Anthropic-compatible)
+        if hasattr(response, "content") and not hasattr(response, "choices"):
+            for block in response.content:
+                if block.type == "text":
+                    content += block.text
+                elif block.type == "tool_use":
+                    tool_calls.append({
+                        "id": getattr(block, "id", ""),
+                        "name": block.name,
+                        "arguments": dict(block.input) if hasattr(block, "input") and block.input else {},
+                    })
+            return content, tool_calls
+
         # OpenAI response object
         if hasattr(response, "choices"):
             choice = response.choices[0]
@@ -219,13 +298,14 @@ class ProjectAgent:
                     except Exception:
                         args = {}
                     tool_calls.append({
+                        "id": getattr(tc, "id", ""),
                         "name": tc.function.name,
                         "arguments": args,
                     })
-        else:
-            # 纯字符串回复
-            content = str(response)
+            return content, tool_calls
 
+        # 纯字符串回复
+        content = str(response)
         return content, tool_calls
 
     def _execute_tool_call(self, tool_call: Dict) -> str:

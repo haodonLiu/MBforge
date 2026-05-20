@@ -42,6 +42,10 @@ class ToolExecutor:
 
         # 知识库搜索
         mixin.register_from_function(self.registry, self.search_knowledge_base)
+        mixin.register_from_function(self.registry, self.find_documents)
+        mixin.register_from_function(self.registry, self.read_document_abstract)
+        mixin.register_from_function(self.registry, self.read_document_overview)
+        mixin.register_from_function(self.registry, self.read_document_detail)
         # 分子数据库
         mixin.register_from_function(self.registry, self.list_molecules)
         mixin.register_from_function(self.registry, self.search_molecule_by_smiles)
@@ -82,6 +86,131 @@ class ToolExecutor:
         except Exception as e:
             logger.exception("KB search failed")
             return f"搜索失败: {e}"
+
+    @tool(
+        "按关键词或实体查找文档",
+        {
+            "keyword": {
+                "type": "string",
+                "description": "关键词或实体名，如 'aspirin' 或 'docking'",
+            },
+            "doc_type": {
+                "type": "string",
+                "description": "文档类型过滤: pdf, markdown, text。空字符串表示全部",
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "返回结果数量，默认5",
+            },
+        },
+    )
+    def find_documents(self, keyword: str, doc_type: str = "", top_k: int = 5) -> str:
+        """按关键词或实体名查找项目文档（支持 L0 摘要快速过滤）."""
+        if self.project is None or self.kb is None:
+            return "错误：项目或知识库未初始化"
+        try:
+            from ..core.summarizer import SummaryManager
+
+            sm = SummaryManager(self.project.root)
+            summaries = sm.list_all()
+
+            # 先用 L0 摘要过滤
+            matched = []
+            for s in summaries:
+                if keyword.lower() in s.l0_abstract.lower():
+                    matched.append(s)
+                    continue
+                if keyword.lower() in " ".join(s.keywords).lower():
+                    matched.append(s)
+                    continue
+                if keyword.lower() in " ".join(s.entity_tags).lower():
+                    matched.append(s)
+
+            if not matched:
+                # fallback: 知识库搜索
+                return self.search_knowledge_base(keyword, top_k=top_k)
+
+            lines = [f"找到 {len(matched)} 个相关文档（按 L0 摘要过滤）:"]
+            for s in matched[:top_k]:
+                lines.append(f"- {s.doc_id}: {s.l0_abstract[:120]}...")
+                if s.entity_tags:
+                    lines.append(f"  实体: {', '.join(s.entity_tags)}")
+            return "\n".join(lines)
+        except Exception as e:
+            logger.exception("Find documents failed")
+            return f"查找失败: {e}"
+
+    @tool(
+        "读取文档 L0 摘要",
+        {
+            "doc_id": {
+                "type": "string",
+                "description": "文档ID",
+            },
+        },
+    )
+    def read_document_abstract(self, doc_id: str) -> str:
+        """读取文档的 L0 一句话摘要（快速了解文档核心内容）."""
+        if self.kb is None:
+            return "错误：知识库未初始化"
+        try:
+            abstract = self.kb.get_document_abstract(doc_id)
+            if abstract:
+                return f"[{doc_id}] L0 摘要:\n{abstract}"
+            return f"文档 {doc_id} 暂无 L0 摘要"
+        except Exception as e:
+            return f"读取失败: {e}"
+
+    @tool(
+        "读取文档 L1 概览",
+        {
+            "doc_id": {
+                "type": "string",
+                "description": "文档ID",
+            },
+        },
+    )
+    def read_document_overview(self, doc_id: str) -> str:
+        """读取文档的 L1 结构化概览（包含背景、方法、结果、分子列表）."""
+        if self.kb is None:
+            return "错误：知识库未初始化"
+        try:
+            overview = self.kb.get_document_overview(doc_id)
+            if overview:
+                return f"[{doc_id}] L1 概览:\n{overview}"
+            return f"文档 {doc_id} 暂无 L1 概览"
+        except Exception as e:
+            return f"读取失败: {e}"
+
+    @tool(
+        "读取文档完整内容",
+        {
+            "doc_id": {
+                "type": "string",
+                "description": "文档ID",
+            },
+            "max_chars": {
+                "type": "integer",
+                "description": "最大字符数，默认4000",
+            },
+        },
+    )
+    def read_document_detail(self, doc_id: str, max_chars: int = 4000) -> str:
+        """读取文档的完整内容片段（L2 Detail）."""
+        if self.kb is None:
+            return "错误：知识库未初始化"
+        try:
+            # 从知识库中获取该文档的 chunks
+            results = self.kb.search("", top_k=20, filter_dict={"doc_id": doc_id})
+            if not results:
+                return f"文档 {doc_id} 暂无索引内容"
+            texts = [r["text"] for r in results]
+            full_text = "\n\n".join(texts)
+            if len(full_text) > max_chars:
+                full_text = full_text[:max_chars] + "\n...[内容已截断]"
+            return f"[{doc_id}] 完整内容:\n{full_text}"
+        except Exception as e:
+            return f"读取失败: {e}"
 
     @tool(
         "列出分子数据库",

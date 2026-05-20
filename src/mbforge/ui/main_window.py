@@ -24,12 +24,16 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..agent.agent import ProjectAgent
+from ..agent.executor import ToolExecutor
 from ..core.knowledge_base import KnowledgeBase
+from ..core.memory import ProjectMemory
 from ..core.mol_database import MoleculeDatabase
 from ..core.project import Project
 from ..models import create_embedder_from_config, create_llm_from_config, create_reranker_from_config
 from ..parsers.pdf_parser import PDFParserPipeline
 from ..utils.config import load_global_config
+from ..utils.logger import get_logger
 from .chat_widget import ChatWidget
 from .dialogs import NewProjectDialog, SettingsDialog
 from .editor import MarkdownEditor
@@ -280,7 +284,6 @@ class MainWindow(QMainWindow):
 
         # LLM 对话框
         self.chat_widget = ChatWidget()
-        self.chat_widget.set_llm(self.llm)
         right_layout.addWidget(self.chat_widget, 1)
 
         self.splitter.addWidget(self.right_panel)
@@ -601,6 +604,29 @@ class MainWindow(QMainWindow):
             mol_db=self.mol_db,
         )
 
+        # 初始化 Agent（带工具调用能力）
+        tool_executor = ToolExecutor(
+            project=project,
+            knowledge_base=self.kb,
+            mol_db=self.mol_db,
+        )
+        self.agent = ProjectAgent(
+            llm=self.llm,
+            tool_executor=tool_executor,
+        )
+        self.agent.set_project_context(project.name, str(project.root))
+        self.chat_widget.set_agent(self.agent)
+
+        # 加载项目记忆
+        memory = ProjectMemory(project.root)
+        saved_ctx = memory.load()
+        if saved_ctx is not None:
+            self.agent.context = saved_ctx
+            self.chat_widget.clear_chat()
+            # 恢复历史消息显示（只恢复 user/assistant）
+            for msg in saved_ctx._history.messages:
+                self.chat_widget._add_message(msg.role, msg.content)
+
         # 刷新 UI
         self.file_tree.set_project(project)
         self.statusbar.showMessage(f"已打开项目: {project.root}")
@@ -772,7 +798,8 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(config, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._setup_models()
-            self.chat_widget.set_llm(self.llm)
+            if self.agent is not None:
+                self.agent.llm = self.llm
             if self.kb:
                 self.kb.embedder = self.embedder
             if self.pdf_pipeline:
@@ -796,6 +823,14 @@ class MainWindow(QMainWindow):
         if hasattr(self, "index_worker") and self.index_worker is not None:
             self.index_worker.terminate()
             self.index_worker.wait(3000)
+        # 保存项目对话记忆
+        if self.project is not None and hasattr(self, "agent") and self.agent is not None:
+            try:
+                memory = ProjectMemory(self.project.root)
+                memory.save(self.agent.context)
+            except Exception as e:
+                logger = get_logger(__name__)
+                logger.warning(f"Failed to save conversation memory: {e}")
         # 释放资源
         if self.kb is not None:
             self.kb.close()

@@ -1,4 +1,4 @@
-"""LLM 对话框组件."""
+"""LLM 对话框组件（集成 Agent 框架）."""
 
 from __future__ import annotations
 
@@ -18,7 +18,10 @@ from PyQt6.QtWidgets import (
     QFrame,
 )
 
-from ..models.base import BaseLLM, Message
+from ..agent.agent import ProjectAgent
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class ChatMessage(QWidget):
@@ -61,20 +64,21 @@ class StreamWorker(QThread):
     finished_signal = pyqtSignal()
     error_signal = pyqtSignal(str)
 
-    def __init__(self, llm: BaseLLM, messages: list[Message]):
+    def __init__(self, agent: ProjectAgent, user_input: str):
         super().__init__()
-        self.llm = llm
-        self.messages = messages
+        self.agent = agent
+        self.user_input = user_input
         self._stopped = False
 
     def run(self):
         try:
-            for chunk in self.llm.chat_stream(self.messages):
+            for text in self.agent.chat_stream(self.user_input):
                 if self._stopped:
                     break
-                self.chunk_received.emit(chunk.delta)
+                self.chunk_received.emit(text)
             self.finished_signal.emit()
         except Exception as e:
+            logger.exception("Stream worker error")
             self.error_signal.emit(str(e))
 
     def stop(self):
@@ -82,14 +86,11 @@ class StreamWorker(QThread):
 
 
 class ChatWidget(QWidget):
-    """LLM 对话面板."""
+    """LLM 对话面板（Agent 集成版）."""
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.llm: Optional[BaseLLM] = None
-        self.messages: list[Message] = [
-            Message(role="system", content="你是一位专业的药物化学和分子生物学研究助手。请用中文回答。")
-        ]
+        self.agent: Optional[ProjectAgent] = None
         self._current_reply_widget: Optional[ChatMessage] = None
         self._worker: Optional[StreamWorker] = None
         self._setup_ui()
@@ -114,10 +115,9 @@ class ChatWidget(QWidget):
                 border: 1px solid #e9ecef;
                 border-radius: 8px;
                 padding: 4px 12px;
+                font-size: 13px;
             }
-            QPushButton:hover {
-                background: #e9ecef;
-            }
+            QPushButton:hover { background: #e9ecef; }
         """)
         self.clear_btn.clicked.connect(self.clear_chat)
         toolbar.addWidget(self.clear_btn)
@@ -198,44 +198,31 @@ class ChatWidget(QWidget):
 
         self.setStyleSheet("background: #ffffff;")
 
-    def set_llm(self, llm: BaseLLM):
-        self.llm = llm
+    def set_agent(self, agent: ProjectAgent):
+        """设置 Agent 实例."""
+        self.agent = agent
 
     def set_system_prompt(self, prompt: str):
-        self.messages = [Message(role="system", content=prompt)]
+        """修改系统提示（会清空历史）."""
+        if self.agent is not None:
+            self.agent.context.set_system_prompt(prompt)
 
     def add_context(self, context: str):
-        """添加知识库检索结果作为上下文.
-
-        会清理之前的检索上下文，避免消息列表无限膨胀。
-        """
-        if not context:
+        """添加知识库检索结果作为上下文."""
+        if self.agent is None or not context:
             return
-        # 清理旧的检索上下文，避免消息列表无限膨胀
-        self.messages = [m for m in self.messages if not (
-            m.role == "system" and m.content.startswith("[知识库检索结果]")
-        )]
-        self.messages.append(Message(role="system", content=f"[知识库检索结果]\n{context}"))
+        self.agent.context.update_project_context(context)
 
     def _send_message(self):
         text = self.input_box.text().strip()
         if not text:
             return
-        if self.llm is None:
-            self._add_message("assistant", "LLM 未配置，请在设置中配置模型。")
+        if self.agent is None:
+            self._add_message("assistant", "Agent 未初始化，请先打开项目。")
             return
 
         self.input_box.clear()
         self._add_message("user", text)
-        self.messages.append(Message(role="user", content=text))
-
-        # 限制历史消息长度，避免OOM（保留system + 最近20轮）
-        MAX_HISTORY = 20
-        system_msgs = [m for m in self.messages if m.role == "system"]
-        non_system = [m for m in self.messages if m.role != "system"]
-        if len(non_system) > MAX_HISTORY * 2:
-            non_system = non_system[-MAX_HISTORY * 2:]
-        self.messages = system_msgs + non_system
 
         # 创建回复气泡
         self._current_reply_widget = ChatMessage("assistant", "")
@@ -245,13 +232,13 @@ class ChatWidget(QWidget):
         self.send_btn.setVisible(False)
         self.stop_btn.setVisible(True)
 
-        # 确保旧worker已停止
+        # 确保旧 worker 已停止
         if self._worker is not None:
             self._worker.stop()
             self._worker.wait(2000)
             self._worker = None
 
-        self._worker = StreamWorker(self.llm, list(self.messages))
+        self._worker = StreamWorker(self.agent, text)
         self._worker.chunk_received.connect(self._on_chunk)
         self._worker.finished_signal.connect(self._on_stream_finished)
         self._worker.error_signal.connect(self._on_stream_error)
@@ -267,13 +254,9 @@ class ChatWidget(QWidget):
         self._scroll_to_bottom()
 
     def _on_stream_finished(self):
-        if self._current_reply_widget:
-            full_text = self._current_reply_widget.body.toPlainText()
-            self.messages.append(Message(role="assistant", content=full_text))
         self._current_reply_widget = None
         self.send_btn.setVisible(True)
         self.stop_btn.setVisible(False)
-        # 只清理引用，不deleteLater，让Qt自动管理
         self._worker = None
 
     def _on_stream_error(self, error: str):
@@ -303,5 +286,5 @@ class ChatWidget(QWidget):
             item = self.messages_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        system_msg = self.messages[0] if self.messages else Message(role="system", content="")
-        self.messages = [system_msg]
+        if self.agent is not None:
+            self.agent.clear()

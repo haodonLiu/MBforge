@@ -64,6 +64,7 @@ class TodoManager:
         self._entries: List[TodoEntry] = []
         self._lock = threading.Lock()
         self._processing = False
+        self._pending_restart = False
         self._load()
 
     def _load(self) -> None:
@@ -219,15 +220,26 @@ class TodoManager:
         on_progress: Optional[Callable[[int, int, TodoEntry], None]] = None,
         on_done: Optional[Callable[[], None]] = None,
     ) -> None:
-        """异步批量处理（后台线程）."""
+        """异步批量处理（后台线程）.
+
+        如果已在处理中，新文件会排队，当前批次完成后自动继续。
+        """
         if self._processing:
-            logger.warning("Already processing")
+            self._pending_restart = True
+            logger.info("Processing in progress, new items queued")
             return
+
+        self._pending_restart = False
 
         def _worker():
             self._processing = True
             try:
-                self.process_all(file_processor, on_progress)
+                while True:
+                    self.process_all(file_processor, on_progress)
+                    if not self._pending_restart:
+                        break
+                    self._pending_restart = False
+                    logger.info("Resuming with newly queued items")
             finally:
                 self._processing = False
                 if on_done:

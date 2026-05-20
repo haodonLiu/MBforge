@@ -83,6 +83,20 @@ def create_llm_from_config(config) -> BaseLLM:
     """从配置创建 LLM 实例."""
     from ..utils.config import ModelConfig
     cfg: ModelConfig = config
+
+    provider = (cfg.provider or "").strip().lower()
+
+    if provider == "anthropic":
+        from .anthropic_llm import AnthropicLLM
+        return AnthropicLLM(
+            base_url=cfg.base_url,
+            api_key=cfg.api_key,
+            model_name=cfg.model_name,
+            max_tokens=cfg.max_tokens,
+            temperature=cfg.temperature,
+            top_p=cfg.top_p,
+        )
+
     return OpenAILLM(
         base_url=cfg.base_url,
         api_key=cfg.api_key,

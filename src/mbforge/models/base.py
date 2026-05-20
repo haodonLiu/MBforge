@@ -11,9 +11,11 @@ from typing import AsyncGenerator, Iterator, List, Optional
 class Message:
     """对话消息."""
 
-    role: str  # system | user | assistant
+    role: str  # system | user | assistant | tool
     content: str
     attachments: Optional[List[str]] = None  # 附件路径，用于 VLM
+    tool_call_id: Optional[str] = None  # 工具调用 ID（用于 function calling）
+    name: Optional[str] = None  # 工具名（用于 tool 消息）
 
 
 @dataclass

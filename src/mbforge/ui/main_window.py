@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
     QDialog,
@@ -97,6 +97,9 @@ class MainWindow(QMainWindow):
         self._setup_statusbar()
         self._apply_theme()
 
+        # 延迟加载最近项目，让 UI 先渲染
+        QTimer.singleShot(100, self._open_recent_project)
+
     # ---- 初始化 ----
 
     def _setup_models(self):
@@ -109,6 +112,7 @@ class MainWindow(QMainWindow):
             log.warning(f"Embedder init failed: {e}")
         try:
             self.llm = create_llm_from_config(config.llm)
+            log.info(f"LLM initialized: {type(self.llm).__name__} (provider={config.llm.provider})")
         except Exception as e:
             log.warning(f"LLM init failed: {e}")
         try:
@@ -316,6 +320,11 @@ class MainWindow(QMainWindow):
         open_file_action.triggered.connect(self._open_external_file)
         file_menu.addAction(open_file_action)
 
+        import_action = QAction("导入文件", self)
+        import_action.setShortcut(QKeySequence("Ctrl+I"))
+        import_action.triggered.connect(self._import_files)
+        file_menu.addAction(import_action)
+
         save_action = QAction("保存", self)
         save_action.setShortcut(QKeySequence("Ctrl+S"))
         save_action.triggered.connect(self._save_current)
@@ -382,6 +391,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction("📂 打开", self._open_project)
         toolbar.addSeparator()
         toolbar.addAction("💾 保存", self._save_current)
+        toolbar.addAction("📥 导入", self._import_files)
         toolbar.addSeparator()
         toolbar.addAction("🔍 搜索", self._search_kb)
         toolbar.addAction("🤖 发送", self._trigger_chat_send)
@@ -579,6 +589,25 @@ class MainWindow(QMainWindow):
                 return
         self._load_project(project)
 
+    def _open_recent_project(self):
+        """启动时自动打开最近项目."""
+        config = load_global_config()
+        while config.recent_projects:
+            path_str = config.recent_projects[0]
+            path = Path(path_str)
+            if not path.exists():
+                config.recent_projects.pop(0)
+                continue
+            try:
+                project = Project.open(path)
+                self._load_project(project)
+                return
+            except Exception as e:
+                logger = get_logger(__name__)
+                logger.warning(f"Failed to open recent project {path}: {e}")
+                config.recent_projects.pop(0)
+        # 没有有效最近项目，静默跳过
+
     def _load_project(self, project: Project):
         # 释放旧项目资源
         if self.kb is not None:
@@ -613,6 +642,7 @@ class MainWindow(QMainWindow):
         self.agent = ProjectAgent(
             llm=self.llm,
             tool_executor=tool_executor,
+            project_root=project.root,
         )
         self.agent.set_project_context(project.name, str(project.root))
         self.chat_widget.set_agent(self.agent)
@@ -740,6 +770,47 @@ class MainWindow(QMainWindow):
         if path:
             self._open_file(Path(path))
 
+    def _import_files(self):
+        """导入文件到项目 raw 目录."""
+        if self.project is None:
+            QMessageBox.warning(self, "提示", "请先打开项目")
+            return
+
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            "导入文件到项目",
+            "",
+            "所有支持文件 (*.md *.txt *.pdf *.json *.yaml *.yml *.sdf *.mol *.mol2 *.pdb *.smi *.csv);;所有文件 (*)",
+        )
+        if not paths:
+            return
+
+        raw_dir = self.project.root / "raw"
+        raw_dir.mkdir(exist_ok=True)
+
+        imported = []
+        failed = []
+        for src in paths:
+            src = Path(src)
+            dst = raw_dir / src.name
+            try:
+                import shutil
+                shutil.copy2(src, dst)
+                self.project.add_file(dst)
+                imported.append(src.name)
+            except Exception as e:
+                failed.append(f"{src.name}: {e}")
+
+        # 刷新文件树
+        self.file_tree.set_project(self.project)
+
+        msg = f"成功导入 {len(imported)} 个文件到 raw/"
+        if failed:
+            msg += f"\n失败 {len(failed)} 个:\n" + "\n".join(failed)
+        self.statusbar.showMessage(msg)
+        logger = get_logger(__name__)
+        logger.info(msg)
+
     def _close_tab(self, index: int):
         widget = self.center_tabs.widget(index)
         if isinstance(widget, PDFViewer):
@@ -798,7 +869,7 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(config, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._setup_models()
-            if self.agent is not None:
+            if getattr(self, "agent", None) is not None:
                 self.agent.llm = self.llm
             if self.kb:
                 self.kb.embedder = self.embedder
@@ -823,7 +894,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "index_worker") and self.index_worker is not None:
             self.index_worker.terminate()
             self.index_worker.wait(3000)
-        # 保存项目对话记忆
+        # 保存项目对话记忆 + 自动提取结构化记忆
         if self.project is not None and hasattr(self, "agent") and self.agent is not None:
             try:
                 memory = ProjectMemory(self.project.root)
@@ -831,6 +902,11 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 logger = get_logger(__name__)
                 logger.warning(f"Failed to save conversation memory: {e}")
+            try:
+                self.agent.extract_memory()
+            except Exception as e:
+                logger = get_logger(__name__)
+                logger.warning(f"Failed to extract structured memory: {e}")
         # 释放资源
         if self.kb is not None:
             self.kb.close()

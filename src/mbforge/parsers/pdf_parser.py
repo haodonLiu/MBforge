@@ -84,13 +84,19 @@ class PDFParserPipeline:
                     from ..utils.helpers import split_text_chunks
                     content.chunks = split_text_chunks(content.text)
 
-        # 4. LLM 摘要
-        if summarize and self.llm is not None and content.text:
-            try:
-                summary = self._summarize(content.text)
-                content.summary = summary
-            except Exception as e:
-                logger.warning(f"Summarization failed: {e}")
+        # 4. LLM 摘要 + L0/L1/L2 三层摘要
+        if summarize and content.text:
+            from ..core.summarizer import DocumentSummarizer, SummaryManager
+            summarizer = DocumentSummarizer(llm=self.llm)
+            summary = summarizer.summarize(content, doc_id)
+            if self.kb is not None:
+                try:
+                    sm = SummaryManager(self.kb.project_root)
+                    sm.save(summary)
+                    logger.info(f"Saved L0/L1 summary for {doc_id}")
+                except Exception as e:
+                    logger.warning(f"Summary save failed: {e}")
+            content.summary = summary.l1_overview
 
         # 5. 分子提取
         if extract_molecules and self.mol_db is not None:

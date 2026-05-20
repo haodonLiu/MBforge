@@ -38,7 +38,9 @@ def run_app(argv: list[str] | None = None) -> int:
 
     # 全局字体
     font = app.font()
-    font.setPointSize(10)
+    # Windows 上默认字体可能使用 pixel size，pointSize() 返回 -1，
+    # 直接使用 setPointSize 会触发 Qt 警告，改用 setPointSizeF
+    font.setPointSizeF(10.0)
     app.setFont(font)
 
     window = MainWindow()

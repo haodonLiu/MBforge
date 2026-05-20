@@ -6,6 +6,13 @@ import argparse
 import sys
 from pathlib import Path
 
+# 优先加载项目根目录的 .env 文件
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 def main() -> int:
     """CLI 主入口."""

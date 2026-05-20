@@ -85,8 +85,47 @@ _CONFIG_PATH = GLOBAL_CONFIG_DIR / "config.json"
 _config_cache: Optional[AppConfig] = None
 
 
+def _config_from_env() -> AppConfig:
+    """从环境变量构建配置（用于 .env 文件集成）."""
+    return AppConfig(
+        llm=ModelConfig(
+            provider=os.environ.get("MBFORGE_LLM_PROVIDER", "openai_compatible"),
+            base_url=os.environ.get("MBFORGE_LLM_BASE_URL", "http://localhost:8000/v1"),
+            api_key=os.environ.get("MBFORGE_LLM_API_KEY", ""),
+            model_name=os.environ.get("MBFORGE_LLM_MODEL", "default"),
+            max_tokens=int(os.environ.get("MBFORGE_LLM_MAX_TOKENS", "4096")),
+            temperature=float(os.environ.get("MBFORGE_LLM_TEMPERATURE", "0.7")),
+            top_p=float(os.environ.get("MBFORGE_LLM_TOP_P", "0.9")),
+        ),
+        embed=EmbedConfig(
+            provider=os.environ.get("MBFORGE_EMBED_PROVIDER", "sentence_transformers"),
+            model_name=os.environ.get("MBFORGE_EMBED_MODEL", "BAAI/bge-small-zh-v1.5"),
+            base_url=os.environ.get("MBFORGE_EMBED_BASE_URL", ""),
+            api_key=os.environ.get("MBFORGE_EMBED_API_KEY", ""),
+            device=os.environ.get("MBFORGE_EMBED_DEVICE", "cpu"),
+        ),
+        rerank=RerankConfig(
+            model_name=os.environ.get("MBFORGE_RERANK_MODEL", "BAAI/bge-reranker-base"),
+            device=os.environ.get("MBFORGE_RERANK_DEVICE", "cpu"),
+        ),
+        vlm=VLMConfig(
+            provider=os.environ.get("MBFORGE_VLM_PROVIDER", "api"),
+            base_url=os.environ.get("MBFORGE_VLM_BASE_URL", ""),
+            api_key=os.environ.get("MBFORGE_VLM_API_KEY", ""),
+            model_name=os.environ.get("MBFORGE_VLM_MODEL", ""),
+        ),
+    )
+
+
 def load_global_config() -> AppConfig:
-    """加载全局配置."""
+    """加载全局配置.
+
+    优先级：
+    1. 内存缓存
+    2. 配置文件 (~/.config/MBForge/config.json)
+    3. 环境变量（支持 .env 文件）
+    4. 默认值
+    """
     global _config_cache
     if _config_cache is not None:
         return _config_cache
@@ -100,7 +139,8 @@ def load_global_config() -> AppConfig:
         except Exception:
             pass
 
-    _config_cache = AppConfig()
+    # 尝试从环境变量读取（用于 .env 文件集成）
+    _config_cache = _config_from_env()
     save_global_config(_config_cache)
     return _config_cache
 

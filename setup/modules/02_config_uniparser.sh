@@ -8,7 +8,7 @@ run_config_uniparser() {
     UNIPARSER_KEY=""
 
     if confirm "是否配置 UniParser 远程解析服务？" "Y"; then
-        UNIPARSER_HOST=$(ask "  服务地址" "https://your-server.com")
+        UNIPARSER_HOST=$(ask "  服务地址" "https://uniparser.dp.tech/")
         read -rp "  API Key: " UNIPARSER_KEY
         if [ -n "$UNIPARSER_KEY" ]; then
             ok "UniParser: $UNIPARSER_HOST"

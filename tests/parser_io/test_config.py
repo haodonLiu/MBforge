@@ -1,6 +1,6 @@
 # tests/parser_io/test_config.py
 import pytest
-from parser_io.config import ParserConfig, load_config, validate_config
+from mbforge.parser_io.config import ParserConfig, load_config, validate_config
 
 
 def test_parser_config_dataclass():

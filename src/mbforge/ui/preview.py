@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Optional
 
 import markdown
-from PyQt6.QtCore import QUrl
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QWidget

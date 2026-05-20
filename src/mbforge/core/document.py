@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 try:
     import fitz  # PyMuPDF
 except ImportError:
     fitz = None  # type: ignore
-import yaml
 
 from ..utils.helpers import split_text_chunks
 

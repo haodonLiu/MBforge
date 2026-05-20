@@ -1,6 +1,5 @@
 """MBForge 工具模块."""
 
-from .constants import *
 from .config import load_global_config, save_global_config, AppConfig, ModelConfig, EmbedConfig, RerankConfig, VLMConfig
 from .helpers import (
     generate_uuid,

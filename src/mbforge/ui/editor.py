@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QTextCursor
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QWidget,

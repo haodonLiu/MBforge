@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# 模块 08: 验证安装
+
+run_verify() {
+    header "验证安装"
+
+    local FAIL=0
+
+    $PYTHON -c "import torch; print(f'PyTorch {torch.__version__}, CUDA={torch.cuda.is_available()}')" 2>/dev/null \
+        && ok "PyTorch OK" || { warn "PyTorch 异常"; FAIL=1; }
+
+    $PYTHON -c "import lxml.etree; print(f'lxml {lxml.etree.__version__}')" 2>/dev/null \
+        && ok "lxml OK" || { warn "lxml 异常"; FAIL=1; }
+
+    $PYTHON -c "import csar; print(f'csar {csar.__version__}')" 2>/dev/null \
+        && ok "csar OK" || { warn "csar 异常"; FAIL=1; }
+
+    $PYTHON -c "import mbforge; print(f'mbforge {mbforge.__version__}')" 2>/dev/null \
+        && ok "mbforge OK" || { warn "mbforge 异常"; FAIL=1; }
+
+    echo ""
+    if [ "$FAIL" -eq 0 ]; then
+        echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
+        echo -e "${GREEN}║  配置完成! 运行 uv run mbforge 启动应用  ║${NC}"
+        echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
+    else
+        echo -e "${YELLOW}╔══════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║  配置完成，部分组件有警告请检查上方      ║${NC}"
+        echo -e "${YELLOW}╚══════════════════════════════════════════╝${NC}"
+    fi
+}

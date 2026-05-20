@@ -1,0 +1,262 @@
+"""LLM 对话框组件."""
+
+from __future__ import annotations
+
+import threading
+from typing import Optional
+
+from PyQt6.QtCore import Qt, pyqtSignal, QThread
+from PyQt6.QtGui import QTextCursor
+from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+    QSplitter,
+    QFrame,
+)
+
+from ..models.base import BaseLLM, Message, StreamChunk
+
+
+class ChatMessage(QWidget):
+    """单条消息气泡."""
+
+    def __init__(self, role: str, content: str, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.role = role
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+
+        header = QLabel(f"<b>{'🤖 AI' if role == 'assistant' else '🧑 用户'}</b>")
+        header.setStyleSheet("color: #4fc1ff;" if role == "assistant" else "color: #b5cea8;")
+        layout.addWidget(header)
+
+        self.body = QTextEdit()
+        self.body.setReadOnly(True)
+        self.body.setPlainText(content)
+        self.body.setMaximumHeight(400)
+        self.body.setStyleSheet("""
+            QTextEdit {
+                background: #252526;
+                color: #d4d4d4;
+                border: none;
+                padding: 8px;
+                border-radius: 4px;
+            }
+        """)
+        layout.addWidget(self.body)
+
+
+class StreamWorker(QThread):
+    """LLM 流式输出工作线程."""
+
+    chunk_received = pyqtSignal(str)
+    finished_signal = pyqtSignal()
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, llm: BaseLLM, messages: list[Message]):
+        super().__init__()
+        self.llm = llm
+        self.messages = messages
+        self._stopped = False
+
+    def run(self):
+        try:
+            for chunk in self.llm.chat_stream(self.messages):
+                if self._stopped:
+                    break
+                self.chunk_received.emit(chunk.delta)
+            self.finished_signal.emit()
+        except Exception as e:
+            self.error_signal.emit(str(e))
+
+    def stop(self):
+        self._stopped = True
+
+
+class ChatWidget(QWidget):
+    """LLM 对话面板."""
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.llm: Optional[BaseLLM] = None
+        self.messages: list[Message] = [
+            Message(role="system", content="你是一位专业的药物化学和分子生物学研究助手。请用中文回答。")
+        ]
+        self._current_reply_widget: Optional[ChatMessage] = None
+        self._worker: Optional[StreamWorker] = None
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        # 顶部工具栏
+        toolbar = QHBoxLayout()
+        self.title_label = QLabel("💬 AI 助手")
+        self.title_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #d4d4d4;")
+        toolbar.addWidget(self.title_label)
+        toolbar.addStretch()
+
+        self.clear_btn = QPushButton("清空")
+        self.clear_btn.setStyleSheet("background: #3c3c3c; color: #d4d4d4; border: none; padding: 4px 12px;")
+        self.clear_btn.clicked.connect(self.clear_chat)
+        toolbar.addWidget(self.clear_btn)
+        layout.addLayout(toolbar)
+
+        # 消息区域
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setStyleSheet("border: none; background: #1e1e1e;")
+        self.messages_container = QWidget()
+        self.messages_layout = QVBoxLayout(self.messages_container)
+        self.messages_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.messages_layout.setSpacing(8)
+        self.messages_layout.addStretch()
+        self.scroll.setWidget(self.messages_container)
+        layout.addWidget(self.scroll, 1)
+
+        # 输入区域
+        input_frame = QFrame()
+        input_frame.setStyleSheet("background: #252526; border-top: 1px solid #333;")
+        input_layout = QHBoxLayout(input_frame)
+        input_layout.setContentsMargins(8, 8, 8, 8)
+
+        self.input_box = QLineEdit()
+        self.input_box.setPlaceholderText("输入问题，按 Enter 发送...")
+        self.input_box.setStyleSheet("""
+            QLineEdit {
+                background: #3c3c3c;
+                color: #d4d4d4;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 6px;
+            }
+        """)
+        self.input_box.returnPressed.connect(self._send_message)
+        input_layout.addWidget(self.input_box)
+
+        self.send_btn = QPushButton("发送")
+        self.send_btn.setStyleSheet("""
+            QPushButton {
+                background: #0e639c;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 16px;
+            }
+            QPushButton:hover { background: #1177bb; }
+        """)
+        self.send_btn.clicked.connect(self._send_message)
+        input_layout.addWidget(self.send_btn)
+
+        self.stop_btn = QPushButton("停止")
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                background: #c75450;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 16px;
+            }
+            QPushButton:hover { background: #d86864; }
+        """)
+        self.stop_btn.setVisible(False)
+        self.stop_btn.clicked.connect(self._stop_generation)
+        input_layout.addWidget(self.stop_btn)
+
+        layout.addWidget(input_frame)
+
+        self.setStyleSheet("background: #1e1e1e;")
+
+    def set_llm(self, llm: BaseLLM):
+        self.llm = llm
+
+    def set_system_prompt(self, prompt: str):
+        self.messages = [Message(role="system", content=prompt)]
+
+    def add_context(self, context: str):
+        """添加知识库检索结果作为上下文."""
+        if not context:
+            return
+        self.messages.append(Message(role="system", content=f"[知识库检索结果]\n{context}"))
+
+    def _send_message(self):
+        text = self.input_box.text().strip()
+        if not text:
+            return
+        if self.llm is None:
+            self._add_message("assistant", "LLM 未配置，请在设置中配置模型。")
+            return
+
+        self.input_box.clear()
+        self._add_message("user", text)
+        self.messages.append(Message(role="user", content=text))
+
+        # 创建回复气泡
+        self._current_reply_widget = ChatMessage("assistant", "")
+        self.messages_layout.insertWidget(self.messages_layout.count() - 1, self._current_reply_widget)
+        self._scroll_to_bottom()
+
+        self.send_btn.setVisible(False)
+        self.stop_btn.setVisible(True)
+
+        self._worker = StreamWorker(self.llm, list(self.messages))
+        self._worker.chunk_received.connect(self._on_chunk)
+        self._worker.finished_signal.connect(self._on_stream_finished)
+        self._worker.error_signal.connect(self._on_stream_error)
+        self._worker.start()
+
+    def _on_chunk(self, text: str):
+        if self._current_reply_widget:
+            cursor = self._current_reply_widget.body.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            cursor.insertText(text)
+            self._current_reply_widget.body.setTextCursor(cursor)
+            self._current_reply_widget.body.ensureCursorVisible()
+        self._scroll_to_bottom()
+
+    def _on_stream_finished(self):
+        if self._current_reply_widget:
+            full_text = self._current_reply_widget.body.toPlainText()
+            self.messages.append(Message(role="assistant", content=full_text))
+        self._current_reply_widget = None
+        self.send_btn.setVisible(True)
+        self.stop_btn.setVisible(False)
+        self._worker = None
+
+    def _on_stream_error(self, error: str):
+        if self._current_reply_widget:
+            self._current_reply_widget.body.setPlainText(f"[错误] {error}")
+        self._on_stream_finished()
+
+    def _stop_generation(self):
+        if self._worker:
+            self._worker.stop()
+            self._worker.wait(2000)
+        self.send_btn.setVisible(True)
+        self.stop_btn.setVisible(False)
+
+    def _add_message(self, role: str, content: str):
+        msg = ChatMessage(role, content)
+        self.messages_layout.insertWidget(self.messages_layout.count() - 1, msg)
+        self._scroll_to_bottom()
+
+    def _scroll_to_bottom(self):
+        vsb = self.scroll.verticalScrollBar()
+        if vsb:
+            vsb.setValue(vsb.maximum())
+
+    def clear_chat(self):
+        while self.messages_layout.count() > 1:
+            item = self.messages_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        system_msg = self.messages[0] if self.messages else Message(role="system", content="")
+        self.messages = [system_msg]

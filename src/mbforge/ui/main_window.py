@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSplitter,
     QStatusBar,
@@ -412,6 +413,19 @@ class MainWindow(QMainWindow):
         self.statusbar = QStatusBar()
         self.statusbar.setStyleSheet("background: #007acc; color: white; padding: 4px;")
         self.setStatusBar(self.statusbar)
+
+        # 进度条
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMaximumWidth(200)
+        self.progress_bar.setMaximumHeight(14)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setStyleSheet(
+            "QProgressBar { background: rgba(255,255,255,0.2); border: none; border-radius: 4px; }"
+            "QProgressBar::chunk { background: #4ecdc4; border-radius: 4px; }"
+        )
+        self.progress_bar.hide()
+        self.statusbar.addPermanentWidget(self.progress_bar)
+
         self.statusbar.showMessage("就绪")
 
     def _apply_theme(self):
@@ -844,12 +858,27 @@ class MainWindow(QMainWindow):
         """启动 TODO 处理（后台线程）."""
         from ..parsers.file_processor import process_file
 
-        def _on_progress(current, total, entry):
-            self.statusbar.showMessage(f"处理中: {current}/{total} - {entry.filename}")
+        pending = self.todo_manager.get_pending()
+        total = len(pending)
+        if total == 0:
+            self.statusbar.showMessage("没有待处理的文件")
+            return
+
+        self.progress_bar.setMaximum(total)
+        self.progress_bar.setValue(0)
+        self.progress_bar.show()
+
+        def _on_progress(current, total_count, entry):
+            self.progress_bar.setValue(current)
+            self.progress_bar.setFormat(f"{current}/{total_count}")
+            self.statusbar.showMessage(f"处理中: {entry.filename} ({current}/{total_count})")
 
         def _on_done():
+            self.progress_bar.hide()
             self.statusbar.showMessage("所有文件处理完成")
             self.file_tree.set_project(self.project)
+            # 启动归档 Agent 整理刚处理完的文件
+            self._run_archive_agent()
 
         self.todo_manager.process_all_async(
             file_processor=lambda e, s, o: process_file(
@@ -862,7 +891,19 @@ class MainWindow(QMainWindow):
             on_progress=_on_progress,
             on_done=_on_done,
         )
-        self.statusbar.showMessage("开始处理导入的文件...")
+        self.statusbar.showMessage(f"开始处理 {total} 个文件...")
+
+    def _run_archive_agent(self):
+        """启动归档 Agent 后台整理已处理文件."""
+        from ..agent.archive_agent import ArchiveAgent
+
+        agent = ArchiveAgent(
+            llm=self.llm,
+            knowledge_base=self.kb,
+            mol_db=self.mol_db,
+            project_root=self.project.root,
+        )
+        agent.run_async(on_done=lambda: self.statusbar.showMessage("归档整理完成"))
 
     def _save_current(self):
         current = self.center_tabs.currentWidget()

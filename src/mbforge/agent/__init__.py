@@ -7,6 +7,7 @@
 """
 
 from .agent import ProjectAgent
+from .archive_agent import ArchiveAgent
 from .context import LayeredContext
 from .executor import ToolExecutor
 from .memory_manager import MemoryManager, MemoryEntry
@@ -15,6 +16,7 @@ from .trajectory import TrajectoryTracker, TrajectoryStep
 
 __all__ = [
     "ProjectAgent",
+    "ArchiveAgent",
     "LayeredContext",
     "ToolExecutor",
     "ToolRegistry",

@@ -1,9 +1,0 @@
-pyproject.toml
-src/MBForge.egg-info/PKG-INFO
-src/MBForge.egg-info/SOURCES.txt
-src/MBForge.egg-info/dependency_links.txt
-src/MBForge.egg-info/top_level.txt
-src/parser_io/__init__.py
-src/parser_io/client.py
-src/parser_io/config.py
-src/parser_io/models.py

@@ -149,6 +149,13 @@ class PDFViewer(QWidget):
     def _render_continuous(self):
         """渲染连续翻页模式."""
         self._clear_pages()
+        # QScrollArea.setWidget 会接管旧 widget 的所有权并可能删除它，
+        # 所以每次切换都重建 continuous_widget
+        self.continuous_widget = QWidget()
+        self.continuous_layout = QVBoxLayout(self.continuous_widget)
+        self.continuous_layout.setSpacing(12)
+        self.continuous_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.continuous_layout.setContentsMargins(12, 12, 12, 12)
         self.scroll.setWidget(self.continuous_widget)
 
         for i in range(len(self.doc)):

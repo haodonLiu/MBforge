@@ -22,7 +22,7 @@ if not exist ".venv" (
 ) else (echo [OK] 虚拟环境已存在)
 
 uv sync --dev
-%PYTHON% -c "import csar" >nul 2>&1 || uv pip install -e openSAR/ --python .venv\Scripts\python.exe
+%PYTHON% -c "import csar" >nul 2>&1 || uv pip install -e setup/openSAR/ --python .venv\Scripts\python.exe
 echo [OK] 依赖安装完成
 
 :: ═══ 02 UniParser ═══

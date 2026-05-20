@@ -22,13 +22,13 @@ explicit = true
 torch = { index = "pytorch-cu128" }
 torchvision = { index = "pytorch-cu128" }
 torchaudio = { index = "pytorch-cu128" }
-uniparser-tools = { path = "UniParser-Tools" }
-csar = { path = "openSAR" }
+uniparser-tools = { path = "setup/UniParser-Tools" }
+csar = { path = "setup/openSAR" }
 
 [tool.uv.workspace]
 members = [
-    "UniParser-Tools",
-    "openSAR",
+    "setup/UniParser-Tools",
+    "setup/openSAR",
 ]
 
 [project]

@@ -70,12 +70,13 @@ This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, inv
 ```
 MBForge/                  # uv workspace root
 ├── src/mbforge/          # 主应用
-├── openSAR/              # uv workspace member，装为 csar（SAR 分析工具箱）
-├── UniParser-Tools/      # uv workspace member，装为 uniparser-tools（远程 PDF 解析 API）
+├── setup/                # 一键配置脚本 + 依赖组件
+│   ├── openSAR/          # uv workspace member，装为 csar（SAR 分析工具箱）
+│   └── UniParser-Tools/  # uv workspace member，装为 uniparser-tools（远程 PDF 解析 API）
 └── tests/
 ```
 
-`openSAR` 和 `UniParser-Tools` 作为 uv workspace 成员安装，但当前核心代码直接用本地 PyMuPDF，未接入 UniParser API。openSAR 尚未集成到 mbforge 核心模块中。
+`openSAR` 和 `UniParser-Tools` 位于 `setup/` 目录，作为 uv workspace 成员安装。当前核心代码直接用本地 PyMuPDF，未接入 UniParser API。openSAR 尚未集成到 mbforge 核心模块中。
 
 ### Config System (Two Tiers)
 

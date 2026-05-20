@@ -27,7 +27,7 @@ run_check_env() {
     # csar
     if ! has_module csar; then
         info "安装 openSAR (csar) ..."
-        uv pip install -e openSAR/ --python "$PYTHON"
+        uv pip install -e setup/openSAR/ --python "$PYTHON"
         ok "csar 已安装"
     else
         ok "csar 已存在"

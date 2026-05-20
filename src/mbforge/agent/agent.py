@@ -139,7 +139,7 @@ class ProjectAgent:
 
             if tool_calls:
                 # 执行工具
-                self.context.add_assistant_message(content or "")
+                self.context.add_assistant_message(content or "", tool_calls=tool_calls)
                 for tc in tool_calls:
                     result = self._execute_tool_call(tc)
                     self.context.add_tool_result(
@@ -184,7 +184,7 @@ class ProjectAgent:
 
             if tool_calls:
                 # 执行所有工具
-                self.context.add_assistant_message(content or "")
+                self.context.add_assistant_message(content or "", tool_calls=tool_calls)
                 for tc in tool_calls:
                     result = self._execute_tool_call(tc)
                     self.context.add_tool_result(

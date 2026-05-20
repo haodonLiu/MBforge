@@ -137,8 +137,11 @@ class LayeredContext:
     def add_user_message(self, content: str) -> None:
         self._history.add("user", content)
 
-    def add_assistant_message(self, content: str) -> None:
-        self._history.add("assistant", content)
+    def add_assistant_message(self, content: str, tool_calls: Optional[List[Dict]] = None) -> None:
+        msg = Message(role="assistant", content=content)
+        if tool_calls:
+            msg.tool_calls = tool_calls
+        self._history.add("assistant", content, tool_calls=tool_calls)
 
     def trim_history(self) -> None:
         """裁剪对话历史，只保留最近 N 轮."""

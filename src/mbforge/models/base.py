@@ -16,6 +16,7 @@ class Message:
     attachments: Optional[List[str]] = None  # 附件路径，用于 VLM
     tool_call_id: Optional[str] = None  # 工具调用 ID（用于 function calling）
     name: Optional[str] = None  # 工具名（用于 tool 消息）
+    tool_calls: Optional[List] = None  # 工具调用列表（用于 assistant 消息）
 
 
 @dataclass

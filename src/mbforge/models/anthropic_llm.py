@@ -56,19 +56,32 @@ class AnthropicLLM(BaseLLM):
                 continue
 
             if m.role == "tool":
-                # Anthropic tool_result 块
-                # Note: 不传 tool_use_id，因为部分 API（如 MiniMax Anthropic 兼容接口）
-                # 不支持外部传入的工具调用 ID，会返回 "tool id not found" 错误
-                content_blocks: List[dict] = [
-                    {
-                        "type": "tool_result",
-                        "content": m.content,
-                    }
-                ]
-                anthropic_msgs.append({"role": "user", "content": content_blocks})
+                # Anthropic tool_result 块，必须带 tool_use_id
+                tool_result_block: dict = {
+                    "type": "tool_result",
+                    "content": m.content,
+                }
+                if m.tool_call_id:
+                    tool_result_block["tool_use_id"] = m.tool_call_id
+                anthropic_msgs.append({"role": "user", "content": [tool_result_block]})
                 continue
 
-            # user / assistant
+            if m.role == "assistant" and m.tool_calls:
+                # assistant 消息包含 tool_use 块
+                content_blocks: List[dict] = []
+                if m.content:
+                    content_blocks.append({"type": "text", "text": m.content})
+                for tc in m.tool_calls:
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tc.get("id", ""),
+                        "name": tc.get("name", ""),
+                        "input": tc.get("arguments", {}),
+                    })
+                anthropic_msgs.append({"role": "assistant", "content": content_blocks})
+                continue
+
+            # user / assistant (纯文本)
             content_blocks = [{"type": "text", "text": m.content}]
             anthropic_msgs.append({"role": m.role, "content": content_blocks})
 

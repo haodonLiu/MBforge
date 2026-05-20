@@ -34,50 +34,65 @@ class MarkdownPreview(QWebEngineView):
         <style>
             body {
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-                font-size: 14px;
-                line-height: 1.6;
-                color: #d4d4d4;
-                background: #1e1e1e;
-                padding: 20px 40px;
+                font-size: 15px;
+                line-height: 1.7;
+                color: #212529;
+                background: #ffffff;
+                padding: 24px 40px;
                 max-width: 900px;
                 margin: 0 auto;
             }
-            h1, h2, h3, h4, h5, h6 { color: #e2e2e2; margin-top: 24px; margin-bottom: 16px; }
-            h1 { border-bottom: 1px solid #444; padding-bottom: 8px; }
-            h2 { border-bottom: 1px solid #333; padding-bottom: 6px; }
+            h1, h2, h3, h4, h5, h6 {
+                color: #212529;
+                margin-top: 28px;
+                margin-bottom: 16px;
+                font-weight: 600;
+            }
+            h1 { border-bottom: 2px solid #e9ecef; padding-bottom: 10px; font-size: 28px; }
+            h2 { border-bottom: 1px solid #e9ecef; padding-bottom: 8px; font-size: 22px; }
+            h3 { font-size: 18px; }
             code {
-                background: #2d2d2d;
-                padding: 2px 6px;
-                border-radius: 3px;
+                background: #f1f3f5;
+                padding: 3px 8px;
+                border-radius: 6px;
                 font-family: "Consolas", "Monaco", monospace;
                 font-size: 0.9em;
+                color: #c2255c;
             }
             pre {
-                background: #2d2d2d;
-                padding: 12px;
-                border-radius: 6px;
+                background: #f8f9fa;
+                padding: 16px;
+                border-radius: 12px;
                 overflow-x: auto;
+                border: 1px solid #e9ecef;
             }
-            pre code { background: none; padding: 0; }
+            pre code { background: none; padding: 0; color: #212529; }
             table {
                 border-collapse: collapse;
                 width: 100%;
                 margin: 16px 0;
+                border-radius: 10px;
+                overflow: hidden;
+                border: 1px solid #e9ecef;
             }
             th, td {
-                border: 1px solid #444;
-                padding: 8px 12px;
+                border: 1px solid #e9ecef;
+                padding: 10px 14px;
                 text-align: left;
             }
-            th { background: #2d2d2d; }
+            th { background: #f8f9fa; font-weight: 600; }
+            tr:nth-child(even) { background: #f8f9fa; }
             blockquote {
-                border-left: 4px solid #094771;
+                border-left: 4px solid #74c0fc;
                 margin: 0;
-                padding: 8px 16px;
-                background: #252526;
+                padding: 12px 20px;
+                background: #f8f9fa;
+                border-radius: 0 10px 10px 0;
             }
-            a { color: #4fc1ff; }
-            img { max-width: 100%; }
+            a { color: #1971c2; text-decoration: none; }
+            a:hover { text-decoration: underline; }
+            img { max-width: 100%; border-radius: 10px; }
+            hr { border: none; border-top: 1px solid #e9ecef; margin: 24px 0; }
         </style>
         </head>
         <body>{content}</body>

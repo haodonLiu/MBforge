@@ -28,10 +28,17 @@ class MarkdownEditor(QPlainTextEdit):
         self.setFont(font)
         self.setStyleSheet("""
             QPlainTextEdit {
-                background: #1e1e1e;
-                color: #d4d4d4;
-                border: none;
-                padding: 8px;
+                background: #f8f9fa;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 10px;
+                padding: 12px;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+            QPlainTextEdit:focus {
+                border-color: #74c0fc;
+                background: #ffffff;
             }
         """)
         self.textChanged.connect(self._on_text_changed)

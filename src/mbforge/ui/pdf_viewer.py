@@ -33,11 +33,11 @@ class PDFViewer(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.scroll.setStyleSheet("background: #1e1e1e; border: none;")
+        self.scroll.setStyleSheet("background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 10px;")
 
         self.label = QLabel()
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label.setStyleSheet("background: #1e1e1e;")
+        self.label.setStyleSheet("background: #f8f9fa; border-radius: 10px;")
         self.scroll.setWidget(self.label)
         layout.addWidget(self.scroll)
 

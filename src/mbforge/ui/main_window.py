@@ -126,7 +126,15 @@ class MainWindow(QMainWindow):
         left_layout.setSpacing(0)
 
         self.project_label = QLabel("未打开项目")
-        self.project_label.setStyleSheet("padding: 8px; background: #252526; color: #d4d4d4; font-weight: bold;")
+        self.project_label.setStyleSheet("""
+            padding: 10px 14px;
+            background: #f8f9fa;
+            color: #212529;
+            font-weight: 600;
+            font-size: 14px;
+            border-bottom: 1px solid #e9ecef;
+            border-radius: 0;
+        """)
         left_layout.addWidget(self.project_label)
 
         self.file_tree = FileTreeWidget()
@@ -136,10 +144,30 @@ class MainWindow(QMainWindow):
 
         left_btn_layout = QHBoxLayout()
         self.scan_btn = QPushButton("🔄 扫描")
-        self.scan_btn.setStyleSheet("background: #3c3c3c; color: #d4d4d4; border: none; padding: 4px;")
+        self.scan_btn.setStyleSheet("""
+            QPushButton {
+                background: #f1f3f5;
+                color: #495057;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+            QPushButton:hover { background: #e9ecef; }
+        """)
         self.scan_btn.clicked.connect(self._scan_project)
         self.index_btn = QPushButton("📚 索引")
-        self.index_btn.setStyleSheet("background: #3c3c3c; color: #d4d4d4; border: none; padding: 4px;")
+        self.index_btn.setStyleSheet("""
+            QPushButton {
+                background: #f1f3f5;
+                color: #495057;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+            QPushButton:hover { background: #e9ecef; }
+        """)
         self.index_btn.clicked.connect(self._index_project)
         left_btn_layout.addWidget(self.scan_btn)
         left_btn_layout.addWidget(self.index_btn)
@@ -153,19 +181,28 @@ class MainWindow(QMainWindow):
         self.center_tabs.setTabsClosable(True)
         self.center_tabs.tabCloseRequested.connect(self._close_tab)
         self.center_tabs.setStyleSheet("""
-            QTabWidget::pane { border: none; }
+            QTabWidget::pane {
+                border: 1px solid #e9ecef;
+                border-radius: 10px;
+                background: #ffffff;
+            }
             QTabBar::tab {
-                background: #2d2d2d;
-                color: #969696;
-                padding: 6px 16px;
+                background: #f1f3f5;
+                color: #868e96;
+                padding: 8px 18px;
                 border: none;
+                border-radius: 8px 8px 0 0;
+                margin-right: 4px;
             }
             QTabBar::tab:selected {
-                background: #1e1e1e;
-                color: #d4d4d4;
+                background: #ffffff;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-bottom: none;
             }
             QTabBar::tab:hover {
-                background: #3c3c3c;
+                background: #e9ecef;
+                color: #495057;
             }
         """)
         self.splitter.addWidget(self.center_tabs)
@@ -185,7 +222,7 @@ class MainWindow(QMainWindow):
         kb_layout.setSpacing(4)
 
         kb_header = QLabel("🔍 知识库检索")
-        kb_header.setStyleSheet("color: #d4d4d4; font-weight: bold;")
+        kb_header.setStyleSheet("color: #212529; font-weight: 600; font-size: 14px;")
         kb_layout.addWidget(kb_header)
 
         kb_input_layout = QHBoxLayout()
@@ -193,25 +230,48 @@ class MainWindow(QMainWindow):
         self.kb_search_input.setPlaceholderText("输入查询...")
         self.kb_search_input.setStyleSheet("""
             QLineEdit {
-                background: #3c3c3c;
-                color: #d4d4d4;
-                border: 1px solid #555;
-                border-radius: 4px;
-                padding: 4px;
+                background: #f8f9fa;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 10px;
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border-color: #74c0fc;
+                background: #ffffff;
             }
         """)
         self.kb_search_input.returnPressed.connect(self._search_kb)
         kb_input_layout.addWidget(self.kb_search_input)
 
         self.kb_search_btn = QPushButton("搜索")
-        self.kb_search_btn.setStyleSheet("background: #0e639c; color: white; border: none; padding: 4px 12px;")
+        self.kb_search_btn.setStyleSheet("""
+            QPushButton {
+                background: #1971c2;
+                color: white;
+                border: none;
+                border-radius: 10px;
+                padding: 6px 16px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QPushButton:hover { background: #1864ab; }
+        """)
         self.kb_search_btn.clicked.connect(self._search_kb)
         kb_input_layout.addWidget(self.kb_search_btn)
         kb_layout.addLayout(kb_input_layout)
 
         self.kb_results = QLabel("未检索")
         self.kb_results.setWordWrap(True)
-        self.kb_results.setStyleSheet("color: #d4d4d4; background: #252526; padding: 6px;")
+        self.kb_results.setStyleSheet("""
+            color: #495057;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 10px;
+            border: 1px solid #e9ecef;
+            font-size: 13px;
+        """)
         self.kb_results.setAlignment(Qt.AlignmentFlag.AlignTop)
         kb_layout.addWidget(self.kb_results)
         right_layout.addWidget(kb_frame)
@@ -292,18 +352,24 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("主工具栏")
         toolbar.setStyleSheet("""
             QToolBar {
-                background: #333;
+                background: #f8f9fa;
                 border: none;
-                spacing: 4px;
-                padding: 4px;
+                border-bottom: 1px solid #e9ecef;
+                spacing: 6px;
+                padding: 6px 10px;
             }
             QToolButton {
-                background: #3c3c3c;
-                color: #d4d4d4;
+                background: transparent;
+                color: #495057;
                 border: none;
-                padding: 4px 12px;
+                border-radius: 8px;
+                padding: 6px 14px;
+                font-size: 13px;
             }
-            QToolButton:hover { background: #505050; }
+            QToolButton:hover {
+                background: #e9ecef;
+                color: #212529;
+            }
         """)
         self.addToolBar(toolbar)
 
@@ -326,27 +392,149 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage("就绪")
 
     def _apply_theme(self):
+        """应用黑白+软线条全局主题."""
         self.setStyleSheet("""
+            /* ===== 全局 ===== */
             QMainWindow {
-                background: #1e1e1e;
+                background: #ffffff;
             }
+            QWidget {
+                background: #ffffff;
+                color: #212529;
+            }
+
+            /* ===== 菜单栏 ===== */
             QMenuBar {
-                background: #3c3c3c;
-                color: #d4d4d4;
+                background: #f8f9fa;
+                color: #212529;
+                border-bottom: 1px solid #e9ecef;
+                padding: 2px 6px;
+            }
+            QMenuBar::item {
+                padding: 6px 14px;
+                border-radius: 6px;
             }
             QMenuBar::item:selected {
-                background: #505050;
+                background: #e7f5ff;
+                color: #1971c2;
             }
             QMenu {
-                background: #3c3c3c;
-                color: #d4d4d4;
-                border: 1px solid #555;
+                background: #ffffff;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 6px;
             }
             QMenu::item:selected {
-                background: #094771;
+                background: #e7f5ff;
+                color: #1971c2;
             }
+            QMenu::separator {
+                height: 1px;
+                background: #e9ecef;
+                margin: 6px 12px;
+            }
+
+            /* ===== 工具栏 ===== */
+            QToolBar {
+                background: #f8f9fa;
+                border: none;
+                border-bottom: 1px solid #e9ecef;
+                spacing: 6px;
+                padding: 6px 10px;
+            }
+            QToolButton {
+                background: transparent;
+                color: #495057;
+                border: none;
+                border-radius: 8px;
+                padding: 6px 14px;
+                font-size: 13px;
+            }
+            QToolButton:hover {
+                background: #e9ecef;
+                color: #212529;
+            }
+
+            /* ===== 状态栏 ===== */
+            QStatusBar {
+                background: #f8f9fa;
+                color: #495057;
+                border-top: 1px solid #e9ecef;
+                padding: 2px 12px;
+            }
+
+            /* ===== 标签页 ===== */
+            QTabWidget::pane {
+                border: 1px solid #e9ecef;
+                border-radius: 10px;
+                background: #ffffff;
+            }
+            QTabBar::tab {
+                background: #f1f3f5;
+                color: #868e96;
+                padding: 8px 18px;
+                border: none;
+                border-radius: 8px 8px 0 0;
+                margin-right: 4px;
+            }
+            QTabBar::tab:selected {
+                background: #ffffff;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-bottom: none;
+            }
+            QTabBar::tab:hover {
+                background: #e9ecef;
+                color: #495057;
+            }
+
+            /* ===== 按钮 ===== */
+            QPushButton {
+                background: #f1f3f5;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px 16px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #e9ecef;
+                border-color: #dee2e6;
+            }
+            QPushButton:pressed {
+                background: #dee2e6;
+            }
+
+            /* ===== 输入框 ===== */
+            QLineEdit {
+                background: #f8f9fa;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px 10px;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border-color: #74c0fc;
+                background: #ffffff;
+            }
+
+            /* ===== 分割器 ===== */
+            QSplitter::handle {
+                background: #e9ecef;
+            }
+            QSplitter::handle:horizontal {
+                width: 2px;
+            }
+
+            /* ===== 标签 ===== */
             QLabel {
-                color: #d4d4d4;
+                color: #212529;
             }
         """)
 

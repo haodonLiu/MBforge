@@ -31,7 +31,9 @@ class ChatMessage(QWidget):
         layout.setContentsMargins(8, 4, 8, 4)
 
         header = QLabel(f"<b>{'🤖 AI' if role == 'assistant' else '🧑 用户'}</b>")
-        header.setStyleSheet("color: #4fc1ff;" if role == "assistant" else "color: #b5cea8;")
+        header.setStyleSheet(
+            "color: #1971c2; font-size: 13px;" if role == "assistant" else "color: #495057; font-size: 13px;"
+        )
         layout.addWidget(header)
 
         self.body = QTextEdit()
@@ -40,11 +42,13 @@ class ChatMessage(QWidget):
         self.body.setMaximumHeight(400)
         self.body.setStyleSheet("""
             QTextEdit {
-                background: #252526;
-                color: #d4d4d4;
-                border: none;
-                padding: 8px;
-                border-radius: 4px;
+                background: #f1f3f5;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                padding: 12px;
+                border-radius: 12px;
+                font-size: 14px;
+                line-height: 1.6;
             }
         """)
         layout.addWidget(self.body)
@@ -98,12 +102,23 @@ class ChatWidget(QWidget):
         # 顶部工具栏
         toolbar = QHBoxLayout()
         self.title_label = QLabel("💬 AI 助手")
-        self.title_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #d4d4d4;")
+        self.title_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #212529;")
         toolbar.addWidget(self.title_label)
         toolbar.addStretch()
 
         self.clear_btn = QPushButton("清空")
-        self.clear_btn.setStyleSheet("background: #3c3c3c; color: #d4d4d4; border: none; padding: 4px 12px;")
+        self.clear_btn.setStyleSheet("""
+            QPushButton {
+                background: #f1f3f5;
+                color: #495057;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 4px 12px;
+            }
+            QPushButton:hover {
+                background: #e9ecef;
+            }
+        """)
         self.clear_btn.clicked.connect(self.clear_chat)
         toolbar.addWidget(self.clear_btn)
         layout.addLayout(toolbar)
@@ -111,7 +126,7 @@ class ChatWidget(QWidget):
         # 消息区域
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
-        self.scroll.setStyleSheet("border: none; background: #1e1e1e;")
+        self.scroll.setStyleSheet("border: none; background: #ffffff;")
         self.messages_container = QWidget()
         self.messages_layout = QVBoxLayout(self.messages_container)
         self.messages_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -122,7 +137,7 @@ class ChatWidget(QWidget):
 
         # 输入区域
         input_frame = QFrame()
-        input_frame.setStyleSheet("background: #252526; border-top: 1px solid #333;")
+        input_frame.setStyleSheet("background: #f8f9fa; border-top: 1px solid #e9ecef;")
         input_layout = QHBoxLayout(input_frame)
         input_layout.setContentsMargins(8, 8, 8, 8)
 
@@ -130,11 +145,16 @@ class ChatWidget(QWidget):
         self.input_box.setPlaceholderText("输入问题，按 Enter 发送...")
         self.input_box.setStyleSheet("""
             QLineEdit {
-                background: #3c3c3c;
-                color: #d4d4d4;
-                border: 1px solid #555;
-                border-radius: 4px;
-                padding: 6px;
+                background: #f8f9fa;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 10px;
+                padding: 8px 12px;
+                font-size: 14px;
+            }
+            QLineEdit:focus {
+                border-color: #74c0fc;
+                background: #ffffff;
             }
         """)
         self.input_box.returnPressed.connect(self._send_message)
@@ -143,13 +163,16 @@ class ChatWidget(QWidget):
         self.send_btn = QPushButton("发送")
         self.send_btn.setStyleSheet("""
             QPushButton {
-                background: #0e639c;
+                background: #1971c2;
                 color: white;
                 border: none;
-                border-radius: 4px;
-                padding: 6px 16px;
+                border-radius: 10px;
+                padding: 8px 18px;
+                font-size: 14px;
+                font-weight: 500;
             }
-            QPushButton:hover { background: #1177bb; }
+            QPushButton:hover { background: #1864ab; }
+            QPushButton:pressed { background: #1565c0; }
         """)
         self.send_btn.clicked.connect(self._send_message)
         input_layout.addWidget(self.send_btn)
@@ -157,13 +180,15 @@ class ChatWidget(QWidget):
         self.stop_btn = QPushButton("停止")
         self.stop_btn.setStyleSheet("""
             QPushButton {
-                background: #c75450;
+                background: #fa5252;
                 color: white;
                 border: none;
-                border-radius: 4px;
-                padding: 6px 16px;
+                border-radius: 10px;
+                padding: 8px 18px;
+                font-size: 14px;
+                font-weight: 500;
             }
-            QPushButton:hover { background: #d86864; }
+            QPushButton:hover { background: #f03e3e; }
         """)
         self.stop_btn.setVisible(False)
         self.stop_btn.clicked.connect(self._stop_generation)
@@ -171,7 +196,7 @@ class ChatWidget(QWidget):
 
         layout.addWidget(input_frame)
 
-        self.setStyleSheet("background: #1e1e1e;")
+        self.setStyleSheet("background: #ffffff;")
 
     def set_llm(self, llm: BaseLLM):
         self.llm = llm

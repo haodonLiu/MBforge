@@ -34,14 +34,20 @@ class FileTreeWidget(QTreeWidget):
         self.setStyleSheet("""
             QTreeWidget {
                 border: none;
-                background: #1e1e1e;
-                color: #d4d4d4;
+                background: #ffffff;
+                color: #212529;
+                outline: none;
+            }
+            QTreeWidget::item {
+                padding: 4px 2px;
+                border-radius: 6px;
             }
             QTreeWidget::item:selected {
-                background: #094771;
+                background: #e7f5ff;
+                color: #1971c2;
             }
             QTreeWidget::item:hover {
-                background: #2a2d2e;
+                background: #f1f3f5;
             }
         """)
 

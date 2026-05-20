@@ -42,19 +42,29 @@ class MoleculePanel(QWidget):
         self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.setStyleSheet("""
             QTableWidget {
-                background: #1e1e1e;
-                color: #d4d4d4;
-                gridline-color: #333;
-                border: none;
+                background: #ffffff;
+                color: #212529;
+                gridline-color: #e9ecef;
+                border: 1px solid #e9ecef;
+                border-radius: 10px;
+                outline: none;
             }
             QHeaderView::section {
-                background: #252526;
-                color: #d4d4d4;
-                padding: 6px;
-                border: 1px solid #333;
+                background: #f8f9fa;
+                color: #495057;
+                padding: 8px 12px;
+                border: 1px solid #e9ecef;
+                font-weight: 600;
+            }
+            QTableWidget::item {
+                padding: 6px 10px;
             }
             QTableWidget::item:selected {
-                background: #094771;
+                background: #e7f5ff;
+                color: #1971c2;
+            }
+            QTableWidget::item:hover {
+                background: #f8f9fa;
             }
         """)
         layout.addWidget(self.table)

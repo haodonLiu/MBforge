@@ -34,6 +34,41 @@ class NewProjectDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("新建项目")
         self.setMinimumWidth(500)
+        self.setStyleSheet("""
+            QDialog {
+                background: #ffffff;
+            }
+            QLabel {
+                color: #212529;
+            }
+            QLineEdit {
+                background: #f8f9fa;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px 10px;
+            }
+            QLineEdit:focus {
+                border-color: #74c0fc;
+            }
+            QTextEdit {
+                background: #f8f9fa;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px 10px;
+            }
+            QPushButton {
+                background: #f1f3f5;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px 16px;
+            }
+            QPushButton:hover {
+                background: #e9ecef;
+            }
+        """)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -91,6 +126,53 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("设置")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
+        self.setStyleSheet("""
+            QDialog {
+                background: #ffffff;
+            }
+            QLabel {
+                color: #212529;
+            }
+            QLineEdit {
+                background: #f8f9fa;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px 10px;
+            }
+            QLineEdit:focus {
+                border-color: #74c0fc;
+            }
+            QComboBox {
+                background: #f8f9fa;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px 10px;
+            }
+            QSpinBox, QDoubleSpinBox {
+                background: #f8f9fa;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px 10px;
+            }
+            QPushButton {
+                background: #f1f3f5;
+                color: #212529;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                padding: 6px 16px;
+            }
+            QPushButton:hover {
+                background: #e9ecef;
+            }
+            QTabWidget::pane {
+                border: 1px solid #e9ecef;
+                border-radius: 10px;
+                background: #ffffff;
+            }
+        """)
         self._setup_ui()
         self._load_config()
 
@@ -236,19 +318,31 @@ class SettingsDialog(QDialog):
 
 
 class MoleculeInfoDialog(QDialog):
-    """分子详细信息对话框."""
+    """分子详细信息对话框（含结构图片预览）."""
 
     def __init__(self, record, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.record = record
         self.setWindowTitle(f"分子详情 - {record.name or record.smiles[:30]}")
-        self.setMinimumWidth(450)
+        self.setMinimumWidth(500)
+        self.setStyleSheet("""
+            QDialog { background: #ffffff; }
+            QLabel { color: #212529; }
+        """)
         self._setup_ui()
 
     def _setup_ui(self):
         import html
+        from .mol_renderer import MoleculeImageWidget
+
         layout = QVBoxLayout(self)
         rec = self.record
+
+        # 分子结构图片
+        img_widget = MoleculeImageWidget(rec.smiles, size=(400, 300))
+        layout.addWidget(img_widget)
+
+        # 详细信息
         text = (
             f"<b>SMILES:</b> <code>{html.escape(rec.smiles)}</code><br>"
             f"<b>名称:</b> {html.escape(rec.name or '-')}<br>"
@@ -262,6 +356,7 @@ class MoleculeInfoDialog(QDialog):
         label = QLabel(text)
         label.setTextFormat(Qt.TextFormat.RichText)
         label.setWordWrap(True)
+        label.setStyleSheet("padding: 8px; font-size: 13px;")
         layout.addWidget(label)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)

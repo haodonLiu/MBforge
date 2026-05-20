@@ -14,6 +14,7 @@ import chromadb
 from chromadb.config import Settings
 
 from .document import ExtractedContent
+from .summarizer import SummaryManager
 from ..utils.constants import KB_COLLECTION_DOCS, PROJECT_META_DIR
 from ..utils.logger import get_logger
 
@@ -162,3 +163,55 @@ class KnowledgeBase:
             "total_chunks": count,
             "db_path": self.db_path,
         }
+
+    def search_by_directory(
+        self,
+        query: str,
+        directory_prefix: str = "",
+        top_k: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """目录级语义搜索（OpenViking 递归目录检索）.
+
+        先通过路径前缀过滤，再在子目录内做语义搜索。
+        """
+        results = self.search(query, top_k=top_k * 3)
+        if directory_prefix:
+            filtered = []
+            for r in results:
+                source = r.get("metadata", {}).get("source", "")
+                if source.startswith(directory_prefix) or directory_prefix in source:
+                    filtered.append(r)
+            results = filtered
+        return results[:top_k]
+
+    def get_document_abstract(self, doc_id: str) -> Optional[str]:
+        """获取文档 L0 摘要."""
+        sm = SummaryManager(self.project_root)
+        summary = sm.load(doc_id)
+        if summary:
+            return summary.l0_abstract
+        return None
+
+    def get_document_overview(self, doc_id: str) -> Optional[str]:
+        """获取文档 L1 概览."""
+        sm = SummaryManager(self.project_root)
+        summary = sm.load(doc_id)
+        if summary:
+            return summary.l1_overview
+        return None
+
+    def get_document_keywords(self, doc_id: str) -> List[str]:
+        """获取文档关键词."""
+        sm = SummaryManager(self.project_root)
+        summary = sm.load(doc_id)
+        if summary:
+            return summary.keywords
+        return []
+
+    def list_document_entities(self, doc_id: str) -> List[str]:
+        """获取文档实体标签."""
+        sm = SummaryManager(self.project_root)
+        summary = sm.load(doc_id)
+        if summary:
+            return summary.entity_tags
+        return []

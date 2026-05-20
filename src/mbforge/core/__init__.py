@@ -5,6 +5,7 @@ from .document import DocumentProcessor, ExtractedContent
 from .knowledge_base import KnowledgeBase
 from .mol_database import MoleculeDatabase, MoleculeRecord
 from .settings import ProjectSettings
+from .summarizer import DocumentSummary, SummaryManager, DocumentSummarizer
 
 __all__ = [
     "Project",
@@ -15,4 +16,7 @@ __all__ = [
     "MoleculeDatabase",
     "MoleculeRecord",
     "ProjectSettings",
+    "DocumentSummary",
+    "SummaryManager",
+    "DocumentSummarizer",
 ]

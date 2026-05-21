@@ -16,12 +16,12 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from .csar_io.reader import MoleculeReader
-from .clustering.fingerprinter import MolecularFingerprinter
-from .clustering.cluster import MolecularClusterer
-from .mcs.finder import MCSFinder
-from .sar.analyzer import SARAnalyzer
-from .csar_vis.renderer import SARRenderer, PlotSettings
+from .io.reader import MoleculeReader
+from ..clustering.fingerprinter import MolecularFingerprinter
+from ..clustering.cluster import MolecularClusterer
+from ..clustering.mcs_finder import MCSFinder
+from .analyzer import SARAnalyzer
+from .vis.renderer import SARRenderer, PlotSettings
 
 logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 
@@ -226,7 +226,7 @@ def run_workflow(
         )
 
         logger.info("Rendering SAR table images for each cluster")
-        from mbforge.mcs.finder import find_substitution_positions
+        from mbforge.clustering.mcs_finder import find_substitution_positions
 
         for cluster in clusters:
             if cluster.size >= 2:

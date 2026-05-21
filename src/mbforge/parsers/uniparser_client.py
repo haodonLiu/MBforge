@@ -21,8 +21,8 @@ except ImportError:
     ParseModeTextual = None  # type: ignore
     _UNIPARSER_AVAILABLE = False
 
-from .config import ParserConfig
-from .models import ParseResult
+from .uniparser_config import ParserConfig
+from .uniparser_models import ParseResult
 
 
 class ParserClient:

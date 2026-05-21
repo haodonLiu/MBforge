@@ -23,8 +23,8 @@ from typing import List, Optional, Dict, Any, Union
 import pandas as pd
 from rdkit import Chem
 
-from ..clustering.fingerprinter import MolecularFingerprinter
-from ..molecules.schema import Molecule, MoleculeBatch
+from ...clustering.fingerprinter import MolecularFingerprinter
+from ...molecules.schema import Molecule, MoleculeBatch
 
 logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 

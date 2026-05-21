@@ -26,7 +26,7 @@ from .api_client import (  # API 客户端
 from .cas_resolver import CASResolver, CASResolverError  # CAS 号解析器和异常
 from .reader import MoleculeReader, MoleculeReadError  # 分子读取器和读取异常
 from .writer import MoleculeWriter, MoleculeWriteError  # 分子写入器和写入异常
-from ..molecules.schema import Molecule, MoleculeBatch  # 统一数据契约
+from ...molecules.schema import Molecule, MoleculeBatch  # 统一数据契约
 
 # 模块公开接口
 __all__ = [

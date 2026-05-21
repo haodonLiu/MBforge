@@ -24,7 +24,7 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import Descriptors
 
-from ..molecules.schema import Molecule, MoleculeBatch
+from ...molecules.schema import Molecule, MoleculeBatch
 
 logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 

@@ -33,7 +33,7 @@ from collections import defaultdict
 import numpy as np
 from rdkit import Chem
 
-from ..mcs.finder import MCSResult
+from ..clustering.mcs_finder import MCSResult
 
 logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 

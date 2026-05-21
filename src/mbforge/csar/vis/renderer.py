@@ -32,7 +32,7 @@ from PIL import Image
 from rdkit import Chem
 from rdkit.Chem import Draw
 
-from ..mcs.finder import (
+from ...clustering.mcs_finder import (
     create_marked_scaffold,
     MCSScaffoldInfo,
 )

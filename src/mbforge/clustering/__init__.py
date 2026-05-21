@@ -16,16 +16,19 @@
     >>> scaffold_clusterer = ScaffoldClusterer()
 """
 
-# 从子模块导入主要类和异常
-from .fingerprinter import MolecularFingerprinter  # 分子指纹计算器
-from .cluster import MolecularClusterer, ClusteringError  # 分子聚类器和聚类异常
-from .scaffold import ScaffoldClusterer, ScaffoldClusteringError  # 骨架聚类器
+from .fingerprinter import MolecularFingerprinter
+from .cluster import MolecularClusterer, ClusteringError
+from .scaffold import ScaffoldClusterer, ScaffoldClusteringError
+from .mcs_finder import MCSFinder, MCSError, MCSResult, MCSScaffoldInfo
 
-# 模块公开接口
 __all__ = [
-    "MolecularFingerprinter",  # 分子指纹计算器
-    "MolecularClusterer",  # 分子聚类器 (基于指纹)
-    "ClusteringError",  # 聚类异常
-    "ScaffoldClusterer",  # 骨架聚类器 (Bemis-Murcko)
-    "ScaffoldClusteringError",  # 骨架聚类异常
+    "MolecularFingerprinter",
+    "MolecularClusterer",
+    "ClusteringError",
+    "ScaffoldClusterer",
+    "ScaffoldClusteringError",
+    "MCSFinder",
+    "MCSError",
+    "MCSResult",
+    "MCSScaffoldInfo",
 ]

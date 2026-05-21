@@ -40,7 +40,8 @@ def main() -> int:
     index_parser.add_argument("path", type=str, help="项目目录路径")
 
     # version
-    parser.add_argument("--version", action="version", version="%(prog)s 0.2.0")
+    from .utils.constants import APP_VERSION
+    parser.add_argument("--version", action="version", version=f"%(prog)s {APP_VERSION}")
 
     args = parser.parse_args()
 

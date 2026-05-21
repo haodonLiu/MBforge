@@ -85,6 +85,17 @@ OCR_PROVIDER_GLM_OCR_OLLAMA = "glm_ocr_ollama"
 # ChromaDB URI scheme (trajectory tracking)
 VIKING_SCHEME = "viking://"
 
+# HuggingFace 镜像
+DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
+
+
+def ensure_hf_mirror():
+    """设置 HuggingFace 镜像环境变量（如果未设置）。"""
+    import os
+    if "HF_ENDPOINT" not in os.environ:
+        os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
+
+
 # 文档元数据键
 META_SOURCE = "source"
 META_FILENAME = "filename"

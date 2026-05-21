@@ -120,44 +120,44 @@ class GlmOcrClient(BaseDocumentParser):
 
     def parse_pdf(self, pdf_path: Path, **kwargs) -> Dict[str, Any]:
         """向后兼容：返回旧格式 dict。"""
-        try:
-            return self._parse_with_glm(pdf_path)
-        except Exception as e:
-            logger.warning(f"GLM-OCR parsing failed ({e}), falling back to PyMuPDF")
-            return self._fallback_pymupdf(pdf_path)
+        out = self.parse(pdf_path, **kwargs)
+        return {"text": out.text, "markdown": out.markdown, "pages": out.pages,
+                "parser": out.metadata.get("parser", "glm_ocr")}
 
     def _parse_with_glm(self, pdf_path: Path) -> Dict[str, Any]:
         """使用 GLM-OCR 解析 PDF."""
+        import shutil
         import tempfile
 
-        # 将 PDF 转为图像（逐页）
         page_images = self._pdf_to_images(pdf_path)
+        tmpdir = page_images[0].parent if page_images else None
 
-        pages_md = []
-        molecule_placeholders = []
+        try:
+            pages_md = []
+            molecule_placeholders = []
 
-        for idx, img_path in enumerate(page_images):
-            try:
-                b64 = self._encode_image(img_path)
-                page_md = self._call_api(b64)
-                pages_md.append(page_md)
+            for idx, img_path in enumerate(page_images):
+                try:
+                    b64 = self._encode_image(img_path)
+                    page_md = self._call_api(b64)
+                    pages_md.append(page_md)
+                    placeholders = self._extract_molecule_placeholders(page_md, page_idx=idx)
+                    molecule_placeholders.extend(placeholders)
+                except Exception as e:
+                    logger.warning(f"Page {idx} OCR failed: {e}")
+                    pages_md.append(f"<!-- Page {idx} OCR failed -->")
 
-                # 提取分子占位符
-                placeholders = self._extract_molecule_placeholders(page_md, page_idx=idx)
-                molecule_placeholders.extend(placeholders)
-            except Exception as e:
-                logger.warning(f"Page {idx} OCR failed: {e}")
-                pages_md.append(f"<!-- Page {idx} OCR failed -->")
-
-        full_markdown = "\n\n---\n\n".join(pages_md)
-
-        return {
-            "markdown": full_markdown,
-            "text": self._markdown_to_text(full_markdown),
-            "pages": pages_md,
-            "molecule_placeholders": molecule_placeholders,
-            "parser": "glm_ocr",
-        }
+            full_markdown = "\n\n---\n\n".join(pages_md)
+            return {
+                "markdown": full_markdown,
+                "text": self._markdown_to_text(full_markdown),
+                "pages": pages_md,
+                "molecule_placeholders": molecule_placeholders,
+                "parser": "glm_ocr",
+            }
+        finally:
+            if tmpdir and tmpdir.exists():
+                shutil.rmtree(tmpdir, ignore_errors=True)
 
     def _fallback_pymupdf(self, pdf_path: Path) -> Dict[str, Any]:
         """Fallback 到 PyMuPDF."""

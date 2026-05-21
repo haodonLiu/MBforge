@@ -19,14 +19,10 @@ from typing import AsyncGenerator, Iterator, List, Optional
 import torch
 
 from .base import BaseLLM, Message, StreamChunk
+from ..utils.constants import ensure_hf_mirror
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-
-def _ensure_hf_mirror() -> None:
-    if "HF_ENDPOINT" not in os.environ:
-        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 
 class NemotronDiffusionLLM(BaseLLM):
@@ -62,7 +58,7 @@ class NemotronDiffusionLLM(BaseLLM):
         if self._model is not None:
             return
 
-        _ensure_hf_mirror()
+        ensure_hf_mirror()
         from modelscope import AutoModel, AutoTokenizer
         from .embedding import _resolve_model_path
 

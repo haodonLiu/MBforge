@@ -69,10 +69,10 @@ class MoleculeRecord:
 
     @property
     def mol(self):
-        """RDKit Mol 对象."""
-        if Chem is None:
-            return None
-        return Chem.MolFromSmiles(self.smiles)
+        """RDKit Mol 对象（带缓存）."""
+        if not hasattr(self, "_cached_mol"):
+            self._cached_mol = Chem.MolFromSmiles(self.smiles) if Chem else None
+        return self._cached_mol
 
     def compute_properties(self) -> Dict[str, float]:
         """计算基本分子性质."""
@@ -106,14 +106,14 @@ class MoleculeRecord:
         )
 
     @classmethod
-    def from_molecule(cls, mol) -> "MoleculeRecord":
+    def from_molecule(cls, mol, activity_type: str = "") -> "MoleculeRecord":
         """从 schema.Molecule 创建 MoleculeRecord。"""
         return cls(
             mol_id=mol.id,
             smiles=mol.smiles,
             name=mol.name,
             activity=mol.activity,
-            activity_type="IC50",
+            activity_type=activity_type or mol.metadata.get("activity_type", ""),
             units=mol.activity_unit or "nM",
             properties=mol.properties,
             tags=[mol.cas] if mol.cas else [],

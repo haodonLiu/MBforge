@@ -12,8 +12,18 @@ from PIL import Image, ImageDraw, ImageFont
 from rdkit import Chem
 
 
+_CACHED_FONT_PATH: Optional[Path] = None
+
+
 def _get_default_font(size: int = 12):
-    """跨平台获取默认字体。"""
+    """跨平台获取默认字体（结果缓存）。"""
+    global _CACHED_FONT_PATH
+    if _CACHED_FONT_PATH is not None:
+        try:
+            return ImageFont.truetype(str(_CACHED_FONT_PATH), size)
+        except Exception:
+            pass
+
     candidates = []
     system = platform.system()
     if system == "Windows":
@@ -29,6 +39,7 @@ def _get_default_font(size: int = 12):
     for font_path in candidates:
         if font_path.exists():
             try:
+                _CACHED_FONT_PATH = font_path
                 return ImageFont.truetype(str(font_path), size)
             except Exception:
                 continue

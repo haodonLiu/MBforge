@@ -22,50 +22,11 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from .base import BaseReranker
-from ..utils.constants import DEFAULT_RERANK_MODEL, DEFAULT_HF_ENDPOINT
+from .embedding import _resolve_model_path
+from ..utils.constants import DEFAULT_RERANK_MODEL, ensure_hf_mirror
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-
-def _ensure_hf_mirror() -> None:
-    if "HF_ENDPOINT" not in os.environ:
-        os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
-
-
-def _resolve_rerank_model_path(model_name: str) -> str:
-    """解析 rerank 模型路径，优先从 ModelScope 缓存加载."""
-    from pathlib import Path
-
-    p = Path(model_name)
-    if p.is_absolute() or (p.exists() and p.is_dir()):
-        return model_name
-
-    possible_cache_bases = [
-        os.environ.get("MODELSCOPE_CACHE", ""),
-        str(Path.home() / "Models" / "ModelScope"),
-        str(Path.home() / ".cache" / "modelscope"),
-    ]
-
-    cache_base = ""
-    for cb in possible_cache_bases:
-        if cb and Path(cb).exists():
-            cache_base = cb
-            break
-
-    if cache_base:
-        name_parts = model_name.replace("/", " ").split()
-        last_part = name_parts[-1] if name_parts else model_name
-        key_name = last_part.rsplit(".", 1)[0]
-
-        cache_path = Path(cache_base)
-        if cache_path.exists():
-            for item in cache_path.rglob("*"):
-                if item.is_dir() and key_name.lower() in item.name.lower():
-                    logger.info(f"Found rerank model in ModelScope cache: {item}")
-                    return str(item)
-
-    return model_name
 
 
 class Qwen3Reranker(BaseReranker):
@@ -113,8 +74,8 @@ class Qwen3Reranker(BaseReranker):
         if self._model is not None:
             return
 
-        _ensure_hf_mirror()
-        resolved = _resolve_rerank_model_path(self.model_name)
+        ensure_hf_mirror()
+        resolved = _resolve_model_path(self.model_name, self.model_name)
         logger.info(f"Loading Qwen3-Reranker model: {resolved} (device={self.device})")
 
         self._tokenizer = AutoTokenizer.from_pretrained(

@@ -146,12 +146,12 @@ class AnthropicLLM(BaseLLM):
 
     async def achat(self, messages: List[Message], **kwargs) -> str:
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.chat, messages, **kwargs)
 
     async def achat_stream(self, messages: List[Message], **kwargs):
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         iterator = await loop.run_in_executor(None, self.chat_stream, messages, **kwargs)
         for chunk in iterator:
             yield chunk

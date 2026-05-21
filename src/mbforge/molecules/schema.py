@@ -64,27 +64,24 @@ class Molecule:
     props: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     _rdkit_mol: Optional[Any] = field(default=None, repr=False)
+    _mol_parse_attempted: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
-        if self.mol is None and not self.smiles:
+        if self._rdkit_mol is None and not self.smiles:
             raise ValueError("Molecule requires at least 'smiles' or '_rdkit_mol'")
-        if self.mol is not None and not self.smiles:
+        if self._rdkit_mol is not None and not self.smiles:
             try:
-                self.smiles = Chem.MolToSmiles(self.mol)
+                self.smiles = Chem.MolToSmiles(self._rdkit_mol)
             except Exception as e:
                 logger.warning(f"Failed to generate SMILES from mol: {e}")
-        if self.mol is None and self.smiles:
-            try:
-                self._rdkit_mol = Chem.MolFromSmiles(self.smiles)
-            except Exception:
-                pass
 
     # ---- 懒加载 RDKit Mol 对象 ----
 
     @property
     def rdkit_mol(self) -> Optional[Any]:
         """从 SMILES 懒加载 RDKit Mol 对象，失败返回 None。"""
-        if self._rdkit_mol is None and _RDKIT_AVAILABLE and self.smiles:
+        if not self._mol_parse_attempted and _RDKIT_AVAILABLE and self.smiles:
+            self._mol_parse_attempted = True
             try:
                 self._rdkit_mol = Chem.MolFromSmiles(self.smiles)
             except Exception:
@@ -102,7 +99,7 @@ class Molecule:
         """别名，兼容旧代码。"""
         return self.rdkit_mol
 
-    def invalidate_rdk(self) -> None:
+    def clear_rdkit_cache(self) -> None:
         self._rdkit_mol = None
 
     # ---- 工厂方法 ----
@@ -165,9 +162,8 @@ class Molecule:
     # ---- 导出方法 ----
 
     def to_dict(self) -> Dict[str, Any]:
-        """序列化。输出格式与旧 MoleculeEntry.to_dict() 向后兼容。"""
+        """序列化为 JSON-safe 字典。"""
         d: Dict[str, Any] = {
-            "mol": self.mol,
             "smiles": self.smiles,
             "name": self.name,
             "activity": self.activity,
@@ -184,7 +180,7 @@ class Molecule:
         return d
 
     def to_json(self) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=False, default=str)
+        return json.dumps(self.to_dict(), ensure_ascii=False)
 
     # ---- 便捷方法 ----
 
@@ -353,12 +349,10 @@ class MoleculeBatch:
 
     # ---- 导出 ----
 
-    def to_dict_list(self) -> List[dict]:
-        return [m.to_dict() for m in self.entries]
-
     def to_dicts(self) -> List[Dict[str, Any]]:
-        """转换为旧版字典列表（向后兼容）。"""
         return [e.to_dict() for e in self.entries]
+
+    to_dict_list = to_dicts  # 兼容别名
 
     def to_dataframe(self) -> Any:
         import pandas as pd

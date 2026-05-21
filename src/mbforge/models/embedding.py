@@ -15,17 +15,11 @@ from ..utils.constants import (
     PROVIDER_SENTENCE_TRANSFORMERS,
     PROVIDER_QWEN3,
     PROVIDER_API,
-    DEFAULT_HF_ENDPOINT,
+    ensure_hf_mirror,
 )
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-
-def _ensure_hf_mirror() -> None:
-    """确保 HF 国内镜像已配置."""
-    if "HF_ENDPOINT" not in os.environ:
-        os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
 
 
 def _resolve_model_path(model_name: str, cache_name: str) -> str:
@@ -88,7 +82,7 @@ class SentenceTransformerEmbedder(BaseEmbedder):
 
     def _load_model(self):
         if self._model is None:
-            _ensure_hf_mirror()
+            ensure_hf_mirror()
             from sentence_transformers import SentenceTransformer
             resolved = _resolve_model_path(self.model_name, self.model_name)
             self._model = SentenceTransformer(resolved, device=self.device, trust_remote_code=True)
@@ -107,7 +101,7 @@ class SentenceTransformerEmbedder(BaseEmbedder):
 
     async def aembed(self, texts: List[str]) -> List[List[float]]:
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.embed, texts)
 
 
@@ -149,7 +143,7 @@ class Qwen3Embedder(BaseEmbedder):
 
     def _load_model(self):
         if self._model is None:
-            _ensure_hf_mirror()
+            ensure_hf_mirror()
             from sentence_transformers import SentenceTransformer
             resolved = _resolve_model_path(self.model_name, self.model_name)
             logger.info(f"Loading Qwen3-Embedding model: {resolved} (device={self.device})")
@@ -186,7 +180,7 @@ class Qwen3Embedder(BaseEmbedder):
 
     async def aembed(self, texts: List[str]) -> List[List[float]]:
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.embed, texts)
 
 
@@ -206,7 +200,7 @@ class APIEmbedder(BaseEmbedder):
 
     async def aembed(self, texts: List[str]) -> List[List[float]]:
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.embed, texts)
 
 

@@ -67,12 +67,12 @@ class OpenAILLM(BaseLLM):
     async def achat(self, messages: List[Message], **kwargs) -> str:
         # 使用同步客户端的线程池执行
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.chat, messages, **kwargs)
 
     async def achat_stream(self, messages: List[Message], **kwargs) -> AsyncGenerator[StreamChunk, None]:
         import asyncio
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         iterator = await loop.run_in_executor(None, self.chat_stream, messages, **kwargs)
         for chunk in iterator:
             yield chunk

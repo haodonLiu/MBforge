@@ -19,17 +19,8 @@ run_check_env() {
         ok "虚拟环境已存在"
     fi
 
-    # 依赖
+    # 依赖（csar 已合并入 mbforge，uv sync 一次性安装全部）
     info "安装依赖 ..."
     uv sync --dev
-    ok "主依赖安装完成"
-
-    # csar
-    if ! has_module csar; then
-        info "安装 openSAR (csar) ..."
-        uv pip install -e setup/openSAR/ --python "$PYTHON"
-        ok "csar 已安装"
-    else
-        ok "csar 已存在"
-    fi
+    ok "主依赖安装完成（包含 csar）"
 }

@@ -26,11 +26,7 @@ if not exist ".venv" (
 ) else (echo [OK] venv exists)
 
 uv sync --dev
-%PYTHON% -c "import csar" >nul 2>&1
-if errorlevel 1 (
-    uv pip install -e setup/openSAR/ --python .venv\Scripts\python.exe
-)
-echo [OK] dependencies installed
+echo [OK] dependencies installed (csar included in mbforge)
 
 :: === 02 UniParser ===
 echo.

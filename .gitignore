@@ -55,9 +55,9 @@ Desktop.ini
 .mbforge/
 output/
 
-# 嵌套子仓库（通过子模块或独立管理）
-UniParser-Tools/
-openSAR/
+# openSAR 代码已合并入 src/mbforge/sar|csar_io|csar_vis|clustering|mcs|molecules
+# 根目录 openSAR/ 是独立 git 仓库，保留在本地但不由 MBForge 追踪
+# setup/ 下的子模块引用已清除
 
 # SQLite 数据库（项目级和临时）
 *.db

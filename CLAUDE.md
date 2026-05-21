@@ -60,20 +60,25 @@ This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, inv
 | `core/` | 数据模型 | `Project`（vault 隐喻，`.mbforge/` 隐藏目录）、`KnowledgeBase`（ChromaDB 封装 + rerank）、`MoleculeDatabase`（SQLite + FTS5）、`DocumentProcessor`、`DocumentSummarizer` |
 | `models/` | AI 模型抽象层 | `BaseLLM`/`BaseEmbedder`/`BaseReranker`/`BaseVLM` 基类 + `OpenAILLM`/`AnthropicLLM`/`SentenceTransformerEmbedder`。`create_llm_from_config()` 按 provider 字符串分发 |
 | `parsers/` | PDF 解析与分子提取 | `PDFParserPipeline` 串联全部解析步骤 |
-| `ui/` | PyQt6 界面 | `MainWindow`（主窗口，组装所有组件）、`ChatWidget`、`PDFViewer`、`MolPanel`、`FileTree` 等 |
+| `ui/` | PyQt6 界面 | `MainWindow`（主窗口，组装所有组件）、`ChatWidget`、`PDFViewer`（虚拟滚动 + 多线程渲染）、`MolPanel`、`FileTree` 等 |
 | `agent/` | ReAct 循环 Agent | `ProjectAgent` + `LayeredContext` + `ToolExecutor`（10 个工具）+ `MemoryManager` + `TrajectoryTracker` |
 | `workflow/` | 占位模块 | `generation`、`docking`、`qsar`、`md` — 仅 toggle 开关，尚未实现 |
 | `parser_io/` | UniParser API 封装 | `ParserClient` 对接 `UniParser-Tools`，`ParseResult` 数据模型 |
 | `utils/` | 配置、日志、辅助 | `AppConfig`、`get_logger`、`generate_uuid`、`split_text_chunks` |
+| `sar/` | SAR 分析引擎 | `SARAnalyzer`（结构-活性关系分析） |
+| `csar_io/` | 分子文件 I/O | `MoleculeReader`、`MoleculeWriter`，支持 CAS 查询 |
+| `csar_vis/` | SAR 可视化 | `SARRenderer`、`PlotSettings` |
+| `clustering/` | 分子聚类 | `MolecularClusterer`（指纹相似度）、`ScaffoldClusterer`（Bemis-Murcko） |
+| `mcs/` | 最大公共子结构 | `MCSFinder` |
+| `molecules/` | 分子数据模型 | `MoleculeEntry`、`MoleculeBatch`、`MoleculeDescriptorCalculator`、`LipinskiFilter`、`VeberFilter`、`PAINSFilter`、`MoleculeStandardizer`、`ScaffoldAnalyzer`、`RECAPFragmenter`、`BRICSFragmenter`、`SubstructureMatcher` |
+| `csar_main.py` | CSAR CLI 入口 | `main()`，提供完整 SAR 分析工作流命令行接口（`uv run csar`） |
 
 ### Workspace Layout
 
 ```
 MBForge/                  # uv workspace root
-├── src/mbforge/          # 主应用
-├── setup/                # 一键配置脚本 + 依赖组件
-│   ├── openSAR/          # uv workspace member，装为 csar（SAR 分析工具箱）
-│   └── UniParser-Tools/  # uv workspace member，装为 uniparser-tools（远程 PDF 解析 API）
+├── src/mbforge/          # 主应用（含合并后的 csar 代码）
+├── setup/                # 一键配置脚本
 └── tests/
 ```
 

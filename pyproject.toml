@@ -24,14 +24,6 @@ explicit = true
 torch = { index = "pytorch-cu128" }
 torchvision = { index = "pytorch-cu128" }
 torchaudio = { index = "pytorch-cu128" }
-uniparser-tools = { path = "setup/UniParser-Tools" }
-csar = { path = "setup/openSAR" }
-
-[tool.uv.workspace]
-members = [
-    "setup/UniParser-Tools",
-    "setup/openSAR",
-]
 
 [project]
 name = "mbforge"
@@ -66,6 +58,8 @@ dependencies = [
     "networkx>=3.0",
     "matplotlib>=3.7.0",
     "seaborn>=0.12.0",
+    # CSAR (SAR 分析工具箱，合并自 openSAR)
+    "openbabel-wheel>=3.1.1",
     # UI
     "pyqt6>=6.6.0",
     "pyqt6-webengine>=6.6.0",
@@ -99,6 +93,7 @@ dev = [
 
 [project.scripts]
 mbforge = "mbforge.cli:main"
+csar = "mbforge.csar_main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

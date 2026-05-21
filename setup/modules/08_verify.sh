@@ -12,7 +12,7 @@ run_verify() {
     $PYTHON -c "import lxml.etree; print(f'lxml {lxml.etree.__version__}')" 2>/dev/null \
         && ok "lxml OK" || { warn "lxml 异常"; FAIL=1; }
 
-    $PYTHON -c "import csar; print(f'csar {csar.__version__}')" 2>/dev/null \
+    $PYTHON -c "from mbforge.sar.analyzer import SARAnalyzer; print('csar SARAnalyzer OK')" 2>/dev/null \
         && ok "csar OK" || { warn "csar 异常"; FAIL=1; }
 
     $PYTHON -c "import mbforge; print(f'mbforge {mbforge.__version__}')" 2>/dev/null \

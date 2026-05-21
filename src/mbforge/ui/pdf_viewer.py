@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import fitz  # PyMuPDF
-from PyQt6.QtCore import QObject, QThread, QEvent, pyqtSignal, pyqtSlot, Qt
+from PyQt6.QtCore import QObject, QThread, QEvent, QTimer, pyqtSignal, pyqtSlot, Qt
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -235,6 +235,8 @@ class PDFViewer(QWidget):
         # 渲染首屏可见页（同步）
         self._render_visible_range()
         self.page_changed.emit(self.current_page + 1, self._total_pages)
+        # 布局完成后重新渲染：首次加载时 viewport 高度可能为 0
+        QTimer.singleShot(0, self._rerender_if_needed)
 
     def _render_visible_range(self):
         """根据当前滚动位置，渲染可见页范围内所有页，回收范围外页。"""
@@ -404,6 +406,11 @@ class PDFViewer(QWidget):
     def _on_viewport_resize(self):
         """窗口大小变化时重新计算可见范围。"""
         if self._continuous_mode and self._virtual_container:
+            self._render_visible_range()
+
+    def _rerender_if_needed(self):
+        """布局完成后检查：若首屏未渲染则重新渲染。"""
+        if self._continuous_mode and self._virtual_container and not self._visible_widgets:
             self._render_visible_range()
 
     def _render_single(self):

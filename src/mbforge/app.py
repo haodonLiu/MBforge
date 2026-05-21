@@ -39,7 +39,7 @@ def run_app(argv: list[str] | None = None) -> int:
 
     app = QApplication(argv)
     app.setApplicationName("MBForge")
-    app.setApplicationVersion("0.1.0")
+    app.setApplicationVersion("0.2.0")
     app.setOrganizationName("MBForge")
 
     # 全局字体

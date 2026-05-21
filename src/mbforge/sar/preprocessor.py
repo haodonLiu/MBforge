@@ -30,8 +30,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from ..mcs.finder import MCSResult
-
 logger = logging.getLogger(__name__)
 
 

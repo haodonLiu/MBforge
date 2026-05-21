@@ -11,6 +11,7 @@ from .base import BaseEmbedder
 from ..utils.constants import (
     DEFAULT_EMBED_MODEL,
     EMBED_INSTRUCTION_RETRIEVAL,
+    EMBED_INSTRUCTION_CLUSTER,
     PROVIDER_SENTENCE_TRANSFORMERS,
     PROVIDER_QWEN3,
     PROVIDER_API,
@@ -25,6 +26,52 @@ def _ensure_hf_mirror() -> None:
     """确保 HF 国内镜像已配置."""
     if "HF_ENDPOINT" not in os.environ:
         os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
+
+
+def _resolve_model_path(model_name: str, cache_name: str) -> str:
+    """解析模型路径，优先从 ModelScope 缓存加载.
+
+    1. 如果是绝对/相对路径，直接使用
+    2. 如果 ModelScope 缓存中存在，使用缓存路径
+    3. 否则返回原 model_name（走 HuggingFace 下载）
+    """
+    from pathlib import Path
+
+    # 已经是本地路径
+    p = Path(model_name)
+    if p.is_absolute() or (p.exists() and p.is_dir()):
+        return model_name
+
+    # ModelScope 缓存常见路径
+    possible_cache_bases = [
+        os.environ.get("MODELSCOPE_CACHE", ""),
+        str(Path.home() / "Models" / "ModelScope"),
+        str(Path.home() / ".cache" / "modelscope"),
+    ]
+
+    cache_base = ""
+    for cb in possible_cache_bases:
+        if cb and Path(cb).exists():
+            cache_base = cb
+            break
+
+    if cache_base:
+        # ModelScope 目录结构: <cache>/<org>/<model>-<version>
+        # ModelScope 用 ___ 代替版本号的点号，如 Qwen3-Embedding-0___6B
+        # 原始名如 Qwen/Qwen3-Embedding-0.6B
+        # 提取关键部分用于匹配: Qwen3-Embedding-0
+        name_parts = cache_name.replace("/", " ").split()
+        last_part = name_parts[-1] if name_parts else cache_name  # e.g. Qwen3-Embedding-0.6B
+        key_name = last_part.rsplit(".", 1)[0]  # e.g. Qwen3-Embedding-0
+
+        cache_path = Path(cache_base)
+        if cache_path.exists():
+            for item in cache_path.rglob("*"):
+                if item.is_dir() and key_name.lower() in item.name.lower():
+                    logger.info(f"Found model in ModelScope cache: {item}")
+                    return str(item)
+
+    return model_name
 
 
 class SentenceTransformerEmbedder(BaseEmbedder):
@@ -43,7 +90,8 @@ class SentenceTransformerEmbedder(BaseEmbedder):
         if self._model is None:
             _ensure_hf_mirror()
             from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(self.model_name, device=self.device, trust_remote_code=True)
+            resolved = _resolve_model_path(self.model_name, self.model_name)
+            self._model = SentenceTransformer(resolved, device=self.device, trust_remote_code=True)
             self._dim = self._model.get_sentence_embedding_dimension()
         return self._model
 
@@ -103,9 +151,10 @@ class Qwen3Embedder(BaseEmbedder):
         if self._model is None:
             _ensure_hf_mirror()
             from sentence_transformers import SentenceTransformer
-            logger.info(f"Loading Qwen3-Embedding model: {self.model_name} (device={self.device})")
+            resolved = _resolve_model_path(self.model_name, self.model_name)
+            logger.info(f"Loading Qwen3-Embedding model: {resolved} (device={self.device})")
             self._model = SentenceTransformer(
-                self.model_name,
+                resolved,
                 device=self.device,
                 trust_remote_code=True,
             )

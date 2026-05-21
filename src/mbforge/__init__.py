@@ -4,5 +4,5 @@
 支持 PDF OCR 解析、分子数据建库、LLM 智能对话、以及分子生成/对接/QSAR/MD 工作流扩展。
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = ["__version__"]

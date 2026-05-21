@@ -304,3 +304,47 @@ class ScaffoldClusterer:
             "largest_cluster_size": largest,
             "scaffold_diversity_index": round(diversity_index, 4),
         }
+
+
+# ---- CLI 入口 ----
+
+if __name__ == "__main__":
+    import argparse
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(description="MBForge 骨架聚类工具")
+    parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
+    parser.add_argument("--min-cluster", type=int, default=1, help="最小簇大小")
+    parser.add_argument("--smiles-column", default="SMILES", help="CSV 中 SMILES 列名")
+    parser.add_argument("--activity-column", default=None, help="CSV 中活性值列名")
+    parser.add_argument("--output", "-o", default=None, help="输出 JSON 文件路径")
+    args = parser.parse_args()
+
+    from ..molecules.loader import load_molecules_from_file
+
+    molecules = load_molecules_from_file(args.input, args.smiles_column, args.activity_column)
+    print(f"Loaded {len(molecules)} molecules")
+
+    clusterer = ScaffoldClusterer(min_cluster_size=args.min_cluster)
+    clusters = clusterer.cluster(molecules)
+    diversity = clusterer.get_scaffold_diversity(molecules)
+
+    results = {
+        "diversity": diversity,
+        "clusters": [],
+    }
+    for c in clusters:
+        results["clusters"].append({
+            "scaffold": c.scaffold_smiles,
+            "num_molecules": c.num_molecules,
+            "mean_activity": round(c.mean_activity, 4) if c.mean_activity is not None else None,
+            "smiles": [m.get("smiles", "") for m in c.molecules],
+        })
+
+    output = json.dumps(results, indent=2, ensure_ascii=False)
+    if args.output:
+        Path(args.output).write_text(output, encoding="utf-8")
+        print(f"Saved {len(clusters)} scaffold clusters to {args.output}")
+    else:
+        print(output)

@@ -243,3 +243,47 @@ class MolecularClusterer:
 
         logger.info(f"Found {len(results)} clusters")
         return results, sim_matrix
+
+
+# ---- CLI 入口 ----
+
+if __name__ == "__main__":
+    import argparse
+    import json
+    import sys
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(description="MBForge 分子聚类工具")
+    parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
+    parser.add_argument("--method", choices=["tanimoto", "butina"], default="tanimoto", help="聚类算法")
+    parser.add_argument("--threshold", type=float, default=0.7, help="相似度阈值 (0-1)")
+    parser.add_argument("--smiles-column", default="SMILES", help="CSV 中 SMILES 列名")
+    parser.add_argument("--activity-column", default=None, help="CSV 中活性值列名")
+    parser.add_argument("--output", "-o", default=None, help="输出 JSON 文件路径")
+    args = parser.parse_args()
+
+    from ..molecules.loader import load_molecules_from_file
+
+    molecules = load_molecules_from_file(args.input, args.smiles_column, args.activity_column)
+    print(f"Loaded {len(molecules)} molecules")
+
+    clusterer = MolecularClusterer(threshold=args.threshold, method=args.method)
+    clusters, sim_matrix = clusterer.cluster(molecules)
+
+    results = []
+    for c in clusters:
+        rep = c.molecules[0] if c.molecules else {}
+        results.append({
+            "cluster_id": c.cluster_id,
+            "size": c.size,
+            "avg_similarity": round(c.avg_similarity, 4),
+            "representative_smiles": rep.get("smiles", ""),
+            "smiles": [m.get("smiles", "") for m in c.molecules],
+        })
+
+    output = json.dumps(results, indent=2, ensure_ascii=False)
+    if args.output:
+        Path(args.output).write_text(output, encoding="utf-8")
+        print(f"Saved {len(clusters)} clusters to {args.output}")
+    else:
+        print(output)

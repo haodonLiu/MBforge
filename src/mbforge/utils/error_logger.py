@@ -14,8 +14,10 @@ from .logger import get_logger
 
 logger = get_logger(__name__)
 
-# 项目根目录下的 docs/errors/
+# 项目根目录下的 docs/errors/，不存在则 fallback 到用户目录
 _ERRORS_DIR = Path(__file__).resolve().parents[3] / "docs" / "errors"
+if not _ERRORS_DIR.parent.exists():
+    _ERRORS_DIR = Path.home() / ".local" / "share" / "MBForge" / "errors"
 
 
 def record_error(

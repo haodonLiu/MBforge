@@ -314,3 +314,53 @@ class SARAnalyzer:
             "min": float(np.min(all_activities)),
             "total_compounds": len(all_activities),
         }
+
+
+# ---- CLI 入口 ----
+
+if __name__ == "__main__":
+    import argparse
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(description="MBForge SAR 分析工具")
+    parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
+    parser.add_argument("--smiles-column", default="SMILES", help="CSV 中 SMILES 列名")
+    parser.add_argument("--activity-column", default="activity", help="CSV 中活性值列名")
+    parser.add_argument("--threshold", type=float, default=None, help="活性阈值")
+    parser.add_argument("--output", "-o", default=None, help="输出 JSON 文件路径")
+    args = parser.parse_args()
+
+    from ..molecules.loader import load_molecules_from_file
+
+    molecules = load_molecules_from_file(
+        args.input, args.smiles_column, args.activity_column
+    )
+    print(f"Loaded {len(molecules)} molecules")
+
+    # 检查是否有活性数据
+    with_activity = [m for m in molecules if "activity" in m]
+    if not with_activity:
+        print("Error: No activity data found. Use --activity-column to specify.", file=sys.stderr)
+        sys.exit(1)
+
+    # 作为单个大簇分析
+    analyzer = SARAnalyzer(activity_threshold=args.threshold)
+    result = analyzer.analyze_cluster(cluster_id=0, molecules=with_activity)
+
+    output_data = {
+        "cluster_id": result.cluster_id,
+        "num_compounds": result.num_compounds,
+        "mean_activity": round(result.mean_activity, 4),
+        "std_activity": round(result.std_activity, 4),
+        "max_activity": round(result.max_activity, 4),
+        "min_activity": round(result.min_activity, 4),
+        "contributions": result.contributions,
+    }
+
+    output = json.dumps(output_data, indent=2, ensure_ascii=False)
+    if args.output:
+        Path(args.output).write_text(output, encoding="utf-8")
+        print(f"Saved SAR result to {args.output}")
+    else:
+        print(output)

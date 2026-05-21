@@ -123,7 +123,7 @@ class Project:
     def _save_index(self) -> None:
         self.meta_dir.mkdir(parents=True, exist_ok=True)
         data = {
-            "version": "0.1.0",
+            "version": "0.2.0",
             "updated_at": datetime.now().isoformat(),
             "documents": [e.to_dict() for e in self._index.values()],
         }

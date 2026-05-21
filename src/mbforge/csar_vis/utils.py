@@ -4,10 +4,35 @@ from __future__ import annotations
 
 import io
 import logging
+import platform
+from pathlib import Path
 from typing import Optional, Tuple, List, Any
 
 from PIL import Image, ImageDraw, ImageFont
 from rdkit import Chem
+
+
+def _get_default_font(size: int = 12):
+    """跨平台获取默认字体。"""
+    candidates = []
+    system = platform.system()
+    if system == "Windows":
+        win_dir = Path("C:/Windows/Fonts")
+        candidates = [win_dir / "arial.ttf", win_dir / "msyh.ttc"]
+    elif system == "Darwin":
+        candidates = [Path("/System/Library/Fonts/Helvetica.ttc")]
+    else:
+        candidates = [
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+        ]
+    for font_path in candidates:
+        if font_path.exists():
+            try:
+                return ImageFont.truetype(str(font_path), size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
 from rdkit.Chem import AllChem
 from rdkit.Chem.Draw import rdMolDraw2D
 
@@ -82,9 +107,7 @@ def combine_scaffold_and_table(
     draw = ImageDraw.Draw(combined)
 
     try:
-        font = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", fontsize
-        )
+        font = _get_default_font(fontsize)
     except Exception:
         font = ImageFont.load_default()
 
@@ -218,9 +241,7 @@ def create_sar_table_image(
     draw = ImageDraw.Draw(table)
 
     try:
-        font = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12
-        )
+        font = _get_default_font(12)
     except Exception:
         font = ImageFont.load_default()
 

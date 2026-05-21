@@ -33,6 +33,41 @@ def _ensure_hf_mirror() -> None:
         os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
 
 
+def _resolve_rerank_model_path(model_name: str) -> str:
+    """解析 rerank 模型路径，优先从 ModelScope 缓存加载."""
+    from pathlib import Path
+
+    p = Path(model_name)
+    if p.is_absolute() or (p.exists() and p.is_dir()):
+        return model_name
+
+    possible_cache_bases = [
+        os.environ.get("MODELSCOPE_CACHE", ""),
+        str(Path.home() / "Models" / "ModelScope"),
+        str(Path.home() / ".cache" / "modelscope"),
+    ]
+
+    cache_base = ""
+    for cb in possible_cache_bases:
+        if cb and Path(cb).exists():
+            cache_base = cb
+            break
+
+    if cache_base:
+        name_parts = model_name.replace("/", " ").split()
+        last_part = name_parts[-1] if name_parts else model_name
+        key_name = last_part.rsplit(".", 1)[0]
+
+        cache_path = Path(cache_base)
+        if cache_path.exists():
+            for item in cache_path.rglob("*"):
+                if item.is_dir() and key_name.lower() in item.name.lower():
+                    logger.info(f"Found rerank model in ModelScope cache: {item}")
+                    return str(item)
+
+    return model_name
+
+
 class Qwen3Reranker(BaseReranker):
     """Qwen3-Reranker 重排序器.
 
@@ -79,15 +114,16 @@ class Qwen3Reranker(BaseReranker):
             return
 
         _ensure_hf_mirror()
-        logger.info(f"Loading Qwen3-Reranker model: {self.model_name} (device={self.device})")
+        resolved = _resolve_rerank_model_path(self.model_name)
+        logger.info(f"Loading Qwen3-Reranker model: {resolved} (device={self.device})")
 
         self._tokenizer = AutoTokenizer.from_pretrained(
-            self.model_name,
+            resolved,
             padding_side="left",
             trust_remote_code=True,
         )
         self._model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
+            resolved,
             trust_remote_code=True,
         )
         self._model.eval()

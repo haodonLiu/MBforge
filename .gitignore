@@ -53,6 +53,11 @@ Desktop.ini
 # 项目运行时数据
 .obsidian/
 .mbforge/
+output/
+
+# 嵌套子仓库（通过子模块或独立管理）
+UniParser-Tools/
+openSAR/
 
 # SQLite 数据库（项目级和临时）
 *.db

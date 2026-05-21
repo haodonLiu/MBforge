@@ -91,6 +91,34 @@ class MoleculeRecord:
         }
         return props
 
+    def to_molecule(self):
+        """转换为 schema.Molecule 对象。"""
+        from ..molecules.schema import Molecule
+        return Molecule(
+            id=self.mol_id,
+            smiles=self.smiles,
+            name=self.name,
+            source="pdf" if self.source_doc else "manual",
+            activity=self.activity,
+            activity_unit=self.units,
+            cas=self.tags[0] if self.tags else None,
+            properties=self.properties,
+        )
+
+    @classmethod
+    def from_molecule(cls, mol) -> "MoleculeRecord":
+        """从 schema.Molecule 创建 MoleculeRecord。"""
+        return cls(
+            mol_id=mol.id,
+            smiles=mol.smiles,
+            name=mol.name,
+            activity=mol.activity,
+            activity_type="IC50",
+            units=mol.activity_unit or "nM",
+            properties=mol.properties,
+            tags=[mol.cas] if mol.cas else [],
+        )
+
 
 class MoleculeDatabase:
     """分子数据库管理器."""

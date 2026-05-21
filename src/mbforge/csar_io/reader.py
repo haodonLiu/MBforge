@@ -25,7 +25,7 @@ from rdkit import Chem
 from rdkit.Chem import PandasTools
 
 from ..clustering.fingerprinter import MolecularFingerprinter
-from ..molecules.models import MoleculeEntry, MoleculeBatch
+from ..molecules.schema import Molecule, MoleculeBatch
 
 logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 
@@ -309,10 +309,10 @@ class MoleculeReader:
         self,
         path: Union[str, Path],
         **kwargs: Any,
-    ) -> List[MoleculeEntry]:
-        """读取分子并返回类型安全的 MoleculeEntry 列表.
+    ) -> List[Molecule]:
+        """读取分子并返回类型安全的 Molecule 列表.
 
-        这是 read() 的类型安全版本，将字典列表转换为 MoleculeEntry 对象。
+        这是 read() 的类型安全版本，将字典列表转换为 Molecule 对象。
         支持自动检测文件格式。
 
         Args:
@@ -320,7 +320,7 @@ class MoleculeReader:
             **kwargs: 传递给具体读取方法的额外参数.
 
         Returns:
-            MoleculeEntry 对象列表.
+            Molecule 对象列表.
 
         Raises:
             MoleculeReadError: 格式不支持或读取失败时抛出.
@@ -332,14 +332,14 @@ class MoleculeReader:
             >>> print(batch.filter_has_activity())
         """
         dicts = self.read(path, **kwargs)
-        entries: List[MoleculeEntry] = []
+        entries: List[Molecule] = []
         for d in dicts:
             try:
-                entries.append(MoleculeEntry.from_dict(d))
-            except ValueError as e:
-                logger.warning(f"Skipping invalid molecule entry: {e}")
+                entries.append(Molecule.from_dict(d))
+            except Exception as e:
+                logger.warning(f"Skipping invalid molecule: {e}")
                 continue
-        logger.info(f"Converted {len(entries)} molecules to MoleculeEntry")
+        logger.info(f"Converted {len(entries)} molecules to Molecule")
         return entries
 
     def read_batch(

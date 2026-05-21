@@ -13,8 +13,7 @@ try:
 except ImportError:
     Chem = None  # type: ignore
 
-from ..core.mol_database import MoleculeRecord
-from ..utils.helpers import generate_uuid
+from ..molecules.schema import Molecule
 
 
 class MoleculeExtractor:
@@ -69,7 +68,7 @@ class MoleculeExtractor:
             })
         return results
 
-    def extract_from_text(self, text: str, doc_id: str = "") -> List[MoleculeRecord]:
+    def extract_from_text(self, text: str, doc_id: str = "") -> List[Molecule]:
         """从文本提取分子记录."""
         smiles_list = self.extract_smiles_candidates(text)
         activities = self.extract_activities(text)
@@ -91,12 +90,9 @@ class MoleculeExtractor:
         records = []
         used_activity_idx = set()
         for smi, smi_pos in smiles_positions:
-            rec = MoleculeRecord(
-                mol_id=generate_uuid(),
-                smiles=smi,
-                source_doc=doc_id,
-            )
             # 基于位置距离的精确匹配：找最近的未使用活性
+            activity = None
+            activity_unit = None
             if activity_positions:
                 best_idx = None
                 best_dist = float("inf")
@@ -107,34 +103,38 @@ class MoleculeExtractor:
                     if dist < best_dist:
                         best_dist = dist
                         best_idx = idx
-                # 阈值：活性与分子距离超过 200 字符认为不相关
                 if best_idx is not None and best_dist < 200:
                     best = activity_positions[best_idx][0]
-                    rec.activity = best["value"]
-                    rec.activity_type = best["type"]
-                    rec.units = best["units"]
+                    activity = best["value"]
+                    activity_unit = best["units"]
                     used_activity_idx.add(best_idx)
+            rec = Molecule(
+                smiles=smi, source="pdf",
+                activity=activity, activity_unit=activity_unit,
+                metadata={"source_doc": doc_id},
+            )
             records.append(rec)
 
         return records
 
-    def extract_from_pdf_result(self, result_dict: Dict[str, Any], doc_id: str = "") -> List[MoleculeRecord]:
+    def extract_from_pdf_result(self, result_dict: Dict[str, Any], doc_id: str = "") -> List[Molecule]:
         """从 UniParser 解析结果提取分子."""
         records = []
-        # UniParser 可能返回结构化分子数据
         molecules = result_dict.get("molecules", [])
         for mol_data in molecules:
             smi = mol_data.get("smiles", "")
             if not smi or not self.is_valid_smiles(smi):
                 continue
-            rec = MoleculeRecord(
-                mol_id=mol_data.get("id", generate_uuid()),
+            rec = Molecule(
                 smiles=smi,
+                source="pdf",
                 name=mol_data.get("name", ""),
-                source_doc=doc_id,
                 activity=mol_data.get("activity"),
-                activity_type=mol_data.get("activity_type", ""),
-                properties=mol_data.get("properties", {}),
+                metadata={
+                    "source_doc": doc_id,
+                    "activity_type": mol_data.get("activity_type", ""),
+                    "properties": mol_data.get("properties", {}),
+                },
             )
             records.append(rec)
         return records

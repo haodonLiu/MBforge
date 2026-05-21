@@ -16,14 +16,14 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from mbforge.csar_io.reader import MoleculeReader
-from mbforge.csar_io.writer import MoleculeWriter
-from mbforge.clustering.fingerprinter import MolecularFingerprinter
-from mbforge.clustering.cluster import MolecularClusterer
-from mbforge.mcs.finder import MCSFinder
-from mbforge.sar.analyzer import SARAnalyzer
-from mbforge.csar_vis.renderer import SARRenderer, PlotSettings
-from mbforge.molecules.models import MoleculeBatch
+from .csar_io.reader import MoleculeReader
+from .csar_io.writer import MoleculeWriter
+from .clustering.fingerprinter import MolecularFingerprinter
+from .clustering.cluster import MolecularClusterer
+from .mcs.finder import MCSFinder
+from .sar.analyzer import SARAnalyzer
+from .csar_vis.renderer import SARRenderer, PlotSettings
+from .molecules.schema import MoleculeBatch
 
 logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 

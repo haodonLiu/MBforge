@@ -24,7 +24,7 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem, Descriptors
 
-from ..molecules.models import MoleculeEntry, MoleculeBatch
+from ..molecules.schema import Molecule, MoleculeBatch
 
 logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 
@@ -168,58 +168,58 @@ class MoleculeWriter:
         logger.info(f"Successfully wrote {len(molecules)} molecules")
 
     # ------------------------------------------------------------------
-    # MoleculeEntry / MoleculeBatch 支持
+    # Molecule / MoleculeBatch 支持（schema 契约）
     # ------------------------------------------------------------------
 
-    def write_entries_csv(
-        self, entries: List[MoleculeEntry], path: Union[str, Path]
+    def write_molecules_csv(
+        self, molecules: List[Molecule], path: Union[str, Path]
     ) -> None:
-        """将 MoleculeEntry 列表写入 CSV 文件.
+        """将 Molecule 列表写入 CSV 文件.
 
         Args:
-            entries: MoleculeEntry 列表.
+            molecules: Molecule 列表.
             path: 输出 CSV 文件路径.
 
         Raises:
             MoleculeWriteError: 写入失败时抛出.
         """
-        batch = MoleculeBatch(entries)
+        batch = MoleculeBatch(molecules)
         try:
             batch.to_csv(path)
         except Exception as e:
             raise MoleculeWriteError(f"Failed to write CSV file {path}: {e}") from e
 
-    def write_entries_sdf(
-        self, entries: List[MoleculeEntry], path: Union[str, Path]
+    def write_molecules_sdf(
+        self, molecules: List[Molecule], path: Union[str, Path]
     ) -> None:
-        """将 MoleculeEntry 列表写入 SDF 文件.
+        """将 Molecule 列表写入 SDF 文件.
 
         Args:
-            entries: MoleculeEntry 列表.
+            molecules: Molecule 列表.
             path: 输出 SDF 文件路径.
 
         Raises:
             MoleculeWriteError: 写入失败时抛出.
         """
-        batch = MoleculeBatch(entries)
+        batch = MoleculeBatch(molecules)
         try:
             batch.to_sdf(path)
         except Exception as e:
             raise MoleculeWriteError(f"Failed to write SDF file {path}: {e}") from e
 
-    def write_entries_excel(
-        self, entries: List[MoleculeEntry], path: Union[str, Path]
+    def write_molecules_excel(
+        self, molecules: List[Molecule], path: Union[str, Path]
     ) -> None:
-        """将 MoleculeEntry 列表写入 Excel 文件.
+        """将 Molecule 列表写入 Excel 文件.
 
         Args:
-            entries: MoleculeEntry 列表.
+            molecules: Molecule 列表.
             path: 输出 Excel 文件路径.
 
         Raises:
             MoleculeWriteError: 写入失败时抛出.
         """
-        batch = MoleculeBatch(entries)
+        batch = MoleculeBatch(molecules)
         try:
             batch.to_excel(path)
         except Exception as e:

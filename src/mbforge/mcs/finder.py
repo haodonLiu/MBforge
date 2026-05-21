@@ -517,6 +517,7 @@ if __name__ == "__main__":
     import argparse
     import json
     import sys
+    from pathlib import Path
 
     parser = argparse.ArgumentParser(description="MBForge MCS 查找工具")
     parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")

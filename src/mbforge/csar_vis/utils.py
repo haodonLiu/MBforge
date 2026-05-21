@@ -10,7 +10,10 @@ from typing import Optional, Tuple, List, Any
 
 from PIL import Image, ImageDraw, ImageFont
 from rdkit import Chem
+from rdkit.Chem import AllChem
+from rdkit.Chem.Draw import rdMolDraw2D
 
+logger = logging.getLogger(__name__)
 
 _CACHED_FONT_PATH: Optional[Path] = None
 
@@ -44,12 +47,6 @@ def _get_default_font(size: int = 12):
             except Exception:
                 continue
     return ImageFont.load_default()
-
-
-from rdkit.Chem import AllChem
-from rdkit.Chem.Draw import rdMolDraw2D
-
-logger = logging.getLogger(__name__)
 
 # Constants
 SUBSTITUENT_SIZE = (80, 60)

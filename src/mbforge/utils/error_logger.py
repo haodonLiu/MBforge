@@ -65,9 +65,9 @@ def record_error(
     ]
 
     if error:
-        lines.append(f"```")
+        lines.append("```")
         lines.append(f"{type(error).__name__}: {error}")
-        lines.append(f"```")
+        lines.append("```")
         lines.append("")
         lines.append("## 堆栈")
         lines.append("")

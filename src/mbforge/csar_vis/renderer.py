@@ -473,7 +473,7 @@ class SARRenderer:
         )
 
         combined_img = combine_scaffold_and_table(
-            scaffold_img, table_img, f"Cluster SAR"
+            scaffold_img, table_img, "Cluster SAR"
         )
 
         combined_img.save(output_path)

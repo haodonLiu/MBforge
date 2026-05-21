@@ -315,6 +315,7 @@ class ScaffoldClusterer:
 if __name__ == "__main__":
     import argparse
     import json
+    from pathlib import Path
 
     parser = argparse.ArgumentParser(description="MBForge 骨架聚类工具")
     parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")

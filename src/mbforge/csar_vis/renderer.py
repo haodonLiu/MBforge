@@ -38,7 +38,7 @@ from rdkit.Chem.Draw import rdMolDraw2D
 from ..mcs.finder import (
     find_substitution_positions,
     create_marked_scaffold,
-    ScaffoldInfo,
+    MCSScaffoldInfo,
     SubstituentInfo,
 )
 from .utils import (
@@ -329,7 +329,7 @@ class SARRenderer:
 
     def render_sar_table_image(
         self,
-        scaffold_info: ScaffoldInfo,
+        scaffold_info: MCSScaffoldInfo,
         molecules: List[Dict[str, Any]],
         output_path: Union[str, Path],
         scaffold_size: Tuple[int, int] = (400, 300),
@@ -341,7 +341,7 @@ class SARRenderer:
         如果R基团超过2个，会生成多个图像(每2个R基团一个)。
 
         Args:
-            scaffold_info: 包含R基团位置的ScaffoldInfo对象.
+            scaffold_info: 包含R基团位置的MCSScaffoldInfo对象.
             molecules: 分子数据字典列表.
             output_path: 输出文件路径.
             scaffold_size: 骨架图像尺寸 (宽, 高).
@@ -381,7 +381,7 @@ class SARRenderer:
                     unique_pairs.append(p)
 
             for idx, pair_indices in enumerate(unique_pairs):
-                pair_scaffold = ScaffoldInfo(
+                pair_scaffold = MCSScaffoldInfo(
                     scaffold_mol=scaffold_info.scaffold_mol,
                     scaffold_smiles=scaffold_info.scaffold_smiles,
                     r_positions={k: scaffold_info.r_positions[k] for k in pair_indices},
@@ -405,7 +405,7 @@ class SARRenderer:
 
     def _render_single_table(
         self,
-        scaffold_info: ScaffoldInfo,
+        scaffold_info: MCSScaffoldInfo,
         molecules: List[Dict[str, Any]],
         output_path: Path,
         r_atom_indices: List[int],
@@ -485,7 +485,7 @@ class SARRenderer:
 
     def render_sar_path_image(
         self,
-        scaffold_info: ScaffoldInfo,
+        scaffold_info: MCSScaffoldInfo,
         molecules: List[Dict[str, Any]],
         output_path: Union[str, Path],
         scaffold_size: Tuple[int, int] = (400, 300),
@@ -497,7 +497,7 @@ class SARRenderer:
         每个表格显示具有相同R1但不同R2的化合物(或反之)。
 
         Args:
-            scaffold_info: 包含R基团位置的ScaffoldInfo对象.
+            scaffold_info: 包含R基团位置的MCSScaffoldInfo对象.
             molecules: 分子数据字典列表.
             output_path: 输出文件路径.
             scaffold_size: 骨架图像尺寸.

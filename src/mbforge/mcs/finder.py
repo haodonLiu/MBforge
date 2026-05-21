@@ -14,7 +14,7 @@ MCS是多个分子共有的最大结构片段，在药物化学中用于:
 主要组件:
     - MCSFinder: MCS查找器类
     - MCSResult: MCS结果数据类
-    - ScaffoldInfo: 骨架信息(含R基团位置)
+    - MCSScaffoldInfo: 骨架信息(含R基团位置)
     - SubstituentInfo: 取代基信息
 
 示例:
@@ -311,7 +311,7 @@ class SubstituentInfo:
 
 
 @dataclass
-class ScaffoldInfo:
+class MCSScaffoldInfo:
     """骨架信息数据类 - 包含R基团位置.
     
     存储MCS骨架及其上的R基团(取代位点)信息。
@@ -332,7 +332,7 @@ class ScaffoldInfo:
 def find_substitution_positions(
     mcs_mol: Chem.Mol,
     molecules: List[Dict[str, Any]],
-) -> Optional[ScaffoldInfo]:
+) -> Optional[MCSScaffoldInfo]:
     """查找MCS骨架上的取代位点.
     
     分析分子与MCS的匹配关系，识别MCS骨架上的R基团位置。
@@ -343,7 +343,7 @@ def find_substitution_positions(
         molecules: 分子字典列表，需包含'mol', 'smiles', 'name', 'activity'.
 
     Returns:
-        ScaffoldInfo对象，包含R基团位置信息，无取代位点时返回None.
+        MCSScaffoldInfo对象，包含R基团位置信息，无取代位点时返回None.
     """
     if len(molecules) == 0:
         return None
@@ -396,7 +396,7 @@ def find_substitution_positions(
 
     scaffold_smiles = Chem.MolToSmiles(mcs_mol)
 
-    return ScaffoldInfo(
+    return MCSScaffoldInfo(
         scaffold_mol=mcs_mol,
         scaffold_smiles=scaffold_smiles,
         r_positions=r_positions,
@@ -453,7 +453,7 @@ def _extract_substituent(
 
 
 def create_marked_scaffold(
-    scaffold_info: ScaffoldInfo,
+    scaffold_info: MCSScaffoldInfo,
     size: Tuple[int, int] = (400, 300),
 ) -> bytes:
     """创建带R基团标签的骨架图像.
@@ -461,7 +461,7 @@ def create_marked_scaffold(
     生成MCS骨架的2D图像，并在R基团位置标记R1, R2等标签。
 
     Args:
-        scaffold_info: 包含R基团位置的ScaffoldInfo对象.
+        scaffold_info: 包含R基团位置的MCSScaffoldInfo对象.
         size: 图像尺寸 (宽, 高)，默认为(400, 300).
 
     Returns:
@@ -509,3 +509,47 @@ def create_marked_scaffold(
     d.FinishDrawing()
 
     return d.GetDrawingText()
+
+
+# ---- CLI 入口 ----
+
+if __name__ == "__main__":
+    import argparse
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(description="MBForge MCS 查找工具")
+    parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
+    parser.add_argument("--threshold", type=float, default=0.8, help="MCS 匹配阈值 (0-1)")
+    parser.add_argument("--timeout", type=int, default=30, help="超时时间（秒）")
+    parser.add_argument("--smiles-column", default="SMILES", help="CSV 中 SMILES 列名")
+    parser.add_argument("--output", "-o", default=None, help="输出 JSON 文件路径")
+    args = parser.parse_args()
+
+    from ..molecules.loader import load_molecules_from_file
+
+    molecules = load_molecules_from_file(args.input, args.smiles_column)
+    print(f"Loaded {len(molecules)} molecules")
+
+    if len(molecules) < 2:
+        print("Error: MCS requires at least 2 molecules", file=sys.stderr)
+        sys.exit(1)
+
+    finder = MCSFinder(timeout=args.timeout)
+    result = finder.find_mcs(molecules, threshold=args.threshold)
+
+    if result is None:
+        print("No MCS found")
+    else:
+        output_data = {
+            "smarts": result.smiles,
+            "num_atoms": result.num_atoms,
+            "num_bonds": result.num_bonds,
+            "score": result.score,
+        }
+        output = json.dumps(output_data, indent=2, ensure_ascii=False)
+        if args.output:
+            Path(args.output).write_text(output, encoding="utf-8")
+            print(f"Saved MCS result to {args.output}")
+        else:
+            print(output)

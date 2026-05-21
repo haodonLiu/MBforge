@@ -29,6 +29,7 @@ class KnowledgeBase:
         self.meta_dir = self.project_root / PROJECT_META_DIR
         self.db_path = str(self.meta_dir / "chroma_db")
         self.embedder = embedder
+        self._sm: Optional[SummaryManager] = None
 
         self._client = chromadb.PersistentClient(
             path=self.db_path,
@@ -38,6 +39,12 @@ class KnowledgeBase:
             name=KB_COLLECTION_DOCS,
             metadata={"hnsw:space": "cosine"},
         )
+
+    def _get_summary(self, doc_id: str):
+        """Lazy-load SummaryManager and cache by doc_id."""
+        if self._sm is None:
+            self._sm = SummaryManager(self.project_root)
+        return self._sm.load(doc_id)
 
     def close(self) -> None:
         """释放资源."""
@@ -107,6 +114,8 @@ class KnowledgeBase:
         filter_dict: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """语义搜索."""
+        if filter_dict is not None and not isinstance(filter_dict, dict):
+            raise ValueError("filter_dict must be a dict")
         query_embedding = None
         if self.embedder is not None:
             try:
@@ -186,32 +195,28 @@ class KnowledgeBase:
 
     def get_document_abstract(self, doc_id: str) -> Optional[str]:
         """获取文档 L0 摘要."""
-        sm = SummaryManager(self.project_root)
-        summary = sm.load(doc_id)
+        summary = self._get_summary(doc_id)
         if summary:
             return summary.l0_abstract
         return None
 
     def get_document_overview(self, doc_id: str) -> Optional[str]:
         """获取文档 L1 概览."""
-        sm = SummaryManager(self.project_root)
-        summary = sm.load(doc_id)
+        summary = self._get_summary(doc_id)
         if summary:
             return summary.l1_overview
         return None
 
     def get_document_keywords(self, doc_id: str) -> List[str]:
         """获取文档关键词."""
-        sm = SummaryManager(self.project_root)
-        summary = sm.load(doc_id)
+        summary = self._get_summary(doc_id)
         if summary:
             return summary.keywords
         return []
 
     def list_document_entities(self, doc_id: str) -> List[str]:
         """获取文档实体标签."""
-        sm = SummaryManager(self.project_root)
-        summary = sm.load(doc_id)
+        summary = self._get_summary(doc_id)
         if summary:
             return summary.entity_tags
         return []

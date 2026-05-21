@@ -19,12 +19,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..utils.constants import PROJECT_META_DIR
+from ..utils.constants import MEMORY_DIR, PROJECT_META_DIR
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-MEMORY_DIR = "memory"
 
 
 @dataclass

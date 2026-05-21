@@ -10,8 +10,8 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-# Python 路径
-PYTHON=".venv/Scripts/python.exe"
+# Python 路径（跨平台）
+PYTHON="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.venv/bin/python"
 
 # 提示函数
 info()  { echo -e "${CYAN}[INFO]${NC} $*"; }

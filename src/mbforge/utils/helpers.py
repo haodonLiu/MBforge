@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json as _json
 import re
 import uuid
 from pathlib import Path
-from typing import List
+from typing import Any, List, Optional
 
 
 def generate_uuid() -> str:
@@ -78,3 +80,38 @@ def format_molecule_info(smiles: str, name: str = "", activity: float | None = N
     if activity is not None:
         lines.append(f"**Activity**: {activity} nM")
     return "\n".join(lines)
+
+
+def ensure_dir(path: Path) -> None:
+    """确保目录存在."""
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def save_json(path: Path, data: Any) -> None:
+    """将数据保存为 JSON 文件（缩进 2 空格）."""
+    ensure_dir(path.parent)
+    with open(path, "w", encoding="utf-8") as f:
+        _json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def load_json(path: Path, default: Any = None) -> Any:
+    """加载 JSON 文件，失败时返回默认值."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return _json.load(f)
+    except Exception:
+        return default
+
+
+def run_sync(sync_func, *args) -> Any:
+    """在当前事件循环的线程池中同步执行函数（异步兼容）."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            future = pool.submit(sync_func, *args)
+            return future.result()
+    return sync_func(*args)

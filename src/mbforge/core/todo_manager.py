@@ -15,14 +15,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from ..utils.constants import PROJECT_META_DIR
+from ..utils.constants import OUTPUT_DIR, PROJECT_META_DIR, TODO_FILE
 from ..utils.helpers import generate_uuid
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-TODO_FILE = "todo.json"
-OUTPUT_DIR = "output"
 
 
 class TodoStatus(str, Enum):

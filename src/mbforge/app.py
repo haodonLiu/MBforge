@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 from PyQt6.QtCore import Qt
@@ -13,6 +14,11 @@ try:
     load_dotenv()
 except ImportError:
     pass
+
+# .env 中的 HF_HOME / MODELSCOPE_CACHE / TORCH_HOME / OLLAMA_MODELS
+# 会在 load_dotenv() 后注入 os.environ，
+# sentence-transformers / modelscope / torch 内部会读取这些变量确定缓存路径，
+# 因此库首次 import 前就已生效，无需额外代码。
 
 from .ui.main_window import MainWindow
 from .utils.logger import setup_logging

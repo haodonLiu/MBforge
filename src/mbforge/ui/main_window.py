@@ -26,6 +26,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..agent.agent import ProjectAgent
+from ..agent.context import LayeredContext
 from ..agent.executor import ToolExecutor
 from ..core.knowledge_base import KnowledgeBase
 from ..core.memory import ProjectMemory
@@ -672,8 +673,9 @@ class MainWindow(QMainWindow):
 
         # 加载项目记忆
         memory = ProjectMemory(project.root)
-        saved_ctx = memory.load()
-        if saved_ctx is not None:
+        saved_data = memory.load_dict()
+        if saved_data is not None:
+            saved_ctx = LayeredContext.from_dict(saved_data)
             self.agent.context = saved_ctx
             self.chat_widget.clear_chat()
             # 恢复历史消息显示（只恢复 user/assistant）
@@ -984,7 +986,7 @@ class MainWindow(QMainWindow):
         if self.project is not None and hasattr(self, "agent") and self.agent is not None:
             try:
                 memory = ProjectMemory(self.project.root)
-                memory.save(self.agent.context)
+                memory.save_dict(self.agent.context.to_dict())
             except Exception as e:
                 logger = get_logger(__name__)
                 logger.warning(f"Failed to save conversation memory: {e}")

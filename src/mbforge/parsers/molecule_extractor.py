@@ -74,22 +74,46 @@ class MoleculeExtractor:
         smiles_list = self.extract_smiles_candidates(text)
         activities = self.extract_activities(text)
 
-        records = []
+        # 预计算每个 SMILES 在文本中的位置
+        smiles_positions = []
         for smi in smiles_list:
+            pos = text.find(smi)
+            if pos >= 0:
+                smiles_positions.append((smi, pos))
+
+        # 预计算每个活性数据在文本中的位置
+        activity_positions = []
+        for act in activities:
+            pos = text.find(act["context"][:20])  # 用上下文片段定位
+            if pos >= 0:
+                activity_positions.append((act, pos))
+
+        records = []
+        used_activity_idx = set()
+        for smi, smi_pos in smiles_positions:
             rec = MoleculeRecord(
                 mol_id=generate_uuid(),
                 smiles=smi,
                 source_doc=doc_id,
             )
-            # 尝试将活性数据匹配到对应的 SMILES
-            # 策略：找文本中离该 SMILES 出现位置最近的活性数据
-            if activities:
-                # 简化：使用第一个未使用的活性，或全局第一个
-                # TODO: 实现基于位置距离的精确匹配
-                act = activities[0]
-                rec.activity = act["value"]
-                rec.activity_type = act["type"]
-                rec.units = act["units"]
+            # 基于位置距离的精确匹配：找最近的未使用活性
+            if activity_positions:
+                best_idx = None
+                best_dist = float("inf")
+                for idx, (act, act_pos) in enumerate(activity_positions):
+                    if idx in used_activity_idx:
+                        continue
+                    dist = abs(smi_pos - act_pos)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_idx = idx
+                # 阈值：活性与分子距离超过 200 字符认为不相关
+                if best_idx is not None and best_dist < 200:
+                    best = activity_positions[best_idx][0]
+                    rec.activity = best["value"]
+                    rec.activity_type = best["type"]
+                    rec.units = best["units"]
+                    used_activity_idx.add(best_idx)
             records.append(rec)
 
         return records

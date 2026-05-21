@@ -23,6 +23,7 @@ source "$MODULES/04_config_llm.sh"
 source "$MODULES/05_config_models.sh"
 source "$MODULES/06_install_modelscope.sh"
 source "$MODULES/07_write_env.sh"
+source "$MODULES/07b_config_cache.sh"
 source "$MODULES/08_verify.sh"
 
 run_check_env
@@ -32,4 +33,5 @@ run_config_llm
 run_config_models
 run_install_modelscope
 run_write_env
+run_config_cache
 run_verify

@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 from .tools import ToolMixin, ToolRegistry, tool
+from ..utils.helpers import truncate_text
 from ..utils.logger import get_logger
 
 if TYPE_CHECKING:
@@ -80,7 +81,7 @@ class ToolExecutor:
                 return "未找到相关结果"
             lines = []
             for i, r in enumerate(results, 1):
-                text = r["text"].replace("\n", " ")[:300]
+                text = truncate_text(r["text"].replace("\n", " "), max_len=300)
                 lines.append(f"{i}. {text}...")
             return "\n\n".join(lines)
         except Exception as e:
@@ -111,12 +112,19 @@ class ToolExecutor:
         try:
             from ..core.summarizer import SummaryManager
 
-            sm = SummaryManager(self.project.root)
-            summaries = sm.list_all()
+            # 优先用知识库语义搜索，如果结果不足再加载摘要过滤
+            candidates = self.kb.search(keyword, top_k=top_k * 3)
+            candidate_ids = {r["metadata"].get("doc_id") for r in candidates}
 
-            # 先用 L0 摘要过滤
+            # 只加载命中的文档的摘要
+            sm = SummaryManager(self.project.root)
+            summaries = {s.doc_id: s for s in sm.list_all() if s.doc_id in candidate_ids}
+
             matched = []
-            for s in summaries:
+            for doc_id in candidate_ids:
+                s = summaries.get(doc_id)
+                if s is None:
+                    continue
                 if keyword.lower() in s.l0_abstract.lower():
                     matched.append(s)
                     continue
@@ -127,12 +135,11 @@ class ToolExecutor:
                     matched.append(s)
 
             if not matched:
-                # fallback: 知识库搜索
                 return self.search_knowledge_base(keyword, top_k=top_k)
 
             lines = [f"找到 {len(matched)} 个相关文档（按 L0 摘要过滤）:"]
             for s in matched[:top_k]:
-                lines.append(f"- {s.doc_id}: {s.l0_abstract[:120]}...")
+                lines.append(f"- {s.doc_id}: {truncate_text(s.l0_abstract, 120)}")
                 if s.entity_tags:
                     lines.append(f"  实体: {', '.join(s.entity_tags)}")
             return "\n".join(lines)

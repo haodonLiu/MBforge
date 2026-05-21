@@ -14,6 +14,9 @@ from typing import Dict, List, Optional
 from .settings import ProjectSettings
 from ..utils.constants import PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS
 from ..utils.helpers import generate_uuid, sha256_file
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class DocumentEntry:
@@ -34,6 +37,7 @@ class DocumentEntry:
         self.indexed = indexed
         self.added_at = datetime.now().isoformat()
         self.hash = ""
+        self.mtime: float = 0.0
 
     @staticmethod
     def _detect_type(path: Path) -> str:
@@ -62,6 +66,7 @@ class DocumentEntry:
             "indexed": self.indexed,
             "added_at": self.added_at,
             "hash": self.hash,
+            "mtime": self.mtime,
         }
 
     @classmethod
@@ -80,6 +85,7 @@ class DocumentEntry:
         )
         entry.added_at = data.get("added_at", "")
         entry.hash = data.get("hash", "")
+        entry.mtime = data.get("mtime", 0.0)
         return entry
 
 
@@ -91,6 +97,7 @@ class Project:
         self.meta_dir = self.root / PROJECT_META_DIR
         self.settings = ProjectSettings.load(self.root)
         self._index: Dict[str, DocumentEntry] = {}
+        self._path_index: Dict[Path, str] = {}  # resolved path -> doc_id
         self._load_index()
 
     @property
@@ -109,8 +116,9 @@ class Project:
                 for item in data.get("documents", []):
                     entry = DocumentEntry.from_dict(item, self.root)
                     self._index[entry.doc_id] = entry
-            except Exception:
-                pass
+                    self._path_index[entry.path.resolve()] = entry.doc_id
+            except Exception as e:
+                logger.warning(f"Failed to load index: {e}")
 
     def _save_index(self) -> None:
         self.meta_dir.mkdir(parents=True, exist_ok=True)
@@ -127,8 +135,6 @@ class Project:
     def scan_files(self) -> List[DocumentEntry]:
         """扫描项目目录，更新索引."""
         found_ids = set()
-        # 构建 path -> entry 映射，避免 O(n²) 查找
-        path_to_entry = {e.path.resolve(): e for e in self._index.values()}
 
         for file_path in self.root.rglob("*"):
             # 跳过隐藏目录和元数据目录
@@ -138,16 +144,19 @@ class Project:
                 continue
             if file_path.is_file() and file_path.suffix.lower() in (SUPPORTED_DOC_EXTS | SUPPORTED_MOL_EXTS):
                 resolved = file_path.resolve()
-                entry = path_to_entry.get(resolved)
+                entry = self._index.get(self._path_index.get(resolved))
+                is_new = False
                 if entry is None:
                     entry = DocumentEntry(path=file_path)
                     self._index[entry.doc_id] = entry
-                    path_to_entry[resolved] = entry
-                # 更新 hash
+                    self._path_index[resolved] = entry.doc_id
+                    is_new = True
+                # 仅当 mtime 变化或新文件时才计算 SHA256
                 try:
-                    new_hash = sha256_file(file_path)
-                    if new_hash != entry.hash:
-                        entry.hash = new_hash
+                    mtime = file_path.stat().st_mtime
+                    if is_new or mtime != entry.mtime:
+                        entry.mtime = mtime
+                        entry.hash = sha256_file(file_path)
                         entry.indexed = False
                 except Exception:
                     pass
@@ -155,6 +164,8 @@ class Project:
         # 移除已删除的文件
         to_remove = [k for k in self._index if k not in found_ids]
         for k in to_remove:
+            entry = self._index[k]
+            self._path_index.pop(entry.path.resolve(), None)
             del self._index[k]
         self._save_index()
         return list(self._index.values())
@@ -163,10 +174,10 @@ class Project:
         return self._index.get(doc_id)
 
     def get_document_by_path(self, path: Path) -> Optional[DocumentEntry]:
-        path = Path(path).resolve()
-        for entry in self._index.values():
-            if entry.path.resolve() == path:
-                return entry
+        resolved = Path(path).resolve()
+        doc_id = self._path_index.get(resolved)
+        if doc_id:
+            return self._index.get(doc_id)
         return None
 
     def add_file(self, path: Path) -> DocumentEntry:
@@ -177,16 +188,21 @@ class Project:
             return existing
         entry = DocumentEntry(path=path)
         try:
+            entry.mtime = path.stat().st_mtime
             entry.hash = sha256_file(path)
         except Exception:
             pass
         self._index[entry.doc_id] = entry
+        self._path_index[path] = entry.doc_id
         self._save_index()
         return entry
 
     def remove_document(self, doc_id: str) -> None:
         """从索引移除文档（不删除实际文件）."""
         if doc_id in self._index:
+            entry = self._index[doc_id]
+            resolved = entry.path.resolve()
+            self._path_index.pop(resolved, None)
             del self._index[doc_id]
             self._save_index()
 

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict
 
-from ..utils.constants import PROJECT_META_DIR
+from ..utils.constants import PROJECT_META_DIR, SETTINGS_FILE
 
 
 @dataclass
@@ -56,14 +56,14 @@ class ProjectSettings:
 
     @classmethod
     def load(cls, project_root: Path) -> ProjectSettings:
-        path = project_root / PROJECT_META_DIR / "settings.json"
+        path = project_root / PROJECT_META_DIR / SETTINGS_FILE
         if path.exists():
             with open(path, "r", encoding="utf-8") as f:
                 return cls.from_dict(json.load(f))
         return cls()
 
     def save(self, project_root: Path) -> None:
-        path = project_root / PROJECT_META_DIR / "settings.json"
+        path = project_root / PROJECT_META_DIR / SETTINGS_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)

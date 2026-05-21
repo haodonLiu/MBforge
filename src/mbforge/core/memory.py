@@ -1,26 +1,25 @@
 """项目级对话记忆持久化.
 
 每个项目独立存储对话上下文，保存在 `.mbforge/memory/` 目录下。
+`core/memory.py` 只负责字典的读写，序列化由调用方负责。
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
-from ..agent.context import LayeredContext
-from ..utils.constants import PROJECT_META_DIR
+from ..utils.constants import MEMORY_DIR, PROJECT_META_DIR
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-MEMORY_DIR = "memory"
 MEMORY_FILE = "conversation.json"
 
 
 class ProjectMemory:
-    """项目对话记忆管理器."""
+    """项目对话记忆管理器 — 只处理字典读写，不依赖 agent 模块."""
 
     def __init__(self, project_root: Path):
         self.project_root = Path(project_root).resolve()
@@ -28,26 +27,24 @@ class ProjectMemory:
         self.memory_path = self.memory_dir / MEMORY_FILE
         self.memory_dir.mkdir(parents=True, exist_ok=True)
 
-    def save(self, context: LayeredContext) -> None:
-        """保存对话上下文到磁盘."""
+    def save_dict(self, data: Dict[str, Any]) -> None:
+        """保存对话上下文字典到磁盘."""
         try:
-            data = context.to_dict()
             with open(self.memory_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             logger.debug(f"Conversation memory saved to {self.memory_path}")
         except Exception as e:
             logger.warning(f"Failed to save conversation memory: {e}")
 
-    def load(self) -> Optional[LayeredContext]:
-        """从磁盘加载对话上下文."""
+    def load_dict(self) -> Optional[Dict[str, Any]]:
+        """从磁盘加载对话上下文字典."""
         if not self.memory_path.exists():
             return None
         try:
             with open(self.memory_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            ctx = LayeredContext.from_dict(data)
             logger.info("Conversation memory loaded")
-            return ctx
+            return data
         except Exception as e:
             logger.warning(f"Failed to load conversation memory: {e}")
             return None

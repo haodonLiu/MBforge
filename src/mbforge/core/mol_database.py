@@ -135,26 +135,30 @@ class MoleculeDatabase:
         if not record.properties:
             record.properties = record.compute_properties()
 
-        self._conn.execute(
-            """
-            INSERT OR REPLACE INTO molecules
-            (mol_id, smiles, name, source_doc, activity, activity_type, units, properties, tags, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                record.mol_id,
-                record.smiles,
-                record.name,
-                record.source_doc,
-                record.activity,
-                record.activity_type,
-                record.units,
-                json.dumps(record.properties, ensure_ascii=False),
-                json.dumps(record.tags, ensure_ascii=False),
-                record.notes,
-            ),
-        )
-        self._conn.commit()
+        try:
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO molecules
+                (mol_id, smiles, name, source_doc, activity, activity_type, units, properties, tags, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.mol_id,
+                    record.smiles,
+                    record.name,
+                    record.source_doc,
+                    record.activity,
+                    record.activity_type,
+                    record.units,
+                    json.dumps(record.properties, ensure_ascii=False),
+                    json.dumps(record.tags, ensure_ascii=False),
+                    record.notes,
+                ),
+            )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
 
     def get_molecule(self, mol_id: str) -> Optional[MoleculeRecord]:
         row = self._conn.execute(
@@ -220,7 +224,9 @@ class MoleculeDatabase:
         return MoleculeRecord.from_dict(data)
 
     def close(self) -> None:
-        self._conn.close()
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
 
     def __enter__(self):
         return self

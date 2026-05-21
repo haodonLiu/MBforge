@@ -6,12 +6,14 @@
 from __future__ import annotations
 
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Optional
 
 from ..core.document import DocumentProcessor, ExtractedContent
 from ..core.knowledge_base import KnowledgeBase
 from ..core.mol_database import MoleculeDatabase, MoleculeRecord
+from ..parsers.molecule_extractor import MoleculeExtractor
 from ..utils.helpers import generate_uuid
 from ..utils.logger import get_logger
 
@@ -43,6 +45,7 @@ class PDFParserPipeline:
         self.vlm = vlm
         self.kb = knowledge_base
         self.mol_db = mol_db
+        self._extractor = MoleculeExtractor()
 
     def parse(
         self,
@@ -66,18 +69,26 @@ class PDFParserPipeline:
             images = DocumentProcessor.extract_pdf_images(pdf_path, img_dir)
             content.images = images
 
-            # 3. VLM 分析图片（如果可用）
+            # 3. VLM 分析图片（如果可用，并行化）
             if self.vlm is not None and images:
                 img_descriptions = []
-                for img_path in images[:5]:  # 限制数量避免太慢
-                    try:
-                        desc = self.vlm.describe_pdf_page(
+                target_images = images[:5]  # 限制数量避免太慢
+                with ThreadPoolExecutor(max_workers=len(target_images)) as pool:
+                    futures = {
+                        pool.submit(
+                            self.vlm.describe_pdf_page,
                             str(img_path),
-                            context=f"Document: {pdf_path.name}",
-                        )
-                        img_descriptions.append(f"[Image {img_path.name}]: {desc}")
-                    except Exception as e:
-                        logger.warning(f"VLM analysis failed for {img_path}: {e}")
+                            f"Document: {pdf_path.name}",
+                        ): img_path
+                        for img_path in target_images
+                    }
+                    for future in as_completed(futures):
+                        img_path = futures[future]
+                        try:
+                            desc = future.result()
+                            img_descriptions.append(f"[Image {img_path.name}]: {desc}")
+                        except Exception as e:
+                            logger.warning(f"VLM analysis failed for {img_path}: {e}")
                 if img_descriptions:
                     content.text += "\n\n## Image Analysis\n\n" + "\n\n".join(img_descriptions)
                     # 重新分块
@@ -95,7 +106,7 @@ class PDFParserPipeline:
                     sm.save(summary)
                     logger.info(f"Saved L0/L1 summary for {doc_id}")
                 except Exception as e:
-                    logger.warning(f"Summary save failed: {e}")
+                    logger.error(f"Summary save failed for {doc_id}: {e}")
             content.summary = summary.l1_overview
 
         # 5. 分子提取
@@ -108,7 +119,7 @@ class PDFParserPipeline:
             try:
                 self.kb.index_document(doc_id, content, metadata={"source": str(pdf_path)})
             except Exception as e:
-                logger.warning(f"KB indexing failed: {e}")
+                logger.error(f"KB indexing failed for {doc_id}: {e}")
 
         return content
 
@@ -133,9 +144,7 @@ class PDFParserPipeline:
 
     def _extract_molecules(self, text: str, doc_id: str) -> List[MoleculeRecord]:
         """从文本提取分子信息并入库."""
-        from .molecule_extractor import MoleculeExtractor
-        extractor = MoleculeExtractor()
-        records = extractor.extract_from_text(text, doc_id=doc_id)
+        records = self._extractor.extract_from_text(text, doc_id=doc_id)
         for rec in records:
             self.mol_db.add_molecule(rec)
         return records

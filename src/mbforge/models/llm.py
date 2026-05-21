@@ -82,11 +82,12 @@ class OpenAILLM(BaseLLM):
 def create_llm_from_config(config) -> BaseLLM:
     """从配置创建 LLM 实例."""
     from ..utils.config import ModelConfig
+    from ..utils.constants import PROVIDER_ANTHROPIC
     cfg: ModelConfig = config
 
     provider = (cfg.provider or "").strip().lower()
 
-    if provider == "anthropic":
+    if provider == PROVIDER_ANTHROPIC:
         from .anthropic_llm import AnthropicLLM
         return AnthropicLLM(
             base_url=cfg.base_url,

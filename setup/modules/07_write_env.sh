@@ -48,6 +48,12 @@ run_write_env() {
     _env_set "MBFORGE_RERANK_MODEL" "${RERANK_MODEL}"
     _env_set "MBFORGE_RERANK_DEVICE" "${RERANK_DEVICE}"
 
+    # 模型缓存目录
+    [ -n "${HF_HOME:-}" ]          && _env_set "HF_HOME" "${HF_HOME}"
+    [ -n "${MODELSCOPE_CACHE:-}" ] && _env_set "MODELSCOPE_CACHE" "${MODELSCOPE_CACHE}"
+    [ -n "${TORCH_HOME:-}" ]      && _env_set "TORCH_HOME" "${TORCH_HOME}"
+    [ -n "${OLLAMA_MODELS:-}" ]    && _env_set "OLLAMA_MODELS" "${OLLAMA_MODELS}"
+
     ok ".env 已从模板生成"
 }
 
@@ -75,6 +81,12 @@ MBFORGE_EMBED_DEVICE=${EMBED_DEVICE}
 # ---------- Rerank ----------
 MBFORGE_RERANK_MODEL=${RERANK_MODEL}
 MBFORGE_RERANK_DEVICE=${RERANK_DEVICE}
+
+# ---------- 模型缓存目录 ----------
+HF_HOME=${HF_HOME:-$HOME/Models/HuggingFace}
+MODELSCOPE_CACHE=${MODELSCOPE_CACHE:-$HOME/Models/ModelScope}
+TORCH_HOME=${TORCH_HOME:-$HOME/Models/Torch}
+OLLAMA_MODELS=${OLLAMA_MODELS:-$HOME/Models/Ollama}
 
 # ---------- UV Mirror ----------
 UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple

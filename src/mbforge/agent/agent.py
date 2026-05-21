@@ -259,7 +259,7 @@ class ProjectAgent:
                     temperature=self.llm.temperature,
                 )
         except Exception as e:
-            logger.warning(f"Function calling not available: {e}")
+            logger.exception(f"Function calling not available: {e}")
 
         # fallback: 普通调用
         return self.llm.chat(messages)
@@ -316,13 +316,6 @@ class ProjectAgent:
         if self.tool_executor is None:
             return "错误：工具执行器未初始化"
         return self.tool_executor.registry.call(name, args)
-
-    def _collect_stream_chunks(self, stream) -> str:
-        """收集流式输出为完整文本（辅助方法）."""
-        text = ""
-        for chunk in stream:
-            text += chunk.delta
-        return text
 
     def clear(self) -> None:
         """清空对话历史."""

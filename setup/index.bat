@@ -103,6 +103,46 @@ set /p "RC=Select [1]: "
 if "%RC%"=="2" set "RERANK_MODEL=BAAI/bge-reranker-v2-m3"
 if "%RC%"=="3" set "RERANK_MODEL=Qwen/Qwen3-Reranker-0.6B"
 
+:: === 05b Embedding/Rerank Device ===
+echo.
+echo --- Embedding/Rerank Device ---
+set "EMBED_DEVICE=cpu"
+set "RERANK_DEVICE=cpu"
+%PYTHON% -c "import torch; assert torch.cuda.is_available()" 2>nul
+if not errorlevel 1 (
+    echo   GPU detected, use CUDA for inference?
+    echo   1) Yes (GPU)  2) No (CPU)
+    set /p "GD=Select [2]: "
+    if "!GD!"=="1" (
+        set "EMBED_DEVICE=cuda"
+        set "RERANK_DEVICE=cuda"
+        echo [OK] GPU mode enabled
+    ) else (
+        echo [OK] CPU mode
+    )
+) else (
+    echo [OK] No GPU detected, using CPU
+)
+
+:: === 07b Model Cache Directories ===
+echo.
+echo --- Model Cache Directories ---
+set "HF_HOME=%USERPROFILE%\Models\HuggingFace"
+set "MODELSCOPE_CACHE=%USERPROFILE%\Models\ModelScope"
+set "TORCH_HOME=%USERPROFILE%\Models\Torch"
+set "OLLAMA_MODELS=%USERPROFILE%\Models\Ollama"
+echo   Default: %%USERPROFILE%%\Models\...
+set /p "HC=Customize cache directories? [y/N]: "
+if /i "!HC!"=="y" (
+    set /p "HF_HOME=  HuggingFace [%%HF_HOME%%]: "
+    set /p "MODELSCOPE_CACHE=  ModelScope [%%MODELSCOPE_CACHE%%]: "
+    set /p "TORCH_HOME=  PyTorch [%%TORCH_HOME%%]: "
+    set /p "OLLAMA_MODELS=  Ollama [%%OLLAMA_MODELS%%]: "
+    echo [OK] Custom cache dirs set
+) else (
+    echo [OK] Using default: %%USERPROFILE%%\Models\...
+)
+
 :: === 07 Write .env ===
 echo.
 echo --- Write Config ---
@@ -125,11 +165,17 @@ echo.
 echo # Embedding
 echo MBFORGE_EMBED_PROVIDER=sentence_transformers
 echo MBFORGE_EMBED_MODEL=%EMBED_MODEL%
-echo MBFORGE_EMBED_DEVICE=cpu
+echo MBFORGE_EMBED_DEVICE=%EMBED_DEVICE%
 echo.
 echo # Rerank
 echo MBFORGE_RERANK_MODEL=%RERANK_MODEL%
-echo MBFORGE_RERANK_DEVICE=cpu
+echo MBFORGE_RERANK_DEVICE=%RERANK_DEVICE%
+echo.
+echo # Model Cache Directories
+echo HF_HOME=%HF_HOME%
+echo MODELSCOPE_CACHE=%MODELSCOPE_CACHE%
+echo TORCH_HOME=%TORCH_HOME%
+echo OLLAMA_MODELS=%OLLAMA_MODELS%
 ) > .env
 echo [OK] .env written
 

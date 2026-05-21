@@ -15,13 +15,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..utils.constants import PROJECT_META_DIR
+from ..utils.constants import PROJECT_META_DIR, TRAJECTORY_DIR, TRAJECTORY_FILE, VIKING_SCHEME
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
-
-TRAJECTORY_DIR = "memory"
-TRAJECTORY_FILE = "trajectory.json"
 
 
 @dataclass
@@ -93,7 +90,7 @@ class TrajectoryTracker:
         """记录一次搜索操作."""
         self.add_step(TrajectoryStep(
             step_type="search",
-            uri=f"viking://kb/search?q={query[:100]}",
+            uri=f"{VIKING_SCHEME}kb/search?q={query[:100]}",
             query=query,
             result_count=result_count,
             top_results=top_results[:5],
@@ -110,7 +107,7 @@ class TrajectoryTracker:
         """记录一次目录/路径导航."""
         self.add_step(TrajectoryStep(
             step_type="navigate",
-            uri=f"viking://project/{path}",
+            uri=f"{VIKING_SCHEME}project/{path}",
             query=reason,
             metadata=metadata or {},
         ))
@@ -124,7 +121,7 @@ class TrajectoryTracker:
         """记录一次文档读取."""
         self.add_step(TrajectoryStep(
             step_type="read",
-            uri=f"viking://docs/{doc_id}?level={level}",
+            uri=f"{VIKING_SCHEME}docs/{doc_id}?level={level}",
             query=doc_id,
             metadata=metadata or {},
         ))
@@ -139,7 +136,7 @@ class TrajectoryTracker:
         """记录一次工具调用."""
         self.add_step(TrajectoryStep(
             step_type="tool",
-            uri=f"viking://tools/{tool_name}",
+            uri=f"{VIKING_SCHEME}tools/{tool_name}",
             query=json.dumps(arguments, ensure_ascii=False)[:200],
             result_count=1 if result_summary else 0,
             top_results=[result_summary[:200]] if result_summary else [],

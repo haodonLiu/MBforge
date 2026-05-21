@@ -5,10 +5,17 @@ from __future__ import annotations
 from typing import List
 
 from .base import BaseReranker
+from ..utils.constants import PROVIDER_SENTENCE_TRANSFORMERS, PROVIDER_QWEN3
+from ..utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class SentenceTransformerReranker(BaseReranker):
-    """基于 sentence-transformers 的 Cross-Encoder Reranker."""
+    """基于 sentence-transformers 的 Cross-Encoder Reranker.
+
+    兼容 BGE-Reranker 等 CrossEncoder 格式模型。
+    """
 
     def __init__(self, model_name: str = "BAAI/bge-reranker-base", device: str = "cpu"):
         self.model_name = model_name
@@ -30,11 +37,21 @@ class SentenceTransformerReranker(BaseReranker):
         return indexed
 
 
-def create_reranker_from_config(config):
+def create_reranker_from_config(config) -> BaseReranker:
     """从配置创建 Reranker 实例."""
     from ..utils.config import RerankConfig
+    from .rerank_qwen3 import Qwen3Reranker
+
     cfg: RerankConfig = config
-    if cfg.provider == "sentence_transformers":
+
+    if cfg.provider == PROVIDER_QWEN3:
+        return Qwen3Reranker(
+            model_name=cfg.model_name,
+            device=cfg.device,
+            max_length=cfg.max_length,
+        )
+    elif cfg.provider == PROVIDER_SENTENCE_TRANSFORMERS:
         return SentenceTransformerReranker(model_name=cfg.model_name, device=cfg.device)
-    # 占位：API reranker
-    return SentenceTransformerReranker(model_name=cfg.model_name, device=cfg.device)
+    else:
+        # fallback to Qwen3
+        return Qwen3Reranker(model_name=cfg.model_name, device=cfg.device)

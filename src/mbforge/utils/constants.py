@@ -5,7 +5,7 @@ from platformdirs import user_data_dir, user_config_dir
 
 APP_NAME = "MBForge"
 APP_AUTHOR = "MBForge"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 
 # 隐藏目录名，存储在项目根目录
 PROJECT_META_DIR = ".mbforge"
@@ -14,11 +14,27 @@ PROJECT_META_DIR = ".mbforge"
 GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))
 GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
 
-# 默认模型配置
-DEFAULT_EMBED_MODEL = "BAAI/bge-small-zh-v1.5"
-DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-base"
+# 默认模型配置 — Qwen3 系列（用户选型决策）
+DEFAULT_EMBED_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+DEFAULT_RERANK_MODEL = "Qwen/Qwen3-Reranker-0.6B"
 DEFAULT_LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct-GGUF"
 DEFAULT_VLM_MODEL = "internlm/internlm-xcomposer2-vl-7b"
+
+# 国内模型下载镜像（ModelScope / HF-Mirror）
+DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
+
+# Embedding 任务指令前缀（Qwen3 Instruction Aware）
+EMBED_INSTRUCTION_RETRIEVAL = (
+    "Given a web search query, retrieve relevant passages that answer the query"
+)
+EMBED_INSTRUCTION_CLUSTER = (
+    "Given a document, retrieve relevant passages that are semantically similar"
+)
+
+# Reranker 默认指令（Qwen3-Reranker）
+RERANK_DEFAULT_INSTRUCTION = (
+    "Given a web search query, retrieve relevant passages that answer the query"
+)
 
 # 支持的文档类型
 SUPPORTED_DOC_EXTS = {".md", ".txt", ".pdf", ".json", ".yaml", ".yml"}
@@ -39,3 +55,40 @@ LLM_TOP_P = 0.9
 
 # 数据库
 MOL_DB_FILENAME = "molecules.db"
+
+# 元数据子目录/文件
+MEMORY_DIR = "memory"
+TRAJECTORY_DIR = "trajectory"
+TRAJECTORY_FILE = "trajectory.json"
+SUMMARY_DIR = "summaries"
+TODO_FILE = "todo.json"
+OUTPUT_DIR = "output"
+SETTINGS_FILE = "settings.json"
+INDEX_FILE = "index.json"
+
+# Provider 字符串
+PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
+PROVIDER_ANTHROPIC = "anthropic"
+PROVIDER_SENTENCE_TRANSFORMERS = "sentence_transformers"
+PROVIDER_QWEN3 = "qwen3"
+PROVIDER_API = "api"
+PROVIDER_OLLAMA = "ollama"
+PROVIDER_LOCAL = "local"
+
+# OCR Provider
+OCR_PROVIDER_PYMUPDF = "pymupdf"
+OCR_PROVIDER_GLM_OCR_MAAS = "glm_ocr_maas"
+OCR_PROVIDER_GLM_OCR_LOCAL = "glm_ocr_local"
+OCR_PROVIDER_GLM_OCR_OLLAMA = "glm_ocr_ollama"
+
+# ChromaDB URI scheme (trajectory tracking)
+VIKING_SCHEME = "viking://"
+
+# 文档元数据键
+META_SOURCE = "source"
+META_FILENAME = "filename"
+META_PAGES = "pages"
+META_DOC_ID = "doc_id"
+META_SECTION = "section"
+META_MOLECULES = "molecules"
+META_KEYWORDS = "keywords"

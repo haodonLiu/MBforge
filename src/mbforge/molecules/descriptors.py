@@ -324,16 +324,16 @@ class MoleculeDescriptorCalculator:
                 )
         return results
 
-    def compute_molecule_entry(self, entry) -> DescriptorResult:
-        """对 MoleculeEntry 计算描述符（便捷方法）.
+    def compute_molecule(self, mol) -> DescriptorResult:
+        """对 Molecule 计算描述符（便捷方法）.
 
         Args:
-            entry: MoleculeEntry 对象（需有 mol 属性）.
+            mol: Molecule 对象（需有 mol 属性）.
 
         Returns:
             描述符计算结果.
         """
-        return self.compute(entry.mol)
+        return self.compute(mol.mol)
 
     def available_descriptors(self) -> List[str]:
         """获取当前配置下所有可用的描述符名称.

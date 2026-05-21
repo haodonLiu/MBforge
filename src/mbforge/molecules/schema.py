@@ -47,7 +47,7 @@ class Molecule:
         tags: 用户自定义标签
         props: 从原始文件读取的额外属性
         metadata: 原始元数据（兼容旧格式）
-        _rdkit_mol: 内部缓存，外部不可见
+        _mol: 内部缓存的 RDKit Mol 对象
     """
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
@@ -63,44 +63,40 @@ class Molecule:
     tags: Dict[str, Any] = field(default_factory=dict)
     props: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
-    _rdkit_mol: Optional[Any] = field(default=None, repr=False)
+    _mol: Optional[Any] = field(default=None, repr=False)
     _mol_parse_attempted: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
-        if self._rdkit_mol is None and not self.smiles:
-            raise ValueError("Molecule requires at least 'smiles' or '_rdkit_mol'")
-        if self._rdkit_mol is not None and not self.smiles:
+        if self._mol is None and not self.smiles:
+            raise ValueError("Molecule requires at least 'smiles' or '_mol'")
+        if self._mol is not None and not self.smiles:
             try:
-                self.smiles = Chem.MolToSmiles(self._rdkit_mol)
+                self.smiles = Chem.MolToSmiles(self._mol)
             except Exception as e:
                 logger.warning(f"Failed to generate SMILES from mol: {e}")
 
     # ---- 懒加载 RDKit Mol 对象 ----
 
     @property
-    def rdkit_mol(self) -> Optional[Any]:
+    def mol(self) -> Optional[Any]:
         """从 SMILES 懒加载 RDKit Mol 对象，失败返回 None。"""
         if not self._mol_parse_attempted and _RDKIT_AVAILABLE and self.smiles:
             self._mol_parse_attempted = True
             try:
-                self._rdkit_mol = Chem.MolFromSmiles(self.smiles)
+                self._mol = Chem.MolFromSmiles(self.smiles)
             except Exception:
-                self._rdkit_mol = None
-        return self._rdkit_mol
+                self._mol = None
+        return self._mol
 
-    @rdkit_mol.setter
-    def rdkit_mol(self, mol: Any) -> None:
-        self._rdkit_mol = mol
-        if mol is not None and _RDKIT_AVAILABLE:
-            self.smiles = Chem.MolToSmiles(mol)
+    @mol.setter
+    def mol(self, value: Any) -> None:
+        self._mol = value
+        if value is not None and _RDKIT_AVAILABLE:
+            self.smiles = Chem.MolToSmiles(value)
 
-    @property
-    def mol(self) -> Optional[Any]:
-        """别名，兼容旧代码。"""
-        return self.rdkit_mol
-
-    def clear_rdkit_cache(self) -> None:
-        self._rdkit_mol = None
+    def clear_mol_cache(self) -> None:
+        self._mol = None
+        self._mol_parse_attempted = False
 
     # ---- 工厂方法 ----
 
@@ -113,16 +109,15 @@ class Molecule:
         if mol is None:
             raise ValueError("RDKit Mol object cannot be None")
         smiles = Chem.MolToSmiles(mol)
-        return cls(smiles=smiles, name=name or smiles, _rdkit_mol=mol, **kwargs)
+        return cls(smiles=smiles, name=name or smiles, _mol=mol, **kwargs)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Molecule":
-        """从字典反序列化。兼容 schema 格式和旧 MoleculeEntry 格式。"""
-        # 旧 MoleculeEntry 格式：{mol, smiles, name, activity, cas, props, ...}
+        """从字典反序列化。兼容 schema 格式和旧 reader 格式。"""
+        # 旧 reader 格式：{mol, smiles, name, activity, cas, props, ...}
         if "mol" in data or ("smiles" in data and "metadata" not in data and "id" not in data):
             mol = data.get("mol")
             smiles = data.get("smiles", "")
-            # 顶层字段
             kwargs: Dict[str, Any] = {
                 "name": data.get("name", ""),
                 "activity": data.get("activity"),
@@ -199,7 +194,7 @@ class Molecule:
             tags=deepcopy(self.tags),
             props=deepcopy(self.props),
             metadata=deepcopy(self.metadata),
-            _rdkit_mol=Chem.Mol(self._rdkit_mol) if self._rdkit_mol is not None else None,
+            _mol=Chem.Mol(self._mol) if self._mol is not None else None,
         )
 
     def has_activity(self) -> bool:
@@ -238,10 +233,6 @@ class Molecule:
         )
 
 
-# ---- 向后兼容别名 ----
-MoleculeEntry = Molecule
-
-
 # ---- Batch 容器 ----
 
 @dataclass
@@ -252,11 +243,6 @@ class MoleculeBatch:
     """
 
     entries: List[Molecule] = field(default_factory=list)
-
-    @property
-    def molecules(self) -> List[Molecule]:
-        """别名，兼容旧代码。"""
-        return self.entries
 
     def __len__(self) -> int:
         return len(self.entries)
@@ -352,8 +338,6 @@ class MoleculeBatch:
     def to_dicts(self) -> List[Dict[str, Any]]:
         return [e.to_dict() for e in self.entries]
 
-    to_dict_list = to_dicts  # 兼容别名
-
     def to_dataframe(self) -> Any:
         import pandas as pd
         records = []
@@ -385,7 +369,7 @@ class MoleculeBatch:
             rec: Dict[str, Any] = {"SMILES": m.smiles}
             rec.update({k: v for k, v in m.metadata.items()
                         if k not in ("props", "properties", "tags")})
-            mol = m.rdkit_mol
+            mol = m.mol
             if mol is not None and _RDKIT_AVAILABLE:
                 rec["NumAtoms"] = mol.GetNumAtoms()
                 rec["MolecularWeight"] = round(Descriptors.MolWt(mol), 2)
@@ -399,7 +383,7 @@ class MoleculeBatch:
         with open(path, "wb") as f:
             writer = Chem.SDWriter(f)
             for m in self.entries:
-                mol = m.rdkit_mol
+                mol = m.mol
                 if mol is not None:
                     mol_copy = Chem.Mol(mol)
                     if m.name:

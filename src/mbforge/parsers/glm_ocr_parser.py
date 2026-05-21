@@ -20,11 +20,12 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from ..utils.logger import get_logger
+from .base_parser import BaseDocumentParser, ParseOutput
 
 logger = get_logger(__name__)
 
 
-class GlmOcrClient:
+class GlmOcrClient(BaseDocumentParser):
     """GLM-OCR 客户端封装.
 
     优先通过 HTTP API (Ollama/vLLM) 调用，不可用则 fallback 到 PyMuPDF。
@@ -103,22 +104,22 @@ class GlmOcrClient:
             logger.warning(f"GLM-OCR API call failed: {e}")
             raise
 
+    def parse(self, pdf_path: Path, **kwargs) -> ParseOutput:
+        """解析 PDF，返回统一 ParseOutput。"""
+        try:
+            result = self._parse_with_glm(pdf_path)
+        except Exception as e:
+            logger.warning(f"GLM-OCR parsing failed ({e}), falling back to PyMuPDF")
+            result = self._fallback_pymupdf(pdf_path)
+        return ParseOutput(
+            text=result.get("text", ""),
+            markdown=result.get("markdown", ""),
+            pages=result.get("pages", []),
+            metadata={"parser": result.get("parser", "glm_ocr")},
+        )
+
     def parse_pdf(self, pdf_path: Path, **kwargs) -> Dict[str, Any]:
-        """解析 PDF，返回结构化结果.
-
-        流程:
-            1. 将 PDF 每页转为图像
-            2. 逐页调用 GLM-OCR
-            3. 合并结果，保留分子占位符
-
-        Returns:
-            {
-                "markdown": str,      # 结构化 Markdown
-                "text": str,          # 纯文本（用于兼容现有流程）
-                "pages": List[str],   # 每页识别结果
-                "molecule_placeholders": List[dict],  # 分子占位符位置
-            }
-        """
+        """向后兼容：返回旧格式 dict。"""
         try:
             return self._parse_with_glm(pdf_path)
         except Exception as e:

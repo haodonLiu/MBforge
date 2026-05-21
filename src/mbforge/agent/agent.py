@@ -230,39 +230,12 @@ class ProjectAgent:
         return self.llm.chat(messages)
 
     def _call_llm_with_tools(self, messages: List[Message], tools: List[Dict]) -> Any:
-        """带工具定义的 LLM 调用.
-
-        注意：这里使用 openai client 的原生 tools 参数。
-        如果 LLM provider 不支持 function calling，会 fallback 到普通调用。
-        """
-        logger.debug(f"_call_llm_with_tools: llm type = {type(self.llm).__name__}")
+        """带工具定义的 LLM 调用。委托给 BaseLLM.call_with_tools()。"""
         try:
-            from ..models.anthropic_llm import AnthropicLLM
-            from ..models.llm import OpenAILLM
-
-            if isinstance(self.llm, AnthropicLLM):
-                return self.llm.call_with_tools(
-                    messages,
-                    tools,
-                    max_tokens=self.llm.max_tokens,
-                    temperature=self.llm.temperature,
-                )
-
-            if isinstance(self.llm, OpenAILLM):
-                # MiniMax OpenAI 兼容接口可能不支持 tool_choice="auto"，
-                # 因此不显式传入，使用 API 默认行为
-                return self.llm.client.chat.completions.create(
-                    model=self.llm.model_name,
-                    messages=self.llm._convert_messages(messages),
-                    tools=tools,
-                    max_tokens=self.llm.max_tokens,
-                    temperature=self.llm.temperature,
-                )
+            return self.llm.call_with_tools(messages, tools)
         except Exception as e:
             logger.exception(f"Function calling not available: {e}")
-
-        # fallback: 普通调用
-        return self.llm.chat(messages)
+            return self.llm.chat(messages)
 
     def _parse_response(self, response: Any) -> tuple[str, List[Dict]]:
         """解析 LLM 响应，提取内容和工具调用.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import AsyncGenerator, Iterator, List, Optional
+from typing import Any, AsyncGenerator, Dict, Iterator, List, Optional
 
 
 @dataclass
@@ -49,6 +49,10 @@ class BaseLLM(ABC):
     async def achat_stream(self, messages: List[Message], **kwargs) -> AsyncGenerator[StreamChunk, None]:
         """异步流式对话."""
         ...
+
+    def call_with_tools(self, messages: List[Message], tools: List[Dict], **kwargs) -> Any:
+        """带工具定义的 LLM 调用。默认 fallback 到 chat()。"""
+        return self.chat(messages, **kwargs)
 
 
 class BaseEmbedder(ABC):

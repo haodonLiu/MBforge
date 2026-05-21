@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import AsyncGenerator, Iterator, List
+from typing import Any, AsyncGenerator, Dict, Iterator, List
 
 import openai
 
@@ -78,14 +78,32 @@ class OpenAILLM(BaseLLM):
             yield chunk
             await asyncio.sleep(0)
 
+    def call_with_tools(self, messages: List[Message], tools: List[Dict], **kwargs) -> Any:
+        return self.client.chat.completions.create(
+            model=self.model_name,
+            messages=self._convert_messages(messages),
+            tools=tools,
+            max_tokens=kwargs.get("max_tokens", self.max_tokens),
+            temperature=kwargs.get("temperature", self.temperature),
+        )
+
 
 def create_llm_from_config(config) -> BaseLLM:
     """从配置创建 LLM 实例."""
     from ..utils.config import ModelConfig
-    from ..utils.constants import PROVIDER_ANTHROPIC
+    from ..utils.constants import PROVIDER_ANTHROPIC, PROVIDER_NEMOTON_DIFFUSION
     cfg: ModelConfig = config
 
     provider = (cfg.provider or "").strip().lower()
+
+    if provider == PROVIDER_NEMOTON_DIFFUSION:
+        from .nemotron_diffusion import NemotronDiffusionLLM
+        return NemotronDiffusionLLM(
+            model_path=cfg.model_name or "nv-community/Nemotron-Labs-Diffusion-3B",
+            device=getattr(cfg, "device", "cuda"),
+            dtype=getattr(cfg, "dtype", "bfloat16"),
+            max_new_tokens=cfg.max_tokens,
+        )
 
     if provider == PROVIDER_ANTHROPIC:
         from .anthropic_llm import AnthropicLLM

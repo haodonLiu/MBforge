@@ -27,7 +27,7 @@ MCS是多个分子共有的最大结构片段，在药物化学中用于:
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, Dict, Any, Union, Tuple
+from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 
 class MCSError(Exception):
     """最大公共子结构查找失败异常.
-    
+
     当MCS查找过程失败时抛出此异常，如分子数量不足或超时。
     """
 
@@ -50,9 +50,9 @@ class MCSError(Exception):
 @dataclass
 class MCSResult:
     """MCS查找结果数据类.
-    
+
     存储MCS查找的详细结果信息。
-    
+
     属性:
         mcs_mol: MCS的RDKit分子对象
         smiles: MCS的SMARTS/SMILES表示
@@ -78,14 +78,14 @@ class MCSResult:
 
 class MCSFinder:
     """最大公共子结构查找器.
-    
+
     该类用于在多个分子间查找最大公共子结构。
     支持两分子和多分子MCS查找，具有超时保护功能。
-    
+
     属性:
         timeout: 每个聚类的最大搜索时间(秒)
         verbose: 是否输出详细日志
-    
+
     示例:
         >>> finder = MCSFinder(timeout=30, verbose=True)
         >>> result = finder.find_mcs(molecules)
@@ -107,7 +107,7 @@ class MCSFinder:
         self, molecules: List[Dict[str, Any]], threshold: float = 0.8
     ) -> Optional[MCSResult]:
         """在多个分子间查找最大公共子结构.
-        
+
         对于两个分子，直接比较查找MCS。
         对于多个分子，采用两两比较策略，选择最优结果。
 
@@ -169,15 +169,15 @@ class MCSFinder:
         self, mol_a: Chem.Mol, smiles_a: str, mol_b: Chem.Mol, smiles_b: str
     ) -> Optional[MCSResult]:
         """查找两个分子之间的MCS.
-        
+
         使用RDKit的rdFMCS算法查找两个分子的最大公共子结构。
-        
+
         Args:
             mol_a: 第一个分子对象.
             smiles_a: 第一个分子的SMILES.
             mol_b: 第二个分子对象.
             smiles_b: 第二个分子的SMILES.
-            
+
         Returns:
             MCSResult对象，查找失败时返回None.
         """
@@ -252,7 +252,7 @@ class MCSFinder:
         self, clusters: List[Any]
     ) -> Dict[int, Optional[MCSResult]]:
         """为每个聚类查找MCS.
-        
+
         批量处理多个聚类，为每个聚类查找最大公共子结构。
 
         Args:
@@ -292,9 +292,9 @@ class MCSFinder:
 @dataclass
 class SubstituentInfo:
     """取代基信息数据类.
-    
+
     存储特定位置上的取代基信息。
-    
+
     属性:
         position_idx: 在MCS骨架上的位置索引
         substituent_smiles: 取代基的SMILES表示
@@ -313,9 +313,9 @@ class SubstituentInfo:
 @dataclass
 class MCSScaffoldInfo:
     """骨架信息数据类 - 包含R基团位置.
-    
+
     存储MCS骨架及其上的R基团(取代位点)信息。
-    
+
     属性:
         scaffold_mol: 骨架的RDKit分子对象(MCS)
         scaffold_smiles: 骨架的SMILES表示
@@ -334,7 +334,7 @@ def find_substitution_positions(
     molecules: List[Dict[str, Any]],
 ) -> Optional[MCSScaffoldInfo]:
     """查找MCS骨架上的取代位点.
-    
+
     分析分子与MCS的匹配关系，识别MCS骨架上的R基团位置。
     R基团是连接到MCS骨架但不属于MCS的原子或基团。
 
@@ -408,7 +408,7 @@ def _extract_substituent(
     mol: Chem.Mol, attachment_atom_idx: int, sub_atom_idx: int
 ) -> Tuple[Optional[Chem.Mol], str]:
     """从分子中提取取代基.
-    
+
     使用BFS遍历从连接点开始提取取代基的原子集合。
 
     Args:
@@ -457,7 +457,7 @@ def create_marked_scaffold(
     size: Tuple[int, int] = (400, 300),
 ) -> bytes:
     """创建带R基团标签的骨架图像.
-    
+
     生成MCS骨架的2D图像，并在R基团位置标记R1, R2等标签。
 
     Args:
@@ -520,7 +520,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="MBForge MCS 查找工具")
     parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
-    parser.add_argument("--threshold", type=float, default=0.8, help="MCS 匹配阈值 (0-1)")
+    parser.add_argument(
+        "--threshold", type=float, default=0.8, help="MCS 匹配阈值 (0-1)"
+    )
     parser.add_argument("--timeout", type=int, default=30, help="超时时间（秒）")
     parser.add_argument("--smiles-column", default="SMILES", help="CSV 中 SMILES 列名")
     parser.add_argument("--output", "-o", default=None, help="输出 JSON 文件路径")

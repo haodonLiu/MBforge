@@ -54,8 +54,7 @@ def load_config() -> ParserConfig:
 
     if not host:
         raise ValueError(
-            "UNIPARSER_HOST is not set. "
-            "Please set it in .env or environment variables."
+            "UNIPARSER_HOST is not set. Please set it in .env or environment variables."
         )
     if not api_key:
         raise ValueError(

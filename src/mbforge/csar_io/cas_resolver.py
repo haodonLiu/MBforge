@@ -134,7 +134,9 @@ class CASResolver:
         try:
             req = urllib.request.Request(
                 url,
-                headers={"User-Agent": "CSAR/0.1.0 (https://github.com/yourusername/csar)"},
+                headers={
+                    "User-Agent": "CSAR/0.1.0 (https://github.com/yourusername/csar)"
+                },
             )
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
                 result = response.read().decode("utf-8").strip()
@@ -164,18 +166,20 @@ class CASResolver:
             首个匹配的 CAS 号，查询失败返回 None.
         """
         encoded = urllib.parse.quote(smiles, safe="")
-        url = (
-            f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{encoded}/synonyms/JSON"
-        )
+        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/{encoded}/synonyms/JSON"
 
         try:
             req = urllib.request.Request(
                 url,
-                headers={"User-Agent": "CSAR/0.1.0 (https://github.com/yourusername/csar)"},
+                headers={
+                    "User-Agent": "CSAR/0.1.0 (https://github.com/yourusername/csar)"
+                },
             )
             with urllib.request.urlopen(req, timeout=self.timeout) as response:
                 data = json.loads(response.read().decode("utf-8"))
-                information_list = data.get("InformationList", {}).get("Information", [])
+                information_list = data.get("InformationList", {}).get(
+                    "Information", []
+                )
                 if not information_list:
                     return None
 
@@ -227,7 +231,9 @@ class CASResolver:
             return None
 
         if source not in ("auto", "nci", "pubchem"):
-            raise CASResolverError(f"Invalid source: {source}. Use 'auto', 'nci', or 'pubchem'.")
+            raise CASResolverError(
+                f"Invalid source: {source}. Use 'auto', 'nci', or 'pubchem'."
+            )
 
         if canonicalize:
             smiles_clean = self._canonicalize_smiles(smiles_clean)

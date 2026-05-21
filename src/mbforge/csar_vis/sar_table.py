@@ -21,11 +21,11 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Any, Tuple, Optional
+from typing import List, Any, Tuple
 
 from PIL import Image
 
-from .utils import create_sar_table_image, get_activity_color, SUBSTITUENT_SIZE
+from .utils import create_sar_table_image, SUBSTITUENT_SIZE
 
 logger = logging.getLogger(__name__)
 

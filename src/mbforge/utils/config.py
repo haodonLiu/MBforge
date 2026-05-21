@@ -11,7 +11,6 @@ from .constants import (
     GLOBAL_CONFIG_DIR,
     PROVIDER_API,
     PROVIDER_OPENAI_COMPATIBLE,
-    PROVIDER_SENTENCE_TRANSFORMERS,
     PROVIDER_QWEN3,
     OCR_PROVIDER_PYMUPDF,
     DEFAULT_EMBED_MODEL,
@@ -69,9 +68,11 @@ class VLMConfig:
 class OcrConfig:
     """OCR 解析配置."""
 
-    provider: str = OCR_PROVIDER_PYMUPDF  # pymupdf | glm_ocr_maas | glm_ocr_local | glm_ocr_ollama
+    provider: str = (
+        OCR_PROVIDER_PYMUPDF  # pymupdf | glm_ocr_maas | glm_ocr_local | glm_ocr_ollama
+    )
     base_url: str = ""  # 本地服务地址或 MaaS API 地址
-    api_key: str = ""   # MaaS API Key
+    api_key: str = ""  # MaaS API Key
     model_name: str = ""  # 本地模型路径或 Ollama 模型名
     use_hf_mirror: bool = True  # 是否使用国内镜像下载模型
 
@@ -148,7 +149,8 @@ def _config_from_env() -> AppConfig:
             base_url=os.environ.get("MBFORGE_OCR_BASE_URL", ""),
             api_key=os.environ.get("MBFORGE_OCR_API_KEY", ""),
             model_name=os.environ.get("MBFORGE_OCR_MODEL", ""),
-            use_hf_mirror=os.environ.get("MBFORGE_OCR_USE_HF_MIRROR", "true").lower() == "true",
+            use_hf_mirror=os.environ.get("MBFORGE_OCR_USE_HF_MIRROR", "true").lower()
+            == "true",
         ),
     )
 
@@ -202,5 +204,6 @@ def setup_hf_mirror() -> None:
     使 transformers / sentence-transformers 自动从镜像站下载模型。
     """
     from .constants import DEFAULT_HF_ENDPOINT
+
     if "HF_ENDPOINT" not in os.environ:
         os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT

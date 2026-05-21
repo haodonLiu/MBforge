@@ -21,7 +21,6 @@
 
 from __future__ import annotations
 
-import io
 import logging
 from pathlib import Path
 from typing import List, Dict, Optional, Any, Union, Tuple
@@ -29,17 +28,13 @@ from dataclasses import dataclass
 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from PIL import Image
 from rdkit import Chem
-from rdkit.Chem import AllChem, Draw
-from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Chem import Draw
 
 from ..mcs.finder import (
-    find_substitution_positions,
     create_marked_scaffold,
     MCSScaffoldInfo,
-    SubstituentInfo,
 )
 from .utils import (
     render_substituent_image,
@@ -53,7 +48,7 @@ logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 
 class RenderError(Exception):
     """渲染失败异常.
-    
+
     当图像渲染过程失败时抛出此异常。
     """
 
@@ -63,9 +58,9 @@ class RenderError(Exception):
 @dataclass
 class PlotSettings:
     """SAR绘图设置数据类.
-    
+
     存储绘图的各种参数设置。
-    
+
     属性:
         figure_size: 图像尺寸 (宽, 高)，默认(12, 8)
         dpi: 图像分辨率，默认300
@@ -89,7 +84,7 @@ class PlotSettings:
 
 class SARRenderer:
     """SAR渲染器 - 生成各种SAR分析可视化.
-    
+
     该类提供多种方法来渲染SAR分析结果，包括:
     - MCS结构图
     - 活性分布图
@@ -97,10 +92,10 @@ class SARRenderer:
     - 相似度矩阵热图
     - 分子网格图
     - SAR表格图
-    
+
     属性:
         settings: PlotSettings对象，控制绘图参数
-    
+
     示例:
         >>> renderer = SARRenderer()
         >>> renderer.render_sar_summary(results, "summary.png")
@@ -142,7 +137,7 @@ class SARRenderer:
             except Exception:
                 pass
 
-            fig = Draw.MolToMPL(render_mol, size=self.settings.figure_size)
+            Draw.MolToMPL(render_mol, size=self.settings.figure_size)
             plt.title(title, fontsize=self.settings.title_fontsize)
             plt.savefig(output_path, dpi=self.settings.dpi, bbox_inches="tight")
             plt.close()
@@ -157,7 +152,7 @@ class SARRenderer:
         mcs_mol: Optional[Chem.Mol] = None,
     ) -> None:
         """渲染聚类的活性分布图.
-        
+
         生成包含活性分布直方图和MCS结构的组合图。
 
         Args:
@@ -201,7 +196,7 @@ class SARRenderer:
         self, sar_results: Dict[int, Any], output_path: Union[str, Path]
     ) -> None:
         """渲染跨所有聚类的SAR汇总图.
-        
+
         生成包含两个子图的汇总:
         - 左图: 各聚类的平均活性柱状图
         - 右图: 聚类大小与平均活性的散点图
@@ -255,7 +250,7 @@ class SARRenderer:
         labels: Optional[List[str]] = None,
     ) -> None:
         """渲染相似度矩阵热图.
-        
+
         使用颜色编码显示分子间的相似度关系。
 
         Args:
@@ -294,7 +289,7 @@ class SARRenderer:
         legends: Optional[List[str]] = None,
     ) -> None:
         """渲染带活性标注的分子网格图.
-        
+
         以网格形式显示多个分子的2D结构，并标注活性值。
 
         Args:
@@ -306,7 +301,6 @@ class SARRenderer:
         output_path = Path(output_path)
 
         mols = [m["mol"] for m in molecules]
-        activities = [m.get("activity", 0) for m in molecules]
 
         legends_out = []
         for i, m in enumerate(molecules):
@@ -336,7 +330,7 @@ class SARRenderer:
         sub_size: Tuple[int, int] = (80, 60),
     ) -> None:
         """渲染SAR表格图像.
-        
+
         生成包含骨架和取代基的SAR表格图像。
         如果R基团超过2个，会生成多个图像(每2个R基团一个)。
 
@@ -478,7 +472,9 @@ class SARRenderer:
             rows, col_labels, scaffold_info.num_r_groups, sub_size
         )
 
-        combined_img = combine_scaffold_and_table(scaffold_img, table_img, f"Cluster SAR")
+        combined_img = combine_scaffold_and_table(
+            scaffold_img, table_img, f"Cluster SAR"
+        )
 
         combined_img.save(output_path)
         logger.info(f"Saved SAR table to {output_path}")
@@ -492,7 +488,7 @@ class SARRenderer:
         sub_size: Tuple[int, int] = (80, 60),
     ) -> None:
         """渲染SAR修饰路径图像.
-        
+
         显示带R标签的骨架，然后按修饰路径分组的表格。
         每个表格显示具有相同R1但不同R2的化合物(或反之)。
 
@@ -589,7 +585,6 @@ class SARRenderer:
 
         path_tables = self._group_by_path(mol_data_list, num_r)
 
-        combined_images = []
         for table_idx, (title, table_rows, table_labels) in enumerate(path_tables):
             table_img = self._create_table_image(
                 table_rows, table_labels, num_r, sub_size

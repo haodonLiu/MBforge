@@ -16,11 +16,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import AllChem, rdFMCS, rdMolDescriptors
+from rdkit.Chem import rdFMCS, rdMolDescriptors
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +203,9 @@ class SubstructureMatcher:
 
         fp1 = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol1, radius, nBits=n_bits)
         fp2 = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol2, radius, nBits=n_bits)
-        return float(np.bitwise_and(fp1, fp2).sum()) / float(np.bitwise_or(fp1, fp2).sum())
+        return float(np.bitwise_and(fp1, fp2).sum()) / float(
+            np.bitwise_or(fp1, fp2).sum()
+        )
 
     def dice_similarity(
         self,
@@ -375,7 +377,9 @@ class SMARTSQuery:
             KeyError: 查询名称不存在时抛出.
         """
         if name not in self._queries:
-            raise KeyError(f"Query '{name}' not found. Available: {list(self._queries.keys())}")
+            raise KeyError(
+                f"Query '{name}' not found. Available: {list(self._queries.keys())}"
+            )
 
         query = self._queries[name]
         atom_matches = mol.GetSubstructMatches(query)
@@ -453,6 +457,7 @@ class SMARTSQuery:
 
 
 # 便捷工厂函数
+
 
 def query_functional_groups(mol: Chem.Mol) -> Dict[str, bool]:
     """查询常见官能团.

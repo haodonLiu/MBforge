@@ -29,7 +29,7 @@ Bemis-Murcko 骨架定义:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
@@ -65,7 +65,9 @@ def get_murcko_scaffold(
             return None
 
         # 转换为 SMILES 再转回，标准化表示
-        scaffold_smiles = Chem.MolToSmiles(scaffold, include_chirality=include_chirality)
+        scaffold_smiles = Chem.MolToSmiles(
+            scaffold, include_chirality=include_chirality
+        )
         if not scaffold_smiles or scaffold_smiles == "":
             return None
 
@@ -225,7 +227,9 @@ class ScaffoldClusterer:
         for mol_dict in molecules:
             mol = mol_dict.get("mol")
             if mol is None:
-                logger.warning(f"Skipping molecule without 'mol': {mol_dict.get('name', '?')}")
+                logger.warning(
+                    f"Skipping molecule without 'mol': {mol_dict.get('name', '?')}"
+                )
                 continue
 
             raw_smiles = get_murcko_scaffold_smiles(
@@ -311,7 +315,6 @@ class ScaffoldClusterer:
 if __name__ == "__main__":
     import argparse
     import json
-    import sys
 
     parser = argparse.ArgumentParser(description="MBForge 骨架聚类工具")
     parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
@@ -323,7 +326,9 @@ if __name__ == "__main__":
 
     from ..molecules.loader import load_molecules_from_file
 
-    molecules = load_molecules_from_file(args.input, args.smiles_column, args.activity_column)
+    molecules = load_molecules_from_file(
+        args.input, args.smiles_column, args.activity_column
+    )
     print(f"Loaded {len(molecules)} molecules")
 
     clusterer = ScaffoldClusterer(min_cluster_size=args.min_cluster)
@@ -335,12 +340,16 @@ if __name__ == "__main__":
         "clusters": [],
     }
     for c in clusters:
-        results["clusters"].append({
-            "scaffold": c.scaffold_smiles,
-            "num_molecules": c.num_molecules,
-            "mean_activity": round(c.mean_activity, 4) if c.mean_activity is not None else None,
-            "smiles": [m.get("smiles", "") for m in c.molecules],
-        })
+        results["clusters"].append(
+            {
+                "scaffold": c.scaffold_smiles,
+                "num_molecules": c.num_molecules,
+                "mean_activity": round(c.mean_activity, 4)
+                if c.mean_activity is not None
+                else None,
+                "smiles": [m.get("smiles", "") for m in c.molecules],
+            }
+        )
 
     output = json.dumps(results, indent=2, ensure_ascii=False)
     if args.output:

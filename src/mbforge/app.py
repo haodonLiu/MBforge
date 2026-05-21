@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 
 from PyQt6.QtCore import Qt
@@ -11,6 +10,7 @@ from PyQt6.QtWidgets import QApplication
 # 优先加载项目根目录的 .env 文件
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -40,6 +40,7 @@ def run_app(argv: list[str] | None = None) -> int:
     app = QApplication(argv)
     app.setApplicationName("MBForge")
     from .utils.constants import APP_VERSION
+
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("MBForge")
 

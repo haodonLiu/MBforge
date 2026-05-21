@@ -27,10 +27,9 @@ from __future__ import annotations
 
 import logging
 from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
-from rdkit import Chem
 from rdkit.ML.Cluster import Butina
 
 from .fingerprinter import MolecularFingerprinter
@@ -40,7 +39,7 @@ logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 
 class ClusteringError(Exception):
     """聚类操作失败异常.
-    
+
     当分子聚类过程失败时抛出此异常。
     """
 
@@ -50,9 +49,9 @@ class ClusteringError(Exception):
 @dataclass
 class ClusterResult:
     """聚类操作结果数据类.
-    
+
     存储单个聚类的详细信息。
-    
+
     属性:
         cluster_id: 聚类唯一标识符
         molecules: 聚类中包含的分子字典列表
@@ -70,15 +69,15 @@ class ClusterResult:
 
 class MolecularClusterer:
     """分子聚类器 - 基于指纹相似性.
-    
+
     该类使用分子指纹相似性将分子分组为聚类。
     支持Tanimoto和Butina两种聚类算法。
-    
+
     属性:
         fingerprinter: 分子指纹计算器实例
         threshold: 相似度阈值 (0.0-1.0)
         method: 聚类方法 ("tanimoto" 或 "butina")
-    
+
     示例:
         >>> clusterer = MolecularClusterer(threshold=0.7, method="butina")
         >>> clusters = clusterer.cluster(molecules)
@@ -103,7 +102,9 @@ class MolecularClusterer:
         self.threshold = threshold
         self.method = method
 
-    def cluster(self, molecules: List[Dict[str, object]]) -> Tuple[List[ClusterResult], np.ndarray]:
+    def cluster(
+        self, molecules: List[Dict[str, object]]
+    ) -> Tuple[List[ClusterResult], np.ndarray]:
         """基于指纹相似性对分子进行聚类.
 
         Args:
@@ -118,7 +119,9 @@ class MolecularClusterer:
         if len(molecules) == 0:
             return [], np.array([])
 
-        logger.info(f"Clustering {len(molecules)} molecules, threshold={self.threshold}")
+        logger.info(
+            f"Clustering {len(molecules)} molecules, threshold={self.threshold}"
+        )
 
         try:
             if self.method == "butina":
@@ -132,11 +135,11 @@ class MolecularClusterer:
         self, molecules: List[Dict[str, object]]
     ) -> Tuple[List[ClusterResult], np.ndarray]:
         """使用Butina算法进行聚类.
-        
+
         Butina算法是一种基于距离矩阵的聚类方法，
         首先选择相似度最高的分子作为聚类中心，
         然后将相似度高于阈值的分子分配到该聚类。
-        
+
         Args:
             molecules: 分子字典列表.
 
@@ -250,12 +253,13 @@ class MolecularClusterer:
 if __name__ == "__main__":
     import argparse
     import json
-    import sys
     from pathlib import Path
 
     parser = argparse.ArgumentParser(description="MBForge 分子聚类工具")
     parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
-    parser.add_argument("--method", choices=["tanimoto", "butina"], default="tanimoto", help="聚类算法")
+    parser.add_argument(
+        "--method", choices=["tanimoto", "butina"], default="tanimoto", help="聚类算法"
+    )
     parser.add_argument("--threshold", type=float, default=0.7, help="相似度阈值 (0-1)")
     parser.add_argument("--smiles-column", default="SMILES", help="CSV 中 SMILES 列名")
     parser.add_argument("--activity-column", default=None, help="CSV 中活性值列名")
@@ -264,7 +268,9 @@ if __name__ == "__main__":
 
     from ..molecules.loader import load_molecules_from_file
 
-    molecules = load_molecules_from_file(args.input, args.smiles_column, args.activity_column)
+    molecules = load_molecules_from_file(
+        args.input, args.smiles_column, args.activity_column
+    )
     print(f"Loaded {len(molecules)} molecules")
 
     clusterer = MolecularClusterer(threshold=args.threshold, method=args.method)
@@ -273,13 +279,15 @@ if __name__ == "__main__":
     results = []
     for c in clusters:
         rep = c.molecules[0] if c.molecules else {}
-        results.append({
-            "cluster_id": c.cluster_id,
-            "size": c.size,
-            "avg_similarity": round(c.avg_similarity, 4),
-            "representative_smiles": rep.get("smiles", ""),
-            "smiles": [m.get("smiles", "") for m in c.molecules],
-        })
+        results.append(
+            {
+                "cluster_id": c.cluster_id,
+                "size": c.size,
+                "avg_similarity": round(c.avg_similarity, 4),
+                "representative_smiles": rep.get("smiles", ""),
+                "smiles": [m.get("smiles", "") for m in c.molecules],
+            }
+        )
 
     output = json.dumps(results, indent=2, ensure_ascii=False)
     if args.output:

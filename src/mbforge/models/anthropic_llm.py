@@ -26,7 +26,9 @@ class AnthropicLLM(BaseLLM):
         import anthropic
 
         if not api_key or api_key.strip() == "":
-            raise ValueError("AnthropicLLM: api_key is empty. Please check your configuration.")
+            raise ValueError(
+                "AnthropicLLM: api_key is empty. Please check your configuration."
+            )
 
         self.client = anthropic.Anthropic(
             api_key=api_key,
@@ -72,12 +74,14 @@ class AnthropicLLM(BaseLLM):
                 if m.content:
                     content_blocks.append({"type": "text", "text": m.content})
                 for tc in m.tool_calls:
-                    content_blocks.append({
-                        "type": "tool_use",
-                        "id": tc.get("id", ""),
-                        "name": tc.get("name", ""),
-                        "input": tc.get("arguments", {}),
-                    })
+                    content_blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc.get("id", ""),
+                            "name": tc.get("name", ""),
+                            "input": tc.get("arguments", {}),
+                        }
+                    )
                 anthropic_msgs.append({"role": "assistant", "content": content_blocks})
                 continue
 
@@ -93,11 +97,15 @@ class AnthropicLLM(BaseLLM):
         anthropic_tools = []
         for t in openai_tools:
             func = t.get("function", {})
-            anthropic_tools.append({
-                "name": func.get("name", ""),
-                "description": func.get("description", ""),
-                "input_schema": func.get("parameters", {"type": "object", "properties": {}}),
-            })
+            anthropic_tools.append(
+                {
+                    "name": func.get("name", ""),
+                    "description": func.get("description", ""),
+                    "input_schema": func.get(
+                        "parameters", {"type": "object", "properties": {}}
+                    ),
+                }
+            )
         return anthropic_tools
 
     def _build_params(self, messages: List[Message], **kwargs) -> Dict[str, Any]:
@@ -141,18 +149,26 @@ class AnthropicLLM(BaseLLM):
                     # thinking 内容暂不输出给用户
                     pass
             elif chunk.type == "message_delta":
-                stop_reason = chunk.delta.stop_reason if hasattr(chunk.delta, "stop_reason") else None
+                stop_reason = (
+                    chunk.delta.stop_reason
+                    if hasattr(chunk.delta, "stop_reason")
+                    else None
+                )
                 yield StreamChunk(delta="", finish_reason=stop_reason)
 
     async def achat(self, messages: List[Message], **kwargs) -> str:
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.chat, messages, **kwargs)
 
     async def achat_stream(self, messages: List[Message], **kwargs):
         import asyncio
+
         loop = asyncio.get_running_loop()
-        iterator = await loop.run_in_executor(None, self.chat_stream, messages, **kwargs)
+        iterator = await loop.run_in_executor(
+            None, self.chat_stream, messages, **kwargs
+        )
         for chunk in iterator:
             yield chunk
             await asyncio.sleep(0)

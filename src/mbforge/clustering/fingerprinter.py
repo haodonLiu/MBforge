@@ -24,7 +24,7 @@ Tanimoto系数:
 
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import Union
 from dataclasses import dataclass
 
 import numpy as np
@@ -36,9 +36,9 @@ from rdkit import DataStructs
 @dataclass
 class FingerprintResult:
     """指纹生成结果数据类.
-    
+
     存储分子指纹及其元数据信息。
-    
+
     属性:
         fingerprint: 指纹位向量 (numpy数组)
         fp_type: 指纹类型 ("Morgan", "MACCS", "RDKit")
@@ -52,15 +52,15 @@ class FingerprintResult:
 
 class MolecularFingerprinter:
     """分子指纹计算器 - 支持多种指纹类型.
-    
+
     该类提供分子指纹生成和Tanimoto相似性计算功能。
     支持Morgan (ECFP)、MACCS和RDKit三种指纹类型。
-    
+
     属性:
         fp_type: 指纹类型
         radius: Morgan指纹的半径
         n_bits: 指纹位数
-    
+
     示例:
         >>> fp = MolecularFingerprinter(fp_type="Morgan", radius=2)
         >>> result = fp.fingerprint(mol)
@@ -133,7 +133,7 @@ class MolecularFingerprinter:
         self, mol1: Union[Chem.Mol, str], mol2: Union[Chem.Mol, str]
     ) -> float:
         """计算两个分子的Tanimoto相似度.
-        
+
         Tanimoto系数衡量两个分子的相似程度，范围为0.0(完全不同)到1.0(完全相同)。
 
         Args:
@@ -158,13 +158,13 @@ class MolecularFingerprinter:
 
     def _tanimoto(self, fp1: np.ndarray, fp2: np.ndarray) -> float:
         """计算两个指纹之间的Tanimoto系数.
-        
+
         Tanimoto系数 = 交集大小 / 并集大小
-        
+
         Args:
             fp1: 第一个指纹数组.
             fp2: 第二个指纹数组.
-            
+
         Returns:
             Tanimoto相似度 (0.0 到 1.0).
         """
@@ -176,7 +176,7 @@ class MolecularFingerprinter:
 
     def pairwise_similarity(self, molecules: list[Chem.Mol]) -> np.ndarray:
         """计算成对Tanimoto相似度矩阵.
-        
+
         计算所有分子之间的两两相似度，返回对称矩阵。
         对角线元素为1.0(分子与自身完全相同)。
 

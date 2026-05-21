@@ -17,23 +17,21 @@ from pathlib import Path
 from typing import Optional
 
 from .csar_io.reader import MoleculeReader
-from .csar_io.writer import MoleculeWriter
 from .clustering.fingerprinter import MolecularFingerprinter
 from .clustering.cluster import MolecularClusterer
 from .mcs.finder import MCSFinder
 from .sar.analyzer import SARAnalyzer
 from .csar_vis.renderer import SARRenderer, PlotSettings
-from .molecules.schema import MoleculeBatch
 
 logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 
 
 def parse_args() -> argparse.Namespace:
     """解析命令行参数.
-    
+
     定义并解析所有可用的命令行参数，包括输入输出路径、
     聚类参数、MCS参数和可视化选项等。
-    
+
     Returns:
         解析后的参数命名空间对象.
     """
@@ -127,7 +125,7 @@ def run_workflow(
     ic50_um_column: Optional[str] = None,
 ) -> None:
     """运行完整的SAR分析工作流.
-    
+
     执行完整的CSAR分析流程，包括:
     1. 读取分子数据
     2. 基于分子指纹进行聚类
@@ -202,7 +200,9 @@ def run_workflow(
                 mcs = mcs_finder.find_mcs(cluster.molecules)
                 mcs_results[cluster.cluster_id] = mcs
             except Exception as e:
-                logger.warning(f"MCS search failed for cluster {cluster.cluster_id}: {e}")
+                logger.warning(
+                    f"MCS search failed for cluster {cluster.cluster_id}: {e}"
+                )
 
     logger.info("Analyzing SAR")
     sar_analyzer = SARAnalyzer()
@@ -213,8 +213,7 @@ def run_workflow(
 
     if not skip_visualization:
         logger.info("Generating visualizations")
-        renderer = SARRenderer()
-        settings = PlotSettings()
+        renderer = SARRenderer(PlotSettings())
 
         logger.info("Rendering SAR summary")
         renderer.render_sar_summary(sar_results, output_dir / "sar_summary.png")

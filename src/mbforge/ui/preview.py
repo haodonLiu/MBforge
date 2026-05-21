@@ -15,17 +15,23 @@ class MarkdownPreview(QWebEngineView):
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self._md = markdown.Markdown(extensions=[
-            "tables",
-            "fenced_code",
-            "toc",
-            "nl2br",
-        ])
+        self._md = markdown.Markdown(
+            extensions=[
+                "tables",
+                "fenced_code",
+                "toc",
+                "nl2br",
+            ]
+        )
         self.setStyleSheet("border: none;")
         settings = self.settings()
         if settings is not None:
-            settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+            settings.setAttribute(
+                QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True
+            )
+            settings.setAttribute(
+                QWebEngineSettings.WebAttribute.JavascriptEnabled, True
+            )
         self._base_html = """
         <!DOCTYPE html>
         <html>

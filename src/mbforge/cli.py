@@ -9,6 +9,7 @@ from pathlib import Path
 # 优先加载项目根目录的 .env 文件
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -41,7 +42,10 @@ def main() -> int:
 
     # version
     from .utils.constants import APP_VERSION
-    parser.add_argument("--version", action="version", version=f"%(prog)s {APP_VERSION}")
+
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {APP_VERSION}"
+    )
 
     args = parser.parse_args()
 
@@ -61,6 +65,7 @@ def _cmd_gui(args) -> int:
     if hasattr(args, "project") and args.project:
         # 通过环境变量传递，主窗口启动后读取
         import os
+
         os.environ["MBFORGE_OPEN_PROJECT"] = args.project
 
     return run_app(extra)

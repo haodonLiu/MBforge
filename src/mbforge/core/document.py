@@ -79,7 +79,9 @@ class DocumentProcessor:
                     base_image = doc.extract_image(xref)
                     if base_image:
                         ext = base_image["ext"]
-                        img_path = output_dir / f"page_{page_idx + 1}_img_{img_idx}.{ext}"
+                        img_path = (
+                            output_dir / f"page_{page_idx + 1}_img_{img_idx}.{ext}"
+                        )
                         with open(img_path, "wb") as f:
                             f.write(base_image["image"])
                         images.append(img_path)
@@ -88,7 +90,7 @@ class DocumentProcessor:
     @classmethod
     def extract_pdf_tables(cls, path: Path) -> List[List[List[str]]]:
         """简单表格提取（基于文本布局）.
-        
+
         返回: [表格] -> [行] -> [单元格]
         """
         tables = []
@@ -97,7 +99,9 @@ class DocumentProcessor:
         return tables
 
     @classmethod
-    def process(cls, path: Path, chunk_size: int = 512, chunk_overlap: int = 128) -> ExtractedContent:
+    def process(
+        cls, path: Path, chunk_size: int = 512, chunk_overlap: int = 128
+    ) -> ExtractedContent:
         """处理任意支持的文件，返回结构化内容."""
         path = Path(path)
         ext = path.suffix.lower()

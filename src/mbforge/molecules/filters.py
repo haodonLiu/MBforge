@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from rdkit import Chem
-from rdkit.Chem import Descriptors, Lipinski, rdMolDescriptors
+from rdkit.Chem import Descriptors, rdMolDescriptors
 from rdkit.Chem.FilterCatalog import FilterCatalog, FilterCatalogParams
 
 logger = logging.getLogger(__name__)
@@ -95,9 +95,7 @@ class MoleculeFilter(ABC):
             result = self.filter(mol)
             results.append(result)
             if not result.passed and names:
-                logger.debug(
-                    f"Filter rejected {names[i]}: {result.reasons}"
-                )
+                logger.debug(f"Filter rejected {names[i]}: {result.reasons}")
         return results
 
 
@@ -516,12 +514,11 @@ class CompositeFilter(MoleculeFilter):
         )
 
     def __repr__(self) -> str:
-        return (
-            f"CompositeFilter(filters={len(self.filters)}, mode='{self.mode}')"
-        )
+        return f"CompositeFilter(filters={len(self.filters)}, mode='{self.mode}')"
 
 
 # 便捷工厂函数
+
 
 def drug_likeness_filter(
     max_lipinski_violations: int = 1,

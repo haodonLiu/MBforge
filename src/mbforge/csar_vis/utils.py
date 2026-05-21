@@ -44,6 +44,8 @@ def _get_default_font(size: int = 12):
             except Exception:
                 continue
     return ImageFont.load_default()
+
+
 from rdkit.Chem import AllChem
 from rdkit.Chem.Draw import rdMolDraw2D
 
@@ -259,7 +261,8 @@ def create_sar_table_image(
     HEADER_BG_COLOR = (200, 200, 200)
     draw.rectangle(
         [0, 0, table_width - 1, table_height - 1],
-        outline=(0, 0, 0), width=2,
+        outline=(0, 0, 0),
+        width=2,
     )
 
     # 表头
@@ -267,15 +270,21 @@ def create_sar_table_image(
         x = padding + col_idx * cell_width
         draw.rectangle(
             [x, padding, x + cell_width, padding + label_height],
-            fill=HEADER_BG_COLOR, outline=(0, 0, 0),
+            fill=HEADER_BG_COLOR,
+            outline=(0, 0, 0),
         )
         text_bbox = draw.textbbox((0, 0), label, font=font)
         text_w = text_bbox[2] - text_bbox[0]
         text_h = text_bbox[3] - text_bbox[1]
-        draw.text((
-            x + (cell_width - text_w) // 2,
-            padding + (label_height - text_h) // 2,
-        ), label, fill=(0, 0, 0), font=font)
+        draw.text(
+            (
+                x + (cell_width - text_w) // 2,
+                padding + (label_height - text_h) // 2,
+            ),
+            label,
+            fill=(0, 0, 0),
+            font=font,
+        )
 
     # 数据行
     for row_idx, row in enumerate(rows):
@@ -283,7 +292,11 @@ def create_sar_table_image(
 
         # 确定该行的基础颜色
         row_bg = (255, 255, 255)
-        if use_activity_colors and activity_col_index is not None and activity_col_index < len(row):
+        if (
+            use_activity_colors
+            and activity_col_index is not None
+            and activity_col_index < len(row)
+        ):
             cell_val = row[activity_col_index]
             if isinstance(cell_val, (int, float)):
                 row_bg = get_activity_color(cell_val)
@@ -294,7 +307,8 @@ def create_sar_table_image(
             # 斑马纹效果
             bg_color = (
                 tuple(max(0, c - 15) for c in row_bg)
-                if (row_idx + col_idx) % 2 == 0 else row_bg
+                if (row_idx + col_idx) % 2 == 0
+                else row_bg
             )
 
             draw.rectangle(
@@ -304,18 +318,26 @@ def create_sar_table_image(
 
             if isinstance(cell, Image.Image):
                 img_resized = cell.resize(sub_size, Image.Resampling.LANCZOS)
-                table.paste(img_resized, (
-                    x + (cell_width - sub_size[0]) // 2,
-                    y + (cell_height - sub_size[1]) // 2,
-                ))
+                table.paste(
+                    img_resized,
+                    (
+                        x + (cell_width - sub_size[0]) // 2,
+                        y + (cell_height - sub_size[1]) // 2,
+                    ),
+                )
             elif isinstance(cell, str):
                 text_bbox = draw.textbbox((0, 0), cell, font=font)
                 text_w = text_bbox[2] - text_bbox[0]
                 text_h = text_bbox[3] - text_bbox[1]
-                draw.text((
-                    x + (cell_width - text_w) // 2,
-                    y + (cell_height - text_h) // 2,
-                ), cell, fill=(0, 0, 0), font=font)
+                draw.text(
+                    (
+                        x + (cell_width - text_w) // 2,
+                        y + (cell_height - text_h) // 2,
+                    ),
+                    cell,
+                    fill=(0, 0, 0),
+                    font=font,
+                )
 
             draw.rectangle([x, y, x + cell_width, y + cell_height], outline=(0, 0, 0))
 

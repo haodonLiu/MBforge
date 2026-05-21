@@ -252,11 +252,15 @@ class ProjectAgent:
                 if block.type == "text":
                     content += block.text
                 elif block.type == "tool_use":
-                    tool_calls.append({
-                        "id": getattr(block, "id", ""),
-                        "name": block.name,
-                        "arguments": dict(block.input) if hasattr(block, "input") and block.input else {},
-                    })
+                    tool_calls.append(
+                        {
+                            "id": getattr(block, "id", ""),
+                            "name": block.name,
+                            "arguments": dict(block.input)
+                            if hasattr(block, "input") and block.input
+                            else {},
+                        }
+                    )
             return content, tool_calls
 
         # OpenAI response object
@@ -270,11 +274,13 @@ class ProjectAgent:
                         args = json.loads(tc.function.arguments)
                     except Exception:
                         args = {}
-                    tool_calls.append({
-                        "id": getattr(tc, "id", ""),
-                        "name": tc.function.name,
-                        "arguments": args,
-                    })
+                    tool_calls.append(
+                        {
+                            "id": getattr(tc, "id", ""),
+                            "name": tc.function.name,
+                            "arguments": args,
+                        }
+                    )
             return content, tool_calls
 
         # 纯字符串回复

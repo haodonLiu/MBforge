@@ -53,10 +53,10 @@ class LayeredContext:
         self.max_total_tokens = max_total_tokens
 
         self._layers: List[ContextLayer] = [
-            ContextLayer("system", priority=0),    # L0
-            ContextLayer("project", priority=1),   # L1
+            ContextLayer("system", priority=0),  # L0
+            ContextLayer("project", priority=1),  # L1
             ContextLayer("tools", priority=2, ephemeral=True),  # L2
-            ContextLayer("history", priority=3),   # L3
+            ContextLayer("history", priority=3),  # L3
         ]
 
         if system_prompt:
@@ -120,11 +120,13 @@ class LayeredContext:
 
     # ---- 工具结果 ----
 
-    def add_tool_result(self, tool_name: str, result: str, tool_call_id: str = "") -> None:
+    def add_tool_result(
+        self, tool_name: str, result: str, tool_call_id: str = ""
+    ) -> None:
         """添加工具调用结果到历史层（紧跟 assistant 的 tool_use 消息之后）."""
         self._history.add(
             "tool",
-            f'[工具调用结果: {tool_name}]\n{result[:4000]}',
+            f"[工具调用结果: {tool_name}]\n{result[:4000]}",
             name=tool_name,
             tool_call_id=tool_call_id,
         )
@@ -137,7 +139,9 @@ class LayeredContext:
     def add_user_message(self, content: str) -> None:
         self._history.add("user", content)
 
-    def add_assistant_message(self, content: str, tool_calls: Optional[List[Dict]] = None) -> None:
+    def add_assistant_message(
+        self, content: str, tool_calls: Optional[List[Dict]] = None
+    ) -> None:
         self._history.add("assistant", content, tool_calls=tool_calls or None)
 
     def trim_history(self) -> None:

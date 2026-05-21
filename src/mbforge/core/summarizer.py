@@ -28,9 +28,9 @@ class DocumentSummary:
     """文档三层摘要."""
 
     doc_id: str
-    l0_abstract: str = ""      # ~100 tokens
-    l1_overview: str = ""      # ~2000 tokens
-    l2_detail_hint: str = ""   # 指向完整内容的位置提示
+    l0_abstract: str = ""  # ~100 tokens
+    l1_overview: str = ""  # ~2000 tokens
+    l2_detail_hint: str = ""  # 指向完整内容的位置提示
     keywords: list[str] = None  # 关键词标签
     entity_tags: list[str] = None  # 实体标签（分子名、蛋白名等）
 
@@ -137,6 +137,7 @@ class DocumentSummarizer:
             return text[:200]
         try:
             from ..models.base import Message
+
             prompt = f"请用一句话（不超过 80 字）总结以下科学文献的核心内容：\n\n{text[:4000]}"
             msgs = [
                 Message(role="system", content="你是一位文献摘要专家。"),
@@ -153,6 +154,7 @@ class DocumentSummarizer:
             return text[:2000]
         try:
             from ..models.base import Message
+
             prompt = (
                 "请对以下科学文献生成结构化概览（不超过 1500 字），包含：\n"
                 "1. 研究背景与目的\n"
@@ -177,26 +179,149 @@ class DocumentSummarizer:
         from collections import Counter
 
         # 提取 2-4 个字的词（中文）或 3-10 字符的英文词组
-        words = re.findall(r'[a-zA-Z]{3,10}', text.lower())
+        words = re.findall(r"[a-zA-Z]{3,10}", text.lower())
         # 过滤常见停用词
-        stop = {"the", "and", "for", "are", "but", "not", "you", "all", "can",
-                "had", "her", "was", "one", "our", "out", "day", "get", "has",
-                "him", "his", "how", "man", "new", "now", "old", "see", "two",
-                "way", "who", "boy", "did", "its", "let", "put", "say", "she",
-                "too", "use", "with", "that", "this", "from", "they", "have",
-                "been", "were", "said", "each", "which", "their", "time", "will",
-                "about", "would", "there", "could", "other", "after", "first",
-                "these", "them", "some", "what", "when", "where", "than", "then",
-                "more", "into", "over", "also", "only", "know", "take", "year",
-                "good", "come", "make", "well", "work", "life", "even", "here",
-                "look", "down", "most", "long", "last", "find", "give", "does",
-                "made", "part", "such", "keep", "call", "came", "back", "much",
-                "before", "right", "through", "during", "should", "between",
-                "being", "both", "under", "never", "really", "still", "those",
-                "while", "group", "high", "every", "great", "another", "study",
-                "using", "used", "based", "shown", "showed", "results", "method",
-                "activity", "compound", "molecular", "cell", "protein", "activity",
-                "analysis", "data", "fig", "table", "et", "al", "vs"}
+        stop = {
+            "the",
+            "and",
+            "for",
+            "are",
+            "but",
+            "not",
+            "you",
+            "all",
+            "can",
+            "had",
+            "her",
+            "was",
+            "one",
+            "our",
+            "out",
+            "day",
+            "get",
+            "has",
+            "him",
+            "his",
+            "how",
+            "man",
+            "new",
+            "now",
+            "old",
+            "see",
+            "two",
+            "way",
+            "who",
+            "boy",
+            "did",
+            "its",
+            "let",
+            "put",
+            "say",
+            "she",
+            "too",
+            "use",
+            "with",
+            "that",
+            "this",
+            "from",
+            "they",
+            "have",
+            "been",
+            "were",
+            "said",
+            "each",
+            "which",
+            "their",
+            "time",
+            "will",
+            "about",
+            "would",
+            "there",
+            "could",
+            "other",
+            "after",
+            "first",
+            "these",
+            "them",
+            "some",
+            "what",
+            "when",
+            "where",
+            "than",
+            "then",
+            "more",
+            "into",
+            "over",
+            "also",
+            "only",
+            "know",
+            "take",
+            "year",
+            "good",
+            "come",
+            "make",
+            "well",
+            "work",
+            "life",
+            "even",
+            "here",
+            "look",
+            "down",
+            "most",
+            "long",
+            "last",
+            "find",
+            "give",
+            "does",
+            "made",
+            "part",
+            "such",
+            "keep",
+            "call",
+            "came",
+            "back",
+            "much",
+            "before",
+            "right",
+            "through",
+            "during",
+            "should",
+            "between",
+            "being",
+            "both",
+            "under",
+            "never",
+            "really",
+            "still",
+            "those",
+            "while",
+            "group",
+            "high",
+            "every",
+            "great",
+            "another",
+            "study",
+            "using",
+            "used",
+            "based",
+            "shown",
+            "showed",
+            "results",
+            "method",
+            "activity",
+            "compound",
+            "molecular",
+            "cell",
+            "protein",
+            "activity",
+            "analysis",
+            "data",
+            "fig",
+            "table",
+            "et",
+            "al",
+            "vs",
+        }
         filtered = [w for w in words if w not in stop and len(w) > 3]
         counter = Counter(filtered)
         return [w for w, _ in counter.most_common(10)]

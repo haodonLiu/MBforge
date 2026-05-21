@@ -79,7 +79,9 @@ class FileTreeWidget(QTreeWidget):
                     continue
                 if entry.is_dir():
                     dirs.append(entry)
-                elif entry.is_file() and entry.suffix.lower() in (SUPPORTED_DOC_EXTS | SUPPORTED_MOL_EXTS):
+                elif entry.is_file() and entry.suffix.lower() in (
+                    SUPPORTED_DOC_EXTS | SUPPORTED_MOL_EXTS
+                ):
                     files.append(entry)
 
             for d in dirs:

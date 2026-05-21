@@ -8,7 +8,7 @@ import json as _json
 import re
 import uuid
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List
 
 
 def generate_uuid() -> str:
@@ -42,7 +42,9 @@ def truncate_text(text: str, max_len: int = 200) -> str:
     return text[:max_len].rsplit(" ", 1)[0] + "..."
 
 
-def split_text_chunks(text: str, chunk_size: int = 512, overlap: int = 128) -> List[str]:
+def split_text_chunks(
+    text: str, chunk_size: int = 512, overlap: int = 128
+) -> List[str]:
     """按字符数分块，优先在段落/句子边界分割."""
     chunks = []
     start = 0
@@ -72,7 +74,9 @@ def split_text_chunks(text: str, chunk_size: int = 512, overlap: int = 128) -> L
     return [c for c in chunks if c]
 
 
-def format_molecule_info(smiles: str, name: str = "", activity: float | None = None) -> str:
+def format_molecule_info(
+    smiles: str, name: str = "", activity: float | None = None
+) -> str:
     """格式化分子信息为文本."""
     lines = [f"**SMILES**: `{smiles}`"]
     if name:
@@ -111,6 +115,7 @@ def run_sync(sync_func, *args) -> Any:
         loop = None
     if loop and loop.is_running():
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor() as pool:
             future = pool.submit(sync_func, *args)
             return future.result()

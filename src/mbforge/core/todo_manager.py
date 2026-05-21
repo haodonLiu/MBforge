@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import threading
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
@@ -69,7 +68,9 @@ class TodoManager:
             try:
                 with open(self.todo_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                self._entries = [TodoEntry.from_dict(e) for e in data.get("entries", [])]
+                self._entries = [
+                    TodoEntry.from_dict(e) for e in data.get("entries", [])
+                ]
             except Exception as e:
                 logger.warning(f"Failed to load todo: {e}")
                 self._entries = []

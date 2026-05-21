@@ -104,10 +104,12 @@ def tool(description: str, parameters: Optional[Dict[str, Any]] = None):
 
         registry.register_tool(search_kb)
     """
+
     def decorator(func: Callable) -> Callable:
         func._tool_description = description
         func._tool_parameters = parameters or {}
         return func
+
     return decorator
 
 

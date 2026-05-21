@@ -25,6 +25,7 @@ class SentenceTransformerReranker(BaseReranker):
     def _load_model(self):
         if self._model is None:
             from sentence_transformers import CrossEncoder
+
             self._model = CrossEncoder(self.model_name, device=self.device)
         return self._model
 

@@ -1,0 +1,4237 @@
+diff --git a/src/mbforge/__init__.py b/src/mbforge/__init__.py
+index ff43ecc..5003f67 100644
+--- a/src/mbforge/__init__.py
++++ b/src/mbforge/__init__.py
+@@ -4,5 +4,5 @@
+ 支持 PDF OCR 解析、分子数据建库、LLM 智能对话、以及分子生成/对接/QSAR/MD 工作流扩展。
+ """
+ 
+-__version__ = "0.1.0"
++__version__ = "0.2.0"
+ __all__ = ["__version__"]
+diff --git a/src/mbforge/agent/agent.py b/src/mbforge/agent/agent.py
+index 1c91097..8c8b641 100644
+--- a/src/mbforge/agent/agent.py
++++ b/src/mbforge/agent/agent.py
+@@ -230,39 +230,12 @@ class ProjectAgent:
+         return self.llm.chat(messages)
+ 
+     def _call_llm_with_tools(self, messages: List[Message], tools: List[Dict]) -> Any:
+-        """带工具定义的 LLM 调用.
+-
+-        注意：这里使用 openai client 的原生 tools 参数。
+-        如果 LLM provider 不支持 function calling，会 fallback 到普通调用。
+-        """
+-        logger.debug(f"_call_llm_with_tools: llm type = {type(self.llm).__name__}")
++        """带工具定义的 LLM 调用。委托给 BaseLLM.call_with_tools()。"""
+         try:
+-            from ..models.anthropic_llm import AnthropicLLM
+-            from ..models.llm import OpenAILLM
+-
+-            if isinstance(self.llm, AnthropicLLM):
+-                return self.llm.call_with_tools(
+-                    messages,
+-                    tools,
+-                    max_tokens=self.llm.max_tokens,
+-                    temperature=self.llm.temperature,
+-                )
+-
+-            if isinstance(self.llm, OpenAILLM):
+-                # MiniMax OpenAI 兼容接口可能不支持 tool_choice="auto"，
+-                # 因此不显式传入，使用 API 默认行为
+-                return self.llm.client.chat.completions.create(
+-                    model=self.llm.model_name,
+-                    messages=self.llm._convert_messages(messages),
+-                    tools=tools,
+-                    max_tokens=self.llm.max_tokens,
+-                    temperature=self.llm.temperature,
+-                )
++            return self.llm.call_with_tools(messages, tools)
+         except Exception as e:
+             logger.exception(f"Function calling not available: {e}")
+-
+-        # fallback: 普通调用
+-        return self.llm.chat(messages)
++            return self.llm.chat(messages)
+ 
+     def _parse_response(self, response: Any) -> tuple[str, List[Dict]]:
+         """解析 LLM 响应，提取内容和工具调用.
+diff --git a/src/mbforge/app.py b/src/mbforge/app.py
+index e58e4ae..0a08c08 100644
+--- a/src/mbforge/app.py
++++ b/src/mbforge/app.py
+@@ -39,7 +39,7 @@ def run_app(argv: list[str] | None = None) -> int:
+ 
+     app = QApplication(argv)
+     app.setApplicationName("MBForge")
+-    app.setApplicationVersion("0.1.0")
++    app.setApplicationVersion("0.2.0")
+     app.setOrganizationName("MBForge")
+ 
+     # 全局字体
+diff --git a/src/mbforge/cli.py b/src/mbforge/cli.py
+index 1203b55..c7daf80 100644
+--- a/src/mbforge/cli.py
++++ b/src/mbforge/cli.py
+@@ -40,7 +40,7 @@ def main() -> int:
+     index_parser.add_argument("path", type=str, help="项目目录路径")
+ 
+     # version
+-    parser.add_argument("--version", action="version", version="%(prog)s 0.1.0")
++    parser.add_argument("--version", action="version", version="%(prog)s 0.2.0")
+ 
+     args = parser.parse_args()
+ 
+diff --git a/src/mbforge/clustering/cluster.py b/src/mbforge/clustering/cluster.py
+index 2c575c3..1446e77 100644
+--- a/src/mbforge/clustering/cluster.py
++++ b/src/mbforge/clustering/cluster.py
+@@ -243,3 +243,47 @@ class MolecularClusterer:
+ 
+         logger.info(f"Found {len(results)} clusters")
+         return results, sim_matrix
++
++
++# ---- CLI 入口 ----
++
++if __name__ == "__main__":
++    import argparse
++    import json
++    import sys
++    from pathlib import Path
++
++    parser = argparse.ArgumentParser(description="MBForge 分子聚类工具")
++    parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
++    parser.add_argument("--method", choices=["tanimoto", "butina"], default="tanimoto", help="聚类算法")
++    parser.add_argument("--threshold", type=float, default=0.7, help="相似度阈值 (0-1)")
++    parser.add_argument("--smiles-column", default="SMILES", help="CSV 中 SMILES 列名")
++    parser.add_argument("--activity-column", default=None, help="CSV 中活性值列名")
++    parser.add_argument("--output", "-o", default=None, help="输出 JSON 文件路径")
++    args = parser.parse_args()
++
++    from ..molecules.loader import load_molecules_from_file
++
++    molecules = load_molecules_from_file(args.input, args.smiles_column, args.activity_column)
++    print(f"Loaded {len(molecules)} molecules")
++
++    clusterer = MolecularClusterer(threshold=args.threshold, method=args.method)
++    clusters, sim_matrix = clusterer.cluster(molecules)
++
++    results = []
++    for c in clusters:
++        rep = c.molecules[0] if c.molecules else {}
++        results.append({
++            "cluster_id": c.cluster_id,
++            "size": c.size,
++            "avg_similarity": round(c.avg_similarity, 4),
++            "representative_smiles": rep.get("smiles", ""),
++            "smiles": [m.get("smiles", "") for m in c.molecules],
++        })
++
++    output = json.dumps(results, indent=2, ensure_ascii=False)
++    if args.output:
++        Path(args.output).write_text(output, encoding="utf-8")
++        print(f"Saved {len(clusters)} clusters to {args.output}")
++    else:
++        print(output)
+diff --git a/src/mbforge/clustering/scaffold.py b/src/mbforge/clustering/scaffold.py
+index dc8bdb6..17b82bc 100644
+--- a/src/mbforge/clustering/scaffold.py
++++ b/src/mbforge/clustering/scaffold.py
+@@ -304,3 +304,47 @@ class ScaffoldClusterer:
+             "largest_cluster_size": largest,
+             "scaffold_diversity_index": round(diversity_index, 4),
+         }
++
++
++# ---- CLI 入口 ----
++
++if __name__ == "__main__":
++    import argparse
++    import json
++    import sys
++
++    parser = argparse.ArgumentParser(description="MBForge 骨架聚类工具")
++    parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
++    parser.add_argument("--min-cluster", type=int, default=1, help="最小簇大小")
++    parser.add_argument("--smiles-column", default="SMILES", help="CSV 中 SMILES 列名")
++    parser.add_argument("--activity-column", default=None, help="CSV 中活性值列名")
++    parser.add_argument("--output", "-o", default=None, help="输出 JSON 文件路径")
++    args = parser.parse_args()
++
++    from ..molecules.loader import load_molecules_from_file
++
++    molecules = load_molecules_from_file(args.input, args.smiles_column, args.activity_column)
++    print(f"Loaded {len(molecules)} molecules")
++
++    clusterer = ScaffoldClusterer(min_cluster_size=args.min_cluster)
++    clusters = clusterer.cluster(molecules)
++    diversity = clusterer.get_scaffold_diversity(molecules)
++
++    results = {
++        "diversity": diversity,
++        "clusters": [],
++    }
++    for c in clusters:
++        results["clusters"].append({
++            "scaffold": c.scaffold_smiles,
++            "num_molecules": c.num_molecules,
++            "mean_activity": round(c.mean_activity, 4) if c.mean_activity is not None else None,
++            "smiles": [m.get("smiles", "") for m in c.molecules],
++        })
++
++    output = json.dumps(results, indent=2, ensure_ascii=False)
++    if args.output:
++        Path(args.output).write_text(output, encoding="utf-8")
++        print(f"Saved {len(clusters)} scaffold clusters to {args.output}")
++    else:
++        print(output)
+diff --git a/src/mbforge/core/mol_database.py b/src/mbforge/core/mol_database.py
+index 9abd403..25b824b 100644
+--- a/src/mbforge/core/mol_database.py
++++ b/src/mbforge/core/mol_database.py
+@@ -91,6 +91,34 @@ class MoleculeRecord:
+         }
+         return props
+ 
++    def to_molecule(self):
++        """转换为 schema.Molecule 对象。"""
++        from ..molecules.schema import Molecule
++        return Molecule(
++            id=self.mol_id,
++            smiles=self.smiles,
++            name=self.name,
++            source="pdf" if self.source_doc else "manual",
++            activity=self.activity,
++            activity_unit=self.units,
++            cas=self.tags[0] if self.tags else None,
++            properties=self.properties,
++        )
++
++    @classmethod
++    def from_molecule(cls, mol) -> "MoleculeRecord":
++        """从 schema.Molecule 创建 MoleculeRecord。"""
++        return cls(
++            mol_id=mol.id,
++            smiles=mol.smiles,
++            name=mol.name,
++            activity=mol.activity,
++            activity_type="IC50",
++            units=mol.activity_unit or "nM",
++            properties=mol.properties,
++            tags=[mol.cas] if mol.cas else [],
++        )
++
+ 
+ class MoleculeDatabase:
+     """分子数据库管理器."""
+diff --git a/src/mbforge/core/project.py b/src/mbforge/core/project.py
+index 2694f74..4b4e768 100644
+--- a/src/mbforge/core/project.py
++++ b/src/mbforge/core/project.py
+@@ -123,7 +123,7 @@ class Project:
+     def _save_index(self) -> None:
+         self.meta_dir.mkdir(parents=True, exist_ok=True)
+         data = {
+-            "version": "0.1.0",
++            "version": "0.2.0",
+             "updated_at": datetime.now().isoformat(),
+             "documents": [e.to_dict() for e in self._index.values()],
+         }
+diff --git a/src/mbforge/csar_io/__init__.py b/src/mbforge/csar_io/__init__.py
+index dca4b11..06a064a 100644
+--- a/src/mbforge/csar_io/__init__.py
++++ b/src/mbforge/csar_io/__init__.py
+@@ -26,6 +26,7 @@ from .api_client import (  # API 客户端
+ from .cas_resolver import CASResolver, CASResolverError  # CAS 号解析器和异常
+ from .reader import MoleculeReader, MoleculeReadError  # 分子读取器和读取异常
+ from .writer import MoleculeWriter, MoleculeWriteError  # 分子写入器和写入异常
++from ..molecules.schema import Molecule, MoleculeBatch  # 统一数据契约
+ 
+ # 模块公开接口
+ __all__ = [
+@@ -44,4 +45,7 @@ __all__ = [
+     "MoleculeReadError",
+     "MoleculeWriter",
+     "MoleculeWriteError",
++    # 数据契约
++    "Molecule",
++    "MoleculeBatch",
+ ]
+diff --git a/src/mbforge/csar_io/reader.py b/src/mbforge/csar_io/reader.py
+index d0dd964..9b3b5b9 100644
+--- a/src/mbforge/csar_io/reader.py
++++ b/src/mbforge/csar_io/reader.py
+@@ -25,7 +25,7 @@ from rdkit import Chem
+ from rdkit.Chem import PandasTools
+ 
+ from ..clustering.fingerprinter import MolecularFingerprinter
+-from ..molecules.models import MoleculeEntry, MoleculeBatch
++from ..molecules.schema import Molecule, MoleculeBatch
+ 
+ logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
+ 
+@@ -309,10 +309,10 @@ class MoleculeReader:
+         self,
+         path: Union[str, Path],
+         **kwargs: Any,
+-    ) -> List[MoleculeEntry]:
+-        """读取分子并返回类型安全的 MoleculeEntry 列表.
++    ) -> List[Molecule]:
++        """读取分子并返回类型安全的 Molecule 列表.
+ 
+-        这是 read() 的类型安全版本，将字典列表转换为 MoleculeEntry 对象。
++        这是 read() 的类型安全版本，将字典列表转换为 Molecule 对象。
+         支持自动检测文件格式。
+ 
+         Args:
+@@ -320,7 +320,7 @@ class MoleculeReader:
+             **kwargs: 传递给具体读取方法的额外参数.
+ 
+         Returns:
+-            MoleculeEntry 对象列表.
++            Molecule 对象列表.
+ 
+         Raises:
+             MoleculeReadError: 格式不支持或读取失败时抛出.
+@@ -332,14 +332,14 @@ class MoleculeReader:
+             >>> print(batch.filter_has_activity())
+         """
+         dicts = self.read(path, **kwargs)
+-        entries: List[MoleculeEntry] = []
++        entries: List[Molecule] = []
+         for d in dicts:
+             try:
+-                entries.append(MoleculeEntry.from_dict(d))
+-            except ValueError as e:
+-                logger.warning(f"Skipping invalid molecule entry: {e}")
++                entries.append(Molecule.from_dict(d))
++            except Exception as e:
++                logger.warning(f"Skipping invalid molecule: {e}")
+                 continue
+-        logger.info(f"Converted {len(entries)} molecules to MoleculeEntry")
++        logger.info(f"Converted {len(entries)} molecules to Molecule")
+         return entries
+ 
+     def read_batch(
+diff --git a/src/mbforge/csar_io/writer.py b/src/mbforge/csar_io/writer.py
+index e1614a0..1a53288 100644
+--- a/src/mbforge/csar_io/writer.py
++++ b/src/mbforge/csar_io/writer.py
+@@ -24,7 +24,7 @@ import pandas as pd
+ from rdkit import Chem
+ from rdkit.Chem import AllChem, Descriptors
+ 
+-from ..molecules.models import MoleculeEntry, MoleculeBatch
++from ..molecules.schema import Molecule, MoleculeBatch
+ 
+ logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
+ 
+@@ -168,58 +168,58 @@ class MoleculeWriter:
+         logger.info(f"Successfully wrote {len(molecules)} molecules")
+ 
+     # ------------------------------------------------------------------
+-    # MoleculeEntry / MoleculeBatch 支持
++    # Molecule / MoleculeBatch 支持（schema 契约）
+     # ------------------------------------------------------------------
+ 
+-    def write_entries_csv(
+-        self, entries: List[MoleculeEntry], path: Union[str, Path]
++    def write_molecules_csv(
++        self, molecules: List[Molecule], path: Union[str, Path]
+     ) -> None:
+-        """将 MoleculeEntry 列表写入 CSV 文件.
++        """将 Molecule 列表写入 CSV 文件.
+ 
+         Args:
+-            entries: MoleculeEntry 列表.
++            molecules: Molecule 列表.
+             path: 输出 CSV 文件路径.
+ 
+         Raises:
+             MoleculeWriteError: 写入失败时抛出.
+         """
+-        batch = MoleculeBatch(entries)
++        batch = MoleculeBatch(molecules)
+         try:
+             batch.to_csv(path)
+         except Exception as e:
+             raise MoleculeWriteError(f"Failed to write CSV file {path}: {e}") from e
+ 
+-    def write_entries_sdf(
+-        self, entries: List[MoleculeEntry], path: Union[str, Path]
++    def write_molecules_sdf(
++        self, molecules: List[Molecule], path: Union[str, Path]
+     ) -> None:
+-        """将 MoleculeEntry 列表写入 SDF 文件.
++        """将 Molecule 列表写入 SDF 文件.
+ 
+         Args:
+-            entries: MoleculeEntry 列表.
++            molecules: Molecule 列表.
+             path: 输出 SDF 文件路径.
+ 
+         Raises:
+             MoleculeWriteError: 写入失败时抛出.
+         """
+-        batch = MoleculeBatch(entries)
++        batch = MoleculeBatch(molecules)
+         try:
+             batch.to_sdf(path)
+         except Exception as e:
+             raise MoleculeWriteError(f"Failed to write SDF file {path}: {e}") from e
+ 
+-    def write_entries_excel(
+-        self, entries: List[MoleculeEntry], path: Union[str, Path]
++    def write_molecules_excel(
++        self, molecules: List[Molecule], path: Union[str, Path]
+     ) -> None:
+-        """将 MoleculeEntry 列表写入 Excel 文件.
++        """将 Molecule 列表写入 Excel 文件.
+ 
+         Args:
+-            entries: MoleculeEntry 列表.
++            molecules: Molecule 列表.
+             path: 输出 Excel 文件路径.
+ 
+         Raises:
+             MoleculeWriteError: 写入失败时抛出.
+         """
+-        batch = MoleculeBatch(entries)
++        batch = MoleculeBatch(molecules)
+         try:
+             batch.to_excel(path)
+         except Exception as e:
+diff --git a/src/mbforge/csar_main.py b/src/mbforge/csar_main.py
+index 662c281..60bbd16 100644
+--- a/src/mbforge/csar_main.py
++++ b/src/mbforge/csar_main.py
+@@ -16,14 +16,14 @@ import sys
+ from pathlib import Path
+ from typing import Optional
+ 
+-from mbforge.csar_io.reader import MoleculeReader
+-from mbforge.csar_io.writer import MoleculeWriter
+-from mbforge.clustering.fingerprinter import MolecularFingerprinter
+-from mbforge.clustering.cluster import MolecularClusterer
+-from mbforge.mcs.finder import MCSFinder
+-from mbforge.sar.analyzer import SARAnalyzer
+-from mbforge.csar_vis.renderer import SARRenderer, PlotSettings
+-from mbforge.molecules.models import MoleculeBatch
++from .csar_io.reader import MoleculeReader
++from .csar_io.writer import MoleculeWriter
++from .clustering.fingerprinter import MolecularFingerprinter
++from .clustering.cluster import MolecularClusterer
++from .mcs.finder import MCSFinder
++from .sar.analyzer import SARAnalyzer
++from .csar_vis.renderer import SARRenderer, PlotSettings
++from .molecules.schema import MoleculeBatch
+ 
+ logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
+ 
+diff --git a/src/mbforge/csar_scripts/__init__.py b/src/mbforge/csar_scripts/__init__.py
+deleted file mode 100644
+index ac25999..0000000
+--- a/src/mbforge/csar_scripts/__init__.py
++++ /dev/null
+@@ -1,8 +0,0 @@
+-"""命令行工具脚本模块.
+-
+-本模块包含独立的命令行工具脚本：
+-    - sar_image_generator.py: SAR 图像生成器（独立入口）
+-    - proc.py: Excel 数据去重脚本
+-
+-这些脚本可以从命令行直接运行，也可以通过 python -m 调用。
+-"""
+diff --git a/src/mbforge/csar_scripts/proc.py b/src/mbforge/csar_scripts/proc.py
+deleted file mode 100644
+index 6f3d72e..0000000
+--- a/src/mbforge/csar_scripts/proc.py
++++ /dev/null
+@@ -1,66 +0,0 @@
+-import pandas as pd
+-
+-# 读取Excel数据
+-data = pd.read_excel(r"C:\Users\10954\Desktop\CSAR\MRGPRX2_activity_data.xlsx")
+-print("原始数据前5行:")
+-print(data.head())
+-print(f"\n原始数据形状: {data.shape}")
+-
+-# 查看重复项情况
+-duplicates = data.duplicated()
+-print(f"\n重复行数: {duplicates.sum()}")
+-
+-# 方法: 根据指定列去重并取平均值，保持原有列顺序
+-def remove_duplicates_and_average(df, id_column):
+-    """
+-    根据指定列去重，对重复的行的数值列取平均值
+-    保持原有列顺序
+-    
+-    Args:
+-        df: DataFrame
+-        id_column: 用于识别重复的列名
+-    
+-    Returns:
+-        去重并平均后的DataFrame（保持原有列顺序）
+-    """
+-    # 记录原始列顺序
+-    original_columns = df.columns.tolist()
+-    
+-    # 选择数值列
+-    numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
+-    
+-    # 需要聚合的列：数值列取平均，其他列取第一个值
+-    agg_dict = {}
+-    for col in df.columns:
+-        if col == id_column:
+-            continue
+-        elif col in numeric_columns:
+-            agg_dict[col] = 'mean'  # 数值列取平均
+-        else:
+-            agg_dict[col] = 'first'  # 非数值列取第一个值
+-    
+-    # 按id_column分组并聚合
+-    result = df.groupby(id_column, as_index=False).agg(agg_dict)
+-    
+-    # 保持原始列顺序
+-    result = result[original_columns]
+-    
+-    return result
+-
+-
+-# 使用SMILES列作为标识列去重
+-if 'SMILES' in data.columns:
+-    deduplicated_data = remove_duplicates_and_average(data, 'SMILES')
+-    print(f"\n去重后数据形状: {deduplicated_data.shape}")
+-    print(f"列顺序: {deduplicated_data.columns.tolist()}")
+-    print("\n去重后数据前5行:")
+-    print(deduplicated_data.head())
+-    
+-    # 保存结果为CSV格式（保持列顺序）
+-    output_path = r"C:\Users\10954\Desktop\CSAR\MRGPRX2_activity_data_deduplicated.csv"
+-    deduplicated_data.to_csv(output_path, index=False)
+-    print(f"\n结果已保存到: {output_path}")
+-    print(f"输出列顺序: {deduplicated_data.columns.tolist()}")
+-else:
+-    print("\n错误: 数据中没有 'SMILES' 列")
+-    print("可用列:", data.columns.tolist())
+\ No newline at end of file
+diff --git a/src/mbforge/csar_scripts/sar_image_generator.py b/src/mbforge/csar_scripts/sar_image_generator.py
+deleted file mode 100644
+index 0667bef..0000000
+--- a/src/mbforge/csar_scripts/sar_image_generator.py
++++ /dev/null
+@@ -1,1184 +0,0 @@
+-"""SAR Image Generator - Generate Structure-Activity Relationship images.
+-
+-This module creates professional SAR images with:
+-- Top: MCS scaffold with R-group labels (R1, R2, etc.)
+-- Bottom: Table with substituent structures (with attachment indicator ~) and activity data
+-
+-Features:
+-- Wavy line (~) attachment indicator for substituents
+-- Support for additional property columns (MW, LogP, TPSA, etc.)
+-- High-resolution PNG output suitable for scientific reports
+-- Color-coded activity values
+-- Clustering before SAR analysis (each cluster <= 10 molecules)
+-"""
+-from __future__ import annotations
+-
+-import io
+-import logging
+-import random
+-from dataclasses import dataclass, field
+-from pathlib import Path
+-from typing import Any, Dict, List, Optional, Tuple, Union
+-
+-import numpy as np
+-import pandas as pd
+-from PIL import Image, ImageDraw, ImageFont
+-from rdkit import Chem
+-from rdkit.Chem import AllChem, Descriptors, Draw, rdFMCS
+-from rdkit.Chem import DataStructs
+-from rdkit.Chem.rdFingerprintGenerator import GetMorganGenerator
+-from rdkit.Chem.Draw import rdMolDraw2D
+-
+-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+-logger = logging.getLogger(__name__)
+-
+-
+-# =============================================================================
+-# Data Classes
+-# =============================================================================
+-
+-@dataclass
+-class SubstituentData:
+-    """Substituent data with molecular properties."""
+-    position_idx: int
+-    r_label: str
+-    smiles: str
+-    mol: Optional[Chem.Mol]
+-    activity: float
+-    mol_name: str
+-    full_mol: Optional[Chem.Mol] = None
+-    # Physicochemical properties
+-    mw: float = 0.0
+-    logp: float = 0.0
+-    tpsa: float = 0.0
+-    hbd: int = 0
+-    hba: int = 0
+-
+-
+-@dataclass
+-class ScaffoldData:
+-    """Scaffold (MCS) data with R-group positions."""
+-    mol: Optional[Chem.Mol] = None
+-    smiles: str = ""
+-    r_positions: Dict[int, List[SubstituentData]] = field(default_factory=dict)
+-
+-
+-# =============================================================================
+-# Core Functions
+-# =============================================================================
+-
+-def calculate_properties(mol: Chem.Mol) -> Dict[str, float]:
+-    """Calculate molecular physicochemical properties.
+-    
+-    Args:
+-        mol: RDKit molecule object.
+-        
+-    Returns:
+-        Dictionary of calculated properties.
+-    """
+-    if mol is None:
+-        return {"MW": 0, "LogP": 0, "TPSA": 0, "HBD": 0, "HBA": 0}
+-    
+-    try:
+-        return {
+-            "MW": round(Descriptors.MolWt(mol), 1),
+-            "LogP": round(Descriptors.MolLogP(mol), 2),
+-            "TPSA": round(Descriptors.TPSA(mol), 1),
+-            "HBD": Descriptors.NumHDonors(mol),
+-            "HBA": Descriptors.NumHAcceptors(mol),
+-        }
+-    except Exception:
+-        return {"MW": 0, "LogP": 0, "TPSA": 0, "HBD": 0, "HBA": 0}
+-
+-
+-def extract_substituent(
+-    mol: Chem.Mol, attachment_idx: int, sub_idx: int
+-) -> Tuple[Optional[Chem.Mol], str]:
+-    """Extract substituent from molecule using BFS.
+-    
+-    Args:
+-        mol: Full molecule.
+-        attachment_idx: Index of attachment atom (on scaffold).
+-        sub_idx: Index of first substituent atom.
+-        
+-    Returns:
+-        Tuple of (substituent Mol, substituent SMILES).
+-    """
+-    sub_atoms = set()
+-    queue = [sub_idx]
+-    visited = {sub_idx}
+-    
+-    while queue:
+-        current = queue.pop(0)
+-        sub_atoms.add(current)
+-        for neighbor in mol.GetAtomWithIdx(current).GetNeighbors():
+-            if neighbor.GetIdx() not in visited and neighbor.GetIdx() != attachment_idx:
+-                visited.add(neighbor.GetIdx())
+-                queue.append(neighbor.GetIdx())
+-    
+-    if not sub_atoms:
+-        return None, ""
+-    
+-    try:
+-        sub_smiles = Chem.MolFragmentToSmiles(mol, atomsToUse=list(sub_atoms))
+-        if not sub_smiles:
+-            return None, ""
+-        sub_mol = Chem.MolFromSmiles(sub_smiles)
+-        return sub_mol, sub_smiles
+-    except Exception:
+-        return None, ""
+-
+-
+-def find_mcs_and_substituents(
+-    molecules: List[Dict[str, Any]],
+-    min_atoms: int = 3,
+-    timeout: int = 30,
+-    sample_size: int = 8,
+-    max_r_groups: int = 2,
+-) -> Optional[ScaffoldData]:
+-    """Find MCS and extract substituents for all molecules.
+-
+-    Randomly samples molecules for MCS finding to improve performance.
+-    Filters to keep only MCS with at most max_r_groups substituents.
+-
+-    Args:
+-        molecules: List of molecule dicts with 'mol', 'smiles', 'name', 'activity'.
+-        min_atoms: Minimum atoms for valid MCS.
+-        timeout: MCS search timeout in seconds.
+-        sample_size: Number of molecules to sample for MCS finding.
+-        max_r_groups: Maximum number of R-groups allowed (default 2, max 6).
+-
+-    Returns:
+-        ScaffoldData object or None if no MCS found.
+-    """
+-    # 限制最大R基团数量为合理范围
+-    max_r_groups = min(max(1, max_r_groups), 6)
+-
+-    if len(molecules) < 2:
+-        logger.warning("Need at least 2 molecules for MCS")
+-        return None
+-    
+-    if len(molecules) > sample_size:
+-        sample_mols = random.sample(molecules, sample_size)
+-        logger.info(f"Sampling {sample_size} molecules from {len(molecules)} total")
+-    else:
+-        sample_mols = molecules
+-    
+-    mols = [m["mol"] for m in sample_mols if m.get("mol") is not None]
+-    if len(mols) < 2:
+-        return None
+-    
+-    # Find MCS
+-    logger.info("Finding MCS...")
+-    mcs_result = rdFMCS.FindMCS(
+-        mols,
+-        ringMatchesRingOnly=False,  # Allow non-ring matches
+-        completeRingsOnly=False,
+-        timeout=timeout,
+-        threshold=0.5,  # Allow partial match
+-    )
+-    
+-    if mcs_result.numAtoms < min_atoms:
+-        logger.warning(f"MCS too small: {mcs_result.numAtoms} atoms")
+-        return None
+-    
+-    mcs_smarts = mcs_result.smartsString
+-    mcs_mol = Chem.MolFromSmarts(mcs_smarts)
+-    
+-    if mcs_mol is None:
+-        return None
+-    
+-    logger.info(f"MCS found: {mcs_result.numAtoms} atoms, SMARTS: {mcs_smarts[:50]}...")
+-    
+-    # Extract substituents
+-    r_positions: Dict[int, List[SubstituentData]] = {}
+-    r_counter: Dict[int, int] = {}
+-    
+-    for mol_data in molecules:
+-        mol = mol_data.get("mol")
+-        if mol is None:
+-            continue
+-        
+-        name = mol_data.get("name", "unknown")
+-        activity = mol_data.get("activity", 0.0)
+-        
+-        match = mol.GetSubstructMatch(mcs_mol)
+-        if not match:
+-            continue
+-        
+-        mcs_atom_set = set(match)
+-        mol_to_mcs = {mol_idx: mcs_idx for mcs_idx, mol_idx in enumerate(match)}
+-        
+-        # Find substituents at each scaffold atom
+-        for atom in mol.GetAtoms():
+-            if atom.GetIdx() not in mcs_atom_set:
+-                continue
+-            
+-            for neighbor in atom.GetNeighbors():
+-                if neighbor.GetIdx() not in mcs_atom_set:
+-                    # Found a substituent
+-                    sub_mol, sub_smiles = extract_substituent(
+-                        mol, atom.GetIdx(), neighbor.GetIdx()
+-                    )
+-                    
+-                    mcs_atom_idx = mol_to_mcs.get(atom.GetIdx())
+-                    if mcs_atom_idx is None:
+-                        continue
+-                    
+-                    if mcs_atom_idx not in r_positions:
+-                        r_positions[mcs_atom_idx] = []
+-                        r_counter[mcs_atom_idx] = len(r_positions)
+-                    
+-                    # Calculate properties
+-                    props = calculate_properties(sub_mol) if sub_mol else {}
+-                    
+-                    sub_data = SubstituentData(
+-                        position_idx=mcs_atom_idx,
+-                        r_label=f"R{r_counter[mcs_atom_idx] + 1}",
+-                        smiles=sub_smiles,
+-                        mol=sub_mol,
+-                        activity=activity,
+-                        mol_name=name,
+-                        full_mol=mol,
+-                        mw=props.get("MW", 0),
+-                        logp=props.get("LogP", 0),
+-                        tpsa=props.get("TPSA", 0),
+-                        hbd=props.get("HBD", 0),
+-                        hba=props.get("HBA", 0),
+-                    )
+-                    r_positions[mcs_atom_idx].append(sub_data)
+-    
+-    if not r_positions:
+-        return None
+-    
+-    # Filter to keep only MCS with at most max_r_groups
+-    if len(r_positions) > max_r_groups:
+-        # Sort by number of substituents and keep top max_r_groups
+-        sorted_r = sorted(r_positions.items(), key=lambda x: len(x[1]), reverse=True)
+-        r_positions = dict(sorted_r[:max_r_groups])
+-        logger.info(f"Filtered MCS from {len(r_positions)} to {max_r_groups} R-groups")
+-    
+-    scaffold_smiles = Chem.MolToSmiles(mcs_mol)
+-    
+-    return ScaffoldData(
+-        mol=mcs_mol,
+-        smiles=scaffold_smiles,
+-        r_positions=r_positions,
+-    )
+-
+-
+-# =============================================================================
+-# Rendering Functions
+-# =============================================================================
+-
+-def render_scaffold_with_r_labels(
+-    scaffold_mol: Chem.Mol,
+-    r_positions: Dict[int, List],
+-    size: Tuple[int, int] = (600, 400),
+-) -> Optional[Image.Image]:
+-    """Render scaffold with R-group labels.
+-    
+-    Args:
+-        scaffold_mol: MCS scaffold molecule.
+-        r_positions: Dictionary mapping atom indices to substituent lists.
+-        size: Image size (width, height).
+-        
+-    Returns:
+-        PIL Image of scaffold with R labels.
+-    """
+-    if scaffold_mol is None:
+-        return None
+-    
+-    # Convert SMARTS to proper molecule for better rendering
+-    scaffold_copy = None
+-    try:
+-        scaffold_smiles = Chem.MolToSmiles(scaffold_mol)
+-        proper_mol = Chem.MolFromSmiles(scaffold_smiles)
+-        if proper_mol is not None and proper_mol.GetNumAtoms() > 0:
+-            # Map old R positions to new indices
+-            match = proper_mol.GetSubstructMatch(scaffold_mol)
+-            if match:
+-                new_r_positions = {}
+-                for old_idx, r_list in r_positions.items():
+-                    if old_idx < len(match):
+-                        new_r_positions[match[old_idx]] = r_list
+-                    else:
+-                        new_r_positions[old_idx] = r_list
+-                r_positions = new_r_positions
+-            scaffold_copy = proper_mol
+-        else:
+-            scaffold_copy = Chem.Mol(scaffold_mol)
+-    except Exception:
+-        scaffold_copy = Chem.Mol(scaffold_mol)
+-    
+-    # Set R labels
+-    sorted_positions = sorted(r_positions.keys())
+-    
+-    for i, atom_idx in enumerate(sorted_positions):
+-        r_label = f"R{i + 1}"
+-        try:
+-            scaffold_copy.GetAtomWithIdx(atom_idx).SetProp("_displayLabel", r_label)
+-        except Exception:
+-            pass
+-    
+-    AllChem.Compute2DCoords(scaffold_copy)
+-    
+-    # Render
+-    d = rdMolDraw2D.MolDraw2DCairo(size[0], size[1])
+-    d.drawOptions().addStereoAnnotation = True
+-    d.drawOptions().addAtomIndices = False
+-    d.drawOptions().fixedBondLength = 20
+-    d.DrawMolecule(scaffold_copy)
+-    d.FinishDrawing()
+-    
+-    png_bytes = d.GetDrawingText()
+-    return Image.open(io.BytesIO(png_bytes))
+-
+-
+-def render_substituent_with_wavy_line(
+-    sub_mol: Chem.Mol,
+-    size: Tuple[int, int] = (100, 70),
+-    attachment_char: str = "~",
+-) -> Optional[Image.Image]:
+-    """Render substituent with wavy line attachment indicator.
+-    
+-    Args:
+-        sub_mol: Substituent molecule.
+-        size: Image size.
+-        attachment_char: Character for attachment (~ or -).
+-        
+-    Returns:
+-        PIL Image with attachment indicator.
+-    """
+-    if sub_mol is None or sub_mol.GetNumAtoms() == 0:
+-        # Return placeholder for H (no substituent)
+-        img = Image.new("RGB", (size[0] + 30, size[1]), "white")
+-        draw = ImageDraw.Draw(img)
+-        try:
+-            font = ImageFont.truetype("arial.ttf", 14)
+-        except Exception:
+-            font = ImageFont.load_default()
+-        draw.text((15, size[1]//2 - 7), "H", fill=(0, 0, 0), font=font)
+-        return img
+-    
+-    try:
+-        AllChem.Compute2DCoords(sub_mol)
+-        d = rdMolDraw2D.MolDraw2DCairo(size[0], size[1])
+-        d.drawOptions().addStereoAnnotation = False
+-        d.drawOptions().addAtomIndices = False
+-        d.drawOptions().fixedBondLength = 12
+-        d.DrawMolecule(sub_mol)
+-        d.FinishDrawing()
+-        
+-        png_bytes = d.GetDrawingText()
+-        mol_img = Image.open(io.BytesIO(png_bytes))
+-        
+-        # Create image with wavy line attachment indicator
+-        attachment_width = 25
+-        total_width = attachment_width + size[0]
+-        combined = Image.new("RGB", (total_width, size[1]), "white")
+-        draw = ImageDraw.Draw(combined)
+-        
+-        # Draw wavy line
+-        y_center = size[1] // 2
+-        wave_points = []
+-        for i in range(4):
+-            x = 2 + i * 6
+-            y = y_center + (4 if i % 2 == 0 else -4)
+-            wave_points.append((x, y))
+-        
+-        if len(wave_points) >= 2:
+-            draw.line(wave_points, fill=(0, 0, 0), width=2)
+-        
+-        # Paste molecule image
+-        combined.paste(mol_img, (attachment_width, 0))
+-        
+-        return combined
+-        
+-    except Exception as e:
+-        logger.warning(f"Failed to render substituent: {e}")
+-        return None
+-
+-
+-def get_activity_color(activity: Optional[float]) -> Tuple[int, int, int]:
+-    """Get color based on activity value (IC50).
+-    
+-    Green = high activity (low IC50)
+-    Red = low activity (high IC50)
+-    """
+-    if activity is None:
+-        return (255, 255, 255)
+-    
+-    if activity <= 10:
+-        return (144, 238, 144)  # Light green
+-    elif activity <= 100:
+-        t = (activity - 10) / 90
+-        return (144 + int(111 * t), 238 - int(38 * t), 144 - int(144 * t))
+-    elif activity <= 1000:
+-        t = (activity - 100) / 900
+-        return (255, 200 - int(100 * t), 0)
+-    else:
+-        return (255, 99, 71)  # Tomato red
+-
+-
+-def create_sar_table(
+-    scaffold_data: ScaffoldData,
+-    include_properties: List[str] = None,
+-    sub_size: Tuple[int, int] = (100, 70),
+-    font_size: int = 11,
+-) -> Optional[Image.Image]:
+-    """Create SAR table with substituents and activity data.
+-    
+-    Args:
+-        scaffold_data: ScaffoldData with R positions and substituents.
+-        include_properties: List of property columns to include.
+-        sub_size: Substituent image size.
+-        font_size: Font size for text.
+-        
+-    Returns:
+-        PIL Image of the table.
+-    """
+-    if include_properties is None:
+-        include_properties = ["MW", "LogP"]
+-    
+-    # Collect unique substituent combinations
+-    r_keys = sorted(scaffold_data.r_positions.keys())
+-    num_r_groups = len(r_keys)
+-    
+-    if num_r_groups == 0:
+-        return None
+-    
+-    # Build rows: each row is a unique molecule with its substituents
+-    molecule_data: Dict[str, Dict] = {}  # mol_name -> data
+-    
+-    for r_idx, sub_list in scaffold_data.r_positions.items():
+-        for sub in sub_list:
+-            if sub.mol_name not in molecule_data:
+-                molecule_data[sub.mol_name] = {
+-                    "activity": sub.activity,
+-                    "substituents": {},
+-                    "full_mol": sub.full_mol,
+-                }
+-            molecule_data[sub.mol_name]["substituents"][r_idx] = sub
+-    
+-    if not molecule_data:
+-        return None
+-    
+-    # Sort by activity
+-    sorted_mols = sorted(molecule_data.items(), key=lambda x: x[1]["activity"])
+-    
+-    # Build table rows
+-    rows = []
+-    for mol_name, data in sorted_mols:
+-        row = []
+-        for r_idx in r_keys:
+-            sub = data["substituents"].get(r_idx)
+-            if sub and sub.mol:
+-                img = render_substituent_with_wavy_line(sub.mol, sub_size)
+-                row.append(img if img else "H")
+-            else:
+-                row.append("H")
+-        
+-        # Add activity
+-        activity = data["activity"]
+-        if activity and activity > 0:
+-            row.append(f"{activity:.1f}")
+-        else:
+-            row.append("N/A")
+-        
+-        # Add properties (use first substituent's properties as representative)
+-        first_sub = list(data["substituents"].values())[0] if data["substituents"] else None
+-        for prop in include_properties:
+-            if first_sub:
+-                val = getattr(first_sub, prop.lower(), 0)
+-                if isinstance(val, float):
+-                    row.append(f"{val:.1f}" if prop == "MW" else f"{val:.2f}")
+-                else:
+-                    row.append(str(val))
+-            else:
+-                row.append("-")
+-        
+-        rows.append((activity, row))
+-    
+-    # Build column labels
+-    col_labels = [f"R{i+1}" for i in range(num_r_groups)]
+-    col_labels.append("IC50(nM)")
+-    col_labels.extend(include_properties)
+-    
+-    # Create table image
+-    return _render_table(rows, col_labels, sub_size, font_size)
+-
+-
+-def _render_table(
+-    rows: List[Tuple[float, List[Any]]],
+-    col_labels: List[str],
+-    sub_size: Tuple[int, int],
+-    font_size: int,
+-) -> Image.Image:
+-    """Render the actual table image."""
+-    # Calculate dimensions
+-    img_col_width = sub_size[0] + 35  # Extra space for wavy line
+-    text_col_width = 70
+-    row_height = sub_size[1] + 15
+-    header_height = 35
+-    padding = 10
+-    
+-    num_cols = len(col_labels)
+-    num_rows = len(rows)
+-    
+-    # Determine column widths
+-    col_widths = []
+-    for i, label in enumerate(col_labels):
+-        if i < len(col_labels) - len(["IC50(nM)"]):  # Image columns
+-            col_widths.append(img_col_width)
+-        else:  # Text columns
+-            col_widths.append(text_col_width)
+-    
+-    total_width = sum(col_widths) + padding * 2
+-    total_height = header_height + num_rows * row_height + padding * 2
+-    
+-    # Create image
+-    table = Image.new("RGB", (total_width, total_height), "white")
+-    draw = ImageDraw.Draw(table)
+-    
+-    # Load font
+-    try:
+-        font = ImageFont.truetype("arial.ttf", font_size)
+-        header_font = ImageFont.truetype("arialbd.ttf", font_size + 1)
+-    except Exception:
+-        font = ImageFont.load_default()
+-        header_font = font
+-    
+-    # Draw header
+-    y = padding
+-    x = padding
+-    for i, (label, width) in enumerate(zip(col_labels, col_widths)):
+-        draw.rectangle([x, y, x + width, y + header_height], 
+-                      fill=(220, 220, 220), outline=(0, 0, 0), width=1)
+-        
+-        bbox = draw.textbbox((0, 0), label, font=header_font)
+-        text_w = bbox[2] - bbox[0]
+-        text_h = bbox[3] - bbox[1]
+-        draw.text((x + (width - text_w) // 2, y + (header_height - text_h) // 2),
+-                 label, fill=(0, 0, 0), font=header_font)
+-        x += width
+-    
+-    # Draw rows
+-    for row_idx, (activity, row) in enumerate(rows):
+-        y = padding + header_height + row_idx * row_height
+-        
+-        # Row background color based on activity
+-        bg_color = get_activity_color(activity)
+-        draw.rectangle([padding, y, total_width - padding, y + row_height],
+-                      fill=bg_color, outline=(0, 0, 0), width=1)
+-        
+-        x = padding
+-        for col_idx, (cell, width) in enumerate(zip(row, col_widths)):
+-            if isinstance(cell, Image.Image):
+-                # Center image in cell
+-                img_x = x + (width - cell.width) // 2
+-                img_y = y + (row_height - cell.height) // 2
+-                table.paste(cell, (img_x, img_y))
+-            else:
+-                # Draw text
+-                text = str(cell)
+-                bbox = draw.textbbox((0, 0), text, font=font)
+-                text_w = bbox[2] - bbox[0]
+-                text_h = bbox[3] - bbox[1]
+-                draw.text((x + (width - text_w) // 2, y + (row_height - text_h) // 2),
+-                         text, fill=(0, 0, 0), font=font)
+-            
+-            # Cell border
+-            draw.rectangle([x, y, x + width, y + row_height], outline=(0, 0, 0), width=1)
+-            x += width
+-    
+-    return table
+-
+-
+-def create_sar_image(
+-    scaffold_data: ScaffoldData,
+-    output_path: Union[str, Path],
+-    title: str = "SAR Analysis",
+-    scaffold_size: Tuple[int, int] = (500, 350),
+-    sub_size: Tuple[int, int] = (90, 65),
+-    include_properties: List[str] = None,
+-) -> bool:
+-    """Create complete SAR image with scaffold and table.
+-    
+-    Args:
+-        scaffold_data: ScaffoldData from find_mcs_and_substituents().
+-        output_path: Output PNG file path.
+-        title: Image title.
+-        scaffold_size: Scaffold image size.
+-        sub_size: Substituent image size.
+-        include_properties: Property columns to include.
+-        
+-    Returns:
+-        True if successful, False otherwise.
+-    """
+-    if scaffold_data.mol is None:
+-        logger.error("No scaffold molecule")
+-        return False
+-    
+-    if include_properties is None:
+-        include_properties = ["MW", "LogP"]
+-    
+-    output_path = Path(output_path)
+-    output_path.parent.mkdir(parents=True, exist_ok=True)
+-    
+-    # Render scaffold
+-    logger.info("Rendering scaffold...")
+-    scaffold_img = render_scaffold_with_r_labels(
+-        scaffold_data.mol, scaffold_data.r_positions, scaffold_size
+-    )
+-    
+-    if scaffold_img is None:
+-        logger.error("Failed to render scaffold")
+-        return False
+-    
+-    # Create table
+-    logger.info("Creating SAR table...")
+-    table_img = create_sar_table(
+-        scaffold_data, include_properties, sub_size
+-    )
+-    
+-    if table_img is None:
+-        logger.error("Failed to create table")
+-        return False
+-    
+-    # Combine images
+-    scaffold_w, scaffold_h = scaffold_img.size
+-    table_w, table_h = table_img.size
+-    
+-    total_width = max(scaffold_w, table_w) + 40
+-    title_height = 50 if title else 0
+-    total_height = title_height + scaffold_h + table_h + 40
+-    
+-    combined = Image.new("RGB", (total_width, total_height), "white")
+-    draw = ImageDraw.Draw(combined)
+-    
+-    # Load font
+-    try:
+-        title_font = ImageFont.truetype("arialbd.ttf", 16)
+-    except Exception:
+-        title_font = ImageFont.load_default()
+-    
+-    # Draw title
+-    if title:
+-        bbox = draw.textbbox((0, 0), title, font=title_font)
+-        text_w = bbox[2] - bbox[0]
+-        draw.text(((total_width - text_w) // 2, 15), title, fill=(0, 0, 0), font=title_font)
+-    
+-    # Paste scaffold
+-    scaffold_x = (total_width - scaffold_w) // 2
+-    combined.paste(scaffold_img, (scaffold_x, title_height + 10))
+-    
+-    # Paste table
+-    table_x = (total_width - table_w) // 2
+-    combined.paste(table_img, (table_x, title_height + scaffold_h + 25))
+-    
+-    # Save
+-    combined.save(output_path, dpi=(300, 300))
+-    logger.info(f"SAR image saved to {output_path}")
+-    
+-    return True
+-
+-
+-# =============================================================================
+-# Clustering Functions
+-# =============================================================================
+-
+-def generate_morgan_fingerprint(mol: Chem.Mol, radius: int = 2, nBits: int = 2048) -> Any:
+-    """Generate Morgan fingerprint for a molecule.
+-    
+-    Args:
+-        mol: RDKit molecule object.
+-        radius: Morgan fingerprint radius.
+-        nBits: Number of bits.
+-        
+-    Returns:
+-        Fingerprint array.
+-    """
+-    if mol is None:
+-        return None
+-    try:
+-        # Use new GetMorganGenerator API (RDKit 2023.09+)
+-        generator = GetMorganGenerator(radius=radius, fpSize=nBits)
+-        fp = generator.GetFingerprint(mol)
+-        arr = np.zeros((nBits,), dtype=np.int8)
+-        DataStructs.ConvertToNumpyArray(fp, arr)
+-        return arr
+-    except Exception:
+-        return None
+-
+-
+-def calculate_tanimoto(fp1: np.ndarray, fp2: np.ndarray) -> float:
+-    """Calculate Tanimoto similarity between two fingerprints.
+-    
+-    Args:
+-        fp1: First fingerprint array.
+-        fp2: Second fingerprint array.
+-        
+-    Returns:
+-        Tanimoto similarity (0-1).
+-    """
+-    if fp1 is None or fp2 is None:
+-        return 0.0
+-    try:
+-        bits1 = set(np.where(fp1 == 1)[0])
+-        bits2 = set(np.where(fp2 == 1)[0])
+-        if len(bits1) == 0 and len(bits2) == 0:
+-            return 1.0
+-        if len(bits1) == 0 or len(bits2) == 0:
+-            return 0.0
+-        intersection = len(bits1 & bits2)
+-        union = len(bits1 | bits2)
+-        return intersection / union if union > 0 else 0.0
+-    except Exception:
+-        return 0.0
+-
+-
+-def cluster_molecules(
+-    molecules: List[Dict[str, Any]],
+-    threshold: float = 0.7,
+-    max_cluster_size: int = 10,
+-    hierarchical: bool = True,
+-    min_substituents: int = 6,
+-) -> List[List[Dict[str, Any]]]:
+-    """Cluster molecules based on Tanimoto similarity with hierarchical clustering.
+-    
+-    Two-level hierarchical clustering:
+-    1. First level: coarse clustering (lower threshold)
+-    2. Second level: fine clustering within each coarse cluster
+-    
+-    Args:
+-        molecules: List of molecule dicts.
+-        threshold: Similarity threshold (0-1) for first level.
+-        max_cluster_size: Maximum molecules per final cluster.
+-        hierarchical: Use hierarchical clustering (default True).
+-        min_substituents: Minimum substituents required per cluster (default 6).
+-        
+-    Returns:
+-        List of clusters, each cluster is a list of molecule dicts.
+-    """
+-    if len(molecules) <= max_cluster_size:
+-        return [molecules]
+-    
+-    logger.info(f"Clustering {len(molecules)} molecules (threshold={threshold}, max={max_cluster_size})...")
+-    
+-    if not hierarchical or len(molecules) <= 20:
+-        # Simple single-level clustering for small datasets
+-        return _single_level_clustering(molecules, threshold, max_cluster_size)
+-    
+-    # Hierarchical clustering: two levels
+-    # First level: coarse clustering (threshold - 0.15)
+-    coarse_threshold = max(0.3, threshold - 0.15)
+-    logger.info(f"Level 1: Coarse clustering (threshold={coarse_threshold})...")
+-    
+-    coarse_clusters = _single_level_clustering(molecules, coarse_threshold, max_cluster_size * 3)
+-    logger.info(f"Created {len(coarse_clusters)} coarse clusters")
+-    
+-    # Second level: fine clustering within each coarse cluster
+-    final_clusters = []
+-    for i, coarse_cluster in enumerate(coarse_clusters):
+-        if len(coarse_cluster) <= max_cluster_size:
+-            # Already small enough
+-            final_clusters.append(coarse_cluster)
+-        else:
+-            logger.info(f"  Level 2: Fine clustering coarse cluster {i+1} ({len(coarse_cluster)} molecules)...")
+-            fine_clusters = _single_level_clustering(coarse_cluster, threshold, max_cluster_size)
+-            final_clusters.extend(fine_clusters)
+-    
+-    logger.info(f"Final: {len(final_clusters)} clusters")
+-    for i, c in enumerate(final_clusters):
+-        logger.info(f"  Cluster {i+1}: {len(c)} molecules")
+-    
+-    # Filter clusters to ensure minimum substituents
+-    if min_substituents > 0:
+-        logger.info(f"Filtering clusters to ensure >= {min_substituents} substituents...")
+-        valid_clusters = []
+-        for i, cluster in enumerate(final_clusters):
+-            if len(cluster) < 2:
+-                logger.debug(f"  Cluster {i+1}: Skipped (only {len(cluster)} molecules)")
+-                continue
+-            
+-            # Quick MCS check to count substituents
+-            scaffold_data = find_mcs_and_substituents(cluster, max_r_groups=10)
+-            if scaffold_data is None:
+-                logger.debug(f"  Cluster {i+1}: Skipped (no MCS found)")
+-                continue
+-            
+-            # Count total unique substituents
+-            total_subs = sum(len(subs) for subs in scaffold_data.r_positions.values())
+-            
+-            if total_subs >= min_substituents:
+-                valid_clusters.append(cluster)
+-                logger.info(f"  Cluster {i+1}: OK ({len(cluster)} molecules, {total_subs} substituents)")
+-            else:
+-                logger.debug(f"  Cluster {i+1}: Skipped (only {total_subs} substituents, need {min_substituents})")
+-        
+-        logger.info(f"Filtered: {len(valid_clusters)}/{len(final_clusters)} clusters meet minimum substituent requirement")
+-        return valid_clusters
+-    
+-    return final_clusters
+-
+-
+-def _single_level_clustering(
+-    molecules: List[Dict[str, Any]],
+-    threshold: float,
+-    max_cluster_size: int,
+-) -> List[List[Dict[str, Any]]]:
+-    """Perform single-level clustering based on Tanimoto similarity."""
+-    # Generate fingerprints
+-    fps = []
+-    valid_indices = []
+-    for i, mol_data in enumerate(molecules):
+-        mol = mol_data.get("mol")
+-        fp = generate_morgan_fingerprint(mol)
+-        if fp is not None:
+-            fps.append(fp)
+-            valid_indices.append(i)
+-    
+-    if len(fps) < 2:
+-        return [molecules]
+-    
+-    n = len(fps)
+-    
+-    # Calculate distance matrix (1 - similarity)
+-    dist_matrix = np.zeros((n, n))
+-    for i in range(n):
+-        for j in range(i + 1, n):
+-            sim = calculate_tanimoto(fps[i], fps[j])
+-            dist = 1.0 - sim
+-            dist_matrix[i, j] = dist
+-            dist_matrix[j, i] = dist
+-    
+-    # Single-linkage clustering
+-    clusters = [[i] for i in range(n)]
+-    
+-    # Keep merging until minimum distance > (1 - threshold) or cluster too large
+-    while len(clusters) > 1:
+-        # Find closest pair of clusters
+-        min_dist = float('inf')
+-        merge_pair = (0, 1)
+-        
+-        for i in range(len(clusters)):
+-            for j in range(i + 1, len(clusters)):
+-                # Complete linkage (maximum distance)
+-                max_dist = 0
+-                for idx1 in clusters[i]:
+-                    for idx2 in clusters[j]:
+-                        d = dist_matrix[idx1, idx2]
+-                        if d > max_dist:
+-                            max_dist = d
+-                
+-                if max_dist < min_dist:
+-                    min_dist = max_dist
+-                    merge_pair = (i, j)
+-        
+-        # Stop if clusters are too dissimilar
+-        if min_dist > (1 - threshold):
+-            break
+-        
+-        # Check if merged cluster would exceed size limit
+-        new_size = len(clusters[merge_pair[0]]) + len(clusters[merge_pair[1]])
+-        if new_size > max_cluster_size:
+-            break
+-        
+-        # Merge clusters
+-        i, j = merge_pair
+-        clusters[i].extend(clusters[j])
+-        clusters.pop(j)
+-    
+-    # Convert indices back to molecule dicts
+-    result_clusters = []
+-    for cluster_indices in clusters:
+-        cluster_mols = [molecules[valid_indices[i]] for i in cluster_indices]
+-        result_clusters.append(cluster_mols)
+-    
+-    return result_clusters
+-
+-
+-# =============================================================================
+-# Main Function for Testing
+-# =============================================================================
+-
+-def generate_sar_images_from_clusters(
+-    csv_path: Union[str, Path],
+-    output_dir: Union[str, Path],
+-    smiles_column: str = "SMILES",
+-    name_column: str = "Compound_ID",
+-    activity_column: str = "IC50_nM",
+-    include_properties: List[str] = None,
+-    cluster_threshold: float = 0.7,
+-    max_cluster_size: int = 10,
+-    cluster_id: Optional[int] = None,
+-    min_substituents: int = 6,
+-    max_r_groups: int = 2,
+-) -> List[Path]:
+-    """Generate SAR images from clustered molecules.
+-
+-    Args:
+-        csv_path: Path to CSV file.
+-        output_dir: Output directory for SAR images.
+-        smiles_column: SMILES column name.
+-        name_column: Compound name column.
+-        activity_column: Activity column name.
+-        include_properties: Property columns to include.
+-        cluster_threshold: Tanimoto similarity threshold for clustering.
+-        max_cluster_size: Maximum molecules per cluster.
+-        cluster_id: If specified, only generate SAR for this cluster (1-based).
+-        min_substituents: Minimum substituents per cluster (default 6).
+-        max_r_groups: Max R-groups per MCS (default 2, range 1-6).
+-
+-    Returns:
+-        List of output image paths.
+-    """
+-    logger.info(f"Reading CSV: {csv_path}")
+-    df = pd.read_csv(csv_path)
+-    
+-    # Validate columns
+-    if smiles_column not in df.columns:
+-        logger.error(f"SMILES column '{smiles_column}' not found")
+-        return []
+-    
+-    # Parse molecules
+-    molecules = []
+-    for _, row in df.iterrows():
+-        smi = row.get(smiles_column, "")
+-        mol = Chem.MolFromSmiles(smi)
+-        if mol is None:
+-            continue
+-        
+-        activity = row.get(activity_column)
+-        if pd.isna(activity):
+-            activity = 0.0
+-        elif isinstance(activity, str):
+-            try:
+-                activity = float(activity)
+-            except ValueError:
+-                activity = 0.0
+-        
+-        molecules.append({
+-            "mol": mol,
+-            "smiles": smi,
+-            "name": str(row.get(name_column, "unknown")),
+-            "activity": float(activity),
+-        })
+-    
+-    logger.info(f"Parsed {len(molecules)} valid molecules")
+-    
+-    if len(molecules) < 2:
+-        logger.error("Need at least 2 valid molecules")
+-        return []
+-    
+-    # Cluster molecules
+-    clusters = cluster_molecules(
+-        molecules, 
+-        cluster_threshold, 
+-        max_cluster_size,
+-        min_substituents=min_substituents,
+-    )
+-    
+-    # Create output directory
+-    output_dir = Path(output_dir)
+-    output_dir.mkdir(parents=True, exist_ok=True)
+-    
+-    # Generate SAR image for each cluster
+-    output_paths = []
+-    
+-    for i, cluster_mols in enumerate(clusters):
+-        if cluster_id is not None and (i + 1) != cluster_id:
+-            continue
+-        
+-        logger.info(f"\n=== Processing Cluster {i+1}/{len(clusters)} ({len(cluster_mols)} molecules) ===")
+-        
+-        # Find MCS and substituents for this cluster
+-        scaffold_data = find_mcs_and_substituents(
+-            cluster_mols,
+-            max_r_groups=max_r_groups,
+-        )
+-        
+-        if scaffold_data is None:
+-            logger.warning(f"Failed to find MCS for cluster {i+1}")
+-            continue
+-        
+-        # Check if this cluster has valid R-groups
+-        if len(scaffold_data.r_positions) == 0:
+-            logger.warning(f"No R-groups found for cluster {i+1}")
+-            continue
+-        
+-        logger.info(f"  MCS has {len(scaffold_data.r_positions)} R-group(s)")
+-        
+-        # Generate SAR image
+-        output_path = output_dir / f"sar_cluster_{i+1}.png"
+-        
+-        success = create_sar_image(
+-            scaffold_data,
+-            output_path,
+-            title=f"SAR Analysis - Cluster {i+1} ({len(cluster_mols)} compounds)",
+-            include_properties=include_properties,
+-        )
+-        
+-        if success:
+-            output_paths.append(output_path)
+-            logger.info(f"Saved: {output_path}")
+-    
+-    return output_paths
+-
+-
+-def generate_sar_from_csv(
+-    csv_path: Union[str, Path],
+-    output_path: Union[str, Path],
+-    smiles_column: str = "SMILES",
+-    name_column: str = "Compound_ID",
+-    activity_column: str = "IC50_nM",
+-    include_properties: List[str] = None,
+-) -> bool:
+-    """Generate SAR image from CSV file.
+-    
+-    DEPRECATED: Use generate_sar_images_from_clusters instead.
+-    
+-    Args:
+-        csv_path: Path to CSV file.
+-        output_path: Output PNG path.
+-        smiles_column: SMILES column name.
+-        name_column: Compound name column.
+-        activity_column: Activity column name.
+-        include_properties: Property columns to include.
+-        
+-    Returns:
+-        True if successful.
+-    """
+-    logger.info(f"Reading CSV: {csv_path}")
+-    df = pd.read_csv(csv_path)
+-    
+-    # Validate columns
+-    if smiles_column not in df.columns:
+-        logger.error(f"SMILES column '{smiles_column}' not found")
+-        return False
+-    
+-    # Parse molecules
+-    molecules = []
+-    for _, row in df.iterrows():
+-        smi = row.get(smiles_column, "")
+-        mol = Chem.MolFromSmiles(smi)
+-        if mol is None:
+-            continue
+-        
+-        activity = row.get(activity_column)
+-        if pd.isna(activity):
+-            activity = 0.0
+-        elif isinstance(activity, str):
+-            try:
+-                activity = float(activity)
+-            except ValueError:
+-                activity = 0.0
+-        
+-        molecules.append({
+-            "mol": mol,
+-            "smiles": smi,
+-            "name": str(row.get(name_column, "unknown")),
+-            "activity": float(activity),
+-        })
+-    
+-    logger.info(f"Parsed {len(molecules)} valid molecules")
+-    
+-    if len(molecules) < 2:
+-        logger.error("Need at least 2 valid molecules")
+-        return False
+-    
+-    # Find MCS and substituents
+-    scaffold_data = find_mcs_and_substituents(molecules)
+-    
+-    if scaffold_data is None:
+-        logger.error("Failed to find MCS")
+-        return False
+-    
+-    # Generate SAR image
+-    return create_sar_image(
+-        scaffold_data,
+-        output_path,
+-        include_properties=include_properties,
+-    )
+-
+-
+-if __name__ == "__main__":
+-    import sys
+-    
+-    if len(sys.argv) < 2:
+-        print("Usage: python sar_image_generator.py <input.csv> [output_dir] [options]")
+-        print("  input.csv      - Input CSV file")
+-        print("  output_dir     - Output directory (default: output/sar/)")
+-        print("  --cluster ID   - Generate SAR only for cluster ID (1-based)")
+-        print("  --threshold N  - Clustering threshold (default: 0.7)")
+-        print("  --max N        - Max molecules per cluster (default: 10)")
+-        print("  --min-subs N   - Min substituents per cluster (default: 6)")
+-        print("  --r-groups N   - Max R-groups per MCS (default: 2, range 1-6)")
+-        print("")
+-        print("Example:")
+-        print("  python sar_image_generator.py data.csv output/sar/")
+-        print("  python sar_image_generator.py data.csv output/sar/ --cluster 1")
+-        print("  python sar_image_generator.py data.csv output/sar/ --threshold 0.6 --max 8 --min-subs 6")
+-        print("  python sar_image_generator.py data.csv output/sar/ --r-groups 4")
+-        sys.exit(1)
+-    
+-    csv_file = Path(sys.argv[1])
+-    output_dir = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("output/sar")
+-    
+-    # Parse optional arguments
+-    cluster_id = None
+-    threshold = 0.7
+-    max_size = 10
+-    min_subs = 6
+-    max_r_groups = 2
+-
+-    i = 3
+-    while i < len(sys.argv):
+-        if sys.argv[i] == "--cluster" and i + 1 < len(sys.argv):
+-            cluster_id = int(sys.argv[i + 1])
+-            i += 2
+-        elif sys.argv[i] == "--threshold" and i + 1 < len(sys.argv):
+-            threshold = float(sys.argv[i + 1])
+-            i += 2
+-        elif sys.argv[i] == "--max" and i + 1 < len(sys.argv):
+-            max_size = int(sys.argv[i + 1])
+-            i += 2
+-        elif sys.argv[i] == "--min-subs" and i + 1 < len(sys.argv):
+-            min_subs = int(sys.argv[i + 1])
+-            i += 2
+-        elif sys.argv[i] == "--r-groups" and i + 1 < len(sys.argv):
+-            max_r_groups = int(sys.argv[i + 1])
+-            i += 2
+-        else:
+-            i += 1
+-
+-    print(f"\nSAR Image Generation")
+-    print(f"  Input: {csv_file}")
+-    print(f"  Output: {output_dir}")
+-    print(f"  Clustering threshold: {threshold}")
+-    print(f"  Max molecules per cluster: {max_size}")
+-    print(f"  Min substituents per cluster: {min_subs}")
+-    print(f"  Max R-groups per MCS: {max_r_groups}")
+-    if cluster_id:
+-        print(f"  Target cluster: {cluster_id}")
+-    print()
+-
+-    output_paths = generate_sar_images_from_clusters(
+-        csv_file,
+-        output_dir,
+-        cluster_threshold=threshold,
+-        max_cluster_size=max_size,
+-        cluster_id=cluster_id,
+-        min_substituents=min_subs,
+-        max_r_groups=max_r_groups,
+-    )
+-    
+-    if output_paths:
+-        print(f"\nGenerated {len(output_paths)} SAR image(s):")
+-        for p in output_paths:
+-            print(f"  - {p}")
+-        sys.exit(0)
+-    else:
+-        print("\nFailed to generate SAR images")
+-        sys.exit(1)
+diff --git a/src/mbforge/csar_vis/renderer.py b/src/mbforge/csar_vis/renderer.py
+index 35ae100..c263102 100644
+--- a/src/mbforge/csar_vis/renderer.py
++++ b/src/mbforge/csar_vis/renderer.py
+@@ -38,7 +38,7 @@ from rdkit.Chem.Draw import rdMolDraw2D
+ from ..mcs.finder import (
+     find_substitution_positions,
+     create_marked_scaffold,
+-    ScaffoldInfo,
++    MCSScaffoldInfo,
+     SubstituentInfo,
+ )
+ from .utils import (
+@@ -329,7 +329,7 @@ class SARRenderer:
+ 
+     def render_sar_table_image(
+         self,
+-        scaffold_info: ScaffoldInfo,
++        scaffold_info: MCSScaffoldInfo,
+         molecules: List[Dict[str, Any]],
+         output_path: Union[str, Path],
+         scaffold_size: Tuple[int, int] = (400, 300),
+@@ -341,7 +341,7 @@ class SARRenderer:
+         如果R基团超过2个，会生成多个图像(每2个R基团一个)。
+ 
+         Args:
+-            scaffold_info: 包含R基团位置的ScaffoldInfo对象.
++            scaffold_info: 包含R基团位置的MCSScaffoldInfo对象.
+             molecules: 分子数据字典列表.
+             output_path: 输出文件路径.
+             scaffold_size: 骨架图像尺寸 (宽, 高).
+@@ -381,7 +381,7 @@ class SARRenderer:
+                     unique_pairs.append(p)
+ 
+             for idx, pair_indices in enumerate(unique_pairs):
+-                pair_scaffold = ScaffoldInfo(
++                pair_scaffold = MCSScaffoldInfo(
+                     scaffold_mol=scaffold_info.scaffold_mol,
+                     scaffold_smiles=scaffold_info.scaffold_smiles,
+                     r_positions={k: scaffold_info.r_positions[k] for k in pair_indices},
+@@ -405,7 +405,7 @@ class SARRenderer:
+ 
+     def _render_single_table(
+         self,
+-        scaffold_info: ScaffoldInfo,
++        scaffold_info: MCSScaffoldInfo,
+         molecules: List[Dict[str, Any]],
+         output_path: Path,
+         r_atom_indices: List[int],
+@@ -485,7 +485,7 @@ class SARRenderer:
+ 
+     def render_sar_path_image(
+         self,
+-        scaffold_info: ScaffoldInfo,
++        scaffold_info: MCSScaffoldInfo,
+         molecules: List[Dict[str, Any]],
+         output_path: Union[str, Path],
+         scaffold_size: Tuple[int, int] = (400, 300),
+@@ -497,7 +497,7 @@ class SARRenderer:
+         每个表格显示具有相同R1但不同R2的化合物(或反之)。
+ 
+         Args:
+-            scaffold_info: 包含R基团位置的ScaffoldInfo对象.
++            scaffold_info: 包含R基团位置的MCSScaffoldInfo对象.
+             molecules: 分子数据字典列表.
+             output_path: 输出文件路径.
+             scaffold_size: 骨架图像尺寸.
+diff --git a/src/mbforge/csar_vis/utils.py b/src/mbforge/csar_vis/utils.py
+index c187052..4c0b316 100644
+--- a/src/mbforge/csar_vis/utils.py
++++ b/src/mbforge/csar_vis/utils.py
+@@ -4,10 +4,35 @@ from __future__ import annotations
+ 
+ import io
+ import logging
++import platform
++from pathlib import Path
+ from typing import Optional, Tuple, List, Any
+ 
+ from PIL import Image, ImageDraw, ImageFont
+ from rdkit import Chem
++
++
++def _get_default_font(size: int = 12):
++    """跨平台获取默认字体。"""
++    candidates = []
++    system = platform.system()
++    if system == "Windows":
++        win_dir = Path("C:/Windows/Fonts")
++        candidates = [win_dir / "arial.ttf", win_dir / "msyh.ttc"]
++    elif system == "Darwin":
++        candidates = [Path("/System/Library/Fonts/Helvetica.ttc")]
++    else:
++        candidates = [
++            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
++            Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
++        ]
++    for font_path in candidates:
++        if font_path.exists():
++            try:
++                return ImageFont.truetype(str(font_path), size)
++            except Exception:
++                continue
++    return ImageFont.load_default()
+ from rdkit.Chem import AllChem
+ from rdkit.Chem.Draw import rdMolDraw2D
+ 
+@@ -82,9 +107,7 @@ def combine_scaffold_and_table(
+     draw = ImageDraw.Draw(combined)
+ 
+     try:
+-        font = ImageFont.truetype(
+-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", fontsize
+-        )
++        font = _get_default_font(fontsize)
+     except Exception:
+         font = ImageFont.load_default()
+ 
+@@ -218,9 +241,7 @@ def create_sar_table_image(
+     draw = ImageDraw.Draw(table)
+ 
+     try:
+-        font = ImageFont.truetype(
+-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 12
+-        )
++        font = _get_default_font(12)
+     except Exception:
+         font = ImageFont.load_default()
+ 
+diff --git a/src/mbforge/mcs/__init__.py b/src/mbforge/mcs/__init__.py
+index 2164f6d..f0bd633 100644
+--- a/src/mbforge/mcs/__init__.py
++++ b/src/mbforge/mcs/__init__.py
+@@ -11,7 +11,7 @@ MCS是多个分子共有的最大结构片段，用于识别共同的结构骨
+ 主要类:
+     MCSFinder: MCS查找器，支持多分子和超时控制
+     MCSResult: MCS查找结果数据类
+-    ScaffoldInfo: 骨架信息，包含R基团位置
++    MCSScaffoldInfo: 骨架信息，包含R基团位置
+     SubstituentInfo: 取代基信息
+ 
+ 示例:
+diff --git a/src/mbforge/mcs/finder.py b/src/mbforge/mcs/finder.py
+index 707f0e2..32096e2 100644
+--- a/src/mbforge/mcs/finder.py
++++ b/src/mbforge/mcs/finder.py
+@@ -14,7 +14,7 @@ MCS是多个分子共有的最大结构片段，在药物化学中用于:
+ 主要组件:
+     - MCSFinder: MCS查找器类
+     - MCSResult: MCS结果数据类
+-    - ScaffoldInfo: 骨架信息(含R基团位置)
++    - MCSScaffoldInfo: 骨架信息(含R基团位置)
+     - SubstituentInfo: 取代基信息
+ 
+ 示例:
+@@ -311,7 +311,7 @@ class SubstituentInfo:
+ 
+ 
+ @dataclass
+-class ScaffoldInfo:
++class MCSScaffoldInfo:
+     """骨架信息数据类 - 包含R基团位置.
+     
+     存储MCS骨架及其上的R基团(取代位点)信息。
+@@ -332,7 +332,7 @@ class ScaffoldInfo:
+ def find_substitution_positions(
+     mcs_mol: Chem.Mol,
+     molecules: List[Dict[str, Any]],
+-) -> Optional[ScaffoldInfo]:
++) -> Optional[MCSScaffoldInfo]:
+     """查找MCS骨架上的取代位点.
+     
+     分析分子与MCS的匹配关系，识别MCS骨架上的R基团位置。
+@@ -343,7 +343,7 @@ def find_substitution_positions(
+         molecules: 分子字典列表，需包含'mol', 'smiles', 'name', 'activity'.
+ 
+     Returns:
+-        ScaffoldInfo对象，包含R基团位置信息，无取代位点时返回None.
++        MCSScaffoldInfo对象，包含R基团位置信息，无取代位点时返回None.
+     """
+     if len(molecules) == 0:
+         return None
+@@ -396,7 +396,7 @@ def find_substitution_positions(
+ 
+     scaffold_smiles = Chem.MolToSmiles(mcs_mol)
+ 
+-    return ScaffoldInfo(
++    return MCSScaffoldInfo(
+         scaffold_mol=mcs_mol,
+         scaffold_smiles=scaffold_smiles,
+         r_positions=r_positions,
+@@ -453,7 +453,7 @@ def _extract_substituent(
+ 
+ 
+ def create_marked_scaffold(
+-    scaffold_info: ScaffoldInfo,
++    scaffold_info: MCSScaffoldInfo,
+     size: Tuple[int, int] = (400, 300),
+ ) -> bytes:
+     """创建带R基团标签的骨架图像.
+@@ -461,7 +461,7 @@ def create_marked_scaffold(
+     生成MCS骨架的2D图像，并在R基团位置标记R1, R2等标签。
+ 
+     Args:
+-        scaffold_info: 包含R基团位置的ScaffoldInfo对象.
++        scaffold_info: 包含R基团位置的MCSScaffoldInfo对象.
+         size: 图像尺寸 (宽, 高)，默认为(400, 300).
+ 
+     Returns:
+@@ -509,3 +509,47 @@ def create_marked_scaffold(
+     d.FinishDrawing()
+ 
+     return d.GetDrawingText()
++
++
++# ---- CLI 入口 ----
++
++if __name__ == "__main__":
++    import argparse
++    import json
++    import sys
++
++    parser = argparse.ArgumentParser(description="MBForge MCS 查找工具")
++    parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
++    parser.add_argument("--threshold", type=float, default=0.8, help="MCS 匹配阈值 (0-1)")
++    parser.add_argument("--timeout", type=int, default=30, help="超时时间（秒）")
++    parser.add_argument("--smiles-column", default="SMILES", help="CSV 中 SMILES 列名")
++    parser.add_argument("--output", "-o", default=None, help="输出 JSON 文件路径")
++    args = parser.parse_args()
++
++    from ..molecules.loader import load_molecules_from_file
++
++    molecules = load_molecules_from_file(args.input, args.smiles_column)
++    print(f"Loaded {len(molecules)} molecules")
++
++    if len(molecules) < 2:
++        print("Error: MCS requires at least 2 molecules", file=sys.stderr)
++        sys.exit(1)
++
++    finder = MCSFinder(timeout=args.timeout)
++    result = finder.find_mcs(molecules, threshold=args.threshold)
++
++    if result is None:
++        print("No MCS found")
++    else:
++        output_data = {
++            "smarts": result.smiles,
++            "num_atoms": result.num_atoms,
++            "num_bonds": result.num_bonds,
++            "score": result.score,
++        }
++        output = json.dumps(output_data, indent=2, ensure_ascii=False)
++        if args.output:
++            Path(args.output).write_text(output, encoding="utf-8")
++            print(f"Saved MCS result to {args.output}")
++        else:
++            print(output)
+diff --git a/src/mbforge/models/base.py b/src/mbforge/models/base.py
+index 10970b6..6bef060 100644
+--- a/src/mbforge/models/base.py
++++ b/src/mbforge/models/base.py
+@@ -4,7 +4,7 @@ from __future__ import annotations
+ 
+ from abc import ABC, abstractmethod
+ from dataclasses import dataclass
+-from typing import AsyncGenerator, Iterator, List, Optional
++from typing import Any, AsyncGenerator, Dict, Iterator, List, Optional
+ 
+ 
+ @dataclass
+@@ -50,6 +50,10 @@ class BaseLLM(ABC):
+         """异步流式对话."""
+         ...
+ 
++    def call_with_tools(self, messages: List[Message], tools: List[Dict], **kwargs) -> Any:
++        """带工具定义的 LLM 调用。默认 fallback 到 chat()。"""
++        return self.chat(messages, **kwargs)
++
+ 
+ class BaseEmbedder(ABC):
+     """Embedding 模型基类."""
+diff --git a/src/mbforge/models/embedding.py b/src/mbforge/models/embedding.py
+index ebd27e1..d7370fe 100644
+--- a/src/mbforge/models/embedding.py
++++ b/src/mbforge/models/embedding.py
+@@ -11,6 +11,7 @@ from .base import BaseEmbedder
+ from ..utils.constants import (
+     DEFAULT_EMBED_MODEL,
+     EMBED_INSTRUCTION_RETRIEVAL,
++    EMBED_INSTRUCTION_CLUSTER,
+     PROVIDER_SENTENCE_TRANSFORMERS,
+     PROVIDER_QWEN3,
+     PROVIDER_API,
+@@ -27,6 +28,52 @@ def _ensure_hf_mirror() -> None:
+         os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
+ 
+ 
++def _resolve_model_path(model_name: str, cache_name: str) -> str:
++    """解析模型路径，优先从 ModelScope 缓存加载.
++
++    1. 如果是绝对/相对路径，直接使用
++    2. 如果 ModelScope 缓存中存在，使用缓存路径
++    3. 否则返回原 model_name（走 HuggingFace 下载）
++    """
++    from pathlib import Path
++
++    # 已经是本地路径
++    p = Path(model_name)
++    if p.is_absolute() or (p.exists() and p.is_dir()):
++        return model_name
++
++    # ModelScope 缓存常见路径
++    possible_cache_bases = [
++        os.environ.get("MODELSCOPE_CACHE", ""),
++        str(Path.home() / "Models" / "ModelScope"),
++        str(Path.home() / ".cache" / "modelscope"),
++    ]
++
++    cache_base = ""
++    for cb in possible_cache_bases:
++        if cb and Path(cb).exists():
++            cache_base = cb
++            break
++
++    if cache_base:
++        # ModelScope 目录结构: <cache>/<org>/<model>-<version>
++        # ModelScope 用 ___ 代替版本号的点号，如 Qwen3-Embedding-0___6B
++        # 原始名如 Qwen/Qwen3-Embedding-0.6B
++        # 提取关键部分用于匹配: Qwen3-Embedding-0
++        name_parts = cache_name.replace("/", " ").split()
++        last_part = name_parts[-1] if name_parts else cache_name  # e.g. Qwen3-Embedding-0.6B
++        key_name = last_part.rsplit(".", 1)[0]  # e.g. Qwen3-Embedding-0
++
++        cache_path = Path(cache_base)
++        if cache_path.exists():
++            for item in cache_path.rglob("*"):
++                if item.is_dir() and key_name.lower() in item.name.lower():
++                    logger.info(f"Found model in ModelScope cache: {item}")
++                    return str(item)
++
++    return model_name
++
++
+ class SentenceTransformerEmbedder(BaseEmbedder):
+     """基于 sentence-transformers 的本地 Embedding.
+ 
+@@ -43,7 +90,8 @@ class SentenceTransformerEmbedder(BaseEmbedder):
+         if self._model is None:
+             _ensure_hf_mirror()
+             from sentence_transformers import SentenceTransformer
+-            self._model = SentenceTransformer(self.model_name, device=self.device, trust_remote_code=True)
++            resolved = _resolve_model_path(self.model_name, self.model_name)
++            self._model = SentenceTransformer(resolved, device=self.device, trust_remote_code=True)
+             self._dim = self._model.get_sentence_embedding_dimension()
+         return self._model
+ 
+@@ -103,9 +151,10 @@ class Qwen3Embedder(BaseEmbedder):
+         if self._model is None:
+             _ensure_hf_mirror()
+             from sentence_transformers import SentenceTransformer
+-            logger.info(f"Loading Qwen3-Embedding model: {self.model_name} (device={self.device})")
++            resolved = _resolve_model_path(self.model_name, self.model_name)
++            logger.info(f"Loading Qwen3-Embedding model: {resolved} (device={self.device})")
+             self._model = SentenceTransformer(
+-                self.model_name,
++                resolved,
+                 device=self.device,
+                 trust_remote_code=True,
+             )
+diff --git a/src/mbforge/models/llm.py b/src/mbforge/models/llm.py
+index 2d16322..d926d82 100644
+--- a/src/mbforge/models/llm.py
++++ b/src/mbforge/models/llm.py
+@@ -2,7 +2,7 @@
+ 
+ from __future__ import annotations
+ 
+-from typing import AsyncGenerator, Iterator, List
++from typing import Any, AsyncGenerator, Dict, Iterator, List
+ 
+ import openai
+ 
+@@ -78,15 +78,33 @@ class OpenAILLM(BaseLLM):
+             yield chunk
+             await asyncio.sleep(0)
+ 
++    def call_with_tools(self, messages: List[Message], tools: List[Dict], **kwargs) -> Any:
++        return self.client.chat.completions.create(
++            model=self.model_name,
++            messages=self._convert_messages(messages),
++            tools=tools,
++            max_tokens=kwargs.get("max_tokens", self.max_tokens),
++            temperature=kwargs.get("temperature", self.temperature),
++        )
++
+ 
+ def create_llm_from_config(config) -> BaseLLM:
+     """从配置创建 LLM 实例."""
+     from ..utils.config import ModelConfig
+-    from ..utils.constants import PROVIDER_ANTHROPIC
++    from ..utils.constants import PROVIDER_ANTHROPIC, PROVIDER_NEMOTON_DIFFUSION
+     cfg: ModelConfig = config
+ 
+     provider = (cfg.provider or "").strip().lower()
+ 
++    if provider == PROVIDER_NEMOTON_DIFFUSION:
++        from .nemotron_diffusion import NemotronDiffusionLLM
++        return NemotronDiffusionLLM(
++            model_path=cfg.model_name or "nv-community/Nemotron-Labs-Diffusion-3B",
++            device=getattr(cfg, "device", "cuda"),
++            dtype=getattr(cfg, "dtype", "bfloat16"),
++            max_new_tokens=cfg.max_tokens,
++        )
++
+     if provider == PROVIDER_ANTHROPIC:
+         from .anthropic_llm import AnthropicLLM
+         return AnthropicLLM(
+diff --git a/src/mbforge/models/nemotron_diffusion.py b/src/mbforge/models/nemotron_diffusion.py
+new file mode 100644
+index 0000000..a7847ec
+--- /dev/null
++++ b/src/mbforge/models/nemotron_diffusion.py
+@@ -0,0 +1,136 @@
++"""Nemotron-Labs-Diffusion-3B 本地 LLM 实现.
++
++基于 NVIDIA Nemotron 扩散语言模型，支持三种推理模式：
++- AR (自回归): 传统解码方式
++- dLM (扩散语言模型): 块级并行生成
++- Linear Self-Speculation: 线性自推测加速
++
++模型规格:
++    - nv-community/Nemotron-Labs-Diffusion-3B: 3B 参数
++    - 需要 transformers>=5.0.0
++    - 支持 CUDA + bfloat16
++"""
++
++from __future__ import annotations
++
++import os
++from typing import AsyncGenerator, Iterator, List, Optional
++
++import torch
++
++from .base import BaseLLM, Message, StreamChunk
++from ..utils.logger import get_logger
++
++logger = get_logger(__name__)
++
++
++def _ensure_hf_mirror() -> None:
++    if "HF_ENDPOINT" not in os.environ:
++        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
++
++
++class NemotronDiffusionLLM(BaseLLM):
++    """Nemotron-Labs-Diffusion-3B 本地推理.
++
++    使用 ModelScope 缓存加载，支持 AR/dLM/Linear-Self-Speculation 三种模式。
++    """
++
++    def __init__(
++        self,
++        model_path: str = "nv-community/Nemotron-Labs-Diffusion-3B",
++        device: str = "cuda",
++        dtype: str = "bfloat16",  # bfloat16 | float16 | float32
++        max_new_tokens: int = 4096,
++        mode: str = "ar",  # ar | dlm | linear_spec
++    ):
++        self.model_path = model_path
++        self.device = device
++        self.dtype = dtype
++        self.max_new_tokens = max_new_tokens
++        self.mode = mode
++        self._model = None
++        self._tokenizer = None
++
++    def _resolve_dtype(self) -> torch.dtype:
++        return {
++            "bfloat16": torch.bfloat16,
++            "float16": torch.float16,
++            "float32": torch.float32,
++        }.get(self.dtype, torch.bfloat16)
++
++    def _load(self) -> None:
++        if self._model is not None:
++            return
++
++        _ensure_hf_mirror()
++        from modelscope import AutoModel, AutoTokenizer
++        from .embedding import _resolve_model_path
++
++        resolved = _resolve_model_path(self.model_path, self.model_path)
++        dtype = self._resolve_dtype()
++        logger.info(f"Loading Nemotron-Diffusion: {resolved} (device={self.device}, dtype={dtype})")
++
++        self._tokenizer = AutoTokenizer.from_pretrained(
++            resolved, trust_remote_code=True
++        )
++        self._model = AutoModel.from_pretrained(
++            resolved, trust_remote_code=True, dtype=dtype
++        )
++        self._model = self._model.to(self.device)
++        self._model.eval()
++        logger.info("Nemotron-Diffusion model loaded successfully")
++
++    def _generate(self, messages: List[Message]) -> str:
++        self._load()
++        assert self._tokenizer is not None
++        assert self._model is not None
++
++        history = [{"role": m.role, "content": m.content} for m in messages]
++        prompt = self._tokenizer.apply_chat_template(
++            history, tokenize=False, add_generation_prompt=True
++        )
++        prompt_ids = self._tokenizer(
++            prompt, return_tensors="pt"
++        ).input_ids.to(device=self.device)
++
++        if self.mode == "dlm":
++            out_ids, nfe = self._model.generate(
++                prompt_ids,
++                max_new_tokens=self.max_new_tokens,
++                block_length=32,
++                threshold=0.9,
++                eos_token_id=self._tokenizer.eos_token_id,
++            )
++        elif self.mode == "linear_spec":
++            out_ids, nfe = self._model.linear_spec_generate(
++                prompt_ids,
++                max_new_tokens=self.max_new_tokens,
++                block_length=32,
++                eos_token_id=self._tokenizer.eos_token_id,
++            )
++        else:  # ar
++            out_ids, nfe = self._model.ar_generate(
++                prompt_ids, max_new_tokens=self.max_new_tokens
++            )
++
++        result = self._tokenizer.batch_decode(
++            out_ids[:, prompt_ids.shape[1]:], skip_special_tokens=True
++        )[0]
++        logger.debug(f"[NFE={nfe}] {result[:100]}...")
++        return result
++
++    def chat(self, messages: List[Message], **kwargs) -> str:
++        return self._generate(messages)
++
++    def chat_stream(self, messages: List[Message], **kwargs) -> Iterator[StreamChunk]:
++        result = self._generate(messages)
++        yield StreamChunk(delta=result, finish_reason="stop")
++
++    async def achat(self, messages: List[Message], **kwargs) -> str:
++        import asyncio
++        loop = asyncio.get_running_loop()
++        return await loop.run_in_executor(None, self._generate, messages)
++
++    async def achat_stream(self, messages: List[Message], **kwargs) -> AsyncGenerator[StreamChunk, None]:
++        result = await self.achat(messages, **kwargs)
++        yield StreamChunk(delta=result, finish_reason="stop")
+diff --git a/src/mbforge/models/rerank_qwen3.py b/src/mbforge/models/rerank_qwen3.py
+index 19f2d43..96f707c 100644
+--- a/src/mbforge/models/rerank_qwen3.py
++++ b/src/mbforge/models/rerank_qwen3.py
+@@ -33,6 +33,41 @@ def _ensure_hf_mirror() -> None:
+         os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
+ 
+ 
++def _resolve_rerank_model_path(model_name: str) -> str:
++    """解析 rerank 模型路径，优先从 ModelScope 缓存加载."""
++    from pathlib import Path
++
++    p = Path(model_name)
++    if p.is_absolute() or (p.exists() and p.is_dir()):
++        return model_name
++
++    possible_cache_bases = [
++        os.environ.get("MODELSCOPE_CACHE", ""),
++        str(Path.home() / "Models" / "ModelScope"),
++        str(Path.home() / ".cache" / "modelscope"),
++    ]
++
++    cache_base = ""
++    for cb in possible_cache_bases:
++        if cb and Path(cb).exists():
++            cache_base = cb
++            break
++
++    if cache_base:
++        name_parts = model_name.replace("/", " ").split()
++        last_part = name_parts[-1] if name_parts else model_name
++        key_name = last_part.rsplit(".", 1)[0]
++
++        cache_path = Path(cache_base)
++        if cache_path.exists():
++            for item in cache_path.rglob("*"):
++                if item.is_dir() and key_name.lower() in item.name.lower():
++                    logger.info(f"Found rerank model in ModelScope cache: {item}")
++                    return str(item)
++
++    return model_name
++
++
+ class Qwen3Reranker(BaseReranker):
+     """Qwen3-Reranker 重排序器.
+ 
+@@ -79,15 +114,16 @@ class Qwen3Reranker(BaseReranker):
+             return
+ 
+         _ensure_hf_mirror()
+-        logger.info(f"Loading Qwen3-Reranker model: {self.model_name} (device={self.device})")
++        resolved = _resolve_rerank_model_path(self.model_name)
++        logger.info(f"Loading Qwen3-Reranker model: {resolved} (device={self.device})")
+ 
+         self._tokenizer = AutoTokenizer.from_pretrained(
+-            self.model_name,
++            resolved,
+             padding_side="left",
+             trust_remote_code=True,
+         )
+         self._model = AutoModelForCausalLM.from_pretrained(
+-            self.model_name,
++            resolved,
+             trust_remote_code=True,
+         )
+         self._model.eval()
+diff --git a/src/mbforge/molecules/__init__.py b/src/mbforge/molecules/__init__.py
+index 7c8adf1..33d918c 100644
+--- a/src/mbforge/molecules/__init__.py
++++ b/src/mbforge/molecules/__init__.py
+@@ -1,7 +1,7 @@
+ """分子处理核心模块.
+ 
+ 本模块提供统一的分子数据模型和高级的分子处理能力，包括：
+-- 标准化分子数据模型 (MoleculeEntry)
++- 标准化分子数据模型 (Molecule)
+ - 分子描述符计算
+ - 分子过滤与筛选
+ - 分子标准化与预处理
+@@ -9,16 +9,16 @@
+ - 子结构匹配与 SMARTS 查询
+ 
+ 示例:
+-    >>> from mbforge.molecules import MoleculeEntry, MoleculeDescriptorCalculator
+-    >>> entry = MoleculeEntry.from_smiles("CCO", name="Ethanol")
++    >>> from mbforge.molecules import Molecule, MoleculeDescriptorCalculator
++    >>> mol = Molecule.from_smiles("CCO", name="Ethanol")
+     >>> calc = MoleculeDescriptorCalculator()
+-    >>> desc = calc.compute(entry.mol)
++    >>> desc = calc.compute(mol.mol)
+     >>> print(desc.molecular_weight)
+ """
+ 
+ from __future__ import annotations
+ 
+-from .models import MoleculeEntry, MoleculeBatch
++from .schema import Molecule, MoleculeBatch, MoleculeEntry
+ from .descriptors import (
+     MoleculeDescriptorCalculator,
+     DescriptorSet,
+@@ -42,9 +42,10 @@ from .matcher import (
+ )
+ 
+ __all__ = [
+-    # 数据模型
+-    "MoleculeEntry",
++    # 数据模型（schema.py — 唯一契约）
++    "Molecule",
+     "MoleculeBatch",
++    "MoleculeEntry",  # 兼容别名，指向 Molecule
+     # 描述符
+     "MoleculeDescriptorCalculator",
+     "DescriptorSet",
+diff --git a/src/mbforge/molecules/loader.py b/src/mbforge/molecules/loader.py
+new file mode 100644
+index 0000000..245076f
+--- /dev/null
++++ b/src/mbforge/molecules/loader.py
+@@ -0,0 +1,134 @@
++"""molecules/loader.py — 从文件加载分子为统一 dict 格式.
++
++各算法模块的 CLI 入口使用此工具加载 SDF/CSV/SMILES 文件。
++输出 List[Dict[str, Any]]，key 包含 "mol" (RDKit Mol) 和 "smiles"。
++"""
++
++from __future__ import annotations
++
++import logging
++from pathlib import Path
++from typing import Any, Dict, List, Optional, Union
++
++from rdkit import Chem
++
++logger = logging.getLogger(__name__)
++
++
++def load_molecules_from_file(
++    path: Union[str, Path],
++    smiles_column: str = "SMILES",
++    activity_column: Optional[str] = None,
++    name_column: str = "Name",
++) -> List[Dict[str, Any]]:
++    """从文件加载分子，返回算法模块所需的 dict 列表.
++
++    支持格式:
++        - .sdf: 从 SDF 读取分子结构和属性
++        - .csv: 读取 CSV 中的 SMILES 列
++        - .smi / .smiles: 一行一个 SMILES（可选 tab 分隔名称）
++
++    Args:
++        path: 分子文件路径.
++        smiles_column: CSV 中 SMILES 所在列名.
++        activity_column: CSV 中活性值列名（可选）.
++        name_column: CSV 中名称列名.
++
++    Returns:
++        分子字典列表，每个字典包含:
++            - mol: RDKit Mol 对象
++            - smiles: SMILES 字符串
++            - name: 分子名称（如果有）
++            - activity: 活性值（如果指定且存在）
++    """
++    path = Path(path)
++    suffix = path.suffix.lower()
++
++    if suffix == ".sdf":
++        return _load_sdf(path)
++    elif suffix == ".csv":
++        return _load_csv(path, smiles_column, activity_column, name_column)
++    elif suffix in (".smi", ".smiles"):
++        return _load_smiles_file(path)
++    else:
++        raise ValueError(f"Unsupported file format: {suffix}")
++
++
++def _load_sdf(path: Path) -> List[Dict[str, Any]]:
++    molecules = []
++    with open(path, "rb") as f:
++        supplier = Chem.ForwardSDMolSupplier(f)
++        for idx, mol in enumerate(supplier):
++            if mol is None:
++                continue
++            name = mol.GetProp("_Name") if mol.HasProp("_Name") else f"mol_{idx}"
++            smiles = Chem.MolToSmiles(mol)
++            entry: Dict[str, Any] = {
++                "mol": mol,
++                "smiles": smiles,
++                "name": name,
++            }
++            for prop in mol.GetPropNames():
++                if prop == "_Name":
++                    continue
++                try:
++                    val = mol.GetProp(prop)
++                    entry[prop] = val
++                except Exception:
++                    pass
++            molecules.append(entry)
++    logger.info(f"Loaded {len(molecules)} molecules from {path}")
++    return molecules
++
++
++def _load_csv(
++    path: Path,
++    smiles_column: str,
++    activity_column: Optional[str],
++    name_column: str,
++) -> List[Dict[str, Any]]:
++    import pandas as pd
++
++    df = pd.read_csv(path)
++    if smiles_column not in df.columns:
++        raise ValueError(f"Column '{smiles_column}' not found. Available: {list(df.columns)}")
++
++    molecules = []
++    for idx, row in df.iterrows():
++        smiles = str(row[smiles_column])
++        mol = Chem.MolFromSmiles(smiles)
++        if mol is None:
++            logger.warning(f"Invalid SMILES at row {idx}: {smiles}")
++            continue
++        entry: Dict[str, Any] = {"mol": mol, "smiles": smiles}
++        if name_column in df.columns:
++            entry["name"] = str(row[name_column])
++        if activity_column and activity_column in df.columns:
++            try:
++                entry["activity"] = float(row[activity_column])
++            except (ValueError, TypeError):
++                pass
++        molecules.append(entry)
++    logger.info(f"Loaded {len(molecules)} molecules from {path}")
++    return molecules
++
++
++def _load_smiles_file(path: Path) -> List[Dict[str, Any]]:
++    molecules = []
++    with open(path) as f:
++        for line in f:
++            line = line.strip()
++            if not line or line.startswith("#"):
++                continue
++            parts = line.split("\t")
++            smiles = parts[0]
++            mol = Chem.MolFromSmiles(smiles)
++            if mol is None:
++                logger.warning(f"Invalid SMILES: {smiles}")
++                continue
++            entry: Dict[str, Any] = {"mol": mol, "smiles": smiles}
++            if len(parts) > 1:
++                entry["name"] = parts[1]
++            molecules.append(entry)
++    logger.info(f"Loaded {len(molecules)} molecules from {path}")
++    return molecules
+diff --git a/src/mbforge/molecules/models.py b/src/mbforge/molecules/models.py
+deleted file mode 100644
+index 1eee349..0000000
+--- a/src/mbforge/molecules/models.py
++++ /dev/null
+@@ -1,543 +0,0 @@
+-"""分子数据模型.
+-
+-提供统一、类型安全的分子数据容器，替代项目中原有的裸字典传递方式。
+-
+-核心类:
+-    MoleculeEntry: 单个分子的完整数据记录
+-    MoleculeBatch: 分子列表的批量操作容器
+-"""
+-
+-from __future__ import annotations
+-
+-import logging
+-from copy import deepcopy
+-from dataclasses import dataclass, field
+-from pathlib import Path
+-from typing import Any, Dict, List, Optional, Union
+-
+-from rdkit import Chem
+-from rdkit.Chem import Descriptors
+-
+-logger = logging.getLogger(__name__)
+-
+-
+-@dataclass
+-class MoleculeEntry:
+-    """单个分子的完整数据记录.
+-
+-    作为项目中分子数据的统一数据模型，替代原有的 Dict[str, Any] 字典传递方式。
+-    所有字段均有类型注解，便于静态类型检查和 IDE 自动补全。
+-
+-    属性:
+-        mol: RDKit 分子对象 (可选，若 SMILES 有效则可延迟解析).
+-        smiles: Canonical SMILES 字符串.
+-        name: 分子名称或标识符.
+-        activity: 生物活性值 (如 IC50, Ki, EC50 等).
+-        activity_unit: 活性值单位 (如 "nM", "uM", "mM").
+-        activity_raw: 原始活性值字符串（保留原始记录）.
+-        cas: CAS 登记号.
+-        cid: PubChem CID.
+-        properties: 计算得到的理化性质字典.
+-        tags: 用户自定义标签字典.
+-        source: 数据来源标识.
+-        props: 从原始文件读取的额外属性字典.
+-    """
+-
+-    smiles: str = ""
+-    mol: Optional[Chem.Mol] = None
+-    name: str = ""
+-    activity: Optional[float] = None
+-    activity_unit: Optional[str] = None
+-    activity_raw: Optional[str] = None
+-    cas: Optional[str] = None
+-    cid: Optional[int] = None
+-    properties: Dict[str, Any] = field(default_factory=dict)
+-    tags: Dict[str, Any] = field(default_factory=dict)
+-    source: str = ""
+-    props: Dict[str, Any] = field(default_factory=dict)
+-
+-    def __post_init__(self) -> None:
+-        """初始化后校验：确保 mol 和 smiles 至少有一个有效."""
+-        if self.mol is None and not self.smiles:
+-            raise ValueError("MoleculeEntry requires at least 'mol' or 'smiles'")
+-        # 如果提供了 mol 但没有 smiles，自动生成
+-        if self.mol is not None and not self.smiles:
+-            try:
+-                self.smiles = Chem.MolToSmiles(self.mol)
+-            except Exception as e:
+-                logger.warning(f"Failed to generate SMILES from mol: {e}")
+-        # 如果提供了 smiles 但没有 mol，延迟解析
+-        if self.mol is None and self.smiles:
+-            self.mol = Chem.MolFromSmiles(self.smiles)
+-            if self.mol is None:
+-                raise ValueError(f"Invalid SMILES: {self.smiles}")
+-
+-    # ------------------------------------------------------------------
+-    # 工厂方法
+-    # ------------------------------------------------------------------
+-
+-    @classmethod
+-    def from_smiles(
+-        cls,
+-        smiles: str,
+-        name: str = "",
+-        **kwargs: Any,
+-    ) -> MoleculeEntry:
+-        """从 SMILES 字符串创建分子记录.
+-
+-        Args:
+-            smiles: SMILES 字符串.
+-            name: 分子名称.
+-            **kwargs: 其他可选字段.
+-
+-        Returns:
+-            初始化后的 MoleculeEntry 实例.
+-
+-        Raises:
+-            ValueError: SMILES 无效时抛出.
+-        """
+-        mol = Chem.MolFromSmiles(smiles)
+-        if mol is None:
+-            raise ValueError(f"Invalid SMILES: {smiles}")
+-        return cls(smiles=smiles, mol=mol, name=name or smiles, **kwargs)
+-
+-    @classmethod
+-    def from_mol(
+-        cls,
+-        mol: Chem.Mol,
+-        name: str = "",
+-        **kwargs: Any,
+-    ) -> MoleculeEntry:
+-        """从 RDKit Mol 对象创建分子记录.
+-
+-        Args:
+-            mol: RDKit 分子对象.
+-            name: 分子名称.
+-            **kwargs: 其他可选字段.
+-
+-        Returns:
+-            初始化后的 MoleculeEntry 实例.
+-
+-        Raises:
+-            ValueError: Mol 对象无效时抛出.
+-        """
+-        if mol is None:
+-            raise ValueError("RDKit Mol object cannot be None")
+-        smiles = Chem.MolToSmiles(mol)
+-        return cls(mol=mol, smiles=smiles, name=name or smiles, **kwargs)
+-
+-    @classmethod
+-    def from_dict(cls, data: Dict[str, Any]) -> MoleculeEntry:
+-        """从旧版字典创建分子记录（向后兼容）.
+-
+-        支持旧版 reader/writer 使用的字典格式：
+-        - "mol": RDKit Mol 对象
+-        - "smiles": SMILES 字符串
+-        - "name": 名称
+-        - "activity": 活性值
+-        - "activity_raw": 原始活性字符串
+-        - "cas": CAS 号
+-        - "props": 额外属性字典
+-
+-        Args:
+-            data: 旧版分子字典.
+-
+-        Returns:
+-            转换后的 MoleculeEntry 实例.
+-        """
+-        kwargs: Dict[str, Any] = {}
+-        if "activity" in data:
+-            kwargs["activity"] = data["activity"]
+-        if "activity_raw" in data:
+-            kwargs["activity_raw"] = data["activity_raw"]
+-        if "cas" in data:
+-            kwargs["cas"] = data["cas"]
+-        if "props" in data:
+-            kwargs["props"] = data.get("props", {})
+-        if "cid" in data:
+-            kwargs["cid"] = data["cid"]
+-        if "source" in data:
+-            kwargs["source"] = data["source"]
+-
+-        mol = data.get("mol")
+-        smiles = data.get("smiles", "")
+-        name = data.get("name", "")
+-
+-        if mol is not None:
+-            return cls.from_mol(mol, name=name, **kwargs)
+-        elif smiles:
+-            return cls.from_smiles(smiles, name=name, **kwargs)
+-        else:
+-            raise ValueError("Dictionary must contain 'mol' or 'smiles' key")
+-
+-    # ------------------------------------------------------------------
+-    # 实用方法
+-    # ------------------------------------------------------------------
+-
+-    def to_dict(self) -> Dict[str, Any]:
+-        """转换为字典格式（向后兼容）.
+-
+-        Returns:
+-            包含所有字段的字典.
+-        """
+-        return {
+-            "mol": self.mol,
+-            "smiles": self.smiles,
+-            "name": self.name,
+-            "activity": self.activity,
+-            "activity_raw": self.activity_raw,
+-            "cas": self.cas,
+-            "cid": self.cid,
+-            "properties": self.properties,
+-            "tags": self.tags,
+-            "source": self.source,
+-            "props": self.props,
+-        }
+-
+-    def copy(self) -> MoleculeEntry:
+-        """深拷贝分子记录.
+-
+-        Returns:
+-            新的 MoleculeEntry 实例（mol 对象也会复制）.
+-        """
+-        new_entry = MoleculeEntry(
+-            smiles=self.smiles,
+-            mol=Chem.Mol(self.mol) if self.mol is not None else None,
+-            name=self.name,
+-            activity=self.activity,
+-            activity_unit=self.activity_unit,
+-            activity_raw=self.activity_raw,
+-            cas=self.cas,
+-            cid=self.cid,
+-            properties=deepcopy(self.properties),
+-            tags=deepcopy(self.tags),
+-            source=self.source,
+-            props=deepcopy(self.props),
+-        )
+-        return new_entry
+-
+-    def has_activity(self) -> bool:
+-        """检查是否有有效活性值.
+-
+-        Returns:
+-            activity 不为 None 且为有效数值时返回 True.
+-        """
+-        return self.activity is not None
+-
+-    def num_atoms(self) -> int:
+-        """获取原子数（惰性计算，mol 为 None 时返回 0）.
+-
+-        Returns:
+-            分子中的原子数量.
+-        """
+-        return self.mol.GetNumAtoms() if self.mol is not None else 0
+-
+-    def num_bonds(self) -> int:
+-        """获取键数.
+-
+-        Returns:
+-            分子中的键数量.
+-        """
+-        return self.mol.GetNumBonds() if self.mol is not None else 0
+-
+-    def molecular_weight(self) -> float:
+-        """计算分子量（mol 为 None 时返回 0.0）.
+-
+-        Returns:
+-            分子量.
+-        """
+-        if self.mol is None:
+-            return 0.0
+-        return Descriptors.MolWt(self.mol)
+-
+-    def logp(self) -> float:
+-        """计算脂水分配系数 LogP.
+-
+-        Returns:
+-            LogP 值.
+-        """
+-        if self.mol is None:
+-            return 0.0
+-        return Descriptors.MolLogP(self.mol)
+-
+-    def __hash__(self) -> int:
+-        """基于 SMILES 的哈希值（用于集合和字典）."""
+-        return hash(self.smiles)
+-
+-    def __eq__(self, other: object) -> bool:
+-        """基于 SMILES 的相等性比较."""
+-        if not isinstance(other, MoleculeEntry):
+-            return NotImplemented
+-        return self.smiles == other.smiles
+-
+-    def __repr__(self) -> str:
+-        """简洁的字符串表示."""
+-        return (
+-            f"MoleculeEntry(name={self.name!r}, smiles={self.smiles!r}, "
+-            f"activity={self.activity}, atoms={self.num_atoms()})"
+-        )
+-
+-
+-class MoleculeBatch:
+-    """分子列表的批量操作容器.
+-
+-    提供对分子集合的高级操作：过滤、映射、排序、分组、去重等。
+-    旨在简化对大量分子的批量处理流程。
+-
+-    属性:
+-        entries: MoleculeEntry 列表.
+-    """
+-
+-    def __init__(self, entries: Optional[List[MoleculeEntry]] = None) -> None:
+-        """初始化分子批次.
+-
+-        Args:
+-            entries: 初始分子列表，默认为空列表.
+-        """
+-        self.entries: List[MoleculeEntry] = list(entries) if entries is not None else []
+-
+-    # ------------------------------------------------------------------
+-    # 序列协议支持
+-    # ------------------------------------------------------------------
+-
+-    def __len__(self) -> int:
+-        return len(self.entries)
+-
+-    def __iter__(self):
+-        return iter(self.entries)
+-
+-    def __getitem__(self, idx: Union[int, slice]) -> Union[MoleculeEntry, List[MoleculeEntry]]:
+-        return self.entries[idx]
+-
+-    def __contains__(self, item: MoleculeEntry) -> bool:
+-        return item in self.entries
+-
+-    # ------------------------------------------------------------------
+-    # 批量操作
+-    # ------------------------------------------------------------------
+-
+-    def append(self, entry: MoleculeEntry) -> None:
+-        """添加单个分子记录."""
+-        self.entries.append(entry)
+-
+-    def extend(self, entries: List[MoleculeEntry]) -> None:
+-        """批量添加分子记录."""
+-        self.entries.extend(entries)
+-
+-    def deduplicate(self, key: str = "smiles") -> MoleculeBatch:
+-        """按指定键去重并取活性平均值（当 key="smiles" 时）.
+-
+-        Args:
+-            key: 去重依据的字段名，默认为 "smiles".
+-
+-        Returns:
+-            去重后的新 MoleculeBatch.
+-        """
+-        if key == "smiles":
+-            seen: Dict[str, List[MoleculeEntry]] = {}
+-            for entry in self.entries:
+-                seen.setdefault(entry.smiles, []).append(entry)
+-
+-            deduped: List[MoleculeEntry] = []
+-            for smiles, group in seen.items():
+-                representative = group[0].copy()
+-                activities = [e.activity for e in group if e.activity is not None]
+-                if activities:
+-                    representative.activity = sum(activities) / len(activities)
+-                    representative.activity_raw = group[0].activity_raw
+-                deduped.append(representative)
+-            return MoleculeBatch(deduped)
+-        else:
+-            # 通用去重
+-            seen: Dict[str, MoleculeEntry] = {}
+-            for entry in self.entries:
+-                val = getattr(entry, key, "")
+-                if val not in seen:
+-                    seen[str(val)] = entry
+-            return MoleculeBatch(list(seen.values()))
+-
+-    def filter_by(
+-        self,
+-        predicate,
+-    ) -> MoleculeBatch:
+-        """按谓词函数过滤分子.
+-
+-        Args:
+-            predicate: 接受 MoleculeEntry 返回 bool 的函数.
+-
+-        Returns:
+-            过滤后的新 MoleculeBatch.
+-        """
+-        return MoleculeBatch([e for e in self.entries if predicate(e)])
+-
+-    def filter_has_activity(self) -> MoleculeBatch:
+-        """过滤掉没有活性值的分子.
+-
+-        Returns:
+-            仅包含有活性值分子的新 MoleculeBatch.
+-        """
+-        return self.filter_by(lambda e: e.has_activity())
+-
+-    def filter_by_size(
+-        self,
+-        min_atoms: Optional[int] = None,
+-        max_atoms: Optional[int] = None,
+-    ) -> MoleculeBatch:
+-        """按原子数范围过滤.
+-
+-        Args:
+-            min_atoms: 最小原子数（含）.
+-            max_atoms: 最大原子数（含）.
+-
+-        Returns:
+-            过滤后的新 MoleculeBatch.
+-        """
+-
+-        def _pred(e: MoleculeEntry) -> bool:
+-            n = e.num_atoms()
+-            if min_atoms is not None and n < min_atoms:
+-                return False
+-            if max_atoms is not None and n > max_atoms:
+-                return False
+-            return True
+-
+-        return self.filter_by(_pred)
+-
+-    def sort_by(
+-        self,
+-        key,
+-        reverse: bool = False,
+-    ) -> MoleculeBatch:
+-        """按指定键排序.
+-
+-        Args:
+-            key: 排序键函数（接受 MoleculeEntry）.
+-            reverse: 是否降序，默认为 False.
+-
+-        Returns:
+-            排序后的新 MoleculeBatch.
+-        """
+-        return MoleculeBatch(sorted(self.entries, key=key, reverse=reverse))
+-
+-    def sort_by_activity(self, reverse: bool = False) -> MoleculeBatch:
+-        """按活性值排序（无活性的排在最后）.
+-
+-        Args:
+-            reverse: 是否降序，默认为 False.
+-
+-        Returns:
+-            排序后的新 MoleculeBatch.
+-        """
+-        def _key(e: MoleculeEntry) -> float:
+-            return e.activity if e.activity is not None else float("inf")
+-        return self.sort_by(_key, reverse=reverse)
+-
+-    def group_by(self, key) -> Dict[Any, MoleculeBatch]:
+-        """按指定键分组.
+-
+-        Args:
+-            key: 分组键函数（接受 MoleculeEntry）.
+-
+-        Returns:
+-            键 -> MoleculeBatch 的字典.
+-        """
+-        groups: Dict[Any, List[MoleculeEntry]] = {}
+-        for entry in self.entries:
+-            k = key(entry)
+-            groups.setdefault(k, []).append(entry)
+-        return {k: MoleculeBatch(v) for k, v in groups.items()}
+-
+-    def get_activities(self) -> List[float]:
+-        """获取所有有效活性值列表.
+-
+-        Returns:
+-            活性值列表（自动过滤 None）.
+-        """
+-        return [e.activity for e in self.entries if e.activity is not None]
+-
+-    def to_dataframe(self) -> Any:
+-        """转换为 pandas DataFrame.
+-
+-        Returns:
+-            包含分子数据的 DataFrame.
+-        """
+-        import pandas as pd
+-
+-        records = []
+-        for e in self.entries:
+-            record: Dict[str, Any] = {
+-                "Name": e.name,
+-                "SMILES": e.smiles,
+-                "NumAtoms": e.num_atoms(),
+-                "NumBonds": e.num_bonds(),
+-                "MolecularWeight": e.molecular_weight(),
+-                "LogP": e.logp(),
+-            }
+-            if e.activity is not None:
+-                record["Activity"] = e.activity
+-            if e.activity_raw is not None:
+-                record["ActivityRaw"] = e.activity_raw
+-            if e.cas is not None:
+-                record["CAS"] = e.cas
+-            if e.cid is not None:
+-                record["CID"] = e.cid
+-            record.update(e.properties)
+-            records.append(record)
+-        return pd.DataFrame(records)
+-
+-    def to_dicts(self) -> List[Dict[str, Any]]:
+-        """转换为旧版字典列表（向后兼容）.
+-
+-        Returns:
+-            字典列表，可直接传给现有 writer.
+-        """
+-        return [e.to_dict() for e in self.entries]
+-
+-    def to_csv(self, path: Union[str, Path]) -> None:
+-        """将批次导出为 CSV 文件.
+-
+-        Args:
+-            path: 输出 CSV 文件路径.
+-        """
+-        path = Path(path)
+-        df = self.to_dataframe()
+-        df.to_csv(path, index=False)
+-
+-    def to_sdf(self, path: Union[str, Path]) -> None:
+-        """将批次导出为 SDF 文件.
+-
+-        Args:
+-            path: 输出 SDF 文件路径.
+-        """
+-        path = Path(path)
+-        with open(path, "wb") as f:
+-            writer = Chem.SDWriter(f)
+-            for entry in self.entries:
+-                if entry.mol is not None:
+-                    mol = Chem.Mol(entry.mol)
+-                    # 写入自定义属性
+-                    for prop, value in entry.props.items():
+-                        mol.SetProp(str(prop), str(value))
+-                    if entry.activity is not None:
+-                        mol.SetProp("Activity", str(entry.activity))
+-                    if entry.cas is not None:
+-                        mol.SetProp("CAS", str(entry.cas))
+-                    if entry.cid is not None:
+-                        mol.SetProp("CID", str(entry.cid))
+-                    if entry.name:
+-                        mol.SetProp("_Name", str(entry.name))
+-                    writer.write(mol)
+-            writer.close()
+-
+-    def to_excel(self, path: Union[str, Path]) -> None:
+-        """将批次导出为 Excel 文件.
+-
+-        Args:
+-            path: 输出 Excel 文件路径.
+-        """
+-        path = Path(path)
+-        df = self.to_dataframe()
+-        df.to_excel(path, index=False)
+-
+-    def __repr__(self) -> str:
+-        return f"MoleculeBatch(n={len(self.entries)})"
+diff --git a/src/mbforge/molecules/schema.py b/src/mbforge/molecules/schema.py
+new file mode 100644
+index 0000000..0a1d84e
+--- /dev/null
++++ b/src/mbforge/molecules/schema.py
+@@ -0,0 +1,433 @@
++"""molecules/schema.py — MBForge 分子数据契约（唯一宪法）
++
++所有模块（parsers, clustering, mcs, sar, csar_io, core/mol_database）
++统一使用此 schema 作为输入输出格式。
++不依赖 RDKit 以外的任何上层模块。
++"""
++
++from __future__ import annotations
++
++import json
++import logging
++import uuid
++from copy import deepcopy
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any, Dict, List, Literal, Optional, Union
++
++logger = logging.getLogger(__name__)
++
++# RDKit 懒加载，避免模块级别 import
++_RDKIT_AVAILABLE = True
++try:
++    from rdkit import Chem
++    from rdkit.Chem import Descriptors
++except ImportError:
++    _RDKIT_AVAILABLE = False
++
++
++@dataclass
++class Molecule:
++    """分子数据契约（统一数据结构）。
++
++    所有 parser/clustering/mcs/sar 模块输入输出均使用此对象。
++    内部只存储可序列化的字段，RDKit Mol 对象通过 SMILES 懒加载重建。
++
++    Attributes:
++        id: 唯一标识符
++        smiles: 标准 SMILES 字符串
++        name: 分子名称或标识符
++        source: 数据来源
++        activity: 生物活性值 (IC50, Ki, EC50 等)
++        activity_unit: 活性值单位 (nM, uM, mM)
++        activity_raw: 原始活性值字符串
++        cas: CAS 登记号
++        cid: PubChem CID
++        properties: 计算得到的理化性质
++        tags: 用户自定义标签
++        props: 从原始文件读取的额外属性
++        metadata: 原始元数据（兼容旧格式）
++        _rdkit_mol: 内部缓存，外部不可见
++    """
++
++    id: str = field(default_factory=lambda: str(uuid.uuid4()))
++    smiles: str = ""
++    name: str = ""
++    source: Literal["pdf", "sdf", "csv", "excel", "manual"] = "manual"
++    activity: Optional[float] = None
++    activity_unit: Optional[str] = None
++    activity_raw: Optional[str] = None
++    cas: Optional[str] = None
++    cid: Optional[int] = None
++    properties: Dict[str, Any] = field(default_factory=dict)
++    tags: Dict[str, Any] = field(default_factory=dict)
++    props: Dict[str, Any] = field(default_factory=dict)
++    metadata: Dict[str, Any] = field(default_factory=dict)
++    _rdkit_mol: Optional[Any] = field(default=None, repr=False)
++
++    def __post_init__(self) -> None:
++        if self.mol is None and not self.smiles:
++            raise ValueError("Molecule requires at least 'smiles' or '_rdkit_mol'")
++        if self.mol is not None and not self.smiles:
++            try:
++                self.smiles = Chem.MolToSmiles(self.mol)
++            except Exception as e:
++                logger.warning(f"Failed to generate SMILES from mol: {e}")
++        if self.mol is None and self.smiles:
++            try:
++                self._rdkit_mol = Chem.MolFromSmiles(self.smiles)
++            except Exception:
++                pass
++
++    # ---- 懒加载 RDKit Mol 对象 ----
++
++    @property
++    def rdkit_mol(self) -> Optional[Any]:
++        """从 SMILES 懒加载 RDKit Mol 对象，失败返回 None。"""
++        if self._rdkit_mol is None and _RDKIT_AVAILABLE and self.smiles:
++            try:
++                self._rdkit_mol = Chem.MolFromSmiles(self.smiles)
++            except Exception:
++                self._rdkit_mol = None
++        return self._rdkit_mol
++
++    @rdkit_mol.setter
++    def rdkit_mol(self, mol: Any) -> None:
++        self._rdkit_mol = mol
++        if mol is not None and _RDKIT_AVAILABLE:
++            self.smiles = Chem.MolToSmiles(mol)
++
++    @property
++    def mol(self) -> Optional[Any]:
++        """别名，兼容旧代码。"""
++        return self.rdkit_mol
++
++    def invalidate_rdk(self) -> None:
++        self._rdkit_mol = None
++
++    # ---- 工厂方法 ----
++
++    @classmethod
++    def from_smiles(cls, smiles: str, source: str = "manual", **kwargs: Any) -> "Molecule":
++        return cls(smiles=smiles, source=source, **kwargs)
++
++    @classmethod
++    def from_mol(cls, mol: Any, name: str = "", **kwargs: Any) -> "Molecule":
++        if mol is None:
++            raise ValueError("RDKit Mol object cannot be None")
++        smiles = Chem.MolToSmiles(mol)
++        return cls(smiles=smiles, name=name or smiles, _rdkit_mol=mol, **kwargs)
++
++    @classmethod
++    def from_dict(cls, data: Dict[str, Any]) -> "Molecule":
++        """从字典反序列化。兼容 schema 格式和旧 MoleculeEntry 格式。"""
++        # 旧 MoleculeEntry 格式：{mol, smiles, name, activity, cas, props, ...}
++        if "mol" in data or ("smiles" in data and "metadata" not in data and "id" not in data):
++            mol = data.get("mol")
++            smiles = data.get("smiles", "")
++            # 顶层字段
++            kwargs: Dict[str, Any] = {
++                "name": data.get("name", ""),
++                "activity": data.get("activity"),
++                "activity_unit": data.get("activity_unit") or data.get("units"),
++                "activity_raw": data.get("activity_raw"),
++                "cas": data.get("cas"),
++                "cid": data.get("cid"),
++                "source": data.get("source", "sdf" if "props" in data else "manual"),
++                "properties": data.get("properties", {}),
++                "tags": data.get("tags", {}),
++                "props": data.get("props", {}),
++            }
++            if mol is not None:
++                return cls.from_mol(mol, **kwargs)
++            return cls(smiles=smiles, **kwargs)
++        # schema 标准格式
++        known = {"id", "smiles", "name", "source", "activity", "activity_unit",
++                 "activity_raw", "cas", "cid", "properties", "tags", "props", "metadata"}
++        extra = {k: v for k, v in data.items() if k not in known}
++        meta = {**data.get("metadata", {}), **extra}
++        return cls(
++            id=data.get("id", str(uuid.uuid4())),
++            smiles=data.get("smiles", ""),
++            name=data.get("name", ""),
++            source=data.get("source", "manual"),
++            activity=data.get("activity"),
++            activity_unit=data.get("activity_unit"),
++            activity_raw=data.get("activity_raw"),
++            cas=data.get("cas"),
++            cid=data.get("cid"),
++            properties=data.get("properties", {}),
++            tags=data.get("tags", {}),
++            props=data.get("props", {}),
++            metadata=meta,
++        )
++
++    # ---- 导出方法 ----
++
++    def to_dict(self) -> Dict[str, Any]:
++        """序列化。输出格式与旧 MoleculeEntry.to_dict() 向后兼容。"""
++        d: Dict[str, Any] = {
++            "mol": self.mol,
++            "smiles": self.smiles,
++            "name": self.name,
++            "activity": self.activity,
++            "activity_raw": self.activity_raw,
++            "cas": self.cas,
++            "cid": self.cid,
++            "properties": self.properties,
++            "tags": self.tags,
++            "source": self.source,
++            "props": self.props,
++        }
++        if self.activity_unit is not None:
++            d["activity_unit"] = self.activity_unit
++        return d
++
++    def to_json(self) -> str:
++        return json.dumps(self.to_dict(), ensure_ascii=False, default=str)
++
++    # ---- 便捷方法 ----
++
++    def copy(self) -> "Molecule":
++        return Molecule(
++            id=self.id,
++            smiles=self.smiles,
++            name=self.name,
++            source=self.source,
++            activity=self.activity,
++            activity_unit=self.activity_unit,
++            activity_raw=self.activity_raw,
++            cas=self.cas,
++            cid=self.cid,
++            properties=deepcopy(self.properties),
++            tags=deepcopy(self.tags),
++            props=deepcopy(self.props),
++            metadata=deepcopy(self.metadata),
++            _rdkit_mol=Chem.Mol(self._rdkit_mol) if self._rdkit_mol is not None else None,
++        )
++
++    def has_activity(self) -> bool:
++        return self.activity is not None
++
++    def num_atoms(self) -> int:
++        return self.mol.GetNumAtoms() if self.mol is not None else 0
++
++    def num_bonds(self) -> int:
++        return self.mol.GetNumBonds() if self.mol is not None else 0
++
++    def molecular_weight(self) -> float:
++        if self.mol is None:
++            return 0.0
++        return Descriptors.MolWt(self.mol)
++
++    def logp(self) -> float:
++        if self.mol is None:
++            return 0.0
++        return Descriptors.MolLogP(self.mol)
++
++    # ---- 哈希与比较（基于 SMILES）----
++
++    def __hash__(self) -> int:
++        return hash(self.smiles)
++
++    def __eq__(self, other: object) -> bool:
++        if not isinstance(other, Molecule):
++            return NotImplemented
++        return self.smiles == other.smiles
++
++    def __repr__(self) -> str:
++        return (
++            f"Molecule(name={self.name!r}, smiles={self.smiles[:20]!r}, "
++            f"activity={self.activity}, atoms={self.num_atoms()})"
++        )
++
++
++# ---- 向后兼容别名 ----
++MoleculeEntry = Molecule
++
++
++# ---- Batch 容器 ----
++
++@dataclass
++class MoleculeBatch:
++    """分子列表的批量操作容器。
++
++    提供过滤、排序、分组、去重、导出等批量操作。
++    """
++
++    entries: List[Molecule] = field(default_factory=list)
++
++    @property
++    def molecules(self) -> List[Molecule]:
++        """别名，兼容旧代码。"""
++        return self.entries
++
++    def __len__(self) -> int:
++        return len(self.entries)
++
++    def __iter__(self):
++        return iter(self.entries)
++
++    def __getitem__(self, idx: Union[int, slice]) -> Union[Molecule, List[Molecule]]:
++        return self.entries[idx]
++
++    def __contains__(self, item: Molecule) -> bool:
++        return item in self.entries
++
++    # ---- 增删 ----
++
++    def append(self, entry: Molecule) -> None:
++        self.entries.append(entry)
++
++    def extend(self, entries: List[Molecule]) -> None:
++        self.entries.extend(entries)
++
++    # ---- 过滤 ----
++
++    def filter_by(self, predicate) -> "MoleculeBatch":
++        return MoleculeBatch([e for e in self.entries if predicate(e)])
++
++    def filter_has_activity(self) -> "MoleculeBatch":
++        return self.filter_by(lambda e: e.has_activity())
++
++    def filter_by_smiles_length(self, max_len: int = 200) -> "MoleculeBatch":
++        return MoleculeBatch([m for m in self.entries if len(m.smiles) <= max_len])
++
++    def filter_by_size(self, min_atoms: Optional[int] = None, max_atoms: Optional[int] = None) -> "MoleculeBatch":
++        def _pred(e: Molecule) -> bool:
++            n = e.num_atoms()
++            if min_atoms is not None and n < min_atoms:
++                return False
++            if max_atoms is not None and n > max_atoms:
++                return False
++            return True
++        return self.filter_by(_pred)
++
++    # ---- 排序 ----
++
++    def sort_by(self, key, reverse: bool = False) -> "MoleculeBatch":
++        return MoleculeBatch(sorted(self.entries, key=key, reverse=reverse))
++
++    def sort_by_activity(self, ascending: bool = False) -> "MoleculeBatch":
++        def _key(e: Molecule) -> float:
++            return e.activity if e.activity is not None else float("inf")
++        return self.sort_by(_key, reverse=not ascending)
++
++    # ---- 分组 ----
++
++    def group_by(self, key) -> Dict[Any, "MoleculeBatch"]:
++        groups: Dict[Any, List[Molecule]] = {}
++        for entry in self.entries:
++            k = key(entry)
++            groups.setdefault(k, []).append(entry)
++        return {k: MoleculeBatch(v) for k, v in groups.items()}
++
++    # ---- 去重 ----
++
++    def deduplicate(self, key: str = "smiles") -> "MoleculeBatch":
++        if key == "smiles":
++            seen: Dict[str, List[Molecule]] = {}
++            for entry in self.entries:
++                seen.setdefault(entry.smiles, []).append(entry)
++            deduped: List[Molecule] = []
++            for smiles, group in seen.items():
++                representative = group[0].copy()
++                activities = [e.activity for e in group if e.activity is not None]
++                if activities:
++                    representative.activity = sum(activities) / len(activities)
++                    representative.activity_raw = group[0].activity_raw
++                deduped.append(representative)
++            return MoleculeBatch(deduped)
++        else:
++            seen: Dict[str, Molecule] = {}
++            for entry in self.entries:
++                val = getattr(entry, key, "")
++                if str(val) not in seen:
++                    seen[str(val)] = entry
++            return MoleculeBatch(list(seen.values()))
++
++    # ---- 查询 ----
++
++    def get_activities(self) -> List[float]:
++        return [e.activity for e in self.entries if e.activity is not None]
++
++    # ---- 导出 ----
++
++    def to_dict_list(self) -> List[dict]:
++        return [m.to_dict() for m in self.entries]
++
++    def to_dicts(self) -> List[Dict[str, Any]]:
++        """转换为旧版字典列表（向后兼容）。"""
++        return [e.to_dict() for e in self.entries]
++
++    def to_dataframe(self) -> Any:
++        import pandas as pd
++        records = []
++        for e in self.entries:
++            record: Dict[str, Any] = {
++                "Name": e.name,
++                "SMILES": e.smiles,
++                "NumAtoms": e.num_atoms(),
++                "NumBonds": e.num_bonds(),
++                "MolecularWeight": e.molecular_weight(),
++                "LogP": e.logp(),
++            }
++            if e.activity is not None:
++                record["Activity"] = e.activity
++            if e.activity_raw is not None:
++                record["ActivityRaw"] = e.activity_raw
++            if e.cas is not None:
++                record["CAS"] = e.cas
++            if e.cid is not None:
++                record["CID"] = e.cid
++            record.update(e.properties)
++            records.append(record)
++        return pd.DataFrame(records)
++
++    def to_csv(self, path: Union[str, Path]) -> None:
++        import pandas as pd
++        records = []
++        for m in self.entries:
++            rec: Dict[str, Any] = {"SMILES": m.smiles}
++            rec.update({k: v for k, v in m.metadata.items()
++                        if k not in ("props", "properties", "tags")})
++            mol = m.rdkit_mol
++            if mol is not None and _RDKIT_AVAILABLE:
++                rec["NumAtoms"] = mol.GetNumAtoms()
++                rec["MolecularWeight"] = round(Descriptors.MolWt(mol), 2)
++                rec["LogP"] = round(Descriptors.MolLogP(mol), 2)
++            records.append(rec)
++        pd.DataFrame(records).to_csv(path, index=False)
++
++    def to_sdf(self, path: Union[str, Path]) -> None:
++        if not _RDKIT_AVAILABLE:
++            raise RuntimeError("RDKit is required for SDF export")
++        with open(path, "wb") as f:
++            writer = Chem.SDWriter(f)
++            for m in self.entries:
++                mol = m.rdkit_mol
++                if mol is not None:
++                    mol_copy = Chem.Mol(mol)
++                    if m.name:
++                        mol_copy.SetProp("_Name", str(m.name))
++                    for k, v in m.props.items():
++                        mol_copy.SetProp(str(k), str(v))
++                    if m.activity is not None:
++                        mol_copy.SetProp("Activity", str(m.activity))
++                    if m.cas is not None:
++                        mol_copy.SetProp("CAS", str(m.cas))
++                    if m.cid is not None:
++                        mol_copy.SetProp("CID", str(m.cid))
++                    writer.write(mol_copy)
++            writer.close()
++
++    def to_excel(self, path: Union[str, Path]) -> None:
++        df = self.to_dataframe()
++        df.to_excel(path, index=False)
++
++    @classmethod
++    def from_smiles_list(cls, smiles_list: List[str], source: str = "manual") -> "MoleculeBatch":
++        return cls([Molecule.from_smiles(s, source=source) for s in smiles_list])
++
++    def __repr__(self) -> str:
++        return f"MoleculeBatch(n={len(self.entries)})"
+diff --git a/src/mbforge/parsers/__init__.py b/src/mbforge/parsers/__init__.py
+index 59a9e60..84c4db9 100644
+--- a/src/mbforge/parsers/__init__.py
++++ b/src/mbforge/parsers/__init__.py
+@@ -1,5 +1,6 @@
+ """MBForge 解析器模块."""
+ 
++from .base_parser import BaseDocumentParser, ParseOutput
+ from .file_processor import (
+     process_file,
+     get_strategy,
+@@ -15,6 +16,8 @@ from .pdf_parser import PDFParserPipeline
+ from .molecule_extractor import MoleculeExtractor
+ 
+ __all__ = [
++    "BaseDocumentParser",
++    "ParseOutput",
+     "PDFParserPipeline",
+     "MoleculeExtractor",
+     "process_file",
+diff --git a/src/mbforge/parsers/base_parser.py b/src/mbforge/parsers/base_parser.py
+new file mode 100644
+index 0000000..e603410
+--- /dev/null
++++ b/src/mbforge/parsers/base_parser.py
+@@ -0,0 +1,45 @@
++"""文档解析器协议.
++
++定义本地解析（PyMuPDF）和远程解析（UniParser API）的统一接口。
++"""
++
++from __future__ import annotations
++
++from abc import ABC, abstractmethod
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any, Dict, List, Optional, Tuple
++
++
++@dataclass
++class ParseOutput:
++    """解析器统一输出。"""
++
++    text: str = ""
++    markdown: str = ""
++    pages: List[str] = field(default_factory=list)
++    images: List[Path] = field(default_factory=list)
++    tables: List[List[List[str]]] = field(default_factory=list)
++    molecules: List[Dict[str, Any]] = field(default_factory=list)
++    metadata: Dict[str, Any] = field(default_factory=dict)
++
++    @property
++    def content(self) -> str:
++        """优先返回 markdown，否则 text。"""
++        return self.markdown or self.text
++
++
++class BaseDocumentParser(ABC):
++    """文档解析器抽象基类。
++
++    本地解析和远程解析均实现此接口，上层只依赖协议。
++    """
++
++    @abstractmethod
++    def parse(self, pdf_path: Path, **kwargs) -> ParseOutput:
++        """解析 PDF 文件，返回统一输出。"""
++        ...
++
++    def health(self) -> Dict[str, Any]:
++        """检查解析器可用性。默认返回 healthy。"""
++        return {"status": "healthy"}
+diff --git a/src/mbforge/parsers/glm_ocr_parser.py b/src/mbforge/parsers/glm_ocr_parser.py
+index a9cd4ab..0eb0c6d 100644
+--- a/src/mbforge/parsers/glm_ocr_parser.py
++++ b/src/mbforge/parsers/glm_ocr_parser.py
+@@ -20,11 +20,12 @@ from typing import Any, Dict, List, Optional
+ import requests
+ 
+ from ..utils.logger import get_logger
++from .base_parser import BaseDocumentParser, ParseOutput
+ 
+ logger = get_logger(__name__)
+ 
+ 
+-class GlmOcrClient:
++class GlmOcrClient(BaseDocumentParser):
+     """GLM-OCR 客户端封装.
+ 
+     优先通过 HTTP API (Ollama/vLLM) 调用，不可用则 fallback 到 PyMuPDF。
+@@ -103,22 +104,22 @@ class GlmOcrClient:
+             logger.warning(f"GLM-OCR API call failed: {e}")
+             raise
+ 
++    def parse(self, pdf_path: Path, **kwargs) -> ParseOutput:
++        """解析 PDF，返回统一 ParseOutput。"""
++        try:
++            result = self._parse_with_glm(pdf_path)
++        except Exception as e:
++            logger.warning(f"GLM-OCR parsing failed ({e}), falling back to PyMuPDF")
++            result = self._fallback_pymupdf(pdf_path)
++        return ParseOutput(
++            text=result.get("text", ""),
++            markdown=result.get("markdown", ""),
++            pages=result.get("pages", []),
++            metadata={"parser": result.get("parser", "glm_ocr")},
++        )
++
+     def parse_pdf(self, pdf_path: Path, **kwargs) -> Dict[str, Any]:
+-        """解析 PDF，返回结构化结果.
+-
+-        流程:
+-            1. 将 PDF 每页转为图像
+-            2. 逐页调用 GLM-OCR
+-            3. 合并结果，保留分子占位符
+-
+-        Returns:
+-            {
+-                "markdown": str,      # 结构化 Markdown
+-                "text": str,          # 纯文本（用于兼容现有流程）
+-                "pages": List[str],   # 每页识别结果
+-                "molecule_placeholders": List[dict],  # 分子占位符位置
+-            }
+-        """
++        """向后兼容：返回旧格式 dict。"""
+         try:
+             return self._parse_with_glm(pdf_path)
+         except Exception as e:
+diff --git a/src/mbforge/parsers/local/__init__.py b/src/mbforge/parsers/local/__init__.py
+new file mode 100644
+index 0000000..bdb03fe
+--- /dev/null
++++ b/src/mbforge/parsers/local/__init__.py
+@@ -0,0 +1,25 @@
++"""parsers/local — 本地 PDF 处理轨道.
++
++与 parser_io/（UniParser API）形成双轨，均输出标准 Molecule 对象。
++
++轨道：
++- PyMuPDF 文本/图片提取
++- regex + LLM 分子识别
++- 输出 Molecule 对象（schema.py 契约）
++
++示例:
++    >>> from mbforge.parsers.local import LocalMoleculeExtractor
++    >>> from mbforge.molecules.schema import Molecule
++    >>> extractor = LocalMoleculeExtractor()
++    >>> mols = extractor.extract_from_text("CCO is ethanol. C=C is ethene.")
++    >>> [m.smiles for m in mols]
++    ['CCO', 'C=C']
++"""
++
++from __future__ import annotations
++
++from ..molecule_extractor import MoleculeExtractor
++
++__all__ = [
++    "MoleculeExtractor",
++]
+diff --git a/src/mbforge/parsers/molecule_extractor.py b/src/mbforge/parsers/molecule_extractor.py
+index 481e84e..a6e3178 100644
+--- a/src/mbforge/parsers/molecule_extractor.py
++++ b/src/mbforge/parsers/molecule_extractor.py
+@@ -13,8 +13,7 @@ try:
+ except ImportError:
+     Chem = None  # type: ignore
+ 
+-from ..core.mol_database import MoleculeRecord
+-from ..utils.helpers import generate_uuid
++from ..molecules.schema import Molecule
+ 
+ 
+ class MoleculeExtractor:
+@@ -69,7 +68,7 @@ class MoleculeExtractor:
+             })
+         return results
+ 
+-    def extract_from_text(self, text: str, doc_id: str = "") -> List[MoleculeRecord]:
++    def extract_from_text(self, text: str, doc_id: str = "") -> List[Molecule]:
+         """从文本提取分子记录."""
+         smiles_list = self.extract_smiles_candidates(text)
+         activities = self.extract_activities(text)
+@@ -91,12 +90,9 @@ class MoleculeExtractor:
+         records = []
+         used_activity_idx = set()
+         for smi, smi_pos in smiles_positions:
+-            rec = MoleculeRecord(
+-                mol_id=generate_uuid(),
+-                smiles=smi,
+-                source_doc=doc_id,
+-            )
+             # 基于位置距离的精确匹配：找最近的未使用活性
++            activity = None
++            activity_unit = None
+             if activity_positions:
+                 best_idx = None
+                 best_dist = float("inf")
+@@ -107,34 +103,38 @@ class MoleculeExtractor:
+                     if dist < best_dist:
+                         best_dist = dist
+                         best_idx = idx
+-                # 阈值：活性与分子距离超过 200 字符认为不相关
+                 if best_idx is not None and best_dist < 200:
+                     best = activity_positions[best_idx][0]
+-                    rec.activity = best["value"]
+-                    rec.activity_type = best["type"]
+-                    rec.units = best["units"]
++                    activity = best["value"]
++                    activity_unit = best["units"]
+                     used_activity_idx.add(best_idx)
++            rec = Molecule(
++                smiles=smi, source="pdf",
++                activity=activity, activity_unit=activity_unit,
++                metadata={"source_doc": doc_id},
++            )
+             records.append(rec)
+ 
+         return records
+ 
+-    def extract_from_pdf_result(self, result_dict: Dict[str, Any], doc_id: str = "") -> List[MoleculeRecord]:
++    def extract_from_pdf_result(self, result_dict: Dict[str, Any], doc_id: str = "") -> List[Molecule]:
+         """从 UniParser 解析结果提取分子."""
+         records = []
+-        # UniParser 可能返回结构化分子数据
+         molecules = result_dict.get("molecules", [])
+         for mol_data in molecules:
+             smi = mol_data.get("smiles", "")
+             if not smi or not self.is_valid_smiles(smi):
+                 continue
+-            rec = MoleculeRecord(
+-                mol_id=mol_data.get("id", generate_uuid()),
++            rec = Molecule(
+                 smiles=smi,
++                source="pdf",
+                 name=mol_data.get("name", ""),
+-                source_doc=doc_id,
+                 activity=mol_data.get("activity"),
+-                activity_type=mol_data.get("activity_type", ""),
+-                properties=mol_data.get("properties", {}),
++                metadata={
++                    "source_doc": doc_id,
++                    "activity_type": mol_data.get("activity_type", ""),
++                    "properties": mol_data.get("properties", {}),
++                },
+             )
+             records.append(rec)
+         return records
+diff --git a/src/mbforge/sar/analyzer.py b/src/mbforge/sar/analyzer.py
+index c66b02c..fe6852d 100644
+--- a/src/mbforge/sar/analyzer.py
++++ b/src/mbforge/sar/analyzer.py
+@@ -314,3 +314,53 @@ class SARAnalyzer:
+             "min": float(np.min(all_activities)),
+             "total_compounds": len(all_activities),
+         }
++
++
++# ---- CLI 入口 ----
++
++if __name__ == "__main__":
++    import argparse
++    import json
++    import sys
++
++    parser = argparse.ArgumentParser(description="MBForge SAR 分析工具")
++    parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
++    parser.add_argument("--smiles-column", default="SMILES", help="CSV 中 SMILES 列名")
++    parser.add_argument("--activity-column", default="activity", help="CSV 中活性值列名")
++    parser.add_argument("--threshold", type=float, default=None, help="活性阈值")
++    parser.add_argument("--output", "-o", default=None, help="输出 JSON 文件路径")
++    args = parser.parse_args()
++
++    from ..molecules.loader import load_molecules_from_file
++
++    molecules = load_molecules_from_file(
++        args.input, args.smiles_column, args.activity_column
++    )
++    print(f"Loaded {len(molecules)} molecules")
++
++    # 检查是否有活性数据
++    with_activity = [m for m in molecules if "activity" in m]
++    if not with_activity:
++        print("Error: No activity data found. Use --activity-column to specify.", file=sys.stderr)
++        sys.exit(1)
++
++    # 作为单个大簇分析
++    analyzer = SARAnalyzer(activity_threshold=args.threshold)
++    result = analyzer.analyze_cluster(cluster_id=0, molecules=with_activity)
++
++    output_data = {
++        "cluster_id": result.cluster_id,
++        "num_compounds": result.num_compounds,
++        "mean_activity": round(result.mean_activity, 4),
++        "std_activity": round(result.std_activity, 4),
++        "max_activity": round(result.max_activity, 4),
++        "min_activity": round(result.min_activity, 4),
++        "contributions": result.contributions,
++    }
++
++    output = json.dumps(output_data, indent=2, ensure_ascii=False)
++    if args.output:
++        Path(args.output).write_text(output, encoding="utf-8")
++        print(f"Saved SAR result to {args.output}")
++    else:
++        print(output)
+diff --git a/src/mbforge/sar/preprocessor.py b/src/mbforge/sar/preprocessor.py
+index 64c8234..d00ab58 100644
+--- a/src/mbforge/sar/preprocessor.py
++++ b/src/mbforge/sar/preprocessor.py
+@@ -30,8 +30,6 @@ from typing import Any, Dict, List, Optional, Tuple
+ 
+ import numpy as np
+ 
+-from ..mcs.finder import MCSResult
+-
+ logger = logging.getLogger(__name__)
+ 
+ 
+diff --git a/src/mbforge/services/__init__.py b/src/mbforge/services/__init__.py
+new file mode 100644
+index 0000000..47bfcb9
+--- /dev/null
++++ b/src/mbforge/services/__init__.py
+@@ -0,0 +1,8 @@
++"""services — 应用服务层.
++
++负责资源生命周期管理，解耦 UI 层与底层模块。
++"""
++
++from .app_context import AppContext
++
++__all__ = ["AppContext"]
+diff --git a/src/mbforge/services/app_context.py b/src/mbforge/services/app_context.py
+new file mode 100644
+index 0000000..15388ac
+--- /dev/null
++++ b/src/mbforge/services/app_context.py
+@@ -0,0 +1,104 @@
++"""AppContext — 应用资源生命周期管理.
++
++集中管理 LLM、Embedder、Reranker、VLM、KnowledgeBase、MoleculeDatabase
++等资源的创建、持有和释放，UI 层只消费 AppContext，不直接创建资源。
++"""
++
++from __future__ import annotations
++
++import logging
++from pathlib import Path
++from typing import Optional
++
++from ..core.knowledge_base import KnowledgeBase
++from ..core.mol_database import MoleculeDatabase
++from ..core.project import Project
++from ..core.todo_manager import TodoManager
++from ..models.base import BaseLLM, BaseEmbedder, BaseReranker, BaseVLM
++from ..models.llm import create_llm_from_config
++from ..models.embedding import create_embedder_from_config
++from ..models.rerank import create_reranker_from_config
++from ..parsers.pdf_parser import PDFParserPipeline
++from ..utils.config import load_global_config
++
++logger = logging.getLogger(__name__)
++
++
++class AppContext:
++    """应用级资源容器.
++
++    职责：
++    - 持有全局模型实例（LLM, Embedder, Reranker, VLM）
++    - 管理项目级资源（KnowledgeBase, MoleculeDatabase, TodoManager, PDFPipeline）
++    - 提供统一的初始化和释放接口
++
++    UI 层通过 AppContext 访问所有资源，无需知道资源的创建细节。
++    """
++
++    def __init__(self):
++        # 全局模型（跨项目共享）
++        self.llm: Optional[BaseLLM] = None
++        self.embedder: Optional[BaseEmbedder] = None
++        self.reranker: Optional[BaseReranker] = None
++        self.vlm: Optional[BaseVLM] = None
++
++        # 项目级资源（随项目切换）
++        self.project: Optional[Project] = None
++        self.kb: Optional[KnowledgeBase] = None
++        self.mol_db: Optional[MoleculeDatabase] = None
++        self.todo_manager: Optional[TodoManager] = None
++        self.pdf_pipeline: Optional[PDFParserPipeline] = None
++
++    def init_models(self) -> None:
++        """从全局配置初始化模型实例。"""
++        config = load_global_config()
++        try:
++            self.embedder = create_embedder_from_config(config.embed)
++        except Exception as e:
++            logger.warning(f"Embedder init failed: {e}")
++        try:
++            self.llm = create_llm_from_config(config.llm)
++            logger.info(f"LLM initialized: {type(self.llm).__name__}")
++        except Exception as e:
++            logger.warning(f"LLM init failed: {e}")
++        try:
++            self.reranker = create_reranker_from_config(config.rerank)
++        except Exception as e:
++            logger.warning(f"Reranker init failed: {e}")
++
++    def open_project(self, project: Project) -> None:
++        """打开项目，初始化项目级资源。"""
++        self.close_project()
++
++        self.project = project
++        self.kb = KnowledgeBase(project.root, embedder=self.embedder)
++        self.mol_db = MoleculeDatabase(project.root)
++        self.todo_manager = TodoManager(project.root)
++        self.pdf_pipeline = PDFParserPipeline(
++            llm=self.llm,
++            embedder=self.embedder,
++            vlm=self.vlm,
++            knowledge_base=self.kb,
++            mol_db=self.mol_db,
++        )
++        logger.info(f"Project opened: {project.name}")
++
++    def close_project(self) -> None:
++        """释放项目级资源。"""
++        if self.kb is not None:
++            self.kb.close()
++            self.kb = None
++        if self.mol_db is not None:
++            self.mol_db.close()
++            self.mol_db = None
++        self.todo_manager = None
++        self.pdf_pipeline = None
++        self.project = None
++
++    def reload_models(self) -> None:
++        """重新加载模型（设置变更后调用）。
++
++        注意：会先关闭当前项目，调用方需重新 open_project()。
++        """
++        self.close_project()
++        self.init_models()
+diff --git a/src/mbforge/ui/pdf_viewer.py b/src/mbforge/ui/pdf_viewer.py
+index 732bfc1..11880d6 100644
+--- a/src/mbforge/ui/pdf_viewer.py
++++ b/src/mbforge/ui/pdf_viewer.py
+@@ -8,7 +8,7 @@ from pathlib import Path
+ from typing import Dict, List, Optional
+ 
+ import fitz  # PyMuPDF
+-from PyQt6.QtCore import QObject, QThread, QEvent, pyqtSignal, pyqtSlot, Qt
++from PyQt6.QtCore import QObject, QThread, QEvent, QTimer, pyqtSignal, pyqtSlot, Qt
+ from PyQt6.QtGui import QImage, QPixmap
+ from PyQt6.QtWidgets import (
+     QHBoxLayout,
+@@ -235,6 +235,8 @@ class PDFViewer(QWidget):
+         # 渲染首屏可见页（同步）
+         self._render_visible_range()
+         self.page_changed.emit(self.current_page + 1, self._total_pages)
++        # 布局完成后重新渲染：首次加载时 viewport 高度可能为 0
++        QTimer.singleShot(0, self._rerender_if_needed)
+ 
+     def _render_visible_range(self):
+         """根据当前滚动位置，渲染可见页范围内所有页，回收范围外页。"""
+@@ -406,6 +408,11 @@ class PDFViewer(QWidget):
+         if self._continuous_mode and self._virtual_container:
+             self._render_visible_range()
+ 
++    def _rerender_if_needed(self):
++        """布局完成后检查：若首屏未渲染则重新渲染。"""
++        if self._continuous_mode and self._virtual_container and not self._visible_widgets:
++            self._render_visible_range()
++
+     def _render_single(self):
+         """单页模式（按需渲染，无虚拟滚动开销）。"""
+         self._clear_visible_widgets()
+diff --git a/src/mbforge/utils/constants.py b/src/mbforge/utils/constants.py
+index 91fb59e..08669ff 100644
+--- a/src/mbforge/utils/constants.py
++++ b/src/mbforge/utils/constants.py
+@@ -74,6 +74,7 @@ PROVIDER_QWEN3 = "qwen3"
+ PROVIDER_API = "api"
+ PROVIDER_OLLAMA = "ollama"
+ PROVIDER_LOCAL = "local"
++PROVIDER_NEMOTON_DIFFUSION = "nemotron_diffusion"
+ 
+ # OCR Provider
+ OCR_PROVIDER_PYMUPDF = "pymupdf"
+diff --git a/src/mbforge/utils/error_logger.py b/src/mbforge/utils/error_logger.py
+index eb23cc5..5558cf8 100644
+--- a/src/mbforge/utils/error_logger.py
++++ b/src/mbforge/utils/error_logger.py
+@@ -14,8 +14,10 @@ from .logger import get_logger
+ 
+ logger = get_logger(__name__)
+ 
+-# 项目根目录下的 docs/errors/
++# 项目根目录下的 docs/errors/，不存在则 fallback 到用户目录
+ _ERRORS_DIR = Path(__file__).resolve().parents[3] / "docs" / "errors"
++if not _ERRORS_DIR.parent.exists():
++    _ERRORS_DIR = Path.home() / ".local" / "share" / "MBForge" / "errors"
+ 
+ 
+ def record_error(
+diff --git a/src/mbforge/workflow/__init__.py b/src/mbforge/workflow/__init__.py
+deleted file mode 100644
+index d5a2e76..0000000
+--- a/src/mbforge/workflow/__init__.py
++++ /dev/null
+@@ -1,23 +0,0 @@
+-"""MBForge 分子工作流模块.
+-
+-预留扩展接口：
+-- 分子生成 (Generation)
+-- 分子对接 (Docking)
+-- QSAR 建模
+-- 分子动力学 (MD)
+-"""
+-
+-from .base import WorkflowBase, WorkflowResult
+-from .generation import GenerationWorkflow
+-from .docking import DockingWorkflow
+-from .qsar import QSARWorkflow
+-from .md import MDWorkflow
+-
+-__all__ = [
+-    "WorkflowBase",
+-    "WorkflowResult",
+-    "GenerationWorkflow",
+-    "DockingWorkflow",
+-    "QSARWorkflow",
+-    "MDWorkflow",
+-]
+diff --git a/src/mbforge/workflow/base.py b/src/mbforge/workflow/base.py
+deleted file mode 100644
+index 7538bb5..0000000
+--- a/src/mbforge/workflow/base.py
++++ /dev/null
+@@ -1,39 +0,0 @@
+-"""工作流基类."""
+-
+-from __future__ import annotations
+-
+-from abc import ABC, abstractmethod
+-from dataclasses import dataclass, field
+-from typing import Any, Dict, List
+-
+-
+-@dataclass
+-class WorkflowResult:
+-    """工作流执行结果."""
+-
+-    success: bool = True
+-    message: str = ""
+-    data: Dict[str, Any] = field(default_factory=dict)
+-    artifacts: List[str] = field(default_factory=list)  # 输出文件路径
+-
+-
+-class WorkflowBase(ABC):
+-    """分子工作流基类."""
+-
+-    name: str = "base"
+-    description: str = ""
+-    enabled: bool = False
+-
+-    @abstractmethod
+-    def run(self, input_data: Dict[str, Any], **kwargs) -> WorkflowResult:
+-        """执行工作流."""
+-        ...
+-
+-    @abstractmethod
+-    def validate_input(self, input_data: Dict[str, Any]) -> tuple[bool, str]:
+-        """验证输入数据."""
+-        ...
+-
+-    def get_config_schema(self) -> Dict[str, Any]:
+-        """返回配置 JSON Schema."""
+-        return {}
+diff --git a/src/mbforge/workflow/docking.py b/src/mbforge/workflow/docking.py
+deleted file mode 100644
+index 0427d5a..0000000
+--- a/src/mbforge/workflow/docking.py
++++ /dev/null
+@@ -1,33 +0,0 @@
+-"""分子对接工作流（预留）."""
+-
+-from __future__ import annotations
+-
+-from typing import Any, Dict
+-
+-from .base import WorkflowBase, WorkflowResult
+-
+-
+-class DockingWorkflow(WorkflowBase):
+-    """分子对接工作流.
+-
+-    预留接口，后续可集成：
+-    - AutoDock Vina
+-    - GNINA (GPU 加速对接)
+-    - LeDock
+-    """
+-
+-    name = "docking"
+-    description = "分子-蛋白对接计算"
+-
+-    def run(self, input_data: Dict[str, Any], **kwargs) -> WorkflowResult:
+-        return WorkflowResult(
+-            success=False,
+-            message="分子对接功能尚未实现。预留接口。",
+-        )
+-
+-    def validate_input(self, input_data: Dict[str, Any]) -> tuple[bool, str]:
+-        if "protein" not in input_data:
+-            return False, "需要提供蛋白结构文件"
+-        if "ligands" not in input_data:
+-            return False, "需要提供配体列表"
+-        return True, ""
+diff --git a/src/mbforge/workflow/generation.py b/src/mbforge/workflow/generation.py
+deleted file mode 100644
+index 492471d..0000000
+--- a/src/mbforge/workflow/generation.py
++++ /dev/null
+@@ -1,31 +0,0 @@
+-"""分子生成工作流（预留）."""
+-
+-from __future__ import annotations
+-
+-from typing import Any, Dict
+-
+-from .base import WorkflowBase, WorkflowResult
+-
+-
+-class GenerationWorkflow(WorkflowBase):
+-    """基于 AI 的分子生成.
+-
+-    预留接口，后续可集成：
+-    - RNN/LSTM/Transformer 生成模型
+-    - 强化学习分子优化
+-    - 扩散模型（Diffusion Models）
+-    """
+-
+-    name = "generation"
+-    description = "基于 AI 的分子生成与优化"
+-
+-    def run(self, input_data: Dict[str, Any], **kwargs) -> WorkflowResult:
+-        return WorkflowResult(
+-            success=False,
+-            message="分子生成功能尚未实现。预留接口。",
+-        )
+-
+-    def validate_input(self, input_data: Dict[str, Any]) -> tuple[bool, str]:
+-        if "scaffold" not in input_data and "constraints" not in input_data:
+-            return False, "需要提供 scaffold 或 constraints"
+-        return True, ""
+diff --git a/src/mbforge/workflow/md.py b/src/mbforge/workflow/md.py
+deleted file mode 100644
+index f833781..0000000
+--- a/src/mbforge/workflow/md.py
++++ /dev/null
+@@ -1,31 +0,0 @@
+-"""分子动力学工作流（预留）."""
+-
+-from __future__ import annotations
+-
+-from typing import Any, Dict
+-
+-from .base import WorkflowBase, WorkflowResult
+-
+-
+-class MDWorkflow(WorkflowBase):
+-    """分子动力学模拟工作流.
+-
+-    预留接口，后续可集成：
+-    - GROMACS
+-    - AMBER
+-    - OpenMM
+-    """
+-
+-    name = "md"
+-    description = "分子动力学模拟"
+-
+-    def run(self, input_data: Dict[str, Any], **kwargs) -> WorkflowResult:
+-        return WorkflowResult(
+-            success=False,
+-            message="MD 功能尚未实现。预留接口。",
+-        )
+-
+-    def validate_input(self, input_data: Dict[str, Any]) -> tuple[bool, str]:
+-        if "structure" not in input_data:
+-            return False, "需要提供分子结构文件"
+-        return True, ""
+diff --git a/src/mbforge/workflow/qsar.py b/src/mbforge/workflow/qsar.py
+deleted file mode 100644
+index ef230d1..0000000
+--- a/src/mbforge/workflow/qsar.py
++++ /dev/null
+@@ -1,33 +0,0 @@
+-"""QSAR 建模工作流（预留）."""
+-
+-from __future__ import annotations
+-
+-from typing import Any, Dict
+-
+-from .base import WorkflowBase, WorkflowResult
+-
+-
+-class QSARWorkflow(WorkflowBase):
+-    """QSAR 建模工作流.
+-
+-    预留接口，后续可集成：
+-    - 传统机器学习（RF, SVM, XGBoost）
+-    - 图神经网络（GNN）
+-    - 分子指纹 + 深度学习
+-    """
+-
+-    name = "qsar"
+-    description = "定量构效关系建模"
+-
+-    def run(self, input_data: Dict[str, Any], **kwargs) -> WorkflowResult:
+-        return WorkflowResult(
+-            success=False,
+-            message="QSAR 功能尚未实现。预留接口。",
+-        )
+-
+-    def validate_input(self, input_data: Dict[str, Any]) -> tuple[bool, str]:
+-        if "molecules" not in input_data:
+-            return False, "需要提供分子数据集"
+-        if "target" not in input_data:
+-            return False, "需要指定目标性质"
+-        return True, ""

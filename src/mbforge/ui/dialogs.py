@@ -212,7 +212,9 @@ class SettingsDialog(QDialog):
     def _setup_llm_tab(self):
         layout = QFormLayout(self.llm_tab)
         self.llm_provider = QComboBox()
-        self.llm_provider.addItems(["openai_compatible", "anthropic", "local", "ollama"])
+        self.llm_provider.addItems(
+            ["openai_compatible", "anthropic", "local", "ollama"]
+        )
         layout.addRow("Provider:", self.llm_provider)
 
         self.llm_base_url = QLineEdit()
@@ -313,6 +315,7 @@ class SettingsDialog(QDialog):
             model_name=self.vlm_model.text(),
         )
         from ..utils.config import save_global_config
+
         save_global_config(self.config)
         self.accept()
 

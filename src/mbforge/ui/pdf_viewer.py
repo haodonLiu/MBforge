@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import atexit
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import fitz  # PyMuPDF
-from PyQt6.QtCore import QObject, QThread, QEvent, QTimer, pyqtSignal, pyqtSlot, Qt
+from PyQt6.QtCore import QEvent, QTimer, pyqtSignal, pyqtSlot, Qt
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -24,7 +24,9 @@ from PyQt6.QtWidgets import (
 
 # 全局线程池，最多 4 个 worker（防止大文档渲染时过度抢占 CPU）
 _NWORKERS = min(4, max(1, __import__("os").cpu_count() or 4))
-_executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=_NWORKERS, thread_name_prefix="pdf_render")
+_executor: ThreadPoolExecutor = ThreadPoolExecutor(
+    max_workers=_NWORKERS, thread_name_prefix="pdf_render"
+)
 atexit.register(lambda: _executor.shutdown(wait=True))
 
 
@@ -41,7 +43,13 @@ def _render_page_range(path: str, scale: float, indices: List[int]) -> List[tupl
             page = doc[idx]
             mat = fitz.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat)
-            img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888)
+            img = QImage(
+                pix.samples,
+                pix.width,
+                pix.height,
+                pix.stride,
+                QImage.Format.Format_RGB888,
+            )
             results.append((idx, img))
     finally:
         doc.close()
@@ -67,11 +75,13 @@ class PDFViewer(QWidget):
         # 虚拟滚动状态
         self._continuous_mode = True
         self._virtual_container: Optional[QWidget] = None
-        self._page_heights: List[int] = []       # 每页渲染高度（pt * scale）
-        self._page_widths: List[int] = []         # 每页渲染宽度
+        self._page_heights: List[int] = []  # 每页渲染高度（pt * scale）
+        self._page_widths: List[int] = []  # 每页渲染宽度
         self._page_cache: Dict[int, QPixmap] = {}  # index -> rendered pixmap
-        self._visible_widgets: Dict[int, QWidget] = {}  # 当前显示的 index -> (num_label, img_label)
-        self._pending_indices: set = set()        # 正在后台渲染的索引
+        self._visible_widgets: Dict[
+            int, QWidget
+        ] = {}  # 当前显示的 index -> (num_label, img_label)
+        self._pending_indices: set = set()  # 正在后台渲染的索引
         self._all_indices_rendered: bool = False  # 是否全部渲染完成
 
         # 后台线程
@@ -143,7 +153,9 @@ class PDFViewer(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.scroll.setStyleSheet("background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 10px;")
+        self.scroll.setStyleSheet(
+            "background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 10px;"
+        )
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.scroll.verticalScrollBar().valueChanged.connect(self._on_scroll)
         self.scroll.viewport().installEventFilter(self)  # 监听 viewport resize
@@ -155,7 +167,9 @@ class PDFViewer(QWidget):
         layout.addWidget(self.scroll, 1)
 
         # 多线程渲染信号连接
-        self._pages_done.connect(self._on_pages_ready, Qt.ConnectionType.QueuedConnection)
+        self._pages_done.connect(
+            self._on_pages_ready, Qt.ConnectionType.QueuedConnection
+        )
 
         self._page_height_approx = 800  # 估算页高，后续精确
 
@@ -224,8 +238,12 @@ class PDFViewer(QWidget):
 
         # 建立虚拟容器（只决定滚动条范围，不承载实际子 widget）
         self._virtual_container = QWidget()
-        self._virtual_container.setMinimumSize(max(self._page_widths), self._total_height())
-        self._virtual_container.setMaximumSize(max(self._page_widths), self._total_height())
+        self._virtual_container.setMinimumSize(
+            max(self._page_widths), self._total_height()
+        )
+        self._virtual_container.setMaximumSize(
+            max(self._page_widths), self._total_height()
+        )
         self._virtual_container.setLayout(QVBoxLayout())
         self._virtual_container.layout().setSpacing(0)
         self._virtual_container.layout().setContentsMargins(0, 0, 0, 0)
@@ -262,7 +280,11 @@ class PDFViewer(QWidget):
             cum += h
 
         # 回收已移出范围的页
-        to_remove = [idx for idx in list(self._visible_widgets) if idx < start_idx or idx > end_idx]
+        to_remove = [
+            idx
+            for idx in list(self._visible_widgets)
+            if idx < start_idx or idx > end_idx
+        ]
         for idx in to_remove:
             w_num, w_img = self._visible_widgets.pop(idx)
             w_num.deleteLater()
@@ -295,7 +317,13 @@ class PDFViewer(QWidget):
             page = self.doc[index]
             mat = fitz.Matrix(self._scale, self._scale)
             pix = page.get_pixmap(matrix=mat)
-            img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888)
+            img = QImage(
+                pix.samples,
+                pix.width,
+                pix.height,
+                pix.stride,
+                QImage.Format.Format_RGB888,
+            )
             pm = QPixmap.fromImage(img)
             self._page_cache[index] = pm
             self._place_page_widget(index, pm)
@@ -320,7 +348,9 @@ class PDFViewer(QWidget):
         img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         img_label.setPixmap(pixmap)
         img_label.setFixedSize(pixmap.width(), pixmap.height())
-        img_label.setStyleSheet("background: #ffffff; border: 1px solid #e9ecef; border-radius: 4px;")
+        img_label.setStyleSheet(
+            "background: #ffffff; border: 1px solid #e9ecef; border-radius: 4px;"
+        )
         img_label.move(0, self._page_offset(index) + 25)
         img_label.resize(pixmap.width(), pixmap.height())
         img_label.show()
@@ -340,7 +370,9 @@ class PDFViewer(QWidget):
         # 将页索引分片，每 worker 一组
         n = min(len(indices), _NWORKERS)
         chunk_size = max(1, len(indices) // n)
-        chunks = [indices[i:i + chunk_size] for i in range(0, len(indices), chunk_size)]
+        chunks = [
+            indices[i : i + chunk_size] for i in range(0, len(indices), chunk_size)
+        ]
 
         self.progress.setMaximum(self._total_pages)
         self.progress.setVisible(True)
@@ -410,7 +442,11 @@ class PDFViewer(QWidget):
 
     def _rerender_if_needed(self):
         """布局完成后检查：若首屏未渲染则重新渲染。"""
-        if self._continuous_mode and self._virtual_container and not self._visible_widgets:
+        if (
+            self._continuous_mode
+            and self._virtual_container
+            and not self._visible_widgets
+        ):
             self._render_visible_range()
 
     def _render_single(self):
@@ -425,7 +461,9 @@ class PDFViewer(QWidget):
         page = self.doc[self.current_page]
         mat = fitz.Matrix(self._scale, self._scale)
         pix = page.get_pixmap(matrix=mat)
-        img = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888)
+        img = QImage(
+            pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888
+        )
         self.single_label.setPixmap(QPixmap.fromImage(img))
         self.single_label.setFixedSize(pix.width, pix.height)
         self.page_changed.emit(self.current_page + 1, self._total_pages)
@@ -450,8 +488,14 @@ class PDFViewer(QWidget):
     def _update_toolbar(self):
         total = self._total_pages
         current = self.current_page + 1
-        self.btn_prev.setEnabled(self.doc is not None and self.current_page > 0 and not self._continuous_mode)
-        self.btn_next.setEnabled(self.doc is not None and self.current_page < total - 1 and not self._continuous_mode)
+        self.btn_prev.setEnabled(
+            self.doc is not None and self.current_page > 0 and not self._continuous_mode
+        )
+        self.btn_next.setEnabled(
+            self.doc is not None
+            and self.current_page < total - 1
+            and not self._continuous_mode
+        )
         self.page_label.setText(f"第 {current} / {total} 页")
         self.page_input.setMaximum(total)
         self.page_input.setValue(current)

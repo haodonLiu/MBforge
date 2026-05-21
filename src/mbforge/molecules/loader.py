@@ -91,7 +91,9 @@ def _load_csv(
 
     df = pd.read_csv(path)
     if smiles_column not in df.columns:
-        raise ValueError(f"Column '{smiles_column}' not found. Available: {list(df.columns)}")
+        raise ValueError(
+            f"Column '{smiles_column}' not found. Available: {list(df.columns)}"
+        )
 
     molecules = []
     for idx, row in df.iterrows():

@@ -142,7 +142,9 @@ class Project:
                 continue
             if file_path.name.startswith("."):
                 continue
-            if file_path.is_file() and file_path.suffix.lower() in (SUPPORTED_DOC_EXTS | SUPPORTED_MOL_EXTS):
+            if file_path.is_file() and file_path.suffix.lower() in (
+                SUPPORTED_DOC_EXTS | SUPPORTED_MOL_EXTS
+            ):
                 resolved = file_path.resolve()
                 entry = self._index.get(self._path_index.get(resolved))
                 is_new = False

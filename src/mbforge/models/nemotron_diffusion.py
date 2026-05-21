@@ -13,8 +13,7 @@
 
 from __future__ import annotations
 
-import os
-from typing import AsyncGenerator, Iterator, List, Optional
+from typing import AsyncGenerator, Iterator, List
 
 import torch
 
@@ -64,7 +63,9 @@ class NemotronDiffusionLLM(BaseLLM):
 
         resolved = _resolve_model_path(self.model_path, self.model_path)
         dtype = self._resolve_dtype()
-        logger.info(f"Loading Nemotron-Diffusion: {resolved} (device={self.device}, dtype={dtype})")
+        logger.info(
+            f"Loading Nemotron-Diffusion: {resolved} (device={self.device}, dtype={dtype})"
+        )
 
         self._tokenizer = AutoTokenizer.from_pretrained(
             resolved, trust_remote_code=True
@@ -85,9 +86,9 @@ class NemotronDiffusionLLM(BaseLLM):
         prompt = self._tokenizer.apply_chat_template(
             history, tokenize=False, add_generation_prompt=True
         )
-        prompt_ids = self._tokenizer(
-            prompt, return_tensors="pt"
-        ).input_ids.to(device=self.device)
+        prompt_ids = self._tokenizer(prompt, return_tensors="pt").input_ids.to(
+            device=self.device
+        )
 
         if self.mode == "dlm":
             out_ids, nfe = self._model.generate(
@@ -110,7 +111,7 @@ class NemotronDiffusionLLM(BaseLLM):
             )
 
         result = self._tokenizer.batch_decode(
-            out_ids[:, prompt_ids.shape[1]:], skip_special_tokens=True
+            out_ids[:, prompt_ids.shape[1] :], skip_special_tokens=True
         )[0]
         logger.debug(f"[NFE={nfe}] {result[:100]}...")
         return result
@@ -124,9 +125,12 @@ class NemotronDiffusionLLM(BaseLLM):
 
     async def achat(self, messages: List[Message], **kwargs) -> str:
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._generate, messages)
 
-    async def achat_stream(self, messages: List[Message], **kwargs) -> AsyncGenerator[StreamChunk, None]:
+    async def achat_stream(
+        self, messages: List[Message], **kwargs
+    ) -> AsyncGenerator[StreamChunk, None]:
         result = await self.achat(messages, **kwargs)
         yield StreamChunk(delta=result, finish_reason="stop")

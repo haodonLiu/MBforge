@@ -26,13 +26,12 @@ SAR分析的核心思想:
 from __future__ import annotations
 
 import logging
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 from collections import defaultdict
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import AllChem, Descriptors
 
 from ..mcs.finder import MCSResult
 
@@ -41,7 +40,7 @@ logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 
 class SARError(Exception):
     """SAR分析失败异常.
-    
+
     当SAR分析过程失败时抛出此异常。
     """
 
@@ -51,9 +50,9 @@ class SARError(Exception):
 @dataclass
 class SARResult:
     """SAR分析结果数据类.
-    
+
     存储单个聚类的SAR分析结果。
-    
+
     属性:
         cluster_id: 聚类ID
         mcs: 该聚类的MCS结果(如果有)
@@ -79,13 +78,13 @@ class SARResult:
 
 class SARAnalyzer:
     """SAR分析器 - 分析分子聚类中的结构-活性关系.
-    
+
     该类分析分子聚类中的活性分布，并识别影响活性的结构特征。
-    
+
     属性:
         activity_threshold: 活性分类阈值(可选)
         use_mcs: 是否使用MCS进行骨架分析
-    
+
     示例:
         >>> analyzer = SARAnalyzer(activity_threshold=100.0)
         >>> results = analyzer.analyze_clusters(clusters, mcs_results)
@@ -113,7 +112,7 @@ class SARAnalyzer:
         mcs_result: Optional[MCSResult] = None,
     ) -> SARResult:
         """分析单个聚类的SAR.
-        
+
         计算聚类的活性统计信息，并分析子结构对活性的贡献。
 
         Args:
@@ -167,13 +166,13 @@ class SARAnalyzer:
         self, molecules: List[Dict[str, Any]], mcs_result: Optional[MCSResult]
     ) -> Dict[str, float]:
         """分析子结构对活性的贡献.
-        
+
         识别MCS骨架上的取代基，并分析不同取代基对活性的影响。
-        
+
         Args:
             molecules: 分子字典列表.
             mcs_result: MCS结果(可选).
-            
+
         Returns:
             贡献字典，键为取代基类型，值为平均活性.
         """
@@ -213,13 +212,13 @@ class SARAnalyzer:
         self, mol: Chem.Mol, mcs_mol: Chem.Mol
     ) -> Dict[int, List[int]]:
         """获取不在MCS中的侧链原子.
-        
+
         识别连接到MCS骨架但不属于MCS的原子。
-        
+
         Args:
             mol: 完整分子对象.
             mcs_mol: MCS分子对象(骨架).
-            
+
         Returns:
             字典，键为MCS原子索引，值为连接的侧链原子索引列表.
         """
@@ -246,7 +245,7 @@ class SARAnalyzer:
         self, clusters: List[Any], mcs_results: Optional[Dict[int, MCSResult]] = None
     ) -> Dict[int, SARResult]:
         """分析所有聚类的SAR.
-        
+
         批量处理多个聚类，为每个聚类执行SAR分析。
 
         Args:
@@ -285,12 +284,12 @@ class SARAnalyzer:
 
     def get_activity_stats(self, sar_results: Dict[int, SARResult]) -> Dict[str, float]:
         """获取跨聚类的总体活性统计.
-        
+
         汇总所有聚类的活性数据，计算总体统计量。
 
         Args:
             sar_results: SAR结果字典，键为cluster_id.
-            
+
         Returns:
             统计字典，包含mean, std, max, min, total_compounds.
         """
@@ -326,7 +325,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MBForge SAR 分析工具")
     parser.add_argument("input", help="分子文件路径 (SDF/CSV/SMILES)")
     parser.add_argument("--smiles-column", default="SMILES", help="CSV 中 SMILES 列名")
-    parser.add_argument("--activity-column", default="activity", help="CSV 中活性值列名")
+    parser.add_argument(
+        "--activity-column", default="activity", help="CSV 中活性值列名"
+    )
     parser.add_argument("--threshold", type=float, default=None, help="活性阈值")
     parser.add_argument("--output", "-o", default=None, help="输出 JSON 文件路径")
     args = parser.parse_args()
@@ -341,7 +342,10 @@ if __name__ == "__main__":
     # 检查是否有活性数据
     with_activity = [m for m in molecules if "activity" in m]
     if not with_activity:
-        print("Error: No activity data found. Use --activity-column to specify.", file=sys.stderr)
+        print(
+            "Error: No activity data found. Use --activity-column to specify.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # 作为单个大簇分析

@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from rdkit import Chem
-from rdkit.Chem import SaltRemover, rdMolDescriptors
+from rdkit.Chem import SaltRemover
 from rdkit.Chem.MolStandardize import rdMolStandardize
 
 logger = logging.getLogger(__name__)
@@ -188,7 +188,9 @@ class MoleculeStandardizer:
 
             final_smiles = Chem.MolToSmiles(result.mol)
             if final_smiles != original_smiles:
-                result.changes.append(f"SMILES changed: {original_smiles} -> {final_smiles}")
+                result.changes.append(
+                    f"SMILES changed: {original_smiles} -> {final_smiles}"
+                )
 
             result.success = True
             return result

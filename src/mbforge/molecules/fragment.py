@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from rdkit import Chem
-from rdkit.Chem import AllChem, BRICS, FragmentCatalog, Recap
+from rdkit.Chem import BRICS, Recap
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 logger = logging.getLogger(__name__)
@@ -286,9 +286,7 @@ class RECAPFragmenter:
             logger.warning(f"RECAP fragmentation failed: {e}")
             return []
 
-    def _extract_fragments_from_tree(
-        self, node
-    ) -> List[FragmentInfo]:
+    def _extract_fragments_from_tree(self, node) -> List[FragmentInfo]:
         """从 RECAP 分解树中提取片段（递归）."""
         fragments = []
         if hasattr(node, "mol") and node.mol is not None:

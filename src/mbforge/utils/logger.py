@@ -18,7 +18,9 @@ from .constants import APP_NAME, GLOBAL_DATA_DIR
 
 # 日志格式
 _CONSOLE_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
-_FILE_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(funcName)s:%(lineno)d | %(message)s"
+_FILE_FORMAT = (
+    "%(asctime)s | %(levelname)-8s | %(name)s | %(funcName)s:%(lineno)d | %(message)s"
+)
 
 # 日期格式
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -55,7 +57,9 @@ def setup_logging(
     if console:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(level)
-        console_handler.setFormatter(logging.Formatter(_CONSOLE_FORMAT, datefmt=_DATE_FORMAT))
+        console_handler.setFormatter(
+            logging.Formatter(_CONSOLE_FORMAT, datefmt=_DATE_FORMAT)
+        )
         root_logger.addHandler(console_handler)
 
     # 文件输出
@@ -66,6 +70,7 @@ def setup_logging(
 
         try:
             from logging.handlers import RotatingFileHandler
+
             file_handler = RotatingFileHandler(
                 log_file,
                 maxBytes=10 * 1024 * 1024,  # 10 MB
@@ -73,7 +78,9 @@ def setup_logging(
                 encoding="utf-8",
             )
             file_handler.setLevel(level)
-            file_handler.setFormatter(logging.Formatter(_FILE_FORMAT, datefmt=_DATE_FORMAT))
+            file_handler.setFormatter(
+                logging.Formatter(_FILE_FORMAT, datefmt=_DATE_FORMAT)
+            )
             root_logger.addHandler(file_handler)
         except Exception:
             # 文件日志初始化失败不影响运行

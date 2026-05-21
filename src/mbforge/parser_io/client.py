@@ -13,6 +13,7 @@ from typing import Any, Dict, Union
 try:
     from uniparser_tools.api.clients import UniParserClient as UniParserClientBase
     from uniparser_tools.common.constant import ParseMode, ParseModeTextual
+
     _UNIPARSER_AVAILABLE = True
 except ImportError:
     UniParserClientBase = None  # type: ignore
@@ -54,12 +55,12 @@ class ParserClient:
         *,
         sync: bool = True,
         textual: int = 2,  # ParseModeTextual.OCRHighQuality
-        table: int = 2,    # ParseMode.OCRHighQuality
-        equation: int = 2, # ParseMode.OCRHighQuality
-        chart: int = -1,   # ParseMode.DumpBase64
+        table: int = 2,  # ParseMode.OCRHighQuality
+        equation: int = 2,  # ParseMode.OCRHighQuality
+        chart: int = -1,  # ParseMode.DumpBase64
         figure: int = -1,  # ParseMode.DumpBase64
         expression: int = -1,  # ParseMode.DumpBase64
-        molecule: int = 1, # ParseMode.OCRFast
+        molecule: int = 1,  # ParseMode.OCRFast
         **kwargs,
     ) -> ParseResult:
         """解析 PDF 文件.

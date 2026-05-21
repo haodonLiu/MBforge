@@ -32,10 +32,7 @@ class OpenAILLM(BaseLLM):
         self.top_p = top_p
 
     def _convert_messages(self, messages: List[Message]) -> List[dict]:
-        return [
-            {"role": m.role, "content": m.content}
-            for m in messages
-        ]
+        return [{"role": m.role, "content": m.content} for m in messages]
 
     def chat(self, messages: List[Message], **kwargs) -> str:
         response = self.client.chat.completions.create(
@@ -67,18 +64,26 @@ class OpenAILLM(BaseLLM):
     async def achat(self, messages: List[Message], **kwargs) -> str:
         # 使用同步客户端的线程池执行
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.chat, messages, **kwargs)
 
-    async def achat_stream(self, messages: List[Message], **kwargs) -> AsyncGenerator[StreamChunk, None]:
+    async def achat_stream(
+        self, messages: List[Message], **kwargs
+    ) -> AsyncGenerator[StreamChunk, None]:
         import asyncio
+
         loop = asyncio.get_running_loop()
-        iterator = await loop.run_in_executor(None, self.chat_stream, messages, **kwargs)
+        iterator = await loop.run_in_executor(
+            None, self.chat_stream, messages, **kwargs
+        )
         for chunk in iterator:
             yield chunk
             await asyncio.sleep(0)
 
-    def call_with_tools(self, messages: List[Message], tools: List[Dict], **kwargs) -> Any:
+    def call_with_tools(
+        self, messages: List[Message], tools: List[Dict], **kwargs
+    ) -> Any:
         return self.client.chat.completions.create(
             model=self.model_name,
             messages=self._convert_messages(messages),
@@ -92,12 +97,14 @@ def create_llm_from_config(config) -> BaseLLM:
     """从配置创建 LLM 实例."""
     from ..utils.config import ModelConfig
     from ..utils.constants import PROVIDER_ANTHROPIC, PROVIDER_NEMOTON_DIFFUSION
+
     cfg: ModelConfig = config
 
     provider = (cfg.provider or "").strip().lower()
 
     if provider == PROVIDER_NEMOTON_DIFFUSION:
         from .nemotron_diffusion import NemotronDiffusionLLM
+
         return NemotronDiffusionLLM(
             model_path=cfg.model_name or "nv-community/Nemotron-Labs-Diffusion-3B",
             device=getattr(cfg, "device", "cuda"),
@@ -107,6 +114,7 @@ def create_llm_from_config(config) -> BaseLLM:
 
     if provider == PROVIDER_ANTHROPIC:
         from .anthropic_llm import AnthropicLLM
+
         return AnthropicLLM(
             base_url=cfg.base_url,
             api_key=cfg.api_key,

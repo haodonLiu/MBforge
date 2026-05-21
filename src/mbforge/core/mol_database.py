@@ -94,6 +94,7 @@ class MoleculeRecord:
     def to_molecule(self):
         """转换为 schema.Molecule 对象。"""
         from ..molecules.schema import Molecule
+
         return Molecule(
             id=self.mol_id,
             smiles=self.smiles,

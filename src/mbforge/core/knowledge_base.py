@@ -137,12 +137,14 @@ class KnowledgeBase:
         distances = results.get("distances", [[]])[0]
 
         for i in range(len(ids)):
-            output.append({
-                "id": ids[i],
-                "text": docs[i],
-                "metadata": metas[i] if metas else {},
-                "distance": distances[i] if distances else 0.0,
-            })
+            output.append(
+                {
+                    "id": ids[i],
+                    "text": docs[i],
+                    "metadata": metas[i] if metas else {},
+                    "distance": distances[i] if distances else 0.0,
+                }
+            )
         return output
 
     def hybrid_search(

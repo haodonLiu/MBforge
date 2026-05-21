@@ -93,9 +93,7 @@ class CompoundProperties:
 
     def to_dict(self) -> Dict[str, Any]:
         """将属性转换为字典."""
-        return {
-            k: v for k, v in self.__dict__.items() if v is not None
-        }
+        return {k: v for k, v in self.__dict__.items() if v is not None}
 
 
 @dataclass
@@ -147,9 +145,7 @@ class _BaseAPIClient:
         """
         self.timeout = timeout
         self.delay = delay
-        self._user_agent = (
-            "CSAR/0.1.0 (https://github.com/yourusername/csar)"
-        )
+        self._user_agent = "CSAR/0.1.0 (https://github.com/yourusername/csar)"
 
     def _get(
         self, url: str, accept: str = "application/json"
@@ -220,8 +216,7 @@ class PubChemClient(_BaseAPIClient):
         """
         encoded = urllib.parse.quote(str(identifier), safe="")
         return (
-            f"{self._BASE_URL}/compound/{id_type}/{encoded}/"
-            f"property/{properties}/JSON"
+            f"{self._BASE_URL}/compound/{id_type}/{encoded}/property/{properties}/JSON"
         )
 
     def get_properties(
@@ -279,9 +274,7 @@ class PubChemClient(_BaseAPIClient):
 
         for i in range(0, len(identifiers), batch_size):
             batch = identifiers[i : i + batch_size]
-            batch_result = self._get_properties_batch_post(
-                batch, id_type, properties
-            )
+            batch_result = self._get_properties_batch_post(batch, id_type, properties)
             results.extend(batch_result)
             if i + batch_size < len(identifiers):
                 self._sleep()
@@ -390,9 +383,7 @@ class PubChemClient(_BaseAPIClient):
         Returns:
             同义词字符串列表.
         """
-        url = (
-            f"{self._BASE_URL}/compound/{id_type}/{identifier}/synonyms/JSON"
-        )
+        url = f"{self._BASE_URL}/compound/{id_type}/{identifier}/synonyms/JSON"
         data = self._get(url)
         if not isinstance(data, dict):
             return []
@@ -489,9 +480,7 @@ class PubChemClient(_BaseAPIClient):
             结果字典列表，每个字典含 CID 和名称.
         """
         encoded = urllib.parse.quote(name, safe="")
-        url = (
-            f"{self._BASE_URL}/compound/name/{encoded}/cids/JSON?name_type=word"
-        )
+        url = f"{self._BASE_URL}/compound/name/{encoded}/cids/JSON?name_type=word"
         try:
             data = self._get(url)
         except APIClientError:
@@ -506,12 +495,16 @@ class PubChemClient(_BaseAPIClient):
         results = []
         for cid in cid_list[:max_results]:
             try:
-                props = self.get_properties(str(cid), "cid", "IUPACName,MolecularFormula")
-                results.append({
-                    "cid": cid,
-                    "name": props.iupac_name or f"CID {cid}",
-                    "formula": props.molecular_formula,
-                })
+                props = self.get_properties(
+                    str(cid), "cid", "IUPACName,MolecularFormula"
+                )
+                results.append(
+                    {
+                        "cid": cid,
+                        "name": props.iupac_name or f"CID {cid}",
+                        "formula": props.molecular_formula,
+                    }
+                )
             except APIClientError:
                 results.append({"cid": cid, "name": f"CID {cid}", "formula": None})
         return results

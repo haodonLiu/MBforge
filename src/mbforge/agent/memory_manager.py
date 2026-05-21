@@ -29,14 +29,14 @@ logger = get_logger(__name__)
 class MemoryEntry:
     """单条记忆条目."""
 
-    category: str       # profile | preferences | entities | events | cases | patterns
-    key: str            # 记忆键（如 "user_name", "preferred_model"）
-    content: str        # 记忆内容
-    confidence: float = 1.0   # 置信度 0-1
-    source: str = ""    # 来源（如 "conversation:msg_id"）
+    category: str  # profile | preferences | entities | events | cases | patterns
+    key: str  # 记忆键（如 "user_name", "preferred_model"）
+    content: str  # 记忆内容
+    confidence: float = 1.0  # 置信度 0-1
+    source: str = ""  # 来源（如 "conversation:msg_id"）
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    access_count: int = 0     # 被检索次数
+    access_count: int = 0  # 被检索次数
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -82,11 +82,20 @@ class MemoryManager:
         try:
             entries = self._cache.get(category, [])
             with open(path, "w", encoding="utf-8") as f:
-                json.dump([e.to_dict() for e in entries], f, indent=2, ensure_ascii=False)
+                json.dump(
+                    [e.to_dict() for e in entries], f, indent=2, ensure_ascii=False
+                )
         except Exception as e:
             logger.warning(f"Failed to save memory category {category}: {e}")
 
-    def add(self, category: str, key: str, content: str, confidence: float = 1.0, source: str = "") -> None:
+    def add(
+        self,
+        category: str,
+        key: str,
+        content: str,
+        confidence: float = 1.0,
+        source: str = "",
+    ) -> None:
         """添加或更新记忆."""
         if category not in self.CATEGORIES:
             logger.warning(f"Unknown memory category: {category}")
@@ -104,13 +113,15 @@ class MemoryManager:
                 return
 
         # 新建
-        entries.append(MemoryEntry(
-            category=category,
-            key=key,
-            content=content,
-            confidence=confidence,
-            source=source,
-        ))
+        entries.append(
+            MemoryEntry(
+                category=category,
+                key=key,
+                content=content,
+                confidence=confidence,
+                source=source,
+            )
+        )
         self._save_category(category)
         logger.info(f"Memory added: {category}/{key}")
 
@@ -177,7 +188,10 @@ class MemoryManager:
 
         try:
             from ..models.base import Message
-            conversation = "\n".join([f"{m.role}: {m.content[:500]}" for m in messages[-10:]])
+
+            conversation = "\n".join(
+                [f"{m.role}: {m.content[:500]}" for m in messages[-10:]]
+            )
             prompt = (
                 "请分析以下对话，提取有价值的记忆条目。按 JSON 数组格式输出，每个条目包含：\n"
                 "- category: profile/preferences/entities/events/cases/patterns\n"
@@ -187,14 +201,17 @@ class MemoryManager:
                 "只输出 JSON 数组，不要其他说明。\n\n"
                 f"对话：\n{conversation}"
             )
-            response = llm.chat([
-                Message(role="system", content="你是一位记忆提取专家。"),
-                Message(role="user", content=prompt),
-            ])
+            response = llm.chat(
+                [
+                    Message(role="system", content="你是一位记忆提取专家。"),
+                    Message(role="user", content=prompt),
+                ]
+            )
 
             # 尝试解析 JSON
             import re
-            json_match = re.search(r'\[.*\]', response, re.DOTALL)
+
+            json_match = re.search(r"\[.*\]", response, re.DOTALL)
             if json_match:
                 data = json.loads(json_match.group(0))
                 for item in data:

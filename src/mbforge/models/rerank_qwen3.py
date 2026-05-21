@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import List, Optional
 
 import torch
@@ -40,12 +39,14 @@ class Qwen3Reranker(BaseReranker):
     """
 
     # 默认任务指令
-    DEFAULT_INSTRUCTION = "Given a web search query, retrieve relevant passages that answer the query"
+    DEFAULT_INSTRUCTION = (
+        "Given a web search query, retrieve relevant passages that answer the query"
+    )
 
     # Prompt 模板
     _PREFIX = (
         "<|im_start|>system\n"
-        'Judge whether the Document meets the requirements based on the Query and the Instruct provided. '
+        "Judge whether the Document meets the requirements based on the Query and the Instruct provided. "
         'Note that the answer can only be "yes" or "no".'
         "<|im_end|>\n<|im_start|>user\n"
     )
@@ -96,12 +97,18 @@ class Qwen3Reranker(BaseReranker):
         self._token_false_id = self._tokenizer.convert_tokens_to_ids("no")
 
         # 预编码 prefix/suffix
-        self._prefix_tokens = self._tokenizer.encode(self._PREFIX, add_special_tokens=False)
-        self._suffix_tokens = self._tokenizer.encode(self._SUFFIX, add_special_tokens=False)
+        self._prefix_tokens = self._tokenizer.encode(
+            self._PREFIX, add_special_tokens=False
+        )
+        self._suffix_tokens = self._tokenizer.encode(
+            self._SUFFIX, add_special_tokens=False
+        )
 
         logger.info("Qwen3-Reranker model loaded successfully")
 
-    def _format_pair(self, query: str, doc: str, instruction: Optional[str] = None) -> str:
+    def _format_pair(
+        self, query: str, doc: str, instruction: Optional[str] = None
+    ) -> str:
         """格式化 (instruction, query, doc) 为模型输入文本."""
         inst = instruction or self.instruction
         return f"<Instruct>: {inst}\n<Query>: {query}\n<Document>: {doc}"
@@ -129,7 +136,9 @@ class Qwen3Reranker(BaseReranker):
         pairs = [self._format_pair(query, p) for p in passages]
 
         # 2. Tokenize（先不加 prefix/suffix，以便正确计算截断长度）
-        max_content_len = self.max_length - len(self._prefix_tokens) - len(self._suffix_tokens)
+        max_content_len = (
+            self.max_length - len(self._prefix_tokens) - len(self._suffix_tokens)
+        )
         inputs = self._tokenizer(
             pairs,
             padding=False,

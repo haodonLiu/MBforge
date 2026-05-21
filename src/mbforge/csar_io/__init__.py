@@ -8,7 +8,7 @@
 主要类:
     MoleculeReader: 分子读取器，支持自动检测文件格式
     MoleculeWriter: 分子写入器，可导出为多种格式
-    
+
 异常类:
     MoleculeReadError: 读取错误
     MoleculeWriteError: 写入错误

@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 try:
     from rdkit import Chem
     from rdkit.Chem import Draw
+
     RDKIT_AVAILABLE = True
 except ImportError:
     RDKIT_AVAILABLE = False

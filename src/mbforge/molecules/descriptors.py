@@ -22,8 +22,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import Descriptors, GraphDescriptors, MolSurf, Lipinski, rdMolDescriptors
-from rdkit.Chem import AllChem, Descriptors3D
+from rdkit.Chem import (
+    Descriptors,
+    GraphDescriptors,
+    Lipinski,
+    rdMolDescriptors,
+)
+from rdkit.Chem import Descriptors3D
 
 logger = logging.getLogger(__name__)
 
@@ -154,8 +159,18 @@ class MoleculeDescriptorCalculator:
             ("NumRadicalElectrons", Descriptors.NumRadicalElectrons),
         ],
         "morgan_fp": [
-            ("MorganFP_2048", lambda m: rdMolDescriptors.GetMorganFingerprintAsBitVect(m, 2, nBits=2048)),
-            ("MorganFP_1024", lambda m: rdMolDescriptors.GetMorganFingerprintAsBitVect(m, 2, nBits=1024)),
+            (
+                "MorganFP_2048",
+                lambda m: rdMolDescriptors.GetMorganFingerprintAsBitVect(
+                    m, 2, nBits=2048
+                ),
+            ),
+            (
+                "MorganFP_1024",
+                lambda m: rdMolDescriptors.GetMorganFingerprintAsBitVect(
+                    m, 2, nBits=1024
+                ),
+            ),
         ],
     }
 
@@ -319,9 +334,7 @@ class MoleculeDescriptorCalculator:
             result = self.compute(mol)
             results.append(result)
             if result.errors and names:
-                logger.warning(
-                    f"Descriptor errors for {names[i]}: {result.errors}"
-                )
+                logger.warning(f"Descriptor errors for {names[i]}: {result.errors}")
         return results
 
     def compute_molecule(self, mol) -> DescriptorResult:

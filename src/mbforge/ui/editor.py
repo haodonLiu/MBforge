@@ -66,6 +66,7 @@ class MarkdownEditor(QPlainTextEdit):
             return True
         except Exception as e:
             from ..utils.logger import get_logger
+
             get_logger(__name__).error(f"保存失败: {e}")
             return False
 

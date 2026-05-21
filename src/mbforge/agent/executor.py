@@ -118,7 +118,9 @@ class ToolExecutor:
 
             # 只加载命中的文档的摘要
             sm = SummaryManager(self.project.root)
-            summaries = {s.doc_id: s for s in sm.list_all() if s.doc_id in candidate_ids}
+            summaries = {
+                s.doc_id: s for s in sm.list_all() if s.doc_id in candidate_ids
+            }
 
             matched = []
             for doc_id in candidate_ids:
@@ -238,7 +240,11 @@ class ToolExecutor:
                 return "分子数据库为空"
             lines = []
             for rec in records:
-                act = f"{rec.activity} {rec.activity_type}" if rec.activity else "无活性数据"
+                act = (
+                    f"{rec.activity} {rec.activity_type}"
+                    if rec.activity
+                    else "无活性数据"
+                )
                 lines.append(f"- {rec.name or rec.smiles[:30]} | {act}")
             return f"共 {len(records)} 条分子记录:\n" + "\n".join(lines)
         except Exception as e:
@@ -262,7 +268,11 @@ class ToolExecutor:
             rec = self.mol_db.search_by_smiles(smiles)
             if rec is None:
                 return f"未找到 SMILES 为 {smiles} 的分子"
-            props = ", ".join([f"{k}={v:.2f}" for k, v in rec.properties.items()]) if rec.properties else "无"
+            props = (
+                ", ".join([f"{k}={v:.2f}" for k, v in rec.properties.items()])
+                if rec.properties
+                else "无"
+            )
             return (
                 f"名称: {rec.name or '-'}\n"
                 f"SMILES: {rec.smiles}\n"
@@ -340,5 +350,7 @@ class ToolExecutor:
         stats.append(f"文档总数: {len(docs)}")
         if self.mol_db:
             mstats = self.mol_db.get_stats()
-            stats.append(f"分子总数: {mstats['total']}（含活性数据: {mstats['with_activity']}）")
+            stats.append(
+                f"分子总数: {mstats['total']}（含活性数据: {mstats['with_activity']}）"
+            )
         return "\n".join(stats)

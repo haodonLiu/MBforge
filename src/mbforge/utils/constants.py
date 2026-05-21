@@ -92,6 +92,7 @@ DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
 def ensure_hf_mirror():
     """设置 HuggingFace 镜像环境变量（如果未设置）。"""
     import os
+
     if "HF_ENDPOINT" not in os.environ:
         os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
 

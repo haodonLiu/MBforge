@@ -22,7 +22,6 @@ from typing import List, Optional, Dict, Any, Union
 
 import pandas as pd
 from rdkit import Chem
-from rdkit.Chem import PandasTools
 
 from ..clustering.fingerprinter import MolecularFingerprinter
 from ..molecules.schema import Molecule, MoleculeBatch
@@ -32,7 +31,7 @@ logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 
 class MoleculeReadError(Exception):
     """分子文件读取失败异常.
-    
+
     当读取分子文件失败时抛出此异常，包含原始错误信息。
     """
 
@@ -41,10 +40,10 @@ class MoleculeReadError(Exception):
 
 class MoleculeReader:
     """分子读取器 - 支持多种文件格式.
-    
+
     该类提供从SDF、Excel和CSV文件中读取分子数据的功能。
     支持自动检测文件格式，并根据文件扩展名调用相应的读取方法。
-    
+
     属性:
         smiles_column: SMILES字符串所在的列名
         name_column: 分子名称所在的列名
@@ -74,7 +73,7 @@ class MoleculeReader:
 
     def read_sdf(self, path: Union[str, Path]) -> List[Dict[str, Any]]:
         """从SDF文件读取分子.
-        
+
         SDF (Structure Data File) 是化学信息学中常用的分子结构文件格式。
         该方法读取SDF文件中的所有分子，并提取分子结构、名称和属性。
 
@@ -110,8 +109,7 @@ class MoleculeReader:
                             "name": name,
                             "smiles": Chem.MolToSmiles(mol),
                             "props": {
-                                prop: mol.GetProp(prop)
-                                for prop in mol.GetPropNames()
+                                prop: mol.GetProp(prop) for prop in mol.GetPropNames()
                             },
                         }
                         # 如果 SDF 中包含 CAS 属性也一并读取
@@ -135,7 +133,7 @@ class MoleculeReader:
         deduplicate: bool = True,
     ) -> List[Dict[str, Any]]:
         """从Excel文件读取分子.
-        
+
         读取Excel文件中的分子数据，支持IC50活性值处理。
         可以自动合并nM和uM单位的IC50值，并进行SMILES去重。
 
@@ -247,7 +245,7 @@ class MoleculeReader:
 
     def read_csv(self, path: Union[str, Path]) -> List[Dict[str, Any]]:
         """从CSV文件读取分子.
-        
+
         读取CSV文件中的分子数据，解析SMILES字符串为分子对象。
 
         Args:
@@ -367,7 +365,7 @@ class MoleculeReader:
 
     def read(self, path: Union[str, Path], **kwargs: Any) -> List[Dict[str, Any]]:
         """自动检测格式并读取分子.
-        
+
         根据文件扩展名自动选择合适的读取方法。
         支持的格式: .sdf, .xlsx, .xls, .csv
 

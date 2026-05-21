@@ -14,7 +14,6 @@ from ..utils.constants import (
     EMBED_INSTRUCTION_CLUSTER,
     PROVIDER_SENTENCE_TRANSFORMERS,
     PROVIDER_QWEN3,
-    PROVIDER_API,
     ensure_hf_mirror,
 )
 from ..utils.logger import get_logger
@@ -55,7 +54,9 @@ def _resolve_model_path(model_name: str, cache_name: str) -> str:
         # 原始名如 Qwen/Qwen3-Embedding-0.6B
         # 提取关键部分用于匹配: Qwen3-Embedding-0
         name_parts = cache_name.replace("/", " ").split()
-        last_part = name_parts[-1] if name_parts else cache_name  # e.g. Qwen3-Embedding-0.6B
+        last_part = (
+            name_parts[-1] if name_parts else cache_name
+        )  # e.g. Qwen3-Embedding-0.6B
         key_name = last_part.rsplit(".", 1)[0]  # e.g. Qwen3-Embedding-0
 
         cache_path = Path(cache_base)
@@ -84,8 +85,11 @@ class SentenceTransformerEmbedder(BaseEmbedder):
         if self._model is None:
             ensure_hf_mirror()
             from sentence_transformers import SentenceTransformer
+
             resolved = _resolve_model_path(self.model_name, self.model_name)
-            self._model = SentenceTransformer(resolved, device=self.device, trust_remote_code=True)
+            self._model = SentenceTransformer(
+                resolved, device=self.device, trust_remote_code=True
+            )
             self._dim = self._model.get_sentence_embedding_dimension()
         return self._model
 
@@ -96,11 +100,14 @@ class SentenceTransformerEmbedder(BaseEmbedder):
 
     def embed(self, texts: List[str]) -> List[List[float]]:
         model = self._load_model()
-        embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+        embeddings = model.encode(
+            texts, normalize_embeddings=True, show_progress_bar=False
+        )
         return embeddings.tolist()
 
     async def aembed(self, texts: List[str]) -> List[List[float]]:
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.embed, texts)
 
@@ -145,15 +152,20 @@ class Qwen3Embedder(BaseEmbedder):
         if self._model is None:
             ensure_hf_mirror()
             from sentence_transformers import SentenceTransformer
+
             resolved = _resolve_model_path(self.model_name, self.model_name)
-            logger.info(f"Loading Qwen3-Embedding model: {resolved} (device={self.device})")
+            logger.info(
+                f"Loading Qwen3-Embedding model: {resolved} (device={self.device})"
+            )
             self._model = SentenceTransformer(
                 resolved,
                 device=self.device,
                 trust_remote_code=True,
             )
             full_dim = self._model.get_sentence_embedding_dimension()
-            self._dim = self.mrl_dim if (self.mrl_dim and self.mrl_dim < full_dim) else full_dim
+            self._dim = (
+                self.mrl_dim if (self.mrl_dim and self.mrl_dim < full_dim) else full_dim
+            )
             logger.info(f"Model loaded. Full dim={full_dim}, output dim={self._dim}")
         return self._model
 
@@ -180,6 +192,7 @@ class Qwen3Embedder(BaseEmbedder):
 
     async def aembed(self, texts: List[str]) -> List[List[float]]:
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.embed, texts)
 
@@ -200,6 +213,7 @@ class APIEmbedder(BaseEmbedder):
 
     async def aembed(self, texts: List[str]) -> List[List[float]]:
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.embed, texts)
 
@@ -222,7 +236,9 @@ def create_embedder_from_config(config) -> BaseEmbedder:
     elif cfg.provider == PROVIDER_SENTENCE_TRANSFORMERS:
         return SentenceTransformerEmbedder(model_name=cfg.model_name, device=cfg.device)
     elif cfg.provider in ("openai", PROVIDER_API):
-        return APIEmbedder(base_url=cfg.base_url, api_key=cfg.api_key, model_name=cfg.model_name)
+        return APIEmbedder(
+            base_url=cfg.base_url, api_key=cfg.api_key, model_name=cfg.model_name
+        )
     else:
         # fallback to Qwen3
         return Qwen3Embedder(model_name=cfg.model_name, device=cfg.device)

@@ -35,7 +35,9 @@ class ChatMessage(QWidget):
 
         header = QLabel(f"<b>{'🤖 AI' if role == 'assistant' else '🧑 用户'}</b>")
         header.setStyleSheet(
-            "color: #1971c2; font-size: 13px;" if role == "assistant" else "color: #495057; font-size: 13px;"
+            "color: #1971c2; font-size: 13px;"
+            if role == "assistant"
+            else "color: #495057; font-size: 13px;"
         )
         layout.addWidget(header)
 
@@ -103,7 +105,9 @@ class ChatWidget(QWidget):
         # 顶部工具栏
         toolbar = QHBoxLayout()
         self.title_label = QLabel("💬 AI 助手")
-        self.title_label.setStyleSheet("font-size: 14px; font-weight: bold; color: #212529;")
+        self.title_label.setStyleSheet(
+            "font-size: 14px; font-weight: bold; color: #212529;"
+        )
         toolbar.addWidget(self.title_label)
         toolbar.addStretch()
 
@@ -226,7 +230,9 @@ class ChatWidget(QWidget):
 
         # 创建回复气泡
         self._current_reply_widget = ChatMessage("assistant", "")
-        self.messages_layout.insertWidget(self.messages_layout.count() - 1, self._current_reply_widget)
+        self.messages_layout.insertWidget(
+            self.messages_layout.count() - 1, self._current_reply_widget
+        )
         self._scroll_to_bottom()
 
         self.send_btn.setVisible(False)

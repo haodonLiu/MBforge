@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 from ..core.document import ExtractedContent
 from ..core.todo_manager import TodoManager, TodoStatus
@@ -46,10 +46,19 @@ class ArchiveAgent:
         todo = TodoManager(self.project_root)
         done_entries = [e for e in todo.get_all() if e.status == TodoStatus.DONE]
 
-        stats = {"total": len(done_entries), "indexed": 0, "summarized": 0, "skipped": 0}
+        stats = {
+            "total": len(done_entries),
+            "indexed": 0,
+            "summarized": 0,
+            "skipped": 0,
+        }
 
         for entry in done_entries:
-            out_dir = Path(entry.output_dir) if entry.output_dir else todo.get_output_path(entry.doc_id)
+            out_dir = (
+                Path(entry.output_dir)
+                if entry.output_dir
+                else todo.get_output_path(entry.doc_id)
+            )
             if not out_dir.exists():
                 stats["skipped"] += 1
                 continue
@@ -155,10 +164,14 @@ class ArchiveAgent:
             f"内容：\n{text[:8000]}"
         )
         try:
-            response = self.llm.chat([
-                Message(role="system", content="你是一位专业的药物化学文献分析助手。"),
-                Message(role="user", content=prompt),
-            ])
+            response = self.llm.chat(
+                [
+                    Message(
+                        role="system", content="你是一位专业的药物化学文献分析助手。"
+                    ),
+                    Message(role="user", content=prompt),
+                ]
+            )
 
             summary_data = {
                 "doc_id": entry.doc_id,

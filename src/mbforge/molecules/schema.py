@@ -101,7 +101,9 @@ class Molecule:
     # ---- 工厂方法 ----
 
     @classmethod
-    def from_smiles(cls, smiles: str, source: str = "manual", **kwargs: Any) -> "Molecule":
+    def from_smiles(
+        cls, smiles: str, source: str = "manual", **kwargs: Any
+    ) -> "Molecule":
         return cls(smiles=smiles, source=source, **kwargs)
 
     @classmethod
@@ -115,7 +117,9 @@ class Molecule:
     def from_dict(cls, data: Dict[str, Any]) -> "Molecule":
         """从字典反序列化。兼容 schema 格式和旧 reader 格式。"""
         # 旧 reader 格式：{mol, smiles, name, activity, cas, props, ...}
-        if "mol" in data or ("smiles" in data and "metadata" not in data and "id" not in data):
+        if "mol" in data or (
+            "smiles" in data and "metadata" not in data and "id" not in data
+        ):
             mol = data.get("mol")
             smiles = data.get("smiles", "")
             kwargs: Dict[str, Any] = {
@@ -134,8 +138,21 @@ class Molecule:
                 return cls.from_mol(mol, **kwargs)
             return cls(smiles=smiles, **kwargs)
         # schema 标准格式
-        known = {"id", "smiles", "name", "source", "activity", "activity_unit",
-                 "activity_raw", "cas", "cid", "properties", "tags", "props", "metadata"}
+        known = {
+            "id",
+            "smiles",
+            "name",
+            "source",
+            "activity",
+            "activity_unit",
+            "activity_raw",
+            "cas",
+            "cid",
+            "properties",
+            "tags",
+            "props",
+            "metadata",
+        }
         extra = {k: v for k, v in data.items() if k not in known}
         meta = {**data.get("metadata", {}), **extra}
         return cls(
@@ -235,6 +252,7 @@ class Molecule:
 
 # ---- Batch 容器 ----
 
+
 @dataclass
 class MoleculeBatch:
     """分子列表的批量操作容器。
@@ -275,7 +293,9 @@ class MoleculeBatch:
     def filter_by_smiles_length(self, max_len: int = 200) -> "MoleculeBatch":
         return MoleculeBatch([m for m in self.entries if len(m.smiles) <= max_len])
 
-    def filter_by_size(self, min_atoms: Optional[int] = None, max_atoms: Optional[int] = None) -> "MoleculeBatch":
+    def filter_by_size(
+        self, min_atoms: Optional[int] = None, max_atoms: Optional[int] = None
+    ) -> "MoleculeBatch":
         def _pred(e: Molecule) -> bool:
             n = e.num_atoms()
             if min_atoms is not None and n < min_atoms:
@@ -283,6 +303,7 @@ class MoleculeBatch:
             if max_atoms is not None and n > max_atoms:
                 return False
             return True
+
         return self.filter_by(_pred)
 
     # ---- 排序 ----
@@ -293,6 +314,7 @@ class MoleculeBatch:
     def sort_by_activity(self, ascending: bool = False) -> "MoleculeBatch":
         def _key(e: Molecule) -> float:
             return e.activity if e.activity is not None else float("inf")
+
         return self.sort_by(_key, reverse=not ascending)
 
     # ---- 分组 ----
@@ -340,6 +362,7 @@ class MoleculeBatch:
 
     def to_dataframe(self) -> Any:
         import pandas as pd
+
         records = []
         for e in self.entries:
             record: Dict[str, Any] = {
@@ -364,11 +387,17 @@ class MoleculeBatch:
 
     def to_csv(self, path: Union[str, Path]) -> None:
         import pandas as pd
+
         records = []
         for m in self.entries:
             rec: Dict[str, Any] = {"SMILES": m.smiles}
-            rec.update({k: v for k, v in m.metadata.items()
-                        if k not in ("props", "properties", "tags")})
+            rec.update(
+                {
+                    k: v
+                    for k, v in m.metadata.items()
+                    if k not in ("props", "properties", "tags")
+                }
+            )
             mol = m.mol
             if mol is not None and _RDKIT_AVAILABLE:
                 rec["NumAtoms"] = mol.GetNumAtoms()
@@ -404,7 +433,9 @@ class MoleculeBatch:
         df.to_excel(path, index=False)
 
     @classmethod
-    def from_smiles_list(cls, smiles_list: List[str], source: str = "manual") -> "MoleculeBatch":
+    def from_smiles_list(
+        cls, smiles_list: List[str], source: str = "manual"
+    ) -> "MoleculeBatch":
         return cls([Molecule.from_smiles(s, source=source) for s in smiles_list])
 
     def __repr__(self) -> str:

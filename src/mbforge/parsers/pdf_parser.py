@@ -90,14 +90,18 @@ class PDFParserPipeline:
                         except Exception as e:
                             logger.warning(f"VLM analysis failed for {img_path}: {e}")
                 if img_descriptions:
-                    content.text += "\n\n## Image Analysis\n\n" + "\n\n".join(img_descriptions)
+                    content.text += "\n\n## Image Analysis\n\n" + "\n\n".join(
+                        img_descriptions
+                    )
                     # 重新分块
                     from ..utils.helpers import split_text_chunks
+
                     content.chunks = split_text_chunks(content.text)
 
         # 4. LLM 摘要 + L0/L1/L2 三层摘要
         if summarize and content.text:
             from ..core.summarizer import DocumentSummarizer, SummaryManager
+
             summarizer = DocumentSummarizer(llm=self.llm)
             summary = summarizer.summarize(content, doc_id)
             if self.kb is not None:
@@ -117,7 +121,9 @@ class PDFParserPipeline:
         # 6. 索引到知识库
         if index_kb and self.kb is not None:
             try:
-                self.kb.index_document(doc_id, content, metadata={"source": str(pdf_path)})
+                self.kb.index_document(
+                    doc_id, content, metadata={"source": str(pdf_path)}
+                )
             except Exception as e:
                 logger.error(f"KB indexing failed for {doc_id}: {e}")
 
@@ -126,6 +132,7 @@ class PDFParserPipeline:
     def _summarize(self, text: str) -> str:
         """使用 LLM 归纳文本."""
         from ..models.base import Message
+
         prompt = (
             "请对以下科学文献内容进行归纳总结，提取关键信息包括：\n"
             "1. 研究目的\n"

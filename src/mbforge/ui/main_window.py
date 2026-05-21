@@ -33,7 +33,11 @@ from ..core.memory import ProjectMemory
 from ..core.mol_database import MoleculeDatabase
 from ..core.project import Project
 from ..core.todo_manager import TodoManager
-from ..models import create_embedder_from_config, create_llm_from_config, create_reranker_from_config
+from ..models import (
+    create_embedder_from_config,
+    create_llm_from_config,
+    create_reranker_from_config,
+)
 from ..parsers.pdf_parser import PDFParserPipeline
 from ..utils.config import load_global_config
 from ..utils.logger import get_logger
@@ -108,6 +112,7 @@ class MainWindow(QMainWindow):
 
     def _setup_models(self):
         from ..utils.logger import get_logger
+
         log = get_logger(__name__)
         config = load_global_config()
         try:
@@ -116,7 +121,9 @@ class MainWindow(QMainWindow):
             log.warning(f"Embedder init failed: {e}")
         try:
             self.llm = create_llm_from_config(config.llm)
-            log.info(f"LLM initialized: {type(self.llm).__name__} (provider={config.llm.provider})")
+            log.info(
+                f"LLM initialized: {type(self.llm).__name__} (provider={config.llm.provider})"
+            )
         except Exception as e:
             log.warning(f"LLM init failed: {e}")
         try:
@@ -693,6 +700,7 @@ class MainWindow(QMainWindow):
             config.recent_projects.insert(0, path_str)
             config.recent_projects = config.recent_projects[:10]
             from ..utils.config import save_global_config
+
             save_global_config(config)
 
     def _scan_project(self):
@@ -820,6 +828,7 @@ class MainWindow(QMainWindow):
             dst = raw_dir / src.name
             try:
                 import shutil
+
                 shutil.copy2(src, dst)
                 self.project.add_file(dst)
                 imported.append(src.name)
@@ -853,6 +862,7 @@ class MainWindow(QMainWindow):
     def _should_auto_process(self) -> bool:
         """检查是否自动处理导入的文件."""
         from ..core.settings import ProjectSettings
+
         settings = ProjectSettings.load(self.project.root)
         return settings.auto_process
 
@@ -873,7 +883,9 @@ class MainWindow(QMainWindow):
         def _on_progress(current, total_count, entry):
             self.progress_bar.setValue(current)
             self.progress_bar.setFormat(f"{current}/{total_count}")
-            self.statusbar.showMessage(f"处理中: {entry.filename} ({current}/{total_count})")
+            self.statusbar.showMessage(
+                f"处理中: {entry.filename} ({current}/{total_count})"
+            )
 
         def _on_done():
             self.progress_bar.hide()
@@ -884,7 +896,9 @@ class MainWindow(QMainWindow):
 
         self.todo_manager.process_all_async(
             file_processor=lambda e, s, o: process_file(
-                e, s, o,
+                e,
+                s,
+                o,
                 llm=self.llm,
                 embedder=self.embedder,
                 knowledge_base=self.kb,
@@ -943,7 +957,9 @@ class MainWindow(QMainWindow):
             self.kb_results.setText("\n\n".join(lines))
 
             # 将结果加入 LLM 上下文
-            context = "\n\n".join([f"[片段{i+1}] {r['text'][:500]}" for i, r in enumerate(results)])
+            context = "\n\n".join(
+                [f"[片段{i + 1}] {r['text'][:500]}" for i, r in enumerate(results)]
+            )
             self.chat_widget.add_context(context)
             self.statusbar.showMessage(f"找到 {len(results)} 条结果，已加入对话上下文")
         except Exception as e:
@@ -983,7 +999,11 @@ class MainWindow(QMainWindow):
             self.index_worker.terminate()
             self.index_worker.wait(3000)
         # 保存项目对话记忆 + 自动提取结构化记忆
-        if self.project is not None and hasattr(self, "agent") and self.agent is not None:
+        if (
+            self.project is not None
+            and hasattr(self, "agent")
+            and self.agent is not None
+        ):
             try:
                 memory = ProjectMemory(self.project.root)
                 memory.save_dict(self.agent.context.to_dict())

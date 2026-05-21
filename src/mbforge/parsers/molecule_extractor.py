@@ -20,13 +20,11 @@ class MoleculeExtractor:
     """从非结构化文本中提取分子信息."""
 
     # 常见 SMILES 模式（简化）
-    SMILES_PATTERN = re.compile(
-        r'[A-Za-z0-9@\.\+\-\=\#\$\(\)\[\]\\\/\%]{4,}'
-    )
+    SMILES_PATTERN = re.compile(r"[A-Za-z0-9@\.\+\-\=\#\$\(\)\[\]\\\/\%]{4,}")
 
     # 活性数据模式：如 IC50 = 5.2 nM, EC50: 10 µM 等
     ACTIVITY_PATTERN = re.compile(
-        r'(IC50|EC50|Ki|Kd|pIC50|pEC50)\s*[=:~]\s*([0-9\.]+)\s*(nM|µM|uM|μM|mM|M|pM)',
+        r"(IC50|EC50|Ki|Kd|pIC50|pEC50)\s*[=:~]\s*([0-9\.]+)\s*(nM|µM|uM|μM|mM|M|pM)",
         re.IGNORECASE,
     )
 
@@ -60,12 +58,16 @@ class MoleculeExtractor:
         """提取活性数据."""
         results = []
         for match in self.ACTIVITY_PATTERN.finditer(text):
-            results.append({
-                "type": match.group(1).upper(),
-                "value": float(match.group(2)),
-                "units": match.group(3).replace("uM", "µM"),
-                "context": text[max(0, match.start() - 50):min(len(text), match.end() + 50)],
-            })
+            results.append(
+                {
+                    "type": match.group(1).upper(),
+                    "value": float(match.group(2)),
+                    "units": match.group(3).replace("uM", "µM"),
+                    "context": text[
+                        max(0, match.start() - 50) : min(len(text), match.end() + 50)
+                    ],
+                }
+            )
         return results
 
     def extract_from_text(self, text: str, doc_id: str = "") -> List[Molecule]:
@@ -109,15 +111,19 @@ class MoleculeExtractor:
                     activity_unit = best["units"]
                     used_activity_idx.add(best_idx)
             rec = Molecule(
-                smiles=smi, source="pdf",
-                activity=activity, activity_unit=activity_unit,
+                smiles=smi,
+                source="pdf",
+                activity=activity,
+                activity_unit=activity_unit,
                 metadata={"source_doc": doc_id},
             )
             records.append(rec)
 
         return records
 
-    def extract_from_pdf_result(self, result_dict: Dict[str, Any], doc_id: str = "") -> List[Molecule]:
+    def extract_from_pdf_result(
+        self, result_dict: Dict[str, Any], doc_id: str = ""
+    ) -> List[Molecule]:
         """从 UniParser 解析结果提取分子."""
         records = []
         molecules = result_dict.get("molecules", [])

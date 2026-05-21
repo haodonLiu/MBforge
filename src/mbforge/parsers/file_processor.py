@@ -12,7 +12,7 @@ import json
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from ..core.document import ExtractedContent
 from ..core.todo_manager import TodoEntry
@@ -24,11 +24,14 @@ logger = get_logger(__name__)
 
 # ---- 策略基类 ----
 
+
 class FileProcessStrategy(ABC):
     """文件处理策略基类."""
 
     @abstractmethod
-    def extract(self, entry: TodoEntry, source: Path, output_dir: Path) -> ExtractedContent:
+    def extract(
+        self, entry: TodoEntry, source: Path, output_dir: Path
+    ) -> ExtractedContent:
         """提取内容."""
         ...
 
@@ -37,11 +40,14 @@ class FileProcessStrategy(ABC):
         kb = deps.get("knowledge_base")
         if kb is not None and content.chunks:
             kb.index_document(
-                entry.doc_id, content,
+                entry.doc_id,
+                content,
                 metadata={"source": entry.source_path},
             )
 
-    def store(self, content: ExtractedContent, entry: TodoEntry, output_dir: Path) -> Dict[str, Any]:
+    def store(
+        self, content: ExtractedContent, entry: TodoEntry, output_dir: Path
+    ) -> Dict[str, Any]:
         """存储输出文件，返回结果 dict."""
         result: Dict[str, Any] = {"status": "done"}
 
@@ -63,11 +69,13 @@ class FileProcessStrategy(ABC):
 
 # ---- PDF 策略 ----
 
+
 class PDFStrategy(FileProcessStrategy):
     """PDF 处理策略：提取 → 分子识别 → 摘要 → 索引."""
 
     def extract(self, entry, source, output_dir):
         from .pdf_parser import PDFParserPipeline
+
         pipeline = PDFParserPipeline()  # 组件在 index 阶段注入
         self._pipeline = pipeline
         content = pipeline.parse(
@@ -85,7 +93,8 @@ class PDFStrategy(FileProcessStrategy):
         kb = deps.get("knowledge_base")
         if kb is not None and content.chunks:
             kb.index_document(
-                entry.doc_id, content,
+                entry.doc_id,
+                content,
                 metadata={"source": entry.source_path},
             )
 
@@ -93,12 +102,15 @@ class PDFStrategy(FileProcessStrategy):
         mol_db = deps.get("mol_db")
         if mol_db and content.molecules:
             from ..core.mol_database import MoleculeRecord
+
             for m in content.molecules:
-                mol_db.add_molecule(MoleculeRecord(
-                    smiles=m.get("smiles", ""),
-                    name=m.get("name", ""),
-                    source_doc=entry.doc_id,
-                ))
+                mol_db.add_molecule(
+                    MoleculeRecord(
+                        smiles=m.get("smiles", ""),
+                        name=m.get("name", ""),
+                        source_doc=entry.doc_id,
+                    )
+                )
 
     def store(self, content, entry, output_dir):
         result = super().store(content, entry, output_dir)
@@ -120,6 +132,7 @@ class PDFStrategy(FileProcessStrategy):
 
 # ---- Markdown 策略 ----
 
+
 class MarkdownStrategy(FileProcessStrategy):
     """Markdown 策略：直接读取 → 分块 → 索引."""
 
@@ -134,6 +147,7 @@ class MarkdownStrategy(FileProcessStrategy):
 
 
 # ---- 纯文本策略 ----
+
 
 class TextStrategy(FileProcessStrategy):
     """纯文本策略：读取 → 分块 → 索引."""
@@ -150,6 +164,7 @@ class TextStrategy(FileProcessStrategy):
 
 # ---- 分子文件策略 ----
 
+
 class MoleculeStrategy(FileProcessStrategy):
     """分子文件策略（SDF/MOL/MOL2/PDB/SMI）：解析分子 → 入分子库."""
 
@@ -163,13 +178,16 @@ class MoleculeStrategy(FileProcessStrategy):
                 line = line.strip()
                 if line and not line.startswith("#"):
                     parts = line.split()
-                    molecules.append({
-                        "smiles": parts[0],
-                        "name": parts[1] if len(parts) > 1 else "",
-                    })
+                    molecules.append(
+                        {
+                            "smiles": parts[0],
+                            "name": parts[1] if len(parts) > 1 else "",
+                        }
+                    )
         else:
             try:
                 from rdkit import Chem
+
                 if ext == ".sdf":
                     supplier = Chem.SDMolSupplier(str(source))
                 elif ext == ".mol":
@@ -184,10 +202,14 @@ class MoleculeStrategy(FileProcessStrategy):
                 for mol in supplier:
                     if mol is not None:
                         Chem.SanitizeMol(mol)
-                        molecules.append({
-                            "smiles": Chem.MolToSmiles(mol),
-                            "name": mol.GetProp("_Name") if mol.HasProp("_Name") else "",
-                        })
+                        molecules.append(
+                            {
+                                "smiles": Chem.MolToSmiles(mol),
+                                "name": mol.GetProp("_Name")
+                                if mol.HasProp("_Name")
+                                else "",
+                            }
+                        )
             except Exception as e:
                 logger.warning(f"RDKit parsing failed for {source}: {e}")
                 shutil.copy2(source, output_dir / source.name)
@@ -205,12 +227,15 @@ class MoleculeStrategy(FileProcessStrategy):
         mol_db = deps.get("mol_db")
         if mol_db and content.molecules:
             from ..core.mol_database import MoleculeRecord
+
             for m in content.molecules:
-                mol_db.add_molecule(MoleculeRecord(
-                    smiles=m["smiles"],
-                    name=m.get("name", ""),
-                    source_doc=entry.doc_id,
-                ))
+                mol_db.add_molecule(
+                    MoleculeRecord(
+                        smiles=m["smiles"],
+                        name=m.get("name", ""),
+                        source_doc=entry.doc_id,
+                    )
+                )
 
         # 分子描述也入 RAG
         super().index(content, entry, **deps)
@@ -226,6 +251,7 @@ class MoleculeStrategy(FileProcessStrategy):
 
 
 # ---- 数据表策略 ----
+
 
 class DataTableStrategy(FileProcessStrategy):
     """数据表策略（CSV/XLSX）：读取 → 转 JSON → 索引."""
@@ -251,7 +277,11 @@ class DataTableStrategy(FileProcessStrategy):
         return ExtractedContent(
             text=text,
             chunks=chunks,
-            metadata={"source": str(source), "columns": list(df.columns), "rows": len(df)},
+            metadata={
+                "source": str(source),
+                "columns": list(df.columns),
+                "rows": len(df),
+            },
         )
 
     def store(self, content, entry, output_dir):
@@ -279,6 +309,7 @@ class DataTableStrategy(FileProcessStrategy):
 
 # ---- JSON 策略 ----
 
+
 class JsonStrategy(FileProcessStrategy):
     """JSON 策略：读取 → 转文本索引."""
 
@@ -291,12 +322,17 @@ class JsonStrategy(FileProcessStrategy):
         return ExtractedContent(
             text=text,
             chunks=chunks,
-            metadata={"source": str(source), "keys": list(data.keys()) if isinstance(data, dict) else "array"},
+            metadata={
+                "source": str(source),
+                "keys": list(data.keys()) if isinstance(data, dict) else "array",
+            },
         )
 
     def store(self, content, entry, output_dir):
         result = super().store(content, entry, output_dir)
-        shutil.copy2(output_dir.parent.parent / entry.source_path, output_dir / "content.json")
+        shutil.copy2(
+            output_dir.parent.parent / entry.source_path, output_dir / "content.json"
+        )
         return result
 
 
@@ -323,6 +359,7 @@ def get_strategy(ext: str) -> FileProcessStrategy:
 
 
 # ---- 统一入口 ----
+
 
 def process_file(
     entry: TodoEntry,

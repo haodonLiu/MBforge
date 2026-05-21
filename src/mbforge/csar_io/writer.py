@@ -22,7 +22,7 @@ from typing import List, Dict, Any, Union
 
 import pandas as pd
 from rdkit import Chem
-from rdkit.Chem import AllChem, Descriptors
+from rdkit.Chem import Descriptors
 
 from ..molecules.schema import Molecule, MoleculeBatch
 
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
 
 class MoleculeWriteError(Exception):
     """分子文件写入失败异常.
-    
+
     当写入分子文件失败时抛出此异常，包含原始错误信息。
     """
 
@@ -40,7 +40,7 @@ class MoleculeWriteError(Exception):
 
 class MoleculeWriter:
     """分子写入器 - 支持多种文件格式.
-    
+
     该类提供将分子数据写入SDF、CSV和Excel文件的功能。
     自动计算分子描述符(分子量、LogP等)并包含在输出中。
     """
@@ -49,7 +49,7 @@ class MoleculeWriter:
         self, molecules: List[Dict[str, Any]], path: Union[str, Path]
     ) -> None:
         """将分子写入SDF文件.
-        
+
         将分子列表写入SDF格式文件，保留分子结构和属性。
 
         Args:
@@ -80,7 +80,7 @@ class MoleculeWriter:
         self, molecules: List[Dict[str, Any]], path: Union[str, Path]
     ) -> None:
         """将分子写入CSV文件.
-        
+
         将分子数据导出为CSV格式，包含以下列:
         - Name: 分子名称
         - SMILES: SMILES字符串
@@ -129,7 +129,7 @@ class MoleculeWriter:
         self, molecules: List[Dict[str, Any]], path: Union[str, Path]
     ) -> None:
         """将分子写入Excel文件.
-        
+
         将分子数据导出为Excel格式(.xlsx)，包含与CSV相同的列。
 
         Args:

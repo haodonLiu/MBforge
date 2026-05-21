@@ -12,10 +12,8 @@
 from __future__ import annotations
 
 import base64
-import io
-import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import requests
 
@@ -121,13 +119,16 @@ class GlmOcrClient(BaseDocumentParser):
     def parse_pdf(self, pdf_path: Path, **kwargs) -> Dict[str, Any]:
         """向后兼容：返回旧格式 dict。"""
         out = self.parse(pdf_path, **kwargs)
-        return {"text": out.text, "markdown": out.markdown, "pages": out.pages,
-                "parser": out.metadata.get("parser", "glm_ocr")}
+        return {
+            "text": out.text,
+            "markdown": out.markdown,
+            "pages": out.pages,
+            "parser": out.metadata.get("parser", "glm_ocr"),
+        }
 
     def _parse_with_glm(self, pdf_path: Path) -> Dict[str, Any]:
         """使用 GLM-OCR 解析 PDF."""
         import shutil
-        import tempfile
 
         page_images = self._pdf_to_images(pdf_path)
         tmpdir = page_images[0].parent if page_images else None
@@ -141,7 +142,9 @@ class GlmOcrClient(BaseDocumentParser):
                     b64 = self._encode_image(img_path)
                     page_md = self._call_api(b64)
                     pages_md.append(page_md)
-                    placeholders = self._extract_molecule_placeholders(page_md, page_idx=idx)
+                    placeholders = self._extract_molecule_placeholders(
+                        page_md, page_idx=idx
+                    )
                     molecule_placeholders.extend(placeholders)
                 except Exception as e:
                     logger.warning(f"Page {idx} OCR failed: {e}")
@@ -163,6 +166,7 @@ class GlmOcrClient(BaseDocumentParser):
         """Fallback 到 PyMuPDF."""
         try:
             import fitz  # PyMuPDF
+
             doc = fitz.open(str(pdf_path))
             texts = []
             for page in doc:
@@ -182,8 +186,10 @@ class GlmOcrClient(BaseDocumentParser):
     def _pdf_to_images(self, pdf_path: Path, dpi: int = 200) -> List[Path]:
         """将 PDF 转为图像列表."""
         import tempfile
+
         try:
             import fitz
+
             doc = fitz.open(str(pdf_path))
             tmpdir = Path(tempfile.mkdtemp(prefix="mbforge_glm_ocr_"))
             images = []
@@ -197,25 +203,31 @@ class GlmOcrClient(BaseDocumentParser):
             logger.error(f"PDF to image conversion failed: {e}")
             raise
 
-    def _extract_molecule_placeholders(self, markdown: str, page_idx: int) -> List[Dict[str, Any]]:
+    def _extract_molecule_placeholders(
+        self, markdown: str, page_idx: int
+    ) -> List[Dict[str, Any]]:
         """从 Markdown 中提取分子占位符.
 
         占位符格式: `<molecule_image>[描述]</molecule_image>`
         """
         import re
+
         placeholders = []
         pattern = re.compile(r"<molecule_image>\[(.*?)\]</molecule_image>")
         for match in pattern.finditer(markdown):
-            placeholders.append({
-                "page": page_idx,
-                "description": match.group(1),
-                "position": match.start(),
-            })
+            placeholders.append(
+                {
+                    "page": page_idx,
+                    "description": match.group(1),
+                    "position": match.start(),
+                }
+            )
         return placeholders
 
     def _markdown_to_text(self, markdown: str) -> str:
         """简单 Markdown 转纯文本（用于兼容现有流程）."""
         import re
+
         text = markdown
         # 移除 HTML 标签
         text = re.sub(r"<[^>]+>", "", text)

@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 class ActivityUnit(Enum):
     """活性单位枚举."""
+
     NM = "nM"
     UM = "uM"
     MM = "mM"
@@ -52,6 +53,7 @@ UNIT_TO_NM: Dict[ActivityUnit, float] = {
 
 class CensoredType(Enum):
     """删失数据类型."""
+
     NONE = "none"
     GREATER_THAN = ">"  # 右删失: 活性 > X (实际可能更高)
     LESS_THAN = "<"  # 左删失: 活性 < X (实际可能更低)
@@ -67,6 +69,7 @@ class CensoredValue:
         censored_type: 删失类型.
         raw_string: 原始字符串.
     """
+
     value: float
     censored_type: CensoredType
     raw_string: str
@@ -84,6 +87,7 @@ class ProcessedActivity:
         is_outlier: 是否是异常值.
         unit: 检测到的单位.
     """
+
     raw: str
     value_nm: Optional[float] = None
     p_value: Optional[float] = None
@@ -106,6 +110,7 @@ class DataQualityReport:
         activity_range: 活性值范围 (min, max).
         p_activity_range: pActivity 范围.
     """
+
     total_molecules: int = 0
     valid_activities: int = 0
     invalid_activities: int = 0
@@ -136,10 +141,12 @@ class DataQualityReport:
 
         if self.valid_activities > 0:
             min_act, max_act = self.activity_range
-            lines.extend([
-                "",
-                f"活性范围 (nM): {min_act:.2f} - {max_act:.2f}",
-            ])
+            lines.extend(
+                [
+                    "",
+                    f"活性范围 (nM): {min_act:.2f} - {max_act:.2f}",
+                ]
+            )
             if self.p_activity_range[0] is not None:
                 min_p, max_p = self.p_activity_range
                 lines.append(f"pActivity 范围: {min_p:.2f} - {max_p:.2f}")
@@ -242,12 +249,16 @@ class ActivityPreprocessor:
             if match:
                 try:
                     value = float(match.group(1))
-                    return CensoredValue(value=value, censored_type=ctype, raw_string=raw_value)
+                    return CensoredValue(
+                        value=value, censored_type=ctype, raw_string=raw_value
+                    )
                 except ValueError:
                     continue
         return None
 
-    def clean_numeric(self, raw_value: str) -> Tuple[Optional[float], ActivityUnit, Optional[CensoredValue]]:
+    def clean_numeric(
+        self, raw_value: str
+    ) -> Tuple[Optional[float], ActivityUnit, Optional[CensoredValue]]:
         """清洗并解析原始活性值.
 
         从混合了单位、符号和数值的字符串中提取数值。
@@ -352,9 +363,7 @@ class ActivityPreprocessor:
 
         return [(v < lower_bound or v > upper_bound) for v in values]
 
-    def process_molecule(
-        self, mol_data: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+    def process_molecule(self, mol_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """处理单个分子的活性数据.
 
         Args:
@@ -454,14 +463,17 @@ class ActivityPreprocessor:
 
                         unit = processed.get("activity_unit", ActivityUnit.UNKNOWN)
                         unit_name = unit.value
-                        self._report.unit_counts[unit_name] = \
+                        self._report.unit_counts[unit_name] = (
                             self._report.unit_counts.get(unit_name, 0) + 1
+                        )
                 else:
                     processed_molecules.append(mol)
                     self._report.invalid_activities += 1
                     self._report.failed_molecules.append(mol)
             except Exception as e:
-                logger.warning(f"Failed to process molecule {mol.get('name', 'unknown')}: {e}")
+                logger.warning(
+                    f"Failed to process molecule {mol.get('name', 'unknown')}: {e}"
+                )
                 processed_molecules.append(mol)
                 self._report.failed_molecules.append(mol)
 
@@ -492,11 +504,19 @@ class ActivityPreprocessor:
 
         # 更新报告
         if all_nm_values:
-            self._report.activity_range = (float(np.min(all_nm_values)), float(np.max(all_nm_values)))
+            self._report.activity_range = (
+                float(np.min(all_nm_values)),
+                float(np.max(all_nm_values)),
+            )
             p_values = [self.to_p_activity(v) for v in all_nm_values]
-            self._report.p_activity_range = (float(np.min(p_values)), float(np.max(p_values)))
+            self._report.p_activity_range = (
+                float(np.min(p_values)),
+                float(np.max(p_values)),
+            )
 
-        logger.info(f"Activity preprocessing complete: {len(processed_molecules)} molecules processed")
+        logger.info(
+            f"Activity preprocessing complete: {len(processed_molecules)} molecules processed"
+        )
         logger.info(f"  Valid activities: {self._report.valid_activities}")
         logger.info(f"  Censored values: {self._report.censored_values}")
         logger.info(f"  Outliers detected: {self._report.outliers}")

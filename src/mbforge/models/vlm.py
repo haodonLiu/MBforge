@@ -14,7 +14,9 @@ class APIVLM(BaseVLM):
     """通过 API 调用的 VLM（OpenAI 兼容格式，支持 vision）."""
 
     def __init__(self, base_url: str, api_key: str, model_name: str = ""):
-        self.client = openai.OpenAI(base_url=base_url, api_key=api_key or "empty", timeout=120)
+        self.client = openai.OpenAI(
+            base_url=base_url, api_key=api_key or "empty", timeout=120
+        )
         self.model_name = model_name
 
     def _encode_image(self, image_path: str) -> str:
@@ -57,5 +59,6 @@ class APIVLM(BaseVLM):
 def create_vlm_from_config(config):
     """从配置创建 VLM 实例."""
     from ..utils.config import VLMConfig
+
     cfg: VLMConfig = config
     return APIVLM(base_url=cfg.base_url, api_key=cfg.api_key, model_name=cfg.model_name)

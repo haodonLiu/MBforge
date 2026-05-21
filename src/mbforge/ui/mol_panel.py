@@ -35,7 +35,9 @@ class MoleculePanel(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(["SMILES", "名称", "活性", "类型", "来源"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -82,10 +84,18 @@ class MoleculePanel(QWidget):
         for i, rec in enumerate(records):
             self.table.setItem(i, 0, QTableWidgetItem(rec.smiles))
             self.table.setItem(i, 1, QTableWidgetItem(rec.name))
-            act_text = f"{rec.activity} {rec.units}" if rec.activity is not None else "-"
+            act_text = (
+                f"{rec.activity} {rec.units}" if rec.activity is not None else "-"
+            )
             self.table.setItem(i, 2, QTableWidgetItem(act_text))
             self.table.setItem(i, 3, QTableWidgetItem(rec.activity_type))
-            self.table.setItem(i, 4, QTableWidgetItem(rec.source_doc[:20] + "..." if rec.source_doc else "-"))
+            self.table.setItem(
+                i,
+                4,
+                QTableWidgetItem(
+                    rec.source_doc[:20] + "..." if rec.source_doc else "-"
+                ),
+            )
             for col in range(5):
                 item = self.table.item(i, col)
                 if item:
@@ -109,4 +119,5 @@ class MoleculePanel(QWidget):
             dlg.exec()
         elif action == export_action:
             from PyQt6.QtWidgets import QApplication
+
             QApplication.clipboard().setText(rec.smiles)

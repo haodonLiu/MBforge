@@ -61,14 +61,15 @@ def _cmd_gui(args) -> int:
     from .app import run_app
 
     # 如果有 --project，先预加载
-    extra = []
     if hasattr(args, "project") and args.project:
         # 通过环境变量传递，主窗口启动后读取
         import os
 
         os.environ["MBFORGE_OPEN_PROJECT"] = args.project
 
-    return run_app(extra)
+    # 必须传入 sys.argv（至少包含程序名），否则 QWebEngine/Chromium
+    # 子进程无法正确初始化，会报 "Argument list is empty"
+    return run_app(sys.argv)
 
 
 def _cmd_init(args) -> int:

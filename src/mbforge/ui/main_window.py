@@ -11,13 +11,10 @@ from PyQt6.QtWidgets import (
     QDialog,
     QFileDialog,
     QHBoxLayout,
-    QLabel,
-    QLineEdit,
     QMainWindow,
     QMessageBox,
-    QProgressBar,
-    QPushButton,
     QSplitter,
+    QStackedWidget,
     QStatusBar,
     QTabWidget,
     QToolBar,
@@ -40,14 +37,29 @@ from ..models import (
 )
 from ..parsers.pdf_parser import PDFParserPipeline
 from ..utils.config import load_global_config
-from ..utils.logger import get_logger
+from ..utils.logger import get_logger, log_call, log_exception
 from .chat_widget import ChatWidget
+from .components import ProgressBar
 from .dialogs import NewProjectDialog, SettingsDialog
 from .editor import MarkdownEditor
 from .file_tree import FileTreeWidget
+from .kb_panel import KnowledgeBasePanel
 from .mol_panel import MoleculePanel
 from .pdf_viewer import PDFViewer
 from .preview import MarkdownPreview
+from .status_dashboard import StatusDashboard
+from .theme import (
+    COLOR_TEXT_SECONDARY,
+    SearchBox,
+    ThemeManager,
+    create_button,
+    create_label,
+)
+from .todo_panel import TodoPanel
+from .welcome_widget import WelcomeWidget
+from .workflow_panel import WorkflowPanel
+
+logger = get_logger(__name__)
 
 
 class IndexWorker(QThread):
@@ -60,9 +72,12 @@ class IndexWorker(QThread):
         super().__init__()
         self.pipeline = pipeline
         self.entries = entries
+        logger.info(f"IndexWorker 创建 | 待索引文件数={len(entries)}")
 
     def run(self):
-        for entry in self.entries:
+        logger.info("IndexWorker 开始运行")
+        total = len(self.entries)
+        for idx, entry in enumerate(self.entries, 1):
             if entry.doc_type == "pdf":
                 self.progress.emit(f"索引: {entry.path.name}")
                 try:
@@ -74,10 +89,54 @@ class IndexWorker(QThread):
                         index_kb=True,
                     )
                     entry.indexed = True
-                except Exception as e:
-                    self.progress.emit(f"失败: {entry.path.name} - {e}")
+                    logger.debug(f"索引成功 [{idx}/{total}]: {entry.path.name}")
+                except Exception:
+                    log_exception(logger, f"索引失败 [{idx}/{total}]: {entry.path.name}")
+                    self.progress.emit(f"失败: {entry.path.name}")
         self.progress.emit("索引完成")
+        logger.info("IndexWorker 运行结束")
         self.finished_signal.emit()
+
+    def __del__(self):
+        logger.debug("IndexWorker 销毁")
+
+
+class ModelInitWorker(QThread):
+    """后台线程：异步加载 Embedder / LLM / Reranker，避免阻塞 UI."""
+
+    progress = pyqtSignal(str)
+    finished_signal = pyqtSignal(object, object, object)  # embedder, llm, reranker
+    error_signal = pyqtSignal(str)
+
+    def run(self):
+        logger.info("ModelInitWorker 开始加载模型")
+        config = load_global_config()
+        embedder = None
+        llm = None
+        reranker = None
+        try:
+            self.progress.emit("加载 Embedder...")
+            embedder = create_embedder_from_config(config.embed)
+            logger.info(f"Embedder 初始化成功: {type(embedder).__name__}")
+        except Exception:
+            log_exception(logger, "Embedder 初始化失败")
+            self.error_signal.emit("Embedder 初始化失败，知识库搜索将不可用")
+        try:
+            self.progress.emit("加载 LLM...")
+            llm = create_llm_from_config(config.llm)
+            logger.info(f"LLM 初始化成功: {type(llm).__name__} (provider={config.llm.provider})")
+        except Exception:
+            log_exception(logger, "LLM 初始化失败")
+            self.error_signal.emit("LLM 初始化失败，AI 对话将不可用")
+        try:
+            self.progress.emit("加载 Reranker...")
+            reranker = create_reranker_from_config(config.rerank)
+            logger.info(f"Reranker 初始化成功: {type(reranker).__name__}")
+        except Exception:
+            log_exception(logger, "Reranker 初始化失败")
+            self.error_signal.emit("Reranker 初始化失败，搜索结果排序将不可用")
+        self.finished_signal.emit(embedder, llm, reranker)
+        logger.info("ModelInitWorker 完成")
 
 
 class MainWindow(QMainWindow):
@@ -85,6 +144,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        logger.info("MainWindow.__init__ 开始")
         self.setWindowTitle("MBForge - Molecular Knowledge Base")
         self.setMinimumSize(1400, 900)
 
@@ -98,38 +158,62 @@ class MainWindow(QMainWindow):
         self.vlm = None
         self.pdf_pipeline: Optional[PDFParserPipeline] = None
 
-        self._setup_models()
         self._setup_ui()
         self._setup_menubar()
         self._setup_toolbar()
         self._setup_statusbar()
-        self._apply_theme()
+        ThemeManager.apply_global(self)
 
-        # 延迟加载最近项目，让 UI 先渲染
-        QTimer.singleShot(100, self._open_recent_project)
+        # 状态标记
+        self._models_ready = False
+
+        # 启动后台模型加载
+        self._model_worker = ModelInitWorker()
+        self._model_worker.progress.connect(self.statusbar.showMessage)
+        self._model_worker.finished_signal.connect(self._on_models_ready)
+        self._model_worker.error_signal.connect(self._on_models_error)
+        self.statusbar.showMessage("正在加载 AI 模型...")
+        self._model_worker.start()
+
+        logger.info("MainWindow.__init__ 完成")
 
     # ---- 初始化 ----
 
-    def _setup_models(self):
-        from ..utils.logger import get_logger
+    def _on_models_ready(self, embedder, llm, reranker):
+        """后台模型加载完成后的回调."""
+        self.embedder = embedder
+        self.llm = llm
+        self.reranker = reranker
+        self._models_ready = True
+        self.statusbar.showMessage("AI 模型加载完成")
 
-        log = get_logger(__name__)
-        config = load_global_config()
-        try:
-            self.embedder = create_embedder_from_config(config.embed)
-        except Exception as e:
-            log.warning(f"Embedder init failed: {e}")
-        try:
-            self.llm = create_llm_from_config(config.llm)
-            log.info(
-                f"LLM initialized: {type(self.llm).__name__} (provider={config.llm.provider})"
+        # 如果项目已经打开，更新模型引用
+        if self.kb is not None and self.embedder is not None:
+            self.kb.embedder = self.embedder
+        if self.pdf_pipeline is not None:
+            self.pdf_pipeline.llm = self.llm
+            self.pdf_pipeline.embedder = self.embedder
+        if getattr(self, "agent", None) is not None:
+            self.agent.llm = self.llm
+            self.chat_widget.set_agent(self.agent)
+
+        # 更新仪表盘
+        if self.project is not None:
+            self.status_dashboard.set_service_status(
+                llm=self.llm is not None,
+                embed=self.embedder is not None,
+                kb=True,
+                mol_db=True,
             )
-        except Exception as e:
-            log.warning(f"LLM init failed: {e}")
-        try:
-            self.reranker = create_reranker_from_config(config.rerank)
-        except Exception as e:
-            log.warning(f"Reranker init failed: {e}")
+
+        # 延迟加载最近项目（如果还没有加载）
+        if self.project is None:
+            QTimer.singleShot(100, self._open_recent_project)
+
+    def _on_models_error(self, msg: str):
+        """后台模型加载出错."""
+        logger.warning(msg)
+        self.statusbar.showMessage(msg)
 
     def _setup_ui(self):
         central = QWidget()
@@ -146,16 +230,10 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
 
-        self.project_label = QLabel("未打开项目")
-        self.project_label.setStyleSheet("""
-            padding: 10px 14px;
-            background: #f8f9fa;
-            color: #212529;
-            font-weight: 600;
-            font-size: 14px;
-            border-bottom: 1px solid #e9ecef;
-            border-radius: 0;
-        """)
+        self.project_label = create_label("未打开项目", level="header")
+        self.project_label.setStyleSheet(
+            "padding: 10px 14px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; border-radius: 0;"
+        )
         left_layout.addWidget(self.project_label)
 
         self.file_tree = FileTreeWidget()
@@ -164,31 +242,9 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.file_tree)
 
         left_btn_layout = QHBoxLayout()
-        self.scan_btn = QPushButton("🔄 扫描")
-        self.scan_btn.setStyleSheet("""
-            QPushButton {
-                background: #f1f3f5;
-                color: #495057;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px 12px;
-                font-size: 13px;
-            }
-            QPushButton:hover { background: #e9ecef; }
-        """)
+        self.scan_btn = create_button("🔄 扫描")
         self.scan_btn.clicked.connect(self._scan_project)
-        self.index_btn = QPushButton("📚 索引")
-        self.index_btn.setStyleSheet("""
-            QPushButton {
-                background: #f1f3f5;
-                color: #495057;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px 12px;
-                font-size: 13px;
-            }
-            QPushButton:hover { background: #e9ecef; }
-        """)
+        self.index_btn = create_button("📚 索引")
         self.index_btn.clicked.connect(self._index_project)
         left_btn_layout.addWidget(self.scan_btn)
         left_btn_layout.addWidget(self.index_btn)
@@ -197,36 +253,22 @@ class MainWindow(QMainWindow):
         self.splitter.addWidget(self.left_panel)
         self.splitter.setStretchFactor(0, 0)
 
-        # 中间：标签页工作区
+        # 中间：标签页工作区（支持欢迎页 + 标签页切换）
+        self.center_stack = QStackedWidget()
+
+        # 欢迎页
+        self.welcome_widget = WelcomeWidget()
+        self.welcome_widget.open_project_requested.connect(self._load_project_from_path)
+        self.welcome_widget.new_project_requested.connect(self._new_project)
+        self.welcome_widget.open_settings_requested.connect(self._show_settings)
+        self.center_stack.addWidget(self.welcome_widget)
+
+        # 标签页工作区
         self.center_tabs = QTabWidget()
         self.center_tabs.setTabsClosable(True)
         self.center_tabs.tabCloseRequested.connect(self._close_tab)
-        self.center_tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #e9ecef;
-                border-radius: 10px;
-                background: #ffffff;
-            }
-            QTabBar::tab {
-                background: #f1f3f5;
-                color: #868e96;
-                padding: 8px 18px;
-                border: none;
-                border-radius: 8px 8px 0 0;
-                margin-right: 4px;
-            }
-            QTabBar::tab:selected {
-                background: #ffffff;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-bottom: none;
-            }
-            QTabBar::tab:hover {
-                background: #e9ecef;
-                color: #495057;
-            }
-        """)
-        self.splitter.addWidget(self.center_tabs)
+        self.center_stack.addWidget(self.center_tabs)
+        self.splitter.addWidget(self.center_stack)
         self.splitter.setStretchFactor(1, 3)
 
         # 右侧：LLM + KB 搜索
@@ -235,64 +277,30 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(4)
 
-        # KB 搜索
+        # 状态仪表盘
+        self.status_dashboard = StatusDashboard()
+        right_layout.addWidget(self.status_dashboard)
+
+        # KB 搜索（合并输入框+按钮为 SearchBox）
         kb_frame = QWidget()
         kb_frame.setMaximumHeight(200)
         kb_layout = QVBoxLayout(kb_frame)
         kb_layout.setContentsMargins(8, 8, 8, 8)
         kb_layout.setSpacing(4)
 
-        kb_header = QLabel("🔍 知识库检索")
-        kb_header.setStyleSheet("color: #212529; font-weight: 600; font-size: 14px;")
+        kb_header = create_label("🔍 知识库检索", level="header")
         kb_layout.addWidget(kb_header)
 
-        kb_input_layout = QHBoxLayout()
-        self.kb_search_input = QLineEdit()
-        self.kb_search_input.setPlaceholderText("输入查询...")
-        self.kb_search_input.setStyleSheet("""
-            QLineEdit {
-                background: #f8f9fa;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 10px;
-                padding: 6px 12px;
-                font-size: 13px;
-            }
-            QLineEdit:focus {
-                border-color: #74c0fc;
-                background: #ffffff;
-            }
-        """)
+        self.kb_search_input = SearchBox(placeholder="输入查询...")
         self.kb_search_input.returnPressed.connect(self._search_kb)
-        kb_input_layout.addWidget(self.kb_search_input)
+        kb_layout.addWidget(self.kb_search_input)
 
-        self.kb_search_btn = QPushButton("搜索")
-        self.kb_search_btn.setStyleSheet("""
-            QPushButton {
-                background: #1971c2;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                padding: 6px 16px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QPushButton:hover { background: #1864ab; }
-        """)
-        self.kb_search_btn.clicked.connect(self._search_kb)
-        kb_input_layout.addWidget(self.kb_search_btn)
-        kb_layout.addLayout(kb_input_layout)
-
-        self.kb_results = QLabel("未检索")
+        self.kb_results = create_label("未检索", level="body")
         self.kb_results.setWordWrap(True)
-        self.kb_results.setStyleSheet("""
-            color: #495057;
-            background: #f8f9fa;
-            padding: 10px;
-            border-radius: 10px;
-            border: 1px solid #e9ecef;
-            font-size: 13px;
-        """)
+        self.kb_results.setStyleSheet(
+            f"color: {COLOR_TEXT_SECONDARY}; background: #f8f9fa; padding: 10px; "
+            f"border-radius: 10px; border: 1px solid #e9ecef; font-size: 13px;"
+        )
         self.kb_results.setAlignment(Qt.AlignmentFlag.AlignTop)
         kb_layout.addWidget(self.kb_results)
         right_layout.addWidget(kb_frame)
@@ -378,38 +386,28 @@ class MainWindow(QMainWindow):
         mol_db_action.triggered.connect(self._show_mol_db)
         tools_menu.addAction(mol_db_action)
 
+        kb_action = QAction("知识库管理", self)
+        kb_action.triggered.connect(self._show_kb_panel)
+        tools_menu.addAction(kb_action)
+
+        todo_action = QAction("TODO 队列", self)
+        todo_action.triggered.connect(self._show_todo_panel)
+        tools_menu.addAction(todo_action)
+
+        workflow_action = QAction("工作流中心", self)
+        workflow_action.triggered.connect(self._show_workflow_panel)
+        tools_menu.addAction(workflow_action)
+
     def _setup_toolbar(self):
+        """精简工具栏：只保留高频操作."""
         toolbar = QToolBar("主工具栏")
-        toolbar.setStyleSheet("""
-            QToolBar {
-                background: #f8f9fa;
-                border: none;
-                border-bottom: 1px solid #e9ecef;
-                spacing: 6px;
-                padding: 6px 10px;
-            }
-            QToolButton {
-                background: transparent;
-                color: #495057;
-                border: none;
-                border-radius: 8px;
-                padding: 6px 14px;
-                font-size: 13px;
-            }
-            QToolButton:hover {
-                background: #e9ecef;
-                color: #212529;
-            }
-        """)
         self.addToolBar(toolbar)
 
+        # 高频操作
         toolbar.addAction("📝 新建", self._new_project)
         toolbar.addAction("📂 打开", self._open_project)
         toolbar.addSeparator()
         toolbar.addAction("💾 保存", self._save_current)
-        toolbar.addAction("📥 导入", self._import_files)
-        toolbar.addAction("⚡ 处理", self._start_process_todo)
-        toolbar.addSeparator()
         toolbar.addAction("🔍 搜索", self._search_kb)
         toolbar.addAction("🤖 发送", self._trigger_chat_send)
 
@@ -419,177 +417,26 @@ class MainWindow(QMainWindow):
 
     def _setup_statusbar(self):
         self.statusbar = QStatusBar()
-        self.statusbar.setStyleSheet("background: #007acc; color: white; padding: 4px;")
         self.setStatusBar(self.statusbar)
 
         # 进度条
-        self.progress_bar = QProgressBar()
+        self.progress_bar = ProgressBar()
         self.progress_bar.setMaximumWidth(200)
-        self.progress_bar.setMaximumHeight(14)
-        self.progress_bar.setTextVisible(True)
-        self.progress_bar.setStyleSheet(
-            "QProgressBar { background: rgba(255,255,255,0.2); border: none; border-radius: 4px; }"
-            "QProgressBar::chunk { background: #4ecdc4; border-radius: 4px; }"
-        )
         self.progress_bar.hide()
         self.statusbar.addPermanentWidget(self.progress_bar)
 
         self.statusbar.showMessage("就绪")
 
-    def _apply_theme(self):
-        """应用黑白+软线条全局主题."""
-        self.setStyleSheet("""
-            /* ===== 全局 ===== */
-            QMainWindow {
-                background: #ffffff;
-            }
-            QWidget {
-                background: #ffffff;
-                color: #212529;
-            }
-
-            /* ===== 菜单栏 ===== */
-            QMenuBar {
-                background: #f8f9fa;
-                color: #212529;
-                border-bottom: 1px solid #e9ecef;
-                padding: 2px 6px;
-            }
-            QMenuBar::item {
-                padding: 6px 14px;
-                border-radius: 6px;
-            }
-            QMenuBar::item:selected {
-                background: #e7f5ff;
-                color: #1971c2;
-            }
-            QMenu {
-                background: #ffffff;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px;
-            }
-            QMenu::item {
-                padding: 6px 20px;
-                border-radius: 6px;
-            }
-            QMenu::item:selected {
-                background: #e7f5ff;
-                color: #1971c2;
-            }
-            QMenu::separator {
-                height: 1px;
-                background: #e9ecef;
-                margin: 6px 12px;
-            }
-
-            /* ===== 工具栏 ===== */
-            QToolBar {
-                background: #f8f9fa;
-                border: none;
-                border-bottom: 1px solid #e9ecef;
-                spacing: 6px;
-                padding: 6px 10px;
-            }
-            QToolButton {
-                background: transparent;
-                color: #495057;
-                border: none;
-                border-radius: 8px;
-                padding: 6px 14px;
-                font-size: 13px;
-            }
-            QToolButton:hover {
-                background: #e9ecef;
-                color: #212529;
-            }
-
-            /* ===== 状态栏 ===== */
-            QStatusBar {
-                background: #f8f9fa;
-                color: #495057;
-                border-top: 1px solid #e9ecef;
-                padding: 2px 12px;
-            }
-
-            /* ===== 标签页 ===== */
-            QTabWidget::pane {
-                border: 1px solid #e9ecef;
-                border-radius: 10px;
-                background: #ffffff;
-            }
-            QTabBar::tab {
-                background: #f1f3f5;
-                color: #868e96;
-                padding: 8px 18px;
-                border: none;
-                border-radius: 8px 8px 0 0;
-                margin-right: 4px;
-            }
-            QTabBar::tab:selected {
-                background: #ffffff;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-bottom: none;
-            }
-            QTabBar::tab:hover {
-                background: #e9ecef;
-                color: #495057;
-            }
-
-            /* ===== 按钮 ===== */
-            QPushButton {
-                background: #f1f3f5;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px 16px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background: #e9ecef;
-                border-color: #dee2e6;
-            }
-            QPushButton:pressed {
-                background: #dee2e6;
-            }
-
-            /* ===== 输入框 ===== */
-            QLineEdit {
-                background: #f8f9fa;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px 10px;
-                font-size: 13px;
-            }
-            QLineEdit:focus {
-                border-color: #74c0fc;
-                background: #ffffff;
-            }
-
-            /* ===== 分割器 ===== */
-            QSplitter::handle {
-                background: #e9ecef;
-            }
-            QSplitter::handle:horizontal {
-                width: 2px;
-            }
-
-            /* ===== 标签 ===== */
-            QLabel {
-                color: #212529;
-            }
-        """)
-
     # ---- 项目操作 ----
 
     def _new_project(self):
+        logger.info("打开新建项目对话框")
         dlg = NewProjectDialog(self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
+            logger.debug("新建项目对话框取消")
             return
         data = dlg.get_data()
+        logger.info(f"创建项目: name={data['name']}, path={data['path']}")
         if not data["name"] or not data["path"]:
             QMessageBox.warning(self, "错误", "项目名称和路径不能为空")
             return
@@ -598,13 +445,18 @@ class MainWindow(QMainWindow):
             project.settings.description = data["description"]
             project.save_settings()
             self._load_project(project)
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"创建项目失败: {e}")
+            logger.info(f"项目创建成功: {project.root}")
+        except Exception:
+            log_exception(logger, "创建项目失败")
+            QMessageBox.critical(self, "错误", f"创建项目失败")
 
     def _open_project(self):
+        logger.info("打开项目文件夹对话框")
         path = QFileDialog.getExistingDirectory(self, "打开项目文件夹")
         if not path:
+            logger.debug("打开项目对话框取消")
             return
+        logger.info(f"尝试打开项目: {path}")
         project = Project.open(Path(path))
         if project is None:
             reply = QMessageBox.question(
@@ -614,8 +466,10 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
+                logger.info(f"目录不存在项目，创建新项目: {path}")
                 project = Project.create(Path(path))
             else:
+                logger.debug("用户取消创建新项目")
                 return
         self._load_project(project)
 
@@ -633,10 +487,15 @@ class MainWindow(QMainWindow):
                 self._load_project(project)
                 return
             except Exception as e:
-                logger = get_logger(__name__)
                 logger.warning(f"Failed to open recent project {path}: {e}")
                 config.recent_projects.pop(0)
         # 没有有效最近项目，静默跳过
+
+    def _load_project_from_path(self, path: Path):
+        """从路径加载项目（供 WelcomeWidget 调用）."""
+        project = Project.open(path)
+        if project:
+            self._load_project(project)
 
     def _load_project(self, project: Project):
         # 释放旧项目资源
@@ -650,6 +509,9 @@ class MainWindow(QMainWindow):
         self.project = project
         self.project_label.setText(f"📁 {project.name}")
 
+        # 切换到标签页视图
+        self.center_stack.setCurrentIndex(1)
+
         # 初始化知识库和分子库
         self.kb = KnowledgeBase(project.root, embedder=self.embedder)
         self.mol_db = MoleculeDatabase(project.root)
@@ -659,7 +521,7 @@ class MainWindow(QMainWindow):
         self.pdf_pipeline = PDFParserPipeline(
             llm=self.llm,
             embedder=self.embedder,
-            vlm=None,  # TODO
+            vlm=None,
             knowledge_base=self.kb,
             mol_db=self.mol_db,
         )
@@ -685,13 +547,20 @@ class MainWindow(QMainWindow):
             saved_ctx = LayeredContext.from_dict(saved_data)
             self.agent.context = saved_ctx
             self.chat_widget.clear_chat()
-            # 恢复历史消息显示（只恢复 user/assistant）
             for msg in saved_ctx._history.messages:
                 self.chat_widget._add_message(msg.role, msg.content)
 
         # 刷新 UI
         self.file_tree.set_project(project)
         self.statusbar.showMessage(f"已打开项目: {project.root}")
+
+        # 更新仪表盘
+        self.status_dashboard.set_service_status(
+            llm=self.llm is not None,
+            embed=self.embedder is not None,
+            kb=True,
+            mol_db=True,
+        )
 
         # 添加到最近项目
         config = load_global_config()
@@ -747,37 +616,38 @@ class MainWindow(QMainWindow):
     def _open_file(self, path: Path):
         path = Path(path)
         ext = path.suffix.lower()
+        logger.info(f"打开文件: {path} (类型={ext})")
 
         # 检查是否已打开
         for i in range(self.center_tabs.count()):
             widget = self.center_tabs.widget(i)
             if hasattr(widget, "file_path") and widget.file_path == path:
+                logger.debug(f"文件已在标签页 {i} 中打开，直接切换")
                 self.center_tabs.setCurrentIndex(i)
                 return
 
         if ext == ".pdf":
+            logger.debug(f"以 PDF 查看器打开: {path}")
             viewer = PDFViewer()
-            viewer.load_pdf(path)
-            self.center_tabs.addTab(viewer, f"📄 {path.name}")
-            self.center_tabs.setCurrentIndex(self.center_tabs.count() - 1)
+            viewer.load_pdf(path, project_root=self.project.root if self.project else None)
+            self._add_tab(viewer, f"📄 {path.name}")
         elif ext in {".md", ".txt", ".json", ".yaml", ".yml"}:
             self._open_text_file(path)
         else:
+            logger.warning(f"不支持的文件类型: {ext}")
             QMessageBox.information(self, "提示", f"暂不支持的文件类型: {ext}")
 
     def _open_text_file(self, path: Path):
-        # 编辑器 + 预览 分割视图
         container = QWidget()
         layout = QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
 
         editor = MarkdownEditor()
-        editor.file_path = path  # 显式设置用于后续查找
+        editor.file_path = path
         editor.load_file(path)
         preview = MarkdownPreview()
         preview.set_markdown(editor.toPlainText())
 
-        # 使用 weakref 避免潜在的循环引用
         def _update_preview():
             if editor and preview:
                 preview.set_markdown(editor.toPlainText())
@@ -832,22 +702,18 @@ class MainWindow(QMainWindow):
                 shutil.copy2(src, dst)
                 self.project.add_file(dst)
                 imported.append(src.name)
-                # 加入 TODO 队列
                 self.todo_manager.add_file(src.name, f"raw/{src.name}")
             except Exception as e:
                 failed.append(f"{src.name}: {e}")
 
-        # 刷新文件树
         self.file_tree.set_project(self.project)
 
         msg = f"成功导入 {len(imported)} 个文件到 raw/"
         if failed:
             msg += f"\n失败 {len(failed)} 个:\n" + "\n".join(failed)
         self.statusbar.showMessage(msg)
-        logger = get_logger(__name__)
         logger.info(msg)
 
-        # 自动处理（如果启用）
         if imported and self._should_auto_process():
             self._start_process_todo()
 
@@ -860,7 +726,6 @@ class MainWindow(QMainWindow):
             widget.deleteLater()
 
     def _should_auto_process(self) -> bool:
-        """检查是否自动处理导入的文件."""
         from ..core.settings import ProjectSettings
 
         settings = ProjectSettings.load(self.project.root)
@@ -891,7 +756,6 @@ class MainWindow(QMainWindow):
             self.progress_bar.hide()
             self.statusbar.showMessage("所有文件处理完成")
             self.file_tree.set_project(self.project)
-            # 启动归档 Agent 整理刚处理完的文件
             self._run_archive_agent()
 
         self.todo_manager.process_all_async(
@@ -925,7 +789,6 @@ class MainWindow(QMainWindow):
         current = self.center_tabs.currentWidget()
         if current is None:
             return
-        # 找到编辑器
         editor = None
         if hasattr(current, "findChild"):
             editor = current.findChild(MarkdownEditor)
@@ -944,9 +807,11 @@ class MainWindow(QMainWindow):
         query = self.kb_search_input.text().strip()
         if not query:
             return
+        logger.info(f"知识库搜索: query='{query}'")
         self.statusbar.showMessage(f"搜索: {query}")
         try:
             results = self.kb.hybrid_search(query, top_k=5, reranker=self.reranker)
+            logger.info(f"知识库搜索完成: 找到 {len(results)} 条结果")
             if not results:
                 self.kb_results.setText("未找到相关结果")
                 return
@@ -956,15 +821,15 @@ class MainWindow(QMainWindow):
                 lines.append(f"{i}. {text[:200]}...")
             self.kb_results.setText("\n\n".join(lines))
 
-            # 将结果加入 LLM 上下文
             context = "\n\n".join(
                 [f"[片段{i + 1}] {r['text'][:500]}" for i, r in enumerate(results)]
             )
             self.chat_widget.add_context(context)
             self.statusbar.showMessage(f"找到 {len(results)} 条结果，已加入对话上下文")
-        except Exception as e:
-            self.kb_results.setText(f"搜索出错: {e}")
-            self.statusbar.showMessage(f"搜索失败: {e}")
+        except Exception:
+            log_exception(logger, f"知识库搜索失败: query='{query}'")
+            self.kb_results.setText("搜索出错")
+            self.statusbar.showMessage("搜索失败")
 
     # ---- 其他功能 ----
 
@@ -972,14 +837,13 @@ class MainWindow(QMainWindow):
         config = load_global_config()
         dlg = SettingsDialog(config, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            self._setup_models()
-            if getattr(self, "agent", None) is not None:
-                self.agent.llm = self.llm
-            if self.kb:
-                self.kb.embedder = self.embedder
-            if self.pdf_pipeline:
-                self.pdf_pipeline.llm = self.llm
-                self.pdf_pipeline.embedder = self.embedder
+            self.statusbar.showMessage("设置已更新，正在重新加载模型...")
+            self._models_ready = False
+            worker = ModelInitWorker()
+            worker.progress.connect(self.statusbar.showMessage)
+            worker.finished_signal.connect(self._on_models_ready)
+            worker.error_signal.connect(self._on_models_error)
+            worker.start()
 
     def _toggle_chat_panel(self):
         self.right_panel.setVisible(self.toggle_chat_action.isChecked())
@@ -990,38 +854,43 @@ class MainWindow(QMainWindow):
             return
         panel = MoleculePanel()
         panel.set_database(self.mol_db)
-        self.center_tabs.addTab(panel, "🧪 分子数据库")
+        self._add_tab(panel, "🧪 分子数据库")
+
+    def _show_kb_panel(self):
+        if self.kb is None:
+            QMessageBox.warning(self, "提示", "请先打开项目")
+            return
+        panel = KnowledgeBasePanel()
+        panel.set_knowledge_base(self.kb)
+        self._add_tab(panel, "📚 知识库")
+
+    def _show_todo_panel(self):
+        if self.todo_manager is None:
+            QMessageBox.warning(self, "提示", "请先打开项目")
+            return
+        panel = TodoPanel()
+        panel.set_todo_manager(self.todo_manager)
+        panel.process_requested.connect(self._start_process_todo)
+        self._add_tab(panel, "📋 TODO")
+
+    def _show_workflow_panel(self):
+        panel = WorkflowPanel()
+        self._add_tab(panel, "🚀 工作流")
+
+    def _add_tab(self, widget: QWidget, title: str):
+        """安全添加标签页（避免重复）."""
+        # 检查是否已有相同标题的标签
+        for i in range(self.center_tabs.count()):
+            if self.center_tabs.tabText(i) == title:
+                self.center_tabs.setCurrentIndex(i)
+                return
+        self.center_tabs.addTab(widget, title)
         self.center_tabs.setCurrentIndex(self.center_tabs.count() - 1)
+        # 确保切换到标签页视图
+        self.center_stack.setCurrentIndex(1)
 
     def closeEvent(self, event):
-        # 停止后台线程
         if hasattr(self, "index_worker") and self.index_worker is not None:
             self.index_worker.terminate()
             self.index_worker.wait(3000)
-        # 保存项目对话记忆 + 自动提取结构化记忆
-        if (
-            self.project is not None
-            and hasattr(self, "agent")
-            and self.agent is not None
-        ):
-            try:
-                memory = ProjectMemory(self.project.root)
-                memory.save_dict(self.agent.context.to_dict())
-            except Exception as e:
-                logger = get_logger(__name__)
-                logger.warning(f"Failed to save conversation memory: {e}")
-            try:
-                self.agent.extract_memory()
-            except Exception as e:
-                logger = get_logger(__name__)
-                logger.warning(f"Failed to extract structured memory: {e}")
-        # 释放资源
-        if self.kb is not None:
-            self.kb.close()
-            self.kb = None
-        if self.mol_db is not None:
-            self.mol_db.close()
-            self.mol_db = None
-        if self.project:
-            self.project.save_settings()
         event.accept()

@@ -1,0 +1,182 @@
+"""欢迎首页组件."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..utils.config import load_global_config
+from .components import EmptyStateWidget
+from .theme import CardWidget, create_button, create_label
+
+
+class WelcomeWidget(QWidget):
+    """欢迎首页：展示最近项目、快捷操作和统计信息."""
+
+    open_project_requested = pyqtSignal(Path)
+    new_project_requested = pyqtSignal()
+    open_settings_requested = pyqtSignal()
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(24)
+
+        # 标题区
+        title = create_label("👋 欢迎来到 MBForge", level="header")
+        title.setStyleSheet("font-size: 28px; font-weight: 700;")
+        layout.addWidget(title)
+
+        subtitle = create_label(
+            "分子科学知识库与 AI 工作台 — 像 Obsidian 一样管理，像 Zotero 一样引用",
+            level="caption",
+        )
+        subtitle.setStyleSheet("font-size: 15px;")
+        layout.addWidget(subtitle)
+
+        layout.addSpacing(20)
+
+        # 快捷操作卡片
+        actions_card = CardWidget("快捷操作")
+        actions_layout = QHBoxLayout()
+        actions_layout.setSpacing(12)
+
+        btn_new = create_button("📝 新建项目", style="primary")
+        btn_new.clicked.connect(lambda: self.new_project_requested.emit())
+        actions_layout.addWidget(btn_new)
+
+        btn_open = create_button("📂 打开项目")
+        btn_open.clicked.connect(self._open_project)
+        actions_layout.addWidget(btn_open)
+
+        btn_settings = create_button("⚙️ 设置")
+        btn_settings.clicked.connect(lambda: self.open_settings_requested.emit())
+        actions_layout.addWidget(btn_settings)
+
+        actions_layout.addStretch()
+        actions_card.add_layout(actions_layout)
+        layout.addWidget(actions_card)
+
+        # 最近项目
+        recent_card = CardWidget("最近项目")
+        self.recent_layout = QVBoxLayout()
+        self.recent_layout.setSpacing(8)
+        self.recent_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        recent_card.add_layout(self.recent_layout)
+        layout.addWidget(recent_card)
+
+        # 统计信息
+        stats_card = CardWidget("系统状态")
+        self.stats_layout = QHBoxLayout()
+        self.stats_layout.setSpacing(20)
+        stats_card.add_layout(self.stats_layout)
+        layout.addWidget(stats_card)
+
+        layout.addStretch()
+        self._refresh_recent_projects()
+        self._refresh_stats()
+
+    def _refresh_recent_projects(self):
+        """刷新最近项目列表."""
+        # 清空旧内容
+        while self.recent_layout.count():
+            item = self.recent_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        config = load_global_config()
+        valid_projects = []
+        for path_str in config.recent_projects[:5]:
+            path = Path(path_str)
+            if path.exists():
+                valid_projects.append(path)
+
+        if not valid_projects:
+            empty = EmptyStateWidget(
+                icon="📂",
+                title="暂无最近项目",
+                subtitle="点击上方「新建项目」或「打开项目」开始",
+            )
+            self.recent_layout.addWidget(empty)
+            return
+
+        for path in valid_projects:
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(8, 8, 8, 8)
+            row_layout.setSpacing(12)
+            row.setStyleSheet("""
+                QWidget {
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                }
+                QWidget:hover {
+                    background: #e7f5ff;
+                }
+            """)
+
+            name_label = create_label(path.name, level="header")
+            row_layout.addWidget(name_label)
+
+            path_label = create_label(str(path), level="caption")
+            row_layout.addWidget(path_label, 1)
+
+            open_btn = create_button("打开", style="primary")
+            open_btn.clicked.connect(lambda checked, p=path: self.open_project_requested.emit(p))
+            row_layout.addWidget(open_btn)
+
+            self.recent_layout.addWidget(row)
+
+    def _refresh_stats(self):
+        """刷新系统状态统计."""
+        while self.stats_layout.count():
+            item = self.stats_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        stats = [
+            ("📚", "文档", "0"),
+            ("🧪", "分子", "0"),
+            ("🔍", "索引片段", "0"),
+        ]
+        for icon, label, value in stats:
+            stat_widget = QWidget()
+            stat_layout = QVBoxLayout(stat_widget)
+            stat_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            stat_layout.setSpacing(4)
+
+            icon_label = create_label(f"{icon}", level="header")
+            icon_label.setStyleSheet("font-size: 24px;")
+            stat_layout.addWidget(icon_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            val_label = create_label(value, level="header")
+            val_label.setStyleSheet("font-size: 20px; font-weight: 700;")
+            stat_layout.addWidget(val_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            name_label = create_label(label, level="caption")
+            stat_layout.addWidget(name_label, alignment=Qt.AlignmentFlag.AlignCenter)
+
+            self.stats_layout.addWidget(stat_widget)
+
+    def _open_project(self):
+        from PyQt6.QtWidgets import QFileDialog
+
+        path = QFileDialog.getExistingDirectory(self, "打开项目文件夹")
+        if path:
+            self.open_project_requested.emit(Path(path))
+
+    def refresh(self):
+        """外部调用刷新数据."""
+        self._refresh_recent_projects()
+        self._refresh_stats()

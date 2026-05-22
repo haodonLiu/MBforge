@@ -1,14 +1,19 @@
-"""PDF 查看器 — 支持大文档虚拟滚动连续加载."""
+"""PDF 查看器 — 支持大文档虚拟滚动 + 分片切片按需加载."""
 
 from __future__ import annotations
 
 import atexit
+import hashlib
+import json
+from collections import OrderedDict, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import fitz  # PyMuPDF
-from PyQt6.QtCore import QEvent, QTimer, pyqtSignal, pyqtSlot, Qt
+from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal, pyqtSlot
+
+from mbforge.utils.logger import get_logger, log_exception
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -21,7 +26,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-
 # 全局线程池，最多 4 个 worker（防止大文档渲染时过度抢占 CPU）
 _NWORKERS = min(4, max(1, __import__("os").cpu_count() or 4))
 _executor: ThreadPoolExecutor = ThreadPoolExecutor(
@@ -30,17 +34,141 @@ _executor: ThreadPoolExecutor = ThreadPoolExecutor(
 atexit.register(lambda: _executor.shutdown(wait=True))
 
 
-def _render_page_range(path: str, scale: float, indices: List[int]) -> List[tuple]:
-    """在线程池worker中渲染一组页，返回 (index, QImage) 列表。
+# ---------- 分片管理器 ----------
 
-    每个 worker 独立打开 fitz.Document，避免跨线程共享 fitz 对象。
-    QImage 被文档声明为可重入，可安全跨线程传递。
+logger = get_logger(__name__)
+
+
+class PDFSliceManager:
+    """大PDF分片管理器：将超长PDF切成多份子PDF，按需加载。
+
+    分片存储在项目目录 .mbforge/pdf_slices/<hash>/ 下：
+        part_000.pdf  (页 0-49)
+        part_001.pdf  (页 50-99)
+        ...
+        metadata.json (页尺寸等元数据)
+    """
+
+    SLICE_SIZE = 50  # 每 50 页一份
+    MIN_PAGES_TO_SLICE = 100  # 超过此页数才触发切片
+
+    def __init__(self, pdf_path: Path, project_root: Path):
+        self.pdf_path = Path(pdf_path)
+        self.project_root = Path(project_root)
+
+        # hash 基于绝对路径 + 修改时间，文件变化自动重建缓存
+        mtime = self.pdf_path.stat().st_mtime
+        hash_input = f"{self.pdf_path.resolve()}:{mtime}"
+        self.doc_hash = hashlib.md5(hash_input.encode()).hexdigest()[:16]
+        self.cache_dir = self.project_root / ".mbforge" / "pdf_slices" / self.doc_hash
+
+        self._meta: Optional[dict] = None
+        self._total_pages = 0
+        self._page_sizes: List[Tuple[float, float]] = []
+
+    def ensure_sliced(self) -> bool:
+        """检查并执行切片。返回 True 表示已就绪并启用分片模式。"""
+        logger.info(f"PDFSliceManager.ensure_sliced | pdf={self.pdf_path} | cache_dir={self.cache_dir}")
+        meta_path = self.cache_dir / "metadata.json"
+        if meta_path.exists():
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    self._meta = json.load(f)
+                # 验证源文件未变化
+                if self._meta.get("mtime") == self.pdf_path.stat().st_mtime:
+                    self._total_pages = self._meta["total_pages"]
+                    self._page_sizes = [tuple(p) for p in self._meta["page_sizes"]]
+                    return self._total_pages >= self.MIN_PAGES_TO_SLICE
+            except (json.JSONDecodeError, KeyError, OSError):
+                pass  # 缓存损坏，重新切片
+
+        return self._do_slicing()
+
+    def _do_slicing(self) -> bool:
+        """执行实际切片操作。"""
+        logger.info(f"开始切片: {self.pdf_path}")
+        doc = fitz.open(str(self.pdf_path))
+        try:
+            self._total_pages = len(doc)
+            if self._total_pages < self.MIN_PAGES_TO_SLICE:
+                return False  # 小文件不需要切片
+
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+            # 收集所有页原始尺寸（避免后续再打开完整PDF）
+            self._page_sizes = []
+            for i in range(self._total_pages):
+                rect = doc[i].mediabox
+                self._page_sizes.append((rect.width, rect.height))
+
+            # 生成分片
+            num_slices = (self._total_pages + self.SLICE_SIZE - 1) // self.SLICE_SIZE
+            for s in range(num_slices):
+                start = s * self.SLICE_SIZE
+                end = min(start + self.SLICE_SIZE, self._total_pages)
+                slice_doc = fitz.open()
+                slice_doc.insert_pdf(doc, from_page=start, to_page=end - 1)
+                slice_path = self.cache_dir / f"part_{s:03d}.pdf"
+                slice_doc.save(str(slice_path))
+                slice_doc.close()
+
+            # 保存 metadata
+            self._meta = {
+                "source": str(self.pdf_path.resolve()),
+                "mtime": self.pdf_path.stat().st_mtime,
+                "slice_size": self.SLICE_SIZE,
+                "total_pages": self._total_pages,
+                "page_sizes": self._page_sizes,
+            }
+            with open(self.cache_dir / "metadata.json", "w", encoding="utf-8") as f:
+                json.dump(self._meta, f, ensure_ascii=False)
+
+            logger.info(f"切片完成: {self.pdf_path} | {num_slices} 个分片 | 总页数={self._total_pages}")
+            return True
+        except Exception:
+            log_exception(logger, f"切片失败: {self.pdf_path}")
+            return False
+        finally:
+            doc.close()
+
+    @property
+    def total_pages(self) -> int:
+        return self._total_pages
+
+    @property
+    def page_sizes(self) -> List[Tuple[float, float]]:
+        return self._page_sizes
+
+    def get_slice_path(self, global_page: int) -> Path:
+        """获取指定全局页码所在的分片文件路径。"""
+        slice_idx = global_page // self.SLICE_SIZE
+        return self.cache_dir / f"part_{slice_idx:03d}.pdf"
+
+    def get_local_index(self, global_page: int) -> int:
+        """将全局页码映射为分片内局部页码。"""
+        return global_page % self.SLICE_SIZE
+
+
+# ---------- Worker 函数 ----------
+
+def _render_page_batch(
+    path: str, scale: float, page_items: List[Tuple[int, int]]
+) -> List[Tuple[int, QImage]]:
+    """从 PDF 文件批量渲染页面。
+
+    Args:
+        path: PDF 文件路径（原始PDF或分片PDF）
+        scale: 缩放比例
+        page_items: [(doc_index, global_index), ...]，doc_index 为文件内页码
+
+    Returns:
+        [(global_index, QImage), ...]
     """
     results = []
     doc = fitz.open(path)
     try:
-        for idx in indices:
-            page = doc[idx]
+        for doc_idx, global_idx in page_items:
+            page = doc[doc_idx]
             mat = fitz.Matrix(scale, scale)
             pix = page.get_pixmap(matrix=mat)
             img = QImage(
@@ -50,41 +178,47 @@ def _render_page_range(path: str, scale: float, indices: List[int]) -> List[tupl
                 pix.stride,
                 QImage.Format.Format_RGB888,
             )
-            results.append((idx, img))
+            results.append((global_idx, img))
     finally:
         doc.close()
     return results
 
 
+# ---------- PDF 查看器 ----------
+
 class PDFViewer(QWidget):
-    """基于 PyMuPDF 的 PDF 查看器（虚拟滚动连续模式）."""
+    """基于 PyMuPDF 的 PDF 查看器（虚拟滚动连续模式 + 大文件分片）."""
+
+    logger = get_logger(__name__ + ".PDFViewer")
 
     page_changed = pyqtSignal(int, int)  # current, total
     _pages_done = pyqtSignal(list)  # 内部信号，在主线程触发 _on_pages_ready
 
     # 虚拟滚动缓冲：视口上下各额外渲染 N 页
     BUFFER_PAGES = 5
+    MAX_CACHE_PAGES = 20  # 内存 LRU 缓存上限
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.doc: Optional[fitz.Document] = None
         self._doc_path: Optional[str] = None
+        self._slice_manager: Optional[PDFSliceManager] = None
+        self._use_slices: bool = False
         self.current_page = 0
         self._scale = 1.5
 
         # 虚拟滚动状态
         self._continuous_mode = True
         self._virtual_container: Optional[QWidget] = None
-        self._page_heights: List[int] = []  # 每页渲染高度（pt * scale）
-        self._page_widths: List[int] = []  # 每页渲染宽度
-        self._page_cache: Dict[int, QPixmap] = {}  # index -> rendered pixmap
-        self._visible_widgets: Dict[
-            int, QWidget
-        ] = {}  # 当前显示的 index -> (num_label, img_label)
-        self._pending_indices: set = set()  # 正在后台渲染的索引
-        self._all_indices_rendered: bool = False  # 是否全部渲染完成
+        self._page_heights: List[int] = []
+        self._page_widths: List[int] = []
+        self._page_cache: OrderedDict[int, QPixmap] = OrderedDict()
+        self._visible_widgets: OrderedDict[
+            int, Tuple[QLabel, QLabel]
+        ] = OrderedDict()
+        self._pending_indices: set = set()
+        self._all_indices_rendered: bool = False
 
-        # 后台线程
         self._rendered_count = 0
         self._total_pages = 0
 
@@ -151,79 +285,109 @@ class PDFViewer(QWidget):
 
         # ---- 滚动区域 ----
         self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
+        # 注意：连续模式下 _virtual_container 没有 layout，子 widget 手动定位，
+        # 因此 widgetResizable 必须为 False，否则 QScrollArea 会自动 resize widget
+        # 导致子 widget 位置被覆盖或 clipping 异常。
+        self.scroll.setWidgetResizable(False)
         self.scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.scroll.setStyleSheet(
             "background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 10px;"
         )
         self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.scroll.verticalScrollBar().valueChanged.connect(self._on_scroll)
-        self.scroll.viewport().installEventFilter(self)  # 监听 viewport resize
+        self.scroll.viewport().installEventFilter(self)
 
-        # 单页模式
         self.single_label: Optional[QLabel] = None
-
         self.scroll.setWidget(self.single_label)
         layout.addWidget(self.scroll, 1)
 
-        # 多线程渲染信号连接
         self._pages_done.connect(
             self._on_pages_ready, Qt.ConnectionType.QueuedConnection
         )
 
-        self._page_height_approx = 800  # 估算页高，后续精确
-
     def _stop_background(self):
-        """通过清空 pending 集合取消在途渲染任务（结果会被丢弃）。"""
+        """取消在途渲染任务。"""
         self._pending_indices.clear()
 
     def _toggle_mode(self):
         self._continuous_mode = not self._continuous_mode
+        self.logger.info(f"_toggle_mode | continuous={self._continuous_mode}")
         self.btn_mode.setText("📜 连续" if self._continuous_mode else "📄 单页")
         self._render()
 
-    def load_pdf(self, path: Path):
+    def load_pdf(self, path: Path, project_root: Optional[Path] = None):
+        """加载PDF文件。如果提供project_root且文件较大，自动启用分片模式。"""
+        self.logger.info(f"load_pdf | path={path} | project_root={project_root}")
         self._stop_background()
-        if self.doc:
-            self.doc.close()
-            self.doc = None
-        try:
+        self.close_document()
+
+        self._doc_path = str(path.resolve())
+
+        # 尝试启用分片模式
+        self._use_slices = False
+        self._slice_manager = None
+        if project_root is not None:
+            self.logger.debug("尝试启用分片模式...")
+            self._slice_manager = PDFSliceManager(path, project_root)
+            self._use_slices = self._slice_manager.ensure_sliced()
+            self.logger.info(f"分片模式={'启用' if self._use_slices else '未启用'} | 总页数={self._slice_manager.total_pages if self._slice_manager else 'N/A'}")
+
+        if self._use_slices:
+            self._total_pages = self._slice_manager.total_pages
+        else:
+            # 回退到原始模式：直接打开完整PDF
+            self.logger.debug("回退到原始模式，打开完整PDF")
             self.doc = fitz.open(str(path))
-            self._doc_path = str(path.resolve())
             self._total_pages = len(self.doc)
-            self.current_page = 0
-            self._page_cache.clear()
-            self._visible_widgets.clear()
-            self._pending_indices.clear()
-            self._all_indices_rendered = False
-            self._rendered_count = 0
+
+        self.current_page = 0
+        self._page_cache.clear()
+        self._visible_widgets.clear()
+        self._pending_indices.clear()
+        self._all_indices_rendered = False
+        self._rendered_count = 0
+
+        try:
             self._precompute_page_sizes()
+            self.logger.debug(f"预计算页尺寸完成: {self._total_pages} 页 | 总高度={self._total_height()}")
             self._render()
-        except Exception as e:
+        except Exception:
+            log_exception(self.logger, f"PDF加载失败: {path}")
             self._clear_visible_widgets()
             self.single_label = QLabel()
             self.single_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.single_label.setStyleSheet("background: #f8f9fa; border-radius: 10px;")
-            self.single_label.setText(f"无法加载 PDF: {e}")
+            self.single_label.setText(f"无法加载 PDF: 详见日志")
             self.scroll.setWidget(self.single_label)
 
     def _precompute_page_sizes(self):
-        """预先计算每页渲染尺寸（只取 mediabox，不实际渲染）。"""
+        """预先计算每页渲染尺寸。分片模式下直接读metadata，无需打开PDF。"""
         self._page_heights = []
         self._page_widths = []
-        for i in range(len(self.doc)):
-            rect = self.doc[i].mediabox
-            w = int(rect.width * self._scale)
-            h = int(rect.height * self._scale)
-            self._page_heights.append(h + 30)  # 页码标签高度
-            self._page_widths.append(w)
+
+        if self._use_slices and self._slice_manager is not None:
+            for raw_w, raw_h in self._slice_manager.page_sizes:
+                w = int(raw_w * self._scale)
+                h = int(raw_h * self._scale)
+                self._page_heights.append(h + 30)  # 页码标签高度
+                self._page_widths.append(w)
+        else:
+            for i in range(len(self.doc)):
+                rect = self.doc[i].mediabox
+                w = int(rect.width * self._scale)
+                h = int(rect.height * self._scale)
+                self._page_heights.append(h + 30)
+                self._page_widths.append(w)
 
     def _total_height(self) -> int:
         return sum(self._page_heights)
 
     def _render(self):
-        if self.doc is None:
+        if not self._use_slices and self.doc is None:
             return
+        if self._use_slices and self._slice_manager is None:
+            return
+
         self._stop_background()
         self._clear_visible_widgets()
         if self._continuous_mode:
@@ -234,26 +398,29 @@ class PDFViewer(QWidget):
 
     def _render_continuous_virtual(self):
         """虚拟滚动连续模式：建立容器，渲染首屏。"""
+        self.logger.debug("_render_continuous_virtual 开始")
         self._clear_visible_widgets()
 
-        # 建立虚拟容器（只决定滚动条范围，不承载实际子 widget）
         self._virtual_container = QWidget()
-        self._virtual_container.setMinimumSize(
-            max(self._page_widths), self._total_height()
-        )
-        self._virtual_container.setMaximumSize(
-            max(self._page_widths), self._total_height()
-        )
-        self._virtual_container.setLayout(QVBoxLayout())
-        self._virtual_container.layout().setSpacing(0)
-        self._virtual_container.layout().setContentsMargins(0, 0, 0, 0)
+        # 先 setWidget，再设置大小。QScrollArea 会根据 widget 的 size/minimumSize
+        # 计算滚动条范围。setMinimumSize 足够让 scroll area 知道总高度。
         self.scroll.setWidget(self._virtual_container)
+        container_w = max(self._page_widths) if self._page_widths else 400
+        container_h = self._total_height() if self._page_heights else 600
+        # widgetResizable=False 时 QScrollArea 使用实际尺寸计算滚动范围，
+        # 因此必须同时设置 fixedSize，否则容器尺寸为默认值导致子 widget 被裁剪。
+        self._virtual_container.setFixedSize(container_w, container_h)
+        self.logger.debug(f"虚拟容器大小: {container_w}x{container_h}")
+        # 强制背景色，避免透明导致看不清
+        self._virtual_container.setStyleSheet("background: #ffffff;")
         self.scroll.verticalScrollBar().setValue(0)
 
-        # 渲染首屏可见页（同步）
+        vp = self.scroll.viewport()
+        self.logger.debug(f"viewport 大小: {vp.width()}x{vp.height()}")
+
         self._render_visible_range()
         self.page_changed.emit(self.current_page + 1, self._total_pages)
-        # 布局完成后重新渲染：首次加载时 viewport 高度可能为 0
+        self.logger.debug(f"_render_continuous_virtual 完成 | visible_widgets={len(self._visible_widgets)}")
         QTimer.singleShot(0, self._rerender_if_needed)
 
     def _render_visible_range(self):
@@ -266,18 +433,22 @@ class PDFViewer(QWidget):
         vis_top = scroll_y
         vis_bottom = scroll_y + vp.height()
 
-        # 计算可见页索引范围
-        cum = 0
-        start_idx = 0
-        end_idx = self._total_pages - 1
-        for i, h in enumerate(self._page_heights):
-            page_top = cum
-            page_bottom = cum + h
-            if page_bottom >= vis_top and start_idx == 0:
-                start_idx = max(0, i - self.BUFFER_PAGES)
-            if page_top <= vis_bottom:
-                end_idx = min(self._total_pages - 1, i + self.BUFFER_PAGES)
-            cum += h
+        # 保底：viewport 还没布局好时（height=0），至少渲染首屏前几页
+        if vp.height() <= 0:
+            start_idx = 0
+            end_idx = min(self._total_pages - 1, self.BUFFER_PAGES)
+        else:
+            cum = 0
+            start_idx = 0
+            end_idx = self._total_pages - 1
+            for i, h in enumerate(self._page_heights):
+                page_top = cum
+                page_bottom = cum + h
+                if page_bottom >= vis_top and start_idx == 0:
+                    start_idx = max(0, i - self.BUFFER_PAGES)
+                if page_top <= vis_bottom:
+                    end_idx = min(self._total_pages - 1, i + self.BUFFER_PAGES)
+                cum += h
 
         # 回收已移出范围的页
         to_remove = [
@@ -287,7 +458,10 @@ class PDFViewer(QWidget):
         ]
         for idx in to_remove:
             w_num, w_img = self._visible_widgets.pop(idx)
+            # 先解除 parent 关系再 deleteLater，避免 parent 析构时二次释放
+            w_num.setParent(None)
             w_num.deleteLater()
+            w_img.setParent(None)
             w_img.deleteLater()
 
         # 渲染范围内缺失的页
@@ -300,37 +474,54 @@ class PDFViewer(QWidget):
                     to_render.append(i)
 
         if to_render:
-            # 批量同步渲染（Qt 不允许跨线程操作 UI，先在主线程渲染）
             for idx in to_render:
                 self._render_page_sync(idx)
 
-        # 补齐还未渲染的页面（触发后台）
         still_missing = [idx for idx in to_render if idx not in self._page_cache]
         if still_missing and not self._all_indices_rendered:
             self._start_background_render(still_missing)
 
     def _render_page_sync(self, index: int) -> bool:
         """同步渲染单页，返回是否成功。"""
-        if self.doc is None or index in self._page_cache:
+        if index in self._page_cache:
             return False
         try:
-            page = self.doc[index]
-            mat = fitz.Matrix(self._scale, self._scale)
-            pix = page.get_pixmap(matrix=mat)
-            img = QImage(
-                pix.samples,
-                pix.width,
-                pix.height,
-                pix.stride,
-                QImage.Format.Format_RGB888,
-            )
-            pm = QPixmap.fromImage(img)
-            self._page_cache[index] = pm
+            if self._use_slices and self._slice_manager is not None:
+                slice_path = str(self._slice_manager.get_slice_path(index))
+                local_idx = self._slice_manager.get_local_index(index)
+                self.logger.debug(f"渲染第 {index} 页 | 分片={slice_path} | 局部页码={local_idx}")
+                doc = fitz.open(slice_path)
+                try:
+                    page = doc[local_idx]
+                    pm = self._page_to_pixmap(page)
+                finally:
+                    doc.close()
+            else:
+                self.logger.debug(f"渲染第 {index} 页 | 原始模式")
+                page = self.doc[index]
+                pm = self._page_to_pixmap(page)
+
+            self._add_to_cache(index, pm)
             self._place_page_widget(index, pm)
             self._rendered_count += 1
+            self.logger.debug(f"第 {index} 页渲染成功")
             return True
         except Exception:
+            log_exception(self.logger, f"第 {index} 页渲染失败")
             return False
+
+    def _page_to_pixmap(self, page) -> QPixmap:
+        """将 fitz.Page 转为 QPixmap。"""
+        mat = fitz.Matrix(self._scale, self._scale)
+        pix = page.get_pixmap(matrix=mat)
+        img = QImage(
+            pix.samples,
+            pix.width,
+            pix.height,
+            pix.stride,
+            QImage.Format.Format_RGB888,
+        )
+        return QPixmap.fromImage(img)
 
     def _place_page_widget(self, index: int, pixmap: QPixmap):
         """将渲染好的 pixmap 放入虚拟容器的正确位置。"""
@@ -367,23 +558,35 @@ class PDFViewer(QWidget):
             return
         self._pending_indices.update(indices)
 
-        # 将页索引分片，每 worker 一组
-        n = min(len(indices), _NWORKERS)
-        chunk_size = max(1, len(indices) // n)
-        chunks = [
-            indices[i : i + chunk_size] for i in range(0, len(indices), chunk_size)
-        ]
+        if self._use_slices and self._slice_manager is not None:
+            # 按分片路径分组，每分片一批提交给worker
+            slice_groups: Dict[str, List[Tuple[int, int]]] = defaultdict(list)
+            for global_idx in indices:
+                slice_path = str(self._slice_manager.get_slice_path(global_idx))
+                local_idx = self._slice_manager.get_local_index(global_idx)
+                slice_groups[slice_path].append((local_idx, global_idx))
 
-        self.progress.setMaximum(self._total_pages)
-        self.progress.setVisible(True)
+            self.progress.setMaximum(len(indices))
+            self.progress.setVisible(True)
 
-        for chunk in chunks:
-            _executor.submit(
-                _render_page_range,
-                self._doc_path,
-                self._scale,
-                chunk,
-            ).add_done_callback(self._on_future_done)
+            for slice_path, items in slice_groups.items():
+                _executor.submit(
+                    _render_page_batch, slice_path, self._scale, items
+                ).add_done_callback(self._on_future_done)
+        else:
+            # 原始模式：直接按原始PDF提交
+            n = min(len(indices), _NWORKERS)
+            chunk_size = max(1, len(indices) // n)
+            chunks = [
+                indices[i : i + chunk_size] for i in range(0, len(indices), chunk_size)
+            ]
+            self.progress.setMaximum(self._total_pages)
+            self.progress.setVisible(True)
+            for chunk in chunks:
+                items = [(idx, idx) for idx in chunk]
+                _executor.submit(
+                    _render_page_batch, self._doc_path, self._scale, items
+                ).add_done_callback(self._on_future_done)
 
     def _on_future_done(self, future):
         """线程池 future 完成回调，通过信号切回主线程。"""
@@ -391,25 +594,19 @@ class PDFViewer(QWidget):
             results = future.result()
         except Exception:
             return
-        # 主线程安全调度
         self._pages_done.emit(results)
 
     @pyqtSlot(list)
     def _on_pages_ready(self, batch: List):
-        """主线程收到渲染好的页（QImage），转为 QPixmap 并放入缓存和 UI。"""
+        """主线程收到渲染好的页，转为 QPixmap 并放入缓存和 UI。"""
         if not batch:
             return
         for idx, qimage in batch:
             if idx in self._pending_indices:
                 self._pending_indices.discard(idx)
             if idx not in self._page_cache:
-                # QPixmap 必须在 GUI 线程创建
-                self._page_cache[idx] = QPixmap.fromImage(qimage)
+                self._add_to_cache(idx, QPixmap.fromImage(qimage))
                 self._rendered_count += 1
-            else:
-                # 缓存命中
-                pass
-            # 已在可见范围则直接放入 widget
             if self._virtual_container and (
                 idx in self._visible_widgets or self._is_index_visible(idx)
             ):
@@ -433,11 +630,13 @@ class PDFViewer(QWidget):
     def _on_scroll(self):
         """滚动时更新可见页。"""
         if self._continuous_mode and self._virtual_container:
+            self.logger.debug("_on_scroll")
             self._render_visible_range()
 
     def _on_viewport_resize(self):
         """窗口大小变化时重新计算可见范围。"""
         if self._continuous_mode and self._virtual_container:
+            self.logger.debug("_on_viewport_resize")
             self._render_visible_range()
 
     def _rerender_if_needed(self):
@@ -447,34 +646,59 @@ class PDFViewer(QWidget):
             and self._virtual_container
             and not self._visible_widgets
         ):
+            self.logger.debug("_rerender_if_needed | 首屏未渲染，重新渲染")
             self._render_visible_range()
 
     def _render_single(self):
         """单页模式（按需渲染，无虚拟滚动开销）。"""
+        self.logger.debug(f"_render_single | page={self.current_page}")
         self._clear_visible_widgets()
-        # 每次重建 single_label，避免 Qt setWidget 替换后 C++ 对象已删除的问题
         self.single_label = QLabel()
         self.single_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.single_label.setStyleSheet("background: #f8f9fa; border-radius: 10px;")
         self.scroll.setWidget(self.single_label)
         self.single_label.clear()
-        page = self.doc[self.current_page]
-        mat = fitz.Matrix(self._scale, self._scale)
-        pix = page.get_pixmap(matrix=mat)
-        img = QImage(
-            pix.samples, pix.width, pix.height, pix.stride, QImage.Format.Format_RGB888
-        )
-        self.single_label.setPixmap(QPixmap.fromImage(img))
-        self.single_label.setFixedSize(pix.width, pix.height)
+
+        try:
+            if self._use_slices and self._slice_manager is not None:
+                slice_path = str(self._slice_manager.get_slice_path(self.current_page))
+                local_idx = self._slice_manager.get_local_index(self.current_page)
+                doc = fitz.open(slice_path)
+                try:
+                    page = doc[local_idx]
+                    pm = self._page_to_pixmap(page)
+                finally:
+                    doc.close()
+            else:
+                page = self.doc[self.current_page]
+                pm = self._page_to_pixmap(page)
+
+            self.single_label.setPixmap(pm)
+            self.single_label.setFixedSize(pm.width(), pm.height())
+        except Exception:
+            self.single_label.setText(f"无法渲染第 {self.current_page + 1} 页")
+
         self.page_changed.emit(self.current_page + 1, self._total_pages)
+
+    def _add_to_cache(self, index: int, pixmap: QPixmap) -> None:
+        """将 pixmap 加入 LRU 缓存，超出上限时移除最旧项。"""
+        self._page_cache[index] = pixmap
+        self._page_cache.move_to_end(index)
+        while len(self._page_cache) > self.MAX_CACHE_PAGES:
+            oldest_idx, oldest_pm = self._page_cache.popitem(last=False)
+            if oldest_idx in self._visible_widgets:
+                self._page_cache[oldest_idx] = oldest_pm
+                break
 
     def _clear_visible_widgets(self):
         """清空虚拟滚动容器中的所有子 widget。"""
-        for w_num, w_img in self._visible_widgets.values():
-            w_num.deleteLater()
-            w_img.deleteLater()
+        # 不单独 deleteLater 子 widget，parent 删除时会自动级联删除。
+        # 否则 parent 的析构可能访问已释放的子对象，导致段错误/闪退。
         self._visible_widgets.clear()
         if self._virtual_container:
+            # 先从 scroll area 中安全移除，避免 setWidget() 时访问已标记删除的对象
+            if self.scroll.widget() is self._virtual_container:
+                self.scroll.takeWidget()
             self._virtual_container.deleteLater()
             self._virtual_container = None
 
@@ -489,10 +713,10 @@ class PDFViewer(QWidget):
         total = self._total_pages
         current = self.current_page + 1
         self.btn_prev.setEnabled(
-            self.doc is not None and self.current_page > 0 and not self._continuous_mode
+            self._has_document() and self.current_page > 0 and not self._continuous_mode
         )
         self.btn_next.setEnabled(
-            self.doc is not None
+            self._has_document()
             and self.current_page < total - 1
             and not self._continuous_mode
         )
@@ -500,12 +724,17 @@ class PDFViewer(QWidget):
         self.page_input.setMaximum(total)
         self.page_input.setValue(current)
 
+    def _has_document(self) -> bool:
+        """检查当前是否有可渲染的文档。"""
+        return self._use_slices or self.doc is not None
+
     def _jump_to_page_input(self):
-        if self.doc is None:
+        if not self._has_document():
             return
         page = self.page_input.value() - 1
         if 0 <= page < self._total_pages:
             self.current_page = page
+            self.logger.info(f"_jump_to_page_input | page={self.current_page}")
             if self._continuous_mode and self._virtual_container:
                 target_y = self._page_offset(page)
                 self.scroll.verticalScrollBar().setValue(target_y)
@@ -514,8 +743,9 @@ class PDFViewer(QWidget):
             self._update_toolbar()
 
     def next_page(self):
-        if self.doc and self.current_page < self._total_pages - 1:
+        if self._has_document() and self.current_page < self._total_pages - 1:
             self.current_page += 1
+            self.logger.debug(f"next_page | page={self.current_page}")
             self._update_toolbar()
             if not self._continuous_mode:
                 self._render_single()
@@ -523,8 +753,9 @@ class PDFViewer(QWidget):
                 self._scroll_to_current_page()
 
     def prev_page(self):
-        if self.doc and self.current_page > 0:
+        if self._has_document() and self.current_page > 0:
             self.current_page -= 1
+            self.logger.debug(f"prev_page | page={self.current_page}")
             self._update_toolbar()
             if not self._continuous_mode:
                 self._render_single()
@@ -533,16 +764,19 @@ class PDFViewer(QWidget):
 
     def zoom_in(self):
         self._scale *= 1.2
+        self.logger.info(f"zoom_in | scale={self._scale:.2f}")
         self._invalidate_and_reload()
 
     def zoom_out(self):
         self._scale /= 1.2
+        self.logger.info(f"zoom_out | scale={self._scale:.2f}")
         self._invalidate_and_reload()
 
     def _invalidate_and_reload(self):
         """缩放后重建所有渲染状态。"""
-        if self.doc is None:
+        if not self._has_document():
             return
+        self.logger.info("_invalidate_and_reload | 重建渲染状态")
         self._stop_background()
         self._page_cache.clear()
         self._pending_indices.clear()
@@ -555,11 +789,14 @@ class PDFViewer(QWidget):
         self._render()
 
     def close_document(self):
+        self.logger.info("close_document")
         self._stop_background()
         self._clear_visible_widgets()
         if self.doc:
             self.doc.close()
             self.doc = None
+        self._slice_manager = None
+        self._use_slices = False
         self._page_cache.clear()
         self._page_heights.clear()
         self._page_widths.clear()
@@ -568,5 +805,6 @@ class PDFViewer(QWidget):
     def eventFilter(self, obj, event):
         """拦截 scroll viewport 的 resize 事件。"""
         if obj is self.scroll.viewport() and event.type() == QEvent.Type.Resize:
+            self.logger.debug("viewport resize 事件")
             self._on_viewport_resize()
         return super().eventFilter(obj, event)

@@ -8,14 +8,13 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QHeaderView,
     QMenu,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from ..core.mol_database import MoleculeDatabase, MoleculeRecord
 from .dialogs import MoleculeInfoDialog
+from .theme import create_table
 
 
 class MoleculePanel(QWidget):
@@ -32,43 +31,12 @@ class MoleculePanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["SMILES", "名称", "活性", "类型", "来源"])
+        self.table = create_table(["SMILES", "名称", "活性", "类型", "来源"], parent=self)
         self.table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
         )
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
-        self.table.setStyleSheet("""
-            QTableWidget {
-                background: #ffffff;
-                color: #212529;
-                gridline-color: #e9ecef;
-                border: 1px solid #e9ecef;
-                border-radius: 10px;
-                outline: none;
-            }
-            QHeaderView::section {
-                background: #f8f9fa;
-                color: #495057;
-                padding: 8px 12px;
-                border: 1px solid #e9ecef;
-                font-weight: 600;
-            }
-            QTableWidget::item {
-                padding: 6px 10px;
-            }
-            QTableWidget::item:selected {
-                background: #e7f5ff;
-                color: #1971c2;
-            }
-            QTableWidget::item:hover {
-                background: #f8f9fa;
-            }
-        """)
         layout.addWidget(self.table)
 
     def set_database(self, mol_db: MoleculeDatabase):
@@ -82,6 +50,8 @@ class MoleculePanel(QWidget):
         records = self.mol_db.list_all(limit=500)
         self.table.setRowCount(len(records))
         for i, rec in enumerate(records):
+            from PyQt6.QtWidgets import QTableWidgetItem
+
             self.table.setItem(i, 0, QTableWidgetItem(rec.smiles))
             self.table.setItem(i, 1, QTableWidgetItem(rec.name))
             act_text = (

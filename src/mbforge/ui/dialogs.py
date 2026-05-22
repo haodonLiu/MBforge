@@ -5,26 +5,25 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
-    QLabel,
-    QLineEdit,
     QPushButton,
+    QSpinBox,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
-    QComboBox,
-    QSpinBox,
-    QDoubleSpinBox,
-    QTabWidget,
 )
 
-from ..utils.config import AppConfig, ModelConfig, EmbedConfig, RerankConfig, VLMConfig
+from ..utils.config import AppConfig, EmbedConfig, ModelConfig, RerankConfig, VLMConfig
+from .components import InfoRow
+from .theme import ThemeManager, create_input
 
 
 class NewProjectDialog(QDialog):
@@ -34,54 +33,18 @@ class NewProjectDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("新建项目")
         self.setMinimumWidth(500)
-        self.setStyleSheet("""
-            QDialog {
-                background: #ffffff;
-            }
-            QLabel {
-                color: #212529;
-            }
-            QLineEdit {
-                background: #f8f9fa;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px 10px;
-            }
-            QLineEdit:focus {
-                border-color: #74c0fc;
-            }
-            QTextEdit {
-                background: #f8f9fa;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px 10px;
-            }
-            QPushButton {
-                background: #f1f3f5;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px 16px;
-            }
-            QPushButton:hover {
-                background: #e9ecef;
-            }
-        """)
+        ThemeManager.apply_dialog(self)
         self._setup_ui()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
         form = QFormLayout()
-        self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("项目名称")
+        self.name_edit = create_input(placeholder="项目名称")
         form.addRow("名称:", self.name_edit)
 
         path_layout = QHBoxLayout()
-        self.path_edit = QLineEdit()
-        self.path_edit.setPlaceholderText("选择项目文件夹")
+        self.path_edit = create_input(placeholder="选择项目文件夹")
         self.browse_btn = QPushButton("浏览...")
         self.browse_btn.clicked.connect(self._browse)
         path_layout.addWidget(self.path_edit)
@@ -126,59 +89,14 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("设置")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
-        self.setStyleSheet("""
-            QDialog {
-                background: #ffffff;
-            }
-            QLabel {
-                color: #212529;
-            }
-            QLineEdit {
-                background: #f8f9fa;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px 10px;
-            }
-            QLineEdit:focus {
-                border-color: #74c0fc;
-            }
-            QComboBox {
-                background: #f8f9fa;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px 10px;
-            }
-            QSpinBox, QDoubleSpinBox {
-                background: #f8f9fa;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px 10px;
-            }
-            QPushButton {
-                background: #f1f3f5;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 6px 16px;
-            }
-            QPushButton:hover {
-                background: #e9ecef;
-            }
-            QTabWidget::pane {
-                border: 1px solid #e9ecef;
-                border-radius: 10px;
-                background: #ffffff;
-            }
-        """)
+        ThemeManager.apply_dialog(self)
         self._setup_ui()
         self._load_config()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("")  # 继承全局 tab 样式
 
         # LLM 标签
         self.llm_tab = QWidget()
@@ -217,14 +135,13 @@ class SettingsDialog(QDialog):
         )
         layout.addRow("Provider:", self.llm_provider)
 
-        self.llm_base_url = QLineEdit()
+        self.llm_base_url = create_input(placeholder="https://...")
         layout.addRow("Base URL:", self.llm_base_url)
 
-        self.llm_api_key = QLineEdit()
-        self.llm_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.llm_api_key = create_input(placeholder="sk-...", password=True)
         layout.addRow("API Key:", self.llm_api_key)
 
-        self.llm_model = QLineEdit()
+        self.llm_model = create_input(placeholder="模型名称")
         layout.addRow("Model:", self.llm_model)
 
         self.llm_max_tokens = QSpinBox()
@@ -243,7 +160,7 @@ class SettingsDialog(QDialog):
         self.embed_provider.addItems(["sentence_transformers", "openai", "api"])
         layout.addRow("Provider:", self.embed_provider)
 
-        self.embed_model = QLineEdit()
+        self.embed_model = create_input(placeholder="模型名称或路径")
         layout.addRow("Model:", self.embed_model)
 
         self.embed_device = QComboBox()
@@ -252,7 +169,7 @@ class SettingsDialog(QDialog):
 
     def _setup_rerank_tab(self):
         layout = QFormLayout(self.rerank_tab)
-        self.rerank_model = QLineEdit()
+        self.rerank_model = create_input(placeholder="模型名称或路径")
         layout.addRow("Model:", self.rerank_model)
 
         self.rerank_device = QComboBox()
@@ -261,14 +178,13 @@ class SettingsDialog(QDialog):
 
     def _setup_vlm_tab(self):
         layout = QFormLayout(self.vlm_tab)
-        self.vlm_base_url = QLineEdit()
+        self.vlm_base_url = create_input(placeholder="https://...")
         layout.addRow("Base URL:", self.vlm_base_url)
 
-        self.vlm_api_key = QLineEdit()
-        self.vlm_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.vlm_api_key = create_input(placeholder="sk-...", password=True)
         layout.addRow("API Key:", self.vlm_api_key)
 
-        self.vlm_model = QLineEdit()
+        self.vlm_model = create_input(placeholder="模型名称")
         layout.addRow("Model:", self.vlm_model)
 
     def _load_config(self):
@@ -328,14 +244,12 @@ class MoleculeInfoDialog(QDialog):
         self.record = record
         self.setWindowTitle(f"分子详情 - {record.name or record.smiles[:30]}")
         self.setMinimumWidth(500)
-        self.setStyleSheet("""
-            QDialog { background: #ffffff; }
-            QLabel { color: #212529; }
-        """)
+        ThemeManager.apply_dialog(self)
         self._setup_ui()
 
     def _setup_ui(self):
         import html
+
         from .mol_renderer import MoleculeImageWidget
 
         layout = QVBoxLayout(self)
@@ -346,21 +260,24 @@ class MoleculeInfoDialog(QDialog):
         layout.addWidget(img_widget)
 
         # 详细信息
-        text = (
-            f"<b>SMILES:</b> <code>{html.escape(rec.smiles)}</code><br>"
-            f"<b>名称:</b> {html.escape(rec.name or '-')}<br>"
-            f"<b>活性:</b> {rec.activity if rec.activity is not None else '-'} "
-            f"{html.escape(rec.activity_type)} {html.escape(rec.units)}<br>"
-            f"<b>来源:</b> {html.escape(rec.source_doc or '-')}<br>"
-            f"<b>性质:</b> {html.escape(str(rec.properties))}<br>"
-            f"<b>标签:</b> {html.escape(', '.join(rec.tags) or '-')}<br>"
-            f"<b>备注:</b> {html.escape(rec.notes or '-')}<br>"
-        )
-        label = QLabel(text)
-        label.setTextFormat(Qt.TextFormat.RichText)
-        label.setWordWrap(True)
-        label.setStyleSheet("padding: 8px; font-size: 13px;")
-        layout.addWidget(label)
+        info_container = QWidget()
+        info_layout = QVBoxLayout(info_container)
+        info_layout.setSpacing(4)
+
+        fields = [
+            ("SMILES", html.escape(rec.smiles)),
+            ("名称", html.escape(rec.name or "-")),
+            ("活性", f"{rec.activity} {rec.units}" if rec.activity is not None else "-"),
+            ("活性类型", rec.activity_type or "-"),
+            ("来源", html.escape(rec.source_doc or "-")),
+            ("性质", html.escape(str(rec.properties))),
+            ("标签", ", ".join(rec.tags) or "-"),
+            ("备注", html.escape(rec.notes or "-")),
+        ]
+        for key, value in fields:
+            info_layout.addWidget(InfoRow(key, value))
+
+        layout.addWidget(info_container)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         buttons.accepted.connect(self.accept)

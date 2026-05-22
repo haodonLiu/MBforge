@@ -1,63 +1,313 @@
-"""LLM 对话框组件（集成 Agent 框架）."""
+"""LLM 对话框组件（集成 Agent 框架，支持 Markdown 渲染）."""
 
 from __future__ import annotations
 
 from typing import Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal, QThread
-from PyQt6.QtGui import QTextCursor
+import markdown
+from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtWebEngineCore import QWebEngineSettings
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
-    QPushButton,
     QScrollArea,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
-    QFrame,
 )
 
 from ..agent.agent import ProjectAgent
-from ..utils.logger import get_logger
+from ..utils.logger import get_logger, log_exception
+from .theme import (
+    COLOR_BG_SECONDARY,
+    COLOR_BG_TERTIARY,
+    COLOR_BORDER,
+    COLOR_BORDER_FOCUS,
+    COLOR_PRIMARY,
+    COLOR_TEXT_MAIN,
+    COLOR_TEXT_SECONDARY,
+    RADIUS_DEFAULT,
+    RADIUS_LARGE,
+    create_button,
+    create_input,
+    create_label,
+)
 
 logger = get_logger(__name__)
 
 
 class ChatMessage(QWidget):
-    """单条消息气泡."""
+    """单条消息气泡，支持 Markdown 渲染."""
 
     def __init__(self, role: str, content: str, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.role = role
+        self._renderer = ChatMessageRenderer()
+        self._setup_ui()
+        self.set_content(content)
+
+    def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(4)
 
-        header = QLabel(f"<b>{'🤖 AI' if role == 'assistant' else '🧑 用户'}</b>")
-        header.setStyleSheet(
-            "color: #1971c2; font-size: 13px;"
-            if role == "assistant"
-            else "color: #495057; font-size: 13px;"
-        )
-        layout.addWidget(header)
+        is_user = self.role == "user"
+        header_text = "🧑 用户" if is_user else "🤖 AI"
+        header_color = COLOR_TEXT_SECONDARY if is_user else COLOR_PRIMARY
 
-        self.body = QTextEdit()
-        self.body.setReadOnly(True)
-        self.body.setPlainText(content)
-        self.body.setMaximumHeight(400)
-        self.body.setStyleSheet("""
-            QTextEdit {
-                background: #f1f3f5;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                padding: 12px;
-                border-radius: 12px;
-                font-size: 14px;
-                line-height: 1.6;
-            }
+        self.header = QLabel(f"<b>{header_text}</b>")
+        self.header.setStyleSheet(f"color: {header_color}; font-size: 13px;")
+        layout.addWidget(self.header)
+
+        # 消息内容容器（带背景色圆角）
+        self.body_container = QFrame()
+        bg_color = COLOR_BG_TERTIARY if is_user else COLOR_BG_SECONDARY
+        self.body_container.setStyleSheet(f"""
+            QFrame {{
+                background: {bg_color};
+                border: 1px solid {COLOR_BORDER};
+                border-radius: {RADIUS_LARGE};
+            }}
         """)
-        layout.addWidget(self.body)
+        body_layout = QVBoxLayout(self.body_container)
+        body_layout.setContentsMargins(12, 10, 12, 10)
+        body_layout.setSpacing(0)
 
+        # 使用 WebEngine 渲染 Markdown
+        self.body = QWebEngineView()
+        self.body.setMinimumHeight(40)
+        self.body.setMaximumHeight(600)
+        self.body.setStyleSheet("background: transparent; border: none;")
+        settings = self.body.settings()
+        if settings is not None:
+            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, False)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
+        body_layout.addWidget(self.body)
+
+        layout.addWidget(self.body_container)
+
+    def set_content(self, content: str) -> None:
+        """设置消息内容（Markdown 格式）."""
+        html = self._renderer.render(content)
+        self.body.setHtml(html)
+        # 自适应高度：通过 JS 获取内容高度
+        self.body.page().runJavaScript(
+            "document.body.scrollHeight",
+            lambda h: self._adjust_height(h),
+        )
+
+    def append_content(self, content: str) -> None:
+        """追加内容（用于流式输出）."""
+        html = self._renderer.render_stream(content)
+        self.body.setHtml(html)
+        self.body.page().runJavaScript(
+            "document.body.scrollHeight",
+            lambda h: self._adjust_height(h),
+        )
+
+    def _adjust_height(self, content_height: int) -> None:
+        """根据内容高度调整 WebView 高度."""
+        if content_height and content_height > 0:
+            new_height = min(content_height + 24, 600)
+            self.body.setMinimumHeight(new_height)
+            self.body.setMaximumHeight(new_height)
+
+
+# ---------- Markdown 渲染器 ----------
+
+class ChatMessageRenderer:
+    """聊天消息 Markdown → HTML 渲染器."""
+
+    def __init__(self):
+        self._md = markdown.Markdown(
+            extensions=[
+                "tables",
+                "fenced_code",
+                "toc",
+                "nl2br",
+            ]
+        )
+
+    def render(self, text: str) -> str:
+        """将 Markdown 文本渲染为完整 HTML."""
+        self._md.reset()
+        body_html = self._md.convert(text)
+        return self._wrap_html(body_html)
+
+    def render_stream(self, text: str) -> str:
+        """流式渲染：未闭合的代码块需要特殊处理."""
+        # 简单处理：如果文本以 ``` 结尾但没有闭合，补一个临时代码块
+        processed = text
+        code_fence_count = processed.count("```")
+        if code_fence_count % 2 == 1:
+            processed = processed + "\n```"
+        self._md.reset()
+        body_html = self._md.convert(processed)
+        return self._wrap_html(body_html)
+
+    def _wrap_html(self, body: str) -> str:
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+    body {{
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.7;
+        color: {COLOR_TEXT_MAIN};
+        background: transparent;
+        padding: 0;
+        margin: 0;
+        word-wrap: break-word;
+    }}
+    h1, h2, h3, h4, h5, h6 {{
+        margin-top: 16px;
+        margin-bottom: 10px;
+        font-weight: 600;
+    }}
+    h1 {{ font-size: 20px; border-bottom: 1px solid {COLOR_BORDER}; padding-bottom: 6px; }}
+    h2 {{ font-size: 17px; border-bottom: 1px solid {COLOR_BORDER}; padding-bottom: 5px; }}
+    h3 {{ font-size: 15px; }}
+    code {{
+        background: {COLOR_BG_TERTIARY};
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: "Consolas", "Monaco", "Courier New", monospace;
+        font-size: 0.9em;
+        color: #c2255c;
+    }}
+    pre {{
+        background: {COLOR_BG_SECONDARY};
+        padding: 12px;
+        border-radius: {RADIUS_DEFAULT};
+        overflow-x: auto;
+        border: 1px solid {COLOR_BORDER};
+        margin: 8px 0;
+    }}
+    pre code {{
+        background: none;
+        padding: 0;
+        color: {COLOR_TEXT_MAIN};
+        font-size: 13px;
+        line-height: 1.5;
+    }}
+    table {{
+        border-collapse: collapse;
+        width: 100%;
+        margin: 10px 0;
+        border-radius: {RADIUS_DEFAULT};
+        overflow: hidden;
+        border: 1px solid {COLOR_BORDER};
+        font-size: 13px;
+    }}
+    th, td {{
+        border: 1px solid {COLOR_BORDER};
+        padding: 8px 10px;
+        text-align: left;
+    }}
+    th {{ background: {COLOR_BG_SECONDARY}; font-weight: 600; }}
+    tr:nth-child(even) {{ background: {COLOR_BG_SECONDARY}; }}
+    blockquote {{
+        border-left: 3px solid {COLOR_BORDER_FOCUS};
+        margin: 8px 0;
+        padding: 8px 14px;
+        background: {COLOR_BG_SECONDARY};
+        border-radius: 0 {RADIUS_DEFAULT} {RADIUS_DEFAULT} 0;
+    }}
+    a {{ color: {COLOR_PRIMARY}; text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+    ul, ol {{ padding-left: 20px; margin: 6px 0; }}
+    li {{ margin: 3px 0; }}
+    p {{ margin: 6px 0; }}
+    hr {{ border: none; border-top: 1px solid {COLOR_BORDER}; margin: 12px 0; }}
+</style>
+</head>
+<body>{body}</body>
+</html>"""
+
+
+# ---------- 消息气泡组件 ----------
+
+class ChatMessage(QWidget):
+    """单条消息气泡，支持 Markdown 渲染."""
+
+    def __init__(self, role: str, content: str, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.role = role
+        self._renderer = ChatMessageRenderer()
+        self._setup_ui()
+        self.set_content(content)
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(4)
+
+        is_user = self.role == "user"
+        header_text = "🧑 用户" if is_user else "🤖 AI"
+        header_color = COLOR_TEXT_SECONDARY if is_user else COLOR_PRIMARY
+
+        self.header = QLabel(f"<b>{header_text}</b>")
+        self.header.setStyleSheet(f"color: {header_color}; font-size: 13px;")
+        layout.addWidget(self.header)
+
+        # 消息内容容器（带背景色圆角）
+        self.body_container = QFrame()
+        bg_color = COLOR_BG_TERTIARY if is_user else COLOR_BG_SECONDARY
+        self.body_container.setStyleSheet(f"""
+            QFrame {{
+                background: {bg_color};
+                border: 1px solid {COLOR_BORDER};
+                border-radius: {RADIUS_LARGE};
+            }}
+        """)
+        body_layout = QVBoxLayout(self.body_container)
+        body_layout.setContentsMargins(12, 10, 12, 10)
+        body_layout.setSpacing(0)
+
+        # 使用 WebEngine 渲染 Markdown
+        self.body = QWebEngineView()
+        self.body.setMinimumHeight(40)
+        self.body.setMaximumHeight(600)
+        self.body.setStyleSheet("background: transparent; border: none;")
+        settings = self.body.settings()
+        if settings is not None:
+            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, False)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
+        body_layout.addWidget(self.body)
+
+        layout.addWidget(self.body_container)
+
+    def set_content(self, content: str) -> None:
+        """设置消息内容（Markdown 格式）."""
+        html = self._renderer.render(content)
+        self.body.setHtml(html)
+        # 自适应高度：通过 JS 获取内容高度
+        self.body.page().runJavaScript(
+            "document.body.scrollHeight",
+            lambda h: self._adjust_height(h),
+        )
+
+    def append_content(self, content: str) -> None:
+        """追加内容（用于流式输出）."""
+        html = self._renderer.render_stream(content)
+        self.body.setHtml(html)
+        self.body.page().runJavaScript(
+            "document.body.scrollHeight",
+            lambda h: self._adjust_height(h),
+        )
+
+    def _adjust_height(self, content_height: int) -> None:
+        """根据内容高度调整 WebView 高度."""
+        if content_height and content_height > 0:
+            new_height = min(content_height + 24, 600)
+            self.body.setMinimumHeight(new_height)
+            self.body.setMaximumHeight(new_height)
+
+
+# ---------- 流式输出工作线程 ----------
 
 class StreamWorker(QThread):
     """LLM 流式输出工作线程."""
@@ -87,14 +337,21 @@ class StreamWorker(QThread):
         self._stopped = True
 
 
+# ---------- 聊天面板 ----------
+
 class ChatWidget(QWidget):
-    """LLM 对话面板（Agent 集成版）."""
+    """LLM 对话面板（Agent 集成版，支持 Markdown 渲染）."""
+
+    # 最大保留消息数，超出时归档旧消息
+    MAX_MESSAGES = 50
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.agent: Optional[ProjectAgent] = None
         self._current_reply_widget: Optional[ChatMessage] = None
         self._worker: Optional[StreamWorker] = None
+        self._pending_text = ""
+        self._flush_timer: Optional[QTimer] = None
         self._setup_ui()
 
     def _setup_ui(self):
@@ -104,25 +361,11 @@ class ChatWidget(QWidget):
 
         # 顶部工具栏
         toolbar = QHBoxLayout()
-        self.title_label = QLabel("💬 AI 助手")
-        self.title_label.setStyleSheet(
-            "font-size: 14px; font-weight: bold; color: #212529;"
-        )
+        self.title_label = create_label("💬 AI 助手", level="header")
         toolbar.addWidget(self.title_label)
         toolbar.addStretch()
 
-        self.clear_btn = QPushButton("清空")
-        self.clear_btn.setStyleSheet("""
-            QPushButton {
-                background: #f1f3f5;
-                color: #495057;
-                border: 1px solid #e9ecef;
-                border-radius: 8px;
-                padding: 4px 12px;
-                font-size: 13px;
-            }
-            QPushButton:hover { background: #e9ecef; }
-        """)
+        self.clear_btn = create_button("清空", style="default")
         self.clear_btn.clicked.connect(self.clear_chat)
         toolbar.addWidget(self.clear_btn)
         layout.addLayout(toolbar)
@@ -141,78 +384,44 @@ class ChatWidget(QWidget):
 
         # 输入区域
         input_frame = QFrame()
-        input_frame.setStyleSheet("background: #f8f9fa; border-top: 1px solid #e9ecef;")
+        input_frame.setStyleSheet(f"background: {COLOR_BG_SECONDARY}; border-top: 1px solid {COLOR_BORDER};")
         input_layout = QHBoxLayout(input_frame)
         input_layout.setContentsMargins(8, 8, 8, 8)
 
-        self.input_box = QLineEdit()
-        self.input_box.setPlaceholderText("输入问题，按 Enter 发送...")
-        self.input_box.setStyleSheet("""
-            QLineEdit {
-                background: #f8f9fa;
-                color: #212529;
-                border: 1px solid #e9ecef;
-                border-radius: 10px;
-                padding: 8px 12px;
-                font-size: 14px;
-            }
-            QLineEdit:focus {
-                border-color: #74c0fc;
-                background: #ffffff;
-            }
-        """)
+        self.input_box = create_input(placeholder="输入问题，按 Enter 发送...")
         self.input_box.returnPressed.connect(self._send_message)
         input_layout.addWidget(self.input_box)
 
-        self.send_btn = QPushButton("发送")
-        self.send_btn.setStyleSheet("""
-            QPushButton {
-                background: #1971c2;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                padding: 8px 18px;
-                font-size: 14px;
-                font-weight: 500;
-            }
-            QPushButton:hover { background: #1864ab; }
-            QPushButton:pressed { background: #1565c0; }
-        """)
+        self.send_btn = create_button("发送", style="primary")
         self.send_btn.clicked.connect(self._send_message)
         input_layout.addWidget(self.send_btn)
 
-        self.stop_btn = QPushButton("停止")
-        self.stop_btn.setStyleSheet("""
-            QPushButton {
-                background: #fa5252;
-                color: white;
-                border: none;
-                border-radius: 10px;
-                padding: 8px 18px;
-                font-size: 14px;
-                font-weight: 500;
-            }
-            QPushButton:hover { background: #f03e3e; }
-        """)
+        self.stop_btn = create_button("停止", style="danger")
         self.stop_btn.setVisible(False)
         self.stop_btn.clicked.connect(self._stop_generation)
         input_layout.addWidget(self.stop_btn)
 
         layout.addWidget(input_frame)
 
-        self.setStyleSheet("background: #ffffff;")
+        # 批量刷新定时器（减少 repaint 频率）
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setInterval(80)
+        self._flush_timer.timeout.connect(self._flush_pending_text)
 
     def set_agent(self, agent: ProjectAgent):
         """设置 Agent 实例."""
+        logger.info(f"ChatWidget.set_agent | agent_type={type(agent).__name__}")
         self.agent = agent
 
     def set_system_prompt(self, prompt: str):
         """修改系统提示（会清空历史）."""
+        logger.info(f"ChatWidget.set_system_prompt | prompt_len={len(prompt)}")
         if self.agent is not None:
             self.agent.context.set_system_prompt(prompt)
 
     def add_context(self, context: str):
         """添加知识库检索结果作为上下文."""
+        logger.debug(f"ChatWidget.add_context | context_len={len(context)}")
         if self.agent is None or not context:
             return
         self.agent.context.update_project_context(context)
@@ -222,8 +431,10 @@ class ChatWidget(QWidget):
         if not text:
             return
         if self.agent is None:
+            logger.warning("ChatWidget._send_message | Agent 未初始化")
             self._add_message("assistant", "Agent 未初始化，请先打开项目。")
             return
+        logger.info(f"ChatWidget._send_message | text_len={len(text)}")
 
         self.input_box.clear()
         self._add_message("user", text)
@@ -244,43 +455,70 @@ class ChatWidget(QWidget):
             self._worker.wait(2000)
             self._worker = None
 
+        self._pending_text = ""
+        self._flush_timer.start()
+
         self._worker = StreamWorker(self.agent, text)
         self._worker.chunk_received.connect(self._on_chunk)
         self._worker.finished_signal.connect(self._on_stream_finished)
         self._worker.error_signal.connect(self._on_stream_error)
         self._worker.start()
+        logger.debug("StreamWorker 已启动")
 
     def _on_chunk(self, text: str):
-        if self._current_reply_widget:
-            cursor = self._current_reply_widget.body.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            cursor.insertText(text)
-            self._current_reply_widget.body.setTextCursor(cursor)
-            self._current_reply_widget.body.ensureCursorVisible()
-        self._scroll_to_bottom()
+        """接收流式块，累积到 pending_text 中，由定时器批量刷新."""
+        self._pending_text += text
+
+    def _flush_pending_text(self):
+        """批量刷新 UI，减少 repaint 频率."""
+        if self._current_reply_widget and self._pending_text:
+            self._current_reply_widget.append_content(self._pending_text)
+            self._scroll_to_bottom()
 
     def _on_stream_finished(self):
+        logger.info(f"ChatWidget._on_stream_finished | reply_len={len(self._pending_text)}")
+        self._flush_timer.stop()
+        # 最后一次刷新，确保所有内容都已显示
+        if self._current_reply_widget and self._pending_text:
+            self._current_reply_widget.set_content(self._pending_text)
         self._current_reply_widget = None
+        self._pending_text = ""
         self.send_btn.setVisible(True)
         self.stop_btn.setVisible(False)
         self._worker = None
 
     def _on_stream_error(self, error: str):
+        logger.error(f"ChatWidget._on_stream_error | {error}")
+        self._flush_timer.stop()
         if self._current_reply_widget:
-            self._current_reply_widget.body.setPlainText(f"[错误] {error}")
+            self._current_reply_widget.set_content(f"❌ **错误**\n\n{error}")
         self._on_stream_finished()
 
     def _stop_generation(self):
+        logger.info("ChatWidget._stop_generation | 用户停止生成")
         if self._worker:
             self._worker.stop()
             self._worker.wait(2000)
+        self._flush_timer.stop()
         self.send_btn.setVisible(True)
         self.stop_btn.setVisible(False)
 
     def _add_message(self, role: str, content: str):
+        logger.debug(f"ChatWidget._add_message | role={role} | content_len={len(content)}")
         msg = ChatMessage(role, content)
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, msg)
+        self._prune_old_messages()
         self._scroll_to_bottom()
+
+    def _prune_old_messages(self):
+        """当消息数超过上限时，移除最旧的消息以释放内存."""
+        # 计算当前消息 widget 数量（排除最后的 stretch）
+        count = self.messages_layout.count() - 1
+        while count > self.MAX_MESSAGES:
+            item = self.messages_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+            count -= 1
 
     def _scroll_to_bottom(self):
         vsb = self.scroll.verticalScrollBar()
@@ -288,6 +526,7 @@ class ChatWidget(QWidget):
             vsb.setValue(vsb.maximum())
 
     def clear_chat(self):
+        logger.info("ChatWidget.clear_chat")
         while self.messages_layout.count() > 1:
             item = self.messages_layout.takeAt(0)
             if item.widget():

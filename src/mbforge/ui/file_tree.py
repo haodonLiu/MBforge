@@ -18,7 +18,7 @@ from ..utils.constants import PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MO
 
 
 class FileTreeWidget(QTreeWidget):
-    """文件树组件."""
+    """文件树组件（支持增量更新与懒加载）."""
 
     file_selected = pyqtSignal(Path)
     file_opened = pyqtSignal(Path)
@@ -29,33 +29,17 @@ class FileTreeWidget(QTreeWidget):
         self.setHeaderLabel("项目文件")
         self.setColumnCount(1)
         self.itemDoubleClicked.connect(self._on_double_click)
+        self.itemExpanded.connect(self._on_item_expanded)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
-        self.setStyleSheet("""
-            QTreeWidget {
-                border: none;
-                background: #ffffff;
-                color: #212529;
-                outline: none;
-            }
-            QTreeWidget::item {
-                padding: 4px 2px;
-                border-radius: 6px;
-            }
-            QTreeWidget::item:selected {
-                background: #e7f5ff;
-                color: #1971c2;
-            }
-            QTreeWidget::item:hover {
-                background: #f1f3f5;
-            }
-        """)
 
     def set_project(self, project: Project):
+        """设置项目并完全刷新树."""
         self.project = project
         self.refresh()
 
     def refresh(self):
+        """完全重建文件树（适合初始加载或大幅变更）."""
         self.clear()
         if self.project is None:
             return
@@ -63,12 +47,22 @@ class FileTreeWidget(QTreeWidget):
         root_item = QTreeWidgetItem(self)
         root_item.setText(0, self.project.name)
         root_item.setData(0, Qt.ItemDataRole.UserRole, self.project.root)
-        self._populate_tree(self.project.root, root_item)
+        # 根目录预加载第一层（展开显示）
+        self._populate_tree(self.project.root, root_item, depth=0)
         root_item.setExpanded(True)
         self.addTopLevelItem(root_item)
 
-    def _populate_tree(self, dir_path: Path, parent_item: QTreeWidgetItem):
-        """递归填充目录树."""
+    def _populate_tree(
+        self, dir_path: Path, parent_item: QTreeWidgetItem, depth: int = 0, max_depth: int = 1
+    ):
+        """递归填充目录树.
+
+        Args:
+            dir_path: 当前目录路径
+            parent_item: 父树节点
+            depth: 当前深度
+            max_depth: 最大预加载深度（超出则标记为懒加载）
+        """
         try:
             dirs = []
             files = []
@@ -88,7 +82,14 @@ class FileTreeWidget(QTreeWidget):
                 item = QTreeWidgetItem(parent_item)
                 item.setText(0, d.name + "/")
                 item.setData(0, Qt.ItemDataRole.UserRole, d)
-                self._populate_tree(d, item)
+                if depth < max_depth:
+                    self._populate_tree(d, item, depth=depth + 1, max_depth=max_depth)
+                else:
+                    # 标记为未加载，展开时再填充
+                    item.setData(0, Qt.ItemDataRole.UserRole + 1, False)
+                    # 添加占位子项以显示展开箭头
+                    placeholder = QTreeWidgetItem(item)
+                    placeholder.setText(0, "加载中...")
 
             for f in files:
                 item = QTreeWidgetItem(parent_item)
@@ -96,6 +97,24 @@ class FileTreeWidget(QTreeWidget):
                 item.setData(0, Qt.ItemDataRole.UserRole, f)
         except PermissionError:
             pass
+
+    def _on_item_expanded(self, item: QTreeWidgetItem):
+        """展开节点时触发懒加载."""
+        loaded = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if loaded is not False:
+            return
+
+        path = item.data(0, Qt.ItemDataRole.UserRole)
+        if path is None or not Path(path).is_dir():
+            return
+
+        # 移除占位子项
+        while item.childCount() > 0:
+            item.removeChild(item.child(0))
+
+        # 加载实际内容
+        self._populate_tree(Path(path), item, depth=999, max_depth=999)
+        item.setData(0, Qt.ItemDataRole.UserRole + 1, True)
 
     def _on_double_click(self, item: QTreeWidgetItem, column: int):
         path = item.data(0, Qt.ItemDataRole.UserRole)

@@ -26,8 +26,16 @@ from .utils.logger import setup_logging
 
 def run_app(argv: list[str] | None = None) -> int:
     """启动 MBForge GUI."""
-    if argv is None:
+    if argv is None or not argv:
         argv = sys.argv
+    # 确保至少有一个元素（程序名），QWebEngine/Chromium 子进程需要它
+    if not argv:
+        argv = ["mbforge"]
+    # Chromium 子进程通过 argv[0] 定位主程序。如果 argv[0] 以 '-' 开头
+    # （如 python -m mbforge 时 argv[0]='-m'），会导致子进程初始化失败。
+    # 替换为 Python 解释器路径确保子进程能正确启动。
+    if argv[0].startswith("-"):
+        argv = [sys.executable, *argv]
 
     # 启用高DPI支持
     QApplication.setHighDpiScaleFactorRoundingPolicy(

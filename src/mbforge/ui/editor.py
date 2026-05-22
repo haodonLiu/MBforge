@@ -34,7 +34,6 @@ class MarkdownEditor(QPlainTextEdit):
                 border-radius: 10px;
                 padding: 12px;
                 font-size: 14px;
-                line-height: 1.6;
             }
             QPlainTextEdit:focus {
                 border-color: #74c0fc;

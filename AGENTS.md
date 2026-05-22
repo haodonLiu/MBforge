@@ -52,15 +52,22 @@ MBForge/
 │   │   ├── trajectory.py     # 工具调用轨迹
 │   │   └── archive_agent.py  # 文档检索 Agent
 │   ├── ui/                   # PyQt6 图形界面
-│   │   ├── main_window.py
-│   │   ├── chat_widget.py
-│   │   ├── pdf_viewer.py
-│   │   ├── mol_panel.py
-│   │   ├── mol_renderer.py
-│   │   ├── file_tree.py
-│   │   ├── editor.py
-│   │   ├── preview.py
-│   │   └── dialogs.py
+│   │   ├── theme.py          # 主题管理器 + 样式常量 + 工厂函数
+│   │   ├── components.py     # 可复用自定义组件
+│   │   ├── main_window.py    # 主窗口（精简版，集成新面板）
+│   │   ├── chat_widget.py    # Markdown 渲染版对话面板
+│   │   ├── dialogs.py        # 通用对话框
+│   │   ├── editor.py         # Markdown 编辑器
+│   │   ├── preview.py        # Markdown 预览
+│   │   ├── file_tree.py      # 增量更新 + 懒加载文件树
+│   │   ├── mol_panel.py      # 分子数据库面板
+│   │   ├── mol_renderer.py   # RDKit 分子渲染
+│   │   ├── pdf_viewer.py     # 虚拟滚动 PDF 查看器（LRU 缓存优化）
+│   │   ├── welcome_widget.py # 欢迎首页
+│   │   ├── kb_panel.py       # 知识库管理面板
+│   │   ├── todo_panel.py     # TODO 队列管理
+│   │   ├── workflow_panel.py # 工作流中心
+│   │   └── status_dashboard.py # 状态仪表盘
 │   ├── parser_io/            # UniParser API 集成
 │   │   ├── client.py
 │   │   ├── config.py

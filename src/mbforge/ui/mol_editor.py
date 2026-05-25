@@ -113,6 +113,7 @@ class MolEditorWidget(QWidget):
         self._selected_atom: Optional[int] = None
         self._selected_bond: Optional[int] = None
         self._pending_atom: Optional[int] = None
+        self._mouse_pos: Optional[tuple[float, float]] = None  # widget coords
         self._highlight_atoms: set[int] = set()
         self._highlight_bonds: set[int] = set()
         self._atom_colors: dict[int, tuple] = {}
@@ -445,13 +446,52 @@ class MolEditorWidget(QWidget):
         y = (self.height() - scaled.height()) // 2
         painter.drawPixmap(x, y, scaled)
 
+        # 键预览虚线（ADD_BOND 模式，从待连接原子到鼠标位置）
+        self._paint_bond_preview(painter, x, y)
+
         # 叠加层（Layer 1）
         self._paint_overlay(painter)
         painter.end()
 
+    def _paint_bond_preview(self, painter: QPainter, pixmap_x: int, pixmap_y: int):
+        """在 ADD_BOND 模式下绘制从待连接原子到鼠标的虚线预览."""
+        if self._tool != EditorTool.ADD_BOND:
+            return
+        if self._pending_atom is None or self._mouse_pos is None:
+            return
+        if self._mol is None:
+            return
+
+        try:
+            pt = self._drawer.GetDrawCoords(self._pending_atom)
+        except Exception:
+            return
+
+        # 起点：pending 原子在 widget 上的位置
+        start_wx, start_wy = self._canvas_to_widget(pt.x, pt.y)
+        # 终点：鼠标 widget 坐标
+        end_wx, end_wy = self._mouse_pos
+
+        pen = QPen(QColor(100, 140, 220, 200))
+        pen.setWidth(2)
+        pen.setDashOffset(0)
+        pen.setDashPattern([6, 4])
+        painter.setPen(pen)
+        painter.drawLine(int(start_wx), int(start_wy), int(end_wx), int(end_wy))
+
+        # 绘制端点圆点
+        painter.setBrush(QColor(100, 140, 220))
+        painter.setPen(Qt.PenStyle.NoPen)
+        from PyQt6.QtCore import QPoint
+        painter.drawEllipse(QPoint(int(start_wx), int(start_wy)), 5, 5)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_transform()
+        self.update()
+
+    def mouseMoveEvent(self, event):
+        self._mouse_pos = (event.position().x(), event.position().y())
         self.update()
 
     def mousePressEvent(self, event):

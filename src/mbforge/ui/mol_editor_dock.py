@@ -17,6 +17,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from rdkit import Chem
+from rdkit.Chem import rdMolDescriptors
+
 from ..molecules.presets import PRESETS
 from .mol_editor import EditorTool, MolEditorWidget
 from .theme import CardWidget, ThemeManager, create_button
@@ -128,6 +131,19 @@ class MolEditorDock(QDockWidget):
         """)
         layout.addWidget(self._output_label)
 
+        # 实时分子式显示
+        self._formula_label = QLabel()
+        self._formula_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._formula_label.setStyleSheet(f"""
+            QLabel {{
+                font-size: 13px;
+                font-weight: 600;
+                color: {ThemeManager.instance().palette()['text_secondary']};
+                padding: 2px 8px;
+            }}
+        """)
+        layout.addWidget(self._formula_label)
+
         self.setWidget(widget)
         self._on_theme_changed(ThemeManager.instance().mode())
 
@@ -144,12 +160,21 @@ class MolEditorDock(QDockWidget):
                 border-radius: 4px;
             }}
         """)
+        self._formula_label.setStyleSheet(f"""
+            QLabel {{
+                font-size: 13px;
+                font-weight: 600;
+                color: {ThemeManager.instance().palette()['text_secondary']};
+                padding: 2px 8px;
+            }}
+        """)
 
     def _on_load_smiles(self):
         esmiles = self._smiles_input.text().strip()
         if esmiles:
             self.editor.set_esmiles(esmiles)
             self._output_label.setText(esmiles)
+            self._update_formula(esmiles)
 
     def _on_tool_changed(self, tool: EditorTool):
         for t, btn in self._tool_buttons.items():
@@ -169,7 +194,22 @@ class MolEditorDock(QDockWidget):
 
     def _on_editor_changed(self, esmiles: str):
         self._output_label.setText(esmiles)
+        self._update_formula(esmiles)
         self.molecule_changed.emit(esmiles)
+
+    def _update_formula(self, esmiles: str):
+        """计算并更新分子式标签."""
+        try:
+            smiles_part = esmiles.split("<sep>")[0]
+            mol = Chem.MolFromSmiles(smiles_part)
+            if mol is None:
+                self._formula_label.setText("")
+                return
+            Chem.SanitizeMol(mol)
+            formula = rdMolDescriptors.CalcMolFormula(mol)
+            self._formula_label.setText(formula)
+        except Exception:
+            self._formula_label.setText("")
 
     def set_esmiles(self, esmiles: str):
         """外部设置 E-SMILES（如从 PDF 识别结果加载）。"""

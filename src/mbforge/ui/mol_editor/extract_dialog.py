@@ -24,9 +24,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..parsers.extraction_result import ExtractionResult
-from ..utils.logger import get_logger
-from .theme import ThemeManager, _p, create_button, create_input, create_label
+from ...parsers.molecule.extraction_result import ExtractionResult
+from ...utils.logger import get_logger
+from ..theme import ThemeManager, _p, create_button, create_input, create_label
 
 logger = get_logger(__name__)
 

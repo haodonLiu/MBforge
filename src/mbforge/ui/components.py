@@ -29,6 +29,7 @@ from .theme import (
     FONT_SIZE_SMALL,
     RADIUS_DEFAULT,
     RADIUS_LARGE,
+    ThemeManager,
     create_button,
     create_label,
 )
@@ -60,36 +61,23 @@ class IconButton(QPushButton):
 class StatusBadge(QLabel):
     """状态徽章标签，显示在线/离线/处理中等状态."""
 
-    STYLES = {
-        "online": ("#40c057", "#ffffff"),
-        "offline": ("#868e96", "#ffffff"),
-        "warning": ("#fab005", "#212529"),
-        "error": ("#fa5252", "#ffffff"),
-        "processing": (COLOR_PRIMARY, "#ffffff"),
-    }
-
     def __init__(self, text: str = "", status: str = "offline", parent: Optional[QWidget] = None):
         super().__init__(text, parent)
-        self.set_status(status)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet(self._build_style())
+        self.set_status(status)
 
     def set_status(self, status: str) -> None:
-        self._status = status if status in self.STYLES else "offline"
-        self.setStyleSheet(self._build_style())
-
-    def _build_style(self) -> str:
-        bg, fg = self.STYLES.get(self._status, self.STYLES["offline"])
-        return f"""
-            QLabel {{
-                background: {bg};
-                color: {fg};
-                border-radius: {RADIUS_LARGE};
-                padding: 2px 10px;
-                font-size: {FONT_SIZE_SMALL};
-                font-weight: 500;
-            }}
-        """
+        self._status = status if status in ("online", "offline", "warning", "error", "processing") else "offline"
+        p = ThemeManager.instance().palette()
+        colors = {
+            "online": (p["success"], "#ffffff"),
+            "offline": (p["text_secondary"], "#ffffff"),
+            "warning": (p["accent_amber"], "#212529"),
+            "error": (p["accent_coral"], "#ffffff"),
+            "processing": (p["brand_primary"], "#ffffff"),
+        }
+        bg, fg = colors.get(self._status, colors["offline"])
+        self.setStyleSheet(f"QLabel {{ background: {bg}; color: {fg}; padding: 2px 8px; border-radius: 10px; font-size: 11px; }}")
 
 
 class SectionHeader(QWidget):
@@ -120,38 +108,33 @@ class SectionHeader(QWidget):
 class EmptyStateWidget(QWidget):
     """空状态提示组件，用于列表/表格为空时展示."""
 
-    def __init__(
-        self,
-        icon: str = "📭",
-        title: str = "暂无数据",
-        subtitle: str = "",
-        action_text: str = "",
-        action_callback: Optional[Callable[[], None]] = None,
-        parent: Optional[QWidget] = None,
-    ):
+    def __init__(self, icon: str = "📭", title: str = "暂无数据",
+                 subtitle: str = "", action_text: str = "",
+                 action_callback: Optional[Callable[[], None]] = None,
+                 parent: Optional[QWidget] = None):
         super().__init__(parent)
+        p = ThemeManager.instance().palette()
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(12)
-
-        self.icon_label = QLabel(icon)
-        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.icon_label.setStyleSheet("font-size: 48px;")
-        layout.addWidget(self.icon_label)
-
-        self.title_label = create_label(title, level="header")
-        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.title_label)
-
+        icon_label = QLabel(icon, parent)
+        icon_label.setStyleSheet("font-size: 48px;")
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(icon_label)
+        title_label = QLabel(title, parent)
+        title_label.setStyleSheet(f"color: {p['text_primary']}; font-size: 16px; font-weight: 600;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title_label)
         if subtitle:
-            self.subtitle_label = create_label(subtitle, level="caption")
-            self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(self.subtitle_label)
-
+            sub_label = QLabel(subtitle, parent)
+            sub_label.setStyleSheet(f"color: {p['text_secondary']}; font-size: 13px;")
+            sub_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(sub_label)
         if action_text and action_callback:
-            self.action_btn = create_button(action_text, style="primary")
-            self.action_btn.clicked.connect(action_callback)
-            layout.addWidget(self.action_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+            from ..ui.theme import create_button
+            btn = create_button(action_text, style="primary")
+            btn.clicked.connect(action_callback)
+            layout.addWidget(btn)
 
 
 class LoadingSpinner(QWidget):
@@ -248,22 +231,18 @@ class ToolBar(QWidget):
 class InfoRow(QWidget):
     """键值对信息行，用于详情展示."""
 
-    def __init__(
-        self,
-        key: str,
-        value: str = "",
-        parent: Optional[QWidget] = None,
-    ):
+    def __init__(self, key: str, value: str = "", parent: Optional[QWidget] = None):
         super().__init__(parent)
+        p = ThemeManager.instance().palette()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 4, 0, 4)
         layout.setSpacing(12)
-
-        self.key_label = create_label(f"{key}:", level="caption")
+        self.key_label = QLabel(f"{key}:", parent)
+        self.key_label.setStyleSheet(f"color: {p['text_secondary']}; font-size: 12px;")
         self.key_label.setMinimumWidth(80)
         layout.addWidget(self.key_label)
-
-        self.value_label = create_label(value, level="body")
+        self.value_label = QLabel(value, parent)
+        self.value_label.setStyleSheet(f"color: {p['text_primary']}; font-size: 13px;")
         self.value_label.setWordWrap(True)
         layout.addWidget(self.value_label, 1)
 

@@ -15,8 +15,8 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
-from ..molecules.esmiles import ESmilesTag, esmiles_to_mol, mol_to_esmiles
-from .mol_editor_items import (
+from ...molecules.esmiles import ESmilesTag, esmiles_to_mol, mol_to_esmiles
+from .items import (
     AtomItem,
     BondItem,
     EditorTool,

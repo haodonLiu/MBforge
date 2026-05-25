@@ -23,9 +23,9 @@ from PyQt6.QtWidgets import (
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors
 
-from ..molecules.presets import PRESETS
-from .mol_editor import EditorTool, MolEditorWidget
-from .theme import CardWidget, ThemeManager, create_button
+from ...molecules.presets import PRESETS
+from ..theme import CardWidget, ThemeManager, create_button
+from .widget import EditorTool, MolEditorWidget
 
 
 class _ShortcutsPanel(QFrame):

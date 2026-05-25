@@ -21,7 +21,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit.Chem.Draw import rdMolDraw2D
 
-from ..molecules.esmiles import ESmilesTag
+from ...molecules.esmiles import ESmilesTag
 
 
 # ---- Editor Tools ----
@@ -513,7 +513,7 @@ class MolEditorScene(QGraphicsView):
 
     def set_esmiles(self, esmiles: str, fit_view: bool = True):
         """加载 E-SMILES，重建 Scene."""
-        from ..molecules.esmiles import esmiles_to_mol
+        from ...molecules.esmiles import esmiles_to_mol
         try:
             self._mol, self._tags = esmiles_to_mol(esmiles)
         except ValueError:
@@ -532,7 +532,7 @@ class MolEditorScene(QGraphicsView):
         """获取当前 E-SMILES。"""
         if self._mol is None:
             return ""
-        from ..molecules.esmiles import mol_to_esmiles
+        from ...molecules.esmiles import mol_to_esmiles
         return mol_to_esmiles(self._mol, self._tags)
 
     def _clear_scene(self):

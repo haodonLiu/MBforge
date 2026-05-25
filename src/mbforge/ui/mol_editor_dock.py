@@ -7,11 +7,14 @@ from typing import Optional
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QDockWidget,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -23,6 +26,106 @@ from rdkit.Chem import rdMolDescriptors
 from ..molecules.presets import PRESETS
 from .mol_editor import EditorTool, MolEditorWidget
 from .theme import CardWidget, ThemeManager, create_button
+
+
+class _ShortcutsPanel(QFrame):
+    """可折叠的快捷键面板，显示所有预设片段（按类别分组）."""
+
+    preset_selected = pyqtSignal(QListWidgetItem)
+
+    # 类别定义
+    CATEGORIES = [
+        ("环", ["苯环", "环己烷", "环戊烷", "吡啶", "噻唑", "呋喃", "哌啶", "吡咯", "吲哚"]),
+        ("官能团", ["羧基", "氨基", "甲基", "羟基", "酰胺", "磺酰基", "酯基", "酮基", "醛基", "氰基", "硝基"]),
+        ("卤素", ["氟", "氯", "溴", "碘"]),
+        ("Markush", ["R[1] 连接点", "R[1] 苯环", "R[1] 羧基", "R[1]+R[2] 苯环"]),
+    ]
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._expanded = True
+        self._setup_ui()
+        self._on_toggle()
+
+    def _setup_ui(self):
+        p = ThemeManager.instance().palette()
+
+        self.setStyleSheet(f"""
+            QFrame {{
+                background: {p['bg_card']};
+                border: 1px solid {p['border']};
+                border-radius: 6px;
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
+
+        # 标题栏（可点击展开/折叠）
+        header = QHBoxLayout()
+        self._toggle_btn = create_button("▾ 快捷键", style="default")
+        self._toggle_btn.setStyleSheet("border: none; background: transparent; padding: 2px 4px;")
+        self._toggle_btn.clicked.connect(self._on_toggle)
+        header.addWidget(self._toggle_btn)
+        header.addStretch()
+        layout.addLayout(header)
+
+        # 内容区（滚动）
+        self._content = QScrollArea()
+        self._content.setWidgetResizable(True)
+        self._content.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._content.setMaximumHeight(180)
+        self._content.setMinimumHeight(0)
+
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setSpacing(8)
+        content_layout.setContentsMargins(4, 4, 4, 4)
+
+        for cat_name, items in self.CATEGORIES:
+            cat_label = QLabel(cat_name)
+            cat_label.setStyleSheet(f"color: {p['brand_primary']}; font-weight: 600; font-size: 11px;")
+            content_layout.addWidget(cat_label)
+
+            grid = QGridLayout()
+            grid.setSpacing(3)
+            col = 0
+            row = 0
+            for item_name in items:
+                btn = create_button(item_name, style="default")
+                btn.setStyleSheet("padding: 3px 6px; font-size: 11px;")
+                # Find preset by name and store esmiles
+                esmiles = self._find_preset(item_name)
+                if esmiles:
+                    btn.clicked.connect(lambda checked, e=esmiles, n=item_name: self._on_preset(n, e))
+                btn.setToolTip(esmiles if esmiles else "")
+                grid.addWidget(btn, row, col)
+                col += 1
+                if col >= 4:
+                    col = 0
+                    row += 1
+            content_layout.addLayout(grid)
+
+        self._content.setWidget(content_widget)
+        layout.addWidget(self._content)
+
+    def _find_preset(self, name: str) -> str:
+        for p in PRESETS:
+            if p["name"] == name:
+                return p["esmiles"]
+        return ""
+
+    def _on_preset(self, name: str, esmiles: str):
+        item = QListWidgetItem(name)
+        item.setData(Qt.ItemDataRole.UserRole, esmiles)
+        self.preset_selected.emit(item)
+
+    def _on_toggle(self):
+        self._expanded = not self._expanded
+        self._toggle_btn.setText("▾ 快捷键" if self._expanded else "▸ 快捷键")
+        self._content.setMaximumHeight(180 if self._expanded else 0)
+        self._content.setMinimumHeight(0 if self._expanded else 0)
 
 
 class MolEditorDock(QDockWidget):
@@ -96,6 +199,25 @@ class MolEditorDock(QDockWidget):
         atom_card.add_layout(atom_layout)
         layout.addWidget(atom_card)
 
+        # 键类型选择
+        bond_card = CardWidget("键类型")
+        bond_layout = QHBoxLayout()
+        bond_layout.setSpacing(4)
+        self._bond_buttons: dict[str, QWidget] = {}
+        for bond in ["SINGLE", "DOUBLE", "TRIPLE", "AROMATIC"]:
+            btn = create_button(bond, style="default")
+            btn.setCheckable(True)
+            btn.setMaximumWidth(70)
+            btn.clicked.connect(lambda checked, b=bond: self._on_bond_changed(b))
+            bond_layout.addWidget(btn)
+            self._bond_buttons[bond] = btn
+
+        # 默认 SINGLE
+        self._bond_buttons["SINGLE"].setChecked(True)
+        bond_layout.addStretch()
+        bond_card.add_layout(bond_layout)
+        layout.addWidget(bond_card)
+
         # 预设片段
         preset_card = CardWidget("预设片段")
         preset_layout = QVBoxLayout()
@@ -110,6 +232,11 @@ class MolEditorDock(QDockWidget):
         preset_layout.addWidget(self._preset_list)
         preset_card.add_layout(preset_layout)
         layout.addWidget(preset_card)
+
+        # 快捷键面板（可折叠）
+        self._shortcuts_panel = _ShortcutsPanel(self)
+        self._shortcuts_panel.preset_selected.connect(self._on_preset_clicked)
+        layout.addWidget(self._shortcuts_panel)
 
         # 分子编辑器主件
         self.editor = MolEditorWidget()
@@ -185,6 +312,17 @@ class MolEditorDock(QDockWidget):
         for a, btn in self._atom_buttons.items():
             btn.setChecked(a == atom)
         self.editor.set_atom_type(atom)
+
+    def _on_bond_changed(self, bond: str):
+        for b, btn in self._bond_buttons.items():
+            btn.setChecked(b == bond)
+        order_map = {
+            "SINGLE": Chem.BondType.SINGLE,
+            "DOUBLE": Chem.BondType.DOUBLE,
+            "TRIPLE": Chem.BondType.TRIPLE,
+            "AROMATIC": Chem.BondType.AROMATIC,
+        }
+        self.editor.set_bond_order(order_map[bond])
 
     def _on_preset_clicked(self, item: QListWidgetItem):
         esmiles = item.data(Qt.ItemDataRole.UserRole)

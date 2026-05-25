@@ -170,6 +170,9 @@ class MolEditorWidget(QWidget):
     def set_atom_type(self, atom: str):
         self._atom_type = atom
 
+    def set_bond_order(self, order: Chem.BondType):
+        self._bond_order = order
+
     # ---- 内部方法 ----
 
     def _recompute_coords(self):

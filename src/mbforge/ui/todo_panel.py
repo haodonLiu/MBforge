@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 
 from ..core.todo_manager import TodoManager
 from .components import EmptyStateWidget, SectionHeader
-from .theme import CardWidget, create_label
+from .theme import CardWidget, ThemeManager, create_label
 
 
 class TodoPanel(QWidget):
@@ -67,40 +67,41 @@ class TodoPanel(QWidget):
         layout.addLayout(stats_layout)
 
         # 总体进度
+        p = ThemeManager.instance().palette()
         self.overall_progress = QProgressBar()
         self.overall_progress.setTextVisible(True)
-        self.overall_progress.setStyleSheet("""
-            QProgressBar {
-                background: #f1f3f5;
+        self.overall_progress.setStyleSheet(f"""
+            QProgressBar {{
+                background: {p['bg_base']};
                 border: none;
                 border-radius: 6px;
                 text-align: center;
                 font-size: 12px;
-            }
-            QProgressBar::chunk {
-                background: #1971c2;
+            }}
+            QProgressBar::chunk {{
+                background: {p['brand_primary']};
                 border-radius: 6px;
-            }
+            }}
         """)
         layout.addWidget(self.overall_progress)
 
         # 队列列表
         self.todo_list = QListWidget()
-        self.todo_list.setStyleSheet("""
-            QListWidget {
-                border: 1px solid #e9ecef;
+        self.todo_list.setStyleSheet(f"""
+            QListWidget {{
+                border: 1px solid {p['border']};
                 border-radius: 10px;
-                background: #ffffff;
+                background: {p['bg_card']};
                 outline: none;
-            }
-            QListWidget::item {
+            }}
+            QListWidget::item {{
                 padding: 10px 12px;
-                border-bottom: 1px solid #f1f3f5;
-            }
-            QListWidget::item:selected {
-                background: #e7f5ff;
-                color: #1971c2;
-            }
+                border-bottom: 1px solid {p['bg_base']};
+            }}
+            QListWidget::item:selected {{
+                background: {p['brand_primary']}1a;
+                color: {p['brand_primary']};
+            }}
         """)
         layout.addWidget(self.todo_list)
 
@@ -112,6 +113,7 @@ class TodoPanel(QWidget):
         )
         self.empty_state.setVisible(False)
         layout.addWidget(self.empty_state)
+        ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
 
     def set_todo_manager(self, todo_manager: TodoManager):
         """设置 TODO 管理器."""
@@ -175,3 +177,6 @@ class TodoPanel(QWidget):
         self.pending_count.setText(str(pending))
         self.processing_count.setText(str(processing))
         self.done_count.setText(str(done))
+
+    def _on_theme_changed(self, mode: str):
+        self.refresh()

@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 
 from ..core.project import Project
 from ..utils.constants import PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS
+from .theme import ThemeManager
 
 
 class FileTreeWidget(QTreeWidget):
@@ -32,6 +33,7 @@ class FileTreeWidget(QTreeWidget):
         self.itemExpanded.connect(self._on_item_expanded)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
+        ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
 
     def set_project(self, project: Project):
         """设置项目并完全刷新树."""
@@ -150,3 +152,6 @@ class FileTreeWidget(QTreeWidget):
             if path:
                 return Path(path)
         return None
+
+    def _on_theme_changed(self, mode: str):
+        self.refresh()

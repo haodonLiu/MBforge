@@ -12,8 +12,8 @@ import math
 from enum import Enum
 from typing import Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QSize
+from PyQt6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap, QPolygon
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 from rdkit import Chem
@@ -369,14 +369,15 @@ class MolEditorWidget(QWidget):
                            wx: float, wy: float,
                            tags: list[ESmilesTag]):
         """在原子旁边绘制一组标签气泡."""
-        font = QFont("Arial", 8)
+        font = QFont()
+        font.setPointSize(8)
         painter.setFont(font)
         fm = painter.fontMetrics()
 
         for i, tag in enumerate(tags):
             text = tag.group
-            tw = fm.horizontalAdvance(text)
-            th = fm.height()
+            tw = max(1, fm.horizontalAdvance(text))
+            th = max(1, fm.height())
             # 气泡背景：文字四周各留 3px padding
             bw = tw + 6
             bh = th + 4
@@ -417,7 +418,6 @@ class MolEditorWidget(QWidget):
                 (cx, cy + size),    # 下
                 (cx - size, cy),    # 左
             ]
-            from PyQt6.QtGui import QPolygon
             poly = QPolygon([QPoint(int(x), int(y)) for x, y in diamond])
 
             painter.setPen(QPen(QColor(230, 120, 30), 1))

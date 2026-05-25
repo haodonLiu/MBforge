@@ -19,7 +19,6 @@ class WorkflowCard(CardWidget):
 
     def __init__(
         self,
-        icon: str,
         name: str,
         description: str,
         status: str = "offline",
@@ -28,11 +27,8 @@ class WorkflowCard(CardWidget):
         super().__init__(title=name, parent=parent)
         self._status = status
 
-        # 图标 + 描述
+        # 描述区域
         desc_layout = QHBoxLayout()
-        icon_label = create_label(icon, level="header")
-        icon_label.setStyleSheet("font-size: 32px;")
-        desc_layout.addWidget(icon_label)
 
         info_layout = QVBoxLayout()
         desc_label = create_label(description, level="body")
@@ -75,7 +71,7 @@ class WorkflowPanel(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(12)
 
-        header = SectionHeader("🚀 工作流中心")
+        header = SectionHeader("工作流中心")
         layout.addWidget(header)
 
         desc = create_label(
@@ -90,21 +86,21 @@ class WorkflowPanel(QWidget):
         grid_layout.setSpacing(12)
 
         workflows = [
-            ("🧬", "分子生成", "基于 AI 的分子结构生成与优化", "offline"),
-            ("🎯", "分子对接", "蛋白质-配体对接预测", "offline"),
-            ("📊", "QSAR", "定量构效关系建模", "offline"),
-            ("🌊", "分子动力学", "MD 模拟与分析", "offline"),
+            ("分子生成", "基于 AI 的分子结构生成与优化", "offline"),
+            ("分子对接", "蛋白质-配体对接预测", "offline"),
+            ("QSAR", "定量构效关系建模", "offline"),
+            ("分子动力学", "MD 模拟与分析", "offline"),
         ]
 
-        for icon, name, desc_text, status in workflows:
-            card = WorkflowCard(icon, name, desc_text, status)
+        for name, desc_text, status in workflows:
+            card = WorkflowCard(name, desc_text, status)
             grid_layout.addWidget(card)
 
         layout.addWidget(grid)
 
         # 占位提示
         empty = EmptyStateWidget(
-            icon="🔧",
+            icon="⚙",
             title="工作流模块开发中",
             subtitle="当前版本为占位界面，后续将接入实际计算引擎",
         )

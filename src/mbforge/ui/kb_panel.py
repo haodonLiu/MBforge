@@ -37,7 +37,7 @@ class KnowledgeBasePanel(QWidget):
         layout.setSpacing(12)
 
         # 头部搜索
-        header = SectionHeader("📚 知识库", action_text="🔄 刷新", action_callback=self.refresh)
+        header = SectionHeader("知识库", action_text="刷新", action_callback=self.refresh)
         layout.addWidget(header)
 
         self.search_box = SearchBox(placeholder="搜索知识库片段...")
@@ -121,7 +121,6 @@ class KnowledgeBasePanel(QWidget):
 
         # 空状态
         self.empty_state = EmptyStateWidget(
-            icon="🔍",
             title="知识库为空",
             subtitle="请先索引项目文件",
         )

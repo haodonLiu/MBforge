@@ -28,7 +28,7 @@ from mbforge.utils.logger import get_logger, log_exception
 from .page_widget import PDFPageLabel
 from .renderer import _executor, _NWORKERS, page_to_pixmap
 from .slice_manager import PDFSliceManager
-from .theme import ThemeManager
+from ..theme import ThemeManager
 
 logger = get_logger(__name__)
 
@@ -81,7 +81,7 @@ class PDFViewer(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(8, 4, 8, 4)
 
-        self.btn_mode = QPushButton("📜 连续")
+        self.btn_mode = QPushButton("连续模式")
         self.btn_mode.setToolTip("切换单页/连续模式")
         self.btn_mode.clicked.connect(self._toggle_mode)
         toolbar.addWidget(self.btn_mode)
@@ -123,12 +123,12 @@ class PDFViewer(QWidget):
         self.progress.setStyleSheet("QProgressBar { border: none; }")
         toolbar.addWidget(self.progress)
 
-        btn_zoom_out = QPushButton("🔍-")
+        btn_zoom_out = QPushButton("−")
         btn_zoom_out.setToolTip("缩小")
         btn_zoom_out.clicked.connect(self.zoom_out)
         toolbar.addWidget(btn_zoom_out)
 
-        btn_zoom_in = QPushButton("🔍+")
+        btn_zoom_in = QPushButton("+")
         btn_zoom_in.setToolTip("放大")
         btn_zoom_in.clicked.connect(self.zoom_in)
         toolbar.addWidget(btn_zoom_in)
@@ -171,7 +171,7 @@ class PDFViewer(QWidget):
     def _toggle_mode(self):
         self._continuous_mode = not self._continuous_mode
         self.logger.info(f"_toggle_mode | continuous={self._continuous_mode}")
-        self.btn_mode.setText("📜 连续" if self._continuous_mode else "📄 单页")
+        self.btn_mode.setText("连续模式" if self._continuous_mode else "单页模式")
         self._render()
 
     def load_pdf(self, path: Path, project_root: Optional[Path] = None):

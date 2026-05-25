@@ -40,7 +40,7 @@ class ChatMessage(QWidget):
         layout.setSpacing(4)
 
         is_user = self.role == "user"
-        header_text = "🧑 用户" if is_user else "🤖 AI"
+        header_text = "用户" if is_user else "AI"
 
         self.header = QLabel(f"<b>{header_text}</b>")
         p = ThemeManager.instance().palette()
@@ -200,7 +200,7 @@ class ChatMessage(QWidget):
         layout.setSpacing(4)
 
         is_user = self.role == "user"
-        header_text = "🧑 用户" if is_user else "🤖 AI"
+        header_text = "用户" if is_user else "AI"
 
         self.header = QLabel(f"<b>{header_text}</b>")
         p = ThemeManager.instance().palette()
@@ -317,7 +317,7 @@ class ChatWidget(QWidget):
 
         # 顶部工具栏
         toolbar = QHBoxLayout()
-        self.title_label = create_label("💬 AI 助手", level="header")
+        self.title_label = create_label("AI 助手", level="header")
         toolbar.addWidget(self.title_label)
         toolbar.addStretch()
 

@@ -221,20 +221,6 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # 顶栏：菜单栏 + 右上角服务状态指示器
-        self.top_bar = QWidget()
-        self.top_bar.setMaximumHeight(30)
-        top_bar_layout = QHBoxLayout(self.top_bar)
-        top_bar_layout.setContentsMargins(0, 0, 8, 0)
-        top_bar_layout.setSpacing(0)
-
-        menubar = self.menuBar()
-        top_bar_layout.addWidget(menubar, 1)
-        self.service_indicator = ServiceStatusIndicator()
-        top_bar_layout.addWidget(self.service_indicator)
-        self.top_bar.setStyleSheet(f"background: {ThemeManager.instance().get_color('brand_primary_deep')};")
-        main_layout.addWidget(self.top_bar)
-
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # 左侧：文件树
@@ -252,7 +238,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.project_label)
 
         # 首页按钮
-        self.home_btn = create_button("🏠 首页", style="default")
+        self.home_btn = create_button("Home", style="default")
         self.home_btn.setStyleSheet(
             f"padding: 6px 12px; font-size: 12px; "
             f"background: {ThemeManager.instance().get_color('bg_hover')}; "
@@ -268,9 +254,9 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.file_tree)
 
         left_btn_layout = QHBoxLayout()
-        self.scan_btn = create_button("🔄 扫描")
+        self.scan_btn = create_button("扫描")
         self.scan_btn.clicked.connect(self._scan_project)
-        self.index_btn = create_button("📚 索引")
+        self.index_btn = create_button("索引")
         self.index_btn.clicked.connect(self._index_project)
         left_btn_layout.addWidget(self.scan_btn)
         left_btn_layout.addWidget(self.index_btn)
@@ -310,7 +296,7 @@ class MainWindow(QMainWindow):
         kb_layout.setContentsMargins(8, 8, 8, 8)
         kb_layout.setSpacing(4)
 
-        kb_header = create_label("🔍 知识库检索", level="header")
+        kb_header = create_label("知识库检索", level="header")
         kb_layout.addWidget(kb_header)
 
         self.kb_search_input = SearchBox(placeholder="输入查询...")
@@ -422,17 +408,46 @@ class MainWindow(QMainWindow):
         tools_menu.addAction(workflow_action)
 
     def _setup_toolbar(self):
-        """快速跳转工具栏：文献库 / 分子库 / 知识库."""
+        """快速跳转工具栏：文献库 / 分子库 / 知识库 + 服务状态指示器."""
         toolbar = QToolBar("快速跳转")
         toolbar.setMovable(True)
+        toolbar.setStyleSheet(f"""
+            QToolBar {{
+                background: {ThemeManager.instance().get_color('brand_primary_deep')};
+                border: none;
+                padding: 4px 8px;
+                spacing: 4px;
+            }}
+            QToolButton {{
+                background: transparent;
+                color: rgba(255,255,255,0.85);
+                border: none;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-size: 13px;
+            }}
+            QToolButton:hover {{
+                background: rgba(255,255,255,0.15);
+                color: #ffffff;
+            }}
+            QWidget#service_indicator {{
+                background: transparent;
+            }}
+        """)
         self.addToolBar(toolbar)
 
-        toolbar.addAction("📚 文献库", self._show_pdf_library)
-        toolbar.addAction("🧪 分子库", self._show_mol_db)
-        toolbar.addAction("🔍 知识库", self._show_kb_panel)
+        toolbar.addAction("文献库", self._show_pdf_library)
+        toolbar.addAction("分子库", self._show_mol_db)
+        toolbar.addAction("知识库", self._show_kb_panel)
         toolbar.addSeparator()
-        toolbar.addAction("📋 TODO", self._show_todo_panel)
-        toolbar.addAction("🚀 工作流", self._show_workflow_panel)
+        toolbar.addAction("TODO", self._show_todo_panel)
+        toolbar.addAction("工作流", self._show_workflow_panel)
+
+        # 服务状态指示器添加到工具栏右侧
+        toolbar.addSeparator()
+        self.service_indicator = ServiceStatusIndicator()
+        self.service_indicator.setObjectName("service_indicator")
+        toolbar.addWidget(self.service_indicator)
 
     def _trigger_chat_send(self):
         """触发 LLM 发送."""
@@ -500,7 +515,6 @@ class MainWindow(QMainWindow):
             f"border-bottom: 1px solid {p['border']}; border-radius: 0;"
             f"color: {p['text_primary']};"
         )
-        self.top_bar.setStyleSheet(f"background: {p['brand_primary_deep']};")
 
     # ---- 项目操作 ----
 
@@ -582,7 +596,7 @@ class MainWindow(QMainWindow):
             self.mol_db = None
 
         self.project = project
-        self.project_label.setText(f"📁 {project.name}")
+        self.project_label.setText(f"{project.name}")
 
         # 切换到标签页视图
         self.center_stack.setCurrentIndex(1)
@@ -708,7 +722,7 @@ class MainWindow(QMainWindow):
             logger.debug(f"以 PDF 查看器打开: {path}")
             viewer = PDFViewer()
             viewer.load_pdf(path, project_root=self.project.root if self.project else None)
-            self._add_tab(viewer, f"📄 {path.name}")
+            self._add_tab(viewer, f"{path.name}")
         elif ext in {".md", ".txt", ".json", ".yaml", ".yml"}:
             self._open_text_file(path)
         else:
@@ -738,7 +752,7 @@ class MainWindow(QMainWindow):
         splitter.setSizes([400, 400])
         layout.addWidget(splitter)
 
-        self.center_tabs.addTab(container, f"📝 {path.name}")
+        self.center_tabs.addTab(container, f"{path.name}")
         self.center_tabs.setCurrentIndex(self.center_tabs.count() - 1)
 
     def _open_external_file(self):
@@ -934,7 +948,7 @@ class MainWindow(QMainWindow):
             return
         panel = MoleculePanel()
         panel.set_database(self.mol_db)
-        self._add_tab(panel, "🧪 分子数据库")
+        self._add_tab(panel, "分子数据库")
 
     def _show_kb_panel(self):
         if self.kb is None:
@@ -942,7 +956,7 @@ class MainWindow(QMainWindow):
             return
         panel = KnowledgeBasePanel()
         panel.set_knowledge_base(self.kb)
-        self._add_tab(panel, "🔍 知识库")
+        self._add_tab(panel, "知识库")
 
     def _show_pdf_library(self):
         if self.project is None:
@@ -952,7 +966,7 @@ class MainWindow(QMainWindow):
         panel = PDFLibraryPanel()
         panel.set_project(self.project)
         panel.pdf_opened.connect(self._open_file)
-        self._add_tab(panel, "📚 文献库")
+        self._add_tab(panel, "文献库")
 
     def _show_todo_panel(self):
         if self.todo_manager is None:
@@ -961,11 +975,11 @@ class MainWindow(QMainWindow):
         panel = TodoPanel()
         panel.set_todo_manager(self.todo_manager)
         panel.process_requested.connect(self._start_process_todo)
-        self._add_tab(panel, "📋 TODO")
+        self._add_tab(panel, "TODO")
 
     def _show_workflow_panel(self):
         panel = WorkflowPanel()
-        self._add_tab(panel, "🚀 工作流")
+        self._add_tab(panel, "工作流")
 
     def _add_tab(self, widget: QWidget, title: str):
         """安全添加标签页（避免重复）."""

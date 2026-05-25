@@ -53,7 +53,7 @@ class MoleculePanel(QWidget):
         toolbar.setSpacing(6)
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("🔍 搜索名称 / SMILES / 来源...")
+        self.search_input.setPlaceholderText("搜索名称 / SMILES / 来源...")
         self.search_input.returnPressed.connect(self.refresh)
         toolbar.addWidget(self.search_input, 3)
 
@@ -69,15 +69,15 @@ class MoleculePanel(QWidget):
         self.act_max.returnPressed.connect(self.refresh)
         toolbar.addWidget(self.act_max, 1)
 
-        self.refresh_btn = create_button("🔄 刷新")
+        self.refresh_btn = create_button("刷新")
         self.refresh_btn.clicked.connect(self.refresh)
         toolbar.addWidget(self.refresh_btn)
 
-        self.import_btn = create_button("📥 导入")
+        self.import_btn = create_button("导入")
         self.import_btn.clicked.connect(self._import_csv)
         toolbar.addWidget(self.import_btn)
 
-        self.export_btn = create_button("📤 导出")
+        self.export_btn = create_button("导出")
         self.export_btn.clicked.connect(self._export_csv)
         toolbar.addWidget(self.export_btn)
 
@@ -117,7 +117,7 @@ class MoleculePanel(QWidget):
         preview_layout.setContentsMargins(8, 8, 8, 8)
         preview_layout.setSpacing(8)
 
-        preview_header = create_label("🧬 结构预览", level="header")
+        preview_header = create_label("结构预览", level="header")
         preview_layout.addWidget(preview_header)
 
         self.img_widget = MoleculeImageWidget(size=(320, 240))
@@ -280,9 +280,9 @@ class MoleculePanel(QWidget):
             return
 
         menu = QMenu(self)
-        view_action = menu.addAction("🔍 查看详情")
-        export_action = menu.addAction("📋 复制 SMILES")
-        delete_action = menu.addAction("🗑️ 删除")
+        view_action = menu.addAction("查看详情")
+        export_action = menu.addAction("复制 SMILES")
+        delete_action = menu.addAction("删除")
         action = menu.exec(self.table.mapToGlobal(position))
 
         if action == view_action:

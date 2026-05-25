@@ -46,11 +46,11 @@ class PDFLibraryPanel(QWidget):
         header_layout.setContentsMargins(0, 0, 0, 8)
         header_layout.setSpacing(8)
 
-        title = create_label("📚 文献库", level="header")
+        title = create_label("文献库", level="header")
         header_layout.addWidget(title)
         header_layout.addStretch()
 
-        self.refresh_btn = create_button("🔄 刷新", style="default")
+        self.refresh_btn = create_button("刷新", style="default")
         self.refresh_btn.clicked.connect(self.refresh)
         header_layout.addWidget(self.refresh_btn)
         layout.addWidget(header)
@@ -66,7 +66,7 @@ class PDFLibraryPanel(QWidget):
 
         # 空状态页
         self.empty_state = EmptyStateWidget(
-            icon="📚",
+            icon="📄",
             title="文献库为空",
             subtitle="请先索引项目文件",
         )
@@ -133,11 +133,11 @@ class PDFLibraryPanel(QWidget):
         detail_layout.addWidget(self.preview_text, 1)
 
         btn_layout = QHBoxLayout()
-        self.open_btn = create_button("📄 打开", style="primary")
+        self.open_btn = create_button("打开", style="primary")
         self.open_btn.clicked.connect(self._open_selected)
         btn_layout.addWidget(self.open_btn)
 
-        self.index_btn = create_button("🔍 重新索引", style="secondary")
+        self.index_btn = create_button("重新索引", style="secondary")
         self.index_btn.clicked.connect(self._reindex_selected)
         btn_layout.addWidget(self.index_btn)
         btn_layout.addStretch()

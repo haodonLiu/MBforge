@@ -455,7 +455,7 @@ class SearchBox(QLineEdit):
     def __init__(self, placeholder: str = "搜索...", parent: Optional[QWidget] = None):
         super().__init__(parent)
         p = _p()
-        self.setPlaceholderText(f"🔍 {placeholder}")
+        self.setPlaceholderText(f"{placeholder}")
         self.setStyleSheet(f"""
         QLineEdit {{
             background: {p['bg_base']};

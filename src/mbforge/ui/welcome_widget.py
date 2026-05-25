@@ -35,7 +35,7 @@ class WelcomeWidget(QWidget):
         layout.setSpacing(24)
 
         # 标题区
-        title = create_label("👋 欢迎来到 MBForge", level="header")
+        title = create_label("欢迎来到 MBForge", level="header")
         title.setStyleSheet("font-size: 28px; font-weight: 700;")
         layout.addWidget(title)
 
@@ -53,11 +53,11 @@ class WelcomeWidget(QWidget):
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(12)
 
-        btn_new = create_button("📝 新建项目", style="primary")
+        btn_new = create_button("新建项目", style="primary")
         btn_new.clicked.connect(lambda: self.new_project_requested.emit())
         actions_layout.addWidget(btn_new)
 
-        btn_open = create_button("📂 打开项目")
+        btn_open = create_button("打开项目")
         btn_open.clicked.connect(self._open_project)
         actions_layout.addWidget(btn_open)
 
@@ -113,7 +113,7 @@ class WelcomeWidget(QWidget):
 
         if not valid_projects:
             empty = EmptyStateWidget(
-                icon="📂",
+                icon="📁",
                 title="暂无最近项目",
                 subtitle="点击上方「新建项目」或「打开项目」开始",
             )
@@ -157,19 +157,15 @@ class WelcomeWidget(QWidget):
                 item.widget().deleteLater()
 
         stats = [
-            ("📚", "文档", "0"),
-            ("🧪", "分子", "0"),
-            ("🔍", "索引片段", "0"),
+            ("文档", "0"),
+            ("分子", "0"),
+            ("索引片段", "0"),
         ]
-        for icon, label, value in stats:
+        for label, value in stats:
             stat_widget = QWidget()
             stat_layout = QVBoxLayout(stat_widget)
             stat_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             stat_layout.setSpacing(4)
-
-            icon_label = create_label(f"{icon}", level="header")
-            icon_label.setStyleSheet("font-size: 24px;")
-            stat_layout.addWidget(icon_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
             val_label = create_label(value, level="header")
             val_label.setStyleSheet("font-size: 20px; font-weight: 700;")

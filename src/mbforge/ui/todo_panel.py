@@ -36,8 +36,8 @@ class TodoPanel(QWidget):
 
         # 头部
         header = SectionHeader(
-            "📋 TODO 队列",
-            action_text="▶️ 开始处理",
+            "TODO 队列",
+            action_text="开始处理",
             action_callback=lambda: self.process_requested.emit(),
         )
         layout.addWidget(header)
@@ -107,7 +107,6 @@ class TodoPanel(QWidget):
 
         # 空状态
         self.empty_state = EmptyStateWidget(
-            icon="✅",
             title="队列空空如也",
             subtitle="导入文件后将自动加入 TODO 队列",
         )
@@ -138,11 +137,11 @@ class TodoPanel(QWidget):
 
             all_items = []
             for item in processing:
-                all_items.append((item, "processing", "🔄"))
+                all_items.append((item, "processing"))
             for item in pending:
-                all_items.append((item, "pending", "⏳"))
+                all_items.append((item, "pending"))
             for item in done[-50:]:  # 只显示最近 50 个完成的
-                all_items.append((item, "done", "✅"))
+                all_items.append((item, "done"))
 
             if not all_items:
                 self.empty_state.setVisible(True)
@@ -150,9 +149,9 @@ class TodoPanel(QWidget):
             else:
                 self.empty_state.setVisible(False)
 
-            for item, status, icon in all_items:
+            for item, status in all_items:
                 filename = getattr(item, "filename", str(item))
-                list_item = QListWidgetItem(f"{icon} {filename}")
+                list_item = QListWidgetItem(filename)
                 list_item.setData(Qt.ItemDataRole.UserRole, (item, status))
                 if status == "processing":
                     list_item.setBackground(Qt.GlobalColor.lightYellow)

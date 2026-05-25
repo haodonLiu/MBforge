@@ -19,12 +19,6 @@ from PyQt6.QtWidgets import (
 )
 
 from .theme import (
-    COLOR_BG_SECONDARY,
-    COLOR_BG_TERTIARY,
-    COLOR_BORDER,
-    COLOR_PRIMARY,
-    COLOR_TEXT_MAIN,
-    COLOR_TEXT_SECONDARY,
     FONT_SIZE_DEFAULT,
     FONT_SIZE_SMALL,
     RADIUS_DEFAULT,
@@ -41,18 +35,19 @@ class IconButton(QPushButton):
     def __init__(self, icon_text: str, tooltip: str = "", parent: Optional[QWidget] = None):
         super().__init__(icon_text, parent)
         self.setToolTip(tooltip)
+        p = ThemeManager.instance().palette()
         self.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
-                color: {COLOR_TEXT_SECONDARY};
+                color: {p['text_secondary']};
                 border: none;
                 border-radius: {RADIUS_DEFAULT};
                 padding: 4px 8px;
                 font-size: {FONT_SIZE_DEFAULT};
             }}
             QPushButton:hover {{
-                background: {COLOR_BG_TERTIARY};
-                color: {COLOR_TEXT_MAIN};
+                background: {p['bg_hover']};
+                color: {p['text_primary']};
             }}
         """)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -175,16 +170,17 @@ class ProgressBar(QProgressBar):
         super().__init__(parent)
         self.setTextVisible(True)
         self.setMaximumHeight(14)
+        p = ThemeManager.instance().palette()
         self.setStyleSheet(f"""
             QProgressBar {{
-                background: {COLOR_BG_TERTIARY};
+                background: {p['bg_hover']};
                 border: none;
                 border-radius: 4px;
                 text-align: center;
                 font-size: {FONT_SIZE_SMALL};
             }}
             QProgressBar::chunk {{
-                background: {COLOR_PRIMARY};
+                background: {p['brand_primary']};
                 border-radius: 4px;
             }}
         """)
@@ -195,10 +191,11 @@ class ToolBar(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        p = ThemeManager.instance().palette()
         self.setStyleSheet(f"""
             QWidget {{
-                background: {COLOR_BG_SECONDARY};
-                border-bottom: 1px solid {COLOR_BORDER};
+                background: {p['bg_secondary']};
+                border-bottom: 1px solid {p['border']};
             }}
         """)
         self._layout = QHBoxLayout(self)
@@ -223,7 +220,8 @@ class ToolBar(QWidget):
     def add_separator(self) -> None:
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setStyleSheet(f"color: {COLOR_BORDER};")
+        p = ThemeManager.instance().palette()
+        sep.setStyleSheet(f"color: {p['border']};")
         sep.setFixedWidth(1)
         self._layout.addWidget(sep)
 

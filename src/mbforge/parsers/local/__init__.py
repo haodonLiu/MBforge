@@ -1,6 +1,6 @@
 """parsers/local — 本地 PDF 处理轨道.
 
-与 parser_io/（UniParser API）形成双轨，均输出标准 Molecule 对象。
+与 parsers/uniparser/（UniParser API）形成双轨，均输出标准 Molecule 对象。
 
 轨道：
 - PyMuPDF 文本/图片提取
@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from ..molecule_extractor import MoleculeExtractor
+from ..molecule import MoleculeExtractor
 
 __all__ = [
     "MoleculeExtractor",

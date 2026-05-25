@@ -13,7 +13,7 @@ try:
 except ImportError:
     Chem = None  # type: ignore
 
-from ..molecules.schema import Molecule
+from ...molecules.schema import Molecule
 
 
 class MoleculeExtractor:

@@ -17,8 +17,8 @@ from typing import Any
 
 import requests
 
-from ..utils.logger import get_logger
-from .base_parser import BaseDocumentParser, ParseOutput
+from ...utils.logger import get_logger
+from ..base_parser import BaseDocumentParser, ParseOutput
 
 logger = get_logger(__name__)
 

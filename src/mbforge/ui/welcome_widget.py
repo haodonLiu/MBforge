@@ -24,6 +24,7 @@ class WelcomeWidget(QWidget):
     open_project_requested = pyqtSignal(Path)
     new_project_requested = pyqtSignal()
     open_settings_requested = pyqtSignal()
+    start_services_requested = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -61,9 +62,13 @@ class WelcomeWidget(QWidget):
         btn_open.clicked.connect(self._open_project)
         actions_layout.addWidget(btn_open)
 
-        btn_settings = create_button("⚙️ 设置")
+        btn_settings = create_button("设置")
         btn_settings.clicked.connect(lambda: self.open_settings_requested.emit())
         actions_layout.addWidget(btn_settings)
+
+        btn_start_ai = create_button("启动 AI 服务")
+        btn_start_ai.clicked.connect(lambda: self.start_services_requested.emit())
+        actions_layout.addWidget(btn_start_ai)
 
         actions_layout.addStretch()
         actions_card.add_layout(actions_layout)

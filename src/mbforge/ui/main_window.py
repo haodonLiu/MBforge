@@ -168,7 +168,10 @@ class MainWindow(QMainWindow):
         # 状态标记
         self._models_ready = False
 
-        # 启动后台模型加载
+    def _start_model_worker(self):
+        """手动启动后台模型加载."""
+        if self._models_ready or (hasattr(self, "_model_worker") and self._model_worker is not None and self._model_worker.isRunning()):
+            return
         self._model_worker = ModelInitWorker()
         self._model_worker.progress.connect(self.statusbar.showMessage)
         self._model_worker.finished_signal.connect(self._on_models_ready)
@@ -273,6 +276,7 @@ class MainWindow(QMainWindow):
         self.welcome_widget.open_project_requested.connect(self._load_project_from_path)
         self.welcome_widget.new_project_requested.connect(self._new_project)
         self.welcome_widget.open_settings_requested.connect(self._show_settings)
+        self.welcome_widget.start_services_requested.connect(self._start_model_worker)
         self.center_stack.addWidget(self.welcome_widget)
 
         # 标签页工作区

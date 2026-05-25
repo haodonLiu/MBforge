@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QMainWindow,
     QMessageBox,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -449,8 +450,11 @@ class MainWindow(QMainWindow):
         toolbar.addAction("TODO", self._show_todo_panel)
         toolbar.addAction("工作流", self._show_workflow_panel)
 
-        # 服务状态指示器添加到工具栏右侧
+        # 服务状态指示器添加到工具栏最右侧
         toolbar.addSeparator()
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        toolbar.addWidget(spacer)
         self.service_indicator = ServiceStatusIndicator()
         self.service_indicator.setObjectName("service_indicator")
         toolbar.addWidget(self.service_indicator)

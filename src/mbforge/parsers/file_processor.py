@@ -12,7 +12,7 @@ import json
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from ..core.document import ExtractedContent
 from ..core.todo_manager import TodoEntry
@@ -47,9 +47,9 @@ class FileProcessStrategy(ABC):
 
     def store(
         self, content: ExtractedContent, entry: TodoEntry, output_dir: Path
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """存储输出文件，返回结果 dict."""
-        result: Dict[str, Any] = {"status": "done"}
+        result: dict[str, Any] = {"status": "done"}
 
         # 保存提取内容
         content_path = output_dir / "content.json"
@@ -338,7 +338,7 @@ class JsonStrategy(FileProcessStrategy):
 
 # ---- 策略注册表 ----
 
-STRATEGIES: Dict[str, FileProcessStrategy] = {
+STRATEGIES: dict[str, FileProcessStrategy] = {
     ".pdf": PDFStrategy(),
     ".md": MarkdownStrategy(),
     ".txt": TextStrategy(),
@@ -370,7 +370,7 @@ def process_file(
     vlm=None,
     knowledge_base=None,
     mol_db=None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """处理单个文件：extract → index → store.
 
     Returns:

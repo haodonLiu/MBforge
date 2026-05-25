@@ -5,7 +5,6 @@ from __future__ import annotations
 import atexit
 import os
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Tuple
 
 import fitz  # PyMuPDF
 from PyQt6.QtGui import QImage
@@ -19,8 +18,8 @@ atexit.register(lambda: _executor.shutdown(wait=True))
 
 
 def _render_page_batch(
-    path: str, scale: float, page_items: List[Tuple[int, int]]
-) -> List[Tuple[int, QImage]]:
+    path: str, scale: float, page_items: list[tuple[int, int]]
+) -> list[tuple[int, QImage]]:
     """从 PDF 文件批量渲染页面.
 
     Args:

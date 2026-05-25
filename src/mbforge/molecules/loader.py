@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 
 from rdkit import Chem
 
@@ -18,9 +18,9 @@ logger = logging.getLogger(__name__)
 def load_molecules_from_file(
     path: Union[str, Path],
     smiles_column: str = "SMILES",
-    activity_column: Optional[str] = None,
+    activity_column: str | None = None,
     name_column: str = "Name",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """从文件加载分子，返回算法模块所需的 dict 列表.
 
     支持格式:
@@ -54,7 +54,7 @@ def load_molecules_from_file(
         raise ValueError(f"Unsupported file format: {suffix}")
 
 
-def _load_sdf(path: Path) -> List[Dict[str, Any]]:
+def _load_sdf(path: Path) -> list[dict[str, Any]]:
     molecules = []
     with open(path, "rb") as f:
         supplier = Chem.ForwardSDMolSupplier(f)
@@ -63,7 +63,7 @@ def _load_sdf(path: Path) -> List[Dict[str, Any]]:
                 continue
             name = mol.GetProp("_Name") if mol.HasProp("_Name") else f"mol_{idx}"
             smiles = Chem.MolToSmiles(mol)
-            entry: Dict[str, Any] = {
+            entry: dict[str, Any] = {
                 "mol": mol,
                 "smiles": smiles,
                 "name": name,
@@ -84,9 +84,9 @@ def _load_sdf(path: Path) -> List[Dict[str, Any]]:
 def _load_csv(
     path: Path,
     smiles_column: str,
-    activity_column: Optional[str],
+    activity_column: str | None,
     name_column: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     import pandas as pd
 
     df = pd.read_csv(path)
@@ -102,7 +102,7 @@ def _load_csv(
         if mol is None:
             logger.warning(f"Invalid SMILES at row {idx}: {smiles}")
             continue
-        entry: Dict[str, Any] = {"mol": mol, "smiles": smiles}
+        entry: dict[str, Any] = {"mol": mol, "smiles": smiles}
         if name_column in df.columns:
             entry["name"] = str(row[name_column])
         if activity_column and activity_column in df.columns:
@@ -115,7 +115,7 @@ def _load_csv(
     return molecules
 
 
-def _load_smiles_file(path: Path) -> List[Dict[str, Any]]:
+def _load_smiles_file(path: Path) -> list[dict[str, Any]]:
     molecules = []
     with open(path) as f:
         for line in f:
@@ -128,7 +128,7 @@ def _load_smiles_file(path: Path) -> List[Dict[str, Any]]:
             if mol is None:
                 logger.warning(f"Invalid SMILES: {smiles}")
                 continue
-            entry: Dict[str, Any] = {"mol": mol, "smiles": smiles}
+            entry: dict[str, Any] = {"mol": mol, "smiles": smiles}
             if len(parts) > 1:
                 entry["name"] = parts[1]
             molecules.append(entry)

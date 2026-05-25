@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -21,7 +21,7 @@ class ParseResult:
 
     status: str
     token: str
-    raw_data: Dict[str, Any] = field(default_factory=dict)
+    raw_data: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -37,7 +37,7 @@ class MoleculeData:
 
     smiles: str
     name: str
-    activity: Optional[float] = None
+    activity: float | None = None
     source: str = ""
 
 
@@ -52,5 +52,5 @@ class SARTask:
         metadata: 任务元信息，如来源文件、解析时间等
     """
 
-    molecules: List[MoleculeData] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    molecules: list[MoleculeData] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)

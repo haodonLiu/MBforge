@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..models.base import Message
 from ..utils.logger import get_logger
@@ -21,7 +21,7 @@ class ContextLayer:
     """上下文层."""
 
     name: str
-    messages: List[Message] = field(default_factory=list)
+    messages: list[Message] = field(default_factory=list)
     priority: int = 0  # 优先级：数字越小越重要，越不容易被裁剪
     max_tokens: int = 0  # 0 表示不限制
     ephemeral: bool = False  # True 表示该层消息不会被持久化
@@ -52,7 +52,7 @@ class LayeredContext:
         self.max_history_rounds = max_history_rounds
         self.max_total_tokens = max_total_tokens
 
-        self._layers: List[ContextLayer] = [
+        self._layers: list[ContextLayer] = [
             ContextLayer("system", priority=0),  # L0
             ContextLayer("project", priority=1),  # L1
             ContextLayer("tools", priority=2, ephemeral=True),  # L2
@@ -140,7 +140,7 @@ class LayeredContext:
         self._history.add("user", content)
 
     def add_assistant_message(
-        self, content: str, tool_calls: Optional[List[Dict]] = None
+        self, content: str, tool_calls: list[dict] | None = None
     ) -> None:
         self._history.add("assistant", content, tool_calls=tool_calls or None)
 
@@ -166,9 +166,9 @@ class LayeredContext:
         self,
         include_tools: bool = True,
         include_history: bool = True,
-    ) -> List[Message]:
+    ) -> list[Message]:
         """按优先级组装消息列表，供 LLM 调用."""
-        result: List[Message] = []
+        result: list[Message] = []
 
         # L0: system（必须）
         result.extend(self._system.messages)
@@ -194,7 +194,7 @@ class LayeredContext:
 
     # ---- 序列化（用于持久化）----
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """序列化为字典（不含 ephemeral 层）."""
         return {
             "system": [m.__dict__ for m in self._system.messages],
@@ -204,7 +204,7 @@ class LayeredContext:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> LayeredContext:
+    def from_dict(cls, data: dict[str, Any]) -> LayeredContext:
         ctx = cls(
             max_history_rounds=data.get("max_history_rounds", 20),
         )

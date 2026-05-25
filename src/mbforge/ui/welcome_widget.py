@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import platform
 from pathlib import Path
-from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -26,7 +25,7 @@ class WelcomeWidget(QWidget):
     open_settings_requested = pyqtSignal()
     start_services_requested = pyqtSignal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._setup_ui()
 

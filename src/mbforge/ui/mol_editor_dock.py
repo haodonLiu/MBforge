@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -16,8 +15,6 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QScrollArea,
-    QSizePolicy,
-    QSlider,
     QSplitter,
     QVBoxLayout,
     QWidget,
@@ -44,7 +41,7 @@ class _ShortcutsPanel(QFrame):
         ("Markush", ["R[1] 连接点", "R[1] 苯环", "R[1] 羧基", "R[1]+R[2] 苯环"]),
     ]
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._expanded = True
         self._setup_ui()
@@ -137,7 +134,7 @@ class MolEditorDock(QDockWidget):
     # 当编辑器中分子变化时发出（E-SMILES 字符串）
     molecule_changed = pyqtSignal(str)
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__("分子编辑器", parent)
         self.setObjectName("MolEditorDock")
         self._setup_ui()
@@ -365,7 +362,7 @@ class MoleculeEditorDialog(QDialog):
     # 当编辑器中分子变化时发出（E-SMILES 字符串）
     molecule_changed = pyqtSignal(str)
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("分子编辑器")
         self.setMinimumSize(800, 600)
@@ -530,23 +527,6 @@ class MoleculeEditorDialog(QDialog):
         """)
         status_layout.addWidget(self._output_label, 1)
 
-        # 缩放控制
-        zoom_layout = QHBoxLayout()
-        zoom_layout.setSpacing(4)
-        z_label = QLabel("缩放")
-        z_label.setStyleSheet(f"font-size: 11px; color: {p['text_secondary']};")
-        zoom_layout.addWidget(z_label)
-        self._zoom_slider = QSlider(Qt.Orientation.Horizontal)
-        self._zoom_slider.setRange(50, 200)
-        self._zoom_slider.setValue(100)
-        self._zoom_slider.setMaximumWidth(100)
-        self._zoom_slider.valueChanged.connect(self._on_zoom_changed)
-        zoom_layout.addWidget(self._zoom_slider)
-        self._zoom_label = QLabel("100%")
-        self._zoom_label.setStyleSheet(f"font-size: 11px; color: {p['text_secondary']};")
-        zoom_layout.addWidget(self._zoom_label)
-        status_layout.addLayout(zoom_layout)
-
         status_layout.addSpacing(8)
 
         # 取消/确认按钮
@@ -628,9 +608,6 @@ class MoleculeEditorDialog(QDialog):
         esmiles = self.editor.get_esmiles()
         self.molecule_changed.emit(esmiles)
         self.close()
-
-    def _on_zoom_changed(self, value: int):
-        self._zoom_label.setText(f"{value}%")
 
     def _update_formula(self, esmiles: str):
         try:

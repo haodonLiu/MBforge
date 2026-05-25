@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -24,9 +23,9 @@ class FileTreeWidget(QTreeWidget):
     file_selected = pyqtSignal(Path)
     file_opened = pyqtSignal(Path)
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.project: Optional[Project] = None
+        self.project: Project | None = None
         self.setHeaderLabel("项目文件")
         self.setColumnCount(1)
         self.itemDoubleClicked.connect(self._on_double_click)
@@ -145,7 +144,7 @@ class FileTreeWidget(QTreeWidget):
         elif action == index_action:
             self.file_selected.emit(Path(path))
 
-    def get_selected_path(self) -> Optional[Path]:
+    def get_selected_path(self) -> Path | None:
         item = self.currentItem()
         if item:
             path = item.data(0, Qt.ItemDataRole.UserRole)

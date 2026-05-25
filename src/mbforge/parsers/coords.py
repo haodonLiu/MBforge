@@ -7,7 +7,6 @@ MolDetv2 输出的图像坐标、pdfplumber 输出的文本坐标、用户框选
 
 from __future__ import annotations
 
-from typing import Tuple
 
 import fitz
 from PyQt6.QtCore import QRect
@@ -25,7 +24,9 @@ def scale_from_page_size(
 ) -> float:
     """计算像素/点的缩放比例.
 
-    优先按宽度计算；若页面为横向（height > width）则按高度计算。
+    按宽度计算（image_w / page_w_pts）。
+    正常渲染下宽度与高度的 scale 应几乎相等；若出现显著偏差
+    （如非均匀缩放），调用方应自行处理。
 
     Args:
         page_w_pts: PDF 页面宽度（点单位）
@@ -34,17 +35,16 @@ def scale_from_page_size(
         image_h: 渲染图像高度（像素）
 
     Returns:
-        scale = image_w / page_w_pts（或 image_h / page_h_pts）
+        scale = image_w / page_w_pts
     """
-    # 优先按宽度计算；若长宽比严重不一致可按高度修正
     return image_w / page_w_pts if page_w_pts else 1.0
 
 
 def image_to_pdf_bbox(
-    bbox_img: Tuple[float, float, float, float],
+    bbox_img: tuple[float, float, float, float],
     page_h_pts: float,
     scale: float,
-) -> Tuple[float, float, float, float]:
+) -> tuple[float, float, float, float]:
     """图像坐标 → PDF 坐标（返回 tuple，便于 JSON 序列化）.
 
     Args:
@@ -64,10 +64,10 @@ def image_to_pdf_bbox(
 
 
 def pdf_to_image_bbox(
-    bbox_pdf: Tuple[float, float, float, float],
+    bbox_pdf: tuple[float, float, float, float],
     page_h_pts: float,
     scale: float,
-) -> Tuple[float, float, float, float]:
+) -> tuple[float, float, float, float]:
     """PDF 坐标 → 图像坐标（返回 tuple）.
 
     Args:
@@ -87,11 +87,15 @@ def pdf_to_image_bbox(
 
 
 def img_to_pdf_rect(
-    bbox_img: Tuple[float, float, float, float],
+    bbox_img: tuple[float, float, float, float],
     page_height_px: float,
     scale: float,
 ) -> fitz.Rect:
     """将图像坐标（左上角原点，像素）转换为 PDF 坐标（左下角原点，点）.
+
+    .. deprecated::
+        新代码请使用 `image_to_pdf_bbox()`，参数语义更清晰
+        （使用 page_h_pts 而非 page_height_px）。
 
     Args:
         bbox_img: (x1, y1, x2, y2)，图像坐标系，左上角原点
@@ -114,8 +118,12 @@ def pdf_to_img_rect(
     bbox_pdf: fitz.Rect,
     page_height_px: float,
     scale: float,
-) -> Tuple[int, int, int, int]:
+) -> tuple[int, int, int, int]:
     """将 PDF 坐标转换为图像坐标.
+
+    .. deprecated::
+        新代码请使用 `pdf_to_image_bbox()`，参数语义更清晰
+        （使用 page_h_pts 而非 page_height_px）。
 
     Args:
         bbox_pdf: fitz.Rect，PDF 坐标系（左下角原点）
@@ -142,7 +150,7 @@ def pdf_to_img_rect(
 def screen_to_img_rect(
     bbox_screen: QRect,
     view_scale: float,
-) -> Tuple[float, float, float, float]:
+) -> tuple[float, float, float, float]:
     """将屏幕控件坐标转换为页面图像坐标.
 
     PDFViewer 中每页的 QLabel 大小等于渲染后的 pixmap 大小，
@@ -163,7 +171,7 @@ def screen_to_img_rect(
 
 
 def img_to_screen_rect(
-    bbox_img: Tuple[float, float, float, float],
+    bbox_img: tuple[float, float, float, float],
     view_scale: float,
 ) -> QRect:
     """将页面图像坐标转换为屏幕控件坐标.
@@ -213,7 +221,7 @@ def screen_to_pdf_rect(
 # 辅助：从 fitz.Page 计算渲染参数
 # ---------------------------------------------------------------------------
 
-def get_render_params(page: fitz.Page, dpi: int = 300) -> Tuple[float, int, int]:
+def get_render_params(page: fitz.Page, dpi: int = 300) -> tuple[float, int, int]:
     """计算页面渲染参数.
 
     Args:

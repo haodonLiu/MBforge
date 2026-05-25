@@ -8,7 +8,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 try:
     from dotenv import load_dotenv
@@ -24,7 +23,7 @@ class ParserConfig:
     api_key: str
 
 
-def find_env_file() -> Optional[Path]:
+def find_env_file() -> Path | None:
     """查找项目根目录的 .env 文件."""
     current = Path.cwd()
     env_cwd = current / ".env"

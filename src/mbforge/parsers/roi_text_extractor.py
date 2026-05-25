@@ -11,22 +11,26 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
-
-try:
-    import pdfplumber
-except ImportError:
-    pdfplumber = None  # type: ignore
+from typing import Optional
 
 from mbforge.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+_essay = Optional[object]
+
+def _get_pdfplumber() -> object | None:
+    try:
+        import pdfplumber
+        return pdfplumber
+    except ImportError:
+        return None
+
 
 def pdf_to_pdfplumber_bbox(
-    bbox_pdf: Tuple[float, float, float, float],
+    bbox_pdf: tuple[float, float, float, float],
     page_h_pts: float,
-) -> Tuple[float, float, float, float]:
+) -> tuple[float, float, float, float]:
     """PDF 坐标 → pdfplumber 坐标.
 
     Args:
@@ -71,7 +75,7 @@ class ROITextExtractor:
         self,
         pdf_path: Path,
         page_idx: int,
-        bbox_pdf: Tuple[float, float, float, float],
+        bbox_pdf: tuple[float, float, float, float],
         page_w_pts: float,
         page_h_pts: float,
     ) -> str:
@@ -93,13 +97,14 @@ class ROITextExtractor:
         Returns:
             提取到的文本上下文
         """
-        if pdfplumber is None:
+        _pdfplumber = _get_pdfplumber()
+        if _pdfplumber is None:
             logger.warning("pdfplumber 未安装，跳过 ROI 文本提取")
             return ""
 
-        texts: List[str] = []
+        texts: list[str] = []
         try:
-            with pdfplumber.open(str(pdf_path)) as pdf:
+            with _pdfplumber.open(str(pdf_path)) as pdf:
                 if page_idx >= len(pdf.pages):
                     return ""
                 page = pdf.pages[page_idx]
@@ -139,11 +144,11 @@ class ROITextExtractor:
 
     def _expand_bbox(
         self,
-        bbox_pdf: Tuple[float, float, float, float],
+        bbox_pdf: tuple[float, float, float, float],
         page_w_pts: float,
         page_h_pts: float,
         direction: str = "top",
-    ) -> Tuple[float, float, float, float]:
+    ) -> tuple[float, float, float, float]:
         """按方向扩展 bbox.
 
         Args:
@@ -177,8 +182,8 @@ class ROITextExtractor:
 
     def _extract_within_bbox(
         self,
-        page: "pdfplumber.page.Page",  # type: ignore[name-defined]
-        bbox_pdf: Tuple[float, float, float, float],
+        page: object,  # pdfplumber.page.Page, 运行时可能为 None
+        bbox_pdf: tuple[float, float, float, float],
         page_h_pts: float,
     ) -> str:
         """在指定 PDF bbox 内提取文本.

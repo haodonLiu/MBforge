@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     from rdkit import Chem
@@ -42,7 +42,7 @@ class MoleculeExtractor:
         except Exception:
             return False
 
-    def extract_smiles_candidates(self, text: str) -> List[str]:
+    def extract_smiles_candidates(self, text: str) -> list[str]:
         """从文本中提取候选 SMILES."""
         candidates = []
         for match in self.SMILES_PATTERN.finditer(text):
@@ -54,7 +54,7 @@ class MoleculeExtractor:
                 self._seen_smiles.add(candidate)
         return candidates
 
-    def extract_activities(self, text: str) -> List[Dict[str, Any]]:
+    def extract_activities(self, text: str) -> list[dict[str, Any]]:
         """提取活性数据."""
         results = []
         for match in self.ACTIVITY_PATTERN.finditer(text):
@@ -70,7 +70,7 @@ class MoleculeExtractor:
             )
         return results
 
-    def extract_from_text(self, text: str, doc_id: str = "") -> List[Molecule]:
+    def extract_from_text(self, text: str, doc_id: str = "") -> list[Molecule]:
         """从文本提取分子记录."""
         smiles_list = self.extract_smiles_candidates(text)
         activities = self.extract_activities(text)
@@ -98,7 +98,7 @@ class MoleculeExtractor:
             if activity_positions:
                 best_idx = None
                 best_dist = float("inf")
-                for idx, (act, act_pos) in enumerate(activity_positions):
+                for idx, (_, act_pos) in enumerate(activity_positions):
                     if idx in used_activity_idx:
                         continue
                     dist = abs(smi_pos - act_pos)
@@ -122,8 +122,8 @@ class MoleculeExtractor:
         return records
 
     def extract_from_pdf_result(
-        self, result_dict: Dict[str, Any], doc_id: str = ""
-    ) -> List[Molecule]:
+        self, result_dict: dict[str, Any], doc_id: str = ""
+    ) -> list[Molecule]:
         """从 UniParser 解析结果提取分子."""
         records = []
         molecules = result_dict.get("molecules", [])

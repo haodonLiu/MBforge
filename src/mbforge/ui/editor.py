@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QFont
@@ -18,9 +17,9 @@ class MarkdownEditor(QPlainTextEdit):
 
     content_changed = pyqtSignal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.file_path: Optional[Path] = None
+        self.file_path: Path | None = None
         self._modified = False
 
         font = QFont("Consolas", 11)

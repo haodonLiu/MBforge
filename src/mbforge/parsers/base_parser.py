@@ -8,7 +8,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 
 @dataclass
@@ -17,11 +17,11 @@ class ParseOutput:
 
     text: str = ""
     markdown: str = ""
-    pages: List[str] = field(default_factory=list)
-    images: List[Path] = field(default_factory=list)
-    tables: List[List[List[str]]] = field(default_factory=list)
-    molecules: List[Dict[str, Any]] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    pages: list[str] = field(default_factory=list)
+    images: list[Path] = field(default_factory=list)
+    tables: list[list[list[str]]] = field(default_factory=list)
+    molecules: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def content(self) -> str:
@@ -40,6 +40,6 @@ class BaseDocumentParser(ABC):
         """解析 PDF 文件，返回统一输出。"""
         ...
 
-    def health(self) -> Dict[str, Any]:
+    def health(self) -> dict[str, Any]:
         """检查解析器可用性。默认返回 healthy。"""
         return {"status": "healthy"}

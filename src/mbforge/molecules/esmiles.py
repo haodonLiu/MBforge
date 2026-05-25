@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Literal, Optional
+from typing import Literal
 
 from rdkit import Chem
-from rdkit.Chem import AllChem
 
 # E-SMILES 分隔符
 SEP = "<sep>"
@@ -88,7 +87,7 @@ def esmiles_to_mol(esmiles: str) -> tuple[Chem.ROMol, list[ESmilesTag]]:
 
 def mol_to_esmiles(
     mol: Chem.ROMol,
-    tags: Optional[list[ESmilesTag]] = None,
+    tags: list[ESmilesTag] | None = None,
     rooted_at: int = 0,
 ) -> str:
     """将 RDKit 分子序列化回 E-SMILES."""

@@ -26,7 +26,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -43,7 +43,7 @@ class ActivityUnit(Enum):
 
 
 # 单位转换因子: 转换为 nM
-UNIT_TO_NM: Dict[ActivityUnit, float] = {
+UNIT_TO_NM: dict[ActivityUnit, float] = {
     ActivityUnit.NM: 1.0,
     ActivityUnit.UM: 1000.0,
     ActivityUnit.MM: 1_000_000.0,
@@ -89,9 +89,9 @@ class ProcessedActivity:
     """
 
     raw: str
-    value_nm: Optional[float] = None
-    p_value: Optional[float] = None
-    censored: Optional[CensoredValue] = None
+    value_nm: float | None = None
+    p_value: float | None = None
+    censored: CensoredValue | None = None
     is_outlier: bool = False
     unit: ActivityUnit = ActivityUnit.UNKNOWN
 
@@ -116,10 +116,10 @@ class DataQualityReport:
     invalid_activities: int = 0
     censored_values: int = 0
     outliers: int = 0
-    unit_counts: Dict[str, int] = field(default_factory=dict)
-    activity_range: Tuple[Optional[float], Optional[float]] = (None, None)
-    p_activity_range: Tuple[Optional[float], Optional[float]] = (None, None)
-    failed_molecules: List[Dict[str, Any]] = field(default_factory=list)
+    unit_counts: dict[str, int] = field(default_factory=dict)
+    activity_range: tuple[float | None, float | None] = (None, None)
+    p_activity_range: tuple[float | None, float | None] = (None, None)
+    failed_molecules: list[dict[str, Any]] = field(default_factory=list)
 
     def summary(self) -> str:
         """生成可读的摘要报告."""
@@ -235,7 +235,7 @@ class ActivityPreprocessor:
                 return unit
         return ActivityUnit.UNKNOWN
 
-    def parse_censored(self, raw_value: str) -> Optional[CensoredValue]:
+    def parse_censored(self, raw_value: str) -> CensoredValue | None:
         """解析删失数据标记.
 
         Args:
@@ -258,7 +258,7 @@ class ActivityPreprocessor:
 
     def clean_numeric(
         self, raw_value: str
-    ) -> Tuple[Optional[float], ActivityUnit, Optional[CensoredValue]]:
+    ) -> tuple[float | None, ActivityUnit, CensoredValue | None]:
         """清洗并解析原始活性值.
 
         从混合了单位、符号和数值的字符串中提取数值。
@@ -339,7 +339,7 @@ class ActivityPreprocessor:
             return 0.0
         return 9.0 - np.log10(value_nm)
 
-    def detect_outliers_iqr(self, values: List[float]) -> List[bool]:
+    def detect_outliers_iqr(self, values: list[float]) -> list[bool]:
         """使用 IQR 方法检测异常值.
 
         使用 Tukey's fences 方法: Q1 - 1.5*IQR 和 Q3 + 1.5*IQR 之外的值被视为异常值.
@@ -363,7 +363,7 @@ class ActivityPreprocessor:
 
         return [(v < lower_bound or v > upper_bound) for v in values]
 
-    def process_molecule(self, mol_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def process_molecule(self, mol_data: dict[str, Any]) -> dict[str, Any] | None:
         """处理单个分子的活性数据.
 
         Args:
@@ -420,10 +420,10 @@ class ActivityPreprocessor:
 
     def process(
         self,
-        molecules: List[Dict[str, Any]],
+        molecules: list[dict[str, Any]],
         activity_key: str = "activity",
         raw_key: str = "activity_raw",
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """批量处理分子的活性数据.
 
         执行完整的预处理流程:
@@ -444,8 +444,8 @@ class ActivityPreprocessor:
         self._report = DataQualityReport()
         self._report.total_molecules = len(molecules)
 
-        processed_molecules: List[Dict[str, Any]] = []
-        all_nm_values: List[float] = []
+        processed_molecules: list[dict[str, Any]] = []
+        all_nm_values: list[float] = []
 
         for mol in molecules:
             try:

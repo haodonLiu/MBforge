@@ -9,7 +9,7 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 try:
     from rdkit import Chem
@@ -31,16 +31,16 @@ class MoleculeRecord:
     smiles: str
     name: str = ""
     source_doc: str = ""  # 来源文档ID
-    activity: Optional[float] = None
+    activity: float | None = None
     activity_type: str = ""  # IC50, EC50, Ki, etc.
     units: str = "nM"
     source_type: Literal["image", "text", "manual"] = "text"
     status: Literal["pending", "confirmed", "rejected"] = "confirmed"
-    properties: Dict[str, Any] = field(default_factory=dict)
-    tags: List[str] = field(default_factory=list)
+    properties: dict[str, Any] = field(default_factory=dict)
+    tags: list[str] = field(default_factory=list)
     notes: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "mol_id": self.mol_id,
             "smiles": self.smiles,
@@ -57,7 +57,7 @@ class MoleculeRecord:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> MoleculeRecord:
+    def from_dict(cls, data: dict[str, Any]) -> MoleculeRecord:
         return cls(
             mol_id=data["mol_id"],
             smiles=data["smiles"],
@@ -80,7 +80,7 @@ class MoleculeRecord:
             self._cached_mol = Chem.MolFromSmiles(self.smiles) if Chem else None
         return self._cached_mol
 
-    def compute_properties(self) -> Dict[str, float]:
+    def compute_properties(self) -> dict[str, float]:
         """计算基本分子性质."""
         if Chem is None or Descriptors is None:
             return {}
@@ -113,7 +113,7 @@ class MoleculeRecord:
         )
 
     @classmethod
-    def from_molecule(cls, mol, activity_type: str = "") -> "MoleculeRecord":
+    def from_molecule(cls, mol, activity_type: str = "") -> MoleculeRecord:
         """从 schema.Molecule 创建 MoleculeRecord。"""
         return cls(
             mol_id=mol.id,
@@ -149,8 +149,7 @@ class MoleculeDatabase:
     CREATE INDEX IF NOT EXISTS idx_smiles ON molecules(smiles);
     CREATE INDEX IF NOT EXISTS idx_source ON molecules(source_doc);
     CREATE INDEX IF NOT EXISTS idx_activity ON molecules(activity);
-    CREATE INDEX IF NOT EXISTS idx_source_type ON molecules(source_type);
-    CREATE INDEX IF NOT EXISTS idx_status ON molecules(status);
+    -- idx_source_type / idx_status 在 _ensure_columns() 中创建，避免旧数据库缺列报错
     CREATE VIRTUAL TABLE IF NOT EXISTS mol_search USING fts5(
         name, notes, smiles, content='molecules', content_rowid='rowid'
     );
@@ -225,7 +224,7 @@ class MoleculeDatabase:
             self._conn.rollback()
             raise
 
-    def get_molecule(self, mol_id: str) -> Optional[MoleculeRecord]:
+    def get_molecule(self, mol_id: str) -> MoleculeRecord | None:
         row = self._conn.execute(
             "SELECT * FROM molecules WHERE mol_id = ?", (mol_id,)
         ).fetchone()
@@ -233,7 +232,7 @@ class MoleculeDatabase:
             return None
         return self._row_to_record(row)
 
-    def search_by_smiles(self, smiles: str) -> Optional[MoleculeRecord]:
+    def search_by_smiles(self, smiles: str) -> MoleculeRecord | None:
         row = self._conn.execute(
             "SELECT * FROM molecules WHERE smiles = ?", (smiles,)
         ).fetchone()
@@ -241,7 +240,7 @@ class MoleculeDatabase:
             return None
         return self._row_to_record(row)
 
-    def search_by_source(self, doc_id: str) -> List[MoleculeRecord]:
+    def search_by_source(self, doc_id: str) -> list[MoleculeRecord]:
         rows = self._conn.execute(
             "SELECT * FROM molecules WHERE source_doc = ?", (doc_id,)
         ).fetchall()
@@ -249,7 +248,7 @@ class MoleculeDatabase:
 
     def search_by_activity_range(
         self, min_val: float, max_val: float, activity_type: str = ""
-    ) -> List[MoleculeRecord]:
+    ) -> list[MoleculeRecord]:
         if activity_type:
             rows = self._conn.execute(
                 "SELECT * FROM molecules WHERE activity BETWEEN ? AND ? AND activity_type = ?",
@@ -265,9 +264,9 @@ class MoleculeDatabase:
     def list_all(
         self,
         limit: int = 1000,
-        source_type: Optional[str] = None,
-        status: Optional[str] = None,
-    ) -> List[MoleculeRecord]:
+        source_type: str | None = None,
+        status: str | None = None,
+    ) -> list[MoleculeRecord]:
         """列出分子记录，支持按来源和状态过滤.
 
         Args:
@@ -275,8 +274,8 @@ class MoleculeDatabase:
             source_type: 过滤来源类型 ('image'|'text'|'manual')
             status: 过滤状态 ('pending'|'confirmed'|'rejected')
         """
-        conditions: List[str] = []
-        params: List[Any] = []
+        conditions: list[str] = []
+        params: list[Any] = []
         if source_type:
             conditions.append("source_type = ?")
             params.append(source_type)
@@ -295,7 +294,7 @@ class MoleculeDatabase:
         self._conn.execute("DELETE FROM molecules WHERE mol_id = ?", (mol_id,))
         self._conn.commit()
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         total = self._conn.execute("SELECT COUNT(*) FROM molecules").fetchone()[0]
         with_activity = self._conn.execute(
             "SELECT COUNT(*) FROM molecules WHERE activity IS NOT NULL"

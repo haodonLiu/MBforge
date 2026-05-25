@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 import markdown
 from PyQt6.QtWebEngineCore import QWebEngineSettings
@@ -13,7 +12,7 @@ from PyQt6.QtWidgets import QWidget
 class MarkdownPreview(QWebEngineView):
     """基于 QWebEngineView 的 Markdown 实时预览."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._md = markdown.Markdown(
             extensions=[

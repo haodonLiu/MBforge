@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import base64
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 import requests
 
@@ -116,7 +116,7 @@ class GlmOcrClient(BaseDocumentParser):
             metadata={"parser": result.get("parser", "glm_ocr")},
         )
 
-    def parse_pdf(self, pdf_path: Path, **kwargs) -> Dict[str, Any]:
+    def parse_pdf(self, pdf_path: Path, **kwargs) -> dict[str, Any]:
         """向后兼容：返回旧格式 dict。"""
         out = self.parse(pdf_path, **kwargs)
         return {
@@ -126,7 +126,7 @@ class GlmOcrClient(BaseDocumentParser):
             "parser": out.metadata.get("parser", "glm_ocr"),
         }
 
-    def _parse_with_glm(self, pdf_path: Path) -> Dict[str, Any]:
+    def _parse_with_glm(self, pdf_path: Path) -> dict[str, Any]:
         """使用 GLM-OCR 解析 PDF."""
         import shutil
 
@@ -162,7 +162,7 @@ class GlmOcrClient(BaseDocumentParser):
             if tmpdir and tmpdir.exists():
                 shutil.rmtree(tmpdir, ignore_errors=True)
 
-    def _fallback_pymupdf(self, pdf_path: Path) -> Dict[str, Any]:
+    def _fallback_pymupdf(self, pdf_path: Path) -> dict[str, Any]:
         """Fallback 到 PyMuPDF."""
         try:
             import fitz  # PyMuPDF
@@ -183,7 +183,7 @@ class GlmOcrClient(BaseDocumentParser):
             logger.error(f"PyMuPDF fallback also failed: {e}")
             raise
 
-    def _pdf_to_images(self, pdf_path: Path, dpi: int = 200) -> List[Path]:
+    def _pdf_to_images(self, pdf_path: Path, dpi: int = 200) -> list[Path]:
         """将 PDF 转为图像列表."""
         import tempfile
 
@@ -205,7 +205,7 @@ class GlmOcrClient(BaseDocumentParser):
 
     def _extract_molecule_placeholders(
         self, markdown: str, page_idx: int
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """从 Markdown 中提取分子占位符.
 
         占位符格式: `<molecule_image>[描述]</molecule_image>`

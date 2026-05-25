@@ -8,7 +8,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 
 from ..utils.logger import get_logger
 
@@ -22,7 +23,7 @@ class ToolInfo:
         self,
         name: str,
         description: str,
-        parameters_schema: Dict[str, Any],
+        parameters_schema: dict[str, Any],
         func: Callable,
     ):
         self.name = name
@@ -30,7 +31,7 @@ class ToolInfo:
         self.parameters_schema = parameters_schema
         self.func = func
 
-    def to_openai_schema(self) -> Dict[str, Any]:
+    def to_openai_schema(self) -> dict[str, Any]:
         """生成 OpenAI function calling schema."""
         return {
             "type": "function",
@@ -50,13 +51,13 @@ class ToolRegistry:
     """工具注册表."""
 
     def __init__(self):
-        self._tools: Dict[str, ToolInfo] = {}
+        self._tools: dict[str, ToolInfo] = {}
 
     def register(
         self,
         name: str,
         description: str,
-        parameters_schema: Dict[str, Any],
+        parameters_schema: dict[str, Any],
         func: Callable,
     ) -> ToolInfo:
         """注册工具."""
@@ -65,17 +66,17 @@ class ToolRegistry:
         logger.info(f"Tool registered: {name}")
         return info
 
-    def get(self, name: str) -> Optional[ToolInfo]:
+    def get(self, name: str) -> ToolInfo | None:
         return self._tools.get(name)
 
-    def list_tools(self) -> List[ToolInfo]:
+    def list_tools(self) -> list[ToolInfo]:
         return list(self._tools.values())
 
-    def to_openai_schemas(self) -> List[Dict[str, Any]]:
+    def to_openai_schemas(self) -> list[dict[str, Any]]:
         """导出所有工具的 OpenAI schema."""
         return [t.to_openai_schema() for t in self._tools.values()]
 
-    def call(self, name: str, arguments: Dict[str, Any]) -> str:
+    def call(self, name: str, arguments: dict[str, Any]) -> str:
         """调用工具."""
         info = self._tools.get(name)
         if info is None:
@@ -88,7 +89,7 @@ class ToolRegistry:
             return f"工具执行错误: {e}"
 
 
-def tool(description: str, parameters: Optional[Dict[str, Any]] = None):
+def tool(description: str, parameters: dict[str, Any] | None = None):
     """工具装饰器.
 
     Args:

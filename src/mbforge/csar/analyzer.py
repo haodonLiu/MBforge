@@ -26,7 +26,7 @@ SAR分析的核心思想:
 from __future__ import annotations
 
 import logging
-from typing import List, Dict, Optional, Any
+from typing import Any
 from dataclasses import dataclass
 from collections import defaultdict
 
@@ -66,14 +66,14 @@ class SARResult:
     """
 
     cluster_id: int  # 聚类ID
-    mcs: Optional[MCSResult]  # MCS结果
-    activities: List[float]  # 活性值列表
+    mcs: MCSResult | None  # MCS结果
+    activities: list[float]  # 活性值列表
     mean_activity: float  # 平均活性
     std_activity: float  # 标准差
     max_activity: float  # 最大活性
     min_activity: float  # 最小活性
     num_compounds: int  # 化合物数量
-    contributions: Dict[str, float]  # 贡献字典
+    contributions: dict[str, float]  # 贡献字典
 
 
 class SARAnalyzer:
@@ -94,7 +94,7 @@ class SARAnalyzer:
     """
 
     def __init__(
-        self, activity_threshold: Optional[float] = None, use_mcs: bool = True
+        self, activity_threshold: float | None = None, use_mcs: bool = True
     ) -> None:
         """初始化SAR分析器.
 
@@ -108,8 +108,8 @@ class SARAnalyzer:
     def analyze_cluster(
         self,
         cluster_id: int,
-        molecules: List[Dict[str, Any]],
-        mcs_result: Optional[MCSResult] = None,
+        molecules: list[dict[str, Any]],
+        mcs_result: MCSResult | None = None,
     ) -> SARResult:
         """分析单个聚类的SAR.
 
@@ -163,8 +163,8 @@ class SARAnalyzer:
         )
 
     def _analyze_contributions(
-        self, molecules: List[Dict[str, Any]], mcs_result: Optional[MCSResult]
-    ) -> Dict[str, float]:
+        self, molecules: list[dict[str, Any]], mcs_result: MCSResult | None
+    ) -> dict[str, float]:
         """分析子结构对活性的贡献.
 
         识别MCS骨架上的取代基，并分析不同取代基对活性的影响。
@@ -176,7 +176,7 @@ class SARAnalyzer:
         Returns:
             贡献字典，键为取代基类型，值为平均活性.
         """
-        contributions: Dict[str, float] = {}
+        contributions: dict[str, float] = {}
 
         if mcs_result is None:
             return contributions
@@ -195,14 +195,14 @@ class SARAnalyzer:
 
             side_chains = self._get_side_chains(mol, mcs_mol)
 
-            for atom_idx, chain_atoms in side_chains.items():
+            for atom_idx, _ in side_chains.items():
                 atom_symbol = mol.GetAtomWithIdx(atom_idx).GetSymbol()
                 key = f"substituent_{atom_symbol}"
                 if key not in contributions:
                     contributions[key] = []
                 contributions[key].append(activity)
 
-        avg_contributions: Dict[str, float] = {}
+        avg_contributions: dict[str, float] = {}
         for key, values in contributions.items():
             avg_contributions[key] = float(np.mean(values))
 
@@ -210,7 +210,7 @@ class SARAnalyzer:
 
     def _get_side_chains(
         self, mol: Chem.Mol, mcs_mol: Chem.Mol
-    ) -> Dict[int, List[int]]:
+    ) -> dict[int, list[int]]:
         """获取不在MCS中的侧链原子.
 
         识别连接到MCS骨架但不属于MCS的原子。
@@ -222,7 +222,7 @@ class SARAnalyzer:
         Returns:
             字典，键为MCS原子索引，值为连接的侧链原子索引列表.
         """
-        side_chains: Dict[int, List[int]] = defaultdict(list)
+        side_chains: dict[int, list[int]] = defaultdict(list)
 
         mcs_match = mol.GetSubstructMatch(mcs_mol)
         if not mcs_match:
@@ -242,8 +242,8 @@ class SARAnalyzer:
         return side_chains
 
     def analyze_clusters(
-        self, clusters: List[Any], mcs_results: Optional[Dict[int, MCSResult]] = None
-    ) -> Dict[int, SARResult]:
+        self, clusters: list[Any], mcs_results: dict[int, MCSResult] | None = None
+    ) -> dict[int, SARResult]:
         """分析所有聚类的SAR.
 
         批量处理多个聚类，为每个聚类执行SAR分析。
@@ -255,7 +255,7 @@ class SARAnalyzer:
         Returns:
             字典，键为cluster_id，值为SARResult.
         """
-        results: Dict[int, SARResult] = {}
+        results: dict[int, SARResult] = {}
         mcs_map = mcs_results or {}
 
         for cluster in clusters:
@@ -282,7 +282,7 @@ class SARAnalyzer:
 
         return results
 
-    def get_activity_stats(self, sar_results: Dict[int, SARResult]) -> Dict[str, float]:
+    def get_activity_stats(self, sar_results: dict[int, SARResult]) -> dict[str, float]:
         """获取跨聚类的总体活性统计.
 
         汇总所有聚类的活性数据，计算总体统计量。

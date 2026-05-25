@@ -13,7 +13,7 @@ import json
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..utils.constants import (
     PROJECT_META_DIR,
@@ -34,16 +34,16 @@ class TrajectoryStep:
     uri: str  # viking:// 风格路径，如 "viking://kb/search?q=foo"
     query: str = ""  # 原始查询
     result_count: int = 0  # 返回结果数
-    top_results: List[str] = field(default_factory=list)  # 结果摘要
+    top_results: list[str] = field(default_factory=list)  # 结果摘要
     duration_ms: float = 0.0
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> TrajectoryStep:
+    def from_dict(cls, data: dict[str, Any]) -> TrajectoryStep:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
@@ -56,13 +56,13 @@ class TrajectoryTracker:
             self.project_root / PROJECT_META_DIR / TRAJECTORY_DIR / TRAJECTORY_FILE
         )
         self.trajectory_path.parent.mkdir(parents=True, exist_ok=True)
-        self._steps: List[TrajectoryStep] = []
+        self._steps: list[TrajectoryStep] = []
         self._load()
 
     def _load(self) -> None:
         if self.trajectory_path.exists():
             try:
-                with open(self.trajectory_path, "r", encoding="utf-8") as f:
+                with open(self.trajectory_path, encoding="utf-8") as f:
                     data = json.load(f)
                 self._steps = [
                     TrajectoryStep.from_dict(s) for s in data.get("steps", [])
@@ -97,9 +97,9 @@ class TrajectoryTracker:
         self,
         query: str,
         result_count: int,
-        top_results: List[str],
+        top_results: list[str],
         duration_ms: float = 0.0,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """记录一次搜索操作."""
         self.add_step(
@@ -118,7 +118,7 @@ class TrajectoryTracker:
         self,
         path: str,
         reason: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """记录一次目录/路径导航."""
         self.add_step(
@@ -134,7 +134,7 @@ class TrajectoryTracker:
         self,
         doc_id: str,
         level: str = "detail",  # abstract | overview | detail
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """记录一次文档读取."""
         self.add_step(
@@ -149,9 +149,9 @@ class TrajectoryTracker:
     def record_tool(
         self,
         tool_name: str,
-        arguments: Dict[str, Any],
+        arguments: dict[str, Any],
         result_summary: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """记录一次工具调用."""
         self.add_step(
@@ -165,7 +165,7 @@ class TrajectoryTracker:
             )
         )
 
-    def get_recent(self, limit: int = 10) -> List[TrajectoryStep]:
+    def get_recent(self, limit: int = 10) -> list[TrajectoryStep]:
         return self._steps[-limit:]
 
     def get_summary(self) -> str:

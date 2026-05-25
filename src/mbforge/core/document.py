@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 try:
     import fitz  # PyMuPDF
@@ -19,14 +19,14 @@ class ExtractedContent:
     """从文件中提取的结构化内容."""
 
     text: str = ""
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    molecules: List[Dict[str, Any]] = field(default_factory=list)
-    images: List[Path] = field(default_factory=list)
-    tables: List[List[List[str]]] = field(default_factory=list)
-    chunks: List[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    molecules: list[dict[str, Any]] = field(default_factory=list)
+    images: list[Path] = field(default_factory=list)
+    tables: list[list[list[str]]] = field(default_factory=list)
+    chunks: list[str] = field(default_factory=list)
     summary: str = ""
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "text": self.text,
             "metadata": self.metadata,
@@ -44,7 +44,7 @@ class DocumentProcessor:
     @classmethod
     def read_text(cls, path: Path) -> str:
         """读取纯文本文件."""
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        with open(path, encoding="utf-8", errors="ignore") as f:
             return f.read()
 
     @classmethod
@@ -64,12 +64,12 @@ class DocumentProcessor:
         return "\n\n".join(text_parts)
 
     @classmethod
-    def extract_pdf_images(cls, path: Path, output_dir: Path) -> List[Path]:
+    def extract_pdf_images(cls, path: Path, output_dir: Path) -> list[Path]:
         """提取 PDF 中的图片."""
         output_dir.mkdir(parents=True, exist_ok=True)
         if fitz is None:
             return []
-        images: List[Path] = []
+        images: list[Path] = []
         with fitz.open(str(path)) as doc:
             for page_idx in range(len(doc)):
                 page = doc[page_idx]
@@ -88,7 +88,7 @@ class DocumentProcessor:
         return images
 
     @classmethod
-    def extract_pdf_tables(cls, path: Path) -> List[List[List[str]]]:
+    def extract_pdf_tables(cls, path: Path) -> list[list[list[str]]]:
         """简单表格提取（基于文本布局）.
 
         返回: [表格] -> [行] -> [单元格]

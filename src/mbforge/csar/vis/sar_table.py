@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Any, Tuple
+from typing import Any
 
 from PIL import Image
 
@@ -31,10 +31,10 @@ logger = logging.getLogger(__name__)
 
 
 def create_substituent_table_image(
-    rows: List[List[Any]],
-    col_labels: List[str],
+    rows: list[list[Any]],
+    col_labels: list[str],
     activity_col_index: int,
-    size: Tuple[int, int] = SUBSTITUENT_SIZE,
+    size: tuple[int, int] = SUBSTITUENT_SIZE,
 ) -> Image.Image:
     """创建带取代基图像的表格图像 (向后兼容包装器).
 

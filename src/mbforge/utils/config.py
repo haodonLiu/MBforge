@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, Optional
+from typing import Any
 
 from .constants import (
     GLOBAL_CONFIG_DIR,
@@ -40,7 +40,7 @@ class EmbedConfig:
     base_url: str = ""
     api_key: str = ""
     device: str = "cpu"
-    mrl_dim: Optional[int] = None  # MRL 输出维度, e.g., 256
+    mrl_dim: int | None = None  # MRL 输出维度, e.g., 256
     instruction: str = ""  # 空字符串使用默认 instruction
 
 
@@ -90,11 +90,11 @@ class AppConfig:
     theme: str = "dark"
     language: str = "zh"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> AppConfig:
+    def from_dict(cls, data: dict[str, Any]) -> AppConfig:
         return cls(
             llm=ModelConfig(**data.get("llm", {})),
             embed=EmbedConfig(**data.get("embed", {})),
@@ -108,7 +108,7 @@ class AppConfig:
 
 
 _CONFIG_PATH = GLOBAL_CONFIG_DIR / "config.json"
-_config_cache: Optional[AppConfig] = None
+_config_cache: AppConfig | None = None
 
 
 def _config_from_env() -> AppConfig:
@@ -170,7 +170,7 @@ def load_global_config() -> AppConfig:
 
     if _CONFIG_PATH.exists():
         try:
-            with open(_CONFIG_PATH, "r", encoding="utf-8") as f:
+            with open(_CONFIG_PATH, encoding="utf-8") as f:
                 data = json.load(f)
             _config_cache = AppConfig.from_dict(data)
             return _config_cache

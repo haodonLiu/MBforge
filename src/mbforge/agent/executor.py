@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from .tools import ToolMixin, ToolRegistry, tool
 from ..utils.helpers import truncate_text
@@ -27,9 +27,9 @@ class ToolExecutor:
 
     def __init__(
         self,
-        project: Optional[Project] = None,
-        knowledge_base: Optional[KnowledgeBase] = None,
-        mol_db: Optional[MoleculeDatabase] = None,
+        project: Project | None = None,
+        knowledge_base: KnowledgeBase | None = None,
+        mol_db: MoleculeDatabase | None = None,
     ):
         self.project = project
         self.kb = knowledge_base

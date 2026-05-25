@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from rdkit import Chem
 from rdkit.Chem import Descriptors, rdMolDescriptors
@@ -41,8 +41,8 @@ class FilterResult:
     """
 
     passed: bool = True
-    reasons: List[str] = field(default_factory=list)
-    details: Dict[str, Any] = field(default_factory=dict)
+    reasons: list[str] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
 
     def __bool__(self) -> bool:
         """支持直接判断：if result:."""
@@ -79,8 +79,8 @@ class MoleculeFilter(ABC):
         return self.filter(mol).passed
 
     def filter_batch(
-        self, molecules: List[Chem.Mol], names: Optional[List[str]] = None
-    ) -> List[FilterResult]:
+        self, molecules: list[Chem.Mol], names: list[str] | None = None
+    ) -> list[FilterResult]:
         """批量过滤.
 
         Args:
@@ -469,7 +469,7 @@ class CompositeFilter(MoleculeFilter):
 
     def __init__(
         self,
-        filters: List[MoleculeFilter],
+        filters: list[MoleculeFilter],
         mode: str = "and",
     ) -> None:
         """初始化组合过滤器.
@@ -489,7 +489,7 @@ class CompositeFilter(MoleculeFilter):
             return FilterResult(passed=False, reasons=["mol is None"])
 
         all_reasons = []
-        all_details: Dict[str, Any] = {}
+        all_details: dict[str, Any] = {}
         passed_count = 0
 
         for f in self.filters:
@@ -535,7 +535,7 @@ def drug_likeness_filter(
     Returns:
         组合过滤器.
     """
-    filters: List[MoleculeFilter] = [
+    filters: list[MoleculeFilter] = [
         LipinskiFilter(max_violations=max_lipinski_violations),
     ]
     if include_veber:
@@ -558,7 +558,7 @@ def lead_likeness_filter() -> CompositeFilter:
     Returns:
         组合过滤器.
     """
-    filters: List[MoleculeFilter] = [
+    filters: list[MoleculeFilter] = [
         MolecularWeightFilter(min_mw=250, max_mw=350),
         RingCountFilter(min_rings=1, max_rings=3),
         LipinskiFilter(max_violations=0, include_rotatable_bonds=True),

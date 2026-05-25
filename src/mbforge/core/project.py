@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from .settings import ProjectSettings
 from ..utils.constants import PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS
@@ -52,7 +51,7 @@ class DocumentEntry:
             return "data"
         return "text"
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         try:
             rel_path = str(self.path.relative_to(self.path.anchor))
         except ValueError:
@@ -70,7 +69,7 @@ class DocumentEntry:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict, project_root: Path) -> DocumentEntry:
+    def from_dict(cls, data: dict, project_root: Path) -> DocumentEntry:
         rel = Path(data["path"])
         # 尝试解析相对路径
         full = project_root / rel
@@ -96,8 +95,8 @@ class Project:
         self.root = Path(root).resolve()
         self.meta_dir = self.root / PROJECT_META_DIR
         self.settings = ProjectSettings.load(self.root)
-        self._index: Dict[str, DocumentEntry] = {}
-        self._path_index: Dict[Path, str] = {}  # resolved path -> doc_id
+        self._index: dict[str, DocumentEntry] = {}
+        self._path_index: dict[Path, str] = {}  # resolved path -> doc_id
         self._load_index()
 
     @property
@@ -111,7 +110,7 @@ class Project:
         path = self._index_path()
         if path.exists():
             try:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     data = json.load(f)
                 for item in data.get("documents", []):
                     entry = DocumentEntry.from_dict(item, self.root)
@@ -132,7 +131,7 @@ class Project:
 
     # ---- 目录扫描 ----
 
-    def scan_files(self) -> List[DocumentEntry]:
+    def scan_files(self) -> list[DocumentEntry]:
         """扫描项目目录，更新索引."""
         found_ids = set()
 
@@ -172,10 +171,10 @@ class Project:
         self._save_index()
         return list(self._index.values())
 
-    def get_document(self, doc_id: str) -> Optional[DocumentEntry]:
+    def get_document(self, doc_id: str) -> DocumentEntry | None:
         return self._index.get(doc_id)
 
-    def get_document_by_path(self, path: Path) -> Optional[DocumentEntry]:
+    def get_document_by_path(self, path: Path) -> DocumentEntry | None:
         resolved = Path(path).resolve()
         doc_id = self._path_index.get(resolved)
         if doc_id:
@@ -208,7 +207,7 @@ class Project:
             del self._index[doc_id]
             self._save_index()
 
-    def list_documents(self, doc_type: Optional[str] = None) -> List[DocumentEntry]:
+    def list_documents(self, doc_type: str | None = None) -> list[DocumentEntry]:
         docs = list(self._index.values())
         if doc_type:
             docs = [d for d in docs if d.doc_type == doc_type]
@@ -235,7 +234,7 @@ class Project:
         return cls(root)
 
     @classmethod
-    def open(cls, root: Path) -> Optional[Project]:
+    def open(cls, root: Path) -> Project | None:
         """打开已有项目."""
         root = Path(root).resolve()
         meta = root / PROJECT_META_DIR

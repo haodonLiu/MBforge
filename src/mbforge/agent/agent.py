@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .context import LayeredContext
 from .executor import ToolExecutor
@@ -48,11 +48,11 @@ class ProjectAgent:
 
     def __init__(
         self,
-        llm: Optional[BaseLLM] = None,
-        tool_executor: Optional[ToolExecutor] = None,
+        llm: BaseLLM | None = None,
+        tool_executor: ToolExecutor | None = None,
         system_prompt: str = "",
         max_iterations: int = 5,
-        project_root: Optional[Path] = None,
+        project_root: Path | None = None,
     ):
         self.llm = llm
         self.tool_executor = tool_executor
@@ -65,8 +65,8 @@ class ProjectAgent:
         )
 
         # 记忆与轨迹
-        self.memory_manager: Optional[MemoryManager] = None
-        self.trajectory_tracker: Optional[TrajectoryTracker] = None
+        self.memory_manager: MemoryManager | None = None
+        self.trajectory_tracker: TrajectoryTracker | None = None
         if project_root is not None:
             self.memory_manager = MemoryManager(project_root)
             self.trajectory_tracker = TrajectoryTracker(project_root)
@@ -225,11 +225,11 @@ class ProjectAgent:
 
     # ---- 内部方法 ----
 
-    def _call_llm(self, messages: List[Message]) -> Any:
+    def _call_llm(self, messages: list[Message]) -> Any:
         """基础 LLM 调用."""
         return self.llm.chat(messages)
 
-    def _call_llm_with_tools(self, messages: List[Message], tools: List[Dict]) -> Any:
+    def _call_llm_with_tools(self, messages: list[Message], tools: list[dict]) -> Any:
         """带工具定义的 LLM 调用。委托给 BaseLLM.call_with_tools()。"""
         try:
             return self.llm.call_with_tools(messages, tools)
@@ -237,7 +237,7 @@ class ProjectAgent:
             logger.exception(f"Function calling not available: {e}")
             return self.llm.chat(messages)
 
-    def _parse_response(self, response: Any) -> tuple[str, List[Dict]]:
+    def _parse_response(self, response: Any) -> tuple[str, list[dict]]:
         """解析 LLM 响应，提取内容和工具调用.
 
         Returns:
@@ -287,7 +287,7 @@ class ProjectAgent:
         content = str(response)
         return content, tool_calls
 
-    def _execute_tool_call(self, tool_call: Dict) -> str:
+    def _execute_tool_call(self, tool_call: dict) -> str:
         """执行单个工具调用."""
         name = tool_call["name"]
         args = tool_call.get("arguments", {})

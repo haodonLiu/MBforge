@@ -6,13 +6,7 @@
 - ReAct 推理循环
 """
 
-from .agent import ProjectAgent
-from .archive_agent import ArchiveAgent
-from .context import LayeredContext
-from .executor import ToolExecutor
-from .memory_manager import MemoryManager, MemoryEntry
-from .tools import ToolRegistry, tool
-from .trajectory import TrajectoryTracker, TrajectoryStep
+from __future__ import annotations
 
 __all__ = [
     "ProjectAgent",

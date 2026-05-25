@@ -13,7 +13,7 @@
 
 from __future__ import annotations
 
-from typing import AsyncGenerator, Iterator, List
+from collections.abc import AsyncGenerator, Iterator
 
 import torch
 
@@ -77,7 +77,7 @@ class NemotronDiffusionLLM(BaseLLM):
         self._model.eval()
         logger.info("Nemotron-Diffusion model loaded successfully")
 
-    def _generate(self, messages: List[Message]) -> str:
+    def _generate(self, messages: list[Message]) -> str:
         self._load()
         assert self._tokenizer is not None
         assert self._model is not None
@@ -116,21 +116,21 @@ class NemotronDiffusionLLM(BaseLLM):
         logger.debug(f"[NFE={nfe}] {result[:100]}...")
         return result
 
-    def chat(self, messages: List[Message], **kwargs) -> str:
+    def chat(self, messages: list[Message], **kwargs) -> str:
         return self._generate(messages)
 
-    def chat_stream(self, messages: List[Message], **kwargs) -> Iterator[StreamChunk]:
+    def chat_stream(self, messages: list[Message], **kwargs) -> Iterator[StreamChunk]:
         result = self._generate(messages)
         yield StreamChunk(delta=result, finish_reason="stop")
 
-    async def achat(self, messages: List[Message], **kwargs) -> str:
+    async def achat(self, messages: list[Message], **kwargs) -> str:
         import asyncio
 
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._generate, messages)
 
     async def achat_stream(
-        self, messages: List[Message], **kwargs
+        self, messages: list[Message], **kwargs
     ) -> AsyncGenerator[StreamChunk, None]:
         result = await self.achat(messages, **kwargs)
         yield StreamChunk(delta=result, finish_reason="stop")

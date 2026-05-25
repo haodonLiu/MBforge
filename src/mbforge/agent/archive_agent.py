@@ -12,7 +12,8 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any
+from collections.abc import Callable
 
 from ..core.document import ExtractedContent
 from ..core.todo_manager import TodoManager, TodoStatus
@@ -30,7 +31,7 @@ class ArchiveAgent:
         llm=None,
         knowledge_base=None,
         mol_db=None,
-        project_root: Optional[Path] = None,
+        project_root: Path | None = None,
     ):
         self.llm = llm
         self.kb = knowledge_base
@@ -38,7 +39,7 @@ class ArchiveAgent:
         self.project_root = Path(project_root).resolve() if project_root else None
         self._running = False
 
-    def run(self) -> Dict[str, Any]:
+    def run(self) -> dict[str, Any]:
         """执行归档整理，返回统计信息."""
         if self.project_root is None:
             return {"error": "No project root"}
@@ -76,7 +77,7 @@ class ArchiveAgent:
         logger.info(f"Archive complete: {stats}")
         return stats
 
-    def run_async(self, on_done: Optional[Callable[[], None]] = None) -> None:
+    def run_async(self, on_done: Callable[[], None] | None = None) -> None:
         """异步执行归档."""
         if self._running:
             return
@@ -93,15 +94,15 @@ class ArchiveAgent:
         thread = threading.Thread(target=_worker, daemon=True)
         thread.start()
 
-    def _archive_file(self, entry, out_dir: Path) -> Dict[str, Any]:
+    def _archive_file(self, entry, out_dir: Path) -> dict[str, Any]:
         """归档单个文件."""
-        result: Dict[str, Any] = {"indexed": False, "summarized": False}
+        result: dict[str, Any] = {"indexed": False, "summarized": False}
 
         index_path = out_dir / "index.json"
         if not index_path.exists():
             return result
 
-        with open(index_path, "r", encoding="utf-8") as f:
+        with open(index_path, encoding="utf-8") as f:
             index_data = json.load(f)
 
         # 1. 确保已索引到知识库
@@ -123,7 +124,7 @@ class ArchiveAgent:
         if not content_path.exists():
             return
 
-        with open(content_path, "r", encoding="utf-8") as f:
+        with open(content_path, encoding="utf-8") as f:
             content_data = json.load(f)
 
         text = content_data.get("text", "")
@@ -145,7 +146,7 @@ class ArchiveAgent:
         if not content_path.exists():
             return
 
-        with open(content_path, "r", encoding="utf-8") as f:
+        with open(content_path, encoding="utf-8") as f:
             content_data = json.load(f)
 
         text = content_data.get("text", "")

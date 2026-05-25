@@ -17,7 +17,7 @@ import json
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..utils.constants import MEMORY_DIR, PROJECT_META_DIR
 from ..utils.logger import get_logger
@@ -38,11 +38,11 @@ class MemoryEntry:
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
     access_count: int = 0  # 被检索次数
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> MemoryEntry:
+    def from_dict(cls, data: dict[str, Any]) -> MemoryEntry:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
@@ -55,7 +55,7 @@ class MemoryManager:
         self.project_root = Path(project_root).resolve()
         self.memory_dir = self.project_root / PROJECT_META_DIR / MEMORY_DIR
         self.memory_dir.mkdir(parents=True, exist_ok=True)
-        self._cache: Dict[str, List[MemoryEntry]] = {}
+        self._cache: dict[str, list[MemoryEntry]] = {}
         self._load_all()
 
     def _category_path(self, category: str) -> Path:
@@ -67,7 +67,7 @@ class MemoryManager:
             path = self._category_path(cat)
             if path.exists():
                 try:
-                    with open(path, "r", encoding="utf-8") as f:
+                    with open(path, encoding="utf-8") as f:
                         data = json.load(f)
                     self._cache[cat] = [MemoryEntry.from_dict(e) for e in data]
                 except Exception as e:
@@ -125,7 +125,7 @@ class MemoryManager:
         self._save_category(category)
         logger.info(f"Memory added: {category}/{key}")
 
-    def get(self, category: str, key: str) -> Optional[MemoryEntry]:
+    def get(self, category: str, key: str) -> MemoryEntry | None:
         """获取单条记忆."""
         for e in self._cache.get(category, []):
             if e.key == key:
@@ -133,7 +133,7 @@ class MemoryManager:
                 return e
         return None
 
-    def search(self, category: str, query: str) -> List[MemoryEntry]:
+    def search(self, category: str, query: str) -> list[MemoryEntry]:
         """在指定类别中搜索记忆（简单子串匹配）."""
         results = []
         for e in self._cache.get(category, []):
@@ -142,7 +142,7 @@ class MemoryManager:
                 results.append(e)
         return results
 
-    def list_category(self, category: str) -> List[MemoryEntry]:
+    def list_category(self, category: str) -> list[MemoryEntry]:
         """列出某类全部记忆."""
         return list(self._cache.get(category, []))
 

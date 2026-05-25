@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterator, List, Tuple
+from typing import Any
+from collections.abc import Iterator
 
 from .base import BaseLLM, Message, StreamChunk
 
@@ -43,14 +44,14 @@ class AnthropicLLM(BaseLLM):
 
     # ---- 消息格式转换 ----
 
-    def _convert_messages(self, messages: List[Message]) -> Tuple[str, List[dict]]:
+    def _convert_messages(self, messages: list[Message]) -> tuple[str, list[dict]]:
         """将 MBForge Message 转为 Anthropic 格式.
 
         Returns:
             (system_text, anthropic_messages)
         """
-        system_parts: List[str] = []
-        anthropic_msgs: List[dict] = []
+        system_parts: list[str] = []
+        anthropic_msgs: list[dict] = []
 
         for m in messages:
             if m.role == "system":
@@ -70,7 +71,7 @@ class AnthropicLLM(BaseLLM):
 
             if m.role == "assistant" and m.tool_calls:
                 # assistant 消息包含 tool_use 块
-                content_blocks: List[dict] = []
+                content_blocks: list[dict] = []
                 if m.content:
                     content_blocks.append({"type": "text", "text": m.content})
                 for tc in m.tool_calls:
@@ -92,7 +93,7 @@ class AnthropicLLM(BaseLLM):
         system_text = "\n".join(system_parts).strip()
         return system_text, anthropic_msgs
 
-    def _convert_tools(self, openai_tools: List[dict]) -> List[dict]:
+    def _convert_tools(self, openai_tools: list[dict]) -> list[dict]:
         """将 OpenAI 格式 tools 转为 Anthropic 格式."""
         anthropic_tools = []
         for t in openai_tools:
@@ -108,11 +109,11 @@ class AnthropicLLM(BaseLLM):
             )
         return anthropic_tools
 
-    def _build_params(self, messages: List[Message], **kwargs) -> Dict[str, Any]:
+    def _build_params(self, messages: list[Message], **kwargs) -> dict[str, Any]:
         """构建 Anthropic API 参数."""
         system, msgs = self._convert_messages(messages)
         max_tokens = min(kwargs.get("max_tokens", self.max_tokens), 196608)
-        params: Dict[str, Any] = {
+        params: dict[str, Any] = {
             "model": self.model_name,
             "max_tokens": max_tokens,
             "messages": msgs,
@@ -131,12 +132,12 @@ class AnthropicLLM(BaseLLM):
 
     # ---- 基础对话 ----
 
-    def chat(self, messages: List[Message], **kwargs) -> str:
+    def chat(self, messages: list[Message], **kwargs) -> str:
         params = self._build_params(messages, **kwargs)
         response = self.client.messages.create(**params)
         return self._extract_text(response)
 
-    def chat_stream(self, messages: List[Message], **kwargs) -> Iterator[StreamChunk]:
+    def chat_stream(self, messages: list[Message], **kwargs) -> Iterator[StreamChunk]:
         params = self._build_params(messages, **kwargs)
         params["stream"] = True
         stream = self.client.messages.create(**params)
@@ -156,13 +157,13 @@ class AnthropicLLM(BaseLLM):
                 )
                 yield StreamChunk(delta="", finish_reason=stop_reason)
 
-    async def achat(self, messages: List[Message], **kwargs) -> str:
+    async def achat(self, messages: list[Message], **kwargs) -> str:
         import asyncio
 
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.chat, messages, **kwargs)
 
-    async def achat_stream(self, messages: List[Message], **kwargs):
+    async def achat_stream(self, messages: list[Message], **kwargs):
         import asyncio
 
         loop = asyncio.get_running_loop()
@@ -177,8 +178,8 @@ class AnthropicLLM(BaseLLM):
 
     def call_with_tools(
         self,
-        messages: List[Message],
-        tools: List[dict],
+        messages: list[Message],
+        tools: list[dict],
         tool_choice: str = "auto",
         **kwargs,
     ) -> Any:
@@ -196,8 +197,8 @@ class AnthropicLLM(BaseLLM):
 
     def call_with_tools_stream(
         self,
-        messages: List[Message],
-        tools: List[dict],
+        messages: list[Message],
+        tools: list[dict],
         tool_choice: str = "auto",
         **kwargs,
     ) -> Iterator[Any]:

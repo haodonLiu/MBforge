@@ -6,7 +6,7 @@ import io
 import logging
 import platform
 from pathlib import Path
-from typing import Optional, Tuple, List, Any
+from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 from rdkit import Chem
@@ -15,7 +15,7 @@ from rdkit.Chem.Draw import rdMolDraw2D
 
 logger = logging.getLogger(__name__)
 
-_CACHED_FONT_PATH: Optional[Path] = None
+_CACHED_FONT_PATH: Path | None = None
 
 
 def _get_default_font(size: int = 12):
@@ -56,8 +56,8 @@ TEXT_COLOR = (0, 0, 0)
 
 def render_substituent_image(
     mol: Chem.Mol,
-    size: Tuple[int, int] = SUBSTITUENT_SIZE,
-) -> Optional[Image.Image]:
+    size: tuple[int, int] = SUBSTITUENT_SIZE,
+) -> Image.Image | None:
     """Render a substituent molecule as an image.
 
     Args:
@@ -136,7 +136,7 @@ def combine_scaffold_and_table(
     return combined
 
 
-def get_activity_color(activity: Optional[float]) -> Tuple[int, int, int]:
+def get_activity_color(activity: float | None) -> tuple[int, int, int]:
     """Get color based on activity value.
 
     Low IC50 (high activity) = green, high IC50 (low activity) = red.
@@ -170,7 +170,7 @@ def get_activity_color(activity: Optional[float]) -> Tuple[int, int, int]:
 
 def extract_substituent(
     mol: Chem.Mol, attachment_atom_idx: int, sub_atom_idx: int
-) -> Tuple[Optional[Chem.Mol], str]:
+) -> tuple[Chem.Mol | None, str]:
     """Extract substituent from molecule using BFS.
 
     Args:
@@ -213,10 +213,10 @@ def extract_substituent(
 
 
 def create_sar_table_image(
-    rows: List[List[Any]],
-    col_labels: List[str],
-    sub_size: Tuple[int, int] = SUBSTITUENT_SIZE,
-    activity_col_index: Optional[int] = None,
+    rows: list[list[Any]],
+    col_labels: list[str],
+    sub_size: tuple[int, int] = SUBSTITUENT_SIZE,
+    activity_col_index: int | None = None,
     use_activity_colors: bool = False,
 ) -> Image.Image:
     """统一 SAR 表格图像创建 (消除 sar_table.py + renderer.py 重复).

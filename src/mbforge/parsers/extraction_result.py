@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional, Tuple
+from typing import Any, Literal
 
 
 @dataclass
@@ -35,16 +35,16 @@ class ExtractionResult:
     moldet_conf: float = 0.0
     scribe_conf: float = 0.0
     composite_conf: float = 0.0
-    bbox_pdf: Optional[Tuple[float, float, float, float]] = None
-    page_idx: Optional[int] = None
+    bbox_pdf: tuple[float, float, float, float] | None = None
+    page_idx: int | None = None
     context_text: str = ""
-    mol_img_path: Optional[Path] = None
+    mol_img_path: Path | None = None
     status: Literal["pending", "confirmed", "rejected"] = "pending"
-    properties: Dict[str, Any] = field(default_factory=dict)
+    properties: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         """自动计算综合置信度."""
-        if self.composite_conf == 0.0 and (self.moldet_conf or self.scribe_conf):
+        if self.composite_conf == 0.0 and self.moldet_conf > 0 and self.scribe_conf > 0:
             self.composite_conf = self.moldet_conf * self.scribe_conf
 
     def to_dict(self) -> dict:
@@ -65,7 +65,7 @@ class ExtractionResult:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "ExtractionResult":
+    def from_dict(cls, data: dict) -> ExtractionResult:
         """从字典反序列化."""
         img_path = data.get("mol_img_path")
         return cls(

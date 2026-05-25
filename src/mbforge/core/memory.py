@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from ..utils.constants import MEMORY_DIR, PROJECT_META_DIR
 from ..utils.logger import get_logger
@@ -27,7 +27,7 @@ class ProjectMemory:
         self.memory_path = self.memory_dir / MEMORY_FILE
         self.memory_dir.mkdir(parents=True, exist_ok=True)
 
-    def save_dict(self, data: Dict[str, Any]) -> None:
+    def save_dict(self, data: dict[str, Any]) -> None:
         """保存对话上下文字典到磁盘."""
         try:
             with open(self.memory_path, "w", encoding="utf-8") as f:
@@ -36,12 +36,12 @@ class ProjectMemory:
         except Exception as e:
             logger.warning(f"Failed to save conversation memory: {e}")
 
-    def load_dict(self) -> Optional[Dict[str, Any]]:
+    def load_dict(self) -> dict[str, Any] | None:
         """从磁盘加载对话上下文字典."""
         if not self.memory_path.exists():
             return None
         try:
-            with open(self.memory_path, "r", encoding="utf-8") as f:
+            with open(self.memory_path, encoding="utf-8") as f:
                 data = json.load(f)
             logger.info("Conversation memory loaded")
             return data

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal, QRect
 from PyQt6.QtGui import QPainter, QPen, QColor
@@ -17,7 +16,7 @@ class PDFPageLabel(QLabel):
     copy_text_requested = pyqtSignal(int, QRect)
     molecule_extract_requested = pyqtSignal(int, QRect)
 
-    def __init__(self, page_index: int, parent: Optional[QWidget] = None):
+    def __init__(self, page_index: int, parent: QWidget | None = None):
         super().__init__(parent)
         self.page_index = page_index
         self.setMouseTracking(True)

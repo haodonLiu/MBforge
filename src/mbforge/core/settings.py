@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from ..utils.constants import PROJECT_META_DIR, SETTINGS_FILE
 
@@ -25,7 +25,7 @@ class ProjectSettings:
     pdf_extract_molecules: bool = True
     theme_override: str = "system"  # "system" | "light" | "dark"
     # 工作流开关
-    workflows_enabled: Dict[str, bool] = field(
+    workflows_enabled: dict[str, bool] = field(
         default_factory=lambda: {
             "generation": False,
             "docking": False,
@@ -34,11 +34,11 @@ class ProjectSettings:
         }
     )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> ProjectSettings:
+    def from_dict(cls, data: dict[str, Any]) -> ProjectSettings:
         return cls(
             name=data.get("name", "Untitled Project"),
             description=data.get("description", ""),
@@ -60,7 +60,7 @@ class ProjectSettings:
     def load(cls, project_root: Path) -> ProjectSettings:
         path = project_root / PROJECT_META_DIR / SETTINGS_FILE
         if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 return cls.from_dict(json.load(f))
         return cls()
 

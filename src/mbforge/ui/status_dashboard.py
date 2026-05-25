@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
-    QLabel,
     QVBoxLayout,
     QWidget,
 )
@@ -18,7 +16,7 @@ from .theme import CardWidget
 class StatusDashboard(QWidget):
     """资源监控卡片（已移至状态栏）."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setMaximumHeight(60)
         self._setup_ui()

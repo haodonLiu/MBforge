@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from .document import ExtractedContent
 from ..utils.constants import PROJECT_META_DIR
@@ -40,11 +40,11 @@ class DocumentSummary:
         if self.entity_tags is None:
             self.entity_tags = []
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> DocumentSummary:
+    def from_dict(cls, data: dict[str, Any]) -> DocumentSummary:
         return cls(
             doc_id=data["doc_id"],
             l0_abstract=data.get("l0_abstract", ""),
@@ -71,12 +71,12 @@ class SummaryManager:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(summary.to_dict(), f, indent=2, ensure_ascii=False)
 
-    def load(self, doc_id: str) -> Optional[DocumentSummary]:
+    def load(self, doc_id: str) -> DocumentSummary | None:
         path = self._summary_path(doc_id)
         if not path.exists():
             return None
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 return DocumentSummary.from_dict(json.load(f))
         except Exception as e:
             logger.warning(f"Failed to load summary for {doc_id}: {e}")
@@ -91,7 +91,7 @@ class SummaryManager:
         results = []
         for path in self.summary_dir.glob("*.json"):
             try:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     results.append(DocumentSummary.from_dict(json.load(f)))
             except Exception:
                 pass

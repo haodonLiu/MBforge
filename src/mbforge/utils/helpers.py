@@ -8,7 +8,7 @@ import json as _json
 import re
 import uuid
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 
 def generate_uuid() -> str:
@@ -44,7 +44,7 @@ def truncate_text(text: str, max_len: int = 200) -> str:
 
 def split_text_chunks(
     text: str, chunk_size: int = 512, overlap: int = 128
-) -> List[str]:
+) -> list[str]:
     """按字符数分块，优先在段落/句子边界分割."""
     chunks = []
     start = 0
@@ -101,7 +101,7 @@ def save_json(path: Path, data: Any) -> None:
 def load_json(path: Path, default: Any = None) -> Any:
     """加载 JSON 文件，失败时返回默认值."""
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return _json.load(f)
     except Exception:
         return default

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING
 
 import markdown
+
+if TYPE_CHECKING:
+    from ..agent.agent import ProjectAgent
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -17,8 +20,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..agent.agent import ProjectAgent
-from ..utils.logger import get_logger, log_exception
+from ..utils.logger import get_logger
 from .theme import ThemeManager, create_button, create_input, create_label
 
 logger = get_logger(__name__)
@@ -27,7 +29,7 @@ logger = get_logger(__name__)
 class ChatMessage(QWidget):
     """单条消息气泡，支持 Markdown 渲染."""
 
-    def __init__(self, role: str, content: str, parent: Optional[QWidget] = None):
+    def __init__(self, role: str, content: str, parent: QWidget | None = None):
         super().__init__(parent)
         self.role = role
         self._renderer = ChatMessageRenderer()
@@ -182,86 +184,6 @@ class ChatMessageRenderer:
 </html>"""
 
 
-# ---------- 消息气泡组件 ----------
-
-class ChatMessage(QWidget):
-    """单条消息气泡，支持 Markdown 渲染."""
-
-    def __init__(self, role: str, content: str, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self.role = role
-        self._renderer = ChatMessageRenderer()
-        self._setup_ui()
-        self.set_content(content)
-
-    def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(4)
-
-        is_user = self.role == "user"
-        header_text = "用户" if is_user else "AI"
-
-        self.header = QLabel(f"<b>{header_text}</b>")
-        p = ThemeManager.instance().palette()
-        header_color = p["text_secondary"] if is_user else p["brand_primary"]
-        self.header.setStyleSheet(f"color: {header_color}; font-size: 13px;")
-        layout.addWidget(self.header)
-
-        # 消息内容容器（带背景色圆角）
-        self.body_container = QFrame()
-        bg_color = p["bg_hover"] if is_user else p["bg_card"]
-        self.body_container.setStyleSheet(f"""
-            QFrame {{
-                background: {bg_color};
-                border: 1px solid {p['border']};
-                border-radius: 12px;
-            }}
-        """)
-        body_layout = QVBoxLayout(self.body_container)
-        body_layout.setContentsMargins(12, 10, 12, 10)
-        body_layout.setSpacing(0)
-
-        # 使用 WebEngine 渲染 Markdown
-        self.body = QWebEngineView()
-        self.body.setMinimumHeight(40)
-        self.body.setMaximumHeight(600)
-        self.body.setStyleSheet("background: transparent; border: none;")
-        settings = self.body.settings()
-        if settings is not None:
-            settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, False)
-            settings.setAttribute(QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True)
-        body_layout.addWidget(self.body)
-
-        layout.addWidget(self.body_container)
-
-    def set_content(self, content: str) -> None:
-        """设置消息内容（Markdown 格式）."""
-        html = self._renderer.render(content)
-        self.body.setHtml(html)
-        # 自适应高度：通过 JS 获取内容高度
-        self.body.page().runJavaScript(
-            "document.body.scrollHeight",
-            lambda h: self._adjust_height(h),
-        )
-
-    def append_content(self, content: str) -> None:
-        """追加内容（用于流式输出）."""
-        html = self._renderer.render_stream(content)
-        self.body.setHtml(html)
-        self.body.page().runJavaScript(
-            "document.body.scrollHeight",
-            lambda h: self._adjust_height(h),
-        )
-
-    def _adjust_height(self, content_height: int) -> None:
-        """根据内容高度调整 WebView 高度."""
-        if content_height and content_height > 0:
-            new_height = min(content_height + 24, 600)
-            self.body.setMinimumHeight(new_height)
-            self.body.setMaximumHeight(new_height)
-
-
 # ---------- 流式输出工作线程 ----------
 
 class StreamWorker(QThread):
@@ -300,13 +222,13 @@ class ChatWidget(QWidget):
     # 最大保留消息数，超出时归档旧消息
     MAX_MESSAGES = 50
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.agent: Optional[ProjectAgent] = None
-        self._current_reply_widget: Optional[ChatMessage] = None
-        self._worker: Optional[StreamWorker] = None
+        self.agent: ProjectAgent | None = None
+        self._current_reply_widget: ChatMessage | None = None
+        self._worker: StreamWorker | None = None
         self._pending_text = ""
-        self._flush_timer: Optional[QTimer] = None
+        self._flush_timer: QTimer | None = None
         self._setup_ui()
         ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
 

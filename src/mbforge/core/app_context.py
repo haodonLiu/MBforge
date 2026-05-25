@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from ..core.knowledge_base import KnowledgeBase
 from ..core.mol_database import MoleculeDatabase
@@ -36,17 +35,17 @@ class AppContext:
 
     def __init__(self):
         # 全局模型（跨项目共享）
-        self.llm: Optional[BaseLLM] = None
-        self.embedder: Optional[BaseEmbedder] = None
-        self.reranker: Optional[BaseReranker] = None
-        self.vlm: Optional[BaseVLM] = None
+        self.llm: BaseLLM | None = None
+        self.embedder: BaseEmbedder | None = None
+        self.reranker: BaseReranker | None = None
+        self.vlm: BaseVLM | None = None
 
         # 项目级资源（随项目切换）
-        self.project: Optional[Project] = None
-        self.kb: Optional[KnowledgeBase] = None
-        self.mol_db: Optional[MoleculeDatabase] = None
-        self.todo_manager: Optional[TodoManager] = None
-        self.pdf_pipeline: Optional[PDFParserPipeline] = None
+        self.project: Project | None = None
+        self.kb: KnowledgeBase | None = None
+        self.mol_db: MoleculeDatabase | None = None
+        self.todo_manager: TodoManager | None = None
+        self.pdf_pipeline: PDFParserPipeline | None = None
 
     def init_models(self) -> None:
         """从全局配置初始化模型实例。"""

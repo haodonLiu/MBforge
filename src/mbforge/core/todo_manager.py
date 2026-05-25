@@ -12,7 +12,8 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 
 from ..utils.constants import OUTPUT_DIR, PROJECT_META_DIR, TODO_FILE
 from ..utils.helpers import generate_uuid
@@ -37,15 +38,15 @@ class TodoEntry:
     source_path: str  # raw/ 中的相对路径
     status: str = TodoStatus.PENDING
     added_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    processed_at: Optional[str] = None
-    error: Optional[str] = None
-    output_dir: Optional[str] = None  # output/<doc_id>/ 相对路径
+    processed_at: str | None = None
+    error: str | None = None
+    output_dir: str | None = None  # output/<doc_id>/ 相对路径
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> TodoEntry:
+    def from_dict(cls, data: dict[str, Any]) -> TodoEntry:
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
@@ -57,7 +58,7 @@ class TodoManager:
         self.todo_path = self.project_root / PROJECT_META_DIR / TODO_FILE
         self.output_dir = self.project_root / OUTPUT_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self._entries: List[TodoEntry] = []
+        self._entries: list[TodoEntry] = []
         self._lock = threading.Lock()
         self._processing = False
         self._pending_restart = False
@@ -66,7 +67,7 @@ class TodoManager:
     def _load(self) -> None:
         if self.todo_path.exists():
             try:
-                with open(self.todo_path, "r", encoding="utf-8") as f:
+                with open(self.todo_path, encoding="utf-8") as f:
                     data = json.load(f)
                 self._entries = [
                     TodoEntry.from_dict(e) for e in data.get("entries", [])
@@ -104,15 +105,15 @@ class TodoManager:
         logger.info(f"Todo added: {filename} ({entry.doc_id})")
         return entry
 
-    def get_pending(self) -> List[TodoEntry]:
+    def get_pending(self) -> list[TodoEntry]:
         """获取所有待处理条目."""
         return [e for e in self._entries if e.status == TodoStatus.PENDING]
 
-    def get_all(self) -> List[TodoEntry]:
+    def get_all(self) -> list[TodoEntry]:
         """获取所有条目."""
         return list(self._entries)
 
-    def get_entry(self, doc_id: str) -> Optional[TodoEntry]:
+    def get_entry(self, doc_id: str) -> TodoEntry | None:
         """按 doc_id 获取条目."""
         for e in self._entries:
             if e.doc_id == doc_id:
@@ -157,8 +158,8 @@ class TodoManager:
 
     def process_next(
         self,
-        file_processor: Callable[[TodoEntry, Path, Path], Dict[str, Any]],
-    ) -> Optional[TodoEntry]:
+        file_processor: Callable[[TodoEntry, Path, Path], dict[str, Any]],
+    ) -> TodoEntry | None:
         """处理下一个待处理条目.
 
         Args:
@@ -196,8 +197,8 @@ class TodoManager:
 
     def process_all(
         self,
-        file_processor: Callable[[TodoEntry, Path, Path], Dict[str, Any]],
-        on_progress: Optional[Callable[[int, int, TodoEntry], None]] = None,
+        file_processor: Callable[[TodoEntry, Path, Path], dict[str, Any]],
+        on_progress: Callable[[int, int, TodoEntry], None] | None = None,
     ) -> None:
         """批量处理所有待处理条目（同步）.
 
@@ -214,9 +215,9 @@ class TodoManager:
 
     def process_all_async(
         self,
-        file_processor: Callable[[TodoEntry, Path, Path], Dict[str, Any]],
-        on_progress: Optional[Callable[[int, int, TodoEntry], None]] = None,
-        on_done: Optional[Callable[[], None]] = None,
+        file_processor: Callable[[TodoEntry, Path, Path], dict[str, Any]],
+        on_progress: Callable[[int, int, TodoEntry], None] | None = None,
+        on_done: Callable[[], None] | None = None,
     ) -> None:
         """异步批量处理（后台线程）.
 

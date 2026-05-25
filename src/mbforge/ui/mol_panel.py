@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-from typing import List, Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -37,10 +36,10 @@ class MoleculePanel(QWidget):
 
     molecule_selected = pyqtSignal(MoleculeRecord)
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.mol_db: Optional[MoleculeDatabase] = None
-        self._all_records: List[MoleculeRecord] = []
+        self.mol_db: MoleculeDatabase | None = None
+        self._all_records: list[MoleculeRecord] = []
         self._setup_ui()
 
     def _setup_ui(self):
@@ -231,19 +230,19 @@ class MoleculePanel(QWidget):
             f" | 待确认: {pending_count} 个 | 当前显示: {len(filtered)} 个"
         )
 
-    def _current_source_filter(self) -> Optional[str]:
+    def _current_source_filter(self) -> str | None:
         """获取当前选中的来源类型过滤值."""
         idx = self.source_filter.currentIndex()
         mapping = {1: "image", 2: "text", 3: "manual"}
         return mapping.get(idx)
 
-    def _current_status_filter(self) -> Optional[str]:
+    def _current_status_filter(self) -> str | None:
         """获取当前选中的状态过滤值."""
         idx = self.status_filter.currentIndex()
         mapping = {1: "pending", 2: "confirmed", 3: "rejected"}
         return mapping.get(idx)
 
-    def _filter_records(self, records: List[MoleculeRecord]) -> List[MoleculeRecord]:
+    def _filter_records(self, records: list[MoleculeRecord]) -> list[MoleculeRecord]:
         """根据搜索框和活性范围过滤记录."""
         query = self.search_input.text().strip().lower()
         min_act = self.act_min.text().strip()
@@ -383,6 +382,8 @@ class MoleculePanel(QWidget):
                         ),
                         activity_type=row.get("activity_type", ""),
                         units=row.get("units", "nM"),
+                        source_type="manual",
+                        status="confirmed",
                     )
                     if self.mol_db:
                         self.mol_db.add_molecule(rec)
@@ -417,7 +418,9 @@ class MoleculePanel(QWidget):
                         "MW",
                         "LogP",
                         "TPSA",
-                        "source",
+                        "source_type",
+                        "status",
+                        "source_doc",
                     ]
                 )
                 for rec in records:
@@ -433,6 +436,8 @@ class MoleculePanel(QWidget):
                             props.get("MW", ""),
                             props.get("LogP", ""),
                             props.get("TPSA", ""),
+                            rec.source_type,
+                            rec.status,
                             rec.source_doc or "",
                         ]
                     )

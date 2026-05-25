@@ -415,7 +415,7 @@
 
 - Location: `setup/UniParser-Tools/`
 - Package name: `uniparser-tools`
-- Status: Workspace member, wrapped by `mbforge.parser_io.ParserClient`
+- Status: Workspace member, wrapped by `mbforge.parsers.uniparser.ParserClient`
 
 ---
 

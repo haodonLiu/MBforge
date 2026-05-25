@@ -121,10 +121,10 @@ MBForge/
 │   │   ├── docking.py        # 分子对接（占位）
 │   │   ├── qsar.py           # QSAR（占位）
 │   │   └── md.py             # 分子动力学（占位）
-│   ├── parser_io/        # UniParser 集成
-│   │   ├── client.py          # UniParser 客户端
-│   │   ├── config.py          # 解析器配置
-│   │   └── models.py          # 数据模型
+│   ├── parsers/
+│   │   ├── uniparser/         # UniParser API 客户端
+│   │   ├── molecule/          # 分子提取管线
+│   │   └── pdf_parser.py      # PDF 解析流水线
 │   ├── utils/            # 工具函数
 │   │   ├── config.py          # 配置管理
 │   │   ├── constants.py       # 常量定义

@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 
 from ..core.knowledge_base import KnowledgeBase
 from .components import EmptyStateWidget, SectionHeader
-from .theme import SearchBox, create_button, create_label
+from .theme import ThemeManager, _p, SearchBox, create_button, create_label
 
 
 class KnowledgeBasePanel(QWidget):
@@ -53,24 +53,25 @@ class KnowledgeBasePanel(QWidget):
         left_layout.setContentsMargins(0, 0, 0, 0)
 
         self.fragment_list = QListWidget()
-        self.fragment_list.setStyleSheet("""
-            QListWidget {
-                border: 1px solid #e9ecef;
+        p = _p()
+        self.fragment_list.setStyleSheet(f"""
+            QListWidget {{
+                border: 1px solid {p['border']};
                 border-radius: 10px;
-                background: #ffffff;
+                background: {p['bg_card']};
                 outline: none;
-            }
-            QListWidget::item {
+            }}
+            QListWidget::item {{
                 padding: 10px 12px;
-                border-bottom: 1px solid #f1f3f5;
-            }
-            QListWidget::item:selected {
-                background: #e7f5ff;
-                color: #1971c2;
-            }
-            QListWidget::item:hover {
-                background: #f8f9fa;
-            }
+                border-bottom: 1px solid {p['border']};
+            }}
+            QListWidget::item:selected {{
+                background: {p['brand_primary']}1a;
+                color: {p['brand_primary']};
+            }}
+            QListWidget::item:hover {{
+                background: {p['bg_hover']};
+            }}
         """)
         self.fragment_list.currentItemChanged.connect(self._on_fragment_changed)
         left_layout.addWidget(self.fragment_list)
@@ -89,14 +90,15 @@ class KnowledgeBasePanel(QWidget):
 
         self.detail_text = QTextEdit()
         self.detail_text.setReadOnly(True)
-        self.detail_text.setStyleSheet("""
-            QTextEdit {
-                background: #f8f9fa;
-                border: 1px solid #e9ecef;
+        p = _p()
+        self.detail_text.setStyleSheet(f"""
+            QTextEdit {{
+                background: {p['bg_hover']};
+                border: 1px solid {p['border']};
                 border-radius: 10px;
                 padding: 12px;
                 font-size: 13px;
-            }
+            }}
         """)
         right_layout.addWidget(self.detail_text)
 
@@ -125,6 +127,11 @@ class KnowledgeBasePanel(QWidget):
         )
         self.empty_state.setVisible(False)
         layout.addWidget(self.empty_state)
+
+        ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self, mode: str):
+        self.refresh()
 
     def set_knowledge_base(self, kb: KnowledgeBase):
         """设置知识库实例."""

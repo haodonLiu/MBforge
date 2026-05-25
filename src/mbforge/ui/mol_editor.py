@@ -430,7 +430,7 @@ class MolEditorWidget(QWidget):
         if self._pixmap is None or self._pixmap.isNull():
             p = ThemeManager.instance().palette()
             painter = QPainter(self)
-            painter.fillRect(self.rect(), p["bg_card"])
+            painter.fillRect(self.rect(), QColor(p["bg_card"]))
             painter.end()
             return
 

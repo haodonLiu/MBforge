@@ -1,4 +1,4 @@
-"""分子编辑器 Dock — 集成工具栏 + 预设片段 + MolEditorWidget."""
+"""分子编辑器 — Dock 和独立对话框."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QDialog,
     QDockWidget,
     QFrame,
     QGridLayout,
@@ -354,3 +355,235 @@ class MolEditorDock(QDockWidget):
         self._smiles_input.setText(esmiles)
         self.editor.set_esmiles(esmiles)
         self._output_label.setText(esmiles)
+
+
+class MoleculeEditorDialog(QDialog):
+    """分子编辑器独立窗口 — 非模态对话框."""
+
+    # 当编辑器中分子变化时发出（E-SMILES 字符串）
+    molecule_changed = pyqtSignal(str)
+
+    def __init__(self, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self.setWindowTitle("分子编辑器")
+        self.setMinimumSize(480, 700)
+        self.resize(520, 800)
+        ThemeManager.apply_dialog(self)
+        self._setup_ui()
+
+        ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        # SMILES 输入框
+        input_card = CardWidget("")
+        input_layout = QVBoxLayout()
+        self._smiles_input = QLineEdit()
+        self._smiles_input.setPlaceholderText("输入 SMILES 或 E-SMILES，回车加载")
+        self._smiles_input.returnPressed.connect(self._on_load_smiles)
+        input_layout.addWidget(self._smiles_input)
+        input_card.add_layout(input_layout)
+        layout.addWidget(input_card)
+
+        # 编辑器工具栏
+        toolbar_card = CardWidget("工具")
+        toolbar_layout = QHBoxLayout()
+        toolbar_layout.setSpacing(6)
+
+        self._tool_buttons: dict[EditorTool, QWidget] = {}
+        for tool in EditorTool:
+            btn = create_button(tool.value, style="default")
+            btn.setCheckable(True)
+            btn.setMaximumWidth(80)
+            btn.clicked.connect(lambda checked, t=tool: self._on_tool_changed(t))
+            toolbar_layout.addWidget(btn)
+            self._tool_buttons[tool] = btn
+
+        self._tool_buttons[EditorTool.SELECT].setChecked(True)
+        toolbar_layout.addStretch()
+        toolbar_card.add_layout(toolbar_layout)
+        layout.addWidget(toolbar_card)
+
+        # 原子类型选择
+        atom_card = CardWidget("原子类型")
+        atom_layout = QHBoxLayout()
+        atom_layout.setSpacing(4)
+        self._atom_buttons: dict[str, QWidget] = {}
+        for atom in ["C", "N", "O", "S", "P", "F", "Cl", "Br"]:
+            btn = create_button(atom, style="default")
+            btn.setCheckable(True)
+            btn.setMaximumWidth(40)
+            btn.clicked.connect(lambda checked, a=atom: self._on_atom_changed(a))
+            atom_layout.addWidget(btn)
+            self._atom_buttons[atom] = btn
+
+        self._atom_buttons["C"].setChecked(True)
+        atom_layout.addStretch()
+        atom_card.add_layout(atom_layout)
+        layout.addWidget(atom_card)
+
+        # 键类型选择
+        bond_card = CardWidget("键类型")
+        bond_layout = QHBoxLayout()
+        bond_layout.setSpacing(4)
+        self._bond_buttons: dict[str, QWidget] = {}
+        for bond in ["SINGLE", "DOUBLE", "TRIPLE", "AROMATIC"]:
+            btn = create_button(bond, style="default")
+            btn.setCheckable(True)
+            btn.setMaximumWidth(70)
+            btn.clicked.connect(lambda checked, b=bond: self._on_bond_changed(b))
+            bond_layout.addWidget(btn)
+            self._bond_buttons[bond] = btn
+
+        self._bond_buttons["SINGLE"].setChecked(True)
+        bond_layout.addStretch()
+        bond_card.add_layout(bond_layout)
+        layout.addWidget(bond_card)
+
+        # 预设片段
+        preset_card = CardWidget("预设片段")
+        preset_layout = QVBoxLayout()
+        self._preset_list = QListWidget()
+        self._preset_list.setSpacing(2)
+        self._preset_list.itemClicked.connect(self._on_preset_clicked)
+        for p in PRESETS:
+            item = QListWidgetItem(p["name"])
+            item.setData(Qt.ItemDataRole.UserRole, p["esmiles"])
+            item.setToolTip(p["esmiles"])
+            self._preset_list.addItem(item)
+        preset_layout.addWidget(self._preset_list)
+        preset_card.add_layout(preset_layout)
+        layout.addWidget(preset_card)
+
+        # 快捷键面板（可折叠）
+        self._shortcuts_panel = _ShortcutsPanel(self)
+        self._shortcuts_panel.preset_selected.connect(self._on_preset_clicked)
+        layout.addWidget(self._shortcuts_panel)
+
+        # 分子编辑器主件
+        self.editor = MolEditorWidget()
+        self.editor.smiles_changed.connect(self._on_editor_changed)
+        layout.addWidget(self.editor, 1)
+
+        # 输出 E-SMILES（只读）
+        self._output_label = QLabel()
+        self._output_label.setWordWrap(True)
+        p = ThemeManager.instance().palette()
+        self._output_label.setStyleSheet(f"""
+            QLabel {{
+                font-family: monospace;
+                font-size: 11px;
+                color: {p['text_secondary']};
+                background: {p['bg_hover']};
+                padding: 4px 8px;
+                border-radius: 4px;
+            }}
+        """)
+        layout.addWidget(self._output_label)
+
+        # 实时分子式显示
+        self._formula_label = QLabel()
+        self._formula_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._formula_label.setStyleSheet(f"""
+            QLabel {{
+                font-size: 13px;
+                font-weight: 600;
+                color: {p['text_secondary']};
+                padding: 2px 8px;
+            }}
+        """)
+        layout.addWidget(self._formula_label)
+
+        # 底部按钮
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        close_btn = create_button("关闭")
+        close_btn.clicked.connect(self.close)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+        self._on_theme_changed(ThemeManager.instance().mode())
+
+    def _on_theme_changed(self, mode: str):
+        self._smiles_input.setStyleSheet("")
+        p = ThemeManager.instance().palette()
+        self._output_label.setStyleSheet(f"""
+            QLabel {{
+                font-family: monospace;
+                font-size: 11px;
+                color: {p['text_secondary']};
+                background: {p['bg_hover']};
+                padding: 4px 8px;
+                border-radius: 4px;
+            }}
+        """)
+        self._formula_label.setStyleSheet(f"""
+            QLabel {{
+                font-size: 13px;
+                font-weight: 600;
+                color: {p['text_secondary']};
+                padding: 2px 8px;
+            }}
+        """)
+
+    def _on_load_smiles(self):
+        esmiles = self._smiles_input.text().strip()
+        if esmiles:
+            self.editor.set_esmiles(esmiles)
+            self._output_label.setText(esmiles)
+            self._update_formula(esmiles)
+
+    def _on_tool_changed(self, tool: EditorTool):
+        for t, btn in self._tool_buttons.items():
+            btn.setChecked(t == tool)
+        self.editor.set_tool(tool)
+
+    def _on_atom_changed(self, atom: str):
+        for a, btn in self._atom_buttons.items():
+            btn.setChecked(a == atom)
+        self.editor.set_atom_type(atom)
+
+    def _on_bond_changed(self, bond: str):
+        for b, btn in self._bond_buttons.items():
+            btn.setChecked(b == bond)
+        order_map = {
+            "SINGLE": Chem.BondType.SINGLE,
+            "DOUBLE": Chem.BondType.DOUBLE,
+            "TRIPLE": Chem.BondType.TRIPLE,
+            "AROMATIC": Chem.BondType.AROMATIC,
+        }
+        self.editor.set_bond_order(order_map[bond])
+
+    def _on_preset_clicked(self, item: QListWidgetItem):
+        esmiles = item.data(Qt.ItemDataRole.UserRole)
+        self._smiles_input.setText(esmiles)
+        self.editor.set_esmiles(esmiles)
+        self._output_label.setText(esmiles)
+
+    def _on_editor_changed(self, esmiles: str):
+        self._output_label.setText(esmiles)
+        self._update_formula(esmiles)
+        self.molecule_changed.emit(esmiles)
+
+    def _update_formula(self, esmiles: str):
+        try:
+            smiles_part = esmiles.split("<sep>")[0]
+            mol = Chem.MolFromSmiles(smiles_part)
+            if mol is None:
+                self._formula_label.setText("")
+                return
+            Chem.SanitizeMol(mol)
+            formula = rdMolDescriptors.CalcMolFormula(mol)
+            self._formula_label.setText(formula)
+        except Exception:
+            self._formula_label.setText("")
+
+    def set_esmiles(self, esmiles: str):
+        """外部设置 E-SMILES。"""
+        self._smiles_input.setText(esmiles)
+        self.editor.set_esmiles(esmiles)
+        self._output_label.setText(esmiles)
+

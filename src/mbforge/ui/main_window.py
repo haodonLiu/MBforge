@@ -46,7 +46,7 @@ from .editor import MarkdownEditor
 from .file_tree import FileTreeWidget
 from .kb_panel import KnowledgeBasePanel
 from .mol_panel import MoleculePanel
-from .mol_editor_dock import MolEditorDock
+from .mol_editor_dock import MoleculeEditorDialog
 from .pdf_viewer import PDFViewer
 from .preview import MarkdownPreview
 from .status_indicator import ServiceStatusIndicator
@@ -413,6 +413,13 @@ class MainWindow(QMainWindow):
         workflow_action.triggered.connect(self._show_workflow_panel)
         tools_menu.addAction(workflow_action)
 
+        tools_menu.addSeparator()
+
+        mol_editor_action = QAction("分子编辑器", self)
+        mol_editor_action.setShortcut(QKeySequence("Ctrl+E"))
+        mol_editor_action.triggered.connect(self._open_mol_editor)
+        tools_menu.addAction(mol_editor_action)
+
     def _setup_toolbar(self):
         """快速跳转工具栏：文献库 / 分子库 / 知识库 + 服务状态指示器."""
         p = ThemeManager.instance().palette()
@@ -491,11 +498,17 @@ class MainWindow(QMainWindow):
 
         self.statusbar.showMessage("就绪")
 
-        # 分子编辑器 Dock（右侧）
-        self.mol_editor_dock = MolEditorDock()
-        self.mol_editor_dock.setFloating(False)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.mol_editor_dock)
-        self.mol_editor_dock.molecule_changed.connect(self._on_molecule_edited)
+        # 分子编辑器独立窗口
+        self._mol_editor_dialog: Optional[MoleculeEditorDialog] = None
+
+    def _open_mol_editor(self):
+        """打开分子编辑器独立窗口."""
+        if self._mol_editor_dialog is None:
+            self._mol_editor_dialog = MoleculeEditorDialog(self)
+            self._mol_editor_dialog.molecule_changed.connect(self._on_molecule_edited)
+        self._mol_editor_dialog.show()
+        self._mol_editor_dialog.raise_()
+        self._mol_editor_dialog.activateWindow()
 
     def _go_home(self):
         """返回欢迎首页."""

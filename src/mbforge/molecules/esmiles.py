@@ -18,7 +18,7 @@ from rdkit.Chem import AllChem
 SEP = "<sep>"
 
 # 标签正则: <a>0:R[1]</a> 或 <r>0:R[1]</r> 或 <c>0:B</c>
-_TAG_PATTERN = re.compile(r"<([arc])>(\d+):([^<]+)</\1>")
+_TAG_PATTERN = re.compile(r"<([arc])>(\d+):(.+?)</\1>")
 
 
 @dataclass

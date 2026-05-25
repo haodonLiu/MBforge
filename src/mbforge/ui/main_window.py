@@ -46,6 +46,7 @@ from .editor import MarkdownEditor
 from .file_tree import FileTreeWidget
 from .kb_panel import KnowledgeBasePanel
 from .mol_panel import MoleculePanel
+from .mol_editor_dock import MolEditorDock
 from .pdf_viewer import PDFViewer
 from .preview import MarkdownPreview
 from .status_indicator import ServiceStatusIndicator
@@ -490,9 +491,19 @@ class MainWindow(QMainWindow):
 
         self.statusbar.showMessage("就绪")
 
+        # 分子编辑器 Dock（右侧）
+        self.mol_editor_dock = MolEditorDock()
+        self.mol_editor_dock.setFloating(False)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.mol_editor_dock)
+        self.mol_editor_dock.molecule_changed.connect(self._on_molecule_edited)
+
     def _go_home(self):
         """返回欢迎首页."""
         self.center_stack.setCurrentIndex(0)
+
+    def _on_molecule_edited(self, esmiles: str):
+        """分子编辑器中分子发生变化时的回调."""
+        logger.debug(f"分子编辑器 E-SMILES 变化: {esmiles[:50]}...")
 
     def _refresh_resources(self):
         """刷新状态栏资源监控."""

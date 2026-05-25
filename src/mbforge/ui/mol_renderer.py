@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
-from typing import Optional
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
@@ -39,7 +38,7 @@ class MoleculeRenderer:
         smiles: str,
         size: tuple[int, int] | None = None,
         legend: str = "",
-    ) -> Optional[QPixmap]:
+    ) -> QPixmap | None:
         """将 SMILES 渲染为 QPixmap.
 
         Args:
@@ -116,7 +115,7 @@ class MoleculeImageWidget(QWidget):
         self,
         smiles: str = "",
         size: tuple[int, int] | None = None,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self._smiles = smiles

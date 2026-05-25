@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import os
-from typing import List, Optional
-
-import openai
 
 from .base import BaseEmbedder
 from ..utils.constants import (
@@ -98,14 +95,14 @@ class SentenceTransformerEmbedder(BaseEmbedder):
         self._load_model()
         return self._dim or 384
 
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    def embed(self, texts: list[str]) -> list[list[float]]:
         model = self._load_model()
         embeddings = model.encode(
             texts, normalize_embeddings=True, show_progress_bar=False
         )
         return embeddings.tolist()
 
-    async def aembed(self, texts: List[str]) -> List[List[float]]:
+    async def aembed(self, texts: list[str]) -> list[list[float]]:
         import asyncio
 
         loop = asyncio.get_running_loop()
@@ -138,8 +135,8 @@ class Qwen3Embedder(BaseEmbedder):
         self,
         model_name: str = DEFAULT_EMBED_MODEL,
         device: str = "cpu",
-        mrl_dim: Optional[int] = None,
-        instruction: Optional[str] = None,
+        mrl_dim: int | None = None,
+        instruction: str | None = None,
     ):
         self.model_name = model_name
         self.device = device
@@ -174,7 +171,7 @@ class Qwen3Embedder(BaseEmbedder):
         self._load_model()
         return self._dim or 768
 
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    def embed(self, texts: list[str]) -> list[list[float]]:
         """编码文本，自动添加 instruction 前缀."""
         model = self._load_model()
         # 为每个文本添加 instruction 前缀
@@ -190,7 +187,7 @@ class Qwen3Embedder(BaseEmbedder):
             embeddings = embeddings[:, : self.mrl_dim]
         return embeddings.tolist()
 
-    async def aembed(self, texts: List[str]) -> List[List[float]]:
+    async def aembed(self, texts: list[str]) -> list[list[float]]:
         import asyncio
 
         loop = asyncio.get_running_loop()
@@ -201,17 +198,19 @@ class APIEmbedder(BaseEmbedder):
     """通过 API 调用的 Embedding（OpenAI 兼容格式）."""
 
     def __init__(self, base_url: str, api_key: str, model_name: str = ""):
+        import openai
+
         self.client = openai.OpenAI(base_url=base_url, api_key=api_key or "empty")
         self.model_name = model_name
 
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    def embed(self, texts: list[str]) -> list[list[float]]:
         response = self.client.embeddings.create(
             model=self.model_name,
             input=texts,
         )
         return [item.embedding for item in response.data]
 
-    async def aembed(self, texts: List[str]) -> List[List[float]]:
+    async def aembed(self, texts: list[str]) -> list[list[float]]:
         import asyncio
 
         loop = asyncio.get_running_loop()

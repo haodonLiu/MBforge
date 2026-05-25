@@ -1,12 +1,6 @@
 """MBForge 核心模块."""
 
-from .project import Project, DocumentEntry
-from .document import DocumentProcessor, ExtractedContent
-from .knowledge_base import KnowledgeBase
-from .mol_database import MoleculeDatabase, MoleculeRecord
-from .settings import ProjectSettings
-from .summarizer import DocumentSummary, SummaryManager, DocumentSummarizer
-from .app_context import AppContext
+from __future__ import annotations
 
 __all__ = [
     "Project",

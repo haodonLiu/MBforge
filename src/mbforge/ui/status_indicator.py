@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QToolTip, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from .theme import ThemeManager
 
@@ -13,7 +11,7 @@ from .theme import ThemeManager
 class ServiceStatusIndicator(QWidget):
     """右上角 4 个服务状态圆点，hover 显示详情."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._status = {
             "LLM": "offline",
@@ -31,7 +29,7 @@ class ServiceStatusIndicator(QWidget):
         self._dots = {}
         for name in ["LLM", "Embedding", "知识库", "分子库"]:
             dot = QLabel("●")
-            dot.setStyleSheet(f"font-size: 12px; color: #868e96;")
+            dot.setStyleSheet("font-size: 12px; color: #868e96;")
             dot.setToolTip(f"{name}: 未连接")
             self._dots[name] = dot
             layout.addWidget(dot)

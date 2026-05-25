@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -25,9 +24,9 @@ class KnowledgeBasePanel(QWidget):
 
     fragment_selected = pyqtSignal(str)
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.kb: Optional[KnowledgeBase] = None
+        self.kb: KnowledgeBase | None = None
         self._fragments: list[dict] = []
         self._setup_ui()
 
@@ -194,7 +193,7 @@ class KnowledgeBasePanel(QWidget):
         except Exception as e:
             self.detail_text.setPlainText(f"搜索失败: {e}")
 
-    def _on_fragment_changed(self, current: Optional[QListWidgetItem], previous):
+    def _on_fragment_changed(self, current: QListWidgetItem | None, previous):
         if current is None:
             return
         idx = current.data(Qt.ItemDataRole.UserRole)

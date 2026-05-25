@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
@@ -41,14 +40,17 @@ class MoleculeExtractDialog(QDialog):
         batch_finished: 批量处理完成
     """
 
-    molecule_confirmed = pyqtSignal(object)  # ExtractionResult
-    molecule_rejected = pyqtSignal(object)  # ExtractionResult
+    #: 用户确认入库一个分子（参数: 修正后的 ExtractionResult）
+    molecule_confirmed = pyqtSignal(object)
+    #: 用户丢弃一个分子（参数: 被丢弃的 ExtractionResult）
+    molecule_rejected = pyqtSignal(object)
+    #: 批量处理完成（无论是否全部审核完毕）
     batch_finished = pyqtSignal()
 
     def __init__(
         self,
-        results: List[ExtractionResult],
-        parent: Optional[QWidget] = None,
+        results: list[ExtractionResult],
+        parent: QWidget | None = None,
     ):
         """初始化对话框.
 
@@ -284,7 +286,7 @@ class MoleculeExtractDialog(QDialog):
             f"已确认: {self.confirmed_count} | 已丢弃: {self.rejected_count}"
         )
 
-    def _load_image(self, img_path: Optional[Path]):
+    def _load_image(self, img_path: Path | None):
         """加载分子图像."""
         if img_path and Path(img_path).exists():
             pixmap = QPixmap(str(img_path))
@@ -400,7 +402,15 @@ class MoleculeExtractDialog(QDialog):
         self.accept()
 
     def resizeEvent(self, event):
-        """窗口大小变化时重新缩放图像."""
+        """窗口大小变化时重新缩放图像（仅在尺寸显著变化时重载）."""
         super().resizeEvent(event)
-        if self.results and self.current_idx < len(self.results):
-            self._load_image(self.results[self.current_idx].mol_img_path)
+        if not self.results or self.current_idx >= len(self.results):
+            return
+        new_size = self.image_label.size()
+        # 避免微小抖动触发重载
+        if hasattr(self, "_last_image_size"):
+            old_w, old_h = self._last_image_size
+            if abs(new_size.width() - old_w) < 20 and abs(new_size.height() - old_h) < 20:
+                return
+        self._last_image_size = (new_size.width(), new_size.height())
+        self._load_image(self.results[self.current_idx].mol_img_path)

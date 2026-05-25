@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -27,9 +26,9 @@ class PDFLibraryPanel(QWidget):
 
     pdf_opened = pyqtSignal(Path)
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.project: Optional[Project] = None
+        self.project: Project | None = None
         self._pdfs: list = []
         self._setup_ui()
 

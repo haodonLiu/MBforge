@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
 
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -57,18 +56,18 @@ class Qwen3Reranker(BaseReranker):
         model_name: str = DEFAULT_RERANK_MODEL,
         device: str = "cpu",
         max_length: int = 8192,
-        instruction: Optional[str] = None,
+        instruction: str | None = None,
     ):
         self.model_name = model_name
         self.device = device
         self.max_length = max_length
         self.instruction = instruction or self.DEFAULT_INSTRUCTION
-        self._tokenizer: Optional[AutoTokenizer] = None
-        self._model: Optional[AutoModelForCausalLM] = None
-        self._prefix_tokens: Optional[List[int]] = None
-        self._suffix_tokens: Optional[List[int]] = None
-        self._token_true_id: Optional[int] = None
-        self._token_false_id: Optional[int] = None
+        self._tokenizer: AutoTokenizer | None = None
+        self._model: AutoModelForCausalLM | None = None
+        self._prefix_tokens: list[int] | None = None
+        self._suffix_tokens: list[int] | None = None
+        self._token_true_id: int | None = None
+        self._token_false_id: int | None = None
 
     def _load(self) -> None:
         """懒加载模型和 tokenizer."""
@@ -107,13 +106,13 @@ class Qwen3Reranker(BaseReranker):
         logger.info("Qwen3-Reranker model loaded successfully")
 
     def _format_pair(
-        self, query: str, doc: str, instruction: Optional[str] = None
+        self, query: str, doc: str, instruction: str | None = None
     ) -> str:
         """格式化 (instruction, query, doc) 为模型输入文本."""
         inst = instruction or self.instruction
         return f"<Instruct>: {inst}\n<Query>: {query}\n<Document>: {doc}"
 
-    def rerank(self, query: str, passages: List[str]) -> List[tuple[int, float]]:
+    def rerank(self, query: str, passages: list[str]) -> list[tuple[int, float]]:
         """对候选文档进行重排序.
 
         Args:

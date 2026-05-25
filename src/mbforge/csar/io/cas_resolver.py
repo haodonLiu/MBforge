@@ -22,7 +22,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +118,7 @@ class CASResolver:
         except Exception:
             return smiles
 
-    def _query_nci_cir(self, smiles: str) -> Optional[List[str]]:
+    def _query_nci_cir(self, smiles: str) -> list[str] | None:
         """通过 NCI CIR API 查询 CAS 号.
 
         Args:
@@ -154,7 +153,7 @@ class CASResolver:
             logger.warning(f"NCI CIR query failed for SMILES {smiles}: {e}")
             return None
 
-    def _query_pubchem(self, smiles: str) -> Optional[str]:
+    def _query_pubchem(self, smiles: str) -> str | None:
         """通过 PubChem PUG REST API 查询 CAS 号.
 
         从化合物的同义词列表中筛选符合 CAS 号格式的条目。
@@ -201,7 +200,7 @@ class CASResolver:
 
     def resolve(
         self, smiles: str, source: str = "auto", canonicalize: bool = True
-    ) -> Optional[str]:
+    ) -> str | None:
         """将 SMILES 解析为 CAS 号.
 
         支持通过 NCI CIR 和 PubChem 进行查询。
@@ -238,7 +237,7 @@ class CASResolver:
         if canonicalize:
             smiles_clean = self._canonicalize_smiles(smiles_clean)
 
-        result: Optional[str] = None
+        result: str | None = None
 
         if source in ("auto", "nci"):
             cas_list = self._query_nci_cir(smiles_clean)
@@ -264,10 +263,10 @@ class CASResolver:
 
     def resolve_batch(
         self,
-        smiles_list: List[str],
+        smiles_list: list[str],
         source: str = "auto",
         canonicalize: bool = True,
-    ) -> List[Optional[str]]:
+    ) -> list[str | None]:
         """批量将 SMILES 解析为 CAS 号.
 
         逐个查询并控制请求频率，避免对远程 API 造成过大压力。
@@ -285,7 +284,7 @@ class CASResolver:
             >>> resolver.resolve_batch(["CCO", "CC(=O)Oc1ccccc1C(=O)O"])
             ['64-17-5', '50-78-2']
         """
-        results: List[Optional[str]] = []
+        results: list[str | None] = []
         for i, smiles in enumerate(smiles_list):
             cas = self.resolve(smiles, source=source, canonicalize=canonicalize)
             results.append(cas)

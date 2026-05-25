@@ -14,7 +14,6 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 from .io.reader import MoleculeReader
 from ..clustering.fingerprinter import MolecularFingerprinter
@@ -121,8 +120,8 @@ def run_workflow(
     fp_type: str = "Morgan",
     mcs_timeout: int = 30,
     skip_visualization: bool = False,
-    ic50_nm_column: Optional[str] = None,
-    ic50_um_column: Optional[str] = None,
+    ic50_nm_column: str | None = None,
+    ic50_um_column: str | None = None,
 ) -> None:
     """运行完整的SAR分析工作流.
 

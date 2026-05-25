@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Union
 
 import numpy as np
 from rdkit import Chem
@@ -41,8 +41,8 @@ class MatchResult:
     matched: bool = False
     query: str = ""
     target: str = ""
-    atom_matches: List[Tuple[int, ...]] = field(default_factory=list)
-    bond_matches: List[Tuple[int, ...]] = field(default_factory=list)
+    atom_matches: list[tuple[int, ...]] = field(default_factory=list)
+    bond_matches: list[tuple[int, ...]] = field(default_factory=list)
     match_count: int = 0
 
     def __bool__(self) -> bool:
@@ -149,7 +149,7 @@ class SubstructureMatcher:
         mol1: Chem.Mol,
         mol2: Chem.Mol,
         timeout: int = 30,
-    ) -> Optional[Chem.Mol]:
+    ) -> Chem.Mol | None:
         """查找两个分子的最大公共子结构（MCS）.
 
         Args:
@@ -235,7 +235,7 @@ class SubstructureMatcher:
 
     def pairwise_similarity_matrix(
         self,
-        molecules: List[Chem.Mol],
+        molecules: list[Chem.Mol],
         radius: int = 2,
         n_bits: int = 2048,
     ) -> np.ndarray:
@@ -280,10 +280,10 @@ class SubstructureMatcher:
     def find_similar_molecules(
         self,
         query: Chem.Mol,
-        molecules: List[Chem.Mol],
+        molecules: list[Chem.Mol],
         threshold: float = 0.7,
-        top_n: Optional[int] = None,
-    ) -> List[Tuple[int, float, Chem.Mol]]:
+        top_n: int | None = None,
+    ) -> list[tuple[int, float, Chem.Mol]]:
         """从分子库中查找与查询分子相似的分子.
 
         Args:
@@ -306,7 +306,7 @@ class SubstructureMatcher:
             results = results[:top_n]
         return results
 
-    def _to_mol(self, pattern: Union[str, Chem.Mol]) -> Optional[Chem.Mol]:
+    def _to_mol(self, pattern: Union[str, Chem.Mol]) -> Chem.Mol | None:
         """将字符串模式转换为 RDKit Mol 对象."""
         if isinstance(pattern, Chem.Mol):
             return pattern
@@ -330,7 +330,7 @@ class SMARTSQuery:
 
     def __init__(self) -> None:
         """初始化 SMARTS 查询工具."""
-        self._queries: Dict[str, Chem.Mol] = {}
+        self._queries: dict[str, Chem.Mol] = {}
 
     def add_query(self, name: str, smarts: str) -> bool:
         """添加 SMARTS 查询模式.
@@ -392,7 +392,7 @@ class SMARTSQuery:
             match_count=len(atom_matches),
         )
 
-    def query_all(self, mol: Chem.Mol) -> Dict[str, MatchResult]:
+    def query_all(self, mol: Chem.Mol) -> dict[str, MatchResult]:
         """对所有注册的查询进行匹配.
 
         Args:
@@ -405,10 +405,10 @@ class SMARTSQuery:
 
     def filter_molecules(
         self,
-        molecules: List[Chem.Mol],
+        molecules: list[Chem.Mol],
         query_name: str,
         mode: str = "include",  # "include" or "exclude"
-    ) -> List[Tuple[int, Chem.Mol]]:
+    ) -> list[tuple[int, Chem.Mol]]:
         """根据 SMARTS 查询筛选分子.
 
         Args:
@@ -429,7 +429,7 @@ class SMARTSQuery:
         return results
 
     @classmethod
-    def from_query_dict(cls, queries: Dict[str, str]) -> SMARTSQuery:
+    def from_query_dict(cls, queries: dict[str, str]) -> SMARTSQuery:
         """从字典批量创建查询工具.
 
         Args:
@@ -444,7 +444,7 @@ class SMARTSQuery:
                 logger.warning(f"Skipped invalid SMARTS for '{name}': {smarts}")
         return sq
 
-    def get_query_names(self) -> List[str]:
+    def get_query_names(self) -> list[str]:
         """获取所有已注册查询的名称.
 
         Returns:
@@ -459,7 +459,7 @@ class SMARTSQuery:
 # 便捷工厂函数
 
 
-def query_functional_groups(mol: Chem.Mol) -> Dict[str, bool]:
+def query_functional_groups(mol: Chem.Mol) -> dict[str, bool]:
     """查询常见官能团.
 
     Args:

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 from rdkit import Chem
 from rdkit.Chem import SaltRemover
@@ -39,11 +38,11 @@ class StandardizationResult:
         errors: 错误信息列表.
     """
 
-    mol: Optional[Chem.Mol] = None
+    mol: Chem.Mol | None = None
     success: bool = True
-    steps_applied: List[str] = field(default_factory=list)
-    changes: List[str] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+    steps_applied: list[str] = field(default_factory=list)
+    changes: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 class MoleculeStandardizer:
@@ -204,7 +203,7 @@ class MoleculeStandardizer:
                 steps_applied=result.steps_applied,
             )
 
-    def standardize_smiles(self, smiles: str) -> Optional[str]:
+    def standardize_smiles(self, smiles: str) -> str | None:
         """直接对 SMILES 字符串进行标准化.
 
         Args:
@@ -223,9 +222,9 @@ class MoleculeStandardizer:
 
     def standardize_batch(
         self,
-        molecules: List[Chem.Mol],
-        names: Optional[List[str]] = None,
-    ) -> List[StandardizationResult]:
+        molecules: list[Chem.Mol],
+        names: list[str] | None = None,
+    ) -> list[StandardizationResult]:
         """批量标准化.
 
         Args:
@@ -271,7 +270,7 @@ class MoleculeStandardizer:
         return largest
 
     @staticmethod
-    def strip_salts(smiles: str) -> Optional[str]:
+    def strip_salts(smiles: str) -> str | None:
         """静态方法：快速去除 SMILES 中的盐.
 
         Args:
@@ -288,7 +287,7 @@ class MoleculeStandardizer:
         return Chem.MolToSmiles(mol)
 
     @staticmethod
-    def canonicalize_smiles(smiles: str) -> Optional[str]:
+    def canonicalize_smiles(smiles: str) -> str | None:
         """静态方法：生成规范化的 Canonical SMILES.
 
         Args:
@@ -308,7 +307,7 @@ class MoleculeStandardizer:
             return Chem.MolToSmiles(mol)
 
     @staticmethod
-    def neutralize_smiles(smiles: str) -> Optional[str]:
+    def neutralize_smiles(smiles: str) -> str | None:
         """静态方法：中性化 SMILES.
 
         Args:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from PyQt6.QtWidgets import (
     QButtonGroup,
@@ -31,7 +30,7 @@ from .theme import ThemeManager, create_input
 class NewProjectDialog(QDialog):
     """创建新项目对话框."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("新建项目")
         self.setMinimumWidth(500)
@@ -88,8 +87,8 @@ class SettingsDialog(QDialog):
     def __init__(
         self,
         config: AppConfig,
-        project_root: Optional[Path] = None,
-        parent: Optional[QWidget] = None,
+        project_root: Path | None = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.config = config
@@ -292,7 +291,7 @@ class SettingsDialog(QDialog):
 class MoleculeInfoDialog(QDialog):
     """分子详细信息对话框（含结构图片预览）."""
 
-    def __init__(self, record, parent: Optional[QWidget] = None):
+    def __init__(self, record, parent: QWidget | None = None):
         super().__init__(parent)
         self.record = record
         self.setWindowTitle(f"分子详情 - {record.name or record.smiles[:30]}")

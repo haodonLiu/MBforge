@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Optional, Any, Union, Tuple
+from typing import Any, Union
 from dataclasses import dataclass
 
 import numpy as np
@@ -102,7 +102,7 @@ class SARRenderer:
         >>> renderer.render_mcs(mcs_mol, "mcs.png", title="MCS Structure")
     """
 
-    def __init__(self, settings: Optional[PlotSettings] = None) -> None:
+    def __init__(self, settings: PlotSettings | None = None) -> None:
         """初始化SAR渲染器.
 
         Args:
@@ -147,9 +147,9 @@ class SARRenderer:
     def render_cluster_activity(
         self,
         cluster_id: int,
-        molecules: List[Dict[str, Any]],
+        molecules: list[dict[str, Any]],
         output_path: Union[str, Path],
-        mcs_mol: Optional[Chem.Mol] = None,
+        mcs_mol: Chem.Mol | None = None,
     ) -> None:
         """渲染聚类的活性分布图.
 
@@ -193,7 +193,7 @@ class SARRenderer:
         plt.close()
 
     def render_sar_summary(
-        self, sar_results: Dict[int, Any], output_path: Union[str, Path]
+        self, sar_results: dict[int, Any], output_path: Union[str, Path]
     ) -> None:
         """渲染跨所有聚类的SAR汇总图.
 
@@ -247,7 +247,7 @@ class SARRenderer:
         self,
         sim_matrix: np.ndarray,
         output_path: Union[str, Path],
-        labels: Optional[List[str]] = None,
+        labels: list[str] | None = None,
     ) -> None:
         """渲染相似度矩阵热图.
 
@@ -283,10 +283,10 @@ class SARRenderer:
 
     def render_mols_with_activities(
         self,
-        molecules: List[Dict[str, Any]],
+        molecules: list[dict[str, Any]],
         output_path: Union[str, Path],
         mols_per_row: int = 4,
-        legends: Optional[List[str]] = None,
+        legends: list[str] | None = None,
     ) -> None:
         """渲染带活性标注的分子网格图.
 
@@ -324,10 +324,10 @@ class SARRenderer:
     def render_sar_table_image(
         self,
         scaffold_info: MCSScaffoldInfo,
-        molecules: List[Dict[str, Any]],
+        molecules: list[dict[str, Any]],
         output_path: Union[str, Path],
-        scaffold_size: Tuple[int, int] = (400, 300),
-        sub_size: Tuple[int, int] = (80, 60),
+        scaffold_size: tuple[int, int] = (400, 300),
+        sub_size: tuple[int, int] = (80, 60),
     ) -> None:
         """渲染SAR表格图像.
 
@@ -400,11 +400,11 @@ class SARRenderer:
     def _render_single_table(
         self,
         scaffold_info: MCSScaffoldInfo,
-        molecules: List[Dict[str, Any]],
+        molecules: list[dict[str, Any]],
         output_path: Path,
-        r_atom_indices: List[int],
-        scaffold_size: Tuple[int, int],
-        sub_size: Tuple[int, int],
+        r_atom_indices: list[int],
+        scaffold_size: tuple[int, int],
+        sub_size: tuple[int, int],
     ) -> None:
         """Render a single SAR table image."""
         scaffold_img = create_marked_scaffold(scaffold_info, scaffold_size)
@@ -482,10 +482,10 @@ class SARRenderer:
     def render_sar_path_image(
         self,
         scaffold_info: MCSScaffoldInfo,
-        molecules: List[Dict[str, Any]],
+        molecules: list[dict[str, Any]],
         output_path: Union[str, Path],
-        scaffold_size: Tuple[int, int] = (400, 300),
-        sub_size: Tuple[int, int] = (80, 60),
+        scaffold_size: tuple[int, int] = (400, 300),
+        sub_size: tuple[int, int] = (80, 60),
     ) -> None:
         """渲染SAR修饰路径图像.
 
@@ -601,9 +601,9 @@ class SARRenderer:
 
     def _group_by_path(
         self,
-        mol_data_list: List[Dict[str, Any]],
+        mol_data_list: list[dict[str, Any]],
         num_r: int,
-    ) -> List[Tuple[str, List[List[Any]], List[str]]]:
+    ) -> list[tuple[str, list[list[Any]], list[str]]]:
         """Group molecules by modification path.
 
         For 2 R-groups: group by R1 value, show R2 variation.
@@ -659,10 +659,10 @@ class SARRenderer:
 
     def _create_table_image(
         self,
-        rows: List[List[Any]],
-        col_labels: List[str],
+        rows: list[list[Any]],
+        col_labels: list[str],
         num_r_groups: int,
-        sub_size: Tuple[int, int],
+        sub_size: tuple[int, int],
     ) -> Image.Image:
         """创建表格图像 (委托给统一实现).
 

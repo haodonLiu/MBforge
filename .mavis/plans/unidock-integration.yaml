@@ -1,0 +1,179 @@
+version: 1
+plan:
+  name: "UniDock 插件集成"
+  max_concurrency: 2
+  max_consecutive_failures: 2
+  max_cycles: 1
+
+tasks:
+  - id: create-plugin
+    title: "创建 UniDockPlugin 插件文件"
+    prompt: |
+      在 MBForge 项目中创建新的 UniDock 分子对接插件。
+
+      项目路径：C:\Users\10954\Desktop\MBForge
+      新建文件：src/mbforge/plugins/unidock/plugin.py
+      现有模板参考：src/mbforge/plugins/cadd_template/plugin.py
+
+      ========== UniDock 技术背景 ==========
+      Uni-Dock 是深势科技开发的高性能 GPU 加速分子对接引擎（Apache 2.0 开源），
+      GitHub: https://github.com/dptech-corp/Uni-Dock
+      支持 vina/vinardo/ad4 打分函数，V100 GPU 比单核 CPU 快 2000 倍。
+
+      ========== UniDock CLI 参数 ==========
+      核心参数：
+        --receptor <path>       受体 PDBQT 文件路径
+        --gpu_batch <path>...   配体 PDBQT 文件（空格分隔，支持多个）
+        --center_x <float>      对接盒子中心 X 坐标 (Å)
+        --center_y <float>      对接盒子中心 Y 坐标 (Å)
+        --center_z <float>      对接盒子中心 Z 坐标 (Å)
+        --size_x <float>        对接盒子 X 尺寸 (Å)，默认 22.5
+        --size_y <float>        对接盒子 Y 尺寸 (Å)，默认 22.5
+        --size_z <float>        对接盒子 Z 尺寸 (Å)，默认 22.5
+        --search_mode <mode>     搜索模式：fast | balance | detail
+        --scoring <func>        打分函数：vina（默认）| vinardo | ad4
+        --num_modes <int>       输出构象数，默认 9
+        --dir <path>            批量输出目录
+        --exhaustiveness <int> 搜索穷尽度，默认 8（数字越大越精确但越慢）
+        --max_step <int>        MC 最大步数，默认 0（自动）
+        --max_gpu_memory <MB>    GPU 显存上限（OOM 时使用）
+        --seed <int>            随机种子
+        --verbosity <0|1|2>    输出详细度
+        --cpu <int>             CPU 核心数（默认 0=自动）
+
+      搜索模式预设：
+        fast    : exhaustiveness=128,  max_step=20   （最快，精度稍低，适合千万级初筛）
+        balance : exhaustiveness=384,  max_step=40   （平衡，推荐默认）
+        detail  : exhaustiveness=512,  max_step=40   （最慢，精度最高，适合精筛）
+
+      conda 安装：conda install unidock -c conda-forge
+
+      ========== 实现要求 ==========
+      1. 参考 cadd_template/plugin.py 的整体结构和命名风格
+      2. 新建目录 src/mbforge/plugins/unidock/__init__.py（空文件，只写一行 __all__）
+      3. plugin.py 包含：
+         - 模块级 docstring（说明 UniDock 用途、安装方式、支持的参数）
+         - UniDockResult dataclass（继承或模仿 DockingResult）
+         - UniDockPlugin 类（继承 BasePlugin）：
+           * meta 定义 name="unidock"，capabilities=[AGENT_TOOL, WORKFLOW, CLI_COMMAND]
+           * setup() 检查 unidock 是否可用，输出可用状态
+           * run_docking() 主方法（接受 RDKit Mol + 参数）
+           * _run_unidock() 内部方法：调用 unidock CLI，subprocess 运行
+           * _parse_unidock_output() 解析输出文件
+           * _prepare_ligand() 用 RDKit 将 Mol 转为 PDBQT（调用 meeko 或直接写 PDBQT）
+           * register_tools() 向 Agent 注册工具
+           * register_cli() 注册 CLI 子命令
+           * get_workflow_steps() 返回工作流步骤
+      4. 关键参数用详细注释（参考参数说明中的 tooltip 信息）
+      5. graceful fallback：UniDock 不可用时输出警告，不崩溃
+      6. 所有方法必须有详细 docstring，中文注释
+      7. 代码风格与 cadd_template 保持一致（typing imports、dataclass 等）
+
+      ========== 输出 ==========
+      1. 创建 src/mbforge/plugins/unidock/__init__.py
+      2. 创建 src/mbforge/plugins/unidock/plugin.py
+      3. 确保插件可被 plugins/registry.py 的自动发现机制找到（参考 cadd_template 的包结构）
+      4. 在 C:\Users\10954\Desktop\MBForge\src\mbforge\plugins\__init__.py 添加对 unidock 的引用（如有需要）
+      完成后报告创建的文件列表。
+
+  - id: add-ui
+    title: "添加 UniDock 参数配置 UI"
+    prompt: |
+      在 MBForge 主程序中添加 UniDock 对接参数的配置 UI。
+
+      项目路径：C:\Users\10954\Desktop\MBForge
+      参考文件：
+        - src/mbforge/ui/workflow_panel.py（工作流面板结构）
+        - src/mbforge/ui/dialogs.py（对话框风格）
+        - src/mbforge/ui/components.py（基础组件）
+        - src/mbforge/ui/main_window.py（主窗口注册方式）
+
+      ========== UI 设计要求 ==========
+      1. 新建文件 src/mbforge/ui/unidock_dialog.py
+      2. 实现 UniDockConfigDialog 类（继承 QDialog）：
+         - 标题：UniDock 对接配置
+         - 包含以下输入字段（每字段带 tooltip 鼠标悬停提示）：
+
+      === 参数及 Tooltip 说明 ===
+      | 字段名 | 类型 | 默认值 | Tooltip 说明 |
+      | receptor_file | QLineEdit | "" | "受体蛋白 PDBQT 文件路径。可用 PDBQTVina.py 转换 PDB 为 PDBQT 格式" |
+      | ligand_smiles | QLineEdit | "" | "配体分子 SMILES 字符串，如 CC(=O)Oc1ccccc1C(=O)O" |
+      | center_x | QDoubleSpinBox | 0.0 | "对接盒子中心 X 坐标（Å），通常为活性口袋中心" |
+      | center_y | QDoubleSpinBox | 0.0 | "对接盒子中心 Y 坐标（Å），通常为活性口袋中心" |
+      | center_z | QDoubleSpinBox | 0.0 | "对接盒子中心 Z 坐标（Å），通常为活性口袋中心" |
+      | size_x | QDoubleSpinBox | 22.5 | "对接盒子 X 方向尺寸（Å）。过小会漏掉重要构象，过大增加计算时间" |
+      | size_y | QDoubleSpinBox | 22.5 | "对接盒子 Y 方向尺寸（Å）" |
+      | size_z | QDoubleSpinBox | 22.5 | "对接盒子 Z 方向尺寸（Å）" |
+      | search_mode | QComboBox | balance | "fast：最快（exhaustiveness=128），适合大规模初筛\nbalance：平衡模式（exhaustiveness=384），推荐默认\ndetail：最精确（exhaustiveness=512），适合精筛" |
+      | scoring | QComboBox | vina | "vina：AutoDock Vina 打分函数，精度与速度平衡\nvinardo：更快，打分略有不同\nad4：AutoDock4 打分函数，需预先生成 affinity maps" |
+      | num_modes | QSpinBox | 9 | "最多输出多少个结合构象。数值越大输出越多但越慢" |
+      | exhaustiveness | QSpinBox | 32 | "搜索穷尽度，数值越大搜索越彻底但越慢。fast=128, balance=384, detail=512" |
+
+      3. 每个字段用 QFormLayout 排列，左标签右输入
+      4. 底部"运行"和"取消"按钮
+      5. 点击"运行"时验证必要字段（receptor_file 和 ligand_smiles），不足时弹出提示
+      6. 运行后返回参数 dict 或直接触发插件调用
+      7. 代码注释：每个字段、每个方法都要有详细中文注释
+      8. 风格：与现有 dialogs.py 保持一致（create_button, create_label, ThemeManager 等）
+
+      ========== 主窗口集成 ==========
+      修改 src/mbforge/ui/main_window.py：
+        - 在 MainWindow 类中添加 UniDock 菜单项或工具栏按钮
+        - 点击时弹出 UniDockConfigDialog
+        - 在 _setup_ui 或 _create_menus 方法中添加，不要修改构造函数参数
+
+      ========== 输出 ==========
+      1. 创建 src/mbforge/ui/unidock_dialog.py
+      2. 修改 src/mbforge/ui/main_window.py（在菜单或工具栏添加 UniDock 入口）
+      3. 报告修改的具体行数和方法名
+
+  - id: write-docs
+    title: "编写 UniDock 插件详细文档"
+    depends_on: [create-plugin]
+    prompt: |
+      为 UniDock 插件编写详细使用文档和代码注释。
+
+      项目路径：C:\Users\10954\Desktop\MBForge
+      插件路径：src/mbforge/plugins/unidock/plugin.py（将在其他任务创建）
+
+      ========== 文档内容要求 ==========
+      在插件文件 plugin.py 的顶部模块 docstring 之后，补充完整的 API 文档。
+
+      文档结构（写入文件注释或 README）：
+      1. UniDock 简介（200字内）
+         - 什么是 UniDock，与 AutoDock Vina 的区别
+         - 适用场景：千万级虚拟筛选、分层对接
+         - 性能数据：V100 GPU 2000x 加速
+
+      2. 安装指南
+         - conda 安装命令
+         - 环境要求：CUDA >= 11.8，NVIDIA GPU (compute capability >= 7.0)
+         - 验证安装：unidock --version
+
+      3. 输入文件准备
+         - 受体准备：PDB → PDBQT（用 prepare_receptor4.py 或 meeko）
+         - 配体准备：SDF/SMILES → PDBQT（用 meeko 或 obabel）
+         - 文件格式说明
+
+      4. 参数说明表（完整的中文参数文档）
+         - 每个 CLI 参数的中文说明、取值范围、默认值
+
+      5. 使用示例
+         - 单配体对接示例（Python API 调用）
+         - 批量对接示例
+         - 三种搜索模式的选用建议
+
+      6. 结果解读
+         - 输出文件说明
+         - 如何判断对接质量
+         - 亲和力（kcal/mol）含义
+
+      7. 常见问题 FAQ
+         - GPU OOM 处理
+         - 命令行过长时的处理
+         - 为什么少数配体对接很慢
+
+      ========== 输出 ==========
+      创建文件：src/mbforge/plugins/unidock/README.md
+      包含以上全部内容，用 Markdown 格式，中文为主，技术术语保留英文
+      在 plugin.py 文件顶部的模块 docstring 中添加指向 README 的引用

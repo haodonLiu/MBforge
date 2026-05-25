@@ -18,7 +18,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Union
+from collections.abc import Callable
 
 import numpy as np
 from rdkit import Chem
@@ -60,10 +61,10 @@ class DescriptorResult:
         errors: 计算过程中遇到的错误信息.
     """
 
-    values: Dict[str, Any] = field(default_factory=dict)
-    mol: Optional[Chem.Mol] = None
+    values: dict[str, Any] = field(default_factory=dict)
+    mol: Chem.Mol | None = None
     success: bool = True
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     def get(self, name: str, default: Any = None) -> Any:
         """获取指定描述符值.
@@ -77,11 +78,11 @@ class DescriptorResult:
         """
         return self.values.get(name, default)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """转换为字典."""
         return dict(self.values)
 
-    def to_array(self, names: Optional[List[str]] = None) -> np.ndarray:
+    def to_array(self, names: list[str] | None = None) -> np.ndarray:
         """转换为 NumPy 数组.
 
         Args:
@@ -114,7 +115,7 @@ class MoleculeDescriptorCalculator:
     """
 
     # 预定义描述符映射
-    _DESCRIPTOR_REGISTRY: Dict[str, List[Tuple[str, Callable]]] = {
+    _DESCRIPTOR_REGISTRY: dict[str, list[tuple[str, Callable]]] = {
         "basic": [
             ("MolWt", Descriptors.MolWt),
             ("MolLogP", Descriptors.MolLogP),
@@ -175,7 +176,7 @@ class MoleculeDescriptorCalculator:
     }
 
     # 2D 描述符白名单（rdMolDescriptors 中常用函数）
-    _ALL_2D_DESCRIPTORS: List[Tuple[str, Callable]] = [
+    _ALL_2D_DESCRIPTORS: list[tuple[str, Callable]] = [
         ("MolWt", Descriptors.MolWt),
         ("MolLogP", Descriptors.MolLogP),
         ("MolMR", Descriptors.MolMR),
@@ -227,7 +228,7 @@ class MoleculeDescriptorCalculator:
     ]
 
     # 3D 描述符（需要构象）
-    _3D_DESCRIPTORS: List[Tuple[str, Callable]] = [
+    _3D_DESCRIPTORS: list[tuple[str, Callable]] = [
         ("Asphericity", Descriptors3D.Asphericity),
         ("Eccentricity", Descriptors3D.Eccentricity),
         ("InertialShapeFactor", Descriptors3D.InertialShapeFactor),
@@ -243,7 +244,7 @@ class MoleculeDescriptorCalculator:
     def __init__(
         self,
         descriptor_set: Union[str, DescriptorSet] = DescriptorSet.BASIC,
-        custom_descriptors: Optional[Dict[str, Callable[[Chem.Mol], Any]]] = None,
+        custom_descriptors: dict[str, Callable[[Chem.Mol], Any]] | None = None,
         include_3d: bool = False,
     ) -> None:
         """初始化描述符计算器.
@@ -260,9 +261,9 @@ class MoleculeDescriptorCalculator:
         self.include_3d = include_3d
         self._descriptors = self._build_descriptor_list()
 
-    def _build_descriptor_list(self) -> List[Tuple[str, Callable]]:
+    def _build_descriptor_list(self) -> list[tuple[str, Callable]]:
         """根据配置构建描述符列表."""
-        descs: List[Tuple[str, Callable]] = []
+        descs: list[tuple[str, Callable]] = []
 
         if self.descriptor_set_name == "all_2d":
             descs.extend(self._ALL_2D_DESCRIPTORS)
@@ -317,9 +318,9 @@ class MoleculeDescriptorCalculator:
 
     def compute_batch(
         self,
-        molecules: List[Chem.Mol],
-        names: Optional[List[str]] = None,
-    ) -> List[DescriptorResult]:
+        molecules: list[Chem.Mol],
+        names: list[str] | None = None,
+    ) -> list[DescriptorResult]:
         """批量计算分子描述符.
 
         Args:
@@ -348,7 +349,7 @@ class MoleculeDescriptorCalculator:
         """
         return self.compute(mol.mol)
 
-    def available_descriptors(self) -> List[str]:
+    def available_descriptors(self) -> list[str]:
         """获取当前配置下所有可用的描述符名称.
 
         Returns:
@@ -380,7 +381,7 @@ class MoleculeDescriptorCalculator:
         return len(self._descriptors) < original_len
 
     @staticmethod
-    def list_builtin_sets() -> List[str]:
+    def list_builtin_sets() -> list[str]:
         """列出所有内置描述符集合名称.
 
         Returns:

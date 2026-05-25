@@ -13,7 +13,7 @@ import uuid
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal, Union
 
 logger = logging.getLogger(__name__)
 
@@ -54,16 +54,16 @@ class Molecule:
     smiles: str = ""
     name: str = ""
     source: Literal["pdf", "sdf", "csv", "excel", "manual"] = "manual"
-    activity: Optional[float] = None
-    activity_unit: Optional[str] = None
-    activity_raw: Optional[str] = None
-    cas: Optional[str] = None
-    cid: Optional[int] = None
-    properties: Dict[str, Any] = field(default_factory=dict)
-    tags: Dict[str, Any] = field(default_factory=dict)
-    props: Dict[str, Any] = field(default_factory=dict)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    _mol: Optional[Any] = field(default=None, repr=False)
+    activity: float | None = None
+    activity_unit: str | None = None
+    activity_raw: str | None = None
+    cas: str | None = None
+    cid: int | None = None
+    properties: dict[str, Any] = field(default_factory=dict)
+    tags: dict[str, Any] = field(default_factory=dict)
+    props: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    _mol: Any | None = field(default=None, repr=False)
     _mol_parse_attempted: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -78,7 +78,7 @@ class Molecule:
     # ---- 懒加载 RDKit Mol 对象 ----
 
     @property
-    def mol(self) -> Optional[Any]:
+    def mol(self) -> Any | None:
         """从 SMILES 懒加载 RDKit Mol 对象，失败返回 None。"""
         if not self._mol_parse_attempted and _RDKIT_AVAILABLE and self.smiles:
             self._mol_parse_attempted = True
@@ -103,18 +103,18 @@ class Molecule:
     @classmethod
     def from_smiles(
         cls, smiles: str, source: str = "manual", **kwargs: Any
-    ) -> "Molecule":
+    ) -> Molecule:
         return cls(smiles=smiles, source=source, **kwargs)
 
     @classmethod
-    def from_mol(cls, mol: Any, name: str = "", **kwargs: Any) -> "Molecule":
+    def from_mol(cls, mol: Any, name: str = "", **kwargs: Any) -> Molecule:
         if mol is None:
             raise ValueError("RDKit Mol object cannot be None")
         smiles = Chem.MolToSmiles(mol)
         return cls(smiles=smiles, name=name or smiles, _mol=mol, **kwargs)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Molecule":
+    def from_dict(cls, data: dict[str, Any]) -> Molecule:
         """从字典反序列化。兼容 schema 格式和旧 reader 格式。"""
         # 旧 reader 格式：{mol, smiles, name, activity, cas, props, ...}
         if "mol" in data or (
@@ -122,7 +122,7 @@ class Molecule:
         ):
             mol = data.get("mol")
             smiles = data.get("smiles", "")
-            kwargs: Dict[str, Any] = {
+            kwargs: dict[str, Any] = {
                 "name": data.get("name", ""),
                 "activity": data.get("activity"),
                 "activity_unit": data.get("activity_unit") or data.get("units"),
@@ -173,9 +173,9 @@ class Molecule:
 
     # ---- 导出方法 ----
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """序列化为 JSON-safe 字典。"""
-        d: Dict[str, Any] = {
+        d: dict[str, Any] = {
             "smiles": self.smiles,
             "name": self.name,
             "activity": self.activity,
@@ -196,7 +196,7 @@ class Molecule:
 
     # ---- 便捷方法 ----
 
-    def copy(self) -> "Molecule":
+    def copy(self) -> Molecule:
         return Molecule(
             id=self.id,
             smiles=self.smiles,
@@ -260,7 +260,7 @@ class MoleculeBatch:
     提供过滤、排序、分组、去重、导出等批量操作。
     """
 
-    entries: List[Molecule] = field(default_factory=list)
+    entries: list[Molecule] = field(default_factory=list)
 
     def __len__(self) -> int:
         return len(self.entries)
@@ -268,7 +268,7 @@ class MoleculeBatch:
     def __iter__(self):
         return iter(self.entries)
 
-    def __getitem__(self, idx: Union[int, slice]) -> Union[Molecule, List[Molecule]]:
+    def __getitem__(self, idx: Union[int, slice]) -> Union[Molecule, list[Molecule]]:
         return self.entries[idx]
 
     def __contains__(self, item: Molecule) -> bool:
@@ -279,23 +279,23 @@ class MoleculeBatch:
     def append(self, entry: Molecule) -> None:
         self.entries.append(entry)
 
-    def extend(self, entries: List[Molecule]) -> None:
+    def extend(self, entries: list[Molecule]) -> None:
         self.entries.extend(entries)
 
     # ---- 过滤 ----
 
-    def filter_by(self, predicate) -> "MoleculeBatch":
+    def filter_by(self, predicate) -> MoleculeBatch:
         return MoleculeBatch([e for e in self.entries if predicate(e)])
 
-    def filter_has_activity(self) -> "MoleculeBatch":
+    def filter_has_activity(self) -> MoleculeBatch:
         return self.filter_by(lambda e: e.has_activity())
 
-    def filter_by_smiles_length(self, max_len: int = 200) -> "MoleculeBatch":
+    def filter_by_smiles_length(self, max_len: int = 200) -> MoleculeBatch:
         return MoleculeBatch([m for m in self.entries if len(m.smiles) <= max_len])
 
     def filter_by_size(
-        self, min_atoms: Optional[int] = None, max_atoms: Optional[int] = None
-    ) -> "MoleculeBatch":
+        self, min_atoms: int | None = None, max_atoms: int | None = None
+    ) -> MoleculeBatch:
         def _pred(e: Molecule) -> bool:
             n = e.num_atoms()
             if min_atoms is not None and n < min_atoms:
@@ -308,10 +308,10 @@ class MoleculeBatch:
 
     # ---- 排序 ----
 
-    def sort_by(self, key, reverse: bool = False) -> "MoleculeBatch":
+    def sort_by(self, key, reverse: bool = False) -> MoleculeBatch:
         return MoleculeBatch(sorted(self.entries, key=key, reverse=reverse))
 
-    def sort_by_activity(self, ascending: bool = False) -> "MoleculeBatch":
+    def sort_by_activity(self, ascending: bool = False) -> MoleculeBatch:
         def _key(e: Molecule) -> float:
             return e.activity if e.activity is not None else float("inf")
 
@@ -319,8 +319,8 @@ class MoleculeBatch:
 
     # ---- 分组 ----
 
-    def group_by(self, key) -> Dict[Any, "MoleculeBatch"]:
-        groups: Dict[Any, List[Molecule]] = {}
+    def group_by(self, key) -> dict[Any, MoleculeBatch]:
+        groups: dict[Any, list[Molecule]] = {}
         for entry in self.entries:
             k = key(entry)
             groups.setdefault(k, []).append(entry)
@@ -328,13 +328,13 @@ class MoleculeBatch:
 
     # ---- 去重 ----
 
-    def deduplicate(self, key: str = "smiles") -> "MoleculeBatch":
+    def deduplicate(self, key: str = "smiles") -> MoleculeBatch:
         if key == "smiles":
-            seen: Dict[str, List[Molecule]] = {}
+            seen: dict[str, list[Molecule]] = {}
             for entry in self.entries:
                 seen.setdefault(entry.smiles, []).append(entry)
-            deduped: List[Molecule] = []
-            for smiles, group in seen.items():
+            deduped: list[Molecule] = []
+            for _, group in seen.items():
                 representative = group[0].copy()
                 activities = [e.activity for e in group if e.activity is not None]
                 if activities:
@@ -343,7 +343,7 @@ class MoleculeBatch:
                 deduped.append(representative)
             return MoleculeBatch(deduped)
         else:
-            seen: Dict[str, Molecule] = {}
+            seen: dict[str, Molecule] = {}
             for entry in self.entries:
                 val = getattr(entry, key, "")
                 if str(val) not in seen:
@@ -352,12 +352,12 @@ class MoleculeBatch:
 
     # ---- 查询 ----
 
-    def get_activities(self) -> List[float]:
+    def get_activities(self) -> list[float]:
         return [e.activity for e in self.entries if e.activity is not None]
 
     # ---- 导出 ----
 
-    def to_dicts(self) -> List[Dict[str, Any]]:
+    def to_dicts(self) -> list[dict[str, Any]]:
         return [e.to_dict() for e in self.entries]
 
     def to_dataframe(self) -> Any:
@@ -365,7 +365,7 @@ class MoleculeBatch:
 
         records = []
         for e in self.entries:
-            record: Dict[str, Any] = {
+            record: dict[str, Any] = {
                 "Name": e.name,
                 "SMILES": e.smiles,
                 "NumAtoms": e.num_atoms(),
@@ -390,7 +390,7 @@ class MoleculeBatch:
 
         records = []
         for m in self.entries:
-            rec: Dict[str, Any] = {"SMILES": m.smiles}
+            rec: dict[str, Any] = {"SMILES": m.smiles}
             rec.update(
                 {
                     k: v
@@ -434,8 +434,8 @@ class MoleculeBatch:
 
     @classmethod
     def from_smiles_list(
-        cls, smiles_list: List[str], source: str = "manual"
-    ) -> "MoleculeBatch":
+        cls, smiles_list: list[str], source: str = "manual"
+    ) -> MoleculeBatch:
         return cls([Molecule.from_smiles(s, source=source) for s in smiles_list])
 
     def __repr__(self) -> str:

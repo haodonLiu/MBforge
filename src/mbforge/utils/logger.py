@@ -13,10 +13,10 @@ import inspect
 import logging
 import os
 import sys
-import threading
 import traceback
 from pathlib import Path
-from typing import Callable, Optional, TypeVar
+from typing import TypeVar
+from collections.abc import Callable
 
 from .constants import APP_NAME, GLOBAL_DATA_DIR
 
@@ -37,7 +37,7 @@ _log_level: int = logging.INFO
 
 def setup_logging(
     level: int = logging.INFO,
-    log_dir: Optional[Path] = None,
+    log_dir: Path | None = None,
     console: bool = True,
     file: bool = True,
 ) -> None:

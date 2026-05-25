@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 import fitz  # PyMuPDF
 
@@ -37,9 +36,9 @@ class PDFSliceManager:
         self.doc_hash = hashlib.md5(hash_input.encode()).hexdigest()[:16]
         self.cache_dir = self.project_root / ".mbforge" / "pdf_slices" / self.doc_hash
 
-        self._meta: Optional[dict] = None
+        self._meta: dict | None = None
         self._total_pages = 0
-        self._page_sizes: List[Tuple[float, float]] = []
+        self._page_sizes: list[tuple[float, float]] = []
 
     def ensure_sliced(self) -> bool:
         """检查并执行切片。返回 True 表示已就绪并启用分片模式。"""
@@ -47,7 +46,7 @@ class PDFSliceManager:
         meta_path = self.cache_dir / "metadata.json"
         if meta_path.exists():
             try:
-                with open(meta_path, "r", encoding="utf-8") as f:
+                with open(meta_path, encoding="utf-8") as f:
                     self._meta = json.load(f)
                 # 验证源文件未变化
                 if self._meta.get("mtime") == self.pdf_path.stat().st_mtime:
@@ -111,7 +110,7 @@ class PDFSliceManager:
         return self._total_pages
 
     @property
-    def page_sizes(self) -> List[Tuple[float, float]]:
+    def page_sizes(self) -> list[tuple[float, float]]:
         return self._page_sizes
 
     def get_slice_path(self, global_page: int) -> Path:

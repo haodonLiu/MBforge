@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -24,9 +23,9 @@ class TodoPanel(QWidget):
 
     process_requested = pyqtSignal()
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self.todo_manager: Optional[TodoManager] = None
+        self.todo_manager: TodoManager | None = None
         self._setup_ui()
 
     def _setup_ui(self):

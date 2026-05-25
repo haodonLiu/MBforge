@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List
 
 from .base import BaseReranker
 from ..utils.constants import PROVIDER_SENTENCE_TRANSFORMERS, PROVIDER_QWEN3
@@ -29,7 +28,7 @@ class SentenceTransformerReranker(BaseReranker):
             self._model = CrossEncoder(self.model_name, device=self.device)
         return self._model
 
-    def rerank(self, query: str, passages: List[str]) -> List[tuple[int, float]]:
+    def rerank(self, query: str, passages: list[str]) -> list[tuple[int, float]]:
         model = self._load_model()
         pairs = [[query, p] for p in passages]
         scores = model.predict(pairs, show_progress_bar=False)

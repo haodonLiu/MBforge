@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import chromadb
 from chromadb.config import Settings
@@ -29,7 +29,7 @@ class KnowledgeBase:
         self.meta_dir = self.project_root / PROJECT_META_DIR
         self.db_path = str(self.meta_dir / "chroma_db")
         self.embedder = embedder
-        self._sm: Optional[SummaryManager] = None
+        self._sm: SummaryManager | None = None
 
         self._client = chromadb.PersistentClient(
             path=self.db_path,
@@ -57,7 +57,7 @@ class KnowledgeBase:
         self,
         doc_id: str,
         content: ExtractedContent,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """将文档内容索引到知识库."""
         if not content.chunks:
@@ -111,8 +111,8 @@ class KnowledgeBase:
         self,
         query: str,
         top_k: int = 5,
-        filter_dict: Optional[Dict[str, Any]] = None,
-    ) -> List[Dict[str, Any]]:
+        filter_dict: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         """语义搜索."""
         if filter_dict is not None and not isinstance(filter_dict, dict):
             raise ValueError("filter_dict must be a dict")
@@ -152,7 +152,7 @@ class KnowledgeBase:
         query: str,
         top_k: int = 5,
         reranker=None,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """语义搜索 + Rerank."""
         candidates = self.search(query, top_k=top_k * 3)
         if reranker is None or len(candidates) <= top_k:
@@ -167,7 +167,7 @@ class KnowledgeBase:
             result.append(item)
         return result
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """获取知识库统计."""
         count = self._collection.count()
         return {
@@ -180,7 +180,7 @@ class KnowledgeBase:
         query: str,
         directory_prefix: str = "",
         top_k: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """目录级语义搜索（OpenViking 递归目录检索）.
 
         先通过路径前缀过滤，再在子目录内做语义搜索。
@@ -195,28 +195,28 @@ class KnowledgeBase:
             results = filtered
         return results[:top_k]
 
-    def get_document_abstract(self, doc_id: str) -> Optional[str]:
+    def get_document_abstract(self, doc_id: str) -> str | None:
         """获取文档 L0 摘要."""
         summary = self._get_summary(doc_id)
         if summary:
             return summary.l0_abstract
         return None
 
-    def get_document_overview(self, doc_id: str) -> Optional[str]:
+    def get_document_overview(self, doc_id: str) -> str | None:
         """获取文档 L1 概览."""
         summary = self._get_summary(doc_id)
         if summary:
             return summary.l1_overview
         return None
 
-    def get_document_keywords(self, doc_id: str) -> List[str]:
+    def get_document_keywords(self, doc_id: str) -> list[str]:
         """获取文档关键词."""
         summary = self._get_summary(doc_id)
         if summary:
             return summary.keywords
         return []
 
-    def list_document_entities(self, doc_id: str) -> List[str]:
+    def list_document_entities(self, doc_id: str) -> list[str]:
         """获取文档实体标签."""
         summary = self._get_summary(doc_id)
         if summary:

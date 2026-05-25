@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -22,7 +21,7 @@ class WorkflowCard(CardWidget):
         name: str,
         description: str,
         status: str = "offline",
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(title=name, parent=parent)
         self._status = status
@@ -62,7 +61,7 @@ class WorkflowCard(CardWidget):
 class WorkflowPanel(QWidget):
     """工作流中心：展示和管理可用工作流模块."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._setup_ui()
 

@@ -26,7 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -72,26 +72,26 @@ class CompoundProperties:
         covalent_unit_count: 共价单元数.
     """
 
-    cid: Optional[int] = None
-    molecular_formula: Optional[str] = None
-    molecular_weight: Optional[float] = None
-    canonical_smiles: Optional[str] = None
-    isomeric_smiles: Optional[str] = None
-    inchi: Optional[str] = None
-    inchi_key: Optional[str] = None
-    iupac_name: Optional[str] = None
-    xlogp: Optional[float] = None
-    exact_mass: Optional[float] = None
-    tpsa: Optional[float] = None
-    complexity: Optional[float] = None
-    charge: Optional[int] = None
-    hbd_count: Optional[int] = None
-    hba_count: Optional[int] = None
-    rotatable_bond_count: Optional[int] = None
-    heavy_atom_count: Optional[int] = None
-    covalent_unit_count: Optional[int] = None
+    cid: int | None = None
+    molecular_formula: str | None = None
+    molecular_weight: float | None = None
+    canonical_smiles: str | None = None
+    isomeric_smiles: str | None = None
+    inchi: str | None = None
+    inchi_key: str | None = None
+    iupac_name: str | None = None
+    xlogp: float | None = None
+    exact_mass: float | None = None
+    tpsa: float | None = None
+    complexity: float | None = None
+    charge: int | None = None
+    hbd_count: int | None = None
+    hba_count: int | None = None
+    rotatable_bond_count: int | None = None
+    heavy_atom_count: int | None = None
+    covalent_unit_count: int | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """将属性转换为字典."""
         return {k: v for k, v in self.__dict__.items() if v is not None}
 
@@ -110,15 +110,15 @@ class CompoundInfo:
         raw_data: 原始 API 响应字典（调试用）.
     """
 
-    cid: Optional[int] = None
-    name: Optional[str] = None
-    cas: Optional[str] = None
-    synonyms: List[str] = field(default_factory=list)
+    cid: int | None = None
+    name: str | None = None
+    cas: str | None = None
+    synonyms: list[str] = field(default_factory=list)
     properties: CompoundProperties = field(default_factory=CompoundProperties)
     source: str = ""
-    raw_data: Dict[str, Any] = field(default_factory=dict)
+    raw_data: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """将综合信息转换为字典."""
         return {
             "cid": self.cid,
@@ -149,7 +149,7 @@ class _BaseAPIClient:
 
     def _get(
         self, url: str, accept: str = "application/json"
-    ) -> Union[Dict[str, Any], str, bytes]:
+    ) -> Union[dict[str, Any], str, bytes]:
         """发送 HTTP GET 请求.
 
         Args:
@@ -252,10 +252,10 @@ class PubChemClient(_BaseAPIClient):
 
     def get_properties_batch(
         self,
-        identifiers: List[str],
+        identifiers: list[str],
         id_type: str = "smiles",
         properties: str = PUBCHEM_COMMON_PROPERTIES,
-    ) -> List[Optional[CompoundProperties]]:
+    ) -> list[CompoundProperties | None]:
         """批量查询化合物属性.
 
         注意：PubChem PUG REST 支持 POST 批量查询（最多 100 个标识符），
@@ -269,7 +269,7 @@ class PubChemClient(_BaseAPIClient):
         Returns:
             与输入等长的 CompoundProperties 列表（失败位置为 None）.
         """
-        results: List[Optional[CompoundProperties]] = []
+        results: list[CompoundProperties | None] = []
         batch_size = 100
 
         for i in range(0, len(identifiers), batch_size):
@@ -283,10 +283,10 @@ class PubChemClient(_BaseAPIClient):
 
     def _get_properties_batch_post(
         self,
-        identifiers: List[str],
+        identifiers: list[str],
         id_type: str,
         properties: str,
-    ) -> List[Optional[CompoundProperties]]:
+    ) -> list[CompoundProperties | None]:
         """通过 POST 批量查询属性（内部方法）."""
         url = f"{self._BASE_URL}/compound/{id_type}/property/{properties}/JSON"
         payload = ",".join(identifiers).encode("utf-8")
@@ -314,13 +314,13 @@ class PubChemClient(_BaseAPIClient):
 
         prop_list = data.get("PropertyTable", {}).get("Properties", [])
         # 建立 CID -> properties 的映射以处理乱序
-        cid_map: Dict[int, Dict[str, Any]] = {}
+        cid_map: dict[int, dict[str, Any]] = {}
         for p in prop_list:
             cid = p.get("CID")
             if cid is not None:
                 cid_map[cid] = p
 
-        results: List[Optional[CompoundProperties]] = []
+        results: list[CompoundProperties | None] = []
         for ident in identifiers:
             # 单条查询获取 CID 以匹配（简化：直接按顺序映射）
             matched = None
@@ -336,7 +336,7 @@ class PubChemClient(_BaseAPIClient):
 
     @staticmethod
     def _identifier_matches(
-        identifier: str, id_type: str, prop_dict: Dict[str, Any]
+        identifier: str, id_type: str, prop_dict: dict[str, Any]
     ) -> bool:
         """判断属性字典是否匹配给定标识符（简化启发式）."""
         if id_type == "smiles":
@@ -346,7 +346,7 @@ class PubChemClient(_BaseAPIClient):
         return False
 
     @staticmethod
-    def _parse_properties(raw: Dict[str, Any]) -> CompoundProperties:
+    def _parse_properties(raw: dict[str, Any]) -> CompoundProperties:
         """将 PubChem 原始属性字典解析为 CompoundProperties."""
         return CompoundProperties(
             cid=_to_int(raw.get("CID")),
@@ -373,7 +373,7 @@ class PubChemClient(_BaseAPIClient):
         self,
         identifier: str,
         id_type: str = "smiles",
-    ) -> List[str]:
+    ) -> list[str]:
         """查询化合物同义词列表.
 
         Args:
@@ -397,7 +397,7 @@ class PubChemClient(_BaseAPIClient):
         self,
         identifier: str,
         id_type: str = "smiles",
-    ) -> Optional[int]:
+    ) -> int | None:
         """查询化合物的 PubChem CID.
 
         Args:
@@ -469,7 +469,7 @@ class PubChemClient(_BaseAPIClient):
         self,
         name: str,
         max_results: int = 10,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """通过名称搜索化合物（自动匹配）.
 
         Args:
@@ -523,7 +523,7 @@ class NCICIRClient(_BaseAPIClient):
         identifier: str,
         input_format: str = "smiles",
         output_format: str = "cas",
-    ) -> Optional[Union[str, List[str]]]:
+    ) -> Union[str, list[str]] | None:
         """化学标识符格式转换.
 
         Args:
@@ -556,7 +556,7 @@ class NCICIRClient(_BaseAPIClient):
 
         return None
 
-    def get_names(self, identifier: str) -> List[str]:
+    def get_names(self, identifier: str) -> list[str]:
         """获取化合物名称列表.
 
         Args:
@@ -570,7 +570,7 @@ class NCICIRClient(_BaseAPIClient):
             return result
         return [result] if result else []
 
-    def get_iupac_name(self, identifier: str) -> Optional[str]:
+    def get_iupac_name(self, identifier: str) -> str | None:
         """获取 IUPAC 名称.
 
         Args:
@@ -582,7 +582,7 @@ class NCICIRClient(_BaseAPIClient):
         result = self.convert(identifier, output_format="iupac_name")
         return result if isinstance(result, str) else None
 
-    def get_inchi(self, identifier: str) -> Optional[str]:
+    def get_inchi(self, identifier: str) -> str | None:
         """获取 InChI.
 
         Args:
@@ -594,7 +594,7 @@ class NCICIRClient(_BaseAPIClient):
         result = self.convert(identifier, output_format="inchi")
         return result if isinstance(result, str) else None
 
-    def get_inchikey(self, identifier: str) -> Optional[str]:
+    def get_inchikey(self, identifier: str) -> str | None:
         """获取 InChIKey.
 
         Args:
@@ -606,7 +606,7 @@ class NCICIRClient(_BaseAPIClient):
         result = self.convert(identifier, output_format="inchikey")
         return result if isinstance(result, str) else None
 
-    def get_cas(self, identifier: str) -> Optional[List[str]]:
+    def get_cas(self, identifier: str) -> list[str] | None:
         """获取 CAS 号列表.
 
         Args:
@@ -626,7 +626,7 @@ class NCICIRClient(_BaseAPIClient):
         fmt: str = "png",
         width: int = 300,
         height: int = 300,
-    ) -> Optional[bytes]:
+    ) -> bytes | None:
         """获取化合物 2D 结构图像.
 
         Args:
@@ -689,7 +689,7 @@ class ChemicalAPIClient:
         Raises:
             APIClientError: 所有数据源均失败时抛出.
         """
-        errors: List[str] = []
+        errors: list[str] = []
 
         # 尝试 PubChem
         try:
@@ -742,10 +742,10 @@ class ChemicalAPIClient:
 
     def get_properties_batch(
         self,
-        identifiers: List[str],
+        identifiers: list[str],
         id_type: str = "smiles",
         properties: str = PUBCHEM_COMMON_PROPERTIES,
-    ) -> List[Optional[CompoundProperties]]:
+    ) -> list[CompoundProperties | None]:
         """批量查询化合物属性.
 
         Args:
@@ -763,7 +763,7 @@ class ChemicalAPIClient:
         identifier: str,
         input_format: str = "smiles",
         output_format: str = "cas",
-    ) -> Optional[Union[str, List[str]]]:
+    ) -> Union[str, list[str]] | None:
         """通过 NCI CIR 进行标识符格式转换.
 
         Args:
@@ -782,7 +782,7 @@ class ChemicalAPIClient:
 # ---------------------------------------------------------------------------
 
 
-def _to_float(value: Any) -> Optional[float]:
+def _to_float(value: Any) -> float | None:
     """将任意值安全转换为 float."""
     if value is None:
         return None
@@ -792,7 +792,7 @@ def _to_float(value: Any) -> Optional[float]:
         return None
 
 
-def _to_int(value: Any) -> Optional[int]:
+def _to_int(value: Any) -> int | None:
     """将任意值安全转换为 int."""
     if value is None:
         return None
@@ -802,7 +802,7 @@ def _to_int(value: Any) -> Optional[int]:
         return None
 
 
-def _extract_cas_from_synonyms(synonyms: List[str]) -> Optional[str]:
+def _extract_cas_from_synonyms(synonyms: list[str]) -> str | None:
     """从同义词列表中提取首个 CAS 号.
 
     Args:

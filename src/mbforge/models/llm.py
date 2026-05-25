@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator, Dict, Iterator, List
-
-import openai
+from typing import Any
+from collections.abc import AsyncGenerator, Iterator
 
 from .base import BaseLLM, Message, StreamChunk
 
@@ -21,6 +20,8 @@ class OpenAILLM(BaseLLM):
         temperature: float = 0.7,
         top_p: float = 0.9,
     ):
+        import openai
+
         self.client = openai.OpenAI(
             base_url=base_url,
             api_key=api_key or "empty",
@@ -31,10 +32,10 @@ class OpenAILLM(BaseLLM):
         self.temperature = temperature
         self.top_p = top_p
 
-    def _convert_messages(self, messages: List[Message]) -> List[dict]:
+    def _convert_messages(self, messages: list[Message]) -> list[dict]:
         return [{"role": m.role, "content": m.content} for m in messages]
 
-    def chat(self, messages: List[Message], **kwargs) -> str:
+    def chat(self, messages: list[Message], **kwargs) -> str:
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=self._convert_messages(messages),
@@ -45,7 +46,7 @@ class OpenAILLM(BaseLLM):
         )
         return response.choices[0].message.content or ""
 
-    def chat_stream(self, messages: List[Message], **kwargs) -> Iterator[StreamChunk]:
+    def chat_stream(self, messages: list[Message], **kwargs) -> Iterator[StreamChunk]:
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=self._convert_messages(messages),
@@ -61,7 +62,7 @@ class OpenAILLM(BaseLLM):
             finish = chunk.choices[0].finish_reason
             yield StreamChunk(delta=delta, finish_reason=finish)
 
-    async def achat(self, messages: List[Message], **kwargs) -> str:
+    async def achat(self, messages: list[Message], **kwargs) -> str:
         # 使用同步客户端的线程池执行
         import asyncio
 
@@ -69,7 +70,7 @@ class OpenAILLM(BaseLLM):
         return await loop.run_in_executor(None, self.chat, messages, **kwargs)
 
     async def achat_stream(
-        self, messages: List[Message], **kwargs
+        self, messages: list[Message], **kwargs
     ) -> AsyncGenerator[StreamChunk, None]:
         import asyncio
 
@@ -82,7 +83,7 @@ class OpenAILLM(BaseLLM):
             await asyncio.sleep(0)
 
     def call_with_tools(
-        self, messages: List[Message], tools: List[Dict], **kwargs
+        self, messages: list[Message], tools: list[dict], **kwargs
     ) -> Any:
         return self.client.chat.completions.create(
             model=self.model_name,

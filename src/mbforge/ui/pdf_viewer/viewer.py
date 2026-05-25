@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections import OrderedDict, defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import fitz  # PyMuPDF
 from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal, pyqtSlot, QRect
@@ -25,9 +25,12 @@ from PyQt6.QtWidgets import (
 
 from mbforge.utils.logger import get_logger, log_exception
 
+from PIL import Image
+
 from .page_widget import PDFPageLabel
 from .renderer import _executor, _NWORKERS, _render_page_batch, page_to_pixmap
 from .slice_manager import PDFSliceManager
+from ..mol_extract_dialog import MoleculeExtractDialog
 from ..theme import ThemeManager
 
 if TYPE_CHECKING:
@@ -51,13 +54,13 @@ class PDFViewer(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
-        mol_image_pipeline: Optional["MolImagePipeline"] = None,
+        parent: QWidget | None = None,
+        mol_image_pipeline: MolImagePipeline | None = None,
     ):
         super().__init__(parent)
-        self.doc: Optional[fitz.Document] = None
-        self._doc_path: Optional[str] = None
-        self._slice_manager: Optional[PDFSliceManager] = None
+        self.doc: fitz.Document | None = None
+        self._doc_path: str | None = None
+        self._slice_manager: PDFSliceManager | None = None
         self._use_slices: bool = False
         self.current_page = 0
         self._scale = 1.5
@@ -65,12 +68,12 @@ class PDFViewer(QWidget):
 
         # 虚拟滚动状态
         self._continuous_mode = True
-        self._virtual_container: Optional[QWidget] = None
-        self._page_heights: List[int] = []
-        self._page_widths: List[int] = []
+        self._virtual_container: QWidget | None = None
+        self._page_heights: list[int] = []
+        self._page_widths: list[int] = []
         self._page_cache: OrderedDict[int, QPixmap] = OrderedDict()
         self._visible_widgets: OrderedDict[
-            int, Tuple[QLabel, QLabel]
+            int, tuple[QLabel, QLabel]
         ] = OrderedDict()
         self._pending_indices: set = set()
         self._all_indices_rendered: bool = False
@@ -79,8 +82,8 @@ class PDFViewer(QWidget):
         self._total_pages = 0
 
         # 高亮注释
-        self._annotations: Dict[int, List[Dict]] = {}
-        self._annotation_file: Optional[Path] = None
+        self._annotations: dict[int, list[dict]] = {}
+        self._annotation_file: Path | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -164,7 +167,7 @@ class PDFViewer(QWidget):
         self.scroll.verticalScrollBar().valueChanged.connect(self._on_scroll)
         self.scroll.viewport().installEventFilter(self)
 
-        self.single_label: Optional[QLabel] = None
+        self.single_label: QLabel | None = None
         self.scroll.setWidget(self.single_label)
         layout.addWidget(self.scroll, 1)
 
@@ -183,7 +186,7 @@ class PDFViewer(QWidget):
         self.btn_mode.setText("连续模式" if self._continuous_mode else "单页模式")
         self._render()
 
-    def load_pdf(self, path: Path, project_root: Optional[Path] = None):
+    def load_pdf(self, path: Path, project_root: Path | None = None):
         """加载PDF文件。如果提供project_root且文件较大，自动启用分片模式。"""
         self.logger.info(f"load_pdf | path={path} | project_root={project_root}")
         self._stop_background()
@@ -359,7 +362,7 @@ class PDFViewer(QWidget):
             w_img.deleteLater()
 
         # 渲染范围内缺失的页
-        to_render: List[int] = []
+        to_render: list[int] = []
         for i in range(start_idx, end_idx + 1):
             if i not in self._visible_widgets and i not in self._pending_indices:
                 if i in self._page_cache:
@@ -456,7 +459,7 @@ class PDFViewer(QWidget):
         """第 index 页相对于容器顶部的 Y 偏移。"""
         return sum(self._page_heights[:index])
 
-    def _start_background_render(self, indices: List[int]):
+    def _start_background_render(self, indices: list[int]):
         """使用线程池并行渲染指定页。"""
         # 排除空白第0页，它不需要后台渲染
         indices = [idx for idx in indices if idx != 0]
@@ -466,7 +469,7 @@ class PDFViewer(QWidget):
 
         if self._use_slices and self._slice_manager is not None:
             # 按分片路径分组，每分片一批提交给worker
-            slice_groups: Dict[str, List[Tuple[int, int]]] = defaultdict(list)
+            slice_groups: dict[str, list[tuple[int, int]]] = defaultdict(list)
             for global_idx in indices:
                 slice_path = str(self._slice_manager.get_slice_path(global_idx))
                 local_idx = self._slice_manager.get_local_index(global_idx)
@@ -503,7 +506,7 @@ class PDFViewer(QWidget):
         self._pages_done.emit(results)
 
     @pyqtSlot(list)
-    def _on_pages_ready(self, batch: List):
+    def _on_pages_ready(self, batch: list):
         """主线程收到渲染好的页，转为 QPixmap 并放入缓存和 UI。"""
         if not batch:
             return
@@ -748,7 +751,12 @@ class PDFViewer(QWidget):
         return new_pm
 
     def _on_highlight(self, page_index: int, screen_rect: QRect):
-        """处理划词高亮请求."""
+        """处理划词高亮请求.
+
+        坐标转换假设：self._scale 等于当前渲染的 像素/点 比例
+        （即 page.get_pixmap(dpi=72*scale).width / page.rect.width）。
+        因此 screen_rect(像素) / scale 即为 PDF 点坐标。
+        """
         if page_index == 0:
             return
         pdf_index = page_index - 1
@@ -832,11 +840,9 @@ class PDFViewer(QWidget):
             # 渲染整页图像（使用当前视图缩放）
             dpi = int(72 * self._scale)
             pix = page.get_pixmap(dpi=dpi)
-            from PIL import Image
-
             page_image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
-            # 屏幕坐标 → 图像坐标
+            # 屏幕坐标 → 图像坐标（PDFPageLabel 尺寸等于 pixmap 尺寸）
             x1 = int(screen_rect.left())
             y1 = int(screen_rect.top())
             x2 = int(screen_rect.right())
@@ -859,9 +865,6 @@ class PDFViewer(QWidget):
                 )
                 return
 
-            # 弹出确认对话框
-            from ..mol_extract_dialog import MoleculeExtractDialog
-
             dlg = MoleculeExtractDialog([result], parent=self)
             dlg.molecule_confirmed.connect(self._on_molecule_confirmed)
             dlg.exec()
@@ -870,7 +873,7 @@ class PDFViewer(QWidget):
             self.logger.error("分子识别失败: %s", exc)
             QMessageBox.critical(self, "识别失败", f"分子识别出错: {exc}")
 
-    def _on_molecule_confirmed(self, result: "ExtractionResult"):
+    def _on_molecule_confirmed(self, result: ExtractionResult):
         """用户确认入库分子."""
         # TODO: 接入主应用的分子数据库
         self.logger.info(
@@ -920,7 +923,7 @@ class PDFViewer(QWidget):
         if not self._annotation_file or not self._annotation_file.exists():
             return
         try:
-            with open(self._annotation_file, "r", encoding="utf-8") as f:
+            with open(self._annotation_file, encoding="utf-8") as f:
                 data = json.load(f)
             self._annotations = {
                 int(k): v for k, v in data.get("annotations", {}).items()

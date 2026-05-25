@@ -8,7 +8,6 @@ from __future__ import annotations
 import traceback
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from .logger import get_logger
 
@@ -23,7 +22,7 @@ if not _ERRORS_DIR.parent.exists():
 def record_error(
     module: str,
     summary: str,
-    error: Optional[Exception] = None,
+    error: Exception | None = None,
     solution: str = "",
     status: str = "待解决",
 ) -> Path:

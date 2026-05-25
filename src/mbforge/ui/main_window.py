@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ..core.knowledge_base import KnowledgeBase
+    from ..core.mol_database import MoleculeDatabase
+    from ..core.project import Project
+    from ..core.todo_manager import TodoManager
 
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
@@ -23,31 +29,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..agent.agent import ProjectAgent
-from ..agent.context import LayeredContext
-from ..agent.executor import ToolExecutor
-from ..core.knowledge_base import KnowledgeBase
-from ..core.memory import ProjectMemory
-from ..core.mol_database import MoleculeDatabase
-from ..core.project import Project
-from ..core.todo_manager import TodoManager
-from ..models import (
-    create_embedder_from_config,
-    create_llm_from_config,
-    create_reranker_from_config,
-)
-from ..parsers.pdf_parser import PDFParserPipeline
 from ..utils.config import load_global_config
-from ..utils.logger import get_logger, log_call, log_exception
+from ..utils.logger import get_logger, log_exception
 from .chat_widget import ChatWidget
 from .components import ProgressBar
 from .dialogs import NewProjectDialog, SettingsDialog
 from .editor import MarkdownEditor
 from .file_tree import FileTreeWidget
-from .kb_panel import KnowledgeBasePanel
-from .mol_panel import MoleculePanel
-from .mol_editor_dock import MoleculeEditorDialog
-from .pdf_viewer import PDFViewer
 from .preview import MarkdownPreview
 from .status_indicator import ServiceStatusIndicator
 from .theme import (
@@ -56,9 +44,7 @@ from .theme import (
     create_button,
     create_label,
 )
-from .todo_panel import TodoPanel
 from .welcome_widget import WelcomeWidget
-from .workflow_panel import WorkflowPanel
 
 logger = get_logger(__name__)
 
@@ -69,7 +55,7 @@ class IndexWorker(QThread):
     progress = pyqtSignal(str)
     finished_signal = pyqtSignal()
 
-    def __init__(self, pipeline: PDFParserPipeline, entries):
+    def __init__(self, pipeline: Any, entries):
         super().__init__()
         self.pipeline = pipeline
         self.entries = entries
@@ -111,6 +97,12 @@ class ModelInitWorker(QThread):
 
     def run(self):
         logger.info("ModelInitWorker 开始加载模型")
+        from ..models import (
+            create_embedder_from_config,
+            create_llm_from_config,
+            create_reranker_from_config,
+        )
+
         config = load_global_config()
         embedder = None
         llm = None
@@ -149,15 +141,15 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("MBForge - Molecular Knowledge Base")
         self.setMinimumSize(1400, 900)
 
-        self.project: Optional[Project] = None
-        self.kb: Optional[KnowledgeBase] = None
-        self.mol_db: Optional[MoleculeDatabase] = None
-        self.todo_manager: Optional[TodoManager] = None
+        self.project: Project | None = None
+        self.kb: KnowledgeBase | None = None
+        self.mol_db: MoleculeDatabase | None = None
+        self.todo_manager: TodoManager | None = None
         self.llm = None
         self.embedder = None
         self.reranker = None
         self.vlm = None
-        self.pdf_pipeline: Optional[PDFParserPipeline] = None
+        self.pdf_pipeline: Any | None = None
 
         self._setup_ui()
         self._setup_menubar()
@@ -499,10 +491,12 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage("就绪")
 
         # 分子编辑器独立窗口
-        self._mol_editor_dialog: Optional[MoleculeEditorDialog] = None
+        self._mol_editor_dialog: Any | None = None
 
     def _open_mol_editor(self):
         """打开分子编辑器独立窗口."""
+        from .mol_editor_dock import MoleculeEditorDialog
+
         if self._mol_editor_dialog is None:
             self._mol_editor_dialog = MoleculeEditorDialog(self)
             self._mol_editor_dialog.molecule_changed.connect(self._on_molecule_edited)
@@ -553,6 +547,8 @@ class MainWindow(QMainWindow):
     # ---- 项目操作 ----
 
     def _new_project(self):
+        from ..core.project import Project
+
         logger.info("打开新建项目对话框")
         dlg = NewProjectDialog(self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
@@ -571,9 +567,11 @@ class MainWindow(QMainWindow):
             logger.info(f"项目创建成功: {project.root}")
         except Exception:
             log_exception(logger, "创建项目失败")
-            QMessageBox.critical(self, "错误", f"创建项目失败")
+            QMessageBox.critical(self, "错误", "创建项目失败")
 
     def _open_project(self):
+        from ..core.project import Project
+
         logger.info("打开项目文件夹对话框")
         path = QFileDialog.getExistingDirectory(self, "打开项目文件夹")
         if not path:
@@ -598,6 +596,8 @@ class MainWindow(QMainWindow):
 
     def _open_recent_project(self):
         """启动时自动打开最近项目."""
+        from ..core.project import Project
+
         config = load_global_config()
         while config.recent_projects:
             path_str = config.recent_projects[0]
@@ -616,11 +616,21 @@ class MainWindow(QMainWindow):
 
     def _load_project_from_path(self, path: Path):
         """从路径加载项目（供 WelcomeWidget 调用）."""
+        from ..core.project import Project
+
         project = Project.open(path)
         if project:
             self._load_project(project)
 
     def _load_project(self, project: Project):
+        from ..core.knowledge_base import KnowledgeBase
+        from ..core.mol_database import MoleculeDatabase
+        from ..core.todo_manager import TodoManager
+        from ..core.memory import ProjectMemory
+        from ..agent.agent import ProjectAgent
+        from ..agent.context import LayeredContext
+        from ..agent.executor import ToolExecutor
+
         # 释放旧项目资源
         if self.kb is not None:
             self.kb.close()
@@ -641,6 +651,8 @@ class MainWindow(QMainWindow):
         self.todo_manager = TodoManager(project.root)
 
         # 更新 PDF 流水线
+        from ..parsers.pdf_parser import PDFParserPipeline
+
         self.pdf_pipeline = PDFParserPipeline(
             llm=self.llm,
             embedder=self.embedder,
@@ -740,6 +752,8 @@ class MainWindow(QMainWindow):
     # ---- 文件操作 ----
 
     def _open_file(self, path: Path):
+        from .pdf_viewer import PDFViewer
+
         path = Path(path)
         ext = path.suffix.lower()
         logger.info(f"打开文件: {path} (类型={ext})")
@@ -844,6 +858,8 @@ class MainWindow(QMainWindow):
             self._start_process_todo()
 
     def _close_tab(self, index: int):
+        from .pdf_viewer import PDFViewer
+
         widget = self.center_tabs.widget(index)
         if isinstance(widget, PDFViewer):
             widget.close_document()
@@ -967,16 +983,22 @@ class MainWindow(QMainWindow):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.statusbar.showMessage("设置已更新，正在重新加载模型...")
             self._models_ready = False
-            worker = ModelInitWorker()
-            worker.progress.connect(self.statusbar.showMessage)
-            worker.finished_signal.connect(self._on_models_ready)
-            worker.error_signal.connect(self._on_models_error)
-            worker.start()
+            # 如果已有模型加载线程在运行，先停止并等待
+            if hasattr(self, "_model_worker") and self._model_worker is not None and self._model_worker.isRunning():
+                self._model_worker.quit()
+                self._model_worker.wait(3000)
+            self._model_worker = ModelInitWorker()
+            self._model_worker.progress.connect(self.statusbar.showMessage)
+            self._model_worker.finished_signal.connect(self._on_models_ready)
+            self._model_worker.error_signal.connect(self._on_models_error)
+            self._model_worker.start()
 
     def _toggle_chat_panel(self):
         self.right_panel.setVisible(self.toggle_chat_action.isChecked())
 
     def _show_mol_db(self):
+        from .mol_panel import MoleculePanel
+
         if self.mol_db is None:
             QMessageBox.warning(self, "提示", "请先打开项目")
             return
@@ -985,6 +1007,8 @@ class MainWindow(QMainWindow):
         self._add_tab(panel, "分子数据库")
 
     def _show_kb_panel(self):
+        from .kb_panel import KnowledgeBasePanel
+
         if self.kb is None:
             QMessageBox.warning(self, "提示", "请先打开项目")
             return
@@ -1003,6 +1027,8 @@ class MainWindow(QMainWindow):
         self._add_tab(panel, "文献库")
 
     def _show_todo_panel(self):
+        from .todo_panel import TodoPanel
+
         if self.todo_manager is None:
             QMessageBox.warning(self, "提示", "请先打开项目")
             return
@@ -1012,6 +1038,8 @@ class MainWindow(QMainWindow):
         self._add_tab(panel, "TODO")
 
     def _show_workflow_panel(self):
+        from .workflow_panel import WorkflowPanel
+
         panel = WorkflowPanel()
         self._add_tab(panel, "工作流")
 
@@ -1031,4 +1059,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, "index_worker") and self.index_worker is not None:
             self.index_worker.terminate()
             self.index_worker.wait(3000)
+        if hasattr(self, "_model_worker") and self._model_worker is not None and self._model_worker.isRunning():
+            self._model_worker.quit()
+            self._model_worker.wait(3000)
+        if hasattr(self.chat_widget, "_worker") and self.chat_widget._worker is not None and self.chat_widget._worker.isRunning():
+            self.chat_widget._worker.stop()
+            self.chat_widget._worker.wait(3000)
         event.accept()

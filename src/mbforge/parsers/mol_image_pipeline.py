@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from typing import List, Literal, Optional, Tuple
+from typing import Any, Literal
 
 import numpy as np
 from PIL import Image
@@ -28,23 +28,25 @@ from mbforge.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# ---- 可选依赖探测 ----
-_HAS_ULTRALYTICS = False
-_HAS_MOLSCRIBE = False
+# ---- 可选依赖探测（懒加载，避免启动时导入重型库） ----
 
-try:
-    from ultralytics import YOLO
 
-    _HAS_ULTRALYTICS = True
-except ImportError:
-    logger.warning("ultralytics 未安装，MolDetv2 检测不可用")
+def _has_ultralytics() -> bool:
+    """运行时检查 ultralytics 是否安装."""
+    try:
+        import ultralytics  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
-try:
-    import molscribe  # noqa: F401
 
-    _HAS_MOLSCRIBE = True
-except ImportError:
-    logger.warning("molscribe 未安装，MolScribe 识别不可用")
+def _has_molscribe() -> bool:
+    """运行时检查 molscribe 是否安装."""
+    try:
+        import molscribe  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 # ---------------------------------------------------------------------------
 # 模型路径管理
@@ -75,8 +77,8 @@ class MolDetv2DocDetector:
 
     def __init__(
         self,
-        model_path: Optional[Path] = None,
-        device: Optional[str] = None,
+        model_path: Path | None = None,
+        device: str | None = None,
         conf_threshold: float = 0.25,
         iou_threshold: float = 0.45,
     ) -> None:
@@ -89,7 +91,7 @@ class MolDetv2DocDetector:
             conf_threshold: 置信度阈值
             iou_threshold: NMS IoU 阈值
         """
-        if not _HAS_ULTRALYTICS:
+        if not _has_ultralytics():
             raise RuntimeError(
                 "ultralytics 未安装，无法使用 MolDetv2 检测器。"
                 "请运行：uv pip install 'mbforge[moldetv2_deps]'"
@@ -100,10 +102,10 @@ class MolDetv2DocDetector:
         self.iou_threshold = iou_threshold
 
         self.model_path = self._resolve_model_path(model_path)
-        self.model: Optional["YOLO"] = None  # type: ignore[name-defined]
+        self.model: Any | None = None
         self._load_model()
 
-    def _resolve_model_path(self, model_path: Optional[Path]) -> Path:
+    def _resolve_model_path(self, model_path: Path | None) -> Path:
         """解析模型路径（支持实际文件名 moldet_v2_yolo11n_960_doc.*）."""
         if model_path is not None:
             return Path(model_path)
@@ -135,6 +137,8 @@ class MolDetv2DocDetector:
         model_name = getattr(self, "MODEL_SUBDIR", "moldetv2")
         logger.info("正在加载 %s 模型：%s", model_name, self.model_path)
         start = time.perf_counter()
+        from ultralytics import YOLO
+
         self.model = YOLO(str(self.model_path))
         # 第一次 warmup
         _ = self.model.predict(
@@ -152,7 +156,7 @@ class MolDetv2DocDetector:
 
     def detect(
         self, image: Image.Image | np.ndarray
-    ) -> List[Tuple[float, float, float, float, float]]:
+    ) -> list[tuple[float, float, float, float, float]]:
         """对整页图像进行分子结构检测.
 
         Args:
@@ -194,6 +198,9 @@ class MolDetv2GeneralDetector(MolDetv2DocDetector):
 
     输入：裁剪后的分子区域图像
     输出：更精确的 bbox（通常比 Doc 版更准）
+
+    注意：MODEL_SUBDIR 和 DEFAULT_INPUT_SIZE 为类属性，
+    通过 Python MRO 在父类 __init__ 中自动正确解析，无需实例覆盖。
     """
 
     MODEL_SUBDIR = "moldetv2-general"
@@ -201,16 +208,14 @@ class MolDetv2GeneralDetector(MolDetv2DocDetector):
 
     def __init__(
         self,
-        model_path: Optional[Path] = None,
-        device: Optional[str] = None,
+        model_path: Path | None = None,
+        device: str | None = None,
         conf_threshold: float = 0.3,
         iou_threshold: float = 0.45,
     ) -> None:
         super().__init__(model_path, device, conf_threshold, iou_threshold)
-        self.MODEL_SUBDIR = MolDetv2GeneralDetector.MODEL_SUBDIR  # type: ignore[misc]
-        self.DEFAULT_INPUT_SIZE = MolDetv2GeneralDetector.DEFAULT_INPUT_SIZE  # type: ignore[misc]
 
-    def _resolve_model_path(self, model_path: Optional[Path]) -> Path:
+    def _resolve_model_path(self, model_path: Path | None) -> Path:
         """解析模型路径（支持实际文件名 moldet_v2_yolo11n_640_general.*）."""
         if model_path is not None:
             return Path(model_path)
@@ -229,7 +234,7 @@ class MolDetv2GeneralDetector(MolDetv2DocDetector):
 
     def detect(
         self, image: Image.Image | np.ndarray
-    ) -> List[Tuple[float, float, float, float, float]]:
+    ) -> list[tuple[float, float, float, float, float]]:
         """对裁剪区域进行分子结构检测.
 
         返回图像坐标系中的 bbox。
@@ -252,8 +257,8 @@ class MolScribeRecognizer:
 
     def __init__(
         self,
-        model_path: Optional[Path] = None,
-        device: Optional[str] = None,
+        model_path: Path | None = None,
+        device: str | None = None,
         backend: Literal["molscribe", "transformers", "auto"] = "auto",
     ) -> None:
         """初始化识别器.
@@ -267,13 +272,13 @@ class MolScribeRecognizer:
         self.device = device or os.getenv("MBFORGE_DEVICE", "auto")
         self.backend = backend
         self.model_path = model_path
-        self._model: Optional[object] = None
-        self._backend_name: Optional[str] = None
+        self._model: object | None = None
+        self._backend_name: str | None = None
         self._load_backend()
 
     def _load_backend(self) -> None:
         """尝试加载可用的后端."""
-        if self.backend in ("auto", "molscribe") and _HAS_MOLSCRIBE:
+        if self.backend in ("auto", "molscribe") and _has_molscribe():
             self._load_molscribe()
             if self._model is not None:
                 self._backend_name = "molscribe"
@@ -348,7 +353,7 @@ class MolScribeRecognizer:
 
     def predict(
         self, image: Image.Image | np.ndarray
-    ) -> Tuple[str, float]:
+    ) -> tuple[str, float]:
         """将分子图像转换为 SMILES.
 
         Args:
@@ -372,7 +377,7 @@ class MolScribeRecognizer:
         else:
             raise RuntimeError(f"未知后端：{self._backend_name}")
 
-    def _predict_molscribe(self, image: Image.Image) -> Tuple[str, float]:
+    def _predict_molscribe(self, image: Image.Image) -> tuple[str, float]:
         """使用 molscribe 后端预测."""
         # molscribe 的典型 API：
         # results = model.predict_images([image], return_atoms_bonds=True)
@@ -392,7 +397,7 @@ class MolScribeRecognizer:
             logger.warning("MolScribe 预测失败：%s", exc)
             return "", 0.0
 
-    def _predict_transformers(self, image: Image.Image) -> Tuple[str, float]:
+    def _predict_transformers(self, image: Image.Image) -> tuple[str, float]:
         """使用 transformers 后端预测."""
         try:
             import torch
@@ -433,11 +438,11 @@ class MolImagePipeline:
 
     def __init__(
         self,
-        doc_detector: Optional[MolDetv2DocDetector] = None,
-        general_detector: Optional[MolDetv2GeneralDetector] = None,
-        recognizer: Optional[MolScribeRecognizer] = None,
-        device: Optional[str] = None,
-        crop_cache_dir: Optional[Path] = None,
+        doc_detector: MolDetv2DocDetector | None = None,
+        general_detector: MolDetv2GeneralDetector | None = None,
+        recognizer: MolScribeRecognizer | None = None,
+        device: str | None = None,
+        crop_cache_dir: Path | None = None,
     ) -> None:
         """初始化管线.
 
@@ -474,8 +479,8 @@ class MolImagePipeline:
         image_w: int,
         image_h: int,
         dpi: float = 300.0,
-        cache_prefix: Optional[str] = None,
-    ) -> List[ExtractionResult]:
+        cache_prefix: str | None = None,
+    ) -> list[ExtractionResult]:
         """对整页 PDF 渲染图像进行分子提取.
 
         Args:
@@ -510,7 +515,7 @@ class MolImagePipeline:
         else:
             pil_image = image
 
-        results: List[ExtractionResult] = []
+        results: list[ExtractionResult] = []
         for idx, (x1, y1, x2, y2, det_conf) in enumerate(img_boxes):
             # 2.1 裁剪分子区域
             x1_int, y1_int = max(0, int(x1)), max(0, int(y1))
@@ -518,7 +523,7 @@ class MolImagePipeline:
             crop = pil_image.crop((x1_int, y1_int, x2_int, y2_int))
 
             # 2.2 保存裁剪图像
-            mol_img_path: Optional[Path] = None
+            mol_img_path: Path | None = None
             if self.crop_cache_dir is not None:
                 prefix = cache_prefix or f"page_{page_idx:04d}"
                 mol_img_path = (
@@ -569,7 +574,7 @@ class MolImagePipeline:
         self,
         crop_image: Image.Image | np.ndarray,
         page_idx: int,
-        bbox_pdf: Optional[Tuple[float, float, float, float]] = None,
+        bbox_pdf: tuple[float, float, float, float] | None = None,
     ) -> ExtractionResult:
         """对已知裁剪区域进行复检精修.
 
@@ -618,7 +623,7 @@ class MolImagePipeline:
     def extract_from_manual_crop(
         self,
         page_image: Image.Image | np.ndarray,
-        crop_bbox_img: Tuple[int, int, int, int],
+        crop_bbox_img: tuple[int, int, int, int],
         page_idx: int,
         page_w_pts: float,
         page_h_pts: float,

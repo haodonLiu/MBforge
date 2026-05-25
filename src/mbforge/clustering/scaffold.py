@@ -29,7 +29,7 @@ Bemis-Murcko 骨架定义:
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
@@ -46,7 +46,7 @@ class ScaffoldClusteringError(Exception):
 def get_murcko_scaffold(
     mol: Chem.Mol,
     include_chirality: bool = False,
-) -> Optional[Chem.Mol]:
+) -> Chem.Mol | None:
     """提取分子的 Bemis-Murcko 通用骨架.
 
     Args:
@@ -115,8 +115,8 @@ class ScaffoldClusterResult:
     def __init__(
         self,
         scaffold_smiles: str,
-        scaffold_mol: Optional[Chem.Mol],
-        molecules: List[Dict[str, Any]],
+        scaffold_mol: Chem.Mol | None,
+        molecules: list[dict[str, Any]],
     ) -> None:
         self.scaffold_smiles = scaffold_smiles
         self.scaffold_mol = scaffold_mol
@@ -124,7 +124,7 @@ class ScaffoldClusterResult:
         self.num_molecules = len(molecules)
 
         # 提取活性值
-        self.activities: List[float] = []
+        self.activities: list[float] = []
         for mol_dict in molecules:
             activity = mol_dict.get("activity")
             if activity is not None and isinstance(activity, (int, float)):
@@ -205,8 +205,8 @@ class ScaffoldClusterer:
 
     def cluster(
         self,
-        molecules: List[Dict[str, Any]],
-    ) -> List[ScaffoldClusterResult]:
+        molecules: list[dict[str, Any]],
+    ) -> list[ScaffoldClusterResult]:
         """根据 Bemis-Murcko 骨架对分子聚类.
 
         Args:
@@ -222,7 +222,7 @@ class ScaffoldClusterer:
             raise ScaffoldClusteringError("分子列表不能为空")
 
         # 按骨架分组
-        scaffold_groups: Dict[str, List[Dict[str, Any]]] = {}
+        scaffold_groups: dict[str, list[dict[str, Any]]] = {}
 
         for mol_dict in molecules:
             mol = mol_dict.get("mol")
@@ -251,7 +251,7 @@ class ScaffoldClusterer:
             raise ScaffoldClusteringError("无法从任何分子中提取骨架")
 
         # 构建结果
-        results: List[ScaffoldClusterResult] = []
+        results: list[ScaffoldClusterResult] = []
         for scaffold_smiles, group_mols in scaffold_groups.items():
             if len(group_mols) < self.min_cluster_size:
                 continue
@@ -279,7 +279,7 @@ class ScaffoldClusterer:
 
         return results
 
-    def get_scaffold_diversity(self, molecules: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def get_scaffold_diversity(self, molecules: list[dict[str, Any]]) -> dict[str, Any]:
         """计算数据集的骨架多样性指标.
 
         Args:

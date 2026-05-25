@@ -14,7 +14,6 @@ import json
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Optional
 
 try:
     import fitz  # PyMuPDF
@@ -55,11 +54,11 @@ class PDFParserPipeline:
         llm=None,
         embedder=None,
         vlm=None,
-        knowledge_base: Optional[KnowledgeBase] = None,
-        mol_db: Optional[MoleculeDatabase] = None,
-        mol_image_pipeline: Optional[MolImagePipeline] = None,
-        roi_text_extractor: Optional[ROITextExtractor] = None,
-        association_engine: Optional[AssociationEngine] = None,
+        knowledge_base: KnowledgeBase | None = None,
+        mol_db: MoleculeDatabase | None = None,
+        mol_image_pipeline: MolImagePipeline | None = None,
+        roi_text_extractor: ROITextExtractor | None = None,
+        association_engine: AssociationEngine | None = None,
     ):
         self.llm = llm
         self.embedder = embedder
@@ -124,7 +123,7 @@ class PDFParserPipeline:
                             desc = future.result()
                             img_descriptions.append(f"[Image {img_path.name}]: {desc}")
                         except Exception as e:
-                            logger.warning(f"VLM analysis failed for {img_path}: {e}")
+                            logger.warning("VLM analysis failed for %s: %s", img_path, e)
                 if img_descriptions:
                     content.text += "\n\n## Image Analysis\n\n" + "\n\n".join(
                         img_descriptions
@@ -144,15 +143,15 @@ class PDFParserPipeline:
                 try:
                     sm = SummaryManager(self.kb.project_root)
                     sm.save(summary)
-                    logger.info(f"Saved L0/L1 summary for {doc_id}")
+                    logger.info("Saved L0/L1 summary for %s", doc_id)
                 except Exception as e:
-                    logger.error(f"Summary save failed for {doc_id}: {e}")
+                    logger.error("Summary save failed for %s: %s", doc_id, e)
             content.summary = summary.l1_overview
 
         # 5. 分子提取
         if extract_molecules and self.mol_db is not None:
             # 5a. 图像检测管线（MolDetv2 优先）
-            pending_results: List[ExtractionResult] = []
+            pending_results: list[ExtractionResult] = []
             if use_image_pipeline and self.mol_image_pipeline is not None:
                 if self.mol_image_pipeline.is_available():
                     try:
@@ -162,7 +161,7 @@ class PDFParserPipeline:
                             dpi=image_pipeline_dpi,
                         )
                     except Exception as e:
-                        logger.error(f"图像分子检测失败：{e}")
+                        logger.error("图像分子检测失败：%s", e)
                 else:
                     logger.warning(
                         "MolImagePipeline 不可用（模型未下载），跳过图像检测"
@@ -192,7 +191,7 @@ class PDFParserPipeline:
                     doc_id, content, metadata={"source": str(pdf_path)}
                 )
             except Exception as e:
-                logger.error(f"KB indexing failed for {doc_id}: {e}")
+                logger.error("KB indexing failed for %s: %s", doc_id, e)
 
         return content
 
@@ -205,7 +204,7 @@ class PDFParserPipeline:
         pdf_path: Path,
         doc_id: str,
         dpi: float = 300.0,
-    ) -> List[ExtractionResult]:
+    ) -> list[ExtractionResult]:
         """渲染 PDF 页面为图像，运行 MolDetv2 检测 + MolScribe 识别 + ROI 文本提取.
 
         Returns:
@@ -214,7 +213,7 @@ class PDFParserPipeline:
         if fitz is None:
             raise ImportError("PyMuPDF 未安装，无法渲染 PDF 页面")
 
-        all_results: List[ExtractionResult] = []
+        all_results: list[ExtractionResult] = []
         crop_cache_dir = self._crop_cache_dir(doc_id)
         crop_cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -285,7 +284,7 @@ class PDFParserPipeline:
 
     def _save_pending_extractions(
         self,
-        results: List[ExtractionResult],
+        results: list[ExtractionResult],
         doc_id: str,
     ) -> None:
         """将 pending 结果序列化保存到 JSON."""
@@ -297,9 +296,9 @@ class PDFParserPipeline:
         logger.debug("Pending 结果已保存：%s", path)
 
     @classmethod
-    def load_pending_extractions(cls, path: Path) -> List[ExtractionResult]:
+    def load_pending_extractions(cls, path: Path) -> list[ExtractionResult]:
         """从 JSON 加载 pending 结果."""
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return [ExtractionResult.from_dict(r) for r in data.get("results", [])]
 
@@ -325,7 +324,7 @@ class PDFParserPipeline:
 
     def _extract_molecules_from_text(
         self, text: str, doc_id: str
-    ) -> List[MoleculeRecord]:
+    ) -> list[MoleculeRecord]:
         """从文本提取分子信息并入库（捡漏角色）."""
         records = self._extractor.extract_from_text(text, doc_id=doc_id)
         for rec in records:

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
 
 from rdkit import Chem
 from rdkit.Chem import BRICS, Recap
@@ -41,9 +40,9 @@ class FragmentInfo:
 
     smarts: str = ""
     smiles: str = ""
-    mol: Optional[Chem.Mol] = None
-    atom_indices: Set[int] = field(default_factory=set)
-    bond_indices: Set[int] = field(default_factory=set)
+    mol: Chem.Mol | None = None
+    atom_indices: set[int] = field(default_factory=set)
+    bond_indices: set[int] = field(default_factory=set)
 
     def __repr__(self) -> str:
         return f"FragmentInfo(smiles={self.smiles!r}, atoms={len(self.atom_indices)})"
@@ -61,7 +60,7 @@ class ScaffoldInfo:
         original_smiles: 原始分子 SMILES.
     """
 
-    scaffold_mol: Optional[Chem.Mol] = None
+    scaffold_mol: Chem.Mol | None = None
     scaffold_smiles: str = ""
     num_rings: int = 0
     num_atoms: int = 0
@@ -78,7 +77,7 @@ class ScaffoldAnalyzer:
         self,
         mol: Chem.Mol,
         include_chirality: bool = False,
-    ) -> Optional[Chem.Mol]:
+    ) -> Chem.Mol | None:
         """提取 Bemis-Murcko 骨架.
 
         移除所有侧链，仅保留环系统和连接它们的链。
@@ -125,7 +124,7 @@ class ScaffoldAnalyzer:
         except Exception:
             return ""
 
-    def get_generic_scaffold(self, mol: Chem.Mol) -> Optional[Chem.Mol]:
+    def get_generic_scaffold(self, mol: Chem.Mol) -> Chem.Mol | None:
         """提取通用骨架（所有原子变为碳，所有键变为单键）.
 
         Args:
@@ -175,10 +174,10 @@ class ScaffoldAnalyzer:
 
     def group_by_scaffold(
         self,
-        molecules: List[Chem.Mol],
-        names: Optional[List[str]] = None,
+        molecules: list[Chem.Mol],
+        names: list[str] | None = None,
         include_chirality: bool = False,
-    ) -> Dict[str, List[Tuple[int, Optional[str], Chem.Mol]]]:
+    ) -> dict[str, list[tuple[int, str | None, Chem.Mol]]]:
         """按 Murcko 骨架对分子分组.
 
         Args:
@@ -189,7 +188,7 @@ class ScaffoldAnalyzer:
         Returns:
             骨架 SMILES -> (索引, 名称, 分子) 列表 的字典.
         """
-        groups: Dict[str, List[Tuple[int, Optional[str], Chem.Mol]]] = {}
+        groups: dict[str, list[tuple[int, str | None, Chem.Mol]]] = {}
         for i, mol in enumerate(molecules):
             scaffold_smiles = self.get_murcko_scaffold_smiles(mol, include_chirality)
             if not scaffold_smiles:
@@ -201,7 +200,7 @@ class ScaffoldAnalyzer:
     def get_scaffold_hierarchy(
         self,
         mol: Chem.Mol,
-    ) -> List[ScaffoldInfo]:
+    ) -> list[ScaffoldInfo]:
         """获取骨架层次结构（从完整分子逐步简化到骨架）.
 
         层次：
@@ -265,7 +264,7 @@ class RECAPFragmenter:
     将分子分解为合成相关的片段。RECAP 定义了 11 种常见的合成反应键类型。
     """
 
-    def fragment(self, mol: Chem.Mol) -> List[FragmentInfo]:
+    def fragment(self, mol: Chem.Mol) -> list[FragmentInfo]:
         """对分子进行 RECAP 片段分解.
 
         Args:
@@ -286,7 +285,7 @@ class RECAPFragmenter:
             logger.warning(f"RECAP fragmentation failed: {e}")
             return []
 
-    def _extract_fragments_from_tree(self, node) -> List[FragmentInfo]:
+    def _extract_fragments_from_tree(self, node) -> list[FragmentInfo]:
         """从 RECAP 分解树中提取片段（递归）."""
         fragments = []
         if hasattr(node, "mol") and node.mol is not None:
@@ -307,9 +306,9 @@ class RECAPFragmenter:
 
     def fragment_batch(
         self,
-        molecules: List[Chem.Mol],
-        names: Optional[List[str]] = None,
-    ) -> Dict[str, List[FragmentInfo]]:
+        molecules: list[Chem.Mol],
+        names: list[str] | None = None,
+    ) -> dict[str, list[FragmentInfo]]:
         """批量 RECAP 分解.
 
         Args:
@@ -333,7 +332,7 @@ class BRICSFragmenter:
     规则将分子分解为合成相关的片段。BRICS 定义了 16 种断键规则。
     """
 
-    def fragment(self, mol: Chem.Mol) -> List[FragmentInfo]:
+    def fragment(self, mol: Chem.Mol) -> list[FragmentInfo]:
         """对分子进行 BRICS 片段分解.
 
         Args:
@@ -379,7 +378,7 @@ class BRICSFragmenter:
             logger.warning(f"BRICS fragmentation failed: {e}")
             return []
 
-    def get_fragment_smiles(self, mol: Chem.Mol) -> List[str]:
+    def get_fragment_smiles(self, mol: Chem.Mol) -> list[str]:
         """获取 BRICS 片段的 SMILES 列表.
 
         Args:
@@ -392,9 +391,9 @@ class BRICSFragmenter:
 
     def fragment_batch(
         self,
-        molecules: List[Chem.Mol],
-        names: Optional[List[str]] = None,
-    ) -> Dict[str, List[FragmentInfo]]:
+        molecules: list[Chem.Mol],
+        names: list[str] | None = None,
+    ) -> dict[str, list[FragmentInfo]]:
         """批量 BRICS 分解.
 
         Args:
@@ -429,7 +428,7 @@ class RGroupAnalyzer:
         self,
         scaffold: Chem.Mol,
         mol: Chem.Mol,
-    ) -> List[FragmentInfo]:
+    ) -> list[FragmentInfo]:
         """识别分子相对于骨架的 R 基团.
 
         Args:
@@ -480,8 +479,8 @@ class RGroupAnalyzer:
         self,
         mol: Chem.Mol,
         start_atom: int,
-        scaffold_atoms: Set[int],
-    ) -> Optional[FragmentInfo]:
+        scaffold_atoms: set[int],
+    ) -> FragmentInfo | None:
         """提取单个 R 基团片段."""
         from collections import deque
 

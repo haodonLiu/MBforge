@@ -27,7 +27,7 @@ MCS是多个分子共有的最大结构片段，在药物化学中用于:
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, Dict, Any, Tuple
+from typing import Any
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -104,8 +104,8 @@ class MCSFinder:
         self.verbose = verbose
 
     def find_mcs(
-        self, molecules: List[Dict[str, Any]], threshold: float = 0.8
-    ) -> Optional[MCSResult]:
+        self, molecules: list[dict[str, Any]], threshold: float = 0.8
+    ) -> MCSResult | None:
         """在多个分子间查找最大公共子结构.
 
         对于两个分子，直接比较查找MCS。
@@ -167,7 +167,7 @@ class MCSFinder:
 
     def _find_mcs_pair(
         self, mol_a: Chem.Mol, smiles_a: str, mol_b: Chem.Mol, smiles_b: str
-    ) -> Optional[MCSResult]:
+    ) -> MCSResult | None:
         """查找两个分子之间的MCS.
 
         使用RDKit的rdFMCS算法查找两个分子的最大公共子结构。
@@ -249,8 +249,8 @@ class MCSFinder:
         )
 
     def find_mcs_for_clusters(
-        self, clusters: List[Any]
-    ) -> Dict[int, Optional[MCSResult]]:
+        self, clusters: list[Any]
+    ) -> dict[int, MCSResult | None]:
         """为每个聚类查找MCS.
 
         批量处理多个聚类，为每个聚类查找最大公共子结构。
@@ -261,7 +261,7 @@ class MCSFinder:
         Returns:
             字典，键为cluster_id，值为MCSResult或None.
         """
-        results: Dict[int, Optional[MCSResult]] = {}
+        results: dict[int, MCSResult | None] = {}
 
         for cluster in clusters:
             cluster_id = (
@@ -325,14 +325,14 @@ class MCSScaffoldInfo:
 
     scaffold_mol: Chem.Mol  # 骨架分子对象
     scaffold_smiles: str  # 骨架SMILES
-    r_positions: Dict[int, List[SubstituentInfo]]  # R基团位置字典
+    r_positions: dict[int, list[SubstituentInfo]]  # R基团位置字典
     num_r_groups: int  # R基团数量
 
 
 def find_substitution_positions(
     mcs_mol: Chem.Mol,
-    molecules: List[Dict[str, Any]],
-) -> Optional[MCSScaffoldInfo]:
+    molecules: list[dict[str, Any]],
+) -> MCSScaffoldInfo | None:
     """查找MCS骨架上的取代位点.
 
     分析分子与MCS的匹配关系，识别MCS骨架上的R基团位置。
@@ -348,7 +348,7 @@ def find_substitution_positions(
     if len(molecules) == 0:
         return None
 
-    r_positions: Dict[int, List[SubstituentInfo]] = {}
+    r_positions: dict[int, list[SubstituentInfo]] = {}
 
     for mol_data in molecules:
         mol = mol_data["mol"]
@@ -406,7 +406,7 @@ def find_substitution_positions(
 
 def _extract_substituent(
     mol: Chem.Mol, attachment_atom_idx: int, sub_atom_idx: int
-) -> Tuple[Optional[Chem.Mol], str]:
+) -> tuple[Chem.Mol | None, str]:
     """从分子中提取取代基.
 
     使用BFS遍历从连接点开始提取取代基的原子集合。
@@ -454,7 +454,7 @@ def _extract_substituent(
 
 def create_marked_scaffold(
     scaffold_info: MCSScaffoldInfo,
-    size: Tuple[int, int] = (400, 300),
+    size: tuple[int, int] = (400, 300),
 ) -> bytes:
     """创建带R基团标签的骨架图像.
 

@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QGuiApplication
@@ -194,7 +193,7 @@ class ThemeManager(QObject):
 
     theme_changed = pyqtSignal(str)  # emits "light" or "dark"
 
-    _instance: Optional["ThemeManager"] = None
+    _instance: ThemeManager | None = None
 
     def __init__(self):
         super().__init__()
@@ -206,7 +205,7 @@ class ThemeManager(QObject):
             app.styleHints().colorSchemeChanged.connect(self._on_system_color_scheme_changed)
 
     @classmethod
-    def instance(cls) -> "ThemeManager":
+    def instance(cls) -> ThemeManager:
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
@@ -260,7 +259,7 @@ class ThemeManager(QObject):
 def create_button(
     text: str,
     style: str = "default",
-    parent: Optional[QWidget] = None,
+    parent: QWidget | None = None,
 ) -> QPushButton:
     """创建统一风格的按钮.
 
@@ -283,7 +282,7 @@ def create_button(
 def create_input(
     placeholder: str = "",
     password: bool = False,
-    parent: Optional[QWidget] = None,
+    parent: QWidget | None = None,
 ) -> QLineEdit:
     """创建统一风格的输入框.
 
@@ -317,7 +316,7 @@ def create_input(
 def create_label(
     text: str,
     level: str = "body",
-    parent: Optional[QWidget] = None,
+    parent: QWidget | None = None,
 ) -> QLabel:
     """创建统一风格的标签.
 
@@ -337,7 +336,7 @@ def create_label(
     return label
 
 
-def create_table(headers: list[str], parent: Optional[QWidget] = None) -> QTableWidget:
+def create_table(headers: list[str], parent: QWidget | None = None) -> QTableWidget:
     """创建统一风格的表格.
 
     Args:
@@ -381,7 +380,7 @@ def create_table(headers: list[str], parent: Optional[QWidget] = None) -> QTable
     return table
 
 
-def create_tree(parent: Optional[QWidget] = None) -> QTreeWidget:
+def create_tree(parent: QWidget | None = None) -> QTreeWidget:
     """创建统一风格的树形组件."""
     p = _p()
     tree = QTreeWidget(parent)
@@ -413,7 +412,7 @@ class CardWidget(QFrame):
     def __init__(
         self,
         title: str = "",
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         p = _p()
@@ -452,7 +451,7 @@ class CardWidget(QFrame):
 class SearchBox(QLineEdit):
     """带搜索图标的搜索输入框（替代输入框+按钮组合）."""
 
-    def __init__(self, placeholder: str = "搜索...", parent: Optional[QWidget] = None):
+    def __init__(self, placeholder: str = "搜索...", parent: QWidget | None = None):
         super().__init__(parent)
         p = _p()
         self.setPlaceholderText(f"{placeholder}")

@@ -26,7 +26,6 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 
 import numpy as np
@@ -61,7 +60,7 @@ class ClusterResult:
     """
 
     cluster_id: int  # 聚类ID
-    molecules: List[Dict[str, object]]  # 分子列表
+    molecules: list[dict[str, object]]  # 分子列表
     representative_idx: int  # 代表性分子索引
     size: int  # 聚类大小
     avg_similarity: float = 0.0  # 平均相似度
@@ -87,7 +86,7 @@ class MolecularClusterer:
 
     def __init__(
         self,
-        fingerprinter: Optional[MolecularFingerprinter] = None,
+        fingerprinter: MolecularFingerprinter | None = None,
         threshold: float = 0.7,
         method: str = "tanimoto",
     ) -> None:
@@ -103,8 +102,8 @@ class MolecularClusterer:
         self.method = method
 
     def cluster(
-        self, molecules: List[Dict[str, object]]
-    ) -> Tuple[List[ClusterResult], np.ndarray]:
+        self, molecules: list[dict[str, object]]
+    ) -> tuple[list[ClusterResult], np.ndarray]:
         """基于指纹相似性对分子进行聚类.
 
         Args:
@@ -132,8 +131,8 @@ class MolecularClusterer:
             raise ClusteringError(f"Clustering failed: {e}") from e
 
     def _cluster_butina(
-        self, molecules: List[Dict[str, object]]
-    ) -> Tuple[List[ClusterResult], np.ndarray]:
+        self, molecules: list[dict[str, object]]
+    ) -> tuple[list[ClusterResult], np.ndarray]:
         """使用Butina算法进行聚类.
 
         Butina算法是一种基于距离矩阵的聚类方法，
@@ -160,7 +159,7 @@ class MolecularClusterer:
             distance_matrix, n, self.threshold, isDistData=True
         )
 
-        results: List[ClusterResult] = []
+        results: list[ClusterResult] = []
         for cluster_id, indices in enumerate(cluster_ids):
             if len(indices) == 0:
                 continue
@@ -194,8 +193,8 @@ class MolecularClusterer:
         return results, sim_matrix
 
     def _cluster_tanimoto(
-        self, molecules: List[Dict[str, object]]
-    ) -> Tuple[List[ClusterResult], np.ndarray]:
+        self, molecules: list[dict[str, object]]
+    ) -> tuple[list[ClusterResult], np.ndarray]:
         """使用Tanimoto相似度阈值进行聚类.
 
         简单的贪心聚类算法:
@@ -215,7 +214,7 @@ class MolecularClusterer:
 
         n = len(molecules)
         assigned = [False] * n
-        results: List[ClusterResult] = []
+        results: list[ClusterResult] = []
 
         for i in range(n):
             if assigned[i]:

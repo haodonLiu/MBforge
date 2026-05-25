@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Tuple
 
 from mbforge.parsers.extraction_result import ExtractionResult
 from mbforge.utils.logger import get_logger
@@ -34,17 +33,17 @@ _COMPOUND_NAME_PATTERNS = [
 _ACTIVITY_PATTERNS = [
     # IC50 = 5.2 nM
     re.compile(
-        r"(IC50|EC50|EC90|Ki|Kd|IC90)\s*[=:]\s*([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM|μM)",
+        r"(IC50|EC50|EC90|Ki|Kd|IC90)\s*[=:]\s*([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM)",
         re.IGNORECASE,
     ),
     # Ki of 3.4 nM
     re.compile(
-        r"(IC50|EC50|EC90|Ki|Kd|IC90)\s+of\s+([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM|μM)",
+        r"(IC50|EC50|EC90|Ki|Kd|IC90)\s+of\s+([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM)",
         re.IGNORECASE,
     ),
     # 5.2 nM (IC50)
     re.compile(
-        r"([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM|μM)\s*\(?\s*(IC50|EC50|EC90|Ki|Kd|IC90)\s*\)?",
+        r"([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM)\s*\(?\s*(IC50|EC50|EC90|Ki|Kd|IC90)\s*\)?",
         re.IGNORECASE,
     ),
 ]
@@ -71,8 +70,8 @@ class AssociationEngine:
 
     def associate_all(
         self,
-        results: List[ExtractionResult],
-    ) -> List[ExtractionResult]:
+        results: list[ExtractionResult],
+    ) -> list[ExtractionResult]:
         """批量关联：为每个 ExtractionResult 解析上下文文本.
 
         Args:
@@ -135,7 +134,7 @@ class AssociationEngine:
 
         return result
 
-    def _extract_compound_name(self, text: str) -> Optional[str]:
+    def _extract_compound_name(self, text: str) -> str | None:
         """从文本中提取化合物编号 / 名称.
 
         优先级：Compound > Fig > Scheme > Table
@@ -148,13 +147,13 @@ class AssociationEngine:
 
     def _extract_activities(
         self, text: str
-    ) -> List[Tuple[str, float, str]]:
+    ) -> list[tuple[str, float, str]]:
         """从文本中提取活性数据.
 
         Returns:
             [(activity_type, value, unit), ...]
         """
-        activities: List[Tuple[str, float, str]] = []
+        activities: list[tuple[str, float, str]] = []
         seen: set = set()
 
         for pattern in _ACTIVITY_PATTERNS:
@@ -198,7 +197,7 @@ class AssociationEngine:
     def _normalize_unit(unit: str) -> str:
         """统一浓度单位."""
         u = unit.lower()
-        if u in ("um", "μm", "μM"):
+        if u in ("um", "μm"):
             return "µM"
         if u == "nm":
             return "nM"

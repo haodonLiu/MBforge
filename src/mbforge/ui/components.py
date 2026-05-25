@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
@@ -22,7 +22,6 @@ from .theme import (
     FONT_SIZE_DEFAULT,
     FONT_SIZE_SMALL,
     RADIUS_DEFAULT,
-    RADIUS_LARGE,
     ThemeManager,
     create_button,
     create_label,
@@ -32,7 +31,7 @@ from .theme import (
 class IconButton(QPushButton):
     """紧凑型图标按钮，无边框背景，悬浮显底."""
 
-    def __init__(self, icon_text: str, tooltip: str = "", parent: Optional[QWidget] = None):
+    def __init__(self, icon_text: str, tooltip: str = "", parent: QWidget | None = None):
         super().__init__(icon_text, parent)
         self.setToolTip(tooltip)
         p = ThemeManager.instance().palette()
@@ -56,7 +55,7 @@ class IconButton(QPushButton):
 class StatusBadge(QLabel):
     """状态徽章标签，显示在线/离线/处理中等状态."""
 
-    def __init__(self, text: str = "", status: str = "offline", parent: Optional[QWidget] = None):
+    def __init__(self, text: str = "", status: str = "offline", parent: QWidget | None = None):
         super().__init__(text, parent)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.set_status(status)
@@ -82,8 +81,8 @@ class SectionHeader(QWidget):
         self,
         title: str,
         action_text: str = "",
-        action_callback: Optional[Callable[[], None]] = None,
-        parent: Optional[QWidget] = None,
+        action_callback: Callable[[], None] | None = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         layout = QHBoxLayout(self)
@@ -105,8 +104,8 @@ class EmptyStateWidget(QWidget):
 
     def __init__(self, icon: str = "📭", title: str = "暂无数据",
                  subtitle: str = "", action_text: str = "",
-                 action_callback: Optional[Callable[[], None]] = None,
-                 parent: Optional[QWidget] = None):
+                 action_callback: Callable[[], None] | None = None,
+                 parent: QWidget | None = None):
         super().__init__(parent)
         p = ThemeManager.instance().palette()
         layout = QVBoxLayout(self)
@@ -135,7 +134,7 @@ class EmptyStateWidget(QWidget):
 class LoadingSpinner(QWidget):
     """简易加载动画（使用 QLabel + 文本动画，不依赖外部 GIF）."""
 
-    def __init__(self, text: str = "加载中", parent: Optional[QWidget] = None):
+    def __init__(self, text: str = "加载中", parent: QWidget | None = None):
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -166,7 +165,7 @@ class LoadingSpinner(QWidget):
 class ProgressBar(QProgressBar):
     """统一风格的进度条."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setTextVisible(True)
         self.setMaximumHeight(14)
@@ -189,7 +188,7 @@ class ProgressBar(QProgressBar):
 class ToolBar(QWidget):
     """简洁工具栏，替代 QToolBar，避免与全局样式冲突."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         p = ThemeManager.instance().palette()
         self.setStyleSheet(f"""
@@ -229,7 +228,7 @@ class ToolBar(QWidget):
 class InfoRow(QWidget):
     """键值对信息行，用于详情展示."""
 
-    def __init__(self, key: str, value: str = "", parent: Optional[QWidget] = None):
+    def __init__(self, key: str, value: str = "", parent: QWidget | None = None):
         super().__init__(parent)
         p = ThemeManager.instance().palette()
         layout = QHBoxLayout(self)

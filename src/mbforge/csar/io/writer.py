@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Union
+from typing import Any, Union
 
 import pandas as pd
 from rdkit import Chem
@@ -46,7 +46,7 @@ class MoleculeWriter:
     """
 
     def write_sdf(
-        self, molecules: List[Dict[str, Any]], path: Union[str, Path]
+        self, molecules: list[dict[str, Any]], path: Union[str, Path]
     ) -> None:
         """将分子写入SDF文件.
 
@@ -77,7 +77,7 @@ class MoleculeWriter:
         logger.info(f"Successfully wrote {len(molecules)} molecules")
 
     def write_csv(
-        self, molecules: List[Dict[str, Any]], path: Union[str, Path]
+        self, molecules: list[dict[str, Any]], path: Union[str, Path]
     ) -> None:
         """将分子写入CSV文件.
 
@@ -104,7 +104,7 @@ class MoleculeWriter:
             records = []
             for mol_data in molecules:
                 mol = mol_data["mol"]
-                record: Dict[str, Any] = {
+                record: dict[str, Any] = {
                     "Name": mol_data.get("name", ""),
                     "SMILES": mol_data.get("smiles", Chem.MolToSmiles(mol)),
                     "NumAtoms": mol.GetNumAtoms(),
@@ -126,7 +126,7 @@ class MoleculeWriter:
         logger.info(f"Successfully wrote {len(molecules)} molecules")
 
     def write_excel(
-        self, molecules: List[Dict[str, Any]], path: Union[str, Path]
+        self, molecules: list[dict[str, Any]], path: Union[str, Path]
     ) -> None:
         """将分子写入Excel文件.
 
@@ -146,7 +146,7 @@ class MoleculeWriter:
             records = []
             for mol_data in molecules:
                 mol = mol_data["mol"]
-                record: Dict[str, Any] = {
+                record: dict[str, Any] = {
                     "Name": mol_data.get("name", ""),
                     "SMILES": mol_data.get("smiles", Chem.MolToSmiles(mol)),
                     "NumAtoms": mol.GetNumAtoms(),
@@ -172,7 +172,7 @@ class MoleculeWriter:
     # ------------------------------------------------------------------
 
     def write_molecules_csv(
-        self, molecules: List[Molecule], path: Union[str, Path]
+        self, molecules: list[Molecule], path: Union[str, Path]
     ) -> None:
         """将 Molecule 列表写入 CSV 文件.
 
@@ -190,7 +190,7 @@ class MoleculeWriter:
             raise MoleculeWriteError(f"Failed to write CSV file {path}: {e}") from e
 
     def write_molecules_sdf(
-        self, molecules: List[Molecule], path: Union[str, Path]
+        self, molecules: list[Molecule], path: Union[str, Path]
     ) -> None:
         """将 Molecule 列表写入 SDF 文件.
 
@@ -208,7 +208,7 @@ class MoleculeWriter:
             raise MoleculeWriteError(f"Failed to write SDF file {path}: {e}") from e
 
     def write_molecules_excel(
-        self, molecules: List[Molecule], path: Union[str, Path]
+        self, molecules: list[Molecule], path: Union[str, Path]
     ) -> None:
         """将 Molecule 列表写入 Excel 文件.
 

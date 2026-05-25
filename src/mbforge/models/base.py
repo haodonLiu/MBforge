@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Dict, Iterator, List, Optional
+from typing import Any
+from collections.abc import AsyncGenerator, Iterator
 
 
 @dataclass
@@ -13,10 +14,10 @@ class Message:
 
     role: str  # system | user | assistant | tool
     content: str
-    attachments: Optional[List[str]] = None  # 附件路径，用于 VLM
-    tool_call_id: Optional[str] = None  # 工具调用 ID（用于 function calling）
-    name: Optional[str] = None  # 工具名（用于 tool 消息）
-    tool_calls: Optional[List] = None  # 工具调用列表（用于 assistant 消息）
+    attachments: list[str] | None = None  # 附件路径，用于 VLM
+    tool_call_id: str | None = None  # 工具调用 ID（用于 function calling）
+    name: str | None = None  # 工具名（用于 tool 消息）
+    tool_calls: list | None = None  # 工具调用列表（用于 assistant 消息）
 
 
 @dataclass
@@ -24,36 +25,36 @@ class StreamChunk:
     """流式输出块."""
 
     delta: str
-    finish_reason: Optional[str] = None
+    finish_reason: str | None = None
 
 
 class BaseLLM(ABC):
     """LLM 基类."""
 
     @abstractmethod
-    def chat(self, messages: List[Message], **kwargs) -> str:
+    def chat(self, messages: list[Message], **kwargs) -> str:
         """同步对话，返回完整回复."""
         ...
 
     @abstractmethod
-    def chat_stream(self, messages: List[Message], **kwargs) -> Iterator[StreamChunk]:
+    def chat_stream(self, messages: list[Message], **kwargs) -> Iterator[StreamChunk]:
         """同步流式对话."""
         ...
 
     @abstractmethod
-    async def achat(self, messages: List[Message], **kwargs) -> str:
+    async def achat(self, messages: list[Message], **kwargs) -> str:
         """异步对话."""
         ...
 
     @abstractmethod
     async def achat_stream(
-        self, messages: List[Message], **kwargs
+        self, messages: list[Message], **kwargs
     ) -> AsyncGenerator[StreamChunk, None]:
         """异步流式对话."""
         ...
 
     def call_with_tools(
-        self, messages: List[Message], tools: List[Dict], **kwargs
+        self, messages: list[Message], tools: list[dict], **kwargs
     ) -> Any:
         """带工具定义的 LLM 调用。默认 fallback 到 chat()。"""
         return self.chat(messages, **kwargs)
@@ -63,12 +64,12 @@ class BaseEmbedder(ABC):
     """Embedding 模型基类."""
 
     @abstractmethod
-    def embed(self, texts: List[str]) -> List[List[float]]:
+    def embed(self, texts: list[str]) -> list[list[float]]:
         """同步编码文本，返回向量列表."""
         ...
 
     @abstractmethod
-    async def aembed(self, texts: List[str]) -> List[List[float]]:
+    async def aembed(self, texts: list[str]) -> list[list[float]]:
         """异步编码文本."""
         ...
 
@@ -77,7 +78,7 @@ class BaseReranker(ABC):
     """Rerank 模型基类."""
 
     @abstractmethod
-    def rerank(self, query: str, passages: List[str]) -> List[tuple[int, float]]:
+    def rerank(self, query: str, passages: list[str]) -> list[tuple[int, float]]:
         """返回 (原始索引, 分数) 列表，按分数降序排列."""
         ...
 

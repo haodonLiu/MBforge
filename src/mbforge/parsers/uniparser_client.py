@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Union
 
 try:
     from uniparser_tools.api.clients import UniParserClient as UniParserClientBase
@@ -112,7 +112,7 @@ class ParserClient:
         pages_dict: bool = False,
         pages_tree: bool = False,
         molecule_source: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """获取解析结果.
 
         Args:
@@ -143,7 +143,7 @@ class ParserClient:
         textual: int = 4,  # FormatFlag.Markdown
         table: int = 4,
         equation: int = 4,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """获取格式化结果.
 
         Args:
@@ -203,10 +203,10 @@ class ParserClient:
 
         raise TimeoutError(f"Parsing timed out after {timeout} seconds")
 
-    def health(self) -> Dict[str, Any]:
+    def health(self) -> dict[str, Any]:
         """检查服务健康状态."""
         return self._client.health()
 
-    def version(self) -> Dict[str, Any]:
+    def version(self) -> dict[str, Any]:
         """获取服务版本信息."""
         return self._client.version()

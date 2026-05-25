@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Union
+from typing import Any, Union
 
 import pandas as pd
 from rdkit import Chem
@@ -54,8 +54,8 @@ class MoleculeReader:
         self,
         smiles_column: str = "SMILES",
         name_column: str = "Name",
-        activity_column: Optional[str] = None,
-        cas_column: Optional[str] = None,
+        activity_column: str | None = None,
+        cas_column: str | None = None,
     ) -> None:
         """初始化分子读取器.
 
@@ -71,7 +71,7 @@ class MoleculeReader:
         self.cas_column = cas_column
         self._fingerprinter = MolecularFingerprinter()
 
-    def read_sdf(self, path: Union[str, Path]) -> List[Dict[str, Any]]:
+    def read_sdf(self, path: Union[str, Path]) -> list[dict[str, Any]]:
         """从SDF文件读取分子.
 
         SDF (Structure Data File) 是化学信息学中常用的分子结构文件格式。
@@ -104,7 +104,7 @@ class MoleculeReader:
                             if mol.HasProp("_Name")
                             else f"mol_{idx}"
                         )
-                        entry: Dict[str, Any] = {
+                        entry: dict[str, Any] = {
                             "mol": mol,
                             "name": name,
                             "smiles": Chem.MolToSmiles(mol),
@@ -128,10 +128,10 @@ class MoleculeReader:
         self,
         path: Union[str, Path],
         sheet_name: Union[str, int] = 0,
-        ic50_nm_column: Optional[str] = None,
-        ic50_um_column: Optional[str] = None,
+        ic50_nm_column: str | None = None,
+        ic50_um_column: str | None = None,
         deduplicate: bool = True,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """从Excel文件读取分子.
 
         读取Excel文件中的分子数据，支持IC50活性值处理。
@@ -222,7 +222,7 @@ class MoleculeReader:
                     except (ValueError, TypeError):
                         activity_value = None
 
-                entry: Dict[str, Any] = {
+                entry: dict[str, Any] = {
                     "mol": mol,
                     "name": name,
                     "smiles": smiles,
@@ -243,7 +243,7 @@ class MoleculeReader:
         logger.info(f"Successfully read {len(molecules)} molecules")
         return molecules
 
-    def read_csv(self, path: Union[str, Path]) -> List[Dict[str, Any]]:
+    def read_csv(self, path: Union[str, Path]) -> list[dict[str, Any]]:
         """从CSV文件读取分子.
 
         读取CSV文件中的分子数据，解析SMILES字符串为分子对象。
@@ -281,7 +281,7 @@ class MoleculeReader:
                 name = str(row.get(self.name_column, f"mol_{idx}"))
                 mol.SetProp("_Name", name)
 
-                entry: Dict[str, Any] = {
+                entry: dict[str, Any] = {
                     "mol": mol,
                     "name": name,
                     "smiles": smiles,
@@ -307,7 +307,7 @@ class MoleculeReader:
         self,
         path: Union[str, Path],
         **kwargs: Any,
-    ) -> List[Molecule]:
+    ) -> list[Molecule]:
         """读取分子并返回类型安全的 Molecule 列表.
 
         这是 read() 的类型安全版本，将字典列表转换为 Molecule 对象。
@@ -330,7 +330,7 @@ class MoleculeReader:
             >>> print(batch.filter_has_activity())
         """
         dicts = self.read(path, **kwargs)
-        entries: List[Molecule] = []
+        entries: list[Molecule] = []
         for d in dicts:
             try:
                 entries.append(Molecule.from_dict(d))
@@ -363,7 +363,7 @@ class MoleculeReader:
         entries = self.read_entries(path, **kwargs)
         return MoleculeBatch(entries)
 
-    def read(self, path: Union[str, Path], **kwargs: Any) -> List[Dict[str, Any]]:
+    def read(self, path: Union[str, Path], **kwargs: Any) -> list[dict[str, Any]]:
         """自动检测格式并读取分子.
 
         根据文件扩展名自动选择合适的读取方法。

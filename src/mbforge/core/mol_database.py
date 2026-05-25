@@ -105,7 +105,7 @@ class MoleculeRecord:
             id=self.mol_id,
             smiles=self.smiles,
             name=self.name,
-            source="pdf" if self.source_doc else "manual",
+            source=self.source_type or ("pdf" if self.source_doc else "manual"),
             activity=self.activity,
             activity_unit=self.units,
             cas=self.tags[0] if self.tags else None,
@@ -165,29 +165,32 @@ class MoleculeDatabase:
         self._init_db()
 
     def _init_db(self) -> None:
+        # 分步执行，避免旧数据库缺少新列导致 CREATE INDEX 失败
         self._conn.executescript(self.SCHEMA)
-        self._migrate_add_columns()
+        self._ensure_columns()
         self._conn.commit()
 
-    def _migrate_add_columns(self) -> None:
-        """向后兼容：为旧数据库添加新列."""
+    def _ensure_columns(self) -> None:
+        """确保所有列存在（向后兼容旧数据库）。"""
         cursor = self._conn.execute("PRAGMA table_info(molecules)")
         columns = {row["name"] for row in cursor.fetchall()}
-        if "source_type" not in columns:
-            self._conn.execute(
-                "ALTER TABLE molecules ADD COLUMN source_type TEXT DEFAULT 'text'"
-            )
-        if "status" not in columns:
-            self._conn.execute(
-                "ALTER TABLE molecules ADD COLUMN status TEXT DEFAULT 'confirmed'"
-            )
-        if "source_type" not in columns or "status" not in columns:
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_source_type ON molecules(source_type)"
-            )
-            self._conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_status ON molecules(status)"
-            )
+
+        for col_def in [
+            "source_type TEXT DEFAULT 'text'",
+            "status TEXT DEFAULT 'confirmed'",
+        ]:
+            col_name = col_def.split()[0]
+            if col_name not in columns:
+                self._conn.execute(f"ALTER TABLE molecules ADD COLUMN {col_def}")
+
+        for idx_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_source_type ON molecules(source_type)",
+            "CREATE INDEX IF NOT EXISTS idx_status ON molecules(status)",
+        ]:
+            try:
+                self._conn.execute(idx_sql)
+            except sqlite3.OperationalError:
+                pass
 
     def add_molecule(self, record: MoleculeRecord) -> None:
         """添加或更新分子记录."""

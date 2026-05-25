@@ -496,7 +496,7 @@ class MolEditorWidget(QWidget):
                            tags: list[ESmilesTag]):
         """在原子旁边绘制一组标签气泡."""
         font = QFont()
-        font.setPointSize(8)
+        font.setPointSize(max(8, 1))
         painter.setFont(font)
         fm = painter.fontMetrics()
 
@@ -586,7 +586,7 @@ class MolEditorWidget(QWidget):
 
         # 标签文字
         font = QFont()
-        font.setPointSize(7)
+        font.setPointSize(max(7, 1))
         painter.setFont(font)
         painter.setPen(QColor(255, 255, 255))
         painter.drawText(int(wx - 6), int(wy + 3), tag.group)

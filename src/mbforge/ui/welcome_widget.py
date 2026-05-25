@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import platform
 from pathlib import Path
 from typing import Optional
 
@@ -13,8 +14,8 @@ from PyQt6.QtWidgets import (
 )
 
 from ..utils.config import load_global_config
-from .components import EmptyStateWidget
-from .theme import CardWidget, create_button, create_label
+from .components import EmptyStateWidget, InfoRow
+from .theme import CardWidget, ThemeManager, create_button, create_label
 
 
 class WelcomeWidget(QWidget):
@@ -87,6 +88,14 @@ class WelcomeWidget(QWidget):
         self._refresh_recent_projects()
         self._refresh_stats()
 
+        ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
+
+    def _on_theme_changed(self, mode: str):
+        """Refresh UI when theme changes."""
+        self._setup_ui()
+        self._refresh_recent_projects()
+        self._refresh_stats()
+
     def _refresh_recent_projects(self):
         """刷新最近项目列表."""
         # 清空旧内容
@@ -116,14 +125,16 @@ class WelcomeWidget(QWidget):
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(8, 8, 8, 8)
             row_layout.setSpacing(12)
-            row.setStyleSheet("""
-                QWidget {
-                    background: #f8f9fa;
+            p = ThemeManager.instance().palette()
+            row.setStyleSheet(f"""
+                QWidget {{
+                    background: {p['bg_card']};
+                    border: 1px solid {p['border']};
                     border-radius: 8px;
-                }
-                QWidget:hover {
-                    background: #e7f5ff;
-                }
+                }}
+                QWidget:hover {{
+                    background: {p['bg_hover']};
+                }}
             """)
 
             name_label = create_label(path.name, level="header")
@@ -168,6 +179,15 @@ class WelcomeWidget(QWidget):
             stat_layout.addWidget(name_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
             self.stats_layout.addWidget(stat_widget)
+
+        # 系统信息
+        sys_widget = QWidget()
+        sys_layout = QVBoxLayout(sys_widget)
+        sys_layout.setContentsMargins(8, 4, 8, 4)
+        sys_layout.setSpacing(4)
+        sys_layout.addWidget(InfoRow("平台", f"{platform.system()} {platform.release()}"))
+        sys_layout.addWidget(InfoRow("Python", platform.python_version()))
+        self.stats_layout.addWidget(sys_widget)
 
     def _open_project(self):
         from PyQt6.QtWidgets import QFileDialog

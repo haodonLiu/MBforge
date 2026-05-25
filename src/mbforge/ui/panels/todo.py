@@ -13,9 +13,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..core.todo_manager import TodoManager
-from .components import EmptyStateWidget, SectionHeader
-from .theme import CardWidget, ThemeManager, create_label
+from ...core.todo_manager import TodoManager
+from ..components import EmptyStateWidget, SectionHeader
+from ..theme import CardWidget, ThemeManager, create_label
 
 
 class TodoPanel(QWidget):

@@ -16,9 +16,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..core.project import Project
-from .components import EmptyStateWidget
-from .theme import ThemeManager, _p, SearchBox, create_button, create_label
+from ...core.project import Project
+from ..components import EmptyStateWidget
+from ..theme import ThemeManager, _p, SearchBox, create_button, create_label
 
 
 class PDFLibraryPanel(QWidget):

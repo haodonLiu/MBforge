@@ -22,9 +22,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..utils.config import AppConfig, EmbedConfig, ModelConfig, RerankConfig, VLMConfig
-from .components import InfoRow
-from .theme import ThemeManager, create_input
+from ...utils.config import AppConfig, EmbedConfig, ModelConfig, RerankConfig, VLMConfig
+from ..components import InfoRow
+from ..theme import ThemeManager, create_input
 
 
 class NewProjectDialog(QDialog):

@@ -33,18 +33,18 @@ from ..utils.config import load_global_config
 from ..utils.logger import get_logger, log_exception
 from .chat_widget import ChatWidget
 from .components import ProgressBar
-from .dialogs import NewProjectDialog, SettingsDialog
+from .dialogs import NewProjectDialog, SettingsDialog, UniDockConfigDialog
 from .editor import MarkdownEditor
 from .file_tree import FileTreeWidget
 from .preview import MarkdownPreview
-from .status_indicator import ServiceStatusIndicator
+from .panels.status_indicator import ServiceStatusIndicator
 from .theme import (
     SearchBox,
     ThemeManager,
     create_button,
     create_label,
 )
-from .welcome_widget import WelcomeWidget
+from .panels.welcome import WelcomeWidget
 
 logger = get_logger(__name__)
 
@@ -407,6 +407,12 @@ class MainWindow(QMainWindow):
 
         tools_menu.addSeparator()
 
+        unidock_action = QAction("UniDock 对接", self)
+        unidock_action.triggered.connect(self._show_unidock_config)
+        tools_menu.addAction(unidock_action)
+
+        tools_menu.addSeparator()
+
         mol_editor_action = QAction("分子编辑器", self)
         mol_editor_action.setShortcut(QKeySequence("Ctrl+E"))
         mol_editor_action.triggered.connect(self._open_mol_editor)
@@ -449,6 +455,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addAction("TODO", self._show_todo_panel)
         toolbar.addAction("工作流", self._show_workflow_panel)
+        toolbar.addAction("UniDock", self._show_unidock_config)
 
         # 服务状态指示器添加到工具栏最右侧
         toolbar.addSeparator()
@@ -495,7 +502,7 @@ class MainWindow(QMainWindow):
 
     def _open_mol_editor(self):
         """打开分子编辑器独立窗口."""
-        from .mol_editor_dock import MoleculeEditorDialog
+        from .mol_editor.dock import MoleculeEditorDialog
 
         if self._mol_editor_dialog is None:
             self._mol_editor_dialog = MoleculeEditorDialog(self)
@@ -997,7 +1004,7 @@ class MainWindow(QMainWindow):
         self.right_panel.setVisible(self.toggle_chat_action.isChecked())
 
     def _show_mol_db(self):
-        from .mol_panel import MoleculePanel
+        from .panels.mol import MoleculePanel
 
         if self.mol_db is None:
             QMessageBox.warning(self, "提示", "请先打开项目")
@@ -1007,7 +1014,7 @@ class MainWindow(QMainWindow):
         self._add_tab(panel, "分子数据库")
 
     def _show_kb_panel(self):
-        from .kb_panel import KnowledgeBasePanel
+        from .panels.kb import KnowledgeBasePanel
 
         if self.kb is None:
             QMessageBox.warning(self, "提示", "请先打开项目")
@@ -1020,14 +1027,14 @@ class MainWindow(QMainWindow):
         if self.project is None:
             QMessageBox.warning(self, "提示", "请先打开项目")
             return
-        from .pdf_library import PDFLibraryPanel
+        from .panels.pdf_library import PDFLibraryPanel
         panel = PDFLibraryPanel()
         panel.set_project(self.project)
         panel.pdf_opened.connect(self._open_file)
         self._add_tab(panel, "文献库")
 
     def _show_todo_panel(self):
-        from .todo_panel import TodoPanel
+        from .panels.todo import TodoPanel
 
         if self.todo_manager is None:
             QMessageBox.warning(self, "提示", "请先打开项目")
@@ -1038,10 +1045,19 @@ class MainWindow(QMainWindow):
         self._add_tab(panel, "TODO")
 
     def _show_workflow_panel(self):
-        from .workflow_panel import WorkflowPanel
+        from .panels.workflow import WorkflowPanel
 
         panel = WorkflowPanel()
         self._add_tab(panel, "工作流")
+
+    def _show_unidock_config(self):
+        """显示 UniDock 对接配置对话框."""
+        dlg = UniDockConfigDialog(self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            config = dlg.get_config()
+            logger.info(f"UniDock 配置: {config}")
+            # TODO: 调用 UniDock 执行对接
+            self.statusbar.showMessage(f"UniDock 对接配置已设置: {config['receptor_file']}")
 
     def _add_tab(self, widget: QWidget, title: str):
         """安全添加标签页（避免重复）."""

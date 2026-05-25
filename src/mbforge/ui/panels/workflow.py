@@ -9,8 +9,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .components import EmptyStateWidget, SectionHeader, StatusBadge
-from .theme import CardWidget, create_button, create_label
+from ..components import EmptyStateWidget, SectionHeader, StatusBadge
+from ..theme import CardWidget, create_button, create_label
 
 
 class WorkflowCard(CardWidget):

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
-from .theme import ThemeManager
+from ..theme import ThemeManager
 
 
 class ServiceStatusIndicator(QWidget):

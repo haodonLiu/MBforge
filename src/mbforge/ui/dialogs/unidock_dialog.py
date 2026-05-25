@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .theme import ThemeManager, create_input
+from ..theme import ThemeManager, create_input
 
 
 class UniDockConfigDialog(QDialog):

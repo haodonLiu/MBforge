@@ -130,6 +130,11 @@ class MolEditorWidget(QWidget):
         self._debounce_timer.timeout.connect(self._on_debounce_timeout)
         self._pending_esmiles: str = ""
 
+        # Undo/Redo history
+        self._history: list[tuple[Chem.ROMol, list[ESmilesTag]]] = []
+        self._history_pos: int = -1
+        self._max_history: int = 50
+
         self._setup_ui()
         if esmiles:
             self.set_esmiles(esmiles)
@@ -159,6 +164,8 @@ class MolEditorWidget(QWidget):
         self._highlight_atoms.clear()
         self._highlight_bonds.clear()
         self._atom_colors.clear()
+        self._history.clear()
+        self._history_pos = -1
         self._recompute_coords()
         self._render()
         self.update()
@@ -287,6 +294,7 @@ class MolEditorWidget(QWidget):
     # ---- 编辑操作 ----
 
     def _op_add_atom(self, target_idx: int):
+        self._save_snapshot()
         rwmol = Chem.RWMol(self._mol)
         new_idx = rwmol.AddAtom(Chem.Atom(self._atom_type))
         rwmol.AddBond(target_idx, new_idx, order=self._bond_order)
@@ -297,6 +305,7 @@ class MolEditorWidget(QWidget):
         self._emit_changed()
 
     def _op_add_atom_free(self, cx: float, cy: float):
+        self._save_snapshot()
         rwmol = Chem.RWMol(self._mol)
         new_idx = rwmol.AddAtom(Chem.Atom(self._atom_type))
         AllChem.Compute2DCoords(rwmol)
@@ -306,6 +315,7 @@ class MolEditorWidget(QWidget):
         self._emit_changed()
 
     def _op_add_bond(self, atom_a: int, atom_b: int):
+        self._save_snapshot()
         rwmol = Chem.RWMol(self._mol)
         if not rwmol.GetBondBetweenAtoms(atom_a, atom_b):
             rwmol.AddBond(atom_a, atom_b, order=self._bond_order)
@@ -318,6 +328,7 @@ class MolEditorWidget(QWidget):
             self._highlight(atom_b)
 
     def _op_delete_atom(self, atom_idx: int):
+        self._save_snapshot()
         rwmol = Chem.RWMol(self._mol)
         rwmol.RemoveAtom(atom_idx)
         AllChem.Compute2DCoords(rwmol)
@@ -330,6 +341,7 @@ class MolEditorWidget(QWidget):
         self.update()
 
     def _op_delete_bond(self, bond_idx: int):
+        self._save_snapshot()
         rwmol = Chem.RWMol(self._mol)
         bond = rwmol.GetBondWithIdx(bond_idx)
         rwmol.RemoveBond(bond.GetBeginAtomIdx(), bond.GetEndAtomIdx())
@@ -378,6 +390,60 @@ class MolEditorWidget(QWidget):
                 new_tags.append(tag)
         return new_tags
 
+    def _save_snapshot(self):
+        """保存当前状态到历史记录（用于撤销/重做）。"""
+        if self._mol is None:
+            return
+        # 深拷贝分子和标签
+        mol_copy = Chem.Mol(self._mol)
+        tags_copy = [ESmilesTag(type=t.type, index=t.index, group=t.group) for t in self._tags]
+
+        # 截断当前位置之后的历史（用于新编辑）
+        self._history = self._history[:self._history_pos + 1]
+        self._history.append((mol_copy, tags_copy))
+
+        # 限制历史大小
+        if len(self._history) > self._max_history:
+            self._history.pop(0)
+        else:
+            self._history_pos += 1
+
+    def undo(self):
+        """撤销上一步操作."""
+        if self._history_pos <= 0:
+            return
+        self._history_pos -= 1
+        mol, tags = self._history[self._history_pos]
+        self._mol = mol
+        self._tags = [ESmilesTag(type=t.type, index=t.index, group=t.group) for t in tags]
+        self._selected_atom = None
+        self._selected_bond = None
+        self._pending_atom = None
+        self._highlight_atoms.clear()
+        self._highlight_bonds.clear()
+        self._atom_colors.clear()
+        self._render()
+        self.update()
+        self._emit_changed()
+
+    def redo(self):
+        """重做操作."""
+        if self._history_pos >= len(self._history) - 1:
+            return
+        self._history_pos += 1
+        mol, tags = self._history[self._history_pos]
+        self._mol = mol
+        self._tags = [ESmilesTag(type=t.type, index=t.index, group=t.group) for t in tags]
+        self._selected_atom = None
+        self._selected_bond = None
+        self._pending_atom = None
+        self._highlight_atoms.clear()
+        self._highlight_bonds.clear()
+        self._atom_colors.clear()
+        self._render()
+        self.update()
+        self._emit_changed()
+
     def _emit_changed(self):
         if self._debounce_timer.isActive():
             self._debounce_timer.stop()
@@ -414,6 +480,16 @@ class MolEditorWidget(QWidget):
 
         # 3. 绘制 <dum> 虚拟原子（atomic_num == 0 的 * 原子）
         self._draw_dummy_atoms(painter)
+
+        # 4. 绘制 <r> 环连接点（在键中点附近显示）
+        for tag in self._tags:
+            if tag.type == "r":
+                self._draw_ring_attachment(painter, tag)
+
+        # 5. 绘制 <c> 抽象环（在环中心显示）
+        for tag in self._tags:
+            if tag.type == "c":
+                self._draw_abstract_ring(painter, tag)
 
     def _draw_tag_bubbles(self, painter: QPainter,
                            wx: float, wy: float,
@@ -473,6 +549,93 @@ class MolEditorWidget(QWidget):
             painter.setPen(QPen(QColor(230, 120, 30), 1))
             painter.setBrush(QColor(255, 200, 80, 220))
             painter.drawPolygon(poly)
+
+    def _draw_ring_attachment(self, painter: QPainter, tag: ESmilesTag):
+        """在键中点绘制环连接点标记（<r>标签）。"""
+        if self._mol is None:
+            return
+        bond_idx = tag.index
+        if bond_idx >= self._mol.GetNumBonds():
+            return
+        try:
+            bond = self._mol.GetBondWithIdx(bond_idx)
+            p1 = self._drawer.GetDrawCoords(bond.GetBeginAtomIdx())
+            p2 = self._drawer.GetDrawCoords(bond.GetEndAtomIdx())
+        except Exception:
+            return
+
+        # 键中点
+        mx = (p1.x + p2.x) / 2.0
+        my = (p1.y + p2.y) / 2.0
+        wx, wy = self._canvas_to_widget(mx, my)
+
+        # 小菱形
+        size = 4 * self._transform.scale
+        diamond = [
+            (wx, wy - size),
+            (wx + size, wy),
+            (wx, wy + size),
+            (wx - size, wy),
+        ]
+        poly = QPolygon([QPoint(int(x), int(y)) for x, y in diamond])
+
+        color = _TAG_COLORS.get(tag.group, (160, 100, 200, 220))
+        painter.setPen(QPen(QColor(*color[:3]), 1))
+        painter.setBrush(QColor(*color[:3], 200))
+        painter.drawPolygon(poly)
+
+        # 标签文字
+        font = QFont()
+        font.setPointSize(7)
+        painter.setFont(font)
+        painter.setPen(QColor(255, 255, 255))
+        painter.drawText(int(wx - 6), int(wy + 3), tag.group)
+
+    def _draw_abstract_ring(self, painter: QPainter, tag: ESmilesTag):
+        """在环中心绘制抽象环标记（<c>标签）。"""
+        if self._mol is None:
+            return
+        try:
+            # 获取环信息 - 找到包含 tag.index 原子的环
+            ring_info = self._mol.GetRingInfo()
+            atom_rings = ring_info.AtomRings()
+            if tag.index >= len(atom_rings):
+                return
+            ring_atoms = atom_rings[tag.index]
+            if not ring_atoms:
+                return
+        except Exception:
+            return
+
+        # 计算环中心
+        cx_canvas = 0.0
+        cy_canvas = 0.0
+        for atom_idx in ring_atoms:
+            try:
+                pt = self._drawer.GetDrawCoords(atom_idx)
+                cx_canvas += pt.x
+                cy_canvas += pt.y
+            except Exception:
+                continue
+        n = len(ring_atoms)
+        if n == 0:
+            return
+        cx_canvas /= n
+        cy_canvas /= n
+        wx, wy = self._canvas_to_widget(cx_canvas, cy_canvas)
+
+        # 圆圈
+        radius = 8 * self._transform.scale
+        painter.setPen(QPen(QColor(180, 80, 200), 2))
+        painter.setBrush(QColor(200, 120, 230, 150))
+        painter.drawEllipse(int(wx - radius), int(wy - radius), int(radius * 2), int(radius * 2))
+
+        # 标签
+        font = QFont()
+        font.setPointSize(7)
+        painter.setFont(font)
+        painter.setPen(QColor(60, 30, 80))
+        painter.drawText(int(wx - 10), int(wy + 3), tag.group)
 
     # ---- Qt Events ----
 
@@ -593,6 +756,16 @@ class MolEditorWidget(QWidget):
                     self._op_delete_atom(hit[1])
                 else:
                     self._op_delete_bond(hit[1])
+
+    def keyPressEvent(self, event):
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            if event.key() == Qt.Key.Key_Z:
+                self.undo()
+                return
+            if event.key() == Qt.Key.Key_Y:
+                self.redo()
+                return
+        super().keyPressEvent(event)
 
     def enterEvent(self, event):
         self.setCursor(Qt.CursorShape.PointingHandCursor)

@@ -12,7 +12,7 @@ import math
 from enum import Enum
 from typing import Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QSize
+from PyQt6.QtCore import Qt, pyqtSignal, QPoint, QSize, QTimer
 from PyQt6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPixmap, QPolygon
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
@@ -122,6 +122,13 @@ class MolEditorWidget(QWidget):
         self._drawer: Optional[rdMolDraw2D.MolDraw2DCairo] = None
         self._pixmap: Optional[QPixmap] = None
         self._transform = CanvasTransform()
+
+        # Debounce timer for smiles_changed signal
+        self._debounce_timer = QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.setInterval(300)
+        self._debounce_timer.timeout.connect(self._on_debounce_timeout)
+        self._pending_esmiles: str = ""
 
         self._setup_ui()
         if esmiles:
@@ -315,7 +322,7 @@ class MolEditorWidget(QWidget):
         rwmol.RemoveAtom(atom_idx)
         AllChem.Compute2DCoords(rwmol)
         self._mol = rwmol
-        self._tags = self._update_tags_after_edit()
+        self._tags = self._update_tags_after_edit(deleted_atom_idx=atom_idx)
         self._selected_atom = None
         self._selected_bond = None
         self._render()
@@ -334,12 +341,51 @@ class MolEditorWidget(QWidget):
         self._emit_changed()
         self.update()
 
-    def _update_tags_after_edit(self):
-        """编辑后调整 tag 索引（暂未实现，保持原样）。"""
-        return self._tags
+    def _update_tags_after_edit(self, deleted_atom_idx: Optional[int] = None):
+        """编辑后调整 tag 索引.
+
+        当原子被删除时：
+        - tag.index > deleted_idx: 索引减 1
+        - tag.index == deleted_idx: 移除该 tag
+        - tag.index < deleted_idx: 保持不变
+        """
+        if deleted_atom_idx is None:
+            # 无原子被删除，只验证索引是否有效
+            new_tags: list[ESmilesTag] = []
+            for tag in self._tags:
+                if tag.type == "a" and tag.index >= self._mol.GetNumAtoms():
+                    continue
+                new_tags.append(tag)
+            return new_tags
+
+        # 原子被删除，需要调整索引
+        new_tags: list[ESmilesTag] = []
+        for tag in self._tags:
+            if tag.type == "a":
+                if tag.index == deleted_atom_idx:
+                    # 引用的原子已被删除，跳过此标签
+                    continue
+                if tag.index > deleted_atom_idx:
+                    # 索引减 1
+                    new_tags.append(ESmilesTag(
+                        type=tag.type,
+                        index=tag.index - 1,
+                        group=tag.group,
+                    ))
+                else:
+                    new_tags.append(tag)
+            else:
+                new_tags.append(tag)
+        return new_tags
 
     def _emit_changed(self):
-        self.smiles_changed.emit(self.get_esmiles())
+        if self._debounce_timer.isActive():
+            self._debounce_timer.stop()
+        self._pending_esmiles = self.get_esmiles()
+        self._debounce_timer.start()
+
+    def _on_debounce_timeout(self):
+        self.smiles_changed.emit(self._pending_esmiles)
 
     # ---- Layer 1 叠加层绘制 ----
 

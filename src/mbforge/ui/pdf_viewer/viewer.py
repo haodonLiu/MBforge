@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections import OrderedDict, defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import fitz  # PyMuPDF
 from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal, pyqtSlot, QRect
@@ -26,9 +26,13 @@ from PyQt6.QtWidgets import (
 from mbforge.utils.logger import get_logger, log_exception
 
 from .page_widget import PDFPageLabel
-from .renderer import _executor, _NWORKERS, page_to_pixmap
+from .renderer import _executor, _NWORKERS, _render_page_batch, page_to_pixmap
 from .slice_manager import PDFSliceManager
 from ..theme import ThemeManager
+
+if TYPE_CHECKING:
+    from ...parsers.mol_image_pipeline import MolImagePipeline
+    from ...parsers.extraction_result import ExtractionResult
 
 logger = get_logger(__name__)
 
@@ -237,7 +241,7 @@ class PDFViewer(QWidget):
             self.single_label = QLabel()
             self.single_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.single_label.setStyleSheet(f"background: {p['bg_base']}; border-radius: 10px;")
-            self.single_label.setText(f"无法加载 PDF: 详见日志")
+            self.single_label.setText("无法加载 PDF: 详见日志")
             self.scroll.setWidget(self.single_label)
 
     def _precompute_page_sizes(self):

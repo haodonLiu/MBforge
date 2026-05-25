@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mbforge.parsers.extraction_result import ExtractionResult
+from mbforge.parsers.molecule.extraction_result import ExtractionResult
 
 
 class TestExtractionResult:

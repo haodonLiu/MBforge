@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import numpy as np
-import pytest
 
-from mbforge.parsers.coords import (
+from mbforge.parsers.molecule.coords import (
     image_to_pdf_bbox,
     pdf_to_image_bbox,
     scale_from_page_size,
@@ -44,10 +42,10 @@ class TestImageToPdfBBox:
 
     def test_basic_conversion(self):
         """简单对称情况."""
-        page_w_pts = 100.0
+        _page_w_pts = 100.0
         page_h_pts = 100.0
-        image_w = 200
-        image_h = 200
+        _image_w = 200
+        _image_h = 200
         scale = 2.0
 
         # 图像左上角 (0, 0) → PDF 左下角 (0, 100)
@@ -86,10 +84,10 @@ class TestPdfToImageBBox:
 
     def test_roundtrip(self):
         """往返转换应保持一致（允许浮点误差）."""
-        page_w_pts = 100.0
+        _page_w_pts = 100.0
         page_h_pts = 100.0
-        image_w = 200
-        image_h = 200
+        _image_w = 200
+        _image_h = 200
         scale = 2.0
 
         original_img = (10.0, 20.0, 50.0, 80.0)

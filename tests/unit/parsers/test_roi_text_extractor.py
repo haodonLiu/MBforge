@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 
-from mbforge.parsers.roi_text_extractor import (
+from mbforge.parsers.molecule.roi_text_extractor import (
     ROITextExtractor,
     pdf_to_pdfplumber_bbox,
 )
@@ -69,7 +68,7 @@ class TestROITextExtractor:
 
     def test_extract_context_no_pdfplumber(self):
         """pdfplumber 未安装时返回空字符串."""
-        import mbforge.parsers.roi_text_extractor as roi_mod
+        import mbforge.parsers.molecule.roi_text_extractor as roi_mod
 
         orig = roi_mod.pdfplumber
         roi_mod.pdfplumber = None

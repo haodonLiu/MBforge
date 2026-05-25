@@ -9,10 +9,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from mbforge.parsers.extraction_result import ExtractionResult
-from mbforge.parsers.mol_image_pipeline import (
+from mbforge.parsers.molecule.mol_image_pipeline import (
     MolDetv2DocDetector,
-    MolDetv2GeneralDetector,
     MolImagePipeline,
     MolScribeRecognizer,
 )
@@ -24,7 +22,7 @@ class TestMolDetv2DocDetector:
     def test_unavailable_without_model(self):
         """模型不存在时 is_available 为 False."""
         with patch(
-            "mbforge.parsers.mol_image_pipeline._HAS_ULTRALYTICS", True
+            "mbforge.parsers.molecule.mol_image_pipeline._HAS_ULTRALYTICS", True
         ), patch.object(MolDetv2DocDetector, "_load_model"):
             detector = MolDetv2DocDetector.__new__(MolDetv2DocDetector)
             detector.model = None
@@ -34,7 +32,7 @@ class TestMolDetv2DocDetector:
     def test_detect_raises_when_unavailable(self):
         """不可用时调用 detect 应抛异常."""
         with patch(
-            "mbforge.parsers.mol_image_pipeline._HAS_ULTRALYTICS", True
+            "mbforge.parsers.molecule.mol_image_pipeline._HAS_ULTRALYTICS", True
         ), patch.object(MolDetv2DocDetector, "_load_model"):
             detector = MolDetv2DocDetector.__new__(MolDetv2DocDetector)
             detector.model = None
@@ -46,7 +44,7 @@ class TestMolDetv2DocDetector:
     def test_model_path_resolution_default(self):
         """默认模型路径解析."""
         with patch(
-            "mbforge.parsers.mol_image_pipeline._HAS_ULTRALYTICS", True
+            "mbforge.parsers.molecule.mol_image_pipeline._HAS_ULTRALYTICS", True
         ), patch.object(MolDetv2DocDetector, "_load_model"):
             detector = MolDetv2DocDetector.__new__(MolDetv2DocDetector)
             detector.MODEL_SUBDIR = "moldetv2-doc"
@@ -66,7 +64,7 @@ class TestMolScribeRecognizer:
     def test_unavailable_without_backend(self):
         """无后端时 is_available 为 False."""
         with patch(
-            "mbforge.parsers.mol_image_pipeline._HAS_MOLSCRIBE", False
+            "mbforge.parsers.molecule.mol_image_pipeline._HAS_MOLSCRIBE", False
         ):
             recognizer = MolScribeRecognizer(backend="molscribe")
             assert not recognizer.is_available()
@@ -74,7 +72,7 @@ class TestMolScribeRecognizer:
     def test_predict_raises_when_unavailable(self):
         """不可用时调用 predict 应抛异常."""
         with patch(
-            "mbforge.parsers.mol_image_pipeline._HAS_MOLSCRIBE", False
+            "mbforge.parsers.molecule.mol_image_pipeline._HAS_MOLSCRIBE", False
         ):
             recognizer = MolScribeRecognizer(backend="molscribe")
             img = Image.new("RGB", (100, 100))

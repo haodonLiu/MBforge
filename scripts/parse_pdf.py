@@ -1,4 +1,4 @@
-"""PDF 解析脚本 — 使用 parser_io 模块调用 UniParser 解析 PDF 文件.
+"""PDF 解析脚本 — 使用 parsers.uniparser 模块调用 UniParser 解析 PDF 文件.
 
 用法:
     python parse_pdf.py <pdf文件路径> [--output <输出目录>] [--timeout <秒>]
@@ -23,8 +23,16 @@ from pathlib import Path
 # 确保可以找到 src/ 下的模块
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from mbforge.parser_io import ParserClient, load_config
-from mbforge.parser_io.models import ParseResult
+from mbforge.parsers.uniparser import ParserClient, ParserConfig, ParseResult
+
+
+def load_config() -> ParserConfig:
+    """从环境变量加载 UniParser 配置."""
+    import os
+    return ParserConfig(
+        host=os.getenv("UNIPARSER_HOST", ""),
+        api_key=os.getenv("UNIPARSER_API_KEY", ""),
+    )
 
 
 def parse_pdf(

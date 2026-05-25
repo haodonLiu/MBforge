@@ -122,13 +122,13 @@ PDF → DocumentProcessor → MoleculeExtractor → DocumentSummarizer
 | `preview.py` | `MarkdownPreview` | HTML/Markdown preview via QWebEngineView |
 | `dialogs.py` | Settings dialogs, About dialog | Configuration UI |
 
-### 3.6 `parser_io/` — UniParser Integration
+### 3.6 `parsers/uniparser/` — UniParser Integration
 
 | File | Class | Responsibility |
 |------|--------|----------------|
-| `client.py` | `ParserClient` | UniParser API wrapper |
-| `config.py` | `ParserConfig`, `load_config()` | Parser-specific config |
-| `models.py` | `ParseResult` | Data models |
+| `uniparser_client.py` | `ParserClient` | UniParser API wrapper |
+| `uniparser_config.py` | `ParserConfig` | Parser-specific config |
+| `uniparser_models.py` | `ParseResult` | Data models |
 
 ### 3.7 `workflow/` — Workflow Extensions (Stubs)
 
@@ -349,4 +349,4 @@ if provider == "myprovider":
 
 ### Replacing PyMuPDF with UniParser
 
-`parser_io/ParserClient` wraps UniParser API. Replace `DocumentProcessor.process()` calls with `ParserClient.parse_and_wait()` in `PDFParserPipeline` to switch parsing backend.
+`parsers/uniparser/ParserClient` wraps UniParser API. Replace `DocumentProcessor.process()` calls with `ParserClient.parse_and_wait()` in `PDFParserPipeline` to switch parsing backend.

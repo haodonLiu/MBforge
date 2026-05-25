@@ -196,7 +196,7 @@ parsers/    → PDF parsing and molecule extraction
 agent/      → ReAct agent with tool execution
 ui/         → PyQt6 GUI components
 workflow/   → Extension modules (stubs)
-parser_io/  → UniParser API integration
+parsers/uniparser/  → UniParser API integration
 utils/      → Config, logging, helpers
 ```
 

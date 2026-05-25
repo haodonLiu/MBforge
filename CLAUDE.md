@@ -63,7 +63,7 @@ This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, inv
 | `ui/` | PyQt6 界面 | `MainWindow`（主窗口，组装所有组件）、`ChatWidget`、`PDFViewer`（虚拟滚动 + 多线程渲染）、`MolPanel`、`FileTree` 等 |
 | `agent/` | ReAct 循环 Agent | `ProjectAgent` + `LayeredContext` + `ToolExecutor`（10 个工具）+ `MemoryManager` + `TrajectoryTracker` |
 | `workflow/` | 占位模块 | `generation`、`docking`、`qsar`、`md` — 仅 toggle 开关，尚未实现 |
-| `parser_io/` | UniParser API 封装 | `ParserClient` 对接 `UniParser-Tools`，`ParseResult` 数据模型 |
+| `parsers/uniparser/` | UniParser API 封装 | `ParserClient` 对接 `UniParser-Tools`，`ParseResult` 数据模型 |
 | `utils/` | 配置、日志、辅助 | `AppConfig`、`get_logger`、`generate_uuid`、`split_text_chunks` |
 | `sar/` | SAR 分析引擎 | `SARAnalyzer`（结构-活性关系分析） |
 | `csar_io/` | 分子文件 I/O | `MoleculeReader`、`MoleculeWriter`，支持 CAS 查询 |

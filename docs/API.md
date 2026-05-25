@@ -36,7 +36,7 @@
   - [ToolExecutor](#tool_executor)
   - [MemoryManager](#memorymanager)
   - [TrajectoryTracker](#trajectorytracker)
-- [parser_io](#parser_io)
+- [parsers.uniparser](#parsersuniparser)
   - [ParserClient](#parserclient)
   - [ParseResult](#parseresult)
   - [ParserConfig](#parserconfig)
@@ -578,7 +578,7 @@ print(content.molecules)
 ### MoleculeExtractor
 
 ```python
-from mbforge.parsers.molecule_extractor import MoleculeExtractor
+from mbforge.parsers.molecule import MoleculeExtractor
 ```
 
 从文本中提取分子结构（SMILES）和活性数据。
@@ -747,7 +747,7 @@ from mbforge.agent.trajectory import TrajectoryTracker
 
 ---
 
-## parser_io
+## parsers.uniparser
 
 ### UniParser 服务信息
 
@@ -763,7 +763,7 @@ from mbforge.agent.trajectory import TrajectoryTracker
 ### ParserClient
 
 ```python
-from mbforge.parser_io.client import ParserClient
+from mbforge.parsers.uniparser import ParserClient
 ```
 
 UniParser API 客户端封装。基于 `UniParser-Tools` 的 `UniParserClient` 进行高层封装，支持同步/异步解析、轮询等待和格式化结果获取。
@@ -773,7 +773,7 @@ UniParser API 客户端封装。基于 `UniParser-Tools` 的 `UniParserClient` �
 构造函数。
 
 ```python
-from mbforge.parser_io.config import load_config
+from mbforge.parsers.uniparser.config import load_config
 config = load_config()
 client = ParserClient(config)
 ```
@@ -812,7 +812,7 @@ result = client.parse_and_wait("./paper.pdf", timeout=300)
 ### ParseResult
 
 ```python
-from mbforge.parser_io.models import ParseResult
+from mbforge.parsers.uniparser.models import ParseResult
 ```
 
 解析结果数据类。

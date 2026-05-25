@@ -68,10 +68,10 @@ MBForge/
 │   │   ├── todo_panel.py     # TODO 队列管理
 │   │   ├── workflow_panel.py # 工作流中心
 │   │   └── status_dashboard.py # 状态仪表盘
-│   ├── parser_io/            # UniParser API 集成
-│   │   ├── client.py
-│   │   ├── config.py
-│   │   └── models.py
+│   ├── parsers/
+│   │   ├── uniparser/        # UniParser API 客户端
+│   │   ├── molecule/         # 分子提取管线
+│   │   └── pdf_parser.py     # PDF 解析流水线
 │   ├── workflow/             # 工作流扩展（占位）
 │   │   ├── base.py
 │   │   ├── generation.py
@@ -89,7 +89,7 @@ MBForge/
 │   └── __main__.py           # python -m mbforge 入口
 ├── tests/                    # 测试
 │   ├── unit/                 # 单元测试
-│   ├── parser_io/            # parser_io 模块测试
+│   ├── parsers/              # parsers 模块测试
 │   └── conftest.py           # pytest 配置（将 src 加入 sys.path）
 ├── setup/                    # 交互式一键配置脚本
 │   ├── index.sh / index.bat  # 入口
@@ -200,7 +200,7 @@ uv run pytest tests/ --cov=mbforge --cov-report=html
 ### 测试结构
 
 - `tests/unit/`：针对 `core/`、`models/` 等模块的单元测试。
-- `tests/parser_io/`：`parser_io` 子包的独立测试。
+- `tests/unit/parsers/`：`parsers` 子包的独立测试。
 - `tests/conftest.py`：将 `src/` 插入 `sys.path` 最前，确保 import 解析正确。
 - 测试类使用 `TestXxx` 命名，测试方法使用 `test_xxx` 命名。
 - 使用 `tempfile.TemporaryDirectory()` 与 `tmp_path` 处理文件系统临时数据。
@@ -338,6 +338,20 @@ class MyClass:
 1. 在 `workflow/` 创建模块，继承 `WorkflowBase`。
 2. 在 `ProjectSettings` 中添加 toggle。
 3. 在 UI 中接入开关。
+
+### 插件系统（plugins/）
+**关键发现（2026-05-25）**：
+1. **自动发现机制**：使用 `pkgutil.iter_modules()` 自动扫描 `plugins/` 子目录，无需手动注册
+2. **插件命名**：目录名 = `meta.name`（如 `unidock/` → `UniDockPlugin.meta.name = "unidock"`）
+3. **已有插件**：已存在 `cadd_template/` 和 `unidock/` 插件
+4. **插件注册检查**：仅检查 `BasePlugin` 子类，不检查目录名匹配
+
+添加新插件：
+1. 在 `plugins/` 下创建子目录（如 `plugins/my_plugin/`）
+2. 创建 `__init__.py` 导出 `MyPluginPlugin` 类
+3. 创建 `plugin.py` 实现 `BasePlugin` 子类
+4. 定义 `meta = PluginMetadata(name="my_plugin", ...)`
+5. 插件自动被 `PluginRegistry.discover()` 发现
 
 ---
 

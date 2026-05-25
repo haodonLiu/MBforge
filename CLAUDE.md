@@ -131,3 +131,24 @@ cp .env.template .env
 1. Create module under `src/mbforge/workflow/`
 2. Inherit `WorkflowBase` from `workflow/base.py`
 3. Add toggle in `ProjectSettings` and UI toggle in `ui/`
+
+## Development Rules
+
+### 遇到报错时
+停下来描述：(1) 错误现象 (2) 理解 (3) 解决方案，再行动。不要盲目穷举。
+
+## Code Navigation (CodeGraph)
+
+Use `codegraph` CLI for code navigation and impact analysis:
+
+```bash
+codegraph query "SymbolName"     # 符号搜索，含类型签名和行号
+codegraph callers "func_name"    # 追踪调用者
+codegraph callees "func_name"    # 被调用分析
+codegraph impact "ClassName"     # 重构前影响范围评估
+codegraph context "自然语言描述"  # AI 上下文构建
+codegraph sync                   # 代码修改后同步索引
+```
+
+索引状态：122 文件 / 2,363 节点 / 4,824 边。重构前必查 impact。
+

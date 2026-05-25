@@ -59,14 +59,14 @@ class MoleculePanel(QWidget):
 
         # 来源类型过滤
         self.source_filter = QComboBox()
-        self.source_filter.addItems(["全部来源", "🖼️ 图像", "📝 文本", "✋ 手动"])
+        self.source_filter.addItems(["全部来源", "图像", "文本", "手动"])
         self.source_filter.setMaximumWidth(100)
         self.source_filter.currentIndexChanged.connect(self.refresh)
         toolbar.addWidget(self.source_filter)
 
         # 状态过滤
         self.status_filter = QComboBox()
-        self.status_filter.addItems(["全部状态", "⚠️ 待确认", "✅ 已确认", "❌ 已丢弃"])
+        self.status_filter.addItems(["全部状态", "待确认", "已确认", "已丢弃"])
         self.status_filter.setMaximumWidth(100)
         self.status_filter.currentIndexChanged.connect(self.refresh)
         toolbar.addWidget(self.status_filter)
@@ -199,17 +199,17 @@ class MoleculePanel(QWidget):
             self.table.setItem(i, 6, QTableWidgetItem(str(props.get("TPSA", "-"))))
             # 来源类型标签
             src_type_map = {
-                "image": "🖼️ 图像",
-                "text": "📝 文本",
-                "manual": "✋ 手动",
+                "image": "图像",
+                "text": "文本",
+                "manual": "手动",
             }
             src_type_text = src_type_map.get(rec.source_type, rec.source_type)
             self.table.setItem(i, 7, QTableWidgetItem(src_type_text))
             # 状态标签
             status_map = {
-                "pending": "⚠️ 待确认",
-                "confirmed": "✅ 已确认",
-                "rejected": "❌ 已丢弃",
+                "pending": "待确认",
+                "confirmed": "已确认",
+                "rejected": "已丢弃",
             }
             status_text = status_map.get(rec.status, rec.status)
             self.table.setItem(i, 8, QTableWidgetItem(status_text))

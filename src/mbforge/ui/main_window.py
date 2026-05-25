@@ -413,26 +413,28 @@ class MainWindow(QMainWindow):
 
     def _setup_toolbar(self):
         """快速跳转工具栏：文献库 / 分子库 / 知识库 + 服务状态指示器."""
+        p = ThemeManager.instance().palette()
         toolbar = QToolBar("快速跳转")
         toolbar.setMovable(True)
         toolbar.setStyleSheet(f"""
             QToolBar {{
-                background: {ThemeManager.instance().get_color('brand_primary_deep')};
+                background: {p['bg_base']};
                 border: none;
+                border-bottom: 1px solid {p['border']};
                 padding: 4px 8px;
                 spacing: 4px;
             }}
             QToolButton {{
                 background: transparent;
-                color: rgba(255,255,255,0.85);
+                color: {p['text_primary']};
                 border: none;
                 border-radius: 4px;
                 padding: 6px 12px;
                 font-size: 13px;
             }}
             QToolButton:hover {{
-                background: rgba(255,255,255,0.15);
-                color: #ffffff;
+                background: {p['bg_hover']};
+                color: {p['brand_primary']};
             }}
             QWidget#service_indicator {{
                 background: transparent;

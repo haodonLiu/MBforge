@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import fitz  # PyMuPDF
-from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal, pyqtSlot, QRect
-from PyQt6.QtGui import QColor, QPainter, QPixmap
+from PyQt6.QtCore import QEvent, QPoint, Qt, QTimer, pyqtSignal, pyqtSlot, QRect
+from PyQt6.QtGui import QColor, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -27,15 +27,18 @@ from mbforge.utils.logger import get_logger, log_exception
 
 from PIL import Image
 
+from .annotations import AnnotationStore, DetectionBox, TextHighlight
+from .detection_popup import DetectionPopup
+from .highlight_toolbar import HighlightToolbar
 from .page_widget import PDFPageLabel
 from .renderer import _executor, _NWORKERS, _render_page_batch, page_to_pixmap
 from .slice_manager import PDFSliceManager
-from ..mol_extract_dialog import MoleculeExtractDialog
+from ..mol_editor.extract_dialog import MoleculeExtractDialog
 from ..theme import ThemeManager
 
 if TYPE_CHECKING:
-    from ...parsers.mol_image_pipeline import MolImagePipeline
-    from ...parsers.extraction_result import ExtractionResult
+    from ...parsers.molecule.mol_image_pipeline import MolImagePipeline
+    from ...parsers.molecule.extraction_result import ExtractionResult
 
 logger = get_logger(__name__)
 
@@ -72,18 +75,22 @@ class PDFViewer(QWidget):
         self._page_heights: list[int] = []
         self._page_widths: list[int] = []
         self._page_cache: OrderedDict[int, QPixmap] = OrderedDict()
-        self._visible_widgets: OrderedDict[
-            int, tuple[QLabel, QLabel]
-        ] = OrderedDict()
+        self._visible_widgets: OrderedDict[int, tuple[QLabel, QLabel]] = OrderedDict()
         self._pending_indices: set = set()
         self._all_indices_rendered: bool = False
 
         self._rendered_count = 0
         self._total_pages = 0
 
-        # 高亮注释
-        self._annotations: dict[int, list[dict]] = {}
+        # 高亮注释（v2: 使用 AnnotationStore 独立存储检测框与高亮）
+        self._annotation_store = AnnotationStore()
         self._annotation_file: Path | None = None
+        self._current_highlight_color: tuple[float, float, float] = (1.0, 1.0, 0.0)
+        self._current_highlight_style: str = "background"
+
+        # 检测框调整大小状态
+        self._resizing_detection_id: str | None = None
+        self._resize_anchor_pdf: tuple[float, float] | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -145,10 +152,23 @@ class PDFViewer(QWidget):
         btn_zoom_in.clicked.connect(self.zoom_in)
         toolbar.addWidget(btn_zoom_in)
 
+        btn_detect_mols = QPushButton("🔬 检测分子")
+        btn_detect_mols.setToolTip("使用 MolDetv2 检测当前页分子结构")
+        btn_detect_mols.clicked.connect(self._detect_molecules_current_page)
+        toolbar.addWidget(btn_detect_mols)
+
         btn_clear_highlight = QPushButton("✨ 清除高亮")
         btn_clear_highlight.setToolTip("清除所有高亮注释")
         btn_clear_highlight.clicked.connect(self._clear_all_highlights)
         toolbar.addWidget(btn_clear_highlight)
+
+        toolbar.addSpacing(12)
+
+        # 高亮颜色/样式工具栏
+        self._hl_toolbar = HighlightToolbar()
+        self._hl_toolbar.color_changed.connect(self._on_highlight_color_changed)
+        self._hl_toolbar.style_changed.connect(self._on_highlight_style_changed)
+        toolbar.addWidget(self._hl_toolbar)
 
         layout.addLayout(toolbar)
 
@@ -202,7 +222,9 @@ class PDFViewer(QWidget):
             self.logger.debug("尝试启用分片模式...")
             self._slice_manager = PDFSliceManager(path, project_root)
             self._use_slices = self._slice_manager.ensure_sliced()
-            self.logger.info(f"分片模式={'启用' if self._use_slices else '未启用'} | 总页数={self._slice_manager.total_pages if self._slice_manager else 'N/A'}")
+            self.logger.info(
+                f"分片模式={'启用' if self._use_slices else '未启用'} | 总页数={self._slice_manager.total_pages if self._slice_manager else 'N/A'}"
+            )
 
         if self._use_slices:
             self._total_pages = self._slice_manager.total_pages
@@ -223,7 +245,7 @@ class PDFViewer(QWidget):
         self._rendered_count = 0
 
         # 初始化注释
-        self._annotations = {}
+        self._annotation_store = AnnotationStore()
         self._annotation_file = None
         if project_root is not None and self._doc_path:
             mtime = path.stat().st_mtime
@@ -236,14 +258,18 @@ class PDFViewer(QWidget):
 
         try:
             self._precompute_page_sizes()
-            self.logger.debug(f"预计算页尺寸完成: {self._total_pages} 页 | 总高度={self._total_height()}")
+            self.logger.debug(
+                f"预计算页尺寸完成: {self._total_pages} 页 | 总高度={self._total_height()}"
+            )
             self._render()
         except Exception:
             log_exception(self.logger, f"PDF加载失败: {path}")
             self._clear_visible_widgets()
             self.single_label = QLabel()
             self.single_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.single_label.setStyleSheet(f"background: {p['bg_base']}; border-radius: 10px;")
+            self.single_label.setStyleSheet(
+                f"background: {p['bg_base']}; border-radius: 10px;"
+            )
             self.single_label.setText("无法加载 PDF: 详见日志")
             self.scroll.setWidget(self.single_label)
 
@@ -317,7 +343,9 @@ class PDFViewer(QWidget):
 
         self._render_visible_range()
         self.page_changed.emit(self.current_page + 1, self._total_pages)
-        self.logger.debug(f"_render_continuous_virtual 完成 | visible_widgets={len(self._visible_widgets)}")
+        self.logger.debug(
+            f"_render_continuous_virtual 完成 | visible_widgets={len(self._visible_widgets)}"
+        )
         QTimer.singleShot(0, self._rerender_if_needed)
 
     def _render_visible_range(self):
@@ -400,7 +428,9 @@ class PDFViewer(QWidget):
             if self._use_slices and self._slice_manager is not None:
                 slice_path = str(self._slice_manager.get_slice_path(pdf_index))
                 local_idx = self._slice_manager.get_local_index(pdf_index)
-                self.logger.debug(f"渲染第 {index} 页 | 分片={slice_path} | 局部页码={local_idx}")
+                self.logger.debug(
+                    f"渲染第 {index} 页 | 分片={slice_path} | 局部页码={local_idx}"
+                )
                 doc = fitz.open(slice_path)
                 try:
                     page = doc[local_idx]
@@ -432,7 +462,9 @@ class PDFViewer(QWidget):
         label_text = "— 第 0 页（空白封面） —" if index == 0 else f"— 第 {index} 页 —"
         num_label = QLabel(label_text, self._virtual_container)
         num_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        num_label.setStyleSheet(f"color: {p['text_secondary']}; font-size: 12px; padding: 4px;")
+        num_label.setStyleSheet(
+            f"color: {p['text_secondary']}; font-size: 12px; padding: 4px;"
+        )
         num_label.move(0, self._page_offset(index))
         num_label.resize(max(self._page_widths), 25)
         num_label.show()
@@ -449,6 +481,33 @@ class PDFViewer(QWidget):
             img_label.clear_highlights_requested.connect(self._clear_page_highlights)
             img_label.copy_text_requested.connect(self._on_copy_selection)
             img_label.molecule_extract_requested.connect(self._on_extract_molecule)
+            img_label.detection_clicked.connect(self._on_detection_clicked)
+            img_label.detection_ctrl_clicked.connect(self._on_detection_ctrl_clicked)
+            img_label.highlight_double_clicked.connect(
+                self._on_highlight_double_clicked
+            )
+
+            # 注入命中测试所需的屏幕坐标映射
+            dets = self._annotation_store.get_page_detections(index)
+            img_label._detection_rects = {
+                d.id: QRect(
+                    int(d.bbox_pdf[0] * self._scale),
+                    int(d.bbox_pdf[1] * self._scale),
+                    int((d.bbox_pdf[2] - d.bbox_pdf[0]) * self._scale),
+                    int((d.bbox_pdf[3] - d.bbox_pdf[1]) * self._scale),
+                )
+                for d in dets
+            }
+            hls = self._annotation_store.get_page_highlights(index)
+            img_label._highlight_rects = {
+                h.id: QRect(
+                    int(h.bbox_pdf[0] * self._scale),
+                    int(h.bbox_pdf[1] * self._scale),
+                    int((h.bbox_pdf[2] - h.bbox_pdf[0]) * self._scale),
+                    int((h.bbox_pdf[3] - h.bbox_pdf[1]) * self._scale),
+                )
+                for h in hls
+            }
         img_label.move(0, self._page_offset(index) + 25)
         img_label.resize(pixmap.width(), pixmap.height())
         img_label.show()
@@ -567,14 +626,49 @@ class PDFViewer(QWidget):
         p = ThemeManager.instance().palette()
         self.single_label = PDFPageLabel(self.current_page)
         self.single_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.single_label.setStyleSheet(f"background: {p['bg_base']}; border-radius: 10px;")
+        self.single_label.setStyleSheet(
+            f"background: {p['bg_base']}; border-radius: 10px;"
+        )
         self.scroll.setWidget(self.single_label)
         self.single_label.clear()
         if self.current_page != 0:
             self.single_label.highlight_requested.connect(self._on_highlight)
-            self.single_label.clear_highlights_requested.connect(self._clear_page_highlights)
+            self.single_label.clear_highlights_requested.connect(
+                self._clear_page_highlights
+            )
             self.single_label.copy_text_requested.connect(self._on_copy_selection)
-            self.single_label.molecule_extract_requested.connect(self._on_extract_molecule)
+            self.single_label.molecule_extract_requested.connect(
+                self._on_extract_molecule
+            )
+            self.single_label.detection_clicked.connect(self._on_detection_clicked)
+            self.single_label.detection_ctrl_clicked.connect(
+                self._on_detection_ctrl_clicked
+            )
+            self.single_label.highlight_double_clicked.connect(
+                self._on_highlight_double_clicked
+            )
+
+            idx = self.current_page
+            dets = self._annotation_store.get_page_detections(idx)
+            self.single_label._detection_rects = {
+                d.id: QRect(
+                    int(d.bbox_pdf[0] * self._scale),
+                    int(d.bbox_pdf[1] * self._scale),
+                    int((d.bbox_pdf[2] - d.bbox_pdf[0]) * self._scale),
+                    int((d.bbox_pdf[3] - d.bbox_pdf[1]) * self._scale),
+                )
+                for d in dets
+            }
+            hls = self._annotation_store.get_page_highlights(idx)
+            self.single_label._highlight_rects = {
+                h.id: QRect(
+                    int(h.bbox_pdf[0] * self._scale),
+                    int(h.bbox_pdf[1] * self._scale),
+                    int((h.bbox_pdf[2] - h.bbox_pdf[0]) * self._scale),
+                    int((h.bbox_pdf[3] - h.bbox_pdf[1]) * self._scale),
+                )
+                for h in hls
+            }
 
         try:
             if self.current_page == 0:
@@ -723,40 +817,75 @@ class PDFViewer(QWidget):
 
     # ---- 高亮注释功能 ----
 
-    def _apply_annotations_to_pixmap(
-        self, pixmap: QPixmap, page_index: int
-    ) -> QPixmap:
-        """在渲染好的 pixmap 上叠加高亮注释."""
-        anns = self._annotations.get(page_index, [])
-        if not anns:
+    def _apply_annotations_to_pixmap(self, pixmap: QPixmap, page_index: int) -> QPixmap:
+        """在渲染好的 pixmap 上叠加高亮注释与检测框."""
+        highlights = self._annotation_store.get_page_highlights(page_index)
+        detections = self._annotation_store.get_page_detections(page_index)
+        if not highlights and not detections:
             return pixmap
         new_pm = QPixmap(pixmap)
         painter = QPainter(new_pm)
-        for ann in anns:
-            if ann.get("type") == "highlight":
-                r = ann["rect"]
-                x0 = int(r[0] * self._scale)
-                y0 = int(r[1] * self._scale)
-                x1 = int(r[2] * self._scale)
-                y1 = int(r[3] * self._scale)
-                color = ann.get("color", [1.0, 1.0, 0.0])
-                qcolor = QColor(
-                    int(color[0] * 255),
-                    int(color[1] * 255),
-                    int(color[2] * 255),
-                    80,
+
+        # 1. 先画用户高亮（底层）
+        for hl in highlights:
+            x0, y0, x1, y1 = hl.bbox_pdf
+            sx0, sy0, sx1, sy1 = [v * self._scale for v in (x0, y0, x1, y1)]
+            r, g, b = hl.color
+            qcolor = QColor(int(r * 255), int(g * 255), int(b * 255))
+
+            if hl.style == "background":
+                qcolor.setAlpha(80)
+                painter.fillRect(
+                    QRect(int(sx0), int(sy0), int(sx1 - sx0), int(sy1 - sy0)),
+                    qcolor,
                 )
-                painter.fillRect(QRect(x0, y0, x1 - x0, y1 - y0), qcolor)
+            else:  # underline
+                pen = QPen(qcolor, 2, Qt.PenStyle.SolidLine)
+                painter.setPen(pen)
+                painter.drawLine(int(sx0), int(sy1), int(sx1), int(sy1))
+
+            # 批注标记：有批注时画一个小圆点
+            if hl.comment:
+                painter.setBrush(QColor(255, 0, 0))
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.drawEllipse(int(sx1) - 6, int(sy0), 6, 6)
+
+        # 2. 再画检测框（上层，带边框和标签）
+        for db in detections:
+            x0, y0, x1, y1 = db.bbox_pdf
+            sx0, sy0, sx1, sy1 = [v * self._scale for v in (x0, y0, x1, y1)]
+
+            if db.status == "confirmed":
+                color = QColor(0, 200, 0)
+            elif db.status == "rejected":
+                color = QColor(200, 0, 0)
+            elif db.status == "corrected":
+                color = QColor(0, 120, 255)
+            else:
+                color = QColor(255, 140, 0)
+
+            pen = QPen(color, 2, Qt.PenStyle.SolidLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(QRect(int(sx0), int(sy0), int(sx1 - sx0), int(sy1 - sy0)))
+
+            label = db.smiles[:20] if db.smiles else "?"
+            painter.setPen(QPen(Qt.GlobalColor.black))
+            label_w = min(120, int(sx1 - sx0))
+            painter.fillRect(
+                int(sx0),
+                int(sy0) - 14,
+                label_w,
+                14,
+                QColor(255, 255, 200, 220),
+            )
+            painter.drawText(int(sx0) + 2, int(sy0) - 2, label)
+
         painter.end()
         return new_pm
 
     def _on_highlight(self, page_index: int, screen_rect: QRect):
-        """处理划词高亮请求.
-
-        坐标转换假设：self._scale 等于当前渲染的 像素/点 比例
-        （即 page.get_pixmap(dpi=72*scale).width / page.rect.width）。
-        因此 screen_rect(像素) / scale 即为 PDF 点坐标。
-        """
+        """处理划词高亮请求."""
         if page_index == 0:
             return
         pdf_index = page_index - 1
@@ -767,18 +896,20 @@ class PDFViewer(QWidget):
             screen_rect.bottom() / self._scale,
         )
         text = self._get_text_in_rect(pdf_index, pdf_rect)
-        ann = {
-            "type": "highlight",
-            "rect": [pdf_rect.x0, pdf_rect.y0, pdf_rect.x1, pdf_rect.y1],
-            "text": text,
-            "color": [1.0, 1.0, 0.0],
-        }
-        if page_index not in self._annotations:
-            self._annotations[page_index] = []
-        self._annotations[page_index].append(ann)
+        hl = TextHighlight(
+            page_idx=page_index,
+            bbox_pdf=(pdf_rect.x0, pdf_rect.y0, pdf_rect.x1, pdf_rect.y1),
+            text=text,
+            color=self._current_highlight_color,
+            style=self._current_highlight_style,
+        )
+        self._annotation_store.highlights.append(hl)
         self._save_annotations()
         self.logger.info(f"高亮注释: page={page_index}, text={text[:50]}...")
-        # 重新渲染该页以显示高亮
+        self._refresh_page(page_index)
+
+    def _refresh_page(self, page_index: int) -> None:
+        """重新渲染指定页以反映标注变化."""
         if page_index in self._page_cache:
             del self._page_cache[page_index]
         if page_index in self._visible_widgets:
@@ -788,6 +919,12 @@ class PDFViewer(QWidget):
             w_img.setParent(None)
             w_img.deleteLater()
         self._render_page_sync(page_index)
+
+    def _on_highlight_color_changed(self, color: tuple[float, float, float]) -> None:
+        self._current_highlight_color = color
+
+    def _on_highlight_style_changed(self, style: str) -> None:
+        self._current_highlight_style = style
 
     def _get_text_in_rect(self, pdf_index: int, pdf_rect: fitz.Rect) -> str:
         """在指定PDF页的指定矩形区域内提取文本."""
@@ -823,6 +960,76 @@ class PDFViewer(QWidget):
 
             QApplication.clipboard().setText(text)
             self.logger.info(f"复制文本: {text[:50]}...")
+
+    def _detect_molecules_current_page(self):
+        """对当前页面进行 MolDetv2 分子检测并在页面上标记."""
+        if self.current_page == 0 or self.mol_image_pipeline is None:
+            return
+        if not self.mol_image_pipeline.is_available():
+            QMessageBox.warning(
+                self,
+                "检测器不可用",
+                "MolDetv2 模型未加载，无法检测分子。\n"
+                "请下载模型放到 ~/.cache/mbforge/models/ 目录。",
+            )
+            return
+
+        pdf_index = self.current_page - 1
+        try:
+            page = self.doc[pdf_index]
+            page_w_pts = page.rect.width
+            page_h_pts = page.rect.height
+
+            # 渲染整页图像（使用当前视图缩放）
+            dpi = int(72 * self._scale)
+            pix = page.get_pixmap(dpi=dpi)
+            page_image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+            # 检测分子
+            results = self.mol_image_pipeline.extract_page(
+                image=page_image,
+                page_idx=pdf_index,
+                page_w_pts=page_w_pts,
+                page_h_pts=page_h_pts,
+                image_w=pix.width,
+                image_h=pix.height,
+            )
+
+            if not results:
+                QMessageBox.information(self, "检测完成", "当前页面未检测到分子结构。")
+                return
+
+            # 将检测结果转为 DetectionBox 对象
+            page_idx = self.current_page
+            for r in results:
+                box = DetectionBox(
+                    page_idx=page_idx,
+                    bbox_pdf=r.bbox_pdf or (0.0, 0.0, 0.0, 0.0),
+                    smiles=r.smiles or "",
+                    name=r.name or "",
+                    moldet_conf=r.moldet_conf,
+                    scribe_conf=r.scribe_conf,
+                    status="pending",
+                )
+                self._annotation_store.detections.append(box)
+
+            self._save_annotations()
+            self._refresh_page(page_idx)
+            # 单页模式下还需要刷新 single_label
+            if not self._continuous_mode:
+                self._render_single()
+
+            smiles_count = sum(1 for r in results if r.smiles)
+            QMessageBox.information(
+                self,
+                "检测完成",
+                f"检测到 {len(results)} 个分子区域，"
+                f"其中 {smiles_count} 个识别出 SMILES。",
+            )
+
+        except Exception as exc:
+            self.logger.error("分子检测失败: %s", exc)
+            QMessageBox.critical(self, "检测失败", f"分子检测出错: {exc}")
 
     def _on_extract_molecule(self, page_index: int, screen_rect: QRect):
         """识别选中区域内的分子结构."""
@@ -886,37 +1093,33 @@ class PDFViewer(QWidget):
         )
 
     def _clear_page_highlights(self, page_index: int):
-        """清除指定页面的所有高亮注释."""
-        if page_index in self._annotations:
-            del self._annotations[page_index]
-            self._save_annotations()
-            if page_index in self._page_cache:
-                del self._page_cache[page_index]
-            if page_index in self._visible_widgets:
-                w_num, w_img = self._visible_widgets.pop(page_index)
-                w_num.setParent(None)
-                w_num.deleteLater()
-                w_img.setParent(None)
-                w_img.deleteLater()
-            self._render_page_sync(page_index)
-            self.logger.info(f"清除第 {page_index} 页高亮")
+        """清除指定页面的所有高亮注释（保留检测框）."""
+        self._annotation_store.highlights = [
+            h for h in self._annotation_store.highlights if h.page_idx != page_index
+        ]
+        self._save_annotations()
+        self._refresh_page(page_index)
+        self.logger.info(f"清除第 {page_index} 页高亮")
 
     def _clear_all_highlights(self):
-        """清除所有高亮注释."""
-        if not self._annotations:
+        """清除所有高亮注释与检测框."""
+        if (
+            not self._annotation_store.detections
+            and not self._annotation_store.highlights
+        ):
             return
         reply = QMessageBox.question(
             self,
             "确认清除",
-            "确定清除所有高亮注释？",
+            "确定清除所有高亮注释与检测框？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        self._annotations.clear()
+        self._annotation_store.clear_all()
         self._save_annotations()
         self._invalidate_and_reload()
-        self.logger.info("清除所有高亮注释")
+        self.logger.info("清除所有标注")
 
     def _load_annotations(self):
         """从JSON文件加载注释."""
@@ -925,14 +1128,14 @@ class PDFViewer(QWidget):
         try:
             with open(self._annotation_file, encoding="utf-8") as f:
                 data = json.load(f)
-            self._annotations = {
-                int(k): v for k, v in data.get("annotations", {}).items()
-            }
-            total = sum(len(v) for v in self._annotations.values())
-            self.logger.info(f"加载 {total} 条注释")
+            self._annotation_store = AnnotationStore.from_dict(data)
+            total = len(self._annotation_store.detections) + len(
+                self._annotation_store.highlights
+            )
+            self.logger.info(f"加载 {total} 条标注")
         except Exception:
             log_exception(self.logger, "加载注释失败")
-            self._annotations = {}
+            self._annotation_store = AnnotationStore()
 
     def _save_annotations(self):
         """保存注释到JSON文件."""
@@ -940,11 +1143,121 @@ class PDFViewer(QWidget):
             return
         try:
             self._annotation_file.parent.mkdir(parents=True, exist_ok=True)
-            data = {"source": self._doc_path, "annotations": self._annotations}
+            data = {"source": self._doc_path, **self._annotation_store.to_dict()}
             with open(self._annotation_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception:
             log_exception(self.logger, "保存注释失败")
+
+    # ---- 检测框交互 ----
+
+    def _on_detection_clicked(self, page_index: int, det_id: str) -> None:
+        """点击检测框：弹出详情面板."""
+        det = self._annotation_store.get_detection_by_id(det_id)
+        if not det:
+            return
+        popup = DetectionPopup(det, parent=self)
+        popup.edit_requested.connect(self._on_edit_detection)
+        popup.status_changed.connect(self._on_detection_status_changed)
+        popup.esmiles_saved.connect(self._on_detection_esmiles_saved)
+        popup.comment_saved.connect(self._on_detection_comment_saved)
+        popup.exec()
+
+    def _on_detection_ctrl_clicked(
+        self, page_index: int, det_id: str, pos: QPoint
+    ) -> None:
+        """Ctrl+点击检测框：进入/完成调整大小模式."""
+        det = self._annotation_store.get_detection_by_id(det_id)
+        if not det:
+            return
+
+        # 使用 screen 坐标转换
+        pdf_x = pos.x() / self._scale
+        pdf_y = pos.y() / self._scale
+
+        if self._resizing_detection_id is None:
+            # 第一次点击：进入 resize 模式
+            self._resizing_detection_id = det_id
+            self._resize_anchor_pdf = (pdf_x, pdf_y)
+            self.logger.info(f"进入调整大小模式: {det_id}")
+        else:
+            # 第二次释放：完成 resize
+            if self._resizing_detection_id != det_id:
+                return
+            anchor_x, anchor_y = self._resize_anchor_pdf
+            old = det.bbox_pdf
+            det.bbox_pdf = (
+                min(old[0], anchor_x, pdf_x),
+                min(old[1], anchor_y, pdf_y),
+                max(old[2], anchor_x, pdf_x),
+                max(old[3], anchor_y, pdf_y),
+            )
+            self._resizing_detection_id = None
+            self._resize_anchor_pdf = None
+            self._save_annotations()
+            self._refresh_page(page_index)
+            self.logger.info(f"调整大小完成: {det_id}")
+
+    def _on_detection_status_changed(self, det_id: str, status: str) -> None:
+        det = self._annotation_store.get_detection_by_id(det_id)
+        if det:
+            det.status = status
+            self._save_annotations()
+            self._refresh_page(det.page_idx)
+
+    def _on_detection_esmiles_saved(self, det_id: str, esmiles: str) -> None:
+        det = self._annotation_store.get_detection_by_id(det_id)
+        if det:
+            det.corrected_esmiles = esmiles
+            det.status = "corrected"
+            self._save_annotations()
+            self._refresh_page(det.page_idx)
+
+    def _on_detection_comment_saved(self, det_id: str, comment: str) -> None:
+        det = self._annotation_store.get_detection_by_id(det_id)
+        if det:
+            det.comment = comment
+            self._save_annotations()
+
+    def _on_edit_detection(self, det_id: str) -> None:
+        """在分子编辑器中打开检测框对应的分子."""
+        det = self._annotation_store.get_detection_by_id(det_id)
+        if not det:
+            return
+        from ..mol_editor.dock import MoleculeEditorDialog
+
+        dlg = MoleculeEditorDialog(parent=self)
+        initial = det.corrected_esmiles or det.smiles
+        dlg.set_esmiles(initial)
+
+        def _on_editor_changed(esmiles: str) -> None:
+            det.corrected_esmiles = esmiles
+            det.status = "corrected"
+            self._save_annotations()
+            self._refresh_page(det.page_idx)
+
+        dlg.molecule_changed.connect(_on_editor_changed)
+        dlg.exec()
+
+    # ---- 高亮批注 ----
+
+    def _on_highlight_double_clicked(self, page_index: int, hl_id: str) -> None:
+        """双击高亮：编辑批注."""
+        hl = self._annotation_store.get_highlight_by_id(hl_id)
+        if not hl:
+            return
+        from PyQt6.QtWidgets import QInputDialog
+
+        text, ok = QInputDialog.getMultiLineText(
+            self,
+            "编辑批注",
+            f"为高亮文本添加批注:\n{hl.text[:80]}...",
+            hl.comment,
+        )
+        if ok:
+            hl.comment = text
+            self._save_annotations()
+            self._refresh_page(page_index)
 
     def close_document(self):
         self.logger.info("close_document")
@@ -959,7 +1272,7 @@ class PDFViewer(QWidget):
         self._page_cache.clear()
         self._page_heights.clear()
         self._page_widths.clear()
-        self._annotations.clear()
+        self._annotation_store = AnnotationStore()
         self._annotation_file = None
         self._update_toolbar()
 

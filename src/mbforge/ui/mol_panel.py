@@ -7,10 +7,10 @@ from typing import List, Optional
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
-    QLabel,
     QLineEdit,
     QMenu,
     QMessageBox,
@@ -57,6 +57,20 @@ class MoleculePanel(QWidget):
         self.search_input.returnPressed.connect(self.refresh)
         toolbar.addWidget(self.search_input, 3)
 
+        # 来源类型过滤
+        self.source_filter = QComboBox()
+        self.source_filter.addItems(["全部来源", "🖼️ 图像", "📝 文本", "✋ 手动"])
+        self.source_filter.setMaximumWidth(100)
+        self.source_filter.currentIndexChanged.connect(self.refresh)
+        toolbar.addWidget(self.source_filter)
+
+        # 状态过滤
+        self.status_filter = QComboBox()
+        self.status_filter.addItems(["全部状态", "⚠️ 待确认", "✅ 已确认", "❌ 已丢弃"])
+        self.status_filter.setMaximumWidth(100)
+        self.status_filter.currentIndexChanged.connect(self.refresh)
+        toolbar.addWidget(self.status_filter)
+
         self.act_min = QLineEdit()
         self.act_min.setPlaceholderText("活性 ≥")
         self.act_min.setMaximumWidth(80)
@@ -93,19 +107,21 @@ class MoleculePanel(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
         # 表格
-        headers = ["SMILES", "名称", "活性", "类型", "MW", "LogP", "TPSA", "来源"]
+        headers = ["SMILES", "名称", "活性", "类型", "MW", "LogP", "TPSA", "来源类型", "状态", "来源文档"]
         self.table = create_table(headers, parent=self)
         self.table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Interactive
         )
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setColumnWidth(0, 220)
-        self.table.setColumnWidth(1, 120)
-        self.table.setColumnWidth(2, 80)
-        self.table.setColumnWidth(3, 60)
-        self.table.setColumnWidth(4, 60)
-        self.table.setColumnWidth(5, 60)
-        self.table.setColumnWidth(6, 60)
+        self.table.setColumnWidth(0, 200)
+        self.table.setColumnWidth(1, 100)
+        self.table.setColumnWidth(2, 70)
+        self.table.setColumnWidth(3, 50)
+        self.table.setColumnWidth(4, 50)
+        self.table.setColumnWidth(5, 50)
+        self.table.setColumnWidth(6, 50)
+        self.table.setColumnWidth(7, 70)
+        self.table.setColumnWidth(8, 70)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
@@ -158,7 +174,12 @@ class MoleculePanel(QWidget):
             self.detail_label.setText("选中分子查看详细信息")
             return
 
-        self._all_records = self.mol_db.list_all(limit=5000)
+        # 数据库级过滤
+        source_type = self._current_source_filter()
+        status = self._current_status_filter()
+        self._all_records = self.mol_db.list_all(
+            limit=5000, source_type=source_type, status=status
+        )
         filtered = self._filter_records(self._all_records)
 
         self.table.setRowCount(len(filtered))
@@ -176,8 +197,25 @@ class MoleculePanel(QWidget):
             self.table.setItem(i, 4, QTableWidgetItem(str(props.get("MW", "-"))))
             self.table.setItem(i, 5, QTableWidgetItem(str(props.get("LogP", "-"))))
             self.table.setItem(i, 6, QTableWidgetItem(str(props.get("TPSA", "-"))))
-            src = rec.source_doc[:20] + "..." if rec.source_doc else "-"
-            self.table.setItem(i, 7, QTableWidgetItem(src))
+            # 来源类型标签
+            src_type_map = {
+                "image": "🖼️ 图像",
+                "text": "📝 文本",
+                "manual": "✋ 手动",
+            }
+            src_type_text = src_type_map.get(rec.source_type, rec.source_type)
+            self.table.setItem(i, 7, QTableWidgetItem(src_type_text))
+            # 状态标签
+            status_map = {
+                "pending": "⚠️ 待确认",
+                "confirmed": "✅ 已确认",
+                "rejected": "❌ 已丢弃",
+            }
+            status_text = status_map.get(rec.status, rec.status)
+            self.table.setItem(i, 8, QTableWidgetItem(status_text))
+            # 来源文档
+            src_doc = rec.source_doc[:20] + "..." if rec.source_doc else "-"
+            self.table.setItem(i, 9, QTableWidgetItem(src_doc))
 
             for col in range(self.table.columnCount()):
                 item = self.table.item(i, col)
@@ -185,10 +223,25 @@ class MoleculePanel(QWidget):
                     item.setData(Qt.ItemDataRole.UserRole, rec)
 
         stats = self.mol_db.get_stats()
+        pending_count = len(
+            [r for r in self._all_records if r.status == "pending"]
+        )
         self.stats_label.setText(
             f"共 {stats['total']} 个分子 | 有活性数据: {stats['with_activity']} 个"
-            f" | 当前显示: {len(filtered)} 个"
+            f" | 待确认: {pending_count} 个 | 当前显示: {len(filtered)} 个"
         )
+
+    def _current_source_filter(self) -> Optional[str]:
+        """获取当前选中的来源类型过滤值."""
+        idx = self.source_filter.currentIndex()
+        mapping = {1: "image", 2: "text", 3: "manual"}
+        return mapping.get(idx)
+
+    def _current_status_filter(self) -> Optional[str]:
+        """获取当前选中的状态过滤值."""
+        idx = self.status_filter.currentIndex()
+        mapping = {1: "pending", 2: "confirmed", 3: "rejected"}
+        return mapping.get(idx)
 
     def _filter_records(self, records: List[MoleculeRecord]) -> List[MoleculeRecord]:
         """根据搜索框和活性范围过滤记录."""
@@ -265,7 +318,9 @@ class MoleculePanel(QWidget):
                 f"<b>HBD:</b> {props.get('HBD', '-')} | "
                 f"<b>HBA:</b> {props.get('HBA', '-')}"
             ),
-            f"<b>来源:</b> {rec.source_doc or '-'}",
+            f"<b>来源类型:</b> {rec.source_type or '-'}",
+            f"<b>状态:</b> {rec.status or '-'}",
+            f"<b>来源文档:</b> {rec.source_doc or '-'}",
             f"<b>标签:</b> {', '.join(rec.tags) or '-'}",
         ]
         self.detail_label.setText("<br>".join(lines))

@@ -9,7 +9,7 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 try:
     from rdkit import Chem
@@ -34,6 +34,8 @@ class MoleculeRecord:
     activity: Optional[float] = None
     activity_type: str = ""  # IC50, EC50, Ki, etc.
     units: str = "nM"
+    source_type: Literal["image", "text", "manual"] = "text"
+    status: Literal["pending", "confirmed", "rejected"] = "confirmed"
     properties: Dict[str, Any] = field(default_factory=dict)
     tags: List[str] = field(default_factory=list)
     notes: str = ""
@@ -47,6 +49,8 @@ class MoleculeRecord:
             "activity": self.activity,
             "activity_type": self.activity_type,
             "units": self.units,
+            "source_type": self.source_type,
+            "status": self.status,
             "properties": self.properties,
             "tags": self.tags,
             "notes": self.notes,
@@ -62,6 +66,8 @@ class MoleculeRecord:
             activity=data.get("activity"),
             activity_type=data.get("activity_type", ""),
             units=data.get("units", "nM"),
+            source_type=data.get("source_type", "text"),
+            status=data.get("status", "confirmed"),
             properties=data.get("properties", {}),
             tags=data.get("tags", []),
             notes=data.get("notes", ""),
@@ -133,6 +139,8 @@ class MoleculeDatabase:
         activity REAL,
         activity_type TEXT,
         units TEXT DEFAULT 'nM',
+        source_type TEXT DEFAULT 'text',
+        status TEXT DEFAULT 'confirmed',
         properties TEXT,  -- JSON
         tags TEXT,        -- JSON array
         notes TEXT,
@@ -141,6 +149,8 @@ class MoleculeDatabase:
     CREATE INDEX IF NOT EXISTS idx_smiles ON molecules(smiles);
     CREATE INDEX IF NOT EXISTS idx_source ON molecules(source_doc);
     CREATE INDEX IF NOT EXISTS idx_activity ON molecules(activity);
+    CREATE INDEX IF NOT EXISTS idx_source_type ON molecules(source_type);
+    CREATE INDEX IF NOT EXISTS idx_status ON molecules(status);
     CREATE VIRTUAL TABLE IF NOT EXISTS mol_search USING fts5(
         name, notes, smiles, content='molecules', content_rowid='rowid'
     );
@@ -156,7 +166,28 @@ class MoleculeDatabase:
 
     def _init_db(self) -> None:
         self._conn.executescript(self.SCHEMA)
+        self._migrate_add_columns()
         self._conn.commit()
+
+    def _migrate_add_columns(self) -> None:
+        """向后兼容：为旧数据库添加新列."""
+        cursor = self._conn.execute("PRAGMA table_info(molecules)")
+        columns = {row["name"] for row in cursor.fetchall()}
+        if "source_type" not in columns:
+            self._conn.execute(
+                "ALTER TABLE molecules ADD COLUMN source_type TEXT DEFAULT 'text'"
+            )
+        if "status" not in columns:
+            self._conn.execute(
+                "ALTER TABLE molecules ADD COLUMN status TEXT DEFAULT 'confirmed'"
+            )
+        if "source_type" not in columns or "status" not in columns:
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_source_type ON molecules(source_type)"
+            )
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_status ON molecules(status)"
+            )
 
     def add_molecule(self, record: MoleculeRecord) -> None:
         """添加或更新分子记录."""
@@ -168,8 +199,8 @@ class MoleculeDatabase:
             self._conn.execute(
                 """
                 INSERT OR REPLACE INTO molecules
-                (mol_id, smiles, name, source_doc, activity, activity_type, units, properties, tags, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (mol_id, smiles, name, source_doc, activity, activity_type, units, source_type, status, properties, tags, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.mol_id,
@@ -179,6 +210,8 @@ class MoleculeDatabase:
                     record.activity,
                     record.activity_type,
                     record.units,
+                    record.source_type,
+                    record.status,
                     json.dumps(record.properties, ensure_ascii=False),
                     json.dumps(record.tags, ensure_ascii=False),
                     record.notes,
@@ -226,10 +259,33 @@ class MoleculeDatabase:
             ).fetchall()
         return [self._row_to_record(r) for r in rows]
 
-    def list_all(self, limit: int = 1000) -> List[MoleculeRecord]:
-        rows = self._conn.execute(
-            "SELECT * FROM molecules ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+    def list_all(
+        self,
+        limit: int = 1000,
+        source_type: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[MoleculeRecord]:
+        """列出分子记录，支持按来源和状态过滤.
+
+        Args:
+            limit: 最大返回数量
+            source_type: 过滤来源类型 ('image'|'text'|'manual')
+            status: 过滤状态 ('pending'|'confirmed'|'rejected')
+        """
+        conditions: List[str] = []
+        params: List[Any] = []
+        if source_type:
+            conditions.append("source_type = ?")
+            params.append(source_type)
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
+        sql = f"SELECT * FROM molecules {where} ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_record(r) for r in rows]
 
     def delete_molecule(self, mol_id: str) -> None:

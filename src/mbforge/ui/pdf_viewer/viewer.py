@@ -45,7 +45,11 @@ class PDFViewer(QWidget):
     BUFFER_PAGES = 5
     MAX_CACHE_PAGES = 20  # 内存 LRU 缓存上限
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        mol_image_pipeline: Optional["MolImagePipeline"] = None,
+    ):
         super().__init__(parent)
         self.doc: Optional[fitz.Document] = None
         self._doc_path: Optional[str] = None
@@ -53,6 +57,7 @@ class PDFViewer(QWidget):
         self._use_slices: bool = False
         self.current_page = 0
         self._scale = 1.5
+        self.mol_image_pipeline = mol_image_pipeline
 
         # 虚拟滚动状态
         self._continuous_mode = True
@@ -436,6 +441,7 @@ class PDFViewer(QWidget):
             img_label.highlight_requested.connect(self._on_highlight)
             img_label.clear_highlights_requested.connect(self._clear_page_highlights)
             img_label.copy_text_requested.connect(self._on_copy_selection)
+            img_label.molecule_extract_requested.connect(self._on_extract_molecule)
         img_label.move(0, self._page_offset(index) + 25)
         img_label.resize(pixmap.width(), pixmap.height())
         img_label.show()
@@ -561,6 +567,7 @@ class PDFViewer(QWidget):
             self.single_label.highlight_requested.connect(self._on_highlight)
             self.single_label.clear_highlights_requested.connect(self._clear_page_highlights)
             self.single_label.copy_text_requested.connect(self._on_copy_selection)
+            self.single_label.molecule_extract_requested.connect(self._on_extract_molecule)
 
         try:
             if self.current_page == 0:
@@ -804,6 +811,72 @@ class PDFViewer(QWidget):
 
             QApplication.clipboard().setText(text)
             self.logger.info(f"复制文本: {text[:50]}...")
+
+    def _on_extract_molecule(self, page_index: int, screen_rect: QRect):
+        """识别选中区域内的分子结构."""
+        if page_index == 0 or self.mol_image_pipeline is None:
+            return
+        if not self.mol_image_pipeline.is_available():
+            QMessageBox.warning(
+                self, "检测器不可用", "MolDetv2 模型未加载，无法识别分子。"
+            )
+            return
+
+        pdf_index = page_index - 1
+        try:
+            page = self.doc[pdf_index]
+            # 渲染整页图像（使用当前视图缩放）
+            dpi = int(72 * self._scale)
+            pix = page.get_pixmap(dpi=dpi)
+            from PIL import Image
+
+            page_image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+            # 屏幕坐标 → 图像坐标
+            x1 = int(screen_rect.left())
+            y1 = int(screen_rect.top())
+            x2 = int(screen_rect.right())
+            y2 = int(screen_rect.bottom())
+            crop_bbox = (x1, y1, x2, y2)
+
+            result = self.mol_image_pipeline.extract_from_manual_crop(
+                page_image=page_image,
+                crop_bbox_img=crop_bbox,
+                page_idx=pdf_index,
+                page_w_pts=page.rect.width,
+                page_h_pts=page.rect.height,
+                image_w=pix.width,
+                image_h=pix.height,
+            )
+
+            if not result.smiles:
+                QMessageBox.information(
+                    self, "未识别到分子", "选中区域内未识别到有效的分子结构。"
+                )
+                return
+
+            # 弹出确认对话框
+            from ..mol_extract_dialog import MoleculeExtractDialog
+
+            dlg = MoleculeExtractDialog([result], parent=self)
+            dlg.molecule_confirmed.connect(self._on_molecule_confirmed)
+            dlg.exec()
+
+        except Exception as exc:
+            self.logger.error("分子识别失败: %s", exc)
+            QMessageBox.critical(self, "识别失败", f"分子识别出错: {exc}")
+
+    def _on_molecule_confirmed(self, result: "ExtractionResult"):
+        """用户确认入库分子."""
+        # TODO: 接入主应用的分子数据库
+        self.logger.info(
+            "用户确认入库分子: %s (source=%s)", result.smiles[:40], result.source
+        )
+        QMessageBox.information(
+            self,
+            "已确认",
+            f"分子已确认:\nSMILES: {result.smiles[:60]}\n名称: {result.name or '-'}",
+        )
 
     def _clear_page_highlights(self, page_index: int):
         """清除指定页面的所有高亮注释."""

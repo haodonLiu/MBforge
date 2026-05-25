@@ -3,10 +3,8 @@
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from mbforge.core.project import Project
-from mbforge.core.settings import ProjectSettings
 
 
 class TestProject:

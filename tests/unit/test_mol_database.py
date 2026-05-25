@@ -3,7 +3,6 @@
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from mbforge.core.mol_database import MoleculeDatabase, MoleculeRecord
 

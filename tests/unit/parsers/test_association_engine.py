@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 
-from mbforge.parsers.association_engine import AssociationEngine
-from mbforge.parsers.extraction_result import ExtractionResult
+from mbforge.parsers.molecule.association_engine import AssociationEngine
+from mbforge.parsers.molecule.extraction_result import ExtractionResult
 
 
 class TestAssociationEngine:

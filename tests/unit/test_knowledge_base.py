@@ -3,7 +3,6 @@
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from mbforge.core.knowledge_base import KnowledgeBase
 from mbforge.core.document import ExtractedContent

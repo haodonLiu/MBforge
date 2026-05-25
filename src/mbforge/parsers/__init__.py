@@ -13,7 +13,7 @@ from .file_processor import (
     JsonStrategy,
 )
 from .pdf_parser import PDFParserPipeline
-from .molecule_extractor import MoleculeExtractor
+from .molecule import MoleculeExtractor
 
 __all__ = [
     "BaseDocumentParser",

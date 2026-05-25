@@ -22,8 +22,8 @@ from typing import Any, Literal
 import numpy as np
 from PIL import Image
 
-from mbforge.parsers.coords import image_to_pdf_bbox, scale_from_page_size
-from mbforge.parsers.extraction_result import ExtractionResult
+from .coords import image_to_pdf_bbox, scale_from_page_size
+from .extraction_result import ExtractionResult
 from mbforge.utils.logger import get_logger
 
 logger = get_logger(__name__)

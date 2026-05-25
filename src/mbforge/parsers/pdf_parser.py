@@ -25,11 +25,11 @@ from PIL import Image
 from ..core.document import DocumentProcessor, ExtractedContent
 from ..core.knowledge_base import KnowledgeBase
 from ..core.mol_database import MoleculeDatabase, MoleculeRecord
-from ..parsers.association_engine import AssociationEngine
-from ..parsers.extraction_result import ExtractionResult
-from ..parsers.mol_image_pipeline import MolImagePipeline
-from ..parsers.molecule_extractor import MoleculeExtractor
-from ..parsers.roi_text_extractor import ROITextExtractor
+from .molecule.association_engine import AssociationEngine
+from .molecule.extraction_result import ExtractionResult
+from .molecule.mol_image_pipeline import MolImagePipeline
+from .molecule.molecule_extractor import MoleculeExtractor
+from .molecule.roi_text_extractor import ROITextExtractor
 from ..utils.constants import PROJECT_META_DIR
 from ..utils.helpers import generate_uuid
 from ..utils.logger import get_logger

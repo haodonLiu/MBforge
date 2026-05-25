@@ -23,6 +23,7 @@ class ProjectSettings:
     auto_process: bool = True  # 导入文件后自动处理（False = 手动触发）
     pdf_ocr_enabled: bool = True
     pdf_extract_molecules: bool = True
+    theme_override: str = "system"  # "system" | "light" | "dark"
     # 工作流开关
     workflows_enabled: Dict[str, bool] = field(
         default_factory=lambda: {
@@ -48,6 +49,7 @@ class ProjectSettings:
             auto_process=data.get("auto_process", True),
             pdf_ocr_enabled=data.get("pdf_ocr_enabled", True),
             pdf_extract_molecules=data.get("pdf_extract_molecules", True),
+            theme_override=data.get("theme_override", "system"),
             workflows_enabled=data.get(
                 "workflows_enabled",
                 {"generation": False, "docking": False, "qsar": False, "md": False},

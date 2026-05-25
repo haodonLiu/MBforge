@@ -645,6 +645,11 @@ class MainWindow(QMainWindow):
 
             save_global_config(config)
 
+        # 应用项目主题覆盖
+        ps = self.project.settings
+        if ps.theme_override != "system":
+            ThemeManager.instance().set_mode(ps.theme_override)
+
     def _scan_project(self):
         if self.project is None:
             return
@@ -908,7 +913,9 @@ class MainWindow(QMainWindow):
 
     def _show_settings(self):
         config = load_global_config()
-        dlg = SettingsDialog(config, self)
+        dlg = SettingsDialog(
+            config, self.project.root if self.project else None, self
+        )
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.statusbar.showMessage("设置已更新，正在重新加载模型...")
             self._models_ready = False

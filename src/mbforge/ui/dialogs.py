@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -14,6 +15,7 @@ from PyQt6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QPushButton,
+    QRadioButton,
     QSpinBox,
     QTabWidget,
     QTextEdit,
@@ -83,15 +85,22 @@ class NewProjectDialog(QDialog):
 class SettingsDialog(QDialog):
     """全局设置对话框."""
 
-    def __init__(self, config: AppConfig, parent: Optional[QWidget] = None):
+    def __init__(
+        self,
+        config: AppConfig,
+        project_root: Optional[Path] = None,
+        parent: Optional[QWidget] = None,
+    ):
         super().__init__(parent)
         self.config = config
+        self.project_root = project_root
         self.setWindowTitle("设置")
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
         ThemeManager.apply_dialog(self)
         self._setup_ui()
         self._load_config()
+        self._load_theme_config()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -117,6 +126,11 @@ class SettingsDialog(QDialog):
         self.vlm_tab = QWidget()
         self._setup_vlm_tab()
         self.tabs.addTab(self.vlm_tab, "VLM")
+
+        # 主题 标签
+        self.theme_tab = QWidget()
+        self._setup_theme_tab()
+        self.tabs.addTab(self.theme_tab, "主题")
 
         layout.addWidget(self.tabs)
 
@@ -187,6 +201,22 @@ class SettingsDialog(QDialog):
         self.vlm_model = create_input(placeholder="模型名称")
         layout.addRow("Model:", self.vlm_model)
 
+    def _setup_theme_tab(self):
+        layout = QVBoxLayout(self.theme_tab)
+        form = QFormLayout()
+        self.theme_group = QButtonGroup()
+        self.theme_system = QRadioButton("跟随系统")
+        self.theme_light = QRadioButton("浅色")
+        self.theme_dark = QRadioButton("深色")
+        self.theme_group.addButton(self.theme_system, 0)
+        self.theme_group.addButton(self.theme_light, 1)
+        self.theme_group.addButton(self.theme_dark, 2)
+        form.addRow("主题:", self.theme_system)
+        form.addRow("", self.theme_light)
+        form.addRow("", self.theme_dark)
+        layout.addLayout(form)
+        layout.addStretch()
+
     def _load_config(self):
         c = self.config
         self.llm_provider.setCurrentText(c.llm.provider)
@@ -206,6 +236,18 @@ class SettingsDialog(QDialog):
         self.vlm_base_url.setText(c.vlm.base_url)
         self.vlm_api_key.setText(c.vlm.api_key)
         self.vlm_model.setText(c.vlm.model_name)
+
+    def _load_theme_config(self):
+        theme_mode = "system"
+        if self.project_root:
+            from ..core.settings import ProjectSettings
+
+            ps = ProjectSettings.load(self.project_root)
+            theme_mode = ps.theme_override
+        # Map mode to button id
+        mode_map = {"system": 0, "light": 1, "dark": 2}
+        btn_id = mode_map.get(theme_mode, 0)
+        self.theme_group.button(btn_id).setChecked(True)
 
     def _save_and_accept(self):
         self.config.llm = ModelConfig(
@@ -230,6 +272,17 @@ class SettingsDialog(QDialog):
             api_key=self.vlm_api_key.text(),
             model_name=self.vlm_model.text(),
         )
+        # Save theme override to project settings
+        mode_map = {0: "system", 1: "light", 2: "dark"}
+        selected_id = self.theme_group.checkedId()
+        selected_mode = mode_map.get(selected_id, "system")
+        if self.project_root:
+            from ..core.settings import ProjectSettings
+
+            ps = ProjectSettings.load(self.project_root)
+            ps.theme_override = selected_mode
+            ps.save(self.project_root)
+        ThemeManager.instance().set_mode(selected_mode)
         from ..utils.config import save_global_config
 
         save_global_config(self.config)

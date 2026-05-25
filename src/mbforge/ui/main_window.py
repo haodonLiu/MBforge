@@ -47,9 +47,8 @@ from .kb_panel import KnowledgeBasePanel
 from .mol_panel import MoleculePanel
 from .pdf_viewer import PDFViewer
 from .preview import MarkdownPreview
-from .status_dashboard import StatusDashboard
+from .status_indicator import ServiceStatusIndicator
 from .theme import (
-    COLOR_TEXT_SECONDARY,
     SearchBox,
     ThemeManager,
     create_button,
@@ -163,6 +162,8 @@ class MainWindow(QMainWindow):
         self._setup_toolbar()
         self._setup_statusbar()
         ThemeManager.apply_global(self)
+        ThemeManager.instance().set_mode("system")
+        ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
 
         # 状态标记
         self._models_ready = False
@@ -199,12 +200,10 @@ class MainWindow(QMainWindow):
 
         # 更新仪表盘
         if self.project is not None:
-            self.status_dashboard.set_service_status(
-                llm=self.llm is not None,
-                embed=self.embedder is not None,
-                kb=True,
-                mol_db=True,
-            )
+            self.service_indicator.set_status("LLM", self.llm is not None)
+            self.service_indicator.set_status("Embedding", self.embedder is not None)
+            self.service_indicator.set_status("知识库", True)
+            self.service_indicator.set_status("分子库", True)
 
         # 延迟加载最近项目（如果还没有加载）
         if self.project is None:
@@ -218,9 +217,23 @@ class MainWindow(QMainWindow):
     def _setup_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        main_layout = QHBoxLayout(central)
+        main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
+
+        # 顶栏：菜单栏 + 右上角服务状态指示器
+        self.top_bar = QWidget()
+        self.top_bar.setMaximumHeight(30)
+        top_bar_layout = QHBoxLayout(self.top_bar)
+        top_bar_layout.setContentsMargins(0, 0, 8, 0)
+        top_bar_layout.setSpacing(0)
+
+        menubar = self.menuBar()
+        top_bar_layout.addWidget(menubar, 1)
+        self.service_indicator = ServiceStatusIndicator()
+        top_bar_layout.addWidget(self.service_indicator)
+        self.top_bar.setStyleSheet(f"background: {ThemeManager.instance().get_color('brand_primary_deep')};")
+        main_layout.addWidget(self.top_bar)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
 
@@ -232,9 +245,22 @@ class MainWindow(QMainWindow):
 
         self.project_label = create_label("未打开项目", level="header")
         self.project_label.setStyleSheet(
-            "padding: 10px 14px; background: #f8f9fa; border-bottom: 1px solid #e9ecef; border-radius: 0;"
+            f"padding: 10px 14px; background: {ThemeManager.instance().get_color('bg_base')}; "
+            f"border-bottom: 1px solid {ThemeManager.instance().get_color('border')}; border-radius: 0;"
+            f"color: {ThemeManager.instance().get_color('text_primary')};"
         )
         left_layout.addWidget(self.project_label)
+
+        # 首页按钮
+        self.home_btn = create_button("🏠 首页", style="default")
+        self.home_btn.setStyleSheet(
+            f"padding: 6px 12px; font-size: 12px; "
+            f"background: {ThemeManager.instance().get_color('bg_hover')}; "
+            f"color: {ThemeManager.instance().get_color('text_primary')}; "
+            f"border: 1px solid {ThemeManager.instance().get_color('border')}; border-radius: 6px;"
+        )
+        self.home_btn.clicked.connect(self._go_home)
+        left_layout.addWidget(self.home_btn)
 
         self.file_tree = FileTreeWidget()
         self.file_tree.file_opened.connect(self._open_file)
@@ -277,10 +303,6 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(4)
 
-        # 状态仪表盘
-        self.status_dashboard = StatusDashboard()
-        right_layout.addWidget(self.status_dashboard)
-
         # KB 搜索（合并输入框+按钮为 SearchBox）
         kb_frame = QWidget()
         kb_frame.setMaximumHeight(200)
@@ -297,9 +319,10 @@ class MainWindow(QMainWindow):
 
         self.kb_results = create_label("未检索", level="body")
         self.kb_results.setWordWrap(True)
+        p = ThemeManager.instance().palette()
         self.kb_results.setStyleSheet(
-            f"color: {COLOR_TEXT_SECONDARY}; background: #f8f9fa; padding: 10px; "
-            f"border-radius: 10px; border: 1px solid #e9ecef; font-size: 13px;"
+            f"color: {p['text_secondary']}; background: {p['bg_base']}; padding: 10px; "
+            f"border-radius: 10px; border: 1px solid {p['border']}; font-size: 13px;"
         )
         self.kb_results.setAlignment(Qt.AlignmentFlag.AlignTop)
         kb_layout.addWidget(self.kb_results)
@@ -399,17 +422,17 @@ class MainWindow(QMainWindow):
         tools_menu.addAction(workflow_action)
 
     def _setup_toolbar(self):
-        """精简工具栏：只保留高频操作."""
-        toolbar = QToolBar("主工具栏")
+        """快速跳转工具栏：文献库 / 分子库 / 知识库."""
+        toolbar = QToolBar("快速跳转")
+        toolbar.setMovable(True)
         self.addToolBar(toolbar)
 
-        # 高频操作
-        toolbar.addAction("📝 新建", self._new_project)
-        toolbar.addAction("📂 打开", self._open_project)
+        toolbar.addAction("📚 文献库", self._show_pdf_library)
+        toolbar.addAction("🧪 分子库", self._show_mol_db)
+        toolbar.addAction("🔍 知识库", self._show_kb_panel)
         toolbar.addSeparator()
-        toolbar.addAction("💾 保存", self._save_current)
-        toolbar.addAction("🔍 搜索", self._search_kb)
-        toolbar.addAction("🤖 发送", self._trigger_chat_send)
+        toolbar.addAction("📋 TODO", self._show_todo_panel)
+        toolbar.addAction("🚀 工作流", self._show_workflow_panel)
 
     def _trigger_chat_send(self):
         """触发 LLM 发送."""
@@ -419,6 +442,21 @@ class MainWindow(QMainWindow):
         self.statusbar = QStatusBar()
         self.setStatusBar(self.statusbar)
 
+        # 资源监控标签（状态栏右侧，永久显示）
+        self.cpu_label = create_label("CPU: -", level="caption")
+        self.mem_label = create_label("内存: -", level="caption")
+        p = ThemeManager.instance().palette()
+        self.cpu_label.setStyleSheet(f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;")
+        self.mem_label.setStyleSheet(f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;")
+        self.statusbar.addPermanentWidget(self.cpu_label)
+        self.statusbar.addPermanentWidget(self.mem_label)
+
+        # 定时刷新资源监控
+        self._res_timer = QTimer(self)
+        self._res_timer.timeout.connect(self._refresh_resources)
+        self._res_timer.setInterval(5000)
+        self._res_timer.start()
+
         # 进度条
         self.progress_bar = ProgressBar()
         self.progress_bar.setMaximumWidth(200)
@@ -426,6 +464,43 @@ class MainWindow(QMainWindow):
         self.statusbar.addPermanentWidget(self.progress_bar)
 
         self.statusbar.showMessage("就绪")
+
+    def _go_home(self):
+        """返回欢迎首页."""
+        self.center_stack.setCurrentIndex(0)
+
+    def _refresh_resources(self):
+        """刷新状态栏资源监控."""
+        try:
+            import psutil
+            cpu_percent = psutil.cpu_percent(interval=0.5)
+            mem = psutil.virtual_memory()
+            self.cpu_label.setText(f"CPU: {cpu_percent:.1f}%")
+            self.mem_label.setText(
+                f"内存: {mem.used // (1024**3)}G / {mem.total // (1024**3)}G ({mem.percent:.0f}%)"
+            )
+        except ImportError:
+            self.cpu_label.setText("CPU: psutil 未安装")
+            self.mem_label.setText("内存: -")
+        except Exception:
+            pass
+
+    def _on_theme_changed(self, mode: str):
+        """Refresh widget styles when theme changes."""
+        p = ThemeManager.instance().palette()
+        self.cpu_label.setStyleSheet(f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;")
+        self.mem_label.setStyleSheet(f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;")
+        self.home_btn.setStyleSheet(
+            f"padding: 6px 12px; font-size: 12px; "
+            f"background: {p['bg_hover']}; color: {p['text_primary']}; "
+            f"border: 1px solid {p['border']}; border-radius: 6px;"
+        )
+        self.project_label.setStyleSheet(
+            f"padding: 10px 14px; background: {p['bg_base']}; "
+            f"border-bottom: 1px solid {p['border']}; border-radius: 0;"
+            f"color: {p['text_primary']};"
+        )
+        self.top_bar.setStyleSheet(f"background: {p['brand_primary_deep']};")
 
     # ---- 项目操作 ----
 
@@ -555,12 +630,10 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(f"已打开项目: {project.root}")
 
         # 更新仪表盘
-        self.status_dashboard.set_service_status(
-            llm=self.llm is not None,
-            embed=self.embedder is not None,
-            kb=True,
-            mol_db=True,
-        )
+        self.service_indicator.set_status("LLM", self.llm is not None)
+        self.service_indicator.set_status("Embedding", self.embedder is not None)
+        self.service_indicator.set_status("知识库", True)
+        self.service_indicator.set_status("分子库", True)
 
         # 添加到最近项目
         config = load_global_config()
@@ -862,7 +935,17 @@ class MainWindow(QMainWindow):
             return
         panel = KnowledgeBasePanel()
         panel.set_knowledge_base(self.kb)
-        self._add_tab(panel, "📚 知识库")
+        self._add_tab(panel, "🔍 知识库")
+
+    def _show_pdf_library(self):
+        if self.project is None:
+            QMessageBox.warning(self, "提示", "请先打开项目")
+            return
+        from .pdf_library import PDFLibraryPanel
+        panel = PDFLibraryPanel()
+        panel.set_project(self.project)
+        panel.pdf_opened.connect(self._open_file)
+        self._add_tab(panel, "📚 文献库")
 
     def _show_todo_panel(self):
         if self.todo_manager is None:

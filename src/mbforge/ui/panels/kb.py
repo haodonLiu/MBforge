@@ -14,9 +14,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..core.knowledge_base import KnowledgeBase
-from .components import EmptyStateWidget, SectionHeader
-from .theme import ThemeManager, _p, SearchBox, create_button, create_label
+from ...core.knowledge_base import KnowledgeBase
+from ..components import EmptyStateWidget, SectionHeader
+from ..theme import ThemeManager, _p, SearchBox, create_button, create_label
 
 
 class KnowledgeBasePanel(QWidget):

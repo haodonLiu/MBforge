@@ -19,11 +19,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..core.mol_database import MoleculeDatabase, MoleculeRecord
-from ..utils.logger import get_logger
-from .dialogs import MoleculeInfoDialog
-from .mol_renderer import MoleculeImageWidget
-from .theme import ThemeManager, _p, create_button, create_label, create_table
+from ...core.mol_database import MoleculeDatabase, MoleculeRecord
+from ...utils.logger import get_logger
+from ..dialogs import MoleculeInfoDialog
+from ..mol_renderer import MoleculeImageWidget
+from ..theme import ThemeManager, _p, create_button, create_label, create_table
 
 logger = get_logger(__name__)
 

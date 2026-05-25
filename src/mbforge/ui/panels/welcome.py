@@ -12,9 +12,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..utils.config import load_global_config
-from .components import EmptyStateWidget, InfoRow
-from .theme import CardWidget, ThemeManager, create_button, create_label
+from ...utils.config import load_global_config
+from ..components import EmptyStateWidget, InfoRow
+from ..theme import CardWidget, ThemeManager, create_button, create_label
 
 
 class WelcomeWidget(QWidget):

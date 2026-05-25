@@ -9,8 +9,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .components import InfoRow
-from .theme import CardWidget
+from ..components import InfoRow
+from ..theme import CardWidget
 
 
 class StatusDashboard(QWidget):

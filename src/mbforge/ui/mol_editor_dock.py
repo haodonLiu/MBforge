@@ -17,6 +17,8 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QScrollArea,
     QSizePolicy,
+    QSlider,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -366,144 +368,198 @@ class MoleculeEditorDialog(QDialog):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle("分子编辑器")
-        self.setMinimumSize(480, 700)
-        self.resize(520, 800)
+        self.setMinimumSize(800, 600)
+        self.resize(960, 700)
         ThemeManager.apply_dialog(self)
         self._setup_ui()
 
         ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        # 三栏布局：左侧工具 | 中央画布 | 右侧原子/模板
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(8, 8, 8, 8)
+        main_layout.setSpacing(6)
 
-        # SMILES 输入框
-        input_card = CardWidget("")
-        input_layout = QVBoxLayout()
+        # ---- 顶部：输入框 ----
+        input_layout = QHBoxLayout()
+        input_layout.setSpacing(6)
         self._smiles_input = QLineEdit()
         self._smiles_input.setPlaceholderText("输入 SMILES 或 E-SMILES，回车加载")
         self._smiles_input.returnPressed.connect(self._on_load_smiles)
         input_layout.addWidget(self._smiles_input)
-        input_card.add_layout(input_layout)
-        layout.addWidget(input_card)
 
-        # 编辑器工具栏
-        toolbar_card = CardWidget("工具")
-        toolbar_layout = QHBoxLayout()
-        toolbar_layout.setSpacing(6)
+        load_btn = create_button("加载")
+        load_btn.clicked.connect(self._on_load_smiles)
+        input_layout.addWidget(load_btn)
+        main_layout.addLayout(input_layout)
+
+        # ---- 中部：三栏 ----
+        center = QSplitter(Qt.Orientation.Horizontal)
+
+        # 左栏：工具按钮（垂直排列）
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(4, 4, 4, 4)
+        left_layout.setSpacing(4)
+
+        tools_label = QLabel("工具")
+        p = ThemeManager.instance().palette()
+        tools_label.setStyleSheet(f"color: {p['brand_primary']}; font-weight: 600; font-size: 11px;")
+        left_layout.addWidget(tools_label)
 
         self._tool_buttons: dict[EditorTool, QWidget] = {}
         for tool in EditorTool:
             btn = create_button(tool.value, style="default")
             btn.setCheckable(True)
-            btn.setMaximumWidth(80)
+            btn.setMaximumWidth(70)
             btn.clicked.connect(lambda checked, t=tool: self._on_tool_changed(t))
-            toolbar_layout.addWidget(btn)
+            left_layout.addWidget(btn)
             self._tool_buttons[tool] = btn
 
         self._tool_buttons[EditorTool.SELECT].setChecked(True)
-        toolbar_layout.addStretch()
-        toolbar_card.add_layout(toolbar_layout)
-        layout.addWidget(toolbar_card)
+        left_layout.addSpacing(8)
 
-        # 原子类型选择
-        atom_card = CardWidget("原子类型")
-        atom_layout = QHBoxLayout()
-        atom_layout.setSpacing(4)
-        self._atom_buttons: dict[str, QWidget] = {}
-        for atom in ["C", "N", "O", "S", "P", "F", "Cl", "Br"]:
-            btn = create_button(atom, style="default")
-            btn.setCheckable(True)
-            btn.setMaximumWidth(40)
-            btn.clicked.connect(lambda checked, a=atom: self._on_atom_changed(a))
-            atom_layout.addWidget(btn)
-            self._atom_buttons[atom] = btn
+        # 键类型子面板
+        bonds_label = QLabel("键类型")
+        bonds_label.setStyleSheet(f"color: {p['brand_primary']}; font-weight: 600; font-size: 11px;")
+        left_layout.addWidget(bonds_label)
 
-        self._atom_buttons["C"].setChecked(True)
-        atom_layout.addStretch()
-        atom_card.add_layout(atom_layout)
-        layout.addWidget(atom_card)
-
-        # 键类型选择
-        bond_card = CardWidget("键类型")
-        bond_layout = QHBoxLayout()
-        bond_layout.setSpacing(4)
         self._bond_buttons: dict[str, QWidget] = {}
         for bond in ["SINGLE", "DOUBLE", "TRIPLE", "AROMATIC"]:
             btn = create_button(bond, style="default")
             btn.setCheckable(True)
             btn.setMaximumWidth(70)
             btn.clicked.connect(lambda checked, b=bond: self._on_bond_changed(b))
-            bond_layout.addWidget(btn)
+            left_layout.addWidget(btn)
             self._bond_buttons[bond] = btn
 
         self._bond_buttons["SINGLE"].setChecked(True)
-        bond_layout.addStretch()
-        bond_card.add_layout(bond_layout)
-        layout.addWidget(bond_card)
+        left_layout.addStretch()
 
-        # 预设片段
-        preset_card = CardWidget("预设片段")
-        preset_layout = QVBoxLayout()
-        self._preset_list = QListWidget()
-        self._preset_list.setSpacing(2)
-        self._preset_list.itemClicked.connect(self._on_preset_clicked)
-        for p in PRESETS:
-            item = QListWidgetItem(p["name"])
-            item.setData(Qt.ItemDataRole.UserRole, p["esmiles"])
-            item.setToolTip(p["esmiles"])
-            self._preset_list.addItem(item)
-        preset_layout.addWidget(self._preset_list)
-        preset_card.add_layout(preset_layout)
-        layout.addWidget(preset_card)
+        center.addWidget(left_widget)
 
-        # 快捷键面板（可折叠）
-        self._shortcuts_panel = _ShortcutsPanel(self)
-        self._shortcuts_panel.preset_selected.connect(self._on_preset_clicked)
-        layout.addWidget(self._shortcuts_panel)
-
-        # 分子编辑器主件
+        # 中央：分子画布
         self.editor = MolEditorWidget()
+        self.editor.setMinimumSize(400, 400)
         self.editor.smiles_changed.connect(self._on_editor_changed)
-        layout.addWidget(self.editor, 1)
+        center.addWidget(self.editor)
+        center.setStretchFactor(0, 0)  # 左栏固定宽度
+        center.setStretchFactor(1, 1)  # 中央画布扩展
 
-        # 输出 E-SMILES（只读）
-        self._output_label = QLabel()
-        self._output_label.setWordWrap(True)
-        p = ThemeManager.instance().palette()
-        self._output_label.setStyleSheet(f"""
-            QLabel {{
-                font-family: monospace;
-                font-size: 11px;
-                color: {p['text_secondary']};
-                background: {p['bg_hover']};
-                padding: 4px 8px;
-                border-radius: 4px;
-            }}
-        """)
-        layout.addWidget(self._output_label)
+        # 右栏：原子类型 + 环模板
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(4, 4, 4, 4)
+        right_layout.setSpacing(6)
 
-        # 实时分子式显示
+        # 原子类型网格
+        atoms_label = QLabel("原子")
+        atoms_label.setStyleSheet(f"color: {p['brand_primary']}; font-weight: 600; font-size: 11px;")
+        right_layout.addWidget(atoms_label)
+
+        atom_grid = QGridLayout()
+        atom_grid.setSpacing(3)
+        self._atom_buttons: dict[str, QWidget] = {}
+        atom_list = ["C", "N", "O", "S", "P", "F", "Cl", "Br"]
+        for i, atom in enumerate(atom_list):
+            row = i // 4
+            col = i % 4
+            btn = create_button(atom, style="default")
+            btn.setCheckable(True)
+            btn.clicked.connect(lambda checked, a=atom: self._on_atom_changed(a))
+            atom_grid.addWidget(btn, row, col)
+            self._atom_buttons[atom] = btn
+
+        self._atom_buttons["C"].setChecked(True)
+        right_layout.addLayout(atom_grid)
+
+        # 环模板
+        rings_label = QLabel("环模板")
+        rings_label.setStyleSheet(f"color: {p['brand_primary']}; font-weight: 600; font-size: 11px;")
+        right_layout.addWidget(rings_label)
+
+        self._preset_list = QListWidget()
+        self._preset_list.setSpacing(1)
+        self._preset_list.setMaximumHeight(160)
+        self._preset_list.itemClicked.connect(self._on_preset_clicked)
+        ring_presets = [p for p in PRESETS if p["name"] in (
+            "苯环", "环己烷", "环戊烷", "吡啶", "噻唑", "呋喃", "哌啶", "吡咯"
+        )]
+        for p_item in ring_presets:
+            item = QListWidgetItem(p_item["name"])
+            item.setData(Qt.ItemDataRole.UserRole, p_item["esmiles"])
+            item.setToolTip(p_item["esmiles"])
+            self._preset_list.addItem(item)
+        right_layout.addWidget(self._preset_list)
+
+        right_layout.addStretch()
+        center.addWidget(right_widget)
+        center.setStretchFactor(2, 0)  # 右栏固定宽度
+
+        main_layout.addWidget(center, 1)
+
+        # ---- 底部：状态栏 ----
+        status_layout = QHBoxLayout()
+        status_layout.setSpacing(8)
+
+        # 分子式
         self._formula_label = QLabel()
-        self._formula_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._formula_label.setStyleSheet(f"""
             QLabel {{
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: 600;
                 color: {p['text_secondary']};
                 padding: 2px 8px;
             }}
         """)
-        layout.addWidget(self._formula_label)
+        status_layout.addWidget(self._formula_label)
 
-        # 底部按钮
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        close_btn = create_button("关闭")
-        close_btn.clicked.connect(self.close)
-        btn_layout.addWidget(close_btn)
-        layout.addLayout(btn_layout)
+        # E-SMILES 输出
+        self._output_label = QLabel()
+        self._output_label.setWordWrap(False)
+        self._output_label.setStyleSheet(f"""
+            QLabel {{
+                font-family: monospace;
+                font-size: 10px;
+                color: {p['text_secondary']};
+                background: {p['bg_hover']};
+                padding: 2px 6px;
+                border-radius: 3px;
+            }}
+        """)
+        status_layout.addWidget(self._output_label, 1)
+
+        # 缩放控制
+        zoom_layout = QHBoxLayout()
+        zoom_layout.setSpacing(4)
+        z_label = QLabel("缩放")
+        z_label.setStyleSheet(f"font-size: 11px; color: {p['text_secondary']};")
+        zoom_layout.addWidget(z_label)
+        self._zoom_slider = QSlider(Qt.Orientation.Horizontal)
+        self._zoom_slider.setRange(50, 200)
+        self._zoom_slider.setValue(100)
+        self._zoom_slider.setMaximumWidth(100)
+        self._zoom_slider.valueChanged.connect(self._on_zoom_changed)
+        zoom_layout.addWidget(self._zoom_slider)
+        self._zoom_label = QLabel("100%")
+        self._zoom_label.setStyleSheet(f"font-size: 11px; color: {p['text_secondary']};")
+        zoom_layout.addWidget(self._zoom_label)
+        status_layout.addLayout(zoom_layout)
+
+        status_layout.addSpacing(8)
+
+        # 取消/确认按钮
+        cancel_btn = create_button("取消")
+        cancel_btn.clicked.connect(self.close)
+        status_layout.addWidget(cancel_btn)
+
+        confirm_btn = create_button("确认")
+        confirm_btn.setStyleSheet(f"background: {p['success']}; color: white;")
+        confirm_btn.clicked.connect(self._on_confirm)
+        status_layout.addWidget(confirm_btn)
+
+        main_layout.addLayout(status_layout)
 
         self._on_theme_changed(ThemeManager.instance().mode())
 
@@ -513,16 +569,16 @@ class MoleculeEditorDialog(QDialog):
         self._output_label.setStyleSheet(f"""
             QLabel {{
                 font-family: monospace;
-                font-size: 11px;
+                font-size: 10px;
                 color: {p['text_secondary']};
                 background: {p['bg_hover']};
-                padding: 4px 8px;
-                border-radius: 4px;
+                padding: 2px 6px;
+                border-radius: 3px;
             }}
         """)
         self._formula_label.setStyleSheet(f"""
             QLabel {{
-                font-size: 13px;
+                font-size: 12px;
                 font-weight: 600;
                 color: {p['text_secondary']};
                 padding: 2px 8px;
@@ -567,6 +623,14 @@ class MoleculeEditorDialog(QDialog):
         self._output_label.setText(esmiles)
         self._update_formula(esmiles)
         self.molecule_changed.emit(esmiles)
+
+    def _on_confirm(self):
+        esmiles = self.editor.get_esmiles()
+        self.molecule_changed.emit(esmiles)
+        self.close()
+
+    def _on_zoom_changed(self, value: int):
+        self._zoom_label.setText(f"{value}%")
 
     def _update_formula(self, esmiles: str):
         try:

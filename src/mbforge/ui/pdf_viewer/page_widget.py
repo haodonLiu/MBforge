@@ -15,6 +15,7 @@ class PDFPageLabel(QLabel):
     highlight_requested = pyqtSignal(int, QRect)
     clear_highlights_requested = pyqtSignal(int)
     copy_text_requested = pyqtSignal(int, QRect)
+    molecule_extract_requested = pyqtSignal(int, QRect)
 
     def __init__(self, page_index: int, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -83,6 +84,11 @@ class PDFPageLabel(QLabel):
             copy_action = menu.addAction("复制选中文本")
             copy_action.triggered.connect(
                 lambda: self.copy_text_requested.emit(self.page_index, self._selection_rect)
+            )
+            menu.addSeparator()
+            extract_action = menu.addAction("识别选中区域分子")
+            extract_action.triggered.connect(
+                lambda: self.molecule_extract_requested.emit(self.page_index, self._selection_rect)
             )
         clear_action = menu.addAction("清除本页高亮")
         clear_action.triggered.connect(

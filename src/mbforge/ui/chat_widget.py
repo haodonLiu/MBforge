@@ -19,20 +19,7 @@ from PyQt6.QtWidgets import (
 
 from ..agent.agent import ProjectAgent
 from ..utils.logger import get_logger, log_exception
-from .theme import (
-    COLOR_BG_SECONDARY,
-    COLOR_BG_TERTIARY,
-    COLOR_BORDER,
-    COLOR_BORDER_FOCUS,
-    COLOR_PRIMARY,
-    COLOR_TEXT_MAIN,
-    COLOR_TEXT_SECONDARY,
-    RADIUS_DEFAULT,
-    RADIUS_LARGE,
-    create_button,
-    create_input,
-    create_label,
-)
+from .theme import ThemeManager, create_button, create_input, create_label
 
 logger = get_logger(__name__)
 
@@ -54,20 +41,21 @@ class ChatMessage(QWidget):
 
         is_user = self.role == "user"
         header_text = "🧑 用户" if is_user else "🤖 AI"
-        header_color = COLOR_TEXT_SECONDARY if is_user else COLOR_PRIMARY
 
         self.header = QLabel(f"<b>{header_text}</b>")
+        p = ThemeManager.instance().palette()
+        header_color = p["text_secondary"] if is_user else p["brand_primary"]
         self.header.setStyleSheet(f"color: {header_color}; font-size: 13px;")
         layout.addWidget(self.header)
 
         # 消息内容容器（带背景色圆角）
         self.body_container = QFrame()
-        bg_color = COLOR_BG_TERTIARY if is_user else COLOR_BG_SECONDARY
+        bg_color = p["bg_hover"] if is_user else p["bg_card"]
         self.body_container.setStyleSheet(f"""
             QFrame {{
                 background: {bg_color};
-                border: 1px solid {COLOR_BORDER};
-                border-radius: {RADIUS_LARGE};
+                border: 1px solid {p['border']};
+                border-radius: 12px;
             }}
         """)
         body_layout = QVBoxLayout(self.body_container)
@@ -147,81 +135,47 @@ class ChatMessageRenderer:
         return self._wrap_html(body_html)
 
     def _wrap_html(self, body: str) -> str:
+        p = ThemeManager.instance().palette()
         return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <style>
+    :root {{
+        --bg-card: {p['bg_card']};
+        --bg-base: {p['bg_base']};
+        --bg-hover: {p['bg_hover']};
+        --text-primary: {p['text_primary']};
+        --text-secondary: {p['text_secondary']};
+        --border: {p['border']};
+        --brand: {p['brand_primary']};
+        --code-bg: {p['bg_hover']};
+    }}
     body {{
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         font-size: 14px;
         line-height: 1.7;
-        color: {COLOR_TEXT_MAIN};
+        color: var(--text-primary);
         background: transparent;
         padding: 0;
         margin: 0;
         word-wrap: break-word;
     }}
-    h1, h2, h3, h4, h5, h6 {{
-        margin-top: 16px;
-        margin-bottom: 10px;
-        font-weight: 600;
-    }}
-    h1 {{ font-size: 20px; border-bottom: 1px solid {COLOR_BORDER}; padding-bottom: 6px; }}
-    h2 {{ font-size: 17px; border-bottom: 1px solid {COLOR_BORDER}; padding-bottom: 5px; }}
+    h1, h2, h3, h4 {{ margin-top: 16px; margin-bottom: 10px; font-weight: 600; }}
+    h1 {{ font-size: 20px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }}
+    h2 {{ font-size: 17px; border-bottom: 1px solid var(--border); padding-bottom: 5px; }}
     h3 {{ font-size: 15px; }}
-    code {{
-        background: {COLOR_BG_TERTIARY};
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-family: "Consolas", "Monaco", "Courier New", monospace;
-        font-size: 0.9em;
-        color: #c2255c;
-    }}
-    pre {{
-        background: {COLOR_BG_SECONDARY};
-        padding: 12px;
-        border-radius: {RADIUS_DEFAULT};
-        overflow-x: auto;
-        border: 1px solid {COLOR_BORDER};
-        margin: 8px 0;
-    }}
-    pre code {{
-        background: none;
-        padding: 0;
-        color: {COLOR_TEXT_MAIN};
-        font-size: 13px;
-        line-height: 1.5;
-    }}
-    table {{
-        border-collapse: collapse;
-        width: 100%;
-        margin: 10px 0;
-        border-radius: {RADIUS_DEFAULT};
-        overflow: hidden;
-        border: 1px solid {COLOR_BORDER};
-        font-size: 13px;
-    }}
-    th, td {{
-        border: 1px solid {COLOR_BORDER};
-        padding: 8px 10px;
-        text-align: left;
-    }}
-    th {{ background: {COLOR_BG_SECONDARY}; font-weight: 600; }}
-    tr:nth-child(even) {{ background: {COLOR_BG_SECONDARY}; }}
-    blockquote {{
-        border-left: 3px solid {COLOR_BORDER_FOCUS};
-        margin: 8px 0;
-        padding: 8px 14px;
-        background: {COLOR_BG_SECONDARY};
-        border-radius: 0 {RADIUS_DEFAULT} {RADIUS_DEFAULT} 0;
-    }}
-    a {{ color: {COLOR_PRIMARY}; text-decoration: none; }}
+    code {{ background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-family: "Consolas", "Monaco", monospace; font-size: 0.9em; color: {p['accent_coral']}; }}
+    pre {{ background: var(--bg-base); padding: 12px; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border); margin: 8px 0; }}
+    pre code {{ background: none; padding: 0; color: var(--text-primary); }}
+    table {{ border-collapse: collapse; width: 100%; margin: 10px 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); font-size: 13px; }}
+    th, td {{ border: 1px solid var(--border); padding: 8px 10px; text-align: left; }}
+    th {{ background: var(--bg-base); font-weight: 600; }}
+    blockquote {{ border-left: 3px solid var(--brand); margin: 8px 0; padding: 8px 14px; background: var(--bg-base); border-radius: 0 8px 8px 0; }}
+    a {{ color: var(--brand); text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
     ul, ol {{ padding-left: 20px; margin: 6px 0; }}
-    li {{ margin: 3px 0; }}
     p {{ margin: 6px 0; }}
-    hr {{ border: none; border-top: 1px solid {COLOR_BORDER}; margin: 12px 0; }}
 </style>
 </head>
 <body>{body}</body>
@@ -247,20 +201,21 @@ class ChatMessage(QWidget):
 
         is_user = self.role == "user"
         header_text = "🧑 用户" if is_user else "🤖 AI"
-        header_color = COLOR_TEXT_SECONDARY if is_user else COLOR_PRIMARY
 
         self.header = QLabel(f"<b>{header_text}</b>")
+        p = ThemeManager.instance().palette()
+        header_color = p["text_secondary"] if is_user else p["brand_primary"]
         self.header.setStyleSheet(f"color: {header_color}; font-size: 13px;")
         layout.addWidget(self.header)
 
         # 消息内容容器（带背景色圆角）
         self.body_container = QFrame()
-        bg_color = COLOR_BG_TERTIARY if is_user else COLOR_BG_SECONDARY
+        bg_color = p["bg_hover"] if is_user else p["bg_card"]
         self.body_container.setStyleSheet(f"""
             QFrame {{
                 background: {bg_color};
-                border: 1px solid {COLOR_BORDER};
-                border-radius: {RADIUS_LARGE};
+                border: 1px solid {p['border']};
+                border-radius: 12px;
             }}
         """)
         body_layout = QVBoxLayout(self.body_container)
@@ -353,6 +308,7 @@ class ChatWidget(QWidget):
         self._pending_text = ""
         self._flush_timer: Optional[QTimer] = None
         self._setup_ui()
+        ThemeManager.instance().theme_changed.connect(self._on_theme_changed)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -384,7 +340,8 @@ class ChatWidget(QWidget):
 
         # 输入区域
         input_frame = QFrame()
-        input_frame.setStyleSheet(f"background: {COLOR_BG_SECONDARY}; border-top: 1px solid {COLOR_BORDER};")
+        p = ThemeManager.instance().palette()
+        input_frame.setStyleSheet(f"background: {p['bg_base']}; border-top: 1px solid {p['border']};")
         input_layout = QHBoxLayout(input_frame)
         input_layout.setContentsMargins(8, 8, 8, 8)
 
@@ -407,6 +364,11 @@ class ChatWidget(QWidget):
         self._flush_timer = QTimer(self)
         self._flush_timer.setInterval(80)
         self._flush_timer.timeout.connect(self._flush_pending_text)
+
+    def _on_theme_changed(self, mode: str):
+        """Refresh styles when theme changes."""
+        # Force re-render of all messages by clearing and re-adding
+        self.clear_chat()
 
     def set_agent(self, agent: ProjectAgent):
         """设置 Agent 实例."""

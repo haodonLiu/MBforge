@@ -182,7 +182,7 @@ class PDFLibraryPanel(QWidget):
         for entry in pdf_entries:
             self._pdfs.append(entry)
             title = entry.path.name
-            status = "✅ 已索引" if entry.indexed else "⏳ 未索引"
+            status = "已索引" if entry.indexed else "未索引"
             item = QListWidgetItem(f"{title}\n{status}")
             item.setData(Qt.ItemDataRole.UserRole, len(self._pdfs) - 1)
             self.pdf_list.addItem(item)
@@ -197,7 +197,7 @@ class PDFLibraryPanel(QWidget):
         for i, entry in enumerate(self._pdfs):
             if query in entry.path.name.lower():
                 title = entry.path.name
-                status = "✅ 已索引" if entry.indexed else "⏳ 未索引"
+                status = "已索引" if entry.indexed else "未索引"
                 item = QListWidgetItem(f"{title}\n{status}")
                 item.setData(Qt.ItemDataRole.UserRole, i)
                 self.pdf_list.addItem(item)

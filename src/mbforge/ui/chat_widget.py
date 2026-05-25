@@ -453,7 +453,7 @@ class ChatWidget(QWidget):
         logger.error(f"ChatWidget._on_stream_error | {error}")
         self._flush_timer.stop()
         if self._current_reply_widget:
-            self._current_reply_widget.set_content(f"❌ **错误**\n\n{error}")
+            self._current_reply_widget.set_content(f"[X] **错误**\n\n{error}")
         self._on_stream_finished()
 
     def _stop_generation(self):

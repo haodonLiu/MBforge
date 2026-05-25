@@ -100,7 +100,7 @@ class WorkflowPanel(QWidget):
 
         # 占位提示
         empty = EmptyStateWidget(
-            icon="⚙",
+            icon="[W]",
             title="工作流模块开发中",
             subtitle="当前版本为占位界面，后续将接入实际计算引擎",
         )

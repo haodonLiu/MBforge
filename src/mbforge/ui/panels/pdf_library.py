@@ -65,7 +65,7 @@ class PDFLibraryPanel(QWidget):
 
         # 空状态页
         self.empty_state = EmptyStateWidget(
-            icon="📄",
+            icon="",
             title="文献库为空",
             subtitle="请先索引项目文件",
         )

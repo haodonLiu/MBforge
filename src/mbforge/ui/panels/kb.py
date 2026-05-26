@@ -65,8 +65,8 @@ class KnowledgeBasePanel(QWidget):
                 border-bottom: 1px solid {p['border']};
             }}
             QListWidget::item:selected {{
-                background: {p['brand_primary']}1a;
-                color: {p['brand_primary']};
+                background: {p['accent']};
+                color: {p['text_secondary']};
             }}
             QListWidget::item:hover {{
                 background: {p['bg_hover']};

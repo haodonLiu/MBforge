@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QButtonGroup, QLabel
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QButtonGroup, QLabel
+
+from ..components import BaseButton, ThemeManager
 
 
 class HighlightToolbar(QWidget):
@@ -31,12 +33,27 @@ class HighlightToolbar(QWidget):
         layout.addWidget(QLabel("高亮颜色:"))
         self._color_group = QButtonGroup(self)
         for name, rgb in self.PRESETS:
-            btn = QPushButton(name)
+            btn = BaseButton(name)
             r, g, b = rgb
-            btn.setStyleSheet(
-                f"background-color: rgb({int(r * 255)},{int(g * 255)},{int(b * 255)});"
-                f"border: 1px solid gray; padding: 2px 8px;"
-            )
+            p = ThemeManager.instance().palette()
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: rgb({r*255:.0f},{g*255:.0f},{b*255:.0f});
+                    border: 2px solid transparent;
+                    border-radius: 12px;
+                    padding: 0px;
+                    min-width: 24px;
+                    max-width: 24px;
+                    min-height: 24px;
+                    max-height: 24px;
+                }}
+                QPushButton:hover {{
+                    border: 2px solid {p['border_focus']};
+                }}
+                QPushButton:selected {{
+                    border: 2px solid {p['text_primary']};
+                }}
+            """)
             btn.setCheckable(True)
             self._color_group.addButton(btn)
             layout.addWidget(btn)
@@ -50,8 +67,8 @@ class HighlightToolbar(QWidget):
 
         layout.addSpacing(16)
         layout.addWidget(QLabel("样式:"))
-        self._btn_bg = QPushButton("背景")
-        self._btn_underline = QPushButton("下划线")
+        self._btn_bg = BaseButton("背景")
+        self._btn_underline = BaseButton("下划线")
         self._btn_bg.setCheckable(True)
         self._btn_underline.setCheckable(True)
         self._btn_bg.setChecked(True)

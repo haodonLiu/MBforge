@@ -8,11 +8,12 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QTextEdit,
 )
 
+from ..components import BaseButton, InfoRow
 from .annotations import DetectionBox
+from ..theme import ThemeManager
 from ..mol_renderer import MoleculeImageWidget
 
 
@@ -41,21 +42,30 @@ class DetectionPopup(QDialog):
         layout.addWidget(self.img_widget)
 
         # 2. 基本信息
-        info_text = (
-            f"SMILES: {self.detection.smiles}\n"
-            f"MolDet 置信度: {self.detection.moldet_conf:.2f}\n"
-            f"Scribe 置信度: {self.detection.scribe_conf:.2f}\n"
-            f"状态: {self.detection.status}"
+        p = ThemeManager.instance().palette()
+        layout.addWidget(InfoRow("SMILES", self.detection.smiles))
+
+        # MolDet 置信度 — accent_amber
+        moldet_row = InfoRow("MolDet 置信度", f"{self.detection.moldet_conf:.2f}")
+        moldet_row.value_label.setStyleSheet(
+            f"color: {p['accent_amber']}; font-weight: 600; font-size: 13px;"
         )
-        self.info_label = QLabel(info_text)
-        self.info_label.setWordWrap(True)
-        layout.addWidget(self.info_label)
+        layout.addWidget(moldet_row)
+
+        # Scribe 置信度 — accent_amber
+        scribe_row = InfoRow("Scribe 置信度", f"{self.detection.scribe_conf:.2f}")
+        scribe_row.value_label.setStyleSheet(
+            f"color: {p['accent_amber']}; font-weight: 600; font-size: 13px;"
+        )
+        layout.addWidget(scribe_row)
+
+        layout.addWidget(InfoRow("状态", self.detection.status))
 
         # 3. 状态操作按钮
         btn_layout = QHBoxLayout()
-        self.btn_confirm = QPushButton("确认")
-        self.btn_reject = QPushButton("拒绝")
-        self.btn_edit = QPushButton("在编辑器中打开...")
+        self.btn_confirm = BaseButton("确认")
+        self.btn_reject = BaseButton("拒绝")
+        self.btn_edit = BaseButton("在编辑器中打开...")
         btn_layout.addWidget(self.btn_confirm)
         btn_layout.addWidget(self.btn_reject)
         btn_layout.addWidget(self.btn_edit)
@@ -78,7 +88,7 @@ class DetectionPopup(QDialog):
         self.comment_edit.setMaximumHeight(80)
         layout.addWidget(self.comment_edit)
 
-        self.btn_save_comment = QPushButton("保存批注")
+        self.btn_save_comment = BaseButton("保存批注")
         self.btn_save_comment.clicked.connect(self._on_save_comment)
         layout.addWidget(self.btn_save_comment)
 
@@ -91,7 +101,7 @@ class DetectionPopup(QDialog):
         self.esmiles_edit.setMaximumHeight(60)
         layout.addWidget(self.esmiles_edit)
 
-        self.btn_save_esmiles = QPushButton("保存修正")
+        self.btn_save_esmiles = BaseButton("保存修正")
         self.btn_save_esmiles.clicked.connect(self._on_save_esmiles)
         layout.addWidget(self.btn_save_esmiles)
 

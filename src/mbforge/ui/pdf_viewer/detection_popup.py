@@ -45,14 +45,14 @@ class DetectionPopup(QDialog):
         p = ThemeManager.instance().palette()
         layout.addWidget(InfoRow("SMILES", self.detection.smiles))
 
-        # MolDet 置信度 — accent_amber
+        # MolDet 置信度 — text_secondary
         moldet_row = InfoRow("MolDet 置信度", f"{self.detection.moldet_conf:.2f}")
         moldet_row.value_label.setStyleSheet(
             f"color: {p['text_secondary']}; font-weight: 600; font-size: 13px;"
         )
         layout.addWidget(moldet_row)
 
-        # Scribe 置信度 — accent_amber
+        # Scribe 置信度 — text_secondary
         scribe_row = InfoRow("Scribe 置信度", f"{self.detection.scribe_conf:.2f}")
         scribe_row.value_label.setStyleSheet(
             f"color: {p['text_secondary']}; font-weight: 600; font-size: 13px;"

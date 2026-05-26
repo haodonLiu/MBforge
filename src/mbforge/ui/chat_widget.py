@@ -46,7 +46,7 @@ class ChatMessage(QWidget):
 
         self.header = QLabel(f"<b>{header_text}</b>")
         p = ThemeManager.instance().palette()
-        header_color = p["text_secondary"] if is_user else p["brand_primary"]
+        header_color = p["text_secondary"] if is_user else p["accent"]
         self.header.setStyleSheet(f"color: {header_color}; font-size: 13px;")
         layout.addWidget(self.header)
 
@@ -150,7 +150,7 @@ class ChatMessageRenderer:
         --text-primary: {p['text_primary']};
         --text-secondary: {p['text_secondary']};
         --border: {p['border']};
-        --brand: {p['brand_primary']};
+        --brand: {p['accent']};
         --code-bg: {p['bg_hover']};
     }}
     body {{

@@ -520,7 +520,7 @@ class MainWindow(QMainWindow):
             }}
             QToolButton:hover {{
                 background: {p["bg_hover"]};
-                color: {p["brand_primary"]};
+                color: {p["accent"]};
             }}
             QWidget#service_indicator {{
                 background: transparent;

@@ -107,7 +107,7 @@ class StatusBadge(QLabel):
         colors = {
             "online": (p["success"], "#ffffff"),
             "offline": (p["text_secondary"], "#ffffff"),
-            "warning": (p["accent_amber"], "#212529"),
+            "warning": (p["text_secondary"], "#212529"),
             "error": (p["accent_coral"], "#ffffff"),
             "processing": (p["accent"], "#ffffff"),
         }

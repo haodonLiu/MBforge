@@ -27,9 +27,11 @@ class ServiceStatusIndicator(QWidget):
         layout.setSpacing(6)
 
         self._dots = {}
+        p = ThemeManager.instance().palette()
+        initial_color = p["text_secondary"]
         for name in ["LLM", "Embedding", "知识库", "分子库"]:
             dot = QLabel("●")
-            dot.setStyleSheet("font-size: 12px; color: #868e96;")
+            dot.setStyleSheet(f"font-size: 12px; color: {initial_color};")
             dot.setToolTip(f"{name}: 未连接")
             self._dots[name] = dot
             layout.addWidget(dot)

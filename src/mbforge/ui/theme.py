@@ -59,17 +59,17 @@ def _p() -> dict:
 
 
 def _build_button_styles(p: dict) -> tuple[str, str, str]:
-    primary = f"""
-    QPushButton {{
+    primary = """
+    QPushButton {
         background: #000000;
         color: white;
         border: none;
         border-radius: 6px;
         padding: 6px 16px;
         font-weight: 500;
-    }}
-    QPushButton:hover {{ background: #333333; }}
-    QPushButton:pressed {{ background: #000000; }}
+    }
+    QPushButton:hover { background: #333333; }
+    QPushButton:pressed { background: #000000; }
     """
     default = f"""
     QPushButton {{

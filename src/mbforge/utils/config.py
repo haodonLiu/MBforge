@@ -16,6 +16,7 @@ from .constants import (
     DEFAULT_EMBED_MODEL,
     DEFAULT_RERANK_MODEL,
 )
+from .helpers import get_default_device
 
 
 @dataclass
@@ -39,7 +40,7 @@ class EmbedConfig:
     model_name: str = DEFAULT_EMBED_MODEL
     base_url: str = ""
     api_key: str = ""
-    device: str = "cpu"
+    device: str = field(default_factory=get_default_device)
     mrl_dim: int | None = None  # MRL 输出维度, e.g., 256
     instruction: str = ""  # 空字符串使用默认 instruction
 
@@ -50,7 +51,7 @@ class RerankConfig:
 
     provider: str = PROVIDER_QWEN3  # qwen3 | sentence_transformers
     model_name: str = DEFAULT_RERANK_MODEL
-    device: str = "cpu"
+    device: str = field(default_factory=get_default_device)
     max_length: int = 8192
 
 
@@ -78,9 +79,21 @@ class OcrConfig:
 
 
 @dataclass
+class ModelServerConfig:
+    """模型服务进程配置."""
+
+    host: str = "127.0.0.1"
+    port: int = 18792
+    auto_start: bool = True
+    startup_timeout: int = 120
+    health_check_interval: int = 5
+
+
+@dataclass
 class AppConfig:
     """全局应用配置."""
 
+    model_server: ModelServerConfig = field(default_factory=ModelServerConfig)
     llm: ModelConfig = field(default_factory=ModelConfig)
     embed: EmbedConfig = field(default_factory=EmbedConfig)
     rerank: RerankConfig = field(default_factory=RerankConfig)
@@ -96,6 +109,7 @@ class AppConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AppConfig:
         return cls(
+            model_server=ModelServerConfig(**data.get("model_server", {})),
             llm=ModelConfig(**data.get("llm", {})),
             embed=EmbedConfig(**data.get("embed", {})),
             rerank=RerankConfig(**data.get("rerank", {})),
@@ -114,6 +128,13 @@ _config_cache: AppConfig | None = None
 def _config_from_env() -> AppConfig:
     """从环境变量构建配置（用于 .env 文件集成）."""
     return AppConfig(
+        model_server=ModelServerConfig(
+            host=os.environ.get("MBFORGE_MODEL_SERVER_HOST", "127.0.0.1"),
+            port=int(os.environ.get("MBFORGE_MODEL_SERVER_PORT", "18792")),
+            auto_start=os.environ.get("MBFORGE_MODEL_SERVER_AUTO_START", "true").lower() == "true",
+            startup_timeout=int(os.environ.get("MBFORGE_MODEL_SERVER_STARTUP_TIMEOUT", "120")),
+            health_check_interval=int(os.environ.get("MBFORGE_MODEL_SERVER_HEALTH_CHECK_INTERVAL", "5")),
+        ),
         llm=ModelConfig(
             provider=os.environ.get("MBFORGE_LLM_PROVIDER", PROVIDER_OPENAI_COMPATIBLE),
             base_url=os.environ.get("MBFORGE_LLM_BASE_URL", "http://localhost:8000/v1"),
@@ -128,14 +149,14 @@ def _config_from_env() -> AppConfig:
             model_name=os.environ.get("MBFORGE_EMBED_MODEL", DEFAULT_EMBED_MODEL),
             base_url=os.environ.get("MBFORGE_EMBED_BASE_URL", ""),
             api_key=os.environ.get("MBFORGE_EMBED_API_KEY", ""),
-            device=os.environ.get("MBFORGE_EMBED_DEVICE", "cpu"),
+            device=os.environ.get("MBFORGE_EMBED_DEVICE", get_default_device()),
             mrl_dim=int(os.environ.get("MBFORGE_EMBED_MRL_DIM", "0")) or None,
             instruction=os.environ.get("MBFORGE_EMBED_INSTRUCTION", ""),
         ),
         rerank=RerankConfig(
             provider=os.environ.get("MBFORGE_RERANK_PROVIDER", PROVIDER_QWEN3),
             model_name=os.environ.get("MBFORGE_RERANK_MODEL", DEFAULT_RERANK_MODEL),
-            device=os.environ.get("MBFORGE_RERANK_DEVICE", "cpu"),
+            device=os.environ.get("MBFORGE_RERANK_DEVICE", get_default_device()),
             max_length=int(os.environ.get("MBFORGE_RERANK_MAX_LENGTH", "8192")),
         ),
         vlm=VLMConfig(

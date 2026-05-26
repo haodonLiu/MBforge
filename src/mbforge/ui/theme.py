@@ -22,40 +22,21 @@ from PyQt6.QtWidgets import (
 
 # ---------- Palette: Light Mode ----------
 LIGHT_PALETTE = {
-    "brand_primary": "#8B6F47",
-    "brand_primary_light": "#A8895F",
-    "brand_primary_deep": "#6B5433",
-    "accent_amber": "#C49A3C",
-    "accent_coral": "#C26B4A",
-    "success": "#5C8A6A",
-    "bg_base": "#FAFAF8",
+    "bg_base": "#FFFFFF",
+    "bg_surface": "#F5F5F5",
     "bg_card": "#FFFFFF",
-    "bg_hover": "#F5F0EB",
-    "bg_zebra": "#F7F4F0",
-    "text_primary": "#2D2319",
-    "text_secondary": "#7A6A5A",
-    "border": "#E0D8CF",
-    "border_focus": "#8B6F47",
-    "bg_secondary": "#EDEAE5",
-}
-
-# ---------- Palette: Dark Mode ----------
-DARK_PALETTE = {
-    "brand_primary": "#C4A070",
-    "brand_primary_light": "#D4B080",
-    "brand_primary_deep": "#A08050",
-    "accent_amber": "#D4AA50",
-    "accent_coral": "#D48060",
-    "success": "#7AAA8A",
-    "bg_base": "#1A1714",
-    "bg_card": "#242019",
-    "bg_hover": "#2E2820",
-    "bg_zebra": "#1F1B17",
-    "text_primary": "#E8E0D5",
-    "text_secondary": "#9A8A7A",
-    "border": "#3A3228",
-    "border_focus": "#C4A070",
-    "bg_secondary": "#2A2520",
+    "bg_hover": "#EBEBEB",
+    "bg_active": "#E0E0E0",
+    "bg_zebra": "#FAFAFA",
+    "text_primary": "#1A1A1A",
+    "text_secondary": "#666666",
+    "border": "#D0D0D0",
+    "border_focus": "#000000",
+    "accent": "#000000",
+    "success": "#4A7A4A",
+    "accent_amber": "#666666",
+    "accent_coral": "#8A4A4A",
+    "bg_secondary": "#F5F5F5",
 }
 
 # ---------- 尺寸常量 ----------
@@ -80,15 +61,15 @@ def _p() -> dict:
 def _build_button_styles(p: dict) -> tuple[str, str, str]:
     primary = f"""
     QPushButton {{
-        background: {p['brand_primary']};
+        background: #000000;
         color: white;
         border: none;
         border-radius: 6px;
         padding: 6px 16px;
         font-weight: 500;
     }}
-    QPushButton:hover {{ background: {p['brand_primary_light']}; }}
-    QPushButton:pressed {{ background: {p['brand_primary_deep']}; }}
+    QPushButton:hover {{ background: #333333; }}
+    QPushButton:pressed {{ background: #000000; }}
     """
     default = f"""
     QPushButton {{
@@ -122,7 +103,7 @@ def _build_global_qss() -> str:
     QMainWindow {{ background: {p['bg_base']}; }}
     QWidget {{ background: {p['bg_base']}; color: {p['text_primary']}; }}
     QMenuBar {{
-        background: {p['brand_primary_deep']};
+        background: #1A1A1A;
         color: #ffffff;
         border-bottom: none;
         padding: 0 8px;
@@ -235,9 +216,9 @@ class ThemeManager(QObject):
     def _set_mode(self, mode: str) -> None:
         if mode == self._mode:
             return
-        self._mode = mode
-        self._palette = DARK_PALETTE.copy() if mode == "dark" else LIGHT_PALETTE.copy()
-        self.theme_changed.emit(mode)
+        self._mode = "light"  # 强制锁定 Light
+        self._palette = LIGHT_PALETTE.copy()
+        self.theme_changed.emit("light")
 
     def _on_system_color_scheme_changed(self) -> None:
         self._apply_system_mode()
@@ -376,8 +357,8 @@ def create_table(headers: list[str], parent: QWidget | None = None) -> QTableWid
         padding: 6px 10px;
     }}
     QTableWidget::item:selected {{
-        background: {p['brand_primary']}1a;
-        color: {p['brand_primary']};
+        background: {p['bg_active']};
+        color: {p['text_primary']};
     }}
     QTableWidget::item:hover {{
         background: {p['bg_hover']};
@@ -402,8 +383,8 @@ def create_tree(parent: QWidget | None = None) -> QTreeWidget:
         border-radius: 4px;
     }}
     QTreeWidget::item:selected {{
-        background: {p['brand_primary']}1a;
-        color: {p['brand_primary']};
+        background: {p['bg_active']};
+        color: {p['text_primary']};
     }}
     QTreeWidget::item:hover {{
         background: {p['bg_hover']};
@@ -427,7 +408,7 @@ class CardWidget(QFrame):
             background: {p['bg_card']};
             border: 1px solid {p['border']};
             border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(45,35,25,0.08);
+            /* Qt QSS 不支持 box-shadow，卡片视觉分离依赖 border + border-radius */
         }}
         """)
         self.setFrameShape(QFrame.Shape.StyledPanel)

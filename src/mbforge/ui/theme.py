@@ -36,6 +36,7 @@ LIGHT_PALETTE = {
     "text_secondary": "#7A6A5A",
     "border": "#E0D8CF",
     "border_focus": "#8B6F47",
+    "bg_secondary": "#EDEAE5",
 }
 
 # ---------- Palette: Dark Mode ----------
@@ -54,6 +55,7 @@ DARK_PALETTE = {
     "text_secondary": "#9A8A7A",
     "border": "#3A3228",
     "border_focus": "#C4A070",
+    "bg_secondary": "#2A2520",
 }
 
 # ---------- 尺寸常量 ----------
@@ -425,6 +427,7 @@ class CardWidget(QFrame):
             background: {p['bg_card']};
             border: 1px solid {p['border']};
             border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(45,35,25,0.08);
         }}
         """)
         self.setFrameShape(QFrame.Shape.StyledPanel)

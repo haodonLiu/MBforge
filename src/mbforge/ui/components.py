@@ -7,9 +7,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QEasingCurve, Qt, QTimer
 from PyQt6.QtWidgets import (
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -17,6 +18,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from PyQt6.QtCore import QPropertyAnimation
 
 from .theme import (
     FONT_SIZE_DEFAULT,
@@ -28,7 +30,46 @@ from .theme import (
 )
 
 
-class IconButton(QPushButton):
+class BaseButton(QPushButton):
+    """带点击反馈的基础按钮.
+
+    点击时短暂降低透明度并恢复，不永久占用 graphics effect slot，
+    可与 QSS 样式表共存。
+    """
+
+    def __init__(self, text: str = "", parent: QWidget | None = None):
+        super().__init__(text, parent)
+        self._click_anim: QPropertyAnimation | None = None
+        self._click_effect: QGraphicsOpacityEffect | None = None
+
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if self.graphicsEffect() is None:
+            self._click_effect = QGraphicsOpacityEffect(self)
+            self._click_effect.setOpacity(0.65)
+            self.setGraphicsEffect(self._click_effect)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if self._click_effect is not None:
+            self._click_anim = QPropertyAnimation(
+                self._click_effect, b"opacity", self
+            )
+            self._click_anim.setDuration(120)
+            self._click_anim.setStartValue(0.65)
+            self._click_anim.setEndValue(1.0)
+            self._click_anim.setEasingCurve(QEasingCurve.Type.OutQuad)
+            self._click_anim.finished.connect(self._clear_click_effect)
+            self._click_anim.start()
+
+    def _clear_click_effect(self):
+        if self._click_effect is not None:
+            self.setGraphicsEffect(None)
+            self._click_effect = None
+            self._click_anim = None
+
+
+class IconButton(BaseButton):
     """紧凑型图标按钮，无边框背景，悬浮显底."""
 
     def __init__(self, icon_text: str, tooltip: str = "", parent: QWidget | None = None):
@@ -102,7 +143,7 @@ class SectionHeader(QWidget):
 class EmptyStateWidget(QWidget):
     """空状态提示组件，用于列表/表格为空时展示."""
 
-    def __init__(self, icon: str = "📭", title: str = "暂无数据",
+    def __init__(self, icon: str = "", title: str = "暂无数据",
                  subtitle: str = "", action_text: str = "",
                  action_callback: Callable[[], None] | None = None,
                  parent: QWidget | None = None):
@@ -111,10 +152,11 @@ class EmptyStateWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(12)
-        icon_label = QLabel(icon, parent)
-        icon_label.setStyleSheet("font-size: 48px;")
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(icon_label)
+        if icon:
+            icon_label = QLabel(icon, parent)
+            icon_label.setStyleSheet(f"font-size: 36px; color: {p['text_secondary']};")
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(icon_label)
         title_label = QLabel(title, parent)
         title_label.setStyleSheet(f"color: {p['text_primary']}; font-size: 16px; font-weight: 600;")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)

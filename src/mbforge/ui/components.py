@@ -109,7 +109,7 @@ class StatusBadge(QLabel):
             "offline": (p["text_secondary"], "#ffffff"),
             "warning": (p["accent_amber"], "#212529"),
             "error": (p["accent_coral"], "#ffffff"),
-            "processing": (p["brand_primary"], "#ffffff"),
+            "processing": (p["accent"], "#ffffff"),
         }
         bg, fg = colors.get(self._status, colors["offline"])
         self.setStyleSheet(f"QLabel {{ background: {bg}; color: {fg}; padding: 2px 8px; border-radius: 10px; font-size: 11px; }}")
@@ -221,7 +221,7 @@ class ProgressBar(QProgressBar):
                 font-size: {FONT_SIZE_SMALL};
             }}
             QProgressBar::chunk {{
-                background: {p['brand_primary']};
+                background: {p['accent']};
                 border-radius: 4px;
             }}
         """)

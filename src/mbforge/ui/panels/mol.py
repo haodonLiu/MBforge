@@ -166,19 +166,28 @@ class MoleculePanel(QWidget):
 
     def refresh(self):
         """刷新表格数据，应用当前过滤条件."""
+        import logging
+        logger = logging.getLogger(__name__)
+
         self.table.setRowCount(0)
         if self.mol_db is None:
             self.stats_label.setText("未加载数据库")
             self.img_widget.clear()
             self.detail_label.setText("选中分子查看详细信息")
+            logger.warning("MolPanel.refresh: mol_db 为 None，跳过刷新")
             return
 
         # 数据库级过滤
         source_type = self._current_source_filter()
         status = self._current_status_filter()
-        self._all_records = self.mol_db.list_all(
-            limit=5000, source_type=source_type, status=status
-        )
+        try:
+            self._all_records = self.mol_db.list_all(
+                limit=5000, source_type=source_type, status=status
+            )
+        except Exception as exc:
+            logger.exception("MolPanel.refresh: 调用 mol_db.list_all 失败: %s", exc)
+            self.stats_label.setText(f"数据库读取失败: {exc}")
+            return
         filtered = self._filter_records(self._all_records)
 
         self.table.setRowCount(len(filtered))

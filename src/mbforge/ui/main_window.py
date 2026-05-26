@@ -79,7 +79,9 @@ class IndexWorker(QThread):
                     entry.indexed = True
                     logger.debug(f"索引成功 [{idx}/{total}]: {entry.path.name}")
                 except Exception:
-                    log_exception(logger, f"索引失败 [{idx}/{total}]: {entry.path.name}")
+                    log_exception(
+                        logger, f"索引失败 [{idx}/{total}]: {entry.path.name}"
+                    )
                     self.progress.emit(f"失败: {entry.path.name}")
         self.progress.emit("索引完成")
         logger.info("IndexWorker 运行结束")
@@ -118,7 +120,9 @@ class ModelInitWorker(QThread):
         try:
             self.progress.emit("加载 LLM...")
             llm = create_llm_from_config(config.llm)
-            logger.info(f"LLM 初始化成功: {type(llm).__name__} (provider={config.llm.provider})")
+            logger.info(
+                f"LLM 初始化成功: {type(llm).__name__} (provider={config.llm.provider})"
+            )
         except Exception:
             log_exception(logger, "LLM 初始化失败")
             self.error_signal.emit("LLM 初始化失败，AI 对话将不可用")
@@ -165,7 +169,11 @@ class MainWindow(QMainWindow):
 
     def _start_model_worker(self):
         """手动启动后台模型加载."""
-        if self._models_ready or (hasattr(self, "_model_worker") and self._model_worker is not None and self._model_worker.isRunning()):
+        if self._models_ready or (
+            hasattr(self, "_model_worker")
+            and self._model_worker is not None
+            and self._model_worker.isRunning()
+        ):
             return
         self._model_worker = ModelInitWorker()
         self._model_worker.progress.connect(self.statusbar.showMessage)
@@ -212,60 +220,42 @@ class MainWindow(QMainWindow):
         logger.warning(msg)
         self.statusbar.showMessage(msg)
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        p = ThemeManager.instance().palette()
 
-        # 左侧：文件树
-        self.left_panel = QWidget()
-        left_layout = QVBoxLayout(self.left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(0)
+        # 顶部 Tab 导航
+        self.main_tabs = QTabWidget()
+        self.main_tabs.setDocumentMode(True)
+        self.main_tabs.setStyleSheet(f"""
+            QTabWidget {{ background: {p["bg_base"]}; }}
+            QTabBar {{
+                background: {p["bg_surface"]};
+                border-bottom: 1px solid {p["border"]};
+            }}
+            QTabBar::tab {{
+                background: transparent;
+                color: {p["text_secondary"]};
+                padding: 10px 20px;
+                font-size: 13px;
+                border: none;
+                border-bottom: 2px solid transparent;
+            }}
+            QTabBar::tab:selected {{
+                color: {p["text_primary"]};
+                border-bottom: 2px solid {p["accent"]};
+            }}
+            QTabBar::tab:hover {{
+                background: {p["bg_hover"]};
+            }}
+        """)
 
-        self.project_label = create_label("未打开项目", level="header")
-        self.project_label.setStyleSheet(
-            f"padding: 10px 14px; background: {ThemeManager.instance().get_color('bg_base')}; "
-            f"border-bottom: 1px solid {ThemeManager.instance().get_color('border')}; border-radius: 0;"
-            f"color: {ThemeManager.instance().get_color('text_primary')};"
-        )
-        left_layout.addWidget(self.project_label)
-
-        # 首页按钮
-        self.home_btn = create_button("Home", style="default")
-        self.home_btn.setStyleSheet(
-            f"padding: 6px 12px; font-size: 12px; "
-            f"background: {ThemeManager.instance().get_color('bg_hover')}; "
-            f"color: {ThemeManager.instance().get_color('text_primary')}; "
-            f"border: 1px solid {ThemeManager.instance().get_color('border')}; border-radius: 6px;"
-        )
-        self.home_btn.clicked.connect(self._go_home)
-        left_layout.addWidget(self.home_btn)
-
-        file_tree_inner = FileTreeWidget()
-        file_tree_inner.file_opened.connect(self._open_file)
-        file_tree_inner.file_selected.connect(self._index_single_file)
-        self.file_tree = CardWidget(title="文件", parent=self)
-        self.file_tree.set_content(file_tree_inner)
-        left_layout.addWidget(self.file_tree)
-
-        left_btn_layout = QHBoxLayout()
-        self.scan_btn = create_button("扫描")
-        self.scan_btn.clicked.connect(self._scan_project)
-        self.index_btn = create_button("索引")
-        self.index_btn.clicked.connect(self._index_project)
-        left_btn_layout.addWidget(self.scan_btn)
-        left_btn_layout.addWidget(self.index_btn)
-        left_layout.addLayout(left_btn_layout)
-
-        self.splitter.addWidget(self.left_panel)
-        self.splitter.setStretchFactor(0, 0)
-
-        # 中间：标签页工作区（支持欢迎页 + 标签页切换）
+        # 标签页工作区（保留供文件打开使用）- 在 Explorer Tab 中显示
         self.center_stack = QStackedWidget()
 
         # 欢迎页
@@ -283,43 +273,130 @@ class MainWindow(QMainWindow):
         self.center_tabs.setTabsClosable(True)
         self.center_tabs.tabCloseRequested.connect(self._close_tab)
         self.center_stack.addWidget(self.center_tabs)
-        self.splitter.addWidget(self.center_stack)
-        self.splitter.setStretchFactor(1, 3)
 
-        # 右侧：LLM + KB 搜索
-        self.right_panel = QWidget()
-        right_layout = QVBoxLayout(self.right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(4)
+        # Explorer Tab：文件树 + 扫描/索引按钮 + 文件标签页
+        self._setup_explorer_tab()
+        self.main_tabs.addTab(self.explorer_tab, "Explorer")
 
-        # KB 搜索
-        kb_search_card = CardWidget(title="知识库检索", parent=self)
-        kb_search_card.setMaximumHeight(200)
+        # Search Tab：KB 检索
+        self._setup_search_tab()
+        self.main_tabs.addTab(self.search_tab, "Search")
+
+        # Chat Tab：LLM 对话
+        self._setup_chat_tab()
+        self.main_tabs.addTab(self.chat_tab, "Chat")
+
+        # Molecular Tab：分子数据库（占位）
+        self._setup_molecular_tab()
+        self.main_tabs.addTab(self.molecular_tab, "Molecular")
+
+        # Workflow Tab：工作流（占位）
+        self._setup_workflow_tab()
+        self.main_tabs.addTab(self.workflow_tab, "Workflow")
+
+        main_layout.addWidget(self.main_tabs, 1)
+
+    def _setup_explorer_tab(self) -> None:
+        """Explorer Tab：文件树 + 项目操作按钮."""
+        self.explorer_tab = QWidget()
+        layout = QVBoxLayout(self.explorer_tab)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+
+        p = ThemeManager.instance().palette()
+
+        # 项目标题
+        self.project_label = create_label("未打开项目", level="header")
+        self.project_label.setStyleSheet(
+            f"font-size: 16px; font-weight: 600; color: {p['text_primary']};"
+        )
+        layout.addWidget(self.project_label)
+
+        # 操作按钮行
+        btn_row = QHBoxLayout()
+        self.home_btn = create_button("Home", style="default")
+        self.home_btn.setStyleSheet(
+            f"padding: 6px 12px; font-size: 12px; "
+            f"background: {p['bg_hover']}; border: 1px solid {p['border']}; border-radius: 6px;"
+        )
+        self.home_btn.clicked.connect(self._go_home)
+        self.scan_btn = create_button("扫描")
+        self.scan_btn.clicked.connect(self._scan_project)
+        self.index_btn = create_button("索引")
+        self.index_btn.clicked.connect(self._index_project)
+        btn_row.addWidget(self.home_btn)
+        btn_row.addWidget(self.scan_btn)
+        btn_row.addWidget(self.index_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        # 文件树
+        file_tree_inner = FileTreeWidget()
+        file_tree_inner.file_opened.connect(self._open_file)
+        file_tree_inner.file_selected.connect(self._index_single_file)
+        self.file_tree_card = CardWidget(title="文件", parent=self)
+        self.file_tree_card.set_content(file_tree_inner)
+        layout.addWidget(self.file_tree_card, 1)
+
+    def _setup_search_tab(self) -> None:
+        """Search Tab：知识库检索."""
+        self.search_tab = QWidget()
+        layout = QVBoxLayout(self.search_tab)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        p = ThemeManager.instance().palette()
+
+        title = create_label("知识库检索", level="header")
+        layout.addWidget(title)
+
         self.kb_search_input = SearchBox(placeholder="输入查询...")
         self.kb_search_input.returnPressed.connect(self._search_kb)
-        kb_search_card.add_widget(self.kb_search_input)
-        self.kb_results = create_label("未检索", level="body")
+        layout.addWidget(self.kb_search_input)
+
+        self.kb_results = create_label("输入查询词并按回车搜索", level="body")
         self.kb_results.setWordWrap(True)
-        p = ThemeManager.instance().palette()
         self.kb_results.setStyleSheet(
-            f"color: {p['text_secondary']}; background: {p['bg_base']}; padding: 10px; "
-            f"border-radius: 10px; border: 1px solid {p['border']}; font-size: 13px;"
+            f"color: {p['text_secondary']}; background: {p['bg_surface']}; padding: 12px; "
+            f"border-radius: 8px; font-size: 13px;"
         )
         self.kb_results.setAlignment(Qt.AlignmentFlag.AlignTop)
-        kb_search_card.add_widget(self.kb_results)
-        right_layout.addWidget(kb_search_card)
+        layout.addWidget(self.kb_results, 1)
 
-        # LLM 对话框
+    def _setup_chat_tab(self) -> None:
+        """Chat Tab：LLM 对话."""
+        self.chat_tab = QWidget()
+        layout = QVBoxLayout(self.chat_tab)
+        layout.setContentsMargins(0, 0, 0, 0)
         chat_inner = ChatWidget()
-        self.chat_widget = CardWidget(title="AI 对话", parent=self)
-        self.chat_widget.set_content(chat_inner)
-        right_layout.addWidget(self.chat_widget, 1)
+        layout.addWidget(chat_inner)
+        self.chat_widget = chat_inner  # Keep reference for signal connections
 
-        self.splitter.addWidget(self.right_panel)
-        self.splitter.setStretchFactor(2, 1)
-        self.splitter.setSizes([240, 800, 360])
+    def _setup_molecular_tab(self) -> None:
+        """Molecular Tab：占位."""
+        self.molecular_tab = QWidget()
+        layout = QVBoxLayout(self.molecular_tab)
+        layout.setContentsMargins(16, 16, 16, 16)
+        from .components import EmptyStateWidget
 
-        main_layout.addWidget(self.splitter)
+        empty = EmptyStateWidget(
+            title="分子数据库",
+            subtitle="从工具菜单或快捷键打开分子数据库面板",
+        )
+        layout.addWidget(empty, 1)
+
+    def _setup_workflow_tab(self) -> None:
+        """Workflow Tab：占位."""
+        self.workflow_tab = QWidget()
+        layout = QVBoxLayout(self.workflow_tab)
+        layout.setContentsMargins(16, 16, 16, 16)
+        from .components import EmptyStateWidget
+
+        empty = EmptyStateWidget(
+            title="工作流中心",
+            subtitle="从工具菜单打开工作流面板",
+        )
+        layout.addWidget(empty, 1)
 
     def _setup_menubar(self):
         menubar = self.menuBar()
@@ -424,23 +501,23 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(True)
         toolbar.setStyleSheet(f"""
             QToolBar {{
-                background: {p['bg_base']};
+                background: {p["bg_base"]};
                 border: none;
-                border-bottom: 1px solid {p['border']};
+                border-bottom: 1px solid {p["border"]};
                 padding: 4px 8px;
                 spacing: 4px;
             }}
             QToolButton {{
                 background: transparent;
-                color: {p['text_primary']};
+                color: {p["text_primary"]};
                 border: none;
                 border-radius: 4px;
                 padding: 6px 12px;
                 font-size: 13px;
             }}
             QToolButton:hover {{
-                background: {p['bg_hover']};
-                color: {p['brand_primary']};
+                background: {p["bg_hover"]};
+                color: {p["brand_primary"]};
             }}
             QWidget#service_indicator {{
                 background: transparent;
@@ -477,8 +554,12 @@ class MainWindow(QMainWindow):
         self.cpu_label = create_label("CPU: -", level="caption")
         self.mem_label = create_label("内存: -", level="caption")
         p = ThemeManager.instance().palette()
-        self.cpu_label.setStyleSheet(f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;")
-        self.mem_label.setStyleSheet(f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;")
+        self.cpu_label.setStyleSheet(
+            f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;"
+        )
+        self.mem_label.setStyleSheet(
+            f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;"
+        )
         self.statusbar.addPermanentWidget(self.cpu_label)
         self.statusbar.addPermanentWidget(self.mem_label)
 
@@ -511,8 +592,8 @@ class MainWindow(QMainWindow):
         self._mol_editor_dialog.activateWindow()
 
     def _go_home(self):
-        """返回欢迎首页."""
-        self.center_stack.setCurrentIndex(0)
+        """返回 Explorer Tab."""
+        self.main_tabs.setCurrentIndex(0)
 
     def _on_molecule_edited(self, esmiles: str):
         """分子编辑器中分子发生变化时的回调."""
@@ -522,6 +603,7 @@ class MainWindow(QMainWindow):
         """刷新状态栏资源监控."""
         try:
             import psutil
+
             cpu_percent = psutil.cpu_percent(interval=0.5)
             mem = psutil.virtual_memory()
             self.cpu_label.setText(f"CPU: {cpu_percent:.1f}%")
@@ -537,17 +619,11 @@ class MainWindow(QMainWindow):
     def _on_theme_changed(self, mode: str):
         """Refresh widget styles when theme changes."""
         p = ThemeManager.instance().palette()
-        self.cpu_label.setStyleSheet(f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;")
-        self.mem_label.setStyleSheet(f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;")
-        self.home_btn.setStyleSheet(
-            f"padding: 6px 12px; font-size: 12px; "
-            f"background: {p['bg_hover']}; color: {p['text_primary']}; "
-            f"border: 1px solid {p['border']}; border-radius: 6px;"
+        self.cpu_label.setStyleSheet(
+            f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;"
         )
-        self.project_label.setStyleSheet(
-            f"padding: 10px 14px; background: {p['bg_base']}; "
-            f"border-bottom: 1px solid {p['border']}; border-radius: 0;"
-            f"color: {p['text_primary']};"
+        self.mem_label.setStyleSheet(
+            f"color: {p['text_secondary']}; padding: 0 4px; font-size: 12px;"
         )
 
     # ---- 项目操作 ----
@@ -648,8 +724,8 @@ class MainWindow(QMainWindow):
         self.project = project
         self.project_label.setText(f"{project.name}")
 
-        # 切换到标签页视图
-        self.center_stack.setCurrentIndex(1)
+        # 切换到 Explorer Tab
+        self.main_tabs.setCurrentIndex(0)
 
         # 初始化知识库和分子库
         self.kb = KnowledgeBase(project.root, embedder=self.embedder)
@@ -702,7 +778,7 @@ class MainWindow(QMainWindow):
                 self.chat_widget._add_message(msg.role, msg.content)
 
         # 刷新 UI
-        self.file_tree.set_project(project)
+        self.file_tree_card.set_project(project)
         self.statusbar.showMessage(f"已打开项目: {project.root}")
 
         # 更新仪表盘
@@ -730,7 +806,7 @@ class MainWindow(QMainWindow):
         if self.project is None:
             return
         entries = self.project.scan_files()
-        self.file_tree.refresh()
+        self.file_tree_card.refresh()
         self.statusbar.showMessage(f"扫描完成，发现 {len(entries)} 个文件")
 
     def _index_project(self):
@@ -763,7 +839,7 @@ class MainWindow(QMainWindow):
     def _on_index_finished(self):
         self.statusbar.showMessage("索引完成")
         if self.project:
-            self.file_tree.refresh()
+            self.file_tree_card.refresh()
 
     # ---- 文件操作 ----
 
@@ -789,7 +865,9 @@ class MainWindow(QMainWindow):
                 if self.pdf_pipeline
                 else None
             )
-            viewer.load_pdf(path, project_root=self.project.root if self.project else None)
+            viewer.load_pdf(
+                path, project_root=self.project.root if self.project else None
+            )
             self._add_tab(viewer, f"{path.name}")
         elif ext in {".md", ".txt", ".json", ".yaml", ".yml"}:
             self._open_text_file(path)
@@ -866,7 +944,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 failed.append(f"{src.name}: {e}")
 
-        self.file_tree.set_project(self.project)
+        self.file_tree_card.set_project(self.project)
 
         msg = f"成功导入 {len(imported)} 个文件到 raw/"
         if failed:
@@ -917,7 +995,7 @@ class MainWindow(QMainWindow):
         def _on_done():
             self.progress_bar.hide()
             self.statusbar.showMessage("所有文件处理完成")
-            self.file_tree.set_project(self.project)
+            self.file_tree_card.set_project(self.project)
             self._run_archive_agent()
 
         self.todo_manager.process_all_async(
@@ -997,14 +1075,16 @@ class MainWindow(QMainWindow):
 
     def _show_settings(self):
         config = load_global_config()
-        dlg = SettingsDialog(
-            config, self.project.root if self.project else None, self
-        )
+        dlg = SettingsDialog(config, self.project.root if self.project else None, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.statusbar.showMessage("设置已更新，正在重新加载模型...")
             self._models_ready = False
             # 如果已有模型加载线程在运行，先停止并等待
-            if hasattr(self, "_model_worker") and self._model_worker is not None and self._model_worker.isRunning():
+            if (
+                hasattr(self, "_model_worker")
+                and self._model_worker is not None
+                and self._model_worker.isRunning()
+            ):
                 self._model_worker.quit()
                 self._model_worker.wait(3000)
             self._model_worker = ModelInitWorker()
@@ -1014,7 +1094,7 @@ class MainWindow(QMainWindow):
             self._model_worker.start()
 
     def _toggle_chat_panel(self):
-        self.right_panel.setVisible(self.toggle_chat_action.isChecked())
+        self.main_tabs.setCurrentIndex(2)  # Chat Tab
 
     def _show_mol_db(self):
         from .panels.mol import MoleculePanel
@@ -1022,6 +1102,7 @@ class MainWindow(QMainWindow):
         if self.mol_db is None:
             QMessageBox.warning(self, "提示", "请先打开项目")
             return
+        self.main_tabs.setCurrentIndex(3)  # Molecular Tab
         panel = MoleculePanel()
         panel.set_database(self.mol_db)
         wrapped = CardWidget(title="分子", parent=self)
@@ -1035,6 +1116,7 @@ class MainWindow(QMainWindow):
         if self.kb is None:
             QMessageBox.warning(self, "提示", "请先打开项目")
             return
+        self.main_tabs.setCurrentIndex(1)  # Search Tab
         panel = KnowledgeBasePanel()
         panel.set_knowledge_base(self.kb)
         wrapped = CardWidget(title="知识库", parent=self)
@@ -1047,6 +1129,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "提示", "请先打开项目")
             return
         from .panels.pdf_library import PDFLibraryPanel
+
         panel = PDFLibraryPanel()
         panel.set_project(self.project)
         panel.pdf_opened.connect(self._open_file)
@@ -1072,6 +1155,7 @@ class MainWindow(QMainWindow):
     def _show_workflow_panel(self):
         from .panels.workflow import WorkflowPanel
 
+        self.main_tabs.setCurrentIndex(4)  # Workflow Tab
         panel = WorkflowPanel()
         wrapped = CardWidget(title="工作流", parent=self)
         wrapped.set_content(panel)
@@ -1085,7 +1169,9 @@ class MainWindow(QMainWindow):
             config = dlg.get_config()
             logger.info(f"UniDock 配置: {config}")
             # TODO: 调用 UniDock 执行对接
-            self.statusbar.showMessage(f"UniDock 对接配置已设置: {config['receptor_file']}")
+            self.statusbar.showMessage(
+                f"UniDock 对接配置已设置: {config['receptor_file']}"
+            )
 
     def _add_tab(self, widget: QWidget, title: str):
         """安全添加标签页（避免重复）."""
@@ -1103,10 +1189,18 @@ class MainWindow(QMainWindow):
         if hasattr(self, "index_worker") and self.index_worker is not None:
             self.index_worker.terminate()
             self.index_worker.wait(3000)
-        if hasattr(self, "_model_worker") and self._model_worker is not None and self._model_worker.isRunning():
+        if (
+            hasattr(self, "_model_worker")
+            and self._model_worker is not None
+            and self._model_worker.isRunning()
+        ):
             self._model_worker.quit()
             self._model_worker.wait(3000)
-        if hasattr(self.chat_widget, "_worker") and self.chat_widget._worker is not None and self.chat_widget._worker.isRunning():
+        if (
+            hasattr(self.chat_widget, "_worker")
+            and self.chat_widget._worker is not None
+            and self.chat_widget._worker.isRunning()
+        ):
             self.chat_widget._worker.stop()
             self.chat_widget._worker.wait(3000)
         event.accept()

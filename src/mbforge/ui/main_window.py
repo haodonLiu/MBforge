@@ -334,6 +334,7 @@ class MainWindow(QMainWindow):
         file_tree_inner = FileTreeWidget()
         file_tree_inner.file_opened.connect(self._open_file)
         file_tree_inner.file_selected.connect(self._index_single_file)
+        self.file_tree = file_tree_inner  # inner widget
         self.file_tree_card = CardWidget(title="文件", parent=self)
         self.file_tree_card.set_content(file_tree_inner)
         layout.addWidget(self.file_tree_card, 1)
@@ -781,7 +782,7 @@ class MainWindow(QMainWindow):
                 self.chat_widget._add_message(msg.role, msg.content)
 
         # 刷新 UI
-        self.file_tree_card.set_project(project)
+        self.file_tree.set_project(project)
         self.statusbar.showMessage(f"已打开项目: {project.root}")
 
         # 更新仪表盘
@@ -809,7 +810,7 @@ class MainWindow(QMainWindow):
         if self.project is None:
             return
         entries = self.project.scan_files()
-        self.file_tree_card.refresh()
+        self.file_tree.refresh()
         self.statusbar.showMessage(f"扫描完成，发现 {len(entries)} 个文件")
 
     def _index_project(self):
@@ -842,7 +843,7 @@ class MainWindow(QMainWindow):
     def _on_index_finished(self):
         self.statusbar.showMessage("索引完成")
         if self.project:
-            self.file_tree_card.refresh()
+            self.file_tree.refresh()
 
     # ---- 文件操作 ----
 
@@ -947,7 +948,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 failed.append(f"{src.name}: {e}")
 
-        self.file_tree_card.set_project(self.project)
+        self.file_tree.set_project(self.project)
 
         msg = f"成功导入 {len(imported)} 个文件到 raw/"
         if failed:
@@ -998,7 +999,7 @@ class MainWindow(QMainWindow):
         def _on_done():
             self.progress_bar.hide()
             self.statusbar.showMessage("所有文件处理完成")
-            self.file_tree_card.set_project(self.project)
+            self.file_tree.set_project(self.project)
             self._run_archive_agent()
 
         self.todo_manager.process_all_async(

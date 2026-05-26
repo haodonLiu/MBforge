@@ -39,6 +39,7 @@ from .file_tree import FileTreeWidget
 from .preview import MarkdownPreview
 from .panels.status_indicator import ServiceStatusIndicator
 from .theme import (
+    CardWidget,
     SearchBox,
     ThemeManager,
     create_button,
@@ -245,9 +246,11 @@ class MainWindow(QMainWindow):
         self.home_btn.clicked.connect(self._go_home)
         left_layout.addWidget(self.home_btn)
 
-        self.file_tree = FileTreeWidget()
-        self.file_tree.file_opened.connect(self._open_file)
-        self.file_tree.file_selected.connect(self._index_single_file)
+        file_tree_inner = FileTreeWidget()
+        file_tree_inner.file_opened.connect(self._open_file)
+        file_tree_inner.file_selected.connect(self._index_single_file)
+        self.file_tree = CardWidget(title="文件", parent=self)
+        self.file_tree.set_content(file_tree_inner)
         left_layout.addWidget(self.file_tree)
 
         left_btn_layout = QHBoxLayout()
@@ -266,11 +269,13 @@ class MainWindow(QMainWindow):
         self.center_stack = QStackedWidget()
 
         # 欢迎页
-        self.welcome_widget = WelcomeWidget()
-        self.welcome_widget.open_project_requested.connect(self._load_project_from_path)
-        self.welcome_widget.new_project_requested.connect(self._new_project)
-        self.welcome_widget.open_settings_requested.connect(self._show_settings)
-        self.welcome_widget.start_services_requested.connect(self._start_model_worker)
+        welcome_inner = WelcomeWidget()
+        welcome_inner.open_project_requested.connect(self._load_project_from_path)
+        welcome_inner.new_project_requested.connect(self._new_project)
+        welcome_inner.open_settings_requested.connect(self._show_settings)
+        welcome_inner.start_services_requested.connect(self._start_model_worker)
+        self.welcome_widget = CardWidget(title="欢迎", parent=self)
+        self.welcome_widget.set_content(welcome_inner)
         self.center_stack.addWidget(self.welcome_widget)
 
         # 标签页工作区
@@ -287,20 +292,12 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(4)
 
-        # KB 搜索（合并输入框+按钮为 SearchBox）
-        kb_frame = QWidget()
-        kb_frame.setMaximumHeight(200)
-        kb_layout = QVBoxLayout(kb_frame)
-        kb_layout.setContentsMargins(8, 8, 8, 8)
-        kb_layout.setSpacing(4)
-
-        kb_header = create_label("知识库检索", level="header")
-        kb_layout.addWidget(kb_header)
-
+        # KB 搜索
+        kb_search_card = CardWidget(title="知识库检索", parent=self)
+        kb_search_card.setMaximumHeight(200)
         self.kb_search_input = SearchBox(placeholder="输入查询...")
         self.kb_search_input.returnPressed.connect(self._search_kb)
-        kb_layout.addWidget(self.kb_search_input)
-
+        kb_search_card.add_widget(self.kb_search_input)
         self.kb_results = create_label("未检索", level="body")
         self.kb_results.setWordWrap(True)
         p = ThemeManager.instance().palette()
@@ -309,11 +306,13 @@ class MainWindow(QMainWindow):
             f"border-radius: 10px; border: 1px solid {p['border']}; font-size: 13px;"
         )
         self.kb_results.setAlignment(Qt.AlignmentFlag.AlignTop)
-        kb_layout.addWidget(self.kb_results)
-        right_layout.addWidget(kb_frame)
+        kb_search_card.add_widget(self.kb_results)
+        right_layout.addWidget(kb_search_card)
 
         # LLM 对话框
-        self.chat_widget = ChatWidget()
+        chat_inner = ChatWidget()
+        self.chat_widget = CardWidget(title="AI 对话", parent=self)
+        self.chat_widget.set_content(chat_inner)
         right_layout.addWidget(self.chat_widget, 1)
 
         self.splitter.addWidget(self.right_panel)
@@ -657,6 +656,15 @@ class MainWindow(QMainWindow):
         self.mol_db = MoleculeDatabase(project.root)
         self.todo_manager = TodoManager(project.root)
 
+        # 初始化分子图像检测管线（MolDetv2）
+        mol_image_pipeline = None
+        try:
+            from ..parsers.molecule.mol_image_pipeline import MolImagePipeline
+
+            mol_image_pipeline = MolImagePipeline()
+        except Exception as exc:
+            logger.warning("MolImagePipeline 初始化失败: %s", exc)
+
         # 更新 PDF 流水线
         from ..parsers.pdf_parser import PDFParserPipeline
 
@@ -666,6 +674,7 @@ class MainWindow(QMainWindow):
             vlm=None,
             knowledge_base=self.kb,
             mol_db=self.mol_db,
+            mol_image_pipeline=mol_image_pipeline,
         )
 
         # 初始化 Agent（带工具调用能力）
@@ -775,7 +784,11 @@ class MainWindow(QMainWindow):
 
         if ext == ".pdf":
             logger.debug(f"以 PDF 查看器打开: {path}")
-            viewer = PDFViewer()
+            viewer = PDFViewer(
+                mol_image_pipeline=self.pdf_pipeline.mol_image_pipeline
+                if self.pdf_pipeline
+                else None
+            )
             viewer.load_pdf(path, project_root=self.project.root if self.project else None)
             self._add_tab(viewer, f"{path.name}")
         elif ext in {".md", ".txt", ".json", ".yaml", ".yml"}:
@@ -1011,7 +1024,10 @@ class MainWindow(QMainWindow):
             return
         panel = MoleculePanel()
         panel.set_database(self.mol_db)
-        self._add_tab(panel, "分子数据库")
+        wrapped = CardWidget(title="分子", parent=self)
+        wrapped.set_content(panel)
+        self._mol_panel = wrapped
+        self._add_tab(wrapped, "分子数据库")
 
     def _show_kb_panel(self):
         from .panels.kb import KnowledgeBasePanel
@@ -1021,7 +1037,10 @@ class MainWindow(QMainWindow):
             return
         panel = KnowledgeBasePanel()
         panel.set_knowledge_base(self.kb)
-        self._add_tab(panel, "知识库")
+        wrapped = CardWidget(title="知识库", parent=self)
+        wrapped.set_content(panel)
+        self._kb_panel = wrapped
+        self._add_tab(wrapped, "知识库")
 
     def _show_pdf_library(self):
         if self.project is None:
@@ -1031,7 +1050,10 @@ class MainWindow(QMainWindow):
         panel = PDFLibraryPanel()
         panel.set_project(self.project)
         panel.pdf_opened.connect(self._open_file)
-        self._add_tab(panel, "文献库")
+        wrapped = CardWidget(title="文献库", parent=self)
+        wrapped.set_content(panel)
+        self._pdf_library_panel = wrapped
+        self._add_tab(wrapped, "文献库")
 
     def _show_todo_panel(self):
         from .panels.todo import TodoPanel
@@ -1042,13 +1064,19 @@ class MainWindow(QMainWindow):
         panel = TodoPanel()
         panel.set_todo_manager(self.todo_manager)
         panel.process_requested.connect(self._start_process_todo)
-        self._add_tab(panel, "TODO")
+        wrapped = CardWidget(title="待办", parent=self)
+        wrapped.set_content(panel)
+        self._todo_panel = wrapped
+        self._add_tab(wrapped, "TODO")
 
     def _show_workflow_panel(self):
         from .panels.workflow import WorkflowPanel
 
         panel = WorkflowPanel()
-        self._add_tab(panel, "工作流")
+        wrapped = CardWidget(title="工作流", parent=self)
+        wrapped.set_content(panel)
+        self._workflow_panel = wrapped
+        self._add_tab(wrapped, "工作流")
 
     def _show_unidock_config(self):
         """显示 UniDock 对接配置对话框."""

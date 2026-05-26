@@ -6,6 +6,7 @@ from ..models.llm import get_llm
 from ..models.embedder import get_embedder
 from ..models.reranker import get_reranker
 from ..models.vlm import get_vlm
+from ..models.moldet import get_moldet
 
 router = APIRouter()
 
@@ -14,6 +15,8 @@ _model_status = {
     "embedder": "loading",
     "reranker": "loading",
     "vlm": "loading",
+    "uniparser": "loading",
+    "moldet": "loading",
 }
 
 
@@ -43,6 +46,33 @@ async def health_check() -> dict:
         _model_status["vlm"] = "ready"
     except Exception:
         _model_status["vlm"] = "error"
+
+    # UniParser 健康检查（通过环境变量配置）
+    try:
+        import os
+        from mbforge.parsers.uniparser.uniparser_config import ParserConfig
+        from mbforge.parsers.uniparser.uniparser_client import ParserClient
+
+        host = os.environ.get("UNIPARSER_HOST", "")
+        api_key = os.environ.get("UNIPARSER_API_KEY", "")
+        if host and api_key:
+            client = ParserClient(ParserConfig(host=host, api_key=api_key))
+            client.health()
+            _model_status["uniparser"] = "ready"
+        else:
+            _model_status["uniparser"] = "error"
+    except Exception:
+        _model_status["uniparser"] = "error"
+
+    # MolDet 健康检查
+    try:
+        pipeline = get_moldet()
+        if pipeline and pipeline.is_available():
+            _model_status["moldet"] = "ready"
+        else:
+            _model_status["moldet"] = "error"
+    except Exception:
+        _model_status["moldet"] = "error"
 
     statuses = list(_model_status.values())
     if all(s == "ready" for s in statuses):

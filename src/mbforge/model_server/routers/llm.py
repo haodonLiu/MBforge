@@ -7,7 +7,7 @@ import json
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from ....models.base import Message
+from mbforge.models.base import Message
 from ..models.llm import get_llm
 from .health import set_model_status
 

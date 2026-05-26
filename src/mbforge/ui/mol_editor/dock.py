@@ -85,7 +85,7 @@ class _ShortcutsPanel(QFrame):
 
         for cat_name, items in self.CATEGORIES:
             cat_label = QLabel(cat_name)
-            cat_label.setStyleSheet(f"color: {p['brand_primary']}; font-weight: 600; font-size: 11px;")
+            cat_label.setStyleSheet(f"color: {p['accent']}; font-weight: 600; font-size: 11px;")
             content_layout.addWidget(cat_label)
 
             grid = QGridLayout()
@@ -402,7 +402,7 @@ class MoleculeEditorDialog(QDialog):
 
         tools_label = QLabel("工具")
         p = ThemeManager.instance().palette()
-        tools_label.setStyleSheet(f"color: {p['brand_primary']}; font-weight: 600; font-size: 11px;")
+        tools_label.setStyleSheet(f"color: {p['accent']}; font-weight: 600; font-size: 11px;")
         left_layout.addWidget(tools_label)
 
         self._tool_buttons: dict[EditorTool, QWidget] = {}
@@ -419,7 +419,7 @@ class MoleculeEditorDialog(QDialog):
 
         # 键类型子面板
         bonds_label = QLabel("键类型")
-        bonds_label.setStyleSheet(f"color: {p['brand_primary']}; font-weight: 600; font-size: 11px;")
+        bonds_label.setStyleSheet(f"color: {p['accent']}; font-weight: 600; font-size: 11px;")
         left_layout.addWidget(bonds_label)
 
         self._bond_buttons: dict[str, QWidget] = {}
@@ -452,7 +452,7 @@ class MoleculeEditorDialog(QDialog):
 
         # 原子类型网格
         atoms_label = QLabel("原子")
-        atoms_label.setStyleSheet(f"color: {p['brand_primary']}; font-weight: 600; font-size: 11px;")
+        atoms_label.setStyleSheet(f"color: {p['accent']}; font-weight: 600; font-size: 11px;")
         right_layout.addWidget(atoms_label)
 
         atom_grid = QGridLayout()
@@ -473,7 +473,7 @@ class MoleculeEditorDialog(QDialog):
 
         # 环模板
         rings_label = QLabel("环模板")
-        rings_label.setStyleSheet(f"color: {p['brand_primary']}; font-weight: 600; font-size: 11px;")
+        rings_label.setStyleSheet(f"color: {p['accent']}; font-weight: 600; font-size: 11px;")
         right_layout.addWidget(rings_label)
 
         self._preset_list = QListWidget()

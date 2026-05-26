@@ -48,14 +48,14 @@ class DetectionPopup(QDialog):
         # MolDet 置信度 — accent_amber
         moldet_row = InfoRow("MolDet 置信度", f"{self.detection.moldet_conf:.2f}")
         moldet_row.value_label.setStyleSheet(
-            f"color: {p['accent_amber']}; font-weight: 600; font-size: 13px;"
+            f"color: {p['text_secondary']}; font-weight: 600; font-size: 13px;"
         )
         layout.addWidget(moldet_row)
 
         # Scribe 置信度 — accent_amber
         scribe_row = InfoRow("Scribe 置信度", f"{self.detection.scribe_conf:.2f}")
         scribe_row.value_label.setStyleSheet(
-            f"color: {p['accent_amber']}; font-weight: 600; font-size: 13px;"
+            f"color: {p['text_secondary']}; font-weight: 600; font-size: 13px;"
         )
         layout.addWidget(scribe_row)
 

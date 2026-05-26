@@ -30,23 +30,65 @@ class WelcomeWidget(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 40, 40, 40)
-        layout.setSpacing(24)
+        # 主题切换时可能重复调用：先清理旧布局
+        if self.layout() is not None:
+            old = self.layout()
+            while old.count():
+                item = old.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+            # 将旧布局转移到临时 widget，从而释放本 widget
+            QWidget().setLayout(old)
+
+        root_layout = QHBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        # ==================== 左侧边栏：最近项目 ====================
+        sidebar = QWidget()
+        sidebar.setFixedWidth(300)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(20, 24, 20, 24)
+        sidebar_layout.setSpacing(16)
+
+        sidebar_title = create_label("最近项目", level="header")
+        sidebar_title.setStyleSheet("font-size: 18px; font-weight: 700;")
+        sidebar_layout.addWidget(sidebar_title)
+
+        self.recent_layout = QVBoxLayout()
+        self.recent_layout.setSpacing(8)
+        self.recent_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        sidebar_layout.addLayout(self.recent_layout)
+
+        sidebar_layout.addStretch()
+        root_layout.addWidget(sidebar)
+
+        # 分隔线
+        divider = QWidget()
+        divider.setFixedWidth(1)
+        p = ThemeManager.instance().palette()
+        divider.setStyleSheet(f"background: {p['border']};")
+        root_layout.addWidget(divider)
+
+        # ==================== 右侧主区域 ====================
+        main_area = QWidget()
+        main_layout = QVBoxLayout(main_area)
+        main_layout.setContentsMargins(40, 40, 40, 40)
+        main_layout.setSpacing(24)
 
         # 标题区
         title = create_label("欢迎来到 MBForge", level="header")
         title.setStyleSheet("font-size: 28px; font-weight: 700;")
-        layout.addWidget(title)
+        main_layout.addWidget(title)
 
         subtitle = create_label(
             "分子科学知识库与 AI 工作台 — 像 Obsidian 一样管理，像 Zotero 一样引用",
             level="caption",
         )
         subtitle.setStyleSheet("font-size: 15px;")
-        layout.addWidget(subtitle)
+        main_layout.addWidget(subtitle)
 
-        layout.addSpacing(20)
+        main_layout.addSpacing(20)
 
         # 快捷操作卡片
         actions_card = CardWidget("快捷操作")
@@ -71,24 +113,18 @@ class WelcomeWidget(QWidget):
 
         actions_layout.addStretch()
         actions_card.add_layout(actions_layout)
-        layout.addWidget(actions_card)
-
-        # 最近项目
-        recent_card = CardWidget("最近项目")
-        self.recent_layout = QVBoxLayout()
-        self.recent_layout.setSpacing(8)
-        self.recent_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        recent_card.add_layout(self.recent_layout)
-        layout.addWidget(recent_card)
+        main_layout.addWidget(actions_card)
 
         # 统计信息
         stats_card = CardWidget("系统状态")
         self.stats_layout = QHBoxLayout()
         self.stats_layout.setSpacing(20)
         stats_card.add_layout(self.stats_layout)
-        layout.addWidget(stats_card)
+        main_layout.addWidget(stats_card)
 
-        layout.addStretch()
+        main_layout.addStretch()
+        root_layout.addWidget(main_area, 1)
+
         self._refresh_recent_projects()
         self._refresh_stats()
 
@@ -117,7 +153,7 @@ class WelcomeWidget(QWidget):
 
         if not valid_projects:
             empty = EmptyStateWidget(
-                icon="📁",
+                icon="",
                 title="暂无最近项目",
                 subtitle="点击上方「新建项目」或「打开项目」开始",
             )

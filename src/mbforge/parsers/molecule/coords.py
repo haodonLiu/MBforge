@@ -9,7 +9,6 @@ from __future__ import annotations
 
 
 import fitz
-from PyQt6.QtCore import QRect
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +147,7 @@ def pdf_to_img_rect(
 # ---------------------------------------------------------------------------
 
 def screen_to_img_rect(
-    bbox_screen: QRect,
+    bbox_screen,  # QRect
     view_scale: float,
 ) -> tuple[float, float, float, float]:
     """将屏幕控件坐标转换为页面图像坐标.
@@ -173,8 +172,8 @@ def screen_to_img_rect(
 def img_to_screen_rect(
     bbox_img: tuple[float, float, float, float],
     view_scale: float,
-) -> QRect:
-    """将页面图像坐标转换为屏幕控件坐标.
+):
+    """将页面图像坐标转换为屏幕控件坐标 (PyQt6 QRect).
 
     Args:
         bbox_img: (x1, y1, x2, y2)，页面图像坐标
@@ -183,6 +182,8 @@ def img_to_screen_rect(
     Returns:
         QRect，控件内坐标
     """
+    from PyQt6.QtCore import QRect
+
     x1, y1, x2, y2 = bbox_img
     return QRect(
         int(x1 * view_scale),
@@ -197,7 +198,7 @@ def img_to_screen_rect(
 # ---------------------------------------------------------------------------
 
 def screen_to_pdf_rect(
-    bbox_screen: QRect,
+    bbox_screen,  # QRect
     view_scale: float,
     page_height_px: float,
     pdf_scale: float,

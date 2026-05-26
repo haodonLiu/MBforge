@@ -12,8 +12,6 @@ import inspect
 import pkgutil
 from pathlib import Path
 
-from PyQt6.QtWidgets import QWidget
-
 from .base import BasePlugin, PluginCapability, PluginSetupError
 from ..agent.tools import ToolRegistry
 
@@ -124,9 +122,9 @@ class PluginRegistry:
         for plugin in self.list_by_capability(PluginCapability.AGENT_TOOL):
             plugin.register_tools(tool_registry)
 
-    def create_panels(self, parent: QWidget) -> dict[str, QWidget]:
-        """创建所有 UI_PANEL 能力的插件面板."""
-        panels: dict[str, QWidget] = {}
+    def create_panels(self, parent):
+        """创建所有 UI_PANEL 能力的插件面板 (保留兼容，新架构不使用 Qt)."""
+        panels = {}
         for plugin in self.list_by_capability(PluginCapability.UI_PANEL):
             panel = plugin.create_ui_panel(parent)
             if panel is not None:

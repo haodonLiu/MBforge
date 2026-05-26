@@ -66,18 +66,47 @@ def main() -> int:
 
 
 def _cmd_gui(args) -> int:
-    from .app import run_app
+    import os
+    import subprocess
+    import time
+    import webbrowser
 
-    # 如果有 --project，先预加载
+    # 如果有 --project，通过环境变量传递
     if hasattr(args, "project") and args.project:
-        # 通过环境变量传递，主窗口启动后读取
-        import os
-
         os.environ["MBFORGE_OPEN_PROJECT"] = args.project
 
-    # 必须传入 sys.argv（至少包含程序名），否则 QWebEngine/Chromium
-    # 子进程无法正确初始化，会报 "Argument list is empty"
-    return run_app(sys.argv)
+    # 启动模型服务器
+    setup_logging()
+    logger.info("启动 MBForge 模型服务...")
+    server_proc = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "mbforge.model_server.main:app",
+         "--host", "127.0.0.1", "--port", "18792"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    # 等待服务就绪
+    import urllib.request
+    for _ in range(30):
+        try:
+            urllib.request.urlopen("http://127.0.0.1:18792/api/v1/health", timeout=1)
+            break
+        except Exception:
+            time.sleep(0.5)
+    else:
+        logger.error("模型服务启动失败")
+        server_proc.terminate()
+        return 1
+
+    logger.info("模型服务已就绪，打开浏览器...")
+    webbrowser.open("http://localhost:5173")
+
+    try:
+        server_proc.wait()
+    except KeyboardInterrupt:
+        logger.info("正在关闭模型服务...")
+        server_proc.terminate()
+    return 0
 
 
 def _cmd_init(args) -> int:

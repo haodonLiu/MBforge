@@ -95,3 +95,54 @@ class VLMClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+class ModelClientFactory:
+    """工厂类：根据连接状态返回 HTTP 客户端或直接模型实例."""
+
+    def __init__(self, base_url: str = "http://127.0.0.1:18792"):
+        self.base_url = base_url
+        self._http_available: bool | None = None
+        self._llm_client = LLMClient(base_url)
+        self._embed_client = EmbedClient(base_url)
+        self._rerank_client = RerankClient(base_url)
+        self._vlm_client = VLMClient(base_url)
+
+    def _check_http(self) -> bool:
+        if self._http_available is not None:
+            return self._http_available
+        try:
+            resp = httpx.get(f"{self.base_url}/api/v1/health", timeout=2.0)
+            self._http_available = resp.status_code == 200
+        except Exception:
+            self._http_available = False
+        return self._http_available
+
+    def get_llm(self):
+        if self._check_http():
+            return self._llm_client
+        # 降级到直接实例
+        from .llm import create_llm_from_config
+        from ..utils.config import load_global_config
+        return create_llm_from_config(load_global_config().llm)
+
+    def get_embedder(self):
+        if self._check_http():
+            return self._embed_client
+        from .embedding import create_embedder_from_config
+        from ..utils.config import load_global_config
+        return create_embedder_from_config(load_global_config().embed)
+
+    def get_reranker(self):
+        if self._check_http():
+            return self._rerank_client
+        from .rerank import create_reranker_from_config
+        from ..utils.config import load_global_config
+        return create_reranker_from_config(load_global_config().rerank)
+
+    def get_vlm(self):
+        if self._check_http():
+            return self._vlm_client
+        from .vlm import create_vlm_from_config
+        from ..utils.config import load_global_config
+        return create_vlm_from_config(load_global_config().vlm)

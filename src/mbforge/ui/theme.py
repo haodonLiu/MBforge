@@ -22,38 +22,38 @@ from PyQt6.QtWidgets import (
 
 # ---------- Palette: Light Mode ----------
 LIGHT_PALETTE = {
-    "brand_primary": "#0F4C81",
-    "brand_primary_light": "#3D5A80",
-    "brand_primary_deep": "#0A3A62",
-    "accent_amber": "#F4A261",
-    "accent_coral": "#E76F51",
-    "success": "#2A9D8F",
-    "bg_base": "#F7F9FC",
+    "brand_primary": "#8B6F47",
+    "brand_primary_light": "#A8895F",
+    "brand_primary_deep": "#6B5433",
+    "accent_amber": "#C49A3C",
+    "accent_coral": "#C26B4A",
+    "success": "#5C8A6A",
+    "bg_base": "#FAFAF8",
     "bg_card": "#FFFFFF",
-    "bg_hover": "#EDF2F7",
-    "bg_zebra": "#F0F4F8",
-    "text_primary": "#1D3557",
-    "text_secondary": "#7A8A9C",
-    "border": "#E9ecef",
-    "border_focus": "#0F4C81",
+    "bg_hover": "#F5F0EB",
+    "bg_zebra": "#F7F4F0",
+    "text_primary": "#2D2319",
+    "text_secondary": "#7A6A5A",
+    "border": "#E0D8CF",
+    "border_focus": "#8B6F47",
 }
 
 # ---------- Palette: Dark Mode ----------
 DARK_PALETTE = {
-    "brand_primary": "#4A90D9",
-    "brand_primary_light": "#6BA3D6",
-    "brand_primary_deep": "#1D3557",
-    "accent_amber": "#F4A261",
-    "accent_coral": "#E76F51",
-    "success": "#2A9D8F",
-    "bg_base": "#0F1419",
-    "bg_card": "#1A1F26",
-    "bg_hover": "#2A3441",
-    "bg_zebra": "#1A2430",
-    "text_primary": "#E8EDF2",
-    "text_secondary": "#6B7A8C",
-    "border": "#2A3441",
-    "border_focus": "#4A90D9",
+    "brand_primary": "#C4A070",
+    "brand_primary_light": "#D4B080",
+    "brand_primary_deep": "#A08050",
+    "accent_amber": "#D4AA50",
+    "accent_coral": "#D48060",
+    "success": "#7AAA8A",
+    "bg_base": "#1A1714",
+    "bg_card": "#242019",
+    "bg_hover": "#2E2820",
+    "bg_zebra": "#1F1B17",
+    "text_primary": "#E8E0D5",
+    "text_secondary": "#9A8A7A",
+    "border": "#3A3228",
+    "border_focus": "#C4A070",
 }
 
 # ---------- 尺寸常量 ----------
@@ -108,7 +108,8 @@ def _build_button_styles(p: dict) -> tuple[str, str, str]:
         padding: 6px 16px;
         font-weight: 500;
     }}
-    QPushButton:hover {{ background: #d4563e; }}
+    QPushButton:hover {{ background: {p['accent_coral']}; }}
+    QPushButton:pressed {{ background: {p['accent_coral']}; }}
     """
     return primary, default, danger
 
@@ -185,6 +186,7 @@ def _build_dialog_qss() -> str:
         padding: 6px 16px;
     }}
     QPushButton:hover {{ background: {p['border']}; }}
+    QPushButton:pressed {{ background: {p['border']}; }}
     """
 
 
@@ -261,14 +263,16 @@ def create_button(
     style: str = "default",
     parent: QWidget | None = None,
 ) -> QPushButton:
-    """创建统一风格的按钮.
+    """创建统一风格的按钮（带点击反馈）.
 
     Args:
         text: 按钮文字
         style: "default" | "primary" | "danger"
         parent: 父 widget
     """
-    btn = QPushButton(text, parent)
+    from .components import BaseButton
+
+    btn = BaseButton(text, parent)
     primary, default, danger = _build_button_styles(_p())
     if style == "primary":
         btn.setStyleSheet(primary)

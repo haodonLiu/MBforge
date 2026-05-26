@@ -74,7 +74,6 @@ PROVIDER_QWEN3 = "qwen3"
 PROVIDER_API = "api"
 PROVIDER_OLLAMA = "ollama"
 PROVIDER_LOCAL = "local"
-PROVIDER_NEMOTON_DIFFUSION = "nemotron_diffusion"
 
 # OCR Provider
 OCR_PROVIDER_PYMUPDF = "pymupdf"

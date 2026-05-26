@@ -2,10 +2,10 @@
 
 from fastapi import APIRouter
 
-from ..models.llm import get_llm, reset_llm
-from ..models.embedder import get_embedder, reset_embedder
-from ..models.reranker import get_reranker, reset_reranker
-from ..models.vlm import get_vlm, reset_vlm
+from ..models.llm import get_llm
+from ..models.embedder import get_embedder
+from ..models.reranker import get_reranker
+from ..models.vlm import get_vlm
 
 router = APIRouter()
 

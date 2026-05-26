@@ -11,6 +11,23 @@ from pathlib import Path
 from typing import Any
 
 
+def get_default_device() -> str:
+    """自动检测可用加速设备，优先 GPU.
+
+    顺序: cuda -> mps (Apple Silicon) -> cpu
+    """
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+    return "cpu"
+
+
 def generate_uuid() -> str:
     """生成唯一标识符."""
     return str(uuid.uuid4())

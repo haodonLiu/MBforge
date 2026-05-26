@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from .base import BaseReranker
 from ..utils.constants import PROVIDER_SENTENCE_TRANSFORMERS, PROVIDER_QWEN3
+from ..utils.helpers import get_default_device
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -16,9 +17,9 @@ class SentenceTransformerReranker(BaseReranker):
     兼容 BGE-Reranker 等 CrossEncoder 格式模型。
     """
 
-    def __init__(self, model_name: str = "BAAI/bge-reranker-base", device: str = "cpu"):
+    def __init__(self, model_name: str = "BAAI/bge-reranker-base", device: str | None = None):
         self.model_name = model_name
-        self.device = device
+        self.device = device or get_default_device()
         self._model = None
 
     def _load_model(self):

@@ -13,6 +13,7 @@ from ..utils.constants import (
     PROVIDER_QWEN3,
     ensure_hf_mirror,
 )
+from ..utils.helpers import get_default_device
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -72,9 +73,9 @@ class SentenceTransformerEmbedder(BaseEmbedder):
     兼容 BGE、GTE 等 sentence-transformers 格式模型。
     """
 
-    def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5", device: str = "cpu"):
+    def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5", device: str | None = None):
         self.model_name = model_name
-        self.device = device
+        self.device = device or get_default_device()
         self._model = None
         self._dim = None
 
@@ -134,12 +135,12 @@ class Qwen3Embedder(BaseEmbedder):
     def __init__(
         self,
         model_name: str = DEFAULT_EMBED_MODEL,
-        device: str = "cpu",
+        device: str | None = None,
         mrl_dim: int | None = None,
         instruction: str | None = None,
     ):
         self.model_name = model_name
-        self.device = device
+        self.device = device or get_default_device()
         self.mrl_dim = mrl_dim  # MRL 输出维度，如 256
         self.instruction = instruction or self.INSTRUCTION_RETRIEVAL
         self._model = None

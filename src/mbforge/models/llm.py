@@ -97,21 +97,11 @@ class OpenAILLM(BaseLLM):
 def create_llm_from_config(config) -> BaseLLM:
     """从配置创建 LLM 实例."""
     from ..utils.config import ModelConfig
-    from ..utils.constants import PROVIDER_ANTHROPIC, PROVIDER_NEMOTON_DIFFUSION
+    from ..utils.constants import PROVIDER_ANTHROPIC
 
     cfg: ModelConfig = config
 
     provider = (cfg.provider or "").strip().lower()
-
-    if provider == PROVIDER_NEMOTON_DIFFUSION:
-        from .nemotron_diffusion import NemotronDiffusionLLM
-
-        return NemotronDiffusionLLM(
-            model_path=cfg.model_name or "nv-community/Nemotron-Labs-Diffusion-3B",
-            device=getattr(cfg, "device", "cuda"),
-            dtype=getattr(cfg, "dtype", "bfloat16"),
-            max_new_tokens=cfg.max_tokens,
-        )
 
     if provider == PROVIDER_ANTHROPIC:
         from .anthropic_llm import AnthropicLLM

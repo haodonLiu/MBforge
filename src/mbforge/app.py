@@ -52,11 +52,12 @@ def run_app(argv: list[str] | None = None) -> int:
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("MBForge")
 
-    # 全局字体
-    font = app.font()
-    # Windows 上默认字体可能使用 pixel size，pointSize() 返回 -1，
-    # 直接使用 setPointSize 会触发 Qt 警告，改用 setPointSizeF
-    font.setPointSizeF(10.0)
+    # 全局字体：直接构造新字体，避免 app.font() 在 Windows 上 pointSize=-1 的问题
+    from PyQt6.QtGui import QFont
+
+    font = QFont("Microsoft YaHei", 10)
+    if font.pointSize() <= 0:
+        font.setPointSize(10)
     app.setFont(font)
 
     window = MainWindow()

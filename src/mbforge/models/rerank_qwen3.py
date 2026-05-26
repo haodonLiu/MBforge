@@ -22,6 +22,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from .base import BaseReranker
 from .embedding import _resolve_model_path
 from ..utils.constants import DEFAULT_RERANK_MODEL, ensure_hf_mirror
+from ..utils.helpers import get_default_device
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -54,12 +55,12 @@ class Qwen3Reranker(BaseReranker):
     def __init__(
         self,
         model_name: str = DEFAULT_RERANK_MODEL,
-        device: str = "cpu",
+        device: str | None = None,
         max_length: int = 8192,
         instruction: str | None = None,
     ):
         self.model_name = model_name
-        self.device = device
+        self.device = device or get_default_device()
         self.max_length = max_length
         self.instruction = instruction or self.DEFAULT_INSTRUCTION
         self._tokenizer: AutoTokenizer | None = None

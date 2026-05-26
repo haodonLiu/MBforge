@@ -58,49 +58,60 @@ class KnowledgeBase:
         doc_id: str,
         content: ExtractedContent,
         metadata: dict[str, Any] | None = None,
+        batch_size: int = 64,
     ) -> None:
-        """将文档内容索引到知识库."""
+        """将文档内容索引到知识库（分批处理避免 OOM）."""
         if not content.chunks:
             return
-
-        chunk_ids = []
-        documents = []
-        metadatas = []
 
         base_meta = metadata or {}
         base_meta["doc_id"] = doc_id
         base_meta["source"] = content.metadata.get("source", "")
 
-        for i, chunk in enumerate(content.chunks):
-            chunk_id = f"{doc_id}_chunk_{i}"
-            chunk_ids.append(chunk_id)
-            documents.append(chunk)
-            meta = {
-                **base_meta,
-                "chunk_index": i,
-                "chunk_hash": hash(chunk) & 0xFFFFFFFF,
+        total = len(content.chunks)
+        for start in range(0, total, batch_size):
+            end = min(start + batch_size, total)
+            chunk_ids = []
+            documents = []
+            metadatas = []
+
+            for i in range(start, end):
+                chunk = content.chunks[i]
+                chunk_id = f"{doc_id}_chunk_{i}"
+                chunk_ids.append(chunk_id)
+                documents.append(chunk)
+                metadatas.append(
+                    {
+                        **base_meta,
+                        "chunk_index": i,
+                        "chunk_hash": hash(chunk) & 0xFFFFFFFF,
+                    }
+                )
+
+            # 生成向量（按批）
+            embeddings = None
+            if self.embedder is not None:
+                try:
+                    embeddings = self.embedder.embed(documents)
+                except Exception as e:
+                    logger.warning(f"Embedding failed for batch {start}-{end}: {e}")
+
+            add_kwargs = {
+                "ids": chunk_ids,
+                "documents": documents,
+                "metadatas": metadatas,
             }
-            metadatas.append(meta)
+            if embeddings is not None:
+                add_kwargs["embeddings"] = embeddings
 
-        # 生成向量
-        embeddings = None
-        if self.embedder is not None:
             try:
-                embeddings = self.embedder.embed(documents)
+                self._collection.add(**add_kwargs)
             except Exception as e:
-                logger.warning(f"Embedding failed: {e}")
+                logger.error(f"KB add failed for batch {start}-{end}: {e}")
 
-        # 如果 embedder 不可用，不传入 embeddings，让 ChromaDB 使用内置默认
-        # 但会触发模型下载；生产环境应确保 embedder 正常配置
-        add_kwargs = {
-            "ids": chunk_ids,
-            "documents": documents,
-            "metadatas": metadatas,
-        }
-        if embeddings is not None:
-            add_kwargs["embeddings"] = embeddings
-
-        self._collection.add(**add_kwargs)
+            logger.debug(
+                "Indexed batch %d-%d/%d for %s", start, end, total, doc_id
+            )
 
     def remove_document(self, doc_id: str) -> None:
         """移除文档的所有索引."""

@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMessageBox,
     QProgressBar,
-    QPushButton,
     QScrollArea,
     QSpinBox,
     QVBoxLayout,
@@ -33,6 +32,7 @@ from .highlight_toolbar import HighlightToolbar
 from .page_widget import PDFPageLabel
 from .renderer import _executor, _NWORKERS, _render_page_batch, page_to_pixmap
 from .slice_manager import PDFSliceManager
+from ..components import BaseButton
 from ..mol_editor.extract_dialog import MoleculeExtractDialog
 from ..theme import ThemeManager
 
@@ -97,17 +97,20 @@ class PDFViewer(QWidget):
         layout.setSpacing(4)
 
         # ---- 工具栏 ----
-        toolbar = QHBoxLayout()
+        toolbar_widget = QWidget()
+        toolbar = QHBoxLayout(toolbar_widget)
         toolbar.setContentsMargins(8, 4, 8, 4)
+        p = ThemeManager.instance().palette()
+        toolbar_widget.setStyleSheet(f"background: {p['bg_hover']}; border-bottom: 1px solid {p['border']};")
 
-        self.btn_mode = QPushButton("连续模式")
+        self.btn_mode = BaseButton("连续模式")
         self.btn_mode.setToolTip("切换单页/连续模式")
         self.btn_mode.clicked.connect(self._toggle_mode)
         toolbar.addWidget(self.btn_mode)
 
         toolbar.addSpacing(12)
 
-        self.btn_prev = QPushButton("◀ 上一页")
+        self.btn_prev = BaseButton("◀ 上一页")
         self.btn_prev.setEnabled(False)
         self.btn_prev.clicked.connect(self.prev_page)
         toolbar.addWidget(self.btn_prev)
@@ -129,7 +132,7 @@ class PDFViewer(QWidget):
 
         toolbar.addStretch()
 
-        self.btn_next = QPushButton("下一页 ▶")
+        self.btn_next = BaseButton("下一页 ▶")
         self.btn_next.setEnabled(False)
         self.btn_next.clicked.connect(self.next_page)
         toolbar.addWidget(self.btn_next)
@@ -142,22 +145,22 @@ class PDFViewer(QWidget):
         self.progress.setStyleSheet("QProgressBar { border: none; }")
         toolbar.addWidget(self.progress)
 
-        btn_zoom_out = QPushButton("−")
+        btn_zoom_out = BaseButton("−")
         btn_zoom_out.setToolTip("缩小")
         btn_zoom_out.clicked.connect(self.zoom_out)
         toolbar.addWidget(btn_zoom_out)
 
-        btn_zoom_in = QPushButton("+")
+        btn_zoom_in = BaseButton("+")
         btn_zoom_in.setToolTip("放大")
         btn_zoom_in.clicked.connect(self.zoom_in)
         toolbar.addWidget(btn_zoom_in)
 
-        btn_detect_mols = QPushButton("🔬 检测分子")
+        btn_detect_mols = BaseButton("检测分子")
         btn_detect_mols.setToolTip("使用 MolDetv2 检测当前页分子结构")
         btn_detect_mols.clicked.connect(self._detect_molecules_current_page)
         toolbar.addWidget(btn_detect_mols)
 
-        btn_clear_highlight = QPushButton("✨ 清除高亮")
+        btn_clear_highlight = BaseButton("清除高亮")
         btn_clear_highlight.setToolTip("清除所有高亮注释")
         btn_clear_highlight.clicked.connect(self._clear_all_highlights)
         toolbar.addWidget(btn_clear_highlight)
@@ -170,7 +173,7 @@ class PDFViewer(QWidget):
         self._hl_toolbar.style_changed.connect(self._on_highlight_style_changed)
         toolbar.addWidget(self._hl_toolbar)
 
-        layout.addLayout(toolbar)
+        layout.addWidget(toolbar_widget)
 
         # ---- 滚动区域 ----
         self.scroll = QScrollArea()
@@ -963,7 +966,16 @@ class PDFViewer(QWidget):
 
     def _detect_molecules_current_page(self):
         """对当前页面进行 MolDetv2 分子检测并在页面上标记."""
-        if self.current_page == 0 or self.mol_image_pipeline is None:
+        if self.current_page == 0:
+            return
+        if self.mol_image_pipeline is None:
+            QMessageBox.warning(
+                self,
+                "检测器未初始化",
+                "分子图像检测模块未加载。\n"
+                "请确认 MolDetv2 模型已下载并放置到 ~/.cache/mbforge/models/ 目录，\n"
+                "然后重启应用。",
+            )
             return
         if not self.mol_image_pipeline.is_available():
             QMessageBox.warning(
@@ -1033,7 +1045,16 @@ class PDFViewer(QWidget):
 
     def _on_extract_molecule(self, page_index: int, screen_rect: QRect):
         """识别选中区域内的分子结构."""
-        if page_index == 0 or self.mol_image_pipeline is None:
+        if page_index == 0:
+            return
+        if self.mol_image_pipeline is None:
+            QMessageBox.warning(
+                self,
+                "检测器未初始化",
+                "分子图像检测模块未加载。\n"
+                "请确认 MolDetv2 模型已下载并放置到 ~/.cache/mbforge/models/ 目录，\n"
+                "然后重启应用。",
+            )
             return
         if not self.mol_image_pipeline.is_available():
             QMessageBox.warning(

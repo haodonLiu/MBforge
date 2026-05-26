@@ -338,6 +338,9 @@ class MainWindow(QMainWindow):
         self.file_tree_card.set_content(file_tree_inner)
         layout.addWidget(self.file_tree_card, 1)
 
+        # 文件标签页（欢迎页 + 标签页工作区）
+        layout.addWidget(self.center_stack, 1)
+
     def _setup_search_tab(self) -> None:
         """Search Tab：知识库检索."""
         self.search_tab = QWidget()
@@ -1161,6 +1164,7 @@ class MainWindow(QMainWindow):
         wrapped.set_content(panel)
         self._workflow_panel = wrapped
         self._add_tab(wrapped, "工作流")
+        self.main_tabs.setCurrentIndex(4)  # Workflow Tab
 
     def _show_unidock_config(self):
         """显示 UniDock 对接配置对话框."""

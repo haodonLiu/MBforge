@@ -2,17 +2,38 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from ..theme import ThemeManager
 
+if TYPE_CHECKING:
+    from ...model_server.process_manager import ModelServerManager
+
 
 class ServiceStatusIndicator(QWidget):
-    """右上角 4 个服务状态圆点，hover 显示详情."""
+    """右上角 4 个服务状态圆点，hover 显示详情.
 
-    def __init__(self, parent: QWidget | None = None):
+    当传入 *manager* 时，会通过 QTimer 每 5 秒轮询 /health，
+    并根据返回的模型状态自动更新圆点颜色。
+    """
+
+    _MODEL_MAP = {
+        "LLM": "llm",
+        "Embedding": "embedder",
+        "知识库": "reranker",
+        "分子库": "vlm",
+    }
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        manager: ModelServerManager | None = None,
+    ):
         super().__init__(parent)
+        self._manager = manager
         self._status = {
             "LLM": "offline",
             "Embedding": "offline",
@@ -20,6 +41,7 @@ class ServiceStatusIndicator(QWidget):
             "分子库": "offline",
         }
         self._setup_ui()
+        self._setup_polling()
 
     def _setup_ui(self):
         layout = QHBoxLayout(self)
@@ -35,6 +57,29 @@ class ServiceStatusIndicator(QWidget):
             dot.setToolTip(f"{name}: 未连接")
             self._dots[name] = dot
             layout.addWidget(dot)
+
+    def _setup_polling(self):
+        """若存在 manager，启动 5 秒定时轮询 /health。"""
+        if self._manager is None:
+            return
+
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._poll_health)
+        self._timer.start(5000)
+        self._poll_health()
+
+    def _poll_health(self):
+        """同步查询 /health 并更新圆点状态。"""
+        if self._manager is None:
+            return
+
+        health = self._manager.get_health()
+        models = health.get("models", {})
+
+        for label, key in self._MODEL_MAP.items():
+            model_state = models.get(key, "offline")
+            online = model_state == "ready"
+            self.set_status(label, online)
 
     def set_status(self, name: str, online: bool):
         """更新单个服务状态."""

@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
-    QPushButton,
     QRadioButton,
     QSpinBox,
     QTabWidget,
@@ -23,7 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ...utils.config import AppConfig, EmbedConfig, ModelConfig, RerankConfig, VLMConfig
-from ..components import InfoRow
+from ..components import BaseButton, InfoRow
 from ..theme import ThemeManager, create_input
 
 
@@ -46,7 +45,7 @@ class NewProjectDialog(QDialog):
 
         path_layout = QHBoxLayout()
         self.path_edit = create_input(placeholder="选择项目文件夹")
-        self.browse_btn = QPushButton("浏览...")
+        self.browse_btn = BaseButton("浏览...")
         self.browse_btn.clicked.connect(self._browse)
         path_layout.addWidget(self.path_edit)
         path_layout.addWidget(self.browse_btn)
@@ -239,7 +238,7 @@ class SettingsDialog(QDialog):
     def _load_theme_config(self):
         theme_mode = "system"
         if self.project_root:
-            from ..core.settings import ProjectSettings
+            from ...core.settings import ProjectSettings
 
             ps = ProjectSettings.load(self.project_root)
             theme_mode = ps.theme_override
@@ -276,13 +275,13 @@ class SettingsDialog(QDialog):
         selected_id = self.theme_group.checkedId()
         selected_mode = mode_map.get(selected_id, "system")
         if self.project_root:
-            from ..core.settings import ProjectSettings
+            from ...core.settings import ProjectSettings
 
             ps = ProjectSettings.load(self.project_root)
             ps.theme_override = selected_mode
             ps.save(self.project_root)
         ThemeManager.instance().set_mode(selected_mode)
-        from ..utils.config import save_global_config
+        from ...utils.config import save_global_config
 
         save_global_config(self.config)
         self.accept()

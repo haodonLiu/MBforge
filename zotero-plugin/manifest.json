@@ -1,0 +1,14 @@
+{
+  "manifest_version": 2,
+  "name": "MBForge Bridge",
+  "version": "1.0.0",
+  "description": "Push Zotero items to MBForge for molecular knowledge base parsing",
+  "author": "MBForge Team",
+  "applications": {
+    "zotero": {
+      "id": "mbforge-bridge@mbforge.org",
+      "strict_min_version": "6.999",
+      "strict_max_version": "8.*"
+    }
+  }
+}

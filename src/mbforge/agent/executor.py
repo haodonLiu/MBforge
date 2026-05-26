@@ -302,7 +302,7 @@ class ToolExecutor:
                 return "项目中暂无文档"
             lines = [f"共 {len(docs)} 个文件:"]
             for d in docs[:50]:
-                idx_mark = "✓" if d.indexed else "○"
+                idx_mark = "[x]" if d.indexed else "[ ]"
                 lines.append(f"  {idx_mark} [{d.doc_type}] {d.path.name}")
             return "\n".join(lines)
         except Exception as e:

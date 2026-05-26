@@ -159,9 +159,17 @@ class MoleculeDatabase:
         self.project_root = Path(project_root).resolve()
         self.db_path = self.project_root / PROJECT_META_DIR / MOL_DB_FILENAME
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._init_db()
+        try:
+            self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+            self._conn.row_factory = sqlite3.Row
+            self._init_db()
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception(
+                "MoleculeDatabase 初始化失败: db_path=%s error=%s", self.db_path, exc
+            )
+            self._conn = None
+            raise
 
     def _init_db(self) -> None:
         # 分步执行，避免旧数据库缺少新列导致 CREATE INDEX 失败
@@ -287,14 +295,20 @@ class MoleculeDatabase:
         sql = f"SELECT * FROM molecules {where} ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
 
+        if self._conn is None:
+            raise RuntimeError("MoleculeDatabase 未初始化：数据库连接失败。")
         rows = self._conn.execute(sql, params).fetchall()
         return [self._row_to_record(r) for r in rows]
 
     def delete_molecule(self, mol_id: str) -> None:
+        if self._conn is None:
+            raise RuntimeError("MoleculeDatabase 未初始化：数据库连接失败。")
         self._conn.execute("DELETE FROM molecules WHERE mol_id = ?", (mol_id,))
         self._conn.commit()
 
     def get_stats(self) -> dict[str, Any]:
+        if self._conn is None:
+            raise RuntimeError("MoleculeDatabase 未初始化：数据库连接失败。")
         total = self._conn.execute("SELECT COUNT(*) FROM molecules").fetchone()[0]
         with_activity = self._conn.execute(
             "SELECT COUNT(*) FROM molecules WHERE activity IS NOT NULL"

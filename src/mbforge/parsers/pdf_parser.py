@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import tempfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 try:
@@ -22,7 +21,7 @@ except ImportError:
 
 from PIL import Image
 
-from ..core.document import DocumentProcessor, ExtractedContent
+from ..core.document import ExtractedContent
 from ..core.knowledge_base import KnowledgeBase
 from ..core.mol_database import MoleculeDatabase, MoleculeRecord
 from .molecule.association_engine import AssociationEngine
@@ -78,7 +77,7 @@ class PDFParserPipeline:
         summarize: bool = True,
         index_kb: bool = True,
         use_image_pipeline: bool = False,
-        image_pipeline_dpi: float = 300.0,
+        image_pipeline_dpi: float = 150.0,
     ) -> ExtractedContent:
         """解析单个 PDF 文件.
 
@@ -89,109 +88,124 @@ class PDFParserPipeline:
             summarize: 是否生成 LLM 摘要
             index_kb: 是否索引到知识库
             use_image_pipeline: 是否启用 MolDetv2 图像检测管线
-            image_pipeline_dpi: 图像检测渲染 DPI（默认 300）
+            image_pipeline_dpi: 图像检测渲染 DPI（默认 150）
         """
         pdf_path = Path(pdf_path)
         doc_id = doc_id or generate_uuid()
 
-        # 1. 基础提取
-        content = DocumentProcessor.process(pdf_path)
-        content.metadata["doc_id"] = doc_id
+        if fitz is None:
+            raise ImportError("PyMuPDF (fitz) 未安装，无法处理 PDF")
 
-        # 2. 提取图片（用于 VLM 分析）
-        with tempfile.TemporaryDirectory() as tmpdir:
-            img_dir = Path(tmpdir) / "images"
-            images = DocumentProcessor.extract_pdf_images(pdf_path, img_dir)
-            content.images = images
+        # 顶层只打开一次 PDF，所有操作复用该句柄
+        with fitz.open(str(pdf_path)) as doc:
+            # 1. 基础提取
+            content = ExtractedContent()
+            content.metadata["source"] = str(pdf_path)
+            content.metadata["filename"] = pdf_path.name
+            content.metadata["doc_id"] = doc_id
+            content.metadata["pages"] = len(doc)
 
-            # 3. VLM 分析图片（如果可用，并行化）
-            if self.vlm is not None and images:
-                img_descriptions = []
-                target_images = images[:5]  # 限制数量避免太慢
-                with ThreadPoolExecutor(max_workers=len(target_images)) as pool:
-                    futures = {
-                        pool.submit(
-                            self.vlm.describe_pdf_page,
-                            str(img_path),
-                            f"Document: {pdf_path.name}",
-                        ): img_path
-                        for img_path in target_images
-                    }
-                    for future in as_completed(futures):
-                        img_path = futures[future]
+            text_parts = []
+            for page in doc:
+                text_parts.append(page.get_text())
+            content.text = "\n\n".join(text_parts)
+
+            if content.text:
+                from ..utils.helpers import split_text_chunks
+
+                content.chunks = split_text_chunks(content.text)
+
+            # 2. 提取图片（限制数量/大小）+ VLM 分析
+            with tempfile.TemporaryDirectory() as tmpdir:
+                img_dir = Path(tmpdir) / "images"
+                images = self._extract_limited_images(doc, img_dir)
+                content.images = images
+
+                # 3. VLM 分析图片（串行，避免并发内存堆积）
+                if self.vlm is not None and images:
+                    img_descriptions = []
+                    target_images = images[:5]  # 限制数量避免太慢
+                    for img_path in target_images:
                         try:
-                            desc = future.result()
-                            img_descriptions.append(f"[Image {img_path.name}]: {desc}")
+                            desc = self.vlm.describe_pdf_page(
+                                str(img_path),
+                                f"Document: {pdf_path.name}",
+                            )
+                            img_descriptions.append(
+                                f"[Image {img_path.name}]: {desc}"
+                            )
                         except Exception as e:
-                            logger.warning("VLM analysis failed for %s: %s", img_path, e)
-                if img_descriptions:
-                    content.text += "\n\n## Image Analysis\n\n" + "\n\n".join(
-                        img_descriptions
-                    )
-                    # 重新分块
-                    from ..utils.helpers import split_text_chunks
-
-                    content.chunks = split_text_chunks(content.text)
-
-        # 4. LLM 摘要 + L0/L1/L2 三层摘要
-        if summarize and content.text:
-            from ..core.summarizer import DocumentSummarizer, SummaryManager
-
-            summarizer = DocumentSummarizer(llm=self.llm)
-            summary = summarizer.summarize(content, doc_id)
-            if self.kb is not None:
-                try:
-                    sm = SummaryManager(self.kb.project_root)
-                    sm.save(summary)
-                    logger.info("Saved L0/L1 summary for %s", doc_id)
-                except Exception as e:
-                    logger.error("Summary save failed for %s: %s", doc_id, e)
-            content.summary = summary.l1_overview
-
-        # 5. 分子提取
-        if extract_molecules and self.mol_db is not None:
-            # 5a. 图像检测管线（MolDetv2 优先）
-            pending_results: list[ExtractionResult] = []
-            if use_image_pipeline and self.mol_image_pipeline is not None:
-                if self.mol_image_pipeline.is_available():
-                    try:
-                        pending_results = self._extract_molecules_from_images(
-                            pdf_path,
-                            doc_id,
-                            dpi=image_pipeline_dpi,
+                            logger.warning(
+                                "VLM analysis failed for %s: %s", img_path, e
+                            )
+                    if img_descriptions:
+                        content.text += "\n\n## Image Analysis\n\n" + "\n\n".join(
+                            img_descriptions
                         )
+                        content.chunks = split_text_chunks(content.text)
+
+            # 4. LLM 摘要 + L0/L1/L2 三层摘要
+            if summarize and content.text:
+                from ..core.summarizer import DocumentSummarizer, SummaryManager
+
+                summarizer = DocumentSummarizer(llm=self.llm)
+                summary = summarizer.summarize(content, doc_id)
+                if self.kb is not None:
+                    try:
+                        sm = SummaryManager(self.kb.project_root)
+                        sm.save(summary)
+                        logger.info("Saved L0/L1 summary for %s", doc_id)
                     except Exception as e:
-                        logger.error("图像分子检测失败：%s", e)
-                else:
-                    logger.warning(
-                        "MolImagePipeline 不可用（模型未下载），跳过图像检测"
+                        logger.error("Summary save failed for %s: %s", doc_id, e)
+                content.summary = summary.l1_overview
+
+            # 5. 分子提取
+            if extract_molecules and self.mol_db is not None:
+                # 5a. 图像检测管线（MolDetv2 优先）
+                pending_results: list[ExtractionResult] = []
+                if use_image_pipeline and self.mol_image_pipeline is not None:
+                    if self.mol_image_pipeline.is_available():
+                        try:
+                            pending_results = self._extract_molecules_from_images(
+                                doc,
+                                pdf_path,
+                                doc_id,
+                                dpi=image_pipeline_dpi,
+                            )
+                        except Exception as e:
+                            logger.error("图像分子检测失败：%s", e)
+                    else:
+                        logger.warning(
+                            "MolImagePipeline 不可用（模型未下载），跳过图像检测"
+                        )
+
+                # 5b. 文本正则捡漏（直接入库）
+                text_records = self._extract_molecules_from_text(content.text, doc_id)
+                content.molecules = [m.to_dict() for m in text_records]
+
+                # 5c. 保存 pending 结果（图像来源，等待人工确认）
+                if pending_results:
+                    self._save_pending_extractions(pending_results, doc_id)
+                    content.metadata["pending_extraction_count"] = len(
+                        pending_results
+                    )
+                    content.metadata["pending_extraction_path"] = str(
+                        self._pending_extractions_path(doc_id)
+                    )
+                    logger.info(
+                        "文档 %s 图像检测发现 %d 个待确认分子",
+                        doc_id,
+                        len(pending_results),
                     )
 
-            # 5b. 文本正则捡漏（直接入库）
-            text_records = self._extract_molecules_from_text(content.text, doc_id)
-            content.molecules = [m.to_dict() for m in text_records]
-
-            # 5c. 保存 pending 结果（图像来源，等待人工确认）
-            if pending_results:
-                self._save_pending_extractions(pending_results, doc_id)
-                content.metadata["pending_extraction_count"] = len(pending_results)
-                content.metadata["pending_extraction_path"] = str(
-                    self._pending_extractions_path(doc_id)
-                )
-                logger.info(
-                    "文档 %s 图像检测发现 %d 个待确认分子",
-                    doc_id,
-                    len(pending_results),
-                )
-
-        # 6. 索引到知识库
-        if index_kb and self.kb is not None:
-            try:
-                self.kb.index_document(
-                    doc_id, content, metadata={"source": str(pdf_path)}
-                )
-            except Exception as e:
-                logger.error("KB indexing failed for %s: %s", doc_id, e)
+            # 6. 索引到知识库（已内部分批）
+            if index_kb and self.kb is not None:
+                try:
+                    self.kb.index_document(
+                        doc_id, content, metadata={"source": str(pdf_path)}
+                    )
+                except Exception as e:
+                    logger.error("KB indexing failed for %s: %s", doc_id, e)
 
         return content
 
@@ -199,31 +213,75 @@ class PDFParserPipeline:
     # 图像分子提取（MolDetv2 + MolScribe）
     # ------------------------------------------------------------------
 
+    def _extract_limited_images(
+        self,
+        doc: "fitz.Document",
+        output_dir: Path,
+        max_images: int = 20,
+        max_size_mb: float = 2.0,
+    ) -> list[Path]:
+        """提取 PDF 中的图片，限制数量和单张大小以控制内存/磁盘占用."""
+        output_dir.mkdir(parents=True, exist_ok=True)
+        images: list[Path] = []
+        max_bytes = int(max_size_mb * 1024 * 1024)
+
+        for page_idx in range(len(doc)):
+            page = doc[page_idx]
+            img_list = page.get_images(full=True)
+            for img_idx, img in enumerate(img_list, start=1):
+                if len(images) >= max_images:
+                    logger.debug("Reached max image limit (%d)", max_images)
+                    return images
+                xref = img[0]
+                base_image = doc.extract_image(xref)
+                if not base_image:
+                    continue
+                img_bytes = base_image["image"]
+                if len(img_bytes) > max_bytes:
+                    logger.debug(
+                        "Skipping oversized image %s bytes > %s bytes",
+                        len(img_bytes),
+                        max_bytes,
+                    )
+                    continue
+                ext = base_image["ext"]
+                img_path = (
+                    output_dir / f"page_{page_idx + 1}_img_{img_idx}.{ext}"
+                )
+                with open(img_path, "wb") as f:
+                    f.write(img_bytes)
+                images.append(img_path)
+        return images
+
     def _extract_molecules_from_images(
         self,
+        doc: "fitz.Document",
         pdf_path: Path,
         doc_id: str,
-        dpi: float = 300.0,
+        dpi: float = 150.0,
     ) -> list[ExtractionResult]:
         """渲染 PDF 页面为图像，运行 MolDetv2 检测 + MolScribe 识别 + ROI 文本提取.
+
+        Args:
+            doc: 已打开的 fitz Document 对象（由上层统一打开，避免重复）
+            pdf_path: PDF 路径（用于 ROI 文本提取）
+            doc_id: 文档 ID
+            dpi: 渲染 DPI（默认 150，降低内存占用）
 
         Returns:
             ExtractionResult 列表（status=pending）
         """
-        if fitz is None:
-            raise ImportError("PyMuPDF 未安装，无法渲染 PDF 页面")
-
         all_results: list[ExtractionResult] = []
         crop_cache_dir = self._crop_cache_dir(doc_id)
         crop_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        with fitz.open(str(pdf_path)) as doc:
-            for page_idx in range(len(doc)):
-                page = doc[page_idx]
-                # 渲染页面为图像
-                pix = page.get_pixmap(dpi=dpi)
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
+        for page_idx in range(len(doc)):
+            page = doc[page_idx]
+            pix = page.get_pixmap(dpi=dpi)
+            try:
+                img = Image.frombytes(
+                    "RGB", [pix.width, pix.height], pix.samples
+                )
                 try:
                     results = self.mol_image_pipeline.extract_page(  # type: ignore[union-attr]
                         image=img,
@@ -251,9 +309,11 @@ class PDFParserPipeline:
 
                     all_results.extend(results)
                 except Exception as exc:
-                    logger.warning(
-                        "页面 %d 图像检测失败：%s", page_idx, exc
-                    )
+                    logger.warning("页面 %d 图像检测失败：%s", page_idx, exc)
+                finally:
+                    img.close()
+            finally:
+                del pix
 
         return all_results
 

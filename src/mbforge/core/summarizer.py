@@ -162,7 +162,7 @@ class DocumentSummarizer:
                 "3. 关键结果与发现\n"
                 "4. 涉及的分子/化合物列表\n"
                 "5. 生物活性数据摘要\n\n"
-                f"内容：\n{text[:8000]}"
+                f"内容：\n{text[:4000]}"
             )
             msgs = [
                 Message(role="system", content="你是一位专业的药物化学文献分析助手。"),

@@ -326,7 +326,17 @@ class MolScribeRecognizer:
     def _load_transformers(self) -> None:
         """加载 transformers 后端（备用）."""
         try:
-            from transformers import AutoModelForVision2Seq, AutoProcessor
+            # 兼容新旧版本 transformers
+            # transformers < 5.x: AutoModelForVision2Seq
+            # transformers >= 5.x: AutoModelForImageTextToText
+            try:
+                from transformers import AutoModelForVision2Seq, AutoProcessor
+
+                ModelClass = AutoModelForVision2Seq
+            except ImportError:
+                from transformers import AutoModelForImageTextToText, AutoProcessor
+
+                ModelClass = AutoModelForImageTextToText
 
             model_id = (
                 str(self.model_path)
@@ -336,8 +346,12 @@ class MolScribeRecognizer:
             logger.info(
                 "尝试加载 MolScribe (transformers 后端)：%s", model_id
             )
-            self._processor = AutoProcessor.from_pretrained(model_id)
-            self._model = AutoModelForVision2Seq.from_pretrained(model_id)
+            self._processor = AutoProcessor.from_pretrained(
+                model_id, local_files_only=True
+            )
+            self._model = ModelClass.from_pretrained(
+                model_id, local_files_only=True
+            )
             if self.device != "auto":
                 dev = "cuda" if "cuda" in self.device else self.device
                 self._model = self._model.to(dev)

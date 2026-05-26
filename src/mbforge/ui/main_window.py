@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 
 from ..utils.config import load_global_config
 from ..utils.logger import get_logger, log_exception
+from ..model_server.process_manager import ModelServerManager
 from .chat_widget import ChatWidget
 from .components import ProgressBar
 from .dialogs import NewProjectDialog, SettingsDialog, UniDockConfigDialog
@@ -167,20 +168,29 @@ class MainWindow(QMainWindow):
         # 状态标记
         self._models_ready = False
 
+        config = load_global_config()
+        self._server_manager = ModelServerManager(
+            host=config.model_server.host,
+            port=config.model_server.port,
+            startup_timeout=config.model_server.startup_timeout,
+        )
+        if config.model_server.auto_start:
+            self._server_manager.start()
+
     def _start_model_worker(self):
-        """手动启动后台模型加载."""
-        if self._models_ready or (
-            hasattr(self, "_model_worker")
-            and self._model_worker is not None
-            and self._model_worker.isRunning()
-        ):
+        """启动模型服务进程."""
+        if hasattr(self, "_server_manager") and self._server_manager.is_running:
             return
-        self._model_worker = ModelInitWorker()
-        self._model_worker.progress.connect(self.statusbar.showMessage)
-        self._model_worker.finished_signal.connect(self._on_models_ready)
-        self._model_worker.error_signal.connect(self._on_models_error)
-        self.statusbar.showMessage("正在加载 AI 模型...")
-        self._model_worker.start()
+        config = load_global_config()
+        if not hasattr(self, "_server_manager"):
+            self._server_manager = ModelServerManager(
+                host=config.model_server.host,
+                port=config.model_server.port,
+                startup_timeout=config.model_server.startup_timeout,
+            )
+        if config.model_server.auto_start:
+            self._server_manager.start()
+            self.statusbar.showMessage("模型服务已启动")
 
         logger.info("MainWindow.__init__ 完成")
 
@@ -1081,21 +1091,20 @@ class MainWindow(QMainWindow):
         config = load_global_config()
         dlg = SettingsDialog(config, self.project.root if self.project else None, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.statusbar.showMessage("设置已更新，正在重新加载模型...")
+            self.statusbar.showMessage("设置已更新，正在重新加载模型服务...")
             self._models_ready = False
-            # 如果已有模型加载线程在运行，先停止并等待
-            if (
-                hasattr(self, "_model_worker")
-                and self._model_worker is not None
-                and self._model_worker.isRunning()
-            ):
-                self._model_worker.quit()
-                self._model_worker.wait(3000)
-            self._model_worker = ModelInitWorker()
-            self._model_worker.progress.connect(self.statusbar.showMessage)
-            self._model_worker.finished_signal.connect(self._on_models_ready)
-            self._model_worker.error_signal.connect(self._on_models_error)
-            self._model_worker.start()
+            # 如果模型服务正在运行，先停止
+            if hasattr(self, "_server_manager") and self._server_manager.is_running:
+                self._server_manager.stop()
+            # 使用新的服务器管理器配置重新初始化
+            self._server_manager = ModelServerManager(
+                host=config.model_server.host,
+                port=config.model_server.port,
+                startup_timeout=config.model_server.startup_timeout,
+            )
+            if config.model_server.auto_start:
+                self._server_manager.start()
+                self.statusbar.showMessage("模型服务已启动")
 
     def _toggle_chat_panel(self):
         self.main_tabs.setCurrentIndex(2)  # Chat Tab
@@ -1208,4 +1217,6 @@ class MainWindow(QMainWindow):
         ):
             self.chat_widget._worker.stop()
             self.chat_widget._worker.wait(3000)
+        if hasattr(self, "_server_manager"):
+            self._server_manager.stop()
         event.accept()

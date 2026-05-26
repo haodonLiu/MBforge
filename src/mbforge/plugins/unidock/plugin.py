@@ -168,9 +168,9 @@ class UniDockPlugin(BasePlugin):
 
         # 输出可用状态
         if self._unidock_available:
-            print(f"[UniDock] ✓ UniDock 可用: {self._unidock_path}")
+            print(f"[UniDock] [OK] UniDock 可用: {self._unidock_path}")
         else:
-            print("[UniDock] ⚠ UniDock 未安装或不在 PATH 中")
+            print("[UniDock] [!] UniDock 未安装或不在 PATH 中")
             print("[UniDock]   安装方式: conda create -n unidock_env unidock -c conda-forge")
             print("[UniDock]   将使用 fallback 模式（不执行实际对接）")
 

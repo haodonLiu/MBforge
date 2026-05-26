@@ -78,7 +78,7 @@ class TodoPanel(QWidget):
                 font-size: 12px;
             }}
             QProgressBar::chunk {{
-                background: {p['brand_primary']};
+                background: {p['accent']};
                 border-radius: 6px;
             }}
         """)
@@ -98,8 +98,8 @@ class TodoPanel(QWidget):
                 border-bottom: 1px solid {p['bg_base']};
             }}
             QListWidget::item:selected {{
-                background: {p['brand_primary']}1a;
-                color: {p['brand_primary']};
+                background: {p['accent']};
+                color: {p['text_secondary']};
             }}
         """)
         layout.addWidget(self.todo_list)

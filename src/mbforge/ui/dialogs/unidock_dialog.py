@@ -11,12 +11,12 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
-    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
+from ..components import BaseButton
 from ..theme import ThemeManager, create_input
 
 
@@ -43,7 +43,7 @@ class UniDockConfigDialog(QDialog):
         receptor_layout = QHBoxLayout()
         self.receptor_edit = create_input(placeholder="选择受体蛋白 PDBQT 文件")
         self.receptor_edit.setToolTip("受体蛋白 PDBQT 文件路径")
-        self.browse_receptor_btn = QPushButton("浏览...")
+        self.browse_receptor_btn = BaseButton("浏览...")
         self.browse_receptor_btn.clicked.connect(self._browse_receptor)
         receptor_layout.addWidget(self.receptor_edit)
         receptor_layout.addWidget(self.browse_receptor_btn)

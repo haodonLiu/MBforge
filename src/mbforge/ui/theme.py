@@ -149,7 +149,7 @@ def _build_global_qss() -> str:
 def _build_dialog_qss() -> str:
     p = _p()
     return f"""
-    QDialog {{ background: {p['bg_card']}; }}
+    QDialog {{ background: {p['bg_card']}; border-radius: 12px; }}
     QLabel {{ color: {p['text_primary']}; }}
     QLineEdit {{
         background: {p['bg_base']};

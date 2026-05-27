@@ -39,22 +39,31 @@
 
 ---
 
-## 2. UI Framework
+## 2. Frontend
 
-### PyQt6
+### React
 
-> Riverbank Computing Ltd. (2024). *PyQt6 Documentation*. https://doc.qt.org/
+> Meta Platforms, Inc. (2024). *React Documentation*. https://react.dev/
 
-- Website: https://www.riverbankcomputing.com/software/pyqt/
-- Version: >= 6.6
-- License: GPL v3 / Commercial
+- Website: https://react.dev/
+- Version: 19
+- License: MIT
 
-### Qt / QWebEngineView
+### Vite
 
-> The Qt Company. (2024). *Qt Documentation*. https://doc.qt.org/
+> You, E. (2024). *Vite Documentation*. https://vitejs.dev/
 
-- Website: https://www.qt.io/
-- Used for: Markdown/HTML preview rendering via embedded Chromium
+- Website: https://vitejs.dev/
+- Version: 6
+- License: MIT
+
+### Tauri
+
+> Tauri Programme within The Commons Collective. (2024). *Tauri Documentation*. https://tauri.app/
+
+- Website: https://tauri.app/
+- Version: v2
+- License: MIT/Apache 2.0
 
 ---
 

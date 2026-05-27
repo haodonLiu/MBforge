@@ -1,14 +1,14 @@
 # MBForge Architecture
 
-> 本文档详细描述 MBForge 的系统架构、核心设计决策、数据流和技术细节。
+> 系统架构、核心设计决策、数据流和技术细节。
 
-**Related Documentation:** [API Reference](API.md) · [Development Guide](DEVELOPMENT.md) · [Tech Stack](TECH_STACK.md) · [References](../REFERENCES.md)
+**Related:** [API Reference](API.md) · [Tech Stack](TECH_STACK.md) · [Development Guide](DEVELOPMENT.md)
 
 ---
 
 ## 1. Overview
 
-MBForge is a PyQt6 desktop application for molecular science and drug discovery research. Its core workflow:
+MBForge is a molecular science knowledge base platform with a React+Vite+Tauri frontend and FastAPI backend. Core workflow:
 
 ```
 PDF → DocumentProcessor → MoleculeExtractor → DocumentSummarizer
@@ -27,38 +27,28 @@ PDF → DocumentProcessor → MoleculeExtractor → DocumentSummarizer
 ## 2. System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        UI Layer (PyQt6)                      │
-│  MainWindow │ ChatWidget │ PDFViewer │ MolPanel │ FileTree  │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────┐
-│                      Agent Layer (ReAct)                     │
-│  ProjectAgent │ LayeredContext │ ToolExecutor │ MemoryManager │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────┐
-│                     Model Abstraction Layer                  │
-│  BaseLLM │ BaseEmbedder │ BaseReranker │ BaseVLM            │
-│  (OpenAI / Anthropic / SentenceTransformer / API)           │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────┐
-│                      Core Data Layer                         │
-│  Project │ KnowledgeBase │ MoleculeDatabase │ Summarizer     │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────┐
-│                     Parser / Pipeline                        │
-│  PDFParserPipeline │ MoleculeExtractor │ DocumentProcessor   │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────┐
-│                  Storage / External Services                 │
-│  ChromaDB (vectors) │ SQLite (molecules) │ UniParser API     │
-│  Local filesystem (.mbforge/)                                │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────┐     ┌─────────────────────────┐
+│  React+Vite Frontend │────▶│  FastAPI Model Server    │
+│  (port 5173)         │     │  (port 18792)            │
+│  Tauri Bridge        │     │  /api/v1/*               │
+└─────────────────────┘     └─────────────────────────┘
+                                     │
+                    ┌────────────────┼────────────────┐
+                    ▼                ▼                ▼
+             ┌──────────┐    ┌──────────┐    ┌──────────┐
+             │ PDFParser │    │ Agent    │    │ Knowledge│
+             │ Pipeline  │    │ (ReAct)  │    │ Base     │
+             └──────────┘    └──────────┘    └──────────┘
 ```
+
+**Layers:**
+1. **Frontend** — React 19 + Vite 6 + TypeScript, served by Vite dev server or Tauri
+2. **Model Server** — FastAPI + uvicorn, 12 API routers
+3. **Agent Layer** — ReAct loop with 10 tools, layered context, memory
+4. **Model Abstraction** — BaseLLM/BaseEmbedder/BaseReranker/BaseVLM
+5. **Core Data** — Project, KnowledgeBase, MoleculeDatabase, Summarizer
+6. **Parser Pipeline** — PDFParserPipeline, MoleculeExtractor, DocumentProcessor
+7. **Storage** — ChromaDB (vectors), SQLite (molecules), local filesystem
 
 ---
 
@@ -66,73 +56,77 @@ PDF → DocumentProcessor → MoleculeExtractor → DocumentSummarizer
 
 ### 3.1 `core/` — Data Models
 
-| File | Class/Module | Responsibility |
-|------|-------------|----------------|
+| File | Class | Responsibility |
+|------|-------|----------------|
 | `project.py` | `Project`, `DocumentEntry` | Vault management, file index, `.mbforge/` metadata |
 | `knowledge_base.py` | `KnowledgeBase` | ChromaDB wrapper: `index_document`, `search`, `hybrid_search` |
 | `mol_database.py` | `MoleculeDatabase`, `MoleculeRecord` | SQLite + FTS5, RDKit property computation |
-| `document.py` | `DocumentProcessor`, `ExtractedContent` | PDF/text/markdown extraction, image extraction |
+| `document.py` | `DocumentProcessor`, `ExtractedContent` | PDF/text/markdown extraction |
 | `summarizer.py` | `DocumentSummarizer`, `SummaryManager` | L0/L1/L2 layered summarization |
-| `settings.py` | `ProjectSettings` | Project-level config (model overrides, workflow toggles) |
+| `settings.py` | `ProjectSettings` | Project-level config |
 | `memory.py` | `AgentMemory` | Agent 6-type memory templates |
 | `todo_manager.py` | `TodoManager` | Todo list persistence |
 
 ### 3.2 `models/` — AI Model Abstraction
 
-| File | Class | Responsibility |
-|------|--------|----------------|
-| `base.py` | `BaseLLM`, `BaseEmbedder`, `BaseReranker`, `BaseVLM`, `Message`, `StreamChunk` | Abstract interfaces |
-| `llm.py` | `OpenAILLM`, `create_llm_from_config()` | OpenAI-compatible API LLM |
-| `anthropic_llm.py` | `AnthropicLLM` | Anthropic Claude series |
-| `embedding.py` | `SentenceTransformerEmbedder`, `APIEmbedder` | Local / API embedding |
-| `rerank.py` | `SentenceTransformerReranker`, `APIReranker` | Local / API reranking |
-| `vlm.py` | `APIVLM` | Vision-language model for PDF image analysis |
+| File | Class | Backend |
+|------|-------|---------|
+| `base.py` | `BaseLLM`, `BaseEmbedder`, `BaseReranker`, `BaseVLM` | Abstract interfaces |
+| `llm.py` | `OpenAILLM` | OpenAI-compatible API |
+| `anthropic_llm.py` | `AnthropicLLM` | Anthropic Claude |
+| `embedding.py` | `SentenceTransformerEmbedder`, `Qwen3Embedder`, `APIEmbedder` | Local + API |
+| `rerank.py` | `SentenceTransformerReranker` | Local |
+| `vlm.py` | `APIVLM` | API |
+| `client.py` | `LLMClient`, `ModelClientFactory` | HTTP clients for model server |
 
-### 3.3 `parsers/` — PDF Parsing & Molecule Extraction
+### 3.3 `model_server/` — FastAPI Backend
 
-| File | Class | Responsibility |
-|------|--------|----------------|
+| Router | Prefix | Function |
+|--------|--------|----------|
+| `llm` | `/api/v1/llm` | LLM chat/stream |
+| `embed` | `/api/v1/embed` | Text embedding |
+| `rerank` | `/api/v1/rerank` | Result reranking |
+| `vlm` | `/api/v1/vlm` | Vision language model |
+| `agent` | `/api/v1/agent` | Agent chat/stream |
+| `kb` | `/api/v1/kb` | Knowledge base search |
+| `molecule` | `/api/v1/molecule` | Molecule database |
+| `project` | `/api/v1/project` | Project management |
+| `file` | `/api/v1/file` | File upload/delete |
+| `health` | `/api/v1/health` | Health check |
+| `settings` | `/api/v1/settings` | App settings |
+| `moldet` | `/api/v1/moldet` | Molecule detection |
+| `uniparser` | `/api/v1/uniparser` | PDF parsing |
+
+### 3.4 `parsers/` — PDF Parsing & Molecule Extraction
+
+| File | Class | Role |
+|------|-------|------|
 | `pdf_parser.py` | `PDFParserPipeline` | Orchestrates full parsing pipeline |
-| `molecule_extractor.py` | `MoleculeExtractor` | Regex + LLM-based SMILES extraction |
-| `file_processor.py` | `FileProcessor` | Generic file → `ExtractedContent` |
+| `molecule_extractor.py` | `MoleculeExtractor` | Regex + LLM SMILES extraction |
+| `file_processor.py` | `FileProcessor` | Multi-format file handling |
+| `molecule/mol_image_pipeline.py` | `MolImagePipeline` | YOLO detection + MolScribe recognition |
+| `uniparser/` | `ParserClient` | UniParser API wrapper |
 
-### 3.4 `agent/` — ReAct Agent
+### 3.5 `agent/` — ReAct Agent
 
-| File | Class | Responsibility |
-|------|--------|----------------|
+| File | Class | Role |
+|------|-------|------|
 | `agent.py` | `ProjectAgent` | ReAct loop coordinator |
-| `context.py` | `LayeredContext` | System → Project → Memory → History layers |
-| `executor.py` | `ToolExecutor`, `ToolRegistry` | Tool registration and execution |
-| `tools.py` | Tool definitions (10 tools) | `search_knowledge`, `search_molecules`, `get_document`, etc. |
-| `memory_manager.py` | `MemoryManager` | 6-type memory: user profile, agent experience, project summary, etc. |
+| `context.py` | `LayeredContext` | Multi-layer context management |
+| `executor.py` | `ToolExecutor` | Tool dispatch and execution |
+| `tools.py` | `@tool` definitions | 10 agent tools |
+| `memory_manager.py` | `MemoryManager` | 6-type memory extraction |
 | `trajectory.py` | `TrajectoryTracker` | Tool call logging |
-| `archive_agent.py` | `ArchiveAgent` | Document/archive search agent |
 
-### 3.5 `ui/` — PyQt6 Interface
+### 3.6 `frontend/` — React Frontend
 
-| File | Class | Responsibility |
-|------|--------|----------------|
-| `main_window.py` | `MainWindow` | Main window, assembles all components |
-| `chat_widget.py` | `ChatWidget` | Chat interface with streaming |
-| `pdf_viewer.py` | `PDFViewer` | PDF rendering via PyMuPDF |
-| `mol_panel.py` | `MolPanel` | Molecule list/detail panel |
-| `mol_renderer.py` | `MolRenderer` | RDKit → QPixmap molecule image rendering |
-| `file_tree.py` | `FileTree` | Project file tree (sidebar) |
-| `editor.py` | `MarkdownEditor` | Markdown editing |
-| `preview.py` | `MarkdownPreview` | HTML/Markdown preview via QWebEngineView |
-| `dialogs.py` | Settings dialogs, About dialog | Configuration UI |
-
-### 3.6 `parsers/uniparser/` — UniParser Integration
-
-| File | Class | Responsibility |
-|------|--------|----------------|
-| `uniparser_client.py` | `ParserClient` | UniParser API wrapper |
-| `uniparser_config.py` | `ParserConfig` | Parser-specific config |
-| `uniparser_models.py` | `ParseResult` | Data models |
-
-### 3.7 `workflow/` — Workflow Extensions (Stubs)
-
-`generation.py`, `docking.py`, `qsar.py`, `md.py` — each imports `WorkflowBase` and provides toggle switches. Not yet implemented.
+| Directory | Content |
+|-----------|---------|
+| `src/components/` | UI components (Chat, ProjectView, Search, Settings, etc.) |
+| `src/api/` | API client wrappers |
+| `src/hooks/` | Custom React hooks |
+| `src/types/` | TypeScript type definitions |
+| `src/styles/` | CSS variables and component styles |
 
 ---
 
@@ -141,212 +135,67 @@ PDF → DocumentProcessor → MoleculeExtractor → DocumentSummarizer
 ### 4.1 PDF Indexing Pipeline
 
 ```
-User triggers "Index"
-        │
-        ▼
-Project.scan_files()  ──returns──►  List[DocumentEntry]
-        │
-        ▼ (for each PDF)
-PDFParserPipeline.parse(pdf_path)
-        │
-        ├─► DocumentProcessor.process()  ──► ExtractedContent
-        │       │
-        │       ├─► PyMuPDF extract text
-        │       ├─► PyMuPDF extract images
-        │       └─► split_text_chunks()
-        │
-        ├─► (optional) VLM.describe_pdf_page() for each image
-        │
-        ├─► (optional) DocumentSummarizer.summarize()
-        │       │        │
-        │       │        └─► LLM.chat() → L0/L1/L2 summaries
-        │       │                  │
-        │       └─► SummaryManager.save()
-        │
-        ├─► (optional) MoleculeExtractor.extract_from_text()
-        │       │        │
-        │       │        ├─► Regex for SMILES patterns
-        │       │        ├─► LLM for chemical name → SMILES
-        │       │        └─► MoleculeRecord list
-        │       │                  │
-        │       └─► MoleculeDatabase.add_molecule()
-        │
-        └─► (optional) KnowledgeBase.index_document()
-                    │
-                    ├─► embed() → chunk vectors
-                    └─► ChromaDB collection.add()
+User selects PDF
+  → DocumentProcessor.extract_text() / extract_images()
+  → MoleculeExtractor.extract_from_text() + extract_from_images()
+  → DocumentSummarizer.generate_summary() (L0/L1/L2)
+  → KnowledgeBase.index_document() (ChromaDB)
+  → MoleculeDatabase.add_molecule() (SQLite + RDKit)
 ```
 
-### 4.2 Agent Chat Pipeline
+### 4.2 Agent Chat Flow
 
 ```
-User types query
-        │
-        ▼
-ProjectAgent.chat()
-        │
-        ├─► LayeredContext.build_messages()
-        │       │        │
-        │       │        ├─► system_prompt (with tool descriptions)
-        │       │        ├─► project context
-        │       │        ├─► injected memories
-        │       │        └─► conversation history
-        │
-        ├─► LLM.chat_completion(tools=...)
-        │       │
-        │       └─► Response { content?, tool_calls? }
-        │
-        ├─► if tool_calls:
-        │       │
-        │       └─► ToolExecutor.registry.call(tool_name, args)
-        │               │
-        │               ├─► search_knowledge → KnowledgeBase.search()
-        │               ├─► search_molecules → MoleculeDatabase.search_by_*
-        │               ├─► get_document → DocumentProcessor
-        │               └─► ...
-        │
-        └─► return final answer
+User sends message
+  → ProjectAgent.chat()
+    → LayeredContext.build_messages() (system + memory + conversation)
+    → LLM.chat() or LLM.call_with_tools()
+    → If tool_call: ToolExecutor.execute()
+    → Response to user
 ```
 
 ---
 
-## 5. Vault / Project Structure
+## 5. Configuration
 
-Each project is a folder. MBForge metadata lives in `.mbforge/` (hidden):
+Two-tier configuration:
 
-```
-my-project/
-├── .mbforge/
-│   ├── settings.json       # ProjectSettings
-│   ├── index.json          # DocumentEntry index
-│   ├── chroma_db/          # ChromaDB persistent client
-│   ├── mol.db             # SQLite molecule database
-│   ├── memories/          # Agent memory JSON files
-│   └── trajectories/      # Tool call logs
-├── papers/
-│   ├── paper1.pdf
-│   └── paper2.md
-└── molecules/
-    └── hit_compounds.sdf
-```
+- **Global** (`~/.config/MBForge/config.json`): LLM, embedding, rerank, VLM settings
+- **Project** (`.mbforge/settings.json`): Model overrides, workflow toggles
+
+Environment variable overrides: `MBFORGE_LLM_*`, `MBFORGE_EMBED_*`, etc.
 
 ---
 
-## 6. Config System (Two Tiers)
+## 6. Error Handling
 
-### Global Config (`~/.config/MBForge/config.json`)
-
-```
-AppConfig
-├── llm: ModelConfig
-│   ├── provider: openai_compatible | anthropic | local
-│   ├── base_url: http://localhost:8000/v1
-│   ├── api_key: ...
-│   ├── model_name: Qwen2.5-7B-Instruct
-│   ├── max_tokens: 4096
-│   └── temperature: 0.7
-├── embed: EmbedConfig
-│   ├── provider: sentence_transformers | openai | api
-│   ├── model_name: BAAI/bge-small-zh-v1.5
-│   ├── device: cpu | cuda
-├── rerank: RerankConfig
-│   ├── provider: sentence_transformers
-│   ├── model_name: BAAI/bge-reranker-base
-│   └── device: cpu | cuda
-├── vlm: VLMConfig
-│   └── ...
-├── recent_projects: [...]
-├── theme: dark | light
-└── language: zh | en
-```
-
-### Project Config (`.mbforge/settings.json`)
+Centralized exception hierarchy:
 
 ```
-ProjectSettings
-├── name: MyProject
-├── created_at: ISO timestamp
-├── model_overrides: {...}    # Override global LLM/embedder per-project
-├── workflow_toggles: {generation: false, docking: false, ...}
-└── ...
+MBForgeError (base, status_code + error_code)
+  ├── ProjectNotFoundError (404)
+  ├── ProjectNotValidError (400)
+  ├── ModelNotAvailableError (503)
+  ├── APIKeyMissingError (401)
+  ├── ConfigError (400)
+  ├── ValidationError (422)
+  ├── FileAccessError (400)
+  └── PathTraversalError (403)
 ```
 
-**Priority:** Project-level overrides > Global config > Environment variables > Defaults.
+Global exception handler in `main.py` converts to structured JSON responses.
 
 ---
 
-## 7. Agent Tool Registry
+## 7. Storage Structure
 
-Ten tools registered in `agent/tools.py`:
-
-| Tool | Function | Description |
-|------|----------|-------------|
-| `search_knowledge` | `KnowledgeBase.hybrid_search()` | Semantic search with rerank |
-| `search_molecules` | `MoleculeDatabase.search_by_*` | Search by SMILES, activity, source |
-| `get_document` | `DocumentProcessor.process()` | Load document content |
-| `get_document_summary` | `KnowledgeBase.get_document_overview()` | Get L1 overview |
-| `list_project_files` | `Project.list_documents()` | List all indexed files |
-| `get_molecule_details` | `MoleculeDatabase.get_molecule()` | Get full molecule record |
-| `calculate_properties` | `MoleculeRecord.compute_properties()` | RDKit property calculation |
-| `search_by_substructure` | *(placeholder)* | Substructure search |
-| `get_recent_memories` | `MemoryManager.get_recent()` | Retrieve memory context |
-| `save_note` | *(placeholder)* | Save user note |
-
----
-
-## 8. Memory System
-
-Based on TencentDB-Agent-Memory patterns, 6 memory types:
-
-| Type | Source | TTL |
-|------|--------|-----|
-| User profile | Explicit / extracted from conversation | Long-term |
-| Agent experience | Extracted after each session | Long-term |
-| Project summary | Periodic summarization | Long-term |
-| Recent context | Last N tool calls | Session |
-| Entity knowledge | Document parsing | Long-term |
-| Session summary | End-of-session extraction | Medium |
-
-Memory injection: `MemoryManager.get_user_profile_text()` → `LayeredContext.inject_memory()` → system prompt layer.
-
----
-
-## 9. Design Influences
-
-- **Vault metaphor**: Obsidian — folder = project, `.obsidian/` = `.mbforge/`
-- **ChromaDB integration**: Inspired by TencentDB-Agent-Memory architecture
-- **ReAct agent**: OpenAI function calling + tool execution loop
-- **Layered context**: Hierarchical context management (system → project → memory → history)
-- **PDF parsing**: PyMuPDF ( Fitz ) for text + image extraction, LLM for structured summarization
-
----
-
-## 10. Extension Points
-
-### Adding a new LLM provider
-
-1. Subclass `BaseLLM` in `models/`
-2. Implement `chat()`, `chat_stream()`, `achat()`, `achat_stream()`
-3. Add dispatch in `create_llm_from_config()`:
-
-```python
-if provider == "myprovider":
-    from .my_llm import MyLLM
-    return MyLLM(...)
 ```
-
-### Adding a new Agent tool
-
-1. Define function in `agent/tools.py`
-2. Register: `ToolExecutor.registry.register(my_tool)`
-3. Tool schema auto-exported via `to_openai_schemas()`
-
-### Adding a workflow module
-
-1. Create `workflow/mymodule.py` implementing `WorkflowBase`
-2. Add toggle in `ProjectSettings`
-3. Wire toggle in UI (`ui/dialogs.py` or `ui/main_window.py`)
-
-### Replacing PyMuPDF with UniParser
-
-`parsers/uniparser/ParserClient` wraps UniParser API. Replace `DocumentProcessor.process()` calls with `ParserClient.parse_and_wait()` in `PDFParserPipeline` to switch parsing backend.
+.mbforge/
+├── index.json          # Document index
+├── settings.json       # Project settings
+├── kb/                 # ChromaDB vector store
+├── molecules.db        # SQLite molecule database
+├── summaries/          # LLM-generated summaries
+├── extractions/        # Molecule extraction cache
+└── trajectories/       # Agent tool call logs
+```

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from pathlib import Path
 from mbforge.parsers.pdf_classifier import (
     PDFClassifier,
     DocumentClassification,
@@ -48,7 +47,7 @@ class TestPDFClassifier:
         result = classifier.classify_page(text, 0)
         assert result.has_molecular_patterns is True
 
-    def test_classify_document_text_pdf(self, tmp_path):
+    def test_classify_document_text_pdf(self):
         """Text-heavy PDF should be classified as text PDF."""
         classifier = PDFClassifier()
         pages = ["Page 1 content " * 50, "Page 2 content " * 50]
@@ -56,7 +55,7 @@ class TestPDFClassifier:
         assert result.is_scanned is False
         assert result.text_density > 50
 
-    def test_classify_document_scanned_pdf(self, tmp_path):
+    def test_classify_document_scanned_pdf(self):
         """Image-heavy PDF should be classified as scanned."""
         classifier = PDFClassifier()
         pages = ["   ", "   ", "   "]

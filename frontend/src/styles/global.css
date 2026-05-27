@@ -554,3 +554,193 @@ body {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/* ===== Confirmation Panel ===== */
+.confirmation-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 24px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.confirmation-header h2 {
+  font-size: var(--font-size-title);
+  font-weight: 600;
+}
+
+.confirmation-info {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.confirmation-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  border-radius: 8px;
+}
+
+.confirmation-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.confirmation-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.confirmation-type {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.confirmation-type-text {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.confirmation-type-scanned {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.confirmation-type-mixed {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
+.confirmation-text-count {
+  color: var(--success);
+}
+
+.confirmation-scanned-count {
+  color: var(--warning);
+}
+
+/* Page Map */
+.confirmation-page-map h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.confirmation-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.confirmation-page {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: default;
+  transition: all 0.15s;
+}
+
+.confirmation-page.text {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.confirmation-page.scanned {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.confirmation-page.has-molecules {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.confirmation-page.small {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.confirmation-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.confirmation-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Recommendations */
+.confirmation-recommendations h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.confirmation-recommendations ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.confirmation-recommendations li {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border-radius: 6px;
+}
+
+.confirmation-method-label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* Summary */
+.confirmation-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: var(--bg-surface);
+  border-radius: 8px;
+}
+
+.confirmation-cost {
+  color: var(--accent);
+  font-size: 16px;
+}
+
+.confirmation-molecules {
+  color: var(--success);
+  font-size: 16px;
+}
+
+/* Actions */
+.confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}

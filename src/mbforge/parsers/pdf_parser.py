@@ -110,6 +110,34 @@ class PDFParserPipeline:
                 text_parts.append(page.get_text())
             content.text = "\n\n".join(text_parts)
 
+            # 1.5. Classify PDF type
+            from .pdf_classifier import PDFClassifier
+            from .ocr_router import OCRMethodRouter
+
+            classifier = PDFClassifier()
+            router = OCRMethodRouter()
+
+            doc_classification = classifier.classify_document_from_pages(
+                text_parts,
+                metadata=content.metadata,
+            )
+
+            content.metadata["classification"] = {
+                "is_scanned": doc_classification.is_scanned,
+                "has_molecules": doc_classification.has_molecular_patterns,
+                "text_density": doc_classification.text_density,
+                "needs_confirmation": doc_classification.needs_confirmation,
+                "pages": [
+                    {
+                        "page_idx": p.page_idx,
+                        "is_scanned": p.is_scanned,
+                        "has_molecular_patterns": p.has_molecular_patterns,
+                        "text_density": p.text_density,
+                    }
+                    for p in doc_classification.pages
+                ],
+            }
+
             if content.text:
                 from ..utils.helpers import split_text_chunks
 

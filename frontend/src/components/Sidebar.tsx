@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom'
-import { FlaskIcon, SearchIcon, ChatIcon, WorkflowIcon, PlusIcon, FileTextIcon, LayoutIcon } from './icons'
+import { FlaskIcon, SearchIcon, ChatIcon, WorkflowIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon } from './icons'
 
 interface Props {
   current: string
   onNavigate: (page: string) => void
+  onSettingsOpen: () => void
   fileTreeOpen: boolean
   onToggleFileTree: () => void
 }
@@ -16,7 +17,7 @@ const NAV_ITEMS = [
   { id: 'workflow', label: '工作流', path: '/workflow', icon: WorkflowIcon },
 ]
 
-export default function Sidebar({ current, onNavigate, fileTreeOpen, onToggleFileTree }: Props) {
+export default function Sidebar({ current, onNavigate, onSettingsOpen, fileTreeOpen, onToggleFileTree }: Props) {
   const navigate = useNavigate()
 
   const handleClick = (item: typeof NAV_ITEMS[0]) => {
@@ -141,6 +142,33 @@ export default function Sidebar({ current, onNavigate, fileTreeOpen, onToggleFil
           }}
         >
           <PlusIcon size={20} />
+        </button>
+        <button
+          title="设置"
+          onClick={onSettingsOpen}
+          style={{
+            width: '44px',
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '8px',
+            border: 'none',
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'var(--bg-hover)'
+            e.currentTarget.style.color = 'var(--text-primary)'
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'transparent'
+            e.currentTarget.style.color = 'var(--text-secondary)'
+          }}
+        >
+          <SettingsIcon size={20} />
         </button>
       </div>
     </aside>

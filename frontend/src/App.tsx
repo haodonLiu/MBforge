@@ -57,6 +57,7 @@ export default function App() {
       <Sidebar
         current={currentPage}
         onNavigate={setCurrentPage}
+        onSettingsOpen={() => setSettingsOpen(true)}
         fileTreeOpen={fileTreeOpen}
         onToggleFileTree={() => setFileTreeOpen(!fileTreeOpen)}
       />

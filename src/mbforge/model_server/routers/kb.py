@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from pathlib import Path
 from pydantic import BaseModel
 
 from ...core.knowledge_base import KnowledgeBase
@@ -24,9 +25,11 @@ class SearchRequest(BaseModel):
 @router.post("/search")
 async def kb_search(
     req: SearchRequest,
-    project: Project = Depends(get_project_from_root),
 ) -> dict:
     try:
+        project = Project.open(Path(req.project_root))
+        if project is None:
+            return {"success": False, "error": f"Not a valid project: {req.project_root}"}
         kb = KnowledgeBase(project.root, embedder=get_embedder())
         results = kb.search(req.query, top_k=req.top_k)
         return {"success": True, "results": results}

@@ -1,4 +1,4 @@
-"""同步 HTTP 客户端（供 PyQt UI 线程使用）."""
+"""同步 HTTP 客户端."""
 
 from __future__ import annotations
 

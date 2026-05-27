@@ -159,7 +159,6 @@ cp .env.template .env
 | 文件 | 作用 |
 |------|------|
 | `src/mbforge/cli.py` | CLI 入口，`mbforge` 命令行工具 |
-| `src/mbforge/app.py` | GUI 入口，启动模型服务器 + 打开浏览器 |
 | `src/mbforge/model_server/main.py` | FastAPI 模型服务器入口 |
 | `src/mbforge/core/project.py` | `Project` 类管理 vault 元数据 |
 | `src/mbforge/parsers/pdf_parser.py` | `PDFParserPipeline` 解析流水线 |
@@ -191,7 +190,7 @@ cp .env.template .env
 
 1. Create module under `src/mbforge/workflow/`
 2. Inherit `WorkflowBase` from `workflow/base.py`
-3. Add toggle in `ProjectSettings` and UI toggle in `ui/`
+3. Add toggle in `ProjectSettings`
 
 ## Development Rules
 

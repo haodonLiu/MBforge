@@ -29,6 +29,14 @@ export default function ConfirmationPanel({
   const scannedPages = pages.filter((p) => p.isScanned).length
   const textPages = totalPages - scannedPages
 
+  const methodCounts = pages.reduce(
+    (acc, p) => {
+      acc[p.recommendedMethod] = (acc[p.recommendedMethod] || 0) + 1
+      return acc
+    },
+    {} as Record<string, number>,
+  )
+
   const handleOverride = () => {
     const method = prompt(
       'Enter override method (e.g. "ocr_all", "text_only", "hybrid"):',
@@ -102,16 +110,20 @@ export default function ConfirmationPanel({
       <div className="confirmation-recommendations">
         <h3>Recommended Methods</h3>
         <ul>
-          <li>
-            <span className="confirmation-method-label">Text pages ({textPages}):</span>{' '}
-            Direct text extraction (low cost)
-          </li>
-          <li>
-            <span className="confirmation-method-label">
-              Scanned pages ({scannedPages}):
-            </span>{' '}
-            OCR + VLM processing (higher cost)
-          </li>
+          {Object.entries(methodCounts).map(([method, count]) => (
+            <li key={method}>
+              <span className="confirmation-method-label">
+                {method} ({count} page{count !== 1 ? 's' : ''}):
+              </span>{' '}
+              {method === 'text_only'
+                ? 'Direct text extraction (low cost)'
+                : method === 'ocr_all'
+                  ? 'Full OCR processing (medium cost)'
+                  : method === 'hybrid'
+                    ? 'OCR + VLM processing (higher cost)'
+                    : method}
+            </li>
+          ))}
         </ul>
       </div>
 

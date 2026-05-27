@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { listDocuments, scanProject } from '../api/client'
 import { FolderIcon, FileTextIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon, ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from './icons'
 import type { DocumentEntry } from '../types'
 import { getProjectRoot } from '../hooks/useProjectRoot'
@@ -33,13 +34,12 @@ export default function ProjectView() {
     setIsLoading(true)
     setError('')
     try {
-      // 模拟数据
-      setDocs([
-        { doc_id: '1', path: '/docs/aspirin.pdf', title: '阿司匹林研究.pdf', doc_type: 'pdf', indexed: true },
-        { doc_id: '2', path: '/docs/caffeine.pdf', title: '咖啡因分子结构.pdf', doc_type: 'pdf', indexed: true },
-        { doc_id: '3', path: '/docs/ibuprofen.pdf', title: '布洛芬药代动力学.pdf', doc_type: 'pdf', indexed: false },
-        { doc_id: '4', path: '/docs/notes.md', title: '研究笔记.md', doc_type: 'md', indexed: true },
-      ])
+      const resp = await listDocuments(root)
+      if (resp.success && resp.documents) {
+        setDocs(resp.documents)
+      } else {
+        setError(resp.error || 'Failed to load documents')
+      }
     } catch (e) {
       console.error(e)
       setError('Failed to load documents')
@@ -54,7 +54,23 @@ export default function ProjectView() {
   }, [])
 
   const handleScan = async () => {
-    loadDocs()
+    const root = getProjectRoot()
+    if (!root) return
+    setIsLoading(true)
+    setError('')
+    try {
+      const resp = await scanProject(root)
+      if (resp.success && resp.documents) {
+        setDocs(resp.documents)
+      } else {
+        setError(resp.error || 'Scan failed')
+      }
+    } catch (e) {
+      console.error(e)
+      setError('Scan failed')
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleOpenPdf = (doc: DocumentEntry) => {

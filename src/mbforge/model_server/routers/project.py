@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ...core.project import Project
 from ...utils.constants import PROJECT_META_DIR
-from ...utils.exceptions import ProjectNotFoundError, ProjectNotValidError
+from ...utils.exceptions import ProjectNotFoundError
 from ...utils.logger import get_logger
 from ..dependencies import get_project_from_root
 
@@ -54,7 +54,11 @@ async def create_project(req: CreateProjectRequest) -> dict:
 
 @router.post("/open")
 async def open_project(req: CreateProjectRequest) -> dict:
-    project = await get_project_from_root(req.root)
+    try:
+        project = await get_project_from_root(req.root)
+    except Exception:
+        # 目录存在但不是有效项目，自动初始化
+        project = Project.create(Path(req.root), req.name or Path(req.root).name)
     return {"success": True, "project": _project_to_dict(project)}
 
 

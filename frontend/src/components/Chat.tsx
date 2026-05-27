@@ -1,19 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { agentChat, chat, listDocuments, moleculeStats } from '../api/client'
-import { SendIcon, UserIcon, BotIcon, SearchIcon, BarChartIcon, TargetIcon, FolderIcon, FileTextIcon, FlaskIcon, GlobeIcon } from './icons'
+import { agentChat, getChatHistory, listDocuments, moleculeStats } from '../api/client'
+import { SendIcon, UserIcon, BotIcon, FolderIcon, FileTextIcon, FlaskIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
 
 interface ChatMessage {
+  id?: string
   role: 'user' | 'assistant'
   content: string
 }
 
-type ChatMode = 'global' | 'project'
-
 export default function Chat() {
   const projectRoot = getProjectRoot()
-  const [mode, setMode] = useState<ChatMode>(projectRoot ? 'project' : 'global')
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', content: '你好！我是 MBForge AI 助手。有什么关于分子或文献的问题可以问我。' },
   ])
@@ -26,15 +24,23 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
+  // Load chat history on mount
+  useEffect(() => {
+    if (!projectRoot) return
+    getChatHistory(projectRoot).then(resp => {
+      if (resp.success && resp.messages && resp.messages.length > 0) {
+        setMessages(resp.messages.map(m => ({
+          id: m.id,
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })))
+      }
+    }).catch(() => {})
+  }, [projectRoot])
+
   useEffect(() => {
     scrollToBottom()
   }, [messages])
-
-  useEffect(() => {
-    if (!projectRoot && mode === 'project') {
-      setMode('global')
-    }
-  }, [projectRoot, mode])
 
   useEffect(() => {
     if (!projectRoot) return
@@ -47,7 +53,7 @@ export default function Chat() {
   }, [projectRoot])
 
   const sendMessage = useCallback(async () => {
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isLoading || !projectRoot) return
 
     const userMsg = input.trim()
     setInput('')
@@ -57,26 +63,21 @@ export default function Chat() {
     const allMessages = [...messages, { role: 'user' as const, content: userMsg }]
 
     try {
-      if (mode === 'global') {
-        const resp = await chat(allMessages.map(m => ({ role: m.role, content: m.content })))
+      const resp = await agentChat(
+        projectRoot,
+        allMessages.map(m => ({ role: m.role, content: m.content })),
+      )
+      if (resp.success) {
         setMessages(prev => [...prev, { role: 'assistant', content: resp.content }])
       } else {
-        const resp = await agentChat(
-          projectRoot,
-          allMessages.map(m => ({ role: m.role, content: m.content })),
-        )
-        if (resp.success) {
-          setMessages(prev => [...prev, { role: 'assistant', content: resp.content }])
-        } else {
-          setMessages(prev => [...prev, { role: 'assistant', content: `错误: ${resp.error || '未知错误'}` }])
-        }
+        setMessages(prev => [...prev, { role: 'assistant', content: `错误: ${resp.error || '未知错误'}` }])
       }
     } catch (e) {
       setMessages(prev => [...prev, { role: 'assistant', content: `网络错误: ${e instanceof Error ? e.message : String(e)}` }])
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, messages, mode, projectRoot])
+  }, [input, isLoading, messages, projectRoot])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -116,66 +117,9 @@ export default function Chat() {
           alignItems: 'center',
           gap: '8px',
         }}>
-          <div style={{
-            display: 'flex',
-            background: 'var(--bg-base)',
-            borderRadius: '8px',
-            padding: '3px',
-            border: '1px solid var(--border)',
-          }}>
-            <button
-              onClick={() => setMode('global')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: 500,
-                background: mode === 'global' ? 'var(--accent)' : 'transparent',
-                color: mode === 'global' ? 'white' : 'var(--text-secondary)',
-                transition: 'all 0.15s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              <GlobeIcon size={14} />
-              全局
-            </button>
-            <button
-              onClick={() => projectRoot && setMode('project')}
-              disabled={!projectRoot}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                cursor: projectRoot ? 'pointer' : 'not-allowed',
-                fontSize: '12px',
-                fontWeight: 500,
-                background: mode === 'project' ? 'var(--accent)' : 'transparent',
-                color: mode === 'project' ? 'white' : projectRoot ? 'var(--text-secondary)' : 'var(--text-muted)',
-                transition: 'all 0.15s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                opacity: projectRoot ? 1 : 0.5,
-              }}
-            >
-              <FolderIcon size={14} />
-              项目
-            </button>
-          </div>
-          {mode === 'global' && (
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              全局模式 - 直接与 LLM 对话
-            </span>
-          )}
-          {mode === 'project' && projectRoot && (
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              项目模式 - 基于项目知识库
-            </span>
-          )}
+          <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+            {projectRoot ? `项目: ${projectRoot.split('/').pop() || projectRoot}` : '未选择项目'}
+          </span>
         </div>
         <div style={{
           flex: 1,
@@ -300,8 +244,8 @@ export default function Chat() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="输入问题... (Enter 发送, Shift+Enter 换行)"
-              disabled={isLoading}
+              placeholder={projectRoot ? "输入问题... (Enter 发送, Shift+Enter 换行)" : "请先打开一个项目"}
+              disabled={isLoading || !projectRoot}
               style={{
                 flex: 1,
                 background: 'transparent',
@@ -363,8 +307,8 @@ export default function Chat() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <ContextItem
-              icon={mode === 'global' ? <GlobeIcon size={16} /> : <FolderIcon size={16} />}
-              label={mode === 'global' ? '全局模式' : (projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目')}
+              icon={<FolderIcon size={16} />}
+              label={projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目'}
             />
             <ContextItem icon={<FileTextIcon size={16} />} label={`${docCount} 篇已索引文献`} />
             <ContextItem icon={<FlaskIcon size={16} />} label={`${molCount} 个分子`} />
@@ -389,17 +333,17 @@ export default function Chat() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <ContextItem
-              icon={<SearchIcon size={16} />}
+              icon={<FlaskIcon size={16} />}
               label="搜索分子"
               onClick={() => insertTemplate('search_mol')}
             />
             <ContextItem
-              icon={<BarChartIcon size={16} />}
+              icon={<FlaskIcon size={16} />}
               label="SAR 分析"
               onClick={() => insertTemplate('analyze_sar')}
             />
             <ContextItem
-              icon={<TargetIcon size={16} />}
+              icon={<FlaskIcon size={16} />}
               label="分子对接"
               onClick={() => insertTemplate('dock')}
             />

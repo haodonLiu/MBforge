@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { SettingsIcon } from './icons'
+import { getSettings, saveSettings } from '../api/settings'
+import ErrorBanner from './ErrorBanner'
 
 type Section = 'general' | 'ai' | 'embedding' | 'reranker' | 'appearance' | 'server' | 'about'
 
@@ -13,9 +15,114 @@ const SECTIONS: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'about', label: '关于', icon: <SettingsIcon size={18} /> },
 ]
 
+interface SettingsState {
+  theme: string
+  language: string
+  llm_provider: string
+  llm_base_url: string
+  llm_api_key: string
+  llm_model: string
+  embed_provider: string
+  embed_model: string
+  rerank_provider: string
+  rerank_model: string
+}
+
+const DEFAULT_SETTINGS: SettingsState = {
+  theme: 'dark',
+  language: 'zh',
+  llm_provider: 'openai_compatible',
+  llm_base_url: 'http://localhost:8000/v1',
+  llm_api_key: '',
+  llm_model: 'default',
+  embed_provider: 'qwen3',
+  embed_model: 'Qwen/Qwen3-Embedding-0.6B',
+  rerank_provider: 'qwen3',
+  rerank_model: 'BAAI/bge-reranker-v2-m3',
+}
+
 export default function Settings() {
   const [activeSection, setActiveSection] = useState<Section>('general')
-  const [fontSize, setFontSize] = useState('medium')
+  const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [saveSuccess, setSaveSuccess] = useState(false)
+
+  useEffect(() => {
+    loadSettings()
+  }, [])
+
+  const loadSettings = async () => {
+    setIsLoading(true)
+    try {
+      const resp = await getSettings()
+      if (resp.success && resp.settings) {
+        const s = resp.settings
+        setSettings({
+          theme: s.theme || 'dark',
+          language: s.language || 'zh',
+          llm_provider: s.llm?.provider || 'openai_compatible',
+          llm_base_url: s.llm?.base_url || '',
+          llm_api_key: s.llm?.api_key || '',
+          llm_model: s.llm?.model_name || '',
+          embed_provider: s.embed?.provider || 'qwen3',
+          embed_model: s.embed?.model_name || '',
+          rerank_provider: s.rerank?.provider || 'qwen3',
+          rerank_model: s.rerank?.model_name || '',
+        })
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSave = async () => {
+    setIsLoading(true)
+    setError('')
+    setSaveSuccess(false)
+    try {
+      const payload = {
+        theme: settings.theme,
+        language: settings.language,
+        llm: {
+          provider: settings.llm_provider,
+          base_url: settings.llm_base_url,
+          api_key: settings.llm_api_key,
+          model_name: settings.llm_model,
+        },
+        embed: {
+          provider: settings.embed_provider,
+          model_name: settings.embed_model,
+        },
+        rerank: {
+          provider: settings.rerank_provider,
+          model_name: settings.rerank_model,
+        },
+      }
+      const resp = await saveSettings(payload)
+      if (resp.success) {
+        setSaveSuccess(true)
+        setTimeout(() => setSaveSuccess(false), 3000)
+      } else {
+        setError(resp.error || 'Failed to save settings')
+      }
+    } catch (e) {
+      console.error(e)
+      setError('Failed to save settings')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleCancel = () => {
+    loadSettings()
+  }
+
+  const updateSetting = (key: keyof SettingsState, value: string) => {
+    setSettings(prev => ({ ...prev, [key]: value }))
+  }
 
   const renderSection = () => {
     switch (activeSection) {
@@ -34,268 +141,216 @@ export default function Settings() {
                   <span className="toggle-slider"></span>
                 </label>
               </div>
-              <div className="setting-item">
-                <div className="setting-info">
-                  <div className="setting-label">自动处理导入文件</div>
-                  <div className="setting-desc">将导入的文件自动添加到处理队列</div>
-                </div>
-                <label className="toggle">
-                  <input type="checkbox" />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
             </div>
             <div className="settings-group">
-              <h3 className="settings-group-title">文件</h3>
+              <h3 className="settings-group-title">语言</h3>
               <div className="setting-item">
                 <div className="setting-info">
-                  <div className="setting-label">默认 PDF 阅读器</div>
-                  <div className="setting-desc">选择用于查看 PDF 的应用</div>
+                  <div className="setting-label">界面语言</div>
                 </div>
-                <select className="setting-select">
-                  <option>内置查看器</option>
-                  <option>系统默认</option>
-                </select>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info">
-                  <div className="setting-label">索引并发数</div>
-                  <div className="setting-desc">同时处理的文件数量</div>
-                </div>
-                <select className="setting-select">
-                  <option>2</option>
-                  <option selected>4</option>
-                  <option>8</option>
+                <select
+                  className="settings-select"
+                  value={settings.language}
+                  onChange={e => updateSetting('language', e.target.value)}
+                >
+                  <option value="zh">中文</option>
+                  <option value="en">English</option>
                 </select>
               </div>
             </div>
           </div>
         )
-
       case 'ai':
         return (
           <div className="settings-section">
             <div className="settings-group">
-              <h3 className="settings-group-title">语言模型</h3>
+              <h3 className="settings-group-title">LLM 配置</h3>
               <div className="setting-item">
                 <div className="setting-info">
                   <div className="setting-label">Provider</div>
                 </div>
-                <select className="setting-select">
-                  <option selected>OpenAI</option>
-                  <option>Anthropic</option>
-                  <option>本地模型</option>
+                <select
+                  className="settings-select"
+                  value={settings.llm_provider}
+                  onChange={e => updateSetting('llm_provider', e.target.value)}
+                >
+                  <option value="openai_compatible">OpenAI Compatible</option>
+                  <option value="anthropic">Anthropic</option>
                 </select>
               </div>
               <div className="setting-item">
                 <div className="setting-info">
-                  <div className="setting-label">模型</div>
+                  <div className="setting-label">Base URL</div>
                 </div>
-                <select className="setting-select">
-                  <option selected>gpt-4o</option>
-                  <option>gpt-4-turbo</option>
-                  <option>gpt-3.5-turbo</option>
-                </select>
+                <input
+                  className="settings-input"
+                  value={settings.llm_base_url}
+                  onChange={e => updateSetting('llm_base_url', e.target.value)}
+                  placeholder="http://localhost:8000/v1"
+                />
               </div>
-              <div className="setting-item vertical">
+              <div className="setting-item">
                 <div className="setting-info">
                   <div className="setting-label">API Key</div>
-                  <div className="setting-desc">你的 API 密钥</div>
                 </div>
-                <div className="setting-input-wrapper">
-                  <input type="password" className="setting-input" placeholder="sk-..." defaultValue="sk-xxxx...xxxx" />
-                </div>
+                <input
+                  className="settings-input"
+                  type="password"
+                  value={settings.llm_api_key}
+                  onChange={e => updateSetting('llm_api_key', e.target.value)}
+                  placeholder="sk-..."
+                />
               </div>
               <div className="setting-item">
                 <div className="setting-info">
-                  <div className="setting-label">Temperature</div>
-                  <div className="setting-desc">控制输出的随机性 (0-2)</div>
+                  <div className="setting-label">Model</div>
                 </div>
-                <div className="range-wrapper">
-                  <input type="range" className="setting-range" min="0" max="2" step="0.1" defaultValue="0.7" />
-                  <span className="range-value">0.7</span>
-                </div>
+                <input
+                  className="settings-input"
+                  value={settings.llm_model}
+                  onChange={e => updateSetting('llm_model', e.target.value)}
+                  placeholder="gpt-4"
+                />
               </div>
             </div>
           </div>
         )
-
       case 'embedding':
         return (
           <div className="settings-section">
             <div className="settings-group">
-              <h3 className="settings-group-title">Embedding 模型</h3>
+              <h3 className="settings-group-title">Embedding 配置</h3>
               <div className="setting-item">
                 <div className="setting-info">
                   <div className="setting-label">Provider</div>
                 </div>
-                <select className="setting-select">
-                  <option selected>OpenAI</option>
-                  <option>本地模型</option>
-                  <option>HuggingFace</option>
+                <select
+                  className="settings-select"
+                  value={settings.embed_provider}
+                  onChange={e => updateSetting('embed_provider', e.target.value)}
+                >
+                  <option value="qwen3">Qwen3</option>
+                  <option value="sentence_transformers">Sentence Transformers</option>
+                  <option value="openai">OpenAI</option>
                 </select>
               </div>
               <div className="setting-item">
                 <div className="setting-info">
-                  <div className="setting-label">模型</div>
+                  <div className="setting-label">Model</div>
                 </div>
-                <select className="setting-select">
-                  <option selected>text-embedding-3-small</option>
-                  <option>text-embedding-3-large</option>
-                  <option>text-embedding-ada-002</option>
-                </select>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info">
-                  <div className="setting-label">向量维度</div>
-                </div>
-                <select className="setting-select">
-                  <option selected>1536</option>
-                  <option>3072</option>
-                </select>
+                <input
+                  className="settings-input"
+                  value={settings.embed_model}
+                  onChange={e => updateSetting('embed_model', e.target.value)}
+                  placeholder="Qwen/Qwen3-Embedding-0.6B"
+                />
               </div>
             </div>
           </div>
         )
-
       case 'reranker':
         return (
           <div className="settings-section">
             <div className="settings-group">
-              <h3 className="settings-group-title">Reranker 模型</h3>
+              <h3 className="settings-group-title">Reranker 配置</h3>
               <div className="setting-item">
                 <div className="setting-info">
-                  <div className="setting-label">启用 Reranker</div>
-                  <div className="setting-desc">对搜索结果进行重排序以提高相关性</div>
+                  <div className="setting-label">Provider</div>
                 </div>
-                <label className="toggle">
-                  <input type="checkbox" defaultChecked />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info">
-                  <div className="setting-label">模型</div>
-                </div>
-                <select className="setting-select">
-                  <option selected>cohere rerank</option>
-                  <option>Jina Reranker</option>
+                <select
+                  className="settings-select"
+                  value={settings.rerank_provider}
+                  onChange={e => updateSetting('rerank_provider', e.target.value)}
+                >
+                  <option value="qwen3">Qwen3</option>
+                  <option value="sentence_transformers">Sentence Transformers</option>
                 </select>
               </div>
               <div className="setting-item">
                 <div className="setting-info">
-                  <div className="setting-label">Top N</div>
-                  <div className="setting-desc">返回的重排序结果数量</div>
+                  <div className="setting-label">Model</div>
                 </div>
-                <input type="number" className="setting-number" defaultValue={10} min={1} max={100} />
+                <input
+                  className="settings-input"
+                  value={settings.rerank_model}
+                  onChange={e => updateSetting('rerank_model', e.target.value)}
+                  placeholder="BAAI/bge-reranker-v2-m3"
+                />
               </div>
             </div>
           </div>
         )
-
       case 'appearance':
         return (
           <div className="settings-section">
             <div className="settings-group">
-              <h3 className="settings-group-title">主题</h3>
+              <h3 className="settings-group-title">外观</h3>
               <div className="setting-item">
                 <div className="setting-info">
-                  <div className="setting-label">外观模式</div>
+                  <div className="setting-label">主题</div>
                 </div>
-                <div className="theme-selector">
-                  <div className="theme-option active">
-                    <div className="theme-preview light"></div>
-                    <span>浅色</span>
-                  </div>
-                  <div className="theme-option">
-                    <div className="theme-preview dark"></div>
-                    <span>深色</span>
-                  </div>
-                  <div className="theme-option">
-                    <div className="theme-preview system"></div>
-                    <span>跟随系统</span>
-                  </div>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info">
-                  <div className="setting-label">字体大小</div>
-                </div>
-                <select className="setting-select" value={fontSize} onChange={e => setFontSize(e.target.value)}>
-                  <option value="small">小 (13px)</option>
-                  <option value="medium">中 (14px)</option>
-                  <option value="large">大 (15px)</option>
+                <select
+                  className="settings-select"
+                  value={settings.theme}
+                  onChange={e => updateSetting('theme', e.target.value)}
+                >
+                  <option value="dark">深色</option>
+                  <option value="light">浅色</option>
                 </select>
               </div>
             </div>
           </div>
         )
-
       case 'server':
         return (
           <div className="settings-section">
             <div className="settings-group">
-              <h3 className="settings-group-title">本地模型服务</h3>
-              <div className="setting-item">
-                <div className="setting-info">
-                  <div className="setting-label">自动启动服务</div>
-                  <div className="setting-desc">应用启动时自动运行模型服务</div>
-                </div>
-                <label className="toggle">
-                  <input type="checkbox" defaultChecked />
-                  <span className="toggle-slider"></span>
-                </label>
-              </div>
+              <h3 className="settings-group-title">模型服务</h3>
               <div className="setting-item">
                 <div className="setting-info">
                   <div className="setting-label">服务地址</div>
+                  <div className="setting-desc">127.0.0.1:18792</div>
                 </div>
-                <input type="text" className="setting-input-text" defaultValue="localhost" />
-              </div>
-              <div className="setting-item">
-                <div className="setting-info">
-                  <div className="setting-label">服务端口</div>
-                </div>
-                <input type="number" className="setting-number" defaultValue={8000} min={1} max={65535} />
-              </div>
-              <div className="setting-item">
-                <div className="setting-info">
-                  <div className="setting-label">启动超时</div>
-                  <div className="setting-desc">服务启动的最大等待时间（秒）</div>
-                </div>
-                <input type="number" className="setting-number" defaultValue={30} min={5} max={300} />
               </div>
             </div>
           </div>
         )
-
       case 'about':
         return (
-          <div className="settings-section about-section">
-            <div className="about-logo">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width={36} height={36}>
-                <path d="M10 2v7.31" />
-                <path d="M14 9.3V1.99" />
-                <path d="M8.5 2h7" />
-                <path d="M14 9.3a6.5 6.5 0 1 1-4 0" />
-                <path d="M5.58 16.5h12.85" />
-              </svg>
-            </div>
-            <h2 className="about-title">MBForge</h2>
-            <p className="about-version">版本 1.0.0</p>
-            <p className="about-desc">Molecular Knowledge Base - 分子知识库</p>
-            <div className="about-links">
-              <a href="#">📖 文档</a>
-              <a href="#">💻 GitHub</a>
-              <a href="#">🐛 问题反馈</a>
+          <div className="settings-section">
+            <div className="settings-group">
+              <h3 className="settings-group-title">关于 MBForge</h3>
+              <div className="setting-item">
+                <div className="setting-info">
+                  <div className="setting-label">版本</div>
+                  <div className="setting-desc">0.1.0</div>
+                </div>
+              </div>
             </div>
           </div>
         )
+      default:
+        return null
     }
   }
 
   return (
-    <div className="settings-layout">
+    <div className="settings-container">
+      {error && <ErrorBanner message={error} onDismiss={() => setError('')} />}
+      {saveSuccess && (
+        <div style={{
+          padding: '10px 16px',
+          background: 'rgba(34, 197, 94, 0.1)',
+          border: '1px solid rgba(34, 197, 94, 0.3)',
+          borderRadius: '6px',
+          color: '#22c55e',
+          fontSize: '13px',
+          marginBottom: '12px',
+        }}>
+          Settings saved successfully
+        </div>
+      )}
+
       {/* 左侧导航 */}
       <div className="settings-nav">
         <div className="settings-nav-title">设置</div>
@@ -320,8 +375,12 @@ export default function Settings() {
         </div>
         {renderSection()}
         <div className="settings-footer">
-          <button className="btn btn-secondary">取消</button>
-          <button className="btn btn-primary">保存设置</button>
+          <button className="btn btn-secondary" onClick={handleCancel} disabled={isLoading}>
+            取消
+          </button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={isLoading}>
+            {isLoading ? '保存中...' : '保存设置'}
+          </button>
         </div>
       </div>
     </div>

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ..utils.exceptions import MBForgeError
-from .routers import llm, embed, rerank, vlm, health, uniparser, moldet, project, kb, molecule, agent, file
+from .routers import llm, embed, rerank, vlm, health, uniparser, moldet, project, kb, molecule, agent, file, settings
 
 app = FastAPI(title="MBForge Model Server", version="1.1.0")
 
@@ -46,3 +46,4 @@ app.include_router(kb.router, prefix="/api/v1/kb", tags=["kb"])
 app.include_router(molecule.router, prefix="/api/v1/molecule", tags=["molecule"])
 app.include_router(agent.router, prefix="/api/v1/agent", tags=["agent"])
 app.include_router(file.router, prefix="/api/v1/file", tags=["file"])
+app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])

@@ -130,6 +130,8 @@ def _build_file_tree(root: Path) -> list[dict]:
 
 @router.get("/file-tree")
 async def file_tree(root: str) -> dict:
-    project = await get_project_from_root(root)
+    project = Project.open(Path(root))
+    if project is None:
+        return {"success": False, "error": f"Not a valid project: {root}"}
     tree = _build_file_tree(project.root)
     return {"success": True, "tree": tree}

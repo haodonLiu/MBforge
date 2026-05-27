@@ -8,9 +8,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 from mbforge.models.base import Message
+from ...utils.exceptions import ModelNotAvailableError
+from ...utils.logger import get_logger
 from ..models.llm import get_llm
 from .health import set_model_status
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -28,7 +31,8 @@ async def chat(request: Request) -> dict:
         return {"content": result, "finish_reason": "stop"}
     except Exception as e:
         set_model_status("llm", "error")
-        return {"content": "", "finish_reason": "error", "error": str(e)}
+        logger.error(f"LLM chat failed: {e}", exc_info=True)
+        raise ModelNotAvailableError(str(e))
 
 
 @router.post("/chat-stream")
@@ -45,6 +49,7 @@ async def chat_stream(request: Request) -> StreamingResponse:
                 yield f"data: {json.dumps({'delta': chunk.delta, 'finish_reason': chunk.finish_reason})}\n\n"
             set_model_status("llm", "ready")
         except Exception as e:
+            logger.error(f"LLM stream failed: {e}", exc_info=True)
             yield f"data: {json.dumps({'delta': '', 'finish_reason': 'error', 'error': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

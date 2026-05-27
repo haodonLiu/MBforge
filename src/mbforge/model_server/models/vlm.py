@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from mbforge.models.base import BaseVLM
 from mbforge.models.vlm import create_vlm_from_config
 
-_vlm_instance: Any = None
+_vlm_instance: BaseVLM | None = None
 
 
-def get_vlm() -> Any:
+def get_vlm() -> BaseVLM:
     global _vlm_instance
     if _vlm_instance is None:
         from mbforge.utils.config import load_global_config

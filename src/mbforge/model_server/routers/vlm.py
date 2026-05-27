@@ -8,9 +8,12 @@ import tempfile
 
 from fastapi import APIRouter, Request
 
+from ...utils.exceptions import ModelNotAvailableError, ValidationError
+from ...utils.logger import get_logger
 from ..models.vlm import get_vlm
 from .health import set_model_status
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -23,7 +26,7 @@ async def describe(request: Request) -> dict:
         prompt = body.get("prompt", "")
 
         if not image_base64:
-            return {"description": "", "error": "image_base64 is required"}
+            raise ValidationError("image_base64 is required")
 
         ext = body.get("ext", "png")
         with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as f:
@@ -34,9 +37,12 @@ async def describe(request: Request) -> dict:
         description = vlm.describe_image(tmp_path, prompt=prompt)
         set_model_status("vlm", "ready")
         return {"description": description}
+    except (ValidationError, ModelNotAvailableError):
+        raise
     except Exception as e:
         set_model_status("vlm", "error")
-        return {"description": "", "error": str(e)}
+        logger.error(f"VLM describe failed: {e}", exc_info=True)
+        raise ModelNotAvailableError(str(e))
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)

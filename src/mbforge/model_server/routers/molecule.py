@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from ...core.mol_database import MoleculeDatabase
+from ...core.mol_database import MoleculeDatabase, MoleculeRecord
 from ...core.project import Project
+from ...utils.logger import get_logger
+from ..dependencies import get_project_from_root
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -24,43 +25,42 @@ class MoleculeAddRequest(BaseModel):
 
 
 @router.get("/list")
-async def list_molecules(project_root: str, limit: int = 100, offset: int = 0) -> dict:
+async def list_molecules(
+    project_root: str,
+    limit: int = 100,
+    offset: int = 0,
+    project: Project = Depends(get_project_from_root),
+) -> dict:
     try:
-        project = Project.open(Path(project_root))
-        if project is None:
-            return {"success": False, "error": "Not a valid project"}
-
         db = MoleculeDatabase(project.root)
         results = db.list_all(limit=limit, offset=offset)
         return {"success": True, "molecules": results}
     except Exception as e:
+        logger.error(f"List molecules failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 
 @router.get("/stats")
-async def molecule_stats(project_root: str) -> dict:
+async def molecule_stats(
+    project_root: str,
+    project: Project = Depends(get_project_from_root),
+) -> dict:
     try:
-        project = Project.open(Path(project_root))
-        if project is None:
-            return {"success": False, "error": "Not a valid project"}
-
         db = MoleculeDatabase(project.root)
         stats = db.get_stats()
         return {"success": True, "stats": stats}
     except Exception as e:
+        logger.error(f"Molecule stats failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 
 @router.post("/add")
-async def add_molecule(req: MoleculeAddRequest) -> dict:
+async def add_molecule(
+    req: MoleculeAddRequest,
+    project: Project = Depends(get_project_from_root),
+) -> dict:
     try:
-        project = Project.open(Path(req.project_root))
-        if project is None:
-            return {"success": False, "error": "Not a valid project"}
-
         db = MoleculeDatabase(project.root)
-        from ...core.mol_database import MoleculeRecord
-
         record = MoleculeRecord(
             smiles=req.smiles,
             name=req.name,
@@ -72,16 +72,18 @@ async def add_molecule(req: MoleculeAddRequest) -> dict:
         db.add_molecule(record)
         return {"success": True, "mol_id": record.mol_id}
     except Exception as e:
+        logger.error(f"Add molecule failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 
 @router.get("/search")
-async def search_molecules(project_root: str, q: str = "", limit: int = 20) -> dict:
+async def search_molecules(
+    project_root: str,
+    q: str = "",
+    limit: int = 20,
+    project: Project = Depends(get_project_from_root),
+) -> dict:
     try:
-        project = Project.open(Path(project_root))
-        if project is None:
-            return {"success": False, "error": "Not a valid project"}
-
         db = MoleculeDatabase(project.root)
         conn = db._conn
         if conn is None:
@@ -93,4 +95,5 @@ async def search_molecules(project_root: str, q: str = "", limit: int = 20) -> d
         results = [db._row_to_record(r) for r in rows]
         return {"success": True, "molecules": results}
     except Exception as e:
+        logger.error(f"Search molecules failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}

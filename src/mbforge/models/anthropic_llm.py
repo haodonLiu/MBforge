@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from collections.abc import Iterator
 
-from .base import BaseLLM, Message, StreamChunk
+from .base import BaseLLM, Message, StreamChunk, run_sync_async
 
 
 class AnthropicLLM(BaseLLM):
@@ -158,18 +158,12 @@ class AnthropicLLM(BaseLLM):
                 yield StreamChunk(delta="", finish_reason=stop_reason)
 
     async def achat(self, messages: list[Message], **kwargs) -> str:
-        import asyncio
-
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.chat, messages, **kwargs)
+        return await run_sync_async(self.chat, messages, **kwargs)
 
     async def achat_stream(self, messages: list[Message], **kwargs):
         import asyncio
 
-        loop = asyncio.get_running_loop()
-        iterator = await loop.run_in_executor(
-            None, self.chat_stream, messages, **kwargs
-        )
+        iterator = await run_sync_async(self.chat_stream, messages, **kwargs)
         for chunk in iterator:
             yield chunk
             await asyncio.sleep(0)

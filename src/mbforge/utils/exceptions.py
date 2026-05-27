@@ -1,0 +1,77 @@
+"""Centralized exception hierarchy for MBForge.
+
+All domain exceptions inherit from MBForgeError, which carries
+an HTTP status code and a machine-readable error code.
+The model_server global exception handler converts these to
+structured JSON responses automatically.
+"""
+
+from __future__ import annotations
+
+
+class MBForgeError(Exception):
+    """Base exception with HTTP status code and error code."""
+
+    status_code: int = 500
+    error_code: str = "internal_error"
+
+    def __init__(self, message: str, *, detail: str | None = None) -> None:
+        self.message = message
+        self.detail = detail
+        super().__init__(message)
+
+
+class ProjectNotFoundError(MBForgeError):
+    """Project directory or index not found."""
+
+    status_code = 404
+    error_code = "project_not_found"
+
+
+class ProjectNotValidError(MBForgeError):
+    """Path exists but is not a valid MBForge project."""
+
+    status_code = 400
+    error_code = "project_not_valid"
+
+
+class ModelNotAvailableError(MBForgeError):
+    """AI model failed to load or is not configured."""
+
+    status_code = 503
+    error_code = "model_not_available"
+
+
+class APIKeyMissingError(MBForgeError):
+    """Required API key is not configured."""
+
+    status_code = 401
+    error_code = "api_key_missing"
+
+
+class ConfigError(MBForgeError):
+    """Configuration file is missing or malformed."""
+
+    status_code = 400
+    error_code = "config_error"
+
+
+class ValidationError(MBForgeError):
+    """Request validation failed."""
+
+    status_code = 422
+    error_code = "validation_error"
+
+
+class FileAccessError(MBForgeError):
+    """File read/write failed."""
+
+    status_code = 400
+    error_code = "file_access_error"
+
+
+class PathTraversalError(MBForgeError):
+    """Path traversal attack detected."""
+
+    status_code = 403
+    error_code = "path_traversal"

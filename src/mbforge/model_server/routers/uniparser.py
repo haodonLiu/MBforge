@@ -10,8 +10,11 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from ...utils.exceptions import ConfigError, ValidationError
+from ...utils.logger import get_logger
 from .health import set_model_status
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -28,7 +31,7 @@ def _get_client() -> Any:
         host = os.environ.get("UNIPARSER_HOST", "")
         api_key = os.environ.get("UNIPARSER_API_KEY", "")
         if not host or not api_key:
-            raise RuntimeError("UNIPARSER_HOST or UNIPARSER_API_KEY not set")
+            raise ConfigError("UNIPARSER_HOST or UNIPARSER_API_KEY not set")
         config = ParserConfig(host=host, api_key=api_key)
         _uniparser_client = ParserClient(config)
     return _uniparser_client
@@ -59,7 +62,7 @@ async def parse_pdf(request: Request) -> dict:
                 tmp_path = f.name
             target_path = tmp_path
         else:
-            return {"error": "pdf_path or pdf_base64 required"}
+            raise ValidationError("pdf_path or pdf_base64 required")
 
         client = _get_client()
         result = client.parse_pdf(
@@ -79,8 +82,11 @@ async def parse_pdf(request: Request) -> dict:
             "token": result.token,
             "raw_data": result.raw_data,
         }
+    except (ValidationError, ConfigError):
+        raise
     except Exception as e:
         set_model_status("uniparser", "error")
+        logger.error(f"UniParser parse failed: {e}", exc_info=True)
         return {"error": str(e)}
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -93,7 +99,7 @@ async def get_result(request: Request) -> dict:
         body = await request.json()
         token = body.get("token", "")
         if not token:
-            return {"error": "token required"}
+            raise ValidationError("token required")
 
         client = _get_client()
         result = client.get_result(
@@ -106,8 +112,11 @@ async def get_result(request: Request) -> dict:
         )
         set_model_status("uniparser", "ready")
         return result
+    except (ValidationError, ConfigError):
+        raise
     except Exception as e:
         set_model_status("uniparser", "error")
+        logger.error(f"UniParser result failed: {e}", exc_info=True)
         return {"error": str(e)}
 
 
@@ -117,7 +126,7 @@ async def get_formatted(request: Request) -> dict:
         body = await request.json()
         token = body.get("token", "")
         if not token:
-            return {"error": "token required"}
+            raise ValidationError("token required")
 
         client = _get_client()
         result = client.get_formatted(
@@ -129,8 +138,11 @@ async def get_formatted(request: Request) -> dict:
         )
         set_model_status("uniparser", "ready")
         return result
+    except (ValidationError, ConfigError):
+        raise
     except Exception as e:
         set_model_status("uniparser", "error")
+        logger.error(f"UniParser formatted failed: {e}", exc_info=True)
         return {"error": str(e)}
 
 
@@ -143,4 +155,5 @@ async def uniparser_health() -> dict:
         return {"status": "ok", "detail": result}
     except Exception as e:
         set_model_status("uniparser", "error")
+        logger.error(f"UniParser health check failed: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}

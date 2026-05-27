@@ -4,15 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What MBForge Is
 
-PyQt6 桌面应用，用于分子科学/药物发现研究。核心流程：PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询。
+React+Vite+Tauri 桌面应用，用于分子科学/药物发现研究。核心流程：PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询。FastAPI 模型服务器提供后端 API，React 前端通过 Tauri 桥接调用。
 
 ## Build / Test / Lint Commands
 
 ```bash
-# 安装依赖（uv workspace，包含 openSAR 和 UniParser-Tools）
+# 安装 Python 依赖（uv workspace，包含 openSAR 和 UniParser-Tools）
 uv sync --dev
 
-# 启动 GUI
+# 安装前端依赖
+cd frontend && npm install
+
+# 启动前端开发服务器（Vite, port 5173）
+cd frontend && npm run dev
+
+# 启动模型服务器（FastAPI, port 18792）
+uv run uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792
+
+# 启动 GUI（自动启动模型服务器 + 打开浏览器）
 mbforge
 # 或
 uv run mbforge gui
@@ -35,8 +44,11 @@ uv run ruff format src/
 # Lint
 uv run ruff check src/
 
-# 打包 EXE
-uv run python build.py
+# 前端构建
+cd frontend && npm run build
+
+# 打包 EXE（Tauri）
+cd src-tauri && cargo tauri build
 ```
 
 ## Architecture
@@ -51,7 +63,24 @@ PDF → DocumentProcessor (PyMuPDF text/image)
   → MoleculeDatabase (SQLite + RDKit, auto-computed properties)
 ```
 
-This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, invoked by both CLI `index` command and GUI `IndexWorker`.
+This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, invoked by both CLI `index` command and model server endpoints.
+
+### System Architecture
+
+```
+┌─────────────────────┐     ┌─────────────────────────┐
+│  React+Vite Frontend │────▶│  FastAPI Model Server    │
+│  (port 5173)         │     │  (port 18792)            │
+│  Tauri Bridge        │     │  /api/v1/*               │
+└─────────────────────┘     └─────────────────────────┘
+                                     │
+                    ┌────────────────┼────────────────┐
+                    ▼                ▼                ▼
+             ┌──────────┐    ┌──────────┐    ┌──────────┐
+             │ PDFParser │    │ Agent    │    │ Knowledge│
+             │ Pipeline  │    │ (ReAct)  │    │ Base     │
+             └──────────┘    └──────────┘    └──────────┘
+```
 
 ### Module Layout
 
@@ -60,7 +89,7 @@ This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, inv
 | `core/` | 数据模型 | `Project`（vault 隐喻，`.mbforge/` 隐藏目录）、`KnowledgeBase`（ChromaDB 封装 + rerank）、`MoleculeDatabase`（SQLite + FTS5）、`DocumentProcessor`、`DocumentSummarizer` |
 | `models/` | AI 模型抽象层 | `BaseLLM`/`BaseEmbedder`/`BaseReranker`/`BaseVLM` 基类 + `OpenAILLM`/`AnthropicLLM`/`SentenceTransformerEmbedder`。`create_llm_from_config()` 按 provider 字符串分发 |
 | `parsers/` | PDF 解析与分子提取 | `PDFParserPipeline` 串联全部解析步骤 |
-| `ui/` | PyQt6 界面 | `MainWindow`（主窗口，组装所有组件）、`ChatWidget`、`PDFViewer`（虚拟滚动 + 多线程渲染）、`MolPanel`、`FileTree` 等 |
+| `model_server/` | FastAPI 模型服务器 | 路由：`llm`、`embed`、`rerank`、`vlm`、`agent`、`kb`、`molecule`、`moldet`、`uniparser`、`project`、`file`、`health` |
 | `agent/` | ReAct 循环 Agent | `ProjectAgent` + `LayeredContext` + `ToolExecutor`（10 个工具）+ `MemoryManager` + `TrajectoryTracker` |
 | `workflow/` | 占位模块 | `generation`、`docking`、`qsar`、`md` — 仅 toggle 开关，尚未实现 |
 | `parsers/uniparser/` | UniParser API 封装 | `ParserClient` 对接 `UniParser-Tools`，`ParseResult` 数据模型 |
@@ -72,12 +101,16 @@ This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, inv
 | `mcs/` | 最大公共子结构 | `MCSFinder` |
 | `molecules/` | 分子数据模型 | `MoleculeEntry`、`MoleculeBatch`、`MoleculeDescriptorCalculator`、`LipinskiFilter`、`VeberFilter`、`PAINSFilter`、`MoleculeStandardizer`、`ScaffoldAnalyzer`、`RECAPFragmenter`、`BRICSFragmenter`、`SubstructureMatcher` |
 | `csar_main.py` | CSAR CLI 入口 | `main()`，提供完整 SAR 分析工作流命令行接口（`uv run csar`） |
+| `frontend/` | React+Vite 前端 | `App.tsx`（路由）、组件：`Chat`、`PDFViewer`、`MoleculeLibrary`、`Workflow`、`Settings`、`Search`、`ProjectView` |
+| `src-tauri/` | Tauri 桥接层 | `main.rs`（Rust 入口）、`tauri.conf.json`（窗口配置） |
 
 ### Workspace Layout
 
 ```
 MBForge/                  # uv workspace root
 ├── src/mbforge/          # 主应用（含合并后的 csar 代码）
+├── frontend/             # React+Vite 前端
+├── src-tauri/            # Tauri Rust 桥接层
 ├── setup/                # 一键配置脚本
 └── tests/
 ```
@@ -93,6 +126,25 @@ MBForge/                  # uv workspace root
 
 `src/mbforge/models/` 提供统一抽象。实现类：`OpenAILLM`（OpenAI 兼容 API）、`AnthropicLLM`、`SentenceTransformerEmbedder`、`APIEmbedder`、`SentenceTransformerReranker`、`APIVLM`。工厂函数 `create_llm_from_config()` 根据配置中的 provider 字段选择实现。
 
+### Model Server API
+
+FastAPI 服务器运行在 `127.0.0.1:18792`，提供以下端点：
+
+| 端点前缀 | 功能 |
+|----------|------|
+| `/api/v1/llm` | LLM 推理（chat/stream） |
+| `/api/v1/embed` | 文本 Embedding |
+| `/api/v1/rerank` | 结果重排序 |
+| `/api/v1/vlm` | 视觉语言模型 |
+| `/api/v1/agent` | Agent 对话 |
+| `/api/v1/kb` | 知识库管理 |
+| `/api/v1/molecule` | 分子数据库查询 |
+| `/api/v1/moldet` | 分子图像检测 |
+| `/api/v1/uniparser` | PDF 解析代理 |
+| `/api/v1/project` | 项目管理 |
+| `/api/v1/file` | 文件操作 |
+| `/api/v1/health` | 健康检查 |
+
 ## Environment
 
 ```bash
@@ -107,13 +159,22 @@ cp .env.template .env
 | 文件 | 作用 |
 |------|------|
 | `src/mbforge/cli.py` | CLI 入口，`mbforge` 命令行工具 |
-| `src/mbforge/app.py` | GUI 入口，`run_app()` 启动 PyQt6 主循环 |
+| `src/mbforge/app.py` | GUI 入口，启动模型服务器 + 打开浏览器 |
+| `src/mbforge/model_server/main.py` | FastAPI 模型服务器入口 |
 | `src/mbforge/core/project.py` | `Project` 类管理 vault 元数据 |
 | `src/mbforge/parsers/pdf_parser.py` | `PDFParserPipeline` 解析流水线 |
 | `src/mbforge/agent/agent.py` | `ProjectAgent` ReAct 循环 |
 | `src/mbforge/agent/tools.py` | Agent 可调用的 10 个工具定义 |
+| `frontend/src/App.tsx` | React 前端路由入口 |
+| `src-tauri/src/main.rs` | Tauri 桥接层 Rust 入口 |
 
 ## Code Patterns
+
+### Adding a new API endpoint to Model Server
+
+1. Create router in `src/mbforge/model_server/routers/` using `APIRouter`
+2. Add dependency injection in `src/mbforge/model_server/dependencies.py` if needed
+3. Register in `src/mbforge/model_server/main.py` via `app.include_router()`
 
 ### Adding a new tool to Agent
 
@@ -151,4 +212,3 @@ codegraph sync                   # 代码修改后同步索引
 ```
 
 索引状态：122 文件 / 2,363 节点 / 4,824 边。重构前必查 impact。
-

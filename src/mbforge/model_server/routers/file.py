@@ -8,8 +8,11 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, UploadFile
 from pydantic import BaseModel
 
-from ...core.project import Project
+from ...utils.exceptions import FileAccessError, PathTraversalError
+from ...utils.logger import get_logger
+from ..dependencies import get_project_from_root
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -23,12 +26,22 @@ async def upload_file(
     file: UploadFile = File(...),
     project_root: str = Form(...),
 ) -> dict:
-    try:
-        project = Project.open(Path(project_root))
-        if project is None:
-            return {"success": False, "error": "Not a valid project"}
+    project = await get_project_from_root(project_root)
 
-        dest = project.root / file.filename
+    # Sanitize filename: strip directory components to prevent path traversal
+    safe_name = Path(str(file.filename)).name
+    dest = project.root / safe_name
+
+    # Verify resolved path stays within project root
+    try:
+        if not dest.resolve().is_relative_to(project.root.resolve()):
+            raise PathTraversalError(
+                f"Uploaded filename '{file.filename}' escapes project root"
+            )
+    except OSError as e:
+        raise FileAccessError(f"Invalid filename: {e}")
+
+    try:
         with open(dest, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
@@ -39,17 +52,18 @@ async def upload_file(
             "path": str(entry.path),
             "doc_type": entry.doc_type,
         }
+    except (PathTraversalError, FileAccessError):
+        raise
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.error(f"Failed to upload file '{safe_name}': {e}", exc_info=True)
+        raise FileAccessError(str(e))
 
 
 @router.post("/delete")
 async def delete_file(req: DeleteFileRequest) -> dict:
-    try:
-        project = Project.open(Path(req.project_root))
-        if project is None:
-            return {"success": False, "error": "Not a valid project"}
+    project = await get_project_from_root(req.project_root)
 
+    try:
         entry = project.get_document(req.doc_id)
         if entry and entry.path.exists():
             entry.path.unlink()
@@ -57,4 +71,5 @@ async def delete_file(req: DeleteFileRequest) -> dict:
         project.remove_document(req.doc_id)
         return {"success": True}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        logger.error(f"Failed to delete document {req.doc_id}: {e}", exc_info=True)
+        raise FileAccessError(str(e))

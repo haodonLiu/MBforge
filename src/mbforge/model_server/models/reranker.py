@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from mbforge.models.base import BaseReranker
 from mbforge.models.rerank import create_reranker_from_config
 from mbforge.utils.config import RerankConfig
 
-_reranker_instance: Any = None
+_reranker_instance: BaseReranker | None = None
 
 
-def get_reranker(config: RerankConfig | None = None) -> Any:
+def get_reranker(config: RerankConfig | None = None) -> BaseReranker:
     global _reranker_instance
     if _reranker_instance is None:
         if config is None:

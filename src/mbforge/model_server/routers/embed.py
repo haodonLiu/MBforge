@@ -2,9 +2,12 @@
 
 from fastapi import APIRouter, Request
 
+from ...utils.exceptions import ModelNotAvailableError
+from ...utils.logger import get_logger
 from ..models.embedder import get_embedder
 from .health import set_model_status
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -22,4 +25,5 @@ async def embed(request: Request) -> dict:
         return {"embeddings": embeddings}
     except Exception as e:
         set_model_status("embedder", "error")
-        return {"embeddings": [], "error": str(e)}
+        logger.error(f"Embedding failed: {e}", exc_info=True)
+        raise ModelNotAvailableError(str(e))

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { kbSearch } from '../api/client'
 import { SearchIcon, FileTextIcon, HashIcon, ClockIcon } from './icons'
+import { getProjectRoot } from '../hooks/useProjectRoot'
 
 interface ResultItem {
   id: string
@@ -9,10 +10,6 @@ interface ResultItem {
   source: string
   tags: string[]
   date: string
-}
-
-function getProjectRoot(): string {
-  return localStorage.getItem('mbforge_project_root') || ''
 }
 
 const HINTS = ['阿司匹林', '分子对接', 'SAR分析', 'IC50']

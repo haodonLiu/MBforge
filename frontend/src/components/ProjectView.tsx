@@ -1,32 +1,21 @@
 import { useState, useEffect } from 'react'
 import { FolderIcon, FileTextIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon, ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from './icons'
 import type { DocumentEntry } from '../types'
-
-function getProjectRoot(): string {
-  return localStorage.getItem('mbforge_project_root') || ''
-}
+import { getProjectRoot } from '../hooks/useProjectRoot'
+import ErrorBanner from './ErrorBanner'
+import StatCard from './project/StatCard'
 
 interface Molecule {
   name: string
   smiles: string
 }
 
-interface Highlight {
-  text: string
-  page: number
-  color: string
-}
-
-interface Note {
-  page: number
-  content: string
-}
-
 export default function ProjectView() {
   const [projectRoot, setProjectRoot] = useState(getProjectRoot())
   const [docs, setDocs] = useState<DocumentEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  
+  const [error, setError] = useState('')
+
   // PDF 阅读状态
   const [selectedPdf, setSelectedPdf] = useState<DocumentEntry | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
@@ -37,20 +26,12 @@ export default function ProjectView() {
     { name: '水杨酸', smiles: 'O=C(O)c1ccccc1O' },
     { name: '布洛芬', smiles: 'CC(C)Cc1ccc(cc1)C(C)C(=O)O' },
   ])
-  const [highlights] = useState<Highlight[]>([
-    { text: '乙酰水杨酸（Acetylsalicylic acid）', page: 3, color: 'yellow' },
-    { text: '抑制环氧化酶（COX-1 和 COX-2）', page: 5, color: 'green' },
-    { text: '抗血小板：预防心血管事件', page: 7, color: 'blue' },
-  ])
-  const [notes] = useState<Note[]>([
-    { page: 3, content: '阿司匹林是最早发现的 NSAID 类药物' },
-    { page: 8, content: '注意阿司匹林与其他抗凝药物的相互作用' },
-  ])
 
   const loadDocs = async () => {
     const root = getProjectRoot()
     if (!root) return
     setIsLoading(true)
+    setError('')
     try {
       // 模拟数据
       setDocs([
@@ -60,7 +41,8 @@ export default function ProjectView() {
         { doc_id: '4', path: '/docs/notes.md', title: '研究笔记.md', doc_type: 'md', indexed: true },
       ])
     } catch (e) {
-      // ignore
+      console.error(e)
+      setError('Failed to load documents')
     } finally {
       setIsLoading(false)
     }
@@ -201,413 +183,115 @@ export default function ProjectView() {
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
-              }}>
-                {selectedPdf.title}
-              </span>
+              }}>{selectedPdf.title || selectedPdf.path}</span>
             </div>
-            
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
                 style={{
-                  width: '32px',
-                  height: '32px',
+                  width: '28px',
+                  height: '28px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   background: 'transparent',
                   border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  color: 'var(--text-secondary)',
+                  borderRadius: '4px',
+                  cursor: currentPage <= 1 ? 'default' : 'pointer',
+                  color: currentPage <= 1 ? 'var(--text-muted)' : 'var(--text-secondary)',
                 }}
               >
-                <ChevronLeftIcon size={18} />
+                <ChevronLeftIcon size={16} />
               </button>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '13px',
-                color: 'var(--text-secondary)',
-              }}>
-                <input
-                  type="number"
-                  value={currentPage}
-                  onChange={e => setCurrentPage(Math.max(1, Math.min(totalPages, parseInt(e.target.value) || 1)))}
-                  style={{
-                    width: '48px',
-                    padding: '4px 8px',
-                    textAlign: 'center',
-                    background: 'var(--bg-surface)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '6px',
-                    fontSize: '13px',
-                    color: 'var(--text-primary)',
-                  }}
-                />
-                <span>/ {totalPages}</span>
-              </div>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{currentPage} / {totalPages}</span>
               <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
                 style={{
-                  width: '32px',
-                  height: '32px',
+                  width: '28px',
+                  height: '28px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   background: 'transparent',
                   border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  color: 'var(--text-secondary)',
+                  borderRadius: '4px',
+                  cursor: currentPage >= totalPages ? 'default' : 'pointer',
+                  color: currentPage >= totalPages ? 'var(--text-muted)' : 'var(--text-secondary)',
                 }}
               >
-                <ChevronRightIcon size={18} />
+                <ChevronRightIcon size={16} />
               </button>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button style={{
-                width: '32px',
-                height: '32px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'var(--accent)',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: 'white',
-              }}>
-                <FlaskIcon size={16} />
-              </button>
-              <button style={{
-                width: '32px',
-                height: '32px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'transparent',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: 'var(--text-secondary)',
-              }}>
-                🔍
-              </button>
-            </div>
-          </div>
-
-          {/* 提取分子快捷栏 */}
-          <div style={{
-            background: 'var(--bg-surface)',
-            borderBottom: '1px solid var(--border)',
-            padding: '12px 16px',
-          }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '10px',
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '13px',
-                fontWeight: 500,
-              }}>
-                <FlaskIcon size={16} style={{ color: 'var(--accent)' }} />
-                检测到 {extractedMolecules.length} 个分子
-              </div>
-              <button style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                fontWeight: 500,
-                background: 'var(--accent)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-              }}>
-                提取全部 →
-              </button>
-            </div>
-            <div style={{
-              display: 'flex',
-              gap: '10px',
-              overflowX: 'auto',
-            }}>
-              {extractedMolecules.map((mol, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px',
-                    padding: '10px 14px',
-                    background: 'var(--bg-base)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                  }}
-                >
-                  <span style={{ fontSize: '13px', fontWeight: 500 }}>{mol.name}</span>
-                  <span style={{
-                    fontSize: '11px',
-                    fontFamily: 'monospace',
-                    color: 'var(--text-muted)',
-                    maxWidth: '180px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}>
-                    {mol.smiles}
-                  </span>
-                </div>
-              ))}
             </div>
           </div>
 
           {/* PDF 内容区 */}
           <div style={{
             flex: 1,
-            overflow: 'auto',
             display: 'flex',
+            alignItems: 'center',
             justifyContent: 'center',
-            padding: '24px',
+            color: 'white',
+            fontSize: '48px',
+            fontWeight: 700,
           }}>
-            <div style={{
-              width: '100%',
-              maxWidth: '800px',
-              background: 'white',
-              borderRadius: '4px',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-              padding: '48px 56px',
-              minHeight: '100%',
-              color: '#333',
-              fontSize: '14px',
-              lineHeight: '1.8',
-            }}>
-              <div style={{
-                marginBottom: '32px',
-                paddingBottom: '16px',
-                borderBottom: '2px solid #eee',
-              }}>
-                <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '8px' }}>
-                  {selectedPdf.title.replace('.pdf', '')}
-                </h1>
-                <p style={{ fontSize: '12px', color: '#888' }}>第 {currentPage} 页 / 共 {totalPages} 页</p>
-              </div>
-              
-              {currentPage === 3 && (
-                <>
-                  <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '28px 0 16px' }}>1. 引言</h2>
-                  <p style={{ marginBottom: '16px' }}>
-                    阿司匹林（Aspirin），化学名称为乙酰水杨酸（Acetylsalicylic acid，ASA），是一种广泛应用于临床的非甾体抗炎药（NSAID）。自1899年上市以来，阿司匹林已成为世界上使用最广泛的药物之一。
-                  </p>
-                  
-                  <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '28px 0 16px' }}>2. 化学结构</h2>
-                  <p style={{ marginBottom: '16px' }}>
-                    阿司匹林的分子式为 C₉H₈O₄，分子量为 180.16 g/mol。其化学结构包含一个苯环、一个羧基（-COOH）和一个乙酰氧基（-OCOCH₃）。
-                  </p>
-                  
-                  <div style={{
-                    display: 'flex',
-                    gap: '16px',
-                    padding: '16px',
-                    background: '#f8f9fa',
-                    border: '1px solid #e9ecef',
-                    borderLeft: '4px solid var(--accent)',
-                    borderRadius: '8px',
-                    margin: '24px 0',
-                  }}>
-                    <div style={{
-                      width: '48px',
-                      height: '48px',
-                      background: 'var(--accent)',
-                      borderRadius: '10px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'white',
-                      fontSize: '24px',
-                    }}>
-                      🧪
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>分子信息</div>
-                      <div style={{ fontSize: '12px' }}>
-                        <div><span style={{ color: '#666' }}>SMILES:</span> <code style={{ background: '#eee', padding: '2px 6px', borderRadius: '4px' }}>CC(=O)Oc1ccccc1C(=O)O</code></div>
-                        <div><span style={{ color: '#666' }}>分子量:</span> <code>180.16 g/mol</code></div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '28px 0 16px' }}>3. 药理学特性</h2>
-                  <p style={{ marginBottom: '16px' }}>
-                    阿司匹林通过抑制环氧化酶（COX-1 和 COX-2）来发挥其抗炎、镇痛和解热作用。这种抑制是不可逆的。
-                  </p>
-                </>
-              )}
-              
-              {currentPage !== 3 && (
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '80px',
-                  color: '#999',
-                }}>
-                  <div style={{ fontSize: '120px', opacity: 0.2 }}>{currentPage}</div>
-                  <p style={{ marginTop: '16px' }}>第 {currentPage} 页内容</p>
-                </div>
-              )}
-            </div>
+            {currentPage}
           </div>
         </div>
 
-        {/* 右侧注释面板 */}
+        {/* 右侧标注面板 */}
         <div style={{
           background: 'var(--bg-surface)',
           borderLeft: '1px solid var(--border)',
           display: 'flex',
           flexDirection: 'column',
+          overflow: 'hidden',
         }}>
-          {/* Tab 切换 */}
           <div style={{
             display: 'flex',
             borderBottom: '1px solid var(--border)',
           }}>
-            {(['highlights', 'notes', 'molecules'] as const).map(tab => (
+            {(['molecules', 'highlights', 'notes'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveAnnotationTab(tab)}
                 style={{
                   flex: 1,
-                  padding: '12px',
+                  padding: '12px 8px',
                   fontSize: '12px',
-                  fontWeight: 500,
-                  background: 'transparent',
+                  background: activeAnnotationTab === tab ? 'var(--accent-muted)' : 'transparent',
                   border: 'none',
                   borderBottom: activeAnnotationTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-                  color: activeAnnotationTab === tab ? 'var(--accent)' : 'var(--text-muted)',
+                  color: activeAnnotationTab === tab ? 'var(--accent)' : 'var(--text-secondary)',
                   cursor: 'pointer',
                 }}
               >
-                {tab === 'highlights' ? '高亮' : tab === 'notes' ? '笔记' : '分子'}
+                {tab === 'molecules' ? '分子' : tab === 'highlights' ? '标注' : '笔记'}
               </button>
             ))}
           </div>
-
-          {/* 内容 */}
           <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
-            {activeAnnotationTab === 'highlights' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {highlights.map((h, i) => (
-                  <div key={i} style={{
-                    display: 'flex',
-                    gap: '10px',
-                    padding: '12px',
-                    background: 'var(--bg-base)',
-                    borderRadius: '8px',
-                  }}>
-                    <div style={{
-                      width: '12px',
-                      height: '12px',
-                      borderRadius: '3px',
-                      background: h.color === 'yellow' ? '#ffeb3b' : h.color === 'green' ? '#4caf50' : '#2196f3',
-                      marginTop: '4px',
-                      flexShrink: 0,
-                    }} />
-                    <div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                        "{h.text}"
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
-                        第 {h.page} 页 · <a href="#" style={{ color: 'var(--accent)' }}>跳转</a>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeAnnotationTab === 'notes' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {notes.map((n, i) => (
-                  <div key={i} style={{
-                    padding: '12px',
-                    background: 'var(--bg-base)',
-                    borderRadius: '8px',
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>第 {n.page} 页</span>
-                      <button style={{ fontSize: '12px', background: 'transparent', border: 'none', cursor: 'pointer' }}>✏️</button>
-                    </div>
-                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                      {n.content}
-                    </div>
-                  </div>
-                ))}
-                <button style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  width: '100%',
-                  padding: '12px',
-                  background: 'var(--bg-base)',
-                  border: '1px dashed var(--border)',
-                  borderRadius: '8px',
-                  fontSize: '13px',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                }}>
-                  + 添加笔记
-                </button>
-              </div>
-            )}
-
             {activeAnnotationTab === 'molecules' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {extractedMolecules.map((mol, i) => (
                   <div key={i} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px',
+                    padding: '10px 12px',
                     background: 'var(--bg-base)',
                     borderRadius: '8px',
-                    cursor: 'pointer',
+                    border: '1px solid var(--border)',
                   }}>
+                    <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '4px' }}>{mol.name}</div>
                     <div style={{
-                      width: '40px',
-                      height: '40px',
-                      background: 'var(--bg-surface)',
-                      borderRadius: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      fontSize: '11px',
+                      fontFamily: 'monospace',
+                      color: 'var(--text-muted)',
+                      maxWidth: '180px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
                     }}>
-                      <FlaskIcon size={20} style={{ color: 'var(--text-muted)' }} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 500 }}>{mol.name}</div>
-                      <div style={{
-                        fontSize: '11px',
-                        fontFamily: 'monospace',
-                        color: 'var(--text-muted)',
-                        maxWidth: '180px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {mol.smiles}
-                      </div>
+                      {mol.smiles}
                     </div>
                   </div>
                 ))}
@@ -642,6 +326,8 @@ export default function ProjectView() {
       padding: '32px',
       overflow: 'auto',
     }}>
+      {error && <ErrorBanner message={error} onDismiss={() => setError('')} />}
+
       {/* 头部 */}
       <div style={{
         display: 'flex',
@@ -788,32 +474,6 @@ export default function ProjectView() {
           ))}
         </div>
       )}
-    </div>
-  )
-}
-
-function StatCard({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
-  return (
-    <div style={{
-      padding: '20px',
-      background: 'var(--bg-surface)',
-      border: '1px solid var(--border)',
-      borderRadius: '12px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-    }}>
-      <div style={{ color: 'var(--text-muted)' }}>{icon}</div>
-      <div>
-        <div style={{
-          fontSize: '20px',
-          fontWeight: 700,
-        }}>{value}</div>
-        <div style={{
-          fontSize: '12px',
-          color: 'var(--text-muted)',
-        }}>{label}</div>
-      </div>
     </div>
   )
 }

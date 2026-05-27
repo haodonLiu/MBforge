@@ -162,6 +162,11 @@ export function addMolecule(projectRoot: string, smiles: string, name = '', sour
 }
 
 // Agent
+export function getChatHistory(projectRoot: string) {
+  return fetchJson<{ success: boolean; messages: import('../types').ChatMessage[] }>(
+    `${API_BASE}/agent/history?project_root=${encodeURIComponent(projectRoot)}`,
+  )
+}
 export function agentChat(projectRoot: string, messages: { role: string; content: string }[], temperature = 0.7) {
   return fetchJson<{ success: boolean; content: string; error?: string }>(
     `${API_BASE}/agent/chat`,

@@ -53,3 +53,10 @@ export interface FileNode {
   is_dir: boolean
   children: FileNode[]
 }
+
+export interface ChatMessage {
+  id?: string
+  role: string
+  content: string
+  timestamp?: string
+}

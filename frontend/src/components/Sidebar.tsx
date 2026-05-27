@@ -1,13 +1,15 @@
 import { useNavigate } from 'react-router-dom'
-import { FlaskIcon, SearchIcon, ChatIcon, FolderIcon, WorkflowIcon, SettingsIcon, PlusIcon } from './icons'
+import { FlaskIcon, SearchIcon, ChatIcon, FolderIcon, WorkflowIcon, SettingsIcon, PlusIcon, FileTextIcon } from './icons'
 
 interface Props {
   current: string
   onNavigate: (page: string) => void
   onSettingsOpen: () => void
+  fileTreeOpen: boolean
+  onToggleFileTree: () => void
 }
 
-  const NAV_ITEMS = [
+const NAV_ITEMS = [
   { id: 'welcome', label: '首页', path: '/', icon: FlaskIcon },
   { id: 'search', label: '搜索', path: '/search', icon: SearchIcon },
   { id: 'chat', label: '对话', path: '/chat', icon: ChatIcon },
@@ -17,7 +19,7 @@ interface Props {
   { id: 'settings', label: '设置', path: '/settings', icon: SettingsIcon },
 ]
 
-export default function Sidebar({ current, onNavigate, onSettingsOpen }: Props) {
+export default function Sidebar({ current, onNavigate, onSettingsOpen, fileTreeOpen, onToggleFileTree }: Props) {
   const navigate = useNavigate()
 
   const handleClick = (item: typeof NAV_ITEMS[0]) => {
@@ -36,6 +38,39 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen }: Props) 
       overflow: 'hidden',
     }}>
       <div style={{ padding: '8px 6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        {/* File tree toggle at top */}
+        <button
+          title="文件树"
+          onClick={onToggleFileTree}
+          style={{
+            width: '44px',
+            height: '44px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '8px',
+            border: 'none',
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+            background: fileTreeOpen ? 'var(--accent-muted)' : 'transparent',
+            color: fileTreeOpen ? 'var(--accent)' : 'var(--text-secondary)',
+          }}
+          onMouseEnter={e => {
+            if (!fileTreeOpen) {
+              e.currentTarget.style.background = 'var(--bg-hover)'
+              e.currentTarget.style.color = 'var(--text-primary)'
+            }
+          }}
+          onMouseLeave={e => {
+            if (!fileTreeOpen) {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'var(--text-secondary)'
+            }
+          }}
+        >
+          <FileTextIcon size={20} />
+        </button>
+
         {NAV_ITEMS.map(item => {
           const Icon = item.icon
           const isActive = current === item.id

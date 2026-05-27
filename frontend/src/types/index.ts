@@ -46,3 +46,10 @@ export interface HealthResponse {
   models: Record<string, string>
   error: string | null
 }
+
+export interface FileNode {
+  name: string
+  path: string
+  is_dir: boolean
+  children: FileNode[]
+}

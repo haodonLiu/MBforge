@@ -190,3 +190,10 @@ export function deleteFile(projectRoot: string, docId: string) {
     { method: 'POST', body: JSON.stringify({ project_root: projectRoot, doc_id: docId }) },
   )
 }
+
+// File Tree
+export function getFileTree(projectRoot: string) {
+  return fetchJson<{ success: boolean; tree: import('../types').FileNode[]; error?: string }>(
+    `${API_BASE}/project/file-tree?root=${encodeURIComponent(projectRoot)}`,
+  )
+}

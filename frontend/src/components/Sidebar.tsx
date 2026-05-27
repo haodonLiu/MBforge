@@ -4,6 +4,7 @@ import { FlaskIcon, SearchIcon, ChatIcon, FolderIcon, WorkflowIcon, SettingsIcon
 interface Props {
   current: string
   onNavigate: (page: string) => void
+  onSettingsOpen: () => void
 }
 
   const NAV_ITEMS = [
@@ -16,7 +17,7 @@ interface Props {
   { id: 'settings', label: '设置', path: '/settings', icon: SettingsIcon },
 ]
 
-export default function Sidebar({ current, onNavigate }: Props) {
+export default function Sidebar({ current, onNavigate, onSettingsOpen }: Props) {
   const navigate = useNavigate()
 
   const handleClick = (item: typeof NAV_ITEMS[0]) => {
@@ -111,7 +112,7 @@ export default function Sidebar({ current, onNavigate }: Props) {
         </button>
         <button
           title="设置"
-          onClick={() => onNavigate('settings')}
+          onClick={onSettingsOpen}
           style={{
             width: '44px',
             height: '44px',

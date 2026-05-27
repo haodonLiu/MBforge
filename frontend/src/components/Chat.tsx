@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { agentChat } from '../api/client'
-import { SendIcon, UserIcon, BotIcon, SearchIcon, BarChartIcon, TargetIcon, FolderIcon, FileTextIcon, FlaskIcon } from './icons'
+import { agentChat, chat } from '../api/client'
+import { SendIcon, UserIcon, BotIcon, SearchIcon, BarChartIcon, TargetIcon, FolderIcon, FileTextIcon, FlaskIcon, GlobeIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
 
 interface ChatMessage {
@@ -8,7 +8,11 @@ interface ChatMessage {
   content: string
 }
 
+type ChatMode = 'global' | 'project'
+
 export default function Chat() {
+  const projectRoot = getProjectRoot()
+  const [mode, setMode] = useState<ChatMode>(projectRoot ? 'project' : 'global')
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', content: '你好！我是 MBForge AI 助手。有什么关于分子或文献的问题可以问我。' },
   ])
@@ -23,6 +27,12 @@ export default function Chat() {
     scrollToBottom()
   }, [messages])
 
+  useEffect(() => {
+    if (!projectRoot && mode === 'project') {
+      setMode('global')
+    }
+  }, [projectRoot, mode])
+
   const sendMessage = useCallback(async () => {
     if (!input.trim() || isLoading) return
 
@@ -31,25 +41,29 @@ export default function Chat() {
     setMessages(prev => [...prev, { role: 'user', content: userMsg }])
     setIsLoading(true)
 
-    const projectRoot = getProjectRoot()
     const allMessages = [...messages, { role: 'user' as const, content: userMsg }]
 
     try {
-      const resp = await agentChat(
-        projectRoot,
-        allMessages.map(m => ({ role: m.role, content: m.content })),
-      )
-      if (resp.success) {
+      if (mode === 'global') {
+        const resp = await chat(allMessages.map(m => ({ role: m.role, content: m.content })))
         setMessages(prev => [...prev, { role: 'assistant', content: resp.content }])
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: `错误: ${resp.error || '未知错误'}` }])
+        const resp = await agentChat(
+          projectRoot,
+          allMessages.map(m => ({ role: m.role, content: m.content })),
+        )
+        if (resp.success) {
+          setMessages(prev => [...prev, { role: 'assistant', content: resp.content }])
+        } else {
+          setMessages(prev => [...prev, { role: 'assistant', content: `错误: ${resp.error || '未知错误'}` }])
+        }
       }
     } catch (e) {
       setMessages(prev => [...prev, { role: 'assistant', content: `网络错误: ${e instanceof Error ? e.message : String(e)}` }])
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, messages])
+  }, [input, isLoading, messages, mode, projectRoot])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -67,8 +81,6 @@ export default function Chat() {
     setInput(prev => prev + (templates[template] || ''))
   }
 
-  const projectRoot = getProjectRoot()
-
   return (
     <div style={{
       display: 'grid',
@@ -84,6 +96,74 @@ export default function Chat() {
         borderRadius: '16px',
         overflow: 'hidden',
       }}>
+        <div style={{
+          padding: '12px 16px',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          <div style={{
+            display: 'flex',
+            background: 'var(--bg-base)',
+            borderRadius: '8px',
+            padding: '3px',
+            border: '1px solid var(--border)',
+          }}>
+            <button
+              onClick={() => setMode('global')}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 500,
+                background: mode === 'global' ? 'var(--accent)' : 'transparent',
+                color: mode === 'global' ? 'white' : 'var(--text-secondary)',
+                transition: 'all 0.15s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <GlobeIcon size={14} />
+              全局
+            </button>
+            <button
+              onClick={() => projectRoot && setMode('project')}
+              disabled={!projectRoot}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: 'none',
+                cursor: projectRoot ? 'pointer' : 'not-allowed',
+                fontSize: '12px',
+                fontWeight: 500,
+                background: mode === 'project' ? 'var(--accent)' : 'transparent',
+                color: mode === 'project' ? 'white' : projectRoot ? 'var(--text-secondary)' : 'var(--text-muted)',
+                transition: 'all 0.15s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                opacity: projectRoot ? 1 : 0.5,
+              }}
+            >
+              <FolderIcon size={14} />
+              项目
+            </button>
+          </div>
+          {mode === 'global' && (
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              全局模式 - 直接与 LLM 对话
+            </span>
+          )}
+          {mode === 'project' && projectRoot && (
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              项目模式 - 基于项目知识库
+            </span>
+          )}
+        </div>
         <div style={{
           flex: 1,
           padding: '24px',
@@ -201,8 +281,8 @@ export default function Chat() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={projectRoot ? '输入问题... (Enter 发送, Shift+Enter 换行)' : '请先打开或创建一个项目'}
-              disabled={!projectRoot || isLoading}
+              placeholder="输入问题... (Enter 发送, Shift+Enter 换行)"
+              disabled={isLoading}
               style={{
                 flex: 1,
                 background: 'transparent',
@@ -219,18 +299,18 @@ export default function Chat() {
             />
             <button
               onClick={sendMessage}
-              disabled={!input.trim() || isLoading || !projectRoot}
+              disabled={!input.trim() || isLoading}
               style={{
                 width: '36px',
                 height: '36px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: input.trim() && !isLoading && projectRoot ? 'var(--accent)' : 'var(--bg-hover)',
-                color: input.trim() && !isLoading && projectRoot ? 'white' : 'var(--text-muted)',
+                background: input.trim() && !isLoading ? 'var(--accent)' : 'var(--bg-hover)',
+                color: input.trim() && !isLoading ? 'white' : 'var(--text-muted)',
                 border: 'none',
                 borderRadius: '8px',
-                cursor: input.trim() && !isLoading && projectRoot ? 'pointer' : 'not-allowed',
+                cursor: input.trim() && !isLoading ? 'pointer' : 'not-allowed',
                 transition: 'all 0.2s',
                 flexShrink: 0,
               }}
@@ -263,7 +343,10 @@ export default function Chat() {
             当前上下文
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <ContextItem icon={<FolderIcon size={16} />} label={projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目'} />
+            <ContextItem
+              icon={mode === 'global' ? <GlobeIcon size={16} /> : <FolderIcon size={16} />}
+              label={mode === 'global' ? '全局模式' : (projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目')}
+            />
             <ContextItem icon={<FileTextIcon size={16} />} label="42 篇已索引文献" />
             <ContextItem icon={<FlaskIcon size={16} />} label="128 个分子" />
           </div>

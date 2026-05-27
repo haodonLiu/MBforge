@@ -159,8 +159,8 @@ class Project:
                         entry.mtime = mtime
                         entry.hash = sha256_file(file_path)
                         entry.indexed = False
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Stat/hash failed for {file_path}: {e}")
                 found_ids.add(entry.doc_id)
         # 移除已删除的文件
         to_remove = [k for k in self._index if k not in found_ids]
@@ -191,8 +191,8 @@ class Project:
         try:
             entry.mtime = path.stat().st_mtime
             entry.hash = sha256_file(path)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Stat/hash failed for {path}: {e}")
         self._index[entry.doc_id] = entry
         self._path_index[path] = entry.doc_id
         self._save_index()

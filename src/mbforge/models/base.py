@@ -2,10 +2,27 @@
 
 from __future__ import annotations
 
+import asyncio
+import functools
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
-from collections.abc import AsyncGenerator, Iterator
+from typing import Any, TypeVar
+from collections.abc import AsyncGenerator, Callable, Iterator
+
+T = TypeVar("T")
+
+
+async def run_sync_async(func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    """Run a synchronous function in a thread pool executor.
+
+    Use this to wrap sync methods into async ones without duplicating
+    the asyncio.get_running_loop() + run_in_executor pattern.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        functools.partial(func, *args, **kwargs),
+    )
 
 
 @dataclass

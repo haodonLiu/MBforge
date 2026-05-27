@@ -93,8 +93,8 @@ class SummaryManager:
             try:
                 with open(path, encoding="utf-8") as f:
                     results.append(DocumentSummary.from_dict(json.load(f)))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to load summary {path}: {e}")
         return results
 
 

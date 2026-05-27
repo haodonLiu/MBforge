@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from mbforge.models.base import BaseEmbedder
 from mbforge.models.embedding import create_embedder_from_config
 from mbforge.utils.config import EmbedConfig
 
-_embedder_instance: Any = None
+_embedder_instance: BaseEmbedder | None = None
 
 
-def get_embedder(config: EmbedConfig | None = None) -> Any:
+def get_embedder(config: EmbedConfig | None = None) -> BaseEmbedder:
     global _embedder_instance
     if _embedder_instance is None:
         if config is None:

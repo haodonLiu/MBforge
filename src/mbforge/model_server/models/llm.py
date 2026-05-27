@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from mbforge.models.base import BaseLLM
 from mbforge.models.llm import create_llm_from_config
 from mbforge.utils.config import ModelConfig
 
-_llm_instance: Any = None
+_llm_instance: BaseLLM | None = None
 
 
-def get_llm(config: ModelConfig | None = None) -> Any:
+def get_llm(config: ModelConfig | None = None) -> BaseLLM:
     global _llm_instance
     if _llm_instance is None:
         if config is None:

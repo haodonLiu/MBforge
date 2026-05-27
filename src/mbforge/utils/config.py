@@ -195,8 +195,8 @@ def load_global_config() -> AppConfig:
                 data = json.load(f)
             _config_cache = AppConfig.from_dict(data)
             return _config_cache
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Config parse failed: {e}")
 
     # 尝试从环境变量读取（用于 .env 文件集成）
     _config_cache = _config_from_env()

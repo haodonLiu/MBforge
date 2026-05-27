@@ -9,9 +9,12 @@ import numpy as np
 from fastapi import APIRouter, Request
 from PIL import Image
 
+from ...utils.exceptions import ModelNotAvailableError, ValidationError
+from ...utils.logger import get_logger
 from ..models.moldet import get_moldet
 from .health import set_model_status
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -26,12 +29,12 @@ async def detect_page(request: Request) -> dict:
         body = await request.json()
         image_base64 = body.get("image_base64", "")
         if not image_base64:
-            return {"error": "image_base64 is required"}
+            raise ValidationError("image_base64 is required")
 
         image = _decode_image(image_base64)
         pipeline = get_moldet()
         if pipeline is None or not pipeline.is_available():
-            return {"error": "MolDet pipeline not available"}
+            raise ModelNotAvailableError("MolDet pipeline not available")
 
         boxes = pipeline.doc_detector.detect(image)
         set_model_status("moldet", "ready")
@@ -42,9 +45,12 @@ async def detect_page(request: Request) -> dict:
             ],
             "count": len(boxes),
         }
+    except (ValidationError, ModelNotAvailableError):
+        raise
     except Exception as e:
         set_model_status("moldet", "error")
-        return {"error": str(e)}
+        logger.error(f"MolDet detect-page failed: {e}", exc_info=True)
+        raise ModelNotAvailableError(str(e))
 
 
 @router.post("/extract-page")
@@ -53,7 +59,7 @@ async def extract_page(request: Request) -> dict:
         body = await request.json()
         image_base64 = body.get("image_base64", "")
         if not image_base64:
-            return {"error": "image_base64 is required"}
+            raise ValidationError("image_base64 is required")
 
         page_idx = body.get("page_idx", 0)
         page_w_pts = body.get("page_w_pts", 595.0)
@@ -63,12 +69,11 @@ async def extract_page(request: Request) -> dict:
         dpi = body.get("dpi", 300.0)
 
         if image_w == 0 or image_h == 0:
-            return {"error": "image_w and image_h are required"}
+            raise ValidationError("image_w and image_h are required")
 
         image = _decode_image(image_base64)
         arr = np.array(image)
         h, w = arr.shape[:2]
-        # 如果客户端未传实际尺寸，使用图像本身尺寸
         if image_w == 0:
             image_w = w
         if image_h == 0:
@@ -76,7 +81,7 @@ async def extract_page(request: Request) -> dict:
 
         pipeline = get_moldet()
         if pipeline is None or not pipeline.is_available():
-            return {"error": "MolDet pipeline not available"}
+            raise ModelNotAvailableError("MolDet pipeline not available")
 
         results = pipeline.extract_page(
             image, page_idx, page_w_pts, page_h_pts, image_w, image_h, dpi
@@ -86,9 +91,12 @@ async def extract_page(request: Request) -> dict:
             "results": [r.to_dict() for r in results],
             "count": len(results),
         }
+    except (ValidationError, ModelNotAvailableError):
+        raise
     except Exception as e:
         set_model_status("moldet", "error")
-        return {"error": str(e)}
+        logger.error(f"MolDet extract-page failed: {e}", exc_info=True)
+        raise ModelNotAvailableError(str(e))
 
 
 @router.post("/extract-region")
@@ -97,7 +105,7 @@ async def extract_region(request: Request) -> dict:
         body = await request.json()
         image_base64 = body.get("image_base64", "")
         if not image_base64:
-            return {"error": "image_base64 is required"}
+            raise ValidationError("image_base64 is required")
 
         page_idx = body.get("page_idx", 0)
         bbox_pdf = body.get("bbox_pdf")
@@ -105,16 +113,19 @@ async def extract_region(request: Request) -> dict:
         image = _decode_image(image_base64)
         pipeline = get_moldet()
         if pipeline is None or not pipeline.is_available():
-            return {"error": "MolDet pipeline not available"}
+            raise ModelNotAvailableError("MolDet pipeline not available")
 
         result = pipeline.extract_region(
             image, page_idx, tuple(bbox_pdf) if bbox_pdf else None
         )
         set_model_status("moldet", "ready")
         return {"result": result.to_dict()}
+    except (ValidationError, ModelNotAvailableError):
+        raise
     except Exception as e:
         set_model_status("moldet", "error")
-        return {"error": str(e)}
+        logger.error(f"MolDet extract-region failed: {e}", exc_info=True)
+        raise ModelNotAvailableError(str(e))
 
 
 @router.get("/health")
@@ -132,4 +143,5 @@ async def moldet_health() -> dict:
         }
     except Exception as e:
         set_model_status("moldet", "error")
+        logger.error(f"MolDet health check failed: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}

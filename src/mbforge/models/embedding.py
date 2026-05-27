@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from .base import BaseEmbedder
+from .base import BaseEmbedder, run_sync_async
 from ..utils.constants import (
     DEFAULT_EMBED_MODEL,
     EMBED_INSTRUCTION_RETRIEVAL,
@@ -104,10 +104,7 @@ class SentenceTransformerEmbedder(BaseEmbedder):
         return embeddings.tolist()
 
     async def aembed(self, texts: list[str]) -> list[list[float]]:
-        import asyncio
-
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.embed, texts)
+        return await run_sync_async(self.embed, texts)
 
 
 class Qwen3Embedder(BaseEmbedder):
@@ -189,10 +186,7 @@ class Qwen3Embedder(BaseEmbedder):
         return embeddings.tolist()
 
     async def aembed(self, texts: list[str]) -> list[list[float]]:
-        import asyncio
-
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.embed, texts)
+        return await run_sync_async(self.embed, texts)
 
 
 class APIEmbedder(BaseEmbedder):
@@ -212,10 +206,7 @@ class APIEmbedder(BaseEmbedder):
         return [item.embedding for item in response.data]
 
     async def aembed(self, texts: list[str]) -> list[list[float]]:
-        import asyncio
-
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.embed, texts)
+        return await run_sync_async(self.embed, texts)
 
 
 def create_embedder_from_config(config) -> BaseEmbedder:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from collections.abc import AsyncGenerator, Iterator
 
-from .base import BaseLLM, Message, StreamChunk
+from .base import BaseLLM, Message, StreamChunk, run_sync_async
 
 
 class OpenAILLM(BaseLLM):
@@ -63,21 +63,14 @@ class OpenAILLM(BaseLLM):
             yield StreamChunk(delta=delta, finish_reason=finish)
 
     async def achat(self, messages: list[Message], **kwargs) -> str:
-        # 使用同步客户端的线程池执行
-        import asyncio
-
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self.chat, messages, **kwargs)
+        return await run_sync_async(self.chat, messages, **kwargs)
 
     async def achat_stream(
         self, messages: list[Message], **kwargs
     ) -> AsyncGenerator[StreamChunk, None]:
         import asyncio
 
-        loop = asyncio.get_running_loop()
-        iterator = await loop.run_in_executor(
-            None, self.chat_stream, messages, **kwargs
-        )
+        iterator = await run_sync_async(self.chat_stream, messages, **kwargs)
         for chunk in iterator:
             yield chunk
             await asyncio.sleep(0)

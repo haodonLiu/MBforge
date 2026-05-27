@@ -2,9 +2,12 @@
 
 from fastapi import APIRouter, Request
 
+from ...utils.exceptions import ModelNotAvailableError
+from ...utils.logger import get_logger
 from ..models.reranker import get_reranker
 from .health import set_model_status
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 
@@ -23,4 +26,5 @@ async def rerank(request: Request) -> dict:
         return {"results": [{"index": idx, "score": score} for idx, score in top_results]}
     except Exception as e:
         set_model_status("reranker", "error")
-        return {"results": [], "error": str(e)}
+        logger.error(f"Rerank failed: {e}", exc_info=True)
+        raise ModelNotAvailableError(str(e))

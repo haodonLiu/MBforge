@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from ..utils.exceptions import MBForgeError
 from .routers import llm, embed, rerank, vlm, health, uniparser, moldet, project, kb, molecule, agent, file
 
 app = FastAPI(title="MBForge Model Server", version="1.1.0")
@@ -17,6 +19,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Global exception handler for structured error responses
+@app.exception_handler(MBForgeError)
+async def mbforge_error_handler(request: Request, exc: MBForgeError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": exc.message,
+            "error_code": exc.error_code,
+        },
+    )
+
 
 # 注册路由
 app.include_router(llm.router, prefix="/api/v1/llm", tags=["llm"])

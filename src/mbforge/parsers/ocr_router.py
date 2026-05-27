@@ -52,7 +52,15 @@ class OCRMethodRouter:
         page_classification: PageClassification,
         method_override: OCRMethod | None = None,
     ) -> OCRMethod:
-        """Select appropriate OCR method for a page."""
+        """Select appropriate OCR method for a page.
+
+        Args:
+            doc_classification: Document-level classification. Reserved for
+                future use where document-wide heuristics (e.g. overall
+                molecular density) may influence per-page method selection.
+            page_classification: Classification of the specific page.
+            method_override: If provided, bypass auto-selection entirely.
+        """
 
         # 1. User override
         if method_override is not None:
@@ -86,6 +94,14 @@ class OCRMethodRouter:
         doc_classification: DocumentClassification,
     ) -> CostEstimate:
         """Estimate total cost for entire document."""
+        if not doc_classification.pages:
+            return CostEstimate(
+                method=OCRMethod.API_TEXT,
+                pages=0,
+                estimated_cost_usd=0.0,
+                estimated_time_seconds=0.0,
+            )
+
         total_cost = 0.0
         total_time = 0.0
 

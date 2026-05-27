@@ -16,7 +16,6 @@ const NAV_ITEMS = [
   { id: 'molecules', label: '分子库', path: '/molecules', icon: FlaskIcon },
   { id: 'workflow', label: '工作流', path: '/workflow', icon: WorkflowIcon },
   { id: 'project', label: '项目', path: '/project', icon: FolderIcon },
-  { id: 'settings', label: '设置', path: '/settings', icon: SettingsIcon },
 ]
 
 export default function Sidebar({ current, onNavigate, onSettingsOpen, fileTreeOpen, onToggleFileTree }: Props) {
@@ -144,37 +143,6 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, fileTreeO
           }}
         >
           <PlusIcon size={20} />
-        </button>
-        <button
-          title="设置"
-          onClick={onSettingsOpen}
-          style={{
-            width: '44px',
-            height: '44px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '8px',
-            border: 'none',
-            cursor: 'pointer',
-            transition: 'all 0.15s',
-            background: current === 'settings' ? 'var(--accent-muted)' : 'transparent',
-            color: current === 'settings' ? 'var(--accent)' : 'var(--text-secondary)',
-          }}
-          onMouseEnter={e => {
-            if (current !== 'settings') {
-              e.currentTarget.style.background = 'var(--bg-hover)'
-              e.currentTarget.style.color = 'var(--text-primary)'
-            }
-          }}
-          onMouseLeave={e => {
-            if (current !== 'settings') {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.color = 'var(--text-secondary)'
-            }
-          }}
-        >
-          <SettingsIcon size={20} />
         </button>
       </div>
     </aside>

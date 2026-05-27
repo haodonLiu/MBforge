@@ -10,6 +10,7 @@ import Workflow from './components/Workflow'
 import ProjectView from './components/ProjectView'
 import SettingsModal from './components/SettingsModal'
 import FileTree from './components/FileTree'
+import PDFViewer from './components/PDFViewer'
 import { useProjectRoot } from './hooks/useProjectRoot'
 
 export default function App() {
@@ -17,10 +18,17 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState('welcome')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [fileTreeOpen, setFileTreeOpen] = useState(true)
+  const [openPdf, setOpenPdf] = useState<string | null>(null)
 
   const handleProjectOpened = (root: string) => {
     setProjectRoot(root)
     setCurrentPage('project')
+  }
+
+  const handleFileClick = (path: string) => {
+    if (path.toLowerCase().endsWith('.pdf')) {
+      setOpenPdf(path)
+    }
   }
 
   // No project open - show Welcome only
@@ -82,7 +90,7 @@ export default function App() {
           }}>
             Files
           </div>
-          <FileTree onFileClick={(path) => console.log('Open file:', path)} />
+          <FileTree onFileClick={handleFileClick} />
         </div>
       )}
       <Header />
@@ -93,14 +101,18 @@ export default function App() {
         flexDirection: 'column',
         overflow: 'hidden',
       }}>
-        <Routes>
-          <Route path="/" element={<ProjectView />} />
-          <Route path="/search" element={<Search />} />
-          <Route path="/chat" element={<Chat />} />
-          <Route path="/molecules" element={<MoleculeLibrary />} />
-          <Route path="/workflow" element={<Workflow />} />
-          <Route path="/project" element={<ProjectView />} />
-        </Routes>
+        {openPdf ? (
+          <PDFViewer filePath={openPdf} onClose={() => setOpenPdf(null)} />
+        ) : (
+          <Routes>
+            <Route path="/" element={<ProjectView />} />
+            <Route path="/search" element={<Search />} />
+            <Route path="/chat" element={<Chat />} />
+            <Route path="/molecules" element={<MoleculeLibrary />} />
+            <Route path="/workflow" element={<Workflow />} />
+            <Route path="/project" element={<ProjectView />} />
+          </Routes>
+        )}
       </main>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>

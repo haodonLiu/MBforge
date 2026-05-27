@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ...utils.exceptions import FileAccessError, PathTraversalError
@@ -19,6 +20,17 @@ router = APIRouter()
 class DeleteFileRequest(BaseModel):
     project_root: str
     doc_id: str
+
+
+@router.get("/pdf")
+async def serve_pdf(path: str) -> FileResponse:
+    """Serve a PDF file for preview."""
+    file_path = Path(path)
+    if not file_path.exists():
+        raise FileAccessError(f"File not found: {path}")
+    if not file_path.suffix.lower() == ".pdf":
+        raise FileAccessError("Only PDF files can be served")
+    return FileResponse(file_path, media_type="application/pdf")
 
 
 @router.post("/upload")

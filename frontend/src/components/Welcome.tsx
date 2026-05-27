@@ -34,6 +34,11 @@ function removeRecentFromStorage(path: string) {
   return list
 }
 
+/** 去掉路径首尾的引号 */
+function sanitizePath(p: string): string {
+  return p.replace(/^["']+|["']+$/g, '').trim()
+}
+
 interface Props {
   onProjectOpened?: (root: string) => void
 }
@@ -143,7 +148,7 @@ export default function Welcome({ onProjectOpened }: Props) {
             <input
               type="text"
               value={selectedDir}
-              onChange={e => setSelectedDir(e.target.value)}
+              onChange={e => setSelectedDir(sanitizePath(e.target.value))}
               placeholder="输入父目录路径 (如: D:/research)"
               className="input"
               style={{ width: '100%', boxSizing: 'border-box' }}
@@ -210,7 +215,7 @@ export default function Welcome({ onProjectOpened }: Props) {
             <input
               type="text"
               value={selectedDir}
-              onChange={e => setSelectedDir(e.target.value)}
+              onChange={e => setSelectedDir(sanitizePath(e.target.value))}
               onKeyDown={e => e.key === 'Enter' && handleOpenDir()}
               placeholder="输入项目根目录路径"
               className="input"

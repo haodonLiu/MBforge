@@ -1,10 +1,12 @@
 import { useState, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { createProject, openProject } from '../api/client'
 import { FlaskIcon, UploadIcon, FolderIcon } from './icons'
 
-export default function Welcome() {
-  const navigate = useNavigate()
+interface Props {
+  onProjectOpened?: (root: string) => void
+}
+
+export default function Welcome({ onProjectOpened }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [projectPath, setProjectPath] = useState('')
   const [projectName, setProjectName] = useState('')
@@ -18,7 +20,7 @@ export default function Welcome() {
       const resp = await createProject(projectPath.trim(), projectName.trim())
       if (resp.success && resp.project) {
         localStorage.setItem('mbforge_project_root', resp.project.root)
-        navigate('/project')
+        onProjectOpened?.(resp.project.root)
       } else {
         alert(resp.error || '创建失败')
       }
@@ -36,7 +38,7 @@ export default function Welcome() {
       const resp = await openProject(projectPath.trim())
       if (resp.success && resp.project) {
         localStorage.setItem('mbforge_project_root', resp.project.root)
-        navigate('/project')
+        onProjectOpened?.(resp.project.root)
       } else {
         alert(resp.error || '打开失败，请确认路径有效')
       }
@@ -47,17 +49,72 @@ export default function Welcome() {
     }
   }
 
-  const handleDirectorySelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDirectorySelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
-    if (files && files.length > 0) {
-      const firstFile = files[0]
-      // webkitRelativePath gives us "foldername/subfolder/file.txt"
-      // We need just the root folder name
-      const relativePath = firstFile.webkitRelativePath
-      if (relativePath) {
+    if (!files || files.length === 0) return
+
+    const firstFile = files[0]
+    // In Tauri, the input returns absolute paths via webkitRelativePath or the file itself
+    let selectedPath = ''
+
+    // Try to get the full path from the file's webkitRelativePath
+    const relativePath = firstFile.webkitRelativePath
+    if (relativePath) {
+      // webkitRelativePath is "FolderName/subfolder/file.txt"
+      // We need the absolute path - extract from the file object
+      // In a browser context we can't get the absolute path, but in Tauri we can
+      // Try to use the path property (Tauri-specific)
+      const anyFile = firstFile as any
+      if (anyFile.path) {
+        // Tauri file picker provides absolute path
+        selectedPath = anyFile.path
+        // Go up to the directory that was selected
+        const parts = selectedPath.replace(/\\/g, '/').split('/')
+        // Remove the filename to get the directory
+        parts.pop()
+        selectedPath = parts.join('/')
+      } else {
+        // Fallback: use relative path
         const rootFolder = relativePath.split('/')[0]
-        // Use current directory as base, or just the folder name
-        setProjectPath(`./${rootFolder}`)
+        selectedPath = `./${rootFolder}`
+      }
+    }
+
+    if (selectedPath) {
+      setProjectPath(selectedPath)
+      // Auto-open: try create first, if it fails try open
+      setIsCreating(true)
+      try {
+        const resp = await createProject(selectedPath, '')
+        if (resp.success && resp.project) {
+          localStorage.setItem('mbforge_project_root', resp.project.root)
+          onProjectOpened?.(resp.project.root)
+          return
+        }
+        // If create fails, try opening as existing project
+        const openResp = await openProject(selectedPath)
+        if (openResp.success && openResp.project) {
+          localStorage.setItem('mbforge_project_root', openResp.project.root)
+          onProjectOpened?.(openResp.project.root)
+          return
+        }
+        // Both failed - let user see the path and try manually
+        alert(openResp.error || '无法打开所选文件夹，请确认路径有效')
+      } catch (e) {
+        // Create failed, try open
+        try {
+          const openResp = await openProject(selectedPath)
+          if (openResp.success && openResp.project) {
+            localStorage.setItem('mbforge_project_root', openResp.project.root)
+            onProjectOpened?.(openResp.project.root)
+            return
+          }
+          alert(openResp.error || '无法打开所选文件夹')
+        } catch (e2) {
+          alert(`打开失败: ${e2 instanceof Error ? e2.message : String(e2)}`)
+        }
+      } finally {
+        setIsCreating(false)
       }
     }
   }

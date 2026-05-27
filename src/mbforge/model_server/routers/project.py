@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ...core.project import Project
+from ...utils.constants import PROJECT_META_DIR
 from ...utils.exceptions import ProjectNotFoundError, ProjectNotValidError
 from ...utils.logger import get_logger
 from ..dependencies import get_project_from_root
@@ -93,3 +94,42 @@ async def scan_project(req: CreateProjectRequest) -> dict:
             for d in docs
         ],
     }
+
+
+def _build_file_tree(root: Path) -> list[dict]:
+    """Recursively build a file tree from a directory, excluding hidden and meta dirs."""
+    result: list[dict] = []
+    try:
+        entries = sorted(root.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower()))
+    except PermissionError:
+        return result
+
+    for entry in entries:
+        # Skip hidden files/dirs and .mbforge meta directory
+        if entry.name.startswith("."):
+            continue
+        if entry.name == PROJECT_META_DIR:
+            continue
+        if entry.is_dir():
+            children = _build_file_tree(entry)
+            result.append({
+                "name": entry.name,
+                "path": str(entry),
+                "is_dir": True,
+                "children": children,
+            })
+        else:
+            result.append({
+                "name": entry.name,
+                "path": str(entry),
+                "is_dir": False,
+                "children": [],
+            })
+    return result
+
+
+@router.get("/file-tree")
+async def file_tree(root: str) -> dict:
+    project = await get_project_from_root(root)
+    tree = _build_file_tree(project.root)
+    return {"success": True, "tree": tree}

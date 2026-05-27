@@ -34,7 +34,7 @@ async def list_molecules(
     try:
         db = MoleculeDatabase(project.root)
         results = db.list_all(limit=limit, offset=offset)
-        return {"success": True, "molecules": results}
+        return {"success": True, "molecules": [r.to_dict() for r in results]}
     except Exception as e:
         logger.error(f"List molecules failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}

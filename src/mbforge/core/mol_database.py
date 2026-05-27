@@ -272,6 +272,7 @@ class MoleculeDatabase:
     def list_all(
         self,
         limit: int = 1000,
+        offset: int = 0,
         source_type: str | None = None,
         status: str | None = None,
     ) -> list[MoleculeRecord]:
@@ -279,6 +280,7 @@ class MoleculeDatabase:
 
         Args:
             limit: 最大返回数量
+            offset: 偏移量
             source_type: 过滤来源类型 ('image'|'text'|'manual')
             status: 过滤状态 ('pending'|'confirmed'|'rejected')
         """
@@ -292,8 +294,8 @@ class MoleculeDatabase:
             params.append(status)
 
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
-        sql = f"SELECT * FROM molecules {where} ORDER BY created_at DESC LIMIT ?"
-        params.append(limit)
+        sql = f"SELECT * FROM molecules {where} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
 
         if self._conn is None:
             raise RuntimeError("MoleculeDatabase 未初始化：数据库连接失败。")

@@ -82,7 +82,14 @@ export default function App() {
           }}>
             Files
           </div>
-          <FileTree onFileClick={(path) => console.log('Open file:', path)} />
+          <FileTree onFileClick={(path) => {
+            // Open PDF in system default viewer, other files show alert
+            if (path.toLowerCase().endsWith('.pdf')) {
+              window.open(`file://${path}`, '_blank')
+            } else {
+              alert(`文件: ${path}`)
+            }
+          }} />
         </div>
       )}
       <Header />

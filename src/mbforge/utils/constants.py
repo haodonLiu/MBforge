@@ -37,8 +37,8 @@ RERANK_DEFAULT_INSTRUCTION = (
 )
 
 # 支持的文档类型
-SUPPORTED_DOC_EXTS = {".md", ".txt", ".pdf", ".json", ".yaml", ".yml"}
-SUPPORTED_MOL_EXTS = {".sdf", ".mol", ".mol2", ".pdb", ".smi", ".csv"}
+SUPPORTED_DOC_EXTS = {".md", ".txt", ".pdf"}
+SUPPORTED_MOL_EXTS = {".sdf", ".mol", ".mol2", ".pdb", ".smi"}
 
 # ChromaDB 集合名
 KB_COLLECTION_DOCS = "documents"

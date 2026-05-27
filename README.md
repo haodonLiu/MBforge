@@ -1,6 +1,6 @@
 # MBForge - Molecular Knowledge Base & AI Workbench
 
-> 类似 Obsidian + Zotero 的分子科学知识库平台，支持 PDF OCR 解析、分子数据建库、LLM 智能对话，以及可扩展的分子生成/对接/QSAR/MD 工作流。
+> 面向分子科学的桌面端知识库平台，支持 PDF OCR 解析、分子数据建库、LLM 智能对话，以及可扩展的分子生成/对接/QSAR/MD 工作流。
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![React 19](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)

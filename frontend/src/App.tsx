@@ -58,6 +58,7 @@ export default function App() {
         current={currentPage}
         onNavigate={setCurrentPage}
         onSettingsOpen={() => setSettingsOpen(true)}
+        onSwitchProject={() => setProjectRoot('')}
         fileTreeOpen={fileTreeOpen}
         onToggleFileTree={() => setFileTreeOpen(!fileTreeOpen)}
       />

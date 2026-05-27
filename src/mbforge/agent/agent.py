@@ -23,6 +23,7 @@ from .context import LayeredContext
 from .executor import ToolExecutor
 from .memory_manager import MemoryManager
 from .trajectory import TrajectoryTracker
+from .optimizations import SPSConfig, SpeculativeScheduler
 from ..models.base import BaseLLM, Message
 from ..utils.logger import get_logger
 
@@ -40,11 +41,44 @@ class ProjectAgent:
     - 检索轨迹跟踪（TrajectoryTracker）
     """
 
-    DEFAULT_SYSTEM_PROMPT = (
-        "你是一位专业的药物化学和分子生物学研究助手。"
-        "你可以使用工具来查询项目中的知识库、分子数据库和文档。"
-        "请用中文回答用户的问题。"
-    )
+    DEFAULT_SYSTEM_PROMPT = """你是 MBForge 分子科学 AI 助手，服务于药物化学与分子生物学研究。
+
+## 身份
+你是一位专业的分子科学研究助手，擅长文献解读、分子数据分析、结构-活性关系（SAR）分析和药物设计建议。
+
+## 能力范围
+1. **文献检索与解读**：搜索知识库中的文献，阅读摘要、概览和全文，回答关于研究内容的问题
+2. **分子数据分析**：查询分子数据库，分析分子性质、活性数据、SMILES 结构
+3. **SAR 分析**：基于分子结构和活性数据，分析构效关系
+4. **药物设计建议**：基于文献和分子数据，提供分子优化、先导化合物优化等建议
+5. **项目管理**：查看项目文档列表、统计信息、索引状态
+
+## 工作流程
+- 收到问题后，先判断需要哪些信息，选择合适的工具获取数据
+- 优先使用工具获取项目中的实际数据，而非仅依赖预训练知识
+- 引用具体文档和分子数据时，注明来源
+- 回答要准确、专业，使用中文学术用语
+
+## 回答规范
+- 涉及分子结构时使用 SMILES 表示
+- 涉及活性数据时注明单位和数值
+- 涉及文献时注明文档名称
+- 不确定的内容明确标注
+- 回答使用 Markdown 格式，表格用于展示对比数据
+
+## 图片输出
+当你需要展示分子结构时，将 SMILES 字符串用行内代码（反引号）包裹，前端会自动将其渲染为分子结构图。
+
+示例：
+- 阿司匹林：`CC(=O)Oc1ccccc1C(=O)O`
+- 布洛芬：`CC(C)Cc1ccc(C(C)C(=O)O)cc1`
+
+输出格式：`SMILES代码`（一对反引号包裹）
+
+注意：
+- 只输出合法的 SMILES 字符串，不要加引号或额外说明
+- 如果 SMILES 无效或太长，用文本描述代替
+- 对于蛋白质、核酸等大分子，用文本描述而非 SMILES"""
 
     def __init__(
         self,
@@ -67,9 +101,11 @@ class ProjectAgent:
         # 记忆与轨迹
         self.memory_manager: MemoryManager | None = None
         self.trajectory_tracker: TrajectoryTracker | None = None
+        self.sps_scheduler: SpeculativeScheduler | None = None
         if project_root is not None:
             self.memory_manager = MemoryManager(project_root)
             self.trajectory_tracker = TrajectoryTracker(project_root)
+            self.sps_scheduler = SpeculativeScheduler(config=SPSConfig(enabled=True))
             self._inject_memories()
 
         if tool_executor is not None:
@@ -152,6 +188,31 @@ class ProjectAgent:
                             tc.get("arguments", {}),
                             result[:200],
                         )
+                    # SPS: 预测并预执行下一步工具
+                    if self.sps_scheduler is not None and self.sps_scheduler.config.enabled:
+                        spec_calls = self.sps_scheduler.record_and_predict(
+                            tc["name"],
+                            tc.get("arguments", {}),
+                            result[:500],
+                        )
+                        for spec in spec_calls:
+                            if spec["confidence"] >= 0.8:
+                                try:
+                                    pre_result = self.tool_executor.registry.call(
+                                        spec["name"], spec["args"]
+                                    )
+                                    self.context.add_tool_result(
+                                        spec["name"],
+                                        f"[预计算] {pre_result}",
+                                        tool_call_id=f"spec_{spec['name']}",
+                                    )
+                                    logger.info(
+                                        "SPS pre-executed: %s (conf=%.2f)",
+                                        spec["name"],
+                                        spec["confidence"],
+                                    )
+                                except Exception as e:
+                                    logger.debug("SPS pre-execution skipped: %s", e)
                 continue
             else:
                 # 直接回复
@@ -196,6 +257,26 @@ class ProjectAgent:
                             tc.get("arguments", {}),
                             result[:200],
                         )
+                    # SPS: 预测并预执行下一步工具
+                    if self.sps_scheduler is not None and self.sps_scheduler.config.enabled:
+                        spec_calls = self.sps_scheduler.record_and_predict(
+                            tc["name"],
+                            tc.get("arguments", {}),
+                            result[:500],
+                        )
+                        for spec in spec_calls:
+                            if spec["confidence"] >= 0.8:
+                                try:
+                                    pre_result = self.tool_executor.registry.call(
+                                        spec["name"], spec["args"]
+                                    )
+                                    self.context.add_tool_result(
+                                        spec["name"],
+                                        f"[预计算] {pre_result}",
+                                        tool_call_id=f"spec_{spec['name']}",
+                                    )
+                                except Exception:
+                                    pass
 
                 # 再请求最终回复并流式输出
                 final_messages = self.context.build_messages()

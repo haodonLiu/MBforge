@@ -181,3 +181,7 @@ class TrajectoryTracker:
         self._steps.clear()
         if self.trajectory_path.exists():
             self.trajectory_path.unlink()
+
+    def export_tool_sequence(self) -> list[str]:
+        """导出纯工具名序列，供 SPS 学习用."""
+        return [s.uri.split("/")[-1] for s in self._steps if s.step_type == "tool"]

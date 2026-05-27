@@ -5,6 +5,7 @@ interface Props {
   current: string
   onNavigate: (page: string) => void
   onSettingsOpen: () => void
+  onSwitchProject: () => void
   fileTreeOpen: boolean
   onToggleFileTree: () => void
 }
@@ -17,7 +18,7 @@ const NAV_ITEMS = [
   { id: 'workflow', label: '工作流', path: '/workflow', icon: WorkflowIcon },
 ]
 
-export default function Sidebar({ current, onNavigate, onSettingsOpen, fileTreeOpen, onToggleFileTree }: Props) {
+export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchProject, fileTreeOpen, onToggleFileTree }: Props) {
   const navigate = useNavigate()
 
   const handleClick = (item: typeof NAV_ITEMS[0]) => {
@@ -118,7 +119,8 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, fileTreeO
         gap: '2px',
       }}>
         <button
-          title="新建项目"
+          title="切换项目"
+          onClick={onSwitchProject}
           style={{
             width: '44px',
             height: '44px',

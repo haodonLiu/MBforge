@@ -1,258 +1,342 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { createProject, openProject } from '../api/client'
-import { FlaskIcon, UploadIcon, FolderIcon } from './icons'
+import { FolderIcon, ArrowLeftIcon, MoleculeLogo, TrashIcon, XIcon } from './icons'
+
+interface RecentProject {
+  name: string
+  path: string
+}
+
+const RECENT_KEY = 'mbforge_recent_projects'
+const MAX_RECENT = 20
+
+function loadRecent(): RecentProject[] {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
+  } catch {
+    return []
+  }
+}
+
+function persistRecent(path: string, name: string) {
+  const list = loadRecent()
+  const filtered = list.filter(p => p.path !== path)
+  const next = [
+    { name: name || path.split(/[/\\]/).pop() || path, path },
+    ...filtered,
+  ].slice(0, MAX_RECENT)
+  localStorage.setItem(RECENT_KEY, JSON.stringify(next))
+}
+
+function removeRecentFromStorage(path: string) {
+  const list = loadRecent().filter(p => p.path !== path)
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list))
+  return list
+}
 
 interface Props {
   onProjectOpened?: (root: string) => void
 }
 
-export default function Welcome({ onProjectOpened }: Props) {
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [projectPath, setProjectPath] = useState('')
-  const [projectName, setProjectName] = useState('')
-  const [isCreating, setIsCreating] = useState(false)
-  const [isOpening, setIsOpening] = useState(false)
+type Page = 'home' | 'create' | 'open'
 
-  const handleCreate = async () => {
-    if (!projectPath.trim()) return
-    setIsCreating(true)
-    try {
-      const resp = await createProject(projectPath.trim(), projectName.trim())
-      if (resp.success && resp.project) {
-        localStorage.setItem('mbforge_project_root', resp.project.root)
-        onProjectOpened?.(resp.project.root)
-      } else {
-        alert(resp.error || '创建失败')
-      }
-    } catch (e) {
-      alert(`创建失败: ${e instanceof Error ? e.message : String(e)}`)
-    } finally {
-      setIsCreating(false)
-    }
+export default function Welcome({ onProjectOpened }: Props) {
+  const [page, setPage] = useState<Page>('home')
+  const [selectedDir, setSelectedDir] = useState('')
+  const [projectName, setProjectName] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>(loadRecent)
+
+  const handleProjectSuccess = (root: string, name: string) => {
+    localStorage.setItem('mbforge_project_root', root)
+    persistRecent(root, name)
+    onProjectOpened?.(root)
   }
 
-  const handleOpen = async () => {
-    if (!projectPath.trim()) return
-    setIsOpening(true)
+  const openByName = async (path: string) => {
+    setLoading(true)
     try {
-      const resp = await openProject(projectPath.trim())
+      const resp = await openProject(path)
       if (resp.success && resp.project) {
-        localStorage.setItem('mbforge_project_root', resp.project.root)
-        onProjectOpened?.(resp.project.root)
+        handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
         alert(resp.error || '打开失败，请确认路径有效')
       }
     } catch (e) {
       alert(`打开失败: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
-      setIsOpening(false)
+      setLoading(false)
     }
   }
 
-  const handleDirectorySelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    const firstFile = files[0]
-    // In Tauri, the input returns absolute paths via webkitRelativePath or the file itself
-    let selectedPath = ''
-
-    // Try to get the full path from the file's webkitRelativePath
-    const relativePath = firstFile.webkitRelativePath
-    if (relativePath) {
-      // webkitRelativePath is "FolderName/subfolder/file.txt"
-      // We need the absolute path - extract from the file object
-      // In a browser context we can't get the absolute path, but in Tauri we can
-      // Try to use the path property (Tauri-specific)
-      const anyFile = firstFile as any
-      if (anyFile.path) {
-        // Tauri file picker provides absolute path
-        selectedPath = anyFile.path
-        // Go up to the directory that was selected
-        const parts = selectedPath.replace(/\\/g, '/').split('/')
-        // Remove the filename to get the directory
-        parts.pop()
-        selectedPath = parts.join('/')
+  const handleCreate = async () => {
+    if (!selectedDir.trim() || !projectName.trim()) return
+    const fullPath = `${selectedDir.trim()}/${projectName.trim()}`
+    setLoading(true)
+    try {
+      const resp = await createProject(fullPath, projectName.trim())
+      if (resp.success && resp.project) {
+        handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
-        // Fallback: use relative path
-        const rootFolder = relativePath.split('/')[0]
-        selectedPath = `./${rootFolder}`
+        alert(resp.error || '创建失败')
       }
-    }
-
-    if (selectedPath) {
-      setProjectPath(selectedPath)
-      // Auto-open: try create first, if it fails try open
-      setIsCreating(true)
-      try {
-        const resp = await createProject(selectedPath, '')
-        if (resp.success && resp.project) {
-          localStorage.setItem('mbforge_project_root', resp.project.root)
-          onProjectOpened?.(resp.project.root)
-          return
-        }
-        // If create fails, try opening as existing project
-        const openResp = await openProject(selectedPath)
-        if (openResp.success && openResp.project) {
-          localStorage.setItem('mbforge_project_root', openResp.project.root)
-          onProjectOpened?.(openResp.project.root)
-          return
-        }
-        // Both failed - let user see the path and try manually
-        alert(openResp.error || '无法打开所选文件夹，请确认路径有效')
-      } catch (e) {
-        // Create failed, try open
-        try {
-          const openResp = await openProject(selectedPath)
-          if (openResp.success && openResp.project) {
-            localStorage.setItem('mbforge_project_root', openResp.project.root)
-            onProjectOpened?.(openResp.project.root)
-            return
-          }
-          alert(openResp.error || '无法打开所选文件夹')
-        } catch (e2) {
-          alert(`打开失败: ${e2 instanceof Error ? e2.message : String(e2)}`)
-        }
-      } finally {
-        setIsCreating(false)
-      }
+    } catch (e) {
+      alert(`创建失败: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setLoading(false)
     }
   }
 
-  return (
-    <div style={{
-      flex: 1,
-      padding: '32px',
-      overflow: 'auto',
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
-      <div style={{
-        maxWidth: '600px',
-        margin: '60px auto',
-        textAlign: 'center',
-      }}>
-        <div style={{
-          width: '72px',
-          height: '72px',
-          background: 'var(--accent)',
-          borderRadius: '18px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          margin: '0 auto 28px',
-        }}>
-          <FlaskIcon size={40} />
-        </div>
-        <h1 style={{
-          fontSize: '32px',
-          fontWeight: 700,
-          letterSpacing: '-1px',
-          marginBottom: '12px',
-        }}>
-          MBForge
-        </h1>
-        <p style={{
-          fontSize: '16px',
-          color: 'var(--text-secondary)',
-          marginBottom: '36px',
-        }}>
-          Molecular Knowledge Base - 分子知识库
-        </p>
+  const handleOpenDir = async () => {
+    if (!selectedDir.trim()) return
+    setLoading(true)
+    try {
+      const resp = await openProject(selectedDir.trim())
+      if (resp.success && resp.project) {
+        handleProjectSuccess(resp.project.root, resp.project.name)
+      } else {
+        alert(resp.error || '无法打开，请确认该目录是有效的 MBForge 项目')
+      }
+    } catch (e) {
+      alert(`打开失败: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setLoading(false)
+    }
+  }
 
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px',
-          marginBottom: '24px',
-        }}>
-          <input
-            type="text"
-            value={projectPath}
-            onChange={e => setProjectPath(e.target.value)}
-            placeholder="项目路径 (如: ./my-project)"
-            className="input"
-          />
-          <input
-            type="text"
-            value={projectName}
-            onChange={e => setProjectName(e.target.value)}
-            placeholder="项目名称 (可选)"
-            className="input"
-          />
-        </div>
+  const btnStyle = (primary = false): React.CSSProperties => ({
+    padding: '10px 20px',
+    borderRadius: '10px',
+    cursor: loading ? 'not-allowed' : 'pointer',
+    fontWeight: 500,
+    fontSize: '14px',
+    transition: 'all 0.15s',
+    opacity: loading ? 0.6 : 1,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    background: primary ? 'var(--accent)' : 'var(--bg-surface)',
+    color: primary ? '#fff' : 'var(--text-primary)',
+    border: primary ? 'none' : '1px solid var(--border)',
+  })
 
-        <div style={{
-          display: 'flex',
-          gap: '12px',
-          justifyContent: 'center',
-        }}>
+  // ---- 创建项目二级页 ----
+  if (page === 'create') {
+    return (
+      <div style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ maxWidth: '500px', margin: '60px auto 0', width: '100%' }}>
           <button
-            className="btn btn-primary"
+            onClick={() => { setPage('home'); setSelectedDir(''); setProjectName('') }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '24px', padding: 0 }}
+          >
+            <ArrowLeftIcon size={16} /> 返回
+          </button>
+
+          <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '24px' }}>新建项目</h2>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+              项目目录
+            </label>
+            <input
+              type="text"
+              value={selectedDir}
+              onChange={e => setSelectedDir(e.target.value)}
+              placeholder="输入父目录路径 (如: D:/research)"
+              className="input"
+              style={{ width: '100%', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+              项目名称
+            </label>
+            <input
+              type="text"
+              value={projectName}
+              onChange={e => setProjectName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCreate()}
+              placeholder="如: aspirin-study"
+              className="input"
+              style={{ width: '100%', boxSizing: 'border-box' }}
+              autoFocus
+            />
+          </div>
+
+          {selectedDir && projectName && (
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px', padding: '10px 14px', background: 'var(--bg-surface)', borderRadius: '8px' }}>
+              将创建: <strong>{selectedDir}/{projectName}</strong>
+            </div>
+          )}
+
+          <button
             onClick={handleCreate}
-            disabled={isCreating || !projectPath.trim()}
+            disabled={loading || !selectedDir.trim() || !projectName.trim()}
+            style={btnStyle(true)}
           >
-            {isCreating ? '创建中...' : '新建项目'}
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={handleOpen}
-            disabled={isOpening || !projectPath.trim()}
-          >
-            {isOpening ? '打开中...' : '打开项目'}
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            // @ts-ignore - webkitdirectory is non-standard
-            webkitdirectory=""
-            multiple={false}
-            style={{ display: 'none' }}
-            onChange={handleDirectorySelect}
-          />
-          <button
-            className="btn btn-secondary"
-            onClick={() => fileInputRef.current?.click()}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            <FolderIcon size={16} />
-            浏览文件夹
+            {loading ? (
+              <>
+                <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                创建中...
+              </>
+            ) : '创建项目'}
           </button>
         </div>
       </div>
+    )
+  }
 
-      <div style={{
-        maxWidth: '600px',
-        margin: '0 auto 40px',
-        padding: '40px 32px',
-        background: 'var(--bg-surface)',
-        border: '2px dashed var(--border)',
-        borderRadius: '16px',
-        textAlign: 'center',
-        cursor: 'pointer',
-        transition: 'all 0.2s',
-      }}
-      onMouseEnter={e => {
-        e.currentTarget.style.borderColor = 'var(--accent)'
-        e.currentTarget.style.background = 'var(--accent-muted)'
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.borderColor = 'var(--border)'
-        e.currentTarget.style.background = 'var(--bg-surface)'
-      }}
-      onClick={() => alert('文件上传功能即将推出')}
-      >
-        <UploadIcon size={40} />
-        <p style={{ marginTop: '16px', fontSize: '14px', color: 'var(--text-secondary)' }}>
-          拖拽文件到此处，或<strong>点击上传</strong>
+  // ---- 打开项目二级页 ----
+  if (page === 'open') {
+    return (
+      <div style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ maxWidth: '500px', margin: '60px auto 0', width: '100%' }}>
+          <button
+            onClick={() => { setPage('home'); setSelectedDir('') }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '24px', padding: 0 }}
+          >
+            <ArrowLeftIcon size={16} /> 返回
+          </button>
+
+          <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '24px' }}>打开已有项目</h2>
+
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+              项目路径
+            </label>
+            <input
+              type="text"
+              value={selectedDir}
+              onChange={e => setSelectedDir(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleOpenDir()}
+              placeholder="输入项目根目录路径"
+              className="input"
+              style={{ width: '100%', boxSizing: 'border-box' }}
+              autoFocus
+            />
+          </div>
+
+          <button
+            onClick={handleOpenDir}
+            disabled={loading || !selectedDir.trim()}
+            style={btnStyle(true)}
+          >
+            {loading ? (
+              <>
+                <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                打开中...
+              </>
+            ) : '打开项目'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ---- 首页 ----
+  return (
+    <div style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ maxWidth: '600px', margin: '60px auto 0', textAlign: 'center', width: '100%' }}>
+        {/* Logo */}
+        <div style={{ margin: '0 auto 28px' }}>
+          <MoleculeLogo size={72} />
+        </div>
+        <h1 style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '-1px', marginBottom: '12px' }}>
+          MBForge
+        </h1>
+        <p style={{ fontSize: '16px', color: 'var(--text-secondary)', marginBottom: '40px' }}>
+          Molecular Knowledge Base - 分子知识库
         </p>
-        <p style={{
-          fontSize: '12px',
-          marginTop: '8px',
-          color: 'var(--text-muted)',
-        }}>
-          支持 PDF, SDF, MOL, PDB, MD
-        </p>
+
+        {/* 操作按钮 */}
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '48px' }}>
+          <button onClick={() => setPage('create')} style={btnStyle(true)}>
+            <FolderIcon size={16} /> 新建项目
+          </button>
+          <button onClick={() => setPage('open')} style={btnStyle()}>
+            <FolderIcon size={16} /> 打开项目
+          </button>
+        </div>
+
+        {/* 最近项目 */}
+        {recentProjects.length > 0 && (
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <h2 style={{
+                fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)',
+                textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0,
+              }}>
+                最近项目
+              </h2>
+              <button
+                onClick={() => { setEditing(!editing); setDeleting(null) }}
+                title={editing ? '完成' : '编辑'}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+                  color: editing ? 'var(--accent)' : 'var(--text-muted)', transition: 'color 0.15s',
+                }}
+              >
+                <TrashIcon size={16} />
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {recentProjects.map((p) => (
+                <div
+                  key={p.path}
+                  style={{
+                    display: 'flex', alignItems: 'center',
+                    padding: '12px 16px', background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)', borderRadius: '10px',
+                    transition: 'all 0.15s', width: '100%', boxSizing: 'border-box',
+                    borderColor: deleting === p.path ? '#e74c3c' : undefined,
+                    opacity: deleting === p.path ? 0.5 : 1,
+                  }}
+                >
+                  {editing && (
+                    <button
+                      onClick={() => {
+                        setDeleting(p.path)
+                        setTimeout(() => {
+                          const updated = removeRecentFromStorage(p.path)
+                          setRecentProjects(updated)
+                          setDeleting(null)
+                          if (updated.length === 0) setEditing(false)
+                        }, 300)
+                      }}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px 8px 2px 0',
+                        color: '#e74c3c', flexShrink: 0, transition: 'transform 0.15s',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.2)'}
+                      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                    >
+                      <XIcon size={14} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => openByName(p.path)}
+                    disabled={loading || deleting === p.path}
+                    style={{
+                      flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      background: 'none', border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
+                      textAlign: 'left', padding: 0, opacity: loading ? 0.6 : 1,
+                    }}
+                  >
+                    <span style={{ fontWeight: 500, fontSize: '14px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '16px' }}>
+                      {p.name}
+                    </span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {p.path}
+                    </span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

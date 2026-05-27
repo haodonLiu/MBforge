@@ -40,12 +40,6 @@ def main() -> int:
     index_parser = subparsers.add_parser("index", help="索引项目文件")
     index_parser.add_argument("path", type=str, help="项目目录路径")
 
-    # zotero-bridge 命令
-    bridge_parser = subparsers.add_parser("zotero-bridge", help="启动 Zotero 桥接服务")
-    bridge_parser.add_argument("--project", "-p", type=str, required=True, help="MBForge 项目目录路径")
-    bridge_parser.add_argument("--host", type=str, default="127.0.0.1", help="监听地址（默认 127.0.0.1）")
-    bridge_parser.add_argument("--port", type=int, default=8233, help="监听端口（默认 8233）")
-
     # version
     from .utils.constants import APP_VERSION
 
@@ -59,8 +53,6 @@ def main() -> int:
         return _cmd_init(args)
     elif args.command == "index":
         return _cmd_index(args)
-    elif args.command == "zotero-bridge":
-        return _cmd_zotero_bridge(args)
     else:
         return _cmd_gui(args)
 
@@ -163,19 +155,6 @@ def _cmd_index(args) -> int:
                 logger.error(f"索引失败: {entry.path.name} - {e}")
 
     logger.info("索引完成")
-    return 0
-
-
-def _cmd_zotero_bridge(args) -> int:
-    setup_logging()
-    from .zotero_bridge.server import run_server
-
-    project_root = Path(args.project).resolve()
-    if not project_root.exists():
-        logger.error("项目目录不存在: %s", project_root)
-        return 1
-
-    run_server(project_root=project_root, host=args.host, port=args.port)
     return 0
 
 

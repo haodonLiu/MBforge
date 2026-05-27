@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -233,3 +234,50 @@ class KnowledgeBase:
         if summary:
             return summary.entity_tags
         return []
+
+    def search_streaming(
+        self,
+        query: str,
+        top_k: int = 5,
+        filter_dict: dict[str, Any] | None = None,
+        yield_first: int = 3,
+    ) -> Iterator[dict[str, Any]]:
+        """增量流式搜索：先 yield 前 yield_first 条，再逐条 yield 剩余。"""
+        if filter_dict is not None and not isinstance(filter_dict, dict):
+            raise ValueError("filter_dict must be a dict")
+
+        query_embedding = None
+        if self.embedder is not None:
+            try:
+                query_embedding = self.embedder.embed([query])[0]
+            except Exception as e:
+                logger.warning("Query embedding failed: %s", e)
+
+        results = self._collection.query(
+            query_embeddings=[query_embedding] if query_embedding else None,
+            query_texts=[query] if query_embedding is None else None,
+            n_results=top_k,
+            where=filter_dict,
+        )
+
+        ids = results.get("ids", [[]])[0]
+        docs = results.get("documents", [[]])[0]
+        metas = results.get("metadatas", [[]])[0]
+        distances = results.get("distances", [[]])[0]
+
+        first_batch_end = min(yield_first, len(ids))
+        for i in range(first_batch_end):
+            yield {
+                "id": ids[i],
+                "text": docs[i],
+                "metadata": metas[i] if metas else {},
+                "distance": distances[i] if distances else 0.0,
+            }
+
+        for i in range(first_batch_end, len(ids)):
+            yield {
+                "id": ids[i],
+                "text": docs[i],
+                "metadata": metas[i] if metas else {},
+                "distance": distances[i] if distances else 0.0,
+            }

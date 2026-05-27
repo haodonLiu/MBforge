@@ -14,12 +14,28 @@ from .file_processor import (
 )
 from .pdf_parser import PDFParserPipeline
 from .molecule import MoleculeExtractor
+from .pdf_classifier import (
+    PDFClassifier,
+    DocumentClassification,
+    PageClassification,
+)
+from .ocr_router import (
+    OCRMethodRouter,
+    OCRMethod,
+    CostEstimate,
+)
 
 __all__ = [
     "BaseDocumentParser",
     "ParseOutput",
     "PDFParserPipeline",
     "MoleculeExtractor",
+    "PDFClassifier",
+    "DocumentClassification",
+    "PageClassification",
+    "OCRMethodRouter",
+    "OCRMethod",
+    "CostEstimate",
     "process_file",
     "get_strategy",
     "FileProcessStrategy",

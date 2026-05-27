@@ -1,24 +1,22 @@
 import { useNavigate } from 'react-router-dom'
-import { FlaskIcon, SearchIcon, ChatIcon, FolderIcon, WorkflowIcon, SettingsIcon, PlusIcon, FileTextIcon } from './icons'
+import { FlaskIcon, SearchIcon, ChatIcon, WorkflowIcon, PlusIcon, FileTextIcon, LayoutIcon } from './icons'
 
 interface Props {
   current: string
   onNavigate: (page: string) => void
-  onSettingsOpen: () => void
   fileTreeOpen: boolean
   onToggleFileTree: () => void
 }
 
 const NAV_ITEMS = [
-  { id: 'welcome', label: '首页', path: '/', icon: FlaskIcon },
+  { id: 'project', label: '项目看板', path: '/project', icon: LayoutIcon },
   { id: 'search', label: '搜索', path: '/search', icon: SearchIcon },
   { id: 'chat', label: '对话', path: '/chat', icon: ChatIcon },
   { id: 'molecules', label: '分子库', path: '/molecules', icon: FlaskIcon },
   { id: 'workflow', label: '工作流', path: '/workflow', icon: WorkflowIcon },
-  { id: 'project', label: '项目', path: '/project', icon: FolderIcon },
 ]
 
-export default function Sidebar({ current, onNavigate, onSettingsOpen, fileTreeOpen, onToggleFileTree }: Props) {
+export default function Sidebar({ current, onNavigate, fileTreeOpen, onToggleFileTree }: Props) {
   const navigate = useNavigate()
 
   const handleClick = (item: typeof NAV_ITEMS[0]) => {

@@ -2,10 +2,7 @@ import { useState, useEffect } from 'react'
 import { listMolecules, searchMolecules } from '../api/client'
 import type { MoleculeRecord } from '../types'
 import { FlaskIcon, SearchIcon } from './icons'
-
-function getProjectRoot(): string {
-  return localStorage.getItem('mbforge_project_root') || ''
-}
+import { getProjectRoot } from '../hooks/useProjectRoot'
 
 export default function MoleculeLibrary() {
   const [search, setSearch] = useState('')

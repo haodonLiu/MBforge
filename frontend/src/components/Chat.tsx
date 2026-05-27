@@ -1,14 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { agentChat } from '../api/client'
 import { SendIcon, UserIcon, BotIcon, SearchIcon, BarChartIcon, TargetIcon, FolderIcon, FileTextIcon, FlaskIcon } from './icons'
+import { getProjectRoot } from '../hooks/useProjectRoot'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
-}
-
-function getProjectRoot(): string {
-  return localStorage.getItem('mbforge_project_root') || ''
 }
 
 export default function Chat() {

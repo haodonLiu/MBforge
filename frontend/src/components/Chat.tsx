@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { agentChat, chat, listDocuments, moleculeStats } from '../api/client'
 import { SendIcon, UserIcon, BotIcon, SearchIcon, BarChartIcon, TargetIcon, FolderIcon, FileTextIcon, FlaskIcon, GlobeIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
@@ -218,9 +219,15 @@ export default function Chat() {
                 border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
                 lineHeight: 1.6,
                 fontSize: '14px',
-                whiteSpace: 'pre-wrap',
+                maxWidth: '85%',
               }}>
-                {msg.content}
+                {msg.role === 'assistant' ? (
+                  <div className="chat-markdown">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                )}
               </div>
               {msg.role === 'user' && (
                 <div style={{

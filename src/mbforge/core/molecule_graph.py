@@ -130,7 +130,14 @@ class MoleculeGraphStorage:
         return graph
 
     def compute_mcs_fingerprint(self, smiles: str) -> str | None:
-        """Compute Morgan fingerprint as MCS proxy."""
+        """Compute fingerprint using Morgan radius 2.
+
+        Note: rdFMCS.FindMCS requires at least 2 molecules to compute a true
+        maximum common substructure. Since this method operates on a single
+        molecule, it generates a Morgan fingerprint (radius 2, 1024 bits) as
+        a structural descriptor. For true MCS-based fingerprinting between
+        molecule pairs, use compute_mcs_fingerprint_pair() instead.
+        """
         if Chem is None or AllChem is None:
             return None
 
@@ -139,4 +146,32 @@ class MoleculeGraphStorage:
             return None
 
         fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=1024)
+        return fp.ToBitString()
+
+    def compute_mcs_fingerprint_pair(
+        self, smiles1: str, smiles2: str
+    ) -> str | None:
+        """Compute MCS-based fingerprint between two molecules.
+
+        Uses rdFMCS.FindMCS to identify the maximum common substructure
+        between two molecules, then generates a Morgan fingerprint from
+        that shared substructure pattern.
+        """
+        if Chem is None or rdFMCS is None or AllChem is None:
+            return None
+
+        mol1 = Chem.MolFromSmiles(smiles1)
+        mol2 = Chem.MolFromSmiles(smiles2)
+        if mol1 is None or mol2 is None:
+            return None
+
+        mcs_result = rdFMCS.FindMCS([mol1, mol2])
+        if mcs_result.numAtoms == 0:
+            return None
+
+        mcs_mol = Chem.MolFromSmarts(mcs_result.smartsString)
+        if mcs_mol is None:
+            return None
+
+        fp = AllChem.GetMorganFingerprintAsBitVect(mcs_mol, 2, nBits=1024)
         return fp.ToBitString()

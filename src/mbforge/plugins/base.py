@@ -2,7 +2,6 @@
 
 所有 MBForge 插件必须继承 BasePlugin，并实现以下至少一个能力:
 - AGENT_TOOL: 向 Agent 注册工具（如分子对接、FEP计算）
-- UI_PANEL:   向主窗口添加 Dock/Panel
 - WORKFLOW:   提供批处理工作流步骤
 - CLI_COMMAND: 提供 CLI 子命令
 """
@@ -13,19 +12,16 @@ from abc import ABC
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any
 from collections.abc import Callable
 
-if TYPE_CHECKING:
-    from PyQt6.QtWidgets import QWidget
-    from ..agent.tools import ToolRegistry
+from ..agent.tools import ToolRegistry
 
 
 class PluginCapability(Enum):
     """插件能力标志."""
 
     AGENT_TOOL = auto()   # 向 ReAct Agent 注册工具
-    UI_PANEL = auto()     # 提供 Qt DockWidget / Panel
     WORKFLOW = auto()     # 提供批处理工作流步骤
     CLI_COMMAND = auto()  # 提供 CLI 子命令
     MOLECULE_IO = auto()  # 支持额外的分子文件格式读写
@@ -67,7 +63,7 @@ class BasePlugin(ABC):
     子类必须:
       1. 定义 meta: PluginMetadata 类属性
       2. 实现 setup() 方法
-      3. 根据需要实现 register_tools() / create_ui_panel() / get_workflow_steps()
+      3. 根据需要实现 register_tools() / get_workflow_steps()
     """
 
     meta: PluginMetadata
@@ -108,13 +104,6 @@ class BasePlugin(ABC):
             )
         """
         ...
-
-    def create_ui_panel(self, parent: QWidget) -> QWidget | None:
-        """【UI_PANEL】创建并返回 Qt 面板实例.
-
-        返回 None 表示当前环境下不提供 UI（如 headless 模式）。
-        """
-        return None
 
     def get_workflow_steps(self) -> list[WorkflowStep]:
         """【WORKFLOW】返回该插件提供的工作流步骤列表."""

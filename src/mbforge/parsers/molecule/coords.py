@@ -169,36 +169,12 @@ def screen_to_img_rect(
     return (x1, y1, x2, y2)
 
 
-def img_to_screen_rect(
-    bbox_img: tuple[float, float, float, float],
-    view_scale: float,
-):
-    """将页面图像坐标转换为屏幕控件坐标 (PyQt6 QRect).
-
-    Args:
-        bbox_img: (x1, y1, x2, y2)，页面图像坐标
-        view_scale: 当前视图的缩放比例
-
-    Returns:
-        QRect，控件内坐标
-    """
-    from PyQt6.QtCore import QRect
-
-    x1, y1, x2, y2 = bbox_img
-    return QRect(
-        int(x1 * view_scale),
-        int(y1 * view_scale),
-        int((x2 - x1) * view_scale),
-        int((y2 - y1) * view_scale),
-    )
-
-
 # ---------------------------------------------------------------------------
 # 屏幕坐标 → PDF 坐标（一站式转换）
 # ---------------------------------------------------------------------------
 
 def screen_to_pdf_rect(
-    bbox_screen,  # QRect
+    bbox_screen,
     view_scale: float,
     page_height_px: float,
     pdf_scale: float,
@@ -206,7 +182,7 @@ def screen_to_pdf_rect(
     """屏幕控件坐标 → PDF 坐标（一站式转换）.
 
     Args:
-        bbox_screen: 控件内屏幕坐标
+        bbox_screen: 控件内屏幕坐标 (x1, y1, x2, y2)
         view_scale: 视图缩放比例（如 1.5）
         page_height_px: 整页渲染图像高度（像素）
         pdf_scale: 像素/点 比例（由渲染 DPI 决定）

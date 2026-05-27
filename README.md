@@ -3,7 +3,8 @@
 > 类似 Obsidian + Zotero 的分子科学知识库平台，支持 PDF OCR 解析、分子数据建库、LLM 智能对话，以及可扩展的分子生成/对接/QSAR/MD 工作流。
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
-[![PyQt6](https://img.shields.io/badge/PyQt6-6.6+-green.svg)](https://doc.qt.org/)
+[![React 19](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
+[![Tauri v2](https://img.shields.io/badge/Tauri-v2-orange.svg)](https://tauri.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## 核心特性
@@ -65,12 +66,10 @@ mbforge index ./my-project
 python -m mbforge
 ```
 
-### 打包为 EXE
+### 打包为桌面应用
 
 ```bash
-uv run python build.py
-# 或
-pyinstaller MBForge.spec
+cd src-tauri && cargo tauri build
 ```
 
 ## 项目结构
@@ -98,16 +97,6 @@ MBForge/
 │   │   ├── pdf_parser.py      # 解析流水线
 │   │   ├── molecule_extractor.py  # 分子提取
 │   │   └── file_processor.py  # 文件处理
-│   ├── ui/               # PyQt6 图形界面
-│   │   ├── main_window.py     # 主窗口
-│   │   ├── chat_widget.py     # 对话组件
-│   │   ├── pdf_viewer.py      # PDF 查看器
-│   │   ├── mol_panel.py       # 分子面板
-│   │   ├── mol_renderer.py    # 分子渲染
-│   │   ├── file_tree.py      # 项目文件树
-│   │   ├── editor.py         # Markdown 编辑器
-│   │   ├── preview.py        # Markdown 预览
-│   │   └── dialogs.py        # 设置对话框
 │   ├── agent/            # AI Agent
 │   │   ├── agent.py           # Agent 协调器
 │   │   ├── context.py         # 分层上下文
@@ -132,7 +121,19 @@ MBForge/
 │   │   ├── logger.py          # 日志
 │   │   └── error_logger.py    # 错误日志
 │   ├── cli.py             # CLI 入口
-│   └── app.py             # GUI 应用入口
+│   └── _core.py           # Rust 加速模块（可选）
+├── frontend/             # React 前端
+│   ├── src/
+│   │   ├── App.tsx        # 路由入口
+│   │   ├── components/    # UI 组件
+│   │   ├── api/           # API 客户端
+│   │   ├── hooks/         # 自定义 Hooks
+│   │   └── types/         # TypeScript 类型
+│   └── package.json
+├── src-tauri/            # Tauri 桌面壳
+│   └── src/main.rs        # Rust 入口
+├── rust/                 # Rust 加速模块
+│   └── src/lib.rs         # PyO3 扩展
 ├── setup/                # 一键配置脚本
 │   ├── openSAR/           # SAR 分析工具箱（uv workspace member）
 │   └── UniParser-Tools/  # PDF 解析 API（uv workspace member）
@@ -149,7 +150,9 @@ MBForge/
 
 | 类别 | 技术 | 版本 |
 |------|------|------|
-| **UI** | PyQt6 + QWebEngineView | >= 6.6 |
+| **前端** | React + Vite + TypeScript | 19 / 6 |
+| **桌面壳** | Tauri | v2 |
+| **后端** | FastAPI + uvicorn | - |
 | **向量数据库** | ChromaDB | >= 0.4 |
 | **Embedding** | sentence-transformers / OpenAI API | >= 2.5 |
 | **LLM** | OpenAI 兼容 API（支持 vLLM、Ollama、硅基流动等） | - |

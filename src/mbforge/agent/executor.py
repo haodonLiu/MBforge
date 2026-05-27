@@ -78,7 +78,11 @@ class ToolExecutor:
         try:
             results = self.kb.search(query, top_k=top_k)
             if not results:
-                return "未找到相关结果"
+                return (
+                    "知识库中未找到相关信息。"
+                    "这可能是因为项目尚未索引文档，或查询内容不在已索引的文档中。"
+                    "我将基于预训练知识回答您的问题。"
+                )
             lines = []
             for i, r in enumerate(results, 1):
                 text = truncate_text(r["text"].replace("\n", " "), max_len=300)

@@ -2,18 +2,28 @@
 
 解决简单 message 列表的问题：
 - 不同层级的消息有不同的生命周期和优先级
-- 支持智能裁剪，确保总 token 不超限
+- 支持 token 计数裁剪，确保总 token 不超限
+- 支持持久化到本地文件
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from ..models.base import Message
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def estimate_tokens(text: str) -> int:
+    """估算 token 数量（简化版：中文 ~1.5 token/字，英文 ~0.25 token/字符）."""
+    chinese_chars = sum(1 for c in text if '一' <= c <= '鿿')
+    other_chars = len(text) - chinese_chars
+    return int(chinese_chars * 1.5 + other_chars * 0.25)
 
 
 @dataclass
@@ -32,6 +42,10 @@ class ContextLayer:
     def clear(self) -> None:
         self.messages.clear()
 
+    def token_count(self) -> int:
+        """计算本层所有消息的 token 总数."""
+        return sum(estimate_tokens(m.content) for m in self.messages)
+
 
 class LayeredContext:
     """分层上下文管理器.
@@ -40,7 +54,7 @@ class LayeredContext:
     - L0 system:   系统提示（永久保留）
     - L1 project:  项目上下文（当前打开的文件、项目信息等）
     - L2 tools:    工具调用结果（临时，ephemeral）
-    - L3 history:  对话历史（可裁剪，只保留最近 N 轮）
+    - L3 history:  对话历史（可裁剪，按 token 裁剪）
     """
 
     def __init__(
@@ -80,6 +94,16 @@ class LayeredContext:
     def _history(self) -> ContextLayer:
         return self._layers[3]
 
+    # ---- Token 计算 ----
+
+    def total_token_count(self) -> int:
+        """计算所有非 ephemeral 层的 token 总数."""
+        return sum(
+            layer.token_count()
+            for layer in self._layers
+            if not layer.ephemeral
+        )
+
     # ---- 系统提示 ----
 
     def set_system_prompt(self, prompt: str) -> None:
@@ -101,7 +125,7 @@ class LayeredContext:
         self._project.clear()
 
     def inject_memory(self, memory_text: str) -> None:
-        """注入用户记忆到项目上下文（OpenViking / TencentDB）."""
+        """注入用户记忆到项目上下文."""
         if not memory_text:
             return
         self._project.add("system", f"[用户记忆]\n{memory_text}")
@@ -123,7 +147,7 @@ class LayeredContext:
     def add_tool_result(
         self, tool_name: str, result: str, tool_call_id: str = ""
     ) -> None:
-        """添加工具调用结果到历史层（紧跟 assistant 的 tool_use 消息之后）."""
+        """添加工具调用结果到历史层."""
         self._history.add(
             "tool",
             f"[工具调用结果: {tool_name}]\n{result[:4000]}",
@@ -145,14 +169,21 @@ class LayeredContext:
         self._history.add("assistant", content, tool_calls=tool_calls or None)
 
     def trim_history(self) -> None:
-        """裁剪对话历史，只保留最近 N 轮."""
+        """基于 token 计数裁剪对话历史，确保不超过 max_total_tokens."""
+        # 先按轮次裁剪
         msgs = self._history.messages
-        if len(msgs) <= self.max_history_rounds * 2:
-            return
-        # 保留最近的 N 轮（user + assistant 算一轮）
-        keep = self.max_history_rounds * 2
-        self._history.messages = msgs[-keep:]
-        logger.debug(f"History trimmed to {keep} messages")
+        if len(msgs) > self.max_history_rounds * 2:
+            keep = self.max_history_rounds * 2
+            self._history.messages = msgs[-keep:]
+            logger.debug(f"History trimmed to {keep} messages (round limit)")
+
+        # 再按 token 裁剪
+        while self.total_token_count() > self.max_total_tokens and len(self._history.messages) > 2:
+            # 移除最早的一轮（user + assistant）
+            removed = self._history.messages.pop(0)
+            if self._history.messages and self._history.messages[0].role == "assistant":
+                self._history.messages.pop(0)
+            logger.debug(f"Trimmed message to fit token limit (removed: {removed.content[:50]}...)")
 
     def clear_history(self) -> None:
         self._history.clear()
@@ -192,7 +223,28 @@ class LayeredContext:
 
         return result
 
-    # ---- 序列化（用于持久化）----
+    # ---- 持久化 ----
+
+    def save_to_file(self, path: Path) -> None:
+        """保存上下文到本地文件（不含 ephemeral 层）."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = self.to_dict()
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.debug(f"Context saved to {path}")
+
+    @classmethod
+    def load_from_file(cls, path: Path) -> LayeredContext | None:
+        """从本地文件加载上下文."""
+        if not path.exists():
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            return cls.from_dict(data)
+        except Exception as e:
+            logger.warning(f"Failed to load context from {path}: {e}")
+            return None
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为字典（不含 ephemeral 层）."""
@@ -201,12 +253,14 @@ class LayeredContext:
             "project": [m.__dict__ for m in self._project.messages],
             "history": [m.__dict__ for m in self._history.messages],
             "max_history_rounds": self.max_history_rounds,
+            "max_total_tokens": self.max_total_tokens,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> LayeredContext:
         ctx = cls(
             max_history_rounds=data.get("max_history_rounds", 20),
+            max_total_tokens=data.get("max_total_tokens", 32000),
         )
         ctx._system.messages = [Message(**m) for m in data.get("system", [])]
         ctx._project.messages = [Message(**m) for m in data.get("project", [])]

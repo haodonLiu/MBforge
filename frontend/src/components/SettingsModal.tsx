@@ -22,6 +22,7 @@ interface SettingsState {
   llm_base_url: string
   llm_api_key: string
   llm_model: string
+  llm_max_tokens: number
   embed_provider: string
   embed_model: string
   rerank_provider: string
@@ -35,6 +36,7 @@ const DEFAULT_SETTINGS: SettingsState = {
   llm_base_url: 'http://localhost:8000/v1',
   llm_api_key: '',
   llm_model: 'default',
+  llm_max_tokens: 4096,
   embed_provider: 'qwen3',
   embed_model: 'Qwen/Qwen3-Embedding-0.6B',
   rerank_provider: 'qwen3',
@@ -72,6 +74,7 @@ export default function SettingsModal({ open, onClose }: Props) {
           llm_base_url: s.llm?.base_url || '',
           llm_api_key: s.llm?.api_key || '',
           llm_model: s.llm?.model_name || '',
+          llm_max_tokens: s.llm?.max_tokens || 4096,
           embed_provider: s.embed?.provider || 'qwen3',
           embed_model: s.embed?.model_name || '',
           rerank_provider: s.rerank?.provider || 'qwen3',
@@ -98,6 +101,7 @@ export default function SettingsModal({ open, onClose }: Props) {
           base_url: settings.llm_base_url,
           api_key: settings.llm_api_key,
           model_name: settings.llm_model,
+          max_tokens: settings.llm_max_tokens,
         },
         embed: {
           provider: settings.embed_provider,
@@ -217,6 +221,22 @@ export default function SettingsModal({ open, onClose }: Props) {
                   value={settings.llm_model}
                   onChange={e => updateSetting('llm_model', e.target.value)}
                   placeholder="gpt-4"
+                />
+              </div>
+              <div className="setting-item">
+                <div className="setting-info">
+                  <div className="setting-label">Max Tokens</div>
+                  <div className="setting-desc">回复最大 token 数（建议设为模型上限的 1/2）</div>
+                </div>
+                <input
+                  className="setting-input"
+                  type="number"
+                  value={settings.llm_max_tokens}
+                  onChange={e => setSettings(prev => ({ ...prev, llm_max_tokens: parseInt(e.target.value) || 4096 }))}
+                  min={256}
+                  max={128000}
+                  step={256}
+                  style={{ width: '120px' }}
                 />
               </div>
             </div>

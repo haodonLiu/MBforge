@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { agentChat, chat } from '../api/client'
+import { agentChat, chat, listDocuments, moleculeStats } from '../api/client'
 import { SendIcon, UserIcon, BotIcon, SearchIcon, BarChartIcon, TargetIcon, FolderIcon, FileTextIcon, FlaskIcon, GlobeIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
 
@@ -18,6 +18,8 @@ export default function Chat() {
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [docCount, setDocCount] = useState(0)
+  const [molCount, setMolCount] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -32,6 +34,16 @@ export default function Chat() {
       setMode('global')
     }
   }, [projectRoot, mode])
+
+  useEffect(() => {
+    if (!projectRoot) return
+    listDocuments(projectRoot).then(resp => {
+      if (resp.success) setDocCount(resp.documents.length)
+    }).catch(() => {})
+    moleculeStats(projectRoot).then(resp => {
+      if (resp.success) setMolCount((resp.stats as any).total || 0)
+    }).catch(() => {})
+  }, [projectRoot])
 
   const sendMessage = useCallback(async () => {
     if (!input.trim() || isLoading) return
@@ -347,8 +359,8 @@ export default function Chat() {
               icon={mode === 'global' ? <GlobeIcon size={16} /> : <FolderIcon size={16} />}
               label={mode === 'global' ? '全局模式' : (projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目')}
             />
-            <ContextItem icon={<FileTextIcon size={16} />} label="42 篇已索引文献" />
-            <ContextItem icon={<FlaskIcon size={16} />} label="128 个分子" />
+            <ContextItem icon={<FileTextIcon size={16} />} label={`${docCount} 篇已索引文献`} />
+            <ContextItem icon={<FlaskIcon size={16} />} label={`${molCount} 个分子`} />
           </div>
         </div>
 

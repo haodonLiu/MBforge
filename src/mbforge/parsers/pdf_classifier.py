@@ -15,7 +15,6 @@ class PageClassification:
     text_density: float
     is_scanned: bool
     has_molecular_patterns: bool
-    context_from_neighbors: str = ""
 
 
 @dataclass
@@ -150,7 +149,7 @@ class PDFClassifier:
         if scanned_count > 0 and text_count > 0:
             return True
 
-        # Low confidence molecular detection needs confirmation
+        # Any molecular pattern detection needs confirmation
         if any(p.has_molecular_patterns for p in pages):
             return True
 

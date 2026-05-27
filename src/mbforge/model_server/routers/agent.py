@@ -44,7 +44,8 @@ async def agent_chat(request: Request) -> dict:
 
         llm = get_llm(None)
         project = _get_project(body.get("project_root", ""))
-        agent = ProjectAgent(llm=llm, project=project)
+        project_root = Path(project.root) if project else None
+        agent = ProjectAgent(llm=llm, project_root=project_root)
         user_input = _extract_last_user_message(messages)
 
         response = agent.chat(user_input)
@@ -65,7 +66,8 @@ async def agent_chat_stream(request: Request) -> StreamingResponse:
 
             llm = get_llm(None)
             project = _get_project(body.get("project_root", ""))
-            agent = ProjectAgent(llm=llm, project=project)
+            project_root = Path(project.root) if project else None
+            agent = ProjectAgent(llm=llm, project_root=project_root)
             user_input = _extract_last_user_message(messages)
 
             for chunk in agent.chat_stream(user_input):

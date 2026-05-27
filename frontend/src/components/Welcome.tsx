@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createProject, openProject } from '../api/client'
-import { FlaskIcon, UploadIcon } from './icons'
+import { FlaskIcon, UploadIcon, FolderIcon } from './icons'
 
 export default function Welcome() {
   const navigate = useNavigate()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [projectPath, setProjectPath] = useState('')
   const [projectName, setProjectName] = useState('')
   const [isCreating, setIsCreating] = useState(false)
@@ -43,6 +44,21 @@ export default function Welcome() {
       alert(`打开失败: ${e instanceof Error ? e.message : String(e)}`)
     } finally {
       setIsOpening(false)
+    }
+  }
+
+  const handleDirectorySelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (files && files.length > 0) {
+      const firstFile = files[0]
+      // webkitRelativePath gives us "foldername/subfolder/file.txt"
+      // We need just the root folder name
+      const relativePath = firstFile.webkitRelativePath
+      if (relativePath) {
+        const rootFolder = relativePath.split('/')[0]
+        // Use current directory as base, or just the folder name
+        setProjectPath(`./${rootFolder}`)
+      }
     }
   }
 
@@ -127,6 +143,23 @@ export default function Welcome() {
             disabled={isOpening || !projectPath.trim()}
           >
             {isOpening ? '打开中...' : '打开项目'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            // @ts-ignore - webkitdirectory is non-standard
+            webkitdirectory=""
+            multiple={false}
+            style={{ display: 'none' }}
+            onChange={handleDirectorySelect}
+          />
+          <button
+            className="btn btn-secondary"
+            onClick={() => fileInputRef.current?.click()}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            <FolderIcon size={16} />
+            浏览文件夹
           </button>
         </div>
       </div>

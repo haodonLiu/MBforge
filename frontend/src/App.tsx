@@ -8,10 +8,11 @@ import Chat from './components/Chat'
 import MoleculeLibrary from './components/MoleculeLibrary'
 import Workflow from './components/Workflow'
 import ProjectView from './components/ProjectView'
-import Settings from './components/Settings'
+import SettingsModal from './components/SettingsModal'
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState('welcome')
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
     <div style={{
@@ -20,7 +21,7 @@ export default function App() {
       gridTemplateRows: 'auto 1fr auto',
       height: '100vh',
     }}>
-      <Sidebar current={currentPage} onNavigate={setCurrentPage} />
+      <Sidebar current={currentPage} onNavigate={setCurrentPage} onSettingsOpen={() => setSettingsOpen(true)} />
       <Header />
       <main style={{
         gridColumn: '2',
@@ -36,9 +37,9 @@ export default function App() {
           <Route path="/molecules" element={<MoleculeLibrary />} />
           <Route path="/workflow" element={<Workflow />} />
           <Route path="/project" element={<ProjectView />} />
-          <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
 }

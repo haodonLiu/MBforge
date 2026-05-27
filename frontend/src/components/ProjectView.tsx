@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { listDocuments, scanProject } from '../api/client'
+import { listDocuments, scanProject, indexProject } from '../api/client'
 import { FolderIcon, FileTextIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon, ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from './icons'
 import type { DocumentEntry } from '../types'
 import { getProjectRoot } from '../hooks/useProjectRoot'
@@ -15,6 +15,8 @@ export default function ProjectView() {
   const [projectRoot, setProjectRoot] = useState(getProjectRoot())
   const [docs, setDocs] = useState<DocumentEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isIndexing, setIsIndexing] = useState(false)
+  const [indexResult, setIndexResult] = useState<{ indexed: number; molecules: number } | null>(null)
   const [error, setError] = useState('')
 
   // PDF 阅读状态
@@ -70,6 +72,38 @@ export default function ProjectView() {
       setError('Scan failed')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleIndex = async () => {
+    const root = getProjectRoot()
+    if (!root) return
+    setIsIndexing(true)
+    setError('')
+    setIndexResult(null)
+    try {
+      // Scan first to discover new files
+      const scanResp = await scanProject(root)
+      if (scanResp.success && scanResp.documents) {
+        setDocs(scanResp.documents)
+      }
+      // Index unindexed PDFs
+      const indexResp = await indexProject(root)
+      if (indexResp.success) {
+        setIndexResult({ indexed: indexResp.indexed, molecules: indexResp.molecules })
+        // Refresh document list to reflect updated indexed status
+        const listResp = await listDocuments(root)
+        if (listResp.success && listResp.documents) {
+          setDocs(listResp.documents)
+        }
+      } else {
+        setError(indexResp.error || 'Index failed')
+      }
+    } catch (e) {
+      console.error(e)
+      setError('Index failed')
+    } finally {
+      setIsIndexing(false)
     }
   }
 
@@ -376,7 +410,7 @@ export default function ProjectView() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-secondary" onClick={handleScan} disabled={!projectRoot || isLoading} style={{
+          <button className="btn btn-secondary" onClick={handleScan} disabled={!projectRoot || isLoading || isIndexing} style={{
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
@@ -385,6 +419,16 @@ export default function ProjectView() {
           }}>
             <ExternalLinkIcon size={14} />
             {isLoading ? '扫描中...' : '扫描文件'}
+          </button>
+          <button className="btn btn-secondary" onClick={handleIndex} disabled={!projectRoot || isLoading || isIndexing} style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 16px',
+            fontSize: '13px',
+          }}>
+            <FlaskIcon size={14} />
+            {isIndexing ? '索引中...' : '索引文件'}
           </button>
           <button className="btn btn-secondary" style={{
             display: 'flex',
@@ -407,10 +451,24 @@ export default function ProjectView() {
         marginBottom: '32px',
       }}>
         <StatCard icon={<FileTextIcon size={18} />} value={String(docs.length)} label="文献" />
-        <StatCard icon={<FlaskIcon size={18} />} value="128" label="分子" />
+        <StatCard icon={<FlaskIcon size={18} />} value={indexResult ? String(indexResult.molecules) : '—'} label="分子" />
         <StatCard icon={<FileTextIcon size={18} />} value={String(docs.filter(d => d.indexed).length)} label="已索引" />
         <StatCard icon={<FolderIcon size={18} />} value={String(docs.length)} label="文件" />
       </div>
+
+      {indexResult && indexResult.indexed > 0 && (
+        <div style={{
+          padding: '12px 16px',
+          background: 'rgba(22,163,74,0.1)',
+          border: '1px solid rgba(22,163,74,0.3)',
+          borderRadius: '8px',
+          marginBottom: '16px',
+          fontSize: '13px',
+          color: '#16a34a',
+        }}>
+          已索引 {indexResult.indexed} 个 PDF，提取 {indexResult.molecules} 个分子
+        </div>
+      )}
 
       {/* 文件列表 */}
       <h2 style={{

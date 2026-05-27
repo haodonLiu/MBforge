@@ -114,6 +114,13 @@ export function scanProject(projectRoot: string) {
   )
 }
 
+export function indexProject(root: string) {
+  return fetchJson<{ success: boolean; indexed: number; molecules: number; error?: string }>(
+    `${API_BASE}/project/index`,
+    { method: 'POST', body: JSON.stringify({ root }) },
+  )
+}
+
 // Knowledge Base
 export function kbSearch(projectRoot: string, query: string, topK = 5) {
   return fetchJson<{ success: boolean; results: import('../types').SearchResult[]; error?: string }>(

@@ -128,6 +128,74 @@ def _build_file_tree(root: Path) -> list[dict]:
     return result
 
 
+class IndexRequest(BaseModel):
+    root: str
+
+
+@router.post("/index")
+async def index_project(req: IndexRequest) -> dict:
+    try:
+        project = Project.open(Path(req.root))
+        if project is None:
+            return {"success": False, "error": f"Not a valid project: {req.root}"}
+
+        docs = project.list_documents()
+        unindexed = [d for d in docs if not d.indexed and d.doc_type == "pdf"]
+
+        if not unindexed:
+            return {"success": True, "indexed": 0, "molecules": 0, "message": "No unindexed PDFs"}
+
+        # Import pipeline components
+        from ...parsers.pdf_parser import PDFParserPipeline
+        from ...core.knowledge_base import KnowledgeBase
+        from ...core.mol_database import MoleculeDatabase
+        from ...models import create_embedder_from_config, create_llm_from_config
+        from ...utils.config import load_global_config
+
+        config = load_global_config()
+        embedder = create_embedder_from_config(config.embed)
+        llm = create_llm_from_config(config.llm)
+        kb = KnowledgeBase(project.root, embedder=embedder)
+        mol_db = MoleculeDatabase(project.root)
+
+        pipeline = PDFParserPipeline(
+            llm=llm,
+            embedder=embedder,
+            knowledge_base=kb,
+            mol_db=mol_db,
+        )
+
+        indexed_count = 0
+        molecule_count = 0
+
+        for doc in unindexed:
+            try:
+                content = pipeline.parse(
+                    doc.path,
+                    doc_id=doc.doc_id,
+                    extract_molecules=True,
+                    summarize=True,
+                    index_kb=True,
+                )
+                doc.indexed = True
+                indexed_count += 1
+                molecule_count += len(content.molecules)
+            except Exception as e:
+                logger.error(f"Failed to index {doc.path}: {e}")
+
+        project._save_index()
+
+        return {
+            "success": True,
+            "indexed": indexed_count,
+            "molecules": molecule_count,
+            "total_unindexed": len(unindexed),
+        }
+    except Exception as e:
+        logger.error(f"Index project failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/file-tree")
 async def file_tree(root: str) -> dict:
     project = Project.open(Path(root))

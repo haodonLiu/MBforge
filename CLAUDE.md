@@ -56,11 +56,12 @@ cd src-tauri && cargo tauri build
 ### Data Flow (Central Pipeline)
 
 ```
-PDF → DocumentProcessor (PyMuPDF text/image)
-  → MoleculeExtractor (regex + LLM SMILES extraction)
+PDF → PyMuPDF text extraction
+  → PDFClassifier (scanned vs text-based, molecular patterns)
+  → split_text_chunks()
+  → MoleculeExtractor (regex SMILES) or MolImagePipeline (YOLO detection)
   → DocumentSummarizer (L0/L1/L2 layered summaries via LLM)
-  → KnowledgeBase (ChromaDB vector store)
-  → MoleculeDatabase (SQLite + RDKit, auto-computed properties)
+  → KnowledgeBase.index_document() (ChromaDB vector store)
 ```
 
 This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, invoked by both CLI `index` command and model server endpoints.
@@ -71,7 +72,8 @@ This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, inv
 ┌─────────────────────┐     ┌─────────────────────────┐
 │  React+Vite Frontend │────▶│  FastAPI Model Server    │
 │  (port 5173)         │     │  (port 18792)            │
-│  Tauri Bridge        │     │  /api/v1/*               │
+│  Vite proxy /api/v1  │     │  13 routers under        │
+│  → localhost:18792   │     │  /api/v1/*               │
 └─────────────────────┘     └─────────────────────────┘
                                      │
                     ┌────────────────┼────────────────┐
@@ -82,6 +84,9 @@ This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, inv
              └──────────┘    └──────────┘    └──────────┘
 ```
 
+**Dev mode**: Vite dev server proxies `/api/v1/*` to `localhost:18792`. The model server must be running separately (`uv run uvicorn`).
+**Production**: Tauri shell spawns uvicorn as a sidecar process on app launch, kills it on close.
+
 ### Module Layout
 
 | 包 | 职责 | 关键类 |
@@ -91,6 +96,7 @@ This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, inv
 | `parsers/` | PDF 解析与分子提取 | `PDFParserPipeline` 串联全部解析步骤 |
 | `model_server/` | FastAPI 模型服务器 | 路由：`llm`、`embed`、`rerank`、`vlm`、`agent`、`kb`、`molecule`、`moldet`、`uniparser`、`project`、`file`、`health` |
 | `agent/` | ReAct 循环 Agent | `ProjectAgent` + `LayeredContext` + `ToolExecutor`（10 个工具）+ `MemoryManager` + `TrajectoryTracker` |
+| `plugins/` | 插件系统 | `PluginBase`、`PluginRegistry`，含 `cadd_template` 和 `unidock` 插件 |
 | `workflow/` | 占位模块 | `generation`、`docking`、`qsar`、`md` — 仅 toggle 开关，尚未实现 |
 | `parsers/uniparser/` | UniParser API 封装 | `ParserClient` 对接 `UniParser-Tools`，`ParseResult` 数据模型 |
 | `utils/` | 配置、日志、辅助 | `AppConfig`、`get_logger`、`generate_uuid`、`split_text_chunks` |
@@ -136,14 +142,19 @@ FastAPI 服务器运行在 `127.0.0.1:18792`，提供以下端点：
 | `/api/v1/embed` | 文本 Embedding |
 | `/api/v1/rerank` | 结果重排序 |
 | `/api/v1/vlm` | 视觉语言模型 |
-| `/api/v1/agent` | Agent 对话 |
+| `/api/v1/agent` | Agent 对话（chat/chat-stream） |
 | `/api/v1/kb` | 知识库管理 |
 | `/api/v1/molecule` | 分子数据库查询 |
 | `/api/v1/moldet` | 分子图像检测 |
 | `/api/v1/uniparser` | PDF 解析代理 |
 | `/api/v1/project` | 项目管理 |
 | `/api/v1/file` | 文件操作 |
+| `/api/v1/settings` | 设置管理 |
 | `/api/v1/health` | 健康检查 |
+
+### Agent Manager (Singleton)
+
+`src/mbforge/model_server/agent_manager.py` 管理全局单例 `ProjectAgent`。切换项目时调用 `switch_project()` 保存旧上下文、加载新项目的 KB + mol_db + ToolExecutor。聊天历史持久化到 `.mbforge/memory/chat_history.json`。
 
 ## Environment
 
@@ -152,7 +163,19 @@ cp .env.template .env
 # 编辑 UNIPARSER_HOST、UNIPARSER_API_KEY 等
 ```
 
-`pyproject.toml` 中 `[tool.uv]` 使用清华镜像源，并 override 了 pandas/numpy 版本约束。
+`pyproject.toml` 中 `[tool.uv]` 使用清华镜像源，PyTorch 使用 `pytorch-cu128` 索引（CUDA 12.8），并 override 了 pandas/numpy 版本约束。
+
+## Frontend Development
+
+`frontend/vite.config.ts` 配置了 API 代理：`/api/v1` → `http://localhost:18792`。开发时需同时运行前端和后端：
+
+```bash
+# 终端 1：模型服务器
+uv run uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792
+
+# 终端 2：前端
+cd frontend && npm run dev
+```
 
 ## Key Files
 
@@ -160,11 +183,13 @@ cp .env.template .env
 |------|------|
 | `src/mbforge/cli.py` | CLI 入口，`mbforge` 命令行工具 |
 | `src/mbforge/model_server/main.py` | FastAPI 模型服务器入口 |
+| `src/mbforge/model_server/agent_manager.py` | Agent 单例管理，项目切换，聊天历史持久化 |
 | `src/mbforge/core/project.py` | `Project` 类管理 vault 元数据 |
 | `src/mbforge/parsers/pdf_parser.py` | `PDFParserPipeline` 解析流水线 |
 | `src/mbforge/agent/agent.py` | `ProjectAgent` ReAct 循环 |
 | `src/mbforge/agent/tools.py` | Agent 可调用的 10 个工具定义 |
 | `frontend/src/App.tsx` | React 前端路由入口 |
+| `frontend/vite.config.ts` | Vite 配置（API 代理到 18792） |
 | `src-tauri/src/main.rs` | Tauri 桥接层 Rust 入口 |
 
 ## Code Patterns
@@ -174,6 +199,7 @@ cp .env.template .env
 1. Create router in `src/mbforge/model_server/routers/` using `APIRouter`
 2. Add dependency injection in `src/mbforge/model_server/dependencies.py` if needed
 3. Register in `src/mbforge/model_server/main.py` via `app.include_router()`
+4. If it needs model singletons, use `get_llm()` etc. from `src/mbforge/model_server/models/`
 
 ### Adding a new tool to Agent
 

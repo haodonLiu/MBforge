@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
-import { getFileTree } from '../api/client'
-import { FolderIcon, FileTextIcon, ChevronRightIcon } from './icons'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { getFileTree, uploadFile } from '../api/client'
+import { FolderIcon, FileTextIcon, ChevronRightIcon, PlusIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
 
 interface FileNode {
@@ -91,7 +91,9 @@ function TreeItem({ node, depth, onFileClick }: { node: FileNode; depth: number;
 export default function FileTree({ onFileClick }: Props) {
   const [tree, setTree] = useState<FileNode[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadTree = useCallback(async () => {
     const root = getProjectRoot()
@@ -116,6 +118,25 @@ export default function FileTree({ onFileClick }: Props) {
   useEffect(() => {
     loadTree()
   }, [loadTree])
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    const root = getProjectRoot()
+    if (!root) return
+
+    setIsUploading(true)
+    for (let i = 0; i < files.length; i++) {
+      try {
+        await uploadFile(root, files[i])
+      } catch (err) {
+        console.error('Upload failed:', err)
+      }
+    }
+    setIsUploading(false)
+    e.target.value = ''
+    loadTree()
+  }
 
   if (error) {
     return (
@@ -157,10 +178,57 @@ export default function FileTree({ onFileClick }: Props) {
   }
 
   return (
-    <div style={{ overflow: 'auto', flex: 1 }}>
-      {tree.map(node => (
-        <TreeItem key={node.path} node={node} depth={0} onFileClick={onFileClick} />
-      ))}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ overflow: 'auto', flex: 1 }}>
+        {tree.map(node => (
+          <TreeItem key={node.path} node={node} depth={0} onFileClick={onFileClick} />
+        ))}
+      </div>
+      <div style={{
+        padding: '10px 12px',
+        borderTop: '1px solid var(--border)',
+      }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.sdf,.mol,.pdb,.md,.txt,.csv"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleImport}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
+          style={{
+            width: '100%',
+            padding: '8px 0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            background: 'none',
+            border: '1px dashed var(--border)',
+            borderRadius: '8px',
+            color: isUploading ? 'var(--text-muted)' : 'var(--text-secondary)',
+            fontSize: '12px',
+            cursor: isUploading ? 'not-allowed' : 'pointer',
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={e => {
+            if (!isUploading) {
+              e.currentTarget.style.borderColor = 'var(--accent)'
+              e.currentTarget.style.color = 'var(--accent)'
+            }
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.borderColor = 'var(--border)'
+            e.currentTarget.style.color = 'var(--text-secondary)'
+          }}
+        >
+          <PlusIcon size={14} />
+          {isUploading ? '导入中...' : '导入文件'}
+        </button>
+      </div>
     </div>
   )
 }

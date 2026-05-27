@@ -70,6 +70,9 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
 /* Utility classes */
 .flex { display: flex; }
@@ -789,6 +792,9 @@ body {
 }
 
 /* Chat Markdown */
+.chat-markdown {
+  overflow-x: auto;
+}
 .chat-markdown p {
   margin: 0 0 8px 0;
 }
@@ -840,17 +846,38 @@ body {
   color: var(--text-secondary);
 }
 .chat-markdown table {
-  border-collapse: collapse;
-  margin: 8px 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 12px 0;
   width: 100%;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
 }
 .chat-markdown th, .chat-markdown td {
-  border: 1px solid var(--border);
-  padding: 6px 12px;
+  padding: 8px 12px;
   text-align: left;
-  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
 .chat-markdown th {
   background: var(--bg-hover);
   font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.chat-markdown tr:last-child td {
+  border-bottom: none;
+}
+.chat-markdown tr:hover td {
+  background: var(--bg-hover);
+}
+.chat-markdown td:first-child, .chat-markdown th:first-child {
+  padding-left: 14px;
+}
+.chat-markdown td:last-child, .chat-markdown th:last-child {
+  padding-right: 14px;
 }

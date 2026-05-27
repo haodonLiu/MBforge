@@ -13,6 +13,7 @@ from datetime import datetime
 from ..agent.agent import ProjectAgent
 from ..agent.context import LayeredContext
 from ..agent.executor import ToolExecutor
+from ..agent.optimizations import OptimizationConfig, SemanticCache
 from ..core.project import Project
 from ..core.knowledge_base import KnowledgeBase
 from ..core.mol_database import MoleculeDatabase
@@ -71,6 +72,20 @@ def switch_project(project_root: str) -> None:
             )
             agent.tool_executor = tool_executor
             agent.project_root = project.root
+
+            # 初始化优化模块
+            try:
+                opt_config = OptimizationConfig()
+                cache = SemanticCache(
+                    project.root, embedder=embedder, config=opt_config.semantic_cache
+                )
+                cache.prefetch_hot_queries()
+                tool_executor.set_semantic_cache(cache)
+                tool_executor.enable_streaming_search(opt_config.streaming_search.enabled)
+                if agent.sps_scheduler is not None:
+                    agent.sps_scheduler.config = opt_config.sps
+            except Exception as e:
+                logger.debug("Optimization init skipped: %s", e)
 
             if saved_context:
                 # 恢复已保存的上下文
@@ -139,12 +154,23 @@ def save_chat_history(project_root: str, messages: list[dict]) -> None:
         json.dump(messages, f, ensure_ascii=False, indent=2)
 
 
-def chat(user_input: str, project_root: str = "") -> str:
+def chat(user_input: str, project_root: str = "", messages: list[dict] | None = None) -> str:
     """与 Agent 对话."""
     if project_root:
         switch_project(project_root)
 
     agent = get_agent()
+
+    # 将完整对话历史注入 Agent 上下文
+    if messages:
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role == "user":
+                agent.context.add_user_message(content)
+            elif role == "assistant":
+                agent.context.add_assistant_message(content)
+
     response = agent.chat(user_input)
 
     # 对话后保存上下文
@@ -154,12 +180,23 @@ def chat(user_input: str, project_root: str = "") -> str:
     return response
 
 
-def chat_stream(user_input: str, project_root: str = ""):
+def chat_stream(user_input: str, project_root: str = "", messages: list[dict] | None = None):
     """流式对话."""
     if project_root:
         switch_project(project_root)
 
     agent = get_agent()
+
+    # 将完整对话历史注入 Agent 上下文
+    if messages:
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if role == "user":
+                agent.context.add_user_message(content)
+            elif role == "assistant":
+                agent.context.add_assistant_message(content)
+
     full_response = ""
     for chunk in agent.chat_stream(user_input):
         full_response += chunk

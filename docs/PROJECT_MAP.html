@@ -271,8 +271,8 @@
 <section id="overview">
   <h2>📊 项目概览</h2>
   <p style="color:var(--text-secondary);margin-bottom:20px;">
-    MBForge 是一款面向药物化学的桌面端知识库应用，核心定位类似 "Obsidian + Zotero" 的分子科学版本。
-    采用 PyQt6 构建 GUI，支持 PDF 深度解析、分子结构识别、向量语义检索与 LLM Agent 对话。
+    MBForge 是一款面向药物化学的桌面端知识库应用，采用 React+Vite+Tauri 构建 GUI，
+    支持 PDF 深度解析、分子结构识别、向量语义检索与 LLM Agent 对话。
   </p>
   <div class="cards">
     <div class="card done"><div class="label">已实现模块</div><div class="value">36</div></div>
@@ -448,20 +448,6 @@ graph TD
           <li><b>L3</b>：对话历史（可裁剪）</li>
         </ul>
         <p>10 个工具覆盖：知识库搜索、文档查找、分子库查询、文档摘要读取等。</p>
-      </div>
-    </div>
-    <div class="accordion-item">
-      <div class="accordion-header" onclick="toggle(this)">
-        <span>📤 流 4：Zotero 桥接（新增）</span>
-        <span class="chevron">▼</span>
-      </div>
-      <div class="accordion-body">
-        <p>Zotero 插件通过右键菜单收集条目元数据、PDF 路径和阅读批注，HTTP POST 到 <code>localhost:8233</code>：</p>
-        <ul>
-          <li>MBForge Bridge 服务（aiohttp）接收后复制 PDF 到 <code>zotero_imports/</code></li>
-          <li>批注保存到 <code>.mbforge/zotero_annotations/{key}.json</code></li>
-          <li>自动加入项目索引，可选触发 <code>PDFParserPipeline</code> 解析</li>
-        </ul>
       </div>
     </div>
   </div>
@@ -822,11 +808,6 @@ class PluginRegistry:
       <div class="title">Keywords 用 LLM 提取</div>
       <div class="desc">当前关键词为简单英文词频统计，质量较低。建议改为 LLM NER 提取。</div>
       <div class="loc">core/summarizer.py</div>
-    </div>
-    <div class="todo-item mid">
-      <div class="title">Zotero 双向同步</div>
-      <div class="desc">当前仅支持 Zotero → MBForge 单向推送，需增加 MBForge 批注回写到 Zotero。</div>
-      <div class="loc">zotero_bridge/</div>
     </div>
     <div class="todo-item mid">
       <div class="title">分子生成模块</div>

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .tools import ToolMixin, ToolRegistry, tool
 from ..utils.helpers import truncate_text
@@ -34,8 +34,18 @@ class ToolExecutor:
         self.project = project
         self.kb = knowledge_base
         self.mol_db = mol_db
+        self.semantic_cache: Any = None
+        self.use_streaming_search: bool = False
         self.registry = ToolRegistry()
         self._register_default_tools()
+
+    def set_semantic_cache(self, cache: Any) -> None:
+        """设置语义缓存实例."""
+        self.semantic_cache = cache
+
+    def enable_streaming_search(self, enabled: bool = True) -> None:
+        """启用/禁用流式搜索工具."""
+        self.use_streaming_search = enabled
 
     def _register_default_tools(self) -> None:
         """注册默认工具集."""
@@ -56,6 +66,10 @@ class ToolExecutor:
         # 项目信息
         mixin.register_from_function(self.registry, self.get_project_info)
 
+        # 流式搜索（条件注册）
+        if self.use_streaming_search:
+            mixin.register_from_function(self.registry, self.streaming_search_knowledge_base)
+
     # ---- 工具定义 ----
 
     @tool(
@@ -75,22 +89,38 @@ class ToolExecutor:
         """语义搜索项目知识库中的文档片段."""
         if self.kb is None:
             return "错误：知识库未初始化，请先打开项目"
+
+        # 优先查缓存
+        if self.semantic_cache is not None:
+            cached = self.semantic_cache.get_l1(query)
+            if cached is None:
+                cached = self.semantic_cache.get_l2(query)
+            if cached is not None:
+                return self._format_search_results(cached, top_k)
+
         try:
             results = self.kb.search(query, top_k=top_k)
+            if self.semantic_cache is not None and results:
+                self.semantic_cache.store(query, results)
             if not results:
                 return (
                     "知识库中未找到相关信息。"
                     "这可能是因为项目尚未索引文档，或查询内容不在已索引的文档中。"
                     "我将基于预训练知识回答您的问题。"
                 )
-            lines = []
-            for i, r in enumerate(results, 1):
-                text = truncate_text(r["text"].replace("\n", " "), max_len=300)
-                lines.append(f"{i}. {text}...")
-            return "\n\n".join(lines)
+            return self._format_search_results(results, top_k)
         except Exception as e:
             logger.exception("KB search failed")
             return f"搜索失败: {e}"
+
+    @staticmethod
+    def _format_search_results(results: list[dict], top_k: int) -> str:
+        """格式化搜索结果为文本."""
+        lines = []
+        for i, r in enumerate(results[:top_k], 1):
+            text = truncate_text(r["text"].replace("\n", " "), max_len=300)
+            lines.append(f"{i}. {text}...")
+        return "\n\n".join(lines)
 
     @tool(
         "按关键词或实体查找文档",
@@ -358,3 +388,43 @@ class ToolExecutor:
                 f"分子总数: {mstats['total']}（含活性数据: {mstats['with_activity']}）"
             )
         return "\n".join(stats)
+
+    @tool(
+        "流式搜索项目知识库",
+        {
+            "query": {
+                "type": "string",
+                "description": "自然语言搜索查询",
+            },
+            "top_k": {
+                "type": "integer",
+                "description": "返回结果数量，默认5",
+            },
+        },
+    )
+    def streaming_search_knowledge_base(self, query: str, top_k: int = 5) -> str:
+        """流式语义搜索，前3条结果立即返回。"""
+        if self.kb is None:
+            return "错误：知识库未初始化"
+        try:
+            from .optimizations.stream_search import (
+                StreamingKnowledgeBaseSearch,
+                StreamingSearchConfig,
+            )
+
+            streamer = StreamingKnowledgeBaseSearch(
+                self.kb, StreamingSearchConfig(enabled=True, yield_first=3)
+            )
+            first_results: list[dict] = []
+            for batch in streamer.stream(query, top_k=top_k):
+                if batch["type"] == "first":
+                    first_results = batch["results"]
+                elif batch["type"] == "complete":
+                    break
+
+            if not first_results:
+                return "知识库中未找到相关信息。"
+            return self._format_search_results(first_results, top_k)
+        except Exception:
+            logger.exception("Streaming KB search failed")
+            return self.search_knowledge_base(query, top_k=top_k)

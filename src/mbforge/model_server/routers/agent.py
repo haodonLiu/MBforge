@@ -50,7 +50,7 @@ async def agent_chat(request: Request) -> dict:
         project_root_str = body.get("project_root", "")
         user_input = _extract_last_user_message(messages)
 
-        response = chat(user_input, project_root_str)
+        response = chat(user_input, project_root_str, messages=messages)
 
         # Persist conversation
         if project_root_str:
@@ -85,7 +85,7 @@ async def agent_chat_stream(request: Request) -> StreamingResponse:
             user_input = _extract_last_user_message(messages)
 
             full_response = ""
-            for chunk in chat_stream(user_input, project_root_str):
+            for chunk in chat_stream(user_input, project_root_str, messages=messages):
                 full_response += chunk
                 yield f"data: {json.dumps({'delta': chunk})}\n\n"
             yield f"data: {json.dumps({'delta': '', 'finish_reason': 'stop'})}\n\n"

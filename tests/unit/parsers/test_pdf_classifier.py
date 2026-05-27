@@ -63,3 +63,102 @@ class TestPDFClassifier:
         result = classifier.classify_document_from_pages(pages)
         assert result.is_scanned is True
         assert result.text_density < 50
+
+    def test_classify_document_empty_pages(self):
+        """Empty pages list should return default classification."""
+        classifier = PDFClassifier()
+        result = classifier.classify_document_from_pages([])
+        assert result.text_density == 0
+        assert result.is_scanned is True
+        assert result.has_molecular_patterns is False
+        assert result.metadata_hints == {}
+        assert result.pages == []
+        assert result.needs_confirmation is False
+
+    def test_analyze_metadata_filename_hint(self):
+        """Metadata with molecular keyword in filename should produce hint."""
+        classifier = PDFClassifier()
+        metadata = {"filename": "drug_discovery_review.pdf"}
+        hints = classifier._analyze_metadata(metadata)
+        assert hints.get("filename_hint") is True
+        assert "title_hint" not in hints
+
+    def test_analyze_metadata_title_hint(self):
+        """Metadata with molecular keyword in title should produce hint."""
+        classifier = PDFClassifier()
+        metadata = {"title": "Chemical Compound Analysis"}
+        hints = classifier._analyze_metadata(metadata)
+        assert hints.get("title_hint") is True
+        assert "filename_hint" not in hints
+
+    def test_analyze_metadata_no_hints(self):
+        """Metadata without molecular keywords should produce empty hints."""
+        classifier = PDFClassifier()
+        metadata = {"filename": "report.pdf", "title": "Annual Report"}
+        hints = classifier._analyze_metadata(metadata)
+        assert hints == {}
+
+    def test_analyze_metadata_empty(self):
+        """Empty metadata should produce empty hints."""
+        classifier = PDFClassifier()
+        hints = classifier._analyze_metadata({})
+        assert hints == {}
+
+    def test_needs_confirmation_mixed_pages(self):
+        """Mixed scanned/text pages should need confirmation."""
+        classifier = PDFClassifier()
+        pages = [
+            PageClassification(page_idx=0, text_density=100, is_scanned=False, has_molecular_patterns=False),
+            PageClassification(page_idx=1, text_density=5, is_scanned=True, has_molecular_patterns=False),
+        ]
+        assert classifier._needs_confirmation(pages) is True
+
+    def test_needs_confirmation_molecular_patterns(self):
+        """Pages with molecular patterns should need confirmation."""
+        classifier = PDFClassifier()
+        pages = [
+            PageClassification(page_idx=0, text_density=100, is_scanned=False, has_molecular_patterns=True),
+        ]
+        assert classifier._needs_confirmation(pages) is True
+
+    def test_needs_confirmation_all_scanned_no_molecules(self):
+        """All scanned pages with no molecules should not need confirmation."""
+        classifier = PDFClassifier()
+        pages = [
+            PageClassification(page_idx=0, text_density=5, is_scanned=True, has_molecular_patterns=False),
+            PageClassification(page_idx=1, text_density=8, is_scanned=True, has_molecular_patterns=False),
+        ]
+        assert classifier._needs_confirmation(pages) is False
+
+    def test_needs_confirmation_all_text_no_molecules(self):
+        """All text pages with no molecules should not need confirmation."""
+        classifier = PDFClassifier()
+        pages = [
+            PageClassification(page_idx=0, text_density=500, is_scanned=False, has_molecular_patterns=False),
+            PageClassification(page_idx=1, text_density=600, is_scanned=False, has_molecular_patterns=False),
+        ]
+        assert classifier._needs_confirmation(pages) is False
+
+    def test_non_molecular_text_no_patterns(self):
+        """Plain English text without chemistry terms should have no molecular patterns."""
+        classifier = PDFClassifier()
+        text = (
+            "The quick brown fox jumps over the lazy dog. "
+            "This is a test of the classification system. "
+            "No chemistry here at all."
+        )
+        result = classifier.classify_page(text, 0)
+        assert result.has_molecular_patterns is False
+
+    def test_smiles_pattern_no_false_positives(self):
+        """Common English words should not match the SMILES pattern."""
+        classifier = PDFClassifier()
+        # These are common words that the old regex matched as false positives
+        words = [
+            "compound", "activity", "molecule", "reaction", "solution",
+            "structure", "protein", "enzyme", "membrane", "receptor",
+        ]
+        for word in words:
+            assert classifier.SMILES_PATTERN.search(word) is None, (
+                f"Word '{word}' should not match SMILES pattern"
+            )

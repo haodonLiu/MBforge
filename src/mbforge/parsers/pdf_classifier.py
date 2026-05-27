@@ -33,8 +33,12 @@ class DocumentClassification:
 class PDFClassifier:
     """Classify PDF type and content."""
 
-    # SMILES-like pattern (simplified)
-    SMILES_PATTERN = re.compile(r"[A-Za-z0-9@\.\+\-\=\#\$\(\)\[\]\\\/\%]{4,}")
+    # SMILES pattern: requires SMILES-specific structural features
+    # (bonds =/#, ring closures letter+digit, chirality @, charges [+/-])
+    SMILES_PATTERN = re.compile(
+        r"(?=(?:.*[=#])|(?:.*[a-z][0-9])|(?:.*@)|(?:.*\[[\+\-]))"
+        r"[A-Za-z0-9@\.\+\-\=\#\$\(\)\[\]\\\/\%\~]{4,}"
+    )
 
     # Common chemical names
     CHEMICAL_NAMES = {

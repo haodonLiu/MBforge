@@ -47,4 +47,4 @@ class TestMCSAnalyzer:
 
         assert result is not None
         assert len(result.coverage) == 2
-        assert all(0 <= c <= 1 for c in result.coverage)
+        assert all(0 <= c <= 100 for c in result.coverage)

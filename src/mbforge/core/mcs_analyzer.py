@@ -77,7 +77,7 @@ class MCSAnalyzer:
         for mol in mols:
             match = mol.GetSubstructMatch(mcs_mol)
             if match:
-                coverage.append(len(match) / mol.GetNumAtoms())
+                coverage.append(len(match) / mol.GetNumAtoms() * 100)
             else:
                 coverage.append(0.0)
 

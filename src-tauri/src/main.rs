@@ -1,14 +1,20 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod commands;
+
 use std::process::{Command, Stdio};
 use tauri::Manager;
 
-struct BackendProcess(std::process::Child);
+struct BackendProcess(std::sync::Mutex<std::process::Child>);
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![
+            commands::pdf::classify_pdf,
+            commands::pdf::extract_text,
+        ])
         .setup(|app| {
             let app_handle = app.handle();
             let resource_dir = app_handle.path().resource_dir().unwrap_or_default();
@@ -56,7 +62,7 @@ fn main() {
                 .ok();
 
             if let Some(c) = child {
-                app.manage(BackendProcess(c));
+                app.manage(BackendProcess(std::sync::Mutex::new(c)));
             }
 
             Ok(())
@@ -64,7 +70,7 @@ fn main() {
         .on_window_event(|app, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 if let Some(state) = app.try_state::<BackendProcess>() {
-                    let mut child = &state.0;
+                    let mut child = state.0.lock().unwrap();
                     let _ = child.kill();
                 }
             }

@@ -1,0 +1,208 @@
+use serde::{Deserialize, Serialize};
+
+use super::helpers::estimate_tokens;
+
+/// A single message in the conversation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub role: String,
+    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+impl Message {
+    pub fn system(content: &str) -> Self {
+        Self { role: "system".into(), content: content.to_string(), tool_calls: None, name: None, tool_call_id: None }
+    }
+    pub fn user(content: &str) -> Self {
+        Self { role: "user".into(), content: content.to_string(), tool_calls: None, name: None, tool_call_id: None }
+    }
+    pub fn assistant(content: &str) -> Self {
+        Self { role: "assistant".into(), content: content.to_string(), tool_calls: None, name: None, tool_call_id: None }
+    }
+    pub fn tool(name: &str, content: &str, call_id: &str) -> Self {
+        Self { role: "tool".into(), content: content.to_string(), tool_calls: None, name: Some(name.to_string()), tool_call_id: Some(call_id.to_string()) }
+    }
+}
+
+/// A layer in the layered context.
+#[derive(Debug, Clone, Default)]
+struct ContextLayer {
+    messages: Vec<Message>,
+    ephemeral: bool,
+}
+
+impl ContextLayer {
+    fn new(ephemeral: bool) -> Self {
+        Self { messages: Vec::new(), ephemeral }
+    }
+
+    fn token_count(&self) -> usize {
+        self.messages.iter().map(|m| estimate_tokens(&m.content)).sum()
+    }
+}
+
+/// Layered conversation context (L0-L3).
+///
+/// - L0 system:   System prompt (permanent)
+/// - L1 project:  Project context
+/// - L2 tools:    Tool results (ephemeral)
+/// - L3 history:  Conversation history (trimmable)
+#[derive(Debug, Clone)]
+pub struct LayeredContext {
+    system: ContextLayer,
+    project: ContextLayer,
+    tools: ContextLayer,
+    history: ContextLayer,
+    max_history_rounds: usize,
+    max_total_tokens: usize,
+}
+
+impl LayeredContext {
+    pub fn new(system_prompt: &str, max_history_rounds: usize, max_total_tokens: usize) -> Self {
+        let mut ctx = Self {
+            system: ContextLayer::new(false),
+            project: ContextLayer::new(false),
+            tools: ContextLayer::new(true),
+            history: ContextLayer::new(false),
+            max_history_rounds,
+            max_total_tokens,
+        };
+        if !system_prompt.is_empty() {
+            ctx.set_system_prompt(system_prompt);
+        }
+        ctx
+    }
+
+    pub fn set_system_prompt(&mut self, prompt: &str) {
+        self.system.messages = vec![Message::system(prompt)];
+    }
+
+    pub fn set_project_context(&mut self, context: &str) {
+        self.project.messages = vec![Message::system(&format!("[项目上下文]\n{}", context))];
+    }
+
+    pub fn add_user_message(&mut self, content: &str) {
+        self.history.messages.push(Message::user(content));
+    }
+
+    pub fn add_assistant_message(&mut self, content: &str) {
+        self.history.messages.push(Message::assistant(content));
+    }
+
+    pub fn add_tool_result(&mut self, tool_name: &str, result: &str) {
+        let truncated = if result.len() > 4000 { &result[..4000] } else { result };
+        self.history.messages.push(Message::tool(tool_name, truncated, ""));
+    }
+
+    pub fn clear_tool_results(&mut self) {
+        self.tools.messages.clear();
+    }
+
+    pub fn clear_history(&mut self) {
+        self.history.messages.clear();
+        self.tools.messages.clear();
+    }
+
+    /// Trim history to fit token limits.
+    pub fn trim_history(&mut self) {
+        // Round-based trimming
+        let max_msgs = self.max_history_rounds * 2;
+        if self.history.messages.len() > max_msgs {
+            let drain = self.history.messages.len() - max_msgs;
+            self.history.messages.drain(..drain);
+        }
+
+        // Token-based trimming
+        while self.total_token_count() > self.max_total_tokens && self.history.messages.len() > 2 {
+            self.history.messages.remove(0);
+            if self.history.messages.first().map_or(false, |m| m.role == "assistant") {
+                self.history.messages.remove(0);
+            }
+        }
+    }
+
+    pub fn total_token_count(&self) -> usize {
+        self.system.token_count() + self.project.token_count() + self.history.token_count()
+    }
+
+    /// Build message list for LLM call.
+    pub fn build_messages(&mut self, include_tools: bool, include_history: bool) -> Vec<Message> {
+        let mut result = Vec::new();
+        result.extend(self.system.messages.clone());
+        result.extend(self.project.messages.clone());
+        if include_tools {
+            result.extend(self.tools.messages.clone());
+        }
+        if include_history {
+            self.trim_history();
+            result.extend(self.history.messages.clone());
+        }
+        result
+    }
+
+    /// Serialize to JSON-compatible map.
+    pub fn to_dict(&self) -> serde_json::Value {
+        serde_json::json!({
+            "system": self.system.messages,
+            "project": self.project.messages,
+            "history": self.history.messages,
+            "max_history_rounds": self.max_history_rounds,
+            "max_total_tokens": self.max_total_tokens,
+        })
+    }
+
+    /// Deserialize from JSON.
+    pub fn from_dict(data: &serde_json::Value) -> Self {
+        let mut ctx = Self::new(
+            "",
+            data["max_history_rounds"].as_u64().unwrap_or(20) as usize,
+            data["max_total_tokens"].as_u64().unwrap_or(32000) as usize,
+        );
+        if let Some(sys) = data["system"].as_array() {
+            ctx.system.messages = serde_json::from_value(serde_json::Value::Array(sys.clone())).unwrap_or_default();
+        }
+        if let Some(proj) = data["project"].as_array() {
+            ctx.project.messages = serde_json::from_value(serde_json::Value::Array(proj.clone())).unwrap_or_default();
+        }
+        if let Some(hist) = data["history"].as_array() {
+            ctx.history.messages = serde_json::from_value(serde_json::Value::Array(hist.clone())).unwrap_or_default();
+        }
+        ctx
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_message_roles() {
+        let m = Message::system("hello");
+        assert_eq!(m.role, "system");
+        let m = Message::tool("search", "result", "123");
+        assert_eq!(m.role, "tool");
+        assert_eq!(m.name, Some("search".into()));
+    }
+
+    #[test]
+    fn test_layered_context() {
+        let mut ctx = LayeredContext::new("You are a helper.", 5, 1000);
+        ctx.add_user_message("hi");
+        ctx.add_assistant_message("hello");
+        let msgs = ctx.build_messages(true, true);
+        assert!(msgs.len() >= 3); // system + user + assistant
+    }
+
+    #[test]
+    fn test_token_estimate() {
+        let mut ctx = LayeredContext::new("", 5, 1000);
+        ctx.add_user_message("Hello world test message");
+        assert!(ctx.total_token_count() > 0);
+    }
+}

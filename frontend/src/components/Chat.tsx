@@ -1,9 +1,48 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
 import { agentChat, getChatHistory, listDocuments, moleculeStats } from '../api/client'
 import { SendIcon, UserIcon, BotIcon, FolderIcon, FileTextIcon, FlaskIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
+
+/** Render inline LaTeX ($...$) within React children */
+function renderInlineLatex(children: React.ReactNode): React.ReactNode {
+  if (typeof children === 'string') {
+    const parts: React.ReactNode[] = []
+    const regex = /(\$[^$\n]+?\$)/g
+    let lastIndex = 0
+    let match: RegExpExecArray | null
+    while ((match = regex.exec(children)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(children.slice(lastIndex, match.index))
+      }
+      const formula = match[0].slice(1, -1).trim()
+      if (formula) {
+        try {
+          const html = katex.renderToString(formula, { throwOnError: false, trust: true })
+          parts.push(
+            <span key={match.index} dangerouslySetInnerHTML={{ __html: html }} />
+          )
+        } catch {
+          parts.push(<code key={match.index}>{formula}</code>)
+        }
+      }
+      lastIndex = match.index + match[0].length
+    }
+    if (lastIndex < children.length) {
+      parts.push(children.slice(lastIndex))
+    }
+    return parts.length > 0 ? <>{parts}</> : children
+  }
+  if (Array.isArray(children)) {
+    return children.map((child, i) => (
+      <span key={i}>{renderInlineLatex(child)}</span>
+    ))
+  }
+  return children
+}
 
 /** 判断字符串是否为合法 SMILES */
 function isSmiles(s: string): boolean {
@@ -169,6 +208,11 @@ export default function Chat() {
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
+                      p: ({ children }) => {
+                        // Process inline LaTeX in paragraph text
+                        const processed = renderInlineLatex(children)
+                        return <p style={{ margin: '6px 0' }}>{processed}</p>
+                      },
                       img: ({ node, ...props }) => (
                         <img
                           {...props}

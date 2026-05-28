@@ -90,14 +90,17 @@ def _cmd_dev(args) -> int:
 
     # 等后端就绪
     import urllib.request
-    for _ in range(30):
+    print("\033[90m等待模型加载...\033[0m")
+    for i in range(60):
         try:
-            urllib.request.urlopen("http://127.0.0.1:18792/api/v1/health", timeout=1)
+            urllib.request.urlopen("http://127.0.0.1:18792/api/v1/health", timeout=2)
             break
         except Exception:
-            time.sleep(0.5)
+            time.sleep(1)
+            if i > 0 and i % 10 == 0:
+                print(f"\033[90m  仍在等待... ({i}s)\033[0m")
     else:
-        print("\033[31m[后端]\033[0m 启动失败")
+        print("\033[31m[后端]\033[0m 启动超时（60s）")
         backend.terminate()
         return 1
 

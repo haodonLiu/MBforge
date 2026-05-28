@@ -74,7 +74,7 @@ def main() -> int:
 
 
 def _cmd_dev(args) -> int:
-    """开发模式：同时启动后端和前端，输出全部可见."""
+    """开发模式：后端和前端分别在独立终端窗口中启动."""
     import os
     import subprocess
     import time
@@ -84,58 +84,73 @@ def _cmd_dev(args) -> int:
 
     setup_logging()
 
-    # 找到项目根目录和前端目录
     project_root = Path(__file__).resolve().parent.parent.parent
     frontend_dir = project_root / "frontend"
 
-    # 启动后端（输出直接打印到终端）
-    print("\033[36m[后端]\033[0m 启动模型服务 (localhost:18792)...")
-    backend = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "mbforge.model_server.main:app",
-         "--host", "127.0.0.1", "--port", "18792"],
-        cwd=str(project_root),
-    )
+    is_windows = sys.platform == "win32"
 
-    # 等后端就绪
+    if is_windows:
+        import shutil
+        import tempfile
+
+        npx_cmd = shutil.which("npx") or "npx"
+
+        # 写临时 .bat 文件避免路径空格截断问题
+        backend_bat = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".bat", delete=False, prefix="mbforge_backend_",
+            dir=str(Path(os.environ.get("TEMP", "C:\\Windows\\Temp"))),
+        )
+        backend_bat.write(f'@echo off\ncd /d "{project_root}"\n"{sys.executable}" -m uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792\npause\n')
+        backend_bat.close()
+
+        frontend_bat = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".bat", delete=False, prefix="mbforge_frontend_",
+            dir=str(Path(os.environ.get("TEMP", "C:\\Windows\\Temp"))),
+        )
+        frontend_bat.write(f'@echo off\ncd /d "{frontend_dir}"\n"{npx_cmd}" vite\npause\n')
+        frontend_bat.close()
+
+        # start 的第一个带引号参数被视为窗口标题，所以用双引号包 bat 路径即可
+        subprocess.Popen(
+            f'start "MBForge 后端 (localhost:18792)" cmd /k "{backend_bat.name}"',
+            shell=True,
+        )
+        subprocess.Popen(
+            f'start "MBForge 前端 (localhost:5173)" cmd /k "{frontend_bat.name}"',
+            shell=True,
+        )
+    else:
+        import shutil
+        npx_cmd = shutil.which("npx") or "npx"
+        backend_cmd = f'cd "{project_root}" && {sys.executable} -m uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792; exec bash'
+        frontend_cmd = f'cd "{frontend_dir}" && {npx_cmd} vite; exec bash'
+        for title, cmd in [("MBForge 后端", backend_cmd), ("MBForge 前端", frontend_cmd)]:
+            for term in ["wt", "gnome-terminal", "xterm", "konsole"]:
+                if shutil.which(term):
+                    subprocess.Popen([term, "--title", title, "-e", "bash", "-c", cmd])
+                    break
+
+    print("\033[32m[后端]\033[0m 已在新终端窗口启动 (localhost:18792)")
+    print("\033[32m[前端]\033[0m 已在新终端窗口启动 (localhost:5173)")
+    print("\033[90m关闭对应终端窗口即可停止各服务\033[0m")
+
+    # 等后端就绪后打开浏览器
     import urllib.request
-    print("\033[90m等待模型加载...\033[0m")
+    print("\033[90m等待后端就绪...\033[0m")
     for i in range(60):
         try:
             urllib.request.urlopen("http://127.0.0.1:18792/api/v1/health", timeout=2)
             break
         except Exception:
             time.sleep(1)
-            if i > 0 and i % 10 == 0:
-                print(f"\033[90m  仍在等待... ({i}s)\033[0m")
     else:
-        print("\033[31m[后端]\033[0m 启动超时（60s）")
-        backend.terminate()
+        print("\033[31m[后端]\033[0m 等待超时，请检查后端终端窗口")
         return 1
 
     print("\033[32m[后端]\033[0m 就绪")
-
-    # 启动前端
-    print("\033[36m[前端]\033[0m 启动 Vite 开发服务器 (localhost:5173)...")
-    import shutil
-    npx_cmd = shutil.which("npx") or "npx"
-    frontend = subprocess.Popen(
-        [npx_cmd, "vite"],
-        cwd=str(frontend_dir),
-        shell=(sys.platform == "win32"),
-    )
-
-    print("\033[32m[前端]\033[0m 浏览器打开 http://localhost:5173")
-    print("\033[90m按 Ctrl+C 停止所有服务\033[0m\n")
-
-    try:
-        # 等待任一进程退出
-        while backend.poll() is None and frontend.poll() is None:
-            time.sleep(0.5)
-    except KeyboardInterrupt:
-        print("\n\033[33m正在停止服务...\033[0m")
-    finally:
-        backend.terminate()
-        frontend.terminate()
+    print("\033[32m[前端]\033[0m 浏览器打开 http://localhost:5173\n")
+    import webbrowser
+    webbrowser.open("http://localhost:5173")
 
     return 0
 
@@ -159,6 +174,9 @@ def _cmd_gui(args) -> int:
 
     import urllib.request
     for _ in range(30):
+        if server_proc.poll() is not None:
+            print(f"\033[31m[后端]\033[0m 进程异常退出 (code={server_proc.returncode})，可能端口已被占用")
+            return 1
         try:
             urllib.request.urlopen("http://127.0.0.1:18792/api/v1/health", timeout=1)
             break

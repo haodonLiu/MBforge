@@ -121,6 +121,56 @@ export function indexProject(root: string) {
   )
 }
 
+export type IndexProgressEvent =
+  | { status: 'indexing'; file: string; current: number; total: number }
+  | { status: 'file_done'; file: string; molecules: number }
+  | { status: 'file_error'; file: string; error: string }
+  | { status: 'completed'; indexed: number; molecules: number; total: number }
+  | { status: 'error'; error: string }
+
+export function indexProjectStream(
+  root: string,
+  onEvent: (event: IndexProgressEvent) => void,
+): () => void {
+  const controller = new AbortController()
+  ;(async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/project/index-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ root }),
+        signal: controller.signal,
+      })
+      if (!resp.ok || !resp.body) {
+        onEvent({ status: 'error', error: `HTTP ${resp.status}` })
+        return
+      }
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              onEvent(JSON.parse(line.slice(6)))
+            } catch { /* skip */ }
+          }
+        }
+      }
+    } catch (e) {
+      if (!controller.signal.aborted) {
+        onEvent({ status: 'error', error: String(e) })
+      }
+    }
+  })()
+  return () => controller.abort()
+}
+
 // Knowledge Base
 export function kbSearch(projectRoot: string, query: string, topK = 5) {
   return fetchJson<{ success: boolean; results: import('../types').SearchResult[]; error?: string }>(

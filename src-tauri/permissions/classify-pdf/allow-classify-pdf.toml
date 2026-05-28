@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-classify-pdf"
+description = "Allows the classify_pdf command"
+commands.allow = ["classify_pdf"]

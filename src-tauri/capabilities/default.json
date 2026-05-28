@@ -6,7 +6,7 @@
   "permissions": [
     "core:default",
     "shell:default",
-    "classify-pdf:allow-classify-pdf",
-    "extract-text:allow-extract-text"
+    "allow-classify-pdf",
+    "allow-extract-text"
   ]
 }

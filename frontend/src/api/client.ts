@@ -259,3 +259,22 @@ export function getFileTree(projectRoot: string) {
     `${API_BASE}/project/file-tree?root=${encodeURIComponent(projectRoot)}`,
   )
 }
+
+// ---- pdf-inspector Rust commands ----
+import {
+  isTauriAvailable,
+  classifyPdf as tauriClassifyPdf,
+  extractText as tauriExtractText,
+  type PdfClassification,
+  type PdfExtraction,
+} from './tauri-bridge'
+
+export async function classifyPdfRust(path: string): Promise<PdfClassification> {
+  if (!isTauriAvailable()) throw new Error('Not in Tauri')
+  return tauriClassifyPdf(path)
+}
+
+export async function extractTextRust(path: string): Promise<PdfExtraction> {
+  if (!isTauriAvailable()) throw new Error('Not in Tauri')
+  return tauriExtractText(path)
+}

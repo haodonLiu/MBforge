@@ -300,6 +300,16 @@ export const TrashIcon: React.FC<IconProps> = ({ size = 16 }) =>
     size,
   )
 
+export const DownloadIcon: React.FC<IconProps> = ({ size = 16 }) =>
+  svg(
+    <>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </>,
+    size,
+  )
+
 /** 三苯环叠合 Logo — 黑底白线 */
 export const MoleculeLogo: React.FC<IconProps> = ({ size = 72 }) => (
   <svg width={size} height={size} viewBox="0 0 72 72" fill="none">

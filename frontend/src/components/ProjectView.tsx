@@ -1,34 +1,22 @@
 import { useState, useEffect } from 'react'
-import { listDocuments, scanProject, indexProject } from '../api/client'
-import { FolderIcon, FileTextIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon, ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from './icons'
+import { listDocuments, scanProject, indexProjectStream, type IndexProgressEvent } from '../api/client'
+import { FolderIcon, FileTextIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon, ArrowLeftIcon } from './icons'
 import type { DocumentEntry } from '../types'
 import { getProjectRoot } from '../hooks/useProjectRoot'
 import ErrorBanner from './ErrorBanner'
 import StatCard from './project/StatCard'
-
-interface Molecule {
-  name: string
-  smiles: string
-}
 
 export default function ProjectView() {
   const [projectRoot, setProjectRoot] = useState(getProjectRoot())
   const [docs, setDocs] = useState<DocumentEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isIndexing, setIsIndexing] = useState(false)
+  const [indexProgress, setIndexProgress] = useState<{ file: string; current: number; total: number } | null>(null)
   const [indexResult, setIndexResult] = useState<{ indexed: number; molecules: number } | null>(null)
   const [error, setError] = useState('')
 
   // PDF 阅读状态
   const [selectedPdf, setSelectedPdf] = useState<DocumentEntry | null>(null)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages] = useState(48)
-  const [activeAnnotationTab, setActiveAnnotationTab] = useState<'highlights' | 'notes' | 'molecules'>('molecules')
-  const [extractedMolecules] = useState<Molecule[]>([
-    { name: '阿司匹林', smiles: 'CC(=O)Oc1ccccc1C(=O)O' },
-    { name: '水杨酸', smiles: 'O=C(O)c1ccccc1O' },
-    { name: '布洛芬', smiles: 'CC(C)Cc1ccc(cc1)C(C)C(=O)O' },
-  ])
 
   const loadDocs = async () => {
     const root = getProjectRoot()
@@ -75,42 +63,48 @@ export default function ProjectView() {
     }
   }
 
-  const handleIndex = async () => {
+  const handleIndex = () => {
     const root = getProjectRoot()
     if (!root) return
     setIsIndexing(true)
     setError('')
     setIndexResult(null)
-    try {
-      // Scan first to discover new files
-      const scanResp = await scanProject(root)
-      if (scanResp.success && scanResp.documents) {
-        setDocs(scanResp.documents)
+    setIndexProgress(null)
+
+    // Scan first
+    scanProject(root).then(scanResp => {
+      if (scanResp.success && scanResp.documents) setDocs(scanResp.documents)
+    }).catch(() => {})
+
+    // Stream index progress
+    indexProjectStream(root, (event: IndexProgressEvent) => {
+      switch (event.status) {
+        case 'indexing':
+          setIndexProgress({ file: event.file, current: event.current, total: event.total })
+          break
+        case 'file_done':
+          break
+        case 'file_error':
+          console.warn(`Index error: ${event.file} - ${event.error}`)
+          break
+        case 'completed':
+          setIndexResult({ indexed: event.indexed, molecules: event.molecules })
+          setIndexProgress(null)
+          setIsIndexing(false)
+          listDocuments(root).then(r => { if (r.success && r.documents) setDocs(r.documents) })
+          break
+        case 'error':
+          setError(event.error)
+          setIndexProgress(null)
+          setIsIndexing(false)
+          break
       }
-      // Index unindexed PDFs
-      const indexResp = await indexProject(root)
-      if (indexResp.success) {
-        setIndexResult({ indexed: indexResp.indexed, molecules: indexResp.molecules })
-        // Refresh document list to reflect updated indexed status
-        const listResp = await listDocuments(root)
-        if (listResp.success && listResp.documents) {
-          setDocs(listResp.documents)
-        }
-      } else {
-        setError(indexResp.error || 'Index failed')
-      }
-    } catch (e) {
-      console.error(e)
-      setError('Index failed')
-    } finally {
-      setIsIndexing(false)
-    }
+    })
   }
 
   const handleOpenPdf = (doc: DocumentEntry) => {
     if (doc.doc_type === 'pdf') {
       setSelectedPdf(doc)
-      setCurrentPage(1)
     }
   }
 
@@ -122,249 +116,49 @@ export default function ProjectView() {
 
   // PDF 视图
   if (selectedPdf) {
+    const pdfUrl = `/api/v1/file/pdf?path=${encodeURIComponent(selectedPdf.path)}`
     return (
-      <div style={{
-        flex: 1,
-        display: 'grid',
-        gridTemplateColumns: '160px 1fr 280px',
-        height: '100%',
-        overflow: 'hidden',
-      }}>
-        {/* 左侧缩略图 */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+        {/* 工具栏 */}
         <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          height: '48px',
+          padding: '0 16px',
           background: 'var(--bg-surface)',
-          borderRight: '1px solid var(--border)',
-          display: 'flex',
-          flexDirection: 'column',
+          borderBottom: '1px solid var(--border)',
+          flexShrink: 0,
         }}>
-          <div style={{
-            padding: '12px 14px',
-            borderBottom: '1px solid var(--border)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontSize: '12px',
+          <button
+            onClick={handleClosePdf}
+            style={{
+              width: '32px', height: '32px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'transparent', border: 'none', borderRadius: '6px',
+              cursor: 'pointer', color: 'var(--text-secondary)',
+            }}
+          >
+            <ArrowLeftIcon size={18} />
+          </button>
+          <span style={{
+            fontSize: '13px', fontWeight: 500,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
-            <span>页面</span>
-            <span style={{ color: 'var(--text-muted)' }}>{currentPage}/{totalPages}</span>
-          </div>
-          <div style={{
+            {selectedPdf.title || selectedPdf.path}
+          </span>
+        </div>
+        {/* PDF 内容 */}
+        <iframe
+          src={pdfUrl}
+          title={selectedPdf.title || 'PDF'}
+          style={{
             flex: 1,
-            overflow: 'auto',
-            padding: '12px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-          }}>
-            {[1, 2, 3, 4, 5, 6, 7].map(page => (
-              <div
-                key={page}
-                onClick={() => setCurrentPage(page)}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '6px',
-                  cursor: 'pointer',
-                  opacity: page === currentPage ? 1 : 0.6,
-                }}
-              >
-                <div style={{
-                  width: '100%',
-                  aspectRatio: '0.707',
-                  background: 'white',
-                  border: page === currentPage ? '2px solid var(--accent)' : '2px solid var(--border)',
-                  borderRadius: '4px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '20px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                  boxShadow: page === currentPage ? '0 2px 8px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
-                }}>
-                  {page}
-                </div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{page}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* 主阅读区 */}
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          background: '#525659',
-          overflow: 'hidden',
-        }}>
-          {/* 工具栏 */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            height: '48px',
-            padding: '0 16px',
-            background: 'var(--bg-surface)',
-            borderBottom: '1px solid var(--border)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <button
-                onClick={handleClosePdf}
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'transparent',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  color: 'var(--text-secondary)',
-                }}
-              >
-                <ArrowLeftIcon size={18} />
-              </button>
-              <span style={{
-                fontSize: '13px',
-                fontWeight: 500,
-                maxWidth: '200px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}>{selectedPdf.title || selectedPdf.path}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage <= 1}
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'transparent',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: currentPage <= 1 ? 'default' : 'pointer',
-                  color: currentPage <= 1 ? 'var(--text-muted)' : 'var(--text-secondary)',
-                }}
-              >
-                <ChevronLeftIcon size={16} />
-              </button>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{currentPage} / {totalPages}</span>
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'transparent',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: currentPage >= totalPages ? 'default' : 'pointer',
-                  color: currentPage >= totalPages ? 'var(--text-muted)' : 'var(--text-secondary)',
-                }}
-              >
-                <ChevronRightIcon size={16} />
-              </button>
-            </div>
-          </div>
-
-          {/* PDF 内容区 */}
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            fontSize: '48px',
-            fontWeight: 700,
-          }}>
-            {currentPage}
-          </div>
-        </div>
-
-        {/* 右侧标注面板 */}
-        <div style={{
-          background: 'var(--bg-surface)',
-          borderLeft: '1px solid var(--border)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}>
-          <div style={{
-            display: 'flex',
-            borderBottom: '1px solid var(--border)',
-          }}>
-            {(['molecules', 'highlights', 'notes'] as const).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveAnnotationTab(tab)}
-                style={{
-                  flex: 1,
-                  padding: '12px 8px',
-                  fontSize: '12px',
-                  background: activeAnnotationTab === tab ? 'var(--accent-muted)' : 'transparent',
-                  border: 'none',
-                  borderBottom: activeAnnotationTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-                  color: activeAnnotationTab === tab ? 'var(--accent)' : 'var(--text-secondary)',
-                  cursor: 'pointer',
-                }}
-              >
-                {tab === 'molecules' ? '分子' : tab === 'highlights' ? '标注' : '笔记'}
-              </button>
-            ))}
-          </div>
-          <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
-            {activeAnnotationTab === 'molecules' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {extractedMolecules.map((mol, i) => (
-                  <div key={i} style={{
-                    padding: '10px 12px',
-                    background: 'var(--bg-base)',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border)',
-                  }}>
-                    <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '4px' }}>{mol.name}</div>
-                    <div style={{
-                      fontSize: '11px',
-                      fontFamily: 'monospace',
-                      color: 'var(--text-muted)',
-                      maxWidth: '180px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}>
-                      {mol.smiles}
-                    </div>
-                  </div>
-                ))}
-                <button style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  width: '100%',
-                  padding: '12px',
-                  background: 'var(--bg-base)',
-                  border: '1px dashed var(--border)',
-                  borderRadius: '8px',
-                  fontSize: '13px',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                }}>
-                  <FlaskIcon size={14} /> 提取页面中的分子
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+            width: '100%',
+            border: 'none',
+            background: '#525659',
+          }}
+        />
       </div>
     )
   }
@@ -455,6 +249,32 @@ export default function ProjectView() {
         <StatCard icon={<FileTextIcon size={18} />} value={String(docs.filter(d => d.indexed).length)} label="已索引" />
         <StatCard icon={<FolderIcon size={18} />} value={String(docs.length)} label="文件" />
       </div>
+
+      {/* 索引进度条 */}
+      {isIndexing && indexProgress && (
+        <div style={{
+          padding: '14px 18px',
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border)',
+          borderRadius: '10px',
+          marginBottom: '16px',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 500 }}>
+              正在索引 {indexProgress.current}/{indexProgress.total}
+            </span>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {indexProgress.file}
+            </span>
+          </div>
+          <div className="download-progress-bar">
+            <div
+              className="download-progress-fill"
+              style={{ width: `${Math.round(indexProgress.current * 100 / indexProgress.total)}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {indexResult && indexResult.indexed > 0 && (
         <div style={{

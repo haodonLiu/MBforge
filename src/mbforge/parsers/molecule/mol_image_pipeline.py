@@ -127,8 +127,8 @@ class MolDetv2DocDetector:
     def _load_model(self) -> None:
         """加载 YOLO 模型."""
         if not self.model_path.exists():
-            logger.error(
-                "MolDetv2-Doc 模型未找到：%s。请下载模型放到该路径。",
+            logger.warning(
+                "MolDetv2-Doc 模型未找到：%s（图像分子检测功能不可用，不影响核心功能）",
                 self.model_path,
             )
             self.model = None
@@ -290,9 +290,8 @@ class MolScribeRecognizer:
                 self._backend_name = "transformers"
                 return
 
-        logger.error(
-            "MolScribe 后端不可用。请安装 molscribe 或 transformers："
-            "uv pip install molscribe 或 transformers[torch]"
+        logger.warning(
+            "MolScribe 后端不可用（SMILES 识别功能不可用，不影响核心功能）"
         )
 
     def _load_molscribe(self) -> None:

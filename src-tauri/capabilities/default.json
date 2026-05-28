@@ -5,6 +5,8 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "shell:default"
+    "shell:default",
+    "classify-pdf:allow-classify-pdf",
+    "extract-text:allow-extract-text"
   ]
 }

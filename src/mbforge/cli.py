@@ -44,6 +44,12 @@ def main() -> int:
     index_parser = subparsers.add_parser("index", help="索引项目文件")
     index_parser.add_argument("path", type=str, help="项目目录路径")
 
+    # download 命令 — 下载可选模型
+    dl_parser = subparsers.add_parser("download", help="下载可选模型（MolDetv2/MolScribe）")
+    dl_parser.add_argument("model", nargs="?", default="all",
+                           choices=["all", "moldet", "molscribe"],
+                           help="要下载的模型（默认 all）")
+
     # version
     from .utils.constants import APP_VERSION
 
@@ -61,6 +67,8 @@ def main() -> int:
         return _cmd_init(args)
     elif args.command == "index":
         return _cmd_index(args)
+    elif args.command == "download":
+        return _cmd_download(args)
     else:
         return _cmd_dev(args)  # 默认 dev 模式
 
@@ -108,9 +116,12 @@ def _cmd_dev(args) -> int:
 
     # 启动前端
     print("\033[36m[前端]\033[0m 启动 Vite 开发服务器 (localhost:5173)...")
+    import shutil
+    npx_cmd = shutil.which("npx") or "npx"
     frontend = subprocess.Popen(
-        ["npx", "vite"],
+        [npx_cmd, "vite"],
         cwd=str(frontend_dir),
+        shell=(sys.platform == "win32"),
     )
 
     print("\033[32m[前端]\033[0m 浏览器打开 http://localhost:5173")
@@ -223,6 +234,138 @@ def _cmd_index(args) -> int:
                 logger.error(f"索引失败: {entry.path.name} - {e}")
 
     logger.info("索引完成")
+    return 0
+
+
+# ---- 模型下载 ----
+
+# MolDetv2 模型来自 Hugging Face
+_MOLDET_MODELS = {
+    "moldetv2-doc": {
+        "repo": "yujieq/MolDetect",
+        "filename": "best.pt",
+        "local_name": "moldetv2-doc.pt",
+        "desc": "MolDetv2-Doc 整页分子检测",
+    },
+    "moldetv2-general": {
+        "repo": "yujieq/MolDetect",
+        "filename": "best.pt",
+        "local_name": "moldetv2-general.pt",
+        "desc": "MolDetv2-General 裁剪区域检测",
+    },
+}
+
+_MOLSCRIBE_MODELS = {
+    "molscribe": {
+        "repo": "yujieq/MolScribe",
+        "filename": None,  # 使用 huggingface_hub 整包下载
+        "local_name": "molscribe",
+        "desc": "MolScribe SMILES 识别",
+    },
+}
+
+
+def _download_with_progress(url: str, dest: Path) -> bool:
+    """下载文件并显示进度条."""
+    import urllib.request
+
+    try:
+        print(f"  下载: {dest.name}")
+        req = urllib.request.Request(url, headers={"User-Agent": "MBForge/1.0"})
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            total = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+            chunk_size = 1024 * 256  # 256KB
+            with open(dest, "wb") as f:
+                while True:
+                    chunk = resp.read(chunk_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total > 0:
+                        pct = downloaded * 100 // total
+                        bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
+                        print(f"\r  [{bar}] {pct}% ({downloaded // 1024}KB/{total // 1024}KB)", end="", flush=True)
+                    else:
+                        print(f"\r  已下载 {downloaded // 1024}KB", end="", flush=True)
+            print()
+        return True
+    except Exception as e:
+        print(f"\n  下载失败: {e}")
+        if dest.exists():
+            dest.unlink()
+        return False
+
+
+def _cmd_download(args) -> int:
+    """下载可选模型."""
+    setup_logging()
+    model_choice = args.model
+
+    target_dir = Path.home() / ".cache" / "mbforge" / "models"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    downloaded = 0
+    skipped = 0
+    failed = 0
+
+    # 下载 MolDetv2 模型
+    if model_choice in ("all", "moldet"):
+        for name, info in _MOLDET_MODELS.items():
+            dest = target_dir / name / info["local_name"]
+            if dest.exists():
+                print(f"\033[32m✓\033[0m {info['desc']} — 已存在")
+                skipped += 1
+                continue
+
+            print(f"\n\033[36m下载 {info['desc']}...\033[0m")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+
+            # 通过 Hugging Face API 获取下载链接
+            url = f"https://huggingface.co/{info['repo']}/resolve/main/{info['filename']}"
+            if _download_with_progress(url, dest):
+                print(f"\033[32m✓\033[0m 下载完成: {dest}")
+                downloaded += 1
+            else:
+                failed += 1
+                print(f"  提示: 你也可以手动下载模型放到 {dest.parent}")
+
+    # 下载 MolScribe 模型
+    if model_choice in ("all", "molscribe"):
+        for name, info in _MOLSCRIBE_MODELS.items():
+            dest_dir = target_dir / info["local_name"]
+            if dest_dir.exists() and any(dest_dir.glob("*.pt")):
+                print(f"\033[32m✓\033[0m {info['desc']} — 已存在")
+                skipped += 1
+                continue
+
+            print(f"\n\033[36m下载 {info['desc']}...\033[0m")
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+            # 使用 huggingface_hub（如果可用）
+            try:
+                from huggingface_hub import snapshot_download
+                print("  使用 huggingface_hub 下载...")
+                snapshot_download(
+                    repo_id=info["repo"],
+                    local_dir=str(dest_dir),
+                )
+                print(f"\033[32m✓\033[0m 下载完成: {dest_dir}")
+                downloaded += 1
+            except ImportError:
+                print("  huggingface_hub 未安装，跳过 MolScribe")
+                print("  安装: pip install huggingface_hub")
+                failed += 1
+            except Exception as e:
+                print(f"  下载失败: {e}")
+                failed += 1
+
+    # 汇总
+    print(f"\n{'='*40}")
+    print(f"下载: {downloaded}  已有: {skipped}  失败: {failed}")
+    if downloaded > 0:
+        print(f"模型目录: {target_dir}")
     return 0
 
 

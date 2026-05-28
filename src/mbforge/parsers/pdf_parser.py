@@ -11,8 +11,11 @@ MolDetv2 优先重构（Week 1）：
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 from pathlib import Path
+
+import requests as _requests
 
 try:
     import fitz  # PyMuPDF
@@ -34,6 +37,22 @@ from ..utils.helpers import generate_uuid
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _call_tauri(command: str, **kwargs):
+    """Call a Tauri command via HTTP, return None on failure (fallback)."""
+    port = os.environ.get("TAURI_DEV_SERVER_PORT", "14268")
+    try:
+        resp = _requests.post(
+            f"http://127.0.0.1:{port}/api/{command}",
+            json=kwargs,
+            timeout=30,
+        )
+        if resp.ok:
+            return resp.json()
+    except Exception:
+        pass
+    return None
 
 
 class PDFParserPipeline:
@@ -93,57 +112,75 @@ class PDFParserPipeline:
         pdf_path = Path(pdf_path)
         doc_id = doc_id or generate_uuid()
 
-        if fitz is None:
-            raise ImportError("PyMuPDF (fitz) 未安装，无法处理 PDF")
+        # 1. 基础提取
+        content = ExtractedContent()
+        content.metadata["source"] = str(pdf_path)
+        content.metadata["filename"] = pdf_path.name
+        content.metadata["doc_id"] = doc_id
 
-        # 顶层只打开一次 PDF，所有操作复用该句柄
-        with fitz.open(str(pdf_path)) as doc:
-            # 1. 基础提取
-            content = ExtractedContent()
-            content.metadata["source"] = str(pdf_path)
-            content.metadata["filename"] = pdf_path.name
-            content.metadata["doc_id"] = doc_id
-            content.metadata["pages"] = len(doc)
+        # ---- Stage 1: Text extraction ----
+        # Try pdf-inspector via Tauri command first
+        from ..utils.config import load_global_config
+        config = load_global_config()
+        pdf_inspector_result = None
+        classification_result = None
 
-            text_parts = []
-            for page in doc:
-                text_parts.append(page.get_text())
+        if config.ocr.use_pdf_inspector:
+            pdf_inspector_result = _call_tauri("extract_text", path=str(pdf_path))
+            classification_result = _call_tauri("classify_pdf", path=str(pdf_path))
+
+        if pdf_inspector_result and classification_result:
+            # pdf-inspector path
+            content.text = pdf_inspector_result.get("markdown", "")
+            text_parts = []  # per-page texts not needed when using markdown
+            content.metadata["pages"] = pdf_inspector_result.get("page_count", 0)
+            content.metadata["classification"] = {
+                "is_scanned": classification_result.get("pdf_type") in ("Scanned", "ImageBased"),
+                "has_molecules": False,  # detected by Stage 5 text regex
+                "text_density": classification_result.get("text_density_avg", 0),
+                "needs_confirmation": classification_result.get("confidence", 0) < 0.8,
+                "pages_needing_ocr": classification_result.get("pages_needing_ocr", []),
+            }
+            content.metadata["pdf_inspector"] = True
+        else:
+            # Fallback: PyMuPDF + PDFClassifier
+            if fitz is None:
+                raise ImportError("PyMuPDF (fitz) not installed and pdf-inspector unavailable")
+            with fitz.open(str(pdf_path)) as doc_fb:
+                content.metadata["pages"] = len(doc_fb)
+                text_parts = [page.get_text() for page in doc_fb]
             content.text = "\n\n".join(text_parts)
+            content.metadata["pdf_inspector"] = False
 
-            # 1.5. Classify PDF type
             from .pdf_classifier import PDFClassifier
-            from .ocr_router import OCRMethodRouter
-
             classifier = PDFClassifier()
-            router = OCRMethodRouter()
-
             doc_classification = classifier.classify_document_from_pages(
-                text_parts,
-                metadata=content.metadata,
+                text_parts, metadata=content.metadata,
             )
-
             content.metadata["classification"] = {
                 "is_scanned": doc_classification.is_scanned,
                 "has_molecules": doc_classification.has_molecular_patterns,
                 "text_density": doc_classification.text_density,
                 "needs_confirmation": doc_classification.needs_confirmation,
                 "pages": [
-                    {
-                        "page_idx": p.page_idx,
-                        "is_scanned": p.is_scanned,
-                        "has_molecular_patterns": p.has_molecular_patterns,
-                        "text_density": p.text_density,
-                    }
+                    {"page_idx": p.page_idx, "is_scanned": p.is_scanned,
+                     "has_molecular_patterns": p.has_molecular_patterns,
+                     "text_density": p.text_density}
                     for p in doc_classification.pages
                 ],
             }
 
-            if content.text:
-                from ..utils.helpers import split_text_chunks
+        if content.text:
+            from ..utils.helpers import split_text_chunks
 
-                content.chunks = split_text_chunks(content.text)
+            content.chunks = split_text_chunks(content.text)
 
-            # 2. 提取图片（限制数量/大小）+ VLM 分析
+        # 2. 提取图片（限制数量/大小）+ VLM 分析
+        # Always open fitz for Stage 2 image extraction
+        if fitz is None:
+            raise ImportError("PyMuPDF (fitz) 未安装，无法提取 PDF 图片")
+
+        with fitz.open(str(pdf_path)) as doc:
             with tempfile.TemporaryDirectory() as tmpdir:
                 img_dir = Path(tmpdir) / "images"
                 images = self._extract_limited_images(doc, img_dir)

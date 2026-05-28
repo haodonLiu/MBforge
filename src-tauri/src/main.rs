@@ -14,6 +14,11 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::pdf::classify_pdf,
             commands::pdf::extract_text,
+            commands::text_ops::text_chunk,
+            commands::classifier::classify_page,
+            commands::classifier::classify_document,
+            commands::extractor::extract_smiles_candidates,
+            commands::extractor::extract_activities,
         ])
         .setup(|app| {
             let app_handle = app.handle();

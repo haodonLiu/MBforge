@@ -76,6 +76,7 @@ class OcrConfig:
     api_key: str = ""  # MaaS API Key
     model_name: str = ""  # 本地模型路径或 Ollama 模型名
     use_hf_mirror: bool = True  # 是否使用国内镜像下载模型
+    use_pdf_inspector: bool = True  # 是否使用 pdf-inspector 解析 PDF
 
 
 @dataclass

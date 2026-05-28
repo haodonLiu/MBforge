@@ -56,8 +56,8 @@ cd src-tauri && cargo tauri build
 ### Data Flow (Central Pipeline)
 
 ```
-PDF → PyMuPDF text extraction
-  → PDFClassifier (scanned vs text-based, molecular patterns)
+PDF → pdf-inspector (Rust Tauri command) → Markdown + classification
+  ↓ (fallback: PyMuPDF + PDFClassifier)
   → split_text_chunks()
   → MoleculeExtractor (regex SMILES) or MolImagePipeline (YOLO detection)
   → DocumentSummarizer (L0/L1/L2 layered summaries via LLM)
@@ -65,6 +65,16 @@ PDF → PyMuPDF text extraction
 ```
 
 This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, invoked by both CLI `index` command and model server endpoints.
+
+### pdf-inspector Integration
+
+pdf-inspector (Rust) is integrated as Tauri commands for PDF classification and text extraction:
+- `classify_pdf`: PDF type classification (TextBased/Scanned/Mixed/ImageBased), ~10-50ms
+- `extract_text`: Structured Markdown extraction with tables, headings, lists
+- Python pipeline calls Tauri commands via HTTP (transition period), falls back to PyMuPDF when unavailable
+- Config: `OcrConfig.use_pdf_inspector` (default: True)
+- Rust source: `src-tauri/src/commands/pdf.rs`
+- Frontend bridge: `frontend/src/api/tauri-bridge.ts`
 
 ### System Architecture
 

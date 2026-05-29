@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 // Types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageClassification {
     pub page_idx: usize,
     pub text_density: f64,
@@ -15,7 +15,7 @@ pub struct PageClassification {
     pub has_molecular_patterns: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentClassification {
     pub text_density: f64,
     pub is_scanned: bool,

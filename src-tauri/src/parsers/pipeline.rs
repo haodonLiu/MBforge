@@ -40,52 +40,17 @@ pub fn parse_pdf(
     // Stage 1: Text extraction
     let (content, page_count) = match parser_choice.as_str() {
         "uniparser" => {
-            // UniParser path — call Python sidecar HTTP API
-            let pdf_path_str = std::fs::canonicalize(&path)
-                .map_err(|e| format!("Failed to resolve path: {}", e))?
-                .to_string_lossy()
-                .to_string();
-            let sidecar_url = std::env::var("SIDECAR_URL")
-                .unwrap_or_else(|_| "http://127.0.0.1:18792".to_string());
-            let url = format!("{}/api/v1/uniparser/parse", sidecar_url);
-            let body = serde_json::json!({
-                "pdf_path": pdf_path_str,
-                "sync": true,
-                "textual": 2,
-                "table": 2,
-                "equation": 2,
-                "molecule": 1,
-            });
-            let resp = reqwest::blocking::Client::new()
-                .post(&url)
-                .json(&body)
-                .timeout(std::time::Duration::from_secs(300))
-                .send()
-                .map_err(|e| format!("UniParser request failed: {}", e))?;
-            let parsed: serde_json::Value = resp.json()
-                .map_err(|e| format!("UniParser response error: {}", e))?;
-            let token = parsed["token"].as_str().unwrap_or("");
-
-            // Get formatted result
-            let result_url = format!("{}/api/v1/uniparser/formatted", sidecar_url);
-            let result_body = serde_json::json!({
-                "token": token,
-                "content": true,
-                "textual": "markdown",
-                "table": "markdown",
-                "equation": "markdown",
-            });
-            let result_resp = reqwest::blocking::Client::new()
-                .post(&result_url)
-                .json(&result_body)
-                .timeout(std::time::Duration::from_secs(120))
-                .send()
-                .map_err(|e| format!("UniParser result request failed: {}", e))?;
-            let result: serde_json::Value = result_resp.json()
-                .map_err(|e| format!("UniParser result error: {}", e))?;
-            let md = result["content"].as_str().unwrap_or("").to_string();
-            let page_count = result["page_count"].as_u64().unwrap_or(0) as usize;
-            (md, page_count)
+            // UniParser path — Rust native HTTP client
+            let host = std::env::var("UNIPARSER_HOST")
+                .unwrap_or_else(|_| "https://uniparser.dp.tech/".to_string());
+            let api_key = std::env::var("UNIPARSER_API_KEY")
+                .unwrap_or_default();
+            if api_key.is_empty() {
+                return Err("UNIPARSER_API_KEY not set".into());
+            }
+            let client = super::uniparser::UniParserClient::new(&host, &api_key);
+            let result = client.parse_pdf(&path)?;
+            (result.content, result.page_count)
         }
         "llama_parse" => {
             // LlamaParse path — read file and call Python sidecar

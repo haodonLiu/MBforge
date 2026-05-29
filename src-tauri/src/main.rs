@@ -13,6 +13,9 @@ use tauri::Manager;
 struct BackendProcess(std::sync::Mutex<std::process::Child>);
 
 fn main() {
+    // Load .env from project root (dev mode) or app directory
+    let _ = dotenvy::dotenv();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(AgentState::new())

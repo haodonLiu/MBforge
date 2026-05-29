@@ -278,3 +278,47 @@ export async function extractTextRust(path: string): Promise<PdfExtraction> {
   if (!isTauriAvailable()) throw new Error('Not in Tauri')
   return tauriExtractText(path)
 }
+
+// ---- pipeline Rust commands ----
+import {
+  parsePdf as tauriParsePdf,
+  agentInit as tauriAgentInit,
+  agentChat as tauriAgentChat,
+  agentClear as tauriAgentClear,
+  agentGetHistory as tauriAgentGetHistory,
+  type PdfParseResult,
+  type ChatMessage,
+} from './tauri-bridge'
+
+export async function parsePdfRust(
+  path: string,
+  chunkSize?: number,
+  overlap?: number,
+  parser?: string,
+): Promise<PdfParseResult> {
+  if (!isTauriAvailable()) throw new Error('Not in Tauri')
+  return tauriParsePdf(path, chunkSize, overlap, parser)
+}
+
+export async function agentInitRust(projectRoot: string): Promise<void> {
+  if (!isTauriAvailable()) throw new Error('Not in Tauri')
+  return tauriAgentInit(projectRoot)
+}
+
+export async function agentChatRust(
+  projectRoot: string,
+  messages: ChatMessage[],
+): Promise<string> {
+  if (!isTauriAvailable()) throw new Error('Not in Tauri')
+  return tauriAgentChat(projectRoot, messages)
+}
+
+export async function agentClearRust(projectRoot: string): Promise<void> {
+  if (!isTauriAvailable()) throw new Error('Not in Tauri')
+  return tauriAgentClear(projectRoot)
+}
+
+export async function agentGetHistoryRust(projectRoot: string): Promise<ChatMessage[]> {
+  if (!isTauriAvailable()) throw new Error('Not in Tauri')
+  return tauriAgentGetHistory(projectRoot)
+}

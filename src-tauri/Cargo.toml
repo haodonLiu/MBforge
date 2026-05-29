@@ -21,3 +21,12 @@ chrono = { version = "0.4", features = ["serde"] }
 walkdir = "2"
 directories = "5"
 tempfile = "3"
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+futures = "0.3"
+tokio-stream = "0.1"
+grep-searcher = "0.1"
+grep-regex = "0.1"
+grep-matcher = "0.1"
+ignore = "0.4"
+globset = "0.4"

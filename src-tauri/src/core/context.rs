@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 
 use super::helpers::estimate_tokens;
@@ -87,6 +89,24 @@ impl LayeredContext {
         self.project.messages = vec![Message::system(&format!("[项目上下文]\n{}", context))];
     }
 
+    pub fn inject_memory(&mut self, memory_text: &str) {
+        if !memory_text.is_empty() {
+            self.project.messages.push(Message::system(&format!("[用户记忆]\n{}", memory_text)));
+        }
+    }
+
+    pub fn inject_agent_memory(&mut self, memory_text: &str) {
+        if !memory_text.is_empty() {
+            self.project.messages.push(Message::system(&format!("[Agent 经验]\n{}", memory_text)));
+        }
+    }
+
+    pub fn inject_retrieval_trajectory(&mut self, trajectory_text: &str) {
+        if !trajectory_text.is_empty() {
+            self.tools.messages.push(Message::system(&format!("[检索轨迹]\n{}", trajectory_text)));
+        }
+    }
+
     pub fn add_user_message(&mut self, content: &str) {
         self.history.messages.push(Message::user(content));
     }
@@ -95,9 +115,28 @@ impl LayeredContext {
         self.history.messages.push(Message::assistant(content));
     }
 
-    pub fn add_tool_result(&mut self, tool_name: &str, result: &str) {
+    pub fn add_assistant_message_with_tool_calls(&mut self, content: &str, tool_calls: &[super::llm::ToolCall]) {
+        let tc_values: Vec<serde_json::Value> = tool_calls.iter().map(|tc| {
+            serde_json::json!({
+                "id": tc.id,
+                "function": {
+                    "name": tc.name,
+                    "arguments": tc.arguments.to_string(),
+                }
+            })
+        }).collect();
+        self.history.messages.push(Message {
+            role: "assistant".into(),
+            content: content.to_string(),
+            tool_calls: Some(tc_values),
+            name: None,
+            tool_call_id: None,
+        });
+    }
+
+    pub fn add_tool_result(&mut self, tool_name: &str, result: &str, tool_call_id: &str) {
         let truncated = if result.len() > 4000 { &result[..4000] } else { result };
-        self.history.messages.push(Message::tool(tool_name, truncated, ""));
+        self.history.messages.push(Message::tool(tool_name, truncated, tool_call_id));
     }
 
     pub fn clear_tool_results(&mut self) {
@@ -174,6 +213,24 @@ impl LayeredContext {
             ctx.history.messages = serde_json::from_value(serde_json::Value::Array(hist.clone())).unwrap_or_default();
         }
         ctx
+    }
+
+    /// Save context to file (excludes ephemeral layers).
+    pub fn save_to_file(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let data = self.to_dict();
+        let json = serde_json::to_string_pretty(&data)?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Load context from file.
+    pub fn load_from_file(path: &Path) -> Option<Self> {
+        let text = std::fs::read_to_string(path).ok()?;
+        let data: serde_json::Value = serde_json::from_str(&text).ok()?;
+        Some(Self::from_dict(&data))
     }
 }
 

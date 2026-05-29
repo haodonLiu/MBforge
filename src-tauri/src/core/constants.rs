@@ -44,6 +44,15 @@ pub const META_SOURCE: &str = "source";
 pub const META_FILENAME: &str = "filename";
 pub const META_DOC_ID: &str = "doc_id";
 
+// Sidecar
+pub const DEFAULT_SIDECAR_PORT: u16 = 18792;
+pub const DEFAULT_SIDECAR_URL: &str = "http://127.0.0.1:18792";
+
+// Agent
+pub const AGENT_MAX_ITERATIONS: usize = 5;
+pub const AGENT_MAX_HISTORY_ROUNDS: usize = 20;
+pub const AGENT_MAX_TOTAL_TOKENS: usize = 32000;
+
 // Platform-specific config/data dirs
 pub fn global_config_dir() -> PathBuf {
     directories::ProjectDirs::from("", APP_NAME, APP_NAME)

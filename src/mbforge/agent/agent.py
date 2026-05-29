@@ -7,10 +7,8 @@
 4. 回到步骤 1，最多循环 5 次
 5. 返回最终回复给用户
 
-集成 OpenViking 和 TencentDB-Agent-Memory：
-- 记忆注入（L1 project 层）
-- 检索轨迹记录
-- 对话结束后的记忆自迭代提取
+注意：记忆管理和轨迹记录已迁移到 Rust 端（core/memory.rs, core/trajectory.rs）。
+Python 端仅保留 Agent 核心逻辑和工具执行。
 """
 
 from __future__ import annotations
@@ -21,8 +19,6 @@ from typing import Any
 
 from .context import LayeredContext
 from .executor import ToolExecutor
-from .memory_manager import MemoryManager
-from .trajectory import TrajectoryTracker
 from .optimizations import SPSConfig, SpeculativeScheduler
 from ..models.base import BaseLLM, Message
 from ..utils.logger import get_logger
@@ -31,15 +27,7 @@ logger = get_logger(__name__)
 
 
 class ProjectAgent:
-    """项目级 AI Agent.
-
-    每个项目拥有独立的 Agent 实例，包含：
-    - 独立的 LayeredContext（分层上下文）
-    - 绑定项目资源的 ToolExecutor
-    - 持久的对话记忆（可选）
-    - 6 类记忆管理（MemoryManager）
-    - 检索轨迹跟踪（TrajectoryTracker）
-    """
+    """项目级 AI Agent."""
 
     DEFAULT_SYSTEM_PROMPT = """你是 MBForge 分子科学 AI 助手，服务于药物化学与分子生物学研究。
 
@@ -98,18 +86,12 @@ class ProjectAgent:
             max_history_rounds=20,
         )
 
-        # 记忆与轨迹
-        self.memory_manager: MemoryManager | None = None
-        self.trajectory_tracker: TrajectoryTracker | None = None
+        # SPS 优化（保留，不依赖 trajectory）
         self.sps_scheduler: SpeculativeScheduler | None = None
         if project_root is not None:
-            self.memory_manager = MemoryManager(project_root)
-            self.trajectory_tracker = TrajectoryTracker(project_root)
             self.sps_scheduler = SpeculativeScheduler(config=SPSConfig(enabled=True))
-            self._inject_memories()
 
         if tool_executor is not None:
-            # 在系统提示中追加可用工具说明
             self._inject_tool_descriptions()
 
     def _inject_tool_descriptions(self) -> None:
@@ -123,23 +105,11 @@ class ProjectAgent:
         for t in tools:
             lines.append(f"- {t.name}: {t.description}")
         desc = "\n".join(lines)
-        # 追加到系统提示
         if self.context._system.messages:
             original = self.context._system.messages[0].content
             self.context.set_system_prompt(original + desc)
         else:
             self.context.set_system_prompt(self.DEFAULT_SYSTEM_PROMPT + desc)
-
-    def _inject_memories(self) -> None:
-        """将用户画像和 Agent 经验注入项目上下文."""
-        if self.memory_manager is None:
-            return
-        user_profile = self.memory_manager.get_user_profile_text()
-        if user_profile:
-            self.context.inject_memory(user_profile)
-        agent_memory = self.memory_manager.get_agent_memory_text()
-        if agent_memory:
-            self.context.inject_agent_memory(agent_memory)
 
     def set_project_context(self, project_name: str, project_path: str) -> None:
         """设置当前项目上下文."""
@@ -148,10 +118,7 @@ class ProjectAgent:
         )
 
     def chat(self, user_input: str) -> str:
-        """同步对话（无流式）.
-
-        执行 ReAct 循环，返回最终回复。
-        """
+        """同步对话（无流式）."""
         if self.llm is None:
             return "LLM 未配置，请在设置中配置模型。"
 
@@ -163,31 +130,21 @@ class ProjectAgent:
 
             messages = self.context.build_messages()
 
-            # 如果有工具，请求 function calling
             if self.tool_executor is not None:
                 tools = self.tool_executor.registry.to_openai_schemas()
                 response = self._call_llm_with_tools(messages, tools)
             else:
                 response = self._call_llm(messages)
 
-            # 解析响应
             content, tool_calls = self._parse_response(response)
 
             if tool_calls:
-                # 执行工具
                 self.context.add_assistant_message(content or "", tool_calls=tool_calls)
                 for tc in tool_calls:
                     result = self._execute_tool_call(tc)
                     self.context.add_tool_result(
                         tc["name"], result, tool_call_id=tc.get("id", "")
                     )
-                    # 记录轨迹
-                    if self.trajectory_tracker is not None:
-                        self.trajectory_tracker.record_tool(
-                            tc["name"],
-                            tc.get("arguments", {}),
-                            result[:200],
-                        )
                     # SPS: 预测并预执行下一步工具
                     if self.sps_scheduler is not None and self.sps_scheduler.config.enabled:
                         spec_calls = self.sps_scheduler.record_and_predict(
@@ -206,35 +163,23 @@ class ProjectAgent:
                                         f"[预计算] {pre_result}",
                                         tool_call_id=f"spec_{spec['name']}",
                                     )
-                                    logger.info(
-                                        "SPS pre-executed: %s (conf=%.2f)",
-                                        spec["name"],
-                                        spec["confidence"],
-                                    )
                                 except Exception as e:
                                     logger.debug("SPS pre-execution skipped: %s", e)
                 continue
             else:
-                # 直接回复
                 final_answer = content or ""
                 self.context.add_assistant_message(final_answer)
                 break
 
-        # 清理临时工具结果
         self.context.clear_tool_results()
         return final_answer
 
     def chat_stream(self, user_input: str):
-        """流式对话生成器（简化版，不执行工具循环）.
-
-        由于流式输出难以在中间插入工具调用，
-        简化策略：先检查是否需要工具，如需要则同步执行后再流式输出最终答案。
-        """
+        """流式对话生成器."""
         if self.llm is None:
             yield "LLM 未配置，请在设置中配置模型。"
             return
 
-        # 先判断是否需要工具（一轮快速调用）
         self.context.add_user_message(user_input)
 
         if self.tool_executor is not None:
@@ -244,41 +189,13 @@ class ProjectAgent:
             content, tool_calls = self._parse_response(response)
 
             if tool_calls:
-                # 执行所有工具
                 self.context.add_assistant_message(content or "", tool_calls=tool_calls)
                 for tc in tool_calls:
                     result = self._execute_tool_call(tc)
                     self.context.add_tool_result(
                         tc["name"], result, tool_call_id=tc.get("id", "")
                     )
-                    if self.trajectory_tracker is not None:
-                        self.trajectory_tracker.record_tool(
-                            tc["name"],
-                            tc.get("arguments", {}),
-                            result[:200],
-                        )
-                    # SPS: 预测并预执行下一步工具
-                    if self.sps_scheduler is not None and self.sps_scheduler.config.enabled:
-                        spec_calls = self.sps_scheduler.record_and_predict(
-                            tc["name"],
-                            tc.get("arguments", {}),
-                            result[:500],
-                        )
-                        for spec in spec_calls:
-                            if spec["confidence"] >= 0.8:
-                                try:
-                                    pre_result = self.tool_executor.registry.call(
-                                        spec["name"], spec["args"]
-                                    )
-                                    self.context.add_tool_result(
-                                        spec["name"],
-                                        f"[预计算] {pre_result}",
-                                        tool_call_id=f"spec_{spec['name']}",
-                                    )
-                                except Exception:
-                                    pass
 
-                # 再请求最终回复并流式输出
                 final_messages = self.context.build_messages()
                 full_text = ""
                 for chunk in self.llm.chat_stream(final_messages):
@@ -288,7 +205,6 @@ class ProjectAgent:
                 self.context.clear_tool_results()
                 return
 
-        # 不需要工具，直接流式输出
         messages = self.context.build_messages()
         full_text = ""
         for chunk in self.llm.chat_stream(messages):
@@ -297,21 +213,12 @@ class ProjectAgent:
         self.context.add_assistant_message(full_text)
         self.context.clear_tool_results()
 
-    def extract_memory(self) -> None:
-        """从当前对话历史中自动提取记忆（TencentDB 记忆自迭代）."""
-        if self.memory_manager is None or self.llm is None:
-            return
-        messages = self.context.build_messages(include_tools=False)
-        self.memory_manager.extract_from_conversation(messages, self.llm)
-
     # ---- 内部方法 ----
 
     def _call_llm(self, messages: list[Message]) -> Any:
-        """基础 LLM 调用."""
         return self.llm.chat(messages)
 
     def _call_llm_with_tools(self, messages: list[Message], tools: list[dict]) -> Any:
-        """带工具定义的 LLM 调用。委托给 BaseLLM.call_with_tools()。"""
         try:
             return self.llm.call_with_tools(messages, tools)
         except Exception as e:
@@ -319,15 +226,9 @@ class ProjectAgent:
             return self.llm.chat(messages)
 
     def _parse_response(self, response: Any) -> tuple[str, list[dict]]:
-        """解析 LLM 响应，提取内容和工具调用.
-
-        Returns:
-            (content, tool_calls_list)
-        """
         content = ""
         tool_calls = []
 
-        # Anthropic response object (MiniMax Anthropic-compatible)
         if hasattr(response, "content") and not hasattr(response, "choices"):
             for block in response.content:
                 if block.type == "text":
@@ -344,7 +245,6 @@ class ProjectAgent:
                     )
             return content, tool_calls
 
-        # OpenAI response object
         if hasattr(response, "choices"):
             choice = response.choices[0]
             msg = choice.message
@@ -364,12 +264,10 @@ class ProjectAgent:
                     )
             return content, tool_calls
 
-        # 纯字符串回复
         content = str(response)
         return content, tool_calls
 
     def _execute_tool_call(self, tool_call: dict) -> str:
-        """执行单个工具调用."""
         name = tool_call["name"]
         args = tool_call.get("arguments", {})
         logger.info(f"Executing tool: {name}({args})")
@@ -378,5 +276,4 @@ class ProjectAgent:
         return self.tool_executor.registry.call(name, args)
 
     def clear(self) -> None:
-        """清空对话历史."""
         self.context.clear_history()

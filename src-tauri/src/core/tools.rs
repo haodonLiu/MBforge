@@ -37,10 +37,20 @@ impl ToolInfo {
     }
 }
 
-/// Tool registry with name-based lookup.
-#[derive(Debug, Default)]
+/// Tool registry with name-based lookup and native function dispatch.
+#[derive(Debug)]
 pub struct ToolRegistry {
     tools: HashMap<String, ToolInfo>,
+    native_funcs: HashMap<String, Box<dyn Fn(&serde_json::Value) -> String>>,
+}
+
+impl Default for ToolRegistry {
+    fn default() -> Self {
+        Self {
+            tools: HashMap::new(),
+            native_funcs: HashMap::new(),
+        }
+    }
 }
 
 impl ToolRegistry {
@@ -52,8 +62,20 @@ impl ToolRegistry {
         self.tools.insert(info.name.clone(), info);
     }
 
+    /// Register a tool with a native Rust function (no sidecar needed).
+    pub fn register_with_fn(&mut self, info: ToolInfo, func: Box<dyn Fn(&serde_json::Value) -> String>) {
+        let name = info.name.clone();
+        self.tools.insert(name.clone(), info);
+        self.native_funcs.insert(name, func);
+    }
+
     pub fn get(&self, name: &str) -> Option<&ToolInfo> {
         self.tools.get(name)
+    }
+
+    /// Get native function for a tool (returns None if it's a sidecar tool).
+    pub fn get_native(&self, name: &str) -> Option<&Box<dyn Fn(&serde_json::Value) -> String>> {
+        self.native_funcs.get(name)
     }
 
     pub fn list(&self) -> Vec<&ToolInfo> {
@@ -79,6 +101,19 @@ mod tests {
         reg.register(ToolInfo::new("search", "Search KB", HashMap::new()));
         assert!(reg.get("search").is_some());
         assert_eq!(reg.list().len(), 1);
+    }
+
+    #[test]
+    fn test_native_registry() {
+        let mut reg = ToolRegistry::new();
+        reg.register_with_fn(
+            ToolInfo::new("echo", "Echo input", HashMap::new()),
+            Box::new(|args| args["text"].as_str().unwrap_or("empty").to_string()),
+        );
+        assert!(reg.get_native("echo").is_some());
+        let func = reg.get_native("echo").unwrap();
+        let result = func(&serde_json::json!({"text": "hello"}));
+        assert_eq!(result, "hello");
     }
 
     #[test]

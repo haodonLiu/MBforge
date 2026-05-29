@@ -13,6 +13,7 @@ from ...utils.logger import get_logger
 from ..agent_manager import (
     chat,
     chat_stream,
+    get_tool_executor,
     load_chat_history,
     save_chat_history,
 )
@@ -108,3 +109,28 @@ async def agent_chat_stream(request: Request) -> StreamingResponse:
             yield f"data: {json.dumps({'delta': '', 'finish_reason': 'error', 'error': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.post("/tools/call")
+async def call_tool(request: Request) -> dict:
+    """统一工具调用端点 — Rust Agent 通过 HTTP 调用 Python 工具."""
+    try:
+        body = await request.json()
+        tool_name = body.get("tool", "")
+        args = body.get("args", {})
+        project_root = body.get("project_root", "")
+
+        if not tool_name:
+            raise ValidationError("tool name is required")
+
+        executor = get_tool_executor(project_root)
+        if executor is None:
+            return {"success": False, "error": "Tool executor not initialized. Open a project first."}
+
+        result = executor.registry.call(tool_name, args)
+        return {"success": True, "result": result}
+    except ValidationError:
+        raise
+    except Exception as e:
+        logger.error(f"Tool call failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}

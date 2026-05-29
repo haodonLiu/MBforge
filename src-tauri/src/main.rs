@@ -4,6 +4,8 @@
 mod commands;
 mod core;
 
+use commands::agent::AgentState;
+
 use std::process::{Command, Stdio};
 use tauri::Manager;
 
@@ -12,6 +14,7 @@ struct BackendProcess(std::sync::Mutex<std::process::Child>);
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .manage(AgentState::new())
         .invoke_handler(tauri::generate_handler![
             commands::pdf::classify_pdf,
             commands::pdf::extract_text,
@@ -20,6 +23,12 @@ fn main() {
             commands::classifier::classify_document,
             commands::extractor::extract_smiles_candidates,
             commands::extractor::extract_activities,
+            commands::agent::agent_init,
+            commands::agent::agent_chat,
+            commands::agent::agent_chat_stream,
+            commands::agent::agent_switch_project,
+            commands::agent::agent_clear,
+            commands::agent::agent_get_history,
         ])
         .setup(|app| {
             let app_handle = app.handle();

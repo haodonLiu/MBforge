@@ -286,8 +286,10 @@ import {
   agentChat as tauriAgentChat,
   agentClear as tauriAgentClear,
   agentGetHistory as tauriAgentGetHistory,
+  postProcessPdf as tauriPostProcessPdf,
   type PdfParseResult,
   type ChatMessage,
+  type PostProcessResult,
 } from './tauri-bridge'
 
 export async function parsePdfRust(
@@ -298,6 +300,13 @@ export async function parsePdfRust(
 ): Promise<PdfParseResult> {
   if (!isTauriAvailable()) throw new Error('Not in Tauri')
   return tauriParsePdf(path, chunkSize, overlap, parser)
+}
+
+export async function postProcessPdfRust(
+  parseResult: PdfParseResult,
+): Promise<PostProcessResult> {
+  if (!isTauriAvailable()) throw new Error('Not in Tauri')
+  return tauriPostProcessPdf(parseResult)
 }
 
 export async function agentInitRust(projectRoot: string): Promise<void> {

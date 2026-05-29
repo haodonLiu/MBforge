@@ -140,3 +140,37 @@ export async function agentClear(projectRoot: string): Promise<void> {
 export async function agentGetHistory(projectRoot: string): Promise<ChatMessage[]> {
   return invoke<ChatMessage[]>('agent_get_history', { projectRoot })
 }
+
+// ---- post_process ----
+
+export interface ActivityRecord {
+  compound: string
+  activity_type: string
+  value: number
+  units: string
+  target: string | null
+  context: string
+}
+
+export interface DocumentMetadata {
+  title: string | null
+  authors: string[]
+  document_type: string
+  key_compounds: string[]
+  key_targets: string[]
+}
+
+export interface PostProcessResult {
+  summary: string
+  structured_content: string
+  validated_smiles: string[]
+  activity_records: ActivityRecord[]
+  key_findings: string[]
+  metadata: DocumentMetadata
+  model: string
+  tokens_used: number | null
+}
+
+export async function postProcessPdf(parseResult: PdfParseResult): Promise<PostProcessResult> {
+  return invoke<PostProcessResult>('post_process_pdf', { parseResult })
+}

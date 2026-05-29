@@ -34,6 +34,7 @@ fn main() {
             commands::agent::agent_clear,
             commands::agent::agent_get_history,
             parsers::pipeline::parse_pdf,
+            parsers::pipeline::post_process_pdf,
         ])
         .setup(|app| {
             let app_handle = app.handle();

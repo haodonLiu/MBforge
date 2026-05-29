@@ -30,7 +30,7 @@ pub struct LlamaParseResult {
 pub async fn parse_with_llamaparse(
     api_url: &str,
     pdf_bytes: Vec<u8>,
-    api_key: Option<&str>,
+    api_key: Option<String>,
 ) -> Result<LlamaParseResult, String> {
     let client = reqwest::Client::new();
     let url = format!("{}/v1/file/upload", api_url.trim_end_matches('/'));
@@ -82,7 +82,7 @@ pub async fn parse_with_llamaparse(
 pub fn parse_with_llamaparse_sync(
     api_url: &str,
     pdf_bytes: Vec<u8>,
-    api_key: Option<&str>,
+    api_key: Option<String>,
 ) -> Result<LlamaParseResult, String> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;

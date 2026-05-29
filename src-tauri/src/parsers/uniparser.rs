@@ -60,14 +60,14 @@ impl UniParserClient {
         let url = format!("{}/trigger-file-async", self.host);
         let token = format!("mbforge_{}", uuid::Uuid::new_v4());
 
-        let form = reqwest::multipart::Form::new()
+        let form = reqwest::blocking::multipart::Form::new()
             .text("token", token.clone())
             .text("sync", "true")
             .text("textual", "2")    // high quality
             .text("table", "2")      // high quality
             .text("equation", "2")   // high quality
             .text("molecule", "1")   // fast
-            .part("file", reqwest::multipart::Part::bytes(pdf_bytes)
+            .part("file", reqwest::blocking::multipart::Part::bytes(pdf_bytes)
                 .file_name(filename.to_string())
                 .mime_str("application/pdf")
                 .map_err(|e| format!("MIME error: {}", e))?);

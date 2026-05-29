@@ -1,10 +1,10 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::commands::classifier::{classify_document, DocumentClassification};
 use crate::commands::extractor::{extract_activities, extract_smiles_candidates, ActivityData};
 
 /// Unified PDF parsing result.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PdfParseResult {
     /// Extracted text/markdown content.
     pub content: String,

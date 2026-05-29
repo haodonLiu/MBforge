@@ -316,30 +316,31 @@ mod tests {
 
     #[test]
     fn test_parse_llm_response_json() {
-        let response = r#"{
-            "summary": "本文档描述了一种新型JAK抑制剂",
-            "structured_content": "## 引言\nJAK激酶在信号通路中...",
-            "validated_smiles": ["c1ccc2ncnc(N)c2c1", "CC(=O)Nc1ccc(O)cc1"],
-            "activity_records": [{
-                "compound": "Compound A",
-                "activity_type": "IC50",
-                "value": 5.2,
-                "units": "nM",
-                "target": "JAK1",
-                "context": "IC50 = 5.2 nM against JAK1"
-            }],
-            "key_findings": ["Compound A shows potent JAK1 inhibition"],
-            "metadata": {
-                "title": "Novel JAK Inhibitors",
-                "authors": ["Zhang et al."],
-                "document_type": "patent",
-                "key_compounds": ["Compound A"],
-                "key_targets": ["JAK1", "JAK2"]
-            }
-        }"#;
+        let response = "\
+{\
+\"summary\": \"test summary\",\
+\"structured_content\": \"test content\",\
+\"validated_smiles\": [\"C1CC1\", \"C(=O)O\"],\
+\"activity_records\": [{\
+\"compound\": \"test\",\
+\"activity_type\": \"IC50\",\
+\"value\": 5.2,\
+\"units\": \"nM\",\
+\"target\": \"JAK1\",\
+\"context\": \"IC50 = 5.2 nM\"\
+}],\
+\"key_findings\": [\"finding1\"],\
+\"metadata\": {\
+\"title\": \"test title\",\
+\"authors\": [\"author1\"],\
+\"document_type\": \"patent\",\
+\"key_compounds\": [\"C1CC1\"],\
+\"key_targets\": [\"JAK1\"]\
+}\
+}";
 
         let result = parse_llm_response(response, "test-model", Some(100)).unwrap();
-        assert_eq!(result.summary, "本文档描述了一种新型JAK抑制剂");
+        assert_eq!(result.summary, "test summary");
         assert_eq!(result.validated_smiles.len(), 2);
         assert_eq!(result.activity_records.len(), 1);
         assert_eq!(result.activity_records[0].value, 5.2);
@@ -351,19 +352,12 @@ mod tests {
 
     #[test]
     fn test_parse_llm_response_with_code_fences() {
-        let response = r#"```json
-{
-    "summary": "测试摘要",
-    "structured_content": "",
-    "validated_smiles": [],
-    "activity_records": [],
-    "key_findings": [],
-    "metadata": {"title": null, "authors": [], "document_type": "paper", "key_compounds": [], "key_targets": []}
-}
-```"#;
+        let response = "```json\n\
+{\"summary\": \"test\", \"structured_content\": \"\", \"validated_smiles\": [], \"activity_records\": [], \"key_findings\": [], \"metadata\": {\"title\": null, \"authors\": [], \"document_type\": \"paper\", \"key_compounds\": [], \"key_targets\": []}}\n\
+```";
 
         let result = parse_llm_response(response, "test", None).unwrap();
-        assert_eq!(result.summary, "测试摘要");
+        assert_eq!(result.summary, "test");
     }
 
     #[test]
@@ -379,7 +373,7 @@ mod tests {
                 needs_confirmation: false,
             },
             chunks: vec!["chunk1".into()],
-            smiles: vec!["CC(=O)".into()],
+            smiles: vec!["C1CC1".into()],
             activities: vec![],
             parser: "pdf_inspector".into(),
             page_count: 10,

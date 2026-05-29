@@ -38,10 +38,18 @@ impl ToolInfo {
 }
 
 /// Tool registry with name-based lookup and native function dispatch.
-#[derive(Debug)]
 pub struct ToolRegistry {
     tools: HashMap<String, ToolInfo>,
-    native_funcs: HashMap<String, Box<dyn Fn(&serde_json::Value) -> String>>,
+    native_funcs: HashMap<String, Box<dyn Fn(&serde_json::Value) -> String + Send + Sync>>,
+}
+
+impl std::fmt::Debug for ToolRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolRegistry")
+            .field("tools", &self.tools.keys().collect::<Vec<_>>())
+            .field("native_funcs_count", &self.native_funcs.len())
+            .finish()
+    }
 }
 
 impl Default for ToolRegistry {
@@ -63,7 +71,7 @@ impl ToolRegistry {
     }
 
     /// Register a tool with a native Rust function (no sidecar needed).
-    pub fn register_with_fn(&mut self, info: ToolInfo, func: Box<dyn Fn(&serde_json::Value) -> String>) {
+    pub fn register_with_fn(&mut self, info: ToolInfo, func: Box<dyn Fn(&serde_json::Value) -> String + Send + Sync>) {
         let name = info.name.clone();
         self.tools.insert(name.clone(), info);
         self.native_funcs.insert(name, func);
@@ -74,7 +82,7 @@ impl ToolRegistry {
     }
 
     /// Get native function for a tool (returns None if it's a sidecar tool).
-    pub fn get_native(&self, name: &str) -> Option<&Box<dyn Fn(&serde_json::Value) -> String>> {
+    pub fn get_native(&self, name: &str) -> Option<&Box<dyn Fn(&serde_json::Value) -> String + Send + Sync>> {
         self.native_funcs.get(name)
     }
 

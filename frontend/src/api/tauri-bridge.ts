@@ -88,3 +88,55 @@ export async function extractSmilesCandidates(text: string): Promise<string[]> {
 export async function extractActivities(text: string): Promise<ActivityData[]> {
   return invoke<ActivityData[]>('extract_activities', { text })
 }
+
+// ---- pipeline ----
+
+export interface PdfParseResult {
+  content: string
+  classification: DocumentClassification
+  chunks: string[]
+  smiles: string[]
+  activities: ActivityData[]
+  parser: string
+  page_count: number
+}
+
+export async function parsePdf(
+  path: string,
+  chunkSize?: number,
+  overlap?: number,
+  parser?: string,
+): Promise<PdfParseResult> {
+  return invoke<PdfParseResult>('parse_pdf', {
+    path,
+    chunkSize: chunkSize ?? 512,
+    overlap: overlap ?? 128,
+    parser: parser ?? 'pdf_inspector',
+  })
+}
+
+// ---- agent ----
+
+export interface ChatMessage {
+  role: string
+  content: string
+}
+
+export async function agentInit(projectRoot: string): Promise<void> {
+  await invoke('agent_init', { projectRoot })
+}
+
+export async function agentChat(
+  projectRoot: string,
+  messages: ChatMessage[],
+): Promise<string> {
+  return invoke<string>('agent_chat', { projectRoot, messages })
+}
+
+export async function agentClear(projectRoot: string): Promise<void> {
+  await invoke('agent_clear', { projectRoot })
+}
+
+export async function agentGetHistory(projectRoot: string): Promise<ChatMessage[]> {
+  return invoke<ChatMessage[]>('agent_get_history', { projectRoot })
+}

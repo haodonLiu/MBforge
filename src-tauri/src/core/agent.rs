@@ -154,7 +154,7 @@ impl Agent {
 
         let messages = self.context.build_messages(true, true);
         let mut rx = self.llm.chat_stream(&messages, None).await?;
-        let (mut tx, new_rx) = tokio::sync::mpsc::channel(64);
+        let (tx, new_rx) = tokio::sync::mpsc::channel(64);
         let mut full_content = String::new();
         while let Some(chunk) = rx.recv().await {
             full_content.push_str(&chunk.delta);

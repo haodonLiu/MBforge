@@ -11,7 +11,7 @@ const SKILLS_DIR: &str = "skills";
 /// - 独立于结构化记忆（memory.rs），更适合程序性知识
 /// - Markdown 格式便于用户直接编辑
 pub struct SkillsManager {
-    skills_dir: PathBuf,
+    pub(crate) skills_dir: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -127,8 +127,9 @@ impl SkillsManager {
             &assistant_msg[..assistant_msg.len().min(1000)]
         );
 
-        let rt = tokio::runtime::Handle::current();
+        let _rt = tokio::runtime::Handle::current();
         let skills_dir = self.skills_dir.clone();
+        let sidecar_url = sidecar_url.to_string();
         tokio::spawn(async move {
             let body = serde_json::json!({
                 "messages": [

@@ -23,10 +23,10 @@ pub struct DocumentEntry {
 impl DocumentEntry {
     fn detect_type(path: &Path) -> String {
         match path.extension().and_then(|e| e.to_str()) {
-            Some(".pdf") => "pdf",
-            Some(".md") => "markdown",
-            Some(ext) if SUPPORTED_MOL_EXTS.contains(&ext) => "molecule",
-            Some(ext) if [".csv", ".xlsx", ".json"].contains(&ext) => "data",
+            Some("pdf") => "pdf",
+            Some("md") => "markdown",
+            Some("sdf") | Some("mol") | Some("mol2") | Some("pdb") | Some("smi") => "molecule",
+            Some("csv") | Some("xlsx") | Some("json") => "data",
             _ => "text",
         }.to_string()
     }

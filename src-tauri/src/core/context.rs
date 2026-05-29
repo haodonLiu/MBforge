@@ -170,6 +170,11 @@ impl LayeredContext {
         self.system.token_count() + self.project.token_count() + self.history.token_count()
     }
 
+    /// Get history messages without mutating state (read-only).
+    pub fn get_history_messages(&self) -> Vec<Message> {
+        self.history.messages.clone()
+    }
+
     /// Build message list for LLM call.
     pub fn build_messages(&mut self, include_tools: bool, include_history: bool) -> Vec<Message> {
         let mut result = Vec::new();

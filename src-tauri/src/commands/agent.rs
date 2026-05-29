@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tauri::Emitter;
 
 use crate::core::agent::Agent;
 use crate::core::config::ModelConfig;
@@ -94,6 +95,6 @@ pub async fn agent_get_history(
 ) -> Result<Vec<Message>, String> {
     let guard = state.inner.read().await;
     let agent = guard.as_ref().ok_or("Agent not initialized")?;
-    let msgs = agent.context.build_messages(false, true);
+    let msgs = agent.context.get_history_messages();
     Ok(msgs)
 }

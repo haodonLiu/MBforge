@@ -1,0 +1,352 @@
+use std::collections::HashMap;
+use std::path::Path;
+
+use grep_matcher::Matcher;
+use grep_regex::RegexMatcherBuilder;
+use grep_searcher::sinks::UTF8;
+use grep_searcher::SearcherBuilder;
+use ignore::WalkBuilder;
+
+use super::tools::{ToolInfo, ToolRegistry};
+
+pub struct ToolExecutor {
+    pub sidecar_url: String,
+    pub project_root: String,
+    pub registry: ToolRegistry,
+}
+
+impl ToolExecutor {
+    pub fn new(sidecar_url: &str, project_root: &str) -> Self {
+        let mut registry = ToolRegistry::new();
+        Self::register_native_tools(&mut registry, project_root);
+        Self::register_sidecar_tools(&mut registry);
+        Self { sidecar_url: sidecar_url.to_string(), project_root: project_root.to_string(), registry }
+    }
+
+    /// 注册 Rust 原生工具（直接执行，不走 sidecar）
+    fn register_native_tools(registry: &mut ToolRegistry, project_root: &str) {
+        let root = project_root.to_string();
+
+        // grep_search — ripgrep 库实现
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("grep_search", "在项目文件中正则搜索内容（ripgrep 级性能）", {
+                    let mut p = HashMap::new();
+                    p.insert("pattern".into(), serde_json::json!({"type": "string"}));
+                    p.insert("path".into(), serde_json::json!({"type": "string"}));
+                    p.insert("max_results".into(), serde_json::json!({"type": "integer"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let pattern = args["pattern"].as_str().unwrap_or("");
+                    let search_path = args["path"].as_str().unwrap_or("");
+                    let max_results = args["max_results"].as_u64().unwrap_or(20) as usize;
+                    native_grep_search(&r, pattern, search_path, max_results)
+                }),
+            );
+        }
+
+        // list_files — ignore crate（.gitignore 感知）
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("list_files", "列出项目中的文件（遵循 .gitignore）", {
+                    let mut p = HashMap::new();
+                    p.insert("pattern".into(), serde_json::json!({"type": "string"}));
+                    p.insert("max_results".into(), serde_json::json!({"type": "integer"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let pattern = args["pattern"].as_str().unwrap_or("");
+                    let max_results = args["max_results"].as_u64().unwrap_or(50) as usize;
+                    native_list_files(&r, pattern, max_results)
+                }),
+            );
+        }
+
+        // read_file
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("read_file", "读取项目中指定文件的内容", {
+                    let mut p = HashMap::new();
+                    p.insert("path".into(), serde_json::json!({"type": "string"}));
+                    p.insert("max_lines".into(), serde_json::json!({"type": "integer"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let file_path = args["path"].as_str().unwrap_or("");
+                    let max_lines = args["max_lines"].as_u64().unwrap_or(200) as usize;
+                    native_read_file(&r, file_path, max_lines)
+                }),
+            );
+        }
+
+        // get_project_info
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("get_project_info", "获取项目基本信息（文件数、目录结构等）", HashMap::new()),
+                Box::new(move |_args| native_get_project_info(&r)),
+            );
+        }
+
+        // glob_search — globset crate
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("glob_search", "按 glob 模式搜索文件名", {
+                    let mut p = HashMap::new();
+                    p.insert("pattern".into(), serde_json::json!({"type": "string"}));
+                    p.insert("max_results".into(), serde_json::json!({"type": "integer"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let pattern = args["pattern"].as_str().unwrap_or("");
+                    let max_results = args["max_results"].as_u64().unwrap_or(50) as usize;
+                    native_glob_search(&r, pattern, max_results)
+                }),
+            );
+        }
+    }
+
+    /// 注册需要 Python sidecar 的工具
+    fn register_sidecar_tools(registry: &mut ToolRegistry) {
+        let tools: Vec<(&str, &str, &[(&str, &str)])> = vec![
+            ("search_knowledge_base", "搜索项目知识库，基于语义相似度检索相关文档内容", &[("query", "string"), ("top_k", "integer")]),
+            ("find_documents", "按关键词查找文档", &[("keyword", "string"), ("doc_type", "string"), ("top_k", "integer")]),
+            ("read_document_abstract", "读取文档的一句话摘要（L0）", &[("doc_id", "string")]),
+            ("read_document_overview", "读取文档的结构化概览（L1）", &[("doc_id", "string")]),
+            ("read_document_detail", "读取文档的完整内容块（L2）", &[("doc_id", "string"), ("max_chars", "integer")]),
+            ("list_molecules", "列出项目中的分子数据", &[("limit", "integer")]),
+            ("search_molecule_by_smiles", "按 SMILES 字符串搜索分子", &[("smiles", "string")]),
+            ("list_documents", "列出项目中的所有文档", &[("doc_type", "string")]),
+            ("get_document_summary", "获取文档的元数据摘要", &[("doc_id", "string")]),
+        ];
+        for (name, desc, params) in tools {
+            let properties: HashMap<String, serde_json::Value> = params.iter()
+                .map(|(k, v)| (k.to_string(), serde_json::json!({"type": v})))
+                .collect();
+            registry.register(ToolInfo::new(name, desc, properties));
+        }
+    }
+
+    pub async fn execute(&self, name: &str, args: &serde_json::Value) -> String {
+        // 先查 native 工具
+        if let Some(func) = self.registry.get_native(name) {
+            return func(args);
+        }
+        // 走 sidecar
+        self.execute_sidecar(name, args).await
+    }
+
+    async fn execute_sidecar(&self, name: &str, args: &serde_json::Value) -> String {
+        let url = format!("{}/api/v1/tools/call", self.sidecar_url.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "tool": name,
+            "args": args,
+            "project_root": self.project_root,
+        });
+        let client = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build() {
+                Ok(c) => c,
+                Err(e) => return format!("HTTP client error: {}", e),
+            };
+        let resp = match client.post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => return format!("Sidecar unavailable: {}", e),
+        };
+        let text = match resp.text().await {
+            Ok(t) => t,
+            Err(e) => return format!("Read error: {}", e),
+        };
+        match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(val) => {
+                if val["success"].as_bool().unwrap_or(false) {
+                    val["result"].as_str().unwrap_or("").to_string()
+                } else {
+                    val["error"].as_str().unwrap_or("Tool execution failed").to_string()
+                }
+            }
+            Err(_) => text,
+        }
+    }
+}
+
+// ===== Rust 原生工具实现（均使用第三方 crate）=====
+
+fn native_grep_search(root: &str, pattern: &str, search_path: &str, max_results: usize) -> String {
+    let matcher = match RegexMatcherBuilder::new().build(pattern) {
+        Ok(m) => m,
+        Err(e) => return format!("Invalid regex: {}", e),
+    };
+
+    let target = if search_path.is_empty() {
+        std::path::PathBuf::from(root)
+    } else {
+        std::path::PathBuf::from(root).join(search_path)
+    };
+
+    let mut results = Vec::new();
+    let mut searcher = SearcherBuilder::new().line_number(true).build();
+
+    let _ = searcher.search_path(&matcher, &target, UTF8(|line_number, line| {
+        if results.len() >= max_results {
+            return Ok(false);
+        }
+        results.push(format!("{}:{}:{}", target.display(), line_number, line.trim()));
+        Ok(true)
+    }));
+
+    if results.is_empty() {
+        "No matches found".to_string()
+    } else {
+        results.join("\n")
+    }
+}
+
+fn native_list_files(root: &str, pattern: &str, max_results: usize) -> String {
+    let walker = WalkBuilder::new(root).build();
+    let glob = if pattern.is_empty() {
+        None
+    } else {
+        match globset::Glob::new(pattern) {
+            Ok(g) => Some(g.compile_matcher()),
+            Err(e) => return format!("Invalid glob: {}", e),
+        }
+    };
+
+    let mut results = Vec::new();
+    for entry in walker.filter_map(|e| e.ok()) {
+        if results.len() >= max_results {
+            break;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            continue;
+        }
+        if let Some(ref g) = glob {
+            if !g.is_match(path) {
+                continue;
+            }
+        }
+        if let Ok(rel) = path.strip_prefix(root) {
+            results.push(rel.to_string_lossy().to_string());
+        }
+    }
+
+    if results.is_empty() {
+        "No files found".to_string()
+    } else {
+        format!("Found {} files:\n{}", results.len(), results.join("\n"))
+    }
+}
+
+fn native_read_file(root: &str, file_path: &str, max_lines: usize) -> String {
+    let path = std::path::PathBuf::from(root).join(file_path);
+    if !path.exists() {
+        return format!("File not found: {}", file_path);
+    }
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => return format!("Read error: {}", e),
+    };
+    let lines: Vec<&str> = content.lines().take(max_lines).collect();
+    let total = content.lines().count();
+    let truncated = if total > max_lines {
+        format!("\n... ({} more lines)", total - max_lines)
+    } else {
+        String::new()
+    };
+    format!("{}{}", lines.join("\n"), truncated)
+}
+
+fn native_get_project_info(root: &str) -> String {
+    let root_path = std::path::PathBuf::from(root);
+    let mut file_count = 0u64;
+    let mut dir_count = 0u64;
+    let mut total_size = 0u64;
+    let mut ext_counts: HashMap<String, u64> = HashMap::new();
+
+    let walker = WalkBuilder::new(root).build();
+    for entry in walker.filter_map(|e| e.ok()) {
+        if entry.path().is_dir() {
+            dir_count += 1;
+        } else {
+            file_count += 1;
+            if let Ok(meta) = entry.metadata() {
+                total_size += meta.len();
+            }
+            if let Some(ext) = entry.path().extension().and_then(|e| e.to_str()) {
+                *ext_counts.entry(ext.to_string()).or_default() += 1;
+            }
+        }
+    }
+
+    let mut lines = vec![
+        format!("Project: {}", root_path.file_name().unwrap_or_default().to_string_lossy()),
+        format!("Path: {}", root),
+        format!("Files: {}", file_count),
+        format!("Directories: {}", dir_count),
+        format!("Total size: {:.2} MB", total_size as f64 / 1_048_576.0),
+    ];
+
+    if !ext_counts.is_empty() {
+        let mut sorted: Vec<_> = ext_counts.into_iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        lines.push("File types:".to_string());
+        for (ext, count) in sorted.iter().take(10) {
+            lines.push(format!("  .{}: {}", ext, count));
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn native_glob_search(root: &str, pattern: &str, max_results: usize) -> String {
+    let glob = match globset::Glob::new(pattern) {
+        Ok(g) => g.compile_matcher(),
+        Err(e) => return format!("Invalid glob: {}", e),
+    };
+
+    let walker = WalkBuilder::new(root).build();
+    let mut results = Vec::new();
+    for entry in walker.filter_map(|e| e.ok()) {
+        if results.len() >= max_results {
+            break;
+        }
+        if entry.path().is_file() && glob.is_match(entry.path()) {
+            if let Ok(rel) = entry.path().strip_prefix(root) {
+                results.push(rel.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    if results.is_empty() {
+        "No files matched".to_string()
+    } else {
+        format!("Found {} files:\n{}", results.len(), results.join("\n"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tool_registration() {
+        let executor = ToolExecutor::new("http://localhost:18792", "/tmp/test");
+        // native + sidecar
+        let tools = executor.registry.list();
+        assert!(tools.len() >= 14);
+        assert!(executor.registry.get("grep_search").is_some());
+        assert!(executor.registry.get("search_knowledge_base").is_some());
+    }
+}

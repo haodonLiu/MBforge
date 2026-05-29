@@ -5,7 +5,6 @@ from __future__ import annotations
 __all__ = [
     "Project",
     "DocumentEntry",
-    "DocumentProcessor",
     "ExtractedContent",
     "KnowledgeBase",
     "MoleculeDatabase",
@@ -14,5 +13,4 @@ __all__ = [
     "DocumentSummary",
     "SummaryManager",
     "DocumentSummarizer",
-    "AppContext",
 ]

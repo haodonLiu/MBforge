@@ -56,15 +56,20 @@ async def health_check() -> dict:
     # UniParser 健康检查（通过环境变量配置）
     try:
         import os
-        from mbforge.parsers.uniparser.uniparser_config import ParserConfig
-        from mbforge.parsers.uniparser.uniparser_client import ParserClient
+        import requests
 
         host = os.environ.get("UNIPARSER_HOST", "")
         api_key = os.environ.get("UNIPARSER_API_KEY", "")
         if host and api_key:
-            client = ParserClient(ParserConfig(host=host, api_key=api_key))
-            client.health()
-            _model_status["uniparser"] = "ready"
+            resp = requests.get(
+                f"{host.rstrip('/')}/health",
+                headers={"X-API-Key": api_key},
+                timeout=10,
+            )
+            if resp.ok:
+                _model_status["uniparser"] = "ready"
+            else:
+                _model_status["uniparser"] = "error"
         else:
             _model_status["uniparser"] = "error"
             logger.debug("UniParser not configured (missing env vars)")

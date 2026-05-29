@@ -42,7 +42,6 @@ SUPPORTED_MOL_EXTS = {".sdf", ".mol", ".mol2", ".pdb", ".smi"}
 
 # ChromaDB 集合名
 KB_COLLECTION_DOCS = "documents"
-KB_COLLECTION_MOLECULES = "molecules"
 
 # PDF 解析参数
 PDF_CHUNK_SIZE = 512
@@ -61,8 +60,6 @@ MEMORY_DIR = "memory"
 TRAJECTORY_DIR = "trajectory"
 TRAJECTORY_FILE = "trajectory.json"
 SUMMARY_DIR = "summaries"
-TODO_FILE = "todo.json"
-OUTPUT_DIR = "output"
 SETTINGS_FILE = "settings.json"
 INDEX_FILE = "index.json"
 
@@ -77,12 +74,6 @@ PROVIDER_LOCAL = "local"
 
 # OCR Provider
 OCR_PROVIDER_PYMUPDF = "pymupdf"
-OCR_PROVIDER_GLM_OCR_MAAS = "glm_ocr_maas"
-OCR_PROVIDER_GLM_OCR_LOCAL = "glm_ocr_local"
-OCR_PROVIDER_GLM_OCR_OLLAMA = "glm_ocr_ollama"
-
-# ChromaDB URI scheme (trajectory tracking)
-VIKING_SCHEME = "viking://"
 
 # HuggingFace 镜像
 DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
@@ -94,13 +85,3 @@ def ensure_hf_mirror():
 
     if "HF_ENDPOINT" not in os.environ:
         os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
-
-
-# 文档元数据键
-META_SOURCE = "source"
-META_FILENAME = "filename"
-META_PAGES = "pages"
-META_DOC_ID = "doc_id"
-META_SECTION = "section"
-META_MOLECULES = "molecules"
-META_KEYWORDS = "keywords"

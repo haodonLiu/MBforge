@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::config::ModelConfig;
 use super::context::Message;
-use super::constants::{PROVIDER_ANTHROPIC, PROVIDER_OPENAI_COMPATIBLE};
+use super::constants::PROVIDER_ANTHROPIC;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmResponse {

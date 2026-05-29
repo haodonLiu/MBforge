@@ -1,5 +1,4 @@
 use serde::Serialize;
-use std::path::PathBuf;
 
 use crate::commands::classifier::{classify_document, DocumentClassification};
 use crate::commands::extractor::{extract_activities, extract_smiles_candidates, ActivityData};

@@ -5,9 +5,11 @@ from __future__ import annotations
 import base64
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
+import requests
 from fastapi import APIRouter, Request
 
 from ...utils.exceptions import ConfigError, ValidationError
@@ -18,22 +20,55 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
-# UniParser 客户端（延迟初始化）
+class _UniParserClient:
+    """轻量级 UniParser HTTP 客户端（纯 requests，无外部依赖）."""
+
+    def __init__(self, host: str, api_key: str):
+        self.host = host.rstrip("/")
+        self.headers = {"X-API-Key": api_key}
+
+    def parse_pdf(self, pdf_path: str, sync: bool = True, **kwargs) -> dict:
+        token = f"mbforge_{uuid.uuid4().hex[:16]}"
+        with open(pdf_path, "rb") as f:
+            files = {"file": (Path(pdf_path).name, f, "application/pdf")}
+            data = {"token": token, "sync": str(sync).lower()}
+            for k, v in kwargs.items():
+                data[k] = str(v)
+            resp = requests.post(
+                f"{self.host}/trigger-file-async",
+                headers=self.headers, data=data, files=files, timeout=300,
+            )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_formatted(self, token: str, content: bool = True, **fmt_kwargs) -> dict:
+        payload = {"token": token, "content": content}
+        payload.update(fmt_kwargs)
+        resp = requests.post(
+            f"{self.host}/get-formatted",
+            headers={**self.headers, "Content-Type": "application/json"},
+            json=payload, timeout=120,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def health(self) -> dict:
+        resp = requests.get(f"{self.host}/health", headers=self.headers, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
+
 _uniparser_client: Any = None
 
 
-def _get_client() -> Any:
+def _get_client() -> _UniParserClient:
     global _uniparser_client
     if _uniparser_client is None:
-        from mbforge.parsers.uniparser.uniparser_client import ParserClient
-        from mbforge.parsers.uniparser.uniparser_config import ParserConfig
-
         host = os.environ.get("UNIPARSER_HOST", "")
         api_key = os.environ.get("UNIPARSER_API_KEY", "")
         if not host or not api_key:
             raise ConfigError("UNIPARSER_HOST or UNIPARSER_API_KEY not set")
-        config = ParserConfig(host=host, api_key=api_key)
-        _uniparser_client = ParserClient(config)
+        _uniparser_client = _UniParserClient(host, api_key)
     return _uniparser_client
 
 

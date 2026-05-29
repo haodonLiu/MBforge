@@ -1,7 +1,5 @@
 use std::collections::HashMap;
-use std::path::Path;
 
-use grep_matcher::Matcher;
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::sinks::UTF8;
 use grep_searcher::SearcherBuilder;

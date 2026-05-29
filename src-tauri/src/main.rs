@@ -3,6 +3,7 @@
 
 mod commands;
 mod core;
+mod parsers;
 
 use commands::agent::AgentState;
 
@@ -29,6 +30,7 @@ fn main() {
             commands::agent::agent_switch_project,
             commands::agent::agent_clear,
             commands::agent::agent_get_history,
+            parsers::pipeline::parse_pdf,
         ])
         .setup(|app| {
             let app_handle = app.handle();

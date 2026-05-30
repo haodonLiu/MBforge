@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 from mbforge.core.knowledge_base import KnowledgeBase
-from mbforge.core.document import ExtractedContent
+from mbforge.core.types import ExtractedContent
 
 
 class FakeEmbedder:

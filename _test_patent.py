@@ -1,7 +1,7 @@
 import sys, os
 sys.path.insert(0, 'src')
 
-from mbforge.core.document import DocumentProcessor, ExtractedContent
+from mbforge.core.types import ExtractedContent
 from mbforge.core.document_tree import extract_headings, DocumentTreeIndex, SectionChunk
 
 pdf_path = r'C:\Users\10954\Desktop\X2\US20260027089A1.PDF'

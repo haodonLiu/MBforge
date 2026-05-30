@@ -211,47 +211,12 @@ def _cmd_init(args) -> int:
 
 
 def _cmd_index(args) -> int:
-    setup_logging()
-    from .core.project import Project
-    from .core.knowledge_base import KnowledgeBase
-    from .core.mol_database import MoleculeDatabase
-    from .models import create_embedder_from_config, create_llm_from_config
-    from .parsers.pdf_parser import PDFParserPipeline
-    from .utils.config import load_global_config
+    """索引命令 — 已迁移到 Rust Tauri pipeline.
 
-    root = Path(args.path).resolve()
-    project = Project.open(root)
-    if project is None:
-        logger.error(f"{root} 不是有效的 MBForge 项目")
-        return 1
-
-    config = load_global_config()
-    embedder = create_embedder_from_config(config.embed)
-    llm = create_llm_from_config(config.llm)
-    kb = KnowledgeBase(project.root, embedder=embedder)
-    mol_db = MoleculeDatabase(project.root)
-
-    pipeline = PDFParserPipeline(
-        llm=llm,
-        embedder=embedder,
-        knowledge_base=kb,
-        mol_db=mol_db,
-    )
-
-    entries = project.scan_files()
-    to_index = [e for e in entries if not e.indexed]
-    logger.info(f"发现 {len(entries)} 个文件，待索引 {len(to_index)} 个")
-
-    for entry in to_index:
-        if entry.doc_type == "pdf":
-            logger.info(f"索引: {entry.path.name}")
-            try:
-                pipeline.parse(entry.path, doc_id=entry.doc_id)
-                entry.indexed = True
-            except Exception as e:
-                logger.error(f"索引失败: {entry.path.name} - {e}")
-
-    logger.info("索引完成")
+    使用前端的"索引项目"按钮，或通过 Tauri command 调用。
+    """
+    print("PDF 索引已迁移到 Rust pipeline。")
+    print("请使用前端的'索引项目'按钮，或通过 Tauri command 调用。")
     return 0
 
 

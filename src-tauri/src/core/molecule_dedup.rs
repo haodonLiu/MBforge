@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use super::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationType};
 
@@ -17,22 +18,18 @@ pub struct DedupResult {
     pub relations_added: i64,
 }
 
-pub fn find_exact_smiles_match(
-    smiles: &str,
-    _db: &MoleculeRelationDb,
-    existing_mols: &[(String, String)],
-) -> Option<(String, f64)> {
-    let normalized = canonicalize_smiles(smiles);
-    for (mol_id, existing_smiles) in existing_mols {
-        if canonicalize_smiles(existing_smiles) == normalized {
-            return Some((mol_id.clone(), 1.0));
+pub fn canonicalize_smiles(smiles: &str) -> String {
+    let trimmed = smiles.trim().to_string();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    #[cfg(feature = "smiles-canonical")]
+    {
+        if let Ok(canon) = smiles_canonical::canonicalize(&trimmed) {
+            return canon;
         }
     }
-    None
-}
-
-pub fn canonicalize_smiles(smiles: &str) -> String {
-    smiles.trim().to_string()
+    trimmed
 }
 
 pub fn call_tanimoto_sidecar(
@@ -65,22 +62,48 @@ pub fn run_dedup_batch(
     _sidecar_url: &str,
     same_as_threshold: f64,
 ) -> DedupResult {
+    let existing = load_existing_molecules(db);
+    let mut seen_smiles: HashSet<String> = existing
+        .iter()
+        .map(|(_, smiles)| canonicalize_smiles(smiles))
+        .collect();
+
     let mut duplicates = Vec::new();
     let mut new_mol_ids = Vec::new();
     let mut relations_added = 0i64;
 
     for (mol_id, smiles) in new_mols {
-        let existing: Vec<(String, String)> = Vec::new();
-        if let Some((match_id, conf)) =
-            find_exact_smiles_match(smiles, db, &existing)
+        let normalized = canonicalize_smiles(smiles);
+        if normalized.is_empty() {
+            new_mol_ids.push(mol_id.clone());
+            continue;
+        }
+
+        if let Some((match_id, _)) = existing
+            .iter()
+            .find(|(_, existing_smiles)| canonicalize_smiles(existing_smiles).eq(&normalized))
         {
             duplicates.push(DedupPair {
                 mol_a_id: mol_id.clone(),
-                mol_b_id: match_id,
-                confidence: conf,
+                mol_b_id: match_id.clone(),
+                confidence: 1.0,
                 reason: "exact SMILES match".to_string(),
             });
+        } else if seen_smiles.contains(&normalized) {
+            if let Some((match_id, _)) = new_mols
+                .iter()
+                .filter(|(id, _)| id.as_str() != mol_id.as_str())
+                .find(|(_, s)| canonicalize_smiles(s).eq(&normalized))
+            {
+                duplicates.push(DedupPair {
+                    mol_a_id: mol_id.clone(),
+                    mol_b_id: match_id.clone(),
+                    confidence: 1.0,
+                    reason: "exact SMILES match (within batch)".to_string(),
+                });
+            }
         } else {
+            seen_smiles.insert(normalized);
             new_mol_ids.push(mol_id.clone());
         }
     }
@@ -109,6 +132,30 @@ pub fn run_dedup_batch(
         new_mols: new_mol_ids,
         relations_added,
     }
+}
+
+fn load_existing_molecules(db: &MoleculeRelationDb) -> Vec<(String, String)> {
+    let conn = db.relations_conn();
+    let mut stmt = match conn.prepare("SELECT mol_id, smiles FROM molecules") {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    let mut result = Vec::new();
+    let mut rows = match stmt.query([]) {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    loop {
+        match rows.next() {
+            Ok(Some(row)) => {
+                let mol_id: String = row.get(0).unwrap_or_default();
+                let smiles: String = row.get(1).unwrap_or_default();
+                result.push((mol_id, smiles));
+            }
+            _ => break,
+        }
+    }
+    result
 }
 
 pub fn add_similarity_relation(

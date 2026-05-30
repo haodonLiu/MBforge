@@ -62,7 +62,6 @@ pub struct RelationStats {
 pub struct MoleculeRelationDb {
     db_path: PathBuf,
     conn: Mutex<Connection>,
-    pub molecules_path: PathBuf,
 }
 
 impl MoleculeRelationDb {
@@ -75,12 +74,9 @@ impl MoleculeRelationDb {
         let conn = Connection::open(&db_path)
             .map_err(|e| format!("Failed to open db {}: {}", db_path.display(), e))?;
 
-        let molecules_path = db_dir.join(MOL_DB_FILENAME);
-
         let db = Self {
             db_path,
             conn: Mutex::new(conn),
-            molecules_path,
         };
         db.init_schema()?;
         Ok(db)
@@ -106,6 +102,24 @@ impl MoleculeRelationDb {
             CREATE INDEX IF NOT EXISTS idx_relations_type ON {}(relation_type);
             CREATE INDEX IF NOT EXISTS idx_relations_a ON {}(mol_a_id);
             CREATE INDEX IF NOT EXISTS idx_relations_b ON {}(mol_b_id);
+
+            CREATE TABLE IF NOT EXISTS molecules (
+                mol_id TEXT PRIMARY KEY,
+                smiles TEXT NOT NULL,
+                name TEXT,
+                source_doc TEXT,
+                activity REAL,
+                activity_type TEXT,
+                units TEXT DEFAULT 'nM',
+                source_type TEXT DEFAULT 'text',
+                status TEXT DEFAULT 'confirmed',
+                properties TEXT,
+                tags TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_mol_smiles ON molecules(smiles);
+            CREATE INDEX IF NOT EXISTS idx_mol_activity ON molecules(activity);
             "#,
             MOL_RELATIONS_TABLE,
             MOL_RELATIONS_TABLE,
@@ -190,24 +204,6 @@ impl MoleculeRelationDb {
         Ok(results)
     }
 
-    pub fn find_by_type(&self, relation_type: &RelationType) -> Result<Vec<MoleculeRelation>, String> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn
-            .prepare(&format!(
-                "SELECT * FROM molecule_relations WHERE relation_type = ? ORDER BY created_at DESC"
-            ))
-            .map_err(|e| format!("Prepare failed: {}", e))?;
-        let mut rows = stmt
-            .query(params![relation_type.as_str()])
-            .map_err(|e| format!("Query failed: {}", e))?;
-
-        let mut results = Vec::new();
-        while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
-            results.push(self.row_to_relation(row)?);
-        }
-        Ok(results)
-    }
-
     pub fn find_similar(
         &self,
         mol_id: &str,
@@ -258,34 +254,12 @@ impl MoleculeRelationDb {
         Ok(results)
     }
 
-    pub fn get_cluster_members(&self, cluster_id: &str) -> Result<Vec<String>, String> {
-        let conn = self.conn.lock().unwrap();
-        let mut stmt = conn
-            .prepare(
-                "SELECT mol_a_id FROM molecule_relations
-                 WHERE relation_type = 'cluster'
-                   AND metadata LIKE ?1",
-            )
-            .map_err(|e| format!("Prepare failed: {}", e))?;
-        let pattern = format!("%\"cluster_id\":\"{} \"%", cluster_id);
-        let mut rows = stmt
-            .query(params![&pattern])
-            .map_err(|e| format!("Query failed: {}", e))?;
-
-        let mut results = Vec::new();
-        while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
-            let mol_id: String = row.get(1).unwrap_or_default();
-            results.push(mol_id);
-        }
-        Ok(results)
-    }
-
     pub fn relations_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().unwrap()
     }
 
     pub fn molecules_conn(&self) -> Result<Connection, String> {
-        Connection::open(&self.molecules_path)
+        Connection::open(&self.db_path)
             .map_err(|e| format!("Failed to open molecules db: {}", e))
     }
 

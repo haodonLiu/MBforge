@@ -295,31 +295,20 @@ class MolScribeRecognizer:
         )
 
     def _load_molscribe(self) -> None:
-        """加载官方 molscribe 后端."""
+        """加载 MolScribe 推理后端（MBForge 内置精简版）."""
         try:
-            # molscribe 的典型初始化：
-            # model = molscribe.MolScribe.from_pretrained(model_path)
-            # 但 API 可能因版本而异，这里做通用封装
-            if self.model_path is None:
-                model_dir = default_model_dir() / "molscribe"
-                self.model_path = model_dir
-            else:
-                self.model_path = Path(self.model_path)
+            from .molscribe_inference import MolScribe as MolScribeModel
+            from .molscribe_inference.download import ensure_molscribe_model
 
-            logger.info(
-                "尝试加载 MolScribe (molscribe 后端)：%s", self.model_path
-            )
-            # 延迟加载，避免 ImportError 在类定义时触发
-            import molscribe as ms
+            # 自动下载权重（如果尚未下载）
+            ckpt_path = ensure_molscribe_model()
+            logger.info("加载 MolScribe 模型：%s", ckpt_path)
 
-            self._model = ms.MolScribe.from_pretrained(str(self.model_path))
-            if hasattr(self._model, "to") and self.device != "auto":
-
-                dev = "cuda" if "cuda" in self.device else self.device
-                self._model = self._model.to(dev)
-            logger.info("MolScribe (molscribe 后端) 加载成功")
+            device = None if self.device == "auto" else self.device
+            self._model = MolScribeModel(ckpt_path, device=device)
+            logger.info("MolScribe 加载成功")
         except Exception as exc:
-            logger.warning("MolScribe molscribe 后端加载失败：%s", exc)
+            logger.warning("MolScribe 加载失败：%s", exc)
             self._model = None
 
     def _load_transformers(self) -> None:

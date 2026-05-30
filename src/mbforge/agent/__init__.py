@@ -1,18 +1,18 @@
-"""MBForge Agent 框架.
+"""MBForge 工具注册与执行框架.
 
-轻量级 LLM Agent，不依赖 LangChain：
-- 分层上下文管理
-- Function Calling 工具调用
-- ReAct 推理循环
+保留模块：ToolExecutor（被 Rust Agent 用作 sidecar 工具桥接）。
+已移除：ProjectAgent, LayeredContext（迁移到 Rust 端）。
 """
 
 from __future__ import annotations
 
+from .tools import ToolInfo, ToolMixin, ToolRegistry, tool
+from .executor import ToolExecutor
+
 __all__ = [
-    "ProjectAgent",
-    "ArchiveAgent",
-    "LayeredContext",
     "ToolExecutor",
     "ToolRegistry",
+    "ToolInfo",
     "tool",
+    "ToolMixin",
 ]

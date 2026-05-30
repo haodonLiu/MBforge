@@ -27,7 +27,7 @@ torchaudio = { index = "pytorch-cu128" }
 
 [project]
 name = "mbforge"
-version = "0.1.0"
+version = "0.2.0"
 description = "MBForge - Molecular Knowledge Base & AI Workbench"
 requires-python = ">=3.11"
 readme = "README.md"

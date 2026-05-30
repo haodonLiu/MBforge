@@ -69,7 +69,10 @@ pub fn parse_pdf(
     let parser_choice = parser.unwrap_or_else(|| "pdf_inspector".to_string());
 
     // Stage 1: Text extraction
-    let (content, page_count, images): (String, usize, Vec<ImageRef>) = match parser_choice.as_str() {
+    // TODO-AUDIT: the `images` field is destructured from the parser result but then
+    // hardcoded to vec![] on line 130 — the actual images are silently discarded.
+    // The images variable below is also unused (bound but never consumed).
+    let (content, page_count, _images): (String, usize, Vec<ImageRef>) = match parser_choice.as_str() {
         "uniparser" => {
             let host = std::env::var("UNIPARSER_HOST")
                 .unwrap_or_else(|_| "https://uniparser.dp.tech/".to_string());
@@ -260,6 +263,8 @@ pub async fn process_document(
 
     // ===== Stage 2: 逐 section 处理 =====
     let mut section_results: Vec<StructuredData> = Vec::new();
+    // TODO-AUDIT: total_compounds and total_activities are incremented per section
+    // but never used afterward — they accumulate but are discarded before return.
     let mut total_compounds = 0usize;
     let mut total_activities = 0usize;
 

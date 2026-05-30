@@ -57,6 +57,9 @@ class ToolExecutor:
         mixin.register_from_function(self.registry, self.read_document_abstract)
         mixin.register_from_function(self.registry, self.read_document_overview)
         mixin.register_from_function(self.registry, self.read_document_detail)
+        # 文档结构树导航（参考 PageIndex）
+        mixin.register_from_function(self.registry, self.get_doc_structure)
+        mixin.register_from_function(self.registry, self.get_doc_pages)
         # 分子数据库
         mixin.register_from_function(self.registry, self.list_molecules)
         mixin.register_from_function(self.registry, self.search_molecule_by_smiles)
@@ -388,6 +391,62 @@ class ToolExecutor:
                 f"分子总数: {mstats['total']}（含活性数据: {mstats['with_activity']}）"
             )
         return "\n".join(stats)
+
+    @tool(
+        "获取文档结构树",
+        {
+            "doc_id": {
+                "type": "string",
+                "description": "文档ID",
+            },
+        },
+    )
+    def get_doc_structure(self, doc_id: str) -> str:
+        """获取文档的章节树结构（不含正文），供 LLM 导航翻书用（参考 PageIndex）."""
+        if self.kb is None:
+            return "错误：知识库未初始化"
+        try:
+            import json as _json
+            tree = self.kb._tree_index.get_structure(doc_id)
+            if tree is None:
+                return f"文档 {doc_id} 暂无结构树"
+            meta = self.kb._tree_index.get_doc_metadata(doc_id)
+            return (
+                f"文档 {doc_id} 结构（共 {meta.get('section_count', 0)} 个顶层章节, "
+                f"{meta.get('page_count', '?')} 页）:\n"
+                + _json.dumps(tree, ensure_ascii=False, indent=2)
+            )
+        except Exception as e:
+            return f"获取结构失败: {e}"
+
+    @tool(
+        "按页码获取文档内容",
+        {
+            "doc_id": {
+                "type": "string",
+                "description": "文档ID",
+            },
+            "pages": {
+                "type": "string",
+                "description": "页码，支持格式: '5-7', '3,8', '12'",
+            },
+        },
+    )
+    def get_doc_pages(self, doc_id: str, pages: str) -> str:
+        """按页码获取文档原文内容，让 LLM 像翻书一样精确读取（参考 PageIndex retrieve.py）."""
+        if self.kb is None:
+            return "错误：知识库未初始化"
+        try:
+            results = self.kb._tree_index.get_pages(doc_id, pages)
+            if not results:
+                return f"文档 {doc_id} 未找到指定页码内容（页码格式: '5-7', '3,8'）"
+            lines = []
+            for r in results:
+                content = r["content"].replace("\n", " ")[:800]
+                lines.append(f"--- 第 {r['page']} 页 ---\n{content}")
+            return "\n\n".join(lines)
+        except Exception as e:
+            return f"读取页内容失败: {e}"
 
     @tool(
         "流式搜索项目知识库",

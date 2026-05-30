@@ -33,4 +33,5 @@ globset = "0.4"
 zip = "0.6"
 dotenvy = "0.15"
 base64 = "0.22"
+lopdf = "0.34"
 rusqlite = { version = "0.32", features = ["bundled"] }

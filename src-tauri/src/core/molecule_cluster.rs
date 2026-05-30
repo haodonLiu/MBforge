@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use super::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+// TODO-AUDIT: ClusterAssignment is dead code — defined with #[allow(dead_code)] but
+// never used anywhere in the codebase. Consider removing entirely.
 #[allow(dead_code)]
 pub struct ClusterAssignment {
     pub mol_id: String,

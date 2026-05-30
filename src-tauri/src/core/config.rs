@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::constants::{global_config_dir, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL};
+use super::constants::{global_config_dir, DEFAULT_EMBED_BASE_URL, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
@@ -42,7 +42,7 @@ impl Default for EmbedConfig {
         Self {
             provider: "qwen3".into(),
             model_name: DEFAULT_EMBED_MODEL.into(),
-            base_url: String::new(),
+            base_url: DEFAULT_EMBED_BASE_URL.into(),
             api_key: String::new(),
             device: "cpu".into(),
         }

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use super::headings::Heading;
+use super::sections::SectionChunk;
+
 /// === A/B 共享的数据结构 ===
 
 /// 文档处理上下文 — 整个 process 期间传递的状态
@@ -13,6 +16,9 @@ pub struct DocProcessingContext {
     pub page_count: usize,
     pub doc_type: Option<String>,
     pub user_request: String,
+    pub headings: Vec<Heading>,
+    pub sections: Vec<SectionChunk>,
+    pub page_texts: Vec<String>,
 }
 
 impl DocProcessingContext {
@@ -25,6 +31,9 @@ impl DocProcessingContext {
             page_count: 0,
             doc_type: None,
             user_request: user_request.to_string(),
+            headings: Vec::new(),
+            sections: Vec::new(),
+            page_texts: Vec::new(),
         }
     }
 }
@@ -36,7 +45,7 @@ pub struct ImageRef {
     pub page: usize,
     pub region: Option<String>,
     pub description: Option<String>,
-    pub smiles: Option<String>,
+    pub esmiles: Option<String>,
 }
 
 /// 文档结构分析结果（Stage 1 输出）

@@ -47,6 +47,7 @@ pub const META_DOC_ID: &str = "doc_id";
 // Sidecar
 pub const DEFAULT_SIDECAR_PORT: u16 = 18792;
 pub const DEFAULT_SIDECAR_URL: &str = "http://127.0.0.1:18792";
+pub const DEFAULT_EMBED_BASE_URL: &str = "http://127.0.0.1:18792";
 
 // Agent
 pub const AGENT_MAX_ITERATIONS: usize = 5;

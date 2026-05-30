@@ -7,8 +7,9 @@
 /// - 策略 D: 数字编号 + 大写开头（"1. Technical Field"）
 
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Heading {
     pub level: usize,
     pub title: String,

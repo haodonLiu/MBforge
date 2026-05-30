@@ -12,14 +12,64 @@ pub struct ToolExecutor {
     pub sidecar_url: String,
     pub project_root: String,
     pub registry: ToolRegistry,
+    // 可选依赖（Agent 工具 Native 化后注入）
+    pub kb: Option<super::knowledge_base::KnowledgeBase>,
+    pub tree_index: Option<super::document_tree::DocumentTreeIndex>,
+    pub summary: Option<super::summary::SummaryManager>,
 }
 
 impl ToolExecutor {
+    /// 原有构造函数（保持向后兼容，Agent::new() 调用这个）
     pub fn new(sidecar_url: &str, project_root: &str) -> Self {
         let mut registry = ToolRegistry::new();
         Self::register_native_tools(&mut registry, project_root);
         Self::register_sidecar_tools(&mut registry);
-        Self { sidecar_url: sidecar_url.to_string(), project_root: project_root.to_string(), registry }
+        Self {
+            sidecar_url: sidecar_url.to_string(),
+            project_root: project_root.to_string(),
+            registry,
+            kb: None,
+            tree_index: None,
+            summary: None,
+        }
+    }
+
+    /// 带完整依赖的构造函数（index_project_rust 调用这个）
+    pub fn new_with_deps(
+        sidecar_url: &str,
+        project_root: &str,
+        kb: super::knowledge_base::KnowledgeBase,
+        tree_index: super::document_tree::DocumentTreeIndex,
+        summary: super::summary::SummaryManager,
+    ) -> Self {
+        let mut executor = Self::new(sidecar_url, project_root);
+        executor.kb = Some(kb);
+        executor.tree_index = Some(tree_index);
+        executor.summary = Some(summary);
+        executor.register_native_kb_tools();
+        executor
+    }
+
+    /// 注入依赖（Agent 初始化后调用）
+    pub fn set_kb(&mut self, kb: super::knowledge_base::KnowledgeBase) {
+        self.kb = Some(kb);
+        self.register_native_kb_tools();
+    }
+    pub fn set_tree_index(&mut self, tree: super::document_tree::DocumentTreeIndex) {
+        self.tree_index = Some(tree);
+    }
+    pub fn set_summary(&mut self, summary: super::summary::SummaryManager) {
+        self.summary = Some(summary);
+    }
+
+    /// 注册需要 KB/tree/summary 的 native 工具
+    fn register_native_kb_tools(&mut self) {
+        // search_knowledge_base — 如果 KB 可用则注册 native 版本
+        if let Some(ref kb) = self.kb {
+            // KB 搜索工具会在 KB 可用时覆盖 sidecar 版本
+            // 但需要 async，暂时保留 sidecar
+            let _ = kb; // 占位，后续 Agent C2 实现
+        }
     }
 
     /// 注册 Rust 原生工具（直接执行，不走 sidecar）
@@ -129,12 +179,72 @@ impl ToolExecutor {
                 serde_json::to_string(&result).unwrap_or_else(|e| format!("Serialization error: {}", e))
             }),
         );
+
+        // search_knowledge_base — Rust Native（替代 Sidecar）
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("search_knowledge_base", "搜索项目知识库，基于语义相似度检索相关文档内容", {
+                    let mut p = HashMap::new();
+                    p.insert("query".into(), serde_json::json!({"type": "string"}));
+                    p.insert("top_k".into(), serde_json::json!({"type": "integer"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let query = args["query"].as_str().unwrap_or("");
+                    let top_k = args["top_k"].as_u64().unwrap_or(5) as usize;
+                    match native_search_knowledge_base(&r, query, top_k) {
+                        Ok(results) => serde_json::to_string(&results).unwrap_or_else(|e| format!("Serialize error: {}", e)),
+                        Err(e) => format!("Search error: {}", e),
+                    }
+                }),
+            );
+        }
+
+        // get_document_structure — Rust Native
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("get_document_structure", "获取文档的章节结构树（heading 层级）", {
+                    let mut p = HashMap::new();
+                    p.insert("doc_id".into(), serde_json::json!({"type": "string"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let doc_id = args["doc_id"].as_str().unwrap_or("");
+                    match native_get_document_structure(&r, doc_id) {
+                        Ok(tree) => serde_json::to_string(&tree).unwrap_or_else(|e| format!("Serialize error: {}", e)),
+                        Err(e) => format!("Structure error: {}", e),
+                    }
+                }),
+            );
+        }
+
+        // get_document_pages — Rust Native
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("get_document_pages", "按页码获取文档的原始文本内容", {
+                    let mut p = HashMap::new();
+                    p.insert("doc_id".into(), serde_json::json!({"type": "string"}));
+                    p.insert("pages".into(), serde_json::json!({"type": "string", "description": "页码范围，如 '5-7,10'"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let doc_id = args["doc_id"].as_str().unwrap_or("");
+                    let pages = args["pages"].as_str().unwrap_or("");
+                    match native_get_document_pages(&r, doc_id, pages) {
+                        Ok(pages) => serde_json::to_string(&pages).unwrap_or_else(|e| format!("Serialize error: {}", e)),
+                        Err(e) => format!("Pages error: {}", e),
+                    }
+                }),
+            );
+        }
     }
 
     /// 注册需要 Python sidecar 的工具
     fn register_sidecar_tools(registry: &mut ToolRegistry) {
         let tools: Vec<(&str, &str, &[(&str, &str)])> = vec![
-            ("search_knowledge_base", "搜索项目知识库，基于语义相似度检索相关文档内容", &[("query", "string"), ("top_k", "integer")]),
             ("find_documents", "按关键词查找文档", &[("keyword", "string"), ("doc_type", "string"), ("top_k", "integer")]),
             ("read_document_abstract", "读取文档的一句话摘要（L0）", &[("doc_id", "string")]),
             ("read_document_overview", "读取文档的结构化概览（L1）", &[("doc_id", "string")]),
@@ -330,6 +440,49 @@ fn native_get_project_info(root: &str) -> String {
     lines.join("\n")
 }
 
+// ===== 知识库 Native 工具 =====
+
+fn native_search_knowledge_base(
+    root: &str,
+    query: &str,
+    top_k: usize,
+) -> Result<Vec<serde_json::Value>, String> {
+    let config = crate::core::config::EmbedConfig::default();
+    let kb = crate::core::knowledge_base::KnowledgeBase::new(std::path::Path::new(root), &config)
+        .map_err(|e| format!("KB init failed: {}", e))?;
+    let results = futures::executor::block_on(kb.search(query, top_k))
+        .map_err(|e| format!("Search failed: {}", e))?;
+    Ok(results.into_iter().map(|r| serde_json::json!({
+        "id": r.id,
+        "text": r.text,
+        "metadata": r.metadata,
+        "score": r.score,
+    })).collect())
+}
+
+fn native_get_document_structure(
+    root: &str,
+    doc_id: &str,
+) -> Result<Option<Vec<crate::parsers::sections::TreeNode>>, String> {
+    let config = crate::core::config::EmbedConfig::default();
+    let kb = crate::core::knowledge_base::KnowledgeBase::new(std::path::Path::new(root), &config)
+        .map_err(|e| format!("KB init failed: {}", e))?;
+    Ok(kb.get_structure(doc_id))
+}
+
+fn native_get_document_pages(
+    root: &str,
+    doc_id: &str,
+    pages: &str,
+) -> Result<Vec<crate::core::knowledge_base::PageContent>, String> {
+    let config = crate::core::config::EmbedConfig::default();
+    let kb = crate::core::knowledge_base::KnowledgeBase::new(std::path::Path::new(root), &config)
+        .map_err(|e| format!("KB init failed: {}", e))?;
+    Ok(kb.get_pages(doc_id, pages))
+}
+
+// ===== 文件搜索 Native 工具 =====
+
 fn native_glob_search(root: &str, pattern: &str, max_results: usize) -> String {
     let glob = match globset::Glob::new(pattern) {
         Ok(g) => g.compile_matcher(),
@@ -368,5 +521,13 @@ mod tests {
         assert!(tools.len() >= 15);
         assert!(executor.registry.get("grep_search").is_some());
         assert!(executor.registry.get("search_knowledge_base").is_some());
+    }
+
+    #[test]
+    fn test_tool_executor_defaults() {
+        let executor = ToolExecutor::new("http://localhost:18792", "/tmp/test");
+        assert!(executor.kb.is_none());
+        assert!(executor.tree_index.is_none());
+        assert!(executor.summary.is_none());
     }
 }

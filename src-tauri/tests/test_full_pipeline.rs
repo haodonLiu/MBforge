@@ -101,6 +101,9 @@ fn test_full_pipeline_with_real_patent() {
         parser: "mineru_precise".to_string(),
         page_count,
         images: vec![],
+        headings: vec![],
+        sections: vec![],
+        page_texts: vec![],
     };
     let parse_json = serde_json::to_string_pretty(&parse_result).unwrap();
     write_file("06_parse_result.json", &parse_json);

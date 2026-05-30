@@ -118,11 +118,18 @@ class ToolExecutor:
 
     @staticmethod
     def _format_search_results(results: list[dict], top_k: int) -> str:
-        """格式化搜索结果为文本."""
+        """格式化搜索结果为文本（统一 section-level，显示章节路径和页码）."""
         lines = []
         for i, r in enumerate(results[:top_k], 1):
             text = truncate_text(r["text"].replace("\n", " "), max_len=300)
-            lines.append(f"{i}. {text}...")
+            meta = r.get("metadata", {})
+            section = meta.get("section_path") or meta.get("section_title", "未知章节")
+            pages = ""
+            ps = meta.get("page_start")
+            pe = meta.get("page_end")
+            if ps:
+                pages = f" (p.{ps}" + (f"-{pe}" if pe and pe != ps else "") + ")"
+            lines.append(f"{i}. [{section}{pages}] {text}...")
         return "\n\n".join(lines)
 
     @tool(

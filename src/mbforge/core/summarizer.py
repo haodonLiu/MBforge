@@ -14,7 +14,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
 
-from .document import ExtractedContent
+from .types import ExtractedContent
 from ..utils.constants import PROJECT_META_DIR
 from ..utils.logger import get_logger
 

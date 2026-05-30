@@ -33,5 +33,5 @@ globset = "0.4"
 zip = "0.6"
 dotenvy = "0.15"
 base64 = "0.22"
-lopdf = "0.34"
 rusqlite = { version = "0.32", features = ["bundled"] }
+lopdf = { git = "https://github.com/J-F-Liu/lopdf", rev = "7a05512d831415b1f2b1ce522391d6beab8a1284", version = "0.40.0" }

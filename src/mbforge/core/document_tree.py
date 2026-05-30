@@ -1,12 +1,13 @@
 """文档结构树索引 — 参考 PageIndex 思想.
 
-不做 chunking，用文档原生章节结构（heading 层级）导航。
-Agent 通过 get_doc_structure + get_doc_pages 实现"翻书"检索。
+以文档原生章节结构（heading 层级）为唯一分块单元，取代固定长度 chunk。
+向量检索、Agent 导航、页码精读全部基于同一套 section 数据。
 """
 
 from __future__ import annotations
 
 import copy
+import dataclasses
 import json
 import re
 from pathlib import Path
@@ -16,6 +17,19 @@ from ..utils.constants import PROJECT_META_DIR
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+@dataclasses.dataclass
+class SectionChunk:
+    """文档章节片段 — 向量化/检索的唯一单元."""
+
+    title: str = ""               # section 标题
+    path: str = ""                # 层级路径，如 "1.Introduction > 1.1.Background"
+    text: str = ""                # 完整正文（含 heading）
+    page_start: int | None = None
+    page_end: int | None = None
+    line_start: int = 0
+    line_end: int = 0
 
 
 def extract_headings(text: str) -> list[dict[str, Any]]:
@@ -30,6 +44,118 @@ def extract_headings(text: str) -> list[dict[str, Any]]:
             title = match.group(2).strip()
             headings.append({"level": level, "title": title, "line_num": line_num})
     return headings
+
+
+def _line_to_page(line_num: int, page_texts: list[str] | None) -> int | None:
+    """将全文行号映射到页码（1-indexed）."""
+    if not page_texts:
+        return None
+    cumulative = 0
+    for page_idx, pt in enumerate(page_texts, start=1):
+        page_lines = pt.count("\n") + 1
+        if cumulative + page_lines >= line_num:
+            return page_idx
+        cumulative += page_lines + 2  # +2 for "\n\n" separator between pages
+    return len(page_texts)
+
+
+def _build_path(headings: list[dict[str, Any]], idx: int) -> str:
+    """构建第 idx 个 heading 的层级路径."""
+    h = headings[idx]
+    level = h["level"]
+    # 向前找同层级的前缀
+    path_parts = [h["title"]]
+    parent_level = level
+    for j in range(idx - 1, -1, -1):
+        prev = headings[j]
+        if prev["level"] < parent_level:
+            path_parts.insert(0, prev["title"])
+            parent_level = prev["level"]
+            if parent_level == 1:
+                break
+    return " > ".join(path_parts)
+
+
+def _extract_section_texts(
+    text: str, headings: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """根据 heading 列表提取每个 section 的文本范围和内容.
+
+    参考 PageIndex page_index_md.py 的 extract_node_text_content。
+    """
+    lines = text.split("\n")
+    sections = []
+    for i, h in enumerate(headings):
+        start_line = h["line_num"] - 1  # 0-indexed
+        if i + 1 < len(headings):
+            end_line = headings[i + 1]["line_num"] - 1
+        else:
+            end_line = len(lines)
+        section_text = "\n".join(lines[start_line:end_line]).strip()
+        if section_text:
+            sections.append(
+                {
+                    "title": h["title"],
+                    "level": h["level"],
+                    "line_start": h["line_num"],
+                    "line_end": end_line,
+                    "text": section_text,
+                }
+            )
+    return sections
+
+
+def _split_long_section(
+    section: dict[str, Any], path: str, max_chars: int
+) -> list[SectionChunk]:
+    """当 section 超过 max_chars 时，按段落再切分."""
+    text = section["text"]
+    if len(text) <= max_chars:
+        return [
+            SectionChunk(
+                title=section["title"],
+                path=path,
+                text=text,
+                line_start=section["line_start"],
+                line_end=section["line_end"],
+            )
+        ]
+
+    parts = text.split("\n\n")
+    chunks: list[SectionChunk] = []
+    current_text = ""
+    part_idx = 0
+
+    for part in parts:
+        if not current_text:
+            current_text = part
+        elif len(current_text) + len(part) + 2 > max_chars:
+            part_idx += 1
+            chunks.append(
+                SectionChunk(
+                    title=section["title"],
+                    path=f"{path} > part_{part_idx}",
+                    text=current_text.strip(),
+                    line_start=section["line_start"],
+                    line_end=section["line_end"],
+                )
+            )
+            current_text = part
+        else:
+            current_text += "\n\n" + part
+
+    if current_text.strip():
+        part_idx += 1
+        chunks.append(
+            SectionChunk(
+                title=section["title"],
+                path=f"{path} > part_{part_idx}" if chunks else path,
+                text=current_text.strip(),
+                line_start=section["line_start"],
+                line_end=section["line_end"],
+            )
+        )
+    return chunks
 
 
 def _build_tree(headings: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -57,12 +183,10 @@ def _build_tree(headings: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _strip_text_fields(tree: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """返回树的副本，移除 text 字段以节省 LLM token（参考 PageIndex remove_fields）."""
+    """返回树的副本，移除 text 字段以节省 LLM token."""
     result = []
     for node in tree:
-        cleaned = {
-            k: v for k, v in node.items() if k != "text"
-        }
+        cleaned = {k: v for k, v in node.items() if k != "text"}
         if node.get("nodes"):
             cleaned["nodes"] = _strip_text_fields(node["nodes"])
         result.append(cleaned)
@@ -85,9 +209,10 @@ def _parse_pages(pages_str: str) -> list[int]:
 class DocumentTreeIndex:
     """文档结构树索引.
 
-    为每个文档维护一棵 heading 树，支持:
-    - 结构导航: get_structure(doc_id) → 树（不含正文）
-    - 页码取文: get_pages(doc_id, page_nums) → 原文内容
+    职责：
+    1. 从 heading 生成 SectionChunk（唯一分块单元）
+    2. 保存结构树和按页原文
+    3. 提供结构导航 + 页码取文（Agent 辅助精读）
     """
 
     def __init__(self, project_root: Path):
@@ -111,15 +236,76 @@ class DocumentTreeIndex:
         with open(self.index_path, "w", encoding="utf-8") as f:
             json.dump(self._trees, f, indent=2, ensure_ascii=False)
 
+    # ── 静态/类方法：不依赖 project_root，可在 DocumentProcessor 中调用 ──
+
+    @staticmethod
+    def build_sections(
+        text: str,
+        headings: list[dict[str, Any]],
+        page_texts: list[str] | None = None,
+        max_chars: int = 8000,
+    ) -> list[SectionChunk]:
+        """从文本和 heading 构建 section chunks（核心分块引擎）.
+
+        Args:
+            text: 文档全文
+            headings: extract_headings() 的结果
+            page_texts: 按页原文列表（用于计算 page_range）
+            max_chars: 单 section 最大字符数，超过则按段落再切分
+        """
+        if not headings:
+            # 无 heading 的文档：全文作为一个 section
+            return [
+                SectionChunk(
+                    title="全文",
+                    path="全文",
+                    text=text,
+                    page_start=_line_to_page(1, page_texts),
+                    page_end=_line_to_page(text.count("\n") + 1, page_texts),
+                    line_start=1,
+                    line_end=text.count("\n") + 1,
+                )
+            ]
+
+        raw_sections = _extract_section_texts(text, headings)
+        sections: list[SectionChunk] = []
+
+        for i, sec in enumerate(raw_sections):
+            path = _build_path(headings, i)
+            # 计算页码范围
+            ps = _line_to_page(sec["line_start"], page_texts)
+            pe = _line_to_page(sec["line_end"], page_texts)
+            # 超长切分
+            chunks = _split_long_section(sec, path, max_chars)
+            for ck in chunks:
+                ck.page_start = ps
+                ck.page_end = pe
+            sections.extend(chunks)
+
+        return sections
+
+    # ── 实例方法：依赖 project_root，用于持久化 ──
+
     def index_document(
         self,
         doc_id: str,
-        headings: list[dict[str, Any]],
+        sections: list[SectionChunk],
         page_count: int | None = None,
         page_texts: list[str] | None = None,
     ) -> None:
-        """为文档建立结构树索引，并可选保存按页原文."""
+        """保存文档的树索引和按页原文."""
+        # 从 sections 反推 headings 以构建树
+        headings = []
+        seen = set()
+        for s in sections:
+            key = (s.title, s.line_start)
+            if key not in seen:
+                seen.add(key)
+                level = s.path.count(" > ") + 1
+                headings.append({"level": level, "title": s.title, "line_num": s.line_start})
+        headings.sort(key=lambda h: h["line_num"])
         tree = _build_tree(headings)
+
         self._trees[doc_id] = {
             "doc_id": doc_id,
             "page_count": page_count,
@@ -127,20 +313,18 @@ class DocumentTreeIndex:
         }
         self.save()
 
-        # 保存按页原文（如有）
         if page_texts:
             doc_pages_dir = self.pages_dir / doc_id
             doc_pages_dir.mkdir(parents=True, exist_ok=True)
-            for i, text in enumerate(page_texts, start=1):
-                (doc_pages_dir / f"page_{i}.txt").write_text(
-                    text, encoding="utf-8"
-                )
+            for i, pt in enumerate(page_texts, start=1):
+                (doc_pages_dir / f"page_{i}.txt").write_text(pt, encoding="utf-8")
 
     def remove_document(self, doc_id: str) -> None:
         """移除文档的树索引和页缓存."""
         self._trees.pop(doc_id, None)
         self.save()
         import shutil
+
         doc_pages_dir = self.pages_dir / doc_id
         if doc_pages_dir.exists():
             shutil.rmtree(doc_pages_dir)
@@ -167,7 +351,9 @@ class DocumentTreeIndex:
         for p in page_nums:
             page_file = doc_pages_dir / f"page_{p}.txt"
             if page_file.exists():
-                results.append({"page": p, "content": page_file.read_text(encoding="utf-8")})
+                results.append(
+                    {"page": p, "content": page_file.read_text(encoding="utf-8")}
+                )
         return results
 
     def get_doc_metadata(self, doc_id: str) -> dict[str, Any] | None:

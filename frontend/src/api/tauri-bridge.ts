@@ -92,6 +92,27 @@ export async function extractActivities(text: string): Promise<ActivityData[]> {
 
 // ---- pipeline ----
 
+export interface ImageRef {
+  filename: string
+  page: number
+  region: string | null
+  description: string | null
+  esmiles: string | null
+}
+
+export interface Heading {
+  level: number
+  title: string
+  line_num: number
+}
+
+export interface SectionChunk {
+  heading: string
+  text: string
+  page: number
+  section_id: string
+}
+
 export interface PdfParseResult {
   content: string
   classification: DocumentClassification
@@ -100,6 +121,10 @@ export interface PdfParseResult {
   activities: ActivityData[]
   parser: string
   page_count: number
+  images: ImageRef[]
+  headings: Heading[]
+  sections: SectionChunk[]
+  page_texts: string[]
 }
 
 export async function parsePdf(
@@ -257,4 +282,58 @@ export async function processDocument(
     path,
     userRequest: userRequest ?? '',
   })
+}
+
+// ---- knowledge_base ----
+
+export interface IndexResult {
+  indexed: number
+  sections: number
+  errors: string[]
+}
+
+export async function indexProjectRust(root: string): Promise<IndexResult> {
+  return invoke<IndexResult>('index_project_rust', { root })
+}
+
+export interface KbSearchResult {
+  id: string
+  text: string
+  metadata: Record<string, unknown>
+  score: number
+}
+
+export async function kbSearch(
+  projectRoot: string,
+  query: string,
+  topK = 5,
+): Promise<KbSearchResult[]> {
+  return invoke<KbSearchResult[]>('kb_search', { projectRoot, query, topK })
+}
+
+export interface TreeNode {
+  title: string
+  node_id: string
+  line_num: number
+  nodes: TreeNode[]
+}
+
+export async function kbGetStructure(
+  projectRoot: string,
+  docId: string,
+): Promise<TreeNode[] | null> {
+  return invoke<TreeNode[] | null>('kb_get_structure', { projectRoot, docId })
+}
+
+export interface PageContent {
+  page: number
+  content: string
+}
+
+export async function kbGetPages(
+  projectRoot: string,
+  docId: string,
+  pages: string,
+): Promise<PageContent[]> {
+  return invoke<PageContent[]>('kb_get_pages', { projectRoot, docId, pages })
 }

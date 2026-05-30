@@ -70,11 +70,10 @@ impl From<DocProcessingContext> for PdfParseResult {
 pub fn parse_pdf(
     path: String,
     chunk_size: Option<usize>,
-    overlap: Option<usize>,
+    _overlap: Option<usize>,
     parser: Option<String>,
 ) -> Result<PdfParseResult, String> {
     let chunk_size = chunk_size.unwrap_or(512);
-    let overlap = overlap.unwrap_or(128);
     let parser_choice = parser.unwrap_or_else(|| "pdf_inspector".to_string());
 
     // Stage 1: Text extraction
@@ -118,12 +117,19 @@ pub fn parse_pdf(
 
     // Stage 1.5: Extract embedded images from PDF (lopdf)
     let tmp_dir = tempfile::tempdir().map_err(|e| format!("Temp dir error: {}", e))?;
-    let images = super::images::extract_images_from_pdf(
+    let extracted = super::images::extract_images_from_pdf(
         &path,
         tmp_dir.path(),
         20,  // max_images
         2,   // max_size_mb
     ).unwrap_or_default();
+    let images: Vec<ImageRef> = extracted.into_iter().map(|img| ImageRef {
+        filename: img.filename,
+        page: img.page,
+        region: None,
+        description: None,
+        esmiles: None,
+    }).collect();
 
     // Stage 2: Classification
     let pages: Vec<String> = content.split("\n\n").map(|s| s.to_string()).collect();
@@ -131,7 +137,7 @@ pub fn parse_pdf(
 
     // Stage 3: Section-based chunking (PageIndex)
     let headings = super::headings::extract_headings(&content);
-    let sections = super::sections::build_sections(&content, &headings, None, 8000);
+    let sections = super::sections::build_sections(&content, &headings, None, chunk_size);
     let chunks: Vec<String> = sections.iter().map(|s| s.text.clone()).collect();
 
     // Stage 4: Molecule extraction (text regex)
@@ -146,7 +152,7 @@ pub fn parse_pdf(
         activities,
         parser: parser_choice,
         page_count,
-        images: vec![],  // TODO: convert ExtractedImage to ImageRef
+        images,
         headings,
         sections,
         page_texts: vec![],  // page_texts populated by post_process_pdf if available
@@ -502,7 +508,8 @@ pub async fn index_project_rust(
     root: String,
 ) -> Result<IndexResult, String> {
     let project_root = std::path::PathBuf::from(&root);
-    let kb = crate::core::knowledge_base::KnowledgeBase::new(&project_root)
+    let config = crate::core::config::EmbedConfig::default();
+    let kb = crate::core::knowledge_base::KnowledgeBase::new(&project_root, &config)
         .map_err(|e| format!("KB init failed: {}", e))?;
 
     // 扫描 PDF 文件
@@ -553,7 +560,7 @@ pub async fn index_project_rust(
 
                 total_sections += sections.len();
 
-                match kb.index_document(&doc_id, &sections, None) {
+                match kb.index_document(&doc_id, &sections, &[]).await {
                     Ok(_) => {
                         indexed += 1;
                     }

@@ -240,18 +240,93 @@ impl ToolExecutor {
                 }),
             );
         }
+
+        // read_document_abstract — 从 SummaryManager 读 L0
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("read_document_abstract", "读取文档的一句话摘要（L0）", {
+                    let mut p = HashMap::new();
+                    p.insert("doc_id".into(), serde_json::json!({"type": "string"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let doc_id = args["doc_id"].as_str().unwrap_or("");
+                    native_read_document_abstract(&r, doc_id)
+                }),
+            );
+        }
+
+        // read_document_overview — 从 SummaryManager 读 L1
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("read_document_overview", "读取文档的结构化概览（L1）", {
+                    let mut p = HashMap::new();
+                    p.insert("doc_id".into(), serde_json::json!({"type": "string"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let doc_id = args["doc_id"].as_str().unwrap_or("");
+                    native_read_document_overview(&r, doc_id)
+                }),
+            );
+        }
+
+        // list_molecules — 从 MoleculeDatabase 查询
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("list_molecules", "列出项目中的分子数据", {
+                    let mut p = HashMap::new();
+                    p.insert("limit".into(), serde_json::json!({"type": "integer"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let limit = args["limit"].as_u64().unwrap_or(20) as usize;
+                    native_list_molecules(&r, limit)
+                }),
+            );
+        }
+
+        // search_molecule_by_smiles — 从 MoleculeDatabase 查询
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("search_molecule_by_smiles", "按 SMILES 字符串搜索分子", {
+                    let mut p = HashMap::new();
+                    p.insert("smiles".into(), serde_json::json!({"type": "string"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let smiles = args["smiles"].as_str().unwrap_or("");
+                    native_search_molecule_by_smiles(&r, smiles)
+                }),
+            );
+        }
+
+        // list_documents — 从 Project 查询
+        {
+            let r = root.clone();
+            registry.register_with_fn(
+                ToolInfo::new("list_documents", "列出项目中的所有文档", {
+                    let mut p = HashMap::new();
+                    p.insert("doc_type".into(), serde_json::json!({"type": "string"}));
+                    p
+                }),
+                Box::new(move |args| {
+                    let doc_type = args["doc_type"].as_str().unwrap_or("");
+                    native_list_documents(&r, doc_type)
+                }),
+            );
+        }
     }
 
     /// 注册需要 Python sidecar 的工具
     fn register_sidecar_tools(registry: &mut ToolRegistry) {
         let tools: Vec<(&str, &str, &[(&str, &str)])> = vec![
             ("find_documents", "按关键词查找文档", &[("keyword", "string"), ("doc_type", "string"), ("top_k", "integer")]),
-            ("read_document_abstract", "读取文档的一句话摘要（L0）", &[("doc_id", "string")]),
-            ("read_document_overview", "读取文档的结构化概览（L1）", &[("doc_id", "string")]),
             ("read_document_detail", "读取文档的完整内容块（L2）", &[("doc_id", "string"), ("max_chars", "integer")]),
-            ("list_molecules", "列出项目中的分子数据", &[("limit", "integer")]),
-            ("search_molecule_by_smiles", "按 SMILES 字符串搜索分子", &[("smiles", "string")]),
-            ("list_documents", "列出项目中的所有文档", &[("doc_type", "string")]),
             ("get_document_summary", "获取文档的元数据摘要", &[("doc_id", "string")]),
         ];
         for (name, desc, params) in tools {
@@ -479,6 +554,101 @@ fn native_get_document_pages(
     let kb = crate::core::knowledge_base::KnowledgeBase::new(std::path::Path::new(root), &config)
         .map_err(|e| format!("KB init failed: {}", e))?;
     Ok(kb.get_pages(doc_id, pages))
+}
+
+// ===== 摘要 Native 工具 =====
+
+fn native_read_document_abstract(root: &str, doc_id: &str) -> String {
+    let project_root = std::path::PathBuf::from(root);
+    match super::summary::SummaryManager::new(&project_root) {
+        Ok(mgr) => match mgr.load(doc_id) {
+            Some(s) => s.l0_abstract,
+            None => format!("No summary found for doc_id: {}", doc_id),
+        },
+        Err(e) => format!("SummaryManager init error: {}", e),
+    }
+}
+
+fn native_read_document_overview(root: &str, doc_id: &str) -> String {
+    let project_root = std::path::PathBuf::from(root);
+    match super::summary::SummaryManager::new(&project_root) {
+        Ok(mgr) => match mgr.load(doc_id) {
+            Some(s) => s.l1_overview,
+            None => format!("No summary found for doc_id: {}", doc_id),
+        },
+        Err(e) => format!("SummaryManager init error: {}", e),
+    }
+}
+
+// ===== 分子数据库 Native 工具 =====
+
+fn native_list_molecules(root: &str, limit: usize) -> String {
+    let db_path = std::path::PathBuf::from(root)
+        .join(".mbforge")
+        .join("molecules.db");
+    if !db_path.exists() {
+        return "No molecule database found".to_string();
+    }
+    match super::molecule_store::MoleculeDatabase::open(&db_path) {
+        Ok(db) => match db.list_all(limit, 0, None, None) {
+            Ok(mols) => serde_json::to_string(&mols).unwrap_or_else(|e| format!("Serialize error: {}", e)),
+            Err(e) => format!("List error: {}", e),
+        },
+        Err(e) => format!("DB error: {}", e),
+    }
+}
+
+fn native_search_molecule_by_smiles(root: &str, smiles: &str) -> String {
+    let db_path = std::path::PathBuf::from(root)
+        .join(".mbforge")
+        .join("molecules.db");
+    if !db_path.exists() {
+        return "No molecule database found".to_string();
+    }
+    match super::molecule_store::MoleculeDatabase::open(&db_path) {
+        Ok(db) => {
+            let mut results = Vec::new();
+            if let Ok(Some(rec)) = db.search_by_esmiles(smiles) {
+                results.push(rec);
+            }
+            if let Ok(recs) = db.search_text(smiles) {
+                for r in recs {
+                    if !results.iter().any(|x| x.mol_id == r.mol_id) {
+                        results.push(r);
+                    }
+                }
+            }
+            serde_json::to_string(&results).unwrap_or_else(|e| format!("Serialize error: {}", e))
+        },
+        Err(e) => format!("DB error: {}", e),
+    }
+}
+
+// ===== 文档列表 Native 工具 =====
+
+fn native_list_documents(root: &str, doc_type: &str) -> String {
+    let project_root = std::path::PathBuf::from(root);
+    match super::project::Project::open(&project_root) {
+        Some(project) => {
+            let docs = project.list_documents().to_vec();
+            let filtered: Vec<_> = if doc_type.is_empty() {
+                docs
+            } else {
+                docs.into_iter().filter(|d| d.doc_type == doc_type).collect()
+            };
+            let result: Vec<_> = filtered.iter().map(|d| {
+                serde_json::json!({
+                    "doc_id": d.doc_id,
+                    "path": d.path,
+                    "doc_type": d.doc_type,
+                    "title": d.title,
+                    "indexed": d.indexed,
+                })
+            }).collect();
+            serde_json::to_string(&result).unwrap_or_else(|e| format!("Serialize error: {}", e))
+        },
+        None => "Project not found".to_string(),
+    }
 }
 
 // ===== 文件搜索 Native 工具 =====

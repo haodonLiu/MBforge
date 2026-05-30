@@ -27,7 +27,7 @@ fn main() {
             commands::text_ops::text_chunk,
             commands::classifier::classify_page,
             commands::classifier::classify_document,
-            commands::extractor::extract_smiles_candidates,
+            commands::extractor::extract_esmiles_candidates,
             commands::extractor::extract_activities,
             commands::extractor::extract_associated_molecules,
             commands::agent::agent_init,
@@ -80,10 +80,11 @@ fn main() {
             }).cloned().unwrap_or_else(|| std::path::PathBuf::from("python"));
 
             // Start model server
+            let no_spawn = std::env::var("MBFORGE_NO_SPAWN").unwrap_or_default().trim() == "1";
             let server_script = resource_dir.join("src").join("mbforge").join("model_server").join("main.py");
             let mut cmd = Command::new(&python);
 
-            if server_script.exists() {
+            if !no_spawn && server_script.exists() {
                 cmd.arg("-m").arg("uvicorn")
                     .arg("mbforge.model_server.main:app")
                     .arg("--host").arg("127.0.0.1")

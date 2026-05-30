@@ -18,8 +18,8 @@ pub struct DedupResult {
     pub relations_added: i64,
 }
 
-pub fn canonicalize_smiles(smiles: &str) -> String {
-    let trimmed = smiles.trim().to_string();
+pub fn canonicalize_esmiles(esmiles: &str) -> String {
+    let trimmed = esmiles.trim().to_string();
     if trimmed.is_empty() {
         return String::new();
     }
@@ -39,14 +39,14 @@ pub fn canonicalize_smiles(smiles: &str) -> String {
 // Additionally, the response field checked here is "score" but chem.py returns
 // "tanimoto" — if ever wired in, this function would always fail.
 pub fn call_tanimoto_sidecar(
-    smiles_a: &str,
-    smiles_b: &str,
+    esmiles_a: &str,
+    esmiles_b: &str,
     sidecar_url: &str,
 ) -> Result<f64, String> {
     let client = reqwest::blocking::Client::new();
     let body = serde_json::json!({
-        "smiles_a": smiles_a,
-        "smiles_b": smiles_b,
+        "smiles_a": esmiles_a,
+        "smiles_b": esmiles_b,
     });
     let resp = client
         .post(format!("{}/api/v1/chem/tanimoto", sidecar_url.trim_end_matches('/')))
@@ -69,17 +69,17 @@ pub fn run_dedup_batch(
     same_as_threshold: f64,
 ) -> DedupResult {
     let existing = load_existing_molecules(db);
-    let mut seen_smiles: HashSet<String> = existing
+    let mut seen_esmiles: HashSet<String> = existing
         .iter()
-        .map(|(_, smiles)| canonicalize_smiles(smiles))
+        .map(|(_, esmiles)| canonicalize_esmiles(esmiles))
         .collect();
 
     let mut duplicates = Vec::new();
     let mut new_mol_ids = Vec::new();
     let mut relations_added = 0i64;
 
-    for (mol_id, smiles) in new_mols {
-        let normalized = canonicalize_smiles(smiles);
+    for (mol_id, esmiles) in new_mols {
+        let normalized = canonicalize_esmiles(esmiles);
         if normalized.is_empty() {
             new_mol_ids.push(mol_id.clone());
             continue;
@@ -87,7 +87,7 @@ pub fn run_dedup_batch(
 
         if let Some((match_id, _)) = existing
             .iter()
-            .find(|(_, existing_smiles)| canonicalize_smiles(existing_smiles).eq(&normalized))
+            .find(|(_, existing_esmiles)| canonicalize_esmiles(existing_esmiles).eq(&normalized))
         {
             duplicates.push(DedupPair {
                 mol_a_id: mol_id.clone(),
@@ -95,11 +95,11 @@ pub fn run_dedup_batch(
                 confidence: 1.0,
                 reason: "exact SMILES match".to_string(),
             });
-        } else if seen_smiles.contains(&normalized) {
+        } else if seen_esmiles.contains(&normalized) {
             if let Some((match_id, _)) = new_mols
                 .iter()
                 .filter(|(id, _)| id.as_str() != mol_id.as_str())
-                .find(|(_, s)| canonicalize_smiles(s).eq(&normalized))
+                .find(|(_, s)| canonicalize_esmiles(s).eq(&normalized))
             {
                 duplicates.push(DedupPair {
                     mol_a_id: mol_id.clone(),
@@ -109,7 +109,7 @@ pub fn run_dedup_batch(
                 });
             }
         } else {
-            seen_smiles.insert(normalized);
+            seen_esmiles.insert(normalized);
             new_mol_ids.push(mol_id.clone());
         }
     }
@@ -145,7 +145,7 @@ pub fn run_dedup_batch(
 // Consider logging a warning or returning an explicit error.
 fn load_existing_molecules(db: &MoleculeRelationDb) -> Vec<(String, String)> {
     let conn = db.relations_conn();
-    let mut stmt = match conn.prepare("SELECT mol_id, smiles FROM molecules") {
+    let mut stmt = match conn.prepare("SELECT mol_id, esmiles FROM molecules") {
         Ok(s) => s,
         Err(_) => return Vec::new(),
     };
@@ -158,8 +158,8 @@ fn load_existing_molecules(db: &MoleculeRelationDb) -> Vec<(String, String)> {
         match rows.next() {
             Ok(Some(row)) => {
                 let mol_id: String = row.get(0).unwrap_or_default();
-                let smiles: String = row.get(1).unwrap_or_default();
-                result.push((mol_id, smiles));
+                let esmiles: String = row.get(1).unwrap_or_default();
+                result.push((mol_id, esmiles));
             }
             _ => break,
         }

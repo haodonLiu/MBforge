@@ -105,7 +105,7 @@ impl MoleculeRelationDb {
 
             CREATE TABLE IF NOT EXISTS molecules (
                 mol_id TEXT PRIMARY KEY,
-                smiles TEXT NOT NULL,
+                esmiles TEXT NOT NULL,
                 name TEXT,
                 source_doc TEXT,
                 activity REAL,
@@ -118,7 +118,7 @@ impl MoleculeRelationDb {
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-            CREATE INDEX IF NOT EXISTS idx_mol_smiles ON molecules(smiles);
+            CREATE INDEX IF NOT EXISTS idx_mol_esmiles ON molecules(esmiles);
             CREATE INDEX IF NOT EXISTS idx_mol_activity ON molecules(activity);
             "#,
             MOL_RELATIONS_TABLE,

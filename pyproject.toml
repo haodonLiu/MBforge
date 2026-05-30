@@ -44,7 +44,6 @@ dependencies = [
     "numpy>=1.26.4,<2.0.0",
     "pillow>=10.4.0",
     "markdown>=3.6",
-    "pymupdf>=1.25.0",
     "opencv-python>=4.10.0",
     "rdkit>=2024.3.0",
     "matplotlib>=3.7.0",

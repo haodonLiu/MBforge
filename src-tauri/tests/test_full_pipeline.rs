@@ -79,7 +79,7 @@ fn test_full_pipeline_with_real_patent() {
     println!("  total chunks: {}", chunk_result.total_chunks);
 
     println!("\n========== Stage 5: Molecule Extraction ==========");
-    let smiles = mbforge::commands::extractor::extract_smiles_candidates(content.clone());
+    let smiles = mbforge::commands::extractor::extract_esmiles_candidates(content.clone());
     let activities = mbforge::commands::extractor::extract_activities(content.clone());
     let mol_json = serde_json::to_string_pretty(&serde_json::json!({
         "smiles_count": smiles.len(),
@@ -96,7 +96,7 @@ fn test_full_pipeline_with_real_patent() {
         content: content.clone(),
         classification: doc_classification,
         chunks: chunk_result.chunks,
-        smiles: smiles.clone(),
+        esmiles: smiles.clone(),
         activities: activities.clone(),
         parser: "mineru_precise".to_string(),
         page_count,

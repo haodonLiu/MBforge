@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
 use crate::commands::classifier::{classify_document, DocumentClassification};
-use crate::commands::extractor::{extract_activities, extract_smiles_candidates, ActivityData};
+use crate::commands::extractor::{extract_activities, extract_esmiles_candidates, ActivityData};
 
 use super::post_process::StructuredData;
 use super::types::{
@@ -19,8 +19,8 @@ pub struct PdfParseResult {
     pub classification: DocumentClassification,
     /// Chunks after splitting.
     pub chunks: Vec<String>,
-    /// Extracted SMILES candidates.
-    pub smiles: Vec<String>,
+    /// Extracted esmiles candidates.
+    pub esmiles: Vec<String>,
     /// Extracted activity data.
     pub activities: Vec<ActivityData>,
     /// Parser used: "pdf_inspector", "llama_parse", "uniparser", or "mineru".
@@ -38,14 +38,14 @@ impl From<DocProcessingContext> for PdfParseResult {
             None,
         );
         let chunks = crate::commands::text_ops::text_chunk(ctx.raw_text.clone(), 512, 128).chunks;
-        let smiles = extract_smiles_candidates(ctx.raw_text.clone());
+        let esmiles = extract_esmiles_candidates(ctx.raw_text.clone());
         let activities = extract_activities(ctx.raw_text.clone());
 
         PdfParseResult {
             content: ctx.raw_text,
             classification,
             chunks,
-            smiles,
+            esmiles,
             activities,
             parser: ctx.parser_used,
             page_count: ctx.page_count,
@@ -119,14 +119,14 @@ pub fn parse_pdf(
         crate::commands::text_ops::text_chunk(content.clone(), chunk_size, overlap).chunks;
 
     // Stage 4: Molecule extraction (text regex)
-    let smiles = extract_smiles_candidates(content.clone());
+    let esmiles = extract_esmiles_candidates(content.clone());
     let activities = extract_activities(content.clone());
 
     Ok(PdfParseResult {
         content,
         classification,
         chunks,
-        smiles,
+        esmiles,
         activities,
         parser: parser_choice,
         page_count,
@@ -157,7 +157,7 @@ pub enum DocProgressEvent {
     #[serde(rename = "section")]
     Section { name: String, status: String, compounds: usize, activities: usize },
     #[serde(rename = "vlm")]
-    Vlm { image_count: usize, smiles_found: usize },
+    Vlm { image_count: usize, esmiles_found: usize },
     #[serde(rename = "merge")]
     Merge { total_compounds: usize, total_activities: usize },
     #[serde(rename = "report")]
@@ -342,7 +342,7 @@ pub async fn process_document(
 
     // ===== Stage 2b: VLM 化学结构识别 =====
     let vlm_config = crate::parsers::vlm_chem::VlmConfig::default();
-    let mut vlm_smiles_found = 0usize;
+    let mut vlm_esmiles_found = 0usize;
     let mut vlm_results: Vec<(String, crate::parsers::vlm_chem::ChemImageResult)> = Vec::new();
 
     if !ctx.images.is_empty() {
@@ -368,13 +368,13 @@ pub async fn process_document(
 
         if !chem_images.is_empty() {
             vlm_results =
-                crate::parsers::vlm_chem::batch_image_to_smiles(&chem_images, &vlm_config).await;
-            vlm_smiles_found = vlm_results.len();
+                crate::parsers::vlm_chem::batch_image_to_esmiles(&chem_images, &vlm_config).await;
+            vlm_esmiles_found = vlm_results.len();
         }
 
         let _ = app.emit("doc-progress", DocProgressEvent::Vlm {
             image_count: chem_images.len(),
-            smiles_found: vlm_smiles_found,
+            esmiles_found: vlm_esmiles_found,
         });
     }
 
@@ -532,7 +532,7 @@ async fn run_merge_and_sar(
 
     let vlm_text: Vec<String> = vlm_results
         .iter()
-        .map(|(fname, result)| format!("{}: {} (conf: {:.2})", fname, result.smiles, result.confidence))
+        .map(|(fname, result)| format!("{}: {} (conf: {:.2})", fname, result.esmiles, result.confidence))
         .collect();
 
     let prompt = format!(
@@ -701,7 +701,7 @@ mod tests {
             metadata: DocumentMetadata { title: None, authors: vec![], document_type: "patent".into(), key_targets: vec![], source_file: None },
             summary: "".into(),
             compounds: vec![CompoundEntry {
-                name: "E041".into(), smiles: Some("C1CC1".into()), category: None,
+                name: "E041".into(), esmiles: Some("C1CC1".into()), category: None,
                 description: "test".into(), source_ref: "p5".into(),
                 confidence: "high".into(), uncertainty_reason: None,
             }],
@@ -713,7 +713,7 @@ mod tests {
             metadata: DocumentMetadata { title: None, authors: vec![], document_type: "patent".into(), key_targets: vec![], source_file: None },
             summary: "".into(),
             compounds: vec![CompoundEntry {
-                name: "E041".into(), smiles: Some("C1CC1".into()), category: None,
+                name: "E041".into(), esmiles: Some("C1CC1".into()), category: None,
                 description: "test duplicate".into(), source_ref: "p12".into(),
                 confidence: "high".into(), uncertainty_reason: None,
             }],

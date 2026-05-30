@@ -16,7 +16,7 @@ class ExtractionResult:
     """分子提取结果.
 
     Attributes:
-        smiles: 识别出的 SMILES 字符串（待确认或已确认）
+        esmiles: 识别出的 E-SMILES 字符串（待确认或已确认）
         name: 化合物名称（可选）
         source: 来源类型：image=图像检测, text=文本正则, manual=手动录入
         moldet_conf: MolDetv2 检测置信度（图像来源时有效）
@@ -29,7 +29,7 @@ class ExtractionResult:
         status: 审核状态：pending=待确认, confirmed=已入库, rejected=已丢弃
     """
 
-    smiles: str
+    esmiles: str
     name: str = ""
     source: Literal["image", "text", "manual"] = "image"
     moldet_conf: float = 0.0
@@ -50,7 +50,7 @@ class ExtractionResult:
     def to_dict(self) -> dict:
         """序列化为字典."""
         return {
-            "smiles": self.smiles,
+            "esmiles": self.esmiles,
             "name": self.name,
             "source": self.source,
             "moldet_conf": self.moldet_conf,
@@ -69,7 +69,7 @@ class ExtractionResult:
         """从字典反序列化."""
         img_path = data.get("mol_img_path")
         return cls(
-            smiles=data.get("smiles", ""),
+            esmiles=data.get("esmiles", "") or data.get("smiles", ""),
             name=data.get("name", ""),
             source=data.get("source", "image"),
             moldet_conf=data.get("moldet_conf", 0.0),

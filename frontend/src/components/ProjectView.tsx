@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { listDocuments, scanProject, indexProjectStream, type IndexProgressEvent } from '../api/client'
+import { listDocuments, scanProject } from '../api/client'
+import { indexProjectRust, type IndexResult } from '../api/tauri-bridge'
+import { listen } from '@tauri-apps/api/event'
 import { FolderIcon, FileTextIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon, ArrowLeftIcon } from './icons'
 import type { DocumentEntry } from '../types'
 import { getProjectRoot } from '../hooks/useProjectRoot'
@@ -12,7 +14,7 @@ export default function ProjectView() {
   const [isLoading, setIsLoading] = useState(false)
   const [isIndexing, setIsIndexing] = useState(false)
   const [indexProgress, setIndexProgress] = useState<{ file: string; current: number; total: number } | null>(null)
-  const [indexResult, setIndexResult] = useState<{ indexed: number; molecules: number } | null>(null)
+  const [indexResult, setIndexResult] = useState<{ indexed: number; sections: number } | null>(null)
   const [error, setError] = useState('')
 
   // PDF 阅读状态
@@ -63,7 +65,7 @@ export default function ProjectView() {
     }
   }
 
-  const handleIndex = () => {
+  const handleIndex = async () => {
     const root = getProjectRoot()
     if (!root) return
     setIsIndexing(true)
@@ -76,30 +78,35 @@ export default function ProjectView() {
       if (scanResp.success && scanResp.documents) setDocs(scanResp.documents)
     }).catch(() => {})
 
-    // Stream index progress
-    indexProjectStream(root, (event: IndexProgressEvent) => {
-      switch (event.status) {
-        case 'indexing':
-          setIndexProgress({ file: event.file, current: event.current, total: event.total })
-          break
-        case 'file_done':
-          break
-        case 'file_error':
-          console.warn(`Index error: ${event.file} - ${event.error}`)
-          break
-        case 'completed':
-          setIndexResult({ indexed: event.indexed, molecules: event.molecules })
-          setIndexProgress(null)
-          setIsIndexing(false)
-          listDocuments(root).then(r => { if (r.success && r.documents) setDocs(r.documents) })
-          break
-        case 'error':
-          setError(event.error)
-          setIndexProgress(null)
-          setIsIndexing(false)
-          break
+    // Listen for progress events from Rust
+    let total = 0
+    const unlisten = await listen<{ stage: string; payload: Record<string, unknown> }>('doc-progress', (event) => {
+      const payload = event.payload.payload
+      const parser = payload.parser as string || ''
+      if (parser.startsWith('indexing')) {
+        const match = parser.match(/indexing\s+(\d+)\/(\d+)/)
+        if (match) {
+          const current = parseInt(match[1], 10)
+          total = parseInt(match[2], 10)
+          setIndexProgress({ file: parser, current, total })
+        }
       }
     })
+
+    try {
+      const result: IndexResult = await indexProjectRust(root)
+      setIndexResult({ indexed: result.indexed, sections: result.sections })
+      if (result.errors.length > 0) {
+        console.warn('Index errors:', result.errors)
+      }
+      listDocuments(root).then(r => { if (r.success && r.documents) setDocs(r.documents) })
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      unlisten()
+      setIndexProgress(null)
+      setIsIndexing(false)
+    }
   }
 
   const handleOpenPdf = (doc: DocumentEntry) => {
@@ -245,7 +252,7 @@ export default function ProjectView() {
         marginBottom: '32px',
       }}>
         <StatCard icon={<FileTextIcon size={18} />} value={String(docs.length)} label="文献" />
-        <StatCard icon={<FlaskIcon size={18} />} value={indexResult ? String(indexResult.molecules) : '—'} label="分子" />
+        <StatCard icon={<FlaskIcon size={18} />} value={indexResult ? String(indexResult.sections) : '—'} label="Sections" />
         <StatCard icon={<FileTextIcon size={18} />} value={String(docs.filter(d => d.indexed).length)} label="已索引" />
         <StatCard icon={<FolderIcon size={18} />} value={String(docs.length)} label="文件" />
       </div>
@@ -286,7 +293,7 @@ export default function ProjectView() {
           fontSize: '13px',
           color: '#16a34a',
         }}>
-          已索引 {indexResult.indexed} 个 PDF，提取 {indexResult.molecules} 个分子
+          已索引 {indexResult.indexed} 个 PDF，生成 {indexResult.sections} 个 section
         </div>
       )}
 

@@ -28,7 +28,7 @@ class MoleculeRecord:
     """分子记录."""
 
     mol_id: str
-    smiles: str
+    esmiles: str
     name: str = ""
     source_doc: str = ""  # 来源文档ID
     activity: float | None = None
@@ -43,7 +43,7 @@ class MoleculeRecord:
     def to_dict(self) -> dict[str, Any]:
         return {
             "mol_id": self.mol_id,
-            "smiles": self.smiles,
+            "esmiles": self.esmiles,
             "name": self.name,
             "source_doc": self.source_doc,
             "activity": self.activity,
@@ -60,7 +60,7 @@ class MoleculeRecord:
     def from_dict(cls, data: dict[str, Any]) -> MoleculeRecord:
         return cls(
             mol_id=data["mol_id"],
-            smiles=data["smiles"],
+            esmiles=data["esmiles"],
             name=data.get("name", ""),
             source_doc=data.get("source_doc", ""),
             activity=data.get("activity"),
@@ -77,7 +77,7 @@ class MoleculeRecord:
     def mol(self):
         """RDKit Mol 对象（带缓存）."""
         if not hasattr(self, "_cached_mol"):
-            self._cached_mol = Chem.MolFromSmiles(self.smiles) if Chem else None
+            self._cached_mol = Chem.MolFromSmiles(self.esmiles) if Chem else None
         return self._cached_mol
 
     def compute_properties(self) -> dict[str, float]:
@@ -103,7 +103,7 @@ class MoleculeRecord:
 
         return Molecule(
             id=self.mol_id,
-            smiles=self.smiles,
+            esmiles=self.esmiles,
             name=self.name,
             source=self.source_type or ("pdf" if self.source_doc else "manual"),
             activity=self.activity,
@@ -117,7 +117,7 @@ class MoleculeRecord:
         """从 schema.Molecule 创建 MoleculeRecord。"""
         return cls(
             mol_id=mol.id,
-            smiles=mol.smiles,
+            esmiles=mol.esmiles,
             name=mol.name,
             activity=mol.activity,
             activity_type=activity_type or mol.metadata.get("activity_type", ""),
@@ -133,7 +133,7 @@ class MoleculeDatabase:
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS molecules (
         mol_id TEXT PRIMARY KEY,
-        smiles TEXT NOT NULL,
+        esmiles TEXT NOT NULL,
         name TEXT,
         source_doc TEXT,
         activity REAL,
@@ -146,12 +146,12 @@ class MoleculeDatabase:
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
-    CREATE INDEX IF NOT EXISTS idx_smiles ON molecules(smiles);
+    CREATE INDEX IF NOT EXISTS idx_esmiles ON molecules(esmiles);
     CREATE INDEX IF NOT EXISTS idx_source ON molecules(source_doc);
     CREATE INDEX IF NOT EXISTS idx_activity ON molecules(activity);
     -- idx_source_type / idx_status 在 _ensure_columns() 中创建，避免旧数据库缺列报错
     CREATE VIRTUAL TABLE IF NOT EXISTS mol_search USING fts5(
-        name, notes, smiles, content='molecules', content_rowid='rowid'
+        name, notes, esmiles, content='molecules', content_rowid='rowid'
     );
     """
 
@@ -209,12 +209,12 @@ class MoleculeDatabase:
             self._conn.execute(
                 """
                 INSERT OR REPLACE INTO molecules
-                (mol_id, smiles, name, source_doc, activity, activity_type, units, source_type, status, properties, tags, notes)
+                (mol_id, esmiles, name, source_doc, activity, activity_type, units, source_type, status, properties, tags, notes)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.mol_id,
-                    record.smiles,
+                    record.esmiles,
                     record.name,
                     record.source_doc,
                     record.activity,
@@ -240,9 +240,9 @@ class MoleculeDatabase:
             return None
         return self._row_to_record(row)
 
-    def search_by_smiles(self, smiles: str) -> MoleculeRecord | None:
+    def search_by_esmiles(self, esmiles: str) -> MoleculeRecord | None:
         row = self._conn.execute(
-            "SELECT * FROM molecules WHERE smiles = ?", (smiles,)
+            "SELECT * FROM molecules WHERE esmiles = ?", (esmiles,)
         ).fetchone()
         if row is None:
             return None

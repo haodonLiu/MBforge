@@ -35,7 +35,7 @@ class Molecule:
 
     Attributes:
         id: 唯一标识符
-        smiles: 标准 SMILES 字符串
+        esmiles: 标准 E-SMILES 字符串
         name: 分子名称或标识符
         source: 数据来源
         activity: 生物活性值 (IC50, Ki, EC50 等)
@@ -51,7 +51,7 @@ class Molecule:
     """
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    smiles: str = ""
+    esmiles: str = ""
     name: str = ""
     source: Literal["pdf", "sdf", "csv", "excel", "manual"] = "manual"
     activity: float | None = None
@@ -67,11 +67,11 @@ class Molecule:
     _mol_parse_attempted: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
-        if self._mol is None and not self.smiles:
-            raise ValueError("Molecule requires at least 'smiles' or '_mol'")
-        if self._mol is not None and not self.smiles:
+        if self._mol is None and not self.esmiles:
+            raise ValueError("Molecule requires at least 'esmiles' or '_mol'")
+        if self._mol is not None and not self.esmiles:
             try:
-                self.smiles = Chem.MolToSmiles(self._mol)
+                self.esmiles = Chem.MolToSmiles(self._mol)
             except Exception as e:
                 logger.warning(f"Failed to generate SMILES from mol: {e}")
 
@@ -80,10 +80,10 @@ class Molecule:
     @property
     def mol(self) -> Any | None:
         """从 SMILES 懒加载 RDKit Mol 对象，失败返回 None。"""
-        if not self._mol_parse_attempted and _RDKIT_AVAILABLE and self.smiles:
+        if not self._mol_parse_attempted and _RDKIT_AVAILABLE and self.esmiles:
             self._mol_parse_attempted = True
             try:
-                self._mol = Chem.MolFromSmiles(self.smiles)
+                self._mol = Chem.MolFromSmiles(self.esmiles)
             except Exception:
                 self._mol = None
         return self._mol
@@ -92,7 +92,7 @@ class Molecule:
     def mol(self, value: Any) -> None:
         self._mol = value
         if value is not None and _RDKIT_AVAILABLE:
-            self.smiles = Chem.MolToSmiles(value)
+            self.esmiles = Chem.MolToSmiles(value)
 
     def clear_mol_cache(self) -> None:
         self._mol = None
@@ -102,26 +102,26 @@ class Molecule:
 
     @classmethod
     def from_smiles(
-        cls, smiles: str, source: str = "manual", **kwargs: Any
+        cls, esmiles: str, source: str = "manual", **kwargs: Any
     ) -> Molecule:
-        return cls(smiles=smiles, source=source, **kwargs)
+        return cls(esmiles=esmiles, source=source, **kwargs)
 
     @classmethod
     def from_mol(cls, mol: Any, name: str = "", **kwargs: Any) -> Molecule:
         if mol is None:
             raise ValueError("RDKit Mol object cannot be None")
-        smiles = Chem.MolToSmiles(mol)
-        return cls(smiles=smiles, name=name or smiles, _mol=mol, **kwargs)
+        esmiles = Chem.MolToSmiles(mol)
+        return cls(esmiles=esmiles, name=name or esmiles, _mol=mol, **kwargs)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Molecule:
         """从字典反序列化。兼容 schema 格式和旧 reader 格式。"""
-        # 旧 reader 格式：{mol, smiles, name, activity, cas, props, ...}
+        # 旧 reader 格式：{mol, esmiles, name, activity, cas, props, ...}
         if "mol" in data or (
-            "smiles" in data and "metadata" not in data and "id" not in data
+            "esmiles" in data and "metadata" not in data and "id" not in data
         ):
             mol = data.get("mol")
-            smiles = data.get("smiles", "")
+            esmiles_str = data.get("esmiles", "") or data.get("smiles", "")
             kwargs: dict[str, Any] = {
                 "name": data.get("name", ""),
                 "activity": data.get("activity"),
@@ -136,10 +136,11 @@ class Molecule:
             }
             if mol is not None:
                 return cls.from_mol(mol, **kwargs)
-            return cls(smiles=smiles, **kwargs)
+            return cls(esmiles=esmiles_str, **kwargs)
         # schema 标准格式
         known = {
             "id",
+            "esmiles",
             "smiles",
             "name",
             "source",
@@ -157,7 +158,7 @@ class Molecule:
         meta = {**data.get("metadata", {}), **extra}
         return cls(
             id=data.get("id", str(uuid.uuid4())),
-            smiles=data.get("smiles", ""),
+            esmiles=data.get("esmiles", "") or data.get("smiles", ""),
             name=data.get("name", ""),
             source=data.get("source", "manual"),
             activity=data.get("activity"),
@@ -176,7 +177,7 @@ class Molecule:
     def to_dict(self) -> dict[str, Any]:
         """序列化为 JSON-safe 字典。"""
         d: dict[str, Any] = {
-            "smiles": self.smiles,
+            "esmiles": self.esmiles,
             "name": self.name,
             "activity": self.activity,
             "activity_raw": self.activity_raw,
@@ -199,7 +200,7 @@ class Molecule:
     def copy(self) -> Molecule:
         return Molecule(
             id=self.id,
-            smiles=self.smiles,
+            esmiles=self.esmiles,
             name=self.name,
             source=self.source,
             activity=self.activity,
@@ -236,16 +237,16 @@ class Molecule:
     # ---- 哈希与比较（基于 SMILES）----
 
     def __hash__(self) -> int:
-        return hash(self.smiles)
+        return hash(self.esmiles)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Molecule):
             return NotImplemented
-        return self.smiles == other.smiles
+        return self.esmiles == other.esmiles
 
     def __repr__(self) -> str:
         return (
-            f"Molecule(name={self.name!r}, smiles={self.smiles[:20]!r}, "
+            f"Molecule(name={self.name!r}, esmiles={self.esmiles[:20]!r}, "
             f"activity={self.activity}, atoms={self.num_atoms()})"
         )
 
@@ -291,7 +292,7 @@ class MoleculeBatch:
         return self.filter_by(lambda e: e.has_activity())
 
     def filter_by_smiles_length(self, max_len: int = 200) -> MoleculeBatch:
-        return MoleculeBatch([m for m in self.entries if len(m.smiles) <= max_len])
+        return MoleculeBatch([m for m in self.entries if len(m.esmiles) <= max_len])
 
     def filter_by_size(
         self, min_atoms: int | None = None, max_atoms: int | None = None
@@ -328,11 +329,11 @@ class MoleculeBatch:
 
     # ---- 去重 ----
 
-    def deduplicate(self, key: str = "smiles") -> MoleculeBatch:
-        if key == "smiles":
+    def deduplicate(self, key: str = "esmiles") -> MoleculeBatch:
+        if key == "esmiles" or key == "smiles":
             seen: dict[str, list[Molecule]] = {}
             for entry in self.entries:
-                seen.setdefault(entry.smiles, []).append(entry)
+                seen.setdefault(entry.esmiles, []).append(entry)
             deduped: list[Molecule] = []
             for _, group in seen.items():
                 representative = group[0].copy()
@@ -367,7 +368,7 @@ class MoleculeBatch:
         for e in self.entries:
             record: dict[str, Any] = {
                 "Name": e.name,
-                "SMILES": e.smiles,
+                "E-SMILES": e.esmiles,
                 "NumAtoms": e.num_atoms(),
                 "NumBonds": e.num_bonds(),
                 "MolecularWeight": e.molecular_weight(),
@@ -390,7 +391,7 @@ class MoleculeBatch:
 
         records = []
         for m in self.entries:
-            rec: dict[str, Any] = {"SMILES": m.smiles}
+            rec: dict[str, Any] = {"E-SMILES": m.esmiles}
             rec.update(
                 {
                     k: v
@@ -433,10 +434,10 @@ class MoleculeBatch:
         df.to_excel(path, index=False)
 
     @classmethod
-    def from_smiles_list(
-        cls, smiles_list: list[str], source: str = "manual"
+    def from_esmiles_list(
+        cls, esmiles_list: list[str], source: str = "manual"
     ) -> MoleculeBatch:
-        return cls([Molecule.from_smiles(s, source=source) for s in smiles_list])
+        return cls([Molecule.from_smiles(s, source=source) for s in esmiles_list])
 
     def __repr__(self) -> str:
         return f"MoleculeBatch(n={len(self.entries)})"

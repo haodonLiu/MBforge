@@ -81,7 +81,7 @@ async def molscribe(request: Request) -> dict:
 
         set_model_status("vlm", "ready")
         return {
-            "smiles": smiles,
+            "esmiles": smiles,
             "confidence": confidence,
             "success": bool(smiles),
         }

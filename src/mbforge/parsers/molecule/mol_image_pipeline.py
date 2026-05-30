@@ -568,7 +568,7 @@ class MolImagePipeline:
 
             results.append(
                 ExtractionResult(
-                    smiles=smiles,
+                    esmiles=smiles,
                     source="image",
                     moldet_conf=det_conf,
                     scribe_conf=scribe_conf,
@@ -580,8 +580,8 @@ class MolImagePipeline:
             )
 
         logger.info(
-            "页面 %d 检测到 %d 个分子区域，识别 %d 个 SMILES",
-            page_idx, len(img_boxes), sum(1 for r in results if r.smiles),
+            "页面 %d 检测到 %d 个分子区域，识别 %d 个 E-SMILES",
+            page_idx, len(img_boxes), sum(1 for r in results if r.esmiles),
         )
         return results
 
@@ -626,7 +626,7 @@ class MolImagePipeline:
                 logger.warning("复检区域 SMILES 识别失败：%s", exc)
 
         return ExtractionResult(
-            smiles=smiles,
+            esmiles=smiles,
             source="image",
             moldet_conf=det_conf,
             scribe_conf=scribe_conf,

@@ -29,29 +29,28 @@ class MoleculeExtractor:
     )
 
     def __init__(self):
-        self._seen_smiles: set = set()
+        self._seen_esmiles: set = set()
 
-    def is_valid_smiles(self, smiles: str) -> bool:
-        """验证 SMILES 是否有效."""
+    def is_valid_esmiles(self, esmiles: str) -> bool:
+        """验证 E-SMILES 是否有效."""
         if Chem is None:
-            # fallback: basic syntax check
-            return len(smiles) > 3 and any(c in smiles for c in "CcNnOoSsPp")
+            return len(esmiles) > 3 and any(c in esmiles for c in "CcNnOoSsPp")
         try:
-            mol = Chem.MolFromSmiles(smiles)
+            mol = Chem.MolFromSmiles(esmiles)
             return mol is not None and mol.GetNumAtoms() > 2
         except Exception:
             return False
 
-    def extract_smiles_candidates(self, text: str) -> list[str]:
-        """从文本中提取候选 SMILES."""
+    def extract_esmiles_candidates(self, text: str) -> list[str]:
+        """从文本中提取候选 E-SMILES."""
         candidates = []
         for match in self.SMILES_PATTERN.finditer(text):
             candidate = match.group(0)
-            if candidate in self._seen_smiles:
+            if candidate in self._seen_esmiles:
                 continue
-            if self.is_valid_smiles(candidate):
+            if self.is_valid_esmiles(candidate):
                 candidates.append(candidate)
-                self._seen_smiles.add(candidate)
+                self._seen_esmiles.add(candidate)
         return candidates
 
     def extract_activities(self, text: str) -> list[dict[str, Any]]:
@@ -72,15 +71,15 @@ class MoleculeExtractor:
 
     def extract_from_text(self, text: str, doc_id: str = "") -> list[Molecule]:
         """从文本提取分子记录."""
-        smiles_list = self.extract_smiles_candidates(text)
+        esmiles_list = self.extract_esmiles_candidates(text)
         activities = self.extract_activities(text)
 
-        # 预计算每个 SMILES 在文本中的位置
-        smiles_positions = []
-        for smi in smiles_list:
+        # 预计算每个 E-SMILES 在文本中的位置
+        esmiles_positions = []
+        for smi in esmiles_list:
             pos = text.find(smi)
             if pos >= 0:
-                smiles_positions.append((smi, pos))
+                esmiles_positions.append((smi, pos))
 
         # 预计算每个活性数据在文本中的位置
         activity_positions = []
@@ -91,7 +90,7 @@ class MoleculeExtractor:
 
         records = []
         used_activity_idx = set()
-        for smi, smi_pos in smiles_positions:
+        for smi, smi_pos in esmiles_positions:
             # 基于位置距离的精确匹配：找最近的未使用活性
             activity = None
             activity_unit = None
@@ -111,7 +110,7 @@ class MoleculeExtractor:
                     activity_unit = best["units"]
                     used_activity_idx.add(best_idx)
             rec = Molecule(
-                smiles=smi,
+                esmiles=smi,
                 source="pdf",
                 activity=activity,
                 activity_unit=activity_unit,
@@ -128,11 +127,11 @@ class MoleculeExtractor:
         records = []
         molecules = result_dict.get("molecules", [])
         for mol_data in molecules:
-            smi = mol_data.get("smiles", "")
-            if not smi or not self.is_valid_smiles(smi):
+            smi = mol_data.get("esmiles", "") or mol_data.get("smiles", "")
+            if not smi or not self.is_valid_esmiles(smi):
                 continue
             rec = Molecule(
-                smiles=smi,
+                esmiles=smi,
                 source="pdf",
                 name=mol_data.get("name", ""),
                 activity=mol_data.get("activity"),

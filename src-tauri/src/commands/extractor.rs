@@ -59,22 +59,22 @@ fn extract_context(text: &str, start: usize, end: usize) -> String {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SmilesWithPosition {
-    pub smiles: String,
+pub struct EsmilesWithPosition {
+    pub esmiles: String,
     pub position: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssociatedMolecule {
-    pub smiles: String,
+    pub esmiles: String,
     pub activity: Option<ActivityData>,
     pub position: usize,
     pub confidence: String,
     pub source_doc: String,
 }
 
-/// Extract SMILES candidates with their text positions.
-fn extract_smiles_with_positions(text: &str) -> Vec<SmilesWithPosition> {
+/// Extract esmiles candidates with their text positions.
+fn extract_esmiles_with_positions(text: &str) -> Vec<EsmilesWithPosition> {
     let mut seen = std::collections::HashSet::new();
     let mut results = Vec::new();
 
@@ -85,8 +85,8 @@ fn extract_smiles_with_positions(text: &str) -> Vec<SmilesWithPosition> {
         }
         if is_valid_smiles_candidate(candidate) {
             seen.insert(candidate.to_string());
-            results.push(SmilesWithPosition {
-                smiles: candidate.to_string(),
+            results.push(EsmilesWithPosition {
+                esmiles: candidate.to_string(),
                 position: m.start(),
             });
         }
@@ -124,23 +124,21 @@ fn extract_activities_with_positions(text: &str) -> Vec<(ActivityData, usize)> {
     results
 }
 
-/// Extract SMILES from text and associate them with nearby activity data
+/// Extract esmiles from text and associate them with nearby activity data
 /// based on spatial proximity (200-character window).
-///
-/// Port of `MoleculeExtractor.extract_from_text()`.
 #[tauri::command]
 pub fn extract_associated_molecules(
     text: String,
     source_doc: String,
 ) -> Vec<AssociatedMolecule> {
-    let smiles_list = extract_smiles_with_positions(&text);
+    let esmiles_list = extract_esmiles_with_positions(&text);
     let activities = extract_activities_with_positions(&text);
     let proximity_window: usize = 200;
 
     let mut used = vec![false; activities.len()];
     let mut results = Vec::new();
 
-    for s in &smiles_list {
+    for s in &esmiles_list {
         let mut best_idx = None;
         let mut best_dist = usize::MAX;
 
@@ -170,7 +168,7 @@ pub fn extract_associated_molecules(
 
         let confidence = if activity.is_some() { "high" } else { "low" }.to_string();
         results.push(AssociatedMolecule {
-            smiles: s.smiles.clone(),
+            esmiles: s.esmiles.clone(),
             activity,
             position: s.position,
             confidence,
@@ -185,14 +183,14 @@ pub fn extract_associated_molecules(
 // Tauri commands
 // ---------------------------------------------------------------------------
 
-/// Extract SMILES candidates from text using regex + basic validation.
+/// Extract esmiles candidates from text using regex + basic validation.
 ///
 /// Port of `MoleculeExtractor.extract_smiles_candidates()` from
 /// `src/mbforge/parsers/molecule/molecule_extractor.py`.
 /// Note: RDKit validation is not available in Rust — this uses basic
 /// heuristic filtering instead.
 #[tauri::command]
-pub fn extract_smiles_candidates(text: String) -> Vec<String> {
+pub fn extract_esmiles_candidates(text: String) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut candidates = Vec::new();
 

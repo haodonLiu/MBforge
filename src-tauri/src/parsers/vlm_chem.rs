@@ -25,16 +25,16 @@ impl Default for VlmConfig {
 /// MolScribe 识别结果
 #[derive(Debug, Clone)]
 pub struct ChemImageResult {
-    pub smiles: String,
+    pub esmiles: String,
     pub confidence: f64,
 }
 
-/// 用 MolScribe 识别化学结构图 → SMILES
+/// 用 MolScribe 识别化学结构图 → esmiles
 ///
 /// # Arguments
 /// * `image_path` - 图片本地路径
 /// * `config` - VLM 端点配置
-pub async fn image_to_smiles(
+pub async fn image_to_esmiles(
     image_path: &str,
     config: &VlmConfig,
 ) -> Result<ChemImageResult, String> {
@@ -78,25 +78,25 @@ pub async fn image_to_smiles(
     let val: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("MolScribe JSON parse error: {}", e))?;
 
-    let smiles = val["smiles"]
+    let esmiles = val["smiles"]
         .as_str()
         .unwrap_or("")
         .to_string();
     let confidence = val["confidence"].as_f64().unwrap_or(0.0);
 
-    Ok(ChemImageResult { smiles, confidence })
+    Ok(ChemImageResult { esmiles, confidence })
 }
 
 /// 用 MolScribe 批量识别多张图片
 ///
 /// 返回 (filename → ChemImageResult) 的映射，识别失败的图片不在结果中
-pub async fn batch_image_to_smiles(
+pub async fn batch_image_to_esmiles(
     image_paths: &[(String, String)], // (filename, full_path)
     config: &VlmConfig,
 ) -> Vec<(String, ChemImageResult)> {
     let mut results = Vec::new();
     for (filename, full_path) in image_paths {
-        match image_to_smiles(full_path, config).await {
+        match image_to_esmiles(full_path, config).await {
             Ok(result) => results.push((filename.clone(), result)),
             Err(e) => {
                 eprintln!("[vlm_chem] failed for {}: {}", filename, e);

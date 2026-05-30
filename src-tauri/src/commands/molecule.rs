@@ -180,12 +180,12 @@ pub async fn mol_find_analogs_with_activity(
 #[tauri::command]
 pub async fn mol_scaffold_profile(
     state: tauri::State<'_, MolDbState>,
-    scaffold_smiles: String,
+    scaffold_esmiles: String,
 ) -> Result<ScaffoldProfile, String> {
     let guard = state.inner.read().await;
     let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
     let mconn = db.molecules_conn()?;
-    crate::core::sar_query::scaffold_activity_profile(&scaffold_smiles, &mconn)
+    crate::core::sar_query::scaffold_activity_profile(&scaffold_esmiles, &mconn)
 }
 
 #[tauri::command]

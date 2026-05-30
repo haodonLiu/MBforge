@@ -13,7 +13,7 @@ use crate::core::molecule_db::MOL_DB_FILENAME;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MoleculeRecord {
     pub mol_id: String,
-    pub smiles: String,
+    pub esmiles: String,
     #[serde(default)]
     pub name: String,
     #[serde(default)]
@@ -39,10 +39,10 @@ pub struct MoleculeRecord {
 }
 
 impl MoleculeRecord {
-    pub fn new(mol_id: &str, smiles: &str) -> Self {
+    pub fn new(mol_id: &str, esmiles: &str) -> Self {
         Self {
             mol_id: mol_id.to_string(),
-            smiles: smiles.to_string(),
+            esmiles: esmiles.to_string(),
             name: String::new(),
             source_doc: String::new(),
             activity: None,
@@ -63,14 +63,14 @@ impl MoleculeRecord {
     /// heuristics since RDKit is unavailable in Rust.
     /// Complex properties (LogP, TPSA) are left for the sidecar.
     pub fn compute_properties(&self) -> serde_json::Value {
-        let smiles = &self.smiles;
-        if smiles.is_empty() {
+        let esmiles = &self.esmiles;
+        if esmiles.is_empty() {
             return serde_json::json!({});
         }
 
-        let mw = estimate_molecular_weight(smiles);
-        let (hbd, hba) = estimate_hbd_hba(smiles);
-        let rotatable = estimate_rotatable_bonds(smiles);
+        let mw = estimate_molecular_weight(esmiles);
+        let (hbd, hba) = estimate_hbd_hba(esmiles);
+        let rotatable = estimate_rotatable_bonds(esmiles);
 
         serde_json::json!({
             "MW": mw,
@@ -91,7 +91,7 @@ impl MoleculeRecord {
 
         Ok(Self {
             mol_id: row.get(0)?,
-            smiles: row.get(1)?,
+            esmiles: row.get(1)?,
             name: row.get(2).unwrap_or_default(),
             source_doc: row.get(3).unwrap_or_default(),
             activity: row.get(4).ok(),
@@ -334,7 +334,7 @@ impl MoleculeDatabase {
                 "
             CREATE TABLE IF NOT EXISTS molecules (
                 mol_id TEXT PRIMARY KEY,
-                smiles TEXT NOT NULL,
+                esmiles TEXT NOT NULL,
                 name TEXT,
                 source_doc TEXT,
                 activity REAL,
@@ -347,7 +347,7 @@ impl MoleculeDatabase {
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-            CREATE INDEX IF NOT EXISTS idx_mol_smiles ON molecules(smiles);
+            CREATE INDEX IF NOT EXISTS idx_mol_esmiles ON molecules(esmiles);
             CREATE INDEX IF NOT EXISTS idx_mol_source ON molecules(source_doc);
             CREATE INDEX IF NOT EXISTS idx_mol_status ON molecules(status);
             CREATE INDEX IF NOT EXISTS idx_mol_source_type ON molecules(source_type);
@@ -361,7 +361,7 @@ impl MoleculeDatabase {
             .execute_batch(
                 "
             CREATE VIRTUAL TABLE IF NOT EXISTS mol_search USING fts5(
-                name, notes, smiles,
+                name, notes, esmiles,
                 content='molecules',
                 content_rowid='rowid'
             );
@@ -390,12 +390,12 @@ impl MoleculeDatabase {
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO molecules
-                 (mol_id, smiles, name, source_doc, activity, activity_type,
+                 (mol_id, esmiles, name, source_doc, activity, activity_type,
                   units, source_type, status, properties, tags, notes)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 params![
                     rec.mol_id,
-                    rec.smiles,
+                    rec.esmiles,
                     rec.name,
                     rec.source_doc,
                     rec.activity,
@@ -412,9 +412,9 @@ impl MoleculeDatabase {
 
         // Sync FTS5 index
         let _ = self.conn.execute(
-            "INSERT INTO mol_search(rowid, name, notes, smiles)
+            "INSERT INTO mol_search(rowid, name, notes, esmiles)
              VALUES (last_insert_rowid(), ?1, ?2, ?3)",
-            params![rec.name, rec.notes, rec.smiles],
+            params![rec.name, rec.notes, rec.esmiles],
         );
 
         Ok(())
@@ -441,15 +441,15 @@ impl MoleculeDatabase {
         }
     }
 
-    /// Search molecule by exact SMILES match.
-    pub fn search_by_smiles(&self, smiles: &str) -> Result<Option<MoleculeRecord>, String> {
+    /// Search molecule by exact esmiles match.
+    pub fn search_by_esmiles(&self, esmiles: &str) -> Result<Option<MoleculeRecord>, String> {
         let mut stmt = self
             .conn
-            .prepare("SELECT * FROM molecules WHERE smiles = ?")
+            .prepare("SELECT * FROM molecules WHERE esmiles = ?")
             .map_err(|e| format!("Prepare failed: {}", e))?;
 
         let mut rows = stmt
-            .query(params![smiles])
+            .query(params![esmiles])
             .map_err(|e| format!("Query failed: {}", e))?;
 
         match rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
@@ -623,8 +623,8 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn make_record(mol_id: &str, smiles: &str) -> MoleculeRecord {
-        MoleculeRecord::new(mol_id, smiles)
+    fn make_record(mol_id: &str, esmiles: &str) -> MoleculeRecord {
+        MoleculeRecord::new(mol_id, esmiles)
     }
 
     #[test]
@@ -637,7 +637,7 @@ mod tests {
 
         let loaded = db.get_molecule("mol-1").unwrap().unwrap();
         assert_eq!(loaded.mol_id, "mol-1");
-        assert_eq!(loaded.smiles, "CC(=O)Oc1ccccc1C(=O)O");
+        assert_eq!(loaded.esmiles, "CC(=O)Oc1ccccc1C(=O)O");
 
         // Properties should be auto-computed
         let mw = loaded.properties["MW"].as_f64().unwrap();
@@ -652,14 +652,14 @@ mod tests {
     }
 
     #[test]
-    fn test_search_by_smiles() {
+    fn test_search_by_esmiles() {
         let tmp = TempDir::new().unwrap();
         let db = MoleculeDatabase::open(tmp.path()).unwrap();
 
         db.add_molecule(&make_record("m1", "CCO")).unwrap();
         db.add_molecule(&make_record("m2", "CCCO")).unwrap();
 
-        let found = db.search_by_smiles("CCO").unwrap().unwrap();
+        let found = db.search_by_esmiles("CCO").unwrap().unwrap();
         assert_eq!(found.mol_id, "m1");
     }
 

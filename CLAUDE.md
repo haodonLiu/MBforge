@@ -4,12 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What MBForge Is
 
-React+Vite+Tauri 桌面应用，用于分子科学/药物发现研究。核心流程：PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询。FastAPI 模型服务器提供后端 API，React 前端通过 Tauri 桥接调用。
+React+Vite+Tauri 桌面应用，用于分子科学/药物发现研究。双语言架构：
+- **Rust** (`src-tauri/src/`): Agent ReAct 循环、PDF 原生解析（lopdf）、分子 SQLite 数据库、Tauri 命令层 — ~9,700 行
+- **Python** (`src/mbforge/`): FastAPI 模型服务器（port 18792）、LLM/Embedding/VLM 推理、ChromaDB 向量库、MolScribe — ~12,900 行
+
+核心流程：PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询。
 
 ## Build / Test / Lint Commands
 
 ```bash
-# 安装 Python 依赖（uv workspace，包含 openSAR 和 UniParser-Tools）
+# Rust 编译检查
+cd src-tauri && cargo check
+
+# Rust 测试（99 个）
+cd src-tauri && cargo test
+
+# 安装 Python 依赖
 uv sync --dev
 
 # 安装前端依赖
@@ -21,22 +31,8 @@ cd frontend && npm run dev
 # 启动模型服务器（FastAPI, port 18792）
 uv run uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792
 
-# 启动 GUI（自动启动模型服务器 + 打开浏览器）
-mbforge
-# 或
-uv run mbforge gui
-
-# 新建项目
-mbforge init ./my-project --name "MyProject"
-
-# 索引项目 PDF
-mbforge index ./my-project
-
-# 运行测试
+# Python 测试（28 个）
 uv run pytest tests/ -v
-
-# 运行单个测试文件
-uv run pytest tests/unit/test_project.py -v
 
 # 格式化
 uv run ruff format src/
@@ -53,106 +49,106 @@ cd src-tauri && cargo tauri build
 
 ## Architecture
 
-### Data Flow (Central Pipeline)
-
-```
-PDF → pdf-inspector (Rust Tauri command) → Markdown + classification
-  ↓ (fallback: PyMuPDF + PDFClassifier)
-  → split_text_chunks()
-  → MoleculeExtractor (regex SMILES) or MolImagePipeline (YOLO detection)
-  → DocumentSummarizer (L0/L1/L2 layered summaries via LLM)
-  → KnowledgeBase.index_document() (ChromaDB vector store)
-```
-
-This pipeline is `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py`, invoked by both CLI `index` command and model server endpoints.
-
-### pdf-inspector Integration
-
-pdf-inspector (Rust) is integrated as Tauri commands for PDF classification and text extraction:
-- `classify_pdf`: PDF type classification (TextBased/Scanned/Mixed/ImageBased), ~10-50ms
-- `extract_text`: Structured Markdown extraction with tables, headings, lists
-- Python pipeline calls Tauri commands via HTTP (transition period), falls back to PyMuPDF when unavailable
-- Config: `OcrConfig.use_pdf_inspector` (default: True)
-- Rust source: `src-tauri/src/commands/pdf.rs`
-- Frontend bridge: `frontend/src/api/tauri-bridge.ts`
-
 ### System Architecture
 
 ```
-┌─────────────────────┐     ┌─────────────────────────┐
-│  React+Vite Frontend │────▶│  FastAPI Model Server    │
-│  (port 5173)         │     │  (port 18792)            │
-│  Vite proxy /api/v1  │     │  13 routers under        │
-│  → localhost:18792   │     │  /api/v1/*               │
-└─────────────────────┘     └─────────────────────────┘
-                                     │
-                    ┌────────────────┼────────────────┐
-                    ▼                ▼                ▼
-             ┌──────────┐    ┌──────────┐    ┌──────────┐
-             │ PDFParser │    │ Agent    │    │ Knowledge│
-             │ Pipeline  │    │ (ReAct)  │    │ Base     │
-             └──────────┘    └──────────┘    └──────────┘
+┌────────────────────────────────────────────────────────┐
+│  React + Vite + TypeScript  (port 5173)                 │
+│  ┌──────────┐ ┌──────────┐ ┌─────────────────────────┐ │
+│  │  Chat     │ │Molecule  │ │ Settings / Project View │ │
+│  │  UI       │ │ Library  │ │                         │ │
+│  └────┬─────┘ └────┬─────┘ └───────────┬─────────────┘ │
+│       │            │                    │               │
+│  ┌────┴────────────┴────────────────────┴──────────┐   │
+│  │   tauri-bridge.ts  (window.__TAURI__.invoke)     │   │
+│  └───────────────────────┬──────────────────────────┘   │
+└──────────────────────────┼──────────────────────────────┘
+                           │
+┌──────────────────────────┼──────────────────────────────┐
+│  Tauri v2 Shell          │                               │
+│  ┌───────────────────────┴─────────────────────────┐    │
+│  │  Rust Agent + Parsers (src-tauri/src/)           │    │
+│  │                                                   │    │
+│  │  commands/ (6)  core/ (16)  parsers/ (12)        │    │
+│  │  │              │              │                  │    │
+│  │  │  Tauri API   │  ReAct Loop  │  PDF Pipeline    │    │
+│  │  │  invoke →    │  LLM+Tools+  │  lopdf +         │    │
+│  │  │  JSON        │  Memory+     │  MinerU+         │    │
+│  │  │              │  Trajectory  │  LlamaParse+     │    │
+│  │  └──────────────┴──────────────┴──────────────────┘    │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │  FastAPI Sidecar (port 18792, spawned by Tauri)  │    │
+│  │  routers/ (15)  models/  agents/  parsers/       │    │
+│  │  LLM / Embed / Rerank / VLM / KB / MolScribe    │    │
+│  └──────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────┘
 ```
 
-**Dev mode**: Vite dev server proxies `/api/v1/*` to `localhost:18792`. The model server must be running separately (`uv run uvicorn`).
-**Production**: Tauri shell spawns uvicorn as a sidecar process on app launch, kills it on close.
+**Dev mode**: Vite dev server proxies `/api/v1/*` to `localhost:18792` + `window.__TAURI__.invoke()` for Rust commands.
+**Production**: Tauri shell spawns uvicorn as sidecar. Frontend uses both HTTP API and Tauri invoke.
+
+### Data Flow (Central Pipeline)
+
+```
+PDF ─→ Rust parsers/pipeline.rs (Stage 1-6)
+  │
+  ├─ 1. classify: intent.rs → PDF type / structure
+  ├─ 2. extract:  mineru.rs / llama_parse.rs / uniparser.rs → Markdown
+  ├─ 3. images:   images.rs (lopdf) → embedded images
+  ├─ 4. associate: association.rs + keywords.rs → molecules + activities
+  ├─ 5. pending:  pending.rs → save partial results
+  └─ 6. store:    molecule_store.rs → SQLite + FTS5
+       │
+       └─→ Python side: LLM post_process → StructuredData → KnowledgeBase (ChromaDB)
+```
+
+Python fallback: `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py` (PyMuPDF) is used when Rust pipeline is unavailable (CLI `index` command).
 
 ### Module Layout
 
-| 包 | 职责 | 关键类 |
-|---|---|---|
-| `core/` | 数据模型 | `Project`（vault 隐喻，`.mbforge/` 隐藏目录）、`KnowledgeBase`（ChromaDB 封装 + rerank）、`MoleculeDatabase`（SQLite + FTS5）、`DocumentProcessor`、`DocumentSummarizer` |
-| `models/` | AI 模型抽象层 | `BaseLLM`/`BaseEmbedder`/`BaseReranker`/`BaseVLM` 基类 + `OpenAILLM`/`AnthropicLLM`/`SentenceTransformerEmbedder`。`create_llm_from_config()` 按 provider 字符串分发 |
-| `parsers/` | PDF 解析与分子提取 | `PDFParserPipeline` 串联全部解析步骤 |
-| `model_server/` | FastAPI 模型服务器 | 路由：`llm`、`embed`、`rerank`、`vlm`、`agent`、`kb`、`molecule`、`moldet`、`uniparser`、`project`、`file`、`health` |
-| `agent/` | ReAct 循环 Agent | `ProjectAgent` + `LayeredContext` + `ToolExecutor`（10 个工具）+ `MemoryManager` + `TrajectoryTracker` |
-| `plugins/` | 插件系统 | `PluginBase`、`PluginRegistry`，含 `cadd_template` 和 `unidock` 插件 |
-| `workflow/` | 占位模块 | `generation`、`docking`、`qsar`、`md` — 仅 toggle 开关，尚未实现 |
-| `parsers/uniparser/` | UniParser API 封装 | `ParserClient` 对接 `UniParser-Tools`，`ParseResult` 数据模型 |
-| `utils/` | 配置、日志、辅助 | `AppConfig`、`get_logger`、`generate_uuid`、`split_text_chunks` |
-| `sar/` | SAR 分析引擎 | `SARAnalyzer`（结构-活性关系分析） |
-| `csar_io/` | 分子文件 I/O | `MoleculeReader`、`MoleculeWriter`，支持 CAS 查询 |
-| `csar_vis/` | SAR 可视化 | `SARRenderer`、`PlotSettings` |
-| `clustering/` | 分子聚类 | `MolecularClusterer`（指纹相似度）、`ScaffoldClusterer`（Bemis-Murcko） |
-| `mcs/` | 最大公共子结构 | `MCSFinder` |
-| `molecules/` | 分子数据模型 | `MoleculeEntry`、`MoleculeBatch`、`MoleculeDescriptorCalculator`、`LipinskiFilter`、`VeberFilter`、`PAINSFilter`、`MoleculeStandardizer`、`ScaffoldAnalyzer`、`RECAPFragmenter`、`BRICSFragmenter`、`SubstructureMatcher` |
-| `csar_main.py` | CSAR CLI 入口 | `main()`，提供完整 SAR 分析工作流命令行接口（`uv run csar`） |
-| `frontend/` | React+Vite 前端 | `App.tsx`（路由）、组件：`Chat`、`PDFViewer`、`MoleculeLibrary`、`Workflow`、`Settings`、`Search`、`ProjectView` |
-| `src-tauri/` | Tauri 桥接层 | `main.rs`（Rust 入口）、`tauri.conf.json`（窗口配置） |
+#### Rust 侧 — `src-tauri/src/` (9,681 行 / ~34 模块)
 
-### Workspace Layout
+| 模块 | 文件数 | 职责 | 关键类型 |
+|------|--------|------|----------|
+| `commands/` | 6 | Tauri invoke 命令层 | `classify_pdf`, `extract_text`, `extract_smiles`, `mol_init`, `agent_init` 等 25+ 命令 |
+| `core/` | 16 | Agent + 数据层 | `Agent` (ReAct), `LlmClient`, `LayeredContext`, `ToolExecutor`, `MoleculeRecord`, `MoleculeDatabase`, `MemoryManager`, `TrajectoryTracker` |
+| `parsers/` | 12 | PDF 解析管线 | `PdfParseResult` (pipeline), `ExtractionResult` (association), `ExtractedImage`, `MineruClient`, `UniParserClient` |
 
-```
-MBForge/                  # uv workspace root
-├── src/mbforge/          # 主应用（含合并后的 csar 代码）
-├── frontend/             # React+Vite 前端
-├── src-tauri/            # Tauri Rust 桥接层
-├── setup/                # 一键配置脚本
-└── tests/
-```
+#### Python 侧 — `src/mbforge/` (12,882 行)
 
-`openSAR` 和 `UniParser-Tools` 位于 `setup/` 目录，作为 uv workspace 成员安装。当前核心代码直接用本地 PyMuPDF，未接入 UniParser API。openSAR 尚未集成到 mbforge 核心模块中。
+| 模块 | 职责 | 关键类 |
+|------|------|--------|
+| `core/` | 数据模型 | `Project`, `KnowledgeBase` (ChromaDB), `MoleculeDatabase` (SQLite+FTS5), `DocumentSummarizer` |
+| `models/` | AI 模型 | `BaseLLM`/`OpenAILLM`/`AnthropicLLM`, `SentenceTransformerEmbedder`, `BaseVLM` |
+| `model_server/` | FastAPI 服务 | 15 routers, singleton managers for LLM/Embed/Rerank/VLM/MolDet |
+| `parsers/` | Python 解析 | `PDFParserPipeline`, `MoleculeExtractor`, `MolImagePipeline`, `MolScribe` |
+| `agent/` | 工具框架 | `ToolExecutor` (10 tools), semantic cache, streaming search |
+| `molecules/` | 数据合约 | `MoleculeEntry`, `MoleculeBatch` schema |
+
+### Rust Agent (Primary)
+
+`src-tauri/src/core/agent.rs` 实现完整的 ReAct Agent：
+- `Agent::new()` — 初始化 LLM client + ToolExecutor + context
+- `Agent::chat()` / `Agent::chat_stream()` — 循环：LLM 调用 → 工具执行 → 结果注入
+- `Agent::switch_project()` — 切换项目上下文
+- 20+ 工具注册在 `core/executor.rs`，含 KB 搜索、分子查询、SAR、文件操作、Agent 子代理
+- 记忆系统：`MemoryManager`（6 分类持久化）+ `TrajectoryTracker`（500 steps）
+- Python 模型服务器通过 `model_server/agent_manager.py` 桥接调用
 
 ### Config System (Two Tiers)
 
-- **全局**: `~/.config/MBForge/config.json`（`AppConfig`）— LLM、embedding、rerank、VLM 设置，支持 `MBFORGE_LLM_*` 环境变量覆盖
+- **全局**: `~/.config/MBForge/config.json`（`AppConfig`）— LLM、embedding、rerank、VLM 设置
 - **项目级**: `.mbforge/settings.json`（`ProjectSettings`）— 模型覆盖、workflow toggle
 
-### AI Model Layer
-
-`src/mbforge/models/` 提供统一抽象。实现类：`OpenAILLM`（OpenAI 兼容 API）、`AnthropicLLM`、`SentenceTransformerEmbedder`、`APIEmbedder`、`SentenceTransformerReranker`、`APIVLM`。工厂函数 `create_llm_from_config()` 根据配置中的 provider 字段选择实现。
-
 ### Model Server API
-
-FastAPI 服务器运行在 `127.0.0.1:18792`，提供以下端点：
 
 | 端点前缀 | 功能 |
 |----------|------|
 | `/api/v1/llm` | LLM 推理（chat/stream） |
 | `/api/v1/embed` | 文本 Embedding |
 | `/api/v1/rerank` | 结果重排序 |
-| `/api/v1/vlm` | 视觉语言模型 |
-| `/api/v1/agent` | Agent 对话（chat/chat-stream） |
+| `/api/v1/vlm` | 视觉语言模型 + MolScribe |
+| `/api/v1/agent` | Agent 桥接（chat/chat-stream） |
 | `/api/v1/kb` | 知识库管理 |
 | `/api/v1/molecule` | 分子数据库查询 |
 | `/api/v1/moldet` | 分子图像检测 |
@@ -161,89 +157,113 @@ FastAPI 服务器运行在 `127.0.0.1:18792`，提供以下端点：
 | `/api/v1/file` | 文件操作 |
 | `/api/v1/settings` | 设置管理 |
 | `/api/v1/health` | 健康检查 |
+| `/api/v1/download` | 模型下载（ModelScope） |
+| `/api/v1/chem` | 化学操作 |
 
-### Agent Manager (Singleton)
+### Phase 1–3 Migration Status
 
-`src/mbforge/model_server/agent_manager.py` 管理全局单例 `ProjectAgent`。切换项目时调用 `switch_project()` 保存旧上下文、加载新项目的 KB + mol_db + ToolExecutor。聊天历史持久化到 `.mbforge/memory/chat_history.json`。
+PDF 解析 Python→Rust 迁移进展：
 
-## Environment
-
-```bash
-cp .env.template .env
-# 编辑 UNIPARSER_HOST、UNIPARSER_API_KEY 等
-```
-
-`pyproject.toml` 中 `[tool.uv]` 使用清华镜像源，PyTorch 使用 `pytorch-cu128` 索引（CUDA 12.8），并 override 了 pandas/numpy 版本约束。
-
-## Frontend Development
-
-`frontend/vite.config.ts` 配置了 API 代理：`/api/v1` → `http://localhost:18792`。开发时需同时运行前端和后端：
-
-```bash
-# 终端 1：模型服务器
-uv run uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792
-
-# 终端 2：前端
-cd frontend && npm run dev
-```
+| Phase | 内容 | 状态 |
+|-------|------|------|
+| 1.1 | SMILES 提取 + 关联提取命令 | ✅ 完成 |
+| 1.2 | 分子-文本关联引擎 | ✅ 完成 |
+| 1.3 | 关键词 & 实体提取 | ✅ 完成 |
+| 1.4 | 文档摘要持久化 | ✅ 完成 |
+| 1.5 | 待处理提取保存 | ✅ 完成 |
+| 2 | SQLite 分子数据库（FTS5 + 属性估算） | ✅ 完成 |
+| 3 | 图像提取（lopdf 嵌入式 XObject） | ✅ 完成 |
+| 4 | OCR 集成（LiteParse PDFium, 待发布） | ⏳ 阻塞 |
+| 5 | VLM 描述管线 | ✅ 完成（Python sidecar） |
+| 6 | 内容提取 + 关联 | ✅ 完成 |
+| LiteParse | PDFium 二进制下载 tag 缺失 | ⏳ 阻塞 |
 
 ## Key Files
 
 | 文件 | 作用 |
 |------|------|
-| `src/mbforge/cli.py` | CLI 入口，`mbforge` 命令行工具 |
+| `src-tauri/src/main.rs` | Tauri 入口，25+ 命令注册，uvicorn sidecar 管理 |
+| `src-tauri/src/core/agent.rs` | **Rust ReAct Agent** 核心循环 |
+| `src-tauri/src/core/llm.rs` | LLM HTTP 客户端（OpenAI/Anthropic 兼容） |
+| `src-tauri/src/core/executor.rs` | 20+ 工具注册器 |
+| `src-tauri/src/core/molecule_store.rs` | SQLite 分子数据库 + FTS5 + 属性估算 |
+| `src-tauri/src/parsers/pipeline.rs` | 统一 PDF 解析管线（Stage 1-6） |
+| `src-tauri/src/parsers/images.rs` | lopdf 图像提取 |
+| `src-tauri/src/parsers/association.rs` | 分子-文本关联引擎 |
+| `src-tauri/src/commands/molecule.rs` | 18 个分子数据库 Tauri 命令 |
+| `src-tauri/src/commands/agent.rs` | Agent 会话 Tauri 命令 |
 | `src/mbforge/model_server/main.py` | FastAPI 模型服务器入口 |
-| `src/mbforge/model_server/agent_manager.py` | Agent 单例管理，项目切换，聊天历史持久化 |
-| `src/mbforge/core/project.py` | `Project` 类管理 vault 元数据 |
-| `src/mbforge/parsers/pdf_parser.py` | `PDFParserPipeline` 解析流水线 |
-| `src/mbforge/agent/agent.py` | `ProjectAgent` ReAct 循环 |
-| `src/mbforge/agent/tools.py` | Agent 可调用的 10 个工具定义 |
+| `src/mbforge/model_server/agent_manager.py` | Agent 桥接单例管理 |
+| `src/mbforge/core/knowledge_base.py` | ChromaDB 向量知识库 |
 | `frontend/src/App.tsx` | React 前端路由入口 |
-| `frontend/vite.config.ts` | Vite 配置（API 代理到 18792） |
-| `src-tauri/src/main.rs` | Tauri 桥接层 Rust 入口 |
+| `frontend/src/api/tauri-bridge.ts` | Tauri invoke 桥接 |
 
 ## Code Patterns
+
+### Adding a new Rust Tauri command
+
+```rust
+// 1. 在 commands/ 下某模块定义命令
+#[tauri::command]
+pub fn my_command(arg: String) -> Result<String, String> {
+    Ok(format!("processed: {}", arg))
+}
+
+// 2. 在 main.rs 中注册
+app.invoke_handler(tauri::generate_handler![
+    commands::my_command,
+    // ...
+]);
+```
+
+### Adding a new Rust Agent tool
+
+```rust
+// 1. 在 core/tools.rs 注册 ToolInfo
+ToolInfo {
+    name: "my_tool",
+    description: "Description for LLM",
+    parameters: serde_json::json!({
+        "type": "object",
+        "properties": { "arg": { "type": "string" } },
+        "required": ["arg"],
+    }),
+}
+
+// 2. 在 core/executor.rs 添加执行逻辑
+"my_tool" => {
+    let arg = args.get("arg").and_then(|v| v.as_str()).unwrap_or("");
+    // 执行...
+    Ok(serde_json::json!({ "result": arg }))
+}
+```
 
 ### Adding a new API endpoint to Model Server
 
 1. Create router in `src/mbforge/model_server/routers/` using `APIRouter`
-2. Add dependency injection in `src/mbforge/model_server/dependencies.py` if needed
-3. Register in `src/mbforge/model_server/main.py` via `app.include_router()`
-4. If it needs model singletons, use `get_llm()` etc. from `src/mbforge/model_server/models/`
+2. Register in `main.py` via `app.include_router()`
 
-### Adding a new tool to Agent
+### Adding a new PDF parser backend
 
-1. Define tool in `src/mbforge/agent/tools.py` using `@tool` decorator
-2. Register in `ToolExecutor.registry` in `agent/executor.py`
-3. Tool schema exported via `registry.to_openai_schemas()` for function calling
-
-### Adding a new model provider
-
-1. Inherit `BaseLLM` in `src/mbforge/models/`
-2. Add provider dispatch in `create_llm_from_config()` in `models/llm.py`
-
-### Adding a new workflow module
-
-1. Create module under `src/mbforge/workflow/`
-2. Inherit `WorkflowBase` from `workflow/base.py`
-3. Add toggle in `ProjectSettings`
-
-## Development Rules
+1. Create client in `src-tauri/src/parsers/` (e.g., `myparser.rs`)
+2. Implement `async fn parse(&self, input: &str) -> Result<ParsedOutput, String>`
+3. Add variant in `pipeline.rs` parser selection logic
 
 ### 遇到报错时
+
 停下来描述：(1) 错误现象 (2) 理解 (3) 解决方案，再行动。不要盲目穷举。
 
-## Code Navigation (CodeGraph)
+## Built-in Documentation
 
-Use `codegraph` CLI for code navigation and impact analysis:
+| 文档 | 位置 |
+|------|------|
+| E-SMILES 规范 + MBForge 集成 | `src-tauri/docs/esmiles/` |
+| LiteParse API 参考（官网存档） | `src-tauri/docs/liteparse/` |
+| 项目系统架构 | `docs/ARCHITECTURE.md` |
+| 公共 API 参考 | `docs/API.md` |
+| 技术栈详情 | `docs/TECH_STACK.md` |
+| 开发指南 | `docs/DEVELOPMENT.md` |
+| PDF 迁移规划 | `docs/pipeline-migration-plan.md` |
+| 管线重设计 | `docs/pipeline-redesign.md` |
+| PDF 提取工作流 | `docs/pdf-extraction-workflow.md` |
 
-```bash
-codegraph query "SymbolName"     # 符号搜索，含类型签名和行号
-codegraph callers "func_name"    # 追踪调用者
-codegraph callees "func_name"    # 被调用分析
-codegraph impact "ClassName"     # 重构前影响范围评估
-codegraph context "自然语言描述"  # AI 上下文构建
-codegraph sync                   # 代码修改后同步索引
-```
-
-索引状态：122 文件 / 2,363 节点 / 4,824 边。重构前必查 impact。

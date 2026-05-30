@@ -16,7 +16,7 @@ router = APIRouter()
 
 class MoleculeAddRequest(BaseModel):
     project_root: str
-    smiles: str
+    esmiles: str
     name: str = ""
     source_doc: str = ""
     activity: float | None = None
@@ -62,7 +62,7 @@ async def add_molecule(
     try:
         db = MoleculeDatabase(project.root)
         record = MoleculeRecord(
-            smiles=req.smiles,
+            esmiles=req.esmiles,
             name=req.name,
             source_doc=req.source_doc,
             activity=req.activity,
@@ -89,7 +89,7 @@ async def search_molecules(
         if conn is None:
             return {"success": False, "error": "Database not initialized"}
         rows = conn.execute(
-            "SELECT * FROM molecules WHERE name LIKE ? OR smiles LIKE ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM molecules WHERE name LIKE ? OR esmiles LIKE ? ORDER BY created_at DESC LIMIT ?",
             (f"%{q}%", f"%{q}%", limit),
         ).fetchall()
         results = [db._row_to_record(r) for r in rows]

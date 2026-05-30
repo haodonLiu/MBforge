@@ -5,7 +5,7 @@ use super::molecule_db::MoleculeRelationDb;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalogWithActivity {
     pub mol_id: String,
-    pub smiles: String,
+    pub esmiles: String,
     pub name: String,
     pub similarity_score: f64,
     pub activity: Option<f64>,
@@ -15,7 +15,7 @@ pub struct AnalogWithActivity {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScaffoldProfile {
-    pub scaffold_smiles: String,
+    pub scaffold_esmiles: String,
     pub molecule_count: usize,
     pub activities: Vec<ScaffoldActivityRecord>,
     pub activity_summary: ActivitySummary,
@@ -24,7 +24,7 @@ pub struct ScaffoldProfile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScaffoldActivityRecord {
     pub mol_id: String,
-    pub smiles: String,
+    pub esmiles: String,
     pub name: String,
     pub activity: Option<f64>,
     pub activity_type: String,
@@ -44,8 +44,8 @@ pub struct ActivitySummary {
 pub struct ActivityCliff {
     pub mol_a_id: String,
     pub mol_b_id: String,
-    pub mol_a_smiles: String,
-    pub mol_b_smiles: String,
+    pub mol_a_esmiles: String,
+    pub mol_b_esmiles: String,
     pub mol_a_name: String,
     pub mol_b_name: String,
     pub similarity_score: f64,
@@ -76,7 +76,7 @@ pub fn find_analogs_with_activity(
         if let Some(record) = get_molecule_activity(&neighbor_id, molecules_conn) {
             results.push(AnalogWithActivity {
                 mol_id: neighbor_id,
-                smiles: record.smiles,
+                esmiles: record.esmiles,
                 name: record.name,
                 similarity_score: score,
                 activity: record.activity,
@@ -94,10 +94,10 @@ pub fn find_analogs_with_activity(
 }
 
 pub fn scaffold_activity_profile(
-    scaffold_smiles: &str,
+    scaffold_esmiles: &str,
     molecules_conn: &rusqlite::Connection,
 ) -> Result<ScaffoldProfile, String> {
-    let mols = search_molecules_by_scaffold(scaffold_smiles, molecules_conn)?;
+    let mols = search_molecules_by_scaffold(scaffold_esmiles, molecules_conn)?;
 
     let mut activities = Vec::new();
     let mut with_act = 0;
@@ -117,7 +117,7 @@ pub fn scaffold_activity_profile(
         }
         activities.push(ScaffoldActivityRecord {
             mol_id: m.mol_id.clone(),
-            smiles: m.smiles.clone(),
+            esmiles: m.esmiles.clone(),
             name: m.name.clone(),
             activity: m.activity,
             activity_type: m.activity_type.clone(),
@@ -132,7 +132,7 @@ pub fn scaffold_activity_profile(
     };
 
     Ok(ScaffoldProfile {
-        scaffold_smiles: scaffold_smiles.to_string(),
+        scaffold_esmiles: scaffold_esmiles.to_string(),
         molecule_count: mols.len(),
         activities,
         activity_summary: ActivitySummary {
@@ -193,8 +193,8 @@ pub fn find_activity_cliffs(
                 cliffs.push(ActivityCliff {
                     mol_a_id: mol_a_id.clone(),
                     mol_b_id: mol_b_id.clone(),
-                    mol_a_smiles: mol_a.as_ref().map(|m| m.smiles.clone()).unwrap_or_default(),
-                    mol_b_smiles: mol_b.as_ref().map(|m| m.smiles.clone()).unwrap_or_default(),
+                    mol_a_esmiles: mol_a.as_ref().map(|m| m.esmiles.clone()).unwrap_or_default(),
+                    mol_b_esmiles: mol_b.as_ref().map(|m| m.esmiles.clone()).unwrap_or_default(),
                     mol_a_name: mol_a.as_ref().map(|m| m.name.clone()).unwrap_or_default(),
                     mol_b_name: mol_b.as_ref().map(|m| m.name.clone()).unwrap_or_default(),
                     similarity_score: score,
@@ -220,7 +220,7 @@ pub fn find_activity_cliffs(
 
 struct MolActivityRecord {
     mol_id: String,
-    smiles: String,
+    esmiles: String,
     name: String,
     activity: Option<f64>,
     activity_type: String,
@@ -232,13 +232,13 @@ fn get_molecule_activity(
     conn: &rusqlite::Connection,
 ) -> Option<MolActivityRecord> {
     conn.query_row(
-        "SELECT mol_id, smiles, name, activity, activity_type, units
+        "SELECT mol_id, esmiles, name, activity, activity_type, units
          FROM molecules WHERE mol_id = ?1",
         rusqlite::params![mol_id],
         |row| {
             Ok(MolActivityRecord {
                 mol_id: row.get(0).unwrap_or_default(),
-                smiles: row.get(1).unwrap_or_default(),
+                esmiles: row.get(1).unwrap_or_default(),
                 name: row.get(2).unwrap_or_default(),
                 activity: row.get(3).ok(),
                 activity_type: row.get(4).unwrap_or_default(),
@@ -250,16 +250,16 @@ fn get_molecule_activity(
 }
 
 fn search_molecules_by_scaffold(
-    scaffold_smiles: &str,
+    scaffold_esmiles: &str,
     conn: &rusqlite::Connection,
 ) -> Result<Vec<MolActivityRecord>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT mol_id, smiles, name, activity, activity_type, units
-             FROM molecules WHERE smiles LIKE ?1",
+            "SELECT mol_id, esmiles, name, activity, activity_type, units
+             FROM molecules WHERE esmiles LIKE ?1",
         )
         .map_err(|e| format!("Prepare failed: {}", e))?;
-    let pattern = format!("%{}%", scaffold_smiles);
+    let pattern = format!("%{}%", scaffold_esmiles);
     let mut rows = stmt
         .query(rusqlite::params![&pattern])
         .map_err(|e| format!("Query failed: {}", e))?;
@@ -268,7 +268,7 @@ fn search_molecules_by_scaffold(
     while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
         results.push(MolActivityRecord {
             mol_id: row.get(0).unwrap_or_default(),
-            smiles: row.get(1).unwrap_or_default(),
+            esmiles: row.get(1).unwrap_or_default(),
             name: row.get(2).unwrap_or_default(),
             activity: row.get(3).ok(),
             activity_type: row.get(4).unwrap_or_default(),

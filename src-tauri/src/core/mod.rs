@@ -5,6 +5,7 @@ pub mod context;
 pub mod executor;
 pub mod helpers;
 pub mod llm;
+pub mod markush;
 pub mod memory;
 pub mod molecule_db;
 pub mod pending;

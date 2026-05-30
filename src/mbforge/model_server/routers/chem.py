@@ -20,14 +20,14 @@ except ImportError:
 
 
 class TanimotoRequest(BaseModel):
-    smiles1: str
-    smiles2: str
+    esmiles1: str
+    esmiles2: str
 
 
 class TanimotoResponse(BaseModel):
     success: bool
-    smiles1: str
-    smiles2: str
+    esmiles1: str
+    esmiles2: str
     tanimoto: float | None
     error: str | None = None
 
@@ -52,40 +52,40 @@ async def tanimoto_similarity(request: TanimotoRequest) -> TanimotoResponse:
     if not _RDKI_AVAILABLE:
         return TanimotoResponse(
             success=False,
-            smiles1=request.smiles1,
-            smiles2=request.smiles2,
+            esmiles1=request.esmiles1,
+            esmiles2=request.esmiles2,
             tanimoto=None,
             error="RDKit not available",
         )
 
-    score = _compute_tanimoto(request.smiles1, request.smiles2)
+    score = _compute_tanimoto(request.esmiles1, request.esmiles2)
     if score is None:
         return TanimotoResponse(
             success=False,
-            smiles1=request.smiles1,
-            smiles2=request.smiles2,
+            esmiles1=request.esmiles1,
+            esmiles2=request.esmiles2,
             tanimoto=None,
-            error="Failed to compute Tanimoto — check SMILES validity",
+            error="Failed to compute Tanimoto — check E-SMILES validity",
         )
 
     return TanimotoResponse(
         success=True,
-        smiles1=request.smiles1,
-        smiles2=request.smiles2,
+        esmiles1=request.esmiles1,
+        esmiles2=request.esmiles2,
         tanimoto=score,
         error=None,
     )
 
 
 class BatchTanimotoRequest(BaseModel):
-    target_smiles: str
-    smiles_list: list[str]
+    target_esmiles: str
+    esmiles_list: list[str]
     threshold: float = 0.7
 
 
 class BatchTanimotoResponse(BaseModel):
     success: bool
-    target_smiles: str
+    target_esmiles: str
     results: list[dict]
     error: str | None = None
 
@@ -97,36 +97,36 @@ async def batch_tanimoto_similarity(
     if not _RDKI_AVAILABLE:
         return BatchTanimotoResponse(
             success=False,
-            target_smiles=request.target_smiles,
+            target_esmiles=request.target_esmiles,
             results=[],
             error="RDKit not available",
         )
 
-    target = request.target_smiles
+    target = request.target_esmiles
     target_mol = Chem.MolFromSmiles(target)
     if target_mol is None:
         return BatchTanimotoResponse(
             success=False,
-            target_smiles=target,
+            target_esmiles=target,
             results=[],
-            error="Invalid target SMILES",
+            error="Invalid target E-SMILES",
         )
 
     target_fp = AllChem.GetMorganFingerprintAsBitVect(target_mol, 2, nBits=2048)
     results = []
-    for smiles in request.smiles_list:
-        mol = Chem.MolFromSmiles(smiles)
+    for esmiles_str in request.esmiles_list:
+        mol = Chem.MolFromSmiles(esmiles_str)
         if mol is None:
             continue
         fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
         score = float(target_fp.TanimotoSimilarity(fp))
         if score >= request.threshold:
-            results.append({"smiles": smiles, "tanimoto": score})
+            results.append({"esmiles": esmiles_str, "tanimoto": score})
 
     results.sort(key=lambda x: x["tanimoto"], reverse=True)
     return BatchTanimotoResponse(
         success=True,
-        target_smiles=target,
+        target_esmiles=target,
         results=results,
         error=None,
     )

@@ -96,10 +96,10 @@ def split_text_chunks(
 
 
 def format_molecule_info(
-    smiles: str, name: str = "", activity: float | None = None
+    esmiles: str, name: str = "", activity: float | None = None
 ) -> str:
     """格式化分子信息为文本."""
-    lines = [f"**SMILES**: `{smiles}`"]
+    lines = [f"**E-SMILES**: `{esmiles}`"]
     if name:
         lines.append(f"**Name**: {name}")
     if activity is not None:

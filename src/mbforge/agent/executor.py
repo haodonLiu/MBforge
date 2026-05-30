@@ -62,7 +62,7 @@ class ToolExecutor:
         mixin.register_from_function(self.registry, self.get_doc_pages)
         # 分子数据库
         mixin.register_from_function(self.registry, self.list_molecules)
-        mixin.register_from_function(self.registry, self.search_molecule_by_smiles)
+        mixin.register_from_function(self.registry, self.search_molecule_by_esmiles)
         # 文档列表
         mixin.register_from_function(self.registry, self.list_documents)
         mixin.register_from_function(self.registry, self.get_document_summary)
@@ -289,29 +289,29 @@ class ToolExecutor:
                     if rec.activity
                     else "无活性数据"
                 )
-                lines.append(f"- {rec.name or rec.smiles[:30]} | {act}")
+                lines.append(f"- {rec.name or rec.esmiles[:30]} | {act}")
             return f"共 {len(records)} 条分子记录:\n" + "\n".join(lines)
         except Exception as e:
             logger.exception("List molecules failed")
             return f"查询失败: {e}"
 
     @tool(
-        "按SMILES搜索分子",
+        "按E-SMILES搜索分子",
         {
-            "smiles": {
+            "esmiles": {
                 "type": "string",
-                "description": "分子的SMILES字符串",
+                "description": "分子的E-SMILES字符串",
             },
         },
     )
-    def search_molecule_by_smiles(self, smiles: str) -> str:
-        """根据 SMILES 在分子数据库中查找分子."""
+    def search_molecule_by_esmiles(self, esmiles: str) -> str:
+        """根据 E-SMILES 在分子数据库中查找分子."""
         if self.mol_db is None:
             return "错误：分子数据库未初始化"
         try:
-            rec = self.mol_db.search_by_smiles(smiles)
+            rec = self.mol_db.search_by_esmiles(esmiles)
             if rec is None:
-                return f"未找到 SMILES 为 {smiles} 的分子"
+                return f"未找到 E-SMILES 为 {esmiles} 的分子"
             props = (
                 ", ".join([f"{k}={v:.2f}" for k, v in rec.properties.items()])
                 if rec.properties
@@ -319,7 +319,7 @@ class ToolExecutor:
             )
             return (
                 f"名称: {rec.name or '-'}\n"
-                f"SMILES: {rec.smiles}\n"
+                f"E-SMILES: {rec.esmiles}\n"
                 f"活性: {rec.activity or '-'} {rec.activity_type} {rec.units}\n"
                 f"性质: {props}\n"
                 f"备注: {rec.notes or '-'}"

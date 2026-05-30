@@ -1,205 +1,247 @@
-# MBForge - Molecular Knowledge Base & AI Workbench
+# MBForge — Molecular Knowledge Base & AI Workbench
 
-> 面向分子科学的桌面端知识库平台，支持 PDF OCR 解析、分子数据建库、LLM 智能对话，以及可扩展的分子生成/对接/QSAR/MD 工作流。
+> 面向分子科学/药物发现的桌面端知识库平台。PDF 解析 → 分子提取 → 向量知识库 → AI Agent 对话查询。
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![React 19](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2-orange.svg)](https://tauri.app/)
+[![Rust](https://img.shields.io/badge/Rust-2021_edition-red)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## 核心特性
 
-- **Vault 项目管理**：一个文件夹即一个项目，类似 Obsidian
-- **层级文件存储**：支持 Markdown、PDF、文本、分子数据文件
-- **PDF 解析流水线**：OCR/文本提取 → 分子识别 → LLM 归纳 → 向量索引
-- **知识库检索**：基于 ChromaDB 的语义搜索 + Rerank 重排序
-- **LLM 对话框**：支持流式输出、知识库上下文增强
-- **分子数据库**：SQLite + RDKit，支持活性数据、性质计算
-- **工作流扩展接口**：预留分子生成/对接/QSAR/MD 模块
-- **本地模型支持**：Embedding、Rerank、LLM、VLM 可配置本地或 API
+- **Vault 项目管理** — 一个文件夹即一个项目，类似 Obsidian
+- **PDF 解析流水线** — Rust 原生解析（lopdf）→ LLM 结构化 → 分子关联 → 摘要 → 向量索引
+- **AI Agent 对话** — 本地 Rust ReAct Agent（20+ 工具），支持上下文增强检索
+- **分子数据库** — SQLite + FTS5，含 SMILES 属性估算（MW/HBD/HBA/RotBonds）
+- **知识库检索** — ChromaDB 语义搜索 + Rerank 重排序
+- **模型服务器** — FastAPI（port 18792），提供 LLM/Embedding/Rerank/VLM/Agent/KB 等 15 个 API 路由
+- **SAR 分析** — 结构-活性关系引擎，支持 Scaffold 聚类、活性悬崖检测
+- **MolScribe 集成** — 分子图像 → SMILES 识别（Swin Transformer + Transformer Decoder）
+- **多源 PDF 解析** — PyMuPDF / MinerU / LlamaParse / UniParser 四引擎可选
+- **LiteParse 就绪** — 文档结构已预留，PDFium 发布后可切换
 
-## 安装
+## 架构概览
+
+```
+┌──────────────────────────────────────────────────┐
+│  React + Vite + TypeScript  (port 5173)           │
+│  ┌──────────┐ ┌──────────┐ ┌───────────────────┐ │
+│  │  Chat     │ │Molecule  │ │ Settings / Project│ │
+│  │  UI       │ │ Library  │ │ View              │ │
+│  └────┬─────┘ └────┬─────┘ └────────┬──────────┘ │
+│       │            │                │             │
+│  ┌────┴────────────┴────────────────┴──────────┐  │
+│  │           tauri-bridge.ts                    │  │
+│  │  (window.__TAURI__.invoke → Rust commands)   │  │
+│  └────────────────────┬─────────────────────────┘  │
+└───────────────────────┼───────────────────────────┘
+                        │
+┌───────────────────────┼───────────────────────────┐
+│  Tauri Shell (Tauri v2 + Rust Agent + Parsers)    │
+│  ┌──────────────────┐  ┌──────────────────────┐  │
+│  │ src-tauri/src/   │  │  FastAPI Sidecar     │  │
+│  │                   │  │  (port 18792)       │  │
+│  │  commands/  (6)   │  │  routers/      (15) │  │
+│  │  core/     (16)   │  │  models/       (5)  │  │
+│  │  parsers/  (12)   │  │  agent/        (4)  │  │
+│  │                   │  │  parsers/      (8)  │  │
+│  │  ~9,681 行 Rust   │  │  ~12,882 行 Python │  │
+│  └──────────────────┘  └──────────────────────┘  │
+└──────────────────────────────────────────────────┘
+```
+
+**双语言分工**: Rust 负责 Agent 循环、PDF 原生解析、分子数据库、SQLite 持久化；Python 负责 LLM/Embedding/VLM 模型推理、ChromaDB 向量库、MolScribe 推理、FastAPI REST API。
+
+## 快速开始
 
 ```bash
-# 使用 uv 安装依赖（推荐）
+# 安装 Python 依赖
 uv sync --dev
 
-# 或安装为可编辑模式
-uv pip install -e .
+# 启动模型服务器（终端 1）
+uv run uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792
 
-# 首次运行前，复制环境变量模板
-cp .env.template .env
-# 编辑 .env，配置 UNIPARSER_HOST、UNIPARSER_API_KEY 等
+# 启动前端（终端 2）
+cd frontend && npm run dev
 ```
 
-### 一键配置（交互式）
-
-Linux/macOS/Git Bash:
-```bash
-bash setup/index.sh
-```
-
-Windows CMD:
-```cmd
-setup\index.bat
-```
-
-## 使用
-
-### 命令行
+### 生产构建
 
 ```bash
-# 启动 GUI
-mbforge
-mbforge gui
-
-# 新建项目
-mbforge init ./my-project --name "MyProject"
-
-# 索引项目文件（后台）
-mbforge index ./my-project
-```
-
-### Python 模块
-
-```bash
-python -m mbforge
-```
-
-### 打包为桌面应用
-
-```bash
+# 打包桌面应用
 cd src-tauri && cargo tauri build
 ```
+
+详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 和 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
 ## 项目结构
 
 ```
 MBForge/
-├── src/mbforge/          # 主应用源码
-│   ├── core/             # 核心数据模型
-│   │   ├── project.py         # Vault 项目管理
-│   │   ├── knowledge_base.py   # ChromaDB 向量知识库
-│   │   ├── mol_database.py     # SQLite 分子数据库
-│   │   ├── document.py        # 文档处理
-│   │   ├── summarizer.py      # LLM 摘要生成
-│   │   ├── settings.py        # 项目配置
-│   │   ├── memory.py         # Agent 记忆模板
-│   │   └── todo_manager.py   # Todo 列表管理
-│   ├── models/           # AI 模型接口
-│   │   ├── base.py            # 基类定义
-│   │   ├── llm.py             # OpenAI 兼容 LLM
-│   │   ├── anthropic_llm.py   # Anthropic LLM
-│   │   ├── embedding.py        # Embedding 模型
-│   │   ├── rerank.py          # Rerank 模型
-│   │   └── vlm.py             # 视觉语言模型
-│   ├── parsers/          # PDF 解析与分子提取
-│   │   ├── pdf_parser.py      # 解析流水线
-│   │   ├── molecule_extractor.py  # 分子提取
-│   │   └── file_processor.py  # 文件处理
-│   ├── agent/            # AI Agent
-│   │   ├── agent.py           # Agent 协调器
-│   │   ├── context.py         # 分层上下文
-│   │   ├── executor.py         # 工具执行器
-│   │   ├── memory_manager.py  # 记忆管理
-│   │   ├── trajectory.py      # 轨迹跟踪
-│   │   └── archive_agent.py  # 归档搜索 Agent
-│   ├── workflow/         # 工作流扩展
-│   │   ├── base.py           # 基类
-│   │   ├── generation.py      # 分子生成（占位）
-│   │   ├── docking.py        # 分子对接（占位）
-│   │   ├── qsar.py           # QSAR（占位）
-│   │   └── md.py             # 分子动力学（占位）
-│   ├── parsers/
-│   │   ├── uniparser/         # UniParser API 客户端
-│   │   ├── molecule/          # 分子提取管线
-│   │   └── pdf_parser.py      # PDF 解析流水线
-│   ├── utils/            # 工具函数
-│   │   ├── config.py          # 配置管理
-│   │   ├── constants.py       # 常量定义
-│   │   ├── helpers.py         # 辅助函数
-│   │   ├── logger.py          # 日志
-│   │   └── error_logger.py    # 错误日志
-│   ├── cli.py             # CLI 入口
-│   └── _core.py           # Rust 加速模块（可选）
-├── frontend/             # React 前端
+├── src/mbforge/                  # Python 模型服务器 & CLI
+│   ├── model_server/             # FastAPI 服务（15 路由）
+│   │   ├── main.py               #   入口 + 路由注册
+│   │   ├── agent_manager.py      #   Agent 单例管理
+│   │   ├── dependencies.py       #   依赖注入
+│   │   ├── models/               #   LLM/Embed/Rerank/VLM/MolDet 单例
+│   │   └── routers/              #   /api/v1/{llm,embed,agent,kb,molecule,...}
+│   ├── core/                     # Python 侧核心
+│   │   ├── project.py            #   Vault 项目管理
+│   │   ├── knowledge_base.py     #   ChromaDB 向量知识库
+│   │   ├── mol_database.py       #   SQLite 分子数据库（FTS5）
+│   │   ├── summarizer.py         #   L0/L1/L2 分层摘要
+│   │   ├── document_tree.py      #   文档标题树索引
+│   │   └── types.py              #   数据模型定义
+│   ├── parsers/                  # Python 侧解析
+│   │   ├── pdf_parser.py         #   PDFParserPipeline
+│   │   ├── pdf_classifier.py     #   文档类型分类
+│   │   ├── ocr_router.py         #   OCR 路由选择
+│   │   └── molecule/             #   分子提取管线
+│   │       ├── molecule_extractor.py    # 正则 SMILES 提取
+│   │       ├── association_engine.py    # 分子-文本关联
+│   │       ├── mol_image_pipeline.py    # 图像→SMILES 管线
+│   │       └── molscribe_inference/     # MolScribe 推理
+│   ├── models/                   # AI 模型抽象层
+│   │   ├── base.py               #   BaseLLM/Embedder/Reranker/VLM
+│   │   ├── llm.py                #   OpenAI 兼容 LLM
+│   │   ├── anthropic_llm.py      #   Anthropic LLM
+│   │   ├── embedding.py          #   SentenceTransformer / API
+│   │   ├── rerank.py / rerank_qwen3.py
+│   │   └── vlm.py                #   视觉语言模型
+│   ├── agent/                    # Python 侧工具框架
+│   │   ├── executor.py           #   ToolExecutor（10 工具）
+│   │   └── optimizations/        #   语义缓存、流式搜索、SPS
+│   ├── molecules/schema.py       #   分子数据合约
+│   └── cli.py                    #   CLI 入口（mbforge 命令）
+│
+├── src-tauri/src/                # Rust 代码（Tauri + Agent + Parser）
+│   ├── main.rs                   #   Tauri 入口，25+ 命令注册
+│   ├── lib.rs                    #   模块导出
+│   ├── commands/                 #   Tauri 命令层（6 模块）
+│   │   ├── pdf.rs                #   分类 & 文本提取
+│   │   ├── classifier.rs         #   页面/文档分类
+│   │   ├── extractor.rs          #   SMILES/活性/关联提取
+│   │   ├── molecule.rs           #   分子数据库 CRUD（18 命令）
+│   │   ├── text_ops.rs           #   文本分块
+│   │   └── agent.rs              #   Agent 会话管理
+│   ├── core/                     #   Rust Agent + 数据层（16 模块）
+│   │   ├── agent.rs              #   ReAct Agent 循环
+│   │   ├── llm.rs                #   LLM HTTP 客户端
+│   │   ├── context.rs            #   分层会话上下文
+│   │   ├── executor.rs           #   ToolExecutor（20+ 工具）
+│   │   ├── molecule_store.rs     #   分子 SQLite 数据库
+│   │   ├── molecule_db.rs        #   分子关系数据库
+│   │   ├── molecule_dedup.rs     #   分子去重
+│   │   ├── molecule_cluster.rs   #   分子聚类
+│   │   ├── sar_query.rs          #   SAR 查询引擎
+│   │   ├── memory.rs             #   6 分类持久记忆
+│   │   ├── trajectory.rs         #   轨迹跟踪
+│   │   ├── skills.rs             #   技能管理
+│   │   ├── tools.rs              #   工具注册表
+│   │   ├── summary.rs            #   文档摘要持久化
+│   │   ├── pending.rs            #   待处理提取
+│   │   └── project.rs            #   项目文档索引
+│   └── parsers/                  #   Rust PDF 解析（12 模块）
+│       ├── types.rs              #   共享数据结构
+│       ├── pipeline.rs           #   统一解析管线（Stage 1-6）
+│       ├── images.rs             #   lopdf 图像提取
+│       ├── association.rs        #   分子-文本关联引擎
+│       ├── keywords.rs           #   关键词 & 实体提取
+│       ├── intent.rs             #   意图路由（LLM 分类）
+│       ├── post_process.rs       #   LLM 结构化后处理
+│       ├── report.rs             #   Markdown 报告生成
+│       ├── vlm_chem.rs           #   VLM 化学结构识别
+│       ├── uniparser.rs          #   UniParser API 客户端
+│       ├── llama_parse.rs        #   LlamaParse API 客户端
+│       └── mineru.rs             #   MinerU API 客户端
+│
+├── frontend/                     # React + Vite 前端
 │   ├── src/
-│   │   ├── App.tsx        # 路由入口
-│   │   ├── components/    # UI 组件
-│   │   ├── api/           # API 客户端
-│   │   ├── hooks/         # 自定义 Hooks
-│   │   └── types/         # TypeScript 类型
-│   └── package.json
-├── src-tauri/            # Tauri 桌面壳
-│   └── src/main.rs        # Rust 入口
-├── rust/                 # Rust 加速模块
-│   └── src/lib.rs         # PyO3 扩展
-├── setup/                # 一键配置脚本
-│   ├── openSAR/           # SAR 分析工具箱（uv workspace member）
-│   └── UniParser-Tools/  # PDF 解析 API（uv workspace member）
-├── tests/                # 测试
-├── docs/                 # 项目文档
-│   ├── ARCHITECTURE.md        # 系统架构
-│   ├── API.md                # API 参考
-│   ├── TECH_STACK.md         # 技术栈
-│   └── DEVELOPMENT.md        # 开发指南
-└── REFERENCES.md          # 引用文献
+│   │   ├── App.tsx               #   路由入口
+│   │   ├── api/                  #   HTTP + Tauri 桥接
+│   │   │   ├── client.ts         #   HTTP 客户端
+│   │   │   ├── tauri-bridge.ts   #   Tauri invoke
+│   │   │   └── settings.ts       #   设置 API
+│   │   ├── components/           #   14 组件
+│   │   │   ├── Chat.tsx          #   对话界面
+│   │   │   ├── MoleculeLibrary.tsx
+│   │   │   ├── PDFViewer.tsx
+│   │   │   ├── Search.tsx
+│   │   │   ├── Workflow.tsx
+│   │   │   └── ...
+│   │   ├── hooks/                #   React Hooks
+│   │   └── types/                #   TypeScript 类型
+│   └── vite.config.ts            #   Vite 配置（API 代理 18792）
+│
+├── rust/                         # PyO3 加速模块（~700 行）
+│   └── src/lib.rs                #   高精度 Tanimoto 矩阵
+│
+├── setup/                        # 一键配置脚本
+│   ├── index.sh / index.bat      #   交互式安装
+│   ├── modules/                  #   8 步配置
+│   └── MolScribe/                #   MolScribe 完整代码
+│
+├── tests/                        # 测试
+│   ├── unit/                     #   Python 测试（28 个）
+│   └── Rust 侧测试               #   99 个（src-tauri）
+│
+├── docs/                         # 项目文档
+│   ├── ARCHITECTURE.md           #   系统架构
+│   ├── API.md                    #   公共 API 参考
+│   ├── TECH_STACK.md             #   技术栈
+│   ├── DEVELOPMENT.md            #   开发指南
+│   ├── pipeline-migration-plan.md # PDF 解析 Python→Rust 迁移规划
+│   ├── pipeline-redesign.md      #   管线增量重设计
+│   ├── pdf-extraction-workflow.md # PDF 提取工作流
+│   └── pdf-pipeline-test/        #   管线测试用例
+│
+├── src-tauri/docs/               # Rust 侧本地文档
+│   ├── esmiles/                  #   E-SMILES 格式规范 + MBForge 集成
+│   └── liteparse/                #   LiteParse API 参考（官网存档）
+│
+├── CLAUDE.md                     # AI 编码助手指南
+└── AGENTS.md                     # Agent 配置
 ```
 
 ## 技术栈
 
-| 类别 | 技术 | 版本 |
+| 类别 | 技术 | 行数 |
 |------|------|------|
-| **前端** | React + Vite + TypeScript | 19 / 6 |
-| **桌面壳** | Tauri | v2 |
-| **后端** | FastAPI + uvicorn | - |
-| **向量数据库** | ChromaDB | >= 0.4 |
-| **Embedding** | sentence-transformers / OpenAI API | >= 2.5 |
-| **LLM** | OpenAI 兼容 API（支持 vLLM、Ollama、硅基流动等） | - |
-| **化学信息学** | RDKit | >= 2024.3 |
-| **PDF 解析** | PyMuPDF | >= 1.25 |
-| **深度学习** | PyTorch (CUDA 12.8) | >= 2.6 |
-| **包管理** | uv | - |
-| **测试** | pytest | >= 7.0 |
+| **Rust 核心** | Tauri v2, lopdf, rusqlite, serde, regex, tokio | ~9,700 |
+| **Python 服务** | FastAPI, uvicorn, ChromaDB, PyMuPDF, sentence-transformers | ~12,900 |
+| **前端** | React 19, TypeScript, Vite 6 | — |
+| **化学信息学** | RDKit (Python), MolScribe (Swin + Transformer), E-SMILES | — |
+| **PDF 解析** | lopdf (Rust), PyMuPDF, MinerU API, LlamaParse, UniParser | — |
+| **包管理** | uv workspace (Python) + Cargo (Rust) | — |
+| **测试** | Rust: `cargo test` (99), Python: `pytest` (28) | — |
 
-详见 [docs/TECH_STACK.md](docs/TECH_STACK.md)。
-
-## 配置
-
-首次运行后，全局配置存储在：
-- Windows: `%APPDATA%/MBForge/config.json`
-- macOS: `~/Library/Application Support/MBForge/config.json`
-- Linux: `~/.config/MBForge/config.json`
-
-每个项目的配置和索引存储在项目根目录的 `.mbforge/` 中。
-
-详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 中的配置系统章节。
-
-## 开发
+## 测试
 
 ```bash
-# 运行测试
-uv run pytest tests/unit/ -v
+# Rust 测试（99 个）
+cd src-tauri && cargo test
 
-# 代码格式化
-uv run ruff format src/
+# Python 测试（28 个）
+uv run pytest tests/ -v
 
-# Lint 检查
-uv run ruff check src/
-
-# 类型检查
-uv run mypy src/
+# 代码检查
+uv run ruff check src/ && uv run ruff format src/ --check
 ```
 
-详见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+## 文档索引
 
-## 文档
-
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - 系统架构设计
-- [API.md](docs/API.md) - 公共 API 参考
-- [TECH_STACK.md](docs/TECH_STACK.md) - 技术栈详解
-- [DEVELOPMENT.md](docs/DEVELOPMENT.md) - 开发指南
-- [REFERENCES.md](REFERENCES.md) - 引用文献
+| 文档 | 位置 |
+|------|------|
+| 系统架构 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| 公共 API | [docs/API.md](docs/API.md) |
+| 技术栈 | [docs/TECH_STACK.md](docs/TECH_STACK.md) |
+| 开发指南 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| PDF 迁移规划 | [docs/pipeline-migration-plan.md](docs/pipeline-migration-plan.md) |
+| 管线重设计 | [docs/pipeline-redesign.md](docs/pipeline-redesign.md) |
+| E-SMILES 规范 | [src-tauri/docs/esmiles/](src-tauri/docs/esmiles/) |
+| LiteParse API | [src-tauri/docs/liteparse/](src-tauri/docs/liteparse/) |
+| 编码指南 | [CLAUDE.md](CLAUDE.md) |
 
 ## 许可
 

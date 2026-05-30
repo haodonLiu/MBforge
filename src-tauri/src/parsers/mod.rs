@@ -9,6 +9,7 @@ pub mod pipeline;
 pub mod post_process;
 pub mod report;
 pub mod sections;
+pub mod summary;
 pub mod types;
 pub mod uniparser;
 pub mod vlm_chem;

@@ -69,10 +69,7 @@ pub fn parse_pdf(
     let parser_choice = parser.unwrap_or_else(|| "pdf_inspector".to_string());
 
     // Stage 1: Text extraction
-    // TODO-AUDIT: the `images` field is destructured from the parser result but then
-    // hardcoded to vec![] on line 130 — the actual images are silently discarded.
-    // The images variable below is also unused (bound but never consumed).
-    let (content, page_count, _images): (String, usize, Vec<ImageRef>) = match parser_choice.as_str() {
+    let (content, page_count): (String, usize) = match parser_choice.as_str() {
         "uniparser" => {
             let host = std::env::var("UNIPARSER_HOST")
                 .unwrap_or_else(|_| "https://uniparser.dp.tech/".to_string());
@@ -82,7 +79,7 @@ pub fn parse_pdf(
             }
             let client = super::uniparser::UniParserClient::new(&host, &api_key);
             let result = client.parse_pdf(&path)?;
-            (result.content, result.page_count, vec![])
+            (result.content, result.page_count)
         }
         "mineru" => {
             let host =
@@ -90,7 +87,7 @@ pub fn parse_pdf(
             let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
             let client = super::mineru::MineruClient::new(&host, &api_key);
             let result = client.parse_file(&path)?;
-            (result.markdown, 0, vec![])
+            (result.markdown, 0)
         }
         "llama_parse" => {
             let pdf_bytes =
@@ -100,23 +97,33 @@ pub fn parse_pdf(
                 pdf_bytes,
                 None,
             )?;
-            (result.markdown, result.page_count, vec![])
+            (result.markdown, result.page_count)
         }
         _ => {
             let result = pdf_inspector::process_pdf(&path)
                 .map_err(|e| format!("pdf-inspector failed: {}", e))?;
             let md = result.markdown.unwrap_or_default();
-            (md, result.page_count as usize, vec![])
+            (md, result.page_count as usize)
         }
     };
+
+    // Stage 1.5: Extract embedded images from PDF (lopdf)
+    let tmp_dir = tempfile::tempdir().map_err(|e| format!("Temp dir error: {}", e))?;
+    let images = super::images::extract_images_from_pdf(
+        &path,
+        tmp_dir.path(),
+        20,  // max_images
+        2,   // max_size_mb
+    ).unwrap_or_default();
 
     // Stage 2: Classification
     let pages: Vec<String> = content.split("\n\n").map(|s| s.to_string()).collect();
     let classification = classify_document(pages, None);
 
-    // Stage 3: Chunking
-    let chunks =
-        crate::commands::text_ops::text_chunk(content.clone(), chunk_size, overlap).chunks;
+    // Stage 3: Section-based chunking (PageIndex)
+    let headings = super::headings::extract_headings(&content);
+    let sections = super::sections::build_sections(&content, &headings, None, 8000);
+    let chunks: Vec<String> = sections.iter().map(|s| s.text.clone()).collect();
 
     // Stage 4: Molecule extraction (text regex)
     let esmiles = extract_esmiles_candidates(content.clone());
@@ -130,7 +137,7 @@ pub fn parse_pdf(
         activities,
         parser: parser_choice,
         page_count,
-        images: vec![],
+        images: vec![],  // TODO: convert ExtractedImage to ImageRef
     })
 }
 
@@ -473,6 +480,24 @@ async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> {
     let md = pdf_result.markdown.unwrap_or_default();
     let page_count = pdf_result.page_count as usize;
 
+    // 提取嵌入图片
+    let tmp_dir = tempfile::tempdir().map_err(|e| format!("Temp dir error: {}", e))?;
+    let extracted = super::images::extract_images_from_pdf(
+        path,
+        tmp_dir.path(),
+        20,
+        2,
+    ).unwrap_or_default();
+
+    // 转换为 ImageRef
+    let images: Vec<ImageRef> = extracted.iter().map(|img| ImageRef {
+        filename: img.filename.clone(),
+        page: img.page,
+        region: None,
+        description: None,
+        smiles: None,
+    }).collect();
+
     // 如果 pdf-inspector 提取不到内容，且内容是扫描件 → 自动升到 MinerU
     if md.len() < 100
         && (page_count > 0)
@@ -494,7 +519,7 @@ async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> {
         text: md,
         page_count,
         parser: "pdf_inspector".into(),
-        images: vec![],
+        images,
     })
 }
 
@@ -732,4 +757,51 @@ mod tests {
         assert_eq!(result.parser, "");
         assert_eq!(result.page_count, 0);
     }
+}
+
+// ===== KB 索引（通过 Python sidecar）=====
+
+/// 通过 HTTP 调用 Python sidecar 索引 sections 到知识库
+pub async fn index_sections_to_kb(
+    project_root: &str,
+    doc_id: &str,
+    sections: &[super::sections::SectionChunk],
+    filename: &str,
+) -> Result<(), String> {
+    let sidecar_url = std::env::var("MBFORGE_SIDECAR_URL")
+        .unwrap_or_else(|_| "http://127.0.0.1:18792".to_string());
+
+    let body = serde_json::json!({
+        "project_root": project_root,
+        "doc_id": doc_id,
+        "filename": filename,
+        "sections": sections.iter().map(|s| serde_json::json!({
+            "title": s.title,
+            "path": s.path,
+            "text": s.text,
+            "page_start": s.page_start,
+            "page_end": s.page_end,
+        })).collect::<Vec<_>>(),
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let url = format!("{}/api/v1/kb/index-sections", sidecar_url.trim_end_matches('/'));
+
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("KB index request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("KB index HTTP error: {}", text));
+    }
+
+    Ok(())
 }

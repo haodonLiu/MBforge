@@ -217,15 +217,3 @@ def save_global_config(config: AppConfig) -> None:
 def get_env_or_config(key: str, default: str = "") -> str:
     """优先从环境变量获取，否则返回默认值."""
     return os.environ.get(key, default)
-
-
-def setup_hf_mirror() -> None:
-    """配置 HuggingFace 国内镜像（hf-mirror）.
-
-    在用户设置中启用 use_hf_mirror 时调用，
-    使 transformers / sentence-transformers 自动从镜像站下载模型。
-    """
-    from .constants import DEFAULT_HF_ENDPOINT
-
-    if "HF_ENDPOINT" not in os.environ:
-        os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT

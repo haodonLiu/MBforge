@@ -5,6 +5,7 @@ from platformdirs import user_data_dir, user_config_dir
 
 APP_NAME = "MBForge"
 APP_AUTHOR = "MBForge"
+# Single source of truth for Python-side version
 APP_VERSION = "0.2.0"
 
 # 隐藏目录名，存储在项目根目录
@@ -74,9 +75,6 @@ PROVIDER_LOCAL = "local"
 
 # OCR Provider
 OCR_PROVIDER_PYMUPDF = "pymupdf"
-
-# HuggingFace 镜像
-DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
 
 
 def ensure_hf_mirror():

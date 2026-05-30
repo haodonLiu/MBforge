@@ -12,89 +12,83 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   return resp.json() as Promise<T>
 }
 
+// SSE 流式工具 — 消费服务端推送的 data: JSON 行
+export function sseStream<T>(
+  url: string,
+  body: unknown,
+  onEvent: (event: T) => void,
+  onError?: (error: string) => void,
+): () => void {
+  const controller = new AbortController()
+  ;(async () => {
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body != null ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      })
+      if (!resp.ok || !resp.body) {
+        onError?.(`HTTP ${resp.status}`)
+        return
+      }
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try { onEvent(JSON.parse(line.slice(6))) } catch { /* skip */ }
+          }
+        }
+      }
+    } catch (e) {
+      if (!controller.signal.aborted) {
+        onError?.(String(e))
+      }
+    }
+  })()
+  return () => controller.abort()
+}
+
 // Health
 export function getHealth() {
   return fetchJson<import('../types').HealthResponse>(`${API_BASE}/health`)
 }
 
-// LLM
-export function chat(messages: { role: string; content: string }[], temperature = 0.7, maxTokens = 4096) {
-  return fetchJson<{ content: string }>(`${API_BASE}/llm/chat`, {
-    method: 'POST',
-    body: JSON.stringify({ messages, temperature, max_tokens: maxTokens }),
-  })
-}
+// LLM streaming
+export type ChatStreamEvent =
+  | { delta: string; finish_reason?: string }
+  | { delta: string; finish_reason: string; error?: string }
 
-export function chatStream(messages: { role: string; content: string }[], temperature = 0.7, maxTokens = 4096) {
-  return new EventSource(
-    `${API_BASE}/llm/chat-stream?` +
-    new URLSearchParams({
-      messages: JSON.stringify(messages),
-      temperature: String(temperature),
-      max_tokens: String(maxTokens),
-    }),
-  )
-}
-
-// Embed
-export function embed(texts: string[]) {
-  return fetchJson<{ embeddings: number[][] }>(`${API_BASE}/embed`, {
-    method: 'POST',
-    body: JSON.stringify({ texts }),
-  })
-}
-
-// Rerank
-export function rerank(query: string, passages: string[], topN = 5) {
-  return fetchJson<{ results: { index: number; score: number }[] }>(`${API_BASE}/rerank`, {
-    method: 'POST',
-    body: JSON.stringify({ query, passages, top_n: topN }),
-  })
-}
-
-// VLM
-export function describeImage(imageBase64: string, prompt = '') {
-  return fetchJson<{ description: string }>(`${API_BASE}/vlm/describe`, {
-    method: 'POST',
-    body: JSON.stringify({ image_base64: imageBase64, prompt }),
-  })
-}
-
-// MolDet
-export function detectPage(imageBase64: string) {
-  return fetchJson<{ boxes: { x1: number; y1: number; x2: number; y2: number; conf: number }[]; count: number }>(
-    `${API_BASE}/moldet/detect-page`,
-    { method: 'POST', body: JSON.stringify({ image_base64: imageBase64 }) },
-  )
-}
-
-export function extractPage(imageBase64: string, pageIdx: number, pageWPts: number, pageHPts: number, imageW: number, imageH: number, dpi = 300) {
-  return fetchJson<{ results: Record<string, unknown>[]; count: number }>(
-    `${API_BASE}/moldet/extract-page`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ image_base64: imageBase64, page_idx: pageIdx, page_w_pts: pageWPts, page_h_pts: pageHPts, image_w: imageW, image_h: imageH, dpi }),
-    },
-  )
-}
-
-// UniParser
-export function parsePdf(pdfPath: string = '', pdfBase64: string = '') {
-  return fetchJson<{ status: string; token: string; raw_data: Record<string, unknown> }>(
-    `${API_BASE}/uniparser/parse`,
-    { method: 'POST', body: JSON.stringify({ pdf_path: pdfPath, pdf_base64: pdfBase64 }) },
+export function chatStream(
+  messages: { role: string; content: string }[],
+  onEvent: (event: ChatStreamEvent) => void,
+  temperature = 0.7,
+  maxTokens = 4096,
+): () => void {
+  return sseStream<ChatStreamEvent>(
+    `${API_BASE}/llm/chat-stream`,
+    { messages, temperature, max_tokens: maxTokens },
+    onEvent,
+    (error) => onEvent({ delta: '', finish_reason: 'error', error }),
   )
 }
 
 // Project
-export function createProject(root: string, name: string = '') {
+export function createProject(root: string, name = '') {
   return fetchJson<{ success: boolean; project: import('../types').Project; error?: string }>(
     `${API_BASE}/project/create`,
     { method: 'POST', body: JSON.stringify({ root, name }) },
   )
 }
 
-export function openProject(root: string, name: string = '') {
+export function openProject(root: string, name = '') {
   return fetchJson<{ success: boolean; project: import('../types').Project; error?: string }>(
     `${API_BASE}/project/open`,
     { method: 'POST', body: JSON.stringify({ root, name }) },
@@ -114,13 +108,6 @@ export function scanProject(projectRoot: string) {
   )
 }
 
-export function indexProject(root: string) {
-  return fetchJson<{ success: boolean; indexed: number; molecules: number; error?: string }>(
-    `${API_BASE}/project/index`,
-    { method: 'POST', body: JSON.stringify({ root }) },
-  )
-}
-
 export type IndexProgressEvent =
   | { status: 'indexing'; file: string; current: number; total: number }
   | { status: 'file_done'; file: string; molecules: number }
@@ -132,17 +119,76 @@ export function indexProjectStream(
   root: string,
   onEvent: (event: IndexProgressEvent) => void,
 ): () => void {
+  return sseStream<IndexProgressEvent>(
+    `${API_BASE}/project/index-stream`,
+    { root },
+    onEvent,
+    (error) => onEvent({ status: 'error', error }),
+  )
+}
+
+// Knowledge Base
+export function kbSearch(projectRoot: string, query: string, topK = 5) {
+  return fetchJson<{ success: boolean; results: import('../types').SearchResult[]; error?: string }>(
+    `${API_BASE}/kb/search`,
+    { method: 'POST', body: JSON.stringify({ project_root: projectRoot, query, top_k: topK }) },
+  )
+}
+
+// Molecule
+export function listMolecules(projectRoot: string, limit = 100, offset = 0) {
+  return fetchJson<{ success: boolean; molecules: import('../types').MoleculeRecord[]; error?: string }>(
+    `${API_BASE}/molecule/list?project_root=${encodeURIComponent(projectRoot)}&limit=${limit}&offset=${offset}`,
+  )
+}
+
+export function searchMolecules(projectRoot: string, q: string, limit = 20) {
+  return fetchJson<{ success: boolean; molecules: import('../types').MoleculeRecord[]; error?: string }>(
+    `${API_BASE}/molecule/search?project_root=${encodeURIComponent(projectRoot)}&q=${encodeURIComponent(q)}&limit=${limit}`,
+  )
+}
+
+export function moleculeStats(projectRoot: string) {
+  return fetchJson<{ success: boolean; stats: Record<string, unknown>; error?: string }>(
+    `${API_BASE}/molecule/stats?project_root=${encodeURIComponent(projectRoot)}`,
+  )
+}
+
+// Agent
+export function getChatHistory(projectRoot: string) {
+  return fetchJson<{ success: boolean; messages: import('../types').ChatMessage[] }>(
+    `${API_BASE}/agent/history?project_root=${encodeURIComponent(projectRoot)}`,
+  )
+}
+
+export function agentChat(projectRoot: string, messages: { role: string; content: string }[], temperature = 0.7) {
+  return fetchJson<{ success: boolean; content: string; error?: string }>(
+    `${API_BASE}/agent/chat`,
+    { method: 'POST', body: JSON.stringify({ project_root: projectRoot, messages, temperature }) },
+  )
+}
+
+export type AgentChatStreamEvent =
+  | { delta: string; finish_reason?: string }
+  | { delta: string; finish_reason: string; error?: string }
+
+export function agentChatStream(
+  projectRoot: string,
+  messages: { role: string; content: string }[],
+  onEvent: (event: AgentChatStreamEvent) => void,
+  temperature = 0.7,
+): () => void {
   const controller = new AbortController()
   ;(async () => {
     try {
-      const resp = await fetch(`${API_BASE}/project/index-stream`, {
+      const resp = await fetch(`${API_BASE}/agent/chat-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ root }),
+        body: JSON.stringify({ project_root: projectRoot, messages, temperature }),
         signal: controller.signal,
       })
       if (!resp.ok || !resp.body) {
-        onEvent({ status: 'error', error: `HTTP ${resp.status}` })
+        onEvent({ delta: '', finish_reason: 'error', error: `HTTP ${resp.status}` })
         return
       }
       const reader = resp.body.getReader()
@@ -156,86 +202,27 @@ export function indexProjectStream(
         buffer = lines.pop() || ''
         for (const line of lines) {
           if (line.startsWith('data: ')) {
-            try {
-              onEvent(JSON.parse(line.slice(6)))
-            } catch { /* skip */ }
+            try { onEvent(JSON.parse(line.slice(6))) } catch { /* skip */ }
           }
         }
       }
     } catch (e) {
       if (!controller.signal.aborted) {
-        onEvent({ status: 'error', error: String(e) })
+        onEvent({ delta: '', finish_reason: 'error', error: String(e) })
       }
     }
   })()
   return () => controller.abort()
 }
 
-// Knowledge Base
-export function kbSearch(projectRoot: string, query: string, topK = 5) {
-  return fetchJson<{ success: boolean; results: import('../types').SearchResult[]; error?: string }>(
-    `${API_BASE}/kb/search`,
-    { method: 'POST', body: JSON.stringify({ project_root: projectRoot, query, top_k: topK }) },
+// File Tree
+export function getFileTree(projectRoot: string) {
+  return fetchJson<{ success: boolean; tree: import('../types').FileNode[]; error?: string }>(
+    `${API_BASE}/project/file-tree?root=${encodeURIComponent(projectRoot)}`,
   )
 }
 
-export function kbStats(projectRoot: string) {
-  return fetchJson<{ success: boolean; stats: Record<string, unknown>; error?: string }>(
-    `${API_BASE}/kb/stats?project_root=${encodeURIComponent(projectRoot)}`,
-  )
-}
-
-// Molecule
-export function listMolecules(projectRoot: string, limit = 100, offset = 0) {
-  return fetchJson<{ success: boolean; molecules: import('../types').MoleculeRecord[]; error?: string }>(
-    `${API_BASE}/molecule/list?project_root=${encodeURIComponent(projectRoot)}&limit=${limit}&offset=${offset}`,
-  )
-}
-
-export function moleculeStats(projectRoot: string) {
-  return fetchJson<{ success: boolean; stats: Record<string, unknown>; error?: string }>(
-    `${API_BASE}/molecule/stats?project_root=${encodeURIComponent(projectRoot)}`,
-  )
-}
-
-export function searchMolecules(projectRoot: string, q: string, limit = 20) {
-  return fetchJson<{ success: boolean; molecules: import('../types').MoleculeRecord[]; error?: string }>(
-    `${API_BASE}/molecule/search?project_root=${encodeURIComponent(projectRoot)}&q=${encodeURIComponent(q)}&limit=${limit}`,
-  )
-}
-
-export function addMolecule(projectRoot: string, smiles: string, name = '', sourceDoc = '', activity?: number) {
-  return fetchJson<{ success: boolean; mol_id?: string; error?: string }>(
-    `${API_BASE}/molecule/add`,
-    { method: 'POST', body: JSON.stringify({ project_root: projectRoot, smiles, name, source_doc: sourceDoc, activity }) },
-  )
-}
-
-// Agent
-export function getChatHistory(projectRoot: string) {
-  return fetchJson<{ success: boolean; messages: import('../types').ChatMessage[] }>(
-    `${API_BASE}/agent/history?project_root=${encodeURIComponent(projectRoot)}`,
-  )
-}
-export function agentChat(projectRoot: string, messages: { role: string; content: string }[], temperature = 0.7) {
-  return fetchJson<{ success: boolean; content: string; error?: string }>(
-    `${API_BASE}/agent/chat`,
-    { method: 'POST', body: JSON.stringify({ project_root: projectRoot, messages, temperature }) },
-  )
-}
-
-export function agentChatStream(projectRoot: string, messages: { role: string; content: string }[], temperature = 0.7) {
-  return new EventSource(
-    `${API_BASE}/agent/chat-stream?` +
-    new URLSearchParams({
-      messages: JSON.stringify(messages),
-      project_root: projectRoot,
-      temperature: String(temperature),
-    }),
-  )
-}
-
-// File
+// File upload
 export function uploadFile(projectRoot: string, file: File) {
   const form = new FormData()
   form.append('file', file)
@@ -246,21 +233,7 @@ export function uploadFile(projectRoot: string, file: File) {
   )
 }
 
-export function deleteFile(projectRoot: string, docId: string) {
-  return fetchJson<{ success: boolean; error?: string }>(
-    `${API_BASE}/file/delete`,
-    { method: 'POST', body: JSON.stringify({ project_root: projectRoot, doc_id: docId }) },
-  )
-}
-
-// File Tree
-export function getFileTree(projectRoot: string) {
-  return fetchJson<{ success: boolean; tree: import('../types').FileNode[]; error?: string }>(
-    `${API_BASE}/project/file-tree?root=${encodeURIComponent(projectRoot)}`,
-  )
-}
-
-// ---- pdf-inspector Rust commands ----
+// ---- Tauri-wrapped Rust commands ----
 import {
   isTauriAvailable,
   classifyPdf as tauriClassifyPdf,
@@ -282,14 +255,12 @@ export async function extractTextRust(path: string): Promise<PdfExtraction> {
 // ---- pipeline Rust commands ----
 import {
   parsePdf as tauriParsePdf,
-  agentInit as tauriAgentInit,
-  agentChat as tauriAgentChat,
-  agentClear as tauriAgentClear,
-  agentGetHistory as tauriAgentGetHistory,
   postProcessPdf as tauriPostProcessPdf,
+  processDocument as tauriProcessDocument,
   type PdfParseResult,
-  type ChatMessage,
   type PostProcessResult,
+  type DocProgressEvent,
+  type DocumentReport,
 } from './tauri-bridge'
 
 export async function parsePdfRust(
@@ -309,25 +280,34 @@ export async function postProcessPdfRust(
   return tauriPostProcessPdf(parseResult)
 }
 
-export async function agentInitRust(projectRoot: string): Promise<void> {
+export async function processDocumentRust(
+  path: string,
+  userRequest?: string,
+  onProgress?: (event: DocProgressEvent) => void,
+): Promise<DocumentReport> {
   if (!isTauriAvailable()) throw new Error('Not in Tauri')
-  return tauriAgentInit(projectRoot)
-}
 
-export async function agentChatRust(
-  projectRoot: string,
-  messages: ChatMessage[],
-): Promise<string> {
-  if (!isTauriAvailable()) throw new Error('Not in Tauri')
-  return tauriAgentChat(projectRoot, messages)
-}
+  const { listen } = await import('@tauri-apps/api/event')
+  return new Promise((resolve, reject) => {
+    const unlistenList: (() => void)[] = []
 
-export async function agentClearRust(projectRoot: string): Promise<void> {
-  if (!isTauriAvailable()) throw new Error('Not in Tauri')
-  return tauriAgentClear(projectRoot)
-}
+    listen<DocProgressEvent>('doc-progress', (event) => {
+      onProgress?.(event.payload)
+    }).then((fn) => unlistenList.push(fn))
 
-export async function agentGetHistoryRust(projectRoot: string): Promise<ChatMessage[]> {
-  if (!isTauriAvailable()) throw new Error('Not in Tauri')
-  return tauriAgentGetHistory(projectRoot)
+    listen<DocumentReport>('doc-result', (event) => {
+      unlistenList.forEach((fn) => fn())
+      resolve(event.payload)
+    }).then((fn) => unlistenList.push(fn))
+
+    listen<string>('doc-error', (event) => {
+      unlistenList.forEach((fn) => fn())
+      reject(new Error(event.payload))
+    }).then((fn) => unlistenList.push(fn))
+
+    tauriProcessDocument(path, userRequest).catch((err) => {
+      unlistenList.forEach((fn) => fn())
+      reject(err)
+    })
+  })
 }

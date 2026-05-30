@@ -1,0 +1,158 @@
+use base64::Engine;
+
+/// === A2: VLM 化学结构识别模块 ===
+///
+/// 将 MinerU 提取出的化学结构图传给 Python sidecar MolScribe 端点，
+/// 返回 SMILES 字符串。
+///
+/// 调用路径：Rust → HTTP POST → /api/v1/vlm/molscribe (Python sidecar)
+
+/// VLM API 配置
+pub struct VlmConfig {
+    pub sidecar_url: String,
+}
+
+impl Default for VlmConfig {
+    fn default() -> Self {
+        Self {
+            sidecar_url: std::env::var("MBFORGE_SIDECAR_URL")
+                .unwrap_or_else(|_| "http://127.0.0.1:18792".to_string()),
+        }
+    }
+}
+
+/// MolScribe 识别结果
+#[derive(Debug, Clone)]
+pub struct ChemImageResult {
+    pub smiles: String,
+    pub confidence: f64,
+}
+
+/// 用 MolScribe 识别化学结构图 → SMILES
+///
+/// # Arguments
+/// * `image_path` - 图片本地路径
+/// * `config` - VLM 端点配置
+pub async fn image_to_smiles(
+    image_path: &str,
+    config: &VlmConfig,
+) -> Result<ChemImageResult, String> {
+    let image_b64 = read_image_base64(image_path)?;
+
+    let body = serde_json::json!({
+        "image_base64": image_b64,
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let url = format!(
+        "{}/api/v1/vlm/molscribe",
+        config.sidecar_url.trim_end_matches('/')
+    );
+
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("MolScribe request failed: {}", e))?;
+
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("MolScribe read error: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!(
+            "MolScribe HTTP {}: {}",
+            status,
+            &text[..text.len().min(200)]
+        ));
+    }
+
+    let val: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("MolScribe JSON parse error: {}", e))?;
+
+    let smiles = val["smiles"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let confidence = val["confidence"].as_f64().unwrap_or(0.0);
+
+    Ok(ChemImageResult { smiles, confidence })
+}
+
+/// 用 MolScribe 批量识别多张图片
+///
+/// 返回 (filename → ChemImageResult) 的映射，识别失败的图片不在结果中
+pub async fn batch_image_to_smiles(
+    image_paths: &[(String, String)], // (filename, full_path)
+    config: &VlmConfig,
+) -> Vec<(String, ChemImageResult)> {
+    let mut results = Vec::new();
+    for (filename, full_path) in image_paths {
+        match image_to_smiles(full_path, config).await {
+            Ok(result) => results.push((filename.clone(), result)),
+            Err(e) => {
+                eprintln!("[vlm_chem] failed for {}: {}", filename, e);
+            }
+        }
+    }
+    results
+}
+
+/// 判断一个图片是否可能是化学结构图（基于 MinerU 提供的元数据或文件名启发式）
+pub fn is_likely_chemical_structure(filename: &str, region: Option<&str>) -> bool {
+    if let Some(r) = region {
+        if r == "figure" || r == "structure" || r == "table" {
+            return true;
+        }
+        return false;
+    }
+
+    // 无区域标注时，用文件名校验
+    let lowercase = filename.to_lowercase();
+    if lowercase.contains("struct")
+        || lowercase.contains("mol")
+        || lowercase.contains("chem")
+        || lowercase.contains("table")
+        || lowercase.contains("fig")
+    {
+        return true;
+    }
+
+    false
+}
+
+fn read_image_base64(path: &str) -> Result<String, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("Failed to read image {}: {}", path, e))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_likely_chemical_structure() {
+        assert!(is_likely_chemical_structure("page_05_img_02.png", Some("structure")));
+        assert!(is_likely_chemical_structure("fig_table_1.png", None));
+        assert!(is_likely_chemical_structure("mol_compound.png", None));
+        assert!(!is_likely_chemical_structure("page_01_bg.png", None));
+        assert!(!is_likely_chemical_structure("header_logo.png", Some("decorative")));
+    }
+
+    #[test]
+    fn test_vlm_config_default() {
+        let config = VlmConfig::default();
+        assert!(!config.sidecar_url.is_empty());
+    }
+}

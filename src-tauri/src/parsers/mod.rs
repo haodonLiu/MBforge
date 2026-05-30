@@ -1,5 +1,9 @@
+pub mod intent;
 pub mod llama_parse;
 pub mod mineru;
 pub mod pipeline;
 pub mod post_process;
+pub mod report;
+pub mod types;
 pub mod uniparser;
+pub mod vlm_chem;

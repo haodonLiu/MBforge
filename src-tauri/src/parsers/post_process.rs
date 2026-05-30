@@ -111,13 +111,13 @@ pub struct UncertainItem {
 // Internal: LLM API config
 // ---------------------------------------------------------------------------
 
-struct LlmApiConfig {
-    base_url: String,
-    api_key: String,
-    model: String,
+pub struct LlmApiConfig {
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
 }
 
-fn load_llm_config() -> Result<LlmApiConfig, String> {
+pub fn load_llm_config() -> Result<LlmApiConfig, String> {
     let base_url = std::env::var("MBFORGE_LLM_BASE_URL")
         .unwrap_or_else(|_| "http://localhost:8000/v1".to_string());
     let api_key = std::env::var("MBFORGE_LLM_API_KEY")
@@ -276,7 +276,7 @@ fn build_batch_prompt(
 }
 
 /// 从 StructuredData 生成 Markdown 报告（程序化生成，不依赖 LLM）
-fn generate_report(data: &StructuredData) -> String {
+pub fn generate_report(data: &StructuredData) -> String {
     let mut r = String::new();
 
     // Title
@@ -430,7 +430,7 @@ struct BatchResult {
 // LLM API call
 // ---------------------------------------------------------------------------
 
-fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(String, Option<u32>), String> {
+pub fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(String, Option<u32>), String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(180))
         .build()
@@ -482,7 +482,7 @@ fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(Stri
 // ---------------------------------------------------------------------------
 
 /// 从 LLM 响应中提取 JSON（处理 think blocks、code fences、控制字符、截断等）
-fn extract_json(response: &str) -> Result<serde_json::Value, String> {
+pub fn extract_json(response: &str) -> Result<serde_json::Value, String> {
     // Strip <think>...</think>
     let after_think = if let Some(end) = response.rfind("</think>") {
         &response[end + 9..]
@@ -595,7 +595,7 @@ fn parse_merge_response(response: &str, model: &str, tokens_used: Option<u32>, b
     Ok(PostProcessResult { report, data, model: model.to_string(), tokens_used, batch_count })
 }
 
-fn parse_structured_data(val: &serde_json::Value) -> Result<StructuredData, String> {
+pub fn parse_structured_data(val: &serde_json::Value) -> Result<StructuredData, String> {
     let metadata = DocumentMetadata {
         title: val["metadata"]["title"].as_str().map(|s| s.to_string()),
         authors: val["metadata"]["authors"].as_array()
@@ -715,6 +715,112 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
             unreachable!()
         }
     }
+}
+
+/// 简化的 section 后处理 — 适用于 Doc Agent 的单段处理
+///
+/// 与 `post_process()` 的区别：
+/// - 不接受整个 PdfParseResult，只接受 text content
+/// - 不依赖 PdfParseResult 的 classification/smiles/activities/chunks 字段
+/// - 直接用全量 content 跑单批 LLM 提取
+pub async fn post_process_section(
+    content: &str,
+    parser: &str,
+    page_count: usize,
+) -> Result<PostProcessResult, String> {
+    let config = load_llm_config()?;
+    let batches = split_into_batches(content);
+    let batch_count = batches.len();
+    let pdf_type = parser;
+
+    if batch_count == 1 {
+        let prompt = build_batch_prompt(&batches[0], 0, 1, &[], "", pdf_type, page_count);
+        let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
+        let val = extract_json(&response)?;
+        let data = parse_structured_data(&val)?;
+        let report = generate_report(&data);
+        Ok(PostProcessResult {
+            report,
+            data,
+            model: config.model,
+            tokens_used: tokens,
+            batch_count: 1,
+        })
+    } else {
+        let mut batch_results = Vec::new();
+        let mut total_tokens = 0u32;
+        for (i, batch) in batches.iter().enumerate() {
+            let prompt = build_batch_prompt(batch, i, batch_count, &[], "", pdf_type, page_count);
+            let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
+            let br = parse_batch_response(&response)?;
+            total_tokens += tokens.unwrap_or(0);
+            batch_results.push(br);
+        }
+        let merge_prompt = build_section_merge_prompt(&batch_results, content, pdf_type, page_count);
+        let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &merge_prompt)?;
+        let mut result =
+            parse_merge_response(&response, &config.model, tokens.map(|t| t + total_tokens), batch_count)?;
+        result.data.metadata.source_file = Some(parser.to_string());
+        Ok(result)
+    }
+}
+
+/// 构建合并 prompt（接受纯文本 content，用于 post_process_section）
+fn build_section_merge_prompt(
+    batch_results: &[BatchResult],
+    _content: &str,
+    pdf_type: &str,
+    page_count: usize,
+) -> String {
+    let mut batches_text = String::new();
+    for (i, br) in batch_results.iter().enumerate() {
+        batches_text.push_str(&format!("--- 第 {} 批结果 ---\n{}\n\n", i + 1, br.data.summary));
+        for c in &br.data.compounds {
+            batches_text.push_str(&format!(
+                "  化合物: {} ({}) [{}]\n",
+                c.name,
+                c.smiles.as_deref().unwrap_or("?"),
+                c.confidence
+            ));
+        }
+        for a in &br.data.activities {
+            batches_text.push_str(&format!(
+                "  活性: {} {} = {} {} [{}]\n",
+                a.compound, a.activity_type, a.value, a.units, a.confidence
+            ));
+        }
+        for f in &br.data.key_findings {
+            batches_text.push_str(&format!("  发现: {} [{}]\n", f.finding, f.confidence));
+        }
+        for u in &br.data.uncertain_items {
+            batches_text.push_str(&format!(
+                "  ⚠️ {}: {} — {}\n",
+                u.item_type, u.content, u.reason
+            ));
+        }
+    }
+
+    format!(
+        r#"请将以下分批分析结果合并为一份完整的结构化报告。
+
+## 原始文档信息
+- 页数: {page_count}
+- 类型: {pdf_type}
+
+## 各批分析结果
+{batches_text}
+
+## 合并要求
+1. 去重：相同化合物/活性数据只保留一条
+2. 合并：将各批的发现整合为完整列表
+3. 汇总：生成 200-400 字的中文摘要
+4. 不确定项：汇总所有批次的 uncertain_items
+5. 只输出 JSON（metadata + summary + compounds + activities + key_findings + uncertain_items），不要其他字段
+只输出 JSON。"#,
+        page_count = page_count,
+        pdf_type = pdf_type,
+        batches_text = batches_text,
+    )
 }
 
 // ---------------------------------------------------------------------------

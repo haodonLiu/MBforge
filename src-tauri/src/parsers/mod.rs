@@ -1,4 +1,5 @@
 pub mod association;
+pub mod headings;
 pub mod images;
 pub mod intent;
 pub mod keywords;
@@ -7,6 +8,7 @@ pub mod mineru;
 pub mod pipeline;
 pub mod post_process;
 pub mod report;
+pub mod sections;
 pub mod types;
 pub mod uniparser;
 pub mod vlm_chem;

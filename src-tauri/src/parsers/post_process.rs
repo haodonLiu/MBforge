@@ -47,7 +47,8 @@ pub struct CompoundEntry {
     /// 化合物名称
     pub name: String,
     /// SMILES 字符串（如果能确认）
-    pub smiles: Option<String>,
+    #[serde(rename = "smiles")]
+    pub esmiles: Option<String>,
     /// 所属类别（如 JAK inhibitor, MRGPRX2 antagonist）
     pub category: Option<String>,
     /// 关键描述
@@ -310,10 +311,10 @@ pub fn generate_report(data: &StructuredData) -> String {
                 "medium" => "⚠️",
                 _ => "❌",
             };
-            let smiles = c.smiles.as_deref().unwrap_or("-");
+            let esmiles = c.esmiles.as_deref().unwrap_or("-");
             r.push_str(&format!(
                 "| {} | {} | `{}` | {} | {} | {} | {} |\n",
-                i + 1, c.name, smiles, c.category.as_deref().unwrap_or("-"),
+                i + 1, c.name, esmiles, c.category.as_deref().unwrap_or("-"),
                 c.description, conf, c.source_ref
             ));
         }
@@ -376,7 +377,7 @@ fn build_merge_prompt(batch_results: &[BatchResult], raw: &PdfParseResult) -> St
     for (i, br) in batch_results.iter().enumerate() {
         batches_text.push_str(&format!("--- 第 {} 批结果 ---\n{}\n\n", i + 1, br.data.summary));
         for c in &br.data.compounds {
-            batches_text.push_str(&format!("  化合物: {} ({}) [{}]\n", c.name, c.smiles.as_deref().unwrap_or("?"), c.confidence));
+            batches_text.push_str(&format!("  化合物: {} ({}) [{}]\n", c.name, c.esmiles.as_deref().unwrap_or("?"), c.confidence));
         }
         for a in &br.data.activities {
             batches_text.push_str(&format!("  活性: {} {} = {} {} [{}]\n", a.compound, a.activity_type, a.value, a.units, a.confidence));
@@ -613,7 +614,7 @@ pub fn parse_structured_data(val: &serde_json::Value) -> Result<StructuredData, 
     let compounds = val["compounds"].as_array()
         .map(|arr| arr.iter().map(|v| CompoundEntry {
             name: v["name"].as_str().unwrap_or("").to_string(),
-            smiles: v["smiles"].as_str().map(|s| s.to_string()),
+            esmiles: v["smiles"].as_str().map(|s| s.to_string()),
             category: v["category"].as_str().map(|s| s.to_string()),
             description: v["description"].as_str().unwrap_or("").to_string(),
             source_ref: v["source_ref"].as_str().unwrap_or("").to_string(),
@@ -679,7 +680,7 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
 
     if batch_count == 1 {
         // 单批：直接处理
-        let prompt = build_batch_prompt(&batches[0], 0, 1, &raw.smiles, &activities_str, pdf_type, raw.page_count);
+        let prompt = build_batch_prompt(&batches[0], 0, 1, &raw.esmiles, &activities_str, pdf_type, raw.page_count);
         let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
         let val = extract_json(&response)?;
         let data = parse_structured_data(&val)?;
@@ -697,7 +698,7 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
         let mut total_tokens = 0u32;
 
         for (i, batch) in batches.iter().enumerate() {
-            let prompt = build_batch_prompt(batch, i, batch_count, &raw.smiles, &activities_str, pdf_type, raw.page_count);
+            let prompt = build_batch_prompt(batch, i, batch_count, &raw.esmiles, &activities_str, pdf_type, raw.page_count);
             let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
             let br = parse_batch_response(&response)?;
             total_tokens += tokens.unwrap_or(0);
@@ -779,7 +780,7 @@ fn build_section_merge_prompt(
             batches_text.push_str(&format!(
                 "  化合物: {} ({}) [{}]\n",
                 c.name,
-                c.smiles.as_deref().unwrap_or("?"),
+                c.esmiles.as_deref().unwrap_or("?"),
                 c.confidence
             ));
         }

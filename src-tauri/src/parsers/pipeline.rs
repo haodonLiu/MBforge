@@ -484,6 +484,97 @@ pub async fn process_document(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// 项目级批量索引（Rust Native，替代 Python /project/index）
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct IndexResult {
+    pub indexed: usize,
+    pub sections: usize,
+    pub errors: Vec<String>,
+}
+
+/// 扫描项目目录下的所有 PDF，提取 → 分 section → 索引到本地知识库。
+#[tauri::command]
+pub async fn index_project_rust(
+    app: tauri::AppHandle,
+    root: String,
+) -> Result<IndexResult, String> {
+    let project_root = std::path::PathBuf::from(&root);
+    let kb = crate::core::knowledge_base::KnowledgeBase::new(&project_root)
+        .map_err(|e| format!("KB init failed: {}", e))?;
+
+    // 扫描 PDF 文件
+    let mut pdf_files: Vec<std::path::PathBuf> = Vec::new();
+    for entry in walkdir::WalkDir::new(&project_root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+    {
+        if let Some(ext) = entry.path().extension() {
+            if ext.eq_ignore_ascii_case("pdf") {
+                pdf_files.push(entry.path().to_path_buf());
+            }
+        }
+    }
+
+    let mut indexed = 0usize;
+    let mut total_sections = 0usize;
+    let mut errors = Vec::new();
+    let total = pdf_files.len();
+
+    for (i, pdf_path) in pdf_files.iter().enumerate() {
+        let doc_id = uuid::Uuid::new_v4().to_string();
+        let filename = pdf_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "unknown.pdf".to_string());
+
+        // 发射进度事件
+        let _ = app.emit(
+            "doc-progress",
+            DocProgressEvent::Classify {
+                parser: format!("indexing {}/{}", i + 1, total),
+                page_count: 0,
+            },
+        );
+
+        let path_str = pdf_path.to_string_lossy().to_string();
+        match classify_and_extract(&path_str).await {
+            Ok(classified) => {
+                let headings = crate::parsers::headings::extract_headings(&classified.text);
+                let sections = crate::parsers::sections::build_sections(
+                    &classified.text,
+                    &headings,
+                    None,
+                    8000,
+                );
+
+                total_sections += sections.len();
+
+                match kb.index_document(&doc_id, &sections, None) {
+                    Ok(_) => {
+                        indexed += 1;
+                    }
+                    Err(e) => {
+                        errors.push(format!("{}: {}", filename, e));
+                    }
+                }
+            }
+            Err(e) => {
+                errors.push(format!("{}: {}", filename, e));
+            }
+        }
+    }
+
+    Ok(IndexResult {
+        indexed,
+        sections: total_sections,
+        errors,
+    })
+}
+
 // ===== 内部辅助函数 =====
 
 /// 分类并提取文件（自动检测 parser）

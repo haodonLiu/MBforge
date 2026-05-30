@@ -48,7 +48,7 @@ impl DocumentTreeIndex {
         self.pages_dir().join(doc_id)
     }
 
-    fn load_trees(&self) -> std::collections::HashMap<String, Vec<TreeNode>> {
+    pub fn load_trees(&self) -> std::collections::HashMap<String, Vec<TreeNode>> {
         let path = self.trees_path();
         if !path.exists() {
             return std::collections::HashMap::new();

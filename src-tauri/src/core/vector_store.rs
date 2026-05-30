@@ -111,14 +111,14 @@ impl VectorStore for SqliteVectorStore {
     ) -> Result<Vec<SearchResult>, String> {
         let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
 
-        let (sql, param) = if let Some(doc_id) = filter_doc_id {
+        let (sql, param): (String, Option<String>) = if let Some(doc_id) = filter_doc_id {
             (
-                "SELECT id, text, embedding, metadata FROM sections WHERE doc_id = ?1".to_string(),
+                "SELECT id, text, embedding, metadata FROM sections WHERE doc_id = ?1".into(),
                 Some(doc_id.to_string()),
             )
         } else {
             (
-                "SELECT id, text, embedding, metadata FROM sections".to_string(),
+                "SELECT id, text, embedding, metadata FROM sections".into(),
                 None,
             )
         };
@@ -126,29 +126,31 @@ impl VectorStore for SqliteVectorStore {
         let mut stmt = conn.prepare(&sql).map_err(|e| format!("Prepare failed: {}", e))?;
 
         let rows = if let Some(ref pid) = param {
-            stmt.query_map([pid.as_str()], |row| {
-                let id: String = row.get(0)?;
-                let text: String = row.get(1)?;
-                let emb_bytes: Vec<u8> = row.get(2)?;
-                let meta_str: String = row.get(3)?;
-                Ok((id, text, emb_bytes, meta_str))
-            })
-            .map_err(|e| format!("Query failed: {}", e))?
+            let rows = stmt
+                .query_map([pid.as_str()], |row| {
+                    let id: String = row.get(0)?;
+                    let text: String = row.get(1)?;
+                    let emb_bytes: Vec<u8> = row.get(2)?;
+                    let meta_str: String = row.get(3)?;
+                    Ok((id, text, emb_bytes, meta_str))
+                })
+                .map_err(|e| format!("Query failed: {}", e))?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Row error: {}", e))?
         } else {
-            stmt.query_map([], |row| {
-                let id: String = row.get(0)?;
-                let text: String = row.get(1)?;
-                let emb_bytes: Vec<u8> = row.get(2)?;
-                let meta_str: String = row.get(3)?;
-                Ok((id, text, emb_bytes, meta_str))
-            })
-            .map_err(|e| format!("Query failed: {}", e))?
+            let rows = stmt
+                .query_map([], |row| {
+                    let id: String = row.get(0)?;
+                    let text: String = row.get(1)?;
+                    let emb_bytes: Vec<u8> = row.get(2)?;
+                    let meta_str: String = row.get(3)?;
+                    Ok((id, text, emb_bytes, meta_str))
+                })
+                .map_err(|e| format!("Query failed: {}", e))?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Row error: {}", e))?
         };
 
         let mut scored: Vec<(SearchResult, f32)> = Vec::new();
-        for row in rows {
-            let (id, text, emb_bytes, meta_str) =
-                row.map_err(|e| format!("Row read failed: {}", e))?;
+        for (id, text, emb_bytes, meta_str) in rows {
             let emb = Self::deserialize_embedding(&emb_bytes);
             let metadata: serde_json::Value =
                 serde_json::from_str(&meta_str).unwrap_or(serde_json::json!({}));

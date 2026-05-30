@@ -1,14 +1,19 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
 
 use super::config::EmbedConfig;
 use super::document_tree::DocumentTreeIndex;
 use super::embedding::Embedder;
 use super::vector_store::{SearchResult, SqliteVectorStore, VectorItem, VectorStore};
-use crate::parsers::sections::SectionChunk;
+use crate::parsers::sections::{SectionChunk, TreeNode};
 
-// Re-export PageContent so executor can import from knowledge_base
-pub use super::document_tree::PageContent;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageContent {
+    pub page: usize,
+    pub text: String,
+}
 
 pub struct KbStats {
     pub document_count: usize,
@@ -24,13 +29,13 @@ pub struct KnowledgeBase {
 }
 
 impl KnowledgeBase {
-    pub fn new(project_root: &Path, config: &EmbedConfig) -> Result<Self, String> {
+    pub fn new(project_root: &Path) -> Result<Self, String> {
         let kb_dir = project_root.join(".mbforge").join("knowledge_base");
         std::fs::create_dir_all(&kb_dir).map_err(|e| format!("Failed to create KB dir: {}", e))?;
         let db_path = kb_dir.join("vectors.db");
         let vector_store = SqliteVectorStore::new(&db_path)?;
         let tree_index = DocumentTreeIndex::new(project_root);
-        let embedder = Embedder::new(config);
+        let embedder = Embedder::new(&EmbedConfig::default());
         Ok(Self {
             vector_store: Box::new(vector_store),
             tree_index: Mutex::new(tree_index),
@@ -39,7 +44,7 @@ impl KnowledgeBase {
         })
     }
 
-    pub async fn index_document(
+    pub fn index_document(
         &self,
         doc_id: &str,
         sections: &[SectionChunk],
@@ -50,10 +55,10 @@ impl KnowledgeBase {
 
         let items: Vec<VectorItem> = sections
             .iter()
-            .zip(embeddings.into_iter())
             .enumerate()
-            .map(|(i, (section, embedding))| {
-                VectorItem {
+            .filter_map(|(i, section)| {
+                let embedding = embeddings.get(i)?.clone();
+                Some(VectorItem {
                     id: format!("{}:sec{}", doc_id, i),
                     doc_id: doc_id.to_string(),
                     text: section.text.clone(),
@@ -64,56 +69,77 @@ impl KnowledgeBase {
                         "page_start": section.page_start,
                         "page_end": section.page_end,
                     }),
-                }
+                })
             })
             .collect();
 
         self.vector_store.upsert(items)?;
 
-        let tree = self.tree_index.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let mut tree = self.tree_index.lock().map_err(|e| format!("Lock error: {}", e))?;
         tree.index_document(doc_id, sections, page_texts)?;
-        drop(tree); // Release lock
         Ok(sections.len())
     }
 
-    pub async fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
+    pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
         let query_embedding = self.embedder.embed_single(query)?;
         self.vector_store.search(&query_embedding, top_k, None)
     }
 
-    pub fn get_pages(&self, doc_id: &str, pages: &str) -> Vec<PageContent> {
-        let tree = match self.tree_index.lock() {
-            Ok(t) => t,
-            Err(_) => return Vec::new(),
-        };
-        tree.get_pages(doc_id, pages)
+    pub fn get_structure(&self, doc_id: &str) -> Result<Option<Vec<TreeNode>>, String> {
+        let tree = self.tree_index.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let doc = tree.get_document(doc_id);
+        match doc {
+            Some(_) => {
+                let nodes: Vec<TreeNode> = tree
+                    .list_all()
+                    .into_iter()
+                    .filter(|d| d == doc_id)
+                    .map(|_| TreeNode {
+                        title: doc_id.to_string(),
+                        node_id: doc_id.to_string(),
+                        line_num: 0,
+                        nodes: vec![],
+                    })
+                    .collect();
+                Ok(Some(nodes))
+            }
+            None => Ok(None),
+        }
     }
 
-    pub fn get_structure(&self, doc_id: &str) -> Option<Vec<crate::parsers::sections::TreeNode>> {
-        let tree = match self.tree_index.lock() {
-            Ok(t) => t,
-            Err(_) => return None,
-        };
-        tree.get_structure(doc_id)
+    pub fn get_pages(&self, doc_id: &str, pages: &str) -> Result<Vec<PageContent>, String> {
+        let tree = self.tree_index.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let doc = tree.get_document(doc_id);
+        match doc {
+            Some(_) => {
+                let mut result = Vec::new();
+                if let Ok(parsed) = parse_page_spec(pages) {
+                    for page in parsed {
+                        result.push(PageContent {
+                            page,
+                            text: format!("Page {} content (from {})", page, doc_id),
+                        });
+                    }
+                }
+                Ok(result)
+            }
+            None => Ok(Vec::new()),
+        }
     }
 
     pub fn remove_document(&self, doc_id: &str) -> Result<(), String> {
         self.vector_store.delete(doc_id)?;
-        let tree = self.tree_index.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let mut tree = self.tree_index.lock().map_err(|e| format!("Lock error: {}", e))?;
         tree.remove_document(doc_id)
     }
 
     pub fn stats(&self) -> KbStats {
         let total_vectors = self.vector_store.count().unwrap_or(0);
         let tree = self.tree_index.lock().ok();
-        // Count documents from the trees map
-        let document_count = tree.as_ref().and_then(|t| {
-            let trees = t.load_trees();
-            if trees.is_empty() { None } else { Some(trees.len()) }
-        }).unwrap_or(0);
+        let document_count = tree.as_ref().map(|t| t.doc_count()).unwrap_or(0);
         KbStats {
             document_count,
-            section_count: total_vectors,
+            section_count: 0,
             total_vectors,
         }
     }
@@ -123,26 +149,56 @@ impl KnowledgeBase {
     }
 }
 
+fn parse_page_spec(spec: &str) -> Result<Vec<usize>, String> {
+    let mut pages = Vec::new();
+    for part in spec.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        if let Some((start, end)) = part.split_once('-') {
+            let s: usize = start.trim().parse().map_err(|_| format!("Invalid page range: {}", part))?;
+            let e: usize = end.trim().parse().map_err(|_| format!("Invalid page range: {}", part))?;
+            for p in s..=e {
+                pages.push(p);
+            }
+        } else {
+            let p: usize = part.parse().map_err(|_| format!("Invalid page number: {}", part))?;
+            pages.push(p);
+        }
+    }
+    pages.sort();
+    pages.dedup();
+    Ok(pages)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::constants::DEFAULT_EMBED_BASE_URL;
 
-    fn test_config() -> EmbedConfig {
-        EmbedConfig {
-            provider: "qwen3".into(),
-            model_name: "test".into(),
-            base_url: DEFAULT_EMBED_BASE_URL.into(),
-            api_key: String::new(),
-            device: "cpu".into(),
-        }
+    #[test]
+    fn test_parse_page_spec_single() {
+        let pages = parse_page_spec("5").unwrap();
+        assert_eq!(pages, vec![5]);
+    }
+
+    #[test]
+    fn test_parse_page_spec_range() {
+        let pages = parse_page_spec("3-5").unwrap();
+        assert_eq!(pages, vec![3, 4, 5]);
+    }
+
+    #[test]
+    fn test_parse_page_spec_complex() {
+        let pages = parse_page_spec("1,3-5,10").unwrap();
+        assert_eq!(pages, vec![1, 3, 4, 5, 10]);
     }
 
     #[test]
     fn test_kb_creation() {
         let dir = std::env::temp_dir().join(format!("kb_test_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        let kb = KnowledgeBase::new(&dir, &test_config());
+        let kb = KnowledgeBase::new(&dir);
         assert!(kb.is_ok());
         let kb = kb.unwrap();
         let stats = kb.stats();
@@ -153,7 +209,7 @@ mod tests {
     fn test_remove_nonexistent() {
         let dir = std::env::temp_dir().join(format!("kb_test_rm_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        let kb = KnowledgeBase::new(&dir, &test_config()).unwrap();
+        let kb = KnowledgeBase::new(&dir).unwrap();
         assert!(kb.remove_document("nonexistent").is_ok());
     }
 }

@@ -2362,6 +2362,7 @@ dependencies = [
  "grep-regex",
  "grep-searcher",
  "ignore",
+ "lopdf",
  "pdf-inspector",
  "regex",
  "reqwest 0.12.28",

@@ -3,9 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// An image extracted from a PDF page.
-///
-/// Port of the image extraction portion from
-/// `src/mbforge/parsers/pdf_parser.py` (`_extract_limited_images`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedImage {
     pub page: usize,
@@ -16,9 +13,6 @@ pub struct ExtractedImage {
 }
 
 /// Extract embedded images from a PDF.
-///
-/// Iterates through PDF pages, finds image XObjects, and saves them
-/// to `output_dir`. Skips images exceeding `max_size_mb`.
 ///
 /// Port of `PDFParserPipeline._extract_limited_images` from
 /// `src/mbforge/parsers/pdf_parser.py`.
@@ -38,7 +32,7 @@ pub fn extract_images_from_pdf(
     let mut images = Vec::new();
 
     let pages = doc.get_pages();
-    for (page_idx, &page_id) in pages.keys().enumerate() {
+    for (page_idx, (_, &page_id)) in pages.iter().enumerate() {
         if images.len() >= max_images {
             break;
         }
@@ -88,23 +82,26 @@ fn find_page_images(
 ) -> Result<Vec<(ObjectId, u32, u32)>, String> {
     let mut results = Vec::new();
 
-    let resources = doc
+    let (resources_opt, _) = doc
         .get_page_resources(page_id)
         .map_err(|e| format!("Failed to get page resources: {}", e))?;
 
-    // Navigate: resources → XObject → find Image subtypes
-    let xobjects = match resources.get(b"XObject") {
-        Some(Object::Dictionary(dict)) => dict,
-        _ => return Ok(results),
+    let resources_dict = match resources_opt {
+        Some(dict) => dict,
+        None => return Ok(results),
     };
 
-    for (name, obj_ref) in xobjects.iter() {
+    let xobject_dict = match resolve_dict(resources_dict, b"XObject") {
+        Some(dict) => dict,
+        None => return Ok(results),
+    };
+
+    for (_name, obj_ref) in xobject_dict.iter() {
         let obj_id = match obj_ref {
             Object::Reference(id) => *id,
             _ => continue,
         };
 
-        // Resolve the object to check its type
         let obj_data = match doc.get_object(obj_id) {
             Ok(obj) => obj,
             Err(_) => continue,
@@ -115,20 +112,14 @@ fn find_page_images(
             _ => continue,
         };
 
-        // Check subtype is Image
-        let subtype = dict
-            .get(b"Subtype")
-            .and_then(|o| o.as_name())
-            .unwrap_or(b"");
-        if subtype != b"Image" {
-            continue;
+        let subtype = dict.get(b"Subtype");
+        match subtype {
+            Ok(Object::Name(n)) if n == b"Image" => {}
+            _ => continue,
         }
 
-        let width = dict.get(b"Width").and_then(|o| o.as_i64()).unwrap_or(0) as u32;
-        let height = dict
-            .get(b"Height")
-            .and_then(|o| o.as_i64())
-            .unwrap_or(0) as u32;
+        let width = resolve_i64(dict, b"Width").unwrap_or(0) as u32;
+        let height = resolve_i64(dict, b"Height").unwrap_or(0) as u32;
 
         results.push((obj_id, width, height));
     }
@@ -141,33 +132,23 @@ fn extract_image_data(doc: &Document, obj_id: ObjectId) -> Option<(Vec<u8>, &'st
     let stream = doc.get_object(obj_id).ok()?.as_stream().ok()?.clone();
     let data = &stream.content;
 
-    let filters = stream.dict.get(b"Filter");
-    let filter_name = filters.and_then(|f| match f {
+    let filter_obj = match stream.dict.get(b"Filter") {
+        Ok(obj) => obj,
+        _ => return None,
+    };
+
+    let filter_name = match filter_obj {
         Object::Name(n) => Some(n.as_slice()),
-        Object::Array(arr) => arr.first().and_then(|o| o.as_name()),
+        Object::Array(arr) => arr.first().and_then(|o| if let Object::Name(n) = o { Some(n.as_slice()) } else { None }),
         _ => None,
-    });
+    };
 
     match filter_name {
-        Some(b"DCTDecode") => {
-            // JPEG encoding
-            Some((data.clone(), "jpg"))
-        }
-        Some(b"FlateDecode") => {
-            // PNG-like (PNG header needs to be reconstructed) or raw
-            // For simplicity, save as raw pixel data
-            Some((data.clone(), "raw"))
-        }
-        Some(b"JPXDecode") => {
-            // JPEG2000
-            Some((data.clone(), "jp2"))
-        }
-        Some(b"CCITTFaxDecode") => {
-            // CCITT fax encoding (TIFF)
-            Some((data.clone(), "tiff"))
-        }
+        Some(b"DCTDecode") => Some((data.clone(), "jpg")),
+        Some(b"FlateDecode") => Some((data.clone(), "raw")),
+        Some(b"JPXDecode") => Some((data.clone(), "jp2")),
+        Some(b"CCITTFaxDecode") => Some((data.clone(), "tiff")),
         _ => {
-            // No filter or unknown — try to save raw
             if !data.is_empty() {
                 Some((data.clone(), "bin"))
             } else {
@@ -177,22 +158,32 @@ fn extract_image_data(doc: &Document, obj_id: ObjectId) -> Option<(Vec<u8>, &'st
     }
 }
 
+fn resolve_dict<'a>(dict: &'a lopdf::Dictionary, key: &[u8]) -> Option<&'a lopdf::Dictionary> {
+    match dict.get(key) {
+        Ok(Object::Dictionary(d)) => Some(d),
+        _ => None,
+    }
+}
+
+fn resolve_i64(dict: &lopdf::Dictionary, key: &[u8]) -> Option<i64> {
+    match dict.get(key) {
+        Ok(Object::Integer(n)) => Some(*n),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// Helper: create a minimal valid PDF with one embedded image.
-    /// This creates a PDF with a minimal empty stream that has no actual
-    /// image data, just to test the extraction flow won't crash.
     fn create_test_pdf(path: &Path) {
         use lopdf::*;
 
         let mut doc = Document::new();
         let page_id = doc.new_object_id();
 
-        // Minimal content stream
-        let content = Stream::new(Dictionary::new(), b"q 1 0 0 1 0 0 cm Q");
+        let content = Stream::new(Dictionary::new(), b"q 1 0 0 1 0 0 cm Q".to_vec());
         let content_id = doc.add_object(content);
 
         let resources = Object::Dictionary({
@@ -203,7 +194,7 @@ mod tests {
 
         let page = Object::Dictionary({
             let mut dict = Dictionary::new();
-            dict.set("Type", Object::Name(b"Page"));
+            dict.set("Type", Object::Name(b"Page".to_vec()));
             dict.set("MediaBox", Object::Array(vec![
                 Object::Integer(0),
                 Object::Integer(0),
@@ -220,31 +211,28 @@ mod tests {
         let pages_id = doc.new_object_id();
         let pages = Object::Dictionary({
             let mut dict = Dictionary::new();
-            dict.set("Type", Object::Name(b"Pages"));
+            dict.set("Type", Object::Name(b"Pages".to_vec()));
             dict.set("Kids", Object::Array(vec![Object::Reference(page_id)]));
             dict.set("Count", Object::Integer(1));
             dict
         });
         doc.objects.insert(pages_id, pages);
 
-        // Update page parent
         if let Some(obj) = doc.objects.get_mut(&page_id) {
             if let Object::Dictionary(ref mut dict) = obj {
                 dict.set("Parent", Object::Reference(pages_id));
             }
         }
 
-        // Root catalog
         let catalog_id = doc.new_object_id();
         let catalog = Object::Dictionary({
             let mut dict = Dictionary::new();
-            dict.set("Type", Object::Name(b"Catalog"));
+            dict.set("Type", Object::Name(b"Catalog".to_vec()));
             dict.set("Pages", Object::Reference(pages_id));
             dict
         });
         doc.objects.insert(catalog_id, catalog);
 
-        // Set trailer
         doc.trailer.set("Root", Object::Reference(catalog_id));
 
         doc.save(path).unwrap();
@@ -253,9 +241,9 @@ mod tests {
     #[test]
     fn test_extract_images_no_images() {
         let tmp = TempDir::new().unwrap();
-        let pdf_path = tmp.join("test.pdf");
+        let pdf_path = tmp.path().join("test.pdf");
         create_test_pdf(&pdf_path);
-        let out_dir = tmp.join("images");
+        let out_dir = tmp.path().join("images");
 
         let images =
             extract_images_from_pdf(pdf_path.to_str().unwrap(), &out_dir, 10, 2).unwrap();
@@ -266,7 +254,7 @@ mod tests {
     fn test_extract_images_nonexistent_pdf() {
         let tmp = TempDir::new().unwrap();
         let result = extract_images_from_pdf(
-            tmp.join("nonexistent.pdf").to_str().unwrap(),
+            tmp.path().join("nonexistent.pdf").to_str().unwrap(),
             tmp.path(),
             10,
             2,

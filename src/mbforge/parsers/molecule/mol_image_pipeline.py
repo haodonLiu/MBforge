@@ -24,6 +24,7 @@ from PIL import Image
 
 from .coords import image_to_pdf_bbox, scale_from_page_size
 from .extraction_result import ExtractionResult
+from mbforge.utils.gpu import is_gpu_available
 from mbforge.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -453,8 +454,18 @@ class MolImagePipeline:
             general_detector: General 版检测器，None 时自动创建
             recognizer: SMILES 识别器，None 时自动创建
             device: 统一设备设置
-            crop_cache_dir: 裁剪图像缓存目录
+            crop_cache_dir: 裁剪轨道缓存目录
         """
+        if not is_gpu_available():
+            self._gpu_disabled = True
+            self.device = "cpu"
+            self.crop_cache_dir = crop_cache_dir
+            self.doc_detector = None
+            self.general_detector = None
+            self.recognizer = None
+            return
+
+        self._gpu_disabled = False
         self.device = device or os.getenv("MBFORGE_DEVICE", "auto")
         self.crop_cache_dir = crop_cache_dir
 
@@ -470,7 +481,9 @@ class MolImagePipeline:
 
     def is_available(self) -> bool:
         """管线核心组件是否可用（至少检测器可用）."""
-        return self.doc_detector.is_available()
+        if self._gpu_disabled:
+            return False
+        return self.doc_detector is not None and self.doc_detector.is_available()
 
     def extract_page(
         self,

@@ -24,7 +24,7 @@ except ImportError:
 
 from PIL import Image
 
-from ..core.document import ExtractedContent
+from ..core.types import ExtractedContent
 from ..core.knowledge_base import KnowledgeBase
 from ..core.mol_database import MoleculeDatabase, MoleculeRecord
 from .molecule.association_engine import AssociationEngine

@@ -1,4 +1,5 @@
 pub mod association;
+pub mod images;
 pub mod intent;
 pub mod keywords;
 pub mod llama_parse;

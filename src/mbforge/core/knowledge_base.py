@@ -14,7 +14,8 @@ from typing import Any
 import chromadb
 from chromadb.config import Settings
 
-from .document import ExtractedContent
+from .types import ExtractedContent
+from .document_tree import DocumentTreeIndex, SectionChunk
 from .summarizer import SummaryManager
 from ..utils.constants import KB_COLLECTION_DOCS, PROJECT_META_DIR
 from ..utils.logger import get_logger
@@ -31,6 +32,7 @@ class KnowledgeBase:
         self.db_path = str(self.meta_dir / "chroma_db")
         self.embedder = embedder
         self._sm: SummaryManager | None = None
+        self._tree_index = DocumentTreeIndex(self.project_root)
 
         self._client = chromadb.PersistentClient(
             path=self.db_path,
@@ -61,7 +63,15 @@ class KnowledgeBase:
         metadata: dict[str, Any] | None = None,
         batch_size: int = 64,
     ) -> None:
-        """将文档内容索引到知识库（分批处理避免 OOM）."""
+        """将文档内容索引到知识库（分批处理避免 OOM），同时建立结构树索引."""
+        # ── 结构树索引（参考 PageIndex）──
+        self._tree_index.index_document(
+            doc_id=doc_id,
+            sections=content.sections,
+            page_count=content.metadata.get("pages"),
+            page_texts=content.page_texts,
+        )
+
         if not content.chunks:
             return
 
@@ -78,6 +88,7 @@ class KnowledgeBase:
 
             for i in range(start, end):
                 chunk = content.chunks[i]
+                section = content.sections[i] if i < len(content.sections) else None
                 chunk_id = f"{doc_id}_chunk_{i}"
                 chunk_ids.append(chunk_id)
                 documents.append(chunk)
@@ -86,6 +97,10 @@ class KnowledgeBase:
                         **base_meta,
                         "chunk_index": i,
                         "chunk_hash": hash(chunk) & 0xFFFFFFFF,
+                        "section_title": section.title if section else "",
+                        "section_path": section.path if section else "",
+                        "page_start": section.page_start if section else None,
+                        "page_end": section.page_end if section else None,
                     }
                 )
 
@@ -118,6 +133,7 @@ class KnowledgeBase:
         """移除文档的所有索引."""
         # ChromaDB 的 where 过滤
         self._collection.delete(where={"doc_id": doc_id})
+        self._tree_index.remove_document(doc_id)
 
     def search(
         self,

@@ -101,6 +101,8 @@ def img_to_pdf_rect(
     Returns:
         fitz.Rect，PDF 坐标系（左下角原点）
     """
+    import fitz
+
     x1_img, y1_img, x2_img, y2_img = bbox_img
     x1 = x1_img / scale
     x2 = x2_img / scale

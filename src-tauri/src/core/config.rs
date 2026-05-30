@@ -92,11 +92,31 @@ impl Default for OcrConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VlmConfig {
+    pub provider: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub model_name: String,
+}
+
+impl Default for VlmConfig {
+    fn default() -> Self {
+        Self {
+            provider: "api".into(),
+            base_url: String::new(),
+            api_key: String::new(),
+            model_name: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub llm: ModelConfig,
     pub embed: EmbedConfig,
     pub rerank: RerankConfig,
     pub ocr: OcrConfig,
+    pub vlm: VlmConfig,
     pub theme: String,
     pub language: String,
 }
@@ -108,6 +128,7 @@ impl Default for AppConfig {
             embed: EmbedConfig::default(),
             rerank: RerankConfig::default(),
             ocr: OcrConfig::default(),
+            vlm: VlmConfig::default(),
             theme: "dark".into(),
             language: "zh".into(),
         }

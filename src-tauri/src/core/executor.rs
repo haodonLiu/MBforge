@@ -5,6 +5,7 @@ use grep_searcher::sinks::UTF8;
 use grep_searcher::SearcherBuilder;
 use ignore::WalkBuilder;
 
+use super::markush;
 use super::tools::{ToolInfo, ToolRegistry};
 
 pub struct ToolExecutor {
@@ -107,6 +108,27 @@ impl ToolExecutor {
                 }),
             );
         }
+
+        // check_markush_overlap — E-SMILES Markush 专利范围检查
+        registry.register_with_fn(
+            ToolInfo::new("check_markush_overlap", "检查一个分子（SMILES）是否落在一个 Markush 专利通式（E-SMILES）的范围内", {
+                let mut p: HashMap<String, serde_json::Value> = HashMap::new();
+                p.insert("esmiles".into(), serde_json::json!({"type": "string", "description": "E-SMILES Markush pattern (e.g. *c1ccccc1<sep><a>0:R[1]</a>)"}));
+                p.insert("query_smiles".into(), serde_json::json!({"type": "string", "description": "Query molecule SMILES (e.g. Fc1ccccc1)"}));
+                p.insert("rgroup_text".into(), serde_json::json!({"type": "string", "description": "Optional patent text defining R-groups (e.g. R[1] is halogen)"}));
+                p
+            }),
+            Box::new(move |args| {
+                let esmiles = args["esmiles"].as_str().unwrap_or("");
+                let query = args["query_smiles"].as_str().unwrap_or("");
+                let rtext = args.get("rgroup_text").and_then(|v| v.as_str());
+                if esmiles.is_empty() || query.is_empty() {
+                    return serde_json::json!({"error": "esmiles and query_smiles are required"}).to_string();
+                }
+                let result = markush::analyze_markush_coverage(esmiles, query, rtext);
+                serde_json::to_string(&result).unwrap_or_else(|e| format!("Serialization error: {}", e))
+            }),
+        );
     }
 
     /// 注册需要 Python sidecar 的工具
@@ -343,7 +365,7 @@ mod tests {
         let executor = ToolExecutor::new("http://localhost:18792", "/tmp/test");
         // native + sidecar
         let tools = executor.registry.list();
-        assert!(tools.len() >= 14);
+        assert!(tools.len() >= 15);
         assert!(executor.registry.get("grep_search").is_some());
         assert!(executor.registry.get("search_knowledge_base").is_some());
     }

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use super::constants::{PROJECT_META_DIR, TRAJECTORY_DIR, TRAJECTORY_FILE};
+use super::helpers::now_rfc3339;
 
 const MAX_STEPS: usize = 500;
 
@@ -17,14 +18,10 @@ pub struct TrajectoryStep {
     pub top_results: Vec<String>,
     #[serde(default)]
     pub duration_ms: f64,
-    #[serde(default = "default_timestamp")]
+    #[serde(default = "now_rfc3339")]
     pub timestamp: String,
     #[serde(default)]
     pub metadata: serde_json::Value,
-}
-
-fn default_timestamp() -> String {
-    chrono::Utc::now().to_rfc3339()
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -57,7 +54,7 @@ impl TrajectoryTracker {
     pub fn save(&self) {
         let data = TrajectoryData {
             steps: self.steps.clone(),
-            updated_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: now_rfc3339(),
         };
         let _ = super::helpers::save_json(&self.path, &data);
     }
@@ -78,7 +75,7 @@ impl TrajectoryTracker {
             result_count: count,
             top_results: results.into_iter().take(5).collect(),
             duration_ms,
-            timestamp: default_timestamp(),
+            timestamp: now_rfc3339(),
             metadata: serde_json::json!({}),
         });
     }
@@ -91,7 +88,7 @@ impl TrajectoryTracker {
             result_count: if summary.is_empty() { 0 } else { 1 },
             top_results: if summary.is_empty() { vec![] } else { vec![summary[..summary.len().min(200)].to_string()] },
             duration_ms: 0.0,
-            timestamp: default_timestamp(),
+            timestamp: now_rfc3339(),
             metadata: serde_json::json!({}),
         });
     }

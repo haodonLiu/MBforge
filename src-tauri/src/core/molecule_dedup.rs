@@ -23,43 +23,7 @@ pub fn canonicalize_esmiles(esmiles: &str) -> String {
     if trimmed.is_empty() {
         return String::new();
     }
-    // TODO-AUDIT: feature "smiles-canonical" is referenced here but not defined in
-    // Cargo.toml — the conditional always evaluates to false. Either add the feature
-    // to [features] in Cargo.toml or remove the conditional.
-    #[cfg(feature = "smiles-canonical")]
-    {
-        if let Ok(canon) = smiles_canonical::canonicalize(&trimmed) {
-            return canon;
-        }
-    }
     trimmed
-}
-
-// TODO-AUDIT: call_tanimoto_sidecar is dead code — defined but never called.
-// Additionally, the response field checked here is "score" but chem.py returns
-// "tanimoto" — if ever wired in, this function would always fail.
-pub fn call_tanimoto_sidecar(
-    esmiles_a: &str,
-    esmiles_b: &str,
-    sidecar_url: &str,
-) -> Result<f64, String> {
-    let client = reqwest::blocking::Client::new();
-    let body = serde_json::json!({
-        "smiles_a": esmiles_a,
-        "smiles_b": esmiles_b,
-    });
-    let resp = client
-        .post(format!("{}/api/v1/chem/tanimoto", sidecar_url.trim_end_matches('/')))
-        .json(&body)
-        .timeout(std::time::Duration::from_secs(30))
-        .send()
-        .map_err(|e| format!("Tanimoto sidecar request failed: {}", e))?;
-    let val: serde_json::Value = resp
-        .json()
-        .map_err(|e| format!("Tanimoto response parse failed: {}", e))?;
-    val.get("tanimoto")
-        .and_then(|v| v.as_f64())
-        .ok_or_else(|| format!("Invalid tanimoto response: {}", val))
 }
 
 pub fn run_dedup_batch(
@@ -125,7 +89,7 @@ pub fn run_dedup_batch(
                 metadata: Some(serde_json::json!({
                     "reason": dup.reason,
                 })),
-                created_at: chrono::Utc::now().to_rfc3339(),
+                created_at: super::helpers::now_rfc3339(),
             };
             if db.add_relation(&rel).is_ok() {
                 relations_added += 1;
@@ -180,7 +144,7 @@ pub fn add_similarity_relation(
         relation_type: RelationType::Similar,
         score: Some(score),
         metadata: None,
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: super::helpers::now_rfc3339(),
     };
     db.add_relation(&rel)
 }

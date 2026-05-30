@@ -2,26 +2,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
-/// Result of associating context text with a detected molecule image.
-///
-/// Port of `ExtractionResult` from
-/// `src/mbforge/parsers/molecule/extraction_result.py`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExtractionResult {
-    pub name: String,
-    pub context_text: String,
-    pub properties: serde_json::Value,
-}
-
-impl ExtractionResult {
-    pub fn new(context_text: &str) -> Self {
-        Self {
-            name: String::new(),
-            context_text: context_text.to_string(),
-            properties: serde_json::json!({}),
-        }
-    }
-}
+pub use crate::core::types::ExtractionResult;
 
 // ---------------------------------------------------------------------------
 // Regex patterns (port of `association_engine.py`)

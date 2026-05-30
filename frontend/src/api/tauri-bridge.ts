@@ -107,17 +107,20 @@ export interface Heading {
 }
 
 export interface SectionChunk {
-  heading: string
+  title: string
+  path: string
   text: string
-  page: number
-  section_id: string
+  page_start: number | null
+  page_end: number | null
+  line_start: number
+  line_end: number
 }
 
 export interface PdfParseResult {
   content: string
   classification: DocumentClassification
   chunks: string[]
-  smiles: string[]
+  esmiles: string[]
   activities: ActivityData[]
   parser: string
   page_count: number
@@ -175,12 +178,12 @@ export type AgentStreamEvent = {
 }
 
 export interface DocumentReport {
-  metadata: { title: string | null; authors: string[]; document_type: string; key_targets: string[]; source_file: string | null }
-  compounds: { name: string; smiles: string | null; category: string | null; description: string; source_ref: string; confidence: string; uncertainty_reason: string | null }[]
-  activities: { compound: string; activity_type: string; value: number; units: string; target: string; source_quote: string; source_ref: string; confidence: string }[]
-  key_findings: { finding: string; evidence: string; source_ref: string; confidence: string }[]
+  metadata: DocumentMetadata
+  compounds: CompoundEntry[]
+  activities: ActivityEntry[]
+  key_findings: FindingEntry[]
   sar_analysis: string
-  uncertain_items: { item_type: string; content: string; reason: string; suggested_action: string }[]
+  uncertain_items: UncertainItem[]
   report_markdown: string
 }
 
@@ -235,32 +238,66 @@ export async function agentGetHistory(sessionId: string): Promise<ChatMessage[]>
 
 // ---- post_process ----
 
-export interface ActivityRecord {
+export interface CompoundEntry {
+  name: string
+  smiles: string | null
+  category: string | null
+  description: string
+  source_ref: string
+  confidence: string
+  uncertainty_reason: string | null
+}
+
+export interface ActivityEntry {
   compound: string
   activity_type: string
   value: number
   units: string
   target: string | null
-  context: string
+  source_quote: string
+  source_ref: string
+  confidence: string
+  uncertainty_reason: string | null
+}
+
+export interface FindingEntry {
+  finding: string
+  evidence: string
+  source_ref: string
+  confidence: string
+  uncertainty_reason: string | null
+}
+
+export interface UncertainItem {
+  item_type: string
+  content: string
+  reason: string
+  suggested_action: string
 }
 
 export interface DocumentMetadata {
   title: string | null
   authors: string[]
   document_type: string
-  key_compounds: string[]
   key_targets: string[]
+  source_file: string | null
+}
+
+export interface StructuredData {
+  metadata: DocumentMetadata
+  summary: string
+  compounds: CompoundEntry[]
+  activities: ActivityEntry[]
+  key_findings: FindingEntry[]
+  uncertain_items: UncertainItem[]
 }
 
 export interface PostProcessResult {
-  summary: string
-  structured_content: string
-  validated_smiles: string[]
-  activity_records: ActivityRecord[]
-  key_findings: string[]
-  metadata: DocumentMetadata
+  report: string
+  data: StructuredData
   model: string
   tokens_used: number | null
+  batch_count: number
 }
 
 export async function postProcessPdf(parseResult: PdfParseResult): Promise<PostProcessResult> {

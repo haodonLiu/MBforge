@@ -353,12 +353,7 @@ impl ToolExecutor {
             "args": args,
             "project_root": self.project_root,
         });
-        let client = match reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build() {
-                Ok(c) => c,
-                Err(e) => return format!("HTTP client error: {}", e),
-            };
+        let client = crate::core::http::client_30s();
         let resp = match client.post(&url)
             .header("Content-Type", "application/json")
             .json(&body)

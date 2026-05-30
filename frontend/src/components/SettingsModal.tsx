@@ -1,8 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { SettingsIcon, XIcon, DownloadIcon } from './icons'
+import { motion, AnimatePresence } from 'framer-motion'
+import { SettingsIcon, XIcon, DownloadIcon, TrashIcon } from './icons'
 import { getSettings, saveSettings } from '../api/settings'
-import { listModels, downloadModel, type DownloadModel, type ProgressEvent } from '../api/download'
+import { useTheme } from '../hooks/useTheme'
+import { listModels, downloadModel, listDownloaded, deleteModel, type DownloadModel, type DownloadedModel, type ProgressEvent } from '../api/download'
 import ErrorBanner from './ErrorBanner'
+import Button from '../components/ui/Button'
+import IconButton from '../components/ui/IconButton'
+import Input from '../components/ui/Input'
+import Caption from '../components/ui/Caption'
+import Badge from '../components/ui/Badge'
+import AlertBanner from '../components/ui/AlertBanner'
 
 type Section = 'general' | 'ai' | 'embedding' | 'reranker' | 'models' | 'appearance' | 'server' | 'about'
 
@@ -64,6 +72,7 @@ interface SettingsState {
   embed_model: string
   rerank_provider: string
   rerank_model: string
+  model_cache_dir: string
 }
 
 const DEFAULT_SETTINGS: SettingsState = {
@@ -78,6 +87,7 @@ const DEFAULT_SETTINGS: SettingsState = {
   embed_model: 'Qwen/Qwen3-Embedding-0.6B',
   rerank_provider: 'qwen3',
   rerank_model: 'BAAI/bge-reranker-v2-m3',
+  model_cache_dir: '',
 }
 
 interface DownloadState {
@@ -107,7 +117,11 @@ export default function SettingsModal({ open, onClose }: Props) {
 
   // ---- 模型下载状态 ----
   const [models, setModels] = useState<DownloadModel[]>([])
+  const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([])
+  const [modelDir, setModelDir] = useState('')
   const [downloadState, setDownloadState] = useState<DownloadState>({})
+  const [modelTab, setModelTab] = useState<'catalog' | 'downloaded'>('catalog')
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const abortRef = useRef<(() => void) | null>(null)
 
   const loadModels = useCallback(async () => {
@@ -117,12 +131,23 @@ export default function SettingsModal({ open, onClose }: Props) {
     } catch { /* 后端未启动时静默失败 */ }
   }, [])
 
+  const loadDownloaded = useCallback(async () => {
+    try {
+      const resp = await listDownloaded()
+      if (resp.success) {
+        setDownloadedModels(resp.models)
+        setModelDir(resp.model_dir)
+      }
+    } catch { /* 后端未启动时静默失败 */ }
+  }, [])
+
   useEffect(() => {
     if (open) {
       loadSettings()
       loadModels()
+      loadDownloaded()
     }
-  }, [open, loadModels])
+  }, [open, loadModels, loadDownloaded])
 
   const loadSettings = async () => {
     setIsLoading(true)
@@ -142,6 +167,7 @@ export default function SettingsModal({ open, onClose }: Props) {
           embed_model: s.embed?.model_name || '',
           rerank_provider: s.rerank?.provider || 'qwen3',
           rerank_model: s.rerank?.model_name || '',
+          model_cache_dir: s.model_cache_dir || '',
         })
       }
     } catch (e) {
@@ -174,6 +200,7 @@ export default function SettingsModal({ open, onClose }: Props) {
           provider: settings.rerank_provider,
           model_name: settings.rerank_model,
         },
+        model_cache_dir: settings.model_cache_dir,
       }
       const resp = await saveSettings(payload)
       if (resp.success) {
@@ -194,8 +221,13 @@ export default function SettingsModal({ open, onClose }: Props) {
     loadSettings()
   }
 
+  const { setTheme } = useTheme()
+
   const updateSetting = (key: keyof SettingsState, value: string) => {
     setSettings(prev => ({ ...prev, [key]: value }))
+    if (key === 'theme') {
+      setTheme(value as 'light' | 'dark')
+    }
   }
 
   // ---- 模型下载 ----
@@ -246,6 +278,20 @@ export default function SettingsModal({ open, onClose }: Props) {
     return s && (s.status === 'connecting' || s.status === 'downloading')
   }
 
+  // ---- 模型删除 ----
+  const handleDelete = async (modelId: string) => {
+    try {
+      const resp = await deleteModel(modelId)
+      if (resp.success) {
+        setDeleteConfirm(null)
+        loadDownloaded()
+        loadModels()
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   // ---- 模型选择器组件 ----
   const ModelSelector = ({
     provider,
@@ -283,7 +329,7 @@ export default function SettingsModal({ open, onClose }: Props) {
           <option value="custom">自定义...</option>
         </select>
         {showCustom && (
-          <input
+          <Input
             className="settings-input"
             value={isKnown ? customModel : modelValue}
             onChange={e => {
@@ -308,9 +354,9 @@ export default function SettingsModal({ open, onClose }: Props) {
     return (
       <div style={{ marginTop: '8px' }}>
         {state.status === 'connecting' && (
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+          <Caption style={{ marginBottom: '4px', display: 'block' }}>
             连接中... {state.source && `(${state.source})`}
-          </div>
+          </Caption>
         )}
         {state.status === 'downloading' && (
           <>
@@ -324,22 +370,22 @@ export default function SettingsModal({ open, onClose }: Props) {
               <span className="download-progress-text">{progress}%</span>
             </div>
             {state.fileName && (
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              <Caption style={{ marginTop: '4px', display: 'block' }}>
                 {state.fileName}
                 {state.fileIndex && state.totalFiles && ` (${state.fileIndex}/${state.totalFiles})`}
-              </div>
+              </Caption>
             )}
           </>
         )}
         {state.status === 'completed' && (
-          <div style={{ fontSize: '12px', color: 'var(--success)' }}>
+          <Caption color="var(--success)" style={{ display: 'block' }}>
             下载完成 {state.source && `(来源: ${state.source})`}
-          </div>
+          </Caption>
         )}
         {state.status === 'failed' && (
-          <div style={{ fontSize: '12px', color: 'var(--danger)' }}>
+          <Caption color="var(--danger)" style={{ display: 'block' }}>
             {state.error || '下载失败'}
-          </div>
+          </Caption>
         )}
       </div>
     )
@@ -417,7 +463,7 @@ export default function SettingsModal({ open, onClose }: Props) {
                     {settings.llm_provider === 'ollama' ? '默认: http://localhost:11434' : 'API 端点地址'}
                   </div>
                 </div>
-                <input
+                <Input
                   className="settings-input"
                   value={settings.llm_base_url}
                   onChange={e => updateSetting('llm_base_url', e.target.value)}
@@ -433,7 +479,7 @@ export default function SettingsModal({ open, onClose }: Props) {
                   <div className="setting-info">
                     <div className="setting-label">API Key</div>
                   </div>
-                  <input
+                  <Input
                     className="settings-input"
                     type="password"
                     value={settings.llm_api_key}
@@ -566,118 +612,192 @@ export default function SettingsModal({ open, onClose }: Props) {
         return (
           <div className="settings-section">
             <div className="settings-group">
-              <h3 className="settings-group-title">下载模型</h3>
-              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: '1.6' }}>
-                下载本地模型以支持 Embedding、Reranker 和分子检测功能。从 ModelScope 下载。
-              </p>
+              {/* Tab 切换 */}
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
+                <Button
+                  size="sm"
+                  style={{
+                    padding: '6px 14px',
+                    background: modelTab === 'catalog' ? 'var(--accent-muted)' : undefined,
+                    color: modelTab === 'catalog' ? 'var(--accent)' : undefined,
+                  }}
+                  onClick={() => setModelTab('catalog')}
+                >
+                  可用模型
+                </Button>
+                <Button
+                  size="sm"
+                  style={{
+                    padding: '6px 14px',
+                    background: modelTab === 'downloaded' ? 'var(--accent-muted)' : undefined,
+                    color: modelTab === 'downloaded' ? 'var(--accent)' : undefined,
+                  }}
+                  onClick={() => { setModelTab('downloaded'); loadDownloaded() }}
+                >
+                  已下载 ({downloadedModels.length})
+                </Button>
+              </div>
 
-              {models.length === 0 ? (
-                <div style={{
-                  padding: '24px',
-                  textAlign: 'center',
-                  color: 'var(--text-muted)',
-                  fontSize: '13px',
-                  background: 'var(--bg-base)',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border)',
-                }}>
-                  模型服务未启动，请先启动后端服务
-                </div>
-              ) : (
-                Object.entries(typeLabels).map(([type, label]) => {
-                  const group = byType(type)
-                  if (group.length === 0) return null
-                  return (
-                    <div key={type} style={{ marginBottom: '24px' }}>
-                      <div style={{
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        color: 'var(--text-secondary)',
-                        marginBottom: '8px',
-                        padding: '4px 0',
-                      }}>
-                        {label}
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {group.map(model => {
-                          const ds = downloadState[model.id]
-                          const downloading = isModelDownloading(model.id)
-                          return (
-                            <div key={model.id} className="model-card">
-                              <div className="model-card-info">
-                                <div className="model-card-name">
-                                  {model.name}
-                                  {model.downloaded && (
-                                    <span style={{
-                                      marginLeft: '8px',
-                                      fontSize: '11px',
-                                      color: 'var(--success)',
-                                      fontWeight: 400,
-                                    }}>
-                                      已下载
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="model-card-desc">{model.description}</div>
-                                {ds && <ProgressBar modelId={model.id} />}
-                              </div>
-                              <div className="model-card-actions">
-                                {!model.downloaded && !downloading && (
-                                  <button
-                                    className="btn btn-primary"
-                                    style={{ padding: '6px 16px', fontSize: '12px' }}
-                                    onClick={() => handleDownload(model.id)}
-                                  >
-                                    下载
-                                  </button>
-                                )}
-                                {downloading && ds?.status === 'downloading' && (
-                                  <button
-                                    className="btn btn-secondary"
-                                    style={{ padding: '6px 16px', fontSize: '12px' }}
-                                    onClick={() => {
-                                      abortRef.current?.()
-                                      setDownloadState(prev => ({
-                                        ...prev,
-                                        [model.id]: { progress: 0, status: 'idle' },
-                                      }))
-                                    }}
-                                  >
-                                    取消
-                                  </button>
-                                )}
-                                {ds?.status === 'completed' && (
-                                  <span style={{ fontSize: '12px', color: 'var(--success)' }}>完成</span>
-                                )}
-                                {ds?.status === 'failed' && (
-                                  <button
-                                    className="btn btn-secondary"
-                                    style={{ padding: '6px 16px', fontSize: '12px' }}
-                                    onClick={() => handleDownload(model.id)}
-                                  >
-                                    重试
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })
-              )}
-
-              {/* 自定义模型提示 */}
+              {/* 模型目录信息 */}
               <div style={{
-                marginTop: '20px',
-                padding: '14px 16px',
+                padding: '10px 14px',
                 background: 'var(--bg-base)',
                 border: '1px solid var(--border)',
                 borderRadius: '8px',
                 fontSize: '12px',
-                lineHeight: '1.8',
-                color: 'var(--text-secondary)',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}>
+                <span style={{ color: 'var(--text-muted)' }}>模型目录:</span>
+                <code style={{ fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-secondary)', wordBreak: 'break-all' }}>
+                  {modelDir || '~/.cache/mbforge/models/'}
+                </code>
+              </div>
+
+              {modelTab === 'catalog' ? (
+                /* ===== 可用模型列表 ===== */
+                models.length === 0 ? (
+                  <div style={{
+                    padding: '24px', textAlign: 'center', color: 'var(--text-muted)',
+                    fontSize: '13px', background: 'var(--bg-base)', borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                  }}>
+                    模型服务未启动，请先启动后端服务
+                  </div>
+                ) : (
+                  Object.entries(typeLabels).map(([type, label]) => {
+                    const group = byType(type)
+                    if (group.length === 0) return null
+                    return (
+                      <div key={type} style={{ marginBottom: '24px' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', padding: '4px 0' }}>
+                          {label}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {group.map(model => {
+                            const ds = downloadState[model.id]
+                            const downloading = isModelDownloading(model.id)
+                            return (
+                              <div key={model.id} className="model-card">
+                                <div className="model-card-info">
+                                  <div className="model-card-name">
+                                    {model.name}
+                                    {model.downloaded && (
+                                      <Badge variant="success" style={{ marginLeft: '8px', fontWeight: 400 }}>已下载</Badge>
+                                    )}
+                                    {model.license && (
+                                      <a
+                                        href={model.license_url || '#'}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{ marginLeft: '8px', fontSize: '10px', color: 'var(--text-muted)', textDecoration: 'underline' }}
+                                        onClick={e => e.stopPropagation()}
+                                      >
+                                        {model.license}
+                                      </a>
+                                    )}
+                                    {model.size_mb > 0 && (
+                                      <Caption style={{ marginLeft: '8px', fontSize: '10px' }}>
+                                        ~{model.size_mb}MB
+                                      </Caption>
+                                    )}
+                                  </div>
+                                  <div className="model-card-desc">{model.description}</div>
+                                  {ds && <ProgressBar modelId={model.id} />}
+                                </div>
+                                <div className="model-card-actions">
+                                  {!model.downloaded && !downloading && (
+                                    <Button size="sm" variant="primary" onClick={() => handleDownload(model.id)}>
+                                      下载
+                                    </Button>
+                                  )}
+                                  {downloading && ds?.status === 'downloading' && (
+                                    <Button size="sm" variant="secondary"
+                                      onClick={() => { abortRef.current?.(); setDownloadState(prev => ({ ...prev, [model.id]: { progress: 0, status: 'idle' } })) }}>
+                                      取消
+                                    </Button>
+                                  )}
+                                  {ds?.status === 'completed' && <Caption color="var(--success)">完成</Caption>}
+                                  {ds?.status === 'failed' && (
+                                    <Button size="sm" variant="secondary" onClick={() => handleDownload(model.id)}>
+                                      重试
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })
+                )
+              ) : (
+                /* ===== 已下载模型列表 ===== */
+                downloadedModels.length === 0 ? (
+                  <div style={{
+                    padding: '24px', textAlign: 'center', color: 'var(--text-muted)',
+                    fontSize: '13px', background: 'var(--bg-base)', borderRadius: '8px',
+                    border: '1px solid var(--border)',
+                  }}>
+                    暂无已下载模型
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {downloadedModels.map(model => (
+                      <div key={model.id} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '12px 14px', background: 'var(--bg-base)', border: '1px solid var(--border)',
+                        borderRadius: '8px', gap: '12px',
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span>{model.name}</span>
+                            <Caption style={{ fontSize: '11px' }}>
+                              {model.size_mb > 0 ? `${model.size_mb} MB` : ''}
+                            </Caption>
+                            {model.in_catalog && (
+                              <span style={{ fontSize: '10px', color: 'var(--success)', background: 'rgba(34,197,94,0.1)', padding: '1px 6px', borderRadius: '4px' }}>
+                                官方
+                              </span>
+                            )}
+                          </div>
+                          <Caption style={{ marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all', display: 'block' }}>
+                            {model.path}
+                          </Caption>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                          {deleteConfirm === model.id ? (
+                            <>
+                              <span style={{ fontSize: '11px', color: 'var(--danger)' }}>确认删除？</span>
+                              <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }}
+                                onClick={() => setDeleteConfirm(null)}>取消</button>
+                              <button className="btn btn-primary" style={{ padding: '4px 10px', fontSize: '11px', background: 'var(--danger)' }}
+                                onClick={() => handleDelete(model.id)}>删除</button>
+                            </>
+                          ) : (
+                            <button
+                              className="btn btn-secondary"
+                              style={{ padding: '4px 10px', fontSize: '11px', color: 'var(--danger)' }}
+                              onClick={() => setDeleteConfirm(model.id)}
+                            >
+                              <TrashIcon size={12} /> 删除
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+
+              {/* 自定义模型提示 */}
+              <div style={{
+                marginTop: '20px', padding: '14px 16px', background: 'var(--bg-base)',
+                border: '1px solid var(--border)', borderRadius: '8px', fontSize: '12px',
+                lineHeight: '1.8', color: 'var(--text-secondary)',
               }}>
                 <div style={{ fontWeight: 600, marginBottom: '6px', color: 'var(--text-primary)' }}>
                   使用其他模型
@@ -687,7 +807,7 @@ export default function SettingsModal({ open, onClose }: Props) {
                 </div>
                 <div style={{ marginTop: '8px', fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-muted)' }}>
                   Embedding / Reranker：直接填本地模型目录路径<br />
-                  MolDet：放入 <code>~/.cache/mbforge/models/</code><br />
+                  MolDet：放入模型目录<br />
                   API 模型（OpenAI / Anthropic）：填 Base URL + API Key + 模型名
                 </div>
               </div>
@@ -756,44 +876,58 @@ export default function SettingsModal({ open, onClose }: Props) {
   if (!open) return null
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      {/* Backdrop */}
-      <div
-        onClick={onClose}
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background: 'rgba(0, 0, 0, 0.5)',
-          backdropFilter: 'blur(4px)',
-        }}
-      />
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {/* Backdrop */}
+          <motion.div
+            onClick={onClose}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.5)',
+              backdropFilter: 'blur(4px)',
+            }}
+          />
 
-      {/* Modal */}
-      <div
-        style={{
-          position: 'relative',
-          width: '90%',
-          maxWidth: '860px',
-          height: '80%',
-          maxHeight: '640px',
-          background: 'var(--bg-surface)',
-          borderRadius: '16px',
-          border: '1px solid var(--border)',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
+          {/* Modal */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 8 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            style={{
+              position: 'relative',
+              width: '90%',
+              maxWidth: '860px',
+              height: '80%',
+              maxHeight: '640px',
+              background: 'var(--bg-surface)',
+              borderRadius: '16px',
+              border: '1px solid var(--border)',
+              boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
         {/* Header */}
         <div style={{
           display: 'flex',
@@ -803,26 +937,9 @@ export default function SettingsModal({ open, onClose }: Props) {
           borderBottom: '1px solid var(--border)',
         }}>
           <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>设置</h2>
-          <button
-            onClick={onClose}
-            style={{
-              width: '32px',
-              height: '32px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: '6px',
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
+          <IconButton size={32} onClick={onClose} title="关闭">
             <XIcon size={18} />
-          </button>
+          </IconButton>
         </div>
 
         {/* Content */}
@@ -885,19 +1002,16 @@ export default function SettingsModal({ open, onClose }: Props) {
             <div style={{ flex: 1, padding: '16px 20px', overflowY: 'auto' }}>
               {error && <ErrorBanner message={error} onDismiss={() => setError('')} />}
               {saveSuccess && (
-                <div style={{
-                  padding: '10px 16px',
-                  background: 'rgba(34, 197, 94, 0.1)',
-                  border: '1px solid rgba(34, 197, 94, 0.3)',
-                  borderRadius: '6px',
-                  color: '#22c55e',
-                  fontSize: '13px',
-                  marginBottom: '12px',
-                }}>
-                  设置已保存
-                </div>
+                <AlertBanner variant="success" message="设置已保存" />
               )}
-              {renderSection()}
+              <motion.div
+                key={activeSection}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.2 }}
+              >
+                {renderSection()}
+              </motion.div>
             </div>
 
             {/* Footer */}
@@ -908,16 +1022,18 @@ export default function SettingsModal({ open, onClose }: Props) {
               padding: '12px 20px',
               borderTop: '1px solid var(--border)',
             }}>
-              <button className="btn btn-secondary" onClick={handleCancel} disabled={isLoading}>
+              <Button variant="secondary" onClick={handleCancel} disabled={isLoading}>
                 取消
-              </button>
-              <button className="btn btn-primary" onClick={handleSave} disabled={isLoading}>
+              </Button>
+              <Button variant="primary" onClick={handleSave} disabled={isLoading} loading={isLoading}>
                 {isLoading ? '保存中...' : '保存设置'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  )
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
+)
 }

@@ -3,16 +3,6 @@ use serde::{Deserialize, Serialize};
 use super::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-// TODO-AUDIT: ClusterAssignment is dead code — defined with #[allow(dead_code)] but
-// never used anywhere in the codebase. Consider removing entirely.
-#[allow(dead_code)]
-pub struct ClusterAssignment {
-    pub mol_id: String,
-    pub cluster_id: String,
-    pub metadata: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClusterInfo {
     pub cluster_id: String,
     pub member_count: usize,
@@ -34,7 +24,7 @@ pub fn assign_to_cluster(
         metadata: Some(serde_json::json!({
             "cluster_id": cluster_id,
         })),
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: super::helpers::now_rfc3339(),
     };
     db.add_relation(&rel)
 }

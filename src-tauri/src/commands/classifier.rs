@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
+use crate::core::helpers::SMILES_RE;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -31,10 +33,6 @@ pub struct DocumentClassification {
 
 const PAGE_SCAN_THRESHOLD: f64 = 20.0;
 const DOCUMENT_SCAN_THRESHOLD: f64 = 50.0;
-
-/// SMILES alphabet pattern (without lookahead — Rust regex doesn't support it).
-static SMILES_ALPHA_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[A-Za-z0-9@.+\-=#$()\[\]\\/%~]{4,}").unwrap());
 
 /// Common chemical names.
 static CHEMICAL_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
@@ -89,7 +87,7 @@ fn is_smiles_like(s: &str) -> bool {
 /// Detect SMILES or chemical names in text.
 fn detect_molecular_patterns(text: &str) -> bool {
     // Check SMILES-like patterns
-    for m in SMILES_ALPHA_RE.find_iter(text).map(|m| m.as_str()) {
+    for m in SMILES_RE.find_iter(text).map(|m| m.as_str()) {
         if is_smiles_like(m) {
             return true;
         }

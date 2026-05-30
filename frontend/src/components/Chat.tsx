@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import katex from 'katex'
@@ -15,6 +16,7 @@ import {
 import type { ChatMessage } from '../api/tauri-bridge'
 import { SendIcon, UserIcon, BotIcon, FolderIcon, FileTextIcon, FlaskIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
+import { Avatar, TextArea, IconButton, Button, PageContainer } from '../components/ui/'
 
 /** Render inline LaTeX ($...$) within React children */
 function renderInlineLatex(children: React.ReactNode): React.ReactNode {
@@ -223,13 +225,7 @@ export default function Chat() {
   }
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-      padding: '24px',
-      gap: '16px',
-    }}>
+    <PageContainer>
       {/* 上下文信息 — 顶部 */}
       <div style={{
         display: 'flex',
@@ -250,104 +246,99 @@ export default function Chat() {
         gap: '20px',
         padding: '8px 0',
       }}>
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            style={{
-              display: 'flex',
-              gap: '12px',
-              maxWidth: '85%',
-              alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-              animation: 'messageIn 0.3s ease-out',
-            }}
-          >
-            {msg.role === 'assistant' && (
-              <div style={{
-                width: '32px', height: '32px', borderRadius: '50%',
-                background: 'var(--accent)', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', flexShrink: 0, color: 'white',
-              }}>
-                <BotIcon size={16} />
-              </div>
-            )}
-            <div style={{
-              padding: '12px 16px',
-              background: msg.role === 'user' ? 'var(--accent)' : 'var(--bg-surface)',
-              color: msg.role === 'user' ? 'white' : 'var(--text-primary)',
-              borderRadius: '12px',
-              border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
-              lineHeight: 1.6, fontSize: '14px', maxWidth: '85%',
-            }}>
-              {msg.role === 'assistant' ? (
-                <div className="chat-markdown">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      p: ({ children }) => {
-                        const processed = renderInlineLatex(children)
-                        return <p style={{ margin: '6px 0' }}>{processed}</p>
-                      },
-                      img: ({ node, ...props }) => (
-                        <img
-                          {...props}
-                          style={{ maxWidth: '100%', borderRadius: '8px', margin: '8px 0', cursor: 'pointer' }}
-                          onClick={() => props.src && window.open(props.src, '_blank')}
-                        />
-                      ),
-                      code: ({ node, className, children, ...props }) => {
-                        const text = String(children).trim()
-                        if (!className && isSmiles(text)) {
-                          return (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', verticalAlign: 'middle' }}>
-                              <img
-                                src={smilesToImgUrl(text)}
-                                alt={text}
-                                style={{ height: '32px', borderRadius: '4px', cursor: 'pointer' }}
-                                onClick={() => window.open(smilesToImgUrl(text), '_blank')}
-                                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                              />
-                              <code style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{text}</code>
-                            </span>
-                          )
-                        }
-                        return <code className={className} {...props}>{children}</code>
-                      },
-                    }}
-                  >{msg.content}</ReactMarkdown>
-                </div>
-              ) : (
-                <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+        <AnimatePresence initial={false}>
+          {messages.map((msg, i) => (
+            <motion.div
+              key={msg.id ?? i}
+              initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.25 }}
+              style={{
+                display: 'flex',
+                gap: '12px',
+                maxWidth: '85%',
+                alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+              }}
+            >
+              {msg.role === 'assistant' && (
+                <Avatar size={32} variant="bot">
+                  <BotIcon size={16} />
+                </Avatar>
               )}
-            </div>
-            {msg.role === 'user' && (
               <div style={{
-                width: '32px', height: '32px', borderRadius: '50%',
-                background: 'var(--bg-hover)', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', flexShrink: 0,
+                padding: '12px 16px',
+                background: msg.role === 'user' ? 'var(--accent)' : 'var(--bg-surface)',
+                color: msg.role === 'user' ? 'white' : 'var(--text-primary)',
+                borderRadius: '12px',
+                border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
+                lineHeight: 1.6, fontSize: '14px', maxWidth: '85%',
               }}>
-                <UserIcon size={16} />
+                {msg.role === 'assistant' ? (
+                  <div className="chat-markdown">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        p: ({ children }) => {
+                          const processed = renderInlineLatex(children)
+                          return <p style={{ margin: '6px 0' }}>{processed}</p>
+                        },
+                        img: ({ node, ...props }) => (
+                          <img
+                            {...props}
+                            style={{ maxWidth: '100%', borderRadius: '8px', margin: '8px 0', cursor: 'pointer' }}
+                            onClick={() => props.src && window.open(props.src, '_blank')}
+                          />
+                        ),
+                        code: ({ node, className, children, ...props }) => {
+                          const text = String(children).trim()
+                          if (!className && isSmiles(text)) {
+                            return (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', verticalAlign: 'middle' }}>
+                                <img
+                                  src={smilesToImgUrl(text)}
+                                  alt={text}
+                                  style={{ height: '32px', borderRadius: '4px', cursor: 'pointer' }}
+                                  onClick={() => window.open(smilesToImgUrl(text), '_blank')}
+                                  onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                                />
+                                <code style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{text}</code>
+                              </span>
+                            )
+                          }
+                          return <code className={className} {...props}>{children}</code>
+                        },
+                      }}
+                    >{msg.content}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                )}
               </div>
-            )}
-          </div>
-        ))}
+              {msg.role === 'user' && (
+                <Avatar size={32} variant="user">
+                  <UserIcon size={16} />
+                </Avatar>
+              )}
+            </motion.div>
+          ))}
+        </AnimatePresence>
         {isLoading && (
           <div style={{ display: 'flex', gap: '12px', maxWidth: '85%' }}>
-            <div style={{
-              width: '32px', height: '32px', borderRadius: '50%',
-              background: 'var(--accent)', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', flexShrink: 0, color: 'white',
-            }}>
+            <Avatar size={32} variant="bot">
               <BotIcon size={16} />
-            </div>
+            </Avatar>
             <div style={{
               padding: '12px 16px', background: 'var(--bg-surface)',
               borderRadius: '12px', border: '1px solid var(--border)',
             }}>
-              <span style={{
-                display: 'inline-block', width: '8px', height: '8px',
-                background: 'var(--text-muted)', borderRadius: '50%',
-                animation: 'pulse 1.4s infinite',
-              }} />
+              <motion.div
+                style={{
+                  display: 'inline-block', width: '8px', height: '8px',
+                  background: 'var(--text-muted)', borderRadius: '50%',
+                }}
+                animate={{ scale: [1, 1.3, 1], opacity: [0.6, 1, 0.6] }}
+                transition={{ duration: 1.4, repeat: Infinity }}
+              />
             </div>
           </div>
         )}
@@ -359,9 +350,9 @@ export default function Chat() {
         <div style={{
           display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap',
         }}>
-          <QuickAction icon={<FlaskIcon size={13} />} label="搜索分子" onClick={() => insertTemplate('search_mol')} />
-          <QuickAction icon={<FlaskIcon size={13} />} label="SAR 分析" onClick={() => insertTemplate('analyze_sar')} />
-          <QuickAction icon={<FlaskIcon size={13} />} label="分子对接" onClick={() => insertTemplate('dock')} />
+          <Button variant="ghost" size="sm" onClick={() => insertTemplate('search_mol')}><FlaskIcon size={13} /> 搜索分子</Button>
+          <Button variant="ghost" size="sm" onClick={() => insertTemplate('analyze_sar')}><FlaskIcon size={13} /> SAR 分析</Button>
+          <Button variant="ghost" size="sm" onClick={() => insertTemplate('dock')}><FlaskIcon size={13} /> 分子对接</Button>
         </div>
 
         <div style={{
@@ -369,75 +360,43 @@ export default function Chat() {
           background: 'var(--bg-surface)', borderRadius: '12px',
           border: '1px solid var(--border)',
         }}>
-          <textarea
+          <TextArea
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={projectRoot ? "输入问题... (Enter 发送, Shift+Enter 换行)" : "请先打开一个项目"}
+            maxHeight="120px"
             disabled={isLoading || !projectRoot}
-            style={{
-              flex: 1, background: 'transparent', border: 'none', outline: 'none',
-              fontSize: '14px', color: 'var(--text-primary)', resize: 'none',
-              maxHeight: '120px', fontFamily: 'inherit', lineHeight: 1.5,
-            }}
             rows={1}
           />
-          <button
-            onClick={sendMessage}
+          <IconButton
+            size={36}
             disabled={!input.trim() || isLoading}
-            style={{
-              width: '36px', height: '36px', display: 'flex', alignItems: 'center',
-              justifyContent: 'center',
-              background: input.trim() && !isLoading ? 'var(--accent)' : 'var(--bg-hover)',
-              color: input.trim() && !isLoading ? 'white' : 'var(--text-muted)',
-              border: 'none', borderRadius: '8px',
-              cursor: input.trim() && !isLoading ? 'pointer' : 'not-allowed',
-              transition: 'all 0.2s', flexShrink: 0,
-            }}
+            onClick={sendMessage}
           >
             <SendIcon size={16} />
-          </button>
+          </IconButton>
         </div>
       </div>
-    </div>
+    </PageContainer>
   )
 }
 
 function ContextChip({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: '6px',
-      padding: '6px 12px', background: 'var(--bg-surface)',
-      border: '1px solid var(--border)', borderRadius: '20px',
-      fontSize: '12px', color: 'var(--text-secondary)',
-    }}>
+    <motion.div
+      whileHover={{ y: -2 }}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '6px',
+        padding: '6px 12px', background: 'var(--bg-surface)',
+        border: '1px solid var(--border)', borderRadius: '20px',
+        fontSize: '12px', color: 'var(--text-secondary)',
+      }}
+    >
       <span style={{ color: 'var(--text-muted)' }}>{icon}</span>
       <span>{label}</span>
-    </div>
+    </motion.div>
   )
 }
 
-function QuickAction({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: '5px',
-        padding: '5px 12px', background: 'var(--bg-surface)',
-        border: '1px solid var(--border)', borderRadius: '16px',
-        fontSize: '12px', color: 'var(--text-secondary)',
-        cursor: 'pointer', transition: 'all 0.15s',
-      }}
-      onMouseEnter={e => {
-        e.currentTarget.style.borderColor = 'var(--accent)'
-        e.currentTarget.style.color = 'var(--text-primary)'
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.borderColor = 'var(--border)'
-        e.currentTarget.style.color = 'var(--text-secondary)'
-      }}
-    >
-      {icon} {label}
-    </button>
-  )
-}
+

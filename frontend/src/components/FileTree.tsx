@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { getFileTree, uploadFile } from '../api/client'
-import { FolderIcon, FileTextIcon, ChevronRightIcon, PlusIcon } from './icons'
+import { PlusIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
+import { default as BaseTreeNode } from '../components/ui/TreeNode'
+import EmptyState from '../components/ui/EmptyState'
+import Button from '../components/ui/Button'
 
 interface FileNode {
   name: string
@@ -14,77 +18,43 @@ interface Props {
   onFileClick?: (path: string) => void
 }
 
-function TreeItem({ node, depth, onFileClick }: { node: FileNode; depth: number; onFileClick?: (path: string) => void }) {
+function TreeNode({ node, depth, onFileClick }: { node: FileNode; depth: number; onFileClick?: (path: string) => void }) {
   const [expanded, setExpanded] = useState(depth < 1)
 
   if (node.is_dir) {
     return (
       <div>
-        <div
-          onClick={() => setExpanded(!expanded)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            padding: '4px 8px',
-            paddingLeft: `${8 + depth * 16}px`,
-            cursor: 'pointer',
-            fontSize: '13px',
-            color: 'var(--text-primary)',
-            borderRadius: '4px',
-            transition: 'background 0.1s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-        >
-          <span style={{
-            display: 'inline-flex',
-            transition: 'transform 0.15s',
-            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-          }}>
-            <ChevronRightIcon size={12} />
-          </span>
-          <FolderIcon size={14} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {node.name}
-          </span>
-        </div>
-        {expanded && node.children.map(child => (
-          <TreeItem key={child.path} node={child} depth={depth + 1} onFileClick={onFileClick} />
-        ))}
+        <BaseTreeNode
+          node={{ ...node, children: [] }}
+          depth={depth}
+          expanded={expanded}
+          onToggle={() => setExpanded(!expanded)}
+        />
+        <AnimatePresence>
+          {expanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: 'easeInOut' }}
+              style={{ overflow: 'hidden' }}
+            >
+              {node.children.map(child => (
+                <TreeNode key={child.path} node={child} depth={depth + 1} onFileClick={onFileClick} />
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     )
   }
 
   return (
-    <div
+    <BaseTreeNode
+      node={node}
+      depth={depth}
       onClick={() => onFileClick?.(node.path)}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '4px',
-        padding: '4px 8px',
-        paddingLeft: `${8 + depth * 16}px`,
-        cursor: 'pointer',
-        fontSize: '13px',
-        color: 'var(--text-secondary)',
-        borderRadius: '4px',
-        transition: 'background 0.1s',
-      }}
-      onMouseEnter={e => {
-        e.currentTarget.style.background = 'var(--bg-hover)'
-        e.currentTarget.style.color = 'var(--text-primary)'
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.background = 'transparent'
-        e.currentTarget.style.color = 'var(--text-secondary)'
-      }}
-    >
-      <FileTextIcon size={14} />
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {node.name}
-      </span>
-    </div>
+    />
   )
 }
 
@@ -139,49 +109,22 @@ export default function FileTree({ onFileClick }: Props) {
   }
 
   if (error) {
-    return (
-      <div style={{
-        padding: '16px 12px',
-        fontSize: '12px',
-        color: 'var(--text-muted)',
-        textAlign: 'center',
-      }}>
-        {error}
-      </div>
-    )
+    return <EmptyState message={error} error />
   }
 
   if (isLoading) {
-    return (
-      <div style={{
-        padding: '16px 12px',
-        fontSize: '12px',
-        color: 'var(--text-muted)',
-        textAlign: 'center',
-      }}>
-        Loading...
-      </div>
-    )
+    return <EmptyState message="Loading..." />
   }
 
   if (tree.length === 0) {
-    return (
-      <div style={{
-        padding: '16px 12px',
-        fontSize: '12px',
-        color: 'var(--text-muted)',
-        textAlign: 'center',
-      }}>
-        No files found
-      </div>
-    )
+    return <EmptyState message="No files found" />
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ overflow: 'auto', flex: 1 }}>
         {tree.map(node => (
-          <TreeItem key={node.path} node={node} depth={0} onFileClick={onFileClick} />
+          <TreeNode key={node.path} node={node} depth={0} onFileClick={onFileClick} />
         ))}
       </div>
       <div style={{
@@ -196,38 +139,16 @@ export default function FileTree({ onFileClick }: Props) {
           style={{ display: 'none' }}
           onChange={handleImport}
         />
-        <button
+        <Button
+          variant="dashed"
+          size="sm"
           onClick={() => fileInputRef.current?.click()}
           disabled={isUploading}
-          style={{
-            width: '100%',
-            padding: '8px 0',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            background: 'none',
-            border: '1px dashed var(--border)',
-            borderRadius: '8px',
-            color: isUploading ? 'var(--text-muted)' : 'var(--text-secondary)',
-            fontSize: '12px',
-            cursor: isUploading ? 'not-allowed' : 'pointer',
-            transition: 'all 0.15s',
-          }}
-          onMouseEnter={e => {
-            if (!isUploading) {
-              e.currentTarget.style.borderColor = 'var(--accent)'
-              e.currentTarget.style.color = 'var(--accent)'
-            }
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.borderColor = 'var(--border)'
-            e.currentTarget.style.color = 'var(--text-secondary)'
-          }}
+          icon={<PlusIcon size={14} />}
+          style={{ width: '100%' }}
         >
-          <PlusIcon size={14} />
           {isUploading ? '导入中...' : '导入文件'}
-        </button>
+        </Button>
       </div>
     </div>
   )

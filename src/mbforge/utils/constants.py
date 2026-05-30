@@ -1,4 +1,8 @@
-"""MBForge 常量定义."""
+"""MBForge 常量定义.
+
+NOTE: Keep in sync with src-tauri/src/core/constants.rs (Rust side).
+When changing a value here, update the corresponding Rust constant.
+"""
 
 from pathlib import Path
 from platformdirs import user_data_dir, user_config_dir
@@ -74,7 +78,27 @@ PROVIDER_OLLAMA = "ollama"
 PROVIDER_LOCAL = "local"
 
 # OCR Provider
-OCR_PROVIDER_PYMUPDF = "pymupdf"
+OCR_PROVIDER_PYMUPDF = "pymupdf"  # Deprecated: PyMuPDF removed from project
+OCR_PROVIDER_NONE = "none"
+
+# 模型下载目录（统一入口）
+def _default_model_cache_dir() -> str:
+    from pathlib import Path
+    return str(Path.home() / ".cache" / "mbforge" / "models")
+
+MODEL_CACHE_DIR = _default_model_cache_dir()
+
+
+def get_model_cache_dir() -> str:
+    """获取有效的模型下载目录（优先使用 config 中的配置）."""
+    try:
+        from .config import load_global_config
+        cfg = load_global_config()
+        if cfg.model_cache_dir:
+            return cfg.model_cache_dir
+    except Exception:
+        pass
+    return MODEL_CACHE_DIR
 
 
 def ensure_hf_mirror():

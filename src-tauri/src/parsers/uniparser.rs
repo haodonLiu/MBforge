@@ -131,22 +131,6 @@ impl UniParserClient {
         })
     }
 
-    /// Health check.
-    // TODO-AUDIT: health() is never called — dead code. Remove or wire up.
-    pub fn health(&self) -> Result<serde_json::Value, String> {
-        let url = format!("{}/health", self.host);
-        let resp = self.client
-            .get(&url)
-            .header("X-API-Key", &self.api_key)
-            .send()
-            .map_err(|e| format!("UniParser health failed: {}", e))?;
-
-        if !resp.status().is_success() {
-            return Err(format!("UniParser health HTTP {}", resp.status()));
-        }
-
-        resp.json().map_err(|e| format!("UniParser health parse error: {}", e))
-    }
 }
 
 #[cfg(test)]

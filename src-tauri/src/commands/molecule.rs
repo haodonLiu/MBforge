@@ -49,7 +49,7 @@ pub async fn mol_add_relation(
         relation_type: rel_type,
         score,
         metadata,
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: crate::core::helpers::now_rfc3339(),
     };
     db.add_relation(&rel)
 }
@@ -208,8 +208,7 @@ pub async fn mol_dedup_batch(
 ) -> Result<DedupResult, String> {
     let guard = state.inner.read().await;
     let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    let sidecar_url = std::env::var("MBFORGE_SIDECAR_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:18792".to_string());
+    let sidecar_url = crate::core::constants::sidecar_url();
     Ok(molecule_dedup::run_dedup_batch(
         &new_mols,
         db,

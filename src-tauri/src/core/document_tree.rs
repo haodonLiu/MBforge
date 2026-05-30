@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::parsers::sections::{SectionChunk, TreeNode};
+use crate::core::types::{SectionChunk, TreeNode};
 
 const DOC_TREES_FILE: &str = "doc_trees.json";
 const PAGES_DIR: &str = "pages";

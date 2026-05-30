@@ -1,4 +1,4 @@
-import { sseStream } from './client'
+import { fetchJson, sseStream } from './client'
 
 const API_BASE = '/api/v1/download'
 
@@ -11,16 +11,41 @@ export interface DownloadModel {
   downloaded: boolean
   downloading: boolean
   local_path: string
+  license: string
+  license_url: string
+  size_mb: number
+  source_url: string
 }
 
-export async function listModels(): Promise<{ success: boolean; models: DownloadModel[] }> {
-  const resp = await fetch(`${API_BASE}/models`)
-  return resp.json()
+export interface DownloadedModel {
+  id: string
+  name: string
+  path: string
+  size_mb: number
+  type: string
+  in_catalog: boolean
 }
 
-export async function checkModelStatus(modelId: string) {
-  const resp = await fetch(`${API_BASE}/status/${modelId}`)
-  return resp.json()
+export function listModels(): Promise<{ success: boolean; models: DownloadModel[] }> {
+  return fetchJson(`${API_BASE}/models`)
+}
+
+export function getModelDir(): Promise<{ success: boolean; model_dir: string }> {
+  return fetchJson(`${API_BASE}/model-dir`)
+}
+
+export function listDownloaded(): Promise<{ success: boolean; models: DownloadedModel[]; model_dir: string }> {
+  return fetchJson(`${API_BASE}/list-downloaded`)
+}
+
+export function deleteModel(modelId: string): Promise<{ success: boolean; deleted?: string; error?: string }> {
+  return fetchJson(`${API_BASE}/delete/${encodeURIComponent(modelId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function checkModelStatus(modelId: string) {
+  return fetchJson(`${API_BASE}/status/${modelId}`)
 }
 
 export type ProgressEvent =

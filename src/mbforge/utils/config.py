@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass, field, asdict
 from typing import Any
@@ -12,11 +11,11 @@ from .constants import (
     PROVIDER_API,
     PROVIDER_OPENAI_COMPATIBLE,
     PROVIDER_QWEN3,
-    OCR_PROVIDER_PYMUPDF,
+    OCR_PROVIDER_NONE,
     DEFAULT_EMBED_MODEL,
     DEFAULT_RERANK_MODEL,
 )
-from .helpers import get_default_device
+from .helpers import get_default_device, load_json, save_json
 
 
 @dataclass
@@ -69,9 +68,7 @@ class VLMConfig:
 class OcrConfig:
     """OCR 解析配置."""
 
-    provider: str = (
-        OCR_PROVIDER_PYMUPDF  # pymupdf | glm_ocr_maas | glm_ocr_local | glm_ocr_ollama
-    )
+    provider: str = "none"  # none | glm_ocr_maas | glm_ocr_local | glm_ocr_ollama
     base_url: str = ""  # 本地服务地址或 MaaS API 地址
     api_key: str = ""  # MaaS API Key
     model_name: str = ""  # 本地模型路径或 Ollama 模型名
@@ -101,6 +98,7 @@ class AppConfig:
     vlm: VLMConfig = field(default_factory=VLMConfig)
     ocr: OcrConfig = field(default_factory=OcrConfig)
     recent_projects: list[str] = field(default_factory=list)
+    model_cache_dir: str = ""  # 空字符串表示使用默认值 (~/.cache/mbforge/models/)
     theme: str = "dark"
     language: str = "zh"
 
@@ -117,6 +115,7 @@ class AppConfig:
             vlm=VLMConfig(**data.get("vlm", {})),
             ocr=OcrConfig(**data.get("ocr", {})),
             recent_projects=data.get("recent_projects", []),
+            model_cache_dir=data.get("model_cache_dir", ""),
             theme=data.get("theme", "dark"),
             language=data.get("language", "zh"),
         )
@@ -167,7 +166,7 @@ def _config_from_env() -> AppConfig:
             model_name=os.environ.get("MBFORGE_VLM_MODEL", ""),
         ),
         ocr=OcrConfig(
-            provider=os.environ.get("MBFORGE_OCR_PROVIDER", OCR_PROVIDER_PYMUPDF),
+            provider=os.environ.get("MBFORGE_OCR_PROVIDER", OCR_PROVIDER_NONE),
             base_url=os.environ.get("MBFORGE_OCR_BASE_URL", ""),
             api_key=os.environ.get("MBFORGE_OCR_API_KEY", ""),
             model_name=os.environ.get("MBFORGE_OCR_MODEL", ""),
@@ -191,13 +190,13 @@ def load_global_config() -> AppConfig:
         return _config_cache
 
     if _CONFIG_PATH.exists():
-        try:
-            with open(_CONFIG_PATH, encoding="utf-8") as f:
-                data = json.load(f)
-            _config_cache = AppConfig.from_dict(data)
-            return _config_cache
-        except Exception as e:
-            logger.warning(f"Config parse failed: {e}")
+        data = load_json(_CONFIG_PATH)
+        if data is not None:
+            try:
+                _config_cache = AppConfig.from_dict(data)
+                return _config_cache
+            except Exception as e:
+                logger.warning(f"Config parse failed: {e}")
 
     # 尝试从环境变量读取（用于 .env 文件集成）
     _config_cache = _config_from_env()
@@ -209,11 +208,4 @@ def save_global_config(config: AppConfig) -> None:
     """保存全局配置."""
     global _config_cache
     _config_cache = config
-    GLOBAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config.to_dict(), f, indent=2, ensure_ascii=False)
-
-
-def get_env_or_config(key: str, default: str = "") -> str:
-    """优先从环境变量获取，否则返回默认值."""
-    return os.environ.get(key, default)
+    save_json(_CONFIG_PATH, config.to_dict())

@@ -21,11 +21,12 @@ router = APIRouter()
 
 
 class _UniParserClient:
-    """轻量级 UniParser HTTP 客户端（纯 requests，无外部依赖）."""
+    """轻量级 UniParser HTTP 客户端（使用 requests.Session 复用 TCP 连接）."""
 
     def __init__(self, host: str, api_key: str):
         self.host = host.rstrip("/")
-        self.headers = {"X-API-Key": api_key}
+        self.session = requests.Session()
+        self.session.headers.update({"X-API-Key": api_key})
 
     def parse_pdf(self, pdf_path: str, sync: bool = True, **kwargs) -> dict:
         token = f"mbforge_{uuid.uuid4().hex[:16]}"
@@ -34,9 +35,9 @@ class _UniParserClient:
             data = {"token": token, "sync": str(sync).lower()}
             for k, v in kwargs.items():
                 data[k] = str(v)
-            resp = requests.post(
+            resp = self.session.post(
                 f"{self.host}/trigger-file-async",
-                headers=self.headers, data=data, files=files, timeout=300,
+                data=data, files=files, timeout=300,
             )
         resp.raise_for_status()
         return resp.json()
@@ -44,16 +45,15 @@ class _UniParserClient:
     def get_formatted(self, token: str, content: bool = True, **fmt_kwargs) -> dict:
         payload = {"token": token, "content": content}
         payload.update(fmt_kwargs)
-        resp = requests.post(
+        resp = self.session.post(
             f"{self.host}/get-formatted",
-            headers={**self.headers, "Content-Type": "application/json"},
             json=payload, timeout=120,
         )
         resp.raise_for_status()
         return resp.json()
 
     def health(self) -> dict:
-        resp = requests.get(f"{self.host}/health", headers=self.headers, timeout=10)
+        resp = self.session.get(f"{self.host}/health", timeout=10)
         resp.raise_for_status()
         return resp.json()
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from fastapi import APIRouter, Request
@@ -26,7 +27,10 @@ async def chat(request: Request) -> dict:
         max_tokens = body.get("max_tokens", 4096)
 
         llm = get_llm(None)
-        result = llm.chat(messages, temperature=temperature, max_tokens=max_tokens)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, lambda: llm.chat(messages, temperature=temperature, max_tokens=max_tokens)
+        )
         set_model_status("llm", "ready")
         return {"content": result, "finish_reason": "stop"}
     except Exception as e:
@@ -45,7 +49,12 @@ async def chat_stream(request: Request) -> StreamingResponse:
             max_tokens = body.get("max_tokens", 4096)
 
             llm = get_llm(None)
-            for chunk in llm.chat_stream(messages, temperature=temperature, max_tokens=max_tokens):
+            loop = asyncio.get_running_loop()
+            # Run the sync stream generator in a thread to avoid blocking the event loop
+            def _sync_stream():
+                return list(llm.chat_stream(messages, temperature=temperature, max_tokens=max_tokens))
+            chunks = await loop.run_in_executor(None, _sync_stream)
+            for chunk in chunks:
                 yield f"data: {json.dumps({'delta': chunk.delta, 'finish_reason': chunk.finish_reason})}\n\n"
             set_model_status("llm", "ready")
         except Exception as e:

@@ -7,14 +7,8 @@
 /// - 策略 D: 数字编号 + 大写开头（"1. Technical Field"）
 
 use regex::Regex;
-use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Heading {
-    pub level: usize,
-    pub title: String,
-    pub line_num: usize,
-}
+pub use crate::core::types::Heading;
 
 /// 从文本中提取所有 heading
 pub fn extract_headings(text: &str) -> Vec<Heading> {

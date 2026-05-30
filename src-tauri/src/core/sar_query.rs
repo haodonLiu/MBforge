@@ -218,25 +218,16 @@ pub fn find_activity_cliffs(
     Ok(cliffs)
 }
 
-struct MolActivityRecord {
-    mol_id: String,
-    esmiles: String,
-    name: String,
-    activity: Option<f64>,
-    activity_type: String,
-    units: String,
-}
-
 fn get_molecule_activity(
     mol_id: &str,
     conn: &rusqlite::Connection,
-) -> Option<MolActivityRecord> {
+) -> Option<ScaffoldActivityRecord> {
     conn.query_row(
         "SELECT mol_id, esmiles, name, activity, activity_type, units
          FROM molecules WHERE mol_id = ?1",
         rusqlite::params![mol_id],
         |row| {
-            Ok(MolActivityRecord {
+            Ok(ScaffoldActivityRecord {
                 mol_id: row.get(0).unwrap_or_default(),
                 esmiles: row.get(1).unwrap_or_default(),
                 name: row.get(2).unwrap_or_default(),
@@ -252,7 +243,7 @@ fn get_molecule_activity(
 fn search_molecules_by_scaffold(
     scaffold_esmiles: &str,
     conn: &rusqlite::Connection,
-) -> Result<Vec<MolActivityRecord>, String> {
+) -> Result<Vec<ScaffoldActivityRecord>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT mol_id, esmiles, name, activity, activity_type, units
@@ -266,7 +257,7 @@ fn search_molecules_by_scaffold(
 
     let mut results = Vec::new();
     while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
-        results.push(MolActivityRecord {
+        results.push(ScaffoldActivityRecord {
             mol_id: row.get(0).unwrap_or_default(),
             esmiles: row.get(1).unwrap_or_default(),
             name: row.get(2).unwrap_or_default(),

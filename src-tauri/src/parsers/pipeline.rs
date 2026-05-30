@@ -4,38 +4,11 @@ use tauri::Emitter;
 use crate::commands::classifier::{classify_document, DocumentClassification};
 use crate::commands::extractor::{extract_activities, extract_esmiles_candidates, ActivityData};
 
-use super::post_process::StructuredData;
 use super::types::{
-    DocProcessingContext, DocStructure, DocumentReport, ImageRef, ProcessingLog,
-    StageLog,
+    DocProcessingContext, DocStructure, DocumentMetadata, DocumentReport, ImageRef,
+    PdfParseResult, PostProcessResult, ProcessingLog, StageLog, StructuredData,
+    UncertainItem,
 };
-
-/// Unified PDF parsing result.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PdfParseResult {
-    /// Extracted text/markdown content.
-    pub content: String,
-    /// Classification result.
-    pub classification: DocumentClassification,
-    /// Chunks after splitting.
-    pub chunks: Vec<String>,
-    /// Extracted esmiles candidates.
-    pub esmiles: Vec<String>,
-    /// Extracted activity data.
-    pub activities: Vec<ActivityData>,
-    /// Parser used: "pdf_inspector", "llama_parse", "uniparser", or "mineru".
-    pub parser: String,
-    /// Page count.
-    pub page_count: usize,
-    /// Images extracted (MinerU path only).
-    pub images: Vec<ImageRef>,
-    /// Document headings extracted.
-    pub headings: Vec<super::headings::Heading>,
-    /// Section chunks (section-based content splitting).
-    pub sections: Vec<super::sections::SectionChunk>,
-    /// Per-page raw text (populated if page mapping available).
-    pub page_texts: Vec<String>,
-}
 
 impl From<DocProcessingContext> for PdfParseResult {
     fn from(ctx: DocProcessingContext) -> Self {
@@ -67,7 +40,7 @@ impl From<DocProcessingContext> for PdfParseResult {
 ///
 /// This chains: extraction → classification → chunking → molecule extraction.
 #[tauri::command]
-pub fn parse_pdf(
+pub async fn parse_pdf(
     path: String,
     chunk_size: Option<usize>,
     _overlap: Option<usize>,
@@ -106,6 +79,11 @@ pub fn parse_pdf(
                 None,
             )?;
             (result.markdown, result.page_count)
+        }
+        "liteparse" => {
+            let result = super::liteparse::parse_with_liteparse(&path, false, None).await?;
+            let page_count = result.pages.len();
+            (result.text, page_count)
         }
         _ => {
             let result = pdf_inspector::process_pdf(&path)
@@ -163,7 +141,7 @@ pub fn parse_pdf(
 #[tauri::command]
 pub fn post_process_pdf(
     parse_result: PdfParseResult,
-) -> Result<super::post_process::PostProcessResult, String> {
+) -> Result<PostProcessResult, String> {
     super::post_process::post_process(&parse_result)
 }
 
@@ -343,7 +321,7 @@ pub async fn process_document(
                     section_name, e
                 ));
                 processing_log.uncertain_items.push(
-                    super::post_process::UncertainItem {
+                    UncertainItem {
                         item_type: "section_processing_error".into(),
                         content: format!("{} section could not be processed", section_name),
                         reason: e,
@@ -419,7 +397,7 @@ pub async fn process_document(
         if section_results.is_empty() && vlm_results.is_empty() {
             // 无任何结果 → 返回空报告
             final_data = StructuredData {
-                metadata: super::post_process::DocumentMetadata {
+                metadata: DocumentMetadata {
                     title: ctx.source_path.to_string_lossy().to_string().into(),
                     authors: vec![],
                     document_type: doc_structure.doc_type.clone(),
@@ -617,21 +595,32 @@ async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> {
         esmiles: None,
     }).collect();
 
-    // 如果 pdf-inspector 提取不到内容，且内容是扫描件 → 自动升到 MinerU
-    if md.len() < 100
-        && (page_count > 0)
-        && std::env::var("MINERU_API_KEY").is_ok()
-    {
-        let host = std::env::var("MINERU_HOST").unwrap_or_else(|_| "https://mineru.net".to_string());
-        let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
-        let client = super::mineru::MineruClient::new(&host, &api_key);
-        let result = client.parse_file(path)?;
-        return Ok(ClassifyResult {
-            text: result.markdown,
-            page_count: 0,
-            parser: "mineru".into(),
-            images: vec![],
-        });
+    // 如果 pdf-inspector 提取不到内容，且内容是扫描件 → 自动升到 MinerU 或 LiteParse
+    if md.len() < 100 && page_count > 0 {
+        // 优先尝试 MinerU（云端 OCR）
+        if std::env::var("MINERU_API_KEY").is_ok() {
+            let host = std::env::var("MINERU_HOST").unwrap_or_else(|_| "https://mineru.net".to_string());
+            let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
+            let client = super::mineru::MineruClient::new(&host, &api_key);
+            let result = client.parse_file(path)?;
+            return Ok(ClassifyResult {
+                text: result.markdown,
+                page_count: 0,
+                parser: "mineru".into(),
+                images: vec![],
+            });
+        }
+        // 回退到 LiteParse（本地 OCR）
+        if let Ok(result) = super::liteparse::parse_with_liteparse(path, true, None).await {
+            if !result.text.trim().is_empty() {
+                return Ok(ClassifyResult {
+                    text: result.text,
+                    page_count: result.pages.len(),
+                    parser: "liteparse".into(),
+                    images: vec![],
+                });
+            }
+        }
     }
 
     Ok(ClassifyResult {
@@ -646,7 +635,7 @@ async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> {
 async fn run_meta_analysis(ctx: &DocProcessingContext) -> Result<DocStructure, String> {
     let prompt = crate::parsers::intent::build_meta_prompt(ctx);
 
-    let config = load_llm_config_for_doc()?;
+    let config = crate::parsers::post_process::load_llm_config()?;
     let (response, _tokens) = crate::parsers::post_process::call_llm_api(
         &config,
         "你是文档分析专家。分析文档开头部分，判断文档类型和结构。只输出 JSON。",
@@ -715,7 +704,7 @@ VLM 识别的 SMILES：
         },
     );
 
-    let config = load_llm_config_for_doc()?;
+    let config = crate::parsers::post_process::load_llm_config()?;
     let (response, _tokens) = crate::parsers::post_process::call_llm_api(
         &config,
         "你是分子科学文档分析专家。从 PDF 提取结果中整理出结构化数据，输出 JSON。",
@@ -729,12 +718,6 @@ VLM 识别的 SMILES：
     let sar = val["sar_analysis"].as_str().unwrap_or("").to_string();
 
     Ok((data, sar))
-}
-
-/// 在 post_process::call_llm_api 暴露后调用
-/// 加载 LLM 配置用于文档处理
-fn load_llm_config_for_doc() -> Result<crate::parsers::post_process::LlmApiConfig, String> {
-    crate::parsers::post_process::load_llm_config()
 }
 
 /// 提取指定 section 的文本（基于 section name 尝试搜索）
@@ -794,7 +777,7 @@ fn merge_partial_results(
     });
 
     StructuredData {
-        metadata: metadata.unwrap_or(super::post_process::DocumentMetadata {
+        metadata: metadata.unwrap_or(DocumentMetadata {
             title: None,
             authors: vec![],
             document_type: "unknown".into(),
@@ -840,7 +823,7 @@ mod tests {
 
     #[test]
     fn test_merge_partial_results_dedup() {
-        use super::super::post_process::{CompoundEntry, DocumentMetadata};
+        use super::super::types::{CompoundEntry, DocumentMetadata};
         let r1 = StructuredData {
             metadata: DocumentMetadata { title: None, authors: vec![], document_type: "patent".into(), key_targets: vec![], source_file: None },
             summary: "".into(),
@@ -936,8 +919,7 @@ pub async fn index_sections_to_kb(
     sections: &[crate::parsers::sections::SectionChunk],
     filename: &str,
 ) -> Result<(), String> {
-    let sidecar_url = std::env::var("MBFORGE_SIDECAR_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:18792".to_string());
+    let sidecar_url = crate::core::constants::sidecar_url();
 
     let body = serde_json::json!({
         "project_root": project_root,
@@ -952,10 +934,7 @@ pub async fn index_sections_to_kb(
         })).collect::<Vec<_>>(),
     });
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+    let client = crate::core::http::client_120s();
 
     let url = format!("{}/api/v1/kb/index-sections", sidecar_url.trim_end_matches('/'));
 

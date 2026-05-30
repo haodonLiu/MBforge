@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json as _json
 import re
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
@@ -141,3 +143,22 @@ def run_sync(sync_func, *args) -> Any:
             future = pool.submit(sync_func, *args)
             return future.result()
     return sync_func(*args)
+
+
+def decode_base64_to_tempfile(
+    image_base64: str, ext: str = "png"
+) -> str:
+    """将 base64 编码的图片解码到临时文件，返回文件路径."""
+    data = base64.b64decode(image_base64)
+    with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as f:
+        f.write(data)
+        return f.name
+
+
+def decode_base64_image(image_base64: str):
+    """将 base64 编码的图片解码为 PIL Image 对象."""
+    from io import BytesIO
+    from PIL import Image
+
+    data = base64.b64decode(image_base64)
+    return Image.open(BytesIO(data))

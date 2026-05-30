@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 # Load .env before anything else
 try:
     from dotenv import load_dotenv
@@ -16,7 +20,42 @@ from fastapi.responses import JSONResponse
 from ..utils.exceptions import MBForgeError
 from .routers import llm, embed, rerank, vlm, health, uniparser, moldet, project, kb, molecule, agent, file, settings, download, chem
 
-app = FastAPI(title="MBForge Model Server", version="1.1.0")
+logger = logging.getLogger("mbforge.startup")
+
+
+def _prewarm_models():
+    """在后台线程中预加载核心模型，避免首次请求阻塞."""
+    try:
+        from .models.llm import get_llm
+        get_llm()
+        logger.info("LLM model prewarmed")
+    except Exception as e:
+        logger.warning(f"LLM prewarm failed: {e}")
+
+    try:
+        from .models.embedder import get_embedder
+        get_embedder()
+        logger.info("Embedder model prewarmed")
+    except Exception as e:
+        logger.warning(f"Embedder prewarm failed: {e}")
+
+    try:
+        from .models.reranker import get_reranker
+        get_reranker()
+        logger.info("Reranker model prewarmed")
+    except Exception as e:
+        logger.warning(f"Reranker prewarm failed: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期：启动时在后台线程预热模型."""
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _prewarm_models)
+    yield
+
+
+app = FastAPI(title="MBForge Model Server", version="1.1.0", lifespan=lifespan)
 
 # CORS
 app.add_middleware(

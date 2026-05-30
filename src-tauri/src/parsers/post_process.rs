@@ -1,112 +1,7 @@
-use serde::{Deserialize, Serialize};
-
-use super::pipeline::PdfParseResult;
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-/// LLM 后处理结果 — 结构化报告 + 机器可读数据
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PostProcessResult {
-    /// 完整的 Markdown 格式报告（人类可读）
-    pub report: String,
-    /// 结构化数据（机器可读）
-    pub data: StructuredData,
-    /// 使用的模型
-    pub model: String,
-    /// token 使用量
-    pub tokens_used: Option<u32>,
-    /// 分批处理的批次数
-    pub batch_count: usize,
-}
-
-/// 结构化数据 — 与报告一一对应
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StructuredData {
-    pub metadata: DocumentMetadata,
-    pub summary: String,
-    pub compounds: Vec<CompoundEntry>,
-    pub activities: Vec<ActivityEntry>,
-    pub key_findings: Vec<FindingEntry>,
-    pub uncertain_items: Vec<UncertainItem>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DocumentMetadata {
-    pub title: Option<String>,
-    pub authors: Vec<String>,
-    pub document_type: String,
-    pub key_targets: Vec<String>,
-    pub source_file: Option<String>,
-}
-
-/// 化合物条目 — 带溯源和置信度
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompoundEntry {
-    /// 化合物名称
-    pub name: String,
-    /// SMILES 字符串（如果能确认）
-    #[serde(rename = "smiles")]
-    pub esmiles: Option<String>,
-    /// 所属类别（如 JAK inhibitor, MRGPRX2 antagonist）
-    pub category: Option<String>,
-    /// 关键描述
-    pub description: String,
-    /// 在原文中的位置引用（页码或段落）
-    pub source_ref: String,
-    /// 置信度: high / medium / low
-    pub confidence: String,
-    /// 不确定的原因（仅当 confidence != high 时）
-    pub uncertainty_reason: Option<String>,
-}
-
-/// 活性数据条目 — 带溯源
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActivityEntry {
-    /// 化合物（名称或 SMILES）
-    pub compound: String,
-    /// 活性类型
-    pub activity_type: String,
-    /// 数值
-    pub value: f64,
-    /// 单位
-    pub units: String,
-    /// 靶点
-    pub target: Option<String>,
-    /// 原文上下文（精确引用）
-    pub source_quote: String,
-    /// 来源页码/段落
-    pub source_ref: String,
-    pub confidence: String,
-    pub uncertainty_reason: Option<String>,
-}
-
-/// 关键发现条目 — 带溯源
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FindingEntry {
-    /// 发现内容
-    pub finding: String,
-    /// 支撑证据（原文引用）
-    pub evidence: String,
-    /// 来源
-    pub source_ref: String,
-    pub confidence: String,
-    pub uncertainty_reason: Option<String>,
-}
-
-/// 不确定项 — 需要人工审核的条目
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UncertainItem {
-    /// 项目类型: compound / activity / finding / classification
-    pub item_type: String,
-    /// 内容描述
-    pub content: String,
-    /// 不确定的原因
-    pub reason: String,
-    /// 建议的审核动作
-    pub suggested_action: String,
-}
+use super::types::{
+    ActivityEntry, CompoundEntry, DocumentMetadata, FindingEntry, PdfParseResult,
+    PostProcessResult, StructuredData, UncertainItem,
+};
 
 // ---------------------------------------------------------------------------
 // Internal: LLM API config
@@ -118,19 +13,29 @@ pub struct LlmApiConfig {
     pub model: String,
 }
 
+/// 从 AppConfig 加载 LLM 配置（统一配置源，不再直接读 env var）。
 pub fn load_llm_config() -> Result<LlmApiConfig, String> {
-    let base_url = std::env::var("MBFORGE_LLM_BASE_URL")
-        .unwrap_or_else(|_| "http://localhost:8000/v1".to_string());
-    let api_key = std::env::var("MBFORGE_LLM_API_KEY")
-        .unwrap_or_default();
-    let model = std::env::var("MBFORGE_LLM_MODEL")
-        .unwrap_or_else(|_| "default".to_string());
+    let app_config = crate::core::config::AppConfig::load();
+    let llm = &app_config.llm;
 
-    if api_key.is_empty() {
-        return Err("MBFORGE_LLM_API_KEY not set".into());
+    if llm.api_key.is_empty() {
+        // 兼容：如果 config.json 中 api_key 为空，尝试从环境变量读取
+        let api_key = std::env::var("MBFORGE_LLM_API_KEY").unwrap_or_default();
+        if api_key.is_empty() {
+            return Err("LLM API key not configured. Set it in Settings or via MBFORGE_LLM_API_KEY env var.".into());
+        }
+        return Ok(LlmApiConfig {
+            base_url: llm.base_url.clone(),
+            api_key,
+            model: llm.model_name.clone(),
+        });
     }
 
-    Ok(LlmApiConfig { base_url, api_key, model })
+    Ok(LlmApiConfig {
+        base_url: llm.base_url.clone(),
+        api_key: llm.api_key.clone(),
+        model: llm.model_name.clone(),
+    })
 }
 
 // ---------------------------------------------------------------------------

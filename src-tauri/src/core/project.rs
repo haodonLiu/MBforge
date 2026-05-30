@@ -102,7 +102,7 @@ impl Project {
                         doc_type: DocumentEntry::detect_type(path),
                         title: path.file_stem().and_then(|s: &std::ffi::OsStr| s.to_str()).unwrap_or("Untitled").to_string(),
                         indexed: false,
-                        added_at: chrono::Utc::now().to_rfc3339(),
+                        added_at: super::helpers::now_rfc3339(),
                         hash,
                         mtime: 0.0,
                     };

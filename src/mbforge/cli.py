@@ -40,10 +40,6 @@ def main() -> int:
     init_parser.add_argument("path", type=str, help="项目目录路径")
     init_parser.add_argument("--name", "-n", type=str, help="项目名称")
 
-    # index 命令
-    index_parser = subparsers.add_parser("index", help="索引项目文件")
-    index_parser.add_argument("path", type=str, help="项目目录路径")
-
     # download 命令 — 下载可选模型
     dl_parser = subparsers.add_parser("download", help="下载可选模型（MolDetv2/MolScribe）")
     dl_parser.add_argument("model", nargs="?", default="all",
@@ -65,8 +61,6 @@ def main() -> int:
         return _cmd_gui(args)
     elif args.command == "init":
         return _cmd_init(args)
-    elif args.command == "index":
-        return _cmd_index(args)
     elif args.command == "download":
         return _cmd_download(args)
     else:
@@ -207,16 +201,6 @@ def _cmd_init(args) -> int:
     project = Project.create(root, name=name)
     logger.info(f"项目已创建: {project.root}")
     logger.info(f"名称: {project.name}")
-    return 0
-
-
-def _cmd_index(args) -> int:
-    """索引命令 — 已迁移到 Rust Tauri pipeline.
-
-    使用前端的"索引项目"按钮，或通过 Tauri command 调用。
-    """
-    print("PDF 索引已迁移到 Rust pipeline。")
-    print("请使用前端的'索引项目'按钮，或通过 Tauri command 调用。")
     return 0
 
 

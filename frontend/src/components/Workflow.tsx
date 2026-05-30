@@ -1,4 +1,13 @@
+import { motion } from 'framer-motion'
+import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import { TargetIcon, BarChartIcon, ClockIcon, CheckIcon } from './icons'
+import PageContainer from '../components/ui/PageContainer'
+import PageTitle from '../components/ui/PageTitle'
+import CardGrid from '../components/ui/CardGrid'
+import HoverCard from '../components/ui/HoverCard'
+import IconContainer from '../components/ui/IconContainer'
+import BodyText from '../components/ui/BodyText'
+import Caption from '../components/ui/Caption'
 
 interface WorkflowItem {
   id: string
@@ -46,89 +55,68 @@ const WORKFLOWS: WorkflowItem[] = [
 
 export default function Workflow() {
   return (
-    <div style={{
-      flex: 1,
-      padding: '32px',
-      overflow: 'auto',
-    }}>
-      <h1 style={{
-        fontSize: 'var(--font-size-title)',
-        fontWeight: 600,
-        marginBottom: '8px',
-      }}>工作流中心</h1>
-      <p style={{
-        color: 'var(--text-secondary)',
-        marginBottom: '24px',
-      }}>选择一个工作流开始执行分子相关任务</p>
+    <PageContainer>
+      <PageTitle>工作流中心</PageTitle>
+      <BodyText style={{ marginBottom: '24px' }}>
+        选择一个工作流开始执行分子相关任务
+      </BodyText>
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-        gap: '16px',
-      }}>
-        {WORKFLOWS.map(wf => (
-          <div
-            key={wf.id}
-            style={{
-              padding: '24px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border)',
-              borderRadius: '14px',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.borderColor = 'var(--accent)'
-              e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.06)'
-              e.currentTarget.style.transform = 'translateY(-2px)'
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.borderColor = 'var(--border)'
-              e.currentTarget.style.boxShadow = 'none'
-              e.currentTarget.style.transform = 'translateY(0)'
-            }}
-          >
-            <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '12px',
-              background: 'var(--accent-muted)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--accent)',
-              marginBottom: '16px',
-            }}>
-              {wf.icon}
-            </div>
-            <h3 style={{
-              fontSize: '16px',
-              fontWeight: 600,
-              marginBottom: '8px',
-            }}>{wf.name}</h3>
-            <p style={{
-              fontSize: '13px',
-              color: 'var(--text-secondary)',
-              lineHeight: 1.5,
-              marginBottom: '16px',
-            }}>{wf.description}</p>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '13px',
-            }}>
-              <span style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: wf.status === 'ready' ? '#16a34a' : '#f59e0b',
-              }} />
-              <span style={{ color: 'var(--text-muted)' }}>{wf.engine}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+      <StaggerContainer>
+        <CardGrid minWidth={320} gap={16}>
+          {WORKFLOWS.map(wf => (
+            <StaggerItem key={wf.id}>
+              <HoverCard
+                style={{
+                  position: 'relative',
+                  padding: '24px',
+                  borderRadius: '14px',
+                  cursor: 'pointer',
+                  ...(wf.status === 'pending' ? { opacity: 0.7, filter: 'grayscale(0.5)' } : {}),
+                }}
+              >
+                {wf.status === 'ready' && (
+                  <motion.div
+                    animate={{ boxShadow: ['0 0 0 0px rgba(26,26,26,0)', '0 0 0 2px rgba(26,26,26,0.08)', '0 0 0 0px rgba(26,26,26,0)'] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      borderRadius: '14px',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                )}
+                <motion.div whileHover={{ rotate: 5 }}>
+                  <IconContainer size={48} style={{ marginBottom: '16px' }}>
+                    {wf.icon}
+                  </IconContainer>
+                </motion.div>
+                <h3 style={{
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  marginBottom: '8px',
+                }}>{wf.name}</h3>
+                <BodyText size="sm" style={{ marginBottom: '16px' }}>
+                  {wf.description}
+                </BodyText>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}>
+                  <span style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: wf.status === 'ready' ? '#16a34a' : '#f59e0b',
+                  }} />
+                  <Caption>{wf.engine}</Caption>
+                </div>
+              </HoverCard>
+            </StaggerItem>
+          ))}
+        </CardGrid>
+      </StaggerContainer>
+    </PageContainer>
   )
 }

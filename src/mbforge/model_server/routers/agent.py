@@ -6,11 +6,13 @@ Agent 对话功能已迁移到 Rust Agent（src-tauri/src/core/agent.rs），
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Request
 
+from ...utils.exceptions import ModelNotAvailableError, ValidationError
+from ...utils.logger import get_logger
 from ..agent_manager import get_tool_executor
-from ..utils.exceptions import ModelNotAvailableError, ValidationError
-from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -32,7 +34,10 @@ async def call_tool(request: Request) -> dict:
         if executor is None:
             return {"success": False, "error": "Tool executor not initialized. Open a project first."}
 
-        result = executor.registry.call(tool_name, args)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, lambda: executor.registry.call(tool_name, args)
+        )
         return {"success": True, "result": result}
     except ValidationError:
         raise

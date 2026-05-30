@@ -6,7 +6,24 @@ import { FolderIcon, FileTextIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon, Ar
 import type { DocumentEntry } from '../types'
 import { getProjectRoot } from '../hooks/useProjectRoot'
 import ErrorBanner from './ErrorBanner'
-import StatCard from './project/StatCard'
+import { motion } from 'framer-motion'
+import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
+
+import PageContainer from '../components/ui/PageContainer'
+import PageTitle from '../components/ui/PageTitle'
+import SectionTitle from '../components/ui/SectionTitle'
+import Card from '../components/ui/Card'
+import HoverCard from '../components/ui/HoverCard'
+import CardGrid from '../components/ui/CardGrid'
+import IconContainer from '../components/ui/IconContainer'
+import Badge from '../components/ui/Badge'
+import Button from '../components/ui/Button'
+import BodyText from '../components/ui/BodyText'
+import Caption from '../components/ui/Caption'
+import Skeleton from '../components/ui/Skeleton'
+import EmptyState from '../components/ui/EmptyState'
+import Toolbar from '../components/ui/Toolbar'
+import IconButton from '../components/ui/IconButton'
 
 export default function ProjectView() {
   const [projectRoot, setProjectRoot] = useState(getProjectRoot())
@@ -127,34 +144,14 @@ export default function ProjectView() {
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
         {/* 工具栏 */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          height: '48px',
-          padding: '0 16px',
-          background: 'var(--bg-surface)',
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-        }}>
-          <button
-            onClick={handleClosePdf}
-            style={{
-              width: '32px', height: '32px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'transparent', border: 'none', borderRadius: '6px',
-              cursor: 'pointer', color: 'var(--text-secondary)',
-            }}
-          >
+        <Toolbar style={{ justifyContent: 'flex-start', gap: '12px', height: '48px', padding: '0 16px' }}>
+          <IconButton size={32} onClick={handleClosePdf}>
             <ArrowLeftIcon size={18} />
-          </button>
-          <span style={{
-            fontSize: '13px', fontWeight: 500,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
+          </IconButton>
+          <Caption truncate style={{ fontSize: '13px', fontWeight: 500 }}>
             {selectedPdf.title || selectedPdf.path}
-          </span>
-        </div>
+          </Caption>
+        </Toolbar>
         {/* PDF 内容 */}
         <iframe
           src={pdfUrl}
@@ -172,11 +169,7 @@ export default function ProjectView() {
 
   // 项目视图
   return (
-    <div style={{
-      flex: 1,
-      padding: '32px',
-      overflow: 'auto',
-    }}>
+    <PageContainer>
       {error && <ErrorBanner message={error} onDismiss={() => setError('')} />}
 
       {/* 头部 */}
@@ -187,194 +180,164 @@ export default function ProjectView() {
         marginBottom: '32px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '12px',
-            background: 'var(--accent-muted)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--accent)',
-          }}>
+          <IconContainer size={48}>
             <FolderIcon size={24} />
-          </div>
+          </IconContainer>
           <div>
-            <h1 style={{
-              fontSize: 'var(--font-size-title)',
-              fontWeight: 600,
-            }}>{projectName}</h1>
-            <p style={{
-              fontSize: '13px',
-              color: 'var(--text-muted)',
-            }}>{projectRoot || '请先打开或创建一个项目'}</p>
+            <PageTitle style={{ marginBottom: '4px' }}>{projectName}</PageTitle>
+            <BodyText muted size="sm">{projectRoot || '请先打开或创建一个项目'}</BodyText>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-secondary" onClick={handleScan} disabled={!projectRoot || isLoading || isIndexing} style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '8px 16px',
-            fontSize: '13px',
-          }}>
-            <ExternalLinkIcon size={14} />
+          <Button
+            variant="secondary"
+            size="md"
+            icon={<ExternalLinkIcon size={14} />}
+            onClick={handleScan}
+            disabled={!projectRoot || isLoading || isIndexing}
+            loading={isLoading}
+          >
             {isLoading ? '扫描中...' : '扫描文件'}
-          </button>
-          <button className="btn btn-secondary" onClick={handleIndex} disabled={!projectRoot || isLoading || isIndexing} style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '8px 16px',
-            fontSize: '13px',
-          }}>
-            <FlaskIcon size={14} />
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            icon={<FlaskIcon size={14} />}
+            onClick={handleIndex}
+            disabled={!projectRoot || isLoading || isIndexing}
+            loading={isIndexing}
+          >
             {isIndexing ? '索引中...' : '索引文件'}
-          </button>
-          <button className="btn btn-secondary" style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '8px 16px',
-            fontSize: '13px',
-          }}>
-            <SettingsIcon size={14} />
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            icon={<SettingsIcon size={14} />}
+          >
             项目设置
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* 统计卡片 */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '16px',
-        marginBottom: '32px',
-      }}>
-        <StatCard icon={<FileTextIcon size={18} />} value={String(docs.length)} label="文献" />
-        <StatCard icon={<FlaskIcon size={18} />} value={indexResult ? String(indexResult.sections) : '—'} label="Sections" />
-        <StatCard icon={<FileTextIcon size={18} />} value={String(docs.filter(d => d.indexed).length)} label="已索引" />
-        <StatCard icon={<FolderIcon size={18} />} value={String(docs.length)} label="文件" />
-      </div>
+      <StaggerContainer stagger={0.08}>
+        <CardGrid style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: '32px' }}>
+          <StaggerItem>
+            <Card>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ color: 'var(--text-muted)' }}><FileTextIcon size={18} /></div>
+                <div>
+                  <div style={{ fontSize: '20px', fontWeight: 700 }}>{String(docs.length)}</div>
+                  <Caption>文献</Caption>
+                </div>
+              </div>
+            </Card>
+          </StaggerItem>
+          <StaggerItem>
+            <Card>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ color: 'var(--text-muted)' }}><FlaskIcon size={18} /></div>
+                <div>
+                  <div style={{ fontSize: '20px', fontWeight: 700 }}>{indexResult ? String(indexResult.sections) : '—'}</div>
+                  <Caption>Sections</Caption>
+                </div>
+              </div>
+            </Card>
+          </StaggerItem>
+          <StaggerItem>
+            <Card>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ color: 'var(--text-muted)' }}><FileTextIcon size={18} /></div>
+                <div>
+                  <div style={{ fontSize: '20px', fontWeight: 700 }}>{String(docs.filter(d => d.indexed).length)}</div>
+                  <Caption>已索引</Caption>
+                </div>
+              </div>
+            </Card>
+          </StaggerItem>
+          <StaggerItem>
+            <Card>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ color: 'var(--text-muted)' }}><FolderIcon size={18} /></div>
+                <div>
+                  <div style={{ fontSize: '20px', fontWeight: 700 }}>{String(docs.length)}</div>
+                  <Caption>文件</Caption>
+                </div>
+              </div>
+            </Card>
+          </StaggerItem>
+        </CardGrid>
+      </StaggerContainer>
 
       {/* 索引进度条 */}
       {isIndexing && indexProgress && (
-        <div style={{
-          padding: '14px 18px',
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border)',
-          borderRadius: '10px',
-          marginBottom: '16px',
-        }}>
+        <Card padding="14px 18px" style={{ marginBottom: '16px', borderRadius: '10px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 500 }}>
+            <BodyText size="sm" style={{ fontWeight: 500 }}>
               正在索引 {indexProgress.current}/{indexProgress.total}
-            </span>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            </BodyText>
+            <Caption truncate style={{ maxWidth: '300px' }}>
               {indexProgress.file}
-            </span>
+            </Caption>
           </div>
           <div className="download-progress-bar">
-            <div
-              className="download-progress-fill"
+            <motion.div
+              className="download-progress-fill shimmer"
               style={{ width: `${Math.round(indexProgress.current * 100 / indexProgress.total)}%` }}
+              animate={{ backgroundPosition: ['0% 0%', '100% 0%'] }}
+              transition={{ repeat: Infinity, duration: 1.2, ease: 'linear' }}
             />
           </div>
-        </div>
+        </Card>
       )}
 
       {indexResult && indexResult.indexed > 0 && (
-        <div style={{
-          padding: '12px 16px',
-          background: 'rgba(22,163,74,0.1)',
-          border: '1px solid rgba(22,163,74,0.3)',
-          borderRadius: '8px',
-          marginBottom: '16px',
-          fontSize: '13px',
-          color: '#16a34a',
-        }}>
-          已索引 {indexResult.indexed} 个 PDF，生成 {indexResult.sections} 个 section
-        </div>
+        <Card padding="12px 16px" style={{ marginBottom: '16px', borderRadius: '8px', background: 'rgba(22,163,74,0.1)', borderColor: 'rgba(22,163,74,0.3)' }}>
+          <BodyText size="sm" style={{ color: '#16a34a' }}>
+            已索引 {indexResult.indexed} 个 PDF，生成 {indexResult.sections} 个 section
+          </BodyText>
+        </Card>
       )}
 
       {/* 文件列表 */}
-      <h2 style={{
-        fontSize: '16px',
-        fontWeight: 600,
-        marginBottom: '16px',
-      }}>项目文件</h2>
+      <SectionTitle style={{ fontSize: '16px', textTransform: 'none', letterSpacing: 'normal', marginBottom: '16px' }}>
+        项目文件
+      </SectionTitle>
 
-      {docs.length === 0 ? (
-        <div style={{
-          padding: '40px',
-          textAlign: 'center',
-          color: 'var(--text-muted)',
-          background: 'var(--bg-surface)',
-          borderRadius: '12px',
-          border: '1px solid var(--border)',
-        }}>
-          {projectRoot ? '暂无文件，点击"扫描文件"索引项目内容' : '请先打开或创建一个项目'}
+      {isLoading ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <Skeleton variant="row" count={5} height={48} />
         </div>
+      ) : docs.length === 0 ? (
+        <EmptyState
+          message={projectRoot ? '暂无文件，点击"扫描文件"索引项目内容' : '请先打开或创建一个项目'}
+        />
       ) : (
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-        }}>
-          {docs.map(doc => (
-            <div
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {docs.map((doc, index) => (
+            <motion.div
               key={doc.doc_id}
-              onClick={() => handleOpenPdf(doc)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: '12px 16px',
-                background: 'var(--bg-surface)',
-                borderRadius: '8px',
-                border: '1px solid var(--border)',
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = 'var(--accent)'
-                e.currentTarget.style.background = 'var(--accent-muted)'
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = 'var(--border)'
-                e.currentTarget.style.background = 'var(--bg-surface)'
-              }}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.03, duration: 0.3 }}
             >
-              <FileTextIcon size={16} />
-              <span style={{ flex: 1, fontSize: '14px' }}>{doc.title || doc.path}</span>
-              <span style={{
-                fontSize: '12px',
-                color: 'var(--text-muted)',
-                padding: '2px 8px',
-                background: 'var(--bg-base)',
-                borderRadius: '4px',
-              }}>{doc.doc_type}</span>
-              {doc.indexed ? (
-                <span style={{
-                  fontSize: '12px',
-                  color: '#16a34a',
-                  padding: '2px 8px',
-                  background: 'rgba(22,163,74,0.1)',
-                  borderRadius: '4px',
-                }}>已索引</span>
-              ) : (
-                <span style={{
-                  fontSize: '12px',
-                  color: 'var(--text-muted)',
-                  padding: '2px 8px',
-                  background: 'var(--bg-base)',
-                  borderRadius: '4px',
-                }}>未索引</span>
-              )}
-            </div>
+              <HoverCard
+                onClick={() => handleOpenPdf(doc)}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '8px' }}
+              >
+                <FileTextIcon size={16} />
+                <BodyText size="md" style={{ flex: 1 }}>{doc.title || doc.path}</BodyText>
+                <Badge variant="neutral">{doc.doc_type}</Badge>
+                {doc.indexed ? (
+                  <Badge variant="success">已索引</Badge>
+                ) : (
+                  <Badge variant="neutral">未索引</Badge>
+                )}
+              </HoverCard>
+            </motion.div>
           ))}
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }

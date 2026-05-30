@@ -1,7 +1,7 @@
 // TODO-AUDIT: DocumentMetadata is imported but rustc reports it as unused at top level.
 // It IS used inside mod tests via `use super::*` glob re-export, but the explicit
 // import is technically redundant. Move into tests block or remove explicit import.
-use super::post_process::{DocumentMetadata, StructuredData};
+use super::types::{DocumentMetadata, StructuredData};
 
 use crate::parsers::post_process::generate_report as post_process_generate_report;
 
@@ -39,28 +39,6 @@ pub fn generate_full_report(
             ));
         }
         r.push('\n');
-    }
-
-    r
-}
-
-/// 生成简短的 Markdown 摘要（用于预览/通知）
-// TODO-AUDIT: generate_summary is never called — dead code. Remove or wire up.
-pub fn generate_summary(data: &StructuredData) -> String {
-    let mut r = String::new();
-
-    r.push_str(&format!("**{}**\n\n", data.metadata.title.as_deref().unwrap_or("未知文档")));
-    r.push_str(&format!("- 类型: {}\n", data.metadata.document_type));
-    r.push_str(&format!("- 化合物: {} 个\n", data.compounds.len()));
-    r.push_str(&format!("- 活性数据: {} 条\n", data.activities.len()));
-    r.push_str(&format!("- 关键发现: {} 条\n", data.key_findings.len()));
-
-    if !data.uncertain_items.is_empty() {
-        r.push_str(&format!("- ⚠️ 不确定项: {} 条（需要人工审核）\n", data.uncertain_items.len()));
-    }
-
-    if !data.summary.is_empty() {
-        r.push_str(&format!("\n{}\n", &data.summary[..data.summary.len().min(200)]));
     }
 
     r
@@ -106,13 +84,5 @@ mod tests {
         let report = generate_full_report(&data, None);
         assert!(report.contains("Test Patent"));
         assert!(!report.contains("SAR"));
-    }
-
-    #[test]
-    fn test_generate_summary() {
-        let data = make_test_data();
-        let summary = generate_summary(&data);
-        assert!(summary.contains("Test Patent"));
-        assert!(summary.contains("类型"));
     }
 }

@@ -1,7 +1,13 @@
 import { useState } from 'react'
-import { kbSearch } from '../api/client'
+import { motion, AnimatePresence } from 'framer-motion'
+import { kbSearch } from '../api/tauri-bridge'
 import { SearchIcon, FileTextIcon, HashIcon, ClockIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
+import PageContainer from '../components/ui/PageContainer'
+import HoverCard from '../components/ui/HoverCard'
+import Caption from '../components/ui/Caption'
+import BodyText from '../components/ui/BodyText'
+import Skeleton from '../components/ui/Skeleton'
 
 interface ResultItem {
   id: string
@@ -19,6 +25,8 @@ export default function Search() {
   const [results, setResults] = useState<ResultItem[]>([])
   const [hasSearched, setHasSearched] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isFocused, setIsFocused] = useState(false)
 
   const doSearch = async (term: string) => {
     const projectRoot = getProjectRoot()
@@ -29,23 +37,21 @@ export default function Search() {
     }
     setIsLoading(true)
     setHasSearched(true)
+    setError(null)
     try {
-      const resp = await kbSearch(projectRoot, term, 10)
-      if (resp.success && resp.results) {
-        const mapped: ResultItem[] = resp.results.map((r, i) => ({
-          id: String(i),
-          title: String(r.metadata?.doc_id || '文档片段'),
-          snippet: r.text || '',
-          source: String(r.metadata?.source || '未知来源'),
-          tags: [],
-          date: '',
-        }))
-        setResults(mapped)
-      } else {
-        setResults([])
-      }
+      const results = await kbSearch(projectRoot, term, 10)
+      const mapped: ResultItem[] = results.map((r, i) => ({
+        id: String(i),
+        title: String(r.metadata?.doc_id || '文档片段'),
+        snippet: r.text || '',
+        source: String(r.metadata?.source || '未知来源'),
+        tags: [],
+        date: '',
+      }))
+      setResults(mapped)
     } catch (e) {
       setResults([])
+      setError(e instanceof Error ? e.message : '搜索失败')
     } finally {
       setIsLoading(false)
     }
@@ -65,32 +71,24 @@ export default function Search() {
   const projectRoot = getProjectRoot()
 
   return (
-    <div style={{
-      flex: 1,
-      padding: '32px',
-      overflow: 'auto',
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
+    <PageContainer>
       <div style={{ marginBottom: '32px' }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: '16px 20px',
-          background: 'var(--bg-surface)',
-          border: '2px solid var(--border)',
-          borderRadius: '14px',
-          transition: 'all 0.2s',
-        }}
-        onFocus={e => {
-          e.currentTarget.style.borderColor = 'var(--accent)'
-          e.currentTarget.style.boxShadow = '0 0 0 4px var(--accent-muted)'
-        }}
-        onBlur={e => {
-          e.currentTarget.style.borderColor = 'var(--border)'
-          e.currentTarget.style.boxShadow = 'none'
-        }}
+        <motion.div
+          animate={{
+            borderColor: isFocused ? 'var(--accent)' : 'var(--border)',
+            boxShadow: isFocused ? '0 0 0 4px var(--accent-muted)' : 'none',
+            scale: isFocused ? 1.01 : 1,
+          }}
+          transition={{ duration: 0.2 }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '16px 20px',
+            background: 'var(--bg-surface)',
+            border: '2px solid var(--border)',
+            borderRadius: '14px',
+          }}
         >
           <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
             <SearchIcon size={22} />
@@ -100,6 +98,8 @@ export default function Search() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleSearch}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
             placeholder={projectRoot ? '搜索分子、文献、概念...' : '请先打开或创建一个项目'}
             disabled={!projectRoot}
             style={{
@@ -112,16 +112,18 @@ export default function Search() {
               fontFamily: 'inherit',
             }}
           />
-        </div>
+        </motion.div>
         <div style={{
           display: 'flex',
           gap: '8px',
           marginTop: '12px',
         }}>
           {HINTS.map(hint => (
-            <span
+            <motion.button
               key={hint}
+              type="button"
               onClick={() => quickSearch(hint)}
+              whileTap={{ scale: 0.95 }}
               style={{
                 padding: '6px 12px',
                 fontSize: '12px',
@@ -131,6 +133,9 @@ export default function Search() {
                 cursor: projectRoot ? 'pointer' : 'not-allowed',
                 transition: 'all 0.15s',
                 opacity: projectRoot ? 1 : 0.5,
+                border: 'none',
+                outline: 'none',
+                fontFamily: 'inherit',
               }}
               onMouseEnter={e => {
                 if (!projectRoot) return
@@ -144,7 +149,7 @@ export default function Search() {
               }}
             >
               {hint}
-            </span>
+            </motion.button>
           ))}
         </div>
       </div>
@@ -157,12 +162,9 @@ export default function Search() {
             alignItems: 'center',
             marginBottom: '16px',
           }}>
-            <span style={{
-              fontSize: '13px',
-              color: 'var(--text-muted)',
-            }}>
-              {isLoading ? '搜索中...' : `找到 ${results.length} 条结果`}
-            </span>
+            <BodyText size="sm" muted>
+              {isLoading ? '搜索中...' : error ? `搜索出错: ${error}` : `找到 ${results.length} 条结果`}
+            </BodyText>
           </div>
 
           <div style={{
@@ -170,73 +172,62 @@ export default function Search() {
             flexDirection: 'column',
             gap: '12px',
           }}>
-            {results.map(r => (
-              <div
-                key={r.id}
-                style={{
-                  padding: '20px',
-                  background: 'var(--bg-surface)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.borderColor = 'var(--accent)'
-                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.06)'
-                  e.currentTarget.style.transform = 'translateX(4px)'
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.borderColor = 'var(--border)'
-                  e.currentTarget.style.boxShadow = 'none'
-                  e.currentTarget.style.transform = 'translateX(0)'
-                }}
-              >
-                <div style={{
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  marginBottom: '8px',
-                }}>
-                  {r.title}
-                </div>
-                <div style={{
-                  fontSize: '14px',
-                  color: 'var(--text-secondary)',
-                  lineHeight: 1.6,
-                }}>
-                  {r.snippet}
-                </div>
-                <div style={{
-                  display: 'flex',
-                  gap: '16px',
-                  marginTop: '12px',
-                  paddingTop: '12px',
-                  borderTop: '1px solid var(--border)',
-                }}>
-                  <MetaItem icon={<FileTextIcon size={14} />} text={r.source} />
-                  {r.tags.length > 0 && <MetaItem icon={<HashIcon size={14} />} text={r.tags.join(', ')} />}
-                  {r.date && <MetaItem icon={<ClockIcon size={14} />} text={r.date} />}
-                </div>
+            <AnimatePresence>
+              {results.map((r, index) => (
+                <motion.div
+                  key={r.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.25, delay: index * 0.05 }}
+                >
+                  <HoverCard>
+                    <div style={{
+                      fontSize: '15px',
+                      fontWeight: 600,
+                      marginBottom: '8px',
+                    }}>
+                      {r.title}
+                    </div>
+                    <BodyText size="md" style={{ lineHeight: 1.6 }}>
+                      {r.snippet}
+                    </BodyText>
+                    <div style={{
+                      display: 'flex',
+                      gap: '16px',
+                      marginTop: '12px',
+                      paddingTop: '12px',
+                      borderTop: '1px solid var(--border)',
+                    }}>
+                      <MetaItem icon={<FileTextIcon size={14} />} text={r.source} />
+                      {r.tags.length > 0 && <MetaItem icon={<HashIcon size={14} />} text={r.tags.join(', ')} />}
+                      {r.date && <MetaItem icon={<ClockIcon size={14} />} text={r.date} />}
+                    </div>
+                  </HoverCard>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            {isLoading && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <Skeleton variant="row" count={3} height={80} />
               </div>
-            ))}
+            )}
           </div>
         </>
       )}
-    </div>
+    </PageContainer>
   )
 }
 
 function MetaItem({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
     <span style={{
-      fontSize: '12px',
-      color: 'var(--text-muted)',
       display: 'flex',
       alignItems: 'center',
       gap: '4px',
     }}>
       <span style={{ flexShrink: 0 }}>{icon}</span>
-      {text}
+      <Caption>{text}</Caption>
     </span>
   )
 }

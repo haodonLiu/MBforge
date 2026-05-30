@@ -1,4 +1,7 @@
 import React from 'react'
+import Card from '../ui/Card'
+import IconContainer from '../ui/IconContainer'
+import Caption from '../ui/Caption'
 
 interface StatCardProps {
   icon: React.ReactNode
@@ -8,26 +11,12 @@ interface StatCardProps {
 
 export default function StatCard({ icon, value, label }: StatCardProps) {
   return (
-    <div style={{
-      padding: '20px',
-      background: 'var(--bg-surface)',
-      border: '1px solid var(--border)',
-      borderRadius: '12px',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-    }}>
-      <div style={{ color: 'var(--text-muted)' }}>{icon}</div>
+    <Card style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <IconContainer>{icon}</IconContainer>
       <div>
-        <div style={{
-          fontSize: '20px',
-          fontWeight: 700,
-        }}>{value}</div>
-        <div style={{
-          fontSize: '12px',
-          color: 'var(--text-muted)',
-        }}>{label}</div>
+        <div style={{ fontSize: '20px', fontWeight: 700 }}>{value}</div>
+        <Caption>{label}</Caption>
       </div>
-    </div>
+    </Card>
   )
 }

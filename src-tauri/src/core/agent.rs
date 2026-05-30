@@ -264,10 +264,7 @@ impl Agent {
     }
 
     async fn sidecar_llm_call(url: &str, body: &serde_json::Value) -> Result<String, String> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(15))
-            .build()
-            .map_err(|e| e.to_string())?;
+        let client = super::http::client_15s();
         let resp = client.post(url)
             .header("Content-Type", "application/json")
             .json(body)
@@ -318,9 +315,7 @@ impl Agent {
             .chars().take(50).collect::<String>();
         if name.is_empty() { return; }
 
-        let safe_name: String = name.chars()
-            .map(|c| if matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c })
-            .collect();
+        let safe_name = super::helpers::safe_filename(&name);
 
         let _ = std::fs::write(skills_dir.join(format!("{}.md", safe_name)), content);
     }

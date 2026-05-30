@@ -21,6 +21,24 @@
   --font-size-title: 20px;
 }
 
+[data-theme="dark"] {
+  --bg-base: #0f0f14;
+  --bg-surface: #1a1a1e;
+  --bg-elevated: #252529;
+  --bg-hover: #2a2a2e;
+  --accent: #e8e8e8;
+  --accent-hover: #ffffff;
+  --accent-muted: rgba(255, 255, 255, 0.08);
+  --text-primary: #e8e8e8;
+  --text-secondary: #a0a0a0;
+  --text-muted: #666666;
+  --border: #2a2a2e;
+  --border-light: #333333;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -72,6 +90,37 @@ body {
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes bounceIn {
+  0% { opacity: 0; transform: scale(0.9) translateY(10px); }
+  60% { opacity: 1; transform: scale(1.02) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 0 0px rgba(26, 26, 26, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.08); }
+}
+
+/* Shimmer utility */
+.shimmer {
+  background: linear-gradient(90deg, var(--accent) 25%, rgba(26,26,26,0.4) 50%, var(--accent) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+/* Skeleton utility */
+.skeleton {
+  background: var(--bg-hover);
+  border-radius: 8px;
+  animation: pulse 1.5s ease-in-out infinite;
 }
 
 /* Utility classes */

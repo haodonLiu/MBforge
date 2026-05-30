@@ -1,5 +1,17 @@
+use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::sync::LazyLock;
+
+/// SMILES candidate pattern (simplified — no RDKit validation in Rust).
+/// Shared between classifier.rs and extractor.rs to avoid duplication.
+pub static SMILES_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[A-Za-z0-9@.+\-=#$()\[\]\\/%~]{4,}").unwrap());
+
+/// Get current UTC time as RFC 3339 string.
+pub fn now_rfc3339() -> String {
+    chrono::Utc::now().to_rfc3339()
+}
 
 /// Generate a UUID v4 string.
 pub fn generate_uuid() -> String {

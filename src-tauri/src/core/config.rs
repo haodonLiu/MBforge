@@ -35,6 +35,10 @@ pub struct EmbedConfig {
     pub base_url: String,
     pub api_key: String,
     pub device: String,
+    #[serde(default)]
+    pub mrl_dim: Option<i32>,
+    #[serde(default)]
+    pub instruction: String,
 }
 
 impl Default for EmbedConfig {
@@ -45,6 +49,8 @@ impl Default for EmbedConfig {
             base_url: DEFAULT_EMBED_BASE_URL.into(),
             api_key: String::new(),
             device: "cpu".into(),
+            mrl_dim: None,
+            instruction: String::new(),
         }
     }
 }
@@ -81,7 +87,7 @@ pub struct OcrConfig {
 impl Default for OcrConfig {
     fn default() -> Self {
         Self {
-            provider: "pymupdf".into(),
+            provider: "none".into(),
             base_url: String::new(),
             api_key: String::new(),
             model_name: String::new(),
@@ -111,12 +117,51 @@ impl Default for VlmConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelServerConfig {
+    #[serde(default = "default_host")]
+    pub host: String,
+    #[serde(default = "default_port")]
+    pub port: u16,
+    #[serde(default = "default_true")]
+    pub auto_start: bool,
+    #[serde(default = "default_startup_timeout")]
+    pub startup_timeout: u32,
+    #[serde(default = "default_health_check_interval")]
+    pub health_check_interval: u32,
+}
+
+fn default_host() -> String { "127.0.0.1".into() }
+fn default_port() -> u16 { 18792 }
+fn default_true() -> bool { true }
+fn default_startup_timeout() -> u32 { 120 }
+fn default_health_check_interval() -> u32 { 5 }
+
+impl Default for ModelServerConfig {
+    fn default() -> Self {
+        Self {
+            host: "127.0.0.1".into(),
+            port: 18792,
+            auto_start: true,
+            startup_timeout: 120,
+            health_check_interval: 5,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default)]
+    pub model_server: ModelServerConfig,
     pub llm: ModelConfig,
     pub embed: EmbedConfig,
     pub rerank: RerankConfig,
     pub ocr: OcrConfig,
     pub vlm: VlmConfig,
+    #[serde(default)]
+    pub recent_projects: Vec<String>,
+    /// 模型下载目录，空字符串表示使用默认值
+    #[serde(default)]
+    pub model_cache_dir: String,
     pub theme: String,
     pub language: String,
 }
@@ -124,11 +169,14 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            model_server: ModelServerConfig::default(),
             llm: ModelConfig::default(),
             embed: EmbedConfig::default(),
             rerank: RerankConfig::default(),
             ocr: OcrConfig::default(),
             vlm: VlmConfig::default(),
+            recent_projects: Vec::new(),
+            model_cache_dir: String::new(),
             theme: "dark".into(),
             language: "zh".into(),
         }

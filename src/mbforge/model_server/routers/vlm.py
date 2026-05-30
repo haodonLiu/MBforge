@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import base64
+import asyncio
 import os
-import tempfile
 
 from fastapi import APIRouter, Request
 
 from ...utils.exceptions import ModelNotAvailableError, ValidationError
+from ...utils.helpers import decode_base64_to_tempfile
 from ...utils.logger import get_logger
 from ..models.moldet import get_moldet
 from ..models.vlm import get_vlm
@@ -30,12 +30,13 @@ async def describe(request: Request) -> dict:
             raise ValidationError("image_base64 is required")
 
         ext = body.get("ext", "png")
-        with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as f:
-            f.write(base64.b64decode(image_base64))
-            tmp_path = f.name
+        tmp_path = decode_base64_to_tempfile(image_base64, ext)
 
         vlm = get_vlm()
-        description = vlm.describe_image(tmp_path, prompt=prompt)
+        loop = asyncio.get_running_loop()
+        description = await loop.run_in_executor(
+            None, lambda: vlm.describe_image(tmp_path, prompt=prompt)
+        )
         set_model_status("vlm", "ready")
         return {"description": description}
     except (ValidationError, ModelNotAvailableError):
@@ -62,9 +63,7 @@ async def molscribe(request: Request) -> dict:
 
         # 解码图片到临时文件
         ext = body.get("ext", "png")
-        with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as f:
-            f.write(base64.b64decode(image_base64))
-            tmp_path = f.name
+        tmp_path = decode_base64_to_tempfile(image_base64, ext)
 
         # 获取 MolImagePipeline 的 recognizer
         pipeline = get_moldet()
@@ -77,7 +76,10 @@ async def molscribe(request: Request) -> dict:
 
         from PIL import Image
         image = Image.open(tmp_path)
-        smiles, confidence = recognizer.predict(image)
+        loop = asyncio.get_running_loop()
+        smiles, confidence = await loop.run_in_executor(
+            None, lambda: recognizer.predict(image)
+        )
 
         set_model_status("vlm", "ready")
         return {

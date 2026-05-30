@@ -139,12 +139,7 @@ impl SkillsManager {
             });
 
             let url = format!("{}/api/v1/llm/chat", sidecar_url.trim_end_matches('/'));
-            let client = match reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(15))
-                .build() {
-                    Ok(c) => c,
-                    Err(_) => return,
-                };
+            let client = super::http::client_15s();
 
             let resp = match client.post(&url)
                 .header("Content-Type", "application/json")
@@ -185,9 +180,7 @@ impl SkillsManager {
             }
 
             // 清理文件名
-            let safe_name: String = name.chars()
-                .map(|c| if matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c })
-                .collect();
+            let safe_name = super::helpers::safe_filename(&name);
 
             let path = skills_dir.join(format!("{}.md", safe_name));
             let _ = std::fs::write(&path, content);

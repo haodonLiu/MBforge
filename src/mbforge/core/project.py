@@ -6,13 +6,12 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 
 from .settings import ProjectSettings
 from ..utils.constants import APP_VERSION, PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS
-from ..utils.helpers import generate_uuid, sha256_file
+from ..utils.helpers import generate_uuid, load_json, save_json, sha256_file
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -119,10 +118,9 @@ class Project:
 
     def _load_index(self) -> None:
         path = self._index_path()
-        if path.exists():
+        data = load_json(path)
+        if data is not None:
             try:
-                with open(path, encoding="utf-8") as f:
-                    data = json.load(f)
                 for item in data.get("documents", []):
                     entry = DocumentEntry.from_dict(item, self.root)
                     self._index[entry.doc_id] = entry
@@ -131,14 +129,12 @@ class Project:
                 logger.warning(f"Failed to load index: {e}")
 
     def _save_index(self) -> None:
-        self.meta_dir.mkdir(parents=True, exist_ok=True)
         data = {
             "version": APP_VERSION,
             "updated_at": datetime.now().isoformat(),
             "documents": [e.to_dict(self.root) for e in self._index.values()],
         }
-        with open(self._index_path(), "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        save_json(self._index_path(), data)
 
     # ---- 目录扫描 ----
 

@@ -3,11 +3,23 @@ import { listMolecules, searchMolecules } from '../api/client'
 import type { MoleculeRecord } from '../types'
 import { FlaskIcon, SearchIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
+import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
+import PageContainer from '../components/ui/PageContainer'
+import PageTitle from '../components/ui/PageTitle'
+import CardGrid from '../components/ui/CardGrid'
+import HoverCard from '../components/ui/HoverCard'
+import IconContainer from '../components/ui/IconContainer'
+import Caption from '../components/ui/Caption'
+import BodyText from '../components/ui/BodyText'
+import Skeleton from '../components/ui/Skeleton'
+import Button from '../components/ui/Button'
+import EmptyState from '../components/ui/EmptyState'
 
 export default function MoleculeLibrary() {
   const [search, setSearch] = useState('')
   const [molecules, setMolecules] = useState<MoleculeRecord[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const loadMolecules = async () => {
     const projectRoot = getProjectRoot()
@@ -16,6 +28,7 @@ export default function MoleculeLibrary() {
       return
     }
     setIsLoading(true)
+    setError(null)
     try {
       if (search.trim()) {
         const resp = await searchMolecules(projectRoot, search.trim())
@@ -34,6 +47,7 @@ export default function MoleculeLibrary() {
       }
     } catch (e) {
       setMolecules([])
+      setError(e instanceof Error ? e.message : '加载失败')
     } finally {
       setIsLoading(false)
     }
@@ -56,24 +70,15 @@ export default function MoleculeLibrary() {
   const projectRoot = getProjectRoot()
 
   return (
-    <div style={{
-      flex: 1,
-      padding: '32px',
-      overflow: 'auto',
-      display: 'flex',
-      flexDirection: 'column',
-    }}>
+    <PageContainer>
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: '24px',
       }}>
-        <h1 style={{
-          fontSize: 'var(--font-size-title)',
-          fontWeight: 600,
-        }}>分子库</h1>
-        <button className="btn btn-primary" onClick={() => alert('添加分子功能即将推出')}>+ 添加分子</button>
+        <PageTitle>分子库</PageTitle>
+        <Button variant="primary" size="sm" onClick={() => import('../hooks/useToast').then(({ showToast }) => showToast('添加分子功能即将推出', 'info'))}>+ 添加分子</Button>
       </div>
 
       <div style={{
@@ -104,89 +109,63 @@ export default function MoleculeLibrary() {
             fontFamily: 'inherit',
           }}
         />
-        <button
-          onClick={handleSearch}
-          disabled={!projectRoot}
-          className="btn btn-primary"
-          style={{ padding: '6px 16px', fontSize: '13px' }}
-        >
+        <Button variant="primary" size="sm" onClick={handleSearch} disabled={!projectRoot}>
           搜索
-        </button>
+        </Button>
       </div>
 
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>加载中...</div>
+        <StaggerContainer stagger={0.05}>
+          <CardGrid>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <StaggerItem key={i}>
+                <Skeleton variant="card" count={1} />
+              </StaggerItem>
+            ))}
+          </CardGrid>
+        </StaggerContainer>
+      ) : error ? (
+        <EmptyState message={error} error />
       ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '16px',
-        }}>
-          {molecules.map(mol => (
-            <div key={mol.mol_id} style={{
-              padding: '20px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border)',
-              borderRadius: '12px',
-              transition: 'all 0.2s',
-              cursor: 'pointer',
-            }}
-            onMouseEnter={e => {
-              e.currentTarget.style.borderColor = 'var(--accent)'
-              e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,0.06)'
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.borderColor = 'var(--border)'
-              e.currentTarget.style.boxShadow = 'none'
-            }}
-            >
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                marginBottom: '12px',
-              }}>
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '10px',
-                  background: 'var(--accent-muted)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'var(--accent)',
-                }}>
-                  <FlaskIcon size={20} />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: '15px' }}>{mol.name || mol.mol_id}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{mol.source_doc || '未知来源'}</div>
-                </div>
-              </div>
-              <div style={{
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                fontFamily: 'SF Mono, monospace',
-                wordBreak: 'break-all',
-                background: 'var(--bg-base)',
-                padding: '8px',
-                borderRadius: '6px',
-              }}>
-                {mol.smiles}
-              </div>
-              {mol.activity !== null && mol.activity !== undefined && (
-                <div style={{
-                  marginTop: '12px',
-                  fontSize: '13px',
-                  color: 'var(--text-secondary)',
-                }}>
-                  活性: {mol.activity.toFixed(2)} {mol.units || 'nM'}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+        <StaggerContainer>
+          <CardGrid>
+            {molecules.map(mol => (
+              <StaggerItem key={mol.mol_id}>
+                <HoverCard>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    marginBottom: '12px',
+                  }}>
+                    <IconContainer size={40}>
+                      <FlaskIcon size={20} />
+                    </IconContainer>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '15px' }}>{mol.name || mol.mol_id}</div>
+                      <Caption>{mol.source_doc || '未知来源'}</Caption>
+                    </div>
+                  </div>
+                  <BodyText size="sm" style={{
+                    fontFamily: 'SF Mono, monospace',
+                    wordBreak: 'break-all',
+                    background: 'var(--bg-base)',
+                    padding: '8px',
+                    borderRadius: '6px',
+                  }}>
+                    {mol.smiles}
+                  </BodyText>
+                  {mol.activity !== null && mol.activity !== undefined && (
+                    <BodyText size="sm" style={{ marginTop: '12px' }}>
+                      活性: {mol.activity.toFixed(2)} {mol.units || 'nM'}
+                    </BodyText>
+                  )}
+                </HoverCard>
+              </StaggerItem>
+            ))}
+          </CardGrid>
+        </StaggerContainer>
       )}
-    </div>
+    </PageContainer>
   )
 }

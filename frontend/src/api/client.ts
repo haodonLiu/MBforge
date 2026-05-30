@@ -1,6 +1,6 @@
 const API_BASE = '/api/v1'
 
-async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+export async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const resp = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
@@ -108,33 +108,6 @@ export function scanProject(projectRoot: string) {
   )
 }
 
-export type IndexProgressEvent =
-  | { status: 'indexing'; file: string; current: number; total: number }
-  | { status: 'file_done'; file: string; molecules: number }
-  | { status: 'file_error'; file: string; error: string }
-  | { status: 'completed'; indexed: number; molecules: number; total: number }
-  | { status: 'error'; error: string }
-
-export function indexProjectStream(
-  root: string,
-  onEvent: (event: IndexProgressEvent) => void,
-): () => void {
-  return sseStream<IndexProgressEvent>(
-    `${API_BASE}/project/index-stream`,
-    { root },
-    onEvent,
-    (error) => onEvent({ status: 'error', error }),
-  )
-}
-
-// Knowledge Base
-export function kbSearch(projectRoot: string, query: string, topK = 5) {
-  return fetchJson<{ success: boolean; results: import('../types').SearchResult[]; error?: string }>(
-    `${API_BASE}/kb/search`,
-    { method: 'POST', body: JSON.stringify({ project_root: projectRoot, query, top_k: topK }) },
-  )
-}
-
 // Molecule
 export function listMolecules(projectRoot: string, limit = 100, offset = 0) {
   return fetchJson<{ success: boolean; molecules: import('../types').MoleculeRecord[]; error?: string }>(
@@ -161,60 +134,6 @@ export function getChatHistory(projectRoot: string) {
   )
 }
 
-export function agentChat(projectRoot: string, messages: { role: string; content: string }[], temperature = 0.7) {
-  return fetchJson<{ success: boolean; content: string; error?: string }>(
-    `${API_BASE}/agent/chat`,
-    { method: 'POST', body: JSON.stringify({ project_root: projectRoot, messages, temperature }) },
-  )
-}
-
-export type AgentChatStreamEvent =
-  | { delta: string; finish_reason?: string }
-  | { delta: string; finish_reason: string; error?: string }
-
-export function agentChatStream(
-  projectRoot: string,
-  messages: { role: string; content: string }[],
-  onEvent: (event: AgentChatStreamEvent) => void,
-  temperature = 0.7,
-): () => void {
-  const controller = new AbortController()
-  ;(async () => {
-    try {
-      const resp = await fetch(`${API_BASE}/agent/chat-stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_root: projectRoot, messages, temperature }),
-        signal: controller.signal,
-      })
-      if (!resp.ok || !resp.body) {
-        onEvent({ delta: '', finish_reason: 'error', error: `HTTP ${resp.status}` })
-        return
-      }
-      const reader = resp.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try { onEvent(JSON.parse(line.slice(6))) } catch { /* skip */ }
-          }
-        }
-      }
-    } catch (e) {
-      if (!controller.signal.aborted) {
-        onEvent({ delta: '', finish_reason: 'error', error: String(e) })
-      }
-    }
-  })()
-  return () => controller.abort()
-}
-
 // File Tree
 export function getFileTree(projectRoot: string) {
   return fetchJson<{ success: boolean; tree: import('../types').FileNode[]; error?: string }>(
@@ -233,81 +152,3 @@ export function uploadFile(projectRoot: string, file: File) {
   )
 }
 
-// ---- Tauri-wrapped Rust commands ----
-import {
-  isTauriAvailable,
-  classifyPdf as tauriClassifyPdf,
-  extractText as tauriExtractText,
-  type PdfClassification,
-  type PdfExtraction,
-} from './tauri-bridge'
-
-export async function classifyPdfRust(path: string): Promise<PdfClassification> {
-  if (!isTauriAvailable()) throw new Error('Not in Tauri')
-  return tauriClassifyPdf(path)
-}
-
-export async function extractTextRust(path: string): Promise<PdfExtraction> {
-  if (!isTauriAvailable()) throw new Error('Not in Tauri')
-  return tauriExtractText(path)
-}
-
-// ---- pipeline Rust commands ----
-import {
-  parsePdf as tauriParsePdf,
-  postProcessPdf as tauriPostProcessPdf,
-  processDocument as tauriProcessDocument,
-  type PdfParseResult,
-  type PostProcessResult,
-  type DocProgressEvent,
-  type DocumentReport,
-} from './tauri-bridge'
-
-export async function parsePdfRust(
-  path: string,
-  chunkSize?: number,
-  overlap?: number,
-  parser?: string,
-): Promise<PdfParseResult> {
-  if (!isTauriAvailable()) throw new Error('Not in Tauri')
-  return tauriParsePdf(path, chunkSize, overlap, parser)
-}
-
-export async function postProcessPdfRust(
-  parseResult: PdfParseResult,
-): Promise<PostProcessResult> {
-  if (!isTauriAvailable()) throw new Error('Not in Tauri')
-  return tauriPostProcessPdf(parseResult)
-}
-
-export async function processDocumentRust(
-  path: string,
-  userRequest?: string,
-  onProgress?: (event: DocProgressEvent) => void,
-): Promise<DocumentReport> {
-  if (!isTauriAvailable()) throw new Error('Not in Tauri')
-
-  const { listen } = await import('@tauri-apps/api/event')
-  return new Promise((resolve, reject) => {
-    const unlistenList: (() => void)[] = []
-
-    listen<DocProgressEvent>('doc-progress', (event) => {
-      onProgress?.(event.payload)
-    }).then((fn) => unlistenList.push(fn))
-
-    listen<DocumentReport>('doc-result', (event) => {
-      unlistenList.forEach((fn) => fn())
-      resolve(event.payload)
-    }).then((fn) => unlistenList.push(fn))
-
-    listen<string>('doc-error', (event) => {
-      unlistenList.forEach((fn) => fn())
-      reject(new Error(event.payload))
-    }).then((fn) => unlistenList.push(fn))
-
-    tauriProcessDocument(path, userRequest).catch((err) => {
-      unlistenList.forEach((fn) => fn())
-      reject(err)
-    })
-  })
-}

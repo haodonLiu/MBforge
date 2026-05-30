@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::keywords::extract_keywords;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentSummary {
     pub l0_abstract: String,
@@ -13,11 +15,11 @@ pub struct DocumentSummary {
 
 /// 生成文档摘要（调用 LLM）
 pub fn generate_summary(content: &str, llm_url: &str) -> Result<DocumentSummary, String> {
-    let config = super::post_process::LlmApiConfig {
-        base_url: llm_url.to_string(),
-        api_key: std::env::var("MBFORGE_LLM_API_KEY").unwrap_or_default(),
-        model: std::env::var("MBFORGE_LLM_MODEL").unwrap_or_default(),
-    };
+    let mut config = super::post_process::load_llm_config()?;
+    // 允许调用方覆盖 base_url（pipeline 传入 sidecar URL）
+    if !llm_url.is_empty() {
+        config.base_url = llm_url.to_string();
+    }
 
     // L0: 一句话摘要
     let l0_prompt = format!(
@@ -53,7 +55,7 @@ pub fn generate_summary(content: &str, llm_url: &str) -> Result<DocumentSummary,
     )?;
     let l1_overview = l1.trim().trim_matches('"').to_string();
 
-    // 关键词提取（简单版：高频词）
+    // 关键词提取（委托给 keywords.rs 的统一实现）
     let keywords = extract_keywords(content);
 
     Ok(DocumentSummary {
@@ -63,41 +65,10 @@ pub fn generate_summary(content: &str, llm_url: &str) -> Result<DocumentSummary,
     })
 }
 
-/// 简单关键词提取（基于词频）
-fn extract_keywords(text: &str) -> Vec<String> {
-    use std::collections::HashMap;
-
-    let stop_words: std::collections::HashSet<&str> = [
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "could",
-        "should", "may", "might", "shall", "can", "to", "of", "in", "for",
-        "on", "with", "at", "by", "from", "as", "into", "through", "during",
-        "before", "after", "above", "below", "between", "out", "off", "over",
-        "under", "again", "further", "then", "once", "and", "but", "or", "nor",
-        "not", "so", "very", "just", "than", "too", "also", "this", "that",
-        "these", "those", "it", "its", "the", "is", "are", "was", "were",
-        "的", "了", "在", "是", "和", "与", "或", "等", "等", "中",
-    ].iter().cloned().collect();
-
-    let mut word_count: HashMap<String, usize> = HashMap::new();
-    for word in text.split_whitespace() {
-        let clean: String = word.chars()
-            .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
-            .collect();
-        let lower = clean.to_lowercase();
-        if lower.len() >= 3 && !stop_words.contains(lower.as_str()) {
-            *word_count.entry(lower).or_insert(0) += 1;
-        }
-    }
-
-    let mut words: Vec<(String, usize)> = word_count.into_iter().collect();
-    words.sort_by(|a, b| b.1.cmp(&a.1));
-    words.into_iter().take(10).map(|(w, _)| w).collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parsers::keywords::extract_keywords;
 
     #[test]
     fn test_extract_keywords() {

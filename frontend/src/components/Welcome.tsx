@@ -1,6 +1,17 @@
 import { useState } from 'react'
+import { motion } from 'framer-motion'
 import { createProject, openProject } from '../api/client'
 import { FolderIcon, ArrowLeftIcon, MoleculeLogo, TrashIcon, XIcon } from './icons'
+import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
+import { showToast } from '../hooks/useToast'
+import Button from '../components/ui/Button'
+import IconButton from '../components/ui/IconButton'
+import Input from '../components/ui/Input'
+import PageTitle from '../components/ui/PageTitle'
+import SectionHeader from '../components/ui/SectionHeader'
+import BodyText from '../components/ui/BodyText'
+import Caption from '../components/ui/Caption'
+import Spinner from '../components/ui/Spinner'
 
 interface RecentProject {
   name: string
@@ -67,10 +78,10 @@ export default function Welcome({ onProjectOpened }: Props) {
       if (resp.success && resp.project) {
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
-        alert(resp.error || '打开失败，请确认路径有效')
+        showToast(resp.error || '打开失败，请确认路径有效', 'error')
       }
     } catch (e) {
-      alert(`打开失败: ${e instanceof Error ? e.message : String(e)}`)
+      showToast(`打开失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
       setLoading(false)
     }
@@ -85,10 +96,10 @@ export default function Welcome({ onProjectOpened }: Props) {
       if (resp.success && resp.project) {
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
-        alert(resp.error || '创建失败')
+        showToast(resp.error || '创建失败', 'error')
       }
     } catch (e) {
-      alert(`创建失败: ${e instanceof Error ? e.message : String(e)}`)
+      showToast(`创建失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
       setLoading(false)
     }
@@ -102,42 +113,35 @@ export default function Welcome({ onProjectOpened }: Props) {
       if (resp.success && resp.project) {
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
-        alert(resp.error || '无法打开，请确认该目录是有效的 MBForge 项目')
+        showToast(resp.error || '无法打开，请确认该目录是有效的 MBForge 项目', 'error')
       }
     } catch (e) {
-      alert(`打开失败: ${e instanceof Error ? e.message : String(e)}`)
+      showToast(`打开失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
       setLoading(false)
     }
   }
 
-  const btnStyle = (primary = false): React.CSSProperties => ({
-    padding: '10px 20px',
-    borderRadius: '10px',
-    cursor: loading ? 'not-allowed' : 'pointer',
-    fontWeight: 500,
-    fontSize: '14px',
-    transition: 'all 0.15s',
-    opacity: loading ? 0.6 : 1,
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '8px',
-    background: primary ? 'var(--accent)' : 'var(--bg-surface)',
-    color: primary ? '#fff' : 'var(--text-primary)',
-    border: primary ? 'none' : '1px solid var(--border)',
-  })
-
   // ---- 创建项目二级页 ----
   if (page === 'create') {
     return (
-      <div style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <motion.div
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -20 }}
+        transition={{ duration: 0.25 }}
+        style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}
+      >
         <div style={{ maxWidth: '500px', margin: '60px auto 0', width: '100%' }}>
-          <button
-            onClick={() => { setPage('home'); setSelectedDir(''); setProjectName('') }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '24px', padding: 0 }}
-          >
-            <ArrowLeftIcon size={16} /> 返回
-          </button>
+          <div style={{ marginBottom: '24px' }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setPage('home'); setSelectedDir(''); setProjectName('') }}
+            >
+              <ArrowLeftIcon size={16} /> 返回
+            </Button>
+          </div>
 
           <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '24px' }}>新建项目</h2>
 
@@ -145,13 +149,10 @@ export default function Welcome({ onProjectOpened }: Props) {
             <label style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               项目目录
             </label>
-            <input
-              type="text"
+            <Input
               value={selectedDir}
               onChange={e => setSelectedDir(sanitizePath(e.target.value))}
               placeholder="输入父目录路径 (如: D:/research)"
-              className="input"
-              style={{ width: '100%', boxSizing: 'border-box' }}
             />
           </div>
 
@@ -159,52 +160,59 @@ export default function Welcome({ onProjectOpened }: Props) {
             <label style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               项目名称
             </label>
-            <input
-              type="text"
+            <Input
               value={projectName}
               onChange={e => setProjectName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleCreate()}
               placeholder="如: aspirin-study"
-              className="input"
-              style={{ width: '100%', boxSizing: 'border-box' }}
               autoFocus
             />
           </div>
 
           {selectedDir && projectName && (
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px', padding: '10px 14px', background: 'var(--bg-surface)', borderRadius: '8px' }}>
-              将创建: <strong>{selectedDir}/{projectName}</strong>
+            <div style={{ marginBottom: '16px', padding: '10px 14px', background: 'var(--bg-surface)', borderRadius: '8px' }}>
+              <Caption>将创建: <strong>{selectedDir}/{projectName}</strong></Caption>
             </div>
           )}
 
-          <button
-            onClick={handleCreate}
+          <Button
+            variant="primary"
+            size="lg"
             disabled={loading || !selectedDir.trim() || !projectName.trim()}
-            style={btnStyle(true)}
+            onClick={handleCreate}
           >
             {loading ? (
               <>
-                <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                <Spinner size={14} color="currentColor" />
                 创建中...
               </>
             ) : '创建项目'}
-          </button>
+          </Button>
         </div>
-      </div>
+      </motion.div>
     )
   }
 
   // ---- 打开项目二级页 ----
   if (page === 'open') {
     return (
-      <div style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+      <motion.div
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: -20 }}
+        transition={{ duration: 0.25 }}
+        style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}
+      >
         <div style={{ maxWidth: '500px', margin: '60px auto 0', width: '100%' }}>
-          <button
-            onClick={() => { setPage('home'); setSelectedDir('') }}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '24px', padding: 0 }}
-          >
-            <ArrowLeftIcon size={16} /> 返回
-          </button>
+          <div style={{ marginBottom: '24px' }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setPage('home'); setSelectedDir('') }}
+            >
+              <ArrowLeftIcon size={16} /> 返回
+            </Button>
+          </div>
 
           <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '24px' }}>打开已有项目</h2>
 
@@ -212,137 +220,168 @@ export default function Welcome({ onProjectOpened }: Props) {
             <label style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               项目路径
             </label>
-            <input
-              type="text"
+            <Input
               value={selectedDir}
               onChange={e => setSelectedDir(sanitizePath(e.target.value))}
               onKeyDown={e => e.key === 'Enter' && handleOpenDir()}
               placeholder="输入项目根目录路径"
-              className="input"
-              style={{ width: '100%', boxSizing: 'border-box' }}
               autoFocus
             />
           </div>
 
-          <button
-            onClick={handleOpenDir}
+          <Button
+            variant="primary"
+            size="lg"
             disabled={loading || !selectedDir.trim()}
-            style={btnStyle(true)}
+            onClick={handleOpenDir}
           >
             {loading ? (
               <>
-                <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.6s linear infinite' }} />
+                <Spinner size={14} color="currentColor" />
                 打开中...
               </>
             ) : '打开项目'}
-          </button>
+          </Button>
         </div>
-      </div>
+      </motion.div>
     )
   }
 
   // ---- 首页 ----
   return (
-    <div style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.3 }}
+      style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}
+    >
       <div style={{ maxWidth: '600px', margin: '60px auto 0', textAlign: 'center', width: '100%' }}>
-        {/* Logo */}
-        <div style={{ margin: '0 auto 28px' }}>
-          <MoleculeLogo size={72} />
-        </div>
-        <h1 style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '-1px', marginBottom: '12px' }}>
-          MBForge
-        </h1>
-        <p style={{ fontSize: '16px', color: 'var(--text-secondary)', marginBottom: '40px' }}>
-          Molecular Knowledge Base - 分子知识库
-        </p>
+        <StaggerContainer stagger={0.08}>
+          {/* Logo */}
+          <StaggerItem>
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.5, ease: 'easeOut' }}
+              style={{ margin: '0 auto 28px' }}
+            >
+              <MoleculeLogo size={72} />
+            </motion.div>
+          </StaggerItem>
 
-        {/* 操作按钮 */}
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '48px' }}>
-          <button onClick={() => setPage('create')} style={btnStyle(true)}>
-            <FolderIcon size={16} /> 新建项目
-          </button>
-          <button onClick={() => setPage('open')} style={btnStyle()}>
-            <FolderIcon size={16} /> 打开项目
-          </button>
-        </div>
+          <StaggerItem>
+            <PageTitle style={{ fontSize: '32px', fontWeight: 700, letterSpacing: '-1px', marginBottom: '12px' }}>
+              MBForge
+            </PageTitle>
+          </StaggerItem>
 
-        {/* 最近项目 */}
-        {recentProjects.length > 0 && (
-          <div style={{ textAlign: 'left' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <h2 style={{
-                fontSize: '14px', fontWeight: 600, color: 'var(--text-secondary)',
-                textTransform: 'uppercase', letterSpacing: '0.5px', margin: 0,
-              }}>
-                最近项目
-              </h2>
-              <button
-                onClick={() => { setEditing(!editing); setDeleting(null) }}
-                title={editing ? '完成' : '编辑'}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
-                  color: editing ? 'var(--accent)' : 'var(--text-muted)', transition: 'color 0.15s',
-                }}
+          <StaggerItem>
+            <BodyText size="lg" style={{ marginBottom: '40px' }}>
+              Molecular Knowledge Base - 分子知识库
+            </BodyText>
+          </StaggerItem>
+
+          {/* 操作按钮 */}
+          <StaggerItem>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '48px' }}>
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={() => setPage('create')}
+                icon={<FolderIcon size={16} />}
               >
-                <TrashIcon size={16} />
-              </button>
+                新建项目
+              </Button>
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={() => setPage('open')}
+                icon={<FolderIcon size={16} />}
+              >
+                打开项目
+              </Button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              {recentProjects.map((p) => (
-                <div
-                  key={p.path}
-                  style={{
-                    display: 'flex', alignItems: 'center',
-                    padding: '12px 16px', background: 'var(--bg-surface)',
-                    border: '1px solid var(--border)', borderRadius: '10px',
-                    transition: 'all 0.15s', width: '100%', boxSizing: 'border-box',
-                    borderColor: deleting === p.path ? '#e74c3c' : undefined,
-                    opacity: deleting === p.path ? 0.5 : 1,
-                  }}
-                >
-                  {editing && (
-                    <button
-                      onClick={() => {
-                        setDeleting(p.path)
-                        setTimeout(() => {
-                          const updated = removeRecentFromStorage(p.path)
-                          setRecentProjects(updated)
-                          setDeleting(null)
-                          if (updated.length === 0) setEditing(false)
-                        }, 300)
-                      }}
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px 8px 2px 0',
-                        color: '#e74c3c', flexShrink: 0, transition: 'transform 0.15s',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.2)'}
-                      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+          </StaggerItem>
+
+          {/* 最近项目 */}
+          {recentProjects.length > 0 && (
+            <StaggerItem>
+              <div style={{ textAlign: 'left', marginTop: '8px' }}>
+                <SectionHeader
+                  title="最近项目"
+                  action={
+                    <IconButton
+                      size={32}
+                      active={editing}
+                      title={editing ? '完成' : '编辑'}
+                      onClick={() => { setEditing(!editing); setDeleting(null) }}
                     >
-                      <XIcon size={14} />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => openByName(p.path)}
-                    disabled={loading || deleting === p.path}
-                    style={{
-                      flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      background: 'none', border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
-                      textAlign: 'left', padding: 0, opacity: loading ? 0.6 : 1,
-                    }}
-                  >
-                    <span style={{ fontWeight: 500, fontSize: '14px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '16px' }}>
-                      {p.name}
-                    </span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      {p.path}
-                    </span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+                      <TrashIcon size={16} />
+                    </IconButton>
+                  }
+                />
+                <StaggerContainer stagger={0.04}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {recentProjects.map((p) => (
+                      <StaggerItem key={p.path}>
+                        <motion.div
+                          style={{
+                            display: 'flex', alignItems: 'center',
+                            padding: '12px 16px', background: 'var(--bg-surface)',
+                            border: '1px solid var(--border)', borderRadius: '10px',
+                            width: '100%', boxSizing: 'border-box',
+                            borderColor: deleting === p.path ? '#e74c3c' : undefined,
+                            opacity: deleting === p.path ? 0.5 : 1,
+                          }}
+                          whileHover={{ borderColor: 'var(--accent)', x: 2 }}
+                          transition={{ duration: 0.15 }}
+                        >
+                          {editing && (
+                            <motion.button
+                              onClick={() => {
+                                setDeleting(p.path)
+                                setTimeout(() => {
+                                  const updated = removeRecentFromStorage(p.path)
+                                  setRecentProjects(updated)
+                                  setDeleting(null)
+                                  if (updated.length === 0) setEditing(false)
+                                }, 300)
+                              }}
+                              whileTap={{ scale: 0.8 }}
+                              style={{
+                                background: 'none', border: 'none', cursor: 'pointer', padding: '2px 8px 2px 0',
+                                color: '#e74c3c', flexShrink: 0,
+                              }}
+                            >
+                              <XIcon size={14} />
+                            </motion.button>
+                          )}
+                          <button
+                            onClick={() => openByName(p.path)}
+                            disabled={loading || deleting === p.path}
+                            style={{
+                              flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              background: 'none', border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
+                              textAlign: 'left', padding: 0, opacity: loading ? 0.6 : 1,
+                            }}
+                          >
+                            <Caption truncate color="var(--text-primary)" style={{ fontSize: '14px', fontWeight: 500, marginRight: '16px' }}>
+                              {p.name}
+                            </Caption>
+                            <Caption truncate style={{ flexShrink: 0 }}>
+                              {p.path}
+                            </Caption>
+                          </button>
+                        </motion.div>
+                      </StaggerItem>
+                    ))}
+                  </div>
+                </StaggerContainer>
+              </div>
+            </StaggerItem>
+          )}
+        </StaggerContainer>
       </div>
-    </div>
+    </motion.div>
   )
 }

@@ -1,5 +1,8 @@
 use std::path::PathBuf;
 
+// NOTE: Keep in sync with src/mbforge/utils/constants.py (Python sidecar).
+// When changing a value here, update the corresponding Python constant.
+
 pub const APP_NAME: &str = "MBForge";
 pub const APP_VERSION: &str = "0.2.0";
 pub const PROJECT_META_DIR: &str = ".mbforge";
@@ -53,6 +56,27 @@ pub const DEFAULT_EMBED_BASE_URL: &str = "http://127.0.0.1:18792";
 pub const AGENT_MAX_ITERATIONS: usize = 5;
 pub const AGENT_MAX_HISTORY_ROUNDS: usize = 20;
 pub const AGENT_MAX_TOTAL_TOKENS: usize = 32000;
+
+/// Get the sidecar URL from environment variable, falling back to DEFAULT_SIDECAR_URL.
+pub fn sidecar_url() -> String {
+    std::env::var("MBFORGE_SIDECAR_URL")
+        .unwrap_or_else(|_| DEFAULT_SIDECAR_URL.to_string())
+}
+
+/// 模型下载目录（统一入口，可通过 config.json 的 model_cache_dir 覆盖）
+pub const MODEL_CACHE_DIR: &str = ".cache/mbforge/models";
+
+/// 获取模型下载目录（优先使用 config 中的配置，否则使用默认路径）
+pub fn model_cache_dir() -> PathBuf {
+    let config = super::config::AppConfig::load();
+    if !config.model_cache_dir.is_empty() {
+        PathBuf::from(&config.model_cache_dir)
+    } else {
+        directories::ProjectDirs::from("", APP_NAME, APP_NAME)
+            .map(|d| d.data_dir().join("models"))
+            .unwrap_or_else(|| PathBuf::from(".").join(MODEL_CACHE_DIR))
+    }
+}
 
 // Platform-specific config/data dirs
 pub fn global_config_dir() -> PathBuf {

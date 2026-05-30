@@ -15,7 +15,8 @@
 - **AI Agent 对话** — 本地 Rust ReAct Agent（20+ 工具），支持上下文增强检索
 - **分子数据库** — SQLite + FTS5，含 SMILES 属性估算（MW/HBD/HBA/RotBonds）
 - **知识库检索** — ChromaDB 语义搜索 + Rerank 重排序
-- **模型服务器** — FastAPI（port 18792），提供 LLM/Embedding/Rerank/VLM/Agent/KB 等 15 个 API 路由
+- **模型服务器** — FastAPI（port 18792），启动预热 + 异步非阻塞，提供 LLM/Embedding/Rerank/VLM/Agent/KB 等 15 个 API 路由
+- **模型管理** — 统一模型目录，支持下载/查看/删除，含许可证和大小信息
 - **SAR 分析** — 结构-活性关系引擎，支持 Scaffold 聚类、活性悬崖检测
 - **MolScribe 集成** — 分子图像 → SMILES 识别（Swin Transformer + Transformer Decoder）
 - **多源 PDF 解析** — PyMuPDF / MinerU / LlamaParse / UniParser 四引擎可选
@@ -43,7 +44,7 @@
 │  │ src-tauri/src/   │  │  FastAPI Sidecar     │  │
 │  │                   │  │  (port 18792)       │  │
 │  │  commands/  (6)   │  │  routers/      (15) │  │
-│  │  core/     (16)   │  │  models/       (5)  │  │
+│  │  core/     (17)   │  │  models/       (5)  │  │
 │  │  parsers/  (12)   │  │  agent/        (4)  │  │
 │  │                   │  │  parsers/      (8)  │  │
 │  │  ~9,681 行 Rust   │  │  ~12,882 行 Python │  │
@@ -52,6 +53,12 @@
 ```
 
 **双语言分工**: Rust 负责 Agent 循环、PDF 原生解析、分子数据库、SQLite 持久化；Python 负责 LLM/Embedding/VLM 模型推理、ChromaDB 向量库、MolScribe 推理、FastAPI REST API。
+
+**性能优化要点**:
+- **Rust 共享 HTTP 客户端** — `core/http.rs` 提供 4 个按超时分类的 `LazyLock` 单例，避免每次请求新建连接池
+- **Python 异步非阻塞** — 所有模型推理路由通过 `run_in_executor` 包装，不阻塞事件循环
+- **启动模型预热** — FastAPI lifespan 在后台线程预加载 LLM/Embedder/Reranker，首次请求零延迟
+- **requests.Session 复用** — UniParser 客户端使用持久连接，减少 TCP 握手开销
 
 ## 快速开始
 
@@ -125,9 +132,10 @@ MBForge/
 │   │   ├── molecule.rs           #   分子数据库 CRUD（18 命令）
 │   │   ├── text_ops.rs           #   文本分块
 │   │   └── agent.rs              #   Agent 会话管理
-│   ├── core/                     #   Rust Agent + 数据层（16 模块）
+│   ├── core/                     #   Rust Agent + 数据层（17 模块）
 │   │   ├── agent.rs              #   ReAct Agent 循环
 │   │   ├── llm.rs                #   LLM HTTP 客户端
+│   │   ├── http.rs               #   共享 HTTP 客户端工厂（按超时分类）
 │   │   ├── context.rs            #   分层会话上下文
 │   │   ├── executor.rs           #   ToolExecutor（20+ 工具）
 │   │   ├── molecule_store.rs     #   分子 SQLite 数据库
@@ -160,9 +168,10 @@ MBForge/
 │   ├── src/
 │   │   ├── App.tsx               #   路由入口
 │   │   ├── api/                  #   HTTP + Tauri 桥接
-│   │   │   ├── client.ts         #   HTTP 客户端
-│   │   │   ├── tauri-bridge.ts   #   Tauri invoke
-│   │   │   └── settings.ts       #   设置 API
+│   │   │   ├── client.ts         #   HTTP 客户端（fetchJson + sseStream）
+│   │   │   ├── tauri-bridge.ts   #   Tauri invoke（类型与 Rust 对齐）
+│   │   │   ├── settings.ts       #   设置 API
+│   │   │   └── download.ts       #   模型下载 API
 │   │   ├── components/           #   14 组件
 │   │   │   ├── Chat.tsx          #   对话界面
 │   │   │   ├── MoleculeLibrary.tsx
@@ -208,7 +217,7 @@ MBForge/
 
 | 类别 | 技术 | 行数 |
 |------|------|------|
-| **Rust 核心** | Tauri v2, lopdf, rusqlite, serde, regex, tokio | ~9,700 |
+| **Rust 核心** | Tauri v2, lopdf, rusqlite, serde, regex, reqwest, tokio | ~9,800 |
 | **Python 服务** | FastAPI, uvicorn, ChromaDB, PyMuPDF, sentence-transformers | ~12,900 |
 | **前端** | React 19, TypeScript, Vite 6 | — |
 | **化学信息学** | RDKit (Python), MolScribe (Swin + Transformer), E-SMILES | — |
@@ -237,6 +246,7 @@ uv run ruff check src/ && uv run ruff format src/ --check
 | 公共 API | [docs/API.md](docs/API.md) |
 | 技术栈 | [docs/TECH_STACK.md](docs/TECH_STACK.md) |
 | 开发指南 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| 第三方引用 | [docs/REFERENCES.md](docs/REFERENCES.md) |
 | PDF 迁移规划 | [docs/pipeline-migration-plan.md](docs/pipeline-migration-plan.md) |
 | 管线重设计 | [docs/pipeline-redesign.md](docs/pipeline-redesign.md) |
 | E-SMILES 规范 | [src-tauri/docs/esmiles/](src-tauri/docs/esmiles/) |

@@ -1,5 +1,7 @@
 """Embedder 推理路由."""
 
+import asyncio
+
 from fastapi import APIRouter, Request
 
 from ...utils.exceptions import ModelNotAvailableError
@@ -20,7 +22,8 @@ async def embed(request: Request) -> dict:
             texts = [texts]
 
         embedder = get_embedder()
-        embeddings = embedder.embed(texts)
+        loop = asyncio.get_running_loop()
+        embeddings = await loop.run_in_executor(None, lambda: embedder.embed(texts))
         set_model_status("embedder", "ready")
         return {"embeddings": embeddings}
     except Exception as e:

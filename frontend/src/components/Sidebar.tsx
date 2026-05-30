@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { FlaskIcon, SearchIcon, ChatIcon, WorkflowIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon } from './icons'
+import IconButton from '../components/ui/IconButton'
 
 interface Props {
   current: string
@@ -17,6 +20,82 @@ const NAV_ITEMS = [
   { id: 'molecules', label: '分子库', path: '/molecules', icon: FlaskIcon },
   { id: 'workflow', label: '工作流', path: '/workflow', icon: WorkflowIcon },
 ]
+
+function Tooltip({ text, children }: { text: string; children: React.ReactNode }) {
+  const [show, setShow] = useState(false)
+  return (
+    <div
+      style={{ position: 'relative' }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      {show && (
+        <motion.div
+          initial={{ opacity: 0, x: -4 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          style={{
+            position: 'absolute',
+            left: 'calc(100% + 8px)',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'var(--accent)',
+            color: '#fff',
+            padding: '4px 10px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            fontWeight: 500,
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            zIndex: 100,
+          }}
+        >
+          {text}
+        </motion.div>
+      )}
+    </div>
+  )
+}
+
+function NavButton({
+  active,
+  onClick,
+  label,
+  icon: Icon,
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+  icon: React.FC<{ size?: number }>
+}) {
+  return (
+    <Tooltip text={label}>
+      <div style={{ position: 'relative' }}>
+        {active && (
+          <motion.div
+            layoutId="sidebar-indicator"
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: '3px',
+              height: '20px',
+              background: 'var(--accent)',
+              borderRadius: '0 2px 2px 0',
+            }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+          />
+        )}
+        <IconButton active={active} onClick={onClick}>
+          <Icon size={20} />
+        </IconButton>
+      </div>
+    </Tooltip>
+  )
+}
 
 export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchProject, fileTreeOpen, onToggleFileTree }: Props) {
   const navigate = useNavigate()
@@ -38,76 +117,21 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchP
     }}>
       <div style={{ padding: '8px 6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
         {/* File tree toggle at top */}
-        <button
-          title="文件树"
-          onClick={onToggleFileTree}
-          style={{
-            width: '44px',
-            height: '44px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '8px',
-            border: 'none',
-            cursor: 'pointer',
-            transition: 'all 0.15s',
-            background: fileTreeOpen ? 'var(--accent-muted)' : 'transparent',
-            color: fileTreeOpen ? 'var(--accent)' : 'var(--text-secondary)',
-          }}
-          onMouseEnter={e => {
-            if (!fileTreeOpen) {
-              e.currentTarget.style.background = 'var(--bg-hover)'
-              e.currentTarget.style.color = 'var(--text-primary)'
-            }
-          }}
-          onMouseLeave={e => {
-            if (!fileTreeOpen) {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.color = 'var(--text-secondary)'
-            }
-          }}
-        >
-          <FileTextIcon size={20} />
-        </button>
+        <Tooltip text="文件树">
+          <IconButton active={fileTreeOpen} onClick={onToggleFileTree}>
+            <FileTextIcon size={20} />
+          </IconButton>
+        </Tooltip>
 
-        {NAV_ITEMS.map(item => {
-          const Icon = item.icon
-          const isActive = current === item.id
-          return (
-            <button
-              key={item.id}
-              title={item.label}
-              onClick={() => handleClick(item)}
-              style={{
-                width: '44px',
-                height: '44px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: '8px',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-                background: isActive ? 'var(--accent-muted)' : 'transparent',
-                color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-              }}
-              onMouseEnter={e => {
-                if (!isActive) {
-                  e.currentTarget.style.background = 'var(--bg-hover)'
-                  e.currentTarget.style.color = 'var(--text-primary)'
-                }
-              }}
-              onMouseLeave={e => {
-                if (!isActive) {
-                  e.currentTarget.style.background = 'transparent'
-                  e.currentTarget.style.color = 'var(--text-secondary)'
-                }
-              }}
-            >
-              <Icon size={20} />
-            </button>
-          )
-        })}
+        {NAV_ITEMS.map((item) => (
+          <NavButton
+            key={item.id}
+            active={current === item.id}
+            onClick={() => handleClick(item)}
+            label={item.label}
+            icon={item.icon}
+          />
+        ))}
       </div>
 
       <div style={{
@@ -118,60 +142,16 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchP
         flexDirection: 'column',
         gap: '2px',
       }}>
-        <button
-          title="切换项目"
-          onClick={onSwitchProject}
-          style={{
-            width: '44px',
-            height: '44px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '8px',
-            border: 'none',
-            cursor: 'pointer',
-            transition: 'all 0.15s',
-            background: 'transparent',
-            color: 'var(--text-secondary)',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = 'var(--bg-hover)'
-            e.currentTarget.style.color = 'var(--text-primary)'
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = 'transparent'
-            e.currentTarget.style.color = 'var(--text-secondary)'
-          }}
-        >
-          <PlusIcon size={20} />
-        </button>
-        <button
-          title="设置"
-          onClick={onSettingsOpen}
-          style={{
-            width: '44px',
-            height: '44px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '8px',
-            border: 'none',
-            cursor: 'pointer',
-            transition: 'all 0.15s',
-            background: 'transparent',
-            color: 'var(--text-secondary)',
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = 'var(--bg-hover)'
-            e.currentTarget.style.color = 'var(--text-primary)'
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = 'transparent'
-            e.currentTarget.style.color = 'var(--text-secondary)'
-          }}
-        >
-          <SettingsIcon size={20} />
-        </button>
+        <Tooltip text="切换项目">
+          <IconButton onClick={onSwitchProject}>
+            <PlusIcon size={20} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip text="设置">
+          <IconButton onClick={onSettingsOpen}>
+            <SettingsIcon size={20} />
+          </IconButton>
+        </Tooltip>
       </div>
     </aside>
   )

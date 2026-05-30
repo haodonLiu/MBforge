@@ -173,10 +173,9 @@ PDF 解析 Python→Rust 迁移进展：
 | 1.5 | 待处理提取保存 | ✅ 完成 |
 | 2 | SQLite 分子数据库（FTS5 + 属性估算） | ✅ 完成 |
 | 3 | 图像提取（lopdf 嵌入式 XObject） | ✅ 完成 |
-| 4 | OCR 集成（LiteParse PDFium, 待发布） | ⏳ 阻塞 |
+| 4 | OCR 集成（LiteParse + PDFium） | ✅ 完成 |
 | 5 | VLM 描述管线 | ✅ 完成（Python sidecar） |
 | 6 | 内容提取 + 关联 | ✅ 完成 |
-| LiteParse | PDFium 二进制下载 tag 缺失 | ⏳ 阻塞 |
 
 ## Key Files
 

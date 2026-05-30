@@ -2,25 +2,19 @@
 
 from __future__ import annotations
 
-import base64
-from io import BytesIO
+import asyncio
 
 import numpy as np
 from fastapi import APIRouter, Request
-from PIL import Image
 
 from ...utils.exceptions import ModelNotAvailableError, ValidationError
+from ...utils.helpers import decode_base64_image
 from ...utils.logger import get_logger
 from ..models.moldet import get_moldet
 from .health import set_model_status
 
 logger = get_logger(__name__)
 router = APIRouter()
-
-
-def _decode_image(image_base64: str) -> Image.Image:
-    data = base64.b64decode(image_base64)
-    return Image.open(BytesIO(data))
 
 
 @router.post("/detect-page")
@@ -31,12 +25,15 @@ async def detect_page(request: Request) -> dict:
         if not image_base64:
             raise ValidationError("image_base64 is required")
 
-        image = _decode_image(image_base64)
+        image = decode_base64_image(image_base64)
         pipeline = get_moldet()
         if pipeline is None or not pipeline.is_available():
             raise ModelNotAvailableError("MolDet pipeline not available")
 
-        boxes = pipeline.doc_detector.detect(image)
+        loop = asyncio.get_running_loop()
+        boxes = await loop.run_in_executor(
+            None, lambda: pipeline.doc_detector.detect(image)
+        )
         set_model_status("moldet", "ready")
         return {
             "boxes": [
@@ -71,7 +68,7 @@ async def extract_page(request: Request) -> dict:
         if image_w == 0 or image_h == 0:
             raise ValidationError("image_w and image_h are required")
 
-        image = _decode_image(image_base64)
+        image = decode_base64_image(image_base64)
         arr = np.array(image)
         h, w = arr.shape[:2]
         if image_w == 0:
@@ -83,8 +80,11 @@ async def extract_page(request: Request) -> dict:
         if pipeline is None or not pipeline.is_available():
             raise ModelNotAvailableError("MolDet pipeline not available")
 
-        results = pipeline.extract_page(
-            image, page_idx, page_w_pts, page_h_pts, image_w, image_h, dpi
+        loop = asyncio.get_running_loop()
+        results = await loop.run_in_executor(
+            None, lambda: pipeline.extract_page(
+                image, page_idx, page_w_pts, page_h_pts, image_w, image_h, dpi
+            )
         )
         set_model_status("moldet", "ready")
         return {
@@ -110,13 +110,16 @@ async def extract_region(request: Request) -> dict:
         page_idx = body.get("page_idx", 0)
         bbox_pdf = body.get("bbox_pdf")
 
-        image = _decode_image(image_base64)
+        image = decode_base64_image(image_base64)
         pipeline = get_moldet()
         if pipeline is None or not pipeline.is_available():
             raise ModelNotAvailableError("MolDet pipeline not available")
 
-        result = pipeline.extract_region(
-            image, page_idx, tuple(bbox_pdf) if bbox_pdf else None
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, lambda: pipeline.extract_region(
+                image, page_idx, tuple(bbox_pdf) if bbox_pdf else None
+            )
         )
         set_model_status("moldet", "ready")
         return {"result": result.to_dict()}

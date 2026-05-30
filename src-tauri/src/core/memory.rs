@@ -15,16 +15,15 @@ pub struct MemoryEntry {
     pub confidence: f64,
     #[serde(default)]
     pub source: String,
-    #[serde(default = "default_timestamp")]
+    #[serde(default = "super::helpers::now_rfc3339")]
     pub created_at: String,
-    #[serde(default = "default_timestamp")]
+    #[serde(default = "super::helpers::now_rfc3339")]
     pub updated_at: String,
     #[serde(default)]
     pub access_count: u32,
 }
 
 fn default_confidence() -> f64 { 1.0 }
-fn default_timestamp() -> String { chrono::Utc::now().to_rfc3339() }
 
 pub struct MemoryManager {
     memory_dir: PathBuf,
@@ -84,7 +83,7 @@ impl MemoryManager {
                 existing.content = entry.content;
                 existing.confidence = entry.confidence;
                 existing.source = entry.source;
-                existing.updated_at = chrono::Utc::now().to_rfc3339();
+                existing.updated_at = super::helpers::now_rfc3339();
                 self.save_category(&cat);
                 return;
             }
@@ -186,12 +185,7 @@ impl MemoryManager {
         });
 
         let url = format!("{}/api/v1/llm/chat", sidecar_url.trim_end_matches('/'));
-        let client = match reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build() {
-                Ok(c) => c,
-                Err(_) => return,
-            };
+        let client = super::http::client_30s();
 
         let resp = match client.post(&url)
             .header("Content-Type", "application/json")

@@ -1,5 +1,7 @@
 """Reranker 推理路由."""
 
+import asyncio
+
 from fastapi import APIRouter, Request
 
 from ...utils.exceptions import ModelNotAvailableError
@@ -20,7 +22,8 @@ async def rerank(request: Request) -> dict:
         top_n = body.get("top_n", 5)
 
         reranker = get_reranker()
-        results = reranker.rerank(query, passages)
+        loop = asyncio.get_running_loop()
+        results = await loop.run_in_executor(None, lambda: reranker.rerank(query, passages))
         top_results = sorted(results, key=lambda x: x[1], reverse=True)[:top_n]
         set_model_status("reranker", "ready")
         return {"results": [{"index": idx, "score": score} for idx, score in top_results]}

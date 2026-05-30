@@ -139,7 +139,7 @@ pub async fn kb_search(
     top_k: Option<usize>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let top_k = top_k.unwrap_or(5);
-    let config = super::config::EmbedConfig::default();
+    let config = super::config::AppConfig::load().embed;
     let kb = KnowledgeBase::new(std::path::Path::new(&root), &config)
         .map_err(|e| format!("KB init failed: {}", e))?;
     let results = kb
@@ -164,7 +164,7 @@ pub fn kb_get_structure(
     root: String,
     doc_id: String,
 ) -> Result<Option<Vec<TreeNode>>, String> {
-    let config = super::config::EmbedConfig::default();
+    let config = super::config::AppConfig::load().embed;
     let kb = KnowledgeBase::new(std::path::Path::new(&root), &config)
         .map_err(|e| format!("KB init failed: {}", e))?;
     Ok(kb.get_structure(&doc_id))
@@ -172,7 +172,7 @@ pub fn kb_get_structure(
 
 #[tauri::command]
 pub fn kb_get_pages(root: String, doc_id: String, pages: String) -> Vec<PageContent> {
-    let config = super::config::EmbedConfig::default();
+    let config = super::config::AppConfig::load().embed;
     if let Ok(kb) = KnowledgeBase::new(std::path::Path::new(&root), &config) {
         kb.get_pages(&doc_id, &pages)
     } else {

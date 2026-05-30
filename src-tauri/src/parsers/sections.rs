@@ -5,31 +5,11 @@
 ///
 /// SectionChunk 是向量索引、结构树、页码缓存的同源数据。
 
-use serde::{Deserialize, Serialize};
+pub use crate::core::types::{SectionChunk, TreeNode};
 
 use super::headings::Heading;
 
 const DEFAULT_MAX_CHARS: usize = 8000;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SectionChunk {
-    pub title: String,
-    pub path: String,
-    pub text: String,
-    pub page_start: Option<usize>,
-    pub page_end: Option<usize>,
-    pub line_start: usize,
-    pub line_end: usize,
-}
-
-/// 结构树节点
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TreeNode {
-    pub title: String,
-    pub node_id: String,
-    pub line_num: usize,
-    pub nodes: Vec<TreeNode>,
-}
 
 /// 核心引擎：headings + text + page_texts → sections
 pub fn build_sections(

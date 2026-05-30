@@ -1,4 +1,5 @@
 import { HelpIcon } from './icons'
+import IconButton from './ui/IconButton'
 
 export default function Header() {
   return (
@@ -25,13 +26,12 @@ export default function Header() {
         MBForge
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <button
+        <IconButton
           title="帮助"
-          className="icon-btn"
-          onClick={() => alert('帮助文档即将推出')}
+          onClick={() => import('../hooks/useToast').then(({ showToast }) => showToast('帮助文档即将推出', 'info'))}
         >
           <HelpIcon size={18} />
-        </button>
+        </IconButton>
       </div>
     </header>
   )

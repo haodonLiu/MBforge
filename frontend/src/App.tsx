@@ -1,5 +1,9 @@
 import { useState } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
+import { AnimatePresence } from 'framer-motion'
+import AnimatedPage from './components/animations/AnimatedPage'
+import ToastContainer from './components/Toast'
+import ErrorBoundary from './components/ErrorBoundary'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import Welcome from './components/Welcome'
@@ -88,7 +92,7 @@ export default function App() {
             if (path.toLowerCase().endsWith('.pdf')) {
               window.open(`file://${path}`, '_blank')
             } else {
-              alert(`文件: ${path}`)
+              import('./hooks/useToast').then(({ showToast }) => showToast(`文件: ${path}`, 'info'))
             }
           }} />
         </div>
@@ -101,16 +105,28 @@ export default function App() {
         flexDirection: 'column',
         overflow: 'hidden',
       }}>
-        <Routes>
-          <Route path="/" element={<ProjectView />} />
-          <Route path="/search" element={<Search />} />
-          <Route path="/chat" element={<Chat />} />
-          <Route path="/molecules" element={<MoleculeLibrary />} />
-          <Route path="/workflow" element={<Workflow />} />
-          <Route path="/project" element={<ProjectView />} />
-        </Routes>
+        <ErrorBoundary>
+          <AppRoutes />
+        </ErrorBoundary>
       </main>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <ToastContainer />
     </div>
+  )
+}
+
+function AppRoutes() {
+  const location = useLocation()
+  return (
+    <AnimatePresence mode="wait">
+      <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<AnimatedPage><ProjectView /></AnimatedPage>} />
+        <Route path="/search" element={<AnimatedPage><Search /></AnimatedPage>} />
+        <Route path="/chat" element={<AnimatedPage><Chat /></AnimatedPage>} />
+        <Route path="/molecules" element={<AnimatedPage><MoleculeLibrary /></AnimatedPage>} />
+        <Route path="/workflow" element={<AnimatedPage><Workflow /></AnimatedPage>} />
+        <Route path="/project" element={<AnimatedPage><ProjectView /></AnimatedPage>} />
+      </Routes>
+    </AnimatePresence>
   )
 }

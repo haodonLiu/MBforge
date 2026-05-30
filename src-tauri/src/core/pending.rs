@@ -1,5 +1,5 @@
 use crate::core::constants::PROJECT_META_DIR;
-use crate::parsers::association::ExtractionResult;
+use crate::core::types::ExtractionResult;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 

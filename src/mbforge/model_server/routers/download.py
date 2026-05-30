@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
+from ...utils.constants import get_model_cache_dir
 from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
 
-# 只维护我们确认可用的 4 个模型
+# 只维护我们确认可用的 4 个模型（含许可证和预估大小信息）
 MODEL_CATALOG: dict[str, dict[str, Any]] = {
     "qwen3-embedding-0.6b": {
         "name": "Qwen3-Embedding-0.6B",
@@ -22,6 +24,10 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "description": "通义千问3 嵌入模型 (0.6B)",
         "ms_repo": "Qwen/Qwen3-Embedding-0.6B",
         "download_type": "snapshot",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B/blob/main/LICENSE",
+        "size_mb": 1200,
+        "source_url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
     },
     "qwen3-reranker-0.6b": {
         "name": "Qwen3-Reranker-0.6B",
@@ -29,6 +35,10 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "description": "通义千问3 重排序模型 (0.6B)",
         "ms_repo": "Qwen/Qwen3-Reranker-0.6B",
         "download_type": "snapshot",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/Qwen/Qwen3-Reranker-0.6B/blob/main/LICENSE",
+        "size_mb": 1200,
+        "source_url": "https://huggingface.co/Qwen/Qwen3-Reranker-0.6B",
     },
     "moldetv2": {
         "name": "MolDetv2",
@@ -38,6 +48,10 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "ms_file": "best.pt",
         "download_type": "file",
         "local_name": "moldetv2-doc.pt",
+        "license": "Apache-2.0",
+        "license_url": "https://huggingface.co/yujieq/MolDetect/blob/main/LICENSE",
+        "size_mb": 25,
+        "source_url": "https://huggingface.co/yujieq/MolDetect",
     },
     "molscribe": {
         "name": "MolScribe",
@@ -45,20 +59,28 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "description": "MolScribe 分子图像转 SMILES",
         "ms_repo": "yujieq/MolScribe",
         "download_type": "snapshot",
+        "license": "MIT",
+        "license_url": "https://github.com/thomas0809/MolScribe/blob/main/LICENSE",
+        "size_mb": 900,
+        "source_url": "https://github.com/thomas0809/MolScribe",
     },
 }
 
 _download_tasks: dict[str, bool] = {}
-MODEL_CACHE_DIR = Path.home() / ".cache" / "mbforge" / "models"
 MS_BASE = "https://modelscope.cn/api/v1/models"
 
 
+def _get_model_cache_dir() -> Path:
+    return Path(get_model_cache_dir())
+
+
 def _model_local_path(model_id: str) -> Path:
+    cache_dir = _get_model_cache_dir()
     info = MODEL_CATALOG[model_id]
     if info["download_type"] == "file":
-        return MODEL_CACHE_DIR / info.get("local_name", f"{model_id}.pt")
+        return cache_dir / info.get("local_name", f"{model_id}.pt")
     name = info["ms_repo"].split("/")[-1]
-    return MODEL_CACHE_DIR / name
+    return cache_dir / name
 
 
 def _is_downloaded(model_id: str) -> bool:
@@ -184,8 +206,101 @@ async def list_models() -> dict:
             "downloaded": _is_downloaded(mid),
             "downloading": _download_tasks.get(mid, False),
             "local_path": str(_model_local_path(mid)),
+            "license": info.get("license", "Unknown"),
+            "license_url": info.get("license_url", ""),
+            "size_mb": info.get("size_mb", 0),
+            "source_url": info.get("source_url", ""),
         })
     return {"success": True, "models": result}
+
+
+@router.get("/model-dir")
+async def get_model_dir() -> dict:
+    """返回当前模型下载目录路径."""
+    return {"success": True, "model_dir": str(_get_model_cache_dir())}
+
+
+@router.get("/list-downloaded")
+async def list_downloaded() -> dict:
+    """扫描模型目录，返回所有已下载模型的信息."""
+    cache_dir = _get_model_cache_dir()
+    downloaded = []
+    if cache_dir.exists():
+        for entry in cache_dir.iterdir():
+            if not entry.is_dir():
+                # 单文件模型（如 moldetv2-doc.pt）
+                if entry.suffix in (".pt", ".pth", ".onnx"):
+                    size_bytes = entry.stat().st_size
+                    # 尝试匹配 catalog
+                    matched_id = None
+                    for mid, info in MODEL_CATALOG.items():
+                        if info.get("local_name") == entry.name:
+                            matched_id = mid
+                            break
+                    downloaded.append({
+                        "id": matched_id or entry.stem,
+                        "name": entry.stem,
+                        "path": str(entry),
+                        "size_mb": round(size_bytes / 1024 / 1024, 1),
+                        "type": "file",
+                        "in_catalog": matched_id is not None,
+                    })
+                continue
+            # 目录模型（如 Qwen3-Embedding-0.6B）
+            has_weights = any(entry.rglob("*.bin")) or any(entry.rglob("*.safetensors"))
+            if has_weights:
+                size_bytes = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
+                # 尝试匹配 catalog
+                matched_id = None
+                for mid, info in MODEL_CATALOG.items():
+                    repo_name = info["ms_repo"].split("/")[-1]
+                    if entry.name == repo_name:
+                        matched_id = mid
+                        break
+                downloaded.append({
+                    "id": matched_id or entry.name,
+                    "name": entry.name,
+                    "path": str(entry),
+                    "size_mb": round(size_bytes / 1024 / 1024, 1),
+                    "type": "directory",
+                    "in_catalog": matched_id is not None,
+                })
+    return {"success": True, "models": downloaded, "model_dir": str(cache_dir)}
+
+
+@router.delete("/delete/{model_id}")
+async def delete_model(model_id: str) -> dict:
+    """删除已下载的模型."""
+    cache_dir = _get_model_cache_dir()
+
+    # 先在 catalog 中查找
+    if model_id in MODEL_CATALOG:
+        info = MODEL_CATALOG[model_id]
+        if info["download_type"] == "file":
+            target = cache_dir / info.get("local_name", f"{model_id}.pt")
+        else:
+            repo_name = info["ms_repo"].split("/")[-1]
+            target = cache_dir / repo_name
+    else:
+        # 尝试作为目录名或文件名
+        target = cache_dir / model_id
+        if not target.exists():
+            target = cache_dir / f"{model_id}.pt"
+        if not target.exists():
+            return {"success": False, "error": f"未找到模型: {model_id}"}
+
+    if not target.exists():
+        return {"success": False, "error": f"模型路径不存在: {target}"}
+
+    try:
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+        return {"success": True, "deleted": str(target)}
+    except Exception as e:
+        logger.error(f"删除模型失败: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 @router.post("/download/{model_id}")

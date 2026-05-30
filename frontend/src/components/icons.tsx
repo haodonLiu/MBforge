@@ -310,6 +310,26 @@ export const DownloadIcon: React.FC<IconProps> = ({ size = 16 }) =>
     size,
   )
 
+export const AlertIcon: React.FC<IconProps> = ({ size = 20 }) =>
+  svg(
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </>,
+    size,
+  )
+
+export const InfoIcon: React.FC<IconProps> = ({ size = 20 }) =>
+  svg(
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="16" x2="12" y2="12" />
+      <line x1="12" y1="8" x2="12.01" y2="8" />
+    </>,
+    size,
+  )
+
 /** 三苯环叠合 Logo — 黑底白线 */
 export const MoleculeLogo: React.FC<IconProps> = ({ size = 72 }) => (
   <svg width={size} height={size} viewBox="0 0 72 72" fill="none">

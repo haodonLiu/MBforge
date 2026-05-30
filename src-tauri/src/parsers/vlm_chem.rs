@@ -16,8 +16,7 @@ pub struct VlmConfig {
 impl Default for VlmConfig {
     fn default() -> Self {
         Self {
-            sidecar_url: std::env::var("MBFORGE_SIDECAR_URL")
-                .unwrap_or_else(|_| "http://127.0.0.1:18792".to_string()),
+            sidecar_url: crate::core::constants::sidecar_url(),
         }
     }
 }
@@ -44,10 +43,7 @@ pub async fn image_to_esmiles(
         "image_base64": image_b64,
     });
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+    let client = crate::core::http::client_120s();
 
     let url = format!(
         "{}/api/v1/vlm/molscribe",
@@ -139,10 +135,7 @@ pub async fn describe_image(
         "ext": ext,
     });
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(300))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+    let client = crate::core::http::client_300s();
 
     let url = format!(
         "{}/api/v1/vlm/describe",

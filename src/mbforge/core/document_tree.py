@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import copy
 import dataclasses
-import json
 import re
 from pathlib import Path
 from typing import Any
 
 from ..utils.constants import PROJECT_META_DIR
+from ..utils.helpers import load_json, save_json
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -224,17 +224,12 @@ class DocumentTreeIndex:
         self._load()
 
     def _load(self) -> None:
-        if self.index_path.exists():
-            try:
-                with open(self.index_path, encoding="utf-8") as f:
-                    self._trees = json.load(f)
-            except Exception as e:
-                logger.warning(f"Failed to load doc tree index: {e}")
+        data = load_json(self.index_path)
+        if data is not None:
+            self._trees = data
 
     def save(self) -> None:
-        self.index_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.index_path, "w", encoding="utf-8") as f:
-            json.dump(self._trees, f, indent=2, ensure_ascii=False)
+        save_json(self.index_path, self._trees)
 
     # ── 静态/类方法：不依赖 project_root，可在 DocumentProcessor 中调用 ──
 

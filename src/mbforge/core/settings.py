@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 
 from ..utils.constants import PROJECT_META_DIR, SETTINGS_FILE
+from ..utils.helpers import load_json, save_json
 
 
 @dataclass
@@ -59,13 +59,11 @@ class ProjectSettings:
     @classmethod
     def load(cls, project_root: Path) -> ProjectSettings:
         path = project_root / PROJECT_META_DIR / SETTINGS_FILE
-        if path.exists():
-            with open(path, encoding="utf-8") as f:
-                return cls.from_dict(json.load(f))
+        data = load_json(path)
+        if data is not None:
+            return cls.from_dict(data)
         return cls()
 
     def save(self, project_root: Path) -> None:
         path = project_root / PROJECT_META_DIR / SETTINGS_FILE
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
+        save_json(path, self.to_dict())

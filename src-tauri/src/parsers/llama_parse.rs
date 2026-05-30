@@ -32,7 +32,7 @@ pub async fn parse_with_llamaparse(
     pdf_bytes: Vec<u8>,
     api_key: Option<String>,
 ) -> Result<LlamaParseResult, String> {
-    let client = reqwest::Client::new();
+    let client = crate::core::http::client_120s();
     let url = format!("{}/v1/file/upload", api_url.trim_end_matches('/'));
 
     let mut form = reqwest::multipart::Form::new()

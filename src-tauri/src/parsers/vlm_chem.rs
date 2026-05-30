@@ -1,4 +1,5 @@
 use base64::Engine;
+use std::path::Path;
 
 /// === A2: VLM 化学结构识别模块 ===
 ///
@@ -103,6 +104,79 @@ pub async fn batch_image_to_smiles(
         }
     }
     results
+}
+
+/// 通用 VLM 图片描述 — 调 Python sidecar `/api/v1/vlm/describe`
+///
+/// 将图片发送给侧边车的 VLM 模型（如 Qwen-VL），返回文本描述。
+///
+/// # Arguments
+/// * `image_path` - 图片本地路径
+/// * `prompt` - 描述提示词（可选，默认："请详细描述这张图片的内容"）
+/// * `sidecar_url` - 侧边车 URL（如 http://127.0.0.1:18792）
+///
+/// # Returns
+/// 图片的文本描述
+///
+/// Port of the VLM describe API call from
+/// `src/mbforge/model_server/routers/vlm.py`.
+pub async fn describe_image(
+    image_path: &str,
+    prompt: &str,
+    sidecar_url: &str,
+) -> Result<String, String> {
+    let image_b64 = read_image_base64(image_path)?;
+
+    let ext = Path::new(image_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png")
+        .to_string();
+
+    let body = serde_json::json!({
+        "image_base64": image_b64,
+        "prompt": if prompt.is_empty() { "请详细描述这张图片的内容" } else { prompt },
+        "ext": ext,
+    });
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let url = format!(
+        "{}/api/v1/vlm/describe",
+        sidecar_url.trim_end_matches('/')
+    );
+
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("VLM describe request failed: {}", e))?;
+
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("VLM describe read error: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!(
+            "VLM describe HTTP {}: {}",
+            status,
+            &text[..text.len().min(200)]
+        ));
+    }
+
+    let val: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("VLM JSON parse error: {}", e))?;
+
+    Ok(val["description"]
+        .as_str()
+        .unwrap_or("")
+        .to_string())
 }
 
 /// 判断一个图片是否可能是化学结构图（基于 MinerU 提供的元数据或文件名启发式）

@@ -29,6 +29,12 @@ pub struct PdfParseResult {
     pub page_count: usize,
     /// Images extracted (MinerU path only).
     pub images: Vec<ImageRef>,
+    /// Document headings extracted.
+    pub headings: Vec<super::headings::Heading>,
+    /// Section chunks (section-based content splitting).
+    pub sections: Vec<super::sections::SectionChunk>,
+    /// Per-page raw text (populated if page mapping available).
+    pub page_texts: Vec<String>,
 }
 
 impl From<DocProcessingContext> for PdfParseResult {
@@ -50,6 +56,9 @@ impl From<DocProcessingContext> for PdfParseResult {
             parser: ctx.parser_used,
             page_count: ctx.page_count,
             images: ctx.images,
+            headings: ctx.headings,
+            sections: ctx.sections,
+            page_texts: ctx.page_texts,
         }
     }
 }
@@ -138,6 +147,9 @@ pub fn parse_pdf(
         parser: parser_choice,
         page_count,
         images: vec![],  // TODO: convert ExtractedImage to ImageRef
+        headings,
+        sections,
+        page_texts: vec![],  // page_texts populated by post_process_pdf if available
     })
 }
 
@@ -202,6 +214,15 @@ pub async fn process_document(
         ctx.page_count = classified.page_count;
         ctx.parser_used = classified.parser;
         ctx.images = classified.images;
+
+        // Stage 0.5: Build sections
+        ctx.headings = crate::parsers::headings::extract_headings(&ctx.raw_text);
+        ctx.sections = crate::parsers::sections::build_sections(
+            &ctx.raw_text,
+            &ctx.headings,
+            None,
+            8000,
+        );
 
         processing_log.stages.push(StageLog {
             stage: 0,
@@ -495,7 +516,7 @@ async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> {
         page: img.page,
         region: None,
         description: None,
-        smiles: None,
+        esmiles: None,
     }).collect();
 
     // 如果 pdf-inspector 提取不到内容，且内容是扫描件 → 自动升到 MinerU
@@ -757,6 +778,55 @@ mod tests {
         assert_eq!(result.parser, "");
         assert_eq!(result.page_count, 0);
     }
+
+    #[test]
+    fn test_pdf_parse_result_serde_roundtrip() {
+        use crate::commands::classifier::DocumentClassification;
+
+        let result = PdfParseResult {
+            content: "test content".into(),
+            classification: DocumentClassification {
+                text_density: 0.5,
+                is_scanned: false,
+                has_molecular_patterns: true,
+                metadata_hints: None,
+                pages: vec![],
+                needs_confirmation: false,
+            },
+            chunks: vec!["chunk1".into(), "chunk2".into()],
+            esmiles: vec!["CCO".into()],
+            activities: vec![],
+            parser: "test".into(),
+            page_count: 1,
+            images: vec![],
+            headings: vec![crate::parsers::headings::Heading {
+                level: 1,
+                title: "Introduction".into(),
+                line_num: 0,
+            }],
+            sections: vec![crate::parsers::sections::SectionChunk {
+                title: "Introduction".into(),
+                path: "Introduction".into(),
+                text: "intro text".into(),
+                page_start: Some(1),
+                page_end: Some(3),
+                line_start: 0,
+                line_end: 10,
+            }],
+            page_texts: vec!["page 1".into()],
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let roundtrip: PdfParseResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(roundtrip.content, "test content");
+        assert_eq!(roundtrip.parser, "test");
+        assert_eq!(roundtrip.headings.len(), 1);
+        assert_eq!(roundtrip.headings[0].title, "Introduction");
+        assert_eq!(roundtrip.sections.len(), 1);
+        assert_eq!(roundtrip.page_texts.len(), 1);
+        assert_eq!(roundtrip.esmiles, vec!["CCO"]);
+    }
 }
 
 // ===== KB 索引（通过 Python sidecar）=====
@@ -765,7 +835,7 @@ mod tests {
 pub async fn index_sections_to_kb(
     project_root: &str,
     doc_id: &str,
-    sections: &[super::sections::SectionChunk],
+    sections: &[crate::parsers::sections::SectionChunk],
     filename: &str,
 ) -> Result<(), String> {
     let sidecar_url = std::env::var("MBFORGE_SIDECAR_URL")

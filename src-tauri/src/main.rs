@@ -6,6 +6,7 @@ mod core;
 mod parsers;
 
 use commands::agent::AgentState;
+use commands::molecule::MolDbState;
 
 use std::process::{Command, Stdio};
 use tauri::Manager;
@@ -19,6 +20,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(AgentState::new())
+        .manage(MolDbState::new())
         .invoke_handler(tauri::generate_handler![
             commands::pdf::classify_pdf,
             commands::pdf::extract_text,
@@ -35,6 +37,24 @@ fn main() {
             commands::agent::agent_get_history,
             parsers::pipeline::parse_pdf,
             parsers::pipeline::post_process_pdf,
+            parsers::pipeline::process_document,
+            commands::molecule::mol_init,
+            commands::molecule::mol_add_relation,
+            commands::molecule::mol_delete_relation,
+            commands::molecule::mol_get_relation,
+            commands::molecule::mol_find_by_molecule,
+            commands::molecule::mol_find_similar,
+            commands::molecule::mol_find_same_as,
+            commands::molecule::mol_get_stats,
+            commands::molecule::mol_assign_cluster,
+            commands::molecule::mol_remove_from_cluster,
+            commands::molecule::mol_get_cluster_members,
+            commands::molecule::mol_get_molecule_clusters,
+            commands::molecule::mol_list_clusters,
+            commands::molecule::mol_find_analogs_with_activity,
+            commands::molecule::mol_scaffold_profile,
+            commands::molecule::mol_find_activity_cliffs,
+            commands::molecule::mol_dedup_batch,
         ])
         .setup(|app| {
             let app_handle = app.handle();

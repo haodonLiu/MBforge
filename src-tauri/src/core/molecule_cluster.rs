@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationType};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct ClusterAssignment {
     pub mol_id: String,
     pub cluster_id: String,

@@ -159,7 +159,7 @@ fn build_tree_nodes(sections: &[SectionChunk]) -> Vec<TreeNode> {
     let mut roots: Vec<TreeNode> = Vec::new();
 
     for section in sections {
-        let depth = section.path.matches('/').count();
+        let depth = section.path.matches(" > ").count();
         let node = TreeNode {
             title: section.title.clone(),
             node_id: section.path.clone(),

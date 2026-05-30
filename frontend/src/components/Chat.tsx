@@ -3,7 +3,16 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
-import { agentChat, getChatHistory, listDocuments, moleculeStats } from '../api/client'
+import { listDocuments, moleculeStats } from '../api/client'
+import {
+  isTauriAvailable,
+  agentInit,
+  agentCreateSession,
+  agentChatStream,
+  agentGetHistory,
+  agentDestroySession,
+} from '../api/tauri-bridge'
+import type { ChatMessage } from '../api/tauri-bridge'
 import { SendIcon, UserIcon, BotIcon, FolderIcon, FileTextIcon, FlaskIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
 
@@ -47,7 +56,6 @@ function renderInlineLatex(children: React.ReactNode): React.ReactNode {
 /** 判断字符串是否为合法 SMILES */
 function isSmiles(s: string): boolean {
   if (!s || s.length < 2 || s.length > 200) return false
-  // SMILES 只含化学符号：字母、数字、括号、键符号等
   return /^[A-Za-z0-9@+\-\[\]()\\/#%=.:]+$/.test(s.trim())
 }
 
@@ -56,7 +64,7 @@ function smilesToImgUrl(smiles: string): string {
   return `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encodeURIComponent(smiles)}/PNG?image_size=300x300`
 }
 
-interface ChatMessage {
+interface LocalMessage {
   id?: string
   role: 'user' | 'assistant'
   content: string
@@ -64,7 +72,8 @@ interface ChatMessage {
 
 export default function Chat() {
   const projectRoot = getProjectRoot()
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const sessionIdRef = useRef<string>('')
+  const [messages, setMessages] = useState<LocalMessage[]>([
     { role: 'assistant', content: '你好！我是 MBForge AI 助手。有什么关于分子或文献的问题可以问我。' },
   ])
   const [input, setInput] = useState('')
@@ -76,18 +85,49 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
+  // Initialize Tauri agent on mount
   useEffect(() => {
-    if (!projectRoot) return
-    getChatHistory(projectRoot).then(resp => {
-      if (resp.success && resp.messages && resp.messages.length > 0) {
-        setMessages(resp.messages.map(m => ({
-          id: m.id,
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-        })))
+    if (!isTauriAvailable()) return
+
+    const initAgent = async () => {
+      const sid = crypto.randomUUID()
+      sessionIdRef.current = sid
+
+      // Load saved LLM config from localStorage (set by Settings)
+      const savedConfig = localStorage.getItem('mbforge_llm_config')
+      const config = savedConfig
+        ? JSON.parse(savedConfig)
+        : { provider: 'openai_compatible', base_url: 'http://localhost:8000/v1', api_key: '', model_name: 'default', max_tokens: 4096, temperature: 0.7, top_p: 0.9 }
+
+      await agentInit(config, 'http://127.0.0.1:18792')
+      await agentCreateSession(sid, projectRoot ?? undefined)
+    }
+
+    initAgent().catch(console.error)
+
+    return () => {
+      // Cleanup session on unmount
+      if (sessionIdRef.current) {
+        agentDestroySession(sessionIdRef.current).catch(() => {})
       }
-    }).catch(() => {})
+    }
   }, [projectRoot])
+
+  // Load agent history when session is ready
+  useEffect(() => {
+    if (!sessionIdRef.current || !isTauriAvailable()) return
+
+    agentGetHistory(sessionIdRef.current)
+      .then((history: ChatMessage[]) => {
+        if (history.length > 0) {
+          setMessages(history.map(m => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })))
+        }
+      })
+      .catch(() => {})
+  }, [sessionIdRef.current])
 
   useEffect(() => {
     scrollToBottom()
@@ -104,28 +144,63 @@ export default function Chat() {
   }, [projectRoot])
 
   const sendMessage = useCallback(async () => {
-    if (!input.trim() || isLoading || !projectRoot) return
+    if (!input.trim() || isLoading || !projectRoot || !sessionIdRef.current) return
 
     const userMsg = input.trim()
     setInput('')
     setIsLoading(true)
 
-    // 构造完整消息列表：历史 + 新用户消息
     const allMessages = [...messages, { role: 'user' as const, content: userMsg }]
     setMessages(allMessages)
 
+    const assistantMsgId = Date.now().toString()
+    setMessages(prev => [...prev, { id: assistantMsgId, role: 'assistant', content: '' }])
+
+    let fullContent = ''
+    let settled = false
+
     try {
-      const resp = await agentChat(
-        projectRoot,
-        allMessages.map(m => ({ role: m.role, content: m.content })),
+      const cancel = await agentChatStream(
+        sessionIdRef.current,
+        userMsg,
+        (delta) => {
+          fullContent += delta
+          setMessages(prev =>
+            prev.map(m => m.id === assistantMsgId
+              ? { ...m, content: fullContent }
+              : m
+            )
+          )
+        },
+        () => {
+          if (!settled) {
+            settled = true
+          }
+        },
+        (error) => {
+          if (!settled) {
+            settled = true
+            setMessages(prev =>
+              prev.map(m => m.id === assistantMsgId
+                ? { ...m, content: `错误: ${error}` }
+                : m
+              )
+            )
+          }
+        },
       )
-      if (resp.success) {
-        setMessages(prev => [...prev, { role: 'assistant', content: resp.content }])
-      } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: `错误: ${resp.error || '未知错误'}` }])
-      }
+
+      // Cleanup listener on unmount
+      return () => cancel()
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `网络错误: ${e instanceof Error ? e.message : String(e)}` }])
+      if (!settled) {
+        setMessages(prev =>
+          prev.map(m => m.id === assistantMsgId
+            ? { ...m, content: `网络错误: ${e instanceof Error ? e.message : String(e)}` }
+            : m
+          )
+        )
+      }
     } finally {
       setIsLoading(false)
     }
@@ -209,7 +284,6 @@ export default function Chat() {
                     remarkPlugins={[remarkGfm]}
                     components={{
                       p: ({ children }) => {
-                        // Process inline LaTeX in paragraph text
                         const processed = renderInlineLatex(children)
                         return <p style={{ margin: '6px 0' }}>{processed}</p>
                       },
@@ -222,7 +296,6 @@ export default function Chat() {
                       ),
                       code: ({ node, className, children, ...props }) => {
                         const text = String(children).trim()
-                        // 行内代码：检测 SMILES
                         if (!className && isSmiles(text)) {
                           return (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', verticalAlign: 'middle' }}>
@@ -283,7 +356,6 @@ export default function Chat() {
 
       {/* 快捷操作 + 输入框 — 底部 */}
       <div style={{ flexShrink: 0 }}>
-        {/* 快捷操作 */}
         <div style={{
           display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap',
         }}>
@@ -292,7 +364,6 @@ export default function Chat() {
           <QuickAction icon={<FlaskIcon size={13} />} label="分子对接" onClick={() => insertTemplate('dock')} />
         </div>
 
-        {/* 输入框 */}
         <div style={{
           display: 'flex', gap: '12px', padding: '12px 16px',
           background: 'var(--bg-surface)', borderRadius: '12px',

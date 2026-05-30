@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .settings import ProjectSettings
-from ..utils.constants import PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS
+from ..utils.constants import APP_VERSION, PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS
 from ..utils.helpers import generate_uuid, sha256_file
 from ..utils.logger import get_logger
 
@@ -51,12 +51,19 @@ class DocumentEntry:
             return "data"
         return "text"
 
-    def to_dict(self) -> dict:
-        try:
-            rel_path = str(self.path.relative_to(self.path.anchor))
-        except ValueError:
-            # 不同驱动器或无法相对化时使用绝对路径
-            rel_path = str(self.path)
+    def to_dict(self, project_root: Path | None = None) -> dict:
+        resolved = self.path.resolve()
+        if project_root is not None:
+            try:
+                rel_path = str(resolved.relative_to(project_root.resolve()))
+            except ValueError:
+                rel_path = str(resolved)
+        else:
+            # fallback: 兼容旧调用方
+            try:
+                rel_path = str(resolved.relative_to(resolved.anchor))
+            except ValueError:
+                rel_path = str(resolved)
         return {
             "doc_id": self.doc_id,
             "path": rel_path,
@@ -71,10 +78,14 @@ class DocumentEntry:
     @classmethod
     def from_dict(cls, data: dict, project_root: Path) -> DocumentEntry:
         rel = Path(data["path"])
-        # 尝试解析相对路径
-        full = project_root / rel
-        if not full.exists():
-            full = project_root / rel.name
+        # 兼容旧数据：如果 rel 是绝对路径（含盘符或 / 开头），直接用
+        if rel.is_absolute():
+            full = rel
+        else:
+            full = project_root / rel
+            if not full.exists():
+                # fallback: 只用文件名
+                full = project_root / rel.name
         entry = cls(
             path=full,
             doc_id=data.get("doc_id", ""),
@@ -122,9 +133,9 @@ class Project:
     def _save_index(self) -> None:
         self.meta_dir.mkdir(parents=True, exist_ok=True)
         data = {
-            "version": "0.2.0",  # APP_VERSION, kept as string for JSON compat
+            "version": APP_VERSION,
             "updated_at": datetime.now().isoformat(),
-            "documents": [e.to_dict() for e in self._index.values()],
+            "documents": [e.to_dict(self.root) for e in self._index.values()],
         }
         with open(self._index_path(), "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -148,7 +159,7 @@ class Project:
                 entry = self._index.get(self._path_index.get(resolved))
                 is_new = False
                 if entry is None:
-                    entry = DocumentEntry(path=file_path)
+                    entry = DocumentEntry(path=resolved)
                     self._index[entry.doc_id] = entry
                     self._path_index[resolved] = entry.doc_id
                     is_new = True

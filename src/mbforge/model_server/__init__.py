@@ -1,3 +1,5 @@
 """MBForge 模型服务进程."""
 
-__version__ = "1.0.0"
+from ..utils.constants import APP_VERSION
+
+__version__ = APP_VERSION

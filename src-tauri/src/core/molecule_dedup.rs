@@ -23,6 +23,9 @@ pub fn canonicalize_smiles(smiles: &str) -> String {
     if trimmed.is_empty() {
         return String::new();
     }
+    // TODO-AUDIT: feature "smiles-canonical" is referenced here but not defined in
+    // Cargo.toml — the conditional always evaluates to false. Either add the feature
+    // to [features] in Cargo.toml or remove the conditional.
     #[cfg(feature = "smiles-canonical")]
     {
         if let Ok(canon) = smiles_canonical::canonicalize(&trimmed) {
@@ -32,6 +35,9 @@ pub fn canonicalize_smiles(smiles: &str) -> String {
     trimmed
 }
 
+// TODO-AUDIT: call_tanimoto_sidecar is dead code — defined but never called.
+// Additionally, the response field checked here is "score" but chem.py returns
+// "tanimoto" — if ever wired in, this function would always fail.
 pub fn call_tanimoto_sidecar(
     smiles_a: &str,
     smiles_b: &str,
@@ -51,7 +57,7 @@ pub fn call_tanimoto_sidecar(
     let val: serde_json::Value = resp
         .json()
         .map_err(|e| format!("Tanimoto response parse failed: {}", e))?;
-    val.get("score")
+    val.get("tanimoto")
         .and_then(|v| v.as_f64())
         .ok_or_else(|| format!("Invalid tanimoto response: {}", val))
 }
@@ -134,6 +140,9 @@ pub fn run_dedup_batch(
     }
 }
 
+// TODO-AUDIT: silently returns empty Vec if molecules table doesn't exist.
+// This causes dedup to treat all molecules as new (no duplicate detection).
+// Consider logging a warning or returning an explicit error.
 fn load_existing_molecules(db: &MoleculeRelationDb) -> Vec<(String, String)> {
     let conn = db.relations_conn();
     let mut stmt = match conn.prepare("SELECT mol_id, smiles FROM molecules") {

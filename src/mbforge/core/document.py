@@ -12,6 +12,7 @@ except ImportError:
     fitz = None  # type: ignore
 
 from ..utils.helpers import split_text_chunks
+from .document_tree import extract_headings
 
 
 @dataclass
@@ -25,6 +26,8 @@ class ExtractedContent:
     tables: list[list[list[str]]] = field(default_factory=list)
     chunks: list[str] = field(default_factory=list)
     summary: str = ""
+    headings: list[dict[str, Any]] = field(default_factory=list)
+    page_texts: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -35,6 +38,7 @@ class ExtractedContent:
             "tables": self.tables,
             "chunks": self.chunks,
             "summary": self.summary,
+            "headings": self.headings,
         }
 
 
@@ -53,15 +57,22 @@ class DocumentProcessor:
         return cls.read_text(path)
 
     @classmethod
-    def read_pdf_text(cls, path: Path) -> str:
-        """使用 PyMuPDF 提取 PDF 文本."""
+    def read_pdf_text(cls, path: Path) -> tuple[str, list[str]]:
+        """使用 PyMuPDF 提取 PDF 文本.
+
+        Returns:
+            (全文, 按页文本列表)
+        """
         text_parts = []
+        page_texts = []
         if fitz is None:
             raise ImportError("PyMuPDF (fitz) is required for PDF processing")
         with fitz.open(str(path)) as doc:
             for page in doc:
-                text_parts.append(page.get_text())
-        return "\n\n".join(text_parts)
+                page_text = page.get_text()
+                page_texts.append(page_text)
+                text_parts.append(page_text)
+        return "\n\n".join(text_parts), page_texts
 
     @classmethod
     def extract_pdf_images(cls, path: Path, output_dir: Path) -> list[Path]:
@@ -94,8 +105,7 @@ class DocumentProcessor:
         返回: [表格] -> [行] -> [单元格]
         """
         tables = []
-        # TODO: 集成更强大的表格提取
-        # 目前返回空，后续可接入 camelot / tabula
+        # TODO-AUDIT: 集成更强大的表格提取 — 目前返回空列表，后续可接入 camelot / tabula
         return tables
 
     @classmethod
@@ -111,7 +121,7 @@ class DocumentProcessor:
         content.metadata["filename"] = path.name
 
         if ext == ".pdf":
-            content.text = cls.read_pdf_text(path)
+            content.text, content.page_texts = cls.read_pdf_text(path)
             if fitz:
                 content.metadata["pages"] = len(fitz.open(str(path)))
         elif ext == ".md":
@@ -121,8 +131,14 @@ class DocumentProcessor:
         else:
             content.text = ""
 
-        # 分块
+        # 提取 heading 层级（参考 PageIndex）
         if content.text:
-            content.chunks = split_text_chunks(content.text, chunk_size, chunk_overlap)
+            content.headings = extract_headings(content.text)
+
+        # 分块（注入 section 元信息）
+        if content.text:
+            content.chunks = split_text_chunks(
+                content.text, chunk_size, chunk_overlap, content.headings
+            )
 
         return content

@@ -1,3 +1,6 @@
+// TODO-AUDIT: DocumentMetadata is imported but rustc reports it as unused at top level.
+// It IS used inside mod tests via `use super::*` glob re-export, but the explicit
+// import is technically redundant. Move into tests block or remove explicit import.
 use super::post_process::{DocumentMetadata, StructuredData};
 
 use crate::parsers::post_process::generate_report as post_process_generate_report;
@@ -42,6 +45,7 @@ pub fn generate_full_report(
 }
 
 /// 生成简短的 Markdown 摘要（用于预览/通知）
+// TODO-AUDIT: generate_summary is never called — dead code. Remove or wire up.
 pub fn generate_summary(data: &StructuredData) -> String {
     let mut r = String::new();
 

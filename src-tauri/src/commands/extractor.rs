@@ -53,6 +53,135 @@ fn extract_context(text: &str, start: usize, end: usize) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Phase 1.1: SMILES-activity position association
+// Port of `MoleculeExtractor.extract_from_text()` from
+// `src/mbforge/parsers/molecule/molecule_extractor.py`.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmilesWithPosition {
+    pub smiles: String,
+    pub position: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssociatedMolecule {
+    pub smiles: String,
+    pub activity: Option<ActivityData>,
+    pub position: usize,
+    pub confidence: String,
+    pub source_doc: String,
+}
+
+/// Extract SMILES candidates with their text positions.
+fn extract_smiles_with_positions(text: &str) -> Vec<SmilesWithPosition> {
+    let mut seen = std::collections::HashSet::new();
+    let mut results = Vec::new();
+
+    for m in SMILES_RE.find_iter(text) {
+        let candidate = m.as_str();
+        if seen.contains(candidate) {
+            continue;
+        }
+        if is_valid_smiles_candidate(candidate) {
+            seen.insert(candidate.to_string());
+            results.push(SmilesWithPosition {
+                smiles: candidate.to_string(),
+                position: m.start(),
+            });
+        }
+    }
+
+    results
+}
+
+/// Extract activity data with their text positions.
+fn extract_activities_with_positions(text: &str) -> Vec<(ActivityData, usize)> {
+    let mut results = Vec::new();
+
+    for caps in ACTIVITY_RE.captures_iter(text) {
+        let activity_type = caps.get(1).unwrap().as_str().to_uppercase();
+        let value: f64 = caps.get(2).unwrap().as_str().parse().unwrap_or(0.0);
+        let units = caps.get(3).unwrap().as_str().replace("uM", "µM");
+        let context = extract_context(
+            text,
+            caps.get(0).unwrap().start(),
+            caps.get(0).unwrap().end(),
+        );
+        let pos = caps.get(0).unwrap().start();
+
+        results.push((
+            ActivityData {
+                activity_type,
+                value,
+                units,
+                context,
+            },
+            pos,
+        ));
+    }
+
+    results
+}
+
+/// Extract SMILES from text and associate them with nearby activity data
+/// based on spatial proximity (200-character window).
+///
+/// Port of `MoleculeExtractor.extract_from_text()`.
+#[tauri::command]
+pub fn extract_associated_molecules(
+    text: String,
+    source_doc: String,
+) -> Vec<AssociatedMolecule> {
+    let smiles_list = extract_smiles_with_positions(&text);
+    let activities = extract_activities_with_positions(&text);
+    let proximity_window: usize = 200;
+
+    let mut used = vec![false; activities.len()];
+    let mut results = Vec::new();
+
+    for s in &smiles_list {
+        let mut best_idx = None;
+        let mut best_dist = usize::MAX;
+
+        for (i, (_, act_pos)) in activities.iter().enumerate() {
+            if used[i] {
+                continue;
+            }
+            let dist = if s.position > *act_pos {
+                s.position - act_pos
+            } else {
+                act_pos - s.position
+            };
+            if dist < best_dist {
+                best_dist = dist;
+                best_idx = Some(i);
+            }
+        }
+
+        let activity = best_idx.and_then(|idx| {
+            if best_dist < proximity_window {
+                used[idx] = true;
+                Some(activities[idx].0.clone())
+            } else {
+                None
+            }
+        });
+
+        let confidence = if activity.is_some() { "high" } else { "low" }.to_string();
+        results.push(AssociatedMolecule {
+            smiles: s.smiles.clone(),
+            activity,
+            position: s.position,
+            confidence,
+            source_doc: source_doc.clone(),
+        });
+    }
+
+    results
+}
+
+// ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
 

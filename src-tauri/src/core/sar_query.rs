@@ -86,6 +86,9 @@ pub fn find_analogs_with_activity(
         }
     }
 
+    // TODO-AUDIT: partial_cmp returns None for NaN; unwrap() would panic.
+    // If DB contains NaN similarity scores, this will panic. Consider using
+    // sorted_by_key with a NaN-aware comparator.
     results.sort_by(|a, b| b.similarity_score.partial_cmp(&a.similarity_score).unwrap());
     Ok(results)
 }

@@ -22,6 +22,7 @@ fn write_file(name: &str, content: &str) -> PathBuf {
 }
 
 #[test]
+#[ignore = "requires real PDF + MinerU API key + LLM — run with: cargo test -- --ignored"]
 fn test_full_pipeline_with_real_patent() {
     // Load .env
     let _ = dotenvy::dotenv();
@@ -99,6 +100,7 @@ fn test_full_pipeline_with_real_patent() {
         activities: activities.clone(),
         parser: "mineru_precise".to_string(),
         page_count,
+        images: vec![],
     };
     let parse_json = serde_json::to_string_pretty(&parse_result).unwrap();
     write_file("06_parse_result.json", &parse_json);

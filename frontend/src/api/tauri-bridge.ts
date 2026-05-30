@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
 /** True when running inside a Tauri webview (desktop app). */
 export function isTauriAvailable(): boolean {
@@ -115,30 +116,96 @@ export async function parsePdf(
   })
 }
 
-// ---- agent ----
+// ---- agent (session-based, per-conversation isolation) ----
 
 export interface ChatMessage {
   role: string
   content: string
 }
 
-export async function agentInit(projectRoot: string): Promise<void> {
-  await invoke('agent_init', { projectRoot })
+export async function agentInit(config: {
+  provider: string
+  base_url: string
+  api_key: string
+  model_name: string
+  max_tokens: number
+  temperature: number
+  top_p: number
+}, sidecarUrl: string): Promise<void> {
+  await invoke('agent_init', { config, sidecarUrl })
 }
 
-export async function agentChat(
-  projectRoot: string,
-  messages: ChatMessage[],
-): Promise<string> {
-  return invoke<string>('agent_chat', { projectRoot, messages })
+export async function agentCreateSession(sessionId: string, projectRoot?: string): Promise<void> {
+  await invoke('agent_create_session', { sessionId, projectRoot: projectRoot ?? null })
 }
 
-export async function agentClear(projectRoot: string): Promise<void> {
-  await invoke('agent_clear', { projectRoot })
+export async function agentChat(sessionId: string, userInput: string): Promise<string> {
+  return invoke<string>('agent_chat', { sessionId, userInput })
 }
 
-export async function agentGetHistory(projectRoot: string): Promise<ChatMessage[]> {
-  return invoke<ChatMessage[]>('agent_get_history', { projectRoot })
+export type AgentStreamEvent = {
+  session_id: string
+  delta: string
+  finish_reason: string | null
+}
+
+export interface DocumentReport {
+  metadata: { title: string | null; authors: string[]; document_type: string; key_targets: string[]; source_file: string | null }
+  compounds: { name: string; smiles: string | null; category: string | null; description: string; source_ref: string; confidence: string; uncertainty_reason: string | null }[]
+  activities: { compound: string; activity_type: string; value: number; units: string; target: string; source_quote: string; source_ref: string; confidence: string }[]
+  key_findings: { finding: string; evidence: string; source_ref: string; confidence: string }[]
+  sar_analysis: string
+  uncertain_items: { item_type: string; content: string; reason: string; suggested_action: string }[]
+  report_markdown: string
+}
+
+export async function agentChatStream(
+  sessionId: string,
+  userInput: string,
+  onChunk: (delta: string) => void,
+  onDone: () => void,
+  onError: (error: string) => void,
+): Promise<() => void> {
+  // Start streaming
+  invoke('agent_chat_stream', { sessionId, userInput }).catch(err => onError(String(err)))
+
+  // Listen for chunks
+  const unlistenChunk = await listen<AgentStreamEvent>('agent-stream-chunk', (event) => {
+    if (event.payload.session_id === sessionId) {
+      onChunk(event.payload.delta)
+      if (event.payload.finish_reason) {
+        onDone()
+      }
+    }
+  })
+
+  // Listen for done signal
+  const unlistenDone = await listen<{ session_id: string }>('agent-stream-done', (event) => {
+    if (event.payload.session_id === sessionId) {
+      onDone()
+    }
+  })
+
+  return () => {
+    unlistenChunk()
+    unlistenDone()
+  }
+}
+
+export async function agentSwitchProject(sessionId: string, projectRoot: string, projectName: string): Promise<void> {
+  await invoke('agent_switch_project', { sessionId, projectRoot, projectName })
+}
+
+export async function agentClear(sessionId: string): Promise<void> {
+  await invoke('agent_clear', { sessionId })
+}
+
+export async function agentDestroySession(sessionId: string): Promise<void> {
+  await invoke('agent_destroy_session', { sessionId })
+}
+
+export async function agentGetHistory(sessionId: string): Promise<ChatMessage[]> {
+  return invoke<ChatMessage[]>('agent_get_history', { sessionId })
 }
 
 // ---- post_process ----
@@ -173,4 +240,21 @@ export interface PostProcessResult {
 
 export async function postProcessPdf(parseResult: PdfParseResult): Promise<PostProcessResult> {
   return invoke<PostProcessResult>('post_process_pdf', { parseResult })
+}
+
+// ---- process_document (A3: 完整文档处理管线) ----
+
+export interface DocProgressEvent {
+  stage: string
+  payload: Record<string, unknown>
+}
+
+export async function processDocument(
+  path: string,
+  userRequest?: string,
+): Promise<void> {
+  return invoke<void>('process_document', {
+    path,
+    userRequest: userRequest ?? '',
+  })
 }

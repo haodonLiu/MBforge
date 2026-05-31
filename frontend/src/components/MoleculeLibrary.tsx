@@ -14,12 +14,14 @@ import BodyText from '../components/ui/BodyText'
 import Skeleton from '../components/ui/Skeleton'
 import Button from '../components/ui/Button'
 import EmptyState from '../components/ui/EmptyState'
+import { AddMoleculeDialog } from '../components/ui/AddMoleculeDialog'
 
 export default function MoleculeLibrary() {
   const [search, setSearch] = useState('')
   const [molecules, setMolecules] = useState<MoleculeRecord[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showAddDialog, setShowAddDialog] = useState(false)
 
   const loadMolecules = async () => {
     const projectRoot = getProjectRoot()
@@ -78,7 +80,7 @@ export default function MoleculeLibrary() {
         marginBottom: '24px',
       }}>
         <PageTitle>分子库</PageTitle>
-        <Button variant="primary" size="sm" onClick={() => import('../hooks/useToast').then(({ showToast }) => showToast('添加分子功能即将推出', 'info'))}>+ 添加分子</Button>
+        <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)}>+ 添加分子</Button>
       </div>
 
       <div style={{
@@ -165,6 +167,15 @@ export default function MoleculeLibrary() {
             ))}
           </CardGrid>
         </StaggerContainer>
+      )}
+
+      {projectRoot && (
+        <AddMoleculeDialog
+          open={showAddDialog}
+          onClose={() => setShowAddDialog(false)}
+          projectRoot={projectRoot}
+          onAdded={loadMolecules}
+        />
       )}
     </PageContainer>
   )

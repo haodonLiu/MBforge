@@ -70,6 +70,14 @@ export const FolderIcon: React.FC<IconProps> = ({ size = 20 }) =>
     size,
   )
 
+export const FolderOpenIcon: React.FC<IconProps> = ({ size = 20 }) =>
+  svg(
+    <>
+      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z" />
+    </>,
+    size,
+  )
+
 export const WorkflowIcon: React.FC<IconProps> = ({ size = 20 }) =>
   svg(
     <>
@@ -326,6 +334,50 @@ export const InfoIcon: React.FC<IconProps> = ({ size = 20 }) =>
       <circle cx="12" cy="12" r="10" />
       <line x1="12" y1="16" x2="12" y2="12" />
       <line x1="12" y1="8" x2="12.01" y2="8" />
+    </>,
+    size,
+  )
+
+export const RefreshCwIcon: React.FC<IconProps> = ({ size = 20 }) =>
+  svg(
+    <>
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </>,
+    size,
+  )
+
+export const CpuIcon: React.FC<IconProps> = ({ size = 20 }) =>
+  svg(
+    <>
+      <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
+      <rect x="9" y="9" width="6" height="6" />
+      <line x1="9" y1="1" x2="9" y2="4" />
+      <line x1="15" y1="1" x2="15" y2="4" />
+      <line x1="9" y1="20" x2="9" y2="23" />
+      <line x1="15" y1="20" x2="15" y2="23" />
+      <line x1="20" y1="9" x2="23" y2="9" />
+      <line x1="20" y1="15" x2="23" y2="15" />
+      <line x1="1" y1="9" x2="4" y2="9" />
+      <line x1="1" y1="15" x2="4" y2="15" />
+    </>,
+    size,
+  )
+
+export const DnaIcon: React.FC<IconProps> = ({ size = 20 }) =>
+  svg(
+    <>
+      <path d="M2 15c6.667-6 13.333 0 20-6" />
+      <path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993" />
+      <path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993" />
+      <path d="M17 6l-2.5-2.5" />
+      <path d="M14 8l-1-1" />
+      <path d="M7 18l2.5 2.5" />
+      <path d="M3.5 14.5l.5.5" />
+      <path d="M5 10l.5.5" />
+      <path d="M2 15c6.667-6 13.333 0 20-6" />
+      <path d="M2 9c6.667 6 13.333 0 20 6" />
     </>,
     size,
   )

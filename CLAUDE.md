@@ -192,7 +192,6 @@ PDF 解析 Python→Rust 迁移进展：
 | `src-tauri/src/commands/molecule.rs` | 18 个分子数据库 Tauri 命令 |
 | `src-tauri/src/commands/agent.rs` | Agent 会话 Tauri 命令 |
 | `src/mbforge/model_server/main.py` | FastAPI 模型服务器入口 |
-| `src/mbforge/model_server/agent_manager.py` | Agent 桥接单例管理 |
 | `src/mbforge/core/knowledge_base.py` | ChromaDB 向量知识库 |
 | `frontend/src/App.tsx` | React 前端路由入口 |
 | `frontend/src/api/tauri-bridge.ts` | Tauri invoke 桥接 |
@@ -218,7 +217,7 @@ app.invoke_handler(tauri::generate_handler![
 ### Adding a new Rust Agent tool
 
 ```rust
-// 1. 在 core/tools.rs 注册 ToolInfo
+// 1. 在 core/executor.rs 注册 ToolInfo
 ToolInfo {
     name: "my_tool",
     description: "Description for LLM",
@@ -262,7 +261,7 @@ ToolInfo {
 | 公共 API 参考 | `docs/API.md` |
 | 技术栈详情 | `docs/TECH_STACK.md` |
 | 开发指南 | `docs/DEVELOPMENT.md` |
-| PDF 迁移规划 | `docs/pipeline-migration-plan.md` |
+| Agent 工作规范 | `AGENTS.md` || PDF 迁移规划 | `docs/pipeline-migration-plan.md` |
 | 管线重设计 | `docs/pipeline-redesign.md` |
 | PDF 提取工作流 | `docs/pdf-extraction-workflow.md` |
 

@@ -28,14 +28,18 @@ export interface SearchResult {
 
 export interface MoleculeRecord {
   mol_id: string
-  smiles: string
-  esmiles?: string
+  esmiles: string
   name: string
   source_doc: string
+  source_type: string
   activity: number | null
   activity_type: string
   units: string
+  status: string
   properties: Record<string, unknown>
+  tags: string[]
+  notes: string
+  created_at: string
 }
 
 export interface ModelStatus {

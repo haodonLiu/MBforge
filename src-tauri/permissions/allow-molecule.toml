@@ -1,0 +1,22 @@
+[[permission]]
+identifier = "allow-molecule"
+description = "Allows molecule database operations"
+commands.allow = [
+  "mol_init",
+  "mol_add_relation",
+  "mol_delete_relation",
+  "mol_get_relation",
+  "mol_find_by_molecule",
+  "mol_find_similar",
+  "mol_find_same_as",
+  "mol_get_stats",
+  "mol_assign_cluster",
+  "mol_remove_from_cluster",
+  "mol_get_cluster_members",
+  "mol_get_molecule_clusters",
+  "mol_list_clusters",
+  "mol_find_analogs_with_activity",
+  "mol_scaffold_profile",
+  "mol_find_activity_cliffs",
+  "mol_dedup_batch",
+]

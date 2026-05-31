@@ -486,8 +486,7 @@ pub async fn index_project_rust(
     root: String,
 ) -> Result<IndexResult, String> {
     let project_root = std::path::PathBuf::from(&root);
-    let config = crate::core::config::EmbedConfig::default();
-    let kb = crate::core::knowledge_base::KnowledgeBase::new(&project_root, &config)
+    let kb = crate::core::knowledge_base::KnowledgeBase::new(&project_root)
         .map_err(|e| format!("KB init failed: {}", e))?;
 
     // 扫描 PDF 文件
@@ -538,7 +537,7 @@ pub async fn index_project_rust(
 
                 total_sections += sections.len();
 
-                match kb.index_document(&doc_id, &sections, &[]).await {
+                match kb.index_document(&doc_id, &sections, &[]) {
                     Ok(_) => {
                         indexed += 1;
                     }
@@ -645,60 +644,155 @@ async fn run_meta_analysis(ctx: &DocProcessingContext) -> Result<DocStructure, S
     crate::parsers::intent::parse_meta_response(&response)
 }
 
-/// Stage 3: 调用 LLM 合并多 section 结果 + SAR 分析
+/// Stage 3: 多 section 结果合并 + 构效关系 (SAR) 分析
+/// 
+/// 输入：各 section 的提取结果 + VLM 识别的 SMILES
+/// 任务：
+/// 1. 去重合并相同化合物/活性数据
+/// 2. 交叉验证文字提取与 VLM 结果
+/// 3. 分析构效关系 (SAR)
+/// 4. 生成最终结构化报告
 async fn run_merge_and_sar(
     section_results: &[StructuredData],
     vlm_results: &[(String, crate::parsers::vlm_chem::ChemImageResult)],
     structure: &DocStructure,
 ) -> Result<(StructuredData, String), String> {
+    // 构建 section 摘要
     let sections_text: Vec<String> = section_results
         .iter()
-        .map(|s| {
+        .enumerate()
+        .map(|(i, s)| {
+            let title = s.metadata.title.as_deref().unwrap_or("未命名");
             format!(
-                "摘要: {}\n化合物: {} 个\n活性数据: {} 条",
-                &s.summary[..s.summary.len().min(200)],
+                "## Section {}: {}\n摘要: {}\n化合物: {} 个 | 活性数据: {} 条",
+                i + 1,
+                title,
+                &s.summary[..s.summary.len().min(300)],
                 s.compounds.len(),
                 s.activities.len(),
             )
         })
         .collect();
 
+    // VLM 识别的化学结构
     let vlm_text: Vec<String> = vlm_results
         .iter()
-        .map(|(fname, result)| format!("{}: {} (conf: {:.2})", fname, result.esmiles, result.confidence))
+        .map(|(fname, result)| {
+            format!(
+                "- **{}**: `{}` (置信度: {:.0}%)",
+                fname,
+                result.esmiles,
+                result.confidence * 100.0
+            )
+        })
         .collect();
 
     let prompt = format!(
-        r#"请验证并合并以下多部分提取结果，生成最终报告。
+        r#"## 任务
+合并多个 section 的提取结果，进行去重、交叉验证和构效关系分析，生成最终报告。
 
-原始文档类型: {doc_type}
+## 文档信息
+- **原始类型**: {doc_type}
+- **Section 数量**: {section_count}
+- **VLM 识别**: {vlm_count} 个化学结构
 
-各部分的提取结果：
+## 各 Section 提取结果
 {sections}
 
-VLM 识别的 SMILES：
+## VLM 图像识别结果
 {vlm}
 
-验证要求：
-1. 去重：相同化合物只保留一条
-2. 交叉验证：文字提取与 VLM 图像识别结果不一致时标记 uncertain
-3. 构效关系分析：总结关键 SAR 发现（500字以内）
-4. 标注不确定项
+---
 
-输出 JSON（只输出 JSON，不要其他文字）：
+## 合并与验证规范
+
+### 1. 去重规则
+| 类型 | 去重依据 |
+|------|----------|
+| 化合物 | name 完全相同，或 SMILES 完全相同 |
+| 活性数据 | compound + activity_type + value 完全相同 |
+| 发现 | finding 内容高度相似 |
+
+### 2. 冲突处理
+- **文字 vs VLM**: 如 SMILES 不一致，保留文字提取结果，VLM 结果标记为 uncertain
+- **数值冲突**: 以原文引用更明确的为准
+
+### 3. 构效关系 (SAR) 分析
+分析以下内容：
+- **活性趋势**: 哪些结构修饰提高/降低了活性
+- **关键基团**: 哪些官能团对活性有显著影响
+- **构效规律**: 总结活性与结构的关系
+- **参考化合物对比**: 与已知化合物比较
+
+输出要求：
+- 500 字以内
+- 中文
+- 包含具体数据支持
+
+---
+
+## 输出格式
+**只输出 JSON**：
+
+```json
 {{
-  "metadata": {{"title": "...", "document_type": "...", "key_targets": ["..."], "authors": ["..."]}},
-  "summary": "200字中文摘要",
-  "compounds": [{{"name": "...", "smiles": "...或null", "category": "...", "description": "...", "source_ref": "...", "confidence": "high/medium/low", "uncertainty_reason": "..."}}],
-  "activities": [{{"compound": "...", "activity_type": "...", "value": 0.0, "units": "nM", "target": "...", "source_quote": "...", "source_ref": "...", "confidence": "high/medium/low", "uncertainty_reason": "..."}}],
-  "key_findings": [{{"finding": "...", "evidence": "...", "source_ref": "...", "confidence": "high/medium/low", "uncertainty_reason": "..."}}],
+  "metadata": {{
+    "title": "string | null",
+    "authors": ["string"],
+    "document_type": "string",
+    "key_targets": ["string"]
+  }},
+  "summary": "200-400字中文摘要",
+  "compounds": [
+    {{
+      "name": "string",
+      "smiles": "string | null",
+      "category": "lead | hit | reference | intermediate | null",
+      "description": "string",
+      "source_ref": "string",
+      "confidence": "high | medium | low",
+      "uncertainty_reason": "string | null"
+    }}
+  ],
+  "activities": [
+    {{
+      "compound": "string",
+      "activity_type": "IC50 | pIC50 | EC50 | Ki | 抑制率",
+      "value": number,
+      "units": "nM | μM | %",
+      "target": "string | null",
+      "source_quote": "string",
+      "source_ref": "string",
+      "confidence": "high | medium | low",
+      "uncertainty_reason": "string | null"
+    }}
+  ],
+  "key_findings": [
+    {{
+      "finding": "string",
+      "evidence": "string",
+      "source_ref": "string",
+      "confidence": "high | medium | low",
+      "uncertainty_reason": "string | null"
+    }}
+  ],
   "sar_analysis": "构效关系总结（500字以内）",
-  "uncertain_items": [{{"item_type": "...", "content": "...", "reason": "...", "suggested_action": "..."}}]
-}}"#,
+  "uncertain_items": [
+    {{
+      "item_type": "string",
+      "content": "string",
+      "reason": "string",
+      "suggested_action": "string"
+    }}
+  ]
+}}
+```"#,
         doc_type = structure.doc_type,
-        sections = sections_text.join("\n---\n"),
+        section_count = section_results.len(),
+        vlm_count = vlm_results.len(),
+        sections = sections_text.join("\n\n---\n\n"),
         vlm = if vlm_text.is_empty() {
-            "无".to_string()
+            "（无 VLM 识别结果）".to_string()
         } else {
             vlm_text.join("\n")
         },
@@ -707,7 +801,7 @@ VLM 识别的 SMILES：
     let config = crate::parsers::post_process::load_llm_config()?;
     let (response, _tokens) = crate::parsers::post_process::call_llm_api(
         &config,
-        "你是分子科学文档分析专家。从 PDF 提取结果中整理出结构化数据，输出 JSON。",
+        "你是分子科学文档分析专家。合并多部分提取结果，进行去重、验证和构效关系分析，输出 JSON。",
         &prompt,
     )?;
 

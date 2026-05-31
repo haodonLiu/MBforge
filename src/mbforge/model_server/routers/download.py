@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from ...utils.constants import get_model_cache_dir
 from ...utils.logger import get_logger
+from ...utils.config import load_global_config, save_global_config
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -23,10 +25,11 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "embedding",
         "description": "通义千问3 嵌入模型 (0.6B)",
         "ms_repo": "Qwen/Qwen3-Embedding-0.6B",
+        "hf_repo": "Qwen/Qwen3-Embedding-0.6B",
         "download_type": "snapshot",
         "license": "Apache-2.0",
         "license_url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B/blob/main/LICENSE",
-        "size_mb": 1200,
+        "size_mb": 1152,  # 实际大小: ~1151.55 MB
         "source_url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
     },
     "qwen3-reranker-0.6b": {
@@ -34,10 +37,11 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "reranker",
         "description": "通义千问3 重排序模型 (0.6B)",
         "ms_repo": "Qwen/Qwen3-Reranker-0.6B",
+        "hf_repo": "Qwen/Qwen3-Reranker-0.6B",
         "download_type": "snapshot",
         "license": "Apache-2.0",
         "license_url": "https://huggingface.co/Qwen/Qwen3-Reranker-0.6B/blob/main/LICENSE",
-        "size_mb": 1200,
+        "size_mb": 1152,  # 实际大小: ~1151.55 MB
         "source_url": "https://huggingface.co/Qwen/Qwen3-Reranker-0.6B",
     },
     "moldetv2": {
@@ -45,12 +49,13 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "detection",
         "description": "MolDetv2 分子检测模型",
         "ms_repo": "yujieq/MolDetect",
+        "hf_repo": "yujieq/MolDetect",
         "ms_file": "best.pt",
         "download_type": "file",
         "local_name": "moldetv2-doc.pt",
         "license": "Apache-2.0",
         "license_url": "https://huggingface.co/yujieq/MolDetect/blob/main/LICENSE",
-        "size_mb": 25,
+        "size_mb": 25,  # 预估大小 (实际需要从本地文件获取)
         "source_url": "https://huggingface.co/yujieq/MolDetect",
     },
     "molscribe": {
@@ -58,10 +63,11 @@ MODEL_CATALOG: dict[str, dict[str, Any]] = {
         "type": "detection",
         "description": "MolScribe 分子图像转 SMILES",
         "ms_repo": "yujieq/MolScribe",
+        "hf_repo": "yujieq/MolScribe",
         "download_type": "snapshot",
         "license": "MIT",
         "license_url": "https://github.com/thomas0809/MolScribe/blob/main/LICENSE",
-        "size_mb": 900,
+        "size_mb": 6186,  # 实际大小: ~6185.65 MB
         "source_url": "https://github.com/thomas0809/MolScribe",
     },
 }
@@ -74,6 +80,54 @@ def _get_model_cache_dir() -> Path:
     return Path(get_model_cache_dir())
 
 
+def _get_hf_cache_dir() -> Path:
+    """获取 HuggingFace 缓存目录."""
+    hf_home = os.environ.get("HF_HOME", "")
+    if hf_home:
+        return Path(hf_home)
+    return Path.home() / ".cache" / "huggingface"
+
+
+def _get_modelscope_cache_dir() -> Path:
+    """获取 ModelScope 缓存目录."""
+    ms_cache = os.environ.get("MODELSCOPE_CACHE", "")
+    if ms_cache:
+        return Path(ms_cache)
+    return Path.home() / ".cache" / "modelscope"
+
+
+def _check_model_in_cache(model_id: str, cache_dir: Path) -> dict | None:
+    """检查模型是否在指定的缓存目录中."""
+    if not cache_dir.exists():
+        return None
+    
+    info = MODEL_CATALOG.get(model_id, {})
+    if not info:
+        return None
+    
+    if info.get("download_type") == "file":
+        local_name = info.get("local_name", f"{model_id}.pt")
+        path = cache_dir / local_name
+        if path.exists() and path.stat().st_size > 0:
+            return {
+                "path": str(path),
+                "size_mb": round(path.stat().st_size / 1024 / 1024, 1),
+            }
+    else:
+        repo_name = info.get("ms_repo", "").split("/")[-1]
+        path = cache_dir / repo_name
+        if path.exists():
+            # 检查是否有模型文件
+            has_weights = any(path.rglob("*.bin")) or any(path.rglob("*.safetensors")) or any(path.rglob("*.pt"))
+            if has_weights:
+                size_bytes = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+                return {
+                    "path": str(path),
+                    "size_mb": round(size_bytes / 1024 / 1024, 1),
+                }
+    return None
+
+
 def _model_local_path(model_id: str) -> Path:
     cache_dir = _get_model_cache_dir()
     info = MODEL_CATALOG[model_id]
@@ -84,11 +138,72 @@ def _model_local_path(model_id: str) -> Path:
 
 
 def _is_downloaded(model_id: str) -> bool:
+    # 首先检查 MBForge 缓存目录
     path = _model_local_path(model_id)
     info = MODEL_CATALOG[model_id]
     if info["download_type"] == "file":
-        return path.exists() and path.stat().st_size > 0
-    return path.exists() and (any(path.rglob("*.bin")) or any(path.rglob("*.safetensors")))
+        if path.exists() and path.stat().st_size > 0:
+            return True
+    else:
+        if path.exists() and (any(path.rglob("*.bin")) or any(path.rglob("*.safetensors"))):
+            return True
+    
+    # 检查 HuggingFace 缓存目录
+    if _check_model_in_cache(model_id, _get_hf_cache_dir()):
+        return True
+    
+    # 检查 ModelScope 缓存目录
+    if _check_model_in_cache(model_id, _get_modelscope_cache_dir()):
+        return True
+    
+    return False
+
+
+def _get_model_location(model_id: str) -> dict:
+    """获取模型的存储位置信息."""
+    info = MODEL_CATALOG.get(model_id, {})
+    locations = []
+    primary_location = None
+    
+    # 检查 MBForge 缓存目录
+    mbforge_path = _model_local_path(model_id)
+    if mbforge_path.exists():
+        locations.append({
+            "source": "mbforge",
+            "path": str(mbforge_path),
+            "size_mb": round(sum(f.stat().st_size for f in mbforge_path.rglob("*") if f.is_file()) / 1024 / 1024, 1) if mbforge_path.is_dir() else round(mbforge_path.stat().st_size / 1024 / 1024, 1),
+        })
+        primary_location = "mbforge"
+    
+    # 检查 HuggingFace 缓存目录
+    hf_cache = _get_hf_cache_dir()
+    hf_result = _check_model_in_cache(model_id, hf_cache)
+    if hf_result:
+        locations.append({
+            "source": "huggingface",
+            "path": hf_result["path"],
+            "size_mb": hf_result["size_mb"],
+        })
+        if primary_location is None:
+            primary_location = "huggingface"
+    
+    # 检查 ModelScope 缓存目录
+    ms_cache = _get_modelscope_cache_dir()
+    ms_result = _check_model_in_cache(model_id, ms_cache)
+    if ms_result:
+        locations.append({
+            "source": "modelscope",
+            "path": ms_result["path"],
+            "size_mb": ms_result["size_mb"],
+        })
+        if primary_location is None:
+            primary_location = "modelscope"
+    
+    return {
+        "found": len(locations) > 0,
+        "locations": locations,
+        "primary": primary_location,
+    }
 
 
 def _download_from_modelscope(model_id: str, *, timeout: int = 300):
@@ -195,22 +310,37 @@ def _download_from_modelscope(model_id: str, *, timeout: int = 300):
 
 @router.get("/models")
 async def list_models() -> dict:
+    """列出所有模型及其状态."""
     try:
         result = []
         for mid, info in MODEL_CATALOG.items():
+            location = _get_model_location(mid)
+            
+            # 计算实际下载的大小（如果已下载）
+            actual_size_mb = info.get("size_mb", 0)
+            if location["found"] and location["locations"]:
+                # 使用主位置的大小
+                for loc in location["locations"]:
+                    if loc["source"] == location["primary"]:
+                        actual_size_mb = loc["size_mb"]
+                        break
+            
             result.append({
                 "id": mid,
                 "name": info["name"],
                 "type": info["type"],
                 "description": info.get("description", ""),
                 "ms_repo": info.get("ms_repo", ""),
-                "downloaded": _is_downloaded(mid),
+                "hf_repo": info.get("hf_repo", ""),
+                "downloaded": location["found"],
                 "downloading": _download_tasks.get(mid, False),
                 "local_path": str(_model_local_path(mid)),
                 "license": info.get("license", "Unknown"),
                 "license_url": info.get("license_url", ""),
-                "size_mb": info.get("size_mb", 0),
+                "size_mb": info.get("size_mb", 0),  # 预估/官方大小
+                "actual_size_mb": actual_size_mb,  # 实际下载大小
                 "source_url": info.get("source_url", ""),
+                "location": location,
             })
         return {"success": True, "models": result}
     except Exception as e:
@@ -218,11 +348,83 @@ async def list_models() -> dict:
         return {"success": False, "error": f"获取模型列表失败: {e}"}
 
 
+@router.get("/model-paths")
+async def get_model_paths() -> dict:
+    """返回所有模型相关的缓存路径."""
+    try:
+        return {
+            "success": True,
+            "paths": {
+                "mbforge": {
+                    "path": str(_get_model_cache_dir()),
+                    "exists": _get_model_cache_dir().exists(),
+                    "size_mb": _get_dir_size(_get_model_cache_dir()),
+                },
+                "huggingface": {
+                    "path": str(_get_hf_cache_dir()),
+                    "env_var": "HF_HOME",
+                    "exists": _get_hf_cache_dir().exists(),
+                    "size_mb": _get_dir_size(_get_hf_cache_dir()),
+                },
+                "modelscope": {
+                    "path": str(_get_modelscope_cache_dir()),
+                    "env_var": "MODELSCOPE_CACHE",
+                    "exists": _get_modelscope_cache_dir().exists(),
+                    "size_mb": _get_dir_size(_get_modelscope_cache_dir()),
+                },
+            }
+        }
+    except Exception as e:
+        logger.error(f"Get model paths failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
+def _get_dir_size(path: Path) -> float:
+    """计算目录大小（MB）."""
+    if not path.exists():
+        return 0.0
+    try:
+        size_bytes = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+        return round(size_bytes / 1024 / 1024, 1)
+    except Exception:
+        return 0.0
+
+
+@router.post("/model-dir")
+async def set_model_dir(path: str) -> dict:
+    """设置 MBForge 模型缓存目录."""
+    try:
+        new_path = Path(path).expanduser().absolute()
+        
+        # 验证路径是否有效
+        if not new_path.parent.exists():
+            return {"success": False, "error": "父目录不存在"}
+        
+        # 保存到配置
+        cfg = load_global_config()
+        cfg.model_cache_dir = str(new_path)
+        save_global_config(cfg)
+        
+        return {
+            "success": True,
+            "model_dir": str(new_path),
+            "message": "模型目录已更新，重启后生效"
+        }
+    except Exception as e:
+        logger.error(f"Set model dir failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/model-dir")
 async def get_model_dir() -> dict:
     """返回当前模型下载目录路径."""
     try:
-        return {"success": True, "model_dir": str(_get_model_cache_dir())}
+        cfg = load_global_config()
+        return {
+            "success": True, 
+            "model_dir": str(_get_model_cache_dir()),
+            "config_dir": cfg.model_cache_dir or "(default)",
+        }
     except Exception as e:
         logger.error(f"Get model dir failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
@@ -346,12 +548,14 @@ async def model_status(model_id: str) -> dict:
     try:
         if model_id not in MODEL_CATALOG:
             return {"success": False, "error": f"未知模型: {model_id}"}
+        location = _get_model_location(model_id)
         return {
             "success": True,
             "model_id": model_id,
-            "downloaded": _is_downloaded(model_id),
+            "downloaded": location["found"],
             "downloading": _download_tasks.get(model_id, False),
             "local_path": str(_model_local_path(model_id)),
+            "location": location,
         }
     except Exception as e:
         logger.error(f"Model status failed for model_id={model_id}: {e}", exc_info=True)

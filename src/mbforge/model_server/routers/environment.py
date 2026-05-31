@@ -26,6 +26,7 @@ class EnvironmentCheckResult(BaseModel):
     gpu_available: bool
     gpu_name: Optional[str] = None
     gpu_memory_mb: Optional[int] = None
+    cuda_version: Optional[str] = None
     capabilities: list[CapabilityStatus]
 
 
@@ -118,6 +119,7 @@ async def check_environment() -> EnvironmentCheckResult:
     gpu_available = False
     gpu_name = None
     gpu_memory_mb = None
+    cuda_version = None
     
     try:
         import torch
@@ -125,14 +127,15 @@ async def check_environment() -> EnvironmentCheckResult:
             gpu_available = True
             gpu_name = torch.cuda.get_device_name(0)
             gpu_memory_mb = int(torch.cuda.get_device_properties(0).total_memory / 1024 / 1024)
+            cuda_version = torch.version.cuda
     except ImportError:
         pass
     
-    # 检查 nvidia-smi
+    # 检查 nvidia-smi 获取更完整的 GPU 信息
     if not gpu_available:
         try:
             result = subprocess.run(
-                ['nvidia-smi', '--query-gpu=name,memory.total', '--format=csv,noheader'],
+                ['nvidia-smi', '--query-gpu=name,memory.total,driver_version', '--format=csv,noheader'],
                 capture_output=True,
                 text=True,
                 timeout=5
@@ -143,8 +146,13 @@ async def check_environment() -> EnvironmentCheckResult:
                     gpu_available = True
                     gpu_name = parts[0].strip()
                     if len(parts) > 1:
-                        mem_str = parts[1].strip().replace(' MiB', '').replace(' MiB', '')
-                        gpu_memory_mb = int(mem_str)
+                        mem_str = parts[1].strip().replace(' MiB', '').replace('MiB', '').strip()
+                        try:
+                            gpu_memory_mb = int(mem_str)
+                        except ValueError:
+                            pass
+                    if len(parts) > 2:
+                        cuda_version = parts[2].strip()
         except (subprocess.SubprocessError, FileNotFoundError):
             pass
     
@@ -153,5 +161,6 @@ async def check_environment() -> EnvironmentCheckResult:
         gpu_available=gpu_available,
         gpu_name=gpu_name,
         gpu_memory_mb=gpu_memory_mb,
+        cuda_version=cuda_version,
         capabilities=capabilities
     )

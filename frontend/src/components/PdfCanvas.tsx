@@ -2,13 +2,16 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import * as pdfjsLib from 'pdfjs-dist'
 
-// 配置 pdf.js worker
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isTextItem(v: any): v is { str: string; transform: number[]; width: number; height: number } {
+  return typeof v === 'object' && v !== null && 'str' in v && typeof v.str === 'string'
+}
+
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.mjs',
   import.meta.url,
 ).toString()
 
-// ---- 模块级文档缓存：避免重复下载 ----
 const docCache = new Map<string, Promise<PDFDocumentProxy>>()
 
 function getCachedDoc(url: string): Promise<PDFDocumentProxy> {
@@ -20,26 +23,25 @@ function getCachedDoc(url: string): Promise<PDFDocumentProxy> {
   return promise
 }
 
-interface Props {
-  /** PDF 文件 URL */
-  url: string
-  /** 当前页码（1-indexed） */
+interface PageInfo {
   pageNumber: number
-  /** 缩放比例 */
+  width: number
+  height: number
+  originalWidth: number
+  originalHeight: number
+  scale: number
+}
+
+interface Props {
+  url: string
+  pageNumber: number
   scale?: number
-  /** 是否生成页面图片 data URL（仅检测模式开启） */
   generateImage?: boolean
-  /** 页面渲染完成回调 */
-  onPageRendered?: (info: {
-    pageNumber: number
-    width: number
-    height: number
-    originalWidth: number
-    originalHeight: number
-    scale: number
-  }) => void
-  /** 页面图片 data URL 回调 */
+  showTextLayer?: boolean
+  onPageRendered?: (info: PageInfo) => void
   onImageReady?: (pageNumber: number, dataUrl: string) => void
+  onTextContent?: (pageNumber: number, items: { str: string; x: number; y: number; width: number; height: number }[]) => void
+  onPageCount?: (count: number) => void
   className?: string
   style?: React.CSSProperties
 }
@@ -49,26 +51,37 @@ export default function PdfCanvas({
   pageNumber,
   scale = 1.5,
   generateImage = false,
+  showTextLayer = true,
   onPageRendered,
   onImageReady,
+  onTextContent,
+  onPageCount,
   className,
   style,
 }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const textLayerRef = useRef<HTMLDivElement>(null)
+  const textLayerInstanceRef = useRef<unknown>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const totalPagesRef = useRef(0)
   const [totalPages, setTotalPages] = useState(0)
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null)
-  // 用 ref 追踪回调，避免 re-render cascade
+
   const onPageRenderedRef = useRef(onPageRendered)
   const onImageReadyRef = useRef(onImageReady)
+  const onTextContentRef = useRef(onTextContent)
+  const onPageCountRef = useRef(onPageCount)
   const generateImageRef = useRef(generateImage)
+  const showTextLayerRef = useRef(showTextLayer)
   onPageRenderedRef.current = onPageRendered
   onImageReadyRef.current = onImageReady
+  onTextContentRef.current = onTextContent
+  onPageCountRef.current = onPageCount
   generateImageRef.current = generateImage
+  showTextLayerRef.current = showTextLayer
 
-  // 加载 PDF 文档（带缓存）
   useEffect(() => {
     let cancelled = false
     setLoading(true)
@@ -80,6 +93,7 @@ export default function PdfCanvas({
         pdfDocRef.current = doc
         totalPagesRef.current = doc.numPages
         setTotalPages(doc.numPages)
+        onPageCountRef.current?.(doc.numPages)
       })
       .catch(e => {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load PDF')
@@ -91,48 +105,137 @@ export default function PdfCanvas({
     return () => { cancelled = true }
   }, [url])
 
-  // 渲染当前页 — 依赖只有 pageNumber 和 scale
+  const renderTextLayerImpl = useCallback(async (page: pdfjsLib.PDFPageProxy) => {
+    const container = textLayerRef.current
+    if (!container) return
+
+    const dpr = window.devicePixelRatio || 1
+    const logicalViewport = page.getViewport({ scale })
+    const textContent = await page.getTextContent()
+
+    if (logicalViewport.rawDims && showTextLayerRef.current) {
+      try {
+        const TextLayerClass = (pdfjsLib as unknown as { TextLayer: new (opts: unknown) => { render: () => Promise<void> } }).TextLayer
+        const instance = new TextLayerClass({
+          textContentSource: textContent,
+          container,
+          viewport: logicalViewport,
+        })
+        textLayerInstanceRef.current = instance
+        await instance.render()
+      } catch (e) {
+        console.warn('TextLayer render failed, using fallback:', e)
+        renderTextLayerFallback(container, textContent, logicalViewport, dpr)
+      }
+    } else {
+      renderTextLayerFallback(container, textContent, logicalViewport, dpr)
+    }
+
+    if (onTextContentRef.current) {
+      const items = (textContent.items as unknown[])
+        .filter(isTextItem)
+        .map(item => ({
+          str: item.str,
+          x: item.transform[4],
+          y: item.transform[5],
+          width: item.width,
+          height: item.height,
+        }))
+      onTextContentRef.current(pageNumber, items)
+    }
+  }, [pageNumber, scale])
+
+  function renderTextLayerFallback(
+    container: HTMLElement,
+    textContent: { items: unknown[] },
+    viewport: { width: number; height: number },
+    _dpr: number,
+  ) {
+    container.innerHTML = ''
+    container.style.width = `${viewport.width}px`
+    container.style.height = `${viewport.height}px`
+
+    for (const raw of textContent.items) {
+      if (!isTextItem(raw)) continue
+      const tx = raw.transform[4]
+      const ty = viewport.height - raw.transform[5] - raw.height
+      const span = document.createElement('span')
+      span.textContent = raw.str
+      span.className = 'pdf-text-layer-span'
+      span.style.cssText = `
+        position: absolute;
+        left: ${tx}px;
+        top: ${ty}px;
+        font-size: ${raw.height}px;
+        font-family: sans-serif;
+        line-height: 1;
+        white-space: pre;
+        color: transparent;
+        pointer-events: auto;
+        transform-origin: 0 0;
+      `
+      container.appendChild(span)
+    }
+  }
+
   const renderPage = useCallback(async () => {
     const doc = pdfDocRef.current
     const canvas = canvasRef.current
+    const textLayerEl = textLayerRef.current
     if (!doc || !canvas) return
 
     try {
       const page = await doc.getPage(pageNumber)
-      const viewport = page.getViewport({ scale })
+      const dpr = window.devicePixelRatio || 1
+      const viewport = page.getViewport({ scale: scale * dpr })
       const ctx = canvas.getContext('2d')
       if (!ctx) return
 
       canvas.width = viewport.width
       canvas.height = viewport.height
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      await page.render({ canvasContext: ctx, viewport }).promise
+      canvas.style.width = `${viewport.width / dpr}px`
+      canvas.style.height = `${viewport.height / dpr}px`
+      ctx.clearRect(0, 0, viewport.width, viewport.height)
+      ctx.scale(dpr, dpr)
+      await page.render({
+        canvasContext: ctx,
+        viewport: page.getViewport({ scale }),
+      }).promise
 
       const originalViewport = page.getViewport({ scale: 1 })
       onPageRenderedRef.current?.({
         pageNumber,
-        width: viewport.width,
-        height: viewport.height,
+        width: viewport.width / dpr,
+        height: viewport.height / dpr,
         originalWidth: originalViewport.width,
         originalHeight: originalViewport.height,
-        scale,
+        scale: scale * dpr,
       })
 
-      // 仅在检测模式生成 data URL（避免读取模式的 CPU 开销）
       if (generateImageRef.current) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
         onImageReadyRef.current?.(pageNumber, canvas.toDataURL('image/png'))
+      }
+
+      if (textLayerEl) {
+        textLayerEl.innerHTML = ''
+        renderTextLayerImpl(page)
       }
     } catch (e) {
       console.error('PDF render error:', e)
     }
-  }, [pageNumber, scale])
+  }, [pageNumber, scale, renderTextLayerImpl])
 
   useEffect(() => {
     if (!loading && !error) renderPage()
   }, [loading, error, renderPage])
 
   return (
-    <div className={className} style={{ position: 'relative', ...style }}>
+    <div
+      ref={containerRef}
+      className={className}
+      style={{ position: 'relative', ...style }}
+    >
       {loading && (
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -157,6 +260,18 @@ export default function PdfCanvas({
           margin: '0 auto',
         }}
       />
+      <div
+        ref={textLayerRef}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          pointerEvents: 'none',
+          display: loading || error || !showTextLayer ? 'none' : 'block',
+          zIndex: 1,
+        }}
+      />
       {totalPages > 0 && (
         <div style={{
           position: 'absolute', bottom: '8px', left: '50%',
@@ -164,6 +279,7 @@ export default function PdfCanvas({
           fontSize: '11px', color: 'var(--text-muted)',
           background: 'var(--bg-surface)', padding: '2px 8px',
           borderRadius: '4px', border: '1px solid var(--border)',
+          zIndex: 2,
         }}>
           {pageNumber} / {totalPages}
         </div>

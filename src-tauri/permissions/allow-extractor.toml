@@ -1,0 +1,8 @@
+[[permission]]
+identifier = "allow-extractor"
+description = "Allows molecule/activity extraction from text"
+commands.allow = [
+  "extract_esmiles_candidates",
+  "extract_activities",
+  "extract_associated_molecules",
+]

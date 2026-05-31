@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { ExtractionResult, DetectionBox } from '../types'
 
 interface Props {
@@ -69,6 +69,8 @@ export default function MoleculeOverlay({
       })
   }, [detections, originalHeight, scale])
 
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
+
   if (boxes.length === 0) return null
 
   return (
@@ -84,11 +86,13 @@ export default function MoleculeOverlay({
     >
       {boxes.map((box, i) => {
         const isSelected = selectedIndex === i
+        const isHovered = hoveredIdx === i
         const color = confColor(box.conf)
         const boxW = box.x2 - box.x1
         const boxH = box.y2 - box.y1
         const smi = box.result?.esmiles || ''
         const confPct = Math.round(box.conf * 100)
+        const ctx = box.result?.context_text || ''
 
         return (
           <div
@@ -107,12 +111,8 @@ export default function MoleculeOverlay({
               transition: 'all 0.15s',
             }}
             onClick={() => onSelect?.(i)}
-            onMouseEnter={e => {
-              e.currentTarget.style.boxShadow = `0 0 0 2px ${color}40`
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.boxShadow = 'none'
-            }}
+            onMouseEnter={() => setHoveredIdx(i)}
+            onMouseLeave={() => setHoveredIdx(null)}
           >
             {/* 标签：SMILES + 置信度 */}
             <div style={{
@@ -127,7 +127,6 @@ export default function MoleculeOverlay({
               fontFamily: 'monospace',
               pointerEvents: 'none',
             }}>
-              {/* 置信度 badge */}
               <span style={{
                 background: color,
                 color: '#fff',
@@ -138,7 +137,6 @@ export default function MoleculeOverlay({
               }}>
                 {confPct}%
               </span>
-              {/* SMILES（截断显示） */}
               {smi && (
                 <span style={{
                   background: 'var(--bg-surface)',
@@ -154,6 +152,29 @@ export default function MoleculeOverlay({
                 </span>
               )}
             </div>
+            {/* Hover tooltip: 上下文文本 */}
+            {isHovered && ctx && (
+              <div style={{
+                position: 'absolute',
+                top: boxH + 6,
+                left: 0,
+                maxWidth: '300px',
+                padding: '6px 10px',
+                background: 'var(--bg-elevated, #1e1e1e)',
+                color: 'var(--text-secondary, #ccc)',
+                fontSize: '10px',
+                lineHeight: 1.4,
+                borderRadius: '6px',
+                border: '1px solid var(--border)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                zIndex: 100,
+                pointerEvents: 'none',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}>
+                {ctx.length > 200 ? ctx.slice(0, 200) + '...' : ctx}
+              </div>
+            )}
           </div>
         )
       })}

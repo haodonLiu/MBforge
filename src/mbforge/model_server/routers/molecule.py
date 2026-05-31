@@ -1,27 +1,20 @@
-"""分子数据库路由."""
+"""分子数据库路由 (Browser dev fallback).
+
+这些端点仅在前端以纯浏览器模式运行时作为降级使用。
+分子列表/搜索/统计的主路径已在 Rust (Tauri) 中实现。
+"""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 
-from ...core.mol_database import MoleculeDatabase, MoleculeRecord
+from ...core.mol_database import MoleculeDatabase
 from ...core.project import Project
 from ...utils.logger import get_logger
 from ..dependencies import get_project_from_root
 
 logger = get_logger(__name__)
 router = APIRouter()
-
-
-class MoleculeAddRequest(BaseModel):
-    project_root: str
-    esmiles: str
-    name: str = ""
-    source_doc: str = ""
-    activity: float | None = None
-    activity_type: str = ""
-    units: str = "nM"
 
 
 @router.get("/list")
@@ -54,28 +47,6 @@ async def molecule_stats(
         return {"success": False, "error": str(e)}
 
 
-@router.post("/add")
-async def add_molecule(
-    req: MoleculeAddRequest,
-    project: Project = Depends(get_project_from_root),
-) -> dict:
-    try:
-        db = MoleculeDatabase(project.root)
-        record = MoleculeRecord(
-            esmiles=req.esmiles,
-            name=req.name,
-            source_doc=req.source_doc,
-            activity=req.activity,
-            activity_type=req.activity_type,
-            units=req.units,
-        )
-        db.add_molecule(record)
-        return {"success": True, "mol_id": record.mol_id}
-    except Exception as e:
-        logger.error(f"Add molecule failed: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
-
-
 @router.get("/search")
 async def search_molecules(
     project_root: str,
@@ -92,7 +63,7 @@ async def search_molecules(
             "SELECT * FROM molecules WHERE name LIKE ? OR esmiles LIKE ? ORDER BY created_at DESC LIMIT ?",
             (f"%{q}%", f"%{q}%", limit),
         ).fetchall()
-        results = [db._row_to_record(r) for r in rows]
+        results = [db._row_to_record(r).to_dict() for r in rows]
         return {"success": True, "molecules": results}
     except Exception as e:
         logger.error(f"Search molecules failed: {e}", exc_info=True)

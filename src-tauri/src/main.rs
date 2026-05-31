@@ -4,16 +4,15 @@
 mod commands;
 mod core;
 mod parsers;
+mod sidecar;
 
 
 use commands::agent::AgentState;
 use commands::molecule::MolDbState;
 use commands::mol_store::MolStoreState;
 
-use std::process::{Command, Stdio};
+use std::process::Command;
 use tauri::Manager;
-
-struct BackendProcess(std::sync::Mutex<std::process::Child>);
 
 fn main() {
     // Load .env from project root (dev mode) or app directory
@@ -85,6 +84,8 @@ fn main() {
             commands::mol_store::mol_store_stats,
             commands::mol_store::mol_store_search_by_smiles,
             commands::mol_store::mol_store_list_by_doc,
+            commands::sidecar::sidecar_status,
+            commands::sidecar::sidecar_restart,
         ])
         .setup(|app| {
             let app_handle = app.handle();
@@ -107,48 +108,38 @@ fn main() {
             }).cloned().unwrap_or_else(|| std::path::PathBuf::from("python"));
 
             // Start model server
-            let no_spawn = std::env::var("MBFORGE_NO_SPAWN").unwrap_or_default().trim() == "1";
-            let server_script = resource_dir.join("src").join("mbforge").join("model_server").join("main.py");
-            let mut cmd = Command::new(&python);
+            let no_spawn = std::env::var("MBFORGE_NO_SPAWN")
+                .unwrap_or_default()
+                .trim()
+                == "1";
+            let server_script = resource_dir
+                .join("src")
+                .join("mbforge")
+                .join("model_server")
+                .join("main.py");
 
             if !no_spawn && server_script.exists() {
-                cmd.arg("-m").arg("uvicorn")
-                    .arg("mbforge.model_server.main:app")
-                    .arg("--host").arg("127.0.0.1")
-                    .arg("--port").arg("18792")
-                    .current_dir(resource_dir);
+                let sidecar = sidecar::SidecarInner::new(python, resource_dir);
+                if let Err(e) = sidecar::spawn_and_start_readers(&sidecar, &app_handle) {
+                    eprintln!("[tauri] Failed to start sidecar: {}", e);
+                } else {
+                    app.manage(sidecar.clone());
+                    sidecar::start_health_monitor(sidecar, app_handle.clone());
+                }
             } else if !no_spawn {
-                // Try to start but script not found - likely dev mode
-                // Only log in debug builds
                 #[cfg(debug_assertions)]
                 eprintln!("[tauri] Dev mode: Python server expected to run separately");
-                return Ok(());
-            } else {
-                // Explicitly disabled
-                return Ok(());
-            }
-
-            let child = cmd
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .map_err(|e| {
-                    eprintln!("[tauri] Failed to start backend: {}", e);
-                    e
-                })
-                .ok();
-
-            if let Some(c) = child {
-                app.manage(BackendProcess(std::sync::Mutex::new(c)));
             }
 
             Ok(())
         })
         .on_window_event(|app, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                if let Some(state) = app.try_state::<BackendProcess>() {
-                    let mut child = state.0.lock().unwrap();
-                    let _ = child.kill();
+                if let Some(state) = app.try_state::<std::sync::Arc<sidecar::SidecarInner>>() {
+                    let mut child = state.child.lock().unwrap();
+                    if let Some(ref mut c) = *child {
+                        let _ = c.kill();
+                    }
                 }
             }
         })

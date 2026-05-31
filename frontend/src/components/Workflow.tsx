@@ -1,22 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
-import { motion } from 'framer-motion'
-import { showToast } from '../hooks/useToast'
-import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
-import { TargetIcon, BarChartIcon, CpuIcon, DnaIcon, FlaskIcon, RefreshCwIcon } from './icons'
-import { 
-  PageContainer, 
-  PageTitle, 
-  CardGrid, 
-  HoverCard, 
-  IconContainer, 
-  BodyText, 
-  Caption,
-  StatusBadge,
-  EnvCard,
-  LibStatusRow,
-  CollapsibleSection,
-} from './ui'
-import type { StatusType } from './ui/StatusBadge'
+import { useState, useEffect } from 'react'
+import { RefreshCwIcon, CheckIcon, XIcon, DownloadIcon, TrashIcon, EditIcon, FolderIcon } from './icons'
+import { PageContainer, PageTitle } from './ui'
+
+interface EnvironmentCheckResult {
+  python_version: string
+  gpu_available: boolean
+  gpu_name: string | null
+  gpu_memory_mb: number | null
+  cuda_version: string | null
+  capabilities: CapabilityStatus[]
+}
 
 interface CapabilityStatus {
   name: string
@@ -26,12 +19,33 @@ interface CapabilityStatus {
   category: string
 }
 
-interface EnvironmentCheckResult {
-  python_version: string
-  gpu_available: boolean
-  gpu_name: string | null
-  gpu_memory_mb: number | null
-  capabilities: CapabilityStatus[]
+interface ModelLocation {
+  source: string
+  path: string
+  size_mb: number
+}
+
+interface ModelInfo {
+  id: string
+  name: string
+  type: string
+  description: string
+  downloaded: boolean
+  downloading: boolean
+  size_mb: number
+  actual_size_mb: number
+  license: string
+  location: {
+    found: boolean
+    locations: ModelLocation[]
+    primary: string | null
+  }
+}
+
+interface ModelPaths {
+  mbforge: { path: string; exists: boolean; size_mb: number }
+  huggingface: { path: string; env_var: string; exists: boolean; size_mb: number }
+  modelscope: { path: string; env_var: string; exists: boolean; size_mb: number }
 }
 
 // 库信息
@@ -46,362 +60,722 @@ const LIBRARY_INFO: Record<string, { name: string; hint?: string }> = {
   torch:    { name: 'PyTorch', hint: '深度学习' },
 }
 
-// 工作流定义
-const WORKFLOWS = [
-  {
-    id: 'sar',
-    name: 'SAR 分析',
-    description: '分析化合物结构-活性关系，识别关键药效团和构效关系',
-    engine: 'MBForge 内置',
-    requires: ['rdkit'],
-    icon: <BarChartIcon size={24} />,
-  },
-  {
-    id: 'moldraw',
-    name: '分子绘制',
-    description: '可视化分子结构，编辑 SMILES 和查看属性',
-    engine: 'RDKit',
-    requires: ['rdkit'],
-    icon: <CpuIcon size={24} />,
-  },
-  {
-    id: 'docking',
-    name: '分子对接',
-    description: '将小分子配体与蛋白质受体进行对接，预测结合模式和亲和力',
-    engine: 'AutoDock Vina',
-    requires: ['vina'],
-    icon: <TargetIcon size={24} />,
-  },
-  {
-    id: 'md',
-    name: '分子动力学',
-    description: '模拟分子在原子层面的动态行为，研究构象变化和相互作用',
-    engine: 'OpenMM',
-    requires: ['openmm'],
-    icon: <DnaIcon size={24} />,
-  },
-  {
-    id: 'admet',
-    name: 'ADMET 预测',
-    description: '预测化合物的吸收、分布、代谢、排泄和毒性特性',
-    engine: 'DeepChem',
-    requires: ['deepchem'],
-    icon: <FlaskIcon size={24} />,
-  },
-]
-
-function getWorkflowStatus(workflow: typeof WORKFLOWS[0], env: EnvironmentCheckResult | null): StatusType {
-  if (!env) return 'pending'
-  
-  const hasCore = env.capabilities.some(c => c.name === 'rdkit' && c.available)
-  
-  if (workflow.id === 'sar' || workflow.id === 'moldraw') {
-    return hasCore ? 'ready' : 'error'
+// 统计卡片组件
+function StatCard({ label, value, subValue, variant = 'default' }: {
+  label: string
+  value: string | number
+  subValue?: string
+  variant?: 'default' | 'success' | 'danger'
+}) {
+  const bgColors = {
+    default: 'var(--bg-surface)',
+    success: 'rgba(22, 163, 74, 0.08)',
+    danger: 'rgba(220, 38, 38, 0.08)',
+  }
+  const textColors = {
+    default: 'var(--text-primary)',
+    success: 'var(--success)',
+    danger: 'var(--danger)',
   }
   
-  const hasRequired = env.capabilities.some(c => workflow.requires.includes(c.name) && c.available)
-  if (hasRequired) return 'ready'
-  if (hasCore) return 'warning'
-  return 'pending'
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '4px',
+      padding: '16px',
+      background: bgColors[variant],
+      borderRadius: '10px',
+      border: '1px solid var(--border)',
+    }}>
+      <div style={{ 
+        fontSize: '11px', 
+        color: 'var(--text-muted)', 
+        textTransform: 'uppercase', 
+        letterSpacing: '0.5px' 
+      }}>
+        {label}
+      </div>
+      <div style={{ 
+        fontSize: '20px', 
+        fontWeight: 700, 
+        color: textColors[variant] 
+      }}>
+        {value}
+      </div>
+      {subValue && (
+        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+          {subValue}
+        </div>
+      )}
+    </div>
+  )
 }
 
-function getStatusText(status: StatusType): string {
-  switch (status) {
-    case 'ready': return '就绪'
-    case 'warning': return '需安装依赖'
-    case 'error': return '缺少核心库'
-    default: return '尚未配置'
-  }
-}
-
-// 环境状态面板
-function EnvironmentPanel({ env, loading }: { env: EnvironmentCheckResult | null; loading: boolean }) {
-  if (loading) {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        style={{
+// 库行组件
+function LibRow({ lib }: { lib: CapabilityStatus }) {
+  const info = LIBRARY_INFO[lib.name] || { name: lib.name }
+  
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '12px 16px',
+      background: 'var(--bg-base)',
+      borderRadius: '8px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{
+          width: '24px',
+          height: '24px',
+          borderRadius: '50%',
+          background: lib.available ? 'var(--success)' : 'var(--danger)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '32px',
-          background: '#fafafa',
-          borderRadius: '12px',
-          border: '1px solid #e5e5e5',
-          marginBottom: '24px',
-        }}
-      >
-        <RefreshCwIcon size={18} style={{ color: '#666', marginRight: '10px' }} />
-        <span style={{ color: '#666', fontSize: '14px' }}>正在检测运行环境...</span>
-      </motion.div>
+          color: 'white',
+          flexShrink: 0,
+        }}>
+          {lib.available ? <CheckIcon size={12} /> : <XIcon size={12} />}
+        </div>
+        <div>
+          <div style={{ fontSize: '14px', fontWeight: 500 }}>
+            {info.name}
+          </div>
+          {info.hint && (
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              {info.hint}
+            </div>
+          )}
+        </div>
+      </div>
+      <div style={{
+        fontSize: '13px',
+        color: lib.available ? 'var(--success)' : 'var(--text-muted)',
+      }}>
+        {lib.available ? lib.version || 'Installed' : 'Not installed'}
+      </div>
+    </div>
+  )
+}
+
+// 库分类区块
+function LibrarySection({ title, libs }: { title: string; libs: CapabilityStatus[] }) {
+  return (
+    <div style={{
+      padding: '16px 20px',
+      background: 'var(--bg-surface)',
+      border: '1px solid var(--border)',
+      borderRadius: '12px',
+    }}>
+      <div style={{ 
+        fontSize: '12px', 
+        fontWeight: 600, 
+        color: 'var(--text-muted)', 
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px',
+        marginBottom: '12px',
+      }}>
+        {title}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {libs.map(lib => (
+          <LibRow key={lib.name} lib={lib} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// 路径卡片组件
+function PathCard({ 
+  title, 
+  path, 
+  exists, 
+  size_mb, 
+  envVar,
+  isEditing,
+  editValue,
+  onEdit,
+  onSave,
+  onCancel,
+  onChange,
+}: { 
+  title: string
+  path: string
+  exists: boolean
+  size_mb: number
+  envVar?: string
+  isEditing?: boolean
+  editValue?: string
+  onEdit?: () => void
+  onSave?: () => void
+  onCancel?: () => void
+  onChange?: (value: string) => void
+}) {
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '14px 16px',
+      background: 'var(--bg-base)',
+      borderRadius: '8px',
+      border: '1px solid var(--border)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+        <div style={{
+          width: '24px',
+          height: '24px',
+          borderRadius: '6px',
+          background: exists ? 'var(--success)' : 'var(--bg-surface)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: exists ? 'white' : 'var(--text-muted)',
+          flexShrink: 0,
+        }}>
+          <FolderIcon size={14} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {title}
+            {envVar && (
+              <span style={{
+                fontSize: '10px',
+                padding: '2px 6px',
+                background: 'var(--bg-surface)',
+                borderRadius: '4px',
+                color: 'var(--text-muted)',
+              }}>
+                {envVar}
+              </span>
+            )}
+          </div>
+          {isEditing ? (
+            <input
+              type="text"
+              value={editValue}
+              onChange={(e) => onChange?.(e.target.value)}
+              style={{
+                width: '100%',
+                marginTop: '6px',
+                padding: '6px 10px',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--accent)',
+                borderRadius: '6px',
+                fontSize: '12px',
+                color: 'var(--text-primary)',
+              }}
+            />
+          ) : (
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', wordBreak: 'break-all' }}>
+              {path}
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '16px' }}>
+        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+          {exists ? `${size_mb} MB` : 'Not found'}
+        </span>
+        
+        {isEditing ? (
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button
+              onClick={onSave}
+              style={{
+                padding: '4px 10px',
+                background: 'var(--success)',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '11px',
+                color: 'white',
+              }}
+            >
+              Save
+            </button>
+            <button
+              onClick={onCancel}
+              style={{
+                padding: '4px 10px',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border)',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '11px',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : onEdit ? (
+          <button
+            onClick={onEdit}
+            style={{
+              padding: '4px 10px',
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            <EditIcon size={12} />
+            Edit
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+// 模型卡片组件
+function ModelCard({ model, onDownload, onDelete }: { 
+  model: ModelInfo
+  onDownload: (id: string) => void
+  onDelete: (id: string) => void
+}) {
+  const typeColors: Record<string, { bg: string; text: string }> = {
+    embedding: { bg: 'rgba(59, 130, 246, 0.1)', text: '#3b82f6' },
+    reranker: { bg: 'rgba(168, 85, 247, 0.1)', text: '#a855f7' },
+    detection: { bg: 'rgba(245, 158, 11, 0.1)', text: '#f59e0b' },
+  }
+  const typeColor = typeColors[model.type] || typeColors.detection
+  
+  // 显示大小
+  const displaySize = model.downloaded ? model.actual_size_mb : model.size_mb
+  const sizeLabel = model.downloaded 
+    ? `${displaySize} MB` 
+    : `~${displaySize} MB`
+  
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '14px 16px',
+      background: 'var(--bg-base)',
+      borderRadius: '8px',
+      border: model.downloaded ? '1px solid var(--success)' : '1px solid var(--border)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+        <div style={{
+          width: '24px',
+          height: '24px',
+          borderRadius: '50%',
+          background: model.downloaded ? 'var(--success)' : 'var(--text-muted)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'white',
+          flexShrink: 0,
+        }}>
+          {model.downloaded ? <CheckIcon size={12} /> : null}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '14px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {model.name}
+            <span style={{
+              fontSize: '10px',
+              padding: '2px 6px',
+              background: typeColor.bg,
+              color: typeColor.text,
+              borderRadius: '4px',
+            }}>
+              {model.type}
+            </span>
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+            {model.description}
+          </div>
+          {model.downloaded && (
+            <div style={{ fontSize: '11px', color: 'var(--success)', marginTop: '4px' }}>
+              Downloaded: {model.actual_size_mb} MB
+              {model.location.primary && ` from ${model.location.primary}`}
+            </div>
+          )}
+        </div>
+      </div>
+      
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: '16px' }}>
+        <span style={{ 
+          fontSize: '12px', 
+          color: model.downloaded ? 'var(--success)' : 'var(--text-muted)', 
+          whiteSpace: 'nowrap',
+          fontWeight: model.downloaded ? 500 : 400,
+        }}>
+          {sizeLabel}
+        </span>
+        
+        {model.downloading ? (
+          <div style={{
+            padding: '6px 12px',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: '6px',
+            fontSize: '12px',
+            color: 'var(--text-secondary)',
+          }}>
+            Downloading...
+          </div>
+        ) : model.downloaded ? (
+          <button
+            onClick={() => onDelete(model.id)}
+            style={{
+              padding: '6px 12px',
+              background: 'rgba(220, 38, 38, 0.08)',
+              border: '1px solid rgba(220, 38, 38, 0.2)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              color: 'var(--danger)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            <TrashIcon size={12} />
+            Delete
+          </button>
+        ) : (
+          <button
+            onClick={() => onDownload(model.id)}
+            style={{
+              padding: '6px 12px',
+              background: 'var(--accent)',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              color: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            <DownloadIcon size={12} />
+            Download
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function Environment() {
+  const [env, setEnv] = useState<EnvironmentCheckResult | null>(null)
+  const [models, setModels] = useState<ModelInfo[]>([])
+  const [paths, setPaths] = useState<ModelPaths | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [editingPath, setEditingPath] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+
+  const fetchEnv = () => {
+    setLoading(true)
+    fetch('/api/v1/environment/check')
+      .then(r => r.json())
+      .then(setEnv)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }
+
+  const fetchModels = () => {
+    fetch('/api/v1/download/models')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setModels(data.models)
+        }
+      })
+      .catch(console.error)
+  }
+
+  const fetchPaths = () => {
+    fetch('/api/v1/download/model-paths')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setPaths(data.paths)
+        }
+      })
+      .catch(console.error)
+  }
+
+  const downloadModel = async (modelId: string) => {
+    try {
+      const response = await fetch(`/api/v1/download/${modelId}`, { 
+        method: 'POST'
+      })
+      
+      if (response.ok) {
+        const checkStatus = setInterval(() => {
+          fetchModels()
+        }, 2000)
+        
+        setTimeout(() => clearInterval(checkStatus), 30000)
+      }
+    } catch (e) {
+      console.error('Download error:', e)
+    }
+  }
+
+  const deleteModel = async (modelId: string) => {
+    if (!confirm('Are you sure you want to delete this model?')) return
+    
+    try {
+      const response = await fetch(`/api/v1/download/delete/${modelId}`, { method: 'DELETE' })
+      const result = await response.json()
+      
+      if (result.success) {
+        fetchModels()
+      } else {
+        console.error('Delete failed:', result.error)
+      }
+    } catch (e) {
+      console.error('Delete error:', e)
+    }
+  }
+
+  const savePath = async () => {
+    if (!editValue.trim()) return
+    
+    try {
+      const response = await fetch('/api/v1/download/model-dir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: editValue.trim() }),
+      })
+      const result = await response.json()
+      
+      if (result.success) {
+        setEditingPath(null)
+        fetchPaths()
+        alert('Path updated! Please restart the app for changes to take effect.')
+      } else {
+        alert('Failed to update path: ' + result.error)
+      }
+    } catch (e) {
+      console.error('Save path error:', e)
+    }
+  }
+
+  useEffect(() => {
+    fetchEnv()
+    fetchModels()
+    fetchPaths()
+  }, [])
+
+  if (loading && !env) {
+    return (
+      <PageContainer>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '80px',
+          color: 'var(--text-secondary)',
+        }}>
+          <RefreshCwIcon size={20} style={{ marginRight: '12px', animation: 'spin 1s linear infinite' }} />
+          Checking environment...
+        </div>
+      </PageContainer>
     )
   }
 
-  if (!env) return null
+  if (!env) {
+    return (
+      <PageContainer>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '80px',
+          color: 'var(--danger)',
+        }}>
+          Failed to get environment info
+        </div>
+      </PageContainer>
+    )
+  }
 
+  // 按分类分组
   const coreLibs = env.capabilities.filter(c => c.category === 'core')
   const mdLibs = env.capabilities.filter(c => c.category === 'md')
   const dockingLibs = env.capabilities.filter(c => c.category === 'docking')
   const admetLibs = env.capabilities.filter(c => c.category === 'admet')
-  
-  const hasMissing = env.capabilities.some(c => !c.available)
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      style={{
-        marginBottom: '24px',
-        borderRadius: '12px',
-        border: '1px solid #e5e5e5',
-        overflow: 'hidden',
-        background: '#fff',
-      }}
-    >
-      {/* 标题栏 */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '14px 16px',
-        background: '#fafafa',
-        borderBottom: '1px solid #e5e5e5',
-      }}>
-        <span style={{ fontWeight: 600, fontSize: '14px' }}>Environment Status</span>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <EnvCard label="Python" value={env.python_version} />
-          <EnvCard 
-            label="GPU" 
-            value={env.gpu_name || 'None'} 
-            subValue={env.gpu_memory_mb ? `${Math.round(env.gpu_memory_mb / 1024)}GB` : undefined}
-            variant={env.gpu_available ? 'success' : 'default'}
-          />
-        </div>
-      </div>
-
-      {/* 库状态列表 */}
-      <div style={{ padding: '16px' }}>
-        <CollapsibleSection title="Core Libraries" badge={coreLibs.length}>
-          {coreLibs.map(cap => {
-            const info = LIBRARY_INFO[cap.name] || { name: cap.name }
-            return (
-              <LibStatusRow 
-                key={cap.name} 
-                name={info.name} 
-                version={cap.version} 
-                available={cap.available}
-                hint={info.hint}
-              />
-            )
-          })}
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Molecular Dynamics" badge={mdLibs.length}>
-          {mdLibs.length > 0 ? mdLibs.map(cap => {
-            const info = LIBRARY_INFO[cap.name] || { name: cap.name }
-            return (
-              <LibStatusRow 
-                key={cap.name} 
-                name={info.name} 
-                version={cap.version} 
-                available={cap.available}
-                hint={info.hint}
-              />
-            )
-          }) : (
-            <div style={{ padding: '12px 0', color: '#999', fontSize: '13px' }}>
-              No molecular dynamics tools installed
-            </div>
-          )}
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Docking" badge={dockingLibs.length}>
-          {dockingLibs.length > 0 ? dockingLibs.map(cap => {
-            const info = LIBRARY_INFO[cap.name] || { name: cap.name }
-            return (
-              <LibStatusRow 
-                key={cap.name} 
-                name={info.name} 
-                version={cap.version} 
-                available={cap.available}
-                hint={info.hint}
-              />
-            )
-          }) : (
-            <div style={{ padding: '12px 0', color: '#999', fontSize: '13px' }}>
-              No docking tools installed
-            </div>
-          )}
-        </CollapsibleSection>
-
-        <CollapsibleSection title="ADMET" badge={admetLibs.length}>
-          {admetLibs.length > 0 ? admetLibs.map(cap => {
-            const info = LIBRARY_INFO[cap.name] || { name: cap.name }
-            return (
-              <LibStatusRow 
-                key={cap.name} 
-                name={info.name} 
-                version={cap.version} 
-                available={cap.available}
-                hint={info.hint}
-              />
-            )
-          }) : (
-            <div style={{ padding: '12px 0', color: '#999', fontSize: '13px' }}>
-              No ADMET tools installed
-            </div>
-          )}
-        </CollapsibleSection>
-
-        {hasMissing && (
-          <div style={{
-            marginTop: '16px',
-            padding: '12px 16px',
-            background: '#fef3c7',
-            border: '1px solid #f59e0b',
-            borderRadius: '6px',
-            color: '#92400e',
-            fontSize: '13px',
-          }}>
-            部分工具未安装。运行 <code style={{ background: '#fff', padding: '2px 6px', borderRadius: '4px' }}>uv add openmm deepchem</code> 安装。
-          </div>
-        )}
-      </div>
-    </motion.div>
-  )
-}
-
-export default function Workflow() {
-  const [env, setEnv] = useState<EnvironmentCheckResult | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  const handleWorkflow = useCallback((wf: typeof WORKFLOWS[0]) => {
-    const status = getWorkflowStatus(wf, env)
-    if (status !== 'ready') {
-      showToast(`${wf.name} 需要安装依赖: ${wf.requires.join(', ')}`, 'info')
-      return
-    }
-    // 根据工作流类型跳转或打开面板
-    switch (wf.id) {
-      case 'sar':
-        showToast('SAR 分析功能开发中...', 'info')
-        break
-      case 'moldraw':
-        showToast('分子绘制功能开发中...', 'info')
-        break
-      case 'docking':
-        showToast('分子对接功能开发中...', 'info')
-        break
-      case 'md':
-        showToast('分子动力学功能开发中...', 'info')
-        break
-      case 'admet':
-        showToast('ADMET 预测功能开发中...', 'info')
-        break
-      default:
-        showToast(`${wf.name}: 功能开发中`, 'info')
-    }
-  }, [env])
-
-  useEffect(() => {
-    async function checkEnvironment() {
-      try {
-        const response = await fetch('/api/v1/environment/check')
-        if (response.ok) {
-          const data = await response.json()
-          setEnv(data)
-        }
-      } catch (e) {
-        console.error('Environment check failed:', e)
-      } finally {
-        setLoading(false)
-      }
-    }
-    checkEnvironment()
-  }, [])
+  // 模型统计
+  const downloadedModels = models.filter(m => m.downloaded).length
+  const totalDownloadedMB = models
+    .filter(m => m.downloaded)
+    .reduce((sum, m) => sum + m.actual_size_mb, 0)
+  const totalEstimatedMB = models.reduce((sum, m) => sum + m.size_mb, 0)
 
   return (
     <PageContainer>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <PageTitle>Workflow Center</PageTitle>
+      {/* 标题栏 */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+        <PageTitle>Environment</PageTitle>
+        <button
+          onClick={() => { fetchEnv(); fetchModels(); fetchPaths() }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 16px',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '13px',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <RefreshCwIcon size={14} />
+          Refresh
+        </button>
       </div>
 
-      <EnvironmentPanel env={env} loading={loading} />
+      {/* 统计卡片 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
+        <StatCard label="Python" value={env.python_version} />
+        <StatCard 
+          label="GPU" 
+          value={env.gpu_name?.split(' ').slice(0, 2).join(' ') || 'None'} 
+          subValue={env.cuda_version ? `CUDA ${env.cuda_version}` : undefined}
+          variant={env.gpu_available ? 'success' : 'default'}
+        />
+        <StatCard 
+          label="GPU Memory" 
+          value={env.gpu_memory_mb ? `${Math.round(env.gpu_memory_mb / 1024)}GB` : 'N/A'} 
+        />
+        <StatCard 
+          label="Models" 
+          value={`${downloadedModels}/${models.length}`}
+          subValue={downloadedModels > 0 ? `${Math.round(totalDownloadedMB)} MB / ${totalEstimatedMB} MB` : undefined}
+          variant={downloadedModels === models.length && models.length > 0 ? 'success' : 'default'}
+        />
+      </div>
 
-      <BodyText style={{ marginBottom: '16px' }}>
-        Select a workflow to start molecular tasks
-      </BodyText>
+      {/* 库列表 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+        <LibrarySection title="Core Libraries" libs={coreLibs} />
+        {mdLibs.length > 0 && (
+          <LibrarySection title="Molecular Dynamics" libs={mdLibs} />
+        )}
+        {dockingLibs.length > 0 && (
+          <LibrarySection title="Docking" libs={dockingLibs} />
+        )}
+        {admetLibs.length > 0 && (
+          <LibrarySection title="ADMET" libs={admetLibs} />
+        )}
+      </div>
 
-      <StaggerContainer>
-        <CardGrid minWidth={280} gap={16}>
-          {WORKFLOWS.map(wf => {
-            const status = getWorkflowStatus(wf, env)
-            const isReady = status === 'ready'
-            
-            return (
-              <StaggerItem key={wf.id}>
-                <HoverCard
-                  onClick={() => handleWorkflow(wf)}
-                  style={{
-                    position: 'relative',
-                    padding: '24px',
-                    borderRadius: '14px',
-                    cursor: isReady ? 'pointer' : 'not-allowed',
-                    opacity: status === 'pending' ? 0.5 : 1,
-                    transition: 'all 0.2s ease',
-                  }}
-                >
-                  {isReady && (
-                    <motion.div
-                      animate={{ 
-                        boxShadow: [
-                          '0 0 0 0px rgba(22, 163, 74, 0)',
-                          '0 0 0 3px rgba(22, 163, 74, 0.15)',
-                          '0 0 0 0px rgba(22, 163, 74, 0)'
-                        ]
-                      }}
-                      transition={{ repeat: Infinity, duration: 3 }}
-                      style={{
-                        position: 'absolute',
-                        inset: 0,
-                        borderRadius: '14px',
-                        pointerEvents: 'none',
-                      }}
-                    />
-                  )}
-                  
-                  <div style={{ position: 'absolute', top: '12px', right: '12px' }}>
-                    <StatusBadge type={status}>{getStatusText(status)}</StatusBadge>
-                  </div>
-                  
-                  <motion.div whileHover={isReady ? { scale: 1.02 } : {}}>
-                    <IconContainer 
-                      size={48} 
-                      style={{ 
-                        marginBottom: '16px',
-                        background: isReady ? '#f0fdf4' : '#fafafa',
-                      }}
-                    >
-                      {wf.icon}
-                    </IconContainer>
-                  </motion.div>
-                  
-                  <h3 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '6px' }}>
-                    {wf.name}
-                  </h3>
-                  
-                  <BodyText size="sm" style={{ marginBottom: '12px', color: '#666' }}>
-                    {wf.description}
-                  </BodyText>
-                  
-                  <Caption>{wf.engine}</Caption>
-                </HoverCard>
-              </StaggerItem>
-            )
-          })}
-        </CardGrid>
-      </StaggerContainer>
+      {/* 模型存储路径 */}
+      <div style={{
+        padding: '16px 20px',
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: '12px',
+        marginBottom: '24px',
+      }}>
+        <div style={{ 
+          fontSize: '12px', 
+          fontWeight: 600, 
+          color: 'var(--text-muted)', 
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+          marginBottom: '16px',
+        }}>
+          Model Cache Paths
+        </div>
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {paths && (
+            <>
+              <PathCard
+                title="MBForge"
+                path={paths.mbforge.path}
+                exists={paths.mbforge.exists}
+                size_mb={paths.mbforge.size_mb}
+                isEditing={editingPath === 'mbforge'}
+                editValue={editValue}
+                onEdit={() => {
+                  setEditingPath('mbforge')
+                  setEditValue(paths.mbforge.path)
+                }}
+                onSave={savePath}
+                onCancel={() => setEditingPath(null)}
+                onChange={setEditValue}
+              />
+              <PathCard
+                title="HuggingFace"
+                path={paths.huggingface.path}
+                exists={paths.huggingface.exists}
+                size_mb={paths.huggingface.size_mb}
+                envVar={paths.huggingface.env_var}
+              />
+              <PathCard
+                title="ModelScope"
+                path={paths.modelscope.path}
+                exists={paths.modelscope.exists}
+                size_mb={paths.modelscope.size_mb}
+                envVar={paths.modelscope.env_var}
+              />
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* AI Models */}
+      <div style={{
+        padding: '16px 20px',
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: '12px',
+      }}>
+        <div style={{ 
+          fontSize: '12px', 
+          fontWeight: 600, 
+          color: 'var(--text-muted)', 
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+          marginBottom: '16px',
+        }}>
+          AI Models ({downloadedModels}/{models.length} downloaded)
+        </div>
+        
+        {models.length === 0 ? (
+          <div style={{
+            padding: '24px',
+            textAlign: 'center',
+            color: 'var(--text-muted)',
+            fontSize: '13px',
+          }}>
+            Loading models...
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {models.map(model => (
+              <ModelCard 
+                key={model.id} 
+                model={model} 
+                onDownload={downloadModel}
+                onDelete={deleteModel}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </PageContainer>
   )
 }

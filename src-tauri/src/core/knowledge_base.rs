@@ -1,16 +1,16 @@
+//! 知识库 — FTS5 全文搜索（无需 embedding 模型）
+//!
+//! 使用 SQLite FTS5 实现文本搜索，纯本地运行，不依赖任何外部模型。
+
 use std::path::Path;
 use std::sync::Mutex;
 
-use super::config::EmbedConfig;
 use super::document_tree::DocumentTreeIndex;
-use super::embedding::Embedder;
 use super::vector_store::{SearchResult, SqliteVectorStore, VectorItem, VectorStore};
 use crate::parsers::sections::{SectionChunk, TreeNode};
 
-// Re-export PageContent so it can be imported from knowledge_base module
 pub use super::document_tree::PageContent;
 
-/// Count total nodes in a tree recursively
 fn count_nodes(nodes: &[TreeNode]) -> usize {
     nodes.iter().map(|n| 1 + count_nodes(&n.nodes)).sum()
 }
@@ -18,56 +18,47 @@ fn count_nodes(nodes: &[TreeNode]) -> usize {
 pub struct KbStats {
     pub document_count: usize,
     pub section_count: usize,
-    pub total_vectors: usize,
+    pub total_sections: usize,
 }
 
 pub struct KnowledgeBase {
     vector_store: Box<dyn VectorStore>,
     tree_index: Mutex<DocumentTreeIndex>,
-    embedder: Embedder,
 }
 
 impl KnowledgeBase {
-    pub fn new(project_root: &Path, config: &EmbedConfig) -> Result<Self, String> {
+    pub fn new(project_root: &Path) -> Result<Self, String> {
         let kb_dir = project_root.join(".mbforge").join("knowledge_base");
         std::fs::create_dir_all(&kb_dir).map_err(|e| format!("Failed to create KB dir: {}", e))?;
         let db_path = kb_dir.join("vectors.db");
         let vector_store = SqliteVectorStore::new(&db_path)?;
         let tree_index = DocumentTreeIndex::new(project_root);
-        let embedder = Embedder::new(config);
         Ok(Self {
             vector_store: Box::new(vector_store),
             tree_index: Mutex::new(tree_index),
-            embedder,
         })
     }
 
-    pub async fn index_document(
+    pub fn index_document(
         &self,
         doc_id: &str,
         sections: &[SectionChunk],
         page_texts: &[String],
     ) -> Result<usize, String> {
-        let texts: Vec<String> = sections.iter().map(|s| s.text.clone()).collect();
-        let embeddings = self.embedder.embed(texts)?;
-
         let items: Vec<VectorItem> = sections
             .iter()
             .enumerate()
-            .filter_map(|(i, section)| {
-                let embedding = embeddings.get(i)?.clone();
-                Some(VectorItem {
-                    id: format!("{}:sec{}", doc_id, i),
-                    doc_id: doc_id.to_string(),
-                    text: section.text.clone(),
-                    embedding,
-                    metadata: serde_json::json!({
-                        "title": section.title,
-                        "path": section.path,
-                        "page_start": section.page_start,
-                        "page_end": section.page_end,
-                    }),
-                })
+            .map(|(i, section)| VectorItem {
+                id: format!("{}:sec{}", doc_id, i),
+                doc_id: doc_id.to_string(),
+                text: section.text.clone(),
+                embedding: vec![],  // FTS5 不需要 embedding
+                metadata: serde_json::json!({
+                    "title": section.title,
+                    "path": section.path,
+                    "page_start": section.page_start,
+                    "page_end": section.page_end,
+                }),
             })
             .collect();
 
@@ -78,17 +69,12 @@ impl KnowledgeBase {
         Ok(sections.len())
     }
 
-    pub async fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
-        let query_embedding = self.embedder.embed_single(query)?;
-        self.vector_store.search(&query_embedding, top_k, None)
+    pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
+        self.vector_store.search(query, top_k, None)
     }
 
-    /// 同步版本的 search（用于 native 工具的同步闭包中调用）
     pub fn search_sync(&self, query: &str, top_k: usize) -> Vec<SearchResult> {
-        self.embedder.embed_single(query)
-            .ok()
-            .and_then(|embedding| self.vector_store.search(&embedding, top_k, None).ok())
-            .unwrap_or_default()
+        self.vector_store.search(query, top_k, None).unwrap_or_default()
     }
 
     pub fn get_structure(&self, doc_id: &str) -> Option<Vec<TreeNode>> {
@@ -111,7 +97,7 @@ impl KnowledgeBase {
     }
 
     pub fn stats(&self) -> KbStats {
-        let total_vectors = self.vector_store.count().unwrap_or(0);
+        let total_sections = self.vector_store.count().unwrap_or(0);
         let (document_count, section_count) = self
             .tree_index
             .lock()
@@ -119,7 +105,6 @@ impl KnowledgeBase {
             .map(|t| {
                 let trees = t.load_trees();
                 let doc_count = trees.len();
-                // Sum up section counts from all documents
                 let sec_count: usize = trees.values().map(|nodes| count_nodes(nodes)).sum();
                 (doc_count, sec_count)
             })
@@ -127,12 +112,8 @@ impl KnowledgeBase {
         KbStats {
             document_count,
             section_count,
-            total_vectors,
+            total_sections,
         }
-    }
-
-    pub fn vector_store(&self) -> &dyn VectorStore {
-        self.vector_store.as_ref()
     }
 }
 
@@ -147,12 +128,9 @@ pub async fn kb_search(
     top_k: Option<usize>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let top_k = top_k.unwrap_or(5);
-    let config = super::config::AppConfig::load().embed;
-    let kb = KnowledgeBase::new(std::path::Path::new(&root), &config)
+    let kb = KnowledgeBase::new(std::path::Path::new(&root))
         .map_err(|e| format!("KB init failed: {}", e))?;
-    let results = kb
-        .search(&query, top_k)
-        .await
+    let results = kb.search(&query, top_k)
         .map_err(|e| format!("Search failed: {}", e))?;
     Ok(results
         .into_iter()
@@ -172,16 +150,14 @@ pub fn kb_get_structure(
     root: String,
     doc_id: String,
 ) -> Result<Option<Vec<TreeNode>>, String> {
-    let config = super::config::AppConfig::load().embed;
-    let kb = KnowledgeBase::new(std::path::Path::new(&root), &config)
+    let kb = KnowledgeBase::new(std::path::Path::new(&root))
         .map_err(|e| format!("KB init failed: {}", e))?;
     Ok(kb.get_structure(&doc_id))
 }
 
 #[tauri::command]
 pub fn kb_get_pages(root: String, doc_id: String, pages: String) -> Vec<PageContent> {
-    let config = super::config::AppConfig::load().embed;
-    if let Ok(kb) = KnowledgeBase::new(std::path::Path::new(&root), &config) {
+    if let Ok(kb) = KnowledgeBase::new(std::path::Path::new(&root)) {
         kb.get_pages(&doc_id, &pages)
     } else {
         Vec::new()
@@ -196,8 +172,7 @@ mod tests {
     fn test_kb_creation() {
         let dir = std::env::temp_dir().join(format!("kb_test_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        let config = EmbedConfig::default();
-        let kb = KnowledgeBase::new(&dir, &config);
+        let kb = KnowledgeBase::new(&dir);
         assert!(kb.is_ok());
     }
 
@@ -205,8 +180,7 @@ mod tests {
     fn test_remove_nonexistent() {
         let dir = std::env::temp_dir().join(format!("kb_test_rm_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        let config = EmbedConfig::default();
-        let kb = KnowledgeBase::new(&dir, &config).unwrap();
+        let kb = KnowledgeBase::new(&dir).unwrap();
         assert!(kb.remove_document("nonexistent").is_ok());
     }
 }

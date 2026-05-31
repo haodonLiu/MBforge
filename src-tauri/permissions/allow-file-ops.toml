@@ -1,0 +1,8 @@
+[[permission]]
+identifier = "allow-file-ops"
+description = "Allows file operations (upload, delete, read)"
+commands.allow = [
+  "upload_files",
+  "delete_file",
+  "read_text_file",
+]

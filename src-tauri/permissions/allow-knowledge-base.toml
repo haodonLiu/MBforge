@@ -1,0 +1,8 @@
+[[permission]]
+identifier = "allow-knowledge-base"
+description = "Allows knowledge base search and retrieval"
+commands.allow = [
+  "kb_search",
+  "kb_get_structure",
+  "kb_get_pages",
+]

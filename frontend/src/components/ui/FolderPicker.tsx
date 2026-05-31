@@ -3,6 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { FolderOpenIcon } from '../icons'
 import Button from './Button'
 import { showToast } from '../../hooks/useToast'
+import { isTauriAvailable } from '../../api/tauri-bridge'
 
 interface FolderPickerProps {
   value: string
@@ -12,10 +13,6 @@ interface FolderPickerProps {
   disabled?: boolean
 }
 
-/**
- * Folder picker using native Tauri dialog.
- * Requires Tauri runtime - no browser fallback.
- */
 export function FolderPicker({ 
   value, 
   onChange, 
@@ -26,19 +23,70 @@ export function FolderPicker({
   const [loading, setLoading] = useState(false)
 
   const handleSelect = async () => {
+    console.log('[FolderPicker] === handleSelect START ===')
+    console.log('[FolderPicker] Title:', title)
+    console.log('[FolderPicker] Tauri available:', isTauriAvailable())
+    console.log('[FolderPicker] Current value:', value)
+    
+    if (!isTauriAvailable()) {
+      console.error('[FolderPicker] Tauri is NOT available!')
+      showToast('Tauri 环境不可用，请在桌面应用中打开', 'error')
+      return
+    }
+    
     setLoading(true)
+    
     try {
+      console.log('[FolderPicker] Calling dialog open...')
+      const startTime = Date.now()
+      
       const selected = await open({
         directory: true,
         multiple: false,
-        title,
+        title: title,
       })
-      if (selected && typeof selected === 'string') {
-        onChange(selected)
+      
+      const elapsed = Date.now() - startTime
+      console.log('[FolderPicker] Dialog returned after', elapsed, 'ms')
+      console.log('[FolderPicker] Selected value:', JSON.stringify(selected))
+      console.log('[FolderPicker] Selected type:', typeof selected)
+      
+      if (selected) {
+        const raw = typeof selected === 'string' ? selected : Array.isArray(selected) ? selected[0] : ''
+        if (raw) {
+          const cleaned = raw.replace(/^\\\\\?\\/, '')
+          console.log('[FolderPicker] Path selected:', raw, '→ cleaned:', cleaned)
+          onChange(cleaned)
+        }
+      } else {
+        console.log('[FolderPicker] Dialog was cancelled (null/undefined)')
       }
-    } catch (e) {
-      showToast(`选择失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
+    } catch (e: unknown) {
+      const error = e as Error
+      console.error('[FolderPicker] === ERROR ===')
+      console.error('[FolderPicker] Error name:', error?.name)
+      console.error('[FolderPicker] Error message:', error?.message)
+      console.error('[FolderPicker] Error stack:', error?.stack)
+      console.error('[FolderPicker] Full error:', error)
+      
+      // Try to extract more details
+      if (typeof e === 'object') {
+        console.error('[FolderPicker] Error details:', JSON.stringify(e, null, 2))
+      }
+      
+      // Check for common error patterns
+      const msg = error?.message || String(e)
+      if (msg.includes('not allowed') || msg.includes('permission')) {
+        showToast('权限不足：对话框被拒绝', 'error')
+      } else if (msg.includes('not available')) {
+        showToast('对话框插件不可用', 'error')
+      } else if (msg.includes('IPC')) {
+        showToast('Tauri IPC 通信错误', 'error')
+      } else {
+        showToast(`选择失败: ${msg}`, 'error')
+      }
     } finally {
+      console.log('[FolderPicker] === handleSelect END ===')
       setLoading(false)
     }
   }

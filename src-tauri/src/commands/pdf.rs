@@ -37,7 +37,10 @@ pub struct PdfClassification {
 #[tauri::command]
 pub fn classify_pdf(path: String) -> Result<PdfClassification, String> {
     let result = pdf_inspector::detect_pdf(&path)
-        .map_err(|e| format!("pdf-inspector detect failed: {}", e))?;
+        .map_err(|e| {
+            log::error!("classify_pdf failed for path={}: {}", path, e);
+            format!("pdf-inspector detect failed: {}", e)
+        })?;
 
     let pdf_type = match result.pdf_type {
         pdf_inspector::PdfType::TextBased => "TextBased",
@@ -45,6 +48,8 @@ pub fn classify_pdf(path: String) -> Result<PdfClassification, String> {
         pdf_inspector::PdfType::Mixed => "Mixed",
         pdf_inspector::PdfType::ImageBased => "ImageBased",
     };
+
+    log::info!("classify_pdf: path={} type={} pages={} ocr={:?}", path, pdf_type, result.page_count, result.pages_needing_ocr);
 
     Ok(PdfClassification {
         pdf_type: pdf_type.to_string(),
@@ -89,7 +94,12 @@ pub struct PdfExtraction {
 #[tauri::command]
 pub fn extract_text(path: String) -> Result<PdfExtraction, String> {
     let result = pdf_inspector::process_pdf(&path)
-        .map_err(|e| format!("pdf-inspector process failed: {}", e))?;
+        .map_err(|e| {
+            log::error!("extract_text failed for path={}: {}", path, e);
+            format!("pdf-inspector process failed: {}", e)
+        })?;
+
+    log::info!("extract_text: path={} pages={} ocr={:?}", path, result.page_count, result.pages_needing_ocr);
 
     Ok(PdfExtraction {
         markdown: result.markdown.unwrap_or_default(),

@@ -39,6 +39,19 @@
   --warning: #f59e0b;
 }
 
+/* Dark mode: accent is light, so text on accent must be dark */
+[data-theme="dark"] .btn-primary {
+  color: #1a1a1a;
+}
+
+[data-theme="dark"] .about-logo {
+  color: #1a1a1a;
+}
+
+[data-theme="dark"] .toggle input:checked + .toggle-slider::before {
+  background: #1a1a1a;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -1061,4 +1074,77 @@ body {
 }
 .chat-markdown td:last-child, .chat-markdown th:last-child {
   padding-right: 14px;
+}
+
+/* ---- Markdown 文件预览 ---- */
+.markdown-preview {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--text-primary);
+}
+.markdown-preview h1 { font-size: 28px; font-weight: 700; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.markdown-preview h2 { font-size: 22px; font-weight: 600; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.markdown-preview h3 { font-size: 18px; font-weight: 600; margin: 24px 0 10px; }
+.markdown-preview h4 { font-size: 16px; font-weight: 600; margin: 20px 0 8px; }
+.markdown-preview p { margin: 12px 0; }
+.markdown-preview a { color: var(--accent); text-decoration: none; }
+.markdown-preview a:hover { text-decoration: underline; }
+.markdown-preview ul, .markdown-preview ol { padding-left: 24px; margin: 12px 0; }
+.markdown-preview li { margin: 4px 0; }
+.markdown-preview blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 8px 16px;
+  margin: 16px 0;
+  background: var(--bg-surface);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-secondary);
+}
+.markdown-preview code {
+  background: var(--bg-base);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+.markdown-preview pre {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+  margin: 16px 0;
+}
+.markdown-preview pre code {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.markdown-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 16px 0;
+  font-size: 14px;
+}
+.markdown-preview th, .markdown-preview td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  text-align: left;
+}
+.markdown-preview th {
+  background: var(--bg-surface);
+  font-weight: 600;
+}
+.markdown-preview tr:nth-child(even) {
+  background: var(--bg-surface);
+}
+.markdown-preview img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 12px 0;
+}
+.markdown-preview hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 24px 0;
 }

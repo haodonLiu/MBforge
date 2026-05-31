@@ -129,13 +129,6 @@ export function moleculeStats(projectRoot: string) {
   )
 }
 
-// Agent
-export function getChatHistory(projectRoot: string) {
-  return fetchJson<{ success: boolean; messages: import('../types').ChatMessage[] }>(
-    `${API_BASE}/agent/history?project_root=${encodeURIComponent(projectRoot)}`,
-  )
-}
-
 // File Tree
 export function getFileTree(projectRoot: string) {
   return fetchJson<{ success: boolean; tree: import('../types').FileNode[]; error?: string }>(

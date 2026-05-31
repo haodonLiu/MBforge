@@ -2,6 +2,54 @@ use lopdf::{Document, Object, ObjectId};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+// ---------------------------------------------------------------------------
+// 坐标转换 — 图像坐标 ↔ PDF 坐标
+// 移植自 src/mbforge/parsers/molecule/coords.py
+// ---------------------------------------------------------------------------
+
+/// 计算像素/点的缩放比例（按宽度计算）。
+pub fn scale_from_page_size(
+    page_w_pts: f64,
+    _page_h_pts: f64,
+    image_w: u32,
+    _image_h: u32,
+) -> f64 {
+    if page_w_pts > 0.0 {
+        image_w as f64 / page_w_pts
+    } else {
+        1.0
+    }
+}
+
+/// 图像坐标 → PDF 坐标（左下角原点）。
+/// bbox_img: (x1, y1, x2, y2)，图像坐标系，左上角原点
+pub fn image_to_pdf_bbox(
+    bbox_img: (f64, f64, f64, f64),
+    page_h_pts: f64,
+    scale: f64,
+) -> (f64, f64, f64, f64) {
+    let (x1_img, y1_img, x2_img, y2_img) = bbox_img;
+    let x1 = x1_img / scale;
+    let x2 = x2_img / scale;
+    let y1 = page_h_pts - y2_img / scale;
+    let y2 = page_h_pts - y1_img / scale;
+    (x1, y1, x2, y2)
+}
+
+/// PDF 坐标 → 图像坐标（左上角原点）。
+pub fn pdf_to_image_bbox(
+    bbox_pdf: (f64, f64, f64, f64),
+    page_h_pts: f64,
+    scale: f64,
+) -> (f64, f64, f64, f64) {
+    let (x1_pdf, y1_pdf, x2_pdf, y2_pdf) = bbox_pdf;
+    let x1 = x1_pdf * scale;
+    let x2 = x2_pdf * scale;
+    let y1 = (page_h_pts - y2_pdf) * scale;
+    let y2 = (page_h_pts - y1_pdf) * scale;
+    (x1, y1, x2, y2)
+}
+
 /// An image extracted from a PDF page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedImage {
@@ -248,6 +296,48 @@ mod tests {
         let images =
             extract_images_from_pdf(pdf_path.to_str().unwrap(), &out_dir, 10, 2).unwrap();
         assert!(images.is_empty(), "No images expected");
+    }
+
+    #[test]
+    fn test_scale_from_page_size() {
+        let s = scale_from_page_size(612.0, 792.0, 1224, 1584);
+        assert!((s - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_image_to_pdf_bbox() {
+        // image (0,0) top-left → PDF (0, page_h) bottom-left
+        let (x1, y1, x2, y2) = image_to_pdf_bbox((0.0, 0.0, 100.0, 100.0), 792.0, 2.0);
+        assert!((x1 - 0.0).abs() < 1e-6);
+        assert!((y1 - (792.0 - 100.0 / 2.0)).abs() < 1e-6);
+        assert!((x2 - 50.0).abs() < 1e-6);
+        assert!((y2 - 792.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_pdf_to_image_bbox() {
+        let (x1, y1, x2, y2) = pdf_to_image_bbox((0.0, 0.0, 50.0, 50.0), 792.0, 2.0);
+        assert!((x1 - 0.0).abs() < 1e-6);
+        // y1 = (page_h(792) - y2_pdf(50)) * scale(2) = 1484
+        assert!((y1 - 1484.0).abs() < 1e-6);
+        assert!((x2 - 100.0).abs() < 1e-6);
+        // y2 = (page_h(792) - y1_pdf(0)) * scale(2) = 1584
+        assert!((y2 - 1584.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_image_pdf_roundtrip() {
+        let original = (10.0, 20.0, 200.0, 300.0);
+        let (x1, y1, x2, y2) = image_to_pdf_bbox(original, 792.0, 2.0);
+        let roundtrip = pdf_to_image_bbox((x1, y1, x2, y2), 792.0, 2.0);
+        assert!((roundtrip.0 - original.0).abs() < 1e-6);
+        assert!((roundtrip.1 - original.1).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_scale_zero_width() {
+        let s = scale_from_page_size(0.0, 100.0, 100, 100);
+        assert!((s - 1.0).abs() < 1e-6);
     }
 
     #[test]

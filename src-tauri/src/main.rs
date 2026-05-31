@@ -8,6 +8,7 @@ mod parsers;
 
 use commands::agent::AgentState;
 use commands::molecule::MolDbState;
+use commands::mol_store::MolStoreState;
 
 use std::process::{Command, Stdio};
 use tauri::Manager;
@@ -19,10 +20,17 @@ fn main() {
     let _ = dotenvy::dotenv();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .manage(AgentState::new())
         .manage(MolDbState::new())
+        .manage(MolStoreState::new())
         .invoke_handler(tauri::generate_handler![
+            commands::file_ops::open_file,
+            commands::project_ops::open_project,
+            commands::project_ops::scan_project_files,
+            commands::project_ops::list_project_documents,
             commands::pdf::classify_pdf,
             commands::pdf::extract_text,
             commands::text_ops::text_chunk,
@@ -63,6 +71,16 @@ fn main() {
             commands::molecule::mol_scaffold_profile,
             commands::molecule::mol_find_activity_cliffs,
             commands::molecule::mol_dedup_batch,
+            // Molecule store commands
+            commands::mol_store::mol_store_init,
+            commands::mol_store::mol_store_add,
+            commands::mol_store::mol_store_list,
+            commands::mol_store::mol_store_get,
+            commands::mol_store::mol_store_search,
+            commands::mol_store::mol_store_delete,
+            commands::mol_store::mol_store_stats,
+            commands::mol_store::mol_store_search_by_smiles,
+            commands::mol_store::mol_store_list_by_doc,
         ])
         .setup(|app| {
             let app_handle = app.handle();
@@ -95,9 +113,14 @@ fn main() {
                     .arg("--host").arg("127.0.0.1")
                     .arg("--port").arg("18792")
                     .current_dir(resource_dir);
+            } else if !no_spawn {
+                // Try to start but script not found - likely dev mode
+                // Only log in debug builds
+                #[cfg(debug_assertions)]
+                eprintln!("[tauri] Dev mode: Python server expected to run separately");
+                return Ok(());
             } else {
-                // Development: assume backend is running separately
-                eprintln!("[tauri] Model server script not found, assuming dev mode");
+                // Explicitly disabled
                 return Ok(());
             }
 

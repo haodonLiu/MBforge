@@ -94,6 +94,15 @@ mod tests {
             name: name.to_string(),
             context_text: context.to_string(),
             properties: serde_json::json!({}),
+            esmiles: String::new(),
+            source: "image".into(),
+            moldet_conf: 0.0,
+            scribe_conf: 0.0,
+            composite_conf: 0.0,
+            bbox_pdf: None,
+            page_idx: None,
+            mol_img_path: None,
+            status: "pending".into(),
         }
     }
 

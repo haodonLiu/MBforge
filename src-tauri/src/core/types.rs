@@ -46,6 +46,25 @@ pub struct ExtractionResult {
     pub name: String,
     pub context_text: String,
     pub properties: serde_json::Value,
+    // 以下字段扩展自 Python ExtractionResult (src/mbforge/parsers/molecule/extraction_result.py)
+    #[serde(default)]
+    pub esmiles: String,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub moldet_conf: f64,
+    #[serde(default)]
+    pub scribe_conf: f64,
+    #[serde(default)]
+    pub composite_conf: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bbox_pdf: Option<[f64; 4]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_idx: Option<usize>,
+    #[serde(default)]
+    pub mol_img_path: Option<String>,
+    #[serde(default)]
+    pub status: String,
 }
 
 impl ExtractionResult {
@@ -54,6 +73,21 @@ impl ExtractionResult {
             name: String::new(),
             context_text: context_text.to_string(),
             properties: serde_json::json!({}),
+            esmiles: String::new(),
+            source: "image".into(),
+            moldet_conf: 0.0,
+            scribe_conf: 0.0,
+            composite_conf: 0.0,
+            bbox_pdf: None,
+            page_idx: None,
+            mol_img_path: None,
+            status: "pending".into(),
         }
+    }
+
+    pub fn with_esmiles(context_text: &str, esmiles: &str) -> Self {
+        let mut s = Self::new(context_text);
+        s.esmiles = esmiles.to_string();
+        s
     }
 }

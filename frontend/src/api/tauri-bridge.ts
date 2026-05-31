@@ -3,7 +3,14 @@ import { listen } from '@tauri-apps/api/event'
 
 /** True when running inside a Tauri webview (desktop app). */
 export function isTauriAvailable(): boolean {
-  return typeof window !== 'undefined' && '__TAURI__' in window
+  try {
+    return typeof window !== 'undefined' && (
+      typeof (window as any).__TAURI_INTERNALS__ !== 'undefined' ||
+      typeof (window as any).__TAURI__ !== 'undefined'
+    )
+  } catch {
+    return false
+  }
 }
 
 // ---- pdf-inspector ----
@@ -330,7 +337,18 @@ export interface IndexResult {
 }
 
 export async function indexProjectRust(root: string): Promise<IndexResult> {
-  return invoke<IndexResult>('index_project_rust', { root })
+  try {
+    return await invoke<IndexResult>('index_project_rust', { root })
+  } catch (e: unknown) {
+    const msg = (e as Error)?.message || String(e) || 'Unknown error'
+    // Tauri v2 on Windows sometimes has transient IPC protocol failures
+    if (msg.includes('ipc.localhost') || msg.includes('ERR_CONNECTION_REFUSED') || msg.includes('Failed to fetch')) {
+      console.warn('[tauri-bridge] IPC transport failure, retrying once...')
+      await new Promise(r => setTimeout(r, 500))
+      return invoke<IndexResult>('index_project_rust', { root })
+    }
+    throw e
+  }
 }
 
 export interface KbSearchResult {
@@ -394,7 +412,26 @@ export async function openProject(
   root: string,
   name?: string,
 ): Promise<ProjectResponse> {
-  return invoke<ProjectResponse>('open_project', { root, name: name ?? null })
+  console.log('[tauri-bridge] === openProject START ===')
+  console.log('[tauri-bridge] Root:', root)
+  console.log('[tauri-bridge] Name:', name)
+
+  try {
+    console.log('[tauri-bridge] Calling invoke("open_project", {...})')
+    const response = await invoke<ProjectResponse>('open_project', { 
+      root, 
+      name: name ?? null 
+    })
+    console.log('[tauri-bridge] Response:', JSON.stringify(response, null, 2))
+    console.log('[tauri-bridge] === openProject END ===')
+    return response
+  } catch (e: unknown) {
+    const error = e as Error
+    console.error('[tauri-bridge] === openProject ERROR ===')
+    console.error('[tauri-bridge] Error:', error?.message || String(e))
+    const msg = error?.message || String(e) || 'Unknown invoke error'
+    return { success: false, error: msg }
+  }
 }
 
 /** 项目文档条目 */
@@ -421,6 +458,31 @@ export async function listProjectDocuments(
   docType?: string,
 ): Promise<{ success: boolean; documents: DocumentEntry[] }> {
   return invoke('list_project_documents', { root, docType: docType ?? null })
+}
+
+/** 文件树节点 */
+export interface FileNode {
+  name: string
+  path: string
+  is_dir: boolean
+  children: FileNode[]
+}
+
+/** 获取项目文件树 */
+export async function getFileTree(
+  root: string,
+): Promise<{ success: boolean; tree: FileNode[] }> {
+  return invoke('get_file_tree', { root })
+}
+
+/** 使用系统对话框导入文件到项目 */
+export async function uploadFiles(projectRoot: string): Promise<DocumentEntry[]> {
+  return invoke<DocumentEntry[]>('upload_files', { projectRoot })
+}
+
+/** 删除项目中的文件 */
+export async function deleteFile(projectRoot: string, docId: string): Promise<boolean> {
+  return invoke<boolean>('delete_file', { projectRoot, docId })
 }
 
 // ---- molecule_store ----

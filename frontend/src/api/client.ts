@@ -150,14 +150,23 @@ export function readFileContent(filePath: string) {
   )
 }
 
-// File upload
+// File upload — DEV ONLY fallback for browser mode.
+// Tauri mode uses `uploadFiles()` from tauri-bridge.ts (Rust native dialog + fs copy).
 export function uploadFile(projectRoot: string, file: File) {
   const form = new FormData()
   form.append('file', file)
   form.append('project_root', projectRoot)
-  return fetchJson<{ success: boolean; doc_id?: string; path?: string; doc_type?: string; error?: string }>(
-    `${API_BASE}/file/upload`,
-    { method: 'POST', body: form },
-  )
+  // Do NOT use fetchJson here — FormData requires browser-set multipart boundary.
+  return (async () => {
+    const resp = await fetch(`${API_BASE}/file/upload`, {
+      method: 'POST',
+      body: form,
+    })
+    if (!resp.ok) {
+      const text = await resp.text()
+      throw new Error(`HTTP ${resp.status}: ${text}`)
+    }
+    return resp.json() as Promise<{ success: boolean; doc_id?: string; path?: string; doc_type?: string; error?: string }>
+  })()
 }
 

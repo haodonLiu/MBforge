@@ -62,6 +62,19 @@
 
 ## 快速开始
 
+### 一键启动（推荐）
+
+```bash
+# Windows: 双击 start-dev.bat 或运行 PowerShell 脚本
+start-dev.bat        # 批处理脚本
+start-dev.ps1        # PowerShell 脚本（支持彩色输出和状态监控）
+
+# Linux/macOS
+./start-dev.sh
+```
+
+### 手动启动
+
 ```bash
 # 安装 Python 依赖
 uv sync --dev
@@ -72,6 +85,8 @@ uv run uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792
 # 启动前端（终端 2）
 cd frontend && npm run dev
 ```
+
+> **注意**: 启动脚本会自动检测并等待服务就绪，然后打开浏览器访问 http://localhost:5173
 
 ### 生产构建
 
@@ -182,9 +197,6 @@ MBForge/
 │   │   ├── hooks/                #   React Hooks
 │   │   └── types/                #   TypeScript 类型
 │   └── vite.config.ts            #   Vite 配置（API 代理 18792）
-│
-├── rust/                         # PyO3 加速模块（~700 行）
-│   └── src/lib.rs                #   高精度 Tanimoto 矩阵
 │
 ├── setup/                        # 一键配置脚本
 │   ├── index.sh / index.bat      #   交互式安装

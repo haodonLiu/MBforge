@@ -182,6 +182,22 @@ class MoleculeDatabase:
         cursor = self._conn.execute("PRAGMA table_info(molecules)")
         columns = {row["name"] for row in cursor.fetchall()}
 
+        # Migration: rename smiles -> esmiles
+        if "smiles" in columns and "esmiles" not in columns:
+            self._conn.execute("ALTER TABLE molecules RENAME COLUMN smiles TO esmiles")
+            # recreate FTS index since it referenced the old column name
+            self._conn.execute("DROP TABLE IF EXISTS mol_search")
+            self._conn.execute("DROP TABLE IF EXISTS mol_search_config")
+            self._conn.execute("DROP TABLE IF EXISTS mol_search_data")
+            self._conn.execute("DROP TABLE IF EXISTS mol_search_idx")
+            self._conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS mol_search USING fts5(
+                    name, notes, esmiles, content='molecules', content_rowid='rowid'
+                )
+            """)
+            cursor = self._conn.execute("PRAGMA table_info(molecules)")
+            columns = {row["name"] for row in cursor.fetchall()}
+
         for col_def in [
             "source_type TEXT DEFAULT 'text'",
             "status TEXT DEFAULT 'confirmed'",

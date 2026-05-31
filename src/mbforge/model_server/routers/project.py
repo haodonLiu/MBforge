@@ -56,48 +56,61 @@ async def create_project(req: CreateProjectRequest) -> dict:
 async def open_project(req: CreateProjectRequest) -> dict:
     try:
         project = await get_project_from_root(req.root)
-    except Exception:
+    except Exception as e:
         # 目录存在但不是有效项目，自动初始化
-        project = Project.create(Path(req.root), req.name or Path(req.root).name)
+        logger.info(f"Project not found at {req.root}, auto-initializing: {e}")
+        try:
+            project = Project.create(Path(req.root), req.name or Path(req.root).name)
+        except Exception as e2:
+            logger.error(f"Auto-init project failed at {req.root}: {e2}", exc_info=True)
+            return {"success": False, "error": f"无法创建项目: {e2}"}
     return {"success": True, "project": _project_to_dict(project)}
 
 
 @router.get("/list")
 async def list_documents(root: str) -> dict:
-    project = await get_project_from_root(root)
-    docs = project.list_documents()
-    return {
-        "success": True,
-        "documents": [
-            {
-                "doc_id": d.doc_id,
-                "path": str(d.path),
-                "doc_type": d.doc_type,
-                "title": d.title,
-                "indexed": d.indexed,
-            }
-            for d in docs
-        ],
-    }
+    try:
+        project = await get_project_from_root(root)
+        docs = project.list_documents()
+        return {
+            "success": True,
+            "documents": [
+                {
+                    "doc_id": d.doc_id,
+                    "path": str(d.path),
+                    "doc_type": d.doc_type,
+                    "title": d.title,
+                    "indexed": d.indexed,
+                }
+                for d in docs
+            ],
+        }
+    except Exception as e:
+        logger.error(f"List documents failed for root={root}: {e}", exc_info=True)
+        return {"success": False, "error": f"列出文档失败: {e}"}
 
 
 @router.post("/scan")
 async def scan_project(req: CreateProjectRequest) -> dict:
-    project = await get_project_from_root(req.root)
-    docs = project.scan_files()
-    return {
-        "success": True,
-        "documents": [
-            {
-                "doc_id": d.doc_id,
-                "path": str(d.path),
-                "doc_type": d.doc_type,
-                "title": d.title,
-                "indexed": d.indexed,
-            }
-            for d in docs
-        ],
-    }
+    try:
+        project = await get_project_from_root(req.root)
+        docs = project.scan_files()
+        return {
+            "success": True,
+            "documents": [
+                {
+                    "doc_id": d.doc_id,
+                    "path": str(d.path),
+                    "doc_type": d.doc_type,
+                    "title": d.title,
+                    "indexed": d.indexed,
+                }
+                for d in docs
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Scan project failed for root={req.root}: {e}", exc_info=True)
+        return {"success": False, "error": f"扫描项目失败: {e}"}
 
 
 def _build_file_tree(root: Path) -> list[dict]:
@@ -134,8 +147,12 @@ def _build_file_tree(root: Path) -> list[dict]:
 
 @router.get("/file-tree")
 async def file_tree(root: str) -> dict:
-    project = Project.open(Path(root))
-    if project is None:
-        return {"success": False, "error": f"Not a valid project: {root}"}
-    tree = _build_file_tree(project.root)
-    return {"success": True, "tree": tree}
+    try:
+        project = Project.open(Path(root))
+        if project is None:
+            return {"success": False, "error": f"Not a valid project: {root}"}
+        tree = _build_file_tree(project.root)
+        return {"success": True, "tree": tree}
+    except Exception as e:
+        logger.error(f"File tree failed for root={root}: {e}", exc_info=True)
+        return {"success": False, "error": f"获取文件树失败: {e}"}

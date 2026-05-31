@@ -22,15 +22,44 @@ class DeleteFileRequest(BaseModel):
     doc_id: str
 
 
+# 支持文本预览的文件扩展名
+TEXT_EXTENSIONS = {".md", ".txt", ".csv", ".json", ".yaml", ".yml", ".toml", ".py", ".rs", ".ts", ".tsx", ".js", ".jsx", ".css", ".html"}
+
+
+@router.get("/content")
+async def read_file_content(path: str):
+    """读取文本文件内容（用于 Markdown/TXT 等预览）."""
+    try:
+        file_path = Path(path)
+        if not file_path.exists():
+            return {"success": False, "error": f"File not found: {path}"}
+        if file_path.suffix.lower() not in TEXT_EXTENSIONS:
+            return {"success": False, "error": f"Unsupported file type: {file_path.suffix}"}
+        content = file_path.read_text(encoding="utf-8", errors="replace")
+        return {"success": True, "content": content, "filename": file_path.name}
+    except Exception as e:
+        logger.error(f"Read file content failed for path={path}: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/pdf")
-async def serve_pdf(path: str) -> FileResponse:
+async def serve_pdf(path: str):
     """Serve a PDF file for preview."""
-    file_path = Path(path)
-    if not file_path.exists():
-        raise FileAccessError(f"File not found: {path}")
-    if not file_path.suffix.lower() == ".pdf":
-        raise FileAccessError("Only PDF files can be served")
-    return FileResponse(file_path, media_type="application/pdf")
+    try:
+        file_path = Path(path)
+        if not file_path.exists():
+            logger.warning(f"PDF not found: {path}")
+            return {"success": False, "error": f"File not found: {path}"}
+        if not file_path.suffix.lower() == ".pdf":
+            return {"success": False, "error": "Only PDF files can be served"}
+        return FileResponse(
+            file_path,
+            media_type="application/pdf",
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
+    except Exception as e:
+        logger.error(f"Serve PDF failed for path={path}: {e}", exc_info=True)
+        return {"success": False, "error": f"无法打开 PDF: {e}"}
 
 
 @router.post("/upload")

@@ -195,77 +195,89 @@ def _download_from_modelscope(model_id: str, *, timeout: int = 300):
 
 @router.get("/models")
 async def list_models() -> dict:
-    result = []
-    for mid, info in MODEL_CATALOG.items():
-        result.append({
-            "id": mid,
-            "name": info["name"],
-            "type": info["type"],
-            "description": info.get("description", ""),
-            "ms_repo": info.get("ms_repo", ""),
-            "downloaded": _is_downloaded(mid),
-            "downloading": _download_tasks.get(mid, False),
-            "local_path": str(_model_local_path(mid)),
-            "license": info.get("license", "Unknown"),
-            "license_url": info.get("license_url", ""),
-            "size_mb": info.get("size_mb", 0),
-            "source_url": info.get("source_url", ""),
-        })
-    return {"success": True, "models": result}
+    try:
+        result = []
+        for mid, info in MODEL_CATALOG.items():
+            result.append({
+                "id": mid,
+                "name": info["name"],
+                "type": info["type"],
+                "description": info.get("description", ""),
+                "ms_repo": info.get("ms_repo", ""),
+                "downloaded": _is_downloaded(mid),
+                "downloading": _download_tasks.get(mid, False),
+                "local_path": str(_model_local_path(mid)),
+                "license": info.get("license", "Unknown"),
+                "license_url": info.get("license_url", ""),
+                "size_mb": info.get("size_mb", 0),
+                "source_url": info.get("source_url", ""),
+            })
+        return {"success": True, "models": result}
+    except Exception as e:
+        logger.error(f"List models failed: {e}", exc_info=True)
+        return {"success": False, "error": f"获取模型列表失败: {e}"}
 
 
 @router.get("/model-dir")
 async def get_model_dir() -> dict:
     """返回当前模型下载目录路径."""
-    return {"success": True, "model_dir": str(_get_model_cache_dir())}
+    try:
+        return {"success": True, "model_dir": str(_get_model_cache_dir())}
+    except Exception as e:
+        logger.error(f"Get model dir failed: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
 
 
 @router.get("/list-downloaded")
 async def list_downloaded() -> dict:
     """扫描模型目录，返回所有已下载模型的信息."""
-    cache_dir = _get_model_cache_dir()
-    downloaded = []
-    if cache_dir.exists():
-        for entry in cache_dir.iterdir():
-            if not entry.is_dir():
-                # 单文件模型（如 moldetv2-doc.pt）
-                if entry.suffix in (".pt", ".pth", ".onnx"):
-                    size_bytes = entry.stat().st_size
+    try:
+        cache_dir = _get_model_cache_dir()
+        downloaded = []
+        if cache_dir.exists():
+            for entry in cache_dir.iterdir():
+                if not entry.is_dir():
+                    # 单文件模型（如 moldetv2-doc.pt）
+                    if entry.suffix in (".pt", ".pth", ".onnx"):
+                        size_bytes = entry.stat().st_size
+                        # 尝试匹配 catalog
+                        matched_id = None
+                        for mid, info in MODEL_CATALOG.items():
+                            if info.get("local_name") == entry.name:
+                                matched_id = mid
+                                break
+                        downloaded.append({
+                            "id": matched_id or entry.stem,
+                            "name": entry.stem,
+                            "path": str(entry),
+                            "size_mb": round(size_bytes / 1024 / 1024, 1),
+                            "type": "file",
+                            "in_catalog": matched_id is not None,
+                        })
+                    continue
+                # 目录模型（如 Qwen3-Embedding-0.6B）
+                has_weights = any(entry.rglob("*.bin")) or any(entry.rglob("*.safetensors"))
+                if has_weights:
+                    size_bytes = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
                     # 尝试匹配 catalog
                     matched_id = None
                     for mid, info in MODEL_CATALOG.items():
-                        if info.get("local_name") == entry.name:
+                        repo_name = info["ms_repo"].split("/")[-1]
+                        if entry.name == repo_name:
                             matched_id = mid
                             break
                     downloaded.append({
-                        "id": matched_id or entry.stem,
-                        "name": entry.stem,
+                        "id": matched_id or entry.name,
+                        "name": entry.name,
                         "path": str(entry),
                         "size_mb": round(size_bytes / 1024 / 1024, 1),
-                        "type": "file",
+                        "type": "directory",
                         "in_catalog": matched_id is not None,
                     })
-                continue
-            # 目录模型（如 Qwen3-Embedding-0.6B）
-            has_weights = any(entry.rglob("*.bin")) or any(entry.rglob("*.safetensors"))
-            if has_weights:
-                size_bytes = sum(f.stat().st_size for f in entry.rglob("*") if f.is_file())
-                # 尝试匹配 catalog
-                matched_id = None
-                for mid, info in MODEL_CATALOG.items():
-                    repo_name = info["ms_repo"].split("/")[-1]
-                    if entry.name == repo_name:
-                        matched_id = mid
-                        break
-                downloaded.append({
-                    "id": matched_id or entry.name,
-                    "name": entry.name,
-                    "path": str(entry),
-                    "size_mb": round(size_bytes / 1024 / 1024, 1),
-                    "type": "directory",
-                    "in_catalog": matched_id is not None,
-                })
-    return {"success": True, "models": downloaded, "model_dir": str(cache_dir)}
+        return {"success": True, "models": downloaded, "model_dir": str(cache_dir)}
+    except Exception as e:
+        logger.error(f"List downloaded models failed: {e}", exc_info=True)
+        return {"success": False, "error": f"扫描已下载模型失败: {e}"}
 
 
 @router.delete("/delete/{model_id}")
@@ -316,6 +328,9 @@ async def download_model(model_id: str):
         try:
             for event in _download_from_modelscope(model_id):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"Download stream failed for model={model_id}: {e}", exc_info=True)
+            yield f"data: {json.dumps({'status': 'failed', 'error': str(e)}, ensure_ascii=False)}\n\n"
         finally:
             _download_tasks.pop(model_id, None)
 
@@ -328,12 +343,16 @@ async def download_model(model_id: str):
 
 @router.get("/status/{model_id}")
 async def model_status(model_id: str) -> dict:
-    if model_id not in MODEL_CATALOG:
-        return {"success": False, "error": f"未知模型: {model_id}"}
-    return {
-        "success": True,
-        "model_id": model_id,
-        "downloaded": _is_downloaded(model_id),
-        "downloading": _download_tasks.get(model_id, False),
-        "local_path": str(_model_local_path(model_id)),
-    }
+    try:
+        if model_id not in MODEL_CATALOG:
+            return {"success": False, "error": f"未知模型: {model_id}"}
+        return {
+            "success": True,
+            "model_id": model_id,
+            "downloaded": _is_downloaded(model_id),
+            "downloading": _download_tasks.get(model_id, False),
+            "local_path": str(_model_local_path(model_id)),
+        }
+    except Exception as e:
+        logger.error(f"Model status failed for model_id={model_id}: {e}", exc_info=True)
+        return {"success": False, "error": f"查询模型状态失败: {e}"}

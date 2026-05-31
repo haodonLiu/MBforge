@@ -7,6 +7,7 @@ import json
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
+from starlette.requests import ClientDisconnect
 
 from mbforge.models.base import Message
 from ...utils.exceptions import ModelNotAvailableError
@@ -57,6 +58,8 @@ async def chat_stream(request: Request) -> StreamingResponse:
             for chunk in chunks:
                 yield f"data: {json.dumps({'delta': chunk.delta, 'finish_reason': chunk.finish_reason})}\n\n"
             set_model_status("llm", "ready")
+        except ClientDisconnect:
+            logger.debug("Client disconnected during LLM stream")
         except Exception as e:
             logger.error(f"LLM stream failed: {e}", exc_info=True)
             yield f"data: {json.dumps({'delta': '', 'finish_reason': 'error', 'error': str(e)})}\n\n"

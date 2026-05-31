@@ -52,7 +52,7 @@ async def describe(request: Request) -> dict:
 
 @router.post("/molscribe")
 async def molscribe(request: Request) -> dict:
-    """化学结构图像 → SMILES（MolScribe）."""
+    """化学结构图像 → SMILES（MolScribe）. Uses standalone molscribe module."""
     tmp_path = None
     try:
         body = await request.json()
@@ -61,31 +61,25 @@ async def molscribe(request: Request) -> dict:
         if not image_base64:
             raise ValidationError("image_base64 is required")
 
-        # 解码图片到临时文件
         ext = body.get("ext", "png")
         tmp_path = decode_base64_to_tempfile(image_base64, ext)
 
-        # 获取 MolImagePipeline 的 recognizer
-        pipeline = get_moldet()
-        if pipeline is None or not pipeline.is_available():
-            raise ModelNotAvailableError("MolDet pipeline not available")
-
-        recognizer = pipeline.recognizer
-        if recognizer is None or not recognizer.is_available():
-            raise ModelNotAvailableError("MolScribe recognizer not available")
-
         from PIL import Image
+        from ...parsers.molecule.molscribe import MolScribe
+
         image = Image.open(tmp_path)
+        model = MolScribe()
+        if not model.is_available:
+            raise ModelNotAvailableError(f"MolScribe not available: {model.error}")
+
         loop = asyncio.get_running_loop()
-        smiles, confidence = await loop.run_in_executor(
-            None, lambda: recognizer.predict(image)
-        )
+        result = await loop.run_in_executor(None, lambda: model.predict(image))
 
         set_model_status("vlm", "ready")
         return {
-            "esmiles": smiles,
-            "confidence": confidence,
-            "success": bool(smiles),
+            "esmiles": result.esmiles,
+            "confidence": result.confidence,
+            "success": result.success and bool(result.esmiles),
         }
     except (ValidationError, ModelNotAvailableError):
         raise

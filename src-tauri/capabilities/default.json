@@ -5,8 +5,11 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "dialog:default",
+    "fs:default",
     "shell:default",
     "allow-classify-pdf",
-    "allow-extract-text"
+    "allow-extract-text",
+    "allow-open-file"
   ]
 }

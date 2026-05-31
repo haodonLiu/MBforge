@@ -6,6 +6,19 @@ use crate::core::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationSta
 use crate::core::molecule_dedup::{self, DedupResult};
 use crate::core::sar_query::{ActivityCliff, AnalogWithActivity, ScaffoldProfile};
 
+macro_rules! log_err {
+    ($fmt:literal, $($arg:expr),+) => {{
+        let msg = format!($fmt, $($arg),+);
+        log::error!("{}", msg);
+        msg
+    }};
+    ($msg:expr) => {{
+        let msg: &str = $msg;
+        log::error!("{}", msg);
+        msg.to_string()
+    }};
+}
+
 pub struct MolDbState {
     pub inner: Arc<RwLock<Option<MoleculeRelationDb>>>,
 }
@@ -18,13 +31,21 @@ impl MolDbState {
     }
 }
 
+fn _db<'a>(guard: &'a Option<MoleculeRelationDb>) -> Result<&'a MoleculeRelationDb, String> {
+    guard.as_ref().ok_or_else(|| log_err!("MoleculeDB not initialized"))
+}
+
 #[tauri::command]
 pub async fn mol_init(
     state: tauri::State<'_, MolDbState>,
     project_root: String,
 ) -> Result<(), String> {
     let root = std::path::Path::new(&project_root);
-    let db = MoleculeRelationDb::new(root)?;
+    log::info!("mol_init: project_root={}", project_root);
+    let db = MoleculeRelationDb::new(root).map_err(|e| {
+        log::error!("mol_init failed for {}: {}", project_root, e);
+        e.to_string()
+    })?;
     let mut guard = state.inner.write().await;
     *guard = Some(db);
     Ok(())
@@ -40,8 +61,9 @@ pub async fn mol_add_relation(
     metadata: Option<serde_json::Value>,
 ) -> Result<i64, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    let rel_type = RelationType::from_str(&relation_type).ok_or("Invalid relation type")?;
+    let db = _db(&guard)?;
+    let rel_type = RelationType::from_str(&relation_type)
+        .ok_or_else(|| log_err!("Invalid relation type: {}", relation_type))?;
     let rel = MoleculeRelation {
         id: None,
         mol_a_id,
@@ -51,7 +73,10 @@ pub async fn mol_add_relation(
         metadata,
         created_at: crate::core::helpers::now_rfc3339(),
     };
-    db.add_relation(&rel)
+    db.add_relation(&rel).map_err(|e| {
+        log::error!("mol_add_relation failed: {}", e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -60,8 +85,11 @@ pub async fn mol_delete_relation(
     id: i64,
 ) -> Result<bool, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    db.delete_relation(id)
+    let db = _db(&guard)?;
+    db.delete_relation(id).map_err(|e| {
+        log::error!("mol_delete_relation id={} failed: {}", id, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -70,8 +98,11 @@ pub async fn mol_get_relation(
     id: i64,
 ) -> Result<Option<MoleculeRelation>, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    db.get_relation(id)
+    let db = _db(&guard)?;
+    db.get_relation(id).map_err(|e| {
+        log::error!("mol_get_relation id={} failed: {}", id, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -80,8 +111,11 @@ pub async fn mol_find_by_molecule(
     mol_id: String,
 ) -> Result<Vec<MoleculeRelation>, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    db.find_by_molecule(&mol_id)
+    let db = _db(&guard)?;
+    db.find_by_molecule(&mol_id).map_err(|e| {
+        log::error!("mol_find_by_molecule mol_id={} failed: {}", mol_id, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -91,8 +125,11 @@ pub async fn mol_find_similar(
     min_score: f64,
 ) -> Result<Vec<(MoleculeRelation, f64)>, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    db.find_similar(&mol_id, min_score)
+    let db = _db(&guard)?;
+    db.find_similar(&mol_id, min_score).map_err(|e| {
+        log::error!("mol_find_similar mol_id={} failed: {}", mol_id, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -101,8 +138,11 @@ pub async fn mol_find_same_as(
     mol_id: String,
 ) -> Result<Vec<MoleculeRelation>, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    db.find_same_as(&mol_id)
+    let db = _db(&guard)?;
+    db.find_same_as(&mol_id).map_err(|e| {
+        log::error!("mol_find_same_as mol_id={} failed: {}", mol_id, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -110,8 +150,11 @@ pub async fn mol_get_stats(
     state: tauri::State<'_, MolDbState>,
 ) -> Result<RelationStats, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    db.get_stats()
+    let db = _db(&guard)?;
+    db.get_stats().map_err(|e| {
+        log::error!("mol_get_stats failed: {}", e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -121,8 +164,11 @@ pub async fn mol_assign_cluster(
     cluster_id: String,
 ) -> Result<i64, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    molecule_cluster::assign_to_cluster(&mol_id, &cluster_id, db)
+    let db = _db(&guard)?;
+    molecule_cluster::assign_to_cluster(&mol_id, &cluster_id, db).map_err(|e| {
+        log::error!("mol_assign_cluster mol_id={} cluster_id={} failed: {}", mol_id, cluster_id, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -132,8 +178,11 @@ pub async fn mol_remove_from_cluster(
     cluster_id: String,
 ) -> Result<bool, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    molecule_cluster::remove_from_cluster(&mol_id, &cluster_id, db)
+    let db = _db(&guard)?;
+    molecule_cluster::remove_from_cluster(&mol_id, &cluster_id, db).map_err(|e| {
+        log::error!("mol_remove_from_cluster mol_id={} cluster_id={} failed: {}", mol_id, cluster_id, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -142,8 +191,11 @@ pub async fn mol_get_cluster_members(
     cluster_id: String,
 ) -> Result<ClusterInfo, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    molecule_cluster::get_cluster_members(&cluster_id, db)
+    let db = _db(&guard)?;
+    molecule_cluster::get_cluster_members(&cluster_id, db).map_err(|e| {
+        log::error!("mol_get_cluster_members cluster_id={} failed: {}", cluster_id, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -152,8 +204,11 @@ pub async fn mol_get_molecule_clusters(
     mol_id: String,
 ) -> Result<Vec<String>, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    molecule_cluster::get_molecule_clusters(&mol_id, db)
+    let db = _db(&guard)?;
+    molecule_cluster::get_molecule_clusters(&mol_id, db).map_err(|e| {
+        log::error!("mol_get_molecule_clusters mol_id={} failed: {}", mol_id, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -161,8 +216,11 @@ pub async fn mol_list_clusters(
     state: tauri::State<'_, MolDbState>,
 ) -> Result<Vec<ClusterInfo>, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    molecule_cluster::list_clusters(db)
+    let db = _db(&guard)?;
+    molecule_cluster::list_clusters(db).map_err(|e| {
+        log::error!("mol_list_clusters failed: {}", e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -172,9 +230,15 @@ pub async fn mol_find_analogs_with_activity(
     min_similarity: f64,
 ) -> Result<Vec<AnalogWithActivity>, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    let mconn = db.molecules_conn()?;
-    crate::core::sar_query::find_analogs_with_activity(&mol_id, min_similarity, db, &mconn)
+    let db = _db(&guard)?;
+    let mconn = db.molecules_conn().map_err(|e| {
+        log::error!("mol_find_analogs_with_activity db conn failed: {}", e);
+        e.to_string()
+    })?;
+    crate::core::sar_query::find_analogs_with_activity(&mol_id, min_similarity, db, &mconn).map_err(|e| {
+        log::error!("mol_find_analogs_with_activity mol_id={} failed: {}", mol_id, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -183,9 +247,15 @@ pub async fn mol_scaffold_profile(
     scaffold_esmiles: String,
 ) -> Result<ScaffoldProfile, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    let mconn = db.molecules_conn()?;
-    crate::core::sar_query::scaffold_activity_profile(&scaffold_esmiles, &mconn)
+    let db = _db(&guard)?;
+    let mconn = db.molecules_conn().map_err(|e| {
+        log::error!("mol_scaffold_profile db conn failed: {}", e);
+        e.to_string()
+    })?;
+    crate::core::sar_query::scaffold_activity_profile(&scaffold_esmiles, &mconn).map_err(|e| {
+        log::error!("mol_scaffold_profile esmiles={} failed: {}", scaffold_esmiles, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -195,9 +265,15 @@ pub async fn mol_find_activity_cliffs(
     min_activity_ratio: f64,
 ) -> Result<Vec<ActivityCliff>, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
-    let mconn = db.molecules_conn()?;
-    crate::core::sar_query::find_activity_cliffs(min_similarity, min_activity_ratio, &mconn)
+    let db = _db(&guard)?;
+    let mconn = db.molecules_conn().map_err(|e| {
+        log::error!("mol_find_activity_cliffs db conn failed: {}", e);
+        e.to_string()
+    })?;
+    crate::core::sar_query::find_activity_cliffs(min_similarity, min_activity_ratio, &mconn).map_err(|e| {
+        log::error!("mol_find_activity_cliffs failed: sim={} ratio={} err={}", min_similarity, min_activity_ratio, e);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -207,8 +283,9 @@ pub async fn mol_dedup_batch(
     same_as_threshold: f64,
 ) -> Result<DedupResult, String> {
     let guard = state.inner.read().await;
-    let db = guard.as_ref().ok_or("MoleculeDB not initialized")?;
+    let db = _db(&guard)?;
     let sidecar_url = crate::core::constants::sidecar_url();
+    log::info!("mol_dedup_batch: {} molecules, threshold={}", new_mols.len(), same_as_threshold);
     Ok(molecule_dedup::run_dedup_batch(
         &new_mols,
         db,
@@ -216,3 +293,5 @@ pub async fn mol_dedup_batch(
         same_as_threshold,
     ))
 }
+
+

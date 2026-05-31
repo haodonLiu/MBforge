@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-open-file"
+description = "Allows opening files with system default application"
+commands.allow = ["open_file"]

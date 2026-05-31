@@ -7,6 +7,19 @@ use crate::core::agent::Agent;
 use crate::core::config::ModelConfig;
 use crate::core::context::Message;
 
+macro_rules! log_err {
+    ($msg:expr) => {{
+        let msg: &str = $msg;
+        log::error!("{}", msg);
+        msg.to_string()
+    }};
+    ($fmt:literal, $($arg:expr),+) => {{
+        let msg = format!($fmt, $($arg),+);
+        log::error!("{}", msg);
+        msg
+    }};
+}
+
 pub struct AgentState {
     pub agents: Arc<RwLock<HashMap<String, Agent>>>,
     pub default_config: Arc<RwLock<Option<(ModelConfig, String)>>>,
@@ -41,10 +54,11 @@ pub async fn agent_create_session(
     let config_guard = state.default_config.read().await;
     let (config, sidecar_url) = config_guard
         .as_ref()
-        .ok_or("Agent not initialized, call agent_init first")?;
+        .ok_or_else(|| log_err!("Agent not initialized, call agent_init first"))?;
 
     let root = project_root.as_deref().map(std::path::Path::new);
     let agent = Agent::new(config, sidecar_url, root);
+    log::info!("Agent session created: {}", session_id);
 
     let mut agents = state.agents.write().await;
     agents.insert(session_id, agent);
@@ -60,8 +74,11 @@ pub async fn agent_chat(
     let mut agents = state.agents.write().await;
     let agent = agents
         .get_mut(&session_id)
-        .ok_or("Session not found")?;
-    agent.chat(&user_input).await
+        .ok_or_else(|| log_err!("agent_chat: session not found: {}", session_id))?;
+    agent.chat(&user_input).await.map_err(|e| {
+        log::error!("agent_chat failed for session={}: {}", session_id, e);
+        e
+    })
 }
 
 #[tauri::command]
@@ -75,8 +92,11 @@ pub async fn agent_chat_stream(
         let mut agents = state.agents.write().await;
         let agent = agents
             .get_mut(&session_id)
-            .ok_or("Session not found")?;
-        agent.chat_stream(&user_input).await?
+            .ok_or_else(|| log_err!("agent_chat_stream: session not found: {}", session_id))?;
+        agent.chat_stream(&user_input).await.map_err(|e| {
+            log::error!("agent_chat_stream failed for session={}: {}", session_id, e);
+            e
+        })?
     };
 
     let handle = app.clone();
@@ -89,9 +109,13 @@ pub async fn agent_chat_stream(
                 "delta": chunk.delta,
                 "finish_reason": chunk.finish_reason,
             });
-            let _ = handle.emit("agent-stream-chunk", &payload);
+            if let Err(e) = handle.emit("agent-stream-chunk", &payload) {
+                log::error!("agent_chat_stream emit failed for session={}: {}", sid, e);
+            }
         }
-        let _ = handle.emit("agent-stream-done", serde_json::json!({ "session_id": sid }));
+        if let Err(e) = handle.emit("agent-stream-done", serde_json::json!({ "session_id": sid })) {
+            log::error!("agent_chat_stream done emit failed: {}", e);
+        }
     });
     Ok(())
 }
@@ -106,11 +130,12 @@ pub async fn agent_switch_project(
     let config_guard = state.default_config.read().await;
     let (config, sidecar_url) = config_guard
         .as_ref()
-        .ok_or("Agent not initialized, call agent_init first")?;
+        .ok_or_else(|| log_err!("Agent not initialized, call agent_init first"))?;
 
     let root = std::path::Path::new(&project_root);
     let mut agent = Agent::new(config, sidecar_url, Some(root));
     agent.set_project_context(&project_name, &project_root);
+    log::info!("Agent session switched project: {} -> {}", session_id, project_name);
 
     let mut agents = state.agents.write().await;
     agents.insert(session_id, agent);
@@ -125,8 +150,9 @@ pub async fn agent_clear(
     let mut agents = state.agents.write().await;
     let agent = agents
         .get_mut(&session_id)
-        .ok_or("Session not found")?;
+        .ok_or_else(|| log_err!("agent_clear: session not found: {}", session_id))?;
     agent.clear();
+    log::info!("Agent session cleared: {}", session_id);
     Ok(())
 }
 

@@ -60,3 +60,31 @@ export interface ChatMessage {
   content: string
   timestamp?: string
 }
+
+// ---- MolDet 分子检测结果 ----
+
+/** MolDet 检测结果（与后端 ExtractionResult 对齐） */
+export interface ExtractionResult {
+  esmiles: string
+  name: string
+  source: 'image' | 'text' | 'manual'
+  moldet_conf: number
+  scribe_conf: number
+  composite_conf: number
+  bbox_pdf: [number, number, number, number] | null  // [x1, y1, x2, y2] PDF points
+  page_idx: number | null
+  context_text: string
+  mol_img_path: string | null
+  status: 'pending' | 'confirmed' | 'rejected'
+  properties: Record<string, unknown>
+}
+
+/** MolDet 检测框（像素坐标） */
+export interface DetectionBox {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  conf: number
+  result?: ExtractionResult
+}

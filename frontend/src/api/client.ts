@@ -62,9 +62,11 @@ export function getHealth() {
 }
 
 // LLM streaming
-export type ChatStreamEvent =
-  | { delta: string; finish_reason?: string }
-  | { delta: string; finish_reason: string; error?: string }
+export type ChatStreamEvent = {
+  delta: string
+  finish_reason?: string
+  error?: string
+}
 
 export function chatStream(
   messages: { role: string; content: string }[],
@@ -138,6 +140,13 @@ export function getChatHistory(projectRoot: string) {
 export function getFileTree(projectRoot: string) {
   return fetchJson<{ success: boolean; tree: import('../types').FileNode[]; error?: string }>(
     `${API_BASE}/project/file-tree?root=${encodeURIComponent(projectRoot)}`,
+  )
+}
+
+// File content (Markdown/TXT preview)
+export function readFileContent(filePath: string) {
+  return fetchJson<{ success: boolean; content: string; filename: string; error?: string }>(
+    `${API_BASE}/file/content?path=${encodeURIComponent(filePath)}`,
   )
 }
 

@@ -15,6 +15,9 @@ import ProjectView from './components/ProjectView'
 import SettingsModal from './components/SettingsModal'
 import FileTree from './components/FileTree'
 import { useProjectRoot } from './hooks/useProjectRoot'
+import { invoke } from '@tauri-apps/api/core'
+import { isTauriAvailable } from './api/tauri-bridge'
+import { showToast } from './hooks/useToast'
 
 export default function App() {
   const { projectRoot, setProjectRoot } = useProjectRoot()
@@ -88,11 +91,16 @@ export default function App() {
             Files
           </div>
           <FileTree onFileClick={(path) => {
-            // Open PDF in system default viewer, other files show alert
+            if (!isTauriAvailable()) {
+              showToast('文件操作仅支持桌面应用环境', 'info')
+              return
+            }
             if (path.toLowerCase().endsWith('.pdf')) {
-              window.open(`file://${path}`, '_blank')
+              invoke('open_file', { path }).catch((e) => {
+                showToast(`无法打开: ${e}`, 'error')
+              })
             } else {
-              import('./hooks/useToast').then(({ showToast }) => showToast(`文件: ${path}`, 'info'))
+              showToast(`文件: ${path}`, 'info')
             }
           }} />
         </div>

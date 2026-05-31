@@ -13,10 +13,11 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",
-    "@types/katex": "^0.16.8",
-    "dequal": "^2.0.3",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-fs": "^2.5.1",
     "framer-motion": "^12.40.0",
     "katex": "^0.17.0",
+    "pdfjs-dist": "^4.9.155",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
@@ -24,6 +25,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@types/katex": "^0.16.8",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.2",

@@ -57,7 +57,13 @@ pub async fn agent_create_session(
         .ok_or_else(|| log_err!("Agent not initialized, call agent_init first"))?;
 
     let root = project_root.as_deref().map(std::path::Path::new);
-    let agent = Agent::new(config, sidecar_url, root);
+    let mut agent = Agent::new(config, sidecar_url, root);
+    
+    // 尝试加载之前保存的上下文（跨会话持久化）
+    if agent.load_context() {
+        log::info!("Agent session {}: loaded persisted context", session_id);
+    }
+    
     log::info!("Agent session created: {}", session_id);
 
     let mut agents = state.agents.write().await;
@@ -132,9 +138,24 @@ pub async fn agent_switch_project(
         .as_ref()
         .ok_or_else(|| log_err!("Agent not initialized, call agent_init first"))?;
 
+    // 先保存旧 Agent 的上下文
+    {
+        let mut agents = state.agents.write().await;
+        if let Some(old_agent) = agents.get(&session_id) {
+            old_agent.save_context();
+            log::info!("Agent session {}: old context saved before switch", session_id);
+        }
+    }
+
     let root = std::path::Path::new(&project_root);
     let mut agent = Agent::new(config, sidecar_url, Some(root));
     agent.set_project_context(&project_name, &project_root);
+    
+    // 尝试加载新项目的上下文
+    if agent.load_context() {
+        log::info!("Agent session {}: loaded context for new project {}", session_id, project_name);
+    }
+    
     log::info!("Agent session switched project: {} -> {}", session_id, project_name);
 
     let mut agents = state.agents.write().await;
@@ -152,6 +173,14 @@ pub async fn agent_clear(
         .get_mut(&session_id)
         .ok_or_else(|| log_err!("agent_clear: session not found: {}", session_id))?;
     agent.clear();
+    // 清除后删除持久化文件
+    if let Some(ref root) = agent.project_root {
+        let path = root.join(".mbforge/memory/agent_context.json");
+        if path.exists() {
+            let _ = std::fs::remove_file(&path);
+            log::info!("Agent session {}: context file removed", session_id);
+        }
+    }
     log::info!("Agent session cleared: {}", session_id);
     Ok(())
 }
@@ -162,6 +191,11 @@ pub async fn agent_destroy_session(
     session_id: String,
 ) -> Result<(), String> {
     let mut agents = state.agents.write().await;
+    // 销毁前先保存上下文
+    if let Some(agent) = agents.get(&session_id) {
+        agent.save_context();
+        log::info!("Agent session {}: context saved before destroy", session_id);
+    }
     agents.remove(&session_id);
     Ok(())
 }

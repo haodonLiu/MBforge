@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { kbSearch } from '../api/tauri-bridge'
+import { kbSearch, isTauriAvailable } from '../api/tauri-bridge'
 import { SearchIcon, FileTextIcon, HashIcon, ClockIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
 import PageContainer from '../components/ui/PageContainer'
@@ -33,6 +33,12 @@ export default function Search() {
     if (!projectRoot) {
       setResults([])
       setHasSearched(true)
+      return
+    }
+    if (!isTauriAvailable()) {
+      setResults([])
+      setHasSearched(true)
+      setError('搜索功能仅支持桌面应用环境')
       return
     }
     setIsLoading(true)

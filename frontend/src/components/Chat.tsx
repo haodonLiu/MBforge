@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
-import { listDocuments, moleculeStats } from '../api/client'
+import { listDocuments, moleculeStats, chatStream } from '../api/client'
 import {
   isTauriAvailable,
   agentInit,
@@ -146,7 +146,7 @@ export default function Chat() {
   }, [projectRoot])
 
   const sendMessage = useCallback(async () => {
-    if (!input.trim() || isLoading || !projectRoot || !sessionIdRef.current) return
+    if (!input.trim() || isLoading || !projectRoot) return
 
     const userMsg = input.trim()
     setInput('')
@@ -162,38 +162,72 @@ export default function Chat() {
     let settled = false
 
     try {
-      const cancel = await agentChatStream(
-        sessionIdRef.current,
-        userMsg,
-        (delta) => {
-          fullContent += delta
-          setMessages(prev =>
-            prev.map(m => m.id === assistantMsgId
-              ? { ...m, content: fullContent }
-              : m
-            )
-          )
-        },
-        () => {
-          if (!settled) {
-            settled = true
-          }
-        },
-        (error) => {
-          if (!settled) {
-            settled = true
+      if (isTauriAvailable() && sessionIdRef.current) {
+        const cancel = await agentChatStream(
+          sessionIdRef.current,
+          userMsg,
+          (delta) => {
+            fullContent += delta
             setMessages(prev =>
               prev.map(m => m.id === assistantMsgId
-                ? { ...m, content: `错误: ${error}` }
+                ? { ...m, content: fullContent }
                 : m
               )
             )
-          }
-        },
-      )
-
-      // Cleanup listener on unmount
-      return () => cancel()
+          },
+          () => {
+            if (!settled) {
+              settled = true
+            }
+          },
+          (error) => {
+            if (!settled) {
+              settled = true
+              setMessages(prev =>
+                prev.map(m => m.id === assistantMsgId
+                  ? { ...m, content: `错误: ${error}` }
+                  : m
+                )
+              )
+            }
+          },
+        )
+        // Store cancel for cleanup if needed
+        ;(sendMessage as any)._cancel = cancel
+      } else {
+        // Browser dev mode fallback: use HTTP chatStream
+        const chatMessages = allMessages.map(m => ({ role: m.role, content: m.content }))
+        const cancel = chatStream(
+          chatMessages,
+          (event) => {
+            if (event.error) {
+              if (!settled) {
+                settled = true
+                setMessages(prev =>
+                  prev.map(m => m.id === assistantMsgId
+                    ? { ...m, content: `错误: ${event.error}` }
+                    : m
+                  )
+                )
+              }
+            } else {
+              fullContent += event.delta
+              setMessages(prev =>
+                prev.map(m => m.id === assistantMsgId
+                  ? { ...m, content: fullContent }
+                  : m
+                )
+              )
+              if (event.finish_reason) {
+                if (!settled) {
+                  settled = true
+                }
+              }
+            }
+          },
+        )
+        ;(sendMessage as any)._cancel = cancel
+      }
     } catch (e) {
       if (!settled) {
         setMessages(prev =>
@@ -250,37 +284,48 @@ export default function Chat() {
           {messages.map((msg, i) => (
             <motion.div
               key={msg.id ?? i}
-              initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.25 }}
+              initial={{ opacity: 0, y: 12, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
               style={{
                 display: 'flex',
-                gap: '12px',
-                maxWidth: '85%',
+                gap: '10px',
+                maxWidth: '88%',
                 alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
               }}
             >
               {msg.role === 'assistant' && (
-                <Avatar size={32} variant="bot">
-                  <BotIcon size={16} />
-                </Avatar>
+                <div style={{ flexShrink: 0, marginTop: '4px' }}>
+                  <Avatar size={32} variant="bot">
+                    <BotIcon size={16} />
+                  </Avatar>
+                </div>
               )}
               <div style={{
-                padding: '12px 16px',
-                background: msg.role === 'user' ? 'var(--accent)' : 'var(--bg-surface)',
-                color: msg.role === 'user' ? 'white' : 'var(--text-primary)',
-                borderRadius: '12px',
+                position: 'relative',
+                padding: '14px 18px',
+                background: msg.role === 'user'
+                  ? 'linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, #000))'
+                  : 'var(--bg-surface)',
+                color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
+                borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
+                boxShadow: msg.role === 'user'
+                  ? '0 4px 12px rgba(0,0,0,0.15)'
+                  : '0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
                 border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
-                lineHeight: 1.6, fontSize: '14px', maxWidth: '85%',
+                lineHeight: 1.65,
+                fontSize: '14px',
               }}>
                 {msg.role === 'assistant' ? (
-                  <div className="chat-markdown">
+                  <div className="chat-markdown" style={{
+                    '--chat-code-bg': 'var(--bg-hover)',
+                  } as React.CSSProperties}>
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
                         p: ({ children }) => {
                           const processed = renderInlineLatex(children)
-                          return <p style={{ margin: '6px 0' }}>{processed}</p>
+                          return <p style={{ margin: '8px 0', '&:first-child': { marginTop: 0 } } as React.CSSProperties}>{processed}</p>
                         },
                         img: ({ node, ...props }) => (
                           <img
@@ -305,8 +350,58 @@ export default function Chat() {
                               </span>
                             )
                           }
-                          return <code className={className} {...props}>{children}</code>
+                          const isBlock = className?.startsWith('language-')
+                          if (isBlock) {
+                            return (
+                              <div style={{
+                                background: 'var(--bg-hover)',
+                                borderRadius: '10px',
+                                padding: '14px 16px',
+                                margin: '8px 0',
+                                overflowX: 'auto',
+                                fontSize: '13px',
+                                border: '1px solid var(--border)',
+                              }}>
+                                <code className={className} {...props}>{children}</code>
+                              </div>
+                            )
+                          }
+                          return (
+                            <code className={className} {...props}
+                              style={{
+                                background: 'var(--bg-hover)',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontSize: '13px',
+                              }}
+                            >{children}</code>
+                          )
                         },
+                        ul: ({ children }) => <ul style={{ paddingLeft: '20px', margin: '6px 0' }}>{children}</ul>,
+                        ol: ({ children }) => <ol style={{ paddingLeft: '20px', margin: '6px 0' }}>{children}</ol>,
+                        table: ({ children }) => (
+                          <div style={{ overflowX: 'auto', margin: '8px 0' }}>
+                            <table style={{ borderCollapse: 'collapse', fontSize: '13px', width: '100%' }}>
+                              {children}
+                            </table>
+                          </div>
+                        ),
+                        th: ({ children }) => <th style={{ border: '1px solid var(--border)', padding: '6px 10px', background: 'var(--bg-hover)', textAlign: 'left' }}>{children}</th>,
+                        td: ({ children }) => <td style={{ border: '1px solid var(--border)', padding: '6px 10px' }}>{children}</td>,
+                        h1: ({ children }) => <h1 style={{ fontSize: '16px', fontWeight: 600, margin: '12px 0 6px' }}>{children}</h1>,
+                        h2: ({ children }) => <h2 style={{ fontSize: '15px', fontWeight: 600, margin: '10px 0 5px' }}>{children}</h2>,
+                        h3: ({ children }) => <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '8px 0 4px' }}>{children}</h3>,
+                        blockquote: ({ children }) => (
+                          <blockquote style={{
+                            margin: '8px 0',
+                            padding: '6px 12px',
+                            borderLeft: '3px solid var(--accent)',
+                            background: 'var(--bg-hover)',
+                            borderRadius: '0 6px 6px 0',
+                            color: 'var(--text-secondary)',
+                          }}>{children}</blockquote>
+                        ),
+                        hr: () => <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '12px 0' }} />,
                       }}
                     >{msg.content}</ReactMarkdown>
                   </div>
@@ -315,30 +410,44 @@ export default function Chat() {
                 )}
               </div>
               {msg.role === 'user' && (
-                <Avatar size={32} variant="user">
-                  <UserIcon size={16} />
-                </Avatar>
+                <div style={{ flexShrink: 0, marginTop: '4px' }}>
+                  <Avatar size={32} variant="user">
+                    <UserIcon size={16} />
+                  </Avatar>
+                </div>
               )}
             </motion.div>
           ))}
         </AnimatePresence>
         {isLoading && (
-          <div style={{ display: 'flex', gap: '12px', maxWidth: '85%' }}>
-            <Avatar size={32} variant="bot">
-              <BotIcon size={16} />
-            </Avatar>
+          <div style={{ display: 'flex', gap: '10px', maxWidth: '88%', alignSelf: 'flex-start' }}>
+            <div style={{ flexShrink: 0, marginTop: '4px' }}>
+              <Avatar size={32} variant="bot">
+                <BotIcon size={16} />
+              </Avatar>
+            </div>
             <div style={{
-              padding: '12px 16px', background: 'var(--bg-surface)',
-              borderRadius: '12px', border: '1px solid var(--border)',
+              padding: '16px 20px',
+              background: 'var(--bg-surface)',
+              borderRadius: '4px 18px 18px 18px',
+              border: '1px solid var(--border)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              display: 'flex',
+              gap: '5px',
+              alignItems: 'center',
             }}>
-              <motion.div
-                style={{
-                  display: 'inline-block', width: '8px', height: '8px',
-                  background: 'var(--text-muted)', borderRadius: '50%',
-                }}
-                animate={{ scale: [1, 1.3, 1], opacity: [0.6, 1, 0.6] }}
-                transition={{ duration: 1.4, repeat: Infinity }}
-              />
+              {[0, 1, 2].map(i => (
+                <motion.div
+                  key={i}
+                  style={{
+                    width: '7px', height: '7px',
+                    background: 'var(--text-muted)',
+                    borderRadius: '50%',
+                  }}
+                  animate={{ y: [0, -6, 0], opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }}
+                />
+              ))}
             </div>
           </div>
         )}
@@ -371,7 +480,7 @@ export default function Chat() {
           />
           <IconButton
             size={36}
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim() || isLoading || !projectRoot}
             onClick={sendMessage}
           >
             <SendIcon size={16} />

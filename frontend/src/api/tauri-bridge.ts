@@ -374,3 +374,158 @@ export async function kbGetPages(
 ): Promise<PageContent[]> {
   return invoke<PageContent[]>('kb_get_pages', { projectRoot, docId, pages })
 }
+
+// ---- project_ops ----
+
+export interface ProjectInfo {
+  name: string
+  root: string
+  document_count: number
+}
+
+export interface ProjectResponse {
+  success: boolean
+  project?: ProjectInfo
+  error?: string
+}
+
+/** 打开或创建项目（Rust native，不依赖 Python sidecar） */
+export async function openProject(
+  root: string,
+  name?: string,
+): Promise<ProjectResponse> {
+  return invoke<ProjectResponse>('open_project', { root, name: name ?? null })
+}
+
+/** 项目文档条目 */
+export interface DocumentEntry {
+  doc_id: string
+  path: string
+  doc_type: string
+  title: string
+  indexed: boolean
+  added_at: string
+  hash: string
+}
+
+/** 扫描项目文件 */
+export async function scanProjectFiles(
+  root: string,
+): Promise<{ success: boolean; documents: DocumentEntry[] }> {
+  return invoke('scan_project_files', { root })
+}
+
+/** 列出项目文档 */
+export async function listProjectDocuments(
+  root: string,
+  docType?: string,
+): Promise<{ success: boolean; documents: DocumentEntry[] }> {
+  return invoke('list_project_documents', { root, docType: docType ?? null })
+}
+
+// ---- molecule_store ----
+
+export interface MoleculeRecord {
+  mol_id: string
+  esmiles: string
+  name: string
+  source_type: string
+  source_doc: string
+  status: string
+  created_at: string
+  updated_at: string
+  activity: number | null
+  activity_type: string
+  units: string
+}
+
+export interface MolStoreStats {
+  total: number
+  with_activity: number
+  pending: number
+}
+
+export async function molStoreInit(projectRoot: string): Promise<void> {
+  return invoke<void>('mol_store_init', { projectRoot })
+}
+
+export async function molStoreAdd(
+  projectRoot: string,
+  molId: string,
+  esmiles: string,
+  name?: string,
+  sourceDoc?: string,
+  activity?: number,
+  activityType?: string,
+  units?: string,
+  sourceType?: string,
+): Promise<void> {
+  return invoke<void>('mol_store_add', {
+    projectRoot,
+    molId,
+    esmiles,
+    name: name ?? null,
+    sourceDoc: sourceDoc ?? null,
+    activity: activity ?? null,
+    activityType: activityType ?? null,
+    units: units ?? null,
+    sourceType: sourceType ?? null,
+  })
+}
+
+export async function molStoreList(
+  projectRoot: string,
+  limit?: number,
+  offset?: number,
+  sourceType?: string,
+  status?: string,
+): Promise<MoleculeRecord[]> {
+  return invoke<MoleculeRecord[]>('mol_store_list', {
+    projectRoot,
+    limit: limit ?? null,
+    offset: offset ?? null,
+    sourceType: sourceType ?? null,
+    status: status ?? null,
+  })
+}
+
+export async function molStoreGet(
+  projectRoot: string,
+  molId: string,
+): Promise<MoleculeRecord | null> {
+  return invoke<MoleculeRecord | null>('mol_store_get', { projectRoot, molId })
+}
+
+export async function molStoreSearch(
+  projectRoot: string,
+  query: string,
+): Promise<MoleculeRecord[]> {
+  return invoke<MoleculeRecord[]>('mol_store_search', { projectRoot, query })
+}
+
+export async function molStoreDelete(
+  projectRoot: string,
+  molId: string,
+): Promise<boolean> {
+  return invoke<boolean>('mol_store_delete', { projectRoot, molId })
+}
+
+export async function molStoreStats(
+  projectRoot: string,
+): Promise<MolStoreStats> {
+  return invoke<MolStoreStats>('mol_store_stats', { projectRoot })
+}
+
+export async function molStoreSearchBySmiles(
+  projectRoot: string,
+  esmiles: string,
+): Promise<MoleculeRecord | null> {
+  return invoke<MoleculeRecord | null>('mol_store_search_by_smiles', { projectRoot, esmiles })
+}
+
+export async function molStoreListByDoc(
+  projectRoot: string,
+  docId: string,
+): Promise<MoleculeRecord[]> {
+  return invoke<MoleculeRecord[]>('mol_store_list_by_doc', { projectRoot, docId })
+}

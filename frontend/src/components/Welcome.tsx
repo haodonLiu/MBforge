@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { createProject, openProject } from '../api/client'
+import { openProject } from '../api/tauri-bridge'
 import { FolderIcon, ArrowLeftIcon, MoleculeLogo, TrashIcon, XIcon } from './icons'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import { showToast } from '../hooks/useToast'
@@ -12,6 +12,7 @@ import SectionHeader from '../components/ui/SectionHeader'
 import BodyText from '../components/ui/BodyText'
 import Caption from '../components/ui/Caption'
 import Spinner from '../components/ui/Spinner'
+import { FolderPicker } from '../components/ui/FolderPicker'
 
 interface RecentProject {
   name: string
@@ -92,7 +93,7 @@ export default function Welcome({ onProjectOpened }: Props) {
     const fullPath = `${selectedDir.trim()}/${projectName.trim()}`
     setLoading(true)
     try {
-      const resp = await createProject(fullPath, projectName.trim())
+      const resp = await openProject(fullPath, projectName.trim())
       if (resp.success && resp.project) {
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
@@ -149,10 +150,11 @@ export default function Welcome({ onProjectOpened }: Props) {
             <label style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               项目目录
             </label>
-            <Input
+            <FolderPicker
               value={selectedDir}
-              onChange={e => setSelectedDir(sanitizePath(e.target.value))}
-              placeholder="输入父目录路径 (如: D:/research)"
+              onChange={(path) => setSelectedDir(sanitizePath(path))}
+              placeholder="选择项目父目录"
+              title="选择项目父目录"
             />
           </div>
 
@@ -220,12 +222,13 @@ export default function Welcome({ onProjectOpened }: Props) {
             <label style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
               项目路径
             </label>
-            <Input
+            <FolderPicker
               value={selectedDir}
-              onChange={e => setSelectedDir(sanitizePath(e.target.value))}
-              onKeyDown={e => e.key === 'Enter' && handleOpenDir()}
-              placeholder="输入项目根目录路径"
-              autoFocus
+              onChange={(path) => {
+                setSelectedDir(sanitizePath(path))
+              }}
+              placeholder="选择项目文件夹"
+              title="选择 MBForge 项目"
             />
           </div>
 

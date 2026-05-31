@@ -6,10 +6,13 @@
   "permissions": [
     "core:default",
     "dialog:default",
+    "dialog:allow-open",
     "fs:default",
+    "fs:allow-read-dir",
     "shell:default",
     "allow-classify-pdf",
     "allow-extract-text",
     "allow-open-file"
-  ]
+  ],
+  "platforms": ["macOS", "windows", "linux", "android", "iOS"]
 }

@@ -1,6 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getFileTree, uploadFile } from '../api/client'
+import { getFileTree as getFileTreeHttp, uploadFile } from '../api/client'
+import {
+  isTauriAvailable,
+  getFileTree as getFileTreeTauri,
+  uploadFiles as uploadFilesTauri,
+} from '../api/tauri-bridge'
 import { PlusIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
 import { default as BaseTreeNode } from '../components/ui/TreeNode'
@@ -63,7 +68,6 @@ export default function FileTree({ onFileClick }: Props) {
   const [isLoading, setIsLoading] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState('')
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadTree = useCallback(async () => {
     const root = getProjectRoot()
@@ -71,12 +75,19 @@ export default function FileTree({ onFileClick }: Props) {
     setIsLoading(true)
     setError('')
     try {
-      const resp = await getFileTree(root)
-      if (resp.success && resp.tree) {
-        setTree(resp.tree)
+      let treeData: FileNode[] = []
+      if (isTauriAvailable()) {
+        const resp = await getFileTreeTauri(root)
+        treeData = resp.tree
       } else {
-        setError(resp.error || 'Failed to load file tree')
+        const resp = await getFileTreeHttp(root)
+        if (resp.success && resp.tree) {
+          treeData = resp.tree as FileNode[]
+        } else {
+          setError(resp.error || 'Failed to load file tree')
+        }
       }
+      setTree(treeData)
     } catch (e) {
       console.error(e)
       setError('Failed to load file tree')
@@ -89,23 +100,43 @@ export default function FileTree({ onFileClick }: Props) {
     loadTree()
   }, [loadTree])
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
+  const handleImport = async () => {
     const root = getProjectRoot()
     if (!root) return
 
-    setIsUploading(true)
-    for (let i = 0; i < files.length; i++) {
+    if (isTauriAvailable()) {
+      setIsUploading(true)
       try {
-        await uploadFile(root, files[i])
+        await uploadFilesTauri(root)
+        loadTree()
       } catch (err) {
         console.error('Upload failed:', err)
+      } finally {
+        setIsUploading(false)
       }
+      return
     }
-    setIsUploading(false)
-    e.target.value = ''
-    loadTree()
+
+    // Browser dev fallback: trigger hidden file input
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.pdf,.sdf,.mol,.pdb,.md,.txt,.csv'
+    input.multiple = true
+    input.onchange = async (e) => {
+      const files = (e.target as HTMLInputElement).files
+      if (!files || files.length === 0) return
+      setIsUploading(true)
+      for (let i = 0; i < files.length; i++) {
+        try {
+          await uploadFile(root, files[i])
+        } catch (err) {
+          console.error('Upload failed:', err)
+        }
+      }
+      setIsUploading(false)
+      loadTree()
+    }
+    input.click()
   }
 
   if (error) {
@@ -131,18 +162,10 @@ export default function FileTree({ onFileClick }: Props) {
         padding: '10px 12px',
         borderTop: '1px solid var(--border)',
       }}>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.sdf,.mol,.pdb,.md,.txt,.csv"
-          multiple
-          style={{ display: 'none' }}
-          onChange={handleImport}
-        />
         <Button
           variant="dashed"
           size="sm"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={handleImport}
           disabled={isUploading}
           icon={<PlusIcon size={14} />}
           style={{ width: '100%' }}

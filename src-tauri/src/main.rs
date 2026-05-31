@@ -28,9 +28,12 @@ fn main() {
         .manage(MolStoreState::new())
         .invoke_handler(tauri::generate_handler![
             commands::file_ops::open_file,
+            commands::file_ops::upload_files,
+            commands::file_ops::delete_file,
             commands::project_ops::open_project,
             commands::project_ops::scan_project_files,
             commands::project_ops::list_project_documents,
+            commands::project_ops::get_file_tree,
             commands::pdf::classify_pdf,
             commands::pdf::extract_text,
             commands::text_ops::text_chunk,

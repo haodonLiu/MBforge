@@ -83,6 +83,14 @@ impl KnowledgeBase {
         self.vector_store.search(&query_embedding, top_k, None)
     }
 
+    /// 同步版本的 search（用于 native 工具的同步闭包中调用）
+    pub fn search_sync(&self, query: &str, top_k: usize) -> Vec<SearchResult> {
+        self.embedder.embed_single(query)
+            .ok()
+            .and_then(|embedding| self.vector_store.search(&embedding, top_k, None).ok())
+            .unwrap_or_default()
+    }
+
     pub fn get_structure(&self, doc_id: &str) -> Option<Vec<TreeNode>> {
         let tree = self.tree_index.lock().ok()?;
         tree.get_structure(doc_id)

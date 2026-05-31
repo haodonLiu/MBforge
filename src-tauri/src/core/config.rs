@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use super::constants::{global_config_dir, DEFAULT_EMBED_BASE_URL, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL};
+use super::semantic_cache::SemanticCacheConfig;
+use super::stream_search::StreamingSearchConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
@@ -198,6 +200,23 @@ impl AppConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OptimizationConfig {
+    #[serde(default)]
+    pub semantic_cache: SemanticCacheConfig,
+    #[serde(default)]
+    pub streaming_search: StreamingSearchConfig,
+}
+
+impl Default for OptimizationConfig {
+    fn default() -> Self {
+        Self {
+            semantic_cache: SemanticCacheConfig::default(),
+            streaming_search: StreamingSearchConfig::default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,5 +226,14 @@ mod tests {
         let config = AppConfig::default();
         assert_eq!(config.theme, "dark");
         assert_eq!(config.embed.provider, "qwen3");
+    }
+
+    #[test]
+    fn test_optimization_config_default() {
+        let opt = OptimizationConfig::default();
+        assert!(opt.semantic_cache.enabled);
+        assert!(opt.streaming_search.enabled);
+        assert_eq!(opt.semantic_cache.max_size, 1000);
+        assert_eq!(opt.streaming_search.yield_first, 3);
     }
 }

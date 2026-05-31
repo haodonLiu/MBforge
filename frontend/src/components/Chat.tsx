@@ -4,7 +4,8 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
-import { listDocuments, moleculeStats, chatStream } from '../api/client'
+import { chatStream } from '../api/client'
+import { listDocuments, moleculeStats } from '../api/client'
 import {
   isTauriAvailable,
   agentInit,
@@ -12,6 +13,8 @@ import {
   agentChatStream,
   agentGetHistory,
   agentDestroySession,
+  listDocumentsTauri,
+  moleculeStatsTauri,
 } from '../api/tauri-bridge'
 import type { ChatMessage } from '../api/tauri-bridge'
 import { SendIcon, UserIcon, BotIcon, FolderIcon, FileTextIcon, FlaskIcon } from './icons'
@@ -137,12 +140,21 @@ export default function Chat() {
 
   useEffect(() => {
     if (!projectRoot) return
-    listDocuments(projectRoot).then(resp => {
-      if (resp.success) setDocCount(resp.documents.length)
-    }).catch(() => {})
-    moleculeStats(projectRoot).then(resp => {
-      if (resp.success) setMolCount((resp.stats as any).total || 0)
-    }).catch(() => {})
+    if (isTauriAvailable()) {
+      listDocumentsTauri(projectRoot).then(resp => {
+        if (resp.success) setDocCount(resp.documents.length)
+      }).catch(() => {})
+      moleculeStatsTauri(projectRoot).then(resp => {
+        if (resp.success) setMolCount((resp.stats as any).total || 0)
+      }).catch(() => {})
+    } else {
+      listDocuments(projectRoot).then(resp => {
+        if (resp.success) setDocCount(resp.documents.length)
+      }).catch(() => {})
+      moleculeStats(projectRoot).then(resp => {
+        if (resp.success) setMolCount((resp.stats as any).total || 0)
+      }).catch(() => {})
+    }
   }, [projectRoot])
 
   const sendMessage = useCallback(async () => {

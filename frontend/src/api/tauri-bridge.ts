@@ -485,6 +485,84 @@ export async function deleteFile(projectRoot: string, docId: string): Promise<bo
   return invoke<boolean>('delete_file', { projectRoot, docId })
 }
 
+/** 读取文本文件内容（Rust 直接读取，无需 HTTP） */
+export async function readTextFile(path: string): Promise<string> {
+  return invoke<string>('read_text_file', { path })
+}
+
+/** 列出项目文档（与 client.ts listDocuments 兼容的包装） */
+export async function listDocumentsTauri(
+  root: string,
+): Promise<{ success: boolean; documents: DocumentEntry[]; error?: string }> {
+  try {
+    const resp = await listProjectDocuments(root)
+    return { success: true, documents: resp.documents }
+  } catch (e) {
+    return { success: false, documents: [], error: String(e) }
+  }
+}
+
+/** 分子统计（与 client.ts moleculeStats 兼容的包装） */
+export async function moleculeStatsTauri(
+  projectRoot: string,
+): Promise<{ success: boolean; stats: Record<string, unknown>; error?: string }> {
+  try {
+    const stats = await molStoreStats(projectRoot)
+    return { success: true, stats: stats as unknown as Record<string, unknown> }
+  } catch (e) {
+    return { success: false, stats: {}, error: String(e) }
+  }
+}
+
+/** 列出分子（与 client.ts listMolecules 兼容的包装） */
+export async function listMoleculesTauri(
+  projectRoot: string,
+  limit = 100,
+  offset = 0,
+): Promise<{ success: boolean; molecules: import('../types').MoleculeRecord[]; error?: string }> {
+  try {
+    const records = await molStoreList(projectRoot, limit, offset)
+    const molecules = records.map((r) => ({
+      mol_id: r.mol_id,
+      smiles: r.esmiles || '',
+      esmiles: r.esmiles,
+      name: r.name,
+      source_doc: r.source_doc,
+      activity: r.activity,
+      activity_type: r.activity_type,
+      units: r.units,
+      properties: {} as Record<string, unknown>,
+    }))
+    return { success: true, molecules }
+  } catch (e) {
+    return { success: false, molecules: [], error: String(e) }
+  }
+}
+
+/** 搜索分子（与 client.ts searchMolecules 兼容的包装） */
+export async function searchMoleculesTauri(
+  projectRoot: string,
+  q: string,
+): Promise<{ success: boolean; molecules: import('../types').MoleculeRecord[]; error?: string }> {
+  try {
+    const records = await molStoreSearch(projectRoot, q)
+    const molecules = records.map((r) => ({
+      mol_id: r.mol_id,
+      smiles: r.esmiles || '',
+      esmiles: r.esmiles,
+      name: r.name,
+      source_doc: r.source_doc,
+      activity: r.activity,
+      activity_type: r.activity_type,
+      units: r.units,
+      properties: {} as Record<string, unknown>,
+    }))
+    return { success: true, molecules }
+  } catch (e) {
+    return { success: false, molecules: [], error: String(e) }
+  }
+}
+
 // ---- molecule_store ----
 
 export interface MoleculeRecord {

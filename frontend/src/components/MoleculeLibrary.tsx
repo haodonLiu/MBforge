@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { listMolecules, searchMolecules } from '../api/client'
+import { isTauriAvailable, listMoleculesTauri, searchMoleculesTauri } from '../api/tauri-bridge'
 import type { MoleculeRecord } from '../types'
 import { FlaskIcon, SearchIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
@@ -32,20 +33,20 @@ export default function MoleculeLibrary() {
     setIsLoading(true)
     setError(null)
     try {
+      let resp
       if (search.trim()) {
-        const resp = await searchMolecules(projectRoot, search.trim())
-        if (resp.success && resp.molecules) {
-          setMolecules(resp.molecules)
-        } else {
-          setMolecules([])
-        }
+        resp = isTauriAvailable()
+          ? await searchMoleculesTauri(projectRoot, search.trim())
+          : await searchMolecules(projectRoot, search.trim())
       } else {
-        const resp = await listMolecules(projectRoot, 100, 0)
-        if (resp.success && resp.molecules) {
-          setMolecules(resp.molecules)
-        } else {
-          setMolecules([])
-        }
+        resp = isTauriAvailable()
+          ? await listMoleculesTauri(projectRoot, 100, 0)
+          : await listMolecules(projectRoot, 100, 0)
+      }
+      if (resp.success && resp.molecules) {
+        setMolecules(resp.molecules)
+      } else {
+        setMolecules([])
       }
     } catch (e) {
       setMolecules([])

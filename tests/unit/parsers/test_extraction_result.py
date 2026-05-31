@@ -14,8 +14,8 @@ class TestExtractionResult:
 
     def test_default_values(self):
         """默认状态应为 pending."""
-        result = ExtractionResult(smiles="CCO")
-        assert result.smiles == "CCO"
+        result = ExtractionResult(esmiles="CCO")
+        assert result.esmiles == "CCO"
         assert result.status == "pending"
         assert result.source == "image"
         assert result.composite_conf == 0.0
@@ -23,7 +23,7 @@ class TestExtractionResult:
     def test_composite_conf_auto(self):
         """自动计算综合置信度."""
         result = ExtractionResult(
-            smiles="CCO",
+            esmiles="CCO",
             moldet_conf=0.9,
             scribe_conf=0.8,
         )
@@ -32,7 +32,7 @@ class TestExtractionResult:
     def test_composite_conf_explicit(self):
         """显式设置时不覆盖."""
         result = ExtractionResult(
-            smiles="CCO",
+            esmiles="CCO",
             moldet_conf=0.9,
             scribe_conf=0.8,
             composite_conf=0.5,
@@ -42,7 +42,7 @@ class TestExtractionResult:
     def test_serialization(self):
         """序列化与反序列化."""
         result = ExtractionResult(
-            smiles="c1ccccc1",
+            esmiles="c1ccccc1",
             name="benzene",
             source="image",
             moldet_conf=0.95,
@@ -56,7 +56,7 @@ class TestExtractionResult:
         d = result.to_dict()
         restored = ExtractionResult.from_dict(d)
 
-        assert restored.smiles == result.smiles
+        assert restored.esmiles == result.esmiles
         assert restored.name == result.name
         assert restored.source == result.source
         assert restored.moldet_conf == result.moldet_conf
@@ -70,7 +70,7 @@ class TestExtractionResult:
 
     def test_serialization_no_optional(self):
         """无可选字段的序列化."""
-        result = ExtractionResult(smiles="O")
+        result = ExtractionResult(esmiles="O")
         d = result.to_dict()
         restored = ExtractionResult.from_dict(d)
         assert restored.bbox_pdf is None

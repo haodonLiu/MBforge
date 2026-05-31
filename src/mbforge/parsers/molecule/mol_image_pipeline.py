@@ -297,17 +297,15 @@ class MolScribeRecognizer:
         )
 
     def _load_molscribe(self) -> None:
-        """加载 MolScribe 推理后端（MBForge 内置精简版）."""
+        """加载 MolScribe 推理后端（通过 molscribe 封装模块）."""
         try:
-            from .molscribe_inference import MolScribe as MolScribeModel
-            from .molscribe_inference.download import ensure_molscribe_model
+            from .molscribe import MolScribeConfig, MolScribe as _Facade
 
-            # 自动下载权重（如果尚未下载）
-            ckpt_path = ensure_molscribe_model()
-            logger.info("加载 MolScribe 模型：%s", ckpt_path)
-
-            device = None if self.device == "auto" else self.device
-            self._model = MolScribeModel(ckpt_path, device=device)
+            cfg = MolScribeConfig(
+                device=self.device,
+                log_smiles=True,
+            )
+            self._model = _Facade(cfg)
             logger.info("MolScribe 加载成功")
         except Exception as exc:
             logger.warning("MolScribe 加载失败：%s", exc)
@@ -383,20 +381,9 @@ class MolScribeRecognizer:
 
     def _predict_molscribe(self, image: Image.Image) -> tuple[str, float]:
         """使用 molscribe 后端预测."""
-        # molscribe 的典型 API：
-        # results = model.predict_images([image], return_atoms_bonds=True)
-        # smiles = results[0]["smiles"]
-        # conf = results[0].get("confidence", 0.5)
         try:
-            results = self._model.predict_images([image])  # type: ignore[union-attr]
-            result = results[0]
-            if isinstance(result, dict):
-                smiles = result.get("smiles", "")
-                conf = result.get("confidence", 0.5)
-            else:
-                smiles = str(result)
-                conf = 0.5
-            return smiles, float(conf)
+            result = self._model.predict(image)  # type: ignore[union-attr]
+            return result.esmiles, result.confidence
         except Exception as exc:
             logger.warning("MolScribe 预测失败：%s", exc)
             return "", 0.0

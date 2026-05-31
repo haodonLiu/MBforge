@@ -12,6 +12,9 @@ APP_AUTHOR = "MBForge"
 # Single source of truth for Python-side version
 APP_VERSION = "0.2.0"
 
+# 项目元数据格式版本号（与 Rust 侧 PROJECT_FORMAT_VERSION 保持同步）
+PROJECT_FORMAT_VERSION = 1
+
 # 隐藏目录名，存储在项目根目录
 PROJECT_META_DIR = ".mbforge"
 

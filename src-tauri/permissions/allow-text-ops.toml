@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-text-ops"
+description = "Allows text chunking operations"
+commands.allow = ["text_chunk"]

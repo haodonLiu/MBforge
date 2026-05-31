@@ -156,7 +156,7 @@ export default function MoleculeLibrary() {
                     padding: '8px',
                     borderRadius: '6px',
                   }}>
-                    {mol.smiles}
+                    {mol.esmiles}
                   </BodyText>
                   {mol.activity !== null && mol.activity !== undefined && (
                     <BodyText size="sm" style={{ marginTop: '12px' }}>

@@ -82,31 +82,10 @@ export function chatStream(
   )
 }
 
-// Project
-export function createProject(root: string, name = '') {
-  return fetchJson<{ success: boolean; project: import('../types').Project; error?: string }>(
-    `${API_BASE}/project/create`,
-    { method: 'POST', body: JSON.stringify({ root, name }) },
-  )
-}
-
-export function openProject(root: string, name = '') {
-  return fetchJson<{ success: boolean; project: import('../types').Project; error?: string }>(
-    `${API_BASE}/project/open`,
-    { method: 'POST', body: JSON.stringify({ root, name }) },
-  )
-}
-
+// Project (browser dev fallback — Tauri uses Rust native commands)
 export function listDocuments(projectRoot: string) {
   return fetchJson<{ success: boolean; documents: import('../types').DocumentEntry[]; error?: string }>(
     `${API_BASE}/project/list?root=${encodeURIComponent(projectRoot)}`,
-  )
-}
-
-export function scanProject(projectRoot: string) {
-  return fetchJson<{ success: boolean; documents: import('../types').DocumentEntry[]; error?: string }>(
-    `${API_BASE}/project/scan`,
-    { method: 'POST', body: JSON.stringify({ root: projectRoot }) },
   )
 }
 

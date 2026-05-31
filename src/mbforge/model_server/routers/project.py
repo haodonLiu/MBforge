@@ -1,33 +1,22 @@
-"""项目路由."""
+"""项目路由 (Browser dev fallback).
+
+这些端点仅在前端以纯浏览器模式运行时作为降级使用。
+项目打开/扫描/创建的主路径已在 Rust (Tauri) 中实现。
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from fastapi import APIRouter
-from pydantic import BaseModel
 
 from ...core.project import Project
 from ...utils.constants import PROJECT_META_DIR
-from ...utils.exceptions import ProjectNotFoundError
 from ...utils.logger import get_logger
 from ..dependencies import get_project_from_root
 
 logger = get_logger(__name__)
 router = APIRouter()
-
-
-class CreateProjectRequest(BaseModel):
-    root: str
-    name: str = ""
-
-
-class ProjectResponse(BaseModel):
-    name: str
-    root: str
-    document_count: int
-    molecule_count: int
-    indexed_count: int
 
 
 def _project_to_dict(project: Project) -> dict:
@@ -40,31 +29,6 @@ def _project_to_dict(project: Project) -> dict:
         "molecule_count": 0,
         "indexed_count": sum(1 for d in docs if d.indexed),
     }
-
-
-@router.post("/create")
-async def create_project(req: CreateProjectRequest) -> dict:
-    try:
-        project = Project.create(Path(req.root), req.name)
-        return {"success": True, "project": _project_to_dict(project)}
-    except Exception as e:
-        logger.error(f"Failed to create project at {req.root}: {e}", exc_info=True)
-        raise ProjectNotFoundError(str(e))
-
-
-@router.post("/open")
-async def open_project(req: CreateProjectRequest) -> dict:
-    try:
-        project = await get_project_from_root(req.root)
-    except Exception as e:
-        # 目录存在但不是有效项目，自动初始化
-        logger.info(f"Project not found at {req.root}, auto-initializing: {e}")
-        try:
-            project = Project.create(Path(req.root), req.name or Path(req.root).name)
-        except Exception as e2:
-            logger.error(f"Auto-init project failed at {req.root}: {e2}", exc_info=True)
-            return {"success": False, "error": f"无法创建项目: {e2}"}
-    return {"success": True, "project": _project_to_dict(project)}
 
 
 @router.get("/list")
@@ -89,28 +53,6 @@ async def list_documents(root: str) -> dict:
         logger.error(f"List documents failed for root={root}: {e}", exc_info=True)
         return {"success": False, "error": f"列出文档失败: {e}"}
 
-
-@router.post("/scan")
-async def scan_project(req: CreateProjectRequest) -> dict:
-    try:
-        project = await get_project_from_root(req.root)
-        docs = project.scan_files()
-        return {
-            "success": True,
-            "documents": [
-                {
-                    "doc_id": d.doc_id,
-                    "path": str(d.path),
-                    "doc_type": d.doc_type,
-                    "title": d.title,
-                    "indexed": d.indexed,
-                }
-                for d in docs
-            ],
-        }
-    except Exception as e:
-        logger.error(f"Scan project failed for root={req.root}: {e}", exc_info=True)
-        return {"success": False, "error": f"扫描项目失败: {e}"}
 
 
 def _build_file_tree(root: Path) -> list[dict]:

@@ -67,7 +67,7 @@ export default function Button({
       type={type}
       title={title}
       className={className}
-      onClick={onClick}
+      onClick={isDisabled ? undefined : onClick}
       disabled={isDisabled}
       style={base}
       whileHover={isDisabled ? undefined : { scale: 1.03 }}

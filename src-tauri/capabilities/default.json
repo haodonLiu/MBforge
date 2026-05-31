@@ -12,7 +12,18 @@
     "shell:default",
     "allow-classify-pdf",
     "allow-extract-text",
-    "allow-open-file"
+    "allow-open-file",
+    "allow-open-project",
+    "allow-agent",
+    "allow-knowledge-base",
+    "allow-molecule",
+    "allow-mol-store",
+    "allow-pipeline",
+    "allow-project-ops",
+    "allow-text-ops",
+    "allow-classifier",
+    "allow-extractor",
+    "allow-file-ops"
   ],
   "platforms": ["macOS", "windows", "linux", "android", "iOS"]
 }

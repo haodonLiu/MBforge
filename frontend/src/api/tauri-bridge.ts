@@ -524,14 +524,18 @@ export async function listMoleculesTauri(
     const records = await molStoreList(projectRoot, limit, offset)
     const molecules = records.map((r) => ({
       mol_id: r.mol_id,
-      smiles: r.esmiles || '',
       esmiles: r.esmiles,
       name: r.name,
       source_doc: r.source_doc,
+      source_type: r.source_type,
       activity: r.activity,
       activity_type: r.activity_type,
       units: r.units,
-      properties: {} as Record<string, unknown>,
+      status: r.status,
+      properties: r.properties,
+      tags: r.tags,
+      notes: r.notes,
+      created_at: r.created_at,
     }))
     return { success: true, molecules }
   } catch (e) {
@@ -548,14 +552,18 @@ export async function searchMoleculesTauri(
     const records = await molStoreSearch(projectRoot, q)
     const molecules = records.map((r) => ({
       mol_id: r.mol_id,
-      smiles: r.esmiles || '',
       esmiles: r.esmiles,
       name: r.name,
       source_doc: r.source_doc,
+      source_type: r.source_type,
       activity: r.activity,
       activity_type: r.activity_type,
       units: r.units,
-      properties: {} as Record<string, unknown>,
+      status: r.status,
+      properties: r.properties,
+      tags: r.tags,
+      notes: r.notes,
+      created_at: r.created_at,
     }))
     return { success: true, molecules }
   } catch (e) {
@@ -569,14 +577,16 @@ export interface MoleculeRecord {
   mol_id: string
   esmiles: string
   name: string
-  source_type: string
   source_doc: string
-  status: string
-  created_at: string
-  updated_at: string
+  source_type: string
   activity: number | null
   activity_type: string
   units: string
+  status: string
+  properties: Record<string, unknown>
+  tags: string[]
+  notes: string
+  created_at: string
 }
 
 export interface MolStoreStats {

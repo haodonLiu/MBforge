@@ -6,4 +6,5 @@ pub mod molecule;
 pub mod mol_store;
 pub mod pdf;
 pub mod project_ops;
+pub mod sidecar;
 pub mod text_ops;

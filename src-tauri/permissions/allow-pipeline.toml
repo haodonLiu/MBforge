@@ -1,0 +1,9 @@
+[[permission]]
+identifier = "allow-pipeline"
+description = "Allows PDF parsing pipeline commands"
+commands.allow = [
+  "parse_pdf",
+  "post_process_pdf",
+  "process_document",
+  "index_project_rust",
+]

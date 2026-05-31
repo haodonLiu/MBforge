@@ -39,6 +39,7 @@ class MoleculeRecord:
     properties: dict[str, Any] = field(default_factory=dict)
     tags: list[str] = field(default_factory=list)
     notes: str = ""
+    created_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -46,14 +47,15 @@ class MoleculeRecord:
             "esmiles": self.esmiles,
             "name": self.name,
             "source_doc": self.source_doc,
+            "source_type": self.source_type,
             "activity": self.activity,
             "activity_type": self.activity_type,
             "units": self.units,
-            "source_type": self.source_type,
             "status": self.status,
             "properties": self.properties,
             "tags": self.tags,
             "notes": self.notes,
+            "created_at": self.created_at,
         }
 
     @classmethod
@@ -71,6 +73,7 @@ class MoleculeRecord:
             properties=data.get("properties", {}),
             tags=data.get("tags", []),
             notes=data.get("notes", ""),
+            created_at=data.get("created_at", ""),
         )
 
     @property
@@ -124,6 +127,7 @@ class MoleculeRecord:
             units=mol.activity_unit or "nM",
             properties=mol.properties,
             tags=[mol.cas] if mol.cas else [],
+            source_type="text" if mol.source in ("pdf", "sdf") else "manual",
         )
 
 

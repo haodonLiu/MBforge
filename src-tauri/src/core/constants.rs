@@ -26,9 +26,9 @@ pub const LLM_MAX_TOKENS: u32 = 4096;
 pub const LLM_TEMPERATURE: f32 = 0.7;
 pub const LLM_TOP_P: f32 = 0.9;
 
-// Supported file extensions
-pub const SUPPORTED_DOC_EXTS: &[&str] = &[".md", ".txt", ".pdf"];
-pub const SUPPORTED_MOL_EXTS: &[&str] = &[".sdf", ".mol", ".mol2", ".pdb", ".smi"];
+// Supported file extensions (without dot, matching std::path::Path::extension())
+pub const SUPPORTED_DOC_EXTS: &[&str] = &["md", "txt", "pdf"];
+pub const SUPPORTED_MOL_EXTS: &[&str] = &["sdf", "mol", "mol2", "pdb", "smi"];
 
 // Provider strings
 pub const PROVIDER_OPENAI_COMPATIBLE: &str = "openai_compatible";

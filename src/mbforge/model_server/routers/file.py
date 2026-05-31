@@ -1,4 +1,8 @@
-"""文件操作路由."""
+"""文件操作路由 (Browser dev fallback).
+
+这些端点仅在前端以纯浏览器模式运行时作为降级使用。
+文件上传/删除/读取的主路径已在 Rust (Tauri) 中实现。
+"""
 
 from __future__ import annotations
 
@@ -7,7 +11,6 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
 
 from ...utils.exceptions import FileAccessError, PathTraversalError
 from ...utils.logger import get_logger
@@ -15,11 +18,6 @@ from ..dependencies import get_project_from_root
 
 logger = get_logger(__name__)
 router = APIRouter()
-
-
-class DeleteFileRequest(BaseModel):
-    project_root: str
-    doc_id: str
 
 
 # 支持文本预览的文件扩展名
@@ -100,17 +98,3 @@ async def upload_file(
         raise FileAccessError(str(e))
 
 
-@router.post("/delete")
-async def delete_file(req: DeleteFileRequest) -> dict:
-    project = await get_project_from_root(req.project_root)
-
-    try:
-        entry = project.get_document(req.doc_id)
-        if entry and entry.path.exists():
-            entry.path.unlink()
-
-        project.remove_document(req.doc_id)
-        return {"success": True}
-    except Exception as e:
-        logger.error(f"Failed to delete document {req.doc_id}: {e}", exc_info=True)
-        raise FileAccessError(str(e))

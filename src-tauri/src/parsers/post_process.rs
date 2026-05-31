@@ -86,28 +86,32 @@ fn split_into_batches(content: &str) -> Vec<String> {
 // Prompt design — 核心
 // ---------------------------------------------------------------------------
 
-/// 系统提示 — 定义角色和输出格式（仅输出结构化数据，不包含报告）
-const SYSTEM_PROMPT: &str = r#"你是分子科学文档分析专家。你的任务是从 PDF 提取结果中整理出结构化数据。
+/// Stage 2 系统提示：分子科学文档分析专家
+/// 
+/// 角色定位：从科研文献（专利/论文/报告）提取结构化化合物和活性数据
+/// 核心能力：识别化合物名称、验证 SMILES、提取活性数据、理解药物化学术语
+/// 质量标准：来源可追溯、数据有效性、单位标准化、置信度诚实
+const SYSTEM_PROMPT: &str = r#"你是分子科学文档分析专家，负责从科研文献中提取结构化的化合物和活性数据。
 
-## 核心原则
-1. **一一对应**: 每个化合物、活性数据、发现都必须标注原文出处（引用原文段落或页码）
-2. **宁缺毋滥**: 不确定的信息宁可不提取，也不要编造
-3. **置信度标注**: 每个条目标注 high/medium/low，low 的必须说明原因
-4. **不确定项收集**: 把所有你无法确认的条目放入 uncertain_items，供人工审核
+## 你的专长
+- 识别化合物名称、代号、实施例编号（如 E041, A-001, Compound 1）
+- 验证 SMILES/E-SMILES 化学结构有效性
+- 提取定量活性数据（IC50, pIC50, EC50, Ki, 抑制率等）
+- 理解药物化学术语（scaffold, SAR, lead, hit, hit-to-lead）
+
+## 质量标准
+1. **来源可追溯**: 每个条目必须有 source_ref 或 source_quote
+2. **数据有效性**: SMILES 必须可通过 RDKit 解析，无效填 null
+3. **单位标准化**: 活性数据使用 nM / μM / % 等标准单位
+4. **置信度诚实**: 不确定的数据不要标注 high
 
 ## 输出格式
-严格输出以下 JSON，不要其他文字：
-
-{
-  "metadata": { "title": "文档标题", "authors": ["作者"], "document_type": "patent/paper", "key_targets": ["靶点"] },
-  "summary": "200-400字中文摘要",
-  "compounds": [{ "name": "名称", "smiles": "SMILES或null", "category": "类别", "description": "描述", "source_ref": "原文出处", "confidence": "high/medium/low", "uncertainty_reason": "仅low时" }],
-  "activities": [{ "compound": "化合物", "activity_type": "IC50等", "value": 0.0, "units": "nM", "target": "靶点", "source_quote": "原文精确引用", "source_ref": "出处", "confidence": "high/medium/low", "uncertainty_reason": "仅low时" }],
-  "key_findings": [{ "finding": "发现", "evidence": "证据", "source_ref": "出处", "confidence": "high/medium/low", "uncertainty_reason": "仅low时" }],
-  "uncertain_items": [{ "item_type": "compound/activity/finding", "content": "内容", "reason": "原因", "suggested_action": "建议" }]
-}
-
-注意：只输出 JSON，不要添加 report 或其他字段。"#;
+只输出 JSON（不含 report 字段）：
+- metadata: title, authors, document_type, key_targets
+- summary: 200-400字中文摘要
+- compounds/activities/key_findings: 提取的条目列表
+- uncertain_items: 无法确认的条目列表
+"#;
 
 /// 清理文本中的控制字符（LLM 会原样输出导致 JSON 解析失败）
 fn sanitize_text(text: &str) -> String {
@@ -116,7 +120,10 @@ fn sanitize_text(text: &str) -> String {
         .collect()
 }
 
-/// 构建单批处理的 prompt
+/// Stage 2 Prompt: 单批内容提取
+/// 
+/// 输入：文档内容 + 预提取的 SMILES/活性数据候选
+/// 任务：识别化合物、验证结构、提取活性数据、标注不确定项
 fn build_batch_prompt(
     batch_content: &str,
     batch_index: usize,
@@ -132,52 +139,138 @@ fn build_batch_prompt(
         String::new()
     };
 
+    // SMILES 预处理：标记候选数量和来源
     let smiles_section = if smiles.is_empty() {
-        "无候选".to_string()
+        "（无预提取 SMILES）".to_string()
     } else {
-        // 只取前 30 个，避免 prompt 过长
-        smiles.iter().take(30).enumerate()
-            .map(|(i, s)| format!("{}. {}", i + 1, s))
-            .collect::<Vec<_>>()
-            .join("\n")
+        format!(
+            "共 {} 个候选（需验证有效性）：\n{}",
+            smiles.len(),
+            smiles.iter().take(30).enumerate()
+                .map(|(i, s)| format!("{}. {}", i + 1, s))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+
+    // 预提取活性数据
+    let activities_section = if activities_str.is_empty() {
+        "（无预提取活性数据）".to_string()
+    } else {
+        format!("\n{}", activities_str)
     };
 
     format!(
-        r#"请分析以下 PDF 提取内容{batch_info}，输出结构化 JSON。
+        r#"## 任务
+分析以下文档内容{batch_info}，提取结构化的化合物和活性数据，输出 JSON。
 
-## PDF 基本信息
-- 类型: {pdf_type}
-- 页数: {page_count}
+## 文档信息
+- **类型**: {pdf_type}
+- **页数**: {page_count}
 
-## 提取的文本内容
----
+## 文档内容
+```
 {content}
----
+```
 
-## 正则提取的 SMILES 候选（前30个，需验证真伪）
+## 预提取的化学信息
 {smiles_section}
 
-## 正则提取的活性数据
-{activities}
+## 预提取的活性数据
+{activities_section}
 
-## 分析要求
-1. 仔细阅读文本，识别所有化合物（药物、中间体、参考化合物）
-2. 验证 SMILES 候选：只有你确信是真实化学结构的才放入 compounds.smiles
-3. 提取活性数据时，必须引用原文中包含数值和单位的完整句子
-4. 对每个条目标注置信度，low 的说明原因
-5. 把无法确认的条目放入 uncertain_items
-6. 生成完整的 Markdown report
+---
 
-注意：
-- report 字段必须是完整的 Markdown 文本
-- 只输出 JSON，不要其他说明
-- 如果这批内容没有有价值的信息，返回空的数组即可"#,
+## 提取规范
+
+### 化合物识别
+识别以下类型的化合物：
+- 目标化合物：如 "Compound 1", "E041", "A-001"
+- 参考化合物：如 "DMSO", "positive control"
+- 中间体：如 "intermediate 3"
+
+### SMILES 验证
+- 只接受 RDKit 可解析的标准 SMILES
+- E-SMILES 格式：`CCO |c:1,t:2|`（含原子电荷和立体化学）
+- 无法解析的结构：`"smiles": null`
+
+### 活性数据提取
+提取时必须包含：
+1. **数值和单位**：如 "IC50 = 5.2 nM"
+2. **完整句子**：引用原文，包含数值和单位的完整句子
+3. **单位标准化**：优先使用 nM，抑制率使用 %
+
+### 置信度评估
+- **high**: 原文明确，数据完整，无歧义
+- **medium**: 有部分描述，需要人工确认
+- **low**: 推测性结论，数据不完整
+
+---
+
+## 输出格式
+**只输出 JSON**，使用以下字段：
+
+```json
+{{
+  "metadata": {{
+    "title": "string | null",
+    "authors": ["string"],
+    "document_type": "patent | paper | report",
+    "key_targets": ["string"],
+    "source_file": "string | null"
+  }},
+  "summary": "200-400字中文摘要",
+  "compounds": [
+    {{
+      "name": "string",
+      "smiles": "string | null",
+      "category": "lead | hit | reference | intermediate | null",
+      "description": "string",
+      "source_ref": "p.5 | Table 1 | Example 3",
+      "confidence": "high | medium | low",
+      "uncertainty_reason": "string | null"
+    }}
+  ],
+  "activities": [
+    {{
+      "compound": "string",
+      "activity_type": "IC50 | pIC50 | EC50 | Ki | Kd | 抑制率",
+      "value": number,
+      "units": "nM | μM | %",
+      "target": "string | null",
+      "source_quote": "原文完整句子",
+      "source_ref": "p.5 | Table 1",
+      "confidence": "high | medium | low",
+      "uncertainty_reason": "string | null"
+    }}
+  ],
+  "key_findings": [
+    {{
+      "finding": "string",
+      "evidence": "string",
+      "source_ref": "string",
+      "confidence": "high | medium | low",
+      "uncertainty_reason": "string | null"
+    }}
+  ],
+  "uncertain_items": [
+    {{
+      "item_type": "structure_ambiguous | activity_conflict | missing_data | format_unclear",
+      "content": "string",
+      "reason": "string",
+      "suggested_action": "string"
+    }}
+  ]
+}}
+```
+
+**禁止**：report 字段、解释性文字、markdown 代码块标记"#,
         batch_info = batch_info,
         pdf_type = pdf_type,
         page_count = page_count,
         content = sanitize_text(batch_content),
         smiles_section = smiles_section,
-        activities = if activities_str.is_empty() { "无".to_string() } else { activities_str.to_string() },
+        activities_section = activities_section,
     )
 }
 

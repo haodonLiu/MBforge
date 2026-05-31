@@ -3,33 +3,92 @@ use super::types::{DocProcessingContext, DocStructure, ExtractionPlan};
 
 /// === A1: 意图路由模块 ===
 
-/// Meta Prompt: 分析文档开头部分，判断文档类型和结构
-/// 只读前 8000 字符 + 页码，不做全文分析
+/// Stage 1 Prompt: 文档结构分析
+/// 
+/// 分析文档开头部分，判断：
+/// 1. 文档类型（专利/论文/报告）
+/// 2. 是否包含化合物表格、化学结构图、活性数据
+/// 3. 章节结构（通过标题识别）
+/// 4. 关键术语（靶点、活性指标、化合物代号等）
+/// 5. 推荐提取策略
+/// 
+/// 输入：前 8000 字符 + 页码
+/// 输出：结构化元数据 JSON
 pub fn build_meta_prompt(context: &DocProcessingContext) -> String {
     let preview: String = context.raw_text.chars().take(8000).collect();
 
+    // 从用户请求中提取关键意图（如果有）
+    let user_hint = if context.user_request.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n## 用户查询意图\n{}", context.user_request)
+    };
+
     format!(
-        r#"分析以下文档开头部分，判断文档类型和结构。
+        r#"## 任务
+分析以下文档的元信息，判断文档类型、结构和关键内容。
 
-文档开头（前 8000 字符）：
----
+## 输入文档（前 8000 字符）
+```
 {preview}
----
+```
 
-要求输出 JSON（不要其他文字）：
+## 文档基本信息
+- 页数: {page_count}{user_hint}
+
+## 分析要求
+
+### 1. 文档类型判断
+根据文档特征判断类型：
+- `patent`: 含权利要求书、说明书、引用号（如 WO/EP/CN/US 专利）
+- `paper`: 含摘要、实验方法、参考文献（期刊/会议论文）
+- `report`: 含摘要、结论、附录（研究报告/综述）
+- `unknown`: 无法判断
+
+### 2. 内容特征检测
+判断文档是否包含以下内容（基于关键词和模式）：
+- `has_compound_tables`: 化合物表格（Table 1, 实施例表, 化合物代号如 E041, A-001）
+- `has_chemical_structures`: 化学结构（SMILES, E-SMILES, 化学结构描述）
+- `has_activity_data`: 活性数据（IC50, pIC50, EC50, Ki, 抑制率, Kd）
+
+### 3. 章节结构识别
+通过标题模式识别章节：
+常见专利章节: title, abstract, background, summary, detailed_description, examples, claims
+常见论文章节: title, abstract, introduction, methods, results, discussion, conclusion
+
+### 4. 关键术语提取
+提取：
+- 靶点/疾病: 如 MrgprX2, HER2, COVID-19
+- 活性指标: 如 pIC50, IC50, EC50
+- 化合物代号: 如 E041, A-001, compound 1
+- 化学术语: 如 scaffold, hit, lead, SAR
+
+### 5. 推荐策略
+根据文档特征推荐后续处理策略：
+- `full`: 全量提取（默认）
+- `table_only`: 重点提取表格数据
+- `structure_only`: 重点提取化学结构
+- `metadata_only`: 仅提取元数据
+
+## 输出格式
+只输出 JSON，不要其他文字：
+```json
 {{
-  "doc_type": "patent / paper / report / unknown",
+  "doc_type": "patent | paper | report | unknown",
   "page_count": {page_count},
-  "has_compound_tables": true/false,
-  "has_chemical_structures": true/false,
-  "has_activity_data": true/false,
+  "has_compound_tables": true | false,
+  "has_chemical_structures": true | false,
+  "has_activity_data": true | false,
   "estimated_sections": ["title", "abstract", "background", ...],
-  "key_terms": ["MrgprX2", "pIC50", ...],
-  "recommended_approach": "full / table_only / structure_only / metadata_only"
+  "key_terms": ["term1", "term2", ...],
+  "recommended_approach": "full | table_only | structure_only | metadata_only"
 }}
-只输出 JSON。"#,
+```
+
+**重要**：只输出 JSON，不要解释或其他内容。"#,
         preview = preview,
         page_count = context.page_count,
+        user_hint = user_hint,
     )
 }
 

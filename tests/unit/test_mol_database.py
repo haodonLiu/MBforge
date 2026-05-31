@@ -14,7 +14,7 @@ class TestMoleculeDatabase:
             try:
                 rec = MoleculeRecord(
                     mol_id="mol-001",
-                    smiles="CCO",
+                    esmiles="CCO",
                     name="Ethanol",
                     activity=100.0,
                     activity_type="IC50",
@@ -26,13 +26,13 @@ class TestMoleculeDatabase:
             finally:
                 db.close()
 
-    def test_search_by_smiles(self):
+    def test_search_by_esmiles(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             db = MoleculeDatabase(Path(tmpdir))
             try:
-                rec = MoleculeRecord(mol_id="mol-002", smiles="c1ccccc1", name="Benzene")
+                rec = MoleculeRecord(mol_id="mol-002", esmiles="c1ccccc1", name="Benzene")
                 db.add_molecule(rec)
-                found = db.search_by_smiles("c1ccccc1")
+                found = db.search_by_esmiles("c1ccccc1")
                 assert found is not None
                 assert found.name == "Benzene"
             finally:
@@ -42,7 +42,7 @@ class TestMoleculeDatabase:
         with tempfile.TemporaryDirectory() as tmpdir:
             db = MoleculeDatabase(Path(tmpdir))
             try:
-                db.add_molecule(MoleculeRecord(mol_id="m1", smiles="C", activity=10.0))
+                db.add_molecule(MoleculeRecord(mol_id="m1", esmiles="C", activity=10.0))
                 stats = db.get_stats()
                 assert stats["total"] == 1
                 assert stats["with_activity"] == 1

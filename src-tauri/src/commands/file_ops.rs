@@ -115,6 +115,17 @@ pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, S
     Ok(true)
 }
 
+/// 读取文本文件内容（UTF-8）。
+#[tauri::command]
+pub fn read_text_file(path: String) -> Result<String, String> {
+    let path_buf = PathBuf::from(&path);
+    if !path_buf.exists() {
+        return Err(format!("File not found: {}", path));
+    }
+    std::fs::read_to_string(&path_buf)
+        .map_err(|e| format!("Failed to read file: {}", e))
+}
+
 /// 使用系统默认程序打开文件。
 #[tauri::command]
 pub async fn open_file(path: String) -> Result<(), String> {

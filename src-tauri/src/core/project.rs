@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::constants::{INDEX_FILE, PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS};
-use super::helpers::{generate_uuid, sha256_file};
+use super::constants::{INDEX_FILE, PROJECT_FORMAT_VERSION, PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS};
+use super::helpers::{generate_uuid, now_rfc3339, sha256_file};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentEntry {
@@ -34,6 +34,10 @@ impl DocumentEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProjectIndex {
+    #[serde(default)]
+    version: u32,
+    #[serde(default)]
+    updated_at: String,
     documents: Vec<DocumentEntry>,
 }
 
@@ -48,20 +52,67 @@ impl Project {
     pub fn open(root: &Path) -> Option<Self> {
         let root = root.to_path_buf().canonicalize().ok()?;
         let meta_dir = root.join(PROJECT_META_DIR);
+
+        if !meta_dir.exists() {
+            return None;
+        }
+
+        // Version check & migration
+        let version = super::project_migrator::ProjectMigrator::read_version(&root);
+        if version > PROJECT_FORMAT_VERSION {
+            log::error!(
+                "Project version {} > app version {}, cannot open",
+                version, PROJECT_FORMAT_VERSION
+            );
+            return None;
+        }
+
+        if let Err(e) = super::project_migrator::ProjectMigrator::migrate(&root) {
+            log::error!("Migration failed: {}, attempting recovery", e);
+            if let Err(e2) = super::project_migrator::ProjectMigrator::recover(&root) {
+                log::error!("Recovery also failed: {}", e2);
+                return None;
+            }
+        }
+
+        // Load index
         let index_path = meta_dir.join(INDEX_FILE);
-        let index: ProjectIndex = super::helpers::load_json(&index_path).unwrap_or(ProjectIndex { documents: vec![] });
+        let index: ProjectIndex = match super::helpers::load_json(&index_path) {
+            Some(idx) => idx,
+            None => {
+                // New project - no documents yet
+                ProjectIndex {
+                    version: PROJECT_FORMAT_VERSION,
+                    updated_at: now_rfc3339(),
+                    documents: vec![],
+                }
+            }
+        };
+
         let mut path_map = HashMap::new();
         for doc in &index.documents {
             let full = root.join(&doc.path);
             path_map.insert(full, doc.doc_id.clone());
         }
-        Some(Self { root, meta_dir, index: index.documents, path_map })
+
+        let mut project = Self {
+            root,
+            meta_dir,
+            index: index.documents,
+            path_map,
+        };
+
+        // NOTE: Scanning removed - use scan_files() explicitly when needed
+        // This avoids slow directory traversal on project open
+
+        Some(project)
     }
 
     pub fn create(root: &Path) -> Option<Self> {
         let root = root.to_path_buf().canonicalize().ok()?;
         let meta_dir = root.join(PROJECT_META_DIR);
         std::fs::create_dir_all(&meta_dir).ok()?;
+        super::project_migrator::ProjectMigrator::write_version(&root, PROJECT_FORMAT_VERSION).ok()?;
         Some(Self { root, meta_dir, index: vec![], path_map: HashMap::new() })
     }
 
@@ -136,7 +187,11 @@ impl Project {
     }
 
     pub fn save_index(&self) {
-        let index = ProjectIndex { documents: self.index.clone() };
+        let index = ProjectIndex {
+            version: PROJECT_FORMAT_VERSION,
+            updated_at: now_rfc3339(),
+            documents: self.index.clone(),
+        };
         let _ = super::helpers::save_json(&self.meta_dir.join(INDEX_FILE), &index);
     }
 }

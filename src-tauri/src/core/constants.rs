@@ -5,6 +5,8 @@ use std::path::PathBuf;
 
 pub const APP_NAME: &str = "MBForge";
 pub const APP_VERSION: &str = "0.2.0";
+/// 项目元数据格式版本号。每次改变 .mbforge/ 目录结构时递增。
+pub const PROJECT_FORMAT_VERSION: u32 = 1;
 pub const PROJECT_META_DIR: &str = ".mbforge";
 
 // Default models
@@ -41,6 +43,7 @@ pub const TRAJECTORY_DIR: &str = "trajectory";
 pub const TRAJECTORY_FILE: &str = "trajectory.json";
 pub const SUMMARY_DIR: &str = "summaries";
 pub const INDEX_FILE: &str = "index.json";
+pub const SETTINGS_FILE: &str = "settings.json";
 
 // Metadata keys
 pub const META_SOURCE: &str = "source";

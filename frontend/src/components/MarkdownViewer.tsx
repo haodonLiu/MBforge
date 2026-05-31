@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { readFileContent } from '../api/client'
+import { isTauriAvailable, readTextFile } from '../api/tauri-bridge'
 import Toolbar from './ui/Toolbar'
 import IconButton from './ui/IconButton'
 import Caption from './ui/Caption'
@@ -26,21 +27,28 @@ export default function MarkdownViewer({ filePath, onClose }: Props) {
     setIsLoading(true)
     setError(null)
 
-    readFileContent(filePath)
-      .then(resp => {
-        if (cancelled) return
-        if (resp.success) {
-          setContent(resp.content)
+    const load = async () => {
+      try {
+        let text = ''
+        if (isTauriAvailable()) {
+          text = await readTextFile(filePath)
         } else {
-          setError(resp.error || 'Failed to load file')
+          const resp = await readFileContent(filePath)
+          if (!resp.success) {
+            setError(resp.error || 'Failed to load file')
+            setIsLoading(false)
+            return
+          }
+          text = resp.content
         }
-      })
-      .catch(e => {
+        if (!cancelled) setContent(text)
+      } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e))
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setIsLoading(false)
-      })
+      }
+    }
+    load()
 
     return () => { cancelled = true }
   }, [filePath])

@@ -29,6 +29,7 @@ export interface SearchResult {
 export interface MoleculeRecord {
   mol_id: string
   smiles: string
+  esmiles?: string
   name: string
   source_doc: string
   activity: number | null

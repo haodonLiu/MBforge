@@ -10,12 +10,18 @@ use std::path::PathBuf;
 pub fn open_project(root: String, name: Option<String>) -> Result<serde_json::Value, String> {
     let path = PathBuf::from(&root);
 
+    // 确保目录存在（处理最近项目路径可能不存在的情况）
+    if !path.exists() {
+        std::fs::create_dir_all(&path)
+            .map_err(|e| format!("创建目录失败: {}", e))?;
+    }
+
     // 尝试打开已有项目
     if let Some(project) = crate::core::project::Project::open(&path) {
         return Ok(project_json(&project));
     }
 
-    // 目录不存在或不是项目 → 创建
+    // 目录存在但不是项目 → 创建
     let project = crate::core::project::Project::create(&path)
         .ok_or_else(|| format!("无法创建项目: {}", root))?;
 

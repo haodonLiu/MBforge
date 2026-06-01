@@ -102,6 +102,19 @@ async def mbforge_error_handler(request: Request, exc: MBForgeError) -> JSONResp
     )
 
 
+@app.exception_handler(Exception)
+async def generic_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error(f"Unhandled error on {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": str(exc),
+            "error_code": "internal_error",
+        },
+    )
+
+
 # 注册路由
 app.include_router(llm.router, prefix="/api/v1/llm", tags=["llm"])
 app.include_router(embed.router, prefix="/api/v1", tags=["embed"])

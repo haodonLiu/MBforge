@@ -70,7 +70,7 @@ impl TrajectoryTracker {
     pub fn record_search(&mut self, query: &str, count: usize, results: Vec<String>, duration_ms: f64) {
         self.add_step(TrajectoryStep {
             step_type: "search".into(),
-            uri: format!("viking://kb/search?q={}", &query[..query.len().min(100)]),
+            uri: format!("viking://kb/search?q={}", &query[..query.floor_char_boundary(100)]),
             query: query.to_string(),
             result_count: count,
             top_results: results.into_iter().take(5).collect(),
@@ -84,9 +84,9 @@ impl TrajectoryTracker {
         self.add_step(TrajectoryStep {
             step_type: "tool".into(),
             uri: format!("viking://tools/{}", name),
-            query: args.to_string()[..args.to_string().len().min(200)].to_string(),
+            query: { let s = args.to_string(); s[..s.floor_char_boundary(200)].to_string() },
             result_count: if summary.is_empty() { 0 } else { 1 },
-            top_results: if summary.is_empty() { vec![] } else { vec![summary[..summary.len().min(200)].to_string()] },
+            top_results: if summary.is_empty() { vec![] } else { vec![summary[..summary.floor_char_boundary(200)].to_string()] },
             duration_ms: 0.0,
             timestamp: now_rfc3339(),
             metadata: serde_json::json!({}),

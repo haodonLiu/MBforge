@@ -135,7 +135,7 @@ impl LayeredContext {
     }
 
     pub fn add_tool_result(&mut self, tool_name: &str, result: &str, tool_call_id: &str) {
-        let truncated = if result.len() > 4000 { &result[..4000] } else { result };
+        let truncated = if result.len() > 4000 { &result[..result.floor_char_boundary(4000)] } else { result };
         self.history.messages.push(Message::tool(tool_name, truncated, tool_call_id));
     }
 

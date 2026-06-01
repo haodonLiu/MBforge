@@ -458,7 +458,56 @@ pub fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(
     let text = resp.text().map_err(|e| format!("LLM API read error: {}", e))?;
 
     if !status.is_success() {
-        return Err(format!("LLM API HTTP {}: {}", status, &text[..text.len().min(500)]));
+        return Err(format!("LLM API HTTP {}: {}", status, &text[..text.floor_char_boundary(500)]));
+    }
+
+    let val: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("LLM API JSON parse error: {}", e))?;
+
+    let content = val["choices"][0]["message"]["content"]
+        .as_str().unwrap_or("").to_string();
+
+    let tokens_used = val["usage"]["total_tokens"].as_u64().map(|v| v as u32);
+
+    if content.is_empty() {
+        return Err("LLM returned empty content".into());
+    }
+
+    Ok((content, tokens_used))
+}
+
+/// Async 版本 — 在 async 上下文中使用，不阻塞 Tokio 运行时
+pub async fn call_llm_api_async(config: &LlmApiConfig, system: &str, user: &str) -> Result<(String, Option<u32>), String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+
+    let body = serde_json::json!({
+        "model": config.model,
+        "messages": [
+            { "role": "system", "content": system },
+            { "role": "user", "content": user }
+        ],
+        "max_tokens": 8192,
+        "temperature": 0.2,
+    });
+
+    let resp = client.post(&url)
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", config.api_key))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("LLM API request failed: {}", e))?;
+
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| format!("LLM API read error: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("LLM API HTTP {}: {}", status, &text[..text.floor_char_boundary(500)]));
     }
 
     let val: serde_json::Value = serde_json::from_str(&text)

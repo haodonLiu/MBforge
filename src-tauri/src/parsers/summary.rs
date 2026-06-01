@@ -24,7 +24,7 @@ pub fn generate_summary(content: &str, llm_url: &str) -> Result<DocumentSummary,
     // L0: 一句话摘要
     let l0_prompt = format!(
         "用一句话（不超过100字）概括以下文档的核心内容。只输出摘要，不要其他文字。\n\n{}",
-        &content[..content.len().min(4000)]
+        &content[..content.floor_char_boundary(4000)]
     );
     let (l0, _) = super::post_process::call_llm_api(
         &config,
@@ -46,7 +46,7 @@ pub fn generate_summary(content: &str, llm_url: &str) -> Result<DocumentSummary,
 
 文档内容：
 {}"#,
-        &content[..content.len().min(8000)]
+        &content[..content.floor_char_boundary(8000)]
     );
     let (l1, _) = super::post_process::call_llm_api(
         &config,

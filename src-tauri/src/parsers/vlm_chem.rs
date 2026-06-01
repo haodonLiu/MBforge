@@ -67,7 +67,7 @@ pub async fn image_to_esmiles(
         return Err(format!(
             "MolScribe HTTP {}: {}",
             status,
-            &text[..text.len().min(200)]
+            &text[..text.floor_char_boundary(200)]
         ));
     }
 
@@ -159,7 +159,7 @@ pub async fn describe_image(
         return Err(format!(
             "VLM describe HTTP {}: {}",
             status,
-            &text[..text.len().min(200)]
+            &text[..text.floor_char_boundary(200)]
         ));
     }
 

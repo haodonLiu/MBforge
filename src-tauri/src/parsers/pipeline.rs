@@ -275,10 +275,6 @@ pub async fn process_document(
 
     // ===== Stage 2: 逐 section 处理 =====
     let mut section_results: Vec<StructuredData> = Vec::new();
-    // TODO-AUDIT: total_compounds and total_activities are incremented per section
-    // but never used afterward — they accumulate but are discarded before return.
-    let mut total_compounds = 0usize;
-    let mut total_activities = 0usize;
 
     for section_name in &plan.target_sections {
         // 跳过不在 estimated_sections 中的 section（除非是 "table_*" 或特殊 section）
@@ -301,16 +297,11 @@ pub async fn process_document(
         .await
         {
             Ok(r) => {
-                let compounds = r.data.compounds.len();
-                let activities = r.data.activities.len();
-                total_compounds += compounds;
-                total_activities += activities;
-
                 let _ = app.emit("doc-progress", DocProgressEvent::Section {
                     name: section_name.clone(),
                     status: "ok".into(),
-                    compounds,
-                    activities,
+                    compounds: r.data.compounds.len(),
+                    activities: r.data.activities.len(),
                 });
 
                 Some(r.data)
@@ -635,11 +626,11 @@ async fn run_meta_analysis(ctx: &DocProcessingContext) -> Result<DocStructure, S
     let prompt = crate::parsers::intent::build_meta_prompt(ctx);
 
     let config = crate::parsers::post_process::load_llm_config()?;
-    let (response, _tokens) = crate::parsers::post_process::call_llm_api(
+    let (response, _tokens) = crate::parsers::post_process::call_llm_api_async(
         &config,
         "你是文档分析专家。分析文档开头部分，判断文档类型和结构。只输出 JSON。",
         &prompt,
-    )?;
+    ).await?;
 
     crate::parsers::intent::parse_meta_response(&response)
 }
@@ -799,11 +790,11 @@ async fn run_merge_and_sar(
     );
 
     let config = crate::parsers::post_process::load_llm_config()?;
-    let (response, _tokens) = crate::parsers::post_process::call_llm_api(
+    let (response, _tokens) = crate::parsers::post_process::call_llm_api_async(
         &config,
         "你是分子科学文档分析专家。合并多部分提取结果，进行去重、验证和构效关系分析，输出 JSON。",
         &prompt,
-    )?;
+    ).await?;
 
     let val = crate::parsers::post_process::extract_json(&response)?;
 

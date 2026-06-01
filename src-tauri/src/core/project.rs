@@ -50,56 +50,56 @@ pub struct Project {
 
 impl Project {
     pub fn open(root: &Path) -> Option<Self> {
-        println!("[Rust Project::open] Starting... root: {:?}", root);
+        log::trace!("[Rust Project::open] Starting... root: {:?}", root);
         
         let root = root.to_path_buf().canonicalize().ok()?;
-        println!("[Rust Project::open] Canonicalized root: {:?}", root);
+        log::trace!("[Rust Project::open] Canonicalized root: {:?}", root);
         
         let meta_dir = root.join(PROJECT_META_DIR);
-        println!("[Rust Project::open] Meta dir: {:?}", meta_dir);
-        println!("[Rust Project::open] Meta dir exists: {}", meta_dir.exists());
+        log::trace!("[Rust Project::open] Meta dir: {:?}", meta_dir);
+        log::trace!("[Rust Project::open] Meta dir exists: {}", meta_dir.exists());
 
         if !meta_dir.exists() {
-            println!("[Rust Project::open] Meta dir does not exist, returning None (not a project)");
+            log::trace!("[Rust Project::open] Meta dir does not exist, returning None (not a project)");
             return None;
         }
 
         // Version check & migration
         let version = super::project_migrator::ProjectMigrator::read_version(&root);
-        println!("[Rust Project::open] Project version: {}", version);
+        log::trace!("[Rust Project::open] Project version: {}", version);
         if version > PROJECT_FORMAT_VERSION {
             log::error!(
                 "Project version {} > app version {}, cannot open",
                 version, PROJECT_FORMAT_VERSION
             );
-            println!("[Rust Project::open] Version too new, returning None");
+            log::trace!("[Rust Project::open] Version too new, returning None");
             return None;
         }
 
         if let Err(e) = super::project_migrator::ProjectMigrator::migrate(&root) {
             log::error!("Migration failed: {}, attempting recovery", e);
-            println!("[Rust Project::open] Migration failed: {}", e);
+            log::trace!("[Rust Project::open] Migration failed: {}", e);
             if let Err(e2) = super::project_migrator::ProjectMigrator::recover(&root) {
                 log::error!("Recovery also failed: {}", e2);
-                println!("[Rust Project::open] Recovery also failed: {}", e2);
+                log::trace!("[Rust Project::open] Recovery also failed: {}", e2);
                 return None;
             }
         } else {
-            println!("[Rust Project::open] Migration succeeded or not needed");
+            log::trace!("[Rust Project::open] Migration succeeded or not needed");
         }
 
         // Load index
         let index_path = meta_dir.join(INDEX_FILE);
-        println!("[Rust Project::open] Index path: {:?}", index_path);
-        println!("[Rust Project::open] Index file exists: {}", index_path.exists());
+        log::trace!("[Rust Project::open] Index path: {:?}", index_path);
+        log::trace!("[Rust Project::open] Index file exists: {}", index_path.exists());
         
         let index: ProjectIndex = match super::helpers::load_json::<ProjectIndex>(&index_path) {
             Some(idx) => {
-                println!("[Rust Project::open] Loaded existing index with {} documents", idx.documents.len());
+                log::trace!("[Rust Project::open] Loaded existing index with {} documents", idx.documents.len());
                 idx
             }
             None => {
-                println!("[Rust Project::open] No existing index, creating empty");
+                log::trace!("[Rust Project::open] No existing index, creating empty");
                 ProjectIndex {
                     version: PROJECT_FORMAT_VERSION,
                     updated_at: now_rfc3339(),
@@ -124,31 +124,31 @@ impl Project {
         // NOTE: Scanning removed - use scan_files() explicitly when needed
         // This avoids slow directory traversal on project open
 
-        println!("[Rust Project::open] Project opened successfully");
+        log::trace!("[Rust Project::open] Project opened successfully");
         Some(project)
     }
 
     pub fn create(root: &Path) -> Option<Self> {
-        println!("[Rust Project::create] Starting... root: {:?}", root);
+        log::trace!("[Rust Project::create] Starting... root: {:?}", root);
         
         let root = root.to_path_buf().canonicalize().ok()?;
-        println!("[Rust Project::create] Canonicalized root: {:?}", root);
+        log::trace!("[Rust Project::create] Canonicalized root: {:?}", root);
         
         let meta_dir = root.join(PROJECT_META_DIR);
-        println!("[Rust Project::create] Creating meta dir: {:?}", meta_dir);
+        log::trace!("[Rust Project::create] Creating meta dir: {:?}", meta_dir);
         
         if std::fs::create_dir_all(&meta_dir).is_err() {
-            println!("[Rust Project::create] Failed to create meta dir");
+            log::trace!("[Rust Project::create] Failed to create meta dir");
             return None;
         }
-        println!("[Rust Project::create] Meta dir created");
+        log::trace!("[Rust Project::create] Meta dir created");
         
         if super::project_migrator::ProjectMigrator::write_version(&root, PROJECT_FORMAT_VERSION).is_err() {
-            println!("[Rust Project::create] Failed to write version");
+            log::trace!("[Rust Project::create] Failed to write version");
             return None;
         }
-        println!("[Rust Project::create] Version written");
-        println!("[Rust Project::create] Project created successfully");
+        log::trace!("[Rust Project::create] Version written");
+        log::trace!("[Rust Project::create] Project created successfully");
         
         Some(Self { root, meta_dir, index: vec![], path_map: HashMap::new() })
     }

@@ -74,7 +74,13 @@ impl KnowledgeBase {
     }
 
     pub fn search_sync(&self, query: &str, top_k: usize) -> Vec<SearchResult> {
-        self.vector_store.search(query, top_k, None).unwrap_or_default()
+        match self.vector_store.search(query, top_k, None) {
+            Ok(results) => results,
+            Err(e) => {
+                log::warn!("KnowledgeBase search_sync failed: {}", e);
+                Vec::new()
+            }
+        }
     }
 
     pub fn get_structure(&self, doc_id: &str) -> Option<Vec<TreeNode>> {

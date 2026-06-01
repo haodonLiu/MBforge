@@ -124,7 +124,7 @@ impl SkillsManager {
              4. 不超过 500 字\n\n\
              用户：{}\n助手：{}",
             user_msg,
-            &assistant_msg[..assistant_msg.len().min(1000)]
+            &assistant_msg[..assistant_msg.floor_char_boundary(1000)]
         );
 
         let _rt = tokio::runtime::Handle::current();

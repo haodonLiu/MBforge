@@ -387,6 +387,12 @@ impl MoleculeDatabase {
         let tags_str =
             serde_json::to_string(&rec.tags).unwrap_or_else(|_| "[]".to_string());
 
+        // 删除旧 FTS 条目（INSERT OR REPLACE 会改变 rowid，导致旧 FTS 残留）
+        let _ = self.conn.execute(
+            "DELETE FROM mol_search WHERE rowid IN (SELECT rowid FROM molecules WHERE mol_id = ?1)",
+            params![rec.mol_id],
+        );
+
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO molecules
@@ -561,6 +567,11 @@ impl MoleculeDatabase {
 
     /// Delete a molecule by ID.
     pub fn delete_molecule(&self, mol_id: &str) -> Result<bool, String> {
+        // 先清理 FTS 条目
+        let _ = self.conn.execute(
+            "DELETE FROM mol_search WHERE rowid IN (SELECT rowid FROM molecules WHERE mol_id = ?1)",
+            params![mol_id],
+        );
         let affected = self
             .conn
             .execute("DELETE FROM molecules WHERE mol_id = ?", params![mol_id])

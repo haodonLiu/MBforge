@@ -87,6 +87,7 @@ impl MoleculeRelationDb {
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(|e| format!("Failed to enable foreign_keys: {}", e))?;
 
+        // 只创建 relations 表。molecules 表由 molecule_store.rs 负责。
         let sql = format!(
             r#"
             CREATE TABLE IF NOT EXISTS {} (
@@ -102,24 +103,6 @@ impl MoleculeRelationDb {
             CREATE INDEX IF NOT EXISTS idx_relations_type ON {}(relation_type);
             CREATE INDEX IF NOT EXISTS idx_relations_a ON {}(mol_a_id);
             CREATE INDEX IF NOT EXISTS idx_relations_b ON {}(mol_b_id);
-
-            CREATE TABLE IF NOT EXISTS molecules (
-                mol_id TEXT PRIMARY KEY,
-                esmiles TEXT NOT NULL,
-                name TEXT,
-                source_doc TEXT,
-                activity REAL,
-                activity_type TEXT,
-                units TEXT DEFAULT 'nM',
-                source_type TEXT DEFAULT 'text',
-                status TEXT DEFAULT 'confirmed',
-                properties TEXT,
-                tags TEXT,
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS idx_mol_esmiles ON molecules(esmiles);
-            CREATE INDEX IF NOT EXISTS idx_mol_activity ON molecules(activity);
             "#,
             MOL_RELATIONS_TABLE,
             MOL_RELATIONS_TABLE,

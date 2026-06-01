@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { kbSearch, isTauriAvailable } from '../api/tauri-bridge'
+import { kbSearchStream, isTauriAvailable } from '../api/tauri-bridge'
 import { SearchIcon, FileTextIcon, HashIcon, ClockIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
+import { tapScale } from '../hooks/useAnimations'
 import PageContainer from '../components/ui/PageContainer'
 import HoverCard from '../components/ui/HoverCard'
 import Caption from '../components/ui/Caption'
@@ -20,6 +21,17 @@ interface ResultItem {
 
 const HINTS = ['阿司匹林', '分子对接', 'SAR分析', 'IC50']
 
+function mapResult(r: { text?: string; metadata?: Record<string, unknown> }, i: number): ResultItem {
+  return {
+    id: String(i),
+    title: String(r.metadata?.doc_id || r.metadata?.title || '文档片段'),
+    snippet: r.text || '',
+    source: String(r.metadata?.source || r.metadata?.path || '未知来源'),
+    tags: [],
+    date: '',
+  }
+}
+
 export default function Search() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<ResultItem[]>([])
@@ -27,6 +39,12 @@ export default function Search() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isFocused, setIsFocused] = useState(false)
+  const unlistenRef = useRef<(() => void) | null>(null)
+
+  // 组件卸载时清理事件监听
+  useEffect(() => {
+    return () => { unlistenRef.current?.() }
+  }, [])
 
   const doSearch = async (term: string) => {
     const projectRoot = getProjectRoot()
@@ -41,24 +59,44 @@ export default function Search() {
       setError('搜索功能仅支持桌面应用环境')
       return
     }
+
+    // 清理上一次搜索
+    unlistenRef.current?.()
     setIsLoading(true)
     setHasSearched(true)
     setError(null)
+    setResults([])
+
+    let resultIndex = 0
+
     try {
-      const results = await kbSearch(projectRoot, term, 10)
-      const mapped: ResultItem[] = results.map((r, i) => ({
-        id: String(i),
-        title: String(r.metadata?.doc_id || '文档片段'),
-        snippet: r.text || '',
-        source: String(r.metadata?.source || '未知来源'),
-        tags: [],
-        date: '',
-      }))
-      setResults(mapped)
+      const unlisten = await kbSearchStream(
+        projectRoot,
+        term,
+        10,
+        (chunk) => {
+          if (chunk.type === 'first') {
+            // 首批结果 — 立即显示
+            setResults(chunk.results.map((r, i) => mapResult(r, resultIndex + i)))
+            resultIndex += chunk.results.length
+            setIsLoading(false)
+          } else if (chunk.type === 'incremental') {
+            // 增量结果 — 追加
+            setResults(prev => [...prev, ...chunk.results.map((r, i) => mapResult(r, resultIndex + i))])
+            resultIndex += chunk.results.length
+          } else if (chunk.type === 'complete') {
+            // 完成
+            if (chunk.error) {
+              setError(chunk.error)
+            }
+            setIsLoading(false)
+          }
+        },
+      )
+      unlistenRef.current = unlisten
     } catch (e) {
       setResults([])
       setError(e instanceof Error ? e.message : '搜索失败')
-    } finally {
       setIsLoading(false)
     }
   }
@@ -129,7 +167,7 @@ export default function Search() {
               key={hint}
               type="button"
               onClick={() => quickSearch(hint)}
-              whileTap={{ scale: 0.95 }}
+              whileTap={tapScale}
               style={{
                 padding: '6px 12px',
                 fontSize: '12px',
@@ -182,10 +220,9 @@ export default function Search() {
               {results.map((r, index) => (
                 <motion.div
                   key={r.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0, y: 10, transition: { delay: index * 0.05 } }}
+                  animate={{ opacity: 1, y: 0, transition: { duration: 0.25, delay: index * 0.05 } }}
                   exit={{ opacity: 0 }}
-                  transition={{ duration: 0.25, delay: index * 0.05 }}
                 >
                   <HoverCard>
                     <div style={{

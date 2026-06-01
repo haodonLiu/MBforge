@@ -1,11 +1,18 @@
-//! 知识库 — FTS5 全文搜索（无需 embedding 模型）
+//! 知识库 — FTS5 全文搜索 + semantic_cache + stream_search
 //!
 //! 使用 SQLite FTS5 实现文本搜索，纯本地运行，不依赖任何外部模型。
+//! 集成 semantic_cache (L1 hash / L2 embedding) 加速重复查询。
+//! 集成 stream_search 分批返回结果。
 
+use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
+
+use tauri::Emitter;
 
 use super::document_tree::DocumentTreeIndex;
+use super::semantic_cache::{SemanticCache, SemanticCacheConfig};
+use super::stream_search::{StreamingSearch, StreamingSearchConfig, StreamingResult};
 use super::vector_store::{SearchResult, SqliteVectorStore, VectorItem, VectorStore};
 use crate::parsers::sections::{SectionChunk, TreeNode};
 
@@ -124,31 +131,124 @@ impl KnowledgeBase {
 }
 
 // ============================================================================
+// 全局缓存：KB 实例 + SemanticCache
+// ============================================================================
+
+/// KB 实例缓存（按 project_root 键，供 knowledge_base.rs 和 executor.rs 共用）
+pub static KB_CACHE: OnceLock<Mutex<HashMap<String, KnowledgeBase>>> = OnceLock::new();
+
+/// SemanticCache 实例缓存（按 project_root 键）
+static SEMANTIC_CACHE: OnceLock<Mutex<HashMap<String, SemanticCache>>> = OnceLock::new();
+
+/// 获取或初始化 KB 实例（公共供 executor.rs 调用）
+pub fn get_or_init_kb(root: &str) -> Result<std::sync::MutexGuard<'static, HashMap<String, KnowledgeBase>>, String> {
+    let cache = KB_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let guard = cache.lock().map_err(|e| format!("KB cache lock error: {}", e))?;
+    if guard.contains_key(root) {
+        return Ok(guard);
+    }
+    drop(guard);
+    let kb = KnowledgeBase::new(std::path::Path::new(root))?;
+    let mut guard = cache.lock().map_err(|e| format!("KB cache lock error: {}", e))?;
+    guard.insert(root.to_string(), kb);
+    Ok(guard)
+}
+
+fn get_or_init_semantic_cache(root: &str) -> std::sync::MutexGuard<'static, HashMap<String, SemanticCache>> {
+    let cache = SEMANTIC_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = cache.lock().unwrap();
+    if !guard.contains_key(root) {
+        let sc = SemanticCache::new(
+            std::path::Path::new(root),
+            None,  // 无 embedder → 仅 L1 (hash) 模式
+            SemanticCacheConfig::default(),
+        );
+        guard.insert(root.to_string(), sc);
+    }
+    guard
+}
+
+/// 搜索核心逻辑：semantic_cache (L1) → FTS5 → cache store → stream_search
+fn search_with_cache(root: &str, query: &str, top_k: usize) -> Result<(Vec<serde_json::Value>, Vec<StreamingResult>), String> {
+    // 1. L1 缓存命中？
+    {
+        let sc_guard = get_or_init_semantic_cache(root);
+        if let Some(cached) = sc_guard.get(root).and_then(|sc| sc.get_l1(query)) {
+            let stream = StreamingSearch::new(StreamingSearchConfig::default())
+                .execute(cached.clone(), top_k);
+            return Ok((cached, stream));
+        }
+    }
+
+    // 2. FTS5 搜索
+    let guard = get_or_init_kb(root)?;
+    let kb = guard.get(root).unwrap();
+    let results = kb.search(query, top_k)
+        .map_err(|e| format!("Search failed: {}", e))?;
+
+    let json_results: Vec<serde_json::Value> = results
+        .into_iter()
+        .map(|r| serde_json::json!({
+            "id": r.id,
+            "text": r.text,
+            "metadata": r.metadata,
+            "score": r.score,
+        }))
+        .collect();
+
+    // 3. 写入缓存
+    {
+        let mut sc_guard = get_or_init_semantic_cache(root);
+        if let Some(sc) = sc_guard.get_mut(root) {
+            sc.store(query, json_results.clone());
+        }
+    }
+
+    // 4. 流式分批
+    let stream = StreamingSearch::new(StreamingSearchConfig::default())
+        .execute(json_results.clone(), top_k);
+
+    Ok((json_results, stream))
+}
+
+// ============================================================================
 // Tauri 命令层
 // ============================================================================
 
+/// 同步搜索（返回完整结果，兼容旧接口）
 #[tauri::command]
-pub async fn kb_search(
+pub fn kb_search(
     root: String,
     query: String,
     top_k: Option<usize>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let top_k = top_k.unwrap_or(5);
-    let kb = KnowledgeBase::new(std::path::Path::new(&root))
-        .map_err(|e| format!("KB init failed: {}", e))?;
-    let results = kb.search(&query, top_k)
-        .map_err(|e| format!("Search failed: {}", e))?;
-    Ok(results
-        .into_iter()
-        .map(|r| {
-            serde_json::json!({
-                "id": r.id,
-                "text": r.text,
-                "metadata": r.metadata,
-                "score": r.score,
-            })
-        })
-        .collect())
+    let (results, _) = search_with_cache(&root, &query, top_k)?;
+    Ok(results)
+}
+
+/// 流式搜索（通过 Tauri 事件分批推送结果）
+#[tauri::command]
+pub async fn kb_search_stream(
+    app: tauri::AppHandle,
+    root: String,
+    query: String,
+    top_k: Option<usize>,
+) -> Result<(), String> {
+    let top_k = top_k.unwrap_or(5);
+    let (results, chunks) = search_with_cache(&root, &query, top_k)?;
+
+    // 通过事件逐 chunk 推送
+    for chunk in chunks {
+        let _ = app.emit("kb-search-chunk", serde_json::json!({
+            "type": chunk.r#type,
+            "results": chunk.results,
+            "count": chunk.count,
+            "error": chunk.error,
+        }));
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -156,14 +256,15 @@ pub fn kb_get_structure(
     root: String,
     doc_id: String,
 ) -> Result<Option<Vec<TreeNode>>, String> {
-    let kb = KnowledgeBase::new(std::path::Path::new(&root))
-        .map_err(|e| format!("KB init failed: {}", e))?;
+    let guard = get_or_init_kb(&root)?;
+    let kb = guard.get(&root).unwrap();
     Ok(kb.get_structure(&doc_id))
 }
 
 #[tauri::command]
 pub fn kb_get_pages(root: String, doc_id: String, pages: String) -> Vec<PageContent> {
-    if let Ok(kb) = KnowledgeBase::new(std::path::Path::new(&root)) {
+    if let Ok(guard) = get_or_init_kb(&root) {
+        let kb = guard.get(&root).unwrap();
         kb.get_pages(&doc_id, &pages)
     } else {
         Vec::new()

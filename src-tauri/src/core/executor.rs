@@ -5,6 +5,8 @@ use grep_searcher::sinks::UTF8;
 use grep_searcher::SearcherBuilder;
 use ignore::WalkBuilder;
 
+use super::helpers;
+use super::knowledge_base::get_or_init_kb;
 use super::markush;
 use super::tools::{ToolInfo, ToolRegistry};
 
@@ -521,18 +523,6 @@ impl ToolExecutor {
 
 // ===== Rust 原生工具实现（均使用第三方 crate）=====
 
-/// 检查目标路径是否在 root 目录内（防止路径穿越）
-fn assert_within_root(root: &str, target: &std::path::Path) -> Result<(), String> {
-    let canonical_root = std::path::Path::new(root).canonicalize()
-        .map_err(|e| format!("Root canonicalize error: {}", e))?;
-    let canonical_target = target.canonicalize()
-        .map_err(|e| format!("Path canonicalize error: {}", e))?;
-    if !canonical_target.starts_with(&canonical_root) {
-        return Err(format!("Access denied: path escapes project root"));
-    }
-    Ok(())
-}
-
 fn native_grep_search(root: &str, pattern: &str, search_path: &str, max_results: usize) -> String {
     let matcher = match RegexMatcherBuilder::new().build(pattern) {
         Ok(m) => m,
@@ -543,8 +533,9 @@ fn native_grep_search(root: &str, pattern: &str, search_path: &str, max_results:
         std::path::PathBuf::from(root)
     } else {
         let p = std::path::PathBuf::from(root).join(search_path);
-        if let Err(e) = assert_within_root(root, &p) {
-            return e;
+        // 使用 helpers 中的统一路径安全检查
+        if helpers::assert_within_root(root, &p).is_err() {
+            return "Access denied: path escapes project root".to_string();
         }
         p
     };
@@ -606,8 +597,9 @@ fn native_list_files(root: &str, pattern: &str, max_results: usize) -> String {
 
 fn native_read_file(root: &str, file_path: &str, max_lines: usize) -> String {
     let path = std::path::PathBuf::from(root).join(file_path);
-    if let Err(e) = assert_within_root(root, &path) {
-        return e;
+    // 使用 helpers 中的统一路径安全检查
+    if helpers::assert_within_root(root, &path).is_err() {
+        return "Access denied: path escapes project root".to_string();
     }
     if !path.exists() {
         return format!("File not found: {}", file_path);
@@ -670,35 +662,14 @@ fn native_get_project_info(root: &str) -> String {
 
 // ===== 知识库 Native 工具 =====
 
-use std::sync::Mutex;
-
-/// 全局 KB 缓存 — 按 root 路径缓存，避免每次工具调用重新初始化
-static KB_CACHE: std::sync::OnceLock<Mutex<HashMap<String, crate::core::knowledge_base::KnowledgeBase>>> =
-    std::sync::OnceLock::new();
-
-fn get_or_init_kb(root: &str) -> Result<std::sync::MutexGuard<'static, HashMap<String, crate::core::knowledge_base::KnowledgeBase>>, String> {
-    let cache = KB_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let guard = cache.lock().map_err(|e| format!("KB cache lock error: {}", e))?;
-    // 如果缓存中没有，需要初始化后插入；但 MutexGuard 不能先释放再获取
-    // 所以用 entry API 的 or_insert_with 无法直接用（需要可变借用）
-    // 简单方案：检查后若不存在，释放锁、创建、再获取
-    if guard.contains_key(root) {
-        return Ok(guard);
-    }
-    drop(guard);
-    let kb = crate::core::knowledge_base::KnowledgeBase::new(std::path::Path::new(root))
-        .map_err(|e| format!("KB init failed: {}", e))?;
-    let mut guard = cache.lock().map_err(|e| format!("KB cache lock error: {}", e))?;
-    guard.insert(root.to_string(), kb);
-    Ok(guard)
-}
+// 使用 knowledge_base.rs 中的共享 KB_CACHE，避免重复缓存
 
 fn native_search_knowledge_base(
     root: &str,
     query: &str,
     top_k: usize,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let guard = get_or_init_kb(root)?;
+    let guard = crate::core::knowledge_base::get_or_init_kb(root)?;
     let kb = guard.get(root).unwrap();
     let results = kb.search(query, top_k)
         .map_err(|e| format!("Search failed: {}", e))?;
@@ -714,7 +685,7 @@ fn native_get_document_structure(
     root: &str,
     doc_id: &str,
 ) -> Result<Option<Vec<crate::parsers::sections::TreeNode>>, String> {
-    let guard = get_or_init_kb(root)?;
+    let guard = crate::core::knowledge_base::get_or_init_kb(root)?;
     let kb = guard.get(root).unwrap();
     Ok(kb.get_structure(doc_id))
 }
@@ -724,7 +695,7 @@ fn native_get_document_pages(
     doc_id: &str,
     pages: &str,
 ) -> Result<Vec<crate::core::knowledge_base::PageContent>, String> {
-    let guard = get_or_init_kb(root)?;
+    let guard = crate::core::knowledge_base::get_or_init_kb(root)?;
     let kb = guard.get(root).unwrap();
     Ok(kb.get_pages(doc_id, pages))
 }

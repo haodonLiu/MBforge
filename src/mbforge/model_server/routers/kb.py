@@ -1,4 +1,9 @@
-"""知识库路由."""
+"""知识库路由 — 搜索和统计（浏览器 dev 模式 fallback）.
+
+注意: 主搜索路径已迁移到 Rust Tauri command (kb_search / kb_search_stream)。
+此路由仅作为浏览器开发模式的 fallback。
+索引已完全由 Rust FTS5 处理，不再需要 /index-sections 端点。
+"""
 
 from __future__ import annotations
 
@@ -22,25 +27,11 @@ class SearchRequest(BaseModel):
     top_k: int = 5
 
 
-class SectionData(BaseModel):
-    title: str
-    path: str
-    text: str
-    page_start: int | None = None
-    page_end: int | None = None
-
-
-class IndexSectionsRequest(BaseModel):
-    project_root: str
-    doc_id: str
-    sections: list[SectionData]
-    filename: str = ""
-
-
 @router.post("/search")
 async def kb_search(
     req: SearchRequest,
 ) -> dict:
+    """浏览器 dev 模式 fallback — 主路径使用 Rust Tauri command."""
     try:
         project = Project.open(Path(req.project_root))
         if project is None:
@@ -50,48 +41,6 @@ async def kb_search(
         return {"success": True, "results": results}
     except Exception as e:
         logger.error(f"KB search failed: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
-
-
-@router.post("/index-sections")
-async def kb_index_sections(
-    req: IndexSectionsRequest,
-) -> dict:
-    """索引 SectionChunk 列表到知识库（从 Rust pipeline 调用）."""
-    try:
-        project = Project.open(Path(req.project_root))
-        if project is None:
-            return {"success": False, "error": f"Not a valid project: {req.project_root}"}
-
-        kb = KnowledgeBase(project.root, embedder=get_embedder())
-
-        # 构建 ExtractedContent 兼容结构
-        from ...core.types import ExtractedContent
-        content = ExtractedContent()
-        content.text = "\n\n".join(s.text for s in req.sections)
-        content.chunks = [s.text for s in req.sections]
-        content.metadata["source"] = req.filename
-        content.metadata["doc_id"] = req.doc_id
-
-        # 构建 sections 兼容结构
-        from ...core.document_tree import SectionChunk
-        content.sections = [
-            SectionChunk(
-                title=s.title,
-                path=s.path,
-                text=s.text,
-                page_start=s.page_start,
-                page_end=s.page_end,
-                line_start=0,
-                line_end=0,
-            )
-            for s in req.sections
-        ]
-
-        kb.index_document(req.doc_id, content, content.metadata)
-        return {"success": True, "indexed": len(req.sections)}
-    except Exception as e:
-        logger.error(f"KB index-sections failed: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 

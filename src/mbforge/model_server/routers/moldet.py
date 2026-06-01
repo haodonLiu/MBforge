@@ -1,6 +1,7 @@
 """MolDet 分子检测与识别路由."""
 
 from __future__ import annotations
+from typing import Any
 
 import asyncio
 
@@ -18,7 +19,7 @@ router = APIRouter()
 
 
 @router.post("/detect-page")
-async def detect_page(request: Request) -> dict:
+async def detect_page(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
         image_base64 = body.get("image_base64", "")
@@ -51,7 +52,7 @@ async def detect_page(request: Request) -> dict:
 
 
 @router.post("/extract-page")
-async def extract_page(request: Request) -> dict:
+async def extract_page(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
         image_base64 = body.get("image_base64", "")
@@ -100,7 +101,7 @@ async def extract_page(request: Request) -> dict:
 
 
 @router.post("/extract-region")
-async def extract_region(request: Request) -> dict:
+async def extract_region(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
         image_base64 = body.get("image_base64", "")
@@ -132,7 +133,7 @@ async def extract_region(request: Request) -> dict:
 
 
 @router.get("/health")
-async def moldet_health() -> dict:
+async def moldet_health() -> dict[str, Any]:
     try:
         pipeline = get_moldet()
         available = pipeline is not None and pipeline.is_available()

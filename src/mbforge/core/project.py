@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from .settings import ProjectSettings
 from ..utils.constants import APP_VERSION, PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS
@@ -50,7 +51,7 @@ class DocumentEntry:
             return "data"
         return "text"
 
-    def to_dict(self, project_root: Path | None = None) -> dict:
+    def to_dict(self, project_root: Path | None = None) -> dict[str, Any]:
         resolved = self.path.resolve()
         if project_root is not None:
             try:
@@ -75,7 +76,7 @@ class DocumentEntry:
         }
 
     @classmethod
-    def from_dict(cls, data: dict, project_root: Path) -> DocumentEntry:
+    def from_dict(cls, data: dict[str, Any], project_root: Path) -> DocumentEntry:
         rel = Path(data["path"])
         # 兼容旧数据：如果 rel 是绝对路径（含盘符或 / 开头），直接用
         if rel.is_absolute():

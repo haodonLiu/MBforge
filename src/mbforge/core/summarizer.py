@@ -101,7 +101,7 @@ class SummaryManager:
 class DocumentSummarizer:
     """文档摘要生成器（依赖 LLM）."""
 
-    def __init__(self, llm=None):
+    def __init__(self, llm: "BaseLLM | None" = None):
         self.llm = llm
 
     def summarize(self, content: ExtractedContent, doc_id: str) -> DocumentSummary:

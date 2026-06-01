@@ -5,6 +5,7 @@
 """
 
 from __future__ import annotations
+from typing import Any
 
 import shutil
 from pathlib import Path
@@ -25,26 +26,40 @@ TEXT_EXTENSIONS = {".md", ".txt", ".csv", ".json", ".yaml", ".yml", ".toml", ".p
 
 
 @router.get("/content")
-async def read_file_content(path: str):
+async def read_file_content(path: str, project_root: str | None = None):
     """读取文本文件内容（用于 Markdown/TXT 等预览）."""
     try:
         file_path = Path(path)
+        if project_root:
+            project = await get_project_from_root(project_root)
+            root_canon = project.root.resolve()
+            path_canon = file_path.resolve()
+            if not path_canon.is_relative_to(root_canon):
+                raise PathTraversalError(f"Path '{path}' escapes project root")
         if not file_path.exists():
             return {"success": False, "error": f"File not found: {path}"}
         if file_path.suffix.lower() not in TEXT_EXTENSIONS:
             return {"success": False, "error": f"Unsupported file type: {file_path.suffix}"}
         content = file_path.read_text(encoding="utf-8", errors="replace")
         return {"success": True, "content": content, "filename": file_path.name}
+    except (PathTraversalError, FileAccessError):
+        raise
     except Exception as e:
         logger.error(f"Read file content failed for path={path}: {e}", exc_info=True)
         return {"success": False, "error": str(e)}
 
 
 @router.get("/pdf")
-async def serve_pdf(path: str):
+async def serve_pdf(path: str, project_root: str | None = None):
     """Serve a PDF file for preview."""
     try:
         file_path = Path(path)
+        if project_root:
+            project = await get_project_from_root(project_root)
+            root_canon = project.root.resolve()
+            path_canon = file_path.resolve()
+            if not path_canon.is_relative_to(root_canon):
+                raise PathTraversalError(f"Path '{path}' escapes project root")
         if not file_path.exists():
             logger.warning(f"PDF not found: {path}")
             return {"success": False, "error": f"File not found: {path}"}
@@ -55,6 +70,8 @@ async def serve_pdf(path: str):
             media_type="application/pdf",
             headers={"Cache-Control": "private, max-age=3600"},
         )
+    except (PathTraversalError, FileAccessError):
+        raise
     except Exception as e:
         logger.error(f"Serve PDF failed for path={path}: {e}", exc_info=True)
         return {"success": False, "error": f"无法打开 PDF: {e}"}
@@ -64,7 +81,7 @@ async def serve_pdf(path: str):
 async def upload_file(
     file: UploadFile = File(...),
     project_root: str = Form(...),
-) -> dict:
+) -> dict[str, Any]:
     project = await get_project_from_root(project_root)
 
     # Sanitize filename: strip directory components to prevent path traversal

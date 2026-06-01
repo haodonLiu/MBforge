@@ -1,6 +1,7 @@
 """Settings 管理路由."""
 
 from __future__ import annotations
+from typing import Any
 
 from fastapi import APIRouter, Request
 
@@ -12,7 +13,7 @@ router = APIRouter()
 
 
 @router.get("/")
-async def get_settings() -> dict:
+async def get_settings() -> dict[str, Any]:
     try:
         config = load_global_config()
         return {"success": True, "settings": config.to_dict()}
@@ -22,7 +23,7 @@ async def get_settings() -> dict:
 
 
 @router.post("/")
-async def save_settings(request: Request) -> dict:
+async def save_settings(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
         settings = body.get("settings", {})

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 
 from .base import BaseReranker
+from ..utils.config import RerankConfig
 from ..utils.constants import PROVIDER_SENTENCE_TRANSFORMERS, PROVIDER_QWEN3
 from ..utils.helpers import get_default_device
 from ..utils.logger import get_logger
@@ -22,7 +23,7 @@ class SentenceTransformerReranker(BaseReranker):
         self.device = device or get_default_device()
         self._model = None
 
-    def _load_model(self):
+    def _load_model(self) -> CrossEncoder:
         if self._model is None:
             from sentence_transformers import CrossEncoder
 
@@ -38,12 +39,11 @@ class SentenceTransformerReranker(BaseReranker):
         return indexed
 
 
-def create_reranker_from_config(config) -> BaseReranker:
+def create_reranker_from_config(config: RerankConfig) -> BaseReranker:
     """从配置创建 Reranker 实例."""
-    from ..utils.config import RerankConfig
     from .rerank_qwen3 import Qwen3Reranker
 
-    cfg: RerankConfig = config
+    cfg = config
 
     if cfg.provider == PROVIDER_QWEN3:
         return Qwen3Reranker(

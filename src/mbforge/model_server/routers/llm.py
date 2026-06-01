@@ -1,6 +1,7 @@
 """LLM 推理路由."""
 
 from __future__ import annotations
+from typing import Any
 
 import asyncio
 import json
@@ -20,7 +21,7 @@ router = APIRouter()
 
 
 @router.post("/chat")
-async def chat(request: Request) -> dict:
+async def chat(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
         messages = [Message(**m) for m in body.get("messages", [])]

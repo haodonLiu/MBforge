@@ -77,7 +77,7 @@ class MoleculeRecord:
         )
 
     @property
-    def mol(self):
+    def mol(self) -> "Chem.Mol | None":
         """RDKit Mol 对象（带缓存）."""
         if not hasattr(self, "_cached_mol"):
             self._cached_mol = Chem.MolFromSmiles(self.esmiles) if Chem else None
@@ -100,7 +100,7 @@ class MoleculeRecord:
         }
         return props
 
-    def to_molecule(self):
+    def to_molecule(self) -> "Molecule":
         """转换为 schema.Molecule 对象。"""
         from ..molecules.schema import Molecule
 
@@ -116,7 +116,7 @@ class MoleculeRecord:
         )
 
     @classmethod
-    def from_molecule(cls, mol, activity_type: str = "") -> MoleculeRecord:
+    def from_molecule(cls, mol: "Molecule", activity_type: str = "") -> MoleculeRecord:
         """从 schema.Molecule 创建 MoleculeRecord。"""
         return cls(
             mol_id=mol.id,

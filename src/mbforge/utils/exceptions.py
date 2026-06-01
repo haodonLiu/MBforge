@@ -21,13 +21,6 @@ class MBForgeError(Exception):
         super().__init__(message)
 
 
-class ProjectNotFoundError(MBForgeError):
-    """Project directory or index not found."""
-
-    status_code = 404
-    error_code = "project_not_found"
-
-
 class ProjectNotValidError(MBForgeError):
     """Path exists but is not a valid MBForge project."""
 
@@ -40,13 +33,6 @@ class ModelNotAvailableError(MBForgeError):
 
     status_code = 503
     error_code = "model_not_available"
-
-
-class APIKeyMissingError(MBForgeError):
-    """Required API key is not configured."""
-
-    status_code = 401
-    error_code = "api_key_missing"
 
 
 class ConfigError(MBForgeError):

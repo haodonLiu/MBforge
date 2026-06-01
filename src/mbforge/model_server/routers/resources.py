@@ -4,6 +4,7 @@
 """
 
 from __future__ import annotations
+from typing import Any
 
 import json
 import logging
@@ -12,7 +13,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from ...core.resource_manager import (
-    RESOURCE_CATALOG, ResourceManager, ResourceType, ResourceStatus,
+    RESOURCE_CATALOG, ResourceManager, ResourceType, ResourceStatus, ResourceStatusResult,
 )
 
 logger = logging.getLogger("mbforge.resources")
@@ -20,7 +21,7 @@ router = APIRouter()
 
 
 @router.get("/check")
-async def check_all() -> dict:
+async def check_all() -> dict[str, Any]:
     """全量环境检查 — 返回所有资源状态 + 环境信息."""
     try:
         report = ResourceManager.check_all()
@@ -51,7 +52,7 @@ async def check_all() -> dict:
 
 
 @router.get("/catalog")
-async def get_catalog() -> dict:
+async def get_catalog() -> dict[str, Any]:
     """获取资源目录（不含状态，纯元数据）."""
     try:
         items = []
@@ -74,7 +75,7 @@ async def get_catalog() -> dict:
 
 
 @router.get("/status/{resource_id}")
-async def check_one(resource_id: str) -> dict:
+async def check_one(resource_id: str) -> dict[str, Any]:
     """检查单个资源状态."""
     try:
         status = ResourceManager.check(resource_id)
@@ -109,10 +110,6 @@ async def ensure_resource(resource_id: str):
         return {"success": True, "status": "already_ready", "resource": _status_to_dict(status)}
 
     def event_stream():
-        def callback(event: dict):
-            # 通过 closure 将事件传入 SSE 流
-            pass
-
         try:
             yield f"data: {json.dumps({'status': 'starting', 'resource_id': resource_id}, ensure_ascii=False)}\n\n"
 
@@ -183,7 +180,7 @@ async def ensure_all():
     )
 
 
-def _status_to_dict(status) -> dict:
+def _status_to_dict(status: ResourceStatusResult) -> dict[str, Any]:
     return {
         "id": status.id,
         "name": status.name,

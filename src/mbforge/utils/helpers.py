@@ -130,7 +130,7 @@ def load_json(path: Path, default: Any = None) -> Any:
         return default
 
 
-def run_sync(sync_func, *args) -> Any:
+def run_sync(sync_func: "Callable[..., Any]", *args: Any) -> Any:
     """在当前事件循环的线程池中同步执行函数（异步兼容）."""
     try:
         loop = asyncio.get_running_loop()
@@ -155,7 +155,7 @@ def decode_base64_to_tempfile(
         return f.name
 
 
-def decode_base64_image(image_base64: str):
+def decode_base64_image(image_base64: str) -> "Image.Image":
     """将 base64 编码的图片解码为 PIL Image 对象."""
     from io import BytesIO
     from PIL import Image

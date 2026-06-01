@@ -26,7 +26,7 @@ GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
 DEFAULT_EMBED_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 DEFAULT_RERANK_MODEL = "Qwen/Qwen3-Reranker-0.6B"
 DEFAULT_LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct-GGUF"
-DEFAULT_VLM_MODEL = "internlm/internlm-xcomposer2-vl-7b"
+DEFAULT_VLM_MODEL = "mimo-v2.5"
 
 # 国内模型下载镜像（ModelScope / HF-Mirror）
 DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
@@ -81,8 +81,10 @@ PROVIDER_OLLAMA = "ollama"
 PROVIDER_LOCAL = "local"
 
 # OCR Provider
-OCR_PROVIDER_PYMUPDF = "pymupdf"  # Deprecated: PyMuPDF removed from project
 OCR_PROVIDER_NONE = "none"
+
+# Sidecar 端口
+DEFAULT_SIDECAR_PORT = 18792
 
 # 模型下载目录（统一入口）
 def _default_model_cache_dir() -> str:
@@ -104,7 +106,7 @@ def get_model_cache_dir() -> str:
     return MODEL_CACHE_DIR
 
 
-def ensure_hf_mirror():
+def ensure_hf_mirror() -> None:
     """设置 HuggingFace 镜像环境变量（如果未设置）。"""
     import os
 

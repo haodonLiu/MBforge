@@ -1,4 +1,5 @@
 """Embedder 推理路由."""
+from typing import Any
 
 import asyncio
 
@@ -14,7 +15,7 @@ router = APIRouter()
 
 
 @router.post("/embed")
-async def embed(request: Request) -> dict:
+async def embed(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
         texts = body.get("texts", [])

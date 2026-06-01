@@ -8,23 +8,35 @@ mod sidecar;
 
 
 use commands::agent::AgentState;
-use commands::molecule::MolDbState;
-use commands::mol_store::MolStoreState;
+use commands::mol_engine::MoleculeEngineState;
 
 use std::process::Command;
 use tauri::Manager;
 
+fn load_dotenv() {
+    if let Ok(contents) = std::fs::read_to_string(".env") {
+        for line in contents.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') { continue; }
+            if let Some((key, value)) = line.split_once('=') {
+                let k = key.trim();
+                let v = value.trim().trim_matches('"').trim_matches('\'');
+                if !k.is_empty() {
+                    std::env::set_var(k, v);
+                }
+            }
+        }
+    }
+}
+
 fn main() {
-    // Load .env from project root (dev mode) or app directory
-    let _ = dotenvy::dotenv();
+    load_dotenv();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .manage(AgentState::new())
-        .manage(MolDbState::new())
-        .manage(MolStoreState::new())
+        .manage(MoleculeEngineState::new())
         .invoke_handler(tauri::generate_handler![
             commands::file_ops::open_file,
             commands::file_ops::read_text_file,

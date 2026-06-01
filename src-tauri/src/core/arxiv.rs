@@ -5,7 +5,6 @@
 //! and three free search queries ("transformer", "attention mechanism",
 //! "large language model") require no token.
 
-use std::collections::HashMap;
 
 use serde_json::Value;
 

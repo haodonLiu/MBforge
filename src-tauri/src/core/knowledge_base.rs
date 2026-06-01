@@ -169,7 +169,7 @@ fn get_or_init_semantic_cache(root: &str) -> std::sync::MutexGuard<'static, Hash
 }
 
 /// 搜索核心逻辑：semantic_cache (L1) → FTS5 → cache store → stream_search
-fn search_with_cache(root: &str, query: &str, top_k: usize) -> Result<(Vec<serde_json::Value>, Vec<StreamingResult>), String> {
+pub fn search_with_cache(root: &str, query: &str, top_k: usize) -> Result<(Vec<serde_json::Value>, Vec<StreamingResult>), String> {
     // 1. L1 缓存命中？
     {
         let sc_guard = get_or_init_semantic_cache(root);
@@ -236,7 +236,7 @@ pub async fn kb_search_stream(
     top_k: Option<usize>,
 ) -> Result<(), String> {
     let top_k = top_k.unwrap_or(5);
-    let (results, chunks) = search_with_cache(&root, &query, top_k)?;
+    let (_results, chunks) = search_with_cache(&root, &query, top_k)?;
 
     // 通过事件逐 chunk 推送
     for chunk in chunks {

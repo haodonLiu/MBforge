@@ -6,7 +6,6 @@ use grep_searcher::SearcherBuilder;
 use ignore::WalkBuilder;
 
 use super::helpers;
-use super::knowledge_base::get_or_init_kb;
 use super::markush;
 use super::tools::{ToolInfo, ToolRegistry};
 
@@ -262,34 +261,20 @@ impl ToolExecutor {
             );
         }
 
-        // list_molecules — 从 MoleculeDatabase 查询
+        // molecule_analysis — 统一分子分析入口
         {
             let r = root.clone();
             registry.register_with_fn(
-                ToolInfo::new("list_molecules", "列出项目中的分子数据", {
+                ToolInfo::new("molecule_analysis", "分子数据库统一分析入口：列表、搜索、SAR、Markush、聚类、去重等", {
                     let mut p = HashMap::new();
-                    p.insert("limit".into(), serde_json::json!({"type": "integer"}));
+                    p.insert("action".into(), serde_json::json!({"type": "string", "description": "操作类型: list | search_by_smiles | search_text | get_stats | get_relation_stats | scaffold_profile | find_analogs | find_activity_cliffs | check_markush | list_clusters | dedup_batch"}));
+                    p.insert("params".into(), serde_json::json!({"type": "object", "description": "操作对应的参数对象"}));
                     p
                 }),
                 Box::new(move |args| {
-                    let limit = args["limit"].as_u64().unwrap_or(20) as usize;
-                    native_list_molecules(&r, limit)
-                }),
-            );
-        }
-
-        // search_molecule_by_smiles — 从 MoleculeDatabase 查询
-        {
-            let r = root.clone();
-            registry.register_with_fn(
-                ToolInfo::new("search_molecule_by_smiles", "按 SMILES 字符串搜索分子", {
-                    let mut p = HashMap::new();
-                    p.insert("smiles".into(), serde_json::json!({"type": "string"}));
-                    p
-                }),
-                Box::new(move |args| {
-                    let smiles = args["smiles"].as_str().unwrap_or("");
-                    native_search_molecule_by_smiles(&r, smiles)
+                    let action = args["action"].as_str().unwrap_or("");
+                    let params = args["params"].clone();
+                    native_molecule_analysis(&r, action, params)
                 }),
             );
         }
@@ -669,16 +654,8 @@ fn native_search_knowledge_base(
     query: &str,
     top_k: usize,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let guard = crate::core::knowledge_base::get_or_init_kb(root)?;
-    let kb = guard.get(root).unwrap();
-    let results = kb.search(query, top_k)
-        .map_err(|e| format!("Search failed: {}", e))?;
-    Ok(results.into_iter().map(|r| serde_json::json!({
-        "id": r.id,
-        "text": r.text,
-        "metadata": r.metadata,
-        "score": r.score,
-    })).collect())
+    let (results, _) = crate::core::knowledge_base::search_with_cache(root, query, top_k)?;
+    Ok(results)
 }
 
 fn native_get_document_structure(
@@ -726,45 +703,22 @@ fn native_read_document_overview(root: &str, doc_id: &str) -> String {
 
 // ===== 分子数据库 Native 工具 =====
 
-fn native_list_molecules(root: &str, limit: usize) -> String {
-    let db_path = std::path::PathBuf::from(root)
-        .join(".mbforge")
-        .join("molecules.db");
-    if !db_path.exists() {
+fn native_molecule_analysis(
+    root: &str,
+    action: &str,
+    params: serde_json::Value,
+) -> String {
+    let project_root = std::path::Path::new(root);
+    if !project_root.join(".mbforge").join("molecules.db").exists() {
         return "No molecule database found".to_string();
     }
-    match super::molecule_store::MoleculeDatabase::open(&db_path) {
-        Ok(db) => match db.list_all(limit, 0, None, None) {
-            Ok(mols) => serde_json::to_string(&mols).unwrap_or_else(|e| format!("Serialize error: {}", e)),
-            Err(e) => format!("List error: {}", e),
+    match super::molecule_engine::MoleculeEngine::new(project_root) {
+        Ok(engine) => match engine.analyze(action, params) {
+            Ok(result) => serde_json::to_string(&result)
+                .unwrap_or_else(|e| format!("Serialize error: {}", e)),
+            Err(e) => format!("Analysis error: {}", e),
         },
-        Err(e) => format!("DB error: {}", e),
-    }
-}
-
-fn native_search_molecule_by_smiles(root: &str, smiles: &str) -> String {
-    let db_path = std::path::PathBuf::from(root)
-        .join(".mbforge")
-        .join("molecules.db");
-    if !db_path.exists() {
-        return "No molecule database found".to_string();
-    }
-    match super::molecule_store::MoleculeDatabase::open(&db_path) {
-        Ok(db) => {
-            let mut results = Vec::new();
-            if let Ok(Some(rec)) = db.search_by_esmiles(smiles) {
-                results.push(rec);
-            }
-            if let Ok(recs) = db.search_text(smiles) {
-                for r in recs {
-                    if !results.iter().any(|x| x.mol_id == r.mol_id) {
-                        results.push(r);
-                    }
-                }
-            }
-            serde_json::to_string(&results).unwrap_or_else(|e| format!("Serialize error: {}", e))
-        },
-        Err(e) => format!("DB error: {}", e),
+        Err(e) => format!("Engine init error: {}", e),
     }
 }
 
@@ -907,7 +861,6 @@ fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: usiz
     struct MatchedSummary {
         doc_id: String,
         l0_abstract: String,
-        keywords: Vec<String>,
         entity_tags: Vec<String>,
     }
     let mut matched: Vec<MatchedSummary> = Vec::new();
@@ -927,7 +880,6 @@ fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: usiz
                 matched.push(MatchedSummary {
                     doc_id: s.doc_id.clone(),
                     l0_abstract: s.l0_abstract.clone(),
-                    keywords: s.keywords.clone(),
                     entity_tags: s.entity_tags.clone(),
                 });
             }

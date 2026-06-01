@@ -147,23 +147,9 @@ impl Agent {
                 self.llm.chat(&messages, None).await?
             };
 
-            let (content, tool_calls) = Self::parse_response_static(&response);
-
-            if tool_calls.is_empty() {
-                final_answer = content;
-                self.context.add_assistant_message(&final_answer);
+            if let Some(answer) = self.run_react_turn(&response).await {
+                final_answer = answer;
                 break;
-            }
-
-            self.context.add_assistant_message_with_tool_calls(&content, &tool_calls);
-
-            for tc in &tool_calls {
-                let result = self.executor.execute(&tc.name, &tc.arguments).await;
-                self.context.add_tool_result(&tc.name, &result, &tc.id);
-                if let Some(ref mut tracker) = self.trajectory_tracker {
-                    let summary = if result.len() > 200 { &result[..result.floor_char_boundary(200)] } else { &result };
-                    tracker.record_tool(&tc.name, &tc.arguments, summary);
-                }
             }
         }
 
@@ -191,23 +177,8 @@ impl Agent {
             for _ in 0..self.max_iterations {
                 let messages = self.context.build_messages(true, true);
                 let response = self.llm.chat(&messages, Some(&tool_schemas)).await?;
-                let (content, tool_calls) = Self::parse_response_static(&response);
-
-                if tool_calls.is_empty() {
-                    // LLM 不再调用工具 — 先记录上下文，再用真正的流式调用输出最终回复
-                    self.context.add_assistant_message(&content);
+                if self.run_react_turn(&response).await.is_some() {
                     break;
-                }
-
-                // 执行工具，继续循环
-                self.context.add_assistant_message_with_tool_calls(&content, &tool_calls);
-                for tc in &tool_calls {
-                    let result = self.executor.execute(&tc.name, &tc.arguments).await;
-                    self.context.add_tool_result(&tc.name, &result, &tc.id);
-                    if let Some(ref mut tracker) = self.trajectory_tracker {
-                        let summary = if result.len() > 200 { &result[..result.floor_char_boundary(200)] } else { &result };
-                        tracker.record_tool(&tc.name, &tc.arguments, summary);
-                    }
                 }
             }
         }
@@ -220,7 +191,7 @@ impl Agent {
 
         // 转发流式 chunks
         let sidecar = self.sidecar_url.clone();
-        let project_root = self.project_root.clone();
+        let _project_root = self.project_root.clone();
         let user_input_owned = user_input.to_string();
         let skills_manager = self.skills_manager.as_ref().map(|s| (s.skills_dir.clone(), sidecar.clone()));
 
@@ -251,48 +222,16 @@ impl Agent {
         };
 
         if should_extract {
-            let messages: Vec<Message> = self.context.build_messages(false, true);
+            let messages = self.context.get_history_messages();
             let sidecar = self.sidecar_url.clone();
-            tokio::spawn(async move {
-                // 用独立的 MemoryManager 做提取，不阻塞主 Agent
-                // 这里简化为直接调 sidecar LLM
-                let prompt = format!(
-                    "请分析以下对话，提取有价值的记忆条目。按 JSON 数组格式输出，每个条目包含：\n\
-                     - category: profile/preferences/entities/events/cases/patterns\n\
-                     - key: 简短的键名\n\
-                     - content: 具体内容\n\
-                     - confidence: 0.0-1.0\n\n\
-                     只输出 JSON 数组，不要其他说明。\n\n\
-                     对话：\n{}",
-                    messages.iter().rev().take(10).rev()
-                        .map(|m| { let end = m.content.floor_char_boundary(500); format!("{}: {}", m.role, &m.content[..end]) })
-                        .collect::<Vec<_>>().join("\n")
-                );
-
-                let body = serde_json::json!({
-                    "messages": [
-                        {"role": "system", "content": "你是一位记忆提取专家。"},
-                        {"role": "user", "content": prompt}
-                    ]
+            if let Some(ref root) = self.project_root {
+                let root = root.clone();
+                tokio::spawn(async move {
+                    let mut mgr = MemoryManager::new(&root);
+                    mgr.extract_from_conversation(&messages, &sidecar).await;
+                    log::info!("Memory extraction completed, total entries: {}", mgr.count());
                 });
-
-                let url = format!("{}/api/v1/llm/chat", sidecar.trim_end_matches('/'));
-                match Self::sidecar_llm_call(&url, &body).await {
-                    Ok(text) => {
-                        // 解析 OpenAI 兼容响应
-                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
-                            let content = val["choices"][0]["message"]["content"]
-                                .as_str().unwrap_or("");
-                            if !content.is_empty() {
-                                log::debug!("Memory extraction completed ({} chars)", content.len());
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log::debug!("Memory extraction failed: {}", e);
-                    }
-                }
-            });
+            }
 
             // 重置计数器
             if let Some(ref mut mgr) = self.memory_manager {
@@ -374,6 +313,82 @@ impl Agent {
         (response.content.clone(), response.tool_calls.clone())
     }
 
+    /// 处理单轮 ReAct 响应。
+    /// - 无 tool_calls → 记录 assistant 回复，返回 `Some(content)`
+    /// - 有 tool_calls → 执行工具、记录结果，返回 `None`（需要继续循环）
+    async fn run_react_turn(&mut self, response: &LlmResponse) -> Option<String> {
+        let (content, tool_calls) = Self::parse_response_static(response);
+        if tool_calls.is_empty() {
+            self.context.add_assistant_message(&content);
+            return Some(content);
+        }
+
+        self.context.add_assistant_message_with_tool_calls(&content, &tool_calls);
+        for tc in &tool_calls {
+            let result = self.execute_single_tool(&tc.name, &tc.arguments, &tc.id).await;
+            self.context.add_tool_result(&tc.name, &result, &tc.id);
+        }
+        None
+    }
+
+    /// 执行单个工具，并记录 trajectory、注入检索结果到 ephemeral 层。
+    async fn execute_single_tool(&mut self, name: &str, arguments: &serde_json::Value, _call_id: &str) -> String {
+        let start = std::time::Instant::now();
+        let result = self.executor.execute(name, arguments).await;
+        let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+        // 记录 trajectory
+        if let Some(ref mut tracker) = self.trajectory_tracker {
+            let summary = if result.len() > 200 { &result[..result.floor_char_boundary(200)] } else { &result };
+            tracker.record_tool(name, arguments, summary);
+
+            // 搜索类工具额外记录 search trajectory
+            if name == "search_knowledge_base" {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&result) {
+                    let results: Vec<String> = val.as_array()
+                        .map(|arr| arr.iter()
+                            .filter_map(|r| r["text"].as_str().map(|s| s.to_string()))
+                            .take(5)
+                            .collect())
+                        .unwrap_or_default();
+                    tracker.record_search(
+                        arguments["query"].as_str().unwrap_or(""),
+                        results.len(),
+                        results,
+                        duration_ms,
+                    );
+                }
+            }
+        }
+
+        // 将检索结果摘要注入 L2 tools 层（ephemeral，build_messages 后自动清除）
+        if name == "search_knowledge_base" {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&result) {
+                if let Some(arr) = val.as_array() {
+                    let summary: String = arr.iter()
+                        .take(3)
+                        .filter_map(|r| {
+                            let text = r["text"].as_str().unwrap_or("");
+                            let doc_id = r["metadata"]["doc_id"].as_str().unwrap_or("?");
+                            let truncated = if text.len() > 150 { &text[..text.floor_char_boundary(150)] } else { text };
+                            Some(format!("- {}: {}", doc_id, truncated))
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !summary.is_empty() {
+                        let query = arguments["query"].as_str().unwrap_or("");
+                        self.context.inject_retrieval_trajectory(&format!(
+                            "知识库搜索: {}\n结果:\n{}",
+                            query, summary
+                        ));
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
     /// 保存上下文到文件
     pub fn save_context(&self) {
         if let Some(ref root) = self.project_root {
@@ -398,6 +413,24 @@ impl Agent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::tools::ToolInfo;
+
+    fn test_agent() -> Agent {
+        let config = ModelConfig::default();
+        let mut agent = Agent::new(&config, "http://localhost:18792", None);
+        agent.executor.registry.register_with_fn(
+            ToolInfo::new("echo", "Echo for testing", {
+                let mut p = std::collections::HashMap::new();
+                p.insert("msg".into(), serde_json::json!({"type": "string"}));
+                p
+            }),
+            Box::new(|args| {
+                let msg = args["msg"].as_str().unwrap_or("");
+                format!("echo: {}", msg)
+            }),
+        );
+        agent
+    }
 
     #[test]
     fn test_parse_response_static() {
@@ -409,5 +442,89 @@ mod tests {
         let (content, tc) = Agent::parse_response_static(&resp);
         assert_eq!(content, "Hello");
         assert!(tc.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_react_turn_no_tools() {
+        let mut agent = test_agent();
+        agent.context.add_user_message("hello");
+        let response = LlmResponse {
+            content: "Hi there".into(),
+            tool_calls: vec![],
+            finish_reason: "stop".into(),
+        };
+        let result = agent.run_react_turn(&response).await;
+        assert_eq!(result, Some("Hi there".to_string()));
+        assert_eq!(agent.context.get_history_messages().len(), 2); // user + assistant
+    }
+
+    #[tokio::test]
+    async fn test_react_turn_with_tools() {
+        let mut agent = test_agent();
+        agent.context.add_user_message("call echo");
+        let response = LlmResponse {
+            content: "Calling tool".into(),
+            tool_calls: vec![ToolCall {
+                id: "1".into(),
+                name: "echo".into(),
+                arguments: serde_json::json!({"msg": "world"}),
+            }],
+            finish_reason: "tool_calls".into(),
+        };
+        let result = agent.run_react_turn(&response).await;
+        assert!(result.is_none()); // 需要继续循环
+        let history = agent.context.get_history_messages();
+        assert_eq!(history.len(), 3); // user + assistant(with tool_calls) + tool_result
+        assert!(history[2].content.contains("echo: world"));
+    }
+
+    #[tokio::test]
+    async fn test_execute_single_tool_records_trajectory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = ModelConfig::default();
+        let mut agent = Agent::new(&config, "http://localhost:18792", Some(tmp.path()));
+        agent.executor.registry.register_with_fn(
+            ToolInfo::new("noop", "Noop", std::collections::HashMap::new()),
+            Box::new(|_| "done".to_string()),
+        );
+        agent.trajectory_tracker = Some(TrajectoryTracker::new(tmp.path()));
+
+        let result = agent.execute_single_tool("noop", &serde_json::json!({}), "id1").await;
+        assert_eq!(result, "done");
+
+        let tracker = agent.trajectory_tracker.unwrap();
+        assert_eq!(tracker.get_recent(10).len(), 1);
+        assert_eq!(tracker.get_recent(10)[0].step_type, "tool");
+    }
+
+    #[tokio::test]
+    async fn test_execute_single_tool_injects_search_retrieval() {
+        let mut agent = test_agent();
+        agent.executor.registry.register_with_fn(
+            ToolInfo::new("search_knowledge_base", "Mock search", {
+                let mut p = std::collections::HashMap::new();
+                p.insert("query".into(), serde_json::json!({"type": "string"}));
+                p
+            }),
+            Box::new(|args| {
+                let q = args["query"].as_str().unwrap_or("");
+                serde_json::json!([
+                    {"text": format!("Result about {}", q), "metadata": {"doc_id": "doc1"}}
+                ]).to_string()
+            }),
+        );
+
+        agent.execute_single_tool("search_knowledge_base", &serde_json::json!({"query": "aspirin"}), "id2").await;
+        // L2 tools 层应该被注入检索摘要
+        let msgs = agent.context.build_messages(true, false);
+        assert!(msgs.iter().any(|m| m.content.contains("aspirin") && m.content.contains("doc1")));
+    }
+
+    #[tokio::test]
+    async fn test_chat_max_iterations_fallback() {
+        let mut agent = test_agent();
+        agent.max_iterations = 0;
+        let result = agent.chat("test").await.unwrap();
+        assert!(result.contains("未能生成最终回复"));
     }
 }

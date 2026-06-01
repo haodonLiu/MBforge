@@ -114,7 +114,7 @@ impl Project {
             path_map.insert(full, doc.doc_id.clone());
         }
 
-        let mut project = Self {
+        let project = Self {
             root,
             meta_dir,
             index: index.documents,

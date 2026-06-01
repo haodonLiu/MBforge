@@ -206,7 +206,9 @@ impl MemoryManager {
             Err(_) => return,
         };
 
-        let content = val["content"].as_str().unwrap_or("");
+        let content = val["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("");
 
         // 提取 JSON 数组
         if let Some(start) = content.find('[') {

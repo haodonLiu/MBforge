@@ -83,7 +83,7 @@ impl MoleculeRelationDb {
     }
 
     fn init_schema(&self) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(|e| format!("Failed to enable foreign_keys: {}", e))?;
 
@@ -116,7 +116,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn add_relation(&self, rel: &MoleculeRelation) -> Result<i64, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let metadata_json = rel
             .metadata
             .as_ref()
@@ -144,7 +144,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn delete_relation(&self, id: i64) -> Result<bool, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let affected = conn
             .execute("DELETE FROM molecule_relations WHERE id = ?", params![id])
             .map_err(|e| format!("Failed to delete relation {}: {}", id, e))?;
@@ -152,7 +152,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn get_relation(&self, id: i64) -> Result<Option<MoleculeRelation>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn
             .prepare("SELECT * FROM molecule_relations WHERE id = ?")
             .map_err(|e| format!("Prepare failed: {}", e))?;
@@ -168,7 +168,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn find_by_molecule(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn
             .prepare(
                 "SELECT * FROM molecule_relations
@@ -192,7 +192,7 @@ impl MoleculeRelationDb {
         mol_id: &str,
         min_score: f64,
     ) -> Result<Vec<(MoleculeRelation, f64)>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn
             .prepare(
                 "SELECT * FROM molecule_relations
@@ -217,7 +217,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn find_same_as(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let mut stmt = conn
             .prepare(
                 "SELECT * FROM molecule_relations
@@ -238,7 +238,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn relations_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap()
+        self.conn.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn molecules_conn(&self) -> Result<Connection, String> {
@@ -247,7 +247,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn get_stats(&self) -> Result<RelationStats, String> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let total: i64 = conn
             .query_row("SELECT COUNT(*) FROM molecule_relations", [], |r| r.get(0))
             .unwrap_or(0);

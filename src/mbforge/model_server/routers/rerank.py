@@ -1,4 +1,5 @@
 """Reranker 推理路由."""
+from typing import Any
 
 import asyncio
 
@@ -14,7 +15,7 @@ router = APIRouter()
 
 
 @router.post("/rerank")
-async def rerank(request: Request) -> dict:
+async def rerank(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
         query = body.get("query", "")

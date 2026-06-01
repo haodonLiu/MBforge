@@ -28,7 +28,7 @@ class _UniParserClient:
         self.session = requests.Session()
         self.session.headers.update({"X-API-Key": api_key})
 
-    def parse_pdf(self, pdf_path: str, sync: bool = True, **kwargs) -> dict:
+    def parse_pdf(self, pdf_path: str, sync: bool = True, **kwargs) -> dict[str, Any]:
         token = f"mbforge_{uuid.uuid4().hex[:16]}"
         with open(pdf_path, "rb") as f:
             files = {"file": (Path(pdf_path).name, f, "application/pdf")}
@@ -42,7 +42,7 @@ class _UniParserClient:
         resp.raise_for_status()
         return resp.json()
 
-    def get_formatted(self, token: str, content: bool = True, **fmt_kwargs) -> dict:
+    def get_formatted(self, token: str, content: bool = True, **fmt_kwargs) -> dict[str, Any]:
         payload = {"token": token, "content": content}
         payload.update(fmt_kwargs)
         resp = self.session.post(
@@ -52,7 +52,7 @@ class _UniParserClient:
         resp.raise_for_status()
         return resp.json()
 
-    def health(self) -> dict:
+    def health(self) -> dict[str, Any]:
         resp = self.session.get(f"{self.host}/health", timeout=10)
         resp.raise_for_status()
         return resp.json()
@@ -73,7 +73,7 @@ def _get_client() -> _UniParserClient:
 
 
 @router.post("/parse")
-async def parse_pdf(request: Request) -> dict:
+async def parse_pdf(request: Request) -> dict[str, Any]:
     tmp_path = None
     try:
         body = await request.json()
@@ -129,7 +129,7 @@ async def parse_pdf(request: Request) -> dict:
 
 
 @router.post("/result")
-async def get_result(request: Request) -> dict:
+async def get_result(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
         token = body.get("token", "")
@@ -156,7 +156,7 @@ async def get_result(request: Request) -> dict:
 
 
 @router.post("/formatted")
-async def get_formatted(request: Request) -> dict:
+async def get_formatted(request: Request) -> dict[str, Any]:
     try:
         body = await request.json()
         token = body.get("token", "")
@@ -182,7 +182,7 @@ async def get_formatted(request: Request) -> dict:
 
 
 @router.get("/health")
-async def uniparser_health() -> dict:
+async def uniparser_health() -> dict[str, Any]:
     try:
         client = _get_client()
         result = client.health()

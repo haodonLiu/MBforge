@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from .base import BaseEmbedder, run_sync_async
+from ..utils.config import EmbedConfig
 from ..utils.constants import (
     DEFAULT_EMBED_MODEL,
     EMBED_INSTRUCTION_RETRIEVAL,
@@ -104,7 +105,7 @@ class SentenceTransformerEmbedder(BaseEmbedder):
         self._model = None
         self._dim = None
 
-    def _load_model(self):
+    def _load_model(self) -> "SentenceTransformer":
         if self._model is None:
             ensure_hf_mirror()
             from sentence_transformers import SentenceTransformer
@@ -168,7 +169,7 @@ class Qwen3Embedder(BaseEmbedder):
         self._model = None
         self._dim = None
 
-    def _load_model(self):
+    def _load_model(self) -> "SentenceTransformer":
         if self._model is None:
             ensure_hf_mirror()
             from sentence_transformers import SentenceTransformer
@@ -234,9 +235,8 @@ class APIEmbedder(BaseEmbedder):
         return await run_sync_async(self.embed, texts)
 
 
-def create_embedder_from_config(config) -> BaseEmbedder:
+def create_embedder_from_config(config: EmbedConfig) -> BaseEmbedder:
     """从配置创建 Embedder 实例."""
-    from ..utils.config import EmbedConfig
     from ..utils.constants import PROVIDER_API
 
     cfg: EmbedConfig = config

@@ -40,13 +40,32 @@ def check_package(pkg_name: str) -> tuple[bool, Optional[str]]:
         return False, None
 
 
+# 白名单：仅允许执行的系统命令（防止命令注入）
+_ALLOWED_COMMANDS: frozenset[str] = frozenset([
+    "vina",
+    "nvidia-smi",
+])
+
+
 def check_command(cmd: str) -> bool:
-    """检查系统命令是否在 PATH 中."""
+    """检查系统命令是否在 PATH 中.
+
+    Args:
+        cmd: 要检查的命令名称。
+
+    Returns:
+        True 如果命令存在且可执行，否则 False。
+
+    Raises:
+        ValueError: 如果命令不在白名单中（安全防护）。
+    """
+    if cmd not in _ALLOWED_COMMANDS:
+        raise ValueError(f"Command '{cmd}' is not in the allowed list: {_ALLOWED_COMMANDS}")
     try:
         subprocess.run(
-            [cmd, '--version'],
+            [cmd, "--version"],
             capture_output=True,
-            timeout=5
+            timeout=5,
         )
         return True
     except (subprocess.SubprocessError, FileNotFoundError):
@@ -135,10 +154,10 @@ async def check_environment() -> EnvironmentCheckResult:
     if not gpu_available:
         try:
             result = subprocess.run(
-                ['nvidia-smi', '--query-gpu=name,memory.total,driver_version', '--format=csv,noheader'],
+                ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
             )
             if result.returncode == 0:
                 parts = result.stdout.strip().split(',')

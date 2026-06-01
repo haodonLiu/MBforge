@@ -186,7 +186,7 @@ def _get_dir_size(path: Path) -> float:
 # ---------------------------------------------------------------------------
 
 @router.get("/models")
-async def list_models() -> dict:
+async def list_models() -> dict[str, Any]:
     """列出所有模型及其状态（基于 ResourceManager）."""
     try:
         result = []
@@ -226,7 +226,7 @@ async def list_models() -> dict:
 
 
 @router.get("/model-paths")
-async def get_model_paths() -> dict:
+async def get_model_paths() -> dict[str, Any]:
     """返回所有模型相关的缓存路径."""
     try:
         return {
@@ -257,7 +257,7 @@ async def get_model_paths() -> dict:
 
 
 @router.post("/model-dir")
-async def set_model_dir(path: str) -> dict:
+async def set_model_dir(path: str) -> dict[str, Any]:
     """设置 MBForge 模型缓存目录."""
     try:
         new_path = Path(path).expanduser().absolute()
@@ -273,7 +273,7 @@ async def set_model_dir(path: str) -> dict:
 
 
 @router.get("/model-dir")
-async def get_model_dir() -> dict:
+async def get_model_dir() -> dict[str, Any]:
     """返回当前模型下载目录路径."""
     try:
         cfg = load_global_config()
@@ -284,7 +284,7 @@ async def get_model_dir() -> dict:
 
 
 @router.get("/list-downloaded")
-async def list_downloaded() -> dict:
+async def list_downloaded() -> dict[str, Any]:
     """扫描模型目录，返回所有已下载模型的信息."""
     try:
         cache_dir = _get_model_cache_dir()
@@ -333,7 +333,7 @@ async def list_downloaded() -> dict:
 
 
 @router.delete("/delete/{model_id}")
-async def delete_model(model_id: str) -> dict:
+async def delete_model(model_id: str) -> dict[str, Any]:
     """删除已下载的模型."""
     cache_dir = _get_model_cache_dir()
 
@@ -397,7 +397,7 @@ async def download_model(model_id: str):
 
 
 @router.get("/status/{model_id}")
-async def model_status(model_id: str) -> dict:
+async def model_status(model_id: str) -> dict[str, Any]:
     try:
         if model_id not in RESOURCE_CATALOG:
             return {"success": False, "error": f"未知模型: {model_id}"}

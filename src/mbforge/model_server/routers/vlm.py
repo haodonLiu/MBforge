@@ -1,6 +1,7 @@
 """VLM 推理路由."""
 
 from __future__ import annotations
+from typing import Any
 
 import asyncio
 import os
@@ -19,7 +20,7 @@ router = APIRouter()
 
 
 @router.post("/describe")
-async def describe(request: Request) -> dict:
+async def describe(request: Request) -> dict[str, Any]:
     tmp_path = None
     try:
         body = await request.json()
@@ -51,7 +52,7 @@ async def describe(request: Request) -> dict:
 
 
 @router.post("/molscribe")
-async def molscribe(request: Request) -> dict:
+async def molscribe(request: Request) -> dict[str, Any]:
     """化学结构图像 → SMILES（MolScribe）. Uses standalone molscribe module."""
     tmp_path = None
     try:

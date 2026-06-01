@@ -8,6 +8,7 @@ from pathlib import Path
 import openai
 
 from .base import BaseVLM
+from ..utils.config import VLMConfig
 
 
 class APIVLM(BaseVLM):
@@ -56,9 +57,7 @@ class APIVLM(BaseVLM):
         return self.describe_image(image_path, prompt)
 
 
-def create_vlm_from_config(config):
+def create_vlm_from_config(config: VLMConfig) -> BaseVLM:
     """从配置创建 VLM 实例."""
-    from ..utils.config import VLMConfig
-
-    cfg: VLMConfig = config
+    cfg = config
     return APIVLM(base_url=cfg.base_url, api_key=cfg.api_key, model_name=cfg.model_name)

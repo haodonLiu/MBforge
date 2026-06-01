@@ -1,4 +1,5 @@
 """健康检查路由 — 集成 ResourceManager 资源状态."""
+from typing import Any
 
 import time
 
@@ -31,7 +32,7 @@ _RESOURCE_CACHE_TTL = 60.0  # 60 秒刷新一次
 
 
 @router.get("/health")
-async def health_check() -> dict:
+async def health_check() -> dict[str, Any]:
     # 尝试初始化各模型（触发懒加载）
     try:
         get_llm()

@@ -5,6 +5,7 @@
 """
 
 from __future__ import annotations
+from typing import Any
 
 from pathlib import Path
 
@@ -19,7 +20,7 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 
-def _project_to_dict(project: Project) -> dict:
+def _project_to_dict(project: Project) -> dict[str, Any]:
     """Format project metadata for API response."""
     docs = project.list_documents()
     return {
@@ -32,7 +33,7 @@ def _project_to_dict(project: Project) -> dict:
 
 
 @router.get("/list")
-async def list_documents(root: str) -> dict:
+async def list_documents(root: str) -> dict[str, Any]:
     try:
         project = await get_project_from_root(root)
         docs = project.list_documents()
@@ -88,7 +89,7 @@ def _build_file_tree(root: Path) -> list[dict]:
 
 
 @router.get("/file-tree")
-async def file_tree(root: str) -> dict:
+async def file_tree(root: str) -> dict[str, Any]:
     try:
         project = Project.open(Path(root))
         if project is None:

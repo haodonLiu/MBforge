@@ -5,6 +5,7 @@
 """
 
 from __future__ import annotations
+from typing import Any
 
 from fastapi import APIRouter, Depends
 
@@ -23,7 +24,7 @@ async def list_molecules(
     limit: int = 100,
     offset: int = 0,
     project: Project = Depends(get_project_from_root),
-) -> dict:
+) -> dict[str, Any]:
     try:
         db = MoleculeDatabase(project.root)
         results = db.list_all(limit=limit, offset=offset)
@@ -37,7 +38,7 @@ async def list_molecules(
 async def molecule_stats(
     project_root: str,
     project: Project = Depends(get_project_from_root),
-) -> dict:
+) -> dict[str, Any]:
     try:
         db = MoleculeDatabase(project.root)
         stats = db.get_stats()
@@ -53,7 +54,7 @@ async def search_molecules(
     q: str = "",
     limit: int = 20,
     project: Project = Depends(get_project_from_root),
-) -> dict:
+) -> dict[str, Any]:
     try:
         db = MoleculeDatabase(project.root)
         conn = db._conn

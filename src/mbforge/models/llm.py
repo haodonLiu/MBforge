@@ -6,6 +6,7 @@ from typing import Any
 from collections.abc import AsyncGenerator, Iterator
 
 from .base import BaseLLM, Message, StreamChunk, run_sync_async
+from ..utils.config import ModelConfig
 
 
 class OpenAILLM(BaseLLM):
@@ -87,9 +88,8 @@ class OpenAILLM(BaseLLM):
         )
 
 
-def create_llm_from_config(config) -> BaseLLM:
+def create_llm_from_config(config: ModelConfig) -> BaseLLM:
     """从配置创建 LLM 实例."""
-    from ..utils.config import ModelConfig
     from ..utils.constants import PROVIDER_ANTHROPIC
 
     cfg: ModelConfig = config

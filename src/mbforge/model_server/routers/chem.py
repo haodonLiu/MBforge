@@ -14,9 +14,9 @@ try:
     from rdkit import Chem
     from rdkit.Chem import AllChem
 
-    _RDKI_AVAILABLE = True
+    _RDKIT_AVAILABLE = True
 except ImportError:
-    _RDKI_AVAILABLE = False
+    _RDKIT_AVAILABLE = False
 
 
 class TanimotoRequest(BaseModel):
@@ -33,7 +33,7 @@ class TanimotoResponse(BaseModel):
 
 
 def _compute_tanimoto(s1: str, s2: str) -> float | None:
-    if not _RDKI_AVAILABLE:
+    if not _RDKIT_AVAILABLE:
         return None
     try:
         mol1 = Chem.MolFromSmiles(s1)
@@ -50,7 +50,7 @@ def _compute_tanimoto(s1: str, s2: str) -> float | None:
 @router.post("/tanimoto", response_model=TanimotoResponse)
 async def tanimoto_similarity(request: TanimotoRequest) -> TanimotoResponse:
     try:
-        if not _RDKI_AVAILABLE:
+        if not _RDKIT_AVAILABLE:
             return TanimotoResponse(
                 success=False,
                 esmiles1=request.esmiles1,
@@ -105,7 +105,7 @@ async def batch_tanimoto_similarity(
     request: BatchTanimotoRequest,
 ) -> BatchTanimotoResponse:
     try:
-        if not _RDKI_AVAILABLE:
+        if not _RDKIT_AVAILABLE:
             return BatchTanimotoResponse(
                 success=False,
                 target_esmiles=request.target_esmiles,

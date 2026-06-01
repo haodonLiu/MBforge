@@ -16,7 +16,7 @@ from chromadb.config import Settings
 
 from .types import ExtractedContent
 from .document_tree import DocumentTreeIndex, SectionChunk
-from .summarizer import SummaryManager
+from .summarizer import DocumentSummary, SummaryManager
 from ..utils.constants import KB_COLLECTION_DOCS, PROJECT_META_DIR
 from ..utils.logger import get_logger
 
@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 class KnowledgeBase:
     """项目级知识库."""
 
-    def __init__(self, project_root: Path, embedder=None):
+    def __init__(self, project_root: Path, embedder: "BaseEmbedder | None" = None):
         self.project_root = Path(project_root).resolve()
         self.meta_dir = self.project_root / PROJECT_META_DIR
         self.db_path = str(self.meta_dir / "chroma_db")
@@ -43,7 +43,7 @@ class KnowledgeBase:
             metadata={"hnsw:space": "cosine"},
         )
 
-    def _get_summary(self, doc_id: str):
+    def _get_summary(self, doc_id: str) -> "DocumentSummary | None":
         """Lazy-load SummaryManager and cache by doc_id."""
         if self._sm is None:
             self._sm = SummaryManager(self.project_root)
@@ -179,7 +179,7 @@ class KnowledgeBase:
         self,
         query: str,
         top_k: int = 5,
-        reranker=None,
+        reranker: "BaseReranker | None" = None,
     ) -> list[dict[str, Any]]:
         """语义搜索 + Rerank."""
         candidates = self.search(query, top_k=top_k * 3)

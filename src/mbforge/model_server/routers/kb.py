@@ -6,6 +6,7 @@
 """
 
 from __future__ import annotations
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pathlib import Path
@@ -30,7 +31,7 @@ class SearchRequest(BaseModel):
 @router.post("/search")
 async def kb_search(
     req: SearchRequest,
-) -> dict:
+) -> dict[str, Any]:
     """浏览器 dev 模式 fallback — 主路径使用 Rust Tauri command."""
     try:
         project = Project.open(Path(req.project_root))
@@ -48,7 +49,7 @@ async def kb_search(
 async def kb_stats(
     project_root: str,
     project: Project = Depends(get_project_from_root),
-) -> dict:
+) -> dict[str, Any]:
     try:
         kb = KnowledgeBase(project.root)
         stats = kb.get_stats()

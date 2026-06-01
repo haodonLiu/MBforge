@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 
-interface Props {
+export interface SkeletonProps {
   variant?: 'card' | 'row' | 'text'
   count?: number
   height?: number
@@ -8,7 +8,7 @@ interface Props {
   className?: string
 }
 
-export default function Skeleton({ variant = 'text', count = 1, height, style, className }: Props) {
+export default function Skeleton({ variant = 'text', count = 1, height, style, className }: SkeletonProps) {
   const items = Array.from({ length: count }, (_, i) => i)
 
   const baseStyle: React.CSSProperties =

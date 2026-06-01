@@ -1,12 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { kbSearchStream, isTauriAvailable } from '../api/tauri-bridge'
-import { SearchIcon, FileTextIcon, HashIcon, ClockIcon } from './icons'
+import { SearchIcon, FileTextIcon } from './icons'
 import { getProjectRoot } from '../hooks/useProjectRoot'
 import { tapScale } from '../hooks/useAnimations'
 import PageContainer from '../components/ui/PageContainer'
-import HoverCard from '../components/ui/HoverCard'
-import Caption from '../components/ui/Caption'
+import Card from '../components/ui/Card'
 import BodyText from '../components/ui/BodyText'
 import Skeleton from '../components/ui/Skeleton'
 
@@ -224,29 +223,56 @@ export default function Search() {
                   animate={{ opacity: 1, y: 0, transition: { duration: 0.25, delay: index * 0.05 } }}
                   exit={{ opacity: 0 }}
                 >
-                  <HoverCard>
+                  <Card hoverable>
                     <div style={{
-                      fontSize: '15px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      marginBottom: '6px',
+                    }}>
+                      <FileTextIcon size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                      <span style={{
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        color: 'var(--accent)',
+                        opacity: 0.85,
+                      }}>
+                        {r.source.split(/[/\\]/).pop()}
+                      </span>
+                    </div>
+                    <div style={{
+                      fontSize: '14px',
                       fontWeight: 600,
-                      marginBottom: '8px',
+                      color: 'var(--text-primary)',
+                      marginBottom: '6px',
                     }}>
                       {r.title}
                     </div>
-                    <BodyText size="md" style={{ lineHeight: 1.6 }}>
+                    <BodyText size="md" style={{ lineHeight: 1.65, color: 'var(--text-secondary)' }}>
                       {r.snippet}
                     </BodyText>
-                    <div style={{
-                      display: 'flex',
-                      gap: '16px',
-                      marginTop: '12px',
-                      paddingTop: '12px',
-                      borderTop: '1px solid var(--border)',
-                    }}>
-                      <MetaItem icon={<FileTextIcon size={14} />} text={r.source} />
-                      {r.tags.length > 0 && <MetaItem icon={<HashIcon size={14} />} text={r.tags.join(', ')} />}
-                      {r.date && <MetaItem icon={<ClockIcon size={14} />} text={r.date} />}
-                    </div>
-                  </HoverCard>
+                    {r.tags.length > 0 && (
+                      <div style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '6px',
+                        marginTop: '10px',
+                      }}>
+                        {r.tags.map(tag => (
+                          <span key={tag} style={{
+                            padding: '2px 8px',
+                            background: 'var(--accent-muted)',
+                            color: 'var(--accent)',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: 500,
+                          }}>
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -262,15 +288,4 @@ export default function Search() {
   )
 }
 
-function MetaItem({ icon, text }: { icon: React.ReactNode; text: string }) {
-  return (
-    <span style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '4px',
-    }}>
-      <span style={{ flexShrink: 0 }}>{icon}</span>
-      <Caption>{text}</Caption>
-    </span>
-  )
-}
+

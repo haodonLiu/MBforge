@@ -1,4 +1,4 @@
-interface Props {
+export interface ProgressBarProps {
   value: number  // 0-100
   label?: string
   showPercent?: boolean
@@ -14,7 +14,7 @@ export default function ProgressBar({
   color = '#16a34a',
   height = 8,
   style 
-}: Props) {
+}: ProgressBarProps) {
   const percent = Math.min(100, Math.max(0, value))
 
   return (

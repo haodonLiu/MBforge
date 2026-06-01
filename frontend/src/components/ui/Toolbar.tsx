@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react'
 
-interface Props {
+export interface ToolbarProps {
   children?: ReactNode
   title?: string
   style?: React.CSSProperties
   className?: string
 }
 
-export default function Toolbar({ children, title, style, className }: Props) {
+export default function Toolbar({ children, title, style, className }: ToolbarProps) {
   return (
     <div
       className={className}

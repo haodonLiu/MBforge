@@ -1,7 +1,8 @@
 import type { ChangeEvent, KeyboardEvent, FocusEvent } from 'react'
 
-interface Props {
+export interface InputProps {
   value?: string
+  defaultValue?: string
   onChange?: (e: ChangeEvent<HTMLInputElement>) => void
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void
   onFocus?: (e: FocusEvent<HTMLInputElement>) => void
@@ -17,6 +18,7 @@ interface Props {
 
 export default function Input({
   value,
+  defaultValue,
   onChange,
   onKeyDown,
   onFocus,
@@ -28,11 +30,12 @@ export default function Input({
   autoFocus,
   style,
   className,
-}: Props) {
+}: InputProps) {
   return (
     <input
       type={type}
       value={value}
+      defaultValue={defaultValue}
       onChange={onChange}
       onKeyDown={onKeyDown}
       onFocus={onFocus}

@@ -1,14 +1,14 @@
 import { motion } from 'framer-motion'
 import type { ReactNode, MouseEvent } from 'react'
 
-interface Props {
+export interface HoverCardProps {
   children: ReactNode
   onClick?: (e: MouseEvent<HTMLDivElement>) => void
   style?: React.CSSProperties
   className?: string
 }
 
-export default function HoverCard({ children, onClick, style, className }: Props) {
+export default function HoverCard({ children, onClick, style, className }: HoverCardProps) {
   return (
     <motion.div
       className={className}

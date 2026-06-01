@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import type { ReactNode, MouseEvent } from 'react'
 
-interface Props {
+export interface IconButtonProps {
   children: ReactNode
   size?: number
   active?: boolean
@@ -21,7 +21,7 @@ export default function IconButton({
   onClick,
   style,
   className,
-}: Props) {
+}: IconButtonProps) {
   return (
     <motion.button
       title={title}

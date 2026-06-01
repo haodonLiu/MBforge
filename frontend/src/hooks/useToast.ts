@@ -1,45 +1,23 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback } from 'react'
+import { showToast, dismissToast, toast, type ToastType, type ToastItem } from '../components/ui/Toast'
 
-export type ToastType = 'success' | 'error' | 'info'
-
-export interface ToastItem {
-  id: string
-  message: string
-  type: ToastType
-}
-
-let globalToasts: ToastItem[] = []
-let listeners: (() => void)[] = []
-
-function notify() {
-  listeners.forEach((l) => l())
-}
-
-export function showToast(message: string, type: ToastType = 'info') {
-  const id = crypto.randomUUID()
-  globalToasts = [...globalToasts, { id, message, type }]
-  notify()
-  setTimeout(() => {
-    globalToasts = globalToasts.filter((t) => t.id !== id)
-    notify()
-  }, 3000)
-}
+// Re-export
+export type { ToastType, ToastItem }
+export { showToast, dismissToast, toast }
 
 export function useToast() {
   const [, setTick] = useState(0)
-  const toastsRef = useRef(globalToasts)
+  const refresh = useCallback(() => setTick(t => t + 1), [])
 
-  const refresh = useCallback(() => {
-    toastsRef.current = globalToasts
-    setTick((t) => t + 1)
-  }, [])
-
-  useState(() => {
-    listeners.push(refresh)
-    return () => {
-      listeners = listeners.filter((l) => l !== refresh)
-    }
-  })
-
-  return { toasts: toastsRef.current }
+  // 保留兼容的旧接口
+  return {
+    toasts: [],
+    show: showToast,
+    dismiss: dismissToast,
+    success: (message: string, opts?: Partial<ToastItem>) => toast.success(message, opts),
+    error: (message: string, opts?: Partial<ToastItem>) => toast.error(message, opts),
+    info: (message: string, opts?: Partial<ToastItem>) => toast.info(message, opts),
+    warning: (message: string, opts?: Partial<ToastItem>) => toast.warning(message, opts),
+    refresh,
+  }
 }

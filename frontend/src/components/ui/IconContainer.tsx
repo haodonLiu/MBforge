@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react'
 
-interface Props {
+export interface IconContainerProps {
   children: ReactNode
   size?: number
   style?: React.CSSProperties
   className?: string
 }
 
-export default function IconContainer({ children, size = 48, style, className }: Props) {
+export default function IconContainer({ children, size = 48, style, className }: IconContainerProps) {
   return (
     <div
       className={className}

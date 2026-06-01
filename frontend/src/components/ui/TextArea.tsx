@@ -1,6 +1,6 @@
 import type { ChangeEvent, KeyboardEvent } from 'react'
 
-interface Props {
+export interface TextAreaProps {
   value?: string
   onChange?: (e: ChangeEvent<HTMLTextAreaElement>) => void
   onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
@@ -24,7 +24,7 @@ export default function TextArea({
   autoFocus,
   style,
   className,
-}: Props) {
+}: TextAreaProps) {
   return (
     <textarea
       value={value}

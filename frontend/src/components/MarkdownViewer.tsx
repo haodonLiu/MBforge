@@ -9,13 +9,15 @@ import Caption from './ui/Caption'
 import { ArrowLeftIcon } from './icons'
 
 interface Props {
+  /** 项目根目录绝对路径 */
+  projectRoot: string
   /** 文件绝对路径 */
   filePath: string
   /** 关闭回调 */
   onClose: () => void
 }
 
-export default function MarkdownViewer({ filePath, onClose }: Props) {
+export default function MarkdownViewer({ projectRoot, filePath, onClose }: Props) {
   const [content, setContent] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -31,9 +33,9 @@ export default function MarkdownViewer({ filePath, onClose }: Props) {
       try {
         let text = ''
         if (isTauriAvailable()) {
-          text = await readTextFile(filePath)
+          text = await readTextFile(projectRoot, filePath)
         } else {
-          const resp = await readFileContent(filePath)
+          const resp = await readFileContent(filePath, projectRoot)
           if (!resp.success) {
             setError(resp.error || 'Failed to load file')
             setIsLoading(false)

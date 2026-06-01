@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-interface Props {
+export interface AvatarProps {
   children: ReactNode
   size?: number
   variant?: 'user' | 'bot'
@@ -8,7 +8,7 @@ interface Props {
   className?: string
 }
 
-export default function Avatar({ children, size = 32, variant = 'bot', style, className }: Props) {
+export default function Avatar({ children, size = 32, variant = 'bot', style, className }: AvatarProps) {
   return (
     <div
       className={className}

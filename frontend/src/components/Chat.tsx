@@ -18,8 +18,10 @@ import {
 } from '../api/tauri-bridge'
 import type { ChatMessage } from '../api/tauri-bridge'
 import { SendIcon, UserIcon, BotIcon, FolderIcon, FileTextIcon, FlaskIcon } from './icons'
+
 import { getProjectRoot } from '../hooks/useProjectRoot'
 import { Avatar, TextArea, IconButton, Button, PageContainer } from '../components/ui/'
+import ChatContextChip from './ChatContextChip'
 
 /** Render inline LaTeX ($...$) within React children */
 function renderInlineLatex(children: React.ReactNode): React.ReactNode {
@@ -35,7 +37,7 @@ function renderInlineLatex(children: React.ReactNode): React.ReactNode {
       const formula = match[0].slice(1, -1).trim()
       if (formula) {
         try {
-          const html = katex.renderToString(formula, { throwOnError: false, trust: true })
+          const html = katex.renderToString(formula, { throwOnError: false, trust: false })
           parts.push(
             <span key={match.index} dangerouslySetInnerHTML={{ __html: html }} />
           )
@@ -145,14 +147,14 @@ export default function Chat() {
         if (resp.success) setDocCount(resp.documents.length)
       }).catch(() => {})
       moleculeStatsTauri(projectRoot).then(resp => {
-        if (resp.success) setMolCount((resp.stats as any).total || 0)
+        if (resp.success) setMolCount(resp.stats.total || 0)
       }).catch(() => {})
     } else {
       listDocuments(projectRoot).then(resp => {
         if (resp.success) setDocCount(resp.documents.length)
       }).catch(() => {})
       moleculeStats(projectRoot).then(resp => {
-        if (resp.success) setMolCount((resp.stats as any).total || 0)
+        if (resp.success) setMolCount(resp.stats.total || 0)
       }).catch(() => {})
     }
   }, [projectRoot])
@@ -175,7 +177,7 @@ export default function Chat() {
 
     try {
       if (isTauriAvailable() && sessionIdRef.current) {
-        const cancel = await agentChatStream(
+        await agentChatStream(
           sessionIdRef.current,
           userMsg,
           (delta) => {
@@ -204,12 +206,10 @@ export default function Chat() {
             }
           },
         )
-        // Store cancel for cleanup if needed
-        ;(sendMessage as any)._cancel = cancel
       } else {
         // Browser dev mode fallback: use HTTP chatStream
         const chatMessages = allMessages.map(m => ({ role: m.role, content: m.content }))
-        const cancel = chatStream(
+        chatStream(
           chatMessages,
           (event) => {
             if (event.error) {
@@ -238,7 +238,6 @@ export default function Chat() {
             }
           },
         )
-        ;(sendMessage as any)._cancel = cancel
       }
     } catch (e) {
       if (!settled) {
@@ -278,9 +277,9 @@ export default function Chat() {
         gap: '16px',
         flexShrink: 0,
       }}>
-        <ContextChip icon={<FolderIcon size={14} />} label={projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目'} />
-        <ContextChip icon={<FileTextIcon size={14} />} label={`${docCount} 篇文献`} />
-        <ContextChip icon={<FlaskIcon size={14} />} label={`${molCount} 个分子`} />
+        <ChatContextChip icon={<FolderIcon size={14} />} label={projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目'} />
+        <ChatContextChip icon={<FileTextIcon size={14} />} label={`${docCount} 篇文献`} />
+        <ChatContextChip icon={<FlaskIcon size={14} />} label={`${molCount} 个分子`} />
       </div>
 
       {/* 消息区域 */}
@@ -317,14 +316,14 @@ export default function Chat() {
                 position: 'relative',
                 padding: '14px 18px',
                 background: msg.role === 'user'
-                  ? 'linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 80%, #000))'
-                  : 'var(--bg-surface)',
+                  ? 'var(--user-bg)'
+                  : 'var(--ai-bg)',
                 color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
                 borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
                 boxShadow: msg.role === 'user'
-                  ? '0 4px 12px rgba(0,0,0,0.15)'
-                  : '0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)',
-                border: msg.role === 'user' ? 'none' : '1px solid var(--border)',
+                  ? '0 4px 12px rgba(99,102,241,0.30)'
+                  : '0 2px 8px var(--ai-shadow)',
+                border: msg.role === 'user' ? 'none' : '1px solid var(--ai-border)',
                 lineHeight: 1.65,
                 fontSize: '14px',
               }}>
@@ -440,12 +439,12 @@ export default function Chat() {
             </div>
             <div style={{
               padding: '16px 20px',
-              background: 'var(--bg-surface)',
+              background: 'var(--ai-bg)',
               borderRadius: '4px 18px 18px 18px',
-              border: '1px solid var(--border)',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              border: '1px solid var(--ai-border)',
+              boxShadow: '0 2px 8px var(--ai-shadow)',
               display: 'flex',
-              gap: '5px',
+              gap: '6px',
               alignItems: 'center',
             }}>
               {[0, 1, 2].map(i => (
@@ -453,7 +452,7 @@ export default function Chat() {
                   key={i}
                   style={{
                     width: '7px', height: '7px',
-                    background: 'var(--text-muted)',
+                    background: 'var(--accent)',
                     borderRadius: '50%',
                   }}
                   animate={{ y: [0, -6, 0], opacity: [0.5, 1, 0.5] }}
@@ -503,21 +502,6 @@ export default function Chat() {
   )
 }
 
-function ContextChip({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <motion.div
-      whileHover={{ y: -2 }}
-      style={{
-        display: 'flex', alignItems: 'center', gap: '6px',
-        padding: '6px 12px', background: 'var(--bg-surface)',
-        border: '1px solid var(--border)', borderRadius: '20px',
-        fontSize: '12px', color: 'var(--text-secondary)',
-      }}
-    >
-      <span style={{ color: 'var(--text-muted)' }}>{icon}</span>
-      <span>{label}</span>
-    </motion.div>
-  )
-}
+
 
 

@@ -4,11 +4,18 @@ import { openProject } from '../api/tauri-bridge'
 import { FolderIcon, ArrowLeftIcon, MoleculeLogo, TrashIcon, XIcon } from './icons'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import { showToast } from '../hooks/useToast'
+import {
+  fadeIn,
+  slideFromRight,
+  logoEntrance,
+  projectCardHover,
+  tapScale,
+} from '../hooks/useAnimations'
 import Button from '../components/ui/Button'
 import IconButton from '../components/ui/IconButton'
 import Input from '../components/ui/Input'
 import PageTitle from '../components/ui/PageTitle'
-import SectionHeader from '../components/ui/SectionHeader'
+import SectionTitle from '../components/ui/SectionTitle'
 import BodyText from '../components/ui/BodyText'
 import Caption from '../components/ui/Caption'
 import Spinner from '../components/ui/Spinner'
@@ -159,10 +166,10 @@ export default function Welcome({ onProjectOpened }: Props) {
   if (page === 'create') {
     return (
       <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -20 }}
-        transition={{ duration: 0.25 }}
+        variants={slideFromRight}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
         style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}
       >
         <div style={{ maxWidth: '500px', margin: '60px auto 0', width: '100%' }}>
@@ -231,10 +238,10 @@ export default function Welcome({ onProjectOpened }: Props) {
   if (page === 'open') {
     return (
       <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -20 }}
-        transition={{ duration: 0.25 }}
+        variants={slideFromRight}
+        initial="hidden"
+        animate="visible"
+        exit="exit"
         style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}
       >
         <div style={{ maxWidth: '500px', margin: '60px auto 0', width: '100%' }}>
@@ -285,9 +292,9 @@ export default function Welcome({ onProjectOpened }: Props) {
   // ---- 首页 ----
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3 }}
+      variants={fadeIn}
+      initial="hidden"
+      animate="visible"
       style={{ flex: 1, padding: '32px', overflow: 'auto', display: 'flex', flexDirection: 'column' }}
     >
       <div style={{ maxWidth: '600px', margin: '60px auto 0', textAlign: 'center', width: '100%' }}>
@@ -295,9 +302,9 @@ export default function Welcome({ onProjectOpened }: Props) {
           {/* Logo */}
           <StaggerItem>
             <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 0.5, ease: 'easeOut' }}
+              variants={logoEntrance}
+              initial="hidden"
+              animate="visible"
               style={{ margin: '0 auto 28px' }}
             >
               <MoleculeLogo size={72} />
@@ -342,19 +349,22 @@ export default function Welcome({ onProjectOpened }: Props) {
           {recentProjects.length > 0 && (
             <StaggerItem>
               <div style={{ textAlign: 'left', marginTop: '8px' }}>
-                <SectionHeader
-                  title="最近项目"
-                  action={
-                    <IconButton
-                      size={32}
-                      active={editing}
-                      title={editing ? '完成' : '编辑'}
-                      onClick={() => { setEditing(!editing); setDeleting(null) }}
-                    >
-                      <TrashIcon size={16} />
-                    </IconButton>
-                  }
-                />
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '12px',
+                }}>
+                  <SectionTitle>最近项目</SectionTitle>
+                  <IconButton
+                    size={32}
+                    active={editing}
+                    title={editing ? '完成' : '编辑'}
+                    onClick={() => { setEditing(!editing); setDeleting(null) }}
+                  >
+                    <TrashIcon size={16} />
+                  </IconButton>
+                </div>
                 <StaggerContainer stagger={0.04}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {recentProjects.map((p) => (
@@ -368,8 +378,7 @@ export default function Welcome({ onProjectOpened }: Props) {
                             borderColor: deleting === p.path ? '#e74c3c' : undefined,
                             opacity: deleting === p.path ? 0.5 : 1,
                           }}
-                          whileHover={{ borderColor: 'var(--accent)', x: 2 }}
-                          transition={{ duration: 0.15 }}
+                          whileHover={projectCardHover}
                         >
                           {editing && (
                             <motion.button
@@ -382,7 +391,7 @@ export default function Welcome({ onProjectOpened }: Props) {
                                   if (updated.length === 0) setEditing(false)
                                 }, 300)
                               }}
-                              whileTap={{ scale: 0.8 }}
+                              whileTap={tapScale}
                               style={{
                                 background: 'none', border: 'none', cursor: 'pointer', padding: '2px 8px 2px 0',
                                 color: '#e74c3c', flexShrink: 0,

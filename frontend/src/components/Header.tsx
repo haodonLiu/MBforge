@@ -1,5 +1,6 @@
 import { HelpIcon } from './icons'
 import IconButton from './ui/IconButton'
+import { showToast } from '../hooks/useToast'
 
 export default function Header() {
   return (
@@ -28,7 +29,7 @@ export default function Header() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         <IconButton
           title="帮助"
-          onClick={() => import('../hooks/useToast').then(({ showToast }) => showToast('帮助文档即将推出', 'info'))}
+          onClick={() => showToast('帮助文档即将推出', 'info')}
         >
           <HelpIcon size={18} />
         </IconButton>

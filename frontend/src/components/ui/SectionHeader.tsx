@@ -1,13 +1,13 @@
 import type { ReactNode } from 'react'
 
-interface Props {
+export interface SectionHeaderProps {
   title: ReactNode
   action?: ReactNode
   style?: React.CSSProperties
   className?: string
 }
 
-export default function SectionHeader({ title, action, style, className }: Props) {
+export default function SectionHeader({ title, action, style, className }: SectionHeaderProps) {
   return (
     <div
       className={className}

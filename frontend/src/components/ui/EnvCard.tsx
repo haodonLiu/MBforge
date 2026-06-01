@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-interface Props {
+export interface EnvCardProps {
   label: string
   value: string | ReactNode
   subValue?: string
@@ -15,7 +15,7 @@ const variantStyles = {
   error:   { bg: '#fee2e2', color: '#dc2626' },
 }
 
-export default function EnvCard({ label, value, subValue, variant = 'default', style }: Props) {
+export default function EnvCard({ label, value, subValue, variant = 'default', style }: EnvCardProps) {
   const v = variantStyles[variant]
 
   return (

@@ -8,7 +8,7 @@ import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import PageContainer from '../components/ui/PageContainer'
 import PageTitle from '../components/ui/PageTitle'
 import CardGrid from '../components/ui/CardGrid'
-import HoverCard from '../components/ui/HoverCard'
+import Card from '../components/ui/Card'
 import IconContainer from '../components/ui/IconContainer'
 import Caption from '../components/ui/Caption'
 import BodyText from '../components/ui/BodyText'
@@ -134,7 +134,7 @@ export default function MoleculeLibrary() {
           <CardGrid>
             {molecules.map(mol => (
               <StaggerItem key={mol.mol_id}>
-                <HoverCard>
+                <Card hoverable>
                   <div style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -163,7 +163,7 @@ export default function MoleculeLibrary() {
                       活性: {mol.activity.toFixed(2)} {mol.units || 'nM'}
                     </BodyText>
                   )}
-                </HoverCard>
+                </Card>
               </StaggerItem>
             ))}
           </CardGrid>

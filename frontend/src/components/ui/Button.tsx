@@ -4,7 +4,7 @@ import type { ReactNode, MouseEvent } from 'react'
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'dashed'
 export type ButtonSize = 'sm' | 'md' | 'lg'
 
-interface Props {
+export interface ButtonProps {
   children?: ReactNode
   variant?: ButtonVariant
   size?: ButtonSize
@@ -44,7 +44,7 @@ export default function Button({
   style,
   className,
   title,
-}: Props) {
+}: ButtonProps) {
   const isDisabled = disabled || loading
   const base: React.CSSProperties = {
     display: 'inline-flex',

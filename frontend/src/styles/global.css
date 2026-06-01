@@ -3,9 +3,9 @@
   --bg-surface: #f8f8f8;
   --bg-elevated: #f0f0f0;
   --bg-hover: #e5e5e5;
-  --accent: #1a1a1a;
-  --accent-hover: #333333;
-  --accent-muted: rgba(0, 0, 0, 0.06);
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-muted: rgba(99, 102, 241, 0.10);
   --text-primary: #1a1a1a;
   --text-secondary: #666666;
   --text-muted: #999999;
@@ -14,6 +14,19 @@
   --success: #16a34a;
   --danger: #dc2626;
   --warning: #f59e0b;
+  /* MoleculeOverlay 状态色 */
+  --status-text: #0369a1;
+  --status-text-bg: #e0f2fe;
+  --status-scanned: #b45309;
+  --status-scanned-bg: #fef3c7;
+  --status-mixed: #7c3aed;
+  --status-mixed-bg: #ede9fe;
+  /* AI 消息气泡 */
+  --ai-bg: #f0f0ff;
+  --ai-border: #c7d2fe;
+  --ai-shadow: rgba(99, 102, 241, 0.12);
+  /* User 消息 */
+  --user-bg: linear-gradient(135deg, #6366f1, #4f46e5);
 
   --font-size-base: 14px;
   --font-size-small: 12px;
@@ -26,9 +39,9 @@
   --bg-surface: #1a1a1e;
   --bg-elevated: #252529;
   --bg-hover: #2a2a2e;
-  --accent: #e8e8e8;
-  --accent-hover: #ffffff;
-  --accent-muted: rgba(255, 255, 255, 0.08);
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-muted: rgba(129, 140, 248, 0.12);
   --text-primary: #e8e8e8;
   --text-secondary: #a0a0a0;
   --text-muted: #666666;
@@ -37,19 +50,25 @@
   --success: #22c55e;
   --danger: #ef4444;
   --warning: #f59e0b;
+  /* MoleculeOverlay 状态色 */
+  --status-text: #38bdf8;
+  --status-text-bg: rgba(14, 165, 233, 0.12);
+  --status-scanned: #fbbf24;
+  --status-scanned-bg: rgba(251, 191, 36, 0.12);
+  --status-mixed: #a78bfa;
+  --status-mixed-bg: rgba(167, 139, 250, 0.12);
+  /* AI 消息气泡 */
+  --ai-bg: #1e1b4b;
+  --ai-border: #312e81;
+  --ai-shadow: rgba(99, 102, 241, 0.20);
+  /* User 消息 */
+  --user-bg: linear-gradient(135deg, #818cf8, #6366f1);
 }
 
-/* Dark mode: accent is light, so text on accent must be dark */
-[data-theme="dark"] .btn-primary {
-  color: #1a1a1a;
-}
-
-[data-theme="dark"] .about-logo {
-  color: #1a1a1a;
-}
-
-[data-theme="dark"] .toggle input:checked + .toggle-slider::before {
-  background: #1a1a1a;
+/* Primary buttons: white text on colored accent in both themes */
+[data-theme="dark"] .btn-primary,
+.btn-primary {
+  color: #ffffff;
 }
 
 * {
@@ -118,13 +137,13 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes glow {
-  0%, 100% { box-shadow: 0 0 0 0px rgba(26, 26, 26, 0); }
-  50% { box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.08); }
+  0%, 100% { box-shadow: 0 0 0 0px rgba(99, 102, 241, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15); }
 }
 
 /* Shimmer utility */
 .shimmer {
-  background: linear-gradient(90deg, var(--accent) 25%, rgba(26,26,26,0.4) 50%, var(--accent) 75%);
+  background: linear-gradient(90deg, var(--accent) 25%, rgba(99,102,241,0.35) 50%, var(--accent) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s linear infinite;
 }
@@ -846,18 +865,18 @@ body {
 }
 
 .confirmation-type-text {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--status-text-bg);
+  color: var(--status-text);
 }
 
 .confirmation-type-scanned {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--status-scanned-bg);
+  color: var(--status-scanned);
 }
 
 .confirmation-type-mixed {
-  background: #ede9fe;
-  color: #7c3aed;
+  background: var(--status-mixed-bg);
+  color: var(--status-mixed);
 }
 
 .confirmation-text-count {
@@ -896,13 +915,13 @@ body {
 }
 
 .confirmation-page.text {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--status-text-bg);
+  color: var(--status-text);
 }
 
 .confirmation-page.scanned {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--status-scanned-bg);
+  color: var(--status-scanned);
 }
 
 .confirmation-page.has-molecules {

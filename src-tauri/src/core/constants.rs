@@ -13,6 +13,7 @@ pub const PROJECT_META_DIR: &str = ".mbforge";
 pub const DEFAULT_EMBED_MODEL: &str = "Qwen/Qwen3-Embedding-0.6B";
 pub const DEFAULT_RERANK_MODEL: &str = "Qwen/Qwen3-Reranker-0.6B";
 pub const DEFAULT_LLM_MODEL: &str = "Qwen/Qwen2.5-7B-Instruct-GGUF";
+pub const DEFAULT_VLM_MODEL: &str = "mimo-v2.5";
 
 // HF mirror
 pub const DEFAULT_HF_ENDPOINT: &str = "https://hf-mirror.com";
@@ -36,6 +37,8 @@ pub const PROVIDER_ANTHROPIC: &str = "anthropic";
 pub const PROVIDER_QWEN3: &str = "qwen3";
 pub const PROVIDER_SENTENCE_TRANSFORMERS: &str = "sentence_transformers";
 pub const PROVIDER_OLLAMA: &str = "ollama";
+pub const PROVIDER_API: &str = "api";
+pub const PROVIDER_LOCAL: &str = "local";
 
 // Subdirectory names
 pub const MEMORY_DIR: &str = "memory";

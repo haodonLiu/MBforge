@@ -33,6 +33,11 @@ impl Message {
 }
 
 /// A layer in the layered context.
+///
+/// Ephemeral layers are automatically cleared after their content is consumed
+/// by [`LayeredContext::build_messages`], ensuring temporary context (e.g.
+/// retrieval trajectory, RAG injections) does not leak across conversation
+/// turns.
 #[derive(Debug, Clone, Default)]
 struct ContextLayer {
     messages: Vec<Message>,
@@ -46,6 +51,14 @@ impl ContextLayer {
 
     fn token_count(&self) -> usize {
         self.messages.iter().map(|m| estimate_tokens(&m.content)).sum()
+    }
+
+    fn clear(&mut self) {
+        self.messages.clear();
+    }
+
+    fn is_ephemeral(&self) -> bool {
+        self.ephemeral
     }
 }
 
@@ -140,12 +153,13 @@ impl LayeredContext {
     }
 
     pub fn clear_tool_results(&mut self) {
-        self.tools.messages.clear();
+        self.tools.clear();
     }
 
+    /// Clear history and all ephemeral layers.
     pub fn clear_history(&mut self) {
-        self.history.messages.clear();
-        self.tools.messages.clear();
+        self.history.clear();
+        self.tools.clear();
     }
 
     /// Trim history to fit token limits.
@@ -176,12 +190,19 @@ impl LayeredContext {
     }
 
     /// Build message list for LLM call.
+    ///
+    /// Ephemeral layers (e.g. `tools`) are included when requested and then
+    /// automatically cleared so their content does not persist to the next
+    /// turn.
     pub fn build_messages(&mut self, include_tools: bool, include_history: bool) -> Vec<Message> {
         let mut result = Vec::new();
         result.extend(self.system.messages.clone());
         result.extend(self.project.messages.clone());
         if include_tools {
             result.extend(self.tools.messages.clone());
+            if self.tools.is_ephemeral() {
+                self.tools.clear();
+            }
         }
         if include_history {
             self.trim_history();
@@ -191,6 +212,9 @@ impl LayeredContext {
     }
 
     /// Serialize to JSON-compatible map.
+    ///
+    /// Note: ephemeral layers are intentionally excluded from serialization
+    /// as they are transient per-turn context.
     pub fn to_dict(&self) -> serde_json::Value {
         serde_json::json!({
             "system": self.system.messages,
@@ -266,5 +290,38 @@ mod tests {
         let mut ctx = LayeredContext::new("", 5, 1000);
         ctx.add_user_message("Hello world test message");
         assert!(ctx.total_token_count() > 0);
+    }
+
+    #[test]
+    fn test_ephemeral_layer_auto_clear() {
+        let mut ctx = LayeredContext::new("You are a helper.", 5, 1000);
+        ctx.inject_retrieval_trajectory("临时检索结果 A");
+        assert_eq!(ctx.tools.messages.len(), 1);
+
+        // First build includes ephemeral content, then auto-clears it.
+        let msgs = ctx.build_messages(true, true);
+        assert!(msgs.iter().any(|m| m.content.contains("临时检索结果 A")));
+        assert_eq!(ctx.tools.messages.len(), 0);
+
+        // Second build no longer contains the cleared ephemeral content.
+        let msgs2 = ctx.build_messages(true, false);
+        assert!(!msgs2.iter().any(|m| m.content.contains("临时检索结果 A")));
+    }
+
+    #[test]
+    fn test_ephemeral_skipped_when_include_tools_false() {
+        let mut ctx = LayeredContext::new("System.", 5, 1000);
+        ctx.inject_retrieval_trajectory("RAG context");
+        assert_eq!(ctx.tools.messages.len(), 1);
+
+        // When include_tools is false, ephemeral layer is NOT consumed/cleared.
+        let msgs = ctx.build_messages(false, true);
+        assert!(!msgs.iter().any(|m| m.content.contains("RAG context")));
+        assert_eq!(ctx.tools.messages.len(), 1); // still preserved
+
+        // It is still available for a subsequent build with include_tools=true.
+        let msgs2 = ctx.build_messages(true, false);
+        assert!(msgs2.iter().any(|m| m.content.contains("RAG context")));
+        assert_eq!(ctx.tools.messages.len(), 0); // now cleared
     }
 }

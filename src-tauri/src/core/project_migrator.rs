@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use serde_json::Value;
 
 use crate::core::constants::{PROJECT_FORMAT_VERSION, PROJECT_META_DIR, INDEX_FILE, SETTINGS_FILE};

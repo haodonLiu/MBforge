@@ -91,6 +91,7 @@ pub struct RGroupResult {
 #[derive(Debug, Clone)]
 struct MoleculeGraph {
     atoms: Vec<Atom>,
+    #[allow(dead_code)]
     bonds: Vec<Bond>,
     adjacency: Vec<Vec<(usize, BondType)>>,
 }
@@ -103,6 +104,7 @@ struct Atom {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Bond {
     from: usize,
     to: usize,

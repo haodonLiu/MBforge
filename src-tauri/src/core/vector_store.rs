@@ -214,7 +214,7 @@ impl VectorStore for SqliteVectorStore {
                 serde_json::from_str(&meta_str).unwrap_or(serde_json::json!({}));
             // FTS5 rank 是负数，越小越好，转换为 0-1 分数
             let score: f32 = if rank < 0.0 {
-                (1.0f32 / (1.0f32 + rank.abs() as f32))
+                1.0f32 / (1.0f32 + rank.abs() as f32)
             } else {
                 0.5f32
             };

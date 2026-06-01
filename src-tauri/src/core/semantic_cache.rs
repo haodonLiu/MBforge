@@ -93,7 +93,7 @@ impl SemanticCache {
             let _ = std::fs::create_dir_all(parent);
         }
 
-        let mut cache = Self {
+        let cache = Self {
             project_root: project_root.to_path_buf(),
             embedder,
             config,

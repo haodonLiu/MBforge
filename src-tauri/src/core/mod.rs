@@ -19,6 +19,7 @@ pub mod molecule_store;
 pub mod pending;
 pub mod project;
 pub mod project_migrator;
+pub mod resource_manager;
 pub mod sar_query;
 pub mod semantic_cache;
 pub mod skills;

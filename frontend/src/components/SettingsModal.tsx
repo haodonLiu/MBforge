@@ -4,6 +4,7 @@ import { SettingsIcon, XIcon, DownloadIcon, TrashIcon } from './icons'
 import { getSettings, saveSettings } from '../api/settings'
 import { useTheme } from '../hooks/useTheme'
 import { listModels, downloadModel, listDownloaded, deleteModel, type DownloadModel, type DownloadedModel, type ProgressEvent } from '../api/download'
+import { resourcesCheck, type EnvironmentReport } from '../api/tauri-bridge'
 import ErrorBanner from './ErrorBanner'
 import Button from '../components/ui/Button'
 import IconButton from '../components/ui/IconButton'
@@ -12,7 +13,7 @@ import Caption from '../components/ui/Caption'
 import Badge from '../components/ui/Badge'
 import AlertBanner from '../components/ui/AlertBanner'
 
-type Section = 'general' | 'ai' | 'embedding' | 'reranker' | 'models' | 'appearance' | 'server' | 'about'
+type Section = 'general' | 'ai' | 'embedding' | 'reranker' | 'models' | 'environment' | 'appearance' | 'server' | 'about'
 
 const SECTIONS: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'general', label: '通用', icon: <SettingsIcon size={18} /> },
@@ -20,6 +21,7 @@ const SECTIONS: { id: Section; label: string; icon: React.ReactNode }[] = [
   { id: 'embedding', label: 'Embedding', icon: <SettingsIcon size={18} /> },
   { id: 'reranker', label: 'Reranker', icon: <SettingsIcon size={18} /> },
   { id: 'models', label: '模型管理', icon: <DownloadIcon size={18} /> },
+  { id: 'environment', label: '环境', icon: <SettingsIcon size={18} /> },
   { id: 'appearance', label: '外观', icon: <SettingsIcon size={18} /> },
   { id: 'server', label: '模型服务', icon: <SettingsIcon size={18} /> },
   { id: 'about', label: '关于', icon: <SettingsIcon size={18} /> },
@@ -100,6 +102,124 @@ interface DownloadState {
     fileIndex?: number
     totalFiles?: number
   }
+}
+
+// ---- 环境检查 Section ----
+
+function EnvironmentSection() {
+  const [report, setReport] = useState<EnvironmentReport | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    resourcesCheck()
+      .then(r => setReport(r))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return <div className="settings-section"><p style={{ color: 'var(--text-muted)', padding: 16 }}>检查中...</p></div>
+  }
+
+  if (!report || !report.resources) {
+    return <div className="settings-section"><p style={{ color: 'var(--text-muted)', padding: 16 }}>无法获取环境信息</p></div>
+  }
+
+  const statusColor = (s: string) => {
+    switch (s) {
+      case 'ready': return 'var(--success)'
+      case 'not_found': return 'var(--warning)'
+      default: return 'var(--error)'
+    }
+  }
+  const statusLabel = (s: string) => {
+    switch (s) {
+      case 'ready': return '✓ 就绪'
+      case 'not_found': return '未下载'
+      default: return s
+    }
+  }
+
+  return (
+    <div className="settings-section">
+      {/* 环境概览 */}
+      <div className="settings-group">
+        <h3 className="settings-group-title">环境概览</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '8px 0' }}>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Python</div>
+          <div style={{ fontSize: 13 }}>{report.python_version}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>GPU</div>
+          <div style={{ fontSize: 13 }}>
+            {report.gpu_available ? `${report.gpu_name} (CUDA ${report.cuda_version})` : '未检测到'}
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>总览</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{report.summary}</div>
+        </div>
+      </div>
+
+      {/* 资源列表 */}
+      <div className="settings-group">
+        <h3 className="settings-group-title">资源状态</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {/* 按类型分组 */}
+          {['model', 'python_package', 'binary'].map(type => {
+            const items = report.resources.filter(r => r.type === type)
+            if (items.length === 0) return null
+            const typeLabel = type === 'model' ? '模型' : type === 'python_package' ? 'Python 包' : '二进制'
+            return (
+              <div key={type} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4, marginTop: 4 }}>
+                  {typeLabel}
+                </div>
+                {items.map(r => (
+                  <div key={r.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '6px 8px', borderRadius: 6,
+                    background: 'var(--bg-secondary, rgba(255,255,255,0.03))',
+                    marginBottom: 2,
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>{r.name}</span>
+                      {r.local_path && (
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {r.local_path}
+                        </span>
+                      )}
+                      {r.version && (
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>v{r.version}</span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {r.size_mb > 0 && (
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{r.size_mb} MB</span>
+                      )}
+                      <span style={{
+                        fontSize: 11, fontWeight: 600,
+                        color: statusColor(r.status),
+                      }}>
+                        {statusLabel(r.status)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 提示 */}
+      {report.resources.some(r => r.status !== 'ready') && (
+        <div className="settings-group">
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 0' }}>
+            运行 <code style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: 4 }}>mbforge env setup</code> 自动搭建缺失资源。
+            模型默认从 ModelScope 下载，Python 包使用清华源。
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface Props {
@@ -815,6 +935,9 @@ export default function SettingsModal({ open, onClose }: Props) {
           </div>
         )
       }
+
+      case 'environment':
+        return <EnvironmentSection />
 
       case 'appearance':
         return (

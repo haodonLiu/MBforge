@@ -86,6 +86,11 @@ fn main() {
             commands::mol_store::mol_store_list_by_doc,
             commands::sidecar::sidecar_status,
             commands::sidecar::sidecar_restart,
+            // 资源管理
+            core::resource_manager::resources_check,
+            core::resource_manager::resources_status,
+            core::resource_manager::resources_get_model_path,
+            core::resource_manager::resources_catalog,
         ])
         .setup(|app| {
             let app_handle = app.handle();

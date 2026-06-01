@@ -1,11 +1,11 @@
-interface Props {
+export interface StatCardProps {
   label: string
   value: string | number
   icon?: React.ReactNode
   style?: React.CSSProperties
 }
 
-export default function StatCard({ label, value, icon, style }: Props) {
+export default function StatCard({ label, value, icon, style }: StatCardProps) {
   return (
     <div
       style={{

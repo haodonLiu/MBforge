@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react'
 
-interface Props {
+export interface PageTitleProps {
   children: ReactNode
   style?: React.CSSProperties
   className?: string
 }
 
-export default function PageTitle({ children, style, className }: Props) {
+export default function PageTitle({ children, style, className }: PageTitleProps) {
   return (
     <h1
       className={className}

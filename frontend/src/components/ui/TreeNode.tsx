@@ -8,7 +8,7 @@ interface FileNode {
   children: FileNode[]
 }
 
-interface Props {
+export interface TreeNodeProps {
   node: FileNode
   depth?: number
   expanded?: boolean
@@ -16,7 +16,7 @@ interface Props {
   onClick?: () => void
 }
 
-export default function TreeNode({ node, depth = 0, expanded = false, onToggle, onClick }: Props) {
+export default function TreeNode({ node, depth = 0, expanded = false, onToggle, onClick }: TreeNodeProps) {
   const paddingLeft = `${8 + depth * 16}px`
 
   if (node.is_dir) {

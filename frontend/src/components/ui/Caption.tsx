@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-interface Props {
+export interface CaptionProps {
   children: ReactNode
   truncate?: boolean
   color?: string
@@ -8,7 +8,7 @@ interface Props {
   className?: string
 }
 
-export default function Caption({ children, truncate = false, color = 'var(--text-muted)', style, className }: Props) {
+export default function Caption({ children, truncate = false, color = 'var(--text-muted)', style, className }: CaptionProps) {
   return (
     <span
       className={className}

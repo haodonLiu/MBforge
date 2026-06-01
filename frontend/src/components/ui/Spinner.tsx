@@ -1,10 +1,10 @@
-interface Props {
+export interface SpinnerProps {
   size?: number
   color?: string
   style?: React.CSSProperties
 }
 
-export default function Spinner({ size = 16, color = 'currentColor', style }: Props) {
+export default function Spinner({ size = 16, color = 'currentColor', style }: SpinnerProps) {
   return (
     <span
       style={{

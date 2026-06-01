@@ -1,28 +1,35 @@
 import type { ReactNode } from 'react'
+import { TONE_COLORS } from '../../styles/tokens'
 
-export type BadgeVariant = 'neutral' | 'success' | 'warning' | 'danger'
+export type BadgeVariant = 'neutral' | 'success' | 'warning' | 'danger' | 'info'
 
-interface Props {
+export interface BadgeProps {
   children: ReactNode
   variant?: BadgeVariant
+  /** 显示左侧小圆点指示器 */
+  dot?: boolean
   style?: React.CSSProperties
   className?: string
 }
 
-const variantMap: Record<BadgeVariant, { color: string; bg: string }> = {
-  neutral: { color: 'var(--text-muted)', bg: 'var(--bg-base)' },
-  success: { color: '#16a34a', bg: 'rgba(22,163,74,0.1)' },
-  warning: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
-  danger:  { color: '#dc2626', bg: 'rgba(220,38,38,0.1)' },
+const variantMap: Record<BadgeVariant, keyof typeof TONE_COLORS> = {
+  neutral: 'neutral',
+  success: 'success',
+  warning: 'warning',
+  danger:  'danger',
+  info:    'info',
 }
 
-export default function Badge({ children, variant = 'neutral', style, className }: Props) {
-  const v = variantMap[variant]
+export default function Badge({ children, variant = 'neutral', dot = false, style, className }: BadgeProps) {
+  const v = TONE_COLORS[variantMap[variant]]
+
   return (
     <span
       className={className}
       style={{
-        display: 'inline-block',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: dot ? '4px' : 0,
         fontSize: '12px',
         color: v.color,
         padding: '2px 8px',
@@ -33,6 +40,15 @@ export default function Badge({ children, variant = 'neutral', style, className 
         ...style,
       }}
     >
+      {dot && (
+        <span style={{
+          width: '6px',
+          height: '6px',
+          borderRadius: '50%',
+          background: v.color,
+          flexShrink: 0,
+        }} />
+      )}
       {children}
     </span>
   )

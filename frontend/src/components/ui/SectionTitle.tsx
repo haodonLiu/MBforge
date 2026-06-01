@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react'
 
-interface Props {
+export interface SectionTitleProps {
   children: ReactNode
   style?: React.CSSProperties
   className?: string
 }
 
-export default function SectionTitle({ children, style, className }: Props) {
+export default function SectionTitle({ children, style, className }: SectionTitleProps) {
   return (
     <h2
       className={className}

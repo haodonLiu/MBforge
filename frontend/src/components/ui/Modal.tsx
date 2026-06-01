@@ -2,8 +2,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import type { ReactNode } from 'react'
 import IconButton from './IconButton'
 import { XIcon } from '../icons'
+import { useIsMobile } from '../../styles/responsive'
 
-interface Props {
+export interface ModalProps {
   open: boolean
   onClose: () => void
   title?: string
@@ -13,6 +14,8 @@ interface Props {
   maxWidth?: string | number
   height?: string | number
   maxHeight?: string | number
+  /** 移动端是否全屏显示（默认 true） */
+  fullScreenOnMobile?: boolean
 }
 
 export default function Modal({
@@ -25,7 +28,17 @@ export default function Modal({
   maxWidth = 860,
   height = '80%',
   maxHeight = 640,
-}: Props) {
+  fullScreenOnMobile = true,
+}: ModalProps) {
+  const isMobile = useIsMobile()
+
+  // 移动端可选全屏显示
+  const finalWidth = isMobile && fullScreenOnMobile ? '100%' : width
+  const finalMaxWidth = isMobile && fullScreenOnMobile ? '100%' : maxWidth
+  const finalHeight = isMobile && fullScreenOnMobile ? '100%' : height
+  const finalMaxHeight = isMobile && fullScreenOnMobile ? '100%' : maxHeight
+  const borderRadius = isMobile && fullScreenOnMobile ? 0 : 16
+
   return (
     <AnimatePresence>
       {open && (
@@ -66,12 +79,12 @@ export default function Modal({
             transition={{ duration: 0.25, ease: 'easeOut' }}
             style={{
               position: 'relative',
-              width,
-              maxWidth,
-              height,
-              maxHeight,
+              width: finalWidth,
+              maxWidth: finalMaxWidth,
+              height: finalHeight,
+              maxHeight: finalMaxHeight,
               background: 'var(--bg-surface)',
-              borderRadius: '16px',
+              borderRadius,
               border: '1px solid var(--border)',
               boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
               display: 'flex',

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import { listProjectDocuments, scanProjectFiles, indexProjectRust, type IndexResult } from '../api/tauri-bridge'
 import { extractPage } from '../api/moldet'
 import { listen } from '@tauri-apps/api/event'
@@ -8,8 +9,7 @@ import type { DocumentEntry, ExtractionResult } from '../types'
 import { extractRoiText } from '../utils/roiText'
 import { getProjectRoot } from '../hooks/useProjectRoot'
 import { showToast } from '../hooks/useToast'
-import ErrorBanner from './ErrorBanner'
-import { motion } from 'framer-motion'
+import AlertBanner from './ui/AlertBanner'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import PdfCanvas from './PdfCanvas'
 import MoleculeOverlay from './MoleculeOverlay'
@@ -19,8 +19,6 @@ import PageContainer from '../components/ui/PageContainer'
 import PageTitle from '../components/ui/PageTitle'
 import SectionTitle from '../components/ui/SectionTitle'
 import Card from '../components/ui/Card'
-import HoverCard from '../components/ui/HoverCard'
-import CardGrid from '../components/ui/CardGrid'
 import IconContainer from '../components/ui/IconContainer'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
@@ -30,6 +28,7 @@ import Skeleton from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import Toolbar from '../components/ui/Toolbar'
 import IconButton from '../components/ui/IconButton'
+import ResponsiveStatGrid from '../components/ui/ResponsiveStatGrid'
 
 export default function ProjectView() {
   const [projectRoot, setProjectRoot] = useState(getProjectRoot())
@@ -299,7 +298,7 @@ export default function ProjectView() {
     try {
       return convertFileSrc(absPath)
     } catch {
-      return `/api/v1/file/pdf?path=${encodeURIComponent(absPath)}`
+      return `/api/v1/file/pdf?path=${encodeURIComponent(absPath)}&project_root=${encodeURIComponent(root)}`
     }
   }, [selectedPdf?.path])
 
@@ -596,6 +595,7 @@ export default function ProjectView() {
   if (selectedMarkdown) {
     return (
       <MarkdownViewer
+        projectRoot={projectRoot}
         filePath={selectedMarkdown.path}
         onClose={handleCloseFile}
       />
@@ -605,7 +605,7 @@ export default function ProjectView() {
   // 项目视图
   return (
     <PageContainer>
-      {error && <ErrorBanner message={error} onDismiss={() => setError('')} />}
+      {error && <AlertBanner variant="danger" message={error} onDismiss={() => setError('')} />}
 
       {/* 头部 */}
       <div style={{
@@ -656,7 +656,7 @@ export default function ProjectView() {
 
       {/* 统计卡片 */}
       <StaggerContainer stagger={0.08}>
-        <CardGrid style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: '32px' }}>
+        <ResponsiveStatGrid style={{ marginBottom: '32px' }}>
           <StaggerItem>
             <Card>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -701,7 +701,7 @@ export default function ProjectView() {
               </div>
             </Card>
           </StaggerItem>
-        </CardGrid>
+        </ResponsiveStatGrid>
       </StaggerContainer>
 
       {/* 索引进度条 */}
@@ -749,28 +749,39 @@ export default function ProjectView() {
         />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {docs.map((doc, index) => (
-            <motion.div
-              key={doc.doc_id}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.03, duration: 0.3 }}
-            >
-              <HoverCard
-                onClick={() => handleOpenFile(doc)}
-                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '8px' }}
+          {docs.map((doc, index) => {
+            // 为每个文档创建带延迟的 fadeUp 变体
+            const delayedFadeUp = {
+              hidden: { opacity: 0, y: 6 },
+              visible: { 
+                opacity: 1, 
+                y: 0, 
+                transition: { delay: index * 0.03, duration: 0.3 } 
+              },
+            }
+            return (
+              <motion.div
+                key={doc.doc_id}
+                variants={delayedFadeUp}
+                initial="hidden"
+                animate="visible"
               >
-                <FileTextIcon size={16} />
-                <BodyText size="md" style={{ flex: 1 }}>{doc.title || doc.path}</BodyText>
-                <Badge variant="neutral">{doc.doc_type}</Badge>
-                {doc.indexed ? (
-                  <Badge variant="success">已索引</Badge>
-                ) : (
-                  <Badge variant="neutral">未索引</Badge>
-                )}
-              </HoverCard>
-            </motion.div>
-          ))}
+                <Card
+                  onClick={() => handleOpenFile(doc)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '8px' }}
+                >
+                  <FileTextIcon size={16} />
+                  <BodyText size="md" style={{ flex: 1 }}>{doc.title || doc.path}</BodyText>
+                  <Badge variant="neutral">{doc.doc_type}</Badge>
+                  {doc.indexed ? (
+                    <Badge variant="success">已索引</Badge>
+                  ) : (
+                    <Badge variant="neutral">未索引</Badge>
+                  )}
+                </Card>
+              </motion.div>
+            )
+          })}
         </div>
       )}
     </PageContainer>

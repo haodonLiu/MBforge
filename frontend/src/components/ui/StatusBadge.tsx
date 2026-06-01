@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 export type StatusType = 'ready' | 'pending' | 'error' | 'warning'
 
-interface Props {
+export interface StatusBadgeProps {
   type: StatusType
   children: ReactNode
   size?: 'sm' | 'md'
@@ -16,7 +16,7 @@ const config: Record<StatusType, { bg: string; color: string; dot: string }> = {
   error:   { bg: '#fee2e2', color: '#dc2626', dot: '#dc2626' },
 }
 
-export default function StatusBadge({ type, children, size = 'md', style }: Props) {
+export default function StatusBadge({ type, children, size = 'md', style }: StatusBadgeProps) {
   const c = config[type]
   const isSm = size === 'sm'
 

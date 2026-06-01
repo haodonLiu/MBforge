@@ -1,6 +1,6 @@
 import { CheckIcon, XIcon } from '../icons'
 
-interface Props {
+export interface LibStatusRowProps {
   name: string
   version?: string | null
   available: boolean
@@ -8,7 +8,7 @@ interface Props {
   showBorder?: boolean
 }
 
-export default function LibStatusRow({ name, version, available, hint, showBorder = true }: Props) {
+export default function LibStatusRow({ name, version, available, hint, showBorder = true }: LibStatusRowProps) {
   return (
     <div
       style={{

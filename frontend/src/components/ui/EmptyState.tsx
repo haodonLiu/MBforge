@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-interface Props {
+export interface EmptyStateProps {
   message: string
   icon?: ReactNode
   error?: boolean
@@ -8,7 +8,7 @@ interface Props {
   className?: string
 }
 
-export default function EmptyState({ message, icon, error = false, style, className }: Props) {
+export default function EmptyState({ message, icon, error = false, style, className }: EmptyStateProps) {
   return (
     <div
       className={className}

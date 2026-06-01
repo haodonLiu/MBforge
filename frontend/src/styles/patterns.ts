@@ -1,0 +1,128 @@
+/**
+ * 通用样式模式 / 模式组合。
+ *
+ * 目的：消除散落的内联样式重复，提升代码可读性。
+ *
+ * 使用方式:
+ *   import { PATTERNS, SIZES } from '@/styles/patterns'
+ *   <div style={{ ...PATTERNS.surfaceBlock, padding: SIZES.padding.md }} />
+ */
+
+import type { CSSProperties } from 'react'
+
+// ============================================================================
+// 间距 / 圆角 / 尺寸常量
+// ============================================================================
+
+export const SIZES = {
+  padding: {
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 20,
+  },
+  radius: {
+    sm: 4,
+    md: 6,
+    lg: 8,
+    xl: 10,
+    '2xl': 12,
+    '3xl': 16,
+  },
+  fontSize: {
+    xs: '10px',
+    sm: '11px',
+    base: '12px',
+    md: '13px',
+    lg: '14px',
+    xl: '16px',
+  },
+} as const
+
+// ============================================================================
+// 通用样式模式
+// ============================================================================
+
+/** 表面块：背景 + 边框 + 圆角（最常用的容器） */
+export const surfaceBlock: CSSProperties = {
+  background: 'var(--bg-base)',
+  border: '1px solid var(--border)',
+  borderRadius: SIZES.radius.xl,
+  padding: SIZES.padding.xl,
+}
+
+/** 表面块（无 padding，由调用方决定） */
+export const surfaceBlockNoPadding: CSSProperties = {
+  background: 'var(--bg-surface)',
+  border: '1px solid var(--border)',
+  borderRadius: SIZES.radius.xl,
+}
+
+/** 表面块（强调边框） */
+export const surfaceBlockAccent: CSSProperties = {
+  background: 'var(--bg-base)',
+  border: '1px solid var(--accent)',
+  borderRadius: SIZES.radius.xl,
+}
+
+/** 行内块：圆角小 + 浅背景（用于 chip / 标签） */
+export const chip: CSSProperties = {
+  padding: `2px 8px`,
+  borderRadius: SIZES.radius.sm,
+  fontSize: SIZES.fontSize.base,
+  fontWeight: 500,
+}
+
+/** 居中容器 */
+export const centerContainer: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+}
+
+/** 横向弹性容器（默认 8px gap） */
+export const hstack = (gap: number | string = 8): CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap,
+})
+
+/** 纵向弹性容器（默认 8px gap） */
+export const vstack = (gap: number | string = 8): CSSProperties => ({
+  display: 'flex',
+  flexDirection: 'column',
+  gap,
+})
+
+/** 全屏遮罩 */
+export const fullscreenBackdrop: CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 1000,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+}
+
+/** 模态框面板 */
+export const modalPanel: CSSProperties = {
+  position: 'relative',
+  background: 'var(--bg-surface)',
+  borderRadius: SIZES.radius['3xl'],
+  border: '1px solid var(--border)',
+  boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
+}
+
+/** 所有 patterns 集合（便于一次性导入） */
+export const PATTERNS = {
+  surfaceBlock,
+  surfaceBlockNoPadding,
+  surfaceBlockAccent,
+  chip,
+  centerContainer,
+  fullscreenBackdrop,
+  modalPanel,
+} as const

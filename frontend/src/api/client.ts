@@ -102,8 +102,14 @@ export function searchMolecules(projectRoot: string, q: string, limit = 20) {
   )
 }
 
+export interface MoleculeStats {
+  total: number
+  with_activity?: number
+  pending?: number
+}
+
 export function moleculeStats(projectRoot: string) {
-  return fetchJson<{ success: boolean; stats: Record<string, unknown>; error?: string }>(
+  return fetchJson<{ success: boolean; stats: MoleculeStats; error?: string }>(
     `${API_BASE}/molecule/stats?project_root=${encodeURIComponent(projectRoot)}`,
   )
 }
@@ -116,9 +122,11 @@ export function getFileTree(projectRoot: string) {
 }
 
 // File content (Markdown/TXT preview)
-export function readFileContent(filePath: string) {
+export function readFileContent(filePath: string, projectRoot?: string) {
+  const params = new URLSearchParams({ path: filePath })
+  if (projectRoot) params.set('project_root', projectRoot)
   return fetchJson<{ success: boolean; content: string; filename: string; error?: string }>(
-    `${API_BASE}/file/content?path=${encodeURIComponent(filePath)}`,
+    `${API_BASE}/file/content?${params.toString()}`,
   )
 }
 

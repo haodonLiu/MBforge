@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRightIcon } from '../icons'
 
-interface Props {
+export interface CollapsibleSectionProps {
   title: string
   children: React.ReactNode
   defaultOpen?: boolean
@@ -10,7 +10,7 @@ interface Props {
   style?: React.CSSProperties
 }
 
-export default function CollapsibleSection({ title, children, defaultOpen = true, badge, style }: Props) {
+export default function CollapsibleSection({ title, children, defaultOpen = true, badge, style }: CollapsibleSectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
 
   return (

@@ -26,7 +26,7 @@ export default function LatexText({ text, className }: Props) {
               __html: katex.renderToString(part.content, {
                 displayMode: part.display,
                 throwOnError: false,
-                trust: true,
+                trust: false,
               }),
             }}
           />

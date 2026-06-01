@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-interface Props {
+export interface BodyTextProps {
   children: ReactNode
   muted?: boolean
   size?: 'sm' | 'md' | 'lg'
@@ -14,7 +14,7 @@ const sizeMap = {
   lg: '16px',
 }
 
-export default function BodyText({ children, muted = false, size = 'md', style, className }: Props) {
+export default function BodyText({ children, muted = false, size = 'md', style, className }: BodyTextProps) {
   return (
     <p
       className={className}

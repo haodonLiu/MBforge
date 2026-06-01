@@ -321,10 +321,12 @@ export interface DocProgressEvent {
 export async function processDocument(
   path: string,
   userRequest?: string,
+  projectRoot?: string,
 ): Promise<void> {
   return invoke<void>('process_document', {
     path,
     userRequest: userRequest ?? '',
+    projectRoot,
   })
 }
 
@@ -511,8 +513,8 @@ export async function deleteFile(projectRoot: string, docId: string): Promise<bo
 }
 
 /** 读取文本文件内容（Rust 直接读取，无需 HTTP） */
-export async function readTextFile(path: string): Promise<string> {
-  return invoke<string>('read_text_file', { path })
+export async function readTextFile(projectRoot: string, path: string): Promise<string> {
+  return invoke<string>('read_text_file', { projectRoot, path })
 }
 
 /** 列出项目文档（与 client.ts listDocuments 兼容的包装） */
@@ -528,14 +530,20 @@ export async function listDocumentsTauri(
 }
 
 /** 分子统计（与 client.ts moleculeStats 兼容的包装） */
+export interface MoleculeStats {
+  total: number
+  with_activity?: number
+  pending?: number
+}
+
 export async function moleculeStatsTauri(
   projectRoot: string,
-): Promise<{ success: boolean; stats: Record<string, unknown>; error?: string }> {
+): Promise<{ success: boolean; stats: MoleculeStats; error?: string }> {
   try {
     const stats = await molStoreStats(projectRoot)
-    return { success: true, stats: stats as unknown as Record<string, unknown> }
+    return { success: true, stats: stats as unknown as MoleculeStats }
   } catch (e) {
-    return { success: false, stats: {}, error: String(e) }
+    return { success: false, stats: { total: 0 }, error: String(e) }
   }
 }
 

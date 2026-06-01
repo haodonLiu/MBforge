@@ -1,6 +1,8 @@
-export type AlertVariant = 'success' | 'danger' | 'info'
+import { TONE_COLORS, type StatusTone } from '../../styles/tokens'
 
-interface Props {
+export type AlertVariant = 'success' | 'danger' | 'info' | 'warning' | 'error'
+
+export interface AlertBannerProps {
   message: string
   variant?: AlertVariant
   onDismiss?: () => void
@@ -8,14 +10,18 @@ interface Props {
   className?: string
 }
 
-const variantMap: Record<AlertVariant, { color: string; bg: string; border: string }> = {
-  success: { color: '#16a34a', bg: 'rgba(22,163,74,0.1)', border: 'rgba(22,163,74,0.3)' },
-  danger:  { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.3)' },
-  info:    { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.3)' },
+/** Map AlertVariant to TONE_COLORS key (some need to be remapped) */
+const toneMap: Record<AlertVariant, StatusTone> = {
+  success: 'success',
+  danger:  'error',    // 'error' provides more vibrant red than 'danger'
+  info:    'info',
+  warning: 'warning',
+  error:   'error',
 }
 
-export default function AlertBanner({ message, variant = 'info', onDismiss, style, className }: Props) {
-  const v = variantMap[variant]
+export default function AlertBanner({ message, variant = 'info', onDismiss, style, className }: AlertBannerProps) {
+  const v = TONE_COLORS[toneMap[variant]]
+
   return (
     <div
       className={className}

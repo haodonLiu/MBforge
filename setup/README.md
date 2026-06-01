@@ -102,6 +102,17 @@ setup/
 | `RERANK_MODEL` | 05 | Rerank 模型名 |
 | `RERANK_DEVICE` | 05 | cpu/cuda |
 
+## 可选功能与已知限制
+
+脚本验证阶段（`08_verify`）会提示以下可选功能的就绪状态：
+
+| 功能 | 依赖 | 状态检查方式 | 不满足时的影响 |
+|------|------|-------------|---------------|
+| **LiteParse (PDFium)** | `vendor/pdfium/release/` 中的 PDFium 二进制 | 检测 `vendor/pdfium/` 目录 | 离线扫描 PDF 解析回退不可用（云 API 仍可工作） |
+| **MolDet 分子检测** | NVIDIA GPU + CUDA 12.8 | 检测 `torch.cuda.is_available()` | 前端分子检测功能不可用，其余功能正常 |
+
+这些功能不是核心依赖，缺失时不影响 MBForge 主体功能（PDF 解析、Agent 对话、分子数据库等）。
+
 ## 添加新模块
 
 1. 在 `modules/` 创建 `0N_xxx.sh`

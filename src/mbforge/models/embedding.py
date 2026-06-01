@@ -88,7 +88,7 @@ class SentenceTransformerEmbedder(BaseEmbedder):
             self._model = SentenceTransformer(
                 resolved, device=self.device, trust_remote_code=True
             )
-            self._dim = self._model.get_sentence_embedding_dimension()
+            self._dim = self._model.get_embedding_dimension()
         return self._model
 
     @property
@@ -157,7 +157,7 @@ class Qwen3Embedder(BaseEmbedder):
                 device=self.device,
                 trust_remote_code=True,
             )
-            full_dim = self._model.get_sentence_embedding_dimension()
+            full_dim = self._model.get_embedding_dimension()
             self._dim = (
                 self.mrl_dim if (self.mrl_dim and self.mrl_dim < full_dim) else full_dim
             )

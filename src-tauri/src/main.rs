@@ -55,6 +55,7 @@ fn main() {
             parsers::pipeline::process_document,
             parsers::pipeline::index_project_rust,
             core::knowledge_base::kb_search,
+            core::knowledge_base::kb_search_stream,
             core::knowledge_base::kb_get_structure,
             core::knowledge_base::kb_get_pages,
             commands::molecule::mol_init,

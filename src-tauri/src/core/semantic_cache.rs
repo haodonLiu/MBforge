@@ -292,10 +292,10 @@ impl SemanticCache {
 }
 
 fn cosine(a: &[f32], b: &[f32]) -> f64 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(x, y)| (*x as f64) * (*y as f64))
-        .sum()
+    let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| (*x as f64) * (*y as f64)).sum();
+    let na: f64 = a.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
+    let nb: f64 = b.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
+    if na == 0.0 || nb == 0.0 { 0.0 } else { dot / (na * nb) }
 }
 
 fn move_to_back(lru: &mut VecDeque<String>, key: &str) {
@@ -428,13 +428,21 @@ mod tests {
 
     #[test]
     fn test_cosine_similarity() {
+        // 正交向量 → 0.0
         let a = vec![1.0f32, 0.0, 0.0];
         let b = vec![0.0f32, 1.0, 0.0];
         assert!((cosine(&a, &b) - 0.0).abs() < 1e-6);
 
+        // 相同向量 → 1.0（余弦相似度，归一化后）
         let c = vec![0.5f32, 0.5, 0.0];
         let d = vec![0.5f32, 0.5, 0.0];
-        assert!((cosine(&c, &d) - 0.5).abs() < 1e-6);
+        assert!((cosine(&c, &d) - 1.0).abs() < 1e-6);
+
+        // 45度角 → cos(45°) ≈ 0.707
+        let e = vec![1.0f32, 0.0];
+        let f = vec![1.0f32, 1.0];
+        let expected = 1.0 / 2.0_f64.sqrt();
+        assert!((cosine(&e, &f) - expected).abs() < 1e-6);
     }
 
     #[test]

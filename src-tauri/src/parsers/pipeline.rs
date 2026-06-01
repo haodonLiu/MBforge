@@ -343,6 +343,55 @@ pub async fn process_document(
         errors: vec![],
     });
 
+    // ===== Stage 2a: 专利命名化合物提取（仅专利文档）=====
+    let mut molecule_traces: Vec<crate::parsers::molecule_extractor::MoleculeTrace> = Vec::new();
+    let mut claim_graph: Option<crate::parsers::claim_parser::ClaimDependencyGraph> = None;
+
+    if doc_structure.doc_type == "patent" {
+        // 合并所有 section 的文本用于分子提取
+        let all_section_text = section_results
+            .iter()
+            .map(|s| s.summary.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let full_text = if all_section_text.len() > 100 {
+            all_section_text
+        } else {
+            ctx.raw_text.clone()
+        };
+
+        let named_mols = crate::parsers::molecule_extractor::extract_named_molecule_series(&full_text);
+        if !named_mols.is_empty() {
+            let mut traces = crate::parsers::molecule_extractor::link_molecules_to_images(
+                &named_mols,
+                &ctx.images,
+                &[],
+            );
+            // 提取理化性质
+            for trace in traces.iter_mut() {
+                trace.properties = crate::parsers::molecule_extractor::extract_properties_for_molecule(
+                    &trace.molecule,
+                    &full_text,
+                    500,
+                );
+            }
+            molecule_traces = traces;
+        }
+
+        // 解析 claims section
+        let claims_text = extract_section_text(&ctx.raw_text, "claims");
+        if !claims_text.is_empty() && claims_text.len() > 20 {
+            claim_graph = Some(crate::parsers::claim_parser::parse_claims_section(&claims_text));
+        }
+
+        let _ = app.emit("doc-progress", DocProgressEvent::Section {
+            name: "patent_molecule_extraction".into(),
+            status: "ok".into(),
+            compounds: molecule_traces.len(),
+            activities: molecule_traces.iter().map(|t| t.properties.len()).sum(),
+        });
+    }
+
     // ===== Stage 2b: VLM 化学结构识别 =====
     let vlm_config = crate::parsers::vlm_chem::VlmConfig::default();
     let mut vlm_esmiles_found = 0usize;
@@ -379,10 +428,20 @@ pub async fn process_document(
             image_count: chem_images.len(),
             esmiles_found: vlm_esmiles_found,
         });
+
+        // 回填 VLM 识别结果到 molecule_traces
+        for trace in molecule_traces.iter_mut() {
+            for img in &trace.related_images {
+                if let Some((_, chem_result)) = vlm_results.iter().find(|(fname, _)| fname == &img.filename) {
+                    trace.vlm_verified_esmiles = Some(chem_result.esmiles.clone());
+                    trace.vlm_confidence = chem_result.confidence;
+                }
+            }
+        }
     }
 
     // ===== Stage 3: 合并 + 验证 + SAR =====
-    let final_data: StructuredData;
+    let mut final_data: StructuredData;
     let sar_analysis: String;
     {
         if section_results.is_empty() && vlm_results.is_empty() {
@@ -434,6 +493,11 @@ pub async fn process_document(
         tokens_used: 0,
         errors: vec![],
     });
+
+    // 专利数据增强：将 molecule_traces 的信息整合进 final_data
+    if doc_structure.doc_type == "patent" {
+        enhance_patent_data(&mut final_data, &molecule_traces, &claim_graph, &mut processing_log);
+    }
 
     // ===== Stage 4: 报告生成 =====
     let report_md =
@@ -877,6 +941,185 @@ fn merge_partial_results(
     }
 }
 
+/// 专利数据增强：将 molecule_traces 和 claim_graph 的信息整合进 StructuredData。
+///
+/// 1. 为现有 CompoundEntry 补充理化性质、图像、VLM 验证
+/// 2. 若 LLM 未提取到某命名化合物，则追加新 CompoundEntry
+/// 3. 将理化性质中的活性数据转为 ActivityEntry
+/// 4. 若有 claim_graph，执行范围评估并加入 key_findings
+fn enhance_patent_data(
+    data: &mut StructuredData,
+    traces: &[crate::parsers::molecule_extractor::MoleculeTrace],
+    claim_graph: &Option<crate::parsers::claim_parser::ClaimDependencyGraph>,
+    processing_log: &mut ProcessingLog,
+) {
+    use crate::parsers::molecule_extractor::MoleculeTrace;
+    use crate::parsers::types::{CompoundEntry, PhysicochemicalProperty};
+
+    let mut existing_names: std::collections::HashSet<String> =
+        data.compounds.iter().map(|c| c.name.clone()).collect();
+    let mut new_activities = Vec::new();
+
+    for trace in traces {
+        let mol = &trace.molecule;
+        let props: Vec<PhysicochemicalProperty> = trace
+            .properties
+            .iter()
+            .map(|p| PhysicochemicalProperty {
+                property_type: p.property_type.clone(),
+                value: p.value,
+                unit: p.unit.clone(),
+                source_quote: p.source_quote.clone(),
+                confidence: p.confidence.clone(),
+            })
+            .collect();
+
+        let related_images: Vec<String> = trace
+            .related_images
+            .iter()
+            .map(|img| img.filename.clone())
+            .collect();
+
+        // 尝试找到同名的现有 CompoundEntry 并增强
+        let mut found = false;
+        for compound in data.compounds.iter_mut() {
+            if compound.name == mol.name {
+                found = true;
+                if !props.is_empty() {
+                    compound.physicochemical_props = Some(props.clone());
+                }
+                if !related_images.is_empty() {
+                    compound.related_images = Some(related_images.clone());
+                }
+                if let Some(ref esmiles) = trace.vlm_verified_esmiles {
+                    compound.vlm_verified_esmiles = Some(esmiles.clone());
+                    if compound.esmiles.is_none() {
+                        compound.esmiles = Some(esmiles.clone());
+                    }
+                }
+                compound.page_location = mol.page_hint;
+                // 提升置信度
+                if compound.confidence != "high" {
+                    compound.confidence = "high".into();
+                }
+                break;
+            }
+        }
+
+        // 若未找到，追加新 CompoundEntry
+        if !found {
+            let description = if trace.properties.is_empty() {
+                mol.context_text.chars().take(200).collect()
+            } else {
+                format!(
+                    "从专利文本提取的命名化合物。关联属性: {}",
+                    trace
+                        .properties
+                        .iter()
+                        .map(|p| format!("{}={} {}", p.property_type, p.value, p.unit))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+
+            data.compounds.push(CompoundEntry {
+                name: mol.name.clone(),
+                esmiles: trace.vlm_verified_esmiles.clone(),
+                category: None,
+                description,
+                source_ref: mol.page_hint.map(|p| format!("p.{}", p)).unwrap_or_else(|| mol.section.clone()),
+                confidence: if trace.vlm_verified_esmiles.is_some() {
+                    "high"
+                } else {
+                    "medium"
+                }.into(),
+                uncertainty_reason: if trace.vlm_verified_esmiles.is_none() {
+                    Some("缺少图像验证的化学结构".into())
+                } else {
+                    None
+                },
+                physicochemical_props: if props.is_empty() { None } else { Some(props.clone()) },
+                related_images: if related_images.is_empty() { None } else { Some(related_images) },
+                vlm_verified_esmiles: trace.vlm_verified_esmiles.clone(),
+                page_location: mol.page_hint,
+            });
+            existing_names.insert(mol.name.clone());
+        }
+
+        // 将活性类理化性质转为 ActivityEntry
+        for prop in &trace.properties {
+            let is_activity = matches!(
+                prop.property_type.as_str(),
+                "IC50" | "EC50" | "EC90" | "KI" | "KD" | "IC90"
+            );
+            if is_activity {
+                new_activities.push(crate::parsers::types::ActivityEntry {
+                    compound: mol.name.clone(),
+                    activity_type: prop.property_type.clone(),
+                    value: prop.value,
+                    units: prop.unit.clone(),
+                    target: None,
+                    source_quote: prop.source_quote.clone(),
+                    source_ref: mol.page_hint.map(|p| format!("p.{}", p)).unwrap_or_default(),
+                    confidence: prop.confidence.clone(),
+                    uncertainty_reason: None,
+                });
+            }
+        }
+    }
+
+    // 追加新活性数据（去重）
+    let existing_activity_keys: std::collections::HashSet<String> = data
+        .activities
+        .iter()
+        .map(|a| format!("{}|{}|{}", a.compound, a.activity_type, a.value))
+        .collect();
+    for activity in new_activities {
+        let key = format!("{}|{}|{}", activity.compound, activity.activity_type, activity.value);
+        if !existing_activity_keys.contains(&key) {
+            data.activities.push(activity);
+        }
+    }
+
+    // Claim 范围评估
+    if let Some(ref graph) = claim_graph {
+        let assessments =
+            crate::parsers::claim_policy::assess_all_compounds(traces, graph);
+        for assessment in &assessments {
+            let finding_text = format!(
+                "化合物 '{}' 的专利范围评估: {:?}",
+                assessment.compound_name, assessment.risk_level
+            );
+            let evidence = assessment.assessment_summary.clone();
+            data.key_findings.push(crate::parsers::types::FindingEntry {
+                finding: finding_text,
+                evidence,
+                source_ref: "claims_section".into(),
+                confidence: match assessment.risk_level {
+                    crate::parsers::claim_policy::RiskLevel::High => "high",
+                    crate::parsers::claim_policy::RiskLevel::Medium => "medium",
+                    crate::parsers::claim_policy::RiskLevel::Low => "low",
+                    crate::parsers::claim_policy::RiskLevel::Clear => "high",
+                }.into(),
+                uncertainty_reason: if assessment.covered_claims.is_empty() {
+                    Some("未检测到权利要求覆盖".into())
+                } else {
+                    None
+                },
+            });
+        }
+
+        processing_log.stages.push(StageLog {
+            stage: 3,
+            name: "专利范围评估".into(),
+            status: "ok".into(),
+            items_processed: assessments.len(),
+            tokens_used: 0,
+            errors: vec![],
+        });
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -916,6 +1159,10 @@ mod tests {
                 name: "E041".into(), esmiles: Some("C1CC1".into()), category: None,
                 description: "test".into(), source_ref: "p5".into(),
                 confidence: "high".into(), uncertainty_reason: None,
+                physicochemical_props: None,
+                related_images: None,
+                vlm_verified_esmiles: None,
+                page_location: None,
             }],
             activities: vec![],
             key_findings: vec![],
@@ -928,6 +1175,10 @@ mod tests {
                 name: "E041".into(), esmiles: Some("C1CC1".into()), category: None,
                 description: "test duplicate".into(), source_ref: "p12".into(),
                 confidence: "high".into(), uncertainty_reason: None,
+                physicochemical_props: None,
+                related_images: None,
+                vlm_verified_esmiles: None,
+                page_location: None,
             }],
             activities: vec![],
             key_findings: vec![],
@@ -995,45 +1246,4 @@ mod tests {
     }
 }
 
-// ===== KB 索引（通过 Python sidecar）=====
 
-/// 通过 HTTP 调用 Python sidecar 索引 sections 到知识库
-pub async fn index_sections_to_kb(
-    project_root: &str,
-    doc_id: &str,
-    sections: &[crate::parsers::sections::SectionChunk],
-    filename: &str,
-) -> Result<(), String> {
-    let sidecar_url = crate::core::constants::sidecar_url();
-
-    let body = serde_json::json!({
-        "project_root": project_root,
-        "doc_id": doc_id,
-        "filename": filename,
-        "sections": sections.iter().map(|s| serde_json::json!({
-            "title": s.title,
-            "path": s.path,
-            "text": s.text,
-            "page_start": s.page_start,
-            "page_end": s.page_end,
-        })).collect::<Vec<_>>(),
-    });
-
-    let client = crate::core::http::client_120s();
-
-    let url = format!("{}/api/v1/kb/index-sections", sidecar_url.trim_end_matches('/'));
-
-    let resp = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("KB index request failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("KB index HTTP error: {}", text));
-    }
-
-    Ok(())
-}

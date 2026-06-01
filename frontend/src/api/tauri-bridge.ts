@@ -363,7 +363,32 @@ export async function kbSearch(
   query: string,
   topK = 5,
 ): Promise<KbSearchResult[]> {
-  return invoke<KbSearchResult[]>('kb_search', { projectRoot, query, topK })
+  return invoke<KbSearchResult[]>('kb_search', { root: projectRoot, query, topK })
+}
+
+export interface KbSearchChunk {
+  type: 'first' | 'incremental' | 'complete'
+  results: KbSearchResult[]
+  count: number
+  error: string | null
+}
+
+/** 流式搜索 — 通过 Tauri 事件分批接收结果 */
+export async function kbSearchStream(
+  projectRoot: string,
+  query: string,
+  topK: number,
+  onChunk: (chunk: KbSearchChunk) => void,
+): Promise<() => void> {
+  invoke('kb_search_stream', { root: projectRoot, query, topK }).catch(err => {
+    onChunk({ type: 'complete', results: [], count: 0, error: String(err) })
+  })
+
+  const unlisten = await listen<KbSearchChunk>('kb-search-chunk', (event) => {
+    onChunk(event.payload)
+  })
+
+  return unlisten
 }
 
 export interface TreeNode {

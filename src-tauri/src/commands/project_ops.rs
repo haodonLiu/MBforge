@@ -2,16 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// 去掉 Windows 长路径前缀 `\\?\`（浏览器拖拽 / 对话框可能带入）
-fn clean_path(raw: &str) -> String {
-    if cfg!(windows) {
-        let p = raw.trim_start_matches(r"\\?\");
-        // 去掉前缀后可能开头是 `C:`，保持原样
-        p.to_string()
-    } else {
-        raw.to_string()
-    }
-}
+use crate::core::helpers::clean_path;
 
 /// 创建或打开项目（Tauri 命令）
 ///

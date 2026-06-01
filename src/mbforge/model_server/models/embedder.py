@@ -2,23 +2,10 @@
 
 from __future__ import annotations
 
+from .singleton import ModelSingleton
 from mbforge.models.base import BaseEmbedder
 from mbforge.models.embedding import create_embedder_from_config
-from mbforge.utils.config import EmbedConfig
 
-_embedder_instance: BaseEmbedder | None = None
-
-
-def get_embedder(config: EmbedConfig | None = None) -> BaseEmbedder:
-    global _embedder_instance
-    if _embedder_instance is None:
-        if config is None:
-            from mbforge.utils.config import load_global_config
-            config = load_global_config().embed
-        _embedder_instance = create_embedder_from_config(config)
-    return _embedder_instance
-
-
-def reset_embedder() -> None:
-    global _embedder_instance
-    _embedder_instance = None
+_mgr = ModelSingleton(BaseEmbedder, lambda cfg: cfg.embed, create_embedder_from_config)
+get_embedder = _mgr.get
+reset_embedder = _mgr.reset

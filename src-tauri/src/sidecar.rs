@@ -6,6 +6,15 @@ use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tauri::Emitter;
 
+/// 构造 sidecar 日志事件 payload
+fn log_event(stream: &str, line: &str) -> serde_json::Value {
+    serde_json::json!({
+        "stream": stream,
+        "line": line,
+        "timestamp": chrono::Utc::now().timestamp_millis(),
+    })
+}
+
 /// Shared state for the Python sidecar process.
 pub struct SidecarInner {
     pub child: Mutex<Option<Child>>,
@@ -79,13 +88,7 @@ pub fn spawn_and_start_readers(inner: &Arc<SidecarInner>, app: &AppHandle) -> Re
         if let Some(stdout) = stdout {
             let reader = BufReader::new(stdout);
             for line in reader.lines().flatten() {
-                let ts = chrono::Utc::now().timestamp_millis();
-                let payload = serde_json::json!({
-                    "stream": "stdout",
-                    "line": line,
-                    "timestamp": ts,
-                });
-                let _ = app_c.emit("sidecar://log", payload);
+                let _ = app_c.emit("sidecar://log", log_event("stdout", &line));
             }
         }
     });
@@ -101,13 +104,7 @@ pub fn spawn_and_start_readers(inner: &Arc<SidecarInner>, app: &AppHandle) -> Re
         if let Some(stderr) = stderr {
             let reader = BufReader::new(stderr);
             for line in reader.lines().flatten() {
-                let ts = chrono::Utc::now().timestamp_millis();
-                let payload = serde_json::json!({
-                    "stream": "stderr",
-                    "line": line,
-                    "timestamp": ts,
-                });
-                let _ = app_c.emit("sidecar://log", payload);
+                let _ = app_c.emit("sidecar://log", log_event("stderr", &line));
             }
         }
     });

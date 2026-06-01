@@ -3,16 +3,8 @@ use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
+use crate::core::helpers::clean_path;
 use crate::core::project::DocumentEntry;
-
-/// 去掉 Windows 长路径前缀 `\\?\`
-fn clean_path(raw: &str) -> String {
-    if cfg!(windows) {
-        raw.trim_start_matches(r"\\?\").to_string()
-    } else {
-        raw.to_string()
-    }
-}
 
 /// 使用系统文件选择器导入文件到项目目录。
 ///

@@ -140,7 +140,7 @@ pub async fn agent_switch_project(
 
     // 先保存旧 Agent 的上下文
     {
-        let mut agents = state.agents.write().await;
+        let agents = state.agents.write().await;
         if let Some(old_agent) = agents.get(&session_id) {
             old_agent.save_context();
             log::info!("Agent session {}: old context saved before switch", session_id);

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
-use crate::core::helpers::clean_path;
+use crate::core::helpers::{assert_within_root, clean_path};
 use crate::core::project::DocumentEntry;
 
 /// 使用系统文件选择器导入文件到项目目录。
@@ -53,17 +53,8 @@ pub async fn upload_files(
         let dest = project.root.join(name);
 
         // 路径遍历安全检查
-        let root_canon = project
-            .root
-            .canonicalize()
-            .unwrap_or_else(|_| project.root.clone());
-        let dest_canon = dest.canonicalize().unwrap_or_else(|_| dest.clone());
-        if !dest_canon.starts_with(&root_canon) {
-            log::error!(
-                "Path traversal blocked: {:?} escapes {:?}",
-                dest,
-                project.root
-            );
+        if let Err(e) = assert_within_root(&project.root.to_string_lossy(), &dest) {
+            log::error!("Path traversal blocked: {:?} escapes {:?}: {}", dest, project.root, e);
             continue;
         }
 
@@ -109,8 +100,9 @@ pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, S
 
 /// 读取文本文件内容（UTF-8）。
 #[tauri::command]
-pub fn read_text_file(path: String) -> Result<String, String> {
+pub fn read_text_file(project_root: String, path: String) -> Result<String, String> {
     let path_buf = PathBuf::from(&path);
+    assert_within_root(&project_root, &path_buf)?;
     if !path_buf.exists() {
         return Err(format!("File not found: {}", path));
     }
@@ -120,8 +112,9 @@ pub fn read_text_file(path: String) -> Result<String, String> {
 
 /// 使用系统默认程序打开文件。
 #[tauri::command]
-pub async fn open_file(path: String) -> Result<(), String> {
+pub async fn open_file(project_root: String, path: String) -> Result<(), String> {
     let path_buf = PathBuf::from(&path);
+    assert_within_root(&project_root, &path_buf)?;
 
     if !path_buf.exists() {
         log::error!("open_file: file not found: {}", path);
@@ -132,11 +125,18 @@ pub async fn open_file(path: String) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", &path_buf.to_string_lossy()])
+        // 用 ShellExecuteW 替代 cmd /c start，消除命令注入
+        let path_str = path_buf.to_string_lossy();
+        std::process::Command::new("rundll32.exe")
+            .args(["url.dll,FileProtocolHandler", &path_str])
             .spawn()
+            .or_else(|_| {
+                std::process::Command::new("cmd")
+                    .args(["/C", "start", "", &path_str])
+                    .spawn()
+            })
             .map_err(|e| {
-                log::error!("open_file cmd start failed for path={}: {}", path, e);
+                log::error!("open_file failed for path={}: {}", path, e);
                 format!("Failed to open file: {}", e)
             })?;
     }

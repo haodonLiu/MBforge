@@ -1,6 +1,6 @@
 //! 项目操作命令 — 创建、打开、扫描项目
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::core::helpers::clean_path;
 

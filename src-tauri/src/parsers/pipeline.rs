@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
-use crate::commands::classifier::{classify_document, DocumentClassification};
-use crate::commands::extractor::{extract_activities, extract_esmiles_candidates, ActivityData};
+use crate::commands::classifier::classify_document;
+use crate::commands::extractor::{extract_activities, extract_esmiles_candidates};
+use crate::core::helpers::{generate_uuid, sha256_text};
+use crate::core::molecule_store::{MoleculeDatabase, MoleculeRecord};
 
 use super::types::{
     DocProcessingContext, DocStructure, DocumentMetadata, DocumentReport, ImageRef,
@@ -163,10 +165,126 @@ pub enum DocProgressEvent {
     Vlm { image_count: usize, esmiles_found: usize },
     #[serde(rename = "merge")]
     Merge { total_compounds: usize, total_activities: usize },
+    #[serde(rename = "persist")]
+    Persist { saved: usize, skipped: usize },
     #[serde(rename = "report")]
     Report { report_len: usize },
     #[serde(rename = "error")]
     Error { stage: String, message: String },
+}
+
+// ---------------------------------------------------------------------------
+// Project-root detection for persistence
+// ---------------------------------------------------------------------------
+
+fn find_project_root(start: &std::path::Path, explicit: Option<&str>) -> Option<std::path::PathBuf> {
+    if let Some(root) = explicit {
+        let p = std::path::PathBuf::from(root);
+        if p.join(".mbforge").is_dir() {
+            return Some(p);
+        }
+    }
+    let mut current = start.parent()?;
+    for _ in 0..5 {
+        if current.join(".mbforge").is_dir() {
+            return Some(current.to_path_buf());
+        }
+        current = current.parent()?;
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
+// CompoundEntry / ActivityEntry → MoleculeRecord mapping
+// ---------------------------------------------------------------------------
+
+fn compound_entry_to_record(
+    compound: &super::types::CompoundEntry,
+    source_doc: &str,
+    source_type: &str,
+) -> Option<MoleculeRecord> {
+    let esmiles = compound.esmiles.as_ref()?;
+    if esmiles.is_empty() {
+        return None;
+    }
+    let mol_id = if compound.name.is_empty() {
+        generate_uuid()
+    } else {
+        sha256_text(&format!("{}|{}", compound.name, esmiles))
+    };
+    let status = match compound.confidence.as_str() {
+        "high" => "confirmed".to_string(),
+        _ => "pending".to_string(),
+    };
+    let mut tags = Vec::new();
+    if let Some(ref cat) = compound.category {
+        tags.push(cat.clone());
+    }
+    let mut properties = serde_json::json!({});
+    if let Some(ref props) = compound.physicochemical_props {
+        let mut map = serde_json::Map::new();
+        for p in props {
+            map.insert(
+                p.property_type.clone(),
+                serde_json::json!({
+                    "value": p.value,
+                    "unit": p.unit,
+                    "source_quote": p.source_quote,
+                    "confidence": p.confidence,
+                }),
+            );
+        }
+        properties = serde_json::Value::Object(map);
+    }
+    let mut notes = format!(
+        "Auto-extracted from {}. Confidence: {}.",
+        source_type, compound.confidence
+    );
+    if let Some(ref vlm) = compound.vlm_verified_esmiles {
+        notes.push_str(&format!(" VLM verified: {}.", vlm));
+    }
+    if let Some(ref reason) = compound.uncertainty_reason {
+        notes.push_str(&format!(" Uncertainty: {}.", reason));
+    }
+    Some(MoleculeRecord {
+        mol_id,
+        esmiles: esmiles.clone(),
+        name: compound.name.clone(),
+        source_doc: source_doc.to_string(),
+        activity: None,
+        activity_type: String::new(),
+        units: "nM".to_string(),
+        source_type: source_type.to_string(),
+        status: status.to_string(),
+        properties,
+        tags,
+        notes,
+        created_at: None,
+    })
+}
+
+fn activity_entry_to_record(
+    activity: &super::types::ActivityEntry,
+    source_doc: &str,
+    source_type: &str,
+) -> MoleculeRecord {
+    let mut record = MoleculeRecord::new(&generate_uuid(), "");
+    record.name = activity.compound.clone();
+    record.source_doc = source_doc.to_string();
+    record.activity = Some(activity.value);
+    record.activity_type = activity.activity_type.clone();
+    record.units = activity.units.clone();
+    record.source_type = format!("{}_activity", source_type);
+    record.status = match activity.confidence.as_str() {
+        "high" => "confirmed".to_string(),
+        _ => "pending".to_string(),
+    };
+    record.notes = format!(
+        "Activity: {} {} {}. Source ref: {}. Confidence: {}.",
+        activity.activity_type, activity.value, activity.units,
+        activity.source_ref, activity.confidence
+    );
+    record
 }
 
 /// 完整的文档处理入口
@@ -176,6 +294,7 @@ pub enum DocProgressEvent {
 pub async fn process_document(
     path: String,
     user_request: Option<String>,
+    project_root: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let user_req = user_request.unwrap_or_default();
@@ -516,6 +635,99 @@ pub async fn process_document(
     let _ = app.emit("doc-progress", DocProgressEvent::Report {
         report_len: report_md.len(),
     });
+
+    // ===== Stage 4.5: Persist extracted molecules to project store =====
+    {
+        let source_doc = final_data
+            .metadata
+            .source_file
+            .as_deref()
+            .unwrap_or(&path);
+        let source_type = &doc_structure.doc_type;
+
+        if let Some(root) = find_project_root(&ctx.source_path, project_root.as_deref()) {
+            let mut records: Vec<MoleculeRecord> = Vec::new();
+            let mut skipped = 0usize;
+
+            for compound in &final_data.compounds {
+                match compound_entry_to_record(compound, source_doc, source_type) {
+                    Some(rec) => records.push(rec),
+                    None => skipped += 1,
+                }
+            }
+
+            for activity in &final_data.activities {
+                records.push(activity_entry_to_record(activity, source_doc, source_type));
+            }
+
+            if !records.is_empty() {
+                match MoleculeDatabase::open(&root) {
+                    Ok(db) => {
+                        let total = records.len();
+                        match db.add_molecules_batch(&records) {
+                            Ok(saved) => {
+                                let _ = app.emit(
+                                    "doc-progress",
+                                    DocProgressEvent::Persist {
+                                        saved,
+                                        skipped,
+                                    },
+                                );
+                                processing_log.stages.push(StageLog {
+                                    stage: 5,
+                                    name: "分子库存储".into(),
+                                    status: "ok".into(),
+                                    items_processed: saved,
+                                    tokens_used: 0,
+                                    errors: vec![],
+                                });
+                                log::info!(
+                                    "Persisted {}/{} molecules to {:?}",
+                                    saved,
+                                    total,
+                                    root
+                                );
+                            }
+                            Err(e) => {
+                                let _ = app.emit(
+                                    "doc-progress",
+                                    DocProgressEvent::Error {
+                                        stage: "persist".into(),
+                                        message: e.clone(),
+                                    },
+                                );
+                                processing_log.warnings.push(format!(
+                                    "Molecule store batch insert failed: {}. {}/{} records not saved.",
+                                    e, total, total
+                                ));
+                                log::error!("Molecule store batch insert failed: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        processing_log.warnings.push(format!(
+                            "Failed to open molecule database at {:?}: {}. Skipping persistence.",
+                            root, e
+                        ));
+                        log::warn!("Failed to open molecule DB at {:?}: {}", root, e);
+                    }
+                }
+            } else {
+                let _ = app.emit(
+                    "doc-progress",
+                    DocProgressEvent::Persist {
+                        saved: 0,
+                        skipped,
+                    },
+                );
+            }
+        } else {
+            log::warn!(
+                "No project root found for {}. Skipping molecule persistence.",
+                path
+            );
+        }
+    }
 
     // 最终结果发射
     let _ = app.emit("doc-result", &report);
@@ -953,7 +1165,7 @@ fn enhance_patent_data(
     claim_graph: &Option<crate::parsers::claim_parser::ClaimDependencyGraph>,
     processing_log: &mut ProcessingLog,
 ) {
-    use crate::parsers::molecule_extractor::MoleculeTrace;
+    
     use crate::parsers::types::{CompoundEntry, PhysicochemicalProperty};
 
     let mut existing_names: std::collections::HashSet<String> =
@@ -1243,6 +1455,115 @@ mod tests {
         assert_eq!(roundtrip.sections.len(), 1);
         assert_eq!(roundtrip.page_texts.len(), 1);
         assert_eq!(roundtrip.esmiles, vec!["CCO"]);
+    }
+
+    #[test]
+    fn test_compound_entry_to_record() {
+        use super::super::types::{CompoundEntry, PhysicochemicalProperty};
+
+        let compound = CompoundEntry {
+            name: "Compound-1".into(),
+            esmiles: Some("CCO".into()),
+            category: Some("inhibitor".into()),
+            description: "desc".into(),
+            source_ref: "p.5".into(),
+            confidence: "high".into(),
+            uncertainty_reason: None,
+            physicochemical_props: Some(vec![PhysicochemicalProperty {
+                property_type: "IC50".into(),
+                value: 12.5,
+                unit: "nM".into(),
+                source_quote: "IC50 = 12.5 nM".into(),
+                confidence: "high".into(),
+            }]),
+            related_images: None,
+            vlm_verified_esmiles: Some("CCO".into()),
+            page_location: Some(5),
+        };
+
+        let rec = compound_entry_to_record(&compound, "test.pdf", "patent").unwrap();
+        assert_eq!(rec.name, "Compound-1");
+        assert_eq!(rec.esmiles, "CCO");
+        assert_eq!(rec.status, "confirmed");
+        assert_eq!(rec.source_type, "patent");
+        assert_eq!(rec.source_doc, "test.pdf");
+        assert!(rec.tags.contains(&"inhibitor".to_string()));
+        assert_eq!(rec.properties["IC50"]["value"], 12.5);
+        assert!(rec.notes.contains("VLM verified"));
+    }
+
+    #[test]
+    fn test_compound_entry_to_record_skips_empty_esmiles() {
+        use super::super::types::CompoundEntry;
+
+        let compound = CompoundEntry {
+            name: "No-Structure".into(),
+            esmiles: Some("".into()),
+            category: None,
+            description: "desc".into(),
+            source_ref: "p.1".into(),
+            confidence: "medium".into(),
+            uncertainty_reason: None,
+            physicochemical_props: None,
+            related_images: None,
+            vlm_verified_esmiles: None,
+            page_location: None,
+        };
+
+        assert!(compound_entry_to_record(&compound, "test.pdf", "paper").is_none());
+    }
+
+    #[test]
+    fn test_activity_entry_to_record() {
+        use super::super::types::ActivityEntry;
+
+        let activity = ActivityEntry {
+            compound: "Compound-1".into(),
+            activity_type: "IC50".into(),
+            value: 12.5,
+            units: "nM".into(),
+            target: Some("JAK2".into()),
+            source_quote: "IC50 = 12.5 nM".into(),
+            source_ref: "p.5".into(),
+            confidence: "high".into(),
+            uncertainty_reason: None,
+        };
+
+        let rec = activity_entry_to_record(&activity, "test.pdf", "patent");
+        assert_eq!(rec.name, "Compound-1");
+        assert_eq!(rec.esmiles, "");
+        assert_eq!(rec.activity, Some(12.5));
+        assert_eq!(rec.activity_type, "IC50");
+        assert_eq!(rec.units, "nM");
+        assert_eq!(rec.status, "confirmed");
+        assert_eq!(rec.source_type, "patent_activity");
+        assert!(rec.notes.contains("12.5"));
+    }
+
+    #[test]
+    fn test_find_project_root_explicit() {
+        let tmp = std::env::temp_dir().join(format!("mbforge-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&tmp.join(".mbforge")).unwrap();
+        let pdf = tmp.join("sub").join("doc.pdf");
+        std::fs::create_dir_all(pdf.parent().unwrap()).unwrap();
+
+        let root = find_project_root(&pdf, Some(tmp.to_str().unwrap()));
+        assert_eq!(root, Some(tmp.clone()));
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn test_find_project_root_walk_up() {
+        let tmp = std::env::temp_dir().join(format!("mbforge-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&tmp.join(".mbforge")).unwrap();
+        let pdf = tmp.join("papers").join("sub").join("doc.pdf");
+        std::fs::create_dir_all(pdf.parent().unwrap()).unwrap();
+
+        let root = find_project_root(&pdf, None);
+        assert_eq!(root, Some(tmp.clone()));
+
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 }
 

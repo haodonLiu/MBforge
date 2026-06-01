@@ -23,7 +23,6 @@ impl ToolExecutor {
     pub fn new(sidecar_url: &str, project_root: &str) -> Self {
         let mut registry = ToolRegistry::new();
         Self::register_native_tools(&mut registry, project_root);
-        Self::register_sidecar_tools(&mut registry);
         Self {
             sidecar_url: sidecar_url.to_string(),
             project_root: project_root.to_string(),
@@ -475,11 +474,6 @@ impl ToolExecutor {
             }),
             Box::new(super::arxiv::tool_pmc_json),
         );
-    }
-
-    /// 注册需要 Python sidecar 的工具（当前为空 — 所有工具已迁移到 Rust native）
-    fn register_sidecar_tools(_registry: &mut ToolRegistry) {
-        // 所有工具已迁移到 Rust native，不再需要 sidecar 调用
     }
 
     pub async fn execute(&self, name: &str, args: &serde_json::Value) -> String {

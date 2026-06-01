@@ -167,9 +167,13 @@ impl Agent {
             }
         }
 
-        self.context.clear_tool_results();
+        // max_iterations 耗尽时的保护
+        if final_answer.is_empty() {
+            final_answer = "抱歉，我在多步推理后未能生成最终回复。请尝试简化问题。".to_string();
+            self.context.add_assistant_message(&final_answer);
+        }
 
-        // 后台异步：记忆提取 + Skills 自动创建（不阻塞返回）
+        self.context.clear_tool_results();
         self.spawn_background_tasks(user_input, &final_answer);
         self.save_context();
 
@@ -182,22 +186,17 @@ impl Agent {
         let tool_schemas = self.executor.registry.to_openai_schemas();
         let has_tools = !tool_schemas.is_empty();
 
-        // 多步工具循环（非流式）— 与 chat() 逻辑一致
+        // 多步工具循环（非流式）
         if has_tools {
-            loop {
+            for _ in 0..self.max_iterations {
                 let messages = self.context.build_messages(true, true);
                 let response = self.llm.chat(&messages, Some(&tool_schemas)).await?;
                 let (content, tool_calls) = Self::parse_response_static(&response);
 
                 if tool_calls.is_empty() {
-                    // LLM 不再调用工具，将其内容作为最终回复流式发送
+                    // LLM 不再调用工具 — 先记录上下文，再用真正的流式调用输出最终回复
                     self.context.add_assistant_message(&content);
-                    self.context.clear_tool_results();
-                    self.spawn_background_tasks(user_input, &content);
-                    self.save_context();
-                    let (tx, rx) = tokio::sync::mpsc::channel(1);
-                    let _ = tx.send(StreamChunk { delta: content, finish_reason: Some("stop".into()) }).await;
-                    return Ok(rx);
+                    break;
                 }
 
                 // 执行工具，继续循环
@@ -213,22 +212,32 @@ impl Agent {
             }
         }
 
-        // 无工具：直接流式
-        let messages = self.context.build_messages(true, true);
-        let mut rx = self.llm.chat_stream(&messages, None).await?;
-        let (tx, new_rx) = tokio::sync::mpsc::channel(64);
-        let mut full_content = String::new();
-        while let Some(chunk) = rx.recv().await {
-            full_content.push_str(&chunk.delta);
-            let _ = tx.send(chunk).await;
-        }
-        self.context.add_assistant_message(&full_content);
+        // 最终流式输出（工具循环结束后或无工具时）
         self.context.clear_tool_results();
+        let messages = self.context.build_messages(true, true);
+        let mut rx = self.llm.chat_stream(&messages, if has_tools { Some(&tool_schemas) } else { None }).await?;
+        let (tx, new_rx) = tokio::sync::mpsc::channel(64);
 
-        // 后台异步
-        self.spawn_background_tasks(user_input, &full_content);
+        // 转发流式 chunks
+        let sidecar = self.sidecar_url.clone();
+        let project_root = self.project_root.clone();
+        let user_input_owned = user_input.to_string();
+        let skills_manager = self.skills_manager.as_ref().map(|s| (s.skills_dir.clone(), sidecar.clone()));
+
+        tokio::spawn(async move {
+            let mut full_content = String::new();
+            while let Some(chunk) = rx.recv().await {
+                full_content.push_str(&chunk.delta);
+                let _ = tx.send(chunk).await;
+            }
+
+            // 后台任务（在转发完成后执行）
+            if let Some((skills_dir, sidecar_url)) = skills_manager {
+                Self::background_skill_creation(&user_input_owned, &full_content, &sidecar_url, &skills_dir).await;
+            }
+        });
+
         self.save_context();
-
         Ok(new_rx)
     }
 
@@ -268,7 +277,21 @@ impl Agent {
                 });
 
                 let url = format!("{}/api/v1/llm/chat", sidecar.trim_end_matches('/'));
-                let _ = Self::sidecar_llm_call(&url, &body).await;
+                match Self::sidecar_llm_call(&url, &body).await {
+                    Ok(text) => {
+                        // 解析 OpenAI 兼容响应
+                        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                            let content = val["choices"][0]["message"]["content"]
+                                .as_str().unwrap_or("");
+                            if !content.is_empty() {
+                                log::debug!("Memory extraction completed ({} chars)", content.len());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::debug!("Memory extraction failed: {}", e);
+                    }
+                }
             });
 
             // 重置计数器
@@ -333,7 +356,8 @@ impl Agent {
             Err(_) => return,
         };
 
-        let content = val["content"].as_str().unwrap_or("");
+        // OpenAI 兼容响应格式
+        let content = val["choices"][0]["message"]["content"].as_str().unwrap_or("");
         if content.is_empty() { return; }
 
         let name = content.lines().next().unwrap_or("unnamed")

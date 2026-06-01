@@ -20,11 +20,14 @@ logger = get_logger(__name__)
 
 
 def _resolve_model_path(model_name: str, cache_name: str) -> str:
-    """解析模型路径，优先从 ModelScope 缓存加载.
+    """解析模型路径，按优先级搜索多个缓存目录.
 
-    1. 如果是绝对/相对路径，直接使用
-    2. 如果 ModelScope 缓存中存在，使用缓存路径
-    3. 否则返回原 model_name（走 HuggingFace 下载）
+    搜索顺序（与 Rust resource_manager.rs check_model_snapshot 对齐）:
+    1. 绝对/相对路径 → 直接用
+    2. MBForge 缓存目录
+    3. ModelScope 缓存（$MODELSCOPE_CACHE + 默认路径）
+    4. HuggingFace 缓存（$HF_HOME）
+    5. 找不到 → 返回原名（走 HuggingFace 下载）
     """
     from pathlib import Path
 
@@ -33,36 +36,76 @@ def _resolve_model_path(model_name: str, cache_name: str) -> str:
     if p.is_absolute() or (p.exists() and p.is_dir()):
         return model_name
 
-    # ModelScope 缓存常见路径
-    possible_cache_bases = [
-        os.environ.get("MODELSCOPE_CACHE", ""),
-        str(Path.home() / "Models" / "ModelScope"),
-        str(Path.home() / ".cache" / "modelscope"),
-    ]
+    # 从 model_name 提取匹配用的 key
+    # "Qwen/Qwen3-Embedding-0.6B" → key_name = "Qwen3-Embedding-0"
+    name_parts = cache_name.replace("/", " ").split()
+    last_part = name_parts[-1] if name_parts else cache_name
+    key_name = last_part.rsplit(".", 1)[0]
 
-    cache_base = ""
-    for cb in possible_cache_bases:
-        if cb and Path(cb).exists():
-            cache_base = cb
-            break
+    # org 名（用于 ModelScope 目录结构 <org>/<model>）
+    org = cache_name.split("/")[0] if "/" in cache_name else ""
 
-    if cache_base:
-        # ModelScope 目录结构: <cache>/<org>/<model>-<version>
-        # ModelScope 用 ___ 代替版本号的点号，如 Qwen3-Embedding-0___6B
-        # 原始名如 Qwen/Qwen3-Embedding-0.6B
-        # 提取关键部分用于匹配: Qwen3-Embedding-0
-        name_parts = cache_name.replace("/", " ").split()
-        last_part = (
-            name_parts[-1] if name_parts else cache_name
-        )  # e.g. Qwen3-Embedding-0.6B
-        key_name = last_part.rsplit(".", 1)[0]  # e.g. Qwen3-Embedding-0
+    # 构建搜索目录列表（与 Rust resource_manager.rs 对齐）
+    search_dirs = []
 
-        cache_path = Path(cache_base)
-        if cache_path.exists():
-            for item in cache_path.rglob("*"):
+    # ① MBForge 缓存
+    try:
+        from ..utils.constants import get_model_cache_dir
+        mbforge_dir = Path(get_model_cache_dir())
+        if mbforge_dir.exists():
+            search_dirs.append(mbforge_dir)
+    except ImportError:
+        pass
+
+    # ② ModelScope 缓存
+    ms_cache = os.environ.get("MODELSCOPE_CACHE", "")
+    if ms_cache:
+        search_dirs.append(Path(ms_cache))
+    search_dirs.append(Path.home() / "Models" / "ModelScope")
+    search_dirs.append(Path.home() / ".cache" / "modelscope")
+
+    # ③ HuggingFace 缓存
+    hf_home = os.environ.get("HF_HOME", "")
+    if hf_home:
+        search_dirs.append(Path(hf_home))
+
+    # 在每个搜索目录中查找
+    for cache_dir in search_dirs:
+        if not cache_dir.exists():
+            continue
+
+        # ModelScope 布局: <cache>/<org>/<name>___<version>/
+        # 也可能直接在 <cache>/<name>/ 下
+        candidates = []
+        if org:
+            candidates.append(cache_dir / org)
+        candidates.append(cache_dir)
+
+        for base in candidates:
+            if not base.exists():
+                continue
+            for item in base.iterdir():
                 if item.is_dir() and key_name.lower() in item.name.lower():
-                    logger.info(f"Found model in ModelScope cache: {item}")
-                    return str(item)
+                    # 确认目录里有权重文件
+                    has_weights = (
+                        any(item.glob("*.safetensors"))
+                        or any(item.glob("*.bin"))
+                        or any(item.glob("*.pt"))
+                        or any(item.glob("*.pth"))
+                    )
+                    if has_weights:
+                        logger.info(f"Found model in cache: {item}")
+                        return str(item)
+
+        # HF 布局: hub/models--<org>--<name>/snapshots/<commit>/
+        if org:
+            hf_encoded = f"models--{org}--{last_part}"
+            snapshots = cache_dir / "hub" / hf_encoded / "snapshots"
+            if snapshots.exists():
+                for snap in snapshots.iterdir():
+                    if snap.is_dir() and any(snap.glob("*.safetensors")):
+                        logger.info(f"Found model in HF cache: {snap}")
+                        return str(snap)
 
     return model_name
 

@@ -1,8 +1,8 @@
 # MBForge 代码逻辑树
 
-> 最后更新: 2026-06-01 (修订版) | 版本: 0.2.0
+> 最后更新: 2026-06-01 | 版本: 0.2.0
 > 本文档记录项目每个模块的功能、依赖关系、I/O 和实现状态。
-> ⚠️ 本次修订基于实际代码审查，补充了一级断链、三级断链、配置不同步和安全风险。
+> ⚠️ 本次修订基于实际代码审查，补充了断链、配置不同步和安全风险排查。
 
 ---
 
@@ -92,21 +92,20 @@ PDF 文件
   └────────────────────┬───────────────────────────────────┘
                        │
   ┌────────────────────┴───────────────────────────────────┐
-  │ Stage 5: 暂存                                           │
-  │   pending.rs → save partial results                     │
-  │   IN: ExtractionResults  OUT: pending.json              │
-  └────────────────────┬───────────────────────────────────┘
-                       │
-  ┌────────────────────┴───────────────────────────────────┐
-  │ Stage 6: 逐 section LLM 处理                            │
+  │ Stage 5: LLM 逐 section 处理                             │
   │   post_process.rs → batch prompt → LLM → JSON parse     │
   │   IN: section_text    OUT: StructuredData               │
   └────────────────────┬───────────────────────────────────┘
-                       │
+                      │
   ┌────────────────────┴───────────────────────────────────┐
+  │ Stage 6: 分子库持久化                                    │
+  │   pipeline.rs → CompoundEntry/ActivityEntry →           │
+  │   molecule_store.rs → SQLite + FTS5 batch 写入          │
+  │   IN: StructuredData  OUT: saved_count + skipped_count  │
+  │   依赖: project_root (显式查找 .mbforge/)                │
+  │                                                         │
   │ Stage 7: 合并 + 报告                                    │
   │   report.rs → merge + SAR analysis → DocumentReport     │
-  │   molecule_store.rs → SQLite + FTS5 写入                │
   │   knowledge_base.rs → ChromaDB 向量索引                  │
   │   IN: all results     OUT: report + DB                  │
   └────────────────────────────────────────────────────────┘
@@ -169,80 +168,80 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 
 ## 三、Rust 模块清单 (src-tauri/src/)
 
-### 3.1 core/ — 核心层 (31 模块, ~9,700 行)
+### 3.1 core/ — 核心层 (31 模块)
 
-| 模块 | 行数 | 功能 | 依赖 | 状态 |
-|------|------|------|------|------|
-| `types` | 93 | 共享数据类型 Heading/SectionChunk/TreeNode/ExtractionResult | 无 | ✅ |
-| `constants` | 95 | 应用常量: 版本、路径、模型名、Provider 字符串 | config | ✅ |
-| `helpers` | 257 | 工具函数: UUID/SHA256/token估算/路径安全 | 无 | ✅ |
-| `http` | 59 | HTTP 客户端工厂 (15s/30s/120s/300s LazyLock) | 无 | ✅ |
-| `config` | 239 | 配置结构体: LLM/Embed/Rerank/VLM/OCR + load/save | constants, helpers | ✅ |
-| `context` | 270 | 分层对话上下文 L0-L3 + token trimming + 文件持久化 | helpers, llm | ✅ |
-| `llm` | 416 | LLM 客户端: OpenAI/Anthropic 兼容, chat + streaming | config, context, constants | ✅ |
-| `tools` | 134 | 工具注册表 + OpenAI function-calling schema 导出 | 无 | ✅ |
-| `executor` | 1007 | **工具执行引擎**: 25+ native 工具 + sidecar 回退 | helpers, markush, tools, kb, doc_tree, summary, mol_store, project, arxiv, http | ✅ |
-| `agent` | 413 | **ReAct Agent**: 多步工具循环 + 流式输出 + 记忆 + Skills | config, constants, context, executor, llm, memory, skills, trajectory, http | ✅ |
-| `project` | 291 | 项目管理: open/create/scan/CRUD, .mbforge/index.json | constants, helpers, project_migrator | ✅ |
-| `project_migrator` | 193 | 版本迁移 v0→v1 + 备份恢复 | constants, helpers | ✅ |
-| `knowledge_base` | 192 | FTS5 知识库: 章节索引 + 搜索 + 结构/页面查询 | document_tree, vector_store, parsers::sections | ✅ |
-| `vector_store` | 288 | SQLite FTS5 向量存储: upsert/search/delete | 无 | ✅ |
-| `document_tree` | 292 | 文档结构树 + 页面级文本缓存 | types | ✅ |
-| `embedding` | 207 | Embedding 生成器: sidecar HTTP + 测试用确定性 embedder | config | ⚠️ 仅 sidecar |
-| `summary` | 200 | 三层文档摘要 L0/L1/L2 持久化 | constants | ✅ |
-| `memory` | 287 | 6 类结构化记忆: profile/preferences/entities/events/cases/patterns | constants, helpers, context, http | ✅ |
-| `skills` | 214 | 程序性知识管理: Markdown Skill CRUD + 自动创建 | constants, helpers, http | ✅ |
-| `trajectory` | 132 | 检索轨迹追踪: .mbforge/trajectory/ | constants, helpers | ✅ |
-| `molecule_db` | 325 | 分子关系数据库: similar/same_as/scaffold/cluster | constants, helpers | ✅ |
-| `molecule_store` | 811 | 分子记录数据库: FTS5 + 属性估算(无 RDKit) | constants, molecule_db | ✅ |
-| `molecule_cluster` | 134 | 分子聚类: assign/remove/members/list | molecule_db, helpers | ✅ |
-| `molecule_dedup` | 150 | 批量去重: exact SMILES match → same_as relation | molecule_db, helpers | ✅ |
-| `sar_query` | 270 | SAR 分析: 类似物/骨架谱/活性悬崖 | molecule_db | ✅ |
-| `markush` | 1040 | E-SMILES Markush 专利分析: VF2 子结构匹配 + R-group | 无 | ✅ |
-| `arxiv` | 287 | arXiv/PMC 论文 API 客户端 (10 个工具函数) | 无 | ✅ |
-| `pending` | 156 | 暂存提取结果 → .mbforge/extractions/ | constants, types | ✅ |
-| `semantic_cache` | 452 | 三级语义缓存: L1 hash/L2 embedding/L3 prefetch | embedding | ⚠️ 未接入 |
-| `stream_search` | 181 | 流式搜索: 分批返回 + 增量更新 | 无 | ⚠️ 未接入 |
-| `resource_manager` | 691 | 统一资源管理: 11 资源注册 + 路径检查 + GPU 检测 | 无 | ✅ 新增 |
-
-### 3.2 commands/ — Tauri 命令层 (10 模块, ~1,600 行)
-
-| 模块 | 行数 | Tauri Commands | 依赖 |
-|------|------|---------------|------|
-| `agent` | 213 | agent_init, agent_create_session, agent_chat, agent_chat_stream, agent_switch_project, agent_clear, agent_destroy_session, agent_get_history | core::agent, config, context |
-| `molecule` | 297 | mol_init, mol_add/delete/get_relation, mol_find_by_molecule/similar/same_as, mol_get_stats, mol_assign/remove_cluster, mol_get/list_clusters, mol_find_analogs, mol_scaffold_profile, mol_find_activity_cliffs, mol_dedup_batch | core::molecule_cluster, molecule_db, molecule_dedup, sar_query |
-| `mol_store` | 186 | mol_store_init, mol_store_add/list/get/search/delete/stats/search_by_smiles/list_by_doc | core::molecule_store |
-| `pdf` | 112 | classify_pdf, extract_text | pdf_inspector crate |
-| `text_ops` | 93 | text_chunk | 无 |
-| `classifier` | 198 | classify_page, classify_document | core::helpers, parsers::association |
-| `extractor` | 272 | extract_esmiles_candidates, extract_activities, extract_associated_molecules | core::helpers, parsers::association |
-| `file_ops` | 175 | open_file, read_text_file, upload_files, delete_file | core::project |
-| `project_ops` | 230 | open_project, scan_project_files, list_project_documents, get_file_tree | core::project, constants |
-| `sidecar` | 33 | sidecar_status, sidecar_restart | sidecar |
-
-### 3.3 parsers/ — PDF 解析管线 (19 模块, ~5,700 行)
-
-| 模块 | 行数 | 功能 | 依赖 |
+| 模块 | 功能 | 依赖 | 状态 |
 |------|------|------|------|
-| `types` | 270 | 管线类型: PdfParseResult/StructuredData/DocStructure/ExtractionPlan/PhysicochemicalProperty 等 | commands::classifier, extractor, core::types |
-| `pipeline` | 1240 | **主管线**: Stage 0~7 编排 + 专利分子提取 + 范围评估 + 项目级批量索引 | 几乎所有 parsers + core |
-| `headings` | 122 | 多策略 heading 提取: Markdown #/全大写/冒号/编号 | core::types |
-| `sections` | 260 | 章节构建: headings→tree + 长章节分割 | core::types, headings |
-| `association` | 331 | 活性提取引擎: 化合物名/IC50/Ki/细胞系/靶点 | core::types |
-| `keywords` | 173 | 词频关键词 + 实体标签提取 | 无 |
-| `post_process` | 930 | LLM 后处理: 批分割/prompt/JSON 修复/结构化解析 | types, core::config |
-| `images` | 354 | PDF 图像提取 (lopdf): JPG/JP2/TIFF/raw | lopdf crate |
-| `intent` | 291 | 用户意图路由: LLM 文档结构分析 + ExtractionPlan | post_process, types |
-| `report` | 88 | 报告生成: SAR 分析 + 不确定项 | types, post_process |
-| `summary` | 80 | LLM 文档摘要生成 (L0+L1) | keywords, post_process |
-| `mineru` | 426 | MinerU 云 API 客户端 | 无 |
-| `uniparser` | 146 | UniParser 云 API 客户端 | 无 |
-| `llama_parse` | 90 | LlamaParse API 客户端 | core::http |
-| `liteparse` | 143 | LiteParse 本地解析 (PDFium) | liteparse crate |
-| `vlm_chem` | 225 | VLM 化学结构识别: MolScribe image→SMILES | core::constants, http |
-| `molecule_extractor` | 630 | **专利命名化合物提取**: 连贯序列检测 + 理化性质关联 + 图像溯源 + VLM 验证 | types, vlm_chem |
-| `claim_parser` | 540 | **专利 Claims 结构化解析**: 编号/依赖图/类型分类/规范化文本 | 无 |
-| `claim_policy` | 530 | **专利范围政策匹配**: DirectMention/MarkushOverlap/SemanticMatch + 风险评估 | claim_parser, molecule_extractor |
+| `types` | 共享数据类型 Heading/SectionChunk/TreeNode/ExtractionResult | 无 | ✅ |
+| `constants` | 应用常量: 版本、路径、模型名、Provider 字符串 | config | ✅ |
+| `helpers` | 工具函数: UUID/SHA256/token估算/路径安全 | 无 | ✅ |
+| `http` | HTTP 客户端工厂 (15s/30s/120s/300s LazyLock) | 无 | ✅ |
+| `config` | 配置结构体: LLM/Embed/Rerank/VLM/OCR + load/save | constants, helpers | ✅ |
+| `context` | 分层对话上下文 L0-L3 + token trimming + 文件持久化 | helpers, llm | ✅ |
+| `llm` | LLM 客户端: OpenAI/Anthropic 兼容, chat + streaming | config, context, constants | ✅ |
+| `tools` | 工具注册表 + OpenAI function-calling schema 导出 | 无 | ✅ |
+| `executor` | **工具执行引擎**: 24+ native 工具 + sidecar 回退 | helpers, markush, tools, kb, doc_tree, summary, molecule_engine, project, arxiv, http | ✅ |
+| `agent` | **ReAct Agent**: 多步工具循环 + 流式输出 + 记忆 + Skills | config, constants, context, executor, llm, memory, skills, trajectory, http | ✅ |
+| `project` | 项目管理: open/create/scan/CRUD, .mbforge/index.json | constants, helpers, project_migrator | ✅ |
+| `project_migrator` | 版本迁移 v0→v1 + 备份恢复 | constants, helpers | ✅ |
+| `knowledge_base` | FTS5 知识库: 章节索引 + 搜索 + 结构/页面查询 | document_tree, vector_store, parsers::sections | ✅ |
+| `vector_store` | SQLite FTS5 向量存储: upsert/search/delete | 无 | ✅ |
+| `document_tree` | 文档结构树 + 页面级文本缓存 | types | ✅ |
+| `embedding` | Embedding 生成器: sidecar HTTP + 测试用确定性 embedder | config | ✅ 设计如此 |
+| `summary` | 三层文档摘要 L0/L1/L2 持久化 | constants | ✅ |
+| `memory` | 6 类结构化记忆: profile/preferences/entities/events/cases/patterns | constants, helpers, context, http | ✅ |
+| `skills` | 程序性知识管理: Markdown Skill CRUD + 自动创建 | constants, helpers, http | ✅ |
+| `trajectory` | 检索轨迹追踪: .mbforge/trajectory/ | constants, helpers | ✅ |
+| `molecule_db` | 分子关系数据库: similar/same_as/scaffold/cluster | constants, helpers | ✅ |
+| `molecule_engine` | **统一分子分析引擎**: 聚合 store + relation_db + cluster + SAR + dedup + markush | molecule_store, molecule_db, molecule_cluster, molecule_dedup, sar_query, markush | ✅ |
+| `molecule_store` | 分子记录数据库: FTS5 + 属性估算(无 RDKit) | constants, molecule_db | ✅ |
+| `molecule_cluster` | 分子聚类: assign/remove/members/list | molecule_db, helpers | ✅ |
+| `molecule_dedup` | 批量去重: exact SMILES match → same_as relation | molecule_db, helpers | ✅ |
+| `sar_query` | SAR 分析: 类似物/骨架谱/活性悬崖 | molecule_db | ✅ |
+| `markush` | E-SMILES Markush 专利分析: VF2 子结构匹配 + R-group | 无 | ✅ |
+| `arxiv` | arXiv/PMC 论文 API 客户端 (10 个工具函数) | 无 | ✅ |
+| `pending` | 暂存提取结果 → .mbforge/extractions/ | constants, types | ✅ 已实现但无调用方（仅模块声明） |
+| `semantic_cache` | 三级语义缓存: L1 hash/L2 embedding/L3 prefetch | embedding | ✅ 已接入（executor 通过 search_with_cache 调用） |
+| `stream_search` | 流式搜索: 分批返回 + 增量更新 | 无 | ✅ 已接入（knowledge_base::kb_search_stream） |
+| `resource_manager` | 统一资源管理: 11 资源注册 + 路径检查 + GPU 检测 | 无 | ✅ |
+
+### 3.2 commands/ — Tauri 命令层 (10 模块)
+
+| 模块 | Tauri Commands | 依赖 |
+|------|---------------|------|
+| `agent` | agent_init, agent_create_session, agent_chat, agent_chat_stream, agent_switch_project, agent_clear, agent_destroy_session, agent_get_history | core::agent, config, context |
+| `molecule` + `mol_store` | 统一通过 `MoleculeEngineState` 调度: store CRUD + relation + cluster + SAR + dedup (26 个命令) | core::molecule_engine |
+| `pdf` | classify_pdf, extract_text | pdf_inspector crate |
+| `text_ops` | text_chunk | 无 |
+| `classifier` | classify_page, classify_document | core::helpers, parsers::association |
+| `extractor` | extract_esmiles_candidates, extract_activities, extract_associated_molecules | core::helpers, parsers::association |
+| `file_ops` | open_file, read_text_file, upload_files, delete_file | core::project |
+| `project_ops` | open_project, scan_project_files, list_project_documents, get_file_tree | core::project, constants |
+| `sidecar` | sidecar_status, sidecar_restart | sidecar |
+
+### 3.3 parsers/ — PDF 解析管线 (19 模块)
+
+| 模块 | 功能 | 依赖 |
+|------|------|------|
+| `types` | 管线类型: PdfParseResult/StructuredData/DocStructure/ExtractionPlan/PhysicochemicalProperty 等 | commands::classifier, extractor, core::types |
+| `pipeline` | **主管线**: Stage 0~7 编排 + 专利分子提取 + 范围评估 + 项目级批量索引 | 几乎所有 parsers + core |
+| `headings` | 多策略 heading 提取: Markdown #/全大写/冒号/编号 | core::types |
+| `sections` | 章节构建: headings→tree + 长章节分割 | core::types, headings |
+| `association` | 活性提取引擎: 化合物名/IC50/Ki/细胞系/靶点 | core::types |
+| `keywords` | 词频关键词 + 实体标签提取 | 无 |
+| `post_process` | LLM 后处理: 批分割/prompt/JSON 修复/结构化解析 | types, core::config |
+| `images` | PDF 图像提取 (lopdf): JPG/JP2/TIFF/raw | lopdf crate |
+| `intent` | 用户意图路由: LLM 文档结构分析 + ExtractionPlan | post_process, types |
+| `report` | 报告生成: SAR 分析 + 不确定项 | types, post_process |
+| `summary` | LLM 文档摘要生成 (L0+L1) | keywords, post_process |
+| `mineru` | MinerU 云 API 客户端 | 无 |
+| `uniparser` | UniParser 云 API 客户端 | 无 |
+| `llama_parse` | LlamaParse API 客户端 | core::http |
+| `liteparse` | LiteParse 本地解析 (PDFium) | liteparse crate |
+| `vlm_chem` | VLM 化学结构识别: MolScribe image→SMILES | core::constants, http |
+| `molecule_extractor` | **专利命名化合物提取**: 连贯序列检测 + 理化性质关联 + 图像溯源 + VLM 验证 | types, vlm_chem |
+| `claim_parser` | **专利 Claims 结构化解析**: 编号/依赖图/类型分类/规范化文本 | 无 |
+| `claim_policy` | **专利范围政策匹配**: DirectMention/MarkushOverlap/SemanticMatch + 风险评估 | claim_parser, molecule_extractor |
 
 ---
 
@@ -315,7 +314,7 @@ main.rs ─→ commands::{agent, molecule, mol_store}, sidecar
 sidecar ─→ (standalone, 管理 Python 进程)
 
 core/agent ─→ core/{config, constants, context, executor, llm, memory, skills, trajectory, http, helpers}
-core/executor ─→ core/{helpers, markush, tools, knowledge_base, document_tree, summary, molecule_store, project, arxiv, http}
+core/executor ─→ core/{helpers, markush, tools, knowledge_base, document_tree, summary, molecule_engine, project, arxiv, http}
 core/llm ─→ core/{config, context, constants}
 core/context ─→ core/{helpers, llm}
 core/knowledge_base ─→ core/{document_tree, vector_store}, parsers::sections
@@ -401,8 +400,11 @@ DocumentReport ← report.rs (merge)                           │
   ├─ sar_analysis: String                                    │
   └─ report_markdown: String                                 │
        │                                                     │
-       ├─→ MoleculeRecord[] → molecule_store.rs (SQLite)     │
-       ├─→ VectorItem[] → knowledge_base.rs (ChromaDB)       │
+       ├─→ MoleculeRecord[] → molecule_engine.rs (SQLite)   │
+       │    统一入口: MoleculeEngine 聚合 store + relation_db   │
+       │    自动持久化: process_document Stage 4.5              │
+       │    batch insert, 确定性 mol_id (sha256(name|esmiles)) │
+        ├─→ VectorItem[] → knowledge_base.rs (FTS5)           │
        └─→ DocumentSummary → summary.rs (L0/L1/L2)           │
                                                              │
 ExtractionResult ← association.rs (图像分子)                  │
@@ -429,7 +431,7 @@ ExtractionResult ← association.rs (图像分子)                  │
   .mbforge/pages/{doc_id}/     ← document_tree.rs (页面文本)
   .mbforge/doc_trees.json      ← document_tree.rs (结构树)
   .mbforge/kb/sections.db      ← vector_store.rs (FTS5 索引)
-  .mbforge/molecules.db        ← molecule_store.rs (分子数据库)
+  .mbforge/molecules.db        ← molecule_engine.rs (统一分子数据库: store + relations)
   .mbforge/memory/agent_context.json ← agent.rs (对话上下文)
 
 读取:
@@ -437,8 +439,6 @@ ExtractionResult ← association.rs (图像分子)                  │
   ~/.cache/mbforge/models/      ← resource_manager (模型缓存)
   PDF/MD/TXT 文件               ← parsers + commands
 ```
-
----
 
 ## 七、断链功能 (承诺但未连贯)
 
@@ -455,44 +455,59 @@ ExtractionResult ← association.rs (图像分子)                  │
 
 | # | 功能 | 承诺位置 | 当前状态 | 断链原因 |
 |---|------|---------|---------|---------|
-| 1 | **semantic_cache** | core/semantic_cache.rs (452 行) | ✅ 已接入 | L1 hash 缓存接入 kb_search，重复查询直接返回；cosine 已修复为真正余弦相似度 |
-| 2 | **stream_search** | core/stream_search.rs (181 行) | ✅ 已接入 | kb_search_stream 通过 Tauri 事件分批推送；前端 Search.tsx 已改为流式接收 |
-| 3 | **embedding native** | core/embedding.rs | ⚠️ 仅 sidecar 模式 | `SidecarEmbedder` 通过 HTTP 调 Python，无本地 Rust embedding |
+| 1 | **semantic_cache** | core/semantic_cache.rs (452 行) | ✅ 已接入全部调用方 | `kb_search`/`kb_search_stream` 走 `search_with_cache()`；`executor::native_search_knowledge_base()` 原绕过缓存，已修复为调用 `search_with_cache()` |
+| 2 | **stream_search** | core/stream_search.rs (181 行) | ✅ 已接入 Rust + 前端 | `search_with_cache()` 输出流式 chunks；`kb_search_stream` Tauri 命令通过事件推送；前端 `Search.tsx` + `tauri-bridge:kbSearchStream` 流式接收 |
+| 3 | **embedding native** | core/embedding.rs | ✅ 设计如此 | Rust 侧通过 HTTP 调 Python sidecar，无需本地 embedding 实现 |
 | 4 | **Python MoleculeDatabase** | core/mol_database.py | ⚠️ 双份实现 | Rust `molecule_store.rs` 已完全替代，Python 版仅作 browser fallback |
 | 5 | **Python KnowledgeBase** | core/knowledge_base.py | ⚠️ 仅 fallback | 搜索已完全迁移到 Rust FTS5 + semantic_cache；Python ChromaDB 仅作浏览器 dev 模式 fallback |
 | 6 | **MolScribe 路径** | molscribe_inference/download.py | ⚠️ 已修复但脆弱 | ResourceManager 路径 → env var → 默认路径三级回退，依赖 ModelScope 缓存布局 |
 | 7 | **LLM 多 Provider** | models/anthropic_llm.py | ✅ 已实现 | Anthropic SDK 兼容，但 Rust 侧 llm.rs 也独立实现了 Anthropic 协议 |
 | 8 | **arXiv 工具** | core/arxiv.rs (10 个工具) | ✅ 已实现 | 已注册到 executor，通过 data.rag.ac.cn API |
 | 9 | **Markush 分析** | core/markush.rs (1040 行) | ✅ 已实现 | check_markush_overlap 工具已注册 |
-| 10 | **分子聚类/SAR** | core/molecule_cluster.rs, sar_query.rs | ✅ 已实现 | 17 个 Tauri 命令已注册 |
-| 11 | **PDFium** | parsers/liteparse.rs, setup.ps1 | ⚠️ 需手动安装 | `cargo check` 通过但运行时需要 vendor/pdfium/release/ |
-| 12 | **MolDet GPU 门控** | model_server/models/moldet.py | ⚠️ 条件可用 | 无 GPU 时返回 None，前端 MolDet 功能不可用 |
+| 10 | **分子聚类/SAR** | core/molecule_cluster.rs, sar_query.rs | ✅ 已实现 | 17 个 Tauri 命令已注册；2026-06-01 收拢至 `molecule_engine.rs` 统一入口 |
+| 11 | **PDFium** | parsers/liteparse.rs, setup.ps1 | ✅ 有安装提示 | `setup/` 验证阶段检测 `vendor/pdfium/` 并给出下载指引；功能可选，不影响主体管线 |
+| 12 | **MolDet GPU 门控** | model_server/models/moldet.py | ✅ 有安装提示 | `setup/` 验证阶段检测 GPU 并提示；无 GPU 时前端 MolDet 不可用，其余功能正常 |
 
 ### 7.3 三级断链：文档声称 ≠ 实际状态
 
 | # | 声称 | 来源 | 实际状态 |
 |---|------|------|---------|
 | T1 | "16 路由" | CODEMAP §4.3 / AGENTS.md | 实际注册 16 个 `APIRouter`，chem 的 2 个端点均已有完整实现（探索报告误判为桩） |
-| T2 | "~25 组件, ~6,500 行前端" | CODEMAP §九 | 实际 58 个 `.tsx/.ts` 文件，9,065 行（CODEMAP 统计偏保守） |
+| T2 | "~25 组件, ~6,500 行前端" | AGENTS.md | 实际 53 个 `.tsx/.ts` 文件（早期预估偏保守） |
 | T3 | "csar/ SAR 分析工具箱" | CODEMAP §4.4, pyproject.toml | 已清理为空占位模块（`__init__.py` 仅注明计划），pyproject.toml 入口已移除 |
 | T4 | "ui/ 目录" | `src/mbforge/` 目录存在 | 已删除（空目录，无任何文件） |
 | T5 | "parsers/pdf_parser.py" | AGENTS.md 项目结构 | 文件不存在，CODEMAP §4.4 已诚实省略（PDF 解析全在 Rust 侧） |
 
 ### 7.4 四级断链：配置/常量不同步
 
-| # | 问题 | Rust 侧值 | Python 侧值 | `.env.template` 值 |
-|---|------|-----------|-------------|-------------------|
-| C1 | **LLM 默认模型** | `Qwen/Qwen2.5-7B-Instruct-GGUF` (`constants.rs`) | `Qwen2.5-7B-Instruct-GGUF` (`constants.py:28`) | `Qwen/Qwen2.5-7B-Instruct` (非 GGUF, `:31`) |
-| C2 | **VLM 默认模型** | — (Rust 侧未定义默认值) | `internlm/internlm-xcomposer2-vl-7b` (`constants.py:29`) | `Qwen/Qwen2.5-VL-7B-Instruct` (`:36`) |
-| C3 | **Embed/Rerank 默认模型** | `DEFAULT_EMBED_MODEL` / `DEFAULT_RERANK_MODEL` (`constants.rs:13-14`) | 缺失 (`constants.py` 中无对应定义) | — |
-| C4 | **AGENTS.md 模块数** | core 声称 26，实际 31；commands 声称 6，实际 10；API routes 声称 15，实际 16（CODEMAP 已反映实际数） | — | — |
+| # | 问题 | Rust 侧值 | Python 侧值 | `.env.template` 值 | 状态 |
+|---|------|-----------|-------------|-------------------|------|
+| C1 | **LLM 默认模型** | `Qwen/Qwen2.5-7B-Instruct-GGUF` (`constants.rs:15`) | `Qwen/Qwen2.5-7B-Instruct-GGUF` (`constants.py:28`) | `Qwen/Qwen2.5-7B-Instruct-GGUF` (`:31`) | ✅ 三侧一致 |
+| C2 | **VLM 默认模型** | — (Rust 侧未使用 VLM) | `mimo-v2.5` (`constants.py:29`) | `mimo-v2.5` (`:55`，已注释) | ✅ Python/Rust 无冲突 |
+| C3 | **Embed/Rerank 默认模型** | `DEFAULT_EMBED_MODEL` / `DEFAULT_RERANK_MODEL` (`constants.rs:13-14`) | `Qwen/Qwen3-Embedding-0.6B` / `Qwen/Qwen3-Reranker-0.6B` (`constants.py:26-27`) | `Qwen/Qwen3-Embedding-0.6B` / `Qwen/Qwen3-Reranker-0.6B` (`:40,48`) | ✅ 三侧一致 |
+| C4 | **AGENTS.md 模块数** | core 声称 26，实际 31；commands 声称 6，实际 10；API routes 声称 15，实际 16 | — | — | ✅ 已同步 |
+| C5 | **PROVIDER_API / PROVIDER_LOCAL** | 缺失（原仅 Python `constants.py:79,81` 有） | 已于 Rust `constants.rs` 补加 `PROVIDER_API` / `PROVIDER_LOCAL` | ✅ 已同步 | ✅ |
+| C6 | **OCR_PROVIDER_PYMUPDF** | Python `constants.py:84` 标记已废弃 | 已删除（PyMuPDF 已从项目移除） | ✅ 已清理 | ✅ |
+| C7 | **DEFAULT_SIDECAR_PORT** | 仅 Rust `constants.rs:56` 有定义 | 已补加 Python `constants.py`，`cli.py` 中 8 处硬编码改为引用常量 | ✅ 已同步 | ✅ |
 
 ### 7.5 安全风险
 
 | # | 位置 | 问题 | 风险等级 |
 |---|------|------|---------|
-| S1 | `routers/environment.py:46-50` | `check_command` 对用户传入的命令执行 `subprocess.run`，存在命令注入风险 | 🟡 中（已缓解） |
-| S2 | `.env` | API key 明文存储于项目根目录，已被 `.gitignore` 排除但本地仍暴露 | 🟡 中 |
+| S1 | `routers/environment.py:44-72` | `check_command` 对用户传入的命令执行 `subprocess.run`，通过 `_ALLOWED_COMMANDS` 白名单限制仅允许 `vina`/`nvidia-smi` | 🟢 低（白名单缓解 + 硬编码调用） |
+| S2 | `.env` | API key 明文存储于项目根目录，已被 `.gitignore` 排除但本地仍暴露 | 🟡 中（建议改用系统密钥链或环境变量注入） |
+
+---
+
+### 7.6 待审核事项
+
+> 每次完成代码修改后，在此记录待人工审核项，由人工确认后标记为 ✅ 或移除。
+
+| # | 日期 | 修改人 | 文件 | 问题描述 | 状态 |
+|---|------|--------|------|---------|------|
+| 1 | 2026-06-01 | AI | AGENTS.md §项目结构 | 移除不存在的 `pdf_parser.py`；标注 `csar/` 为占位模块；更正 AGENTS.md 模块统计（core 26→31, commands 6→10, routes 15→16） | ✅ 已确认 |
+| 2 | 2026-06-01 | AI | AGENTS.md, CLAUDE.md, CODEMAP.md | 同步三文件至当前代码库：CLAUDE.md 模块计数更新（commands 11/core 32/parsers 19/routers 16）、待审核移入 CODEMAP；AGENTS.md 项目结构移除不存在的 agent/ 目录、补充 frontend/ 文件清单、修正 typo；CODEMAP.md 表头补齐"状态"列 | ⚠️ 待审核 |
+| 3 | 2026-06-01 | AI | CODEMAP.md §2.1, §3.1, §7.2 | 修复内部矛盾：① §2.1 管线图 Stage 5（pending.rs 虚设）重编为 Stage 5 LLM 处理 + Stage 6 分子库持久化；② §3.1 semantic_cache/stream_search 状态从 ⚠️ 更新为 ✅ 并注明接入方式；③ §7.2 #1 semantic_cache 状态同步更新。pending.rs 确认为死代码（仅 mod.rs 声明，无调用方） | ⚠️ 待审核 |
 
 ---
 
@@ -505,7 +520,7 @@ PDF → Rust parsers/pipeline → Stage 0~7 → DocumentReport
                                               ├→ SQLite molecule_store
                                               └→ FTS5 knowledge_base
 
-Agent → Rust agent.rs → ReAct 循环 → 25+ native 工具
+Agent → Rust agent.rs → ReAct 循环 → 24+ native 工具
                                        ├→ KB 搜索
                                        ├→ 分子查询
                                        ├→ arXiv/PMC
@@ -518,13 +533,12 @@ Agent → Rust agent.rs → ReAct 循环 → 25+ native 工具
          → Python resource_manager → ModelScope 下载 + pip 安装
 ```
 
-### 需要打通的链路 ⚠️
+### 已有安装提示 🛈
 
 ```
-semantic_cache → 需接入 executor 的 KB 搜索路径
-stream_search → 需接入前端 Search 组件的增量渲染
-embedding native → 需实现 Rust 本地 embedding (或确认 sidecar 模式足够)
-PDFium → 需自动化 setup.ps1 或集成到 resource_manager
+embedding native → setup/ 验证阶段显示提示（sidecar HTTP 模式，功能正常）
+PDFium         → setup/ 验证阶段检测 vendor/pdfium/ 并给出下载指引
+MolDet GPU     → setup/ 验证阶段检测 GPU 并提示；无 GPU 时功能不可用
 ```
 
 ### 修复中的链路 🚧
@@ -533,39 +547,4 @@ PDFium → 需自动化 setup.ps1 或集成到 resource_manager
 专利分子提取 (pipeline.rs Stage 2a) → 2026-06-01 新增，已接入专利文档处理管线
 专利 Claims 解析 (claim_parser.rs) → 2026-06-01 新增，已接入专利文档处理管线
 专利范围检测 (claim_policy.rs) → 2026-06-01 新增，已接入专利文档处理管线
-```
-
----
-
-## 九、模块行数统计
-
-```
-Rust (src-tauri/src/):
-  core/       31 模块   ~9,700 行
-  commands/   10 模块   ~1,600 行
-  parsers/    19 模块   ~5,700 行
-  main.rs + sidecar.rs + lib.rs  ~400 行
-  ─────────────────────────────────
-  总计:        62 模块  ~17,400 行
-
-Python (src/mbforge/):
-  core/       8 模块    ~3,200 行
-  models/     7 模块    ~2,100 行
-  model_server/ 16 路由 + 5 models  ~3,500 行
-  parsers/    5 模块    ~2,800 行
-  molecules/  1 模块    ~400 行
-  utils/      6 模块    ~880 行
-  ─────────────────────────────────
-  总计:        48 模块  ~12,900 行
-
-Frontend (frontend/src/):
-  components/  ~58 组件  ~7,500 行
-  api/         5 文件    ~900 行
-  hooks/       4 文件    ~335 行
-  types/       1 文件    ~84 行
-  utils/       1 文件    ~65 行
-  ─────────────────────────────────
-  总计:        58 文件  ~9,065 行
-
-全项目: ~165 模块/文件, ~39,365 行代码
 ```

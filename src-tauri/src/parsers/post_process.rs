@@ -429,15 +429,9 @@ struct BatchResult {
 // LLM API call
 // ---------------------------------------------------------------------------
 
-pub fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(String, Option<u32>), String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(180))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
-
-    let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-
-    let body = serde_json::json!({
+/// 构建 LLM 请求体
+fn build_llm_body(config: &LlmApiConfig, system: &str, user: &str) -> serde_json::Value {
+    serde_json::json!({
         "model": config.model,
         "messages": [
             { "role": "system", "content": system },
@@ -445,7 +439,37 @@ pub fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(
         ],
         "max_tokens": 8192,
         "temperature": 0.2,
-    });
+    })
+}
+
+/// 解析 LLM 响应文本 → (content, tokens_used)
+fn parse_llm_response(text: &str) -> Result<(String, Option<u32>), String> {
+    let val: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| format!("LLM API JSON parse error: {}", e))?;
+
+    let content = val["choices"][0]["message"]["content"]
+        .as_str().unwrap_or("").to_string();
+    let tokens_used = val["usage"]["total_tokens"].as_u64().map(|v| v as u32);
+
+    if content.is_empty() {
+        return Err("LLM returned empty content".into());
+    }
+    Ok((content, tokens_used))
+}
+
+/// 构建 HTTP 错误消息
+fn llm_http_error(status: reqwest::StatusCode, text: &str) -> String {
+    format!("LLM API HTTP {}: {}", status, &text[..text.floor_char_boundary(500)])
+}
+
+pub fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(String, Option<u32>), String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .map_err(|e| format!("HTTP client error: {}", e))?;
+
+    let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
+    let body = build_llm_body(config, system, user);
 
     let resp = client.post(&url)
         .header("Content-Type", "application/json")
@@ -458,22 +482,9 @@ pub fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(
     let text = resp.text().map_err(|e| format!("LLM API read error: {}", e))?;
 
     if !status.is_success() {
-        return Err(format!("LLM API HTTP {}: {}", status, &text[..text.floor_char_boundary(500)]));
+        return Err(llm_http_error(status, &text));
     }
-
-    let val: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("LLM API JSON parse error: {}", e))?;
-
-    let content = val["choices"][0]["message"]["content"]
-        .as_str().unwrap_or("").to_string();
-
-    let tokens_used = val["usage"]["total_tokens"].as_u64().map(|v| v as u32);
-
-    if content.is_empty() {
-        return Err("LLM returned empty content".into());
-    }
-
-    Ok((content, tokens_used))
+    parse_llm_response(&text)
 }
 
 /// Async 版本 — 在 async 上下文中使用，不阻塞 Tokio 运行时
@@ -484,16 +495,7 @@ pub async fn call_llm_api_async(config: &LlmApiConfig, system: &str, user: &str)
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-
-    let body = serde_json::json!({
-        "model": config.model,
-        "messages": [
-            { "role": "system", "content": system },
-            { "role": "user", "content": user }
-        ],
-        "max_tokens": 8192,
-        "temperature": 0.2,
-    });
+    let body = build_llm_body(config, system, user);
 
     let resp = client.post(&url)
         .header("Content-Type", "application/json")
@@ -507,22 +509,9 @@ pub async fn call_llm_api_async(config: &LlmApiConfig, system: &str, user: &str)
     let text = resp.text().await.map_err(|e| format!("LLM API read error: {}", e))?;
 
     if !status.is_success() {
-        return Err(format!("LLM API HTTP {}: {}", status, &text[..text.floor_char_boundary(500)]));
+        return Err(llm_http_error(status, &text));
     }
-
-    let val: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("LLM API JSON parse error: {}", e))?;
-
-    let content = val["choices"][0]["message"]["content"]
-        .as_str().unwrap_or("").to_string();
-
-    let tokens_used = val["usage"]["total_tokens"].as_u64().map(|v| v as u32);
-
-    if content.is_empty() {
-        return Err("LLM returned empty content".into());
-    }
-
-    Ok((content, tokens_used))
+    parse_llm_response(&text)
 }
 
 // ---------------------------------------------------------------------------
@@ -667,6 +656,10 @@ pub fn parse_structured_data(val: &serde_json::Value) -> Result<StructuredData, 
             source_ref: v["source_ref"].as_str().unwrap_or("").to_string(),
             confidence: v["confidence"].as_str().unwrap_or("medium").to_string(),
             uncertainty_reason: v["uncertainty_reason"].as_str().map(|s| s.to_string()),
+            physicochemical_props: None,
+            related_images: None,
+            vlm_verified_esmiles: None,
+            page_location: None,
         }).collect())
         .unwrap_or_default();
 

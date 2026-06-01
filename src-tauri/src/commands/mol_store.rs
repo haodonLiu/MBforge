@@ -56,14 +56,8 @@ pub async fn mol_store_add(
     units: Option<String>,
     source_type: Option<String>,
 ) -> Result<(), String> {
-    let mut guard = state.inner.lock().await;
-    
-    if guard.is_none() {
-        let root = PathBuf::from(&project_root);
-        let db = MoleculeDatabase::open(&root).map_err(|e| e.to_string())?;
-        *guard = Some(db);
-    }
-    
+    get_or_init_db(&state, &project_root).await?;
+    let guard = state.inner.lock().await;
     let db = guard.as_ref().ok_or("Database not initialized")?;
 
     let mut record = MoleculeRecord::new(&mol_id, &esmiles);

@@ -117,6 +117,16 @@ pub struct DocumentMetadata {
     pub source_file: Option<String>,
 }
 
+/// 理化性质条目 — 活性或理化数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhysicochemicalProperty {
+    pub property_type: String,
+    pub value: f64,
+    pub unit: String,
+    pub source_quote: String,
+    pub confidence: String,
+}
+
 /// 化合物条目 — 带溯源和置信度
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompoundEntry {
@@ -135,6 +145,18 @@ pub struct CompoundEntry {
     pub confidence: String,
     /// 不确定的原因（仅当 confidence != high 时）
     pub uncertainty_reason: Option<String>,
+    /// 理化性质数据列表（专利分子提取增强）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub physicochemical_props: Option<Vec<PhysicochemicalProperty>>,
+    /// 关联的图像文件名列表
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub related_images: Option<Vec<String>>,
+    /// VLM 图像识别验证后的 E-SMILES
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vlm_verified_esmiles: Option<String>,
+    /// 化合物在原文中的页码位置
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_location: Option<usize>,
 }
 
 /// 活性数据条目 — 带溯源

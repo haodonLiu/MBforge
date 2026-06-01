@@ -19,7 +19,7 @@ pub fn sidecar_status(state: State<Arc<SidecarInner>>) -> serde_json::Value {
         "restartCount": restarts,
         "state": state_str,
         "uptimeSecs": uptime,
-        "lastError": *state.last_error.lock().unwrap(),
+        "lastError": *state.last_error.lock().unwrap_or_else(|e| e.into_inner()),
     })
 }
 

@@ -9,8 +9,6 @@ pub use crate::core::types::{SectionChunk, TreeNode};
 
 use super::headings::Heading;
 
-const DEFAULT_MAX_CHARS: usize = 8000;
-
 /// 核心引擎：headings + text + page_texts → sections
 pub fn build_sections(
     text: &str,
@@ -20,7 +18,7 @@ pub fn build_sections(
 ) -> Vec<SectionChunk> {
     if headings.is_empty() {
         // 无 heading → 全文作为一个 section
-        let page_start = page_texts.and_then(|pt| Some(1));
+        let page_start = page_texts.and_then(|_pt| Some(1));
         let page_end = page_texts.map(|pt| pt.len());
         return vec![SectionChunk {
             title: "全文".to_string(),
@@ -54,7 +52,7 @@ pub fn build_sections(
         update_path_stack(&mut path_stack, heading);
 
         // 计算 page 范围
-        let (page_start, page_end) = page_texts.map(|pt| {
+        let (page_start, page_end) = page_texts.map(|_pt| {
             let ps = line_to_page(start_line, &lines);
             let pe = line_to_page(end_line.saturating_sub(1), &lines);
             (ps, pe)
@@ -155,7 +153,7 @@ fn update_path_stack(stack: &mut Vec<String>, heading: &Heading) {
     stack.push(heading.title.clone());
 }
 
-fn line_to_page(line_num: usize, lines: &[&str]) -> Option<usize> {
+fn line_to_page(line_num: usize, _lines: &[&str]) -> Option<usize> {
     // 通过分页标记（如 "\f" 或连续空行）估算页码
     // 简化实现：每 50 行一页
     Some(line_num / 50 + 1)
@@ -212,6 +210,8 @@ impl TreeNode {
 mod tests {
     use super::*;
     use super::super::headings::extract_headings;
+
+    const DEFAULT_MAX_CHARS: usize = 8000;
 
     #[test]
     fn test_build_sections_basic() {

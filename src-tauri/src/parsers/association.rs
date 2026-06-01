@@ -174,10 +174,13 @@ pub fn associate_single(result: &mut ExtractionResult) {
         }
     }
 
-    let map = result
-        .properties
-        .as_object_mut()
-        .expect("properties must be a JSON object");
+    let map = if let Some(m) = result.properties.as_object_mut() {
+        m
+    } else {
+        log::warn!("associate_single: properties is not a JSON object, resetting");
+        result.properties = serde_json::json!({});
+        result.properties.as_object_mut().unwrap()
+    };
 
     // 2. Activities
     let activities = extract_activities(text);

@@ -422,7 +422,6 @@ fn build_merge_prompt(batch_results: &[BatchResult], raw: &PdfParseResult) -> St
 #[derive(Debug, Clone)]
 struct BatchResult {
     data: StructuredData,
-    tokens_used: Option<u32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -618,7 +617,7 @@ fn parse_batch_response(response: &str) -> Result<BatchResult, String> {
     // Support both flat format and { "data": {...} } wrapper
     let data_val = val.get("data").unwrap_or(&val);
     let data = parse_structured_data(data_val)?;
-    Ok(BatchResult { data, tokens_used: None })
+    Ok(BatchResult { data })
 }
 
 /// 解析合并响应为最终 PostProcessResult（程序化生成报告）
@@ -753,7 +752,18 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
             result.data.metadata.source_file = Some(raw.parser.clone());
             Ok(result)
         } else {
-            unreachable!()
+            // 单批：无需 LLM 合并，直接构造 PostProcessResult
+            let batch_result = batch_results.into_iter().next().unwrap();
+            let report = generate_report(&batch_result.data);
+            let mut data = batch_result.data;
+            data.metadata.source_file = Some(raw.parser.clone());
+            Ok(PostProcessResult {
+                report,
+                data,
+                model: config.model.clone(),
+                tokens_used: Some(total_tokens),
+                batch_count: 1,
+            })
         }
     }
 }

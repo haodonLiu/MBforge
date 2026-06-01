@@ -17,29 +17,6 @@ pub struct MineruResult {
     pub task_id: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct TaskResponse {
-    code: i32,
-    msg: String,
-    data: Option<TaskData>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TaskData {
-    task_id: Option<String>,
-    state: Option<String>,
-    full_zip_url: Option<String>,
-    markdown_url: Option<String>,
-    err_msg: Option<String>,
-    extract_progress: Option<ExtractProgress>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ExtractProgress {
-    extracted_pages: Option<u32>,
-    total_pages: Option<u32>,
-}
-
 impl MineruClient {
     /// Create a new client.
     /// If api_key is empty, uses the Agent API (no auth required).

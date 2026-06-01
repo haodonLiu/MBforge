@@ -285,10 +285,26 @@ fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
         }
     }
 
-    // 4. HF_HOME
+    // 4. HF_HOME（HuggingFace 缓存布局: hub/models--<org>--<repo>/snapshots/<commit>/）
     if let Ok(hf_home) = std::env::var("HF_HOME") {
-        let dir = PathBuf::from(&hf_home).join(repo_name);
-        if let Some(result) = check_dir_for_weights(info, &dir) {
+        let hf_hub = PathBuf::from(&hf_home).join("hub");
+        let encoded_name = format!("models--{}", info.ms_repo.replace('/', "--"));
+        let snapshots = hf_hub.join(&encoded_name).join("snapshots");
+        if snapshots.exists() {
+            // 遍历 snapshots 下的 commit 目录
+            if let Ok(entries) = std::fs::read_dir(&snapshots) {
+                for entry in entries.flatten() {
+                    if entry.path().is_dir() {
+                        if let Some(result) = check_dir_for_weights(info, &entry.path()) {
+                            return result;
+                        }
+                    }
+                }
+            }
+        }
+        // 兼容直接路径（用户手动放置）
+        let direct = PathBuf::from(&hf_home).join(repo_name);
+        if let Some(result) = check_dir_for_weights(info, &direct) {
             return result;
         }
     }
@@ -373,7 +389,7 @@ fn check_model_file(info: &ResourceInfo) -> ResourceStatusResult {
     not_found(info)
 }
 
-/// 检查 Python 包是否安装（通过子进程）
+/// 检查 Python 包是否安装（通过子进程，带超时）
 fn check_python_package(info: &ResourceInfo) -> ResourceStatusResult {
     let import_name = if info.import_name.is_empty() {
         info.pip_name
@@ -381,14 +397,20 @@ fn check_python_package(info: &ResourceInfo) -> ResourceStatusResult {
         info.import_name
     };
 
-    let output = std::process::Command::new("python")
-        .args(["-c", &format!("import {}; print(getattr({}, '__version__', ''))", import_name, import_name)])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output();
+    let cmd_code = format!("import {}; print(getattr({}, '__version__', ''))", import_name, import_name);
+    // 尝试 python，再尝试 python3
+    let output = ["python", "python3"].iter().find_map(|py| {
+        std::process::Command::new(py)
+            .args(["-c", &cmd_code])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+    });
 
     match output {
-        Ok(out) if out.status.success() => {
+        Some(out) => {
             let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
             ResourceStatusResult {
                 id: info.id.to_string(),
@@ -407,7 +429,7 @@ fn check_python_package(info: &ResourceInfo) -> ResourceStatusResult {
 
 /// 检查 PDFium
 fn check_pdfium() -> ResourceStatusResult {
-    let info = RESOURCE_CATALOG.iter().find(|r| r.id == "pdfium").unwrap();
+    let info = RESOURCE_CATALOG.iter().find(|r| r.id == "pdfium").expect("pdfium must be in RESOURCE_CATALOG");
 
     // Rust vendor 目录
     if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
@@ -494,15 +516,11 @@ fn walk_dir_for_ext(dir: &std::path::Path, exts: &[&str], depth: u32) -> bool {
 }
 
 fn dir_size(dir: &std::path::Path) -> u64 {
+    // 使用 walkdir 处理符号链接循环（不跟随 symlink 目录）
     let mut total = 0u64;
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                total += path.metadata().map(|m| m.len()).unwrap_or(0);
-            } else if path.is_dir() {
-                total += dir_size(&path);
-            }
+    for entry in walkdir::WalkDir::new(dir).follow_links(false).into_iter().flatten() {
+        if entry.file_type().is_file() {
+            total += entry.metadata().map(|m| m.len()).unwrap_or(0);
         }
     }
     total
@@ -510,15 +528,18 @@ fn dir_size(dir: &std::path::Path) -> u64 {
 
 /// 获取 Python 版本
 fn get_python_version() -> String {
-    std::process::Command::new("python")
-        .args(["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string())
+    let cmd = "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')";
+    ["python", "python3"].iter().find_map(|py| {
+        std::process::Command::new(py)
+            .args(["-c", cmd])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+    }).unwrap_or_else(|| "unknown".to_string())
 }
 
 /// 检测 GPU（通过 nvidia-smi）

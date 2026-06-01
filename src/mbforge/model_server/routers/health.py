@@ -1,5 +1,7 @@
 """健康检查路由 — 集成 ResourceManager 资源状态."""
 
+import time
+
 from fastapi import APIRouter
 
 from ...core.resource_manager import ResourceManager, ResourceStatus
@@ -21,6 +23,11 @@ _model_status = {
     "uniparser": "loading",
     "moldet": "loading",
 }
+
+# 资源状态缓存（避免每次 health 请求都做递归文件系统扫描）
+_resource_cache: dict[str, str] = {}
+_resource_cache_time: float = 0.0
+_RESOURCE_CACHE_TTL = 60.0  # 60 秒刷新一次
 
 
 @router.get("/health")
@@ -100,14 +107,19 @@ async def health_check() -> dict:
     else:
         overall = "loading"
 
-    # 资源下载状态（轻量检查，不触发模型加载）
-    resource_status = {}
-    try:
-        for rid in ResourceManager.catalog:
-            res = ResourceManager.check(rid)
-            resource_status[rid] = res.status.value
-    except Exception as e:
-        logger.debug(f"Resource status check failed: {e}")
+    # 资源下载状态（带缓存，避免每次请求都做递归文件系统扫描）
+    global _resource_cache, _resource_cache_time
+    now = time.monotonic()
+    if now - _resource_cache_time > _RESOURCE_CACHE_TTL:
+        try:
+            _resource_cache = {}
+            for rid in ResourceManager.catalog:
+                res = ResourceManager.check(rid)
+                _resource_cache[rid] = res.status.value
+            _resource_cache_time = now
+        except Exception as e:
+            logger.debug(f"Resource status check failed: {e}")
+    resource_status = dict(_resource_cache)
 
     return {
         "status": overall,

@@ -635,6 +635,33 @@ pub fn get_model_path(resource_id: &str) -> Option<PathBuf> {
     }
 }
 
+/// 将所有模型路径写入共享 JSON 文件，供 Python sidecar 读取。
+/// 在 main.rs setup 中、spawn Python 之前调用。
+pub fn write_resolved_paths() {
+    use std::io::Write;
+
+    let config_dir = directories::ProjectDirs::from("", "", "MBForge")
+        .map(|d| d.config_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from(".").join(".config").join("MBForge"));
+    let _ = std::fs::create_dir_all(&config_dir);
+    let path = config_dir.join("resolved_paths.json");
+
+    let mut map = serde_json::Map::new();
+    for info in RESOURCE_CATALOG {
+        if info.resource_type == ResourceType::Model {
+            if let Some(p) = get_model_path(info.id) {
+                map.insert(info.id.to_string(), serde_json::Value::String(p.to_string_lossy().to_string()));
+            }
+        }
+    }
+
+    let json = serde_json::Value::Object(map);
+    if let Ok(mut f) = std::fs::File::create(&path) {
+        let _ = f.write_all(serde_json::to_string_pretty(&json).unwrap_or_default().as_bytes());
+        log::info!("Wrote resolved model paths to {}", path.display());
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tauri Commands
 // ---------------------------------------------------------------------------

@@ -20,14 +20,11 @@ logger = get_logger(__name__)
 
 
 def _resolve_model_path(model_name: str, cache_name: str) -> str:
-    """解析模型路径，按优先级搜索多个缓存目录.
+    """解析模型路径 — 读取 Rust 写入的 resolved_paths.json.
 
-    搜索顺序（与 Rust resource_manager.rs check_model_snapshot 对齐）:
-    1. 绝对/相对路径 → 直接用
-    2. MBForge 缓存目录
-    3. ModelScope 缓存（$MODELSCOPE_CACHE + 默认路径）
-    4. HuggingFace 缓存（$HF_HOME）
-    5. 找不到 → 返回原名（走 HuggingFace 下载）
+    Rust resource_manager.rs 是路径解析的唯一真相源。
+    Rust 在启动时将解析结果写入 ~/.config/MBForge/resolved_paths.json。
+    Python 直接读取，不再自己搜索缓存目录。
     """
     from pathlib import Path
 
@@ -36,78 +33,63 @@ def _resolve_model_path(model_name: str, cache_name: str) -> str:
     if p.is_absolute() or (p.exists() and p.is_dir()):
         return model_name
 
-    # 从 model_name 提取匹配用的 key
-    # "Qwen/Qwen3-Embedding-0.6B" → key_name = "Qwen3-Embedding-0"
-    name_parts = cache_name.replace("/", " ").split()
-    last_part = name_parts[-1] if name_parts else cache_name
-    key_name = last_part.rsplit(".", 1)[0]
+    # 读取 Rust 写入的路径文件
+    resolved = _read_resolved_paths()
+    if resolved:
+        # model_name → resource_id 映射
+        resource_id = _model_name_to_resource_id(cache_name)
+        if resource_id and resource_id in resolved:
+            path = resolved[resource_id]
+            if Path(path).exists():
+                logger.info(f"Resolved {cache_name} → {path} (via Rust resource_manager)")
+                return path
 
-    # org 名（用于 ModelScope 目录结构 <org>/<model>）
-    org = cache_name.split("/")[0] if "/" in cache_name else ""
-
-    # 构建搜索目录列表（与 Rust resource_manager.rs 对齐）
-    search_dirs = []
-
-    # ① MBForge 缓存
-    try:
-        from ..utils.constants import get_model_cache_dir
-        mbforge_dir = Path(get_model_cache_dir())
-        if mbforge_dir.exists():
-            search_dirs.append(mbforge_dir)
-    except ImportError:
-        pass
-
-    # ② ModelScope 缓存
-    ms_cache = os.environ.get("MODELSCOPE_CACHE", "")
-    if ms_cache:
-        search_dirs.append(Path(ms_cache))
-    search_dirs.append(Path.home() / "Models" / "ModelScope")
-    search_dirs.append(Path.home() / ".cache" / "modelscope")
-
-    # ③ HuggingFace 缓存
-    hf_home = os.environ.get("HF_HOME", "")
-    if hf_home:
-        search_dirs.append(Path(hf_home))
-
-    # 在每个搜索目录中查找
-    for cache_dir in search_dirs:
-        if not cache_dir.exists():
-            continue
-
-        # ModelScope 布局: <cache>/<org>/<name>___<version>/
-        # 也可能直接在 <cache>/<name>/ 下
-        candidates = []
-        if org:
-            candidates.append(cache_dir / org)
-        candidates.append(cache_dir)
-
-        for base in candidates:
-            if not base.exists():
-                continue
-            for item in base.iterdir():
-                if item.is_dir() and key_name.lower() in item.name.lower():
-                    # 确认目录里有权重文件
-                    has_weights = (
-                        any(item.glob("*.safetensors"))
-                        or any(item.glob("*.bin"))
-                        or any(item.glob("*.pt"))
-                        or any(item.glob("*.pth"))
-                    )
-                    if has_weights:
-                        logger.info(f"Found model in cache: {item}")
-                        return str(item)
-
-        # HF 布局: hub/models--<org>--<name>/snapshots/<commit>/
-        if org:
-            hf_encoded = f"models--{org}--{last_part}"
-            snapshots = cache_dir / "hub" / hf_encoded / "snapshots"
-            if snapshots.exists():
-                for snap in snapshots.iterdir():
-                    if snap.is_dir() and any(snap.glob("*.safetensors")):
-                        logger.info(f"Found model in HF cache: {snap}")
-                        return str(snap)
-
+    # 回退：返回原名（走 HuggingFace 下载）
+    logger.info(f"No cached path for {model_name}, will try HuggingFace download")
     return model_name
+
+
+def _model_name_to_resource_id(model_name: str) -> str | None:
+    """将模型名映射到 resource_manager 的 resource_id."""
+    mapping = {
+        "Qwen/Qwen3-Embedding": "embedding",
+        "Qwen/Qwen3-Reranker": "reranker",
+        "yujieq/MolDetect": "moldet",
+        "yujieq/MolScribe": "molscribe",
+    }
+    model_lower = model_name.lower()
+    for prefix, rid in mapping.items():
+        if prefix.lower() in model_lower:
+            return rid
+    return None
+
+
+_RESOLVED_PATHS_CACHE: dict[str, str] | None = None
+
+
+def _read_resolved_paths() -> dict[str, str] | None:
+    """读取 Rust 写入的 resolved_paths.json（带内存缓存）."""
+    global _RESOLVED_PATHS_CACHE
+    if _RESOLVED_PATHS_CACHE is not None:
+        return _RESOLVED_PATHS_CACHE
+
+    from pathlib import Path
+    import json
+
+    config_dir = Path.home() / ".config" / "MBForge"
+    path = config_dir / "resolved_paths.json"
+    if not path.exists():
+        return None
+
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        _RESOLVED_PATHS_CACHE = data
+        logger.info(f"Loaded resolved paths from {path}: {list(data.keys())}")
+        return data
+    except Exception as e:
+        logger.warning(f"Failed to read resolved_paths.json: {e}")
+        return None
 
 
 class SentenceTransformerEmbedder(BaseEmbedder):

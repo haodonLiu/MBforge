@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from ...core.knowledge_base import KnowledgeBase
 from ...core.project import Project
+from ...utils.exceptions import ProjectNotValidError
 from ...utils.logger import get_logger
 from ..dependencies import get_project_from_root
 from ..models.embedder import get_embedder
@@ -29,20 +30,14 @@ class SearchRequest(BaseModel):
 
 
 @router.post("/search")
-async def kb_search(
-    req: SearchRequest,
-) -> dict[str, Any]:
+async def kb_search(req: SearchRequest) -> dict[str, Any]:
     """浏览器 dev 模式 fallback — 主路径使用 Rust Tauri command."""
-    try:
-        project = Project.open(Path(req.project_root))
-        if project is None:
-            return {"success": False, "error": f"Not a valid project: {req.project_root}"}
-        kb = KnowledgeBase(project.root, embedder=get_embedder())
-        results = kb.search(req.query, top_k=req.top_k)
-        return {"success": True, "results": results}
-    except Exception as e:
-        logger.error(f"KB search failed: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
+    project = Project.open(Path(req.project_root))
+    if project is None:
+        raise ProjectNotValidError(f"Not a valid project: {req.project_root}")
+    kb = KnowledgeBase(project.root, embedder=get_embedder())
+    results = kb.search(req.query, top_k=req.top_k)
+    return {"success": True, "results": results}
 
 
 @router.get("/stats")
@@ -50,10 +45,6 @@ async def kb_stats(
     project_root: str,
     project: Project = Depends(get_project_from_root),
 ) -> dict[str, Any]:
-    try:
-        kb = KnowledgeBase(project.root)
-        stats = kb.get_stats()
-        return {"success": True, "stats": stats}
-    except Exception as e:
-        logger.error(f"KB stats failed: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
+    kb = KnowledgeBase(project.root)
+    stats = kb.get_stats()
+    return {"success": True, "stats": stats}

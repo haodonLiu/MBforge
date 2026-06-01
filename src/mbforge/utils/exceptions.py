@@ -61,3 +61,17 @@ class PathTraversalError(MBForgeError):
 
     status_code = 403
     error_code = "path_traversal"
+
+
+class ResourceNotAvailableError(MBForgeError):
+    """External resource (model, package) not downloaded or unavailable."""
+
+    status_code = 503
+    error_code = "resource_not_available"
+
+
+class ToolExecutionError(MBForgeError):
+    """Agent tool execution failed."""
+
+    status_code = 500
+    error_code = "tool_execution_error"

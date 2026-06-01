@@ -46,30 +46,18 @@ impl ToolExecutor {
         executor.kb = Some(kb);
         executor.tree_index = Some(tree_index);
         executor.summary = Some(summary);
-        executor.register_native_kb_tools();
         executor
     }
 
     /// 注入依赖（Agent 初始化后调用）
     pub fn set_kb(&mut self, kb: super::knowledge_base::KnowledgeBase) {
         self.kb = Some(kb);
-        self.register_native_kb_tools();
     }
     pub fn set_tree_index(&mut self, tree: super::document_tree::DocumentTreeIndex) {
         self.tree_index = Some(tree);
     }
     pub fn set_summary(&mut self, summary: super::summary::SummaryManager) {
         self.summary = Some(summary);
-    }
-
-    /// 注册需要 KB/tree/summary 的 native 工具
-    fn register_native_kb_tools(&mut self) {
-        // search_knowledge_base — 如果 KB 可用则注册 native 版本
-        if let Some(ref kb) = self.kb {
-            // KB 搜索工具会在 KB 可用时覆盖 sidecar 版本
-            // 但需要 async，暂时保留 sidecar
-            let _ = kb; // 占位，后续 Agent C2 实现
-        }
     }
 
     /// 注册 Rust 原生工具（直接执行，不走 sidecar）
@@ -539,6 +527,18 @@ impl ToolExecutor {
 
 // ===== Rust 原生工具实现（均使用第三方 crate）=====
 
+/// 检查目标路径是否在 root 目录内（防止路径穿越）
+fn assert_within_root(root: &str, target: &std::path::Path) -> Result<(), String> {
+    let canonical_root = std::path::Path::new(root).canonicalize()
+        .map_err(|e| format!("Root canonicalize error: {}", e))?;
+    let canonical_target = target.canonicalize()
+        .map_err(|e| format!("Path canonicalize error: {}", e))?;
+    if !canonical_target.starts_with(&canonical_root) {
+        return Err(format!("Access denied: path escapes project root"));
+    }
+    Ok(())
+}
+
 fn native_grep_search(root: &str, pattern: &str, search_path: &str, max_results: usize) -> String {
     let matcher = match RegexMatcherBuilder::new().build(pattern) {
         Ok(m) => m,
@@ -548,7 +548,11 @@ fn native_grep_search(root: &str, pattern: &str, search_path: &str, max_results:
     let target = if search_path.is_empty() {
         std::path::PathBuf::from(root)
     } else {
-        std::path::PathBuf::from(root).join(search_path)
+        let p = std::path::PathBuf::from(root).join(search_path);
+        if let Err(e) = assert_within_root(root, &p) {
+            return e;
+        }
+        p
     };
 
     let mut results = Vec::new();
@@ -608,6 +612,9 @@ fn native_list_files(root: &str, pattern: &str, max_results: usize) -> String {
 
 fn native_read_file(root: &str, file_path: &str, max_lines: usize) -> String {
     let path = std::path::PathBuf::from(root).join(file_path);
+    if let Err(e) = assert_within_root(root, &path) {
+        return e;
+    }
     if !path.exists() {
         return format!("File not found: {}", file_path);
     }
@@ -669,13 +676,36 @@ fn native_get_project_info(root: &str) -> String {
 
 // ===== 知识库 Native 工具 =====
 
+use std::sync::Mutex;
+
+/// 全局 KB 缓存 — 按 root 路径缓存，避免每次工具调用重新初始化
+static KB_CACHE: std::sync::OnceLock<Mutex<HashMap<String, crate::core::knowledge_base::KnowledgeBase>>> =
+    std::sync::OnceLock::new();
+
+fn get_or_init_kb(root: &str) -> Result<std::sync::MutexGuard<'static, HashMap<String, crate::core::knowledge_base::KnowledgeBase>>, String> {
+    let cache = KB_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let guard = cache.lock().map_err(|e| format!("KB cache lock error: {}", e))?;
+    // 如果缓存中没有，需要初始化后插入；但 MutexGuard 不能先释放再获取
+    // 所以用 entry API 的 or_insert_with 无法直接用（需要可变借用）
+    // 简单方案：检查后若不存在，释放锁、创建、再获取
+    if guard.contains_key(root) {
+        return Ok(guard);
+    }
+    drop(guard);
+    let kb = crate::core::knowledge_base::KnowledgeBase::new(std::path::Path::new(root))
+        .map_err(|e| format!("KB init failed: {}", e))?;
+    let mut guard = cache.lock().map_err(|e| format!("KB cache lock error: {}", e))?;
+    guard.insert(root.to_string(), kb);
+    Ok(guard)
+}
+
 fn native_search_knowledge_base(
     root: &str,
     query: &str,
     top_k: usize,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let kb = crate::core::knowledge_base::KnowledgeBase::new(std::path::Path::new(root))
-        .map_err(|e| format!("KB init failed: {}", e))?;
+    let guard = get_or_init_kb(root)?;
+    let kb = guard.get(root).unwrap();
     let results = kb.search(query, top_k)
         .map_err(|e| format!("Search failed: {}", e))?;
     Ok(results.into_iter().map(|r| serde_json::json!({
@@ -690,9 +720,8 @@ fn native_get_document_structure(
     root: &str,
     doc_id: &str,
 ) -> Result<Option<Vec<crate::parsers::sections::TreeNode>>, String> {
-    let config = crate::core::config::EmbedConfig::default();
-    let kb = crate::core::knowledge_base::KnowledgeBase::new(std::path::Path::new(root))
-        .map_err(|e| format!("KB init failed: {}", e))?;
+    let guard = get_or_init_kb(root)?;
+    let kb = guard.get(root).unwrap();
     Ok(kb.get_structure(doc_id))
 }
 
@@ -701,9 +730,8 @@ fn native_get_document_pages(
     doc_id: &str,
     pages: &str,
 ) -> Result<Vec<crate::core::knowledge_base::PageContent>, String> {
-    let config = crate::core::config::EmbedConfig::default();
-    let kb = crate::core::knowledge_base::KnowledgeBase::new(std::path::Path::new(root))
-        .map_err(|e| format!("KB init failed: {}", e))?;
+    let guard = get_or_init_kb(root)?;
+    let kb = guard.get(root).unwrap();
     Ok(kb.get_pages(doc_id, pages))
 }
 

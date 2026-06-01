@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
+use tauri::Emitter;
 
 /// Shared state for the Python sidecar process.
 pub struct SidecarInner {

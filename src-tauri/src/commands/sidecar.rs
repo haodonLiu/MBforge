@@ -7,11 +7,11 @@ use crate::sidecar::SidecarInner;
 pub fn sidecar_status(state: State<Arc<SidecarInner>>) -> serde_json::Value {
     let healthy = state.healthy.load(std::sync::atomic::Ordering::Relaxed);
     let restarts = state.restart_count.load(std::sync::atomic::Ordering::Relaxed);
-    let uptime = state
+    let uptime: u64 = state
         .start_time
         .lock()
         .unwrap()
-        .map(|t| t.elapsed().as_secs())
+        .map(|t: std::time::Instant| t.elapsed().as_secs())
         .unwrap_or(0);
     let state_str = if healthy { "online" } else { "offline" };
     serde_json::json!({

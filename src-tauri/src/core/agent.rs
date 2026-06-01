@@ -161,7 +161,7 @@ impl Agent {
                 let result = self.executor.execute(&tc.name, &tc.arguments).await;
                 self.context.add_tool_result(&tc.name, &result, &tc.id);
                 if let Some(ref mut tracker) = self.trajectory_tracker {
-                    let summary = if result.len() > 200 { &result[..200] } else { &result };
+                    let summary = if result.len() > 200 { &result[..result.floor_char_boundary(200)] } else { &result };
                     tracker.record_tool(&tc.name, &tc.arguments, summary);
                 }
             }
@@ -182,28 +182,38 @@ impl Agent {
         let tool_schemas = self.executor.registry.to_openai_schemas();
         let has_tools = !tool_schemas.is_empty();
 
+        // 多步工具循环（非流式）— 与 chat() 逻辑一致
         if has_tools {
-            let messages = self.context.build_messages(true, true);
-            let response = self.llm.chat(&messages, Some(&tool_schemas)).await?;
-            let (content, tool_calls) = Self::parse_response_static(&response);
+            loop {
+                let messages = self.context.build_messages(true, true);
+                let response = self.llm.chat(&messages, Some(&tool_schemas)).await?;
+                let (content, tool_calls) = Self::parse_response_static(&response);
 
-            if !tool_calls.is_empty() {
+                if tool_calls.is_empty() {
+                    // LLM 不再调用工具，将其内容作为最终回复流式发送
+                    self.context.add_assistant_message(&content);
+                    self.context.clear_tool_results();
+                    self.spawn_background_tasks(user_input, &content);
+                    self.save_context();
+                    let (tx, rx) = tokio::sync::mpsc::channel(1);
+                    let _ = tx.send(StreamChunk { delta: content, finish_reason: Some("stop".into()) }).await;
+                    return Ok(rx);
+                }
+
+                // 执行工具，继续循环
                 self.context.add_assistant_message_with_tool_calls(&content, &tool_calls);
                 for tc in &tool_calls {
                     let result = self.executor.execute(&tc.name, &tc.arguments).await;
                     self.context.add_tool_result(&tc.name, &result, &tc.id);
+                    if let Some(ref mut tracker) = self.trajectory_tracker {
+                        let summary = if result.len() > 200 { &result[..result.floor_char_boundary(200)] } else { &result };
+                        tracker.record_tool(&tc.name, &tc.arguments, summary);
+                    }
                 }
-                let messages = self.context.build_messages(true, true);
-                return self.llm.chat_stream(&messages, None).await;
             }
-
-            self.context.add_assistant_message(&content);
-            self.context.clear_tool_results();
-            let (tx, rx) = tokio::sync::mpsc::channel(1);
-            let _ = tx.send(StreamChunk { delta: content, finish_reason: Some("stop".into()) }).await;
-            return Ok(rx);
         }
 
+        // 无工具：直接流式
         let messages = self.context.build_messages(true, true);
         let mut rx = self.llm.chat_stream(&messages, None).await?;
         let (tx, new_rx) = tokio::sync::mpsc::channel(64);
@@ -246,7 +256,7 @@ impl Agent {
                      只输出 JSON 数组，不要其他说明。\n\n\
                      对话：\n{}",
                     messages.iter().rev().take(10).rev()
-                        .map(|m| format!("{}: {}", m.role, &m.content[..m.content.len().min(500)]))
+                        .map(|m| { let end = m.content.floor_char_boundary(500); format!("{}: {}", m.role, &m.content[..end]) })
                         .collect::<Vec<_>>().join("\n")
                 );
 
@@ -302,7 +312,7 @@ impl Agent {
              要求：标题用 # 开头，步骤用数字列表，关键参数用代码块，不超过 500 字。\n\n\
              用户：{}\n助手：{}",
             user_msg,
-            &assistant_msg[..assistant_msg.len().min(1000)]
+            &assistant_msg[..assistant_msg.floor_char_boundary(1000)]
         );
 
         let body = serde_json::json!({

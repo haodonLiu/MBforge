@@ -27,14 +27,11 @@ tempfile = "3"
 reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls", "multipart", "blocking"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 futures = "0.3"
-tokio-stream = "0.1"
 grep-searcher = "0.1"
 grep-regex = "0.1"
-grep-matcher = "0.1"
 ignore = "0.4"
 globset = "0.4"
 zip = "0.6"
-dotenvy = "0.15"
 base64 = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
 lopdf = { git = "https://github.com/J-F-Liu/lopdf", rev = "7a05512d831415b1f2b1ce522391d6beab8a1284", version = "0.40.0" }

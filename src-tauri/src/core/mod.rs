@@ -15,6 +15,7 @@ pub mod memory;
 pub mod molecule_db;
 pub mod molecule_cluster;
 pub mod molecule_dedup;
+pub mod molecule_engine;
 pub mod molecule_store;
 pub mod pending;
 pub mod project;

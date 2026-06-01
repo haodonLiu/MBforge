@@ -2,6 +2,7 @@ pub mod agent;
 pub mod classifier;
 pub mod extractor;
 pub mod file_ops;
+pub mod mol_engine;
 pub mod molecule;
 pub mod mol_store;
 pub mod pdf;

@@ -37,34 +37,46 @@ def _get_model_cache_dir() -> Path:
 # 内部工具（保持 SSE 下载流实现）
 # ---------------------------------------------------------------------------
 
-def _is_essential_file(path: str, model_id: str) -> bool:
-    """判断是否为必要文件（只下载权重 + 配置，不下载完整仓库）."""
-    name = path.rsplit("/", 1)[-1] if "/" in path else path
-    ext = name.rsplit(".", 1)[-1] if "." in name else ""
+def _filter_essential_files(all_files: list[str], model_id: str) -> list[str]:
+    """从仓库文件列表中筛选必要文件（只下载权重 + 配置，不下载完整仓库）."""
+    def _name(p: str) -> str:
+        return p.rsplit("/", 1)[-1] if "/" in p else p
 
-    # MolScribe: 只下载 checkpoint
+    # MolScribe: 只下载 checkpoint + 配置 + tokenizer
     if model_id == "molscribe":
-        return name.endswith(".pth") or name == "config.json"
+        return [f for f in all_files if _name(f).endswith((".pth", ".json", ".txt", ".model"))]
 
-    # 通用：权重文件 + 必要配置
-    essential_patterns = [
-        # 权重（优先 safetensors，跳过 .bin 节省空间）
-        ext == "safetensors",
-        name.endswith(".pt") and not name.startswith("."),
-        name.endswith(".pth"),
-        # 配置
-        name == "config.json",
-        name == "generation_config.json",
-        name == "preprocessor_config.json",
-        # Tokenizer
-        name == "tokenizer.json",
-        name == "tokenizer_config.json",
-        name == "vocab.json",
-        name == "merges.txt",
-        name == "special_tokens_map.json",
-        name == "added_tokens.json",
-    ]
-    return any(essential_patterns)
+    # 检查远程仓库是否有 safetensors
+    has_safetensors = any(_name(f).endswith(".safetensors") for f in all_files)
+
+    def _is_essential(path: str) -> bool:
+        name = _name(path)
+        ext = name.rsplit(".", 1)[-1] if "." in name else ""
+
+        weight_patterns = [
+            ext == "safetensors",
+            name.endswith(".pt") and not name.startswith("."),
+            name.endswith(".pth"),
+        ]
+        # 如果仓库没有 safetensors，也下载 .bin 作为回退
+        if not has_safetensors:
+            weight_patterns.append(name.endswith(".bin"))
+
+        config_patterns = [
+            name == "config.json",
+            name == "generation_config.json",
+            name == "preprocessor_config.json",
+            name == "tokenizer.json",
+            name == "tokenizer_config.json",
+            name == "vocab.json",
+            name == "merges.txt",
+            name == "special_tokens_map.json",
+            name == "added_tokens.json",
+            name == "model.safetensors.index.json",  # 分片模型索引
+        ]
+        return any(weight_patterns) or any(config_patterns)
+
+    return [f for f in all_files if _is_essential(f)]
 
 
 def _download_from_modelscope(model_id: str, *, timeout: int = 300):
@@ -87,7 +99,7 @@ def _download_from_modelscope(model_id: str, *, timeout: int = 300):
             r = _requests.get(f"{MS_BASE}/{repo}/repo/tree?Revision=master", timeout=30)
             tree = r.json().get("Data", []) if r.ok else []
             all_files = [f["Path"] for f in tree if f.get("Type") == "blob"]
-            files = [f for f in all_files if _is_essential_file(f, model_id)]
+            files = _filter_essential_files(all_files, model_id)
         except Exception:
             files = []
 

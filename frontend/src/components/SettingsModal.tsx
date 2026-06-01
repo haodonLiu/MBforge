@@ -130,6 +130,7 @@ function EnvironmentSection() {
     switch (s) {
       case 'ready': return 'var(--success)'
       case 'not_found': return 'var(--warning)'
+      case 'partial': return 'var(--warning)'
       default: return 'var(--error)'
     }
   }
@@ -137,6 +138,7 @@ function EnvironmentSection() {
     switch (s) {
       case 'ready': return '✓ 就绪'
       case 'not_found': return '未下载'
+      case 'partial': return '部分就绪'
       default: return s
     }
   }

@@ -112,6 +112,7 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         ms_repo="Qwen/Qwen3-Embedding-0.6B",
         hf_repo="Qwen/Qwen3-Embedding-0.6B",
         download_type="snapshot",
+        local_name="Qwen3-Embedding-0.6B",
         source_url="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
     ),
     "reranker": ResourceInfo(
@@ -125,6 +126,7 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         ms_repo="Qwen/Qwen3-Reranker-0.6B",
         hf_repo="Qwen/Qwen3-Reranker-0.6B",
         download_type="snapshot",
+        local_name="Qwen3-Reranker-0.6B",
         source_url="https://huggingface.co/Qwen/Qwen3-Reranker-0.6B",
     ),
     "moldet": ResourceInfo(
@@ -153,6 +155,7 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         ms_repo="yujieq/MolScribe",
         hf_repo="yujieq/MolScribe",
         download_type="snapshot",
+        local_name="MolScribe",
         source_url="https://github.com/thomas0809/MolScribe",
     ),
     # ──── Python 包（清华源）────
@@ -161,6 +164,7 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         name="RDKit",
         type=ResourceType.PYTHON_PACKAGE,
         description="分子信息学: SMILES 解析、分子属性计算",
+        license="BSD-3",
         pip_name="rdkit",
         import_name="rdkit",
         mirror=TSINGHUA_PIP,
@@ -170,6 +174,7 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         name="PyTorch",
         type=ResourceType.PYTHON_PACKAGE,
         description="深度学习框架 (CUDA 12.8)",
+        license="BSD-3",
         pip_name="torch",
         import_name="torch",
         mirror=TSINGHUA_PIP,
@@ -197,6 +202,7 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         name="Ultralytics",
         type=ResourceType.PYTHON_PACKAGE,
         description="YOLO 目标检测框架 (MolDet 依赖)",
+        license="AGPL-3.0",
         pip_name="ultralytics",
         import_name="ultralytics",
         mirror=TSINGHUA_PIP,
@@ -613,6 +619,10 @@ class ResourceManager:
             success = _download_model_from_modelscope(info, callback)
         elif info.type == ResourceType.PYTHON_PACKAGE:
             success = _install_python_package(info, callback)
+        elif info.type == ResourceType.BINARY:
+            if callback:
+                callback({"status": "failed", "error": f"二进制资源 {info.name} 需要手动安装，请参考项目文档"})
+            return status
 
         if success:
             return cls.check(resource_id)

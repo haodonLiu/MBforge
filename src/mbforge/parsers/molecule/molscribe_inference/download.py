@@ -11,7 +11,7 @@ CHECKPOINT_NAME = "swin_base_char_aux_1m680k.pth"
 
 
 def get_model_dir() -> Path:
-    """获取 MolScribe 模型目录（优先 ResourceManager，其次环境变量，最后默认路径）."""
+    """获取 MolScribe 模型目录（优先环境变量，其次 ResourceManager，最后默认路径）."""
     # 1. 环境变量覆盖
     env_dir = os.environ.get("MBFORGE_MOLSCRIBE_DIR")
     if env_dir:
@@ -65,16 +65,20 @@ def ensure_molscribe_model(model_dir: Path | None = None) -> str:
     except ImportError:
         pass
 
-    # 回退：直接 ModelScope 下载
-    print("正在从 ModelScope 下载 MolScribe ...")
+    # 回退：直接 ModelScope 下载（指定 local_dir 确保文件落在预期位置）
+    print(f"正在从 ModelScope 下载 MolScribe 到 {d} ...")
+    d.mkdir(parents=True, exist_ok=True)
     try:
         from modelscope import snapshot_download
-        snapshot_download(MODEL_ID)
+        snapshot_download(MODEL_ID, local_dir=str(d), local_dir_use_symlinks=False)
     except ImportError:
         raise RuntimeError("需要: pip install modelscope")
     except Exception as e:
         raise RuntimeError(f"下载失败: {e}")
 
     if not is_model_available(d):
-        raise RuntimeError(f"下载完成但找不到 {CHECKPOINT_NAME}")
-    return str(d / CHECKPOINT_NAME)
+        raise RuntimeError(f"下载完成但找不到 {CHECKPOINT_NAME}，请检查 {d}")
+    ckpt = d / CHECKPOINT_NAME
+    if ckpt.exists():
+        return str(ckpt)
+    return str(d)

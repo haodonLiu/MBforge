@@ -18,8 +18,8 @@ PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询
 - **Python 侧载（Sidecar）**：FastAPI 模型服务器（port 18792），负责 LLM/Embedding/VLM 推理、ChromaDB 向量库、MolScribe 分子图像识别
 
 **双语言分工**：
-- **Rust**（`src-tauri/src/`，~9,700 行）：Agent 循环、PDF 原生解析（lopdf）、分子 SQLite 数据库、Tauri IPC 命令层
-- **Python**（`src/mbforge/`，~12,900 行）：FastAPI REST API、LLM/Embedding/VLM 模型推理、ChromaDB、MolScribe
+- **Rust**（`src-tauri/src/`）：Agent 循环、PDF 原生解析（lopdf）、分子 SQLite 数据库、Tauri IPC 命令层
+- **Python**（`src/mbforge/`）：FastAPI REST API、LLM/Embedding/VLM 模型推理、ChromaDB、MolScribe
 
 ---
 
@@ -47,31 +47,44 @@ PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询
 MBForge/
 ├── frontend/               # React + Vite 前端
 │   ├── src/
-│   │   ├── api/            # HTTP 客户端 + Tauri invoke 桥接
-│   │   ├── components/     # UI 组件（Chat, MoleculeLibrary, PDFViewer, ...）
-│   │   ├── hooks/          # React Hooks
+│   │   ├── api/            # Tauri invoke 桥接 + HTTP fallback
+│   │   ├── components/     # 38 个 UI 组件（Chat, MoleculeLibrary, Search, ...）
+│   │   │   ├── ui/         # 21 个原子组件（Button, Modal, Card, ...）
+│   │   │   ├── settings/   # 设置/模型管理组件
+│   │   │   ├── animations/ # 动画包装组件
+│   │   │   └── project/    # 项目仪表盘组件
+│   │   ├── hooks/          # React Hooks（useTheme, useToast, ...）
+│   │   ├── context/        # React Context 入口
 │   │   ├── types/          # TypeScript 类型定义
-│   │   └── App.tsx         # 路由入口
+│   │   ├── utils/          # 工具函数（ROI 文本提取）
+│   │   ├── styles/         # 全局 CSS 变量/主题
+│   │   ├── App.tsx         # 路由入口
+│   │   └── main.tsx        # 应用入口
 │   ├── package.json
 │   ├── tsconfig.json       # TypeScript 严格模式
 │   └── vite.config.ts      # Vite 配置，开发时代理 /api → localhost:18792
 │
 ├── src-tauri/              # Rust Tauri 后端
 │   ├── src/
-│   │   ├── main.rs         # Tauri 入口：命令注册 + Python sidecar 管理
+│   │   ├── main.rs         # Tauri 入口：30+ 命令注册 + Python sidecar 管理
 │   │   ├── lib.rs          # 模块导出
-│   │   ├── commands/       # Tauri IPC 命令层（6 模块，25+ 命令）
-│   │   ├── core/           # Agent + 数据层（26 模块）
+│   │   ├── commands/       # Tauri IPC 命令层（11 模块，30+ 命令）
+│   │   ├── core/           # Agent + 数据层（32 模块）
 │   │   │   ├── agent.rs    # ReAct Agent 核心循环
-│   │   │   ├── executor.rs # 20+ 工具执行器
+│   │   │   ├── executor.rs # 25+ 工具执行器
 │   │   │   ├── llm.rs      # LLM HTTP 客户端
 │   │   │   ├── molecule_store.rs   # SQLite + FTS5 分子数据库
 │   │   │   ├── memory.rs           # 6 分类持久记忆
-│   │   │   └── vector_store.rs     # 向量存储/检索
-│   │   └── parsers/        # PDF 解析管线（16 模块）
-│   │       ├── pipeline.rs # 统一解析管线（Stage 1-6）
+│   │   │   ├── markush.rs          # E-SMILES Markush 分析
+│   │   │   ├── resource_manager.rs # 统一资源管理
+│   │   │   └── semantic_cache.rs   # 三级语义缓存
+│   │   └── parsers/        # PDF 解析管线（19 模块）
+│   │       ├── pipeline.rs # 统一解析管线（Stage 0-7）
 │   │       ├── association.rs      # 分子-文本关联引擎
 │   │       ├── images.rs           # lopdf 图像提取
+│   │       ├── claim_parser.rs     # 专利 Claims 解析
+│   │       ├── claim_policy.rs     # 专利范围匹配
+│   │       ├── molecule_extractor.rs # 专利命名化合物提取
 │   │       ├── mineru.rs           # MinerU API 客户端
 │   │       ├── llama_parse.rs      # LlamaParse API 客户端
 │   │       └── uniparser.rs        # UniParser API 客户端
@@ -82,24 +95,25 @@ MBForge/
 ├── src/mbforge/            # Python 模型服务器 & 核心库
 │   ├── model_server/       # FastAPI 服务
 │   │   ├── main.py         # 入口 + 路由注册
-│   │   ├── agent_manager.py# Agent 桥接单例管理
 │   │   ├── dependencies.py # 依赖注入
 │   │   ├── models/         # LLM/Embed/Rerank/VLM/MolDet 单例管理
-│   │   └── routers/        # 15 个 API 路由模块
+│   │   └── routers/        # 16 个 API 路由模块
 │   ├── core/               # Python 数据层
 │   │   ├── project.py      # Vault 项目管理
 │   │   ├── knowledge_base.py       # ChromaDB 向量知识库
 │   │   ├── mol_database.py         # SQLite 分子数据库
+│   │   ├── resource_manager.py     # 资源管理 + ModelScope 下载
 │   │   └── summarizer.py           # L0/L1/L2 分层摘要
 │   ├── models/             # AI 模型抽象层
-│   │   ├── base.py, llm.py, anthropic_llm.py, embedding.py, vlm.py
-│   ├── parsers/            # Python 解析层
-│   │   ├── pdf_parser.py           # PDFParserPipeline（PyMuPDF）
-│   │   └── molecule/               # 分子提取管线 + MolScribe
-│   ├── agent/              # Python 工具框架
-│   ├── csar/               # SAR 分析工具箱
+│   │   ├── base.py, llm.py, anthropic_llm.py, embedding.py, vlm.py, rerank.py, rerank_qwen3.py
+│   ├── parsers/            # Python 解析层（PDF 解析全在 Rust 侧）
+│   │   └── molecule/       # MolDet + MolScribe 图像分子提取管线
+│   │       ├── molscribe/           # MolScribe 门面类
+│   │       └── molscribe_inference/ # MolScribe 推理引擎
+│   ├── csar/               # SAR 分析工具箱（占位模块，仅 __init__.py）
 │   ├── molecules/          # 分子数据合约
-│   └── cli.py              # CLI 入口（mbforge / csar 命令）
+│   ├── utils/              # 配置、常量、异常、GPU 检测、日志
+│   └── cli.py              # CLI 入口（mbforge 命令）
 │
 ├── tests/                  # Python 测试
 │   ├── unit/               # 单元测试（知识库、分子数据库、Agent 优化等）
@@ -117,8 +131,9 @@ MBForge/
 │   ├── pdf-extraction-workflow.md
 │   ├── pipeline-migration-plan.md
 │   ├── pipeline-redesign.md
-│   └── pdf-pipeline-test/  # 管线测试用例与参考输出
+│   └── migration-agent-*.md # 迁移代理日志
 │
+├── CODEMAP.md              # 代码逻辑树（最详细模块清单）
 ├── pyproject.toml          # Python 项目配置（uv + setuptools）
 ├── uv.lock                 # Python 依赖锁定
 ├── package.json            # 根级 npm 配置（空对象，前端配置在 frontend/）
@@ -246,6 +261,7 @@ uv run ruff format src/ --check
 | 导入排序 | 1) `std::` / `core::` 2) 第三方 crate 3) `crate::` / `super::` |
 | 并发状态 | Tauri 状态使用 `Arc<RwLock<T>>` 模式，读多写少时用 `RwLock`，写操作用 `.write().await` |
 | Unsafe | **禁止**引入新的 `unsafe` 代码块 |
+| 路径安全 | **必须**使用 `core/helpers.rs` 中的 `assert_within_root()` 或 `safe_join()` 进行路径安全检查；禁止直接使用 `Path::join()` 后直接访问文件系统 |
 | Dev 编译 | `.cargo/config.toml` 已屏蔽 warnings，CI 构建前需确认 `cargo check` 零 errors |
 
 ### Python（`src/mbforge/`）
@@ -275,6 +291,7 @@ uv run ruff format src/ --check
 | 类型 | 优先使用 `interface` 定义数据结构；使用 `import type` 导入仅作类型使用的符号；**严格模式**强制开启（`strict: true`, `noUnusedLocals: true`, `noUnusedParameters: true`, `noFallthroughCasesInSwitch: true`） |
 | 组件 | 使用 `export default function ComponentName()` 定义页面级组件；局部 UI 用 `function SubComponent()`； Hooks 用 `useXxx` 前缀 |
 | JSX 样式 | 优先使用 CSS 变量（`var(--xxx)`）和全局样式类；内联 `style` 仅用于动态计算值；禁止在 JSX 中写大型 CSS 对象，超过 3 个属性的内联样式应提取为类或 styled 组件 |
+| 动画 | **必须**使用 `hooks/useAnimations.ts` 中的预定义动画变体；禁止在组件中重复定义 `motion.div` 的 `initial/animate/exit/transition` 参数；交互式动画（如焦点状态）可直接使用 `animate={{ ... }}` |
 | 错误处理 | API 调用使用 `try/catch`；异步函数返回 `{ success: boolean; error?: string }` 时，调用方必须检查 `success` |
 | 路径 | 统一使用 `@/` 别名指向 `src/`，禁止相对路径 `../../` 超过两级 |
 | React Hooks | 遵守 Rules of Hooks（顶层调用，不在循环/条件中）；`useEffect` 依赖数组必须完整；`useCallback` / `useMemo` 仅在计算昂贵或引用稳定性必要时使用 |
@@ -558,6 +575,7 @@ export function myFn(arg: string): string {
 - [ ] `uv run ruff check src/` 零 critical errors（迁移期旧代码除外）
 - [ ] 不提交 API 密钥或敏感配置
 - [ ] `.gitignore` 已覆盖新增产物
+- [ ] **CODEMAP.md §7.6 待审核事项**：本次修改涉及的文档/代码问题是否已记录，由人工确认
 
 ---
 
@@ -614,6 +632,8 @@ export function myFn(arg: string): string {
 
 | 文档 | 位置 | 内容 |
 |------|------|------|
+| 代码逻辑树（最详细） | `CODEMAP.md` | 每个模块的功能、依赖、实现状态 |
+| AI 编码指南 | `CLAUDE.md` | 项目概要 + 构建/测试命令 |
 | 技术栈详情 | `docs/TECH_STACK.md` | 所有依赖的技术选型、版本、使用场景 |
 | 第三方引用 | `docs/REFERENCES.md` | 外部库、论文、数据引用 |
 | PDF 迁移规划 | `docs/pipeline-migration-plan.md` | Python→Rust 迁移路线图 |
@@ -621,4 +641,3 @@ export function myFn(arg: string): string {
 | PDF 提取工作流 | `docs/pdf-extraction-workflow.md` | 端到端 PDF 处理流程 |
 | E-SMILES 规范 | `src-tauri/docs/esmiles/` | E-SMILES 格式 + MBForge 集成 |
 | LiteParse API | `src-tauri/docs/liteparse/` | LiteParse API 参考存档 |
-| AI 编码指南 | `CLAUDE.md` | Claude Code 专用指南（含代码示例） |

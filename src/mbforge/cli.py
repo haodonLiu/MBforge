@@ -40,11 +40,18 @@ def main() -> int:
     init_parser.add_argument("path", type=str, help="项目目录路径")
     init_parser.add_argument("--name", "-n", type=str, help="项目名称")
 
-    # download 命令 — 下载可选模型
+    # download 命令 — 下载可选模型（重定向到 ResourceManager）
     dl_parser = subparsers.add_parser("download", help="下载可选模型（MolDetv2/MolScribe）")
     dl_parser.add_argument("model", nargs="?", default="all",
                            choices=["all", "moldet", "molscribe"],
                            help="要下载的模型（默认 all）")
+
+    # env 命令 — 环境管理
+    env_parser = subparsers.add_parser("env", help="环境管理（检查/搭建）")
+    env_sub = env_parser.add_subparsers(dest="env_command")
+    env_sub.add_parser("check", help="检查环境状态")
+    env_setup = env_sub.add_parser("setup", help="搭建全部环境")
+    env_setup.add_argument("--non-interactive", action="store_true", help="静默模式")
 
     # version
     from .utils.constants import APP_VERSION
@@ -63,6 +70,14 @@ def main() -> int:
         return _cmd_init(args)
     elif args.command == "download":
         return _cmd_download(args)
+    elif args.command == "env":
+        if args.env_command == "check":
+            return _cmd_env_check(args)
+        elif args.env_command == "setup":
+            return _cmd_env_setup(args)
+        else:
+            env_parser.print_help()
+            return 1
     else:
         return _cmd_dev(args)  # 默认 dev 模式
 
@@ -333,6 +348,116 @@ def _cmd_download(args) -> int:
     print(f"下载: {downloaded}  已有: {skipped}  失败: {failed}")
     if downloaded > 0:
         print(f"模型目录: {target_dir}")
+    return 0
+
+
+# ---- 环境管理 ----
+
+def _cmd_env_check(args) -> int:
+    """环境检查 — 使用 ResourceManager 展示全量环境报告."""
+    setup_logging()
+    from .core.resource_manager import ResourceManager
+
+    print("\n\033[36m=== MBForge 环境检查 ===\033[0m\n")
+    report = ResourceManager.check_all()
+
+    # 环境信息
+    print(f"  Python:    {report.python_version}")
+    if report.gpu_available:
+        print(f"  GPU:       {report.gpu_name} (CUDA {report.cuda_version})")
+    else:
+        print(f"  GPU:       \033[33m未检测到\033[0m")
+    print()
+
+    # 资源状态
+    print(f"  \033[1m{'资源':<25} {'状态':<12} {'大小':<10} {'路径'}\033[0m")
+    print(f"  {'─' * 80}")
+
+    ready_count = 0
+    for r in report.resources:
+        if r.status.value == "ready":
+            status_str = "\033[32m✓ 就绪\033[0m"
+            ready_count += 1
+        elif r.status.value == "not_found":
+            status_str = "\033[33m✗ 未找到\033[0m"
+        else:
+            status_str = f"\033[31m✗ {r.status.value}\033[0m"
+
+        size_str = f"{r.size_mb:.0f} MB" if r.size_mb > 0 else ""
+        path_str = r.local_path if r.local_path else ""
+        ver_str = f" v{r.version}" if r.version else ""
+        print(f"  {r.name:<25} {status_str:<20} {size_str:<10} {path_str}{ver_str}")
+
+    print(f"\n  \033[1m{report.summary}\033[0m\n")
+
+    if ready_count < len(report.resources):
+        print(f"  提示: 运行 \033[36mmbforge env setup\033[0m 自动搭建缺失资源")
+        print(f"  模型默认从 \033[36mModelScope\033[0m 下载，Python 包使用 \033[36m清华源\033[0m\n")
+
+    return 0
+
+
+def _cmd_env_setup(args) -> int:
+    """环境搭建 — 自动下载/安装缺失资源."""
+    setup_logging()
+    from .core.resource_manager import ResourceManager, ResourceStatus, ResourceType
+
+    non_interactive = getattr(args, "non_interactive", False)
+
+    print("\n\033[36m=== MBForge 环境搭建 ===\033[0m\n")
+    report = ResourceManager.check_all()
+    print(f"  当前状态: {report.summary}\n")
+
+    missing = [r for r in report.resources if r.status != ResourceStatus.READY]
+    if not missing:
+        print(f"  \033[32m所有资源已就绪！\033[0m\n")
+        return 0
+
+    print(f"  需要安装/下载 {len(missing)} 个资源:\n")
+    for r in missing:
+        info = ResourceManager.catalog.get(r.id)
+        size_str = f" (~{info.size_mb:.0f} MB)" if info and info.size_mb > 0 else ""
+        print(f"    • {r.name}{size_str} — {r.status.value}")
+
+    if not non_interactive:
+        print()
+        answer = input("  是否开始搭建？[Y/n] ").strip().lower()
+        if answer and answer != "y":
+            print("  已取消")
+            return 0
+
+    print()
+    success_count = 0
+    for r in missing:
+        info = ResourceManager.catalog.get(r.id)
+        if info is None:
+            continue
+
+        print(f"  \033[36m▸ {r.name}\033[0m ...")
+
+        def progress_callback(event: dict):
+            status = event.get("status", "")
+            if status == "downloading":
+                progress = event.get("progress", 0)
+                if progress > 0:
+                    print(f"\r    下载中... {progress}%", end="", flush=True)
+                file_info = event.get("file", "")
+                if file_info:
+                    fp = event.get("file_progress", 0)
+                    fi = event.get("file_index", 0)
+                    tf = event.get("total_files", 0)
+                    print(f"\r    下载 {fi}/{tf}: {file_info} ({fp}%)", end="", flush=True)
+            elif status == "completed":
+                print(f"\r    \033[32m✓ 完成\033[0m")
+
+        result = ResourceManager.ensure(r.id, callback=progress_callback)
+        if result.status == ResourceStatus.READY:
+            print(f"    \033[32m✓ {r.name} 就绪\033[0m")
+            success_count += 1
+        else:
+            print(f"    \033[31m✗ {r.name} 失败: {result.error}\033[0m")
+
+    print(f"\n  搭建完成: {success_count}/{len(missing)} 成功\n")
     return 0
 
 

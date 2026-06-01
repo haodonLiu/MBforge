@@ -21,7 +21,7 @@ from ..utils.exceptions import MBForgeError
 from .routers import (
     llm, embed, rerank, vlm, moldet, uniparser,
     health, project, kb, molecule, file,
-    settings, download, chem, environment,
+    settings, download, chem, environment, resources,
 )
 
 logger = logging.getLogger("mbforge.startup")
@@ -51,10 +51,29 @@ def _prewarm_models():
         logger.warning(f"Reranker prewarm failed: {e}")
 
 
+def _check_environment():
+    """启动时环境检查 — 记录资源状态到日志."""
+    try:
+        from ..core.resource_manager import ResourceManager
+        report = ResourceManager.check_all()
+        logger.info(f"Environment check: {report.summary}")
+        for r in report.resources:
+            if r.status.value == "ready":
+                logger.info(f"  ✓ {r.name}: ready {r.local_path}")
+            else:
+                logger.info(f"  ✗ {r.name}: {r.status.value}")
+    except Exception as e:
+        logger.warning(f"Environment check failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动时在后台线程预热模型."""
+    """应用生命周期：启动时检查环境 + 后台预热模型."""
+    # 1. 同步环境检查（快速，不下载）
     loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _check_environment)
+
+    # 2. 后台预热模型
     loop.run_in_executor(None, _prewarm_models)
     yield
 
@@ -99,3 +118,4 @@ app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"]
 app.include_router(download.router, prefix="/api/v1/download", tags=["download"])
 app.include_router(chem.router, prefix="/api/v1/chem", tags=["chem"])
 app.include_router(environment.router, prefix="/api/v1/environment", tags=["environment"])
+app.include_router(resources.router, prefix="/api/v1/resources", tags=["resources"])

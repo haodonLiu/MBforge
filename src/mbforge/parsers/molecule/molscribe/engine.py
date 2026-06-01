@@ -25,9 +25,19 @@ class MolScribeEngine:
 
     def _load(self) -> None:
         from ..molscribe_inference import MolScribe as _MolScribe
-        from ..molscribe_inference.download import ensure_molscribe_model
+        from ..molscribe_inference.download import ensure_molscribe_model, is_model_available
 
         ckpt = self.config.model_path
+        if ckpt is None:
+            # 先检查 ResourceManager 是否能找到已下载的模型
+            try:
+                from mbforge.core.resource_manager import ResourceManager
+                path = ResourceManager.get_molscribe_path()
+                if path is not None:
+                    ckpt = str(path)
+            except ImportError:
+                pass
+
         if ckpt is None:
             ckpt = ensure_molscribe_model()
 

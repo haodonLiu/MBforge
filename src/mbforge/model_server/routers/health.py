@@ -1,7 +1,8 @@
-"""健康检查路由."""
+"""健康检查路由 — 集成 ResourceManager 资源状态."""
 
 from fastapi import APIRouter
 
+from ...core.resource_manager import ResourceManager, ResourceStatus
 from ...utils.logger import get_logger
 from ..models.llm import get_llm
 from ..models.embedder import get_embedder
@@ -88,6 +89,7 @@ async def health_check() -> dict:
         _model_status["moldet"] = "error"
         logger.debug(f"MolDet health check failed: {e}")
 
+    # 计算整体状态
     statuses = list(_model_status.values())
     if all(s == "ready" for s in statuses):
         overall = "online"
@@ -98,9 +100,19 @@ async def health_check() -> dict:
     else:
         overall = "loading"
 
+    # 资源下载状态（轻量检查，不触发模型加载）
+    resource_status = {}
+    try:
+        for rid in ResourceManager.catalog:
+            res = ResourceManager.check(rid)
+            resource_status[rid] = res.status.value
+    except Exception as e:
+        logger.debug(f"Resource status check failed: {e}")
+
     return {
         "status": overall,
         "models": dict(_model_status),
+        "resources": resource_status,
         "error": None,
     }
 

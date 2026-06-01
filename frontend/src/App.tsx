@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import AnimatedPage from './components/animations/AnimatedPage'
-import ToastContainer from './components/Toast'
+import { ToastContainer } from './components/ui'
 import ErrorBoundary from './components/ErrorBoundary'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
@@ -12,18 +12,24 @@ import Chat from './components/Chat'
 import MoleculeLibrary from './components/MoleculeLibrary'
 import Workflow from './components/Workflow'
 import ProjectView from './components/ProjectView'
+import SARAnalysis from './components/SARAnalysis'
+import Dashboard from './components/Dashboard'
+import Notes from './components/Notes'
 import SettingsModal from './components/SettingsModal'
 import FileTree from './components/FileTree'
 import { useProjectRoot } from './hooks/useProjectRoot'
 import { invoke } from '@tauri-apps/api/core'
 import { isTauriAvailable } from './api/tauri-bridge'
 import { showToast } from './hooks/useToast'
+import { useIsMobile, useIsTablet } from './styles/responsive'
 
 export default function App() {
   const { projectRoot, setProjectRoot } = useProjectRoot()
   const [currentPage, setCurrentPage] = useState('project')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [fileTreeOpen, setFileTreeOpen] = useState(true)
+  const isMobile = useIsMobile()
+  const isTablet = useIsTablet()
 
   const handleProjectOpened = (root: string) => {
     setProjectRoot(root)
@@ -49,15 +55,22 @@ export default function App() {
           <Welcome onProjectOpened={handleProjectOpened} />
         </main>
         <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        <ToastContainer />
       </div>
     )
   }
+
+  // 移动端：文件树默认关闭，Sidebar 简化
+  const effectiveFileTreeOpen = fileTreeOpen && !isMobile
+  const showFileTree = effectiveFileTreeOpen && !isTablet
 
   // Project open - show full app with file tree
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: fileTreeOpen ? '56px 220px 1fr' : '56px 1fr',
+      gridTemplateColumns: effectiveFileTreeOpen
+        ? (showFileTree ? '56px 220px 1fr' : '56px 1fr')
+        : '56px 1fr',
       gridTemplateRows: 'auto 1fr auto',
       height: '100vh',
     }}>
@@ -69,7 +82,7 @@ export default function App() {
         fileTreeOpen={fileTreeOpen}
         onToggleFileTree={() => setFileTreeOpen(!fileTreeOpen)}
       />
-      {fileTreeOpen && (
+      {showFileTree && (
         <div style={{
           gridColumn: '2',
           gridRow: '1 / 4',
@@ -96,7 +109,7 @@ export default function App() {
               return
             }
             if (path.toLowerCase().endsWith('.pdf')) {
-              invoke('open_file', { path }).catch((e) => {
+              invoke('open_file', { projectRoot, path }).catch((e) => {
                 showToast(`无法打开: ${e}`, 'error')
               })
             } else {
@@ -107,11 +120,13 @@ export default function App() {
       )}
       <Header />
       <main style={{
-        gridColumn: fileTreeOpen ? '3' : '2',
+        gridColumn: effectiveFileTreeOpen ? (showFileTree ? '3' : '2') : '2',
         gridRow: '2 / 3',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        // 移动端：增加一些安全区
+        paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0,
       }}>
         <ErrorBoundary>
           <AppRoutes />
@@ -134,6 +149,9 @@ function AppRoutes() {
         <Route path="/molecules" element={<AnimatedPage><MoleculeLibrary /></AnimatedPage>} />
         <Route path="/workflow" element={<AnimatedPage><Workflow /></AnimatedPage>} />
         <Route path="/project" element={<AnimatedPage><ProjectView /></AnimatedPage>} />
+        <Route path="/sar" element={<AnimatedPage><SARAnalysis /></AnimatedPage>} />
+        <Route path="/dashboard" element={<AnimatedPage><Dashboard /></AnimatedPage>} />
+        <Route path="/notes" element={<AnimatedPage><Notes /></AnimatedPage>} />
       </Routes>
     </AnimatePresence>
   )

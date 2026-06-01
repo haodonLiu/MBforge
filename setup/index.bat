@@ -185,6 +185,25 @@ if errorlevel 1 (echo [WARN] PyTorch) else (echo [OK] PyTorch)
 if errorlevel 1 (echo [WARN] mbforge) else (echo [OK] mbforge)
 
 echo.
+echo --- Optional Feature Status ---
+
+if exist "vendor\pdfium\release\pdfium.dll" (
+    echo [OK] LiteParse (PDFium) - ready
+) else (
+    echo [WARN] LiteParse (PDFium) - not installed (offline scan PDF fallback)
+    echo   Download PDFium to vendor\pdfium\release\ when needed
+    echo   https://github.com/bblanchon/pdfium-binaries/releases
+)
+
+%PYTHON% -c "import torch; assert torch.cuda.is_available()" 2>nul
+if not errorlevel 1 (
+    echo [OK] MolDet (GPU) - ready
+) else (
+    echo [WARN] MolDet (GPU) - no GPU, molecule detection unavailable
+    echo   Requires NVIDIA GPU + CUDA 12.8
+)
+
+echo.
 echo ========================================
 echo   Setup done! Run: uv run mbforge
 echo ========================================

@@ -28,4 +28,27 @@ run_verify() {
         echo -e "${YELLOW}║  配置完成，部分组件有警告请检查上方      ║${NC}"
         echo -e "${YELLOW}╚══════════════════════════════════════════╝${NC}"
     fi
+
+    # ── 可选功能提示 ──
+    echo ""
+    echo -e "${DIM}───────────────── 可选功能提示 ─────────────────${NC}"
+
+    # LiteParse / PDFium
+    if [ -f "vendor/pdfium/release/pdfium.dll" ] || [ -f "vendor/pdfium/release/libpdfium.so" ]; then
+        ok "LiteParse (PDFium) — 就绪"
+    else
+        warn "LiteParse (PDFium) — 未安装（离线扫描 PDF 解析回退）"
+        echo -e "  ${DIM}需要时手动下载 PDFium 到 vendor/pdfium/release/${NC}"
+        echo -e "  ${DIM}https://github.com/bblanchon/pdfium-binaries/releases${NC}"
+    fi
+
+    # MolDet GPU
+    if $PYTHON -c "import torch; assert torch.cuda.is_available()" 2>/dev/null; then
+        ok "MolDet (GPU) — 就绪"
+    else
+        warn "MolDet (GPU) — 无 GPU，分子检测功能不可用"
+        echo -e "  ${DIM}需 NVIDIA GPU + CUDA 12.8 才能使用分子检测功能${NC}"
+    fi
+
+    echo -e "${DIM}────────────────────────────────────────────────${NC}"
 }

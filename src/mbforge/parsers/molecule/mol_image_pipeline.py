@@ -108,23 +108,30 @@ class MolDetv2DocDetector:
         self._load_model()
 
     def _resolve_model_path(self, model_path: Path | None) -> Path:
-        """解析模型路径（支持实际文件名 moldet_v2_yolo11n_960_doc.*）."""
+        """解析模型路径（支持子目录和扁平布局）."""
         if model_path is not None:
             return Path(model_path)
 
-        model_dir = default_model_dir() / self.MODEL_SUBDIR
-        # 先尝试精确匹配，再模糊匹配
-        patterns = ["moldetv2-doc.*", "*doc*.pt", "*doc*.onnx"]
-        for pat in patterns:
-            candidates = list(model_dir.glob(pat))
-            if candidates:
-                # 优先 .pt，其次 .onnx
-                for ext in (".pt", ".onnx", ".engine"):
-                    for c in candidates:
-                        if c.suffix.lower() == ext:
-                            return c
-                return candidates[0]
-        return model_dir / "moldetv2-doc.pt"
+        base_dir = default_model_dir()
+        model_dir = base_dir / self.MODEL_SUBDIR
+
+        # 搜索顺序：子目录 → 父目录（扁平布局）
+        search_dirs = [model_dir, base_dir]
+        patterns = [f"{self.MODEL_SUBDIR}.*", f"*{self.MODEL_SUBDIR.split('-')[-1]}*.pt"]
+
+        for search_dir in search_dirs:
+            if not search_dir.exists():
+                continue
+            for pat in patterns:
+                candidates = list(search_dir.glob(pat))
+                if candidates:
+                    for ext in (".pt", ".onnx", ".engine"):
+                        for c in candidates:
+                            if c.suffix.lower() == ext:
+                                return c
+                    return candidates[0]
+
+        return model_dir / f"{self.MODEL_SUBDIR}.pt"
 
     def _load_model(self) -> None:
         """加载 YOLO 模型."""
@@ -216,23 +223,6 @@ class MolDetv2GeneralDetector(MolDetv2DocDetector):
         iou_threshold: float = 0.45,
     ) -> None:
         super().__init__(model_path, device, conf_threshold, iou_threshold)
-
-    def _resolve_model_path(self, model_path: Path | None) -> Path:
-        """解析模型路径（支持实际文件名 moldet_v2_yolo11n_640_general.*）."""
-        if model_path is not None:
-            return Path(model_path)
-
-        model_dir = default_model_dir() / self.MODEL_SUBDIR
-        patterns = ["moldetv2-general.*", "*general*.pt", "*general*.onnx"]
-        for pat in patterns:
-            candidates = list(model_dir.glob(pat))
-            if candidates:
-                for ext in (".pt", ".onnx", ".engine"):
-                    for c in candidates:
-                        if c.suffix.lower() == ext:
-                            return c
-                return candidates[0]
-        return model_dir / "moldetv2-general.pt"
 
     def detect(
         self, image: Image.Image | np.ndarray

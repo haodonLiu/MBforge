@@ -54,7 +54,7 @@ def main() -> int:
     env_setup.add_argument("--non-interactive", action="store_true", help="静默模式")
 
     # version
-    from .utils.constants import APP_VERSION
+    from .utils.constants import APP_VERSION, DEFAULT_SIDECAR_PORT
 
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {APP_VERSION}"
@@ -109,7 +109,7 @@ def _cmd_dev(args) -> int:
             mode="w", suffix=".bat", delete=False, prefix="mbforge_backend_",
             dir=str(Path(os.environ.get("TEMP", "C:\\Windows\\Temp"))),
         )
-        backend_bat.write(f'@echo off\ncd /d "{project_root}"\n"{sys.executable}" -m uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792\npause\n')
+        backend_bat.write(f'@echo off\ncd /d "{project_root}"\n"{sys.executable}" -m uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port {DEFAULT_SIDECAR_PORT}\npause\n')
         backend_bat.close()
 
         frontend_bat = tempfile.NamedTemporaryFile(
@@ -121,7 +121,7 @@ def _cmd_dev(args) -> int:
 
         # start 的第一个带引号参数被视为窗口标题，所以用双引号包 bat 路径即可
         subprocess.Popen(
-            f'start "MBForge 后端 (localhost:18792)" cmd /k "{backend_bat.name}"',
+            f'start "MBForge 后端 (localhost:{DEFAULT_SIDECAR_PORT})" cmd /k "{backend_bat.name}"',
             shell=True,
         )
         subprocess.Popen(
@@ -131,7 +131,7 @@ def _cmd_dev(args) -> int:
     else:
         import shutil
         npx_cmd = shutil.which("npx") or "npx"
-        backend_cmd = f'cd "{project_root}" && {sys.executable} -m uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792; exec bash'
+        backend_cmd = f'cd "{project_root}" && {sys.executable} -m uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port {DEFAULT_SIDECAR_PORT}; exec bash'
         frontend_cmd = f'cd "{frontend_dir}" && {npx_cmd} vite; exec bash'
         for title, cmd in [("MBForge 后端", backend_cmd), ("MBForge 前端", frontend_cmd)]:
             for term in ["wt", "gnome-terminal", "xterm", "konsole"]:
@@ -139,7 +139,7 @@ def _cmd_dev(args) -> int:
                     subprocess.Popen([term, "--title", title, "-e", "bash", "-c", cmd])
                     break
 
-    print("\033[32m[后端]\033[0m 已在新终端窗口启动 (localhost:18792)")
+    print(f"\033[32m[后端]\033[0m 已在新终端窗口启动 (localhost:{DEFAULT_SIDECAR_PORT})")
     print("\033[32m[前端]\033[0m 已在新终端窗口启动 (localhost:5173)")
     print("\033[90m关闭对应终端窗口即可停止各服务\033[0m")
 
@@ -148,7 +148,7 @@ def _cmd_dev(args) -> int:
     print("\033[90m等待后端就绪...\033[0m")
     for i in range(60):
         try:
-            urllib.request.urlopen("http://127.0.0.1:18792/api/v1/health", timeout=2)
+            urllib.request.urlopen(f"http://127.0.0.1:{DEFAULT_SIDECAR_PORT}/api/v1/health", timeout=2)
             break
         except Exception:
             time.sleep(1)
@@ -175,10 +175,10 @@ def _cmd_gui(args) -> int:
         os.environ["MBFORGE_OPEN_PROJECT"] = args.project
 
     setup_logging()
-    print("\033[36m[后端]\033[0m 启动模型服务 (localhost:18792)...")
+    print(f"\033[36m[后端]\033[0m 启动模型服务 (localhost:{DEFAULT_SIDECAR_PORT})...")
     server_proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "mbforge.model_server.main:app",
-         "--host", "127.0.0.1", "--port", "18792"],
+         "--host", "127.0.0.1", "--port", str(DEFAULT_SIDECAR_PORT)],
     )
 
     import urllib.request
@@ -187,7 +187,7 @@ def _cmd_gui(args) -> int:
             print(f"\033[31m[后端]\033[0m 进程异常退出 (code={server_proc.returncode})，可能端口已被占用")
             return 1
         try:
-            urllib.request.urlopen("http://127.0.0.1:18792/api/v1/health", timeout=1)
+            urllib.request.urlopen(f"http://127.0.0.1:{DEFAULT_SIDECAR_PORT}/api/v1/health", timeout=1)
             break
         except Exception:
             time.sleep(0.5)

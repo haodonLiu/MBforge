@@ -74,90 +74,58 @@ export default function Welcome({ onProjectOpened }: Props) {
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>(loadRecent)
 
   const handleProjectSuccess = (root: string, name: string) => {
-    console.log('[Welcome] === handleProjectSuccess ===')
-    console.log('[Welcome] Root:', root)
-    console.log('[Welcome] Name:', name)
     localStorage.setItem('mbforge_project_root', root)
     persistRecent(root, name)
-    console.log('[Welcome] Calling onProjectOpened...')
     onProjectOpened?.(root)
-    console.log('[Welcome] === handleProjectSuccess END ===')
   }
 
   const openByName = async (path: string) => {
-    console.log('[Welcome] === openByName START ===')
-    console.log('[Welcome] Path:', path)
-    console.log('[Welcome] Current loading state:', loading)
-    
     setLoading(true)
     try {
-      console.log('[Welcome] Calling openProject...')
       const resp = await openProject(path)
-      console.log('[Welcome] openProject response:', JSON.stringify(resp, null, 2))
-      
       if (resp.success && resp.project) {
-        console.log('[Welcome] Project opened successfully:', resp.project)
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
-        console.error('[Welcome] openProject failed:', resp.error)
         showToast(resp.error || '打开失败，请确认路径有效', 'error')
       }
     } catch (e) {
-      console.error('[Welcome] Exception:', e)
       showToast(`打开失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
-      console.log('[Welcome] === openByName END ===')
       setLoading(false)
     }
   }
 
   const handleCreate = async () => {
     if (!selectedDir.trim() || !projectName.trim()) return
-    console.log('[Welcome] === handleCreate START ===')
     const fullPath = `${selectedDir.trim()}/${projectName.trim()}`
-    console.log('[Welcome] Full path:', fullPath)
     setLoading(true)
     try {
-      console.log('[Welcome] Calling openProject (create)...')
       const resp = await openProject(fullPath, projectName.trim())
-      console.log('[Welcome] openProject response:', JSON.stringify(resp, null, 2))
       if (resp.success && resp.project) {
-        console.log('[Welcome] Project created successfully')
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
-        console.error('[Welcome] Create failed:', resp.error)
         showToast(resp.error || '创建失败', 'error')
       }
     } catch (e) {
-      console.error('[Welcome] Exception:', e)
       showToast(`创建失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
-      console.log('[Welcome] === handleCreate END ===')
       setLoading(false)
     }
   }
 
   const handleOpenDir = async () => {
     if (!selectedDir.trim()) return
-    console.log('[Welcome] === handleOpenDir START ===')
-    console.log('[Welcome] Selected dir:', selectedDir)
     setLoading(true)
     try {
-      console.log('[Welcome] Calling openProject...')
       const resp = await openProject(selectedDir.trim())
-      console.log('[Welcome] openProject response:', JSON.stringify(resp, null, 2))
       if (resp.success && resp.project) {
-        console.log('[Welcome] Project opened successfully')
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
-        console.error('[Welcome] Open failed:', resp.error)
         showToast(resp.error || '无法打开，请确认该目录是有效的 MBForge 项目', 'error')
       }
     } catch (e) {
-      console.error('[Welcome] Exception:', e)
       showToast(`打开失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
-      console.log('[Welcome] === handleOpenDir END ===')
       setLoading(false)
     }
   }

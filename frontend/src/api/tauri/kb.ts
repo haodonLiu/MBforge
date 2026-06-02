@@ -1,5 +1,6 @@
 /** Knowledge base — indexing, semantic search, document structure & pages. */
 
+import { EVT } from '../tauri-events'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
@@ -57,7 +58,7 @@ export async function kbSearchStream(
     onChunk({ type: 'complete', results: [], count: 0, error: String(err) })
   })
 
-  const unlisten = await listen<KbSearchChunk>('kb-search-chunk', (event) => {
+  const unlisten = await listen<KbSearchChunk>(EVT.KbSearchChunk, (event) => {
     onChunk(event.payload)
   })
 

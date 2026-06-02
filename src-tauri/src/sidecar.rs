@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tauri::Emitter;
 
-use crate::core::constants::{sidecar_url, DEFAULT_SIDECAR_PORT};
+use crate::core::constants::{sidecar_url, DEFAULT_SIDECAR_PORT, EVT_SIDECAR_LOG, EVT_SIDECAR_STATUS};
 
 /// 构造 sidecar 日志事件 payload
 fn log_event(stream: &str, line: &str) -> serde_json::Value {
@@ -90,7 +90,7 @@ pub fn spawn_and_start_readers(inner: &Arc<SidecarInner>, app: &AppHandle) -> Re
         if let Some(stdout) = stdout {
             let reader = BufReader::new(stdout);
             for line in reader.lines().flatten() {
-                let _ = app_c.emit("sidecar://log", log_event("stdout", &line));
+                let _ = app_c.emit(EVT_SIDECAR_LOG, log_event("stdout", &line));
             }
         }
     });
@@ -106,7 +106,7 @@ pub fn spawn_and_start_readers(inner: &Arc<SidecarInner>, app: &AppHandle) -> Re
         if let Some(stderr) = stderr {
             let reader = BufReader::new(stderr);
             for line in reader.lines().flatten() {
-                let _ = app_c.emit("sidecar://log", log_event("stderr", &line));
+                let _ = app_c.emit(EVT_SIDECAR_LOG, log_event("stderr", &line));
             }
         }
     });
@@ -131,7 +131,7 @@ fn emit_status(inner: &SidecarInner, app: &AppHandle) {
         "uptimeSecs": uptime,
         "lastError": *inner.last_error.lock().unwrap_or_else(|e| e.into_inner()),
     });
-    let _ = app.emit("sidecar://status", payload);
+    let _ = app.emit(EVT_SIDECAR_STATUS, payload);
 }
 
 /// Background health-check loop. Auto-restarts sidecar on repeated failures.
@@ -143,7 +143,7 @@ pub fn start_health_monitor(inner: Arc<SidecarInner>, app: AppHandle) {
         {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[sidecar] Failed to create HTTP client: {}", e);
+                log::error!("[sidecar] Failed to create HTTP client: {}", e);
                 return;
             }
         };
@@ -181,7 +181,7 @@ pub fn start_health_monitor(inner: Arc<SidecarInner>, app: AppHandle) {
                                 inner.restart_count.fetch_add(1, Ordering::Relaxed);
                             if restarts < MAX_RESTARTS {
                                 let _ = app.emit(
-                                    "sidecar://log",
+                                    EVT_SIDECAR_LOG,
                                     serde_json::json!({
                                         "stream": "system",
                                         "line": format!(
@@ -194,7 +194,7 @@ pub fn start_health_monitor(inner: Arc<SidecarInner>, app: AppHandle) {
                                 if let Err(e) = spawn_and_start_readers(&inner, &app) {
                                     *inner.last_error.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.clone());
                                     let _ = app.emit(
-                                        "sidecar://log",
+                                        EVT_SIDECAR_LOG,
                                         serde_json::json!({
                                             "stream": "system",
                                             "line": format!("[sidecar] Restart failed: {}", e),
@@ -204,7 +204,7 @@ pub fn start_health_monitor(inner: Arc<SidecarInner>, app: AppHandle) {
                                     emit_status(&inner, &app);
                                 } else {
                                     let _ = app.emit(
-                                        "sidecar://log",
+                                        EVT_SIDECAR_LOG,
                                         serde_json::json!({
                                             "stream": "system",
                                             "line": "[sidecar] Sidecar restarted successfully",
@@ -214,7 +214,7 @@ pub fn start_health_monitor(inner: Arc<SidecarInner>, app: AppHandle) {
                                 }
                             } else {
                                 let _ = app.emit(
-                                    "sidecar://log",
+                                    EVT_SIDECAR_LOG,
                                     serde_json::json!({
                                         "stream": "system",
                                         "line": format!(

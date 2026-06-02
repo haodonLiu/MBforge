@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+use log::error;
 mod core;
 mod parsers;
 mod sidecar;
@@ -75,14 +76,14 @@ fn main() {
 
                 let sidecar = sidecar::SidecarInner::new(python, resource_dir);
                 if let Err(e) = sidecar::spawn_and_start_readers(&sidecar, &app_handle) {
-                    eprintln!("[tauri] Failed to start sidecar: {}", e);
+                    log::error!("[tauri] Failed to start sidecar: {}", e);
                 } else {
                     app.manage(sidecar.clone());
                     sidecar::start_health_monitor(sidecar, app_handle.clone());
                 }
             } else if !no_spawn {
                 #[cfg(debug_assertions)]
-                eprintln!("[tauri] Dev mode: Python server expected to run separately");
+                log::info!("[tauri] Dev mode: Python server expected to run separately");
             }
 
             Ok(())
@@ -90,7 +91,7 @@ fn main() {
         .on_window_event(|app, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 if let Some(state) = app.try_state::<std::sync::Arc<sidecar::SidecarInner>>() {
-                    let mut child = state.child.lock().unwrap();
+                    let mut child = state.child.lock().unwrap_or_else(|e| e.into_inner());
                     if let Some(ref mut c) = *child {
                         let _ = c.kill();
                     }

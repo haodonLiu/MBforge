@@ -1,5 +1,6 @@
 /** Agent session management + post-process PDF reporting. */
 
+import { EVT } from '../tauri-events'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { PdfParseResult } from './pdf'
@@ -58,7 +59,7 @@ export async function agentChatStream(
   invoke('agent_chat_stream', { sessionId, userInput }).catch(err => onError(String(err)))
 
   // Listen for chunks
-  const unlistenChunk = await listen<AgentStreamEvent>('agent-stream-chunk', (event) => {
+  const unlistenChunk = await listen<AgentStreamEvent>(EVT.AgentStreamChunk, (event) => {
     if (event.payload.session_id === sessionId) {
       onChunk(event.payload.delta)
       if (event.payload.finish_reason) {
@@ -68,7 +69,7 @@ export async function agentChatStream(
   })
 
   // Listen for done signal
-  const unlistenDone = await listen<{ session_id: string }>('agent-stream-done', (event) => {
+  const unlistenDone = await listen<{ session_id: string }>(EVT.AgentStreamDone, (event) => {
     if (event.payload.session_id === sessionId) {
       onDone()
     }

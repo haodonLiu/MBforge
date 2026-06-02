@@ -174,23 +174,26 @@ pub fn associate_single(result: &mut ExtractionResult) {
         }
     }
 
-    let map = if let Some(m) = result.properties.as_object_mut() {
-        m
-    } else {
-        log::warn!("associate_single: properties is not a JSON object, resetting");
-        result.properties = serde_json::json!({});
-        result.properties.as_object_mut().unwrap()
+    // Ensure `result.properties` is a JSON object. We use a fresh map
+    // local variable to avoid the unsafe `as_object_mut().unwrap()` that
+    // would otherwise be required after re-assigning properties.
+    let mut map_owned: serde_json::Map<String, serde_json::Value> = match result.properties.as_object_mut() {
+        Some(m) => std::mem::take(m),
+        None => {
+            log::warn!("associate_single: properties is not a JSON object, resetting");
+            serde_json::Map::new()
+        }
     };
 
     // 2. Activities
     let activities = extract_activities(text);
     if !activities.is_empty() {
         let first = &activities[0];
-        map.entry("activity_type".to_string())
+        map_owned.entry("activity_type".to_string())
             .or_insert(serde_json::json!(first.activity_type));
-        map.entry("activity_value".to_string())
+        map_owned.entry("activity_value".to_string())
             .or_insert(serde_json::json!(first.value));
-        map.entry("activity_unit".to_string())
+        map_owned.entry("activity_unit".to_string())
             .or_insert(serde_json::json!(first.unit));
 
         let activities_json: Vec<serde_json::Value> = activities
@@ -203,23 +206,26 @@ pub fn associate_single(result: &mut ExtractionResult) {
                 })
             })
             .collect();
-        map.entry("activities".to_string())
+        map_owned.entry("activities".to_string())
             .or_insert(serde_json::json!(activities_json));
     }
 
     // 3. Cell lines
     let cell_lines = extract_cell_lines(text);
     if !cell_lines.is_empty() {
-        map.entry("cell_lines".to_string())
+        map_owned.entry("cell_lines".to_string())
             .or_insert(serde_json::json!(cell_lines));
     }
 
     // 4. Targets
     let targets = extract_targets(text);
     if !targets.is_empty() {
-        map.entry("targets".to_string())
+        map_owned.entry("targets".to_string())
             .or_insert(serde_json::json!(targets));
     }
+
+    // Write back the populated map.
+    result.properties = serde_json::Value::Object(map_owned);
 }
 
 /// Batch association: run `associate_single` on every result.

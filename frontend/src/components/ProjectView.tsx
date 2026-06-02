@@ -1,3 +1,4 @@
+import { EVT } from '../api/tauri-events'
 import { useState, useEffect } from 'react'
 import { listProjectDocuments, scanProjectFiles, indexProjectRust, type IndexResult } from '../api/tauri-bridge'
 import { listen } from '@tauri-apps/api/event'
@@ -77,7 +78,7 @@ export default function ProjectView() {
     }).catch(() => {})
 
     let total = 0
-    const unlisten = await listen<{ stage: string; payload: Record<string, unknown> }>('doc-progress', (event) => {
+    const unlisten = await listen<{ stage: string; payload: Record<string, unknown> }>(EVT.DocProgress, (event) => {
       const payload = event.payload.payload
       const parser = payload.parser as string || ''
       if (parser.startsWith('indexing')) {

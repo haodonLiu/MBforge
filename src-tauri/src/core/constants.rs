@@ -53,6 +53,36 @@ pub const META_SOURCE: &str = "source";
 pub const META_FILENAME: &str = "filename";
 pub const META_DOC_ID: &str = "doc_id";
 
+// -----------------------------------------------------------------------------
+// Tauri event names — single source of truth for IPC channel identifiers.
+//
+// Frontend mirrors these as string literals in `api/tauri/*.ts`; if you change
+// a value here, update the matching `listen<...>(...)` calls in the frontend.
+// (Future: codegen from this file to a `tauri-events.ts`.)
+// -----------------------------------------------------------------------------
+
+/// Pipeline progress updates emitted during `process_document`.
+/// Payload: `DocProgressEvent` (stage + payload).
+pub const EVT_DOC_PROGRESS: &str = "doc-progress";
+
+/// Final pipeline result emitted on completion.
+pub const EVT_DOC_RESULT: &str = "doc-result";
+
+/// Sidecar stdout/stderr log line.
+pub const EVT_SIDECAR_LOG: &str = "sidecar://log";
+
+/// Sidecar health-status update.
+pub const EVT_SIDECAR_STATUS: &str = "sidecar://status";
+
+/// Streaming agent response chunk (delta text).
+pub const EVT_AGENT_STREAM_CHUNK: &str = "agent-stream-chunk";
+
+/// Streaming agent response completion signal.
+pub const EVT_AGENT_STREAM_DONE: &str = "agent-stream-done";
+
+/// Knowledge-base streaming search chunk.
+pub const EVT_KB_SEARCH_CHUNK: &str = "kb-search-chunk";
+
 // Sidecar
 pub const DEFAULT_SIDECAR_PORT: u16 = 18792;
 pub const DEFAULT_SIDECAR_URL: &str = "http://127.0.0.1:18792";

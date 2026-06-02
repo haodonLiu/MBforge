@@ -10,6 +10,8 @@ use std::sync::{Mutex, OnceLock};
 
 use tauri::Emitter;
 
+use crate::core::constants::EVT_KB_SEARCH_CHUNK;
+
 use super::document_tree::DocumentTreeIndex;
 use super::semantic_cache::{SemanticCache, SemanticCacheConfig};
 use super::stream_search::{StreamingSearch, StreamingSearchConfig, StreamingResult};
@@ -156,7 +158,7 @@ pub fn get_or_init_kb(root: &str) -> Result<std::sync::MutexGuard<'static, HashM
 
 fn get_or_init_semantic_cache(root: &str) -> std::sync::MutexGuard<'static, HashMap<String, SemanticCache>> {
     let cache = SEMANTIC_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = cache.lock().unwrap();
+    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
     if !guard.contains_key(root) {
         let sc = SemanticCache::new(
             std::path::Path::new(root),
@@ -240,7 +242,7 @@ pub async fn kb_search_stream(
 
     // 通过事件逐 chunk 推送
     for chunk in chunks {
-        let _ = app.emit("kb-search-chunk", serde_json::json!({
+        let _ = app.emit(EVT_KB_SEARCH_CHUNK, serde_json::json!({
             "type": chunk.r#type,
             "results": chunk.results,
             "count": chunk.count,

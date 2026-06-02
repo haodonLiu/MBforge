@@ -1,6 +1,8 @@
 /** Molecule store + analysis wrappers (compatible with client.ts). */
 
 import { invoke } from '@tauri-apps/api/core'
+import { invokeWithError } from './_utils'
+import { ErrorCode } from '../../utils/errors'
 import type { MoleculeRecord } from '../../types'
 
 export interface MoleculeRecord_ {
@@ -26,7 +28,10 @@ export interface MolStoreStats {
 }
 
 export async function molStoreInit(projectRoot: string): Promise<void> {
-  return invoke<void>('mol_store_init', { projectRoot })
+  return invokeWithError(
+    () => invoke<void>('mol_store_init', { projectRoot }),
+    ErrorCode.MoleculeSearch,
+  )
 }
 
 export async function molStoreAdd(
@@ -40,17 +45,20 @@ export async function molStoreAdd(
   units?: string,
   sourceType?: string,
 ): Promise<void> {
-  return invoke<void>('mol_store_add', {
-    projectRoot,
-    molId,
-    esmiles,
-    name: name ?? null,
-    sourceDoc: sourceDoc ?? null,
-    activity: activity ?? null,
-    activityType: activityType ?? null,
-    units: units ?? null,
-    sourceType: sourceType ?? null,
-  })
+  return invokeWithError(
+    () => invoke<void>('mol_store_add', {
+      projectRoot,
+      molId,
+      esmiles,
+      name: name ?? null,
+      sourceDoc: sourceDoc ?? null,
+      activity: activity ?? null,
+      activityType: activityType ?? null,
+      units: units ?? null,
+      sourceType: sourceType ?? null,
+    }),
+    ErrorCode.MoleculeSearch,
+  )
 }
 
 export async function molStoreList(
@@ -60,54 +68,75 @@ export async function molStoreList(
   sourceType?: string,
   status?: string,
 ): Promise<MoleculeRecord_[]> {
-  return invoke<MoleculeRecord_[]>('mol_store_list', {
-    projectRoot,
-    limit: limit ?? null,
-    offset: offset ?? null,
-    sourceType: sourceType ?? null,
-    status: status ?? null,
-  })
+  return invokeWithError(
+    () => invoke<MoleculeRecord_[]>('mol_store_list', {
+      projectRoot,
+      limit: limit ?? null,
+      offset: offset ?? null,
+      sourceType: sourceType ?? null,
+      status: status ?? null,
+    }),
+    ErrorCode.MoleculeSearch,
+  )
 }
 
 export async function molStoreGet(
   projectRoot: string,
   molId: string,
 ): Promise<MoleculeRecord_ | null> {
-  return invoke<MoleculeRecord_ | null>('mol_store_get', { projectRoot, molId })
+  return invokeWithError(
+    () => invoke<MoleculeRecord_ | null>('mol_store_get', { projectRoot, molId }),
+    ErrorCode.MoleculeSearch,
+  )
 }
 
 export async function molStoreSearch(
   projectRoot: string,
   query: string,
 ): Promise<MoleculeRecord_[]> {
-  return invoke<MoleculeRecord_[]>('mol_store_search', { projectRoot, query })
+  return invokeWithError(
+    () => invoke<MoleculeRecord_[]>('mol_store_search', { projectRoot, query }),
+    ErrorCode.MoleculeSearch,
+  )
 }
 
 export async function molStoreDelete(
   projectRoot: string,
   molId: string,
 ): Promise<boolean> {
-  return invoke<boolean>('mol_store_delete', { projectRoot, molId })
+  return invokeWithError(
+    () => invoke<boolean>('mol_store_delete', { projectRoot, molId }),
+    ErrorCode.MoleculeSearch,
+  )
 }
 
 export async function molStoreStats(
   projectRoot: string,
 ): Promise<MolStoreStats> {
-  return invoke<MolStoreStats>('mol_store_stats', { projectRoot })
+  return invokeWithError(
+    () => invoke<MolStoreStats>('mol_store_stats', { projectRoot }),
+    ErrorCode.MoleculeSearch,
+  )
 }
 
 export async function molStoreSearchBySmiles(
   projectRoot: string,
   esmiles: string,
 ): Promise<MoleculeRecord_ | null> {
-  return invoke<MoleculeRecord_ | null>('mol_store_search_by_smiles', { projectRoot, esmiles })
+  return invokeWithError(
+    () => invoke<MoleculeRecord_ | null>('mol_store_search_by_smiles', { projectRoot, esmiles }),
+    ErrorCode.MoleculeSearch,
+  )
 }
 
 export async function molStoreListByDoc(
   projectRoot: string,
   docId: string,
 ): Promise<MoleculeRecord_[]> {
-  return invoke<MoleculeRecord_[]>('mol_store_list_by_doc', { projectRoot, docId })
+  return invokeWithError(
+    () => invoke<MoleculeRecord_[]>('mol_store_list_by_doc', { projectRoot, docId }),
+    ErrorCode.MoleculeSearch,
+  )
 }
 
 // ---- client.ts compatible wrappers ----

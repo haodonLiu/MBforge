@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
+import { motion } from 'framer-motion'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import katex from 'katex'
@@ -87,9 +89,16 @@ export default function Chat() {
   const [isLoading, setIsLoading] = useState(false)
   const [docCount, setDocCount] = useState(0)
   const [molCount, setMolCount] = useState(0)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => messagesContainerRef.current,
+    estimateSize: () => 120,
+    measureElement: (el) => el.getBoundingClientRect().height,
+    overscan: 5,
+  })
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' })
   }
 
   // Initialize Tauri agent on mount
@@ -260,11 +269,12 @@ export default function Chat() {
     }
   }
 
+  const { t } = useTranslation()
   const insertTemplate = (template: string) => {
     const templates: Record<string, string> = {
-      search_mol: '搜索分子：',
-      analyze_sar: '请分析这些分子的SAR关系：',
-      dock: '执行分子对接：',
+      search_mol: t('chat.searchMolPrefix'),
+      analyze_sar: t('chat.analyzeSarPrefix'),
+      dock: t('chat.dockPrefix'),
     }
     setInput(prev => prev + (templates[template] || ''))
   }
@@ -283,155 +293,169 @@ export default function Chat() {
       </div>
 
       {/* 消息区域 */}
-      <div style={{
-        flex: 1,
-        overflowY: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '20px',
-        padding: '8px 0',
-      }}>
-        <AnimatePresence initial={false}>
-          {messages.map((msg, i) => (
-            <motion.div
-              key={msg.id ?? i}
-              initial={{ opacity: 0, y: 12, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-              style={{
-                display: 'flex',
-                gap: '10px',
-                maxWidth: '88%',
-                alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-              }}
-            >
-              {msg.role === 'assistant' && (
-                <div style={{ flexShrink: 0, marginTop: '4px' }}>
-                  <Avatar size={32} variant="bot">
-                    <BotIcon size={16} />
-                  </Avatar>
-                </div>
-              )}
-              <div style={{
-                position: 'relative',
-                padding: '14px 18px',
-                background: msg.role === 'user'
-                  ? 'var(--user-bg)'
-                  : 'var(--ai-bg)',
-                color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
-                borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
-                boxShadow: msg.role === 'user'
-                  ? '0 4px 12px rgba(99,102,241,0.30)'
-                  : '0 2px 8px var(--ai-shadow)',
-                border: msg.role === 'user' ? 'none' : '1px solid var(--ai-border)',
-                lineHeight: 1.65,
-                fontSize: '14px',
-              }}>
-                {msg.role === 'assistant' ? (
-                  <div className="chat-markdown" style={{
-                    '--chat-code-bg': 'var(--bg-hover)',
-                  } as React.CSSProperties}>
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        p: ({ children }) => {
-                          const processed = renderInlineLatex(children)
-                          return <p style={{ margin: '8px 0', '&:first-child': { marginTop: 0 } } as React.CSSProperties}>{processed}</p>
-                        },
-                        img: ({ node, ...props }) => (
-                          <img
-                            {...props}
-                            style={{ maxWidth: '100%', borderRadius: '8px', margin: '8px 0', cursor: 'pointer' }}
-                            onClick={() => props.src && window.open(props.src, '_blank')}
-                          />
-                        ),
-                        code: ({ node, className, children, ...props }) => {
-                          const text = String(children).trim()
-                          if (!className && isSmiles(text)) {
-                            return (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', verticalAlign: 'middle' }}>
-                                <img
-                                  src={smilesToImgUrl(text)}
-                                  alt={text}
-                                  style={{ height: '32px', borderRadius: '4px', cursor: 'pointer' }}
-                                  onClick={() => window.open(smilesToImgUrl(text), '_blank')}
-                                  onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                                />
-                                <code style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{text}</code>
-                              </span>
-                            )
-                          }
-                          const isBlock = className?.startsWith('language-')
-                          if (isBlock) {
-                            return (
-                              <div style={{
-                                background: 'var(--bg-hover)',
-                                borderRadius: '10px',
-                                padding: '14px 16px',
-                                margin: '8px 0',
-                                overflowX: 'auto',
-                                fontSize: '13px',
-                                border: '1px solid var(--border)',
-                              }}>
-                                <code className={className} {...props}>{children}</code>
+      <div
+        ref={messagesContainerRef}
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          position: 'relative',
+          padding: '8px 0',
+        }}
+      >
+        <div style={{ height: `${virtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
+          {virtualizer.getVirtualItems().map((virtualItem) => {
+            const msg = messages[virtualItem.index]
+            return (
+              <div
+                key={msg.id ?? virtualItem.index}
+                ref={virtualizer.measureElement}
+                data-index={virtualItem.index}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualItem.start}px)`,
+                  padding: '0 16px',
+                }}
+              >
+                <div style={{
+                  display: 'flex',
+                  gap: '10px',
+                  maxWidth: '88%',
+                  marginLeft: msg.role === 'user' ? 'auto' : '0',
+                  marginRight: msg.role === 'user' ? '0' : 'auto',
+                  marginBottom: '20px',
+                }}>
+                  {msg.role === 'assistant' && (
+                    <div style={{ flexShrink: 0, marginTop: '4px' }}>
+                      <Avatar size={32} variant="bot">
+                        <BotIcon size={16} />
+                      </Avatar>
+                    </div>
+                  )}
+                  <div style={{
+                    position: 'relative',
+                    padding: '14px 18px',
+                    background: msg.role === 'user'
+                      ? 'var(--user-bg)'
+                      : 'var(--ai-bg)',
+                    color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
+                    borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
+                    boxShadow: msg.role === 'user'
+                      ? '0 4px 12px rgba(99,102,241,0.30)'
+                      : '0 2px 8px var(--ai-shadow)',
+                    border: msg.role === 'user' ? 'none' : '1px solid var(--ai-border)',
+                    lineHeight: 1.65,
+                    fontSize: '14px',
+                  }}>
+                    {msg.role === 'assistant' ? (
+                      <div className="chat-markdown" style={{
+                        '--chat-code-bg': 'var(--bg-hover)',
+                      } as React.CSSProperties}>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            p: ({ children }) => {
+                              const processed = renderInlineLatex(children)
+                              return <p style={{ margin: '8px 0', '&:first-child': { marginTop: 0 } } as React.CSSProperties}>{processed}</p>
+                            },
+                            img: ({ node, ...props }) => (
+                              <img
+                                {...props}
+                                style={{ maxWidth: '100%', borderRadius: '8px', margin: '8px 0', cursor: 'pointer' }}
+                                onClick={() => props.src && window.open(props.src, '_blank')}
+                              />
+                            ),
+                            code: ({ node, className, children, ...props }) => {
+                              const text = String(children).trim()
+                              if (!className && isSmiles(text)) {
+                                return (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', verticalAlign: 'middle' }}>
+                                    <img
+                                      src={smilesToImgUrl(text)}
+                                      alt={text}
+                                      style={{ height: '32px', borderRadius: '4px', cursor: 'pointer' }}
+                                      onClick={() => window.open(smilesToImgUrl(text), '_blank')}
+                                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                                    />
+                                    <code style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{text}</code>
+                                  </span>
+                                )
+                              }
+                              const isBlock = className?.startsWith('language-')
+                              if (isBlock) {
+                                return (
+                                  <div style={{
+                                    background: 'var(--bg-hover)',
+                                    borderRadius: '10px',
+                                    padding: '14px 16px',
+                                    margin: '8px 0',
+                                    overflowX: 'auto',
+                                    fontSize: '13px',
+                                    border: '1px solid var(--border)',
+                                  }}>
+                                    <code className={className} {...props}>{children}</code>
+                                  </div>
+                                )
+                              }
+                              return (
+                                <code className={className} {...props}
+                                  style={{
+                                    background: 'var(--bg-hover)',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    fontSize: '13px',
+                                  }}
+                                >{children}</code>
+                              )
+                            },
+                            ul: ({ children }) => <ul style={{ paddingLeft: '20px', margin: '6px 0' }}>{children}</ul>,
+                            ol: ({ children }) => <ol style={{ paddingLeft: '20px', margin: '6px 0' }}>{children}</ol>,
+                            table: ({ children }) => (
+                              <div style={{ overflowX: 'auto', margin: '8px 0' }}>
+                                <table style={{ borderCollapse: 'collapse', fontSize: '13px', width: '100%' }}>
+                                  {children}
+                                </table>
                               </div>
-                            )
-                          }
-                          return (
-                            <code className={className} {...props}
-                              style={{
+                            ),
+                            th: ({ children }) => <th style={{ border: '1px solid var(--border)', padding: '6px 10px', background: 'var(--bg-hover)', textAlign: 'left' }}>{children}</th>,
+                            td: ({ children }) => <td style={{ border: '1px solid var(--border)', padding: '6px 10px' }}>{children}</td>,
+                            h1: ({ children }) => <h1 style={{ fontSize: '16px', fontWeight: 600, margin: '12px 0 6px' }}>{children}</h1>,
+                            h2: ({ children }) => <h2 style={{ fontSize: '15px', fontWeight: 600, margin: '10px 0 5px' }}>{children}</h2>,
+                            h3: ({ children }) => <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '8px 0 4px' }}>{children}</h3>,
+                            blockquote: ({ children }) => (
+                              <blockquote style={{
+                                margin: '8px 0',
+                                padding: '6px 12px',
+                                borderLeft: '3px solid var(--accent)',
                                 background: 'var(--bg-hover)',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                fontSize: '13px',
-                              }}
-                            >{children}</code>
-                          )
-                        },
-                        ul: ({ children }) => <ul style={{ paddingLeft: '20px', margin: '6px 0' }}>{children}</ul>,
-                        ol: ({ children }) => <ol style={{ paddingLeft: '20px', margin: '6px 0' }}>{children}</ol>,
-                        table: ({ children }) => (
-                          <div style={{ overflowX: 'auto', margin: '8px 0' }}>
-                            <table style={{ borderCollapse: 'collapse', fontSize: '13px', width: '100%' }}>
-                              {children}
-                            </table>
-                          </div>
-                        ),
-                        th: ({ children }) => <th style={{ border: '1px solid var(--border)', padding: '6px 10px', background: 'var(--bg-hover)', textAlign: 'left' }}>{children}</th>,
-                        td: ({ children }) => <td style={{ border: '1px solid var(--border)', padding: '6px 10px' }}>{children}</td>,
-                        h1: ({ children }) => <h1 style={{ fontSize: '16px', fontWeight: 600, margin: '12px 0 6px' }}>{children}</h1>,
-                        h2: ({ children }) => <h2 style={{ fontSize: '15px', fontWeight: 600, margin: '10px 0 5px' }}>{children}</h2>,
-                        h3: ({ children }) => <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '8px 0 4px' }}>{children}</h3>,
-                        blockquote: ({ children }) => (
-                          <blockquote style={{
-                            margin: '8px 0',
-                            padding: '6px 12px',
-                            borderLeft: '3px solid var(--accent)',
-                            background: 'var(--bg-hover)',
-                            borderRadius: '0 6px 6px 0',
-                            color: 'var(--text-secondary)',
-                          }}>{children}</blockquote>
-                        ),
-                        hr: () => <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '12px 0' }} />,
-                      }}
-                    >{msg.content}</ReactMarkdown>
+                                borderRadius: '0 6px 6px 0',
+                                color: 'var(--text-secondary)',
+                              }}>{children}</blockquote>
+                            ),
+                            hr: () => <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '12px 0' }} />,
+                          }}
+                        >{msg.content}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                    )}
                   </div>
-                ) : (
-                  <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
-                )}
-              </div>
-              {msg.role === 'user' && (
-                <div style={{ flexShrink: 0, marginTop: '4px' }}>
-                  <Avatar size={32} variant="user">
-                    <UserIcon size={16} />
-                  </Avatar>
+                  {msg.role === 'user' && (
+                    <div style={{ flexShrink: 0, marginTop: '4px' }}>
+                      <Avatar size={32} variant="user">
+                        <UserIcon size={16} />
+                      </Avatar>
+                    </div>
+                  )}
                 </div>
-              )}
-            </motion.div>
-          ))}
-        </AnimatePresence>
+              </div>
+            )
+          })}
+        </div>
         {isLoading && (
-          <div style={{ display: 'flex', gap: '10px', maxWidth: '88%', alignSelf: 'flex-start' }}>
+          <div style={{ display: 'flex', gap: '10px', maxWidth: '88%', marginLeft: '16px' }}>
             <div style={{ flexShrink: 0, marginTop: '4px' }}>
               <Avatar size={32} variant="bot">
                 <BotIcon size={16} />
@@ -462,7 +486,6 @@ export default function Chat() {
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* 快捷操作 + 输入框 — 底部 */}
@@ -470,9 +493,9 @@ export default function Chat() {
         <div style={{
           display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap',
         }}>
-          <Button variant="ghost" size="sm" onClick={() => insertTemplate('search_mol')}><FlaskIcon size={13} /> 搜索分子</Button>
-          <Button variant="ghost" size="sm" onClick={() => insertTemplate('analyze_sar')}><FlaskIcon size={13} /> SAR 分析</Button>
-          <Button variant="ghost" size="sm" onClick={() => insertTemplate('dock')}><FlaskIcon size={13} /> 分子对接</Button>
+          <Button variant="ghost" size="sm" onClick={() => insertTemplate('search_mol')}><FlaskIcon size={13} /> {t('chat.searchMolecule')}</Button>
+          <Button variant="ghost" size="sm" onClick={() => insertTemplate('analyze_sar')}><FlaskIcon size={13} /> {t('chat.sarAnalysis')}</Button>
+          <Button variant="ghost" size="sm" onClick={() => insertTemplate('dock')}><FlaskIcon size={13} /> {t('chat.molecularDocking')}</Button>
         </div>
 
         <div style={{
@@ -484,7 +507,7 @@ export default function Chat() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={projectRoot ? "输入问题... (Enter 发送, Shift+Enter 换行)" : "请先打开一个项目"}
+            placeholder={projectRoot ? t('chat.placeholder') : t('chat.placeholderNoProject')}
             maxHeight="120px"
             disabled={isLoading || !projectRoot}
             rows={1}

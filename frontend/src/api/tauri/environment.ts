@@ -1,6 +1,8 @@
 /** Resource manager — environment check, model paths, catalog. */
 
 import { invoke } from '@tauri-apps/api/core'
+import { invokeWithError } from './_utils'
+import { ErrorCode } from '../../utils/errors'
 
 export interface ResourceStatusItem {
   id: string
@@ -24,17 +26,26 @@ export interface EnvironmentReport {
 
 /** 全量环境检查（Rust native，不依赖 Python sidecar） */
 export async function resourcesCheck(): Promise<EnvironmentReport> {
-  return invoke<EnvironmentReport>('resources_check')
+  return invokeWithError(
+    () => invoke<EnvironmentReport>('resources_check'),
+    ErrorCode.ApiError,
+  )
 }
 
 /** 检查单个资源状态 */
 export async function resourcesStatus(resourceId: string): Promise<ResourceStatusItem> {
-  return invoke<ResourceStatusItem>('resources_status', { resourceId })
+  return invokeWithError(
+    () => invoke<ResourceStatusItem>('resources_status', { resourceId }),
+    ErrorCode.ApiError,
+  )
 }
 
 /** 获取已下载模型的本地路径 */
 export async function resourcesGetModelPath(resourceId: string): Promise<string | null> {
-  return invoke<string | null>('resources_get_model_path', { resourceId })
+  return invokeWithError(
+    () => invoke<string | null>('resources_get_model_path', { resourceId }),
+    ErrorCode.ApiError,
+  )
 }
 
 /** 获取资源目录（纯元数据） */

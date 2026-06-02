@@ -1,6 +1,8 @@
 /** Text utilities — chunking, page classification, structured extraction. */
 
 import { invoke } from '@tauri-apps/api/core'
+import { invokeWithError } from './_utils'
+import { ErrorCode } from '../../utils/errors'
 
 // ---- text_ops ----
 
@@ -10,7 +12,10 @@ export interface TextChunkResult {
 }
 
 export async function textChunk(text: string, chunkSize = 512, overlap = 128): Promise<TextChunkResult> {
-  return invoke<TextChunkResult>('text_chunk', { text, chunkSize, overlap })
+  return invokeWithError(
+    () => invoke<TextChunkResult>('text_chunk', { text, chunkSize, overlap }),
+    ErrorCode.ApiError,
+  )
 }
 
 // ---- classifier ----
@@ -32,11 +37,17 @@ export interface DocumentClassification {
 }
 
 export async function classifyPage(pageText: string, pageIdx: number): Promise<PageClassification> {
-  return invoke<PageClassification>('classify_page', { pageText, pageIdx })
+  return invokeWithError(
+    () => invoke<PageClassification>('classify_page', { pageText, pageIdx }),
+    ErrorCode.ApiError,
+  )
 }
 
 export async function classifyDocument(pages: string[], metadata?: Record<string, unknown>): Promise<DocumentClassification> {
-  return invoke<DocumentClassification>('classify_document', { pages, metadata: metadata ?? null })
+  return invokeWithError(
+    () => invoke<DocumentClassification>('classify_document', { pages, metadata: metadata ?? null }),
+    ErrorCode.ApiError,
+  )
 }
 
 // ---- extractor ----

@@ -14,7 +14,7 @@ pub struct VectorItem {
     pub id: String,
     pub doc_id: String,
     pub text: String,
-    pub embedding: Vec<f32>,  // 保留字段，FTS5 不使用
+    pub embedding: Vec<f32>, // 保留字段，FTS5 不使用
     pub metadata: serde_json::Value,
 }
 
@@ -44,8 +44,8 @@ pub struct SqliteVectorStore {
 
 impl SqliteVectorStore {
     pub fn new(db_path: &Path) -> Result<Self, String> {
-        let conn = Connection::open(db_path)
-            .map_err(|e| format!("Failed to open SQLite: {}", e))?;
+        let conn =
+            Connection::open(db_path).map_err(|e| format!("Failed to open SQLite: {}", e))?;
 
         // 主表：存储文本和元数据
         conn.execute(
@@ -74,7 +74,9 @@ impl SqliteVectorStore {
         )
         .map_err(|e| format!("Failed to create index: {}", e))?;
 
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 }
 
@@ -98,10 +100,8 @@ impl VectorStore for SqliteVectorStore {
             .map_err(|e| format!("Upsert failed for {}: {}", item.id, e))?;
 
             // 同步到 FTS5 索引
-            tx.execute(
-                "DELETE FROM sections_fts WHERE id = ?1",
-                params![item.id],
-            ).ok(); // 忽略删除错误（可能是新条目）
+            tx.execute("DELETE FROM sections_fts WHERE id = ?1", params![item.id])
+                .ok(); // 忽略删除错误（可能是新条目）
 
             tx.execute(
                 "INSERT INTO sections_fts (id, text) VALUES (?1, ?2)",
@@ -110,8 +110,7 @@ impl VectorStore for SqliteVectorStore {
             .map_err(|e| format!("FTS5 insert failed for {}: {}", item.id, e))?;
         }
 
-        tx.commit()
-            .map_err(|e| format!("Commit failed: {}", e))?;
+        tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
         Ok(())
     }
 
@@ -141,60 +140,75 @@ impl VectorStore for SqliteVectorStore {
                 "SELECT s.id, s.text, s.metadata FROM sections s ORDER BY s.rowid DESC LIMIT ?1"
             };
 
-            let mut stmt = conn.prepare(sql).map_err(|e| format!("Prepare failed: {}", e))?;
+            let mut stmt = conn
+                .prepare(sql)
+                .map_err(|e| format!("Prepare failed: {}", e))?;
 
-            let row_mapper = |row: &rusqlite::Row| -> Result<(String, String, String), rusqlite::Error> {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            };
+            let row_mapper =
+                |row: &rusqlite::Row| -> Result<(String, String, String), rusqlite::Error> {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                };
 
             let rows = if let Some(doc_id) = filter_doc_id {
                 stmt.query_map(params![doc_id, top_k], row_mapper)
             } else {
                 stmt.query_map(params![top_k], row_mapper)
-            }.map_err(|e| format!("Query failed: {}", e))?;
+            }
+            .map_err(|e| format!("Query failed: {}", e))?;
 
             let mut results = Vec::new();
             for row in rows {
                 let (id, text, meta_str) = row.map_err(|e| format!("Row error: {}", e))?;
                 let metadata: serde_json::Value =
                     serde_json::from_str(&meta_str).unwrap_or(serde_json::json!({}));
-                results.push(SearchResult { id, text, metadata, score: 1.0 });
+                results.push(SearchResult {
+                    id,
+                    text,
+                    metadata,
+                    score: 1.0,
+                });
             }
             return Ok(results);
         }
 
         // FTS5 搜索
-        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(doc_id) = filter_doc_id {
-            (
-                "SELECT s.id, s.text, s.metadata, rank
+        let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
+            if let Some(doc_id) = filter_doc_id {
+                (
+                    "SELECT s.id, s.text, s.metadata, rank
                  FROM sections_fts f
                  JOIN sections s ON f.id = s.id
                  WHERE sections_fts MATCH ?1 AND s.doc_id = ?2
                  ORDER BY rank
-                 LIMIT ?3".into(),
-                vec![
-                    Box::new(clean_query) as Box<dyn rusqlite::types::ToSql>,
-                    Box::new(doc_id.to_string()),
-                    Box::new(top_k as i64),
-                ],
-            )
-        } else {
-            (
-                "SELECT s.id, s.text, s.metadata, rank
+                 LIMIT ?3"
+                        .into(),
+                    vec![
+                        Box::new(clean_query) as Box<dyn rusqlite::types::ToSql>,
+                        Box::new(doc_id.to_string()),
+                        Box::new(top_k as i64),
+                    ],
+                )
+            } else {
+                (
+                    "SELECT s.id, s.text, s.metadata, rank
                  FROM sections_fts f
                  JOIN sections s ON f.id = s.id
                  WHERE sections_fts MATCH ?1
                  ORDER BY rank
-                 LIMIT ?2".into(),
-                vec![
-                    Box::new(clean_query) as Box<dyn rusqlite::types::ToSql>,
-                    Box::new(top_k as i64),
-                ],
-            )
-        };
+                 LIMIT ?2"
+                        .into(),
+                    vec![
+                        Box::new(clean_query) as Box<dyn rusqlite::types::ToSql>,
+                        Box::new(top_k as i64),
+                    ],
+                )
+            };
 
-        let mut stmt = conn.prepare(&sql).map_err(|e| format!("Prepare failed: {}", e))?;
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
 
         let rows = stmt
             .query_map(param_refs.as_slice(), |row| {
@@ -235,7 +249,8 @@ impl VectorStore for SqliteVectorStore {
         conn.execute(
             "DELETE FROM sections_fts WHERE id IN (SELECT id FROM sections WHERE doc_id = ?1)",
             [doc_id],
-        ).ok();
+        )
+        .ok();
         // 再从主表删除
         conn.execute("DELETE FROM sections WHERE doc_id = ?1", [doc_id])
             .map_err(|e| format!("Delete failed: {}", e))?;

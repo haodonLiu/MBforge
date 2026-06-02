@@ -29,12 +29,12 @@ export default function ConfirmationPanel({
   const scannedPages = pages.filter((p) => p.isScanned).length
   const textPages = totalPages - scannedPages
 
-  const methodCounts = pages.reduce(
+  const methodCounts = pages.reduce<Record<string, number>>(
     (acc, p) => {
       acc[p.recommendedMethod] = (acc[p.recommendedMethod] || 0) + 1
       return acc
     },
-    {} as Record<string, number>,
+    {},
   )
 
   const handleOverride = () => {

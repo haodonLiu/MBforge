@@ -11,11 +11,15 @@ import { useEffect, useRef } from 'react'
 const isDev = import.meta.env.DEV
 
 export function useRenderTiming(componentName: string) {
-  if (!isDev) return
-
-  const startTime = useRef(performance.now())
+  const startTime = useRef<number | null>(null)
 
   useEffect(() => {
+    if (!isDev) return
+    startTime.current = performance.now()
+  }, [])
+
+  useEffect(() => {
+    if (!isDev || startTime.current == null) return
     const mountMs = performance.now() - startTime.current
     if (mountMs > 16) {
       console.warn(`[render-timing] ${componentName} mount: ${mountMs.toFixed(2)}ms (>1 frame)`)
@@ -25,6 +29,7 @@ export function useRenderTiming(componentName: string) {
   })
 
   useEffect(() => {
+    if (!isDev) return
     return () => {
       console.log(`[render-timing] ${componentName} unmount`)
     }

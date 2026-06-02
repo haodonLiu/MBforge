@@ -170,7 +170,10 @@ pub fn find_activity_cliffs(
     let mut cliffs = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| format!("Row fetch failed: {}", e))?
+    {
         let mol_a_id: String = row.get(1).unwrap_or_default();
         let mol_b_id: String = row.get(2).unwrap_or_default();
         let score: f64 = row.get(4).unwrap_or(0.0);
@@ -188,8 +191,10 @@ pub fn find_activity_cliffs(
         let mol_a = get_molecule_activity(&mol_a_id, conn);
         let mol_b = get_molecule_activity(&mol_b_id, conn);
 
-        let (act_a, act_b) = (mol_a.as_ref().and_then(|m| m.activity),
-                              mol_b.as_ref().and_then(|m| m.activity));
+        let (act_a, act_b) = (
+            mol_a.as_ref().and_then(|m| m.activity),
+            mol_b.as_ref().and_then(|m| m.activity),
+        );
 
         if let (Some(a), Some(b)) = (act_a, act_b) {
             let ratio = (a / b).max(b / a);
@@ -197,8 +202,14 @@ pub fn find_activity_cliffs(
                 cliffs.push(ActivityCliff {
                     mol_a_id: mol_a_id.clone(),
                     mol_b_id: mol_b_id.clone(),
-                    mol_a_esmiles: mol_a.as_ref().map(|m| m.esmiles.clone()).unwrap_or_default(),
-                    mol_b_esmiles: mol_b.as_ref().map(|m| m.esmiles.clone()).unwrap_or_default(),
+                    mol_a_esmiles: mol_a
+                        .as_ref()
+                        .map(|m| m.esmiles.clone())
+                        .unwrap_or_default(),
+                    mol_b_esmiles: mol_b
+                        .as_ref()
+                        .map(|m| m.esmiles.clone())
+                        .unwrap_or_default(),
                     mol_a_name: mol_a.as_ref().map(|m| m.name.clone()).unwrap_or_default(),
                     mol_b_name: mol_b.as_ref().map(|m| m.name.clone()).unwrap_or_default(),
                     similarity_score: score,
@@ -260,7 +271,10 @@ fn search_molecules_by_scaffold(
         .map_err(|e| format!("Query failed: {}", e))?;
 
     let mut results = Vec::new();
-    while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| format!("Row fetch failed: {}", e))?
+    {
         results.push(ScaffoldActivityRecord {
             mol_id: row.get(0).unwrap_or_default(),
             esmiles: row.get(1).unwrap_or_default(),

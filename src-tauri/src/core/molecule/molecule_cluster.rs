@@ -29,7 +29,11 @@ pub fn assign_to_cluster(
     db.add_relation(&rel)
 }
 
-pub fn remove_from_cluster(mol_id: &str, cluster_id: &str, db: &MoleculeRelationDb) -> Result<bool, String> {
+pub fn remove_from_cluster(
+    mol_id: &str,
+    cluster_id: &str,
+    db: &MoleculeRelationDb,
+) -> Result<bool, String> {
     let conn = db.relations_conn();
     let affected = conn
         .execute(
@@ -43,7 +47,10 @@ pub fn remove_from_cluster(mol_id: &str, cluster_id: &str, db: &MoleculeRelation
     Ok(affected > 0)
 }
 
-pub fn get_cluster_members(cluster_id: &str, db: &MoleculeRelationDb) -> Result<ClusterInfo, String> {
+pub fn get_cluster_members(
+    cluster_id: &str,
+    db: &MoleculeRelationDb,
+) -> Result<ClusterInfo, String> {
     let conn = db.relations_conn();
     let mut stmt = conn
         .prepare(
@@ -60,7 +67,10 @@ pub fn get_cluster_members(cluster_id: &str, db: &MoleculeRelationDb) -> Result<
     let mut metadata_map: std::collections::HashMap<String, serde_json::Value> =
         std::collections::HashMap::new();
 
-    while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| format!("Row fetch failed: {}", e))?
+    {
         let mol_id: String = row.get(0).unwrap_or_default();
         let meta_str: Option<String> = row.get(1).ok();
         if let Some(m) = meta_str.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()) {
@@ -96,7 +106,10 @@ pub fn get_molecule_clusters(mol_id: &str, db: &MoleculeRelationDb) -> Result<Ve
         .map_err(|e| format!("Query failed: {}", e))?;
 
     let mut clusters: Vec<String> = Vec::new();
-    while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| format!("Row fetch failed: {}", e))?
+    {
         let cluster_id: String = row.get(0).unwrap_or_default();
         clusters.push(cluster_id);
     }
@@ -111,12 +124,13 @@ pub fn list_clusters(db: &MoleculeRelationDb) -> Result<Vec<ClusterInfo>, String
              WHERE relation_type = 'cluster'",
         )
         .map_err(|e| format!("Prepare failed: {}", e))?;
-    let mut rows = stmt
-        .query([])
-        .map_err(|e| format!("Query failed: {}", e))?;
+    let mut rows = stmt.query([]).map_err(|e| format!("Query failed: {}", e))?;
 
     let mut cluster_ids: Vec<String> = Vec::new();
-    while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| format!("Row fetch failed: {}", e))?
+    {
         let cid: String = row.get(0).unwrap_or_default();
         cluster_ids.push(cid);
     }

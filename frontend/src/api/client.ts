@@ -149,4 +149,88 @@ export function uploadFile(projectRoot: string, file: File) {
     return resp.json() as Promise<{ success: boolean; doc_id?: string; path?: string; doc_type?: string; error?: string }>
   })()
 }
+// ============================================================================
+// SAR (Structure-Activity Relationship) Analysis
+// ============================================================================
+
+export interface SARCompoundInput {
+  id: string
+  name: string
+  smiles: string
+  activity?: number | null
+  activity_type?: string | null
+  units?: string | null
+}
+
+export interface RGroupMatrix {
+  core_smiles: string
+  r_labels: string[]
+  rows: string[][]
+  compounds: Array<Record<string, unknown> & { id: string; name: string; smiles: string; matches: boolean }>
+  unmatched_count: number
+}
+
+export interface RGroupMatrixResponse {
+  success: boolean
+  core_smiles?: string
+  r_labels?: string[]
+  rows?: string[][]
+  compounds?: RGroupMatrix['compounds']
+  unmatched_count?: number
+  error?: string
+}
+
+export interface ActivityHeatmapCell {
+  substituent_smiles: string
+  avg_activity: number
+  count: number
+  min: number
+  max: number
+}
+
+export interface ActivityHeatmapEntry {
+  r_label: string
+  cells: ActivityHeatmapCell[]
+}
+
+export interface ActivityHeatmapResponse {
+  success: boolean
+  heatmaps: ActivityHeatmapEntry[]
+  error?: string
+}
+
+export function buildRGroupMatrix(
+  compounds: SARCompoundInput[],
+  core_smiles?: string,
+  auto_extract_scaffold = true,
+): Promise<RGroupMatrixResponse> {
+  return fetchJson<RGroupMatrixResponse>(`${API_BASE}/sar/matrix`, {
+    method: 'POST',
+    body: JSON.stringify({
+      compounds,
+      core_smiles: core_smiles ?? null,
+      auto_extract_scaffold,
+    }),
+  })
+}
+
+export function buildActivityHeatmap(
+  matrix: RGroupMatrix,
+  lower_is_better = true,
+): Promise<ActivityHeatmapResponse> {
+  return fetchJson<ActivityHeatmapResponse>(`${API_BASE}/sar/heatmap`, {
+    method: 'POST',
+    body: JSON.stringify({ matrix, lower_is_better }),
+  })
+}
+
+export function extractScaffold(smiles_list: string[]) {
+  return fetchJson<{ success: boolean; core_smiles: string | null; error?: string }>(
+    `${API_BASE}/sar/scaffold`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ smiles_list }),
+    },
+  )
+}
 

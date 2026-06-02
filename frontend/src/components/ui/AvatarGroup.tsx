@@ -108,7 +108,7 @@ export default function AvatarGroup({
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             ) : renderFallback && !isOverflow ? (
-              renderFallback(item as AvatarItem)
+              renderFallback(item)
             ) : (
               initials
             )}

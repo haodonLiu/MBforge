@@ -11,10 +11,7 @@ use crate::parsers::post_process::generate_report as post_process_generate_repor
 /// 在 post_process::generate_report() 基础上扩展 SAR 分析 + 处理日志。
 
 /// 生成完整 Markdown 报告
-pub fn generate_full_report(
-    data: &StructuredData,
-    sar_analysis: Option<&str>,
-) -> String {
+pub fn generate_full_report(data: &StructuredData, sar_analysis: Option<&str>) -> String {
     let mut r = post_process_generate_report(data);
 
     // SAR 分析（如果存在）

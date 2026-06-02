@@ -4,12 +4,10 @@
 /// Usage:
 ///   cd src-tauri
 ///   cargo test --test test_full_pipeline -- --nocapture
-
 use std::path::PathBuf;
 
 fn output_dir() -> PathBuf {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../tests/integration/output");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/integration/output");
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -47,7 +45,9 @@ fn test_full_pipeline_with_real_patent() {
     assert!(!api_key.is_empty(), "MINERU_API_KEY must be set in .env");
 
     let client = mbforge::parsers::mineru::MineruClient::new(&host, &api_key);
-    let mineru_result = client.parse_file(pdf_path).expect("MinerU Precise API failed");
+    let mineru_result = client
+        .parse_file(pdf_path)
+        .expect("MinerU Precise API failed");
     write_file("02_mineru_markdown.md", &mineru_result.markdown);
     println!("  markdown length: {} chars", mineru_result.markdown.len());
     println!("  source: {}", mineru_result.source);
@@ -62,7 +62,10 @@ fn test_full_pipeline_with_real_patent() {
     write_file("03_document_classification.json", &doc_class_json);
     println!("  text_density: {:.1}", doc_classification.text_density);
     println!("  is_scanned: {}", doc_classification.is_scanned);
-    println!("  has_molecular_patterns: {}", doc_classification.has_molecular_patterns);
+    println!(
+        "  has_molecular_patterns: {}",
+        doc_classification.has_molecular_patterns
+    );
 
     println!("\n========== Stage 4: Text Chunking ==========");
     let chunk_result = mbforge::commands::text_ops::text_chunk(content.clone(), 512, 128);
@@ -71,7 +74,8 @@ fn test_full_pipeline_with_real_patent() {
         "chunks_preview": chunk_result.chunks.iter().take(5).enumerate().map(|(i, c)| {
             serde_json::json!({"index": i, "length": c.len(), "preview": &c[..c.len().min(200)]})
         }).collect::<Vec<_>>(),
-    })).unwrap();
+    }))
+    .unwrap();
     write_file("04_chunks.json", &chunks_json);
     // Write full chunks to a separate file
     let full_chunks = chunk_result.chunks.join("\n\n---CHUNK---\n\n");
@@ -86,7 +90,8 @@ fn test_full_pipeline_with_real_patent() {
         "smiles": smiles,
         "activities_count": activities.len(),
         "activities": activities,
-    })).unwrap();
+    }))
+    .unwrap();
     write_file("05_molecules.json", &mol_json);
     println!("  SMILES candidates: {}", smiles.len());
     println!("  Activity records: {}", activities.len());
@@ -122,7 +127,10 @@ fn test_full_pipeline_with_real_patent() {
             println!("  compounds: {}", post_result.data.compounds.len());
             println!("  activities: {}", post_result.data.activities.len());
             println!("  key_findings: {}", post_result.data.key_findings.len());
-            println!("  uncertain_items: {}", post_result.data.uncertain_items.len());
+            println!(
+                "  uncertain_items: {}",
+                post_result.data.uncertain_items.len()
+            );
             for u in &post_result.data.uncertain_items {
                 println!("    ⚠️  [{}] {} — {}", u.item_type, u.content, u.reason);
             }
@@ -134,12 +142,17 @@ fn test_full_pipeline_with_real_patent() {
     }
 
     println!("\n========== Output Files ==========");
-    let entries: Vec<_> = std::fs::read_dir(output_dir()).unwrap()
+    let entries: Vec<_> = std::fs::read_dir(output_dir())
+        .unwrap()
         .filter_map(|e| e.ok())
         .collect();
     for entry in entries {
         let meta = entry.metadata().unwrap();
-        println!("  {} ({:.1} KB)", entry.file_name().to_string_lossy(), meta.len() as f64 / 1024.0);
+        println!(
+            "  {} ({:.1} KB)",
+            entry.file_name().to_string_lossy(),
+            meta.len() as f64 / 1024.0
+        );
     }
 
     println!("\nDone! All output in: {}", output_dir().display());

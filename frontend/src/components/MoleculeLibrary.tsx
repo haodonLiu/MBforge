@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { listMoleculesTauri, searchMoleculesTauri } from '../api/tauri/molecule'
 import type { MoleculeRecord } from '../types'
 import { FlaskIcon, SearchIcon } from './icons'
@@ -18,6 +19,7 @@ import { AddMoleculeDialog } from '../components/ui/AddMoleculeDialog'
 
 export default function MoleculeLibrary() {
   const { projectRoot } = useAppContext()
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const [molecules, setMolecules] = useState<MoleculeRecord[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -45,7 +47,7 @@ export default function MoleculeLibrary() {
       }
     } catch (e) {
       setMolecules([])
-      setError(e instanceof Error ? e.message : '加载失败')
+      setError(e instanceof Error ? e.message : t('mol.loadFailed'))
     } finally {
       setIsLoading(false)
     }
@@ -73,8 +75,8 @@ export default function MoleculeLibrary() {
         alignItems: 'center',
         marginBottom: '24px',
       }}>
-        <PageTitle>分子库</PageTitle>
-        <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)}>+ 添加分子</Button>
+        <PageTitle>{t('mol.title')}</PageTitle>
+        <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)}>{t('mol.add')}</Button>
       </div>
 
       <div style={{
@@ -93,7 +95,7 @@ export default function MoleculeLibrary() {
           value={search}
           onChange={e => setSearch(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={projectRoot ? '搜索分子...' : '请先打开或创建一个项目'}
+          placeholder={projectRoot ? t('mol.search') : t('mol.searchNoProject')}
           disabled={!projectRoot}
           style={{
             flex: 1,
@@ -106,7 +108,7 @@ export default function MoleculeLibrary() {
           }}
         />
         <Button variant="primary" size="sm" onClick={handleSearch} disabled={!projectRoot}>
-          搜索
+          {t('mol.searchBtn')}
         </Button>
       </div>
 
@@ -139,7 +141,7 @@ export default function MoleculeLibrary() {
                     </IconContainer>
                     <div>
                       <div style={{ fontWeight: 600, fontSize: '15px' }}>{mol.name || mol.mol_id}</div>
-                      <Caption>{mol.source_doc || '未知来源'}</Caption>
+                      <Caption>{mol.source_doc || t('mol.unknownSource')}</Caption>
                     </div>
                   </div>
                   <BodyText size="sm" style={{
@@ -153,7 +155,7 @@ export default function MoleculeLibrary() {
                   </BodyText>
                   {mol.activity !== null && mol.activity !== undefined && (
                     <BodyText size="sm" style={{ marginTop: '12px' }}>
-                      活性: {mol.activity.toFixed(2)} {mol.units || 'nM'}
+                       {t('mol.activity')}: {mol.activity.toFixed(2)} {mol.units || 'nM'}
                     </BodyText>
                   )}
                 </Card>

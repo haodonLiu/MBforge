@@ -1,6 +1,8 @@
 /** Project management — open, scan, list, file tree, file operations. */
 
 import { invoke } from '@tauri-apps/api/core'
+import { invokeWithError } from './_utils'
+import { ErrorCode } from '../../utils/errors'
 
 export interface ProjectInfo {
   name: string
@@ -33,10 +35,10 @@ export async function openProject(
     console.log('[tauri-bridge] === openProject END ===')
     return response
   } catch (e: unknown) {
-    const error = e as Error
+    const error = e instanceof Error ? e : undefined
     console.error('[tauri-bridge] === openProject ERROR ===')
     console.error('[tauri-bridge] Error:', error?.message || String(e))
-    const msg = error?.message || String(e) || 'Unknown invoke error'
+    const msg = error?.message || String(e)
     return { success: false, error: msg }
   }
 }
@@ -56,7 +58,10 @@ export interface DocumentEntry {
 export async function scanProjectFiles(
   root: string,
 ): Promise<{ success: boolean; documents: DocumentEntry[] }> {
-  return invoke('scan_project_files', { root })
+  return invokeWithError(
+    () => invoke('scan_project_files', { root }),
+    ErrorCode.ProjectOpen,
+  )
 }
 
 /** 列出项目文档 */
@@ -64,7 +69,10 @@ export async function listProjectDocuments(
   root: string,
   docType?: string,
 ): Promise<{ success: boolean; documents: DocumentEntry[] }> {
-  return invoke('list_project_documents', { root, docType: docType ?? null })
+  return invokeWithError(
+    () => invoke('list_project_documents', { root, docType: docType ?? null }),
+    ErrorCode.ProjectOpen,
+  )
 }
 
 /** 文件树节点 */
@@ -79,22 +87,34 @@ export interface FileNode {
 export async function getFileTree(
   root: string,
 ): Promise<{ success: boolean; tree: FileNode[] }> {
-  return invoke('get_file_tree', { root })
+  return invokeWithError(
+    () => invoke('get_file_tree', { root }),
+    ErrorCode.ProjectOpen,
+  )
 }
 
 /** 使用系统对话框导入文件到项目 */
 export async function uploadFiles(projectRoot: string): Promise<DocumentEntry[]> {
-  return invoke<DocumentEntry[]>('upload_files', { projectRoot })
+  return invokeWithError(
+    () => invoke<DocumentEntry[]>('upload_files', { projectRoot }),
+    ErrorCode.ProjectOpen,
+  )
 }
 
 /** 删除项目中的文件 */
 export async function deleteFile(projectRoot: string, docId: string): Promise<boolean> {
-  return invoke<boolean>('delete_file', { projectRoot, docId })
+  return invokeWithError(
+    () => invoke<boolean>('delete_file', { projectRoot, docId }),
+    ErrorCode.ProjectOpen,
+  )
 }
 
 /** 读取文本文件内容（Rust 直接读取，无需 HTTP） */
 export async function readTextFile(projectRoot: string, path: string): Promise<string> {
-  return invoke<string>('read_text_file', { projectRoot, path })
+  return invokeWithError(
+    () => invoke<string>('read_text_file', { projectRoot, path }),
+    ErrorCode.ProjectOpen,
+  )
 }
 
 /** 列出项目文档（与 client.ts listDocuments 兼容的包装） */

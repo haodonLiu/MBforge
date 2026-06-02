@@ -36,10 +36,26 @@ const DOCUMENT_SCAN_THRESHOLD: f64 = 50.0;
 /// Common chemical names.
 static CHEMICAL_NAMES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let names = [
-        "aspirin", "ibuprofen", "caffeine", "metformin", "paracetamol",
-        "acetaminophen", "penicillin", "morphine", "codeine", "insulin",
-        "glucose", "ethanol", "methanol", "acetone", "benzene",
-        "toluene", "phenol", "aniline", "pyridine", "quinoline",
+        "aspirin",
+        "ibuprofen",
+        "caffeine",
+        "metformin",
+        "paracetamol",
+        "acetaminophen",
+        "penicillin",
+        "morphine",
+        "codeine",
+        "insulin",
+        "glucose",
+        "ethanol",
+        "methanol",
+        "acetone",
+        "benzene",
+        "toluene",
+        "phenol",
+        "aniline",
+        "pyridine",
+        "quinoline",
     ];
     names.iter().copied().collect()
 });
@@ -180,7 +196,9 @@ pub fn classify_document(
         .map(|(idx, text)| classify_page(text.clone(), idx))
         .collect();
 
-    let has_molecules = page_classifications.iter().any(|p| p.has_molecular_patterns);
+    let has_molecules = page_classifications
+        .iter()
+        .any(|p| p.has_molecular_patterns);
 
     let metadata_hints = metadata.map(|m| analyze_metadata(&m));
 

@@ -1,9 +1,9 @@
+use serde_json::Value;
 use std::fs;
 use std::path::Path;
-use serde_json::Value;
 
-use crate::core::constants::{PROJECT_FORMAT_VERSION, PROJECT_META_DIR, INDEX_FILE, SETTINGS_FILE};
-use crate::core::helpers::{save_json, now_rfc3339};
+use crate::core::constants::{INDEX_FILE, PROJECT_FORMAT_VERSION, PROJECT_META_DIR, SETTINGS_FILE};
+use crate::core::helpers::{now_rfc3339, save_json};
 
 pub struct ProjectMigrator;
 
@@ -19,7 +19,10 @@ impl ProjectMigrator {
     }
 
     /// Write the project format version.
-    pub fn write_version(project_root: &Path, version: u32) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn write_version(
+        project_root: &Path,
+        version: u32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let version_path = project_root.join(PROJECT_META_DIR).join("version");
         fs::write(&version_path, version.to_string())?;
         Ok(())
@@ -49,7 +52,9 @@ impl ProjectMigrator {
             copy_dir_all(&meta_dir, &backup_dir)?;
             log::info!(
                 "Backed up .mbforge to {:?} before migration v{} -> v{}",
-                backup_dir, from_version, target_version
+                backup_dir,
+                from_version,
+                target_version
             );
         }
 
@@ -71,7 +76,8 @@ impl ProjectMigrator {
     pub fn recover(project_root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         let meta_dir = project_root.join(PROJECT_META_DIR);
         let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
-        let corrupted_dir = project_root.join(format!("{}.corrupted.{}", PROJECT_META_DIR, timestamp));
+        let corrupted_dir =
+            project_root.join(format!("{}.corrupted.{}", PROJECT_META_DIR, timestamp));
 
         if meta_dir.exists() {
             copy_dir_all(&meta_dir, &corrupted_dir)?;

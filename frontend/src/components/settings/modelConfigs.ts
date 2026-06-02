@@ -34,15 +34,15 @@ export const LLM_MODELS: Record<string, { value: string; label: string }[]> = {
 }
 
 export const SETTING_SECTIONS = [
-  { id: 'general', label: '通用', icon: 'settings' },
-  { id: 'ai', label: 'AI 模型', icon: 'settings' },
-  { id: 'embedding', label: 'Embedding', icon: 'settings' },
-  { id: 'reranker', label: 'Reranker', icon: 'settings' },
-  { id: 'models', label: '模型管理', icon: 'download' },
-  { id: 'environment', label: '环境', icon: 'settings' },
-  { id: 'appearance', label: '外观', icon: 'settings' },
-  { id: 'server', label: '模型服务', icon: 'settings' },
-  { id: 'about', label: '关于', icon: 'settings' },
+  { id: 'general', labelKey: 'settings.general', icon: 'settings' },
+  { id: 'ai', labelKey: 'settings.ai', icon: 'settings' },
+  { id: 'embedding', labelKey: 'settings.embedding', icon: 'settings' },
+  { id: 'reranker', labelKey: 'settings.reranker', icon: 'settings' },
+  { id: 'models', labelKey: 'settings.models', icon: 'download' },
+  { id: 'environment', labelKey: 'settings.environment', icon: 'settings' },
+  { id: 'appearance', labelKey: 'settings.appearance', icon: 'settings' },
+  { id: 'server', labelKey: 'settings.server', icon: 'settings' },
+  { id: 'about', labelKey: 'settings.about', icon: 'settings' },
 ] as const
 
 export type Section = typeof SETTING_SECTIONS[number]['id']

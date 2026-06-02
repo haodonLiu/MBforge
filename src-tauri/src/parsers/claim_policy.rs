@@ -17,8 +17,7 @@ use super::molecule_extractor::MoleculeTrace;
 /// 1. 优先搜索 E-SMILES 分隔符 `<sep>`
 /// 2. 备选：搜索符合 SMILES 字符集特征的连续子串
 static SMILES_CANDIDATE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"[A-Z][a-z]?(?:[()=\[\]0-9@#%+\-*/:;<>?!|&^~$`"']*[A-Z][a-z]?)+"#)
-        .unwrap()
+    Regex::new(r#"[A-Z][a-z]?(?:[()=\[\]0-9@#%+\-*/:;<>?!|&^~$`"']*[A-Z][a-z]?)+"#).expect("valid SMILES candidate regex")
 });
 
 fn extract_candidate_esmiles(text: &str) -> Option<String> {
@@ -168,7 +167,10 @@ pub fn assess_patent_scope(
         RiskLevel::High
     } else if !covered_claims.is_empty() {
         RiskLevel::Medium
-    } else if matches.iter().any(|m| m.match_type == MatchType::SemanticMatch) {
+    } else if matches
+        .iter()
+        .any(|m| m.match_type == MatchType::SemanticMatch)
+    {
         RiskLevel::Low
     } else {
         RiskLevel::Clear
@@ -221,7 +223,11 @@ fn check_direct_mention(compound: &MoleculeTrace, claim: &PatentClaim) -> Option
 
     // 匹配编号部分（如 "Compound 1" 可以匹配 "compound 1" 或仅 "1" 在特定上下文中）
     let _num_str = compound.molecule.sequence_num.to_string();
-    if claim.compounds_mentioned.iter().any(|m| m.to_lowercase() == name_lower) {
+    if claim
+        .compounds_mentioned
+        .iter()
+        .any(|m| m.to_lowercase() == name_lower)
+    {
         return Some(ClaimPolicyMatch {
             claim_number: claim.claim_number,
             compound_name: compound.molecule.name.clone(),
@@ -278,11 +284,8 @@ fn check_markush_mention(
     };
 
     // 3. 调用真正的 Markush 子结构匹配
-    let overlap = crate::core::markush::analyze_markush_coverage(
-        &candidate,
-        esmiles,
-        Some(&claim.raw_text),
-    );
+    let overlap =
+        crate::core::markush::analyze_markush_coverage(&candidate, esmiles, Some(&claim.raw_text));
 
     let (score, details) = match overlap.match_level {
         crate::core::markush::MatchLevel::FullOverlap => (
@@ -477,9 +480,9 @@ fn build_assessment_summary(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::claim_parser::{ClaimType, PatentClaim};
     use super::super::molecule_extractor::{NameType, NamedMolecule};
+    use super::*;
 
     fn make_molecule(name: &str, seq: u32, context: &str) -> MoleculeTrace {
         MoleculeTrace {
@@ -571,7 +574,9 @@ mod tests {
         };
         let matches = check_compound_against_claims(&mol, &graph);
         assert!(!matches.is_empty());
-        let semantic = matches.iter().find(|m| m.match_type == MatchType::SemanticMatch);
+        let semantic = matches
+            .iter()
+            .find(|m| m.match_type == MatchType::SemanticMatch);
         assert!(semantic.is_some());
         assert!(semantic.unwrap().match_score > 0.15);
     }
@@ -592,7 +597,9 @@ mod tests {
             dependents_map: Default::default(),
         };
         let matches = check_compound_against_claims(&mol, &graph);
-        let markush = matches.iter().find(|m| m.match_type == MatchType::MarkushOverlap);
+        let markush = matches
+            .iter()
+            .find(|m| m.match_type == MatchType::MarkushOverlap);
         assert!(markush.is_some());
     }
 
@@ -612,7 +619,9 @@ mod tests {
             dependents_map: Default::default(),
         };
         let matches = check_compound_against_claims(&mol, &graph);
-        let markush = matches.iter().find(|m| m.match_type == MatchType::MarkushOverlap);
+        let markush = matches
+            .iter()
+            .find(|m| m.match_type == MatchType::MarkushOverlap);
         assert!(markush.is_none());
     }
 
@@ -659,7 +668,12 @@ mod tests {
     #[test]
     fn test_assess_patent_scope_medium() {
         let mol = make_molecule("Compound 2", 2, "Compound 2 is active.");
-        let claim1 = make_claim(1, "A compound of formula I.", ClaimType::Independent, vec![]);
+        let claim1 = make_claim(
+            1,
+            "A compound of formula I.",
+            ClaimType::Independent,
+            vec![],
+        );
         let claim2 = make_claim(
             2,
             "The compound of claim 1 wherein R1 is methyl and Compound 2 is included.",

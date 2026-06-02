@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<coverage generated="1780409479047" clover="3.2.0">
+  <project timestamp="1780409479047" name="All files">
+    <metrics statements="30" coveredstatements="30" conditionals="75" coveredconditionals="74" methods="8" coveredmethods="8" elements="113" coveredelements="112" complexity="0" loc="30" ncloc="30" packages="1" files="3" classes="3"/>
+    <file name="Button.tsx" path="C:\Users\10954\Desktop\MBForge\frontend\src\components\ui\Button.tsx">
+      <metrics statements="5" coveredstatements="5" conditionals="19" coveredconditionals="19" methods="1" coveredmethods="1"/>
+      <line num="21" count="1" type="stmt"/>
+      <line num="29" count="1" type="stmt"/>
+      <line num="48" count="18" type="cond" truecount="2" falsecount="0"/>
+      <line num="49" count="18" type="stmt"/>
+      <line num="65" count="18" type="stmt"/>
+    </file>
+    <file name="Card.tsx" path="C:\Users\10954\Desktop\MBForge\frontend\src\components\ui\Card.tsx">
+      <metrics statements="4" coveredstatements="4" conditionals="10" coveredconditionals="10" methods="1" coveredmethods="1"/>
+      <line num="14" count="9" type="stmt"/>
+      <line num="24" count="9" type="cond" truecount="4" falsecount="0"/>
+      <line num="25" count="3" type="stmt"/>
+      <line num="38" count="6" type="stmt"/>
+    </file>
+    <file name="Tabs.tsx" path="C:\Users\10954\Desktop\MBForge\frontend\src\components\ui\Tabs.tsx">
+      <metrics statements="21" coveredstatements="21" conditionals="46" coveredconditionals="45" methods="6" coveredmethods="6"/>
+      <line num="34" count="1" type="stmt"/>
+      <line num="58" count="23" type="cond" truecount="2" falsecount="0"/>
+      <line num="59" count="23" type="stmt"/>
+      <line num="60" count="23" type="cond" truecount="2" falsecount="0"/>
+      <line num="62" count="23" type="stmt"/>
+      <line num="63" count="4" type="cond" truecount="1" falsecount="1"/>
+      <line num="64" count="4" type="cond" truecount="2" falsecount="0"/>
+      <line num="65" count="4" type="stmt"/>
+      <line num="68" count="23" type="stmt"/>
+      <line num="69" count="67" type="stmt"/>
+      <line num="70" count="67" type="stmt"/>
+      <line num="72" count="67" type="stmt"/>
+      <line num="89" count="67" type="cond" truecount="2" falsecount="0"/>
+      <line num="90" count="11" type="stmt"/>
+      <line num="94" count="1" type="stmt"/>
+      <line num="120" count="56" type="stmt"/>
+      <line num="124" count="3" type="stmt"/>
+      <line num="162" count="23" type="stmt"/>
+      <line num="177" count="23" type="stmt"/>
+      <line num="193" count="4" type="cond" truecount="4" falsecount="0"/>
+      <line num="194" count="3" type="stmt"/>
+    </file>
+  </project>
+</coverage>

@@ -1,7 +1,7 @@
 //! 项目操作命令 — 创建、打开、扫描项目
 
+use log::{debug, error, info, warn};
 use std::path::PathBuf;
-use log::{info, warn, error, debug};
 
 use crate::core::helpers::clean_path;
 
@@ -15,7 +15,7 @@ pub fn open_project(root: String, name: Option<String>) -> Result<serde_json::Va
     info!("project_ops: open_project START");
     debug!("Root: {}", root);
     debug!("Name: {:?}", name);
-    
+
     let path = PathBuf::from(&root);
     debug!("Path exists: {}", path.exists());
     debug!("Path is directory: {}", path.is_dir());
@@ -40,7 +40,10 @@ pub fn open_project(root: String, name: Option<String>) -> Result<serde_json::Va
         debug!("Found existing project, returning...");
         debug!("Project name: {:?}", project.root.file_name());
         let result = project_json(&project);
-        debug!("Result: {}", serde_json::to_string_pretty(&result).unwrap_or_default());
+        debug!(
+            "Result: {}",
+            serde_json::to_string_pretty(&result).unwrap_or_default()
+        );
         info!("project_ops: open_project END (existing)");
         return Ok(result);
     }
@@ -52,7 +55,10 @@ pub fn open_project(root: String, name: Option<String>) -> Result<serde_json::Va
             debug!("Project created successfully");
             debug!("Project name: {:?}", project.root.file_name());
             let result = project_json(&project);
-            debug!("Result: {}", serde_json::to_string_pretty(&result).unwrap_or_default());
+            debug!(
+                "Result: {}",
+                serde_json::to_string_pretty(&result).unwrap_or_default()
+            );
             info!("project_ops: open_project END (created)");
             Ok(result)
         }
@@ -70,18 +76,17 @@ pub fn scan_project_files(root: String) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     info!("project_ops: scan_project_files START");
     debug!("Root: {}", root);
-    
+
     let path = PathBuf::from(&root);
-    let mut project = crate::core::project::Project::open(&path)
-        .ok_or_else(|| {
-            debug!("Project not found");
-            format!("项目不存在: {}", root)
-        })?;
+    let mut project = crate::core::project::Project::open(&path).ok_or_else(|| {
+        debug!("Project not found");
+        format!("项目不存在: {}", root)
+    })?;
 
     debug!("Project found, scanning files...");
     let docs = project.scan_files();
     debug!("Found {} documents", docs.len());
-    
+
     let result = serde_json::json!({
         "success": true,
         "documents": docs_json(&docs),
@@ -92,18 +97,20 @@ pub fn scan_project_files(root: String) -> Result<serde_json::Value, String> {
 
 /// 列出项目文档
 #[tauri::command]
-pub fn list_project_documents(root: String, doc_type: Option<String>) -> Result<serde_json::Value, String> {
+pub fn list_project_documents(
+    root: String,
+    doc_type: Option<String>,
+) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     info!("project_ops: list_project_documents START");
     debug!("Root: {}", root);
     debug!("Doc type filter: {:?}", doc_type);
-    
+
     let path = PathBuf::from(&root);
-    let project = crate::core::project::Project::open(&path)
-        .ok_or_else(|| {
-            debug!("Project not found");
-            format!("项目不存在: {}", root)
-        })?;
+    let project = crate::core::project::Project::open(&path).ok_or_else(|| {
+        debug!("Project not found");
+        format!("项目不存在: {}", root)
+    })?;
 
     let docs = project.list_documents().to_vec();
     let filtered: Vec<_> = match doc_type.as_deref() {
@@ -128,7 +135,7 @@ fn project_json(project: &crate::core::project::Project) -> serde_json::Value {
     } else {
         root_str.to_string()
     };
-    
+
     serde_json::json!({
         "success": true,
         "project": {
@@ -140,15 +147,17 @@ fn project_json(project: &crate::core::project::Project) -> serde_json::Value {
 }
 
 fn docs_json(docs: &[crate::core::project::DocumentEntry]) -> Vec<serde_json::Value> {
-    docs.iter().map(|d| {
-        serde_json::json!({
-            "doc_id": d.doc_id,
-            "path": d.path,
-            "doc_type": d.doc_type,
-            "title": d.title,
-            "indexed": d.indexed,
+    docs.iter()
+        .map(|d| {
+            serde_json::json!({
+                "doc_id": d.doc_id,
+                "path": d.path,
+                "doc_type": d.doc_type,
+                "title": d.title,
+                "indexed": d.indexed,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 // ---- File tree ----

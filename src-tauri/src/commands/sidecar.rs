@@ -6,7 +6,9 @@ use crate::sidecar::SidecarInner;
 #[tauri::command]
 pub fn sidecar_status(state: State<Arc<SidecarInner>>) -> serde_json::Value {
     let healthy = state.healthy.load(std::sync::atomic::Ordering::Relaxed);
-    let restarts = state.restart_count.load(std::sync::atomic::Ordering::Relaxed);
+    let restarts = state
+        .restart_count
+        .load(std::sync::atomic::Ordering::Relaxed);
     let uptime: u64 = state
         .start_time
         .lock()

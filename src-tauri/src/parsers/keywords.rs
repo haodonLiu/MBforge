@@ -14,35 +14,153 @@ pub struct KeywordExtraction {
 }
 
 /// Regex for extracting 3-10 character English words.
-static WORD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[a-zA-Z]{3,10}").unwrap());
-
-/// Regex for compound names like "Compound 1", "compound 5b".
+static WORD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[a-zA-Z]{3,10}").expect("valid word regex"));
 static COMPOUND_NAME_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)Compound\s+\d+[a-zA-Z]?").unwrap());
-
-/// Regex for common entity patterns (protein/gene names).
+    LazyLock::new(|| Regex::new(r"(?i)Compound\s+\d+[a-zA-Z]?").expect("valid compound name regex"));
 static ENTITY_CANDIDATE_RE: LazyLock<Regex> =
-    LazyLock::new(||     Regex::new(r"\b[A-Z][A-Za-z0-9]{2,9}\b").unwrap());
+    LazyLock::new(|| Regex::new(r"\b[A-Z][A-Za-z0-9]{2,9}\b").expect("valid entity regex"));
 
 /// Default stoplist — ported from `summarizer.py`.
 fn default_stoplist() -> std::collections::HashSet<&'static str> {
     [
-        "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her",
-        "was", "one", "our", "out", "day", "get", "has", "him", "his", "how", "man",
-        "new", "now", "old", "see", "two", "way", "who", "boy", "did", "its", "let",
-        "put", "say", "she", "too", "use", "with", "that", "this", "from", "they",
-        "have", "been", "were", "said", "each", "which", "their", "time", "will",
-        "about", "would", "there", "could", "other", "after", "first", "these",
-        "them", "some", "what", "when", "where", "than", "then", "more", "into",
-        "over", "also", "only", "know", "take", "year", "good", "come", "make",
-        "well", "work", "life", "even", "here", "look", "down", "most", "long",
-        "last", "find", "give", "does", "made", "part", "such", "keep", "call",
-        "came", "back", "much", "before", "right", "through", "during", "should",
-        "between", "being", "both", "under", "never", "really", "still", "those",
-        "while", "group", "high", "every", "great", "another", "study", "using",
-        "used", "based", "shown", "showed", "results", "method", "activity",
-        "compound", "molecular", "cell", "protein", "analysis", "data", "fig",
-        "table", "et", "al", "vs",
+        "the",
+        "and",
+        "for",
+        "are",
+        "but",
+        "not",
+        "you",
+        "all",
+        "can",
+        "had",
+        "her",
+        "was",
+        "one",
+        "our",
+        "out",
+        "day",
+        "get",
+        "has",
+        "him",
+        "his",
+        "how",
+        "man",
+        "new",
+        "now",
+        "old",
+        "see",
+        "two",
+        "way",
+        "who",
+        "boy",
+        "did",
+        "its",
+        "let",
+        "put",
+        "say",
+        "she",
+        "too",
+        "use",
+        "with",
+        "that",
+        "this",
+        "from",
+        "they",
+        "have",
+        "been",
+        "were",
+        "said",
+        "each",
+        "which",
+        "their",
+        "time",
+        "will",
+        "about",
+        "would",
+        "there",
+        "could",
+        "other",
+        "after",
+        "first",
+        "these",
+        "them",
+        "some",
+        "what",
+        "when",
+        "where",
+        "than",
+        "then",
+        "more",
+        "into",
+        "over",
+        "also",
+        "only",
+        "know",
+        "take",
+        "year",
+        "good",
+        "come",
+        "make",
+        "well",
+        "work",
+        "life",
+        "even",
+        "here",
+        "look",
+        "down",
+        "most",
+        "long",
+        "last",
+        "find",
+        "give",
+        "does",
+        "made",
+        "part",
+        "such",
+        "keep",
+        "call",
+        "came",
+        "back",
+        "much",
+        "before",
+        "right",
+        "through",
+        "during",
+        "should",
+        "between",
+        "being",
+        "both",
+        "under",
+        "never",
+        "really",
+        "still",
+        "those",
+        "while",
+        "group",
+        "high",
+        "every",
+        "great",
+        "another",
+        "study",
+        "using",
+        "used",
+        "based",
+        "shown",
+        "showed",
+        "results",
+        "method",
+        "activity",
+        "compound",
+        "molecular",
+        "cell",
+        "protein",
+        "analysis",
+        "data",
+        "fig",
+        "table",
+        "et",
+        "al",
+        "vs",
     ]
     .into_iter()
     .collect()
@@ -63,10 +181,7 @@ pub fn extract_keywords(text: &str) -> Vec<String> {
         *freq.entry(word).or_insert(0) += 1;
     }
 
-    let mut words: Vec<(usize, String)> = freq
-        .into_iter()
-        .map(|(w, c)| (c, w))
-        .collect();
+    let mut words: Vec<(usize, String)> = freq.into_iter().map(|(w, c)| (c, w)).collect();
     words.sort_by(|a, b| b.0.cmp(&a.0));
     words.into_iter().take(10).map(|(_, w)| w).collect()
 }
@@ -98,10 +213,30 @@ pub fn extract_entities(text: &str) -> Vec<String> {
         // Skip sentence-starting words that are common English
         if matches!(
             lower.as_str(),
-            "this" | "that" | "these" | "those" | "with" | "from" | "they" | "were"
-                | "have" | "been" | "will" | "would" | "could" | "should" | "also"
-                | "only" | "into" | "over" | "some" | "more" | "than" | "then"
-                | "each" | "both"
+            "this"
+                | "that"
+                | "these"
+                | "those"
+                | "with"
+                | "from"
+                | "they"
+                | "were"
+                | "have"
+                | "been"
+                | "will"
+                | "would"
+                | "could"
+                | "should"
+                | "also"
+                | "only"
+                | "into"
+                | "over"
+                | "some"
+                | "more"
+                | "than"
+                | "then"
+                | "each"
+                | "both"
         ) {
             continue;
         }

@@ -7,7 +7,6 @@ mod core;
 mod parsers;
 mod sidecar;
 
-
 use commands::agent::AgentState;
 use commands::mol_engine::MoleculeEngineState;
 
@@ -18,7 +17,9 @@ fn load_dotenv() {
     if let Ok(contents) = std::fs::read_to_string(".env") {
         for line in contents.lines() {
             let line = line.trim();
-            if line.is_empty() || line.starts_with('#') { continue; }
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
             if let Some((key, value)) = line.split_once('=') {
                 let k = key.trim();
                 let v = value.trim().trim_matches('"').trim_matches('\'');
@@ -51,19 +52,20 @@ fn main() {
                 std::path::PathBuf::from("python3"),
             ];
 
-            let python = py_paths.iter().find(|p| {
-                if p.is_absolute() {
-                    p.exists()
-                } else {
-                    Command::new(p).arg("--version").output().is_ok()
-                }
-            }).cloned().unwrap_or_else(|| std::path::PathBuf::from("python"));
+            let python = py_paths
+                .iter()
+                .find(|p| {
+                    if p.is_absolute() {
+                        p.exists()
+                    } else {
+                        Command::new(p).arg("--version").output().is_ok()
+                    }
+                })
+                .cloned()
+                .unwrap_or_else(|| std::path::PathBuf::from("python"));
 
             // Start model server
-            let no_spawn = std::env::var("MBFORGE_NO_SPAWN")
-                .unwrap_or_default()
-                .trim()
-                == "1";
+            let no_spawn = std::env::var("MBFORGE_NO_SPAWN").unwrap_or_default().trim() == "1";
             let server_script = resource_dir
                 .join("src")
                 .join("mbforge")

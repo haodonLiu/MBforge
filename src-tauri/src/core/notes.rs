@@ -47,7 +47,8 @@ struct NotesIndex {
 }
 
 fn notes_path(root: &Path) -> PathBuf {
-    root.join(super::constants::PROJECT_META_DIR).join("notes.json")
+    root.join(super::constants::PROJECT_META_DIR)
+        .join("notes.json")
 }
 
 fn load_index(root: &Path) -> Result<NotesIndex, String> {
@@ -55,18 +56,15 @@ fn load_index(root: &Path) -> Result<NotesIndex, String> {
     if !path.exists() {
         return Ok(NotesIndex::default());
     }
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("读取笔记失败: {e}"))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("解析笔记失败: {e}"))
+    let content = std::fs::read_to_string(&path).map_err(|e| format!("读取笔记失败: {e}"))?;
+    serde_json::from_str(&content).map_err(|e| format!("解析笔记失败: {e}"))
 }
 
 fn save_index(root: &Path, index: &NotesIndex) -> Result<(), String> {
     let path = notes_path(root);
-    let content = serde_json::to_string_pretty(index)
-        .map_err(|e| format!("序列化笔记失败: {e}"))?;
-    std::fs::write(&path, content)
-        .map_err(|e| format!("保存笔记失败: {e}"))
+    let content =
+        serde_json::to_string_pretty(index).map_err(|e| format!("序列化笔记失败: {e}"))?;
+    std::fs::write(&path, content).map_err(|e| format!("保存笔记失败: {e}"))
 }
 
 pub fn list_notes(root: &Path) -> Result<Vec<Note>, String> {
@@ -92,7 +90,8 @@ pub fn save_note(root: &Path, note: Note) -> Result<Note, String> {
         }
     }
     save_index(root, &index)?;
-    Ok(index.notes.into_iter().find(|n| n.id == id).unwrap())
+    index.notes.into_iter().find(|n| n.id == id)
+        .ok_or_else(|| format!("Note {} saved but not found in index", id))
 }
 
 pub fn delete_note(root: &Path, id: &str) -> Result<bool, String> {
@@ -130,11 +129,8 @@ pub fn find_backlinks(root: &Path, target_id: &str) -> Result<Vec<Note>, String>
     // 注意:不能仅匹配 [[<title>],否则 "AA" 会误匹配 "[[AAExtra]]"
     // 安全做法是匹配 [[<title>]] 或 [[<title>|alias]]
     let pattern_title = regex::escape(target_title);
-    let re = regex::Regex::new(&format!(
-        r"\[\[\s*{}\s*(\|[^\]]*)?\]\]",
-        pattern_title
-    ))
-    .map_err(|e| format!("正则构造失败: {e}"))?;
+    let re = regex::Regex::new(&format!(r"\[\[\s*{}\s*(\|[^\]]*)?\]\]", pattern_title))
+        .map_err(|e| format!("正则构造失败: {e}"))?;
 
     let backlinks: Vec<Note> = index
         .notes
@@ -143,4 +139,101 @@ pub fn find_backlinks(root: &Path, target_id: &str) -> Result<Vec<Note>, String>
         .collect();
 
     Ok(backlinks)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn make_note(id: &str, title: &str, content: &str) -> Note {
+        Note {
+            id: id.to_string(),
+            title: title.to_string(),
+            content: content.to_string(),
+            tags: Vec::new(),
+            links: Vec::new(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    fn make_index(notes: Vec<Note>) -> NotesIndex {
+        NotesIndex { notes }
+    }
+
+    fn write_test_index(dir: &Path, index: &NotesIndex) {
+        fs::create_dir_all(dir.join(super::super::constants::PROJECT_META_DIR)).unwrap();
+        let path = notes_path(dir);
+        let content = serde_json::to_string_pretty(index).unwrap();
+        fs::write(&path, content).unwrap();
+    }
+
+    #[test]
+    fn test_find_backlinks_matches_basic_wikilink() {
+        let dir = tempdir();
+        let target = make_note("n1", "COX-2 综述", "正文");
+        let source1 = make_note("n2", "实验设计", "参考 [[COX-2 综述]] 进行分子对接");
+        let source2 = make_note("n3", "合成路线", "无引用");
+        let index = make_index(vec![target.clone(), source1.clone(), source2.clone()]);
+        write_test_index(&dir, &index);
+
+        let result = find_backlinks(&dir, "n1").unwrap();
+        let ids: Vec<&str> = result.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(ids, vec!["n2"], "应只匹配包含 [[COX-2 综述]] 的笔记");
+    }
+
+    #[test]
+    fn test_find_backlinks_matches_alias_syntax() {
+        let dir = tempdir();
+        let target = make_note("n1", "Celecoxib", "");
+        let source = make_note("n2", "测试", "见 [[Celecoxib|塞来昔布]]");
+        write_test_index(&dir, &make_index(vec![target, source]));
+
+        let result = find_backlinks(&dir, "n1").unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, "n2");
+    }
+
+    #[test]
+    fn test_find_backlinks_avoids_partial_match() {
+        // "AA" 不应误匹配 "[[AAExtra]]"
+        let dir = tempdir();
+        let target = make_note("n1", "AA", "");
+        let decoy = make_note("n2", "陷阱", "见 [[AAExtra]]");
+        write_test_index(&dir, &make_index(vec![target, decoy]));
+
+        let result = find_backlinks(&dir, "n1").unwrap();
+        assert!(result.is_empty(), "AA 不应匹配 AAExtra");
+    }
+
+    #[test]
+    fn test_find_backlinks_excludes_self() {
+        let dir = tempdir();
+        let target = make_note("n1", "自引用", "见 [[自引用]] 的循环引用");
+        write_test_index(&dir, &make_index(vec![target]));
+
+        let result = find_backlinks(&dir, "n1").unwrap();
+        assert!(result.is_empty(), "笔记不应反向链接自己");
+    }
+
+    #[test]
+    fn test_find_backlinks_returns_empty_for_missing_target() {
+        let dir = tempdir();
+        let other = make_note("n1", "其他", "");
+        write_test_index(&dir, &make_index(vec![other]));
+
+        let result = find_backlinks(&dir, "nonexistent").unwrap();
+        assert!(result.is_empty());
+    }
+
+    fn tempdir() -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("mbforge_notes_test_{nanos}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 }

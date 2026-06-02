@@ -1,6 +1,8 @@
-import { Suspense, useState, lazy } from 'react'
+import { Suspense, useState, lazy, useEffect } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
+import { useTranslation, I18nextProvider } from 'react-i18next'
+import i18n from './i18n'
 import AnimatedPage from './components/animations/AnimatedPage'
 import { ToastContainer } from './components/ui'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -15,6 +17,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { isTauriAvailable } from './api/tauri-bridge'
 import { showToast } from './hooks/useToast'
 import { useIsMobile, useIsTablet } from './styles/responsive'
+import { registerGlobalErrorHandlers } from './api/tauri/_utils'
 
 // Route-level code splitting — each page becomes its own chunk.
 // Heavy bundles (Chat, MoleculeLibrary, ProjectView, SARAnalysis) only
@@ -30,6 +33,7 @@ const Notes = lazy(() => import('./components/Notes'))
 
 /** Lightweight fallback shown while a route chunk is being fetched. */
 function RouteFallback() {
+  const { t } = useTranslation()
   return (
     <div
       role="status"
@@ -43,16 +47,18 @@ function RouteFallback() {
         fontSize: '14px',
       }}
     >
-      Loading…
+      {t('common.loading')}
     </div>
   )
 }
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppInner />
-    </AppProvider>
+    <I18nextProvider i18n={i18n}>
+      <AppProvider>
+        <AppInner />
+      </AppProvider>
+    </I18nextProvider>
   )
 }
 
@@ -63,6 +69,12 @@ function AppInner() {
   const [fileTreeOpen, setFileTreeOpen] = useState(true)
   const isMobile = useIsMobile()
   const isTablet = useIsTablet()
+  const { t } = useTranslation()
+
+  useEffect(() => {
+    const cleanup = registerGlobalErrorHandlers()
+    return cleanup
+  }, [])
 
   const handleProjectOpened = (root: string) => {
     setProjectRoot(root)
@@ -134,19 +146,19 @@ function AppInner() {
             textTransform: 'uppercase',
             letterSpacing: '0.5px',
           }}>
-            Files
+            {t('nav.fileTree')}
           </div>
           <FileTree onFileClick={(path) => {
             if (!isTauriAvailable()) {
-              showToast('文件操作仅支持桌面应用环境', 'info')
+              showToast(t('error.description'), 'info')
               return
             }
             if (path.toLowerCase().endsWith('.pdf')) {
-              invoke('open_file', { projectRoot, path }).catch((e) => {
-                showToast(`无法打开: ${e}`, 'error')
+              invoke('open_file', { projectRoot, path }).catch((e: unknown) => {
+                showToast(`${t('error.title')}: ${String(e)}`, 'error')
               })
             } else {
-              showToast(`文件: ${path}`, 'info')
+              showToast(`${t('common.project')}: ${path}`, 'info')
             }
           }} />
         </div>

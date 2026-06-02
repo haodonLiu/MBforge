@@ -42,9 +42,9 @@ impl UniParserClient {
             return Err(format!("File not found: {}", pdf_path));
         }
 
-        let pdf_bytes = std::fs::read(path)
-            .map_err(|e| format!("Failed to read PDF: {}", e))?;
-        let filename = path.file_name()
+        let pdf_bytes = std::fs::read(path).map_err(|e| format!("Failed to read PDF: {}", e))?;
+        let filename = path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("document.pdf");
 
@@ -63,16 +63,20 @@ impl UniParserClient {
         let form = reqwest::blocking::multipart::Form::new()
             .text("token", token.clone())
             .text("sync", "true")
-            .text("textual", "2")    // high quality
-            .text("table", "2")      // high quality
-            .text("equation", "2")   // high quality
-            .text("molecule", "1")   // fast
-            .part("file", reqwest::blocking::multipart::Part::bytes(pdf_bytes)
-                .file_name(filename.to_string())
-                .mime_str("application/pdf")
-                .map_err(|e| format!("MIME error: {}", e))?);
+            .text("textual", "2") // high quality
+            .text("table", "2") // high quality
+            .text("equation", "2") // high quality
+            .text("molecule", "1") // fast
+            .part(
+                "file",
+                reqwest::blocking::multipart::Part::bytes(pdf_bytes)
+                    .file_name(filename.to_string())
+                    .mime_str("application/pdf")
+                    .map_err(|e| format!("MIME error: {}", e))?,
+            );
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .header("X-API-Key", &self.api_key)
             .multipart(form)
@@ -85,7 +89,8 @@ impl UniParserClient {
             return Err(format!("UniParser HTTP {}: {}", status, body));
         }
 
-        let _: serde_json::Value = resp.json()
+        let _: serde_json::Value = resp
+            .json()
             .map_err(|e| format!("UniParser trigger response error: {}", e))?;
 
         Ok(token)
@@ -103,7 +108,8 @@ impl UniParserClient {
             "equation": "markdown",
         });
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .header("X-API-Key", &self.api_key)
             .header("Content-Type", "application/json")
@@ -117,7 +123,8 @@ impl UniParserClient {
             return Err(format!("UniParser HTTP {}: {}", status, body));
         }
 
-        let result: serde_json::Value = resp.json()
+        let result: serde_json::Value = resp
+            .json()
             .map_err(|e| format!("UniParser result parse error: {}", e))?;
 
         let content = result["content"].as_str().unwrap_or("").to_string();
@@ -130,7 +137,6 @@ impl UniParserClient {
             source: "uniparser".to_string(),
         })
     }
-
 }
 
 #[cfg(test)]

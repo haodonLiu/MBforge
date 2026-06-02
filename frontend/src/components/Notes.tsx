@@ -1,22 +1,26 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
+import i18n from '../i18n'
 import { PageContainer, PageTitle, Button, Input, EmptyState, AlertBanner } from './ui'
 import { PlusIcon, SearchIcon, FlaskIcon, ClockIcon } from './icons'
 import NoteEditor, { type Note } from './notes/NoteEditor'
 import { showToast } from '../hooks/useToast'
 import { useAppContext } from '../context/AppContext'
-import { notesList, notesSave, notesDelete } from '../api/tauri/notes'
+import { notesList, notesSave, notesDelete, notesBacklinks } from '../api/tauri/notes'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 
 function relativeTime(iso: string): string {
+  const t = i18n.t.bind(i18n)
   const diff = (Date.now() - new Date(iso).getTime()) / 1000
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`
-  if (diff < 604800) return `${Math.floor(diff / 86400)}天前`
-  return new Date(iso).toLocaleDateString('zh-CN')
+  if (diff < 60) return t('time.justNow')
+  if (diff < 3600) return t('time.minutesAgo', { count: Math.floor(diff / 60) })
+  if (diff < 86400) return t('time.hoursAgo', { count: Math.floor(diff / 3600) })
+  if (diff < 604800) return t('time.daysAgo', { count: Math.floor(diff / 86400) })
+  return new Date(iso).toLocaleDateString()
 }
 
 export default function Notes() {
+  const { t } = useTranslation()
   const { projectRoot } = useAppContext()
   const [notes, setNotes] = useState<Note[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -37,7 +41,7 @@ export default function Notes() {
         setActiveId(list[0].id)
       }
     } catch (e) {
-      showToast('加载笔记失败', 'error')
+      showToast(t('notes.loadFailed'), 'error')
     } finally {
       setLoading(false)
     }
@@ -80,7 +84,7 @@ export default function Notes() {
     if (!projectRoot) return
     const newNote: Note = {
       id: `note_${Date.now()}`,
-      title: '新笔记',
+      title: t('notes.create'),
       content: '',
       tags: [],
       links: [],
@@ -91,11 +95,55 @@ export default function Notes() {
       const saved = await notesSave(projectRoot, newNote)
       setNotes(prev => [saved, ...prev])
       setActiveId(saved.id)
-      showToast('已创建新笔记', 'success')
+      showToast(t('notes.created'), 'success')
     } catch (e) {
-      showToast('保存笔记失败', 'error')
+      showToast(t('notes.saveFailed'), 'error')
     }
   }
+
+  // 双链点击：按标题查找笔记并跳转
+  const handleWikiLinkClick = (title: string) => {
+    const target = notes.find(
+      n => n.title.trim().toLowerCase() === title.trim().toLowerCase(),
+    )
+    if (target) {
+      setActiveId(target.id)
+      showToast(t('notes.jumped', { title: target.title }), 'info')
+    } else {
+      showToast(t('notes.notFound', { title }), 'warning')
+    }
+  }
+
+  // 双链候选（自动补全）：当前所有笔记 + 占位 molecule/document 实体
+  const wikilinkSuggestions = useMemo(
+    () =>
+      notes.map(n => ({
+        id: n.id,
+        title: n.title || '(无标题)',
+        type: 'note' as const,
+      })),
+    [notes],
+  )
+
+  // 反向链接：当前活跃笔记被哪些其他笔记引用
+  const [backlinks, setBacklinks] = useState<Note[]>([])
+  useEffect(() => {
+    if (!projectRoot || !activeId) {
+      setBacklinks([])
+      return
+    }
+    let cancelled = false
+    notesBacklinks(projectRoot, activeId)
+      .then(list => {
+        if (!cancelled) setBacklinks(list)
+      })
+      .catch(() => {
+        if (!cancelled) setBacklinks([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectRoot, activeId, notes])
 
   const handleUpdate = async (updated: Note) => {
     if (!projectRoot) return
@@ -103,12 +151,12 @@ export default function Notes() {
     try {
       await notesSave(projectRoot, updated)
     } catch (e) {
-      showToast('保存笔记失败', 'error')
+      showToast(t('notes.saveFailed'), 'error')
     }
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确定删除这条笔记？此操作不可撤销。')) return
+    if (!confirm(t('notes.confirmDelete'))) return
     if (!projectRoot) return
     try {
       await notesDelete(projectRoot, id)
@@ -116,9 +164,9 @@ export default function Notes() {
       if (activeId === id) {
         setActiveId(notes.find(n => n.id !== id)?.id ?? null)
       }
-      showToast('笔记已删除', 'success')
+      showToast(t('notes.deleted'), 'success')
     } catch (e) {
-      showToast('删除笔记失败', 'error')
+      showToast(t('notes.deleteFailed'), 'error')
     }
   }
 
@@ -126,29 +174,29 @@ export default function Notes() {
     <PageContainer>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20, gap: 16, flexWrap: 'wrap' }}>
         <div>
-          <PageTitle>Notes</PageTitle>
+          <PageTitle>{t('notes.title')}</PageTitle>
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            知识库笔记 · 共 {notes.length} 条 · 支持 Markdown 与双链
+            {t('notes.subtitle', { count: notes.length })}
           </div>
           {loading && (
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-              正在加载笔记...
+              {t('notes.loading')}
             </div>
           )}
           {!projectRoot && (
             <div style={{ fontSize: 12, color: 'var(--warning)', marginTop: 4 }}>
-              请先打开或创建一个项目
+              {t('notes.noProject')}
             </div>
           )}
         </div>
         <Button variant="primary" onClick={handleCreate}>
-          <PlusIcon size={14} /> 新建笔记
+          <PlusIcon size={14} /> {t('notes.create')}
         </Button>
       </div>
 
       <AlertBanner
         variant="info"
-        message="使用 [[笔记名]] 创建双链，让笔记互相连接形成知识网络。支持 Markdown 语法、#标签、表格、引用块等。"
+        message={t('notes.banner')}
       />
 
       <div style={{
@@ -168,7 +216,7 @@ export default function Notes() {
             <Input
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              placeholder="搜索笔记内容..."
+              placeholder={t('notes.searchPlaceholder')}
               style={{ paddingLeft: 32 }}
             />
           </div>
@@ -177,7 +225,7 @@ export default function Notes() {
           {allTags.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               <TagPill
-                label="全部"
+                label={t('notes.allTags')}
                 active={activeTag === null}
                 onClick={() => setActiveTag(null)}
               />
@@ -194,7 +242,7 @@ export default function Notes() {
 
           {/* 笔记列表 */}
           {tagFiltered.length === 0 ? (
-            <EmptyState message="没有匹配的笔记" />
+            <EmptyState message={t('notes.empty')} />
           ) : (
             <StaggerContainer stagger={0.04}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -212,22 +260,108 @@ export default function Notes() {
           )}
         </div>
 
-        {/* 右侧：编辑器 */}
-        <NoteEditor
-          note={activeNote}
-          onChange={handleUpdate}
-          onDelete={handleDelete}
-          wikilinkSuggestions={[]}
-        />
+        {/* 右侧：编辑器 + 反向链接 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <NoteEditor
+            note={activeNote}
+            onChange={handleUpdate}
+            onDelete={handleDelete}
+            wikilinkSuggestions={wikilinkSuggestions}
+            onWikiLinkClick={handleWikiLinkClick}
+          />
+          {activeNote && <BacklinksPanel backlinks={backlinks} onJump={handleWikiLinkClick} />}
+        </div>
       </div>
     </PageContainer>
   )
 }
 
 // ============================================================================
+// 反向链接面板
+// ============================================================================
+interface BacklinksPanelProps {
+  backlinks: Note[]
+  onJump: (title: string) => void
+}
+
+function BacklinksPanel({ backlinks, onJump }: BacklinksPanelProps) {
+  if (backlinks.length === 0) return null
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 12,
+        padding: 14,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 8,
+        }}
+      >
+        <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+          反向链接
+        </h4>
+        <span
+          style={{
+            fontSize: 11,
+            color: 'var(--text-muted)',
+            padding: '1px 8px',
+            background: 'var(--bg-base)',
+            borderRadius: 10,
+          }}
+        >
+          {backlinks.length} 条
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {backlinks.map(n => (
+          <button
+            key={n.id}
+            type="button"
+            onClick={() => onJump(n.title)}
+            style={{
+              textAlign: 'left',
+              padding: '6px 10px',
+              background: 'var(--bg-base)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: 12,
+              color: 'var(--text-primary)',
+              transition: 'all 0.1s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.borderColor = 'var(--accent)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.borderColor = 'var(--border)'
+            }}
+          >
+            <span style={{ fontWeight: 500 }}>{n.title || '(无标题)'}</span>
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 10,
+                color: 'var(--text-muted)',
+              }}
+            >
+              {relativeTime(n.updatedAt)}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
 // 子组件
 // ============================================================================
-
 interface TagPillProps {
   label: string
   active: boolean
@@ -254,7 +388,6 @@ function TagPill({ label, active, onClick }: TagPillProps) {
     </button>
   )
 }
-
 interface NoteListItemProps {
   note: Note
   active: boolean

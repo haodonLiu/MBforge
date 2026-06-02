@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { kbSearchStream, isTauriAvailable } from '../api/tauri-bridge'
 import { SearchIcon, FileTextIcon } from './icons'
@@ -32,6 +33,7 @@ function mapResult(r: { text?: string; metadata?: Record<string, unknown> }, i: 
 }
 
 export default function Search() {
+  const { t } = useTranslation()
   const { projectRoot } = useAppContext()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<ResultItem[]>([])
@@ -141,7 +143,7 @@ export default function Search() {
             onKeyDown={handleSearch}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder={projectRoot ? '搜索分子、文献、概念...' : '请先打开或创建一个项目'}
+            placeholder={projectRoot ? t('search.placeholder') : t('search.placeholderNoProject')}
             disabled={!projectRoot}
             style={{
               flex: 1,

@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::constants::{INDEX_FILE, PROJECT_FORMAT_VERSION, PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS};
+use super::constants::{
+    INDEX_FILE, PROJECT_FORMAT_VERSION, PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS,
+};
 use super::helpers::{generate_uuid, now_rfc3339, sha256_file};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,7 +30,8 @@ impl DocumentEntry {
             Some("sdf") | Some("mol") | Some("mol2") | Some("pdb") | Some("smi") => "molecule",
             Some("csv") | Some("xlsx") | Some("json") => "data",
             _ => "text",
-        }.to_string()
+        }
+        .to_string()
     }
 }
 
@@ -51,16 +54,21 @@ pub struct Project {
 impl Project {
     pub fn open(root: &Path) -> Option<Self> {
         log::trace!("[Rust Project::open] Starting... root: {:?}", root);
-        
+
         let root = root.to_path_buf().canonicalize().ok()?;
         log::trace!("[Rust Project::open] Canonicalized root: {:?}", root);
-        
+
         let meta_dir = root.join(PROJECT_META_DIR);
         log::trace!("[Rust Project::open] Meta dir: {:?}", meta_dir);
-        log::trace!("[Rust Project::open] Meta dir exists: {}", meta_dir.exists());
+        log::trace!(
+            "[Rust Project::open] Meta dir exists: {}",
+            meta_dir.exists()
+        );
 
         if !meta_dir.exists() {
-            log::trace!("[Rust Project::open] Meta dir does not exist, returning None (not a project)");
+            log::trace!(
+                "[Rust Project::open] Meta dir does not exist, returning None (not a project)"
+            );
             return None;
         }
 
@@ -70,7 +78,8 @@ impl Project {
         if version > PROJECT_FORMAT_VERSION {
             log::error!(
                 "Project version {} > app version {}, cannot open",
-                version, PROJECT_FORMAT_VERSION
+                version,
+                PROJECT_FORMAT_VERSION
             );
             log::trace!("[Rust Project::open] Version too new, returning None");
             return None;
@@ -91,11 +100,17 @@ impl Project {
         // Load index
         let index_path = meta_dir.join(INDEX_FILE);
         log::trace!("[Rust Project::open] Index path: {:?}", index_path);
-        log::trace!("[Rust Project::open] Index file exists: {}", index_path.exists());
-        
+        log::trace!(
+            "[Rust Project::open] Index file exists: {}",
+            index_path.exists()
+        );
+
         let index: ProjectIndex = match super::helpers::load_json::<ProjectIndex>(&index_path) {
             Some(idx) => {
-                log::trace!("[Rust Project::open] Loaded existing index with {} documents", idx.documents.len());
+                log::trace!(
+                    "[Rust Project::open] Loaded existing index with {} documents",
+                    idx.documents.len()
+                );
                 idx
             }
             None => {
@@ -130,75 +145,108 @@ impl Project {
 
     pub fn create(root: &Path) -> Option<Self> {
         log::trace!("[Rust Project::create] Starting... root: {:?}", root);
-        
+
         let root = root.to_path_buf().canonicalize().ok()?;
         log::trace!("[Rust Project::create] Canonicalized root: {:?}", root);
-        
+
         let meta_dir = root.join(PROJECT_META_DIR);
         log::trace!("[Rust Project::create] Creating meta dir: {:?}", meta_dir);
-        
+
         if std::fs::create_dir_all(&meta_dir).is_err() {
             log::trace!("[Rust Project::create] Failed to create meta dir");
             return None;
         }
         log::trace!("[Rust Project::create] Meta dir created");
-        
-        if super::project_migrator::ProjectMigrator::write_version(&root, PROJECT_FORMAT_VERSION).is_err() {
+
+        if super::project_migrator::ProjectMigrator::write_version(&root, PROJECT_FORMAT_VERSION)
+            .is_err()
+        {
             log::trace!("[Rust Project::create] Failed to write version");
             return None;
         }
         log::trace!("[Rust Project::create] Version written");
         log::trace!("[Rust Project::create] Project created successfully");
-        
-        Some(Self { root, meta_dir, index: vec![], path_map: HashMap::new() })
+
+        Some(Self {
+            root,
+            meta_dir,
+            index: vec![],
+            path_map: HashMap::new(),
+        })
     }
 
     pub fn scan_files(&mut self) -> Vec<DocumentEntry> {
         let mut new_entries = Vec::new();
         let mut seen_paths = std::collections::HashSet::new();
 
-        let all_exts: Vec<&str> = SUPPORTED_DOC_EXTS.iter().chain(SUPPORTED_MOL_EXTS.iter()).copied().collect();
-        for entry in walkdir::WalkDir::new(&self.root).into_iter().filter_map(|e| e.ok()) {
+        let all_exts: Vec<&str> = SUPPORTED_DOC_EXTS
+            .iter()
+            .chain(SUPPORTED_MOL_EXTS.iter())
+            .copied()
+            .collect();
+        for entry in walkdir::WalkDir::new(&self.root)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             let path = entry.path();
-            if !path.is_file() { continue; }
-            if path.starts_with(&self.meta_dir) { continue; }
-            let name = path.file_name().and_then(|n: &std::ffi::OsStr| n.to_str()).unwrap_or("");
-            if name.starts_with('.') { continue; }
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-            if !all_exts.contains(&ext.as_str()) { continue; }
+            if !path.is_file() {
+                continue;
+            }
+            if path.starts_with(&self.meta_dir) {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|n: &std::ffi::OsStr| n.to_str())
+                .unwrap_or("");
+            if name.starts_with('.') {
+                continue;
+            }
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if !all_exts.contains(&ext.as_str()) {
+                continue;
+            }
 
-                seen_paths.insert(path.to_path_buf());
+            seen_paths.insert(path.to_path_buf());
 
-                if let Some(doc_id) = self.path_map.get(path) {
-                    // Update hash if file changed
-                    if let Some(doc) = self.index.iter_mut().find(|d| &d.doc_id == doc_id) {
-                        if let Ok(new_hash) = sha256_file(path) {
-                            if new_hash != doc.hash {
-                                doc.hash = new_hash;
-                                doc.indexed = false;
-                            }
+            if let Some(doc_id) = self.path_map.get(path) {
+                // Update hash if file changed
+                if let Some(doc) = self.index.iter_mut().find(|d| &d.doc_id == doc_id) {
+                    if let Ok(new_hash) = sha256_file(path) {
+                        if new_hash != doc.hash {
+                            doc.hash = new_hash;
+                            doc.indexed = false;
                         }
                     }
-                } else {
-                    // New file
-                    let doc_id = generate_uuid();
-                    let hash = sha256_file(path).unwrap_or_default();
-                    let rel = path.strip_prefix(&self.root).unwrap_or(path);
-                    let entry = DocumentEntry {
-                        doc_id: doc_id.clone(),
-                        path: rel.to_string_lossy().to_string(),
-                        doc_type: DocumentEntry::detect_type(path),
-                        title: path.file_stem().and_then(|s: &std::ffi::OsStr| s.to_str()).unwrap_or("Untitled").to_string(),
-                        indexed: false,
-                        added_at: super::helpers::now_rfc3339(),
-                        hash,
-                        mtime: 0.0,
-                    };
-                    self.path_map.insert(path.to_path_buf(), doc_id);
-                    self.index.push(entry.clone());
-                    new_entries.push(entry);
                 }
+            } else {
+                // New file
+                let doc_id = generate_uuid();
+                let hash = sha256_file(path).unwrap_or_default();
+                let rel = path.strip_prefix(&self.root).unwrap_or(path);
+                let entry = DocumentEntry {
+                    doc_id: doc_id.clone(),
+                    path: rel.to_string_lossy().to_string(),
+                    doc_type: DocumentEntry::detect_type(path),
+                    title: path
+                        .file_stem()
+                        .and_then(|s: &std::ffi::OsStr| s.to_str())
+                        .unwrap_or("Untitled")
+                        .to_string(),
+                    indexed: false,
+                    added_at: super::helpers::now_rfc3339(),
+                    hash,
+                    mtime: 0.0,
+                };
+                self.path_map.insert(path.to_path_buf(), doc_id);
+                self.index.push(entry.clone());
+                new_entries.push(entry);
             }
+        }
 
         // Remove deleted files
         self.index.retain(|d| {
@@ -242,7 +290,11 @@ impl Project {
             doc_id: doc_id.clone(),
             path: rel.to_string_lossy().to_string(),
             doc_type: DocumentEntry::detect_type(&full),
-            title: full.file_stem().and_then(|s: &std::ffi::OsStr| s.to_str()).unwrap_or("Untitled").to_string(),
+            title: full
+                .file_stem()
+                .and_then(|s: &std::ffi::OsStr| s.to_str())
+                .unwrap_or("Untitled")
+                .to_string(),
             indexed: false,
             added_at: now_rfc3339(),
             hash,
@@ -285,7 +337,10 @@ mod tests {
     fn test_detect_type() {
         assert_eq!(DocumentEntry::detect_type(Path::new("test.pdf")), "pdf");
         assert_eq!(DocumentEntry::detect_type(Path::new("test.md")), "markdown");
-        assert_eq!(DocumentEntry::detect_type(Path::new("test.mol")), "molecule");
+        assert_eq!(
+            DocumentEntry::detect_type(Path::new("test.mol")),
+            "molecule"
+        );
         assert_eq!(DocumentEntry::detect_type(Path::new("test.txt")), "text");
     }
 }

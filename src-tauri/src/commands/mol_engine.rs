@@ -39,6 +39,9 @@ pub async fn get_or_init_engine(
     let engine =
         MoleculeEngine::new(&root).map_err(|e| format!("MoleculeEngine init failed: {}", e))?;
     *guard = Some(engine);
-    log::info!("MoleculeEngine initialized for project_root={}", project_root);
+    log::info!(
+        "MoleculeEngine initialized for project_root={}",
+        project_root
+    );
     Ok(())
 }

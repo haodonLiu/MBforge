@@ -25,32 +25,36 @@ pub mod vector_store;
 // used by commands/ and parsers/ to continue working after the
 // `core/memory/`, `core/document/`, `core/molecule/` refactor.
 pub use document::document_tree;
-pub use document::knowledge_base;
-pub use document::semantic_cache;
-pub use document::stream_search;
-pub use document::summary;
 pub use document::document_tree::{DocumentTreeIndex, PageContent};
+pub use document::knowledge_base;
 pub use document::knowledge_base::{
-    get_or_init_kb, kb_get_pages, kb_get_structure, kb_search, kb_search_stream,
-    search_with_cache, KnowledgeBase,
+    get_or_init_kb, kb_get_pages, kb_get_structure, kb_search, kb_search_stream, search_with_cache,
+    KnowledgeBase,
 };
+pub use document::semantic_cache;
 pub use document::semantic_cache::{SemanticCache, SemanticCacheConfig};
+pub use document::stream_search;
 pub use document::stream_search::{StreamingResult, StreamingSearch, StreamingSearchConfig};
+pub use document::summary;
 pub use document::summary::SummaryManager;
 pub use memory::memory::MemoryManager;
 pub use memory::pending::pending_path;
 pub use memory::skills::SkillsManager;
 pub use memory::trajectory::TrajectoryTracker;
 pub use molecule::molecule_cluster;
-pub use molecule::molecule_db;
-pub use molecule::molecule_dedup;
-pub use molecule::molecule_engine;
-pub use molecule::molecule_store;
 pub use molecule::molecule_cluster::ClusterInfo;
-pub use molecule::molecule_db::{MOL_DB_FILENAME, MoleculeRelation, MoleculeRelationDb, RelationStats, RelationType};
-pub use molecule::molecule_dedup::{add_similarity_relation, run_dedup_batch, DedupPair, DedupResult};
-pub use molecule::molecule_engine::{
-    ActivityCliff, ActivitySummary, AnalogWithActivity, MoleculeEngine,
-    MarkushOverlap, MarkushPattern, ScaffoldActivityRecord, ScaffoldProfile,
+pub use molecule::molecule_db;
+pub use molecule::molecule_db::{
+    MoleculeRelation, MoleculeRelationDb, RelationStats, RelationType, MOL_DB_FILENAME,
 };
+pub use molecule::molecule_dedup;
+pub use molecule::molecule_dedup::{
+    add_similarity_relation, run_dedup_batch, DedupPair, DedupResult,
+};
+pub use molecule::molecule_engine;
+pub use molecule::molecule_engine::{
+    ActivityCliff, ActivitySummary, AnalogWithActivity, MarkushOverlap, MarkushPattern,
+    MoleculeEngine, ScaffoldActivityRecord, ScaffoldProfile,
+};
+pub use molecule::molecule_store;
 pub use molecule::molecule_store::{MoleculeDatabase, MoleculeRecord};

@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 /// SMILES candidate pattern (simplified — no RDKit validation in Rust).
 /// Shared between classifier.rs and extractor.rs to avoid duplication.
 pub static SMILES_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[A-Za-z0-9@.+\-=#$()\[\]\\/%~]{4,}").unwrap());
+    LazyLock::new(|| Regex::new(r"[A-Za-z0-9@.+\-=#$()\[\]\\/%~]{4,}").expect("valid SMILES regex"));
 
 /// Get current UTC time as RFC 3339 string.
 pub fn now_rfc3339() -> String {
@@ -48,7 +48,13 @@ pub fn truncate_text(text: &str, max_len: usize) -> String {
 /// Safe filename: replace illegal characters with underscore.
 pub fn safe_filename(name: &str) -> String {
     name.chars()
-        .map(|c| if matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c })
+        .map(|c| {
+            if matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect::<String>()
         .trim()
         .to_string()
@@ -69,7 +75,10 @@ pub fn clean_path(raw: &str) -> String {
 }
 
 /// Save data as JSON file (2-space indent).
-pub fn save_json<T: serde::Serialize>(path: &Path, data: &T) -> Result<(), Box<dyn std::error::Error>> {
+pub fn save_json<T: serde::Serialize>(
+    path: &Path,
+    data: &T,
+) -> Result<(), Box<dyn std::error::Error>> {
     ensure_dir(path.parent().unwrap_or(Path::new(".")))?;
     let json = serde_json::to_string_pretty(data)?;
     std::fs::write(path, json)?;
@@ -84,7 +93,10 @@ pub fn load_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
 
 /// Estimate token count (rough heuristic: CJK ~1.5 token/char, other ~0.25 token/char).
 pub fn estimate_tokens(text: &str) -> usize {
-    let cjk = text.chars().filter(|c| *c >= '\u{4e00}' && *c <= '\u{9fff}' || *c >= '\u{3400}' && *c <= '\u{4dbf}').count();
+    let cjk = text
+        .chars()
+        .filter(|c| *c >= '\u{4e00}' && *c <= '\u{9fff}' || *c >= '\u{3400}' && *c <= '\u{4dbf}')
+        .count();
     let other = text.len() - cjk;
     (cjk as f64 * 1.5 + other as f64 * 0.25) as usize
 }
@@ -200,15 +212,15 @@ mod tests {
     fn test_assert_within_root_valid() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        
+
         // Create a subdirectory
         let subdir = root.join("docs");
         fs::create_dir_all(&subdir).unwrap();
-        
+
         // Create a file in the subdirectory
         let file_path = subdir.join("readme.txt");
         fs::write(&file_path, "test").unwrap();
-        
+
         // Valid path within root
         let result = assert_within_root(
             root.to_string_lossy().as_ref(),
@@ -222,30 +234,30 @@ mod tests {
     fn test_assert_within_root_traversal() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        
+
         // Path traversal attempt - non-existent path should fail canonicalize
         let result = assert_within_root(
             root.to_string_lossy().as_ref(),
             Path::new("../../../etc/passwd"),
         );
         // This should fail because the path doesn't exist
-        assert!(result.is_err(), "Expected error for non-existent traversal path");
+        assert!(
+            result.is_err(),
+            "Expected error for non-existent traversal path"
+        );
     }
 
     #[test]
     fn test_assert_within_root_absolute_inside() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        
+
         // Create a file
         let file_path = root.join("test.txt");
         fs::write(&file_path, "test").unwrap();
-        
+
         // Absolute path within root should work
-        let result = assert_within_root(
-            root.to_string_lossy().as_ref(),
-            &file_path,
-        );
+        let result = assert_within_root(root.to_string_lossy().as_ref(), &file_path);
         assert!(result.is_ok(), "Expected Ok but got: {:?}", result);
         assert!(result.unwrap().within_root);
     }
@@ -254,11 +266,11 @@ mod tests {
     fn test_safe_join() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        
+
         // Create the directory that safe_join will reference
         let docs_dir = root.join("docs");
         fs::create_dir_all(&docs_dir).unwrap();
-        
+
         let joined = safe_join(root, "docs");
         assert!(joined.is_ok(), "Expected Ok but got: {:?}", joined);
         assert!(joined.unwrap().to_string_lossy().contains("docs"));

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { FlaskIcon, SearchIcon, ChatIcon, WorkflowIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon, TargetIcon, BarChartIcon, NoteIcon } from './icons'
 import IconButton from '../components/ui/IconButton'
 import Tooltip from '../components/ui/Tooltip'
@@ -14,17 +15,15 @@ interface Props {
 }
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: '数据看板', path: '/dashboard', icon: BarChartIcon },
-  { id: 'project', label: '项目看板', path: '/project', icon: LayoutIcon },
-  { id: 'notes', label: '笔记', path: '/notes', icon: NoteIcon },
-  { id: 'search', label: '搜索', path: '/search', icon: SearchIcon },
-  { id: 'chat', label: '对话', path: '/chat', icon: ChatIcon },
-  { id: 'molecules', label: '分子库', path: '/molecules', icon: FlaskIcon },
-  { id: 'sar', label: 'SAR 分析', path: '/sar', icon: TargetIcon },
-  { id: 'workflow', label: '工作流', path: '/workflow', icon: WorkflowIcon },
+  { id: 'dashboard', path: '/dashboard', icon: BarChartIcon, labelKey: 'nav.dashboard' },
+  { id: 'project', path: '/project', icon: LayoutIcon, labelKey: 'nav.project' },
+  { id: 'notes', path: '/notes', icon: NoteIcon, labelKey: 'nav.notes' },
+  { id: 'search', path: '/search', icon: SearchIcon, labelKey: 'nav.search' },
+  { id: 'chat', path: '/chat', icon: ChatIcon, labelKey: 'nav.chat' },
+  { id: 'molecules', path: '/molecules', icon: FlaskIcon, labelKey: 'nav.molecules' },
+  { id: 'sar', path: '/sar', icon: TargetIcon, labelKey: 'nav.sar' },
+  { id: 'workflow', path: '/workflow', icon: WorkflowIcon, labelKey: 'nav.workflow' },
 ]
-
-
 
 function NavButton({
   active,
@@ -66,10 +65,11 @@ function NavButton({
 
 export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchProject, fileTreeOpen, onToggleFileTree }: Props) {
   const navigate = useNavigate()
+  const { t } = useTranslation()
 
   const handleClick = (item: typeof NAV_ITEMS[0]) => {
     onNavigate(item.id)
-    navigate(item.path)
+    void navigate(item.path)
   }
 
   return (
@@ -84,7 +84,7 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchP
     }}>
       <div style={{ padding: '8px 6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
         {/* File tree toggle at top */}
-        <Tooltip text="文件树">
+        <Tooltip text={t('nav.fileTree')}>
           <IconButton active={fileTreeOpen} onClick={onToggleFileTree}>
             <FileTextIcon size={20} />
           </IconButton>
@@ -95,7 +95,7 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchP
             key={item.id}
             active={current === item.id}
             onClick={() => handleClick(item)}
-            label={item.label}
+            label={t(item.labelKey)}
             icon={item.icon}
           />
         ))}
@@ -109,12 +109,12 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchP
         flexDirection: 'column',
         gap: '2px',
       }}>
-        <Tooltip text="切换项目">
+        <Tooltip text={t('nav.switchProject')}>
           <IconButton onClick={onSwitchProject}>
             <PlusIcon size={20} />
           </IconButton>
         </Tooltip>
-        <Tooltip text="设置">
+        <Tooltip text={t('nav.settings')}>
           <IconButton onClick={onSettingsOpen}>
             <SettingsIcon size={20} />
           </IconButton>

@@ -19,16 +19,40 @@ pub struct Message {
 
 impl Message {
     pub fn system(content: &str) -> Self {
-        Self { role: "system".into(), content: content.to_string(), tool_calls: None, name: None, tool_call_id: None }
+        Self {
+            role: "system".into(),
+            content: content.to_string(),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
     }
     pub fn user(content: &str) -> Self {
-        Self { role: "user".into(), content: content.to_string(), tool_calls: None, name: None, tool_call_id: None }
+        Self {
+            role: "user".into(),
+            content: content.to_string(),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
     }
     pub fn assistant(content: &str) -> Self {
-        Self { role: "assistant".into(), content: content.to_string(), tool_calls: None, name: None, tool_call_id: None }
+        Self {
+            role: "assistant".into(),
+            content: content.to_string(),
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
     }
     pub fn tool(name: &str, content: &str, call_id: &str) -> Self {
-        Self { role: "tool".into(), content: content.to_string(), tool_calls: None, name: Some(name.to_string()), tool_call_id: Some(call_id.to_string()) }
+        Self {
+            role: "tool".into(),
+            content: content.to_string(),
+            tool_calls: None,
+            name: Some(name.to_string()),
+            tool_call_id: Some(call_id.to_string()),
+        }
     }
 }
 
@@ -46,11 +70,17 @@ struct ContextLayer {
 
 impl ContextLayer {
     fn new(ephemeral: bool) -> Self {
-        Self { messages: Vec::new(), ephemeral }
+        Self {
+            messages: Vec::new(),
+            ephemeral,
+        }
     }
 
     fn token_count(&self) -> usize {
-        self.messages.iter().map(|m| estimate_tokens(&m.content)).sum()
+        self.messages
+            .iter()
+            .map(|m| estimate_tokens(&m.content))
+            .sum()
     }
 
     fn clear(&mut self) {
@@ -104,19 +134,25 @@ impl LayeredContext {
 
     pub fn inject_memory(&mut self, memory_text: &str) {
         if !memory_text.is_empty() {
-            self.project.messages.push(Message::system(&format!("[用户记忆]\n{}", memory_text)));
+            self.project
+                .messages
+                .push(Message::system(&format!("[用户记忆]\n{}", memory_text)));
         }
     }
 
     pub fn inject_agent_memory(&mut self, memory_text: &str) {
         if !memory_text.is_empty() {
-            self.project.messages.push(Message::system(&format!("[Agent 经验]\n{}", memory_text)));
+            self.project
+                .messages
+                .push(Message::system(&format!("[Agent 经验]\n{}", memory_text)));
         }
     }
 
     pub fn inject_retrieval_trajectory(&mut self, trajectory_text: &str) {
         if !trajectory_text.is_empty() {
-            self.tools.messages.push(Message::system(&format!("[检索轨迹]\n{}", trajectory_text)));
+            self.tools
+                .messages
+                .push(Message::system(&format!("[检索轨迹]\n{}", trajectory_text)));
         }
     }
 
@@ -128,16 +164,23 @@ impl LayeredContext {
         self.history.messages.push(Message::assistant(content));
     }
 
-    pub fn add_assistant_message_with_tool_calls(&mut self, content: &str, tool_calls: &[super::llm::ToolCall]) {
-        let tc_values: Vec<serde_json::Value> = tool_calls.iter().map(|tc| {
-            serde_json::json!({
-                "id": tc.id,
-                "function": {
-                    "name": tc.name,
-                    "arguments": tc.arguments.to_string(),
-                }
+    pub fn add_assistant_message_with_tool_calls(
+        &mut self,
+        content: &str,
+        tool_calls: &[super::llm::ToolCall],
+    ) {
+        let tc_values: Vec<serde_json::Value> = tool_calls
+            .iter()
+            .map(|tc| {
+                serde_json::json!({
+                    "id": tc.id,
+                    "function": {
+                        "name": tc.name,
+                        "arguments": tc.arguments.to_string(),
+                    }
+                })
             })
-        }).collect();
+            .collect();
         self.history.messages.push(Message {
             role: "assistant".into(),
             content: content.to_string(),
@@ -148,8 +191,14 @@ impl LayeredContext {
     }
 
     pub fn add_tool_result(&mut self, tool_name: &str, result: &str, tool_call_id: &str) {
-        let truncated = if result.len() > 4000 { &result[..result.floor_char_boundary(4000)] } else { result };
-        self.history.messages.push(Message::tool(tool_name, truncated, tool_call_id));
+        let truncated = if result.len() > 4000 {
+            &result[..result.floor_char_boundary(4000)]
+        } else {
+            result
+        };
+        self.history
+            .messages
+            .push(Message::tool(tool_name, truncated, tool_call_id));
     }
 
     pub fn clear_tool_results(&mut self) {
@@ -174,7 +223,12 @@ impl LayeredContext {
         // Token-based trimming
         while self.total_token_count() > self.max_total_tokens && self.history.messages.len() > 2 {
             self.history.messages.remove(0);
-            if self.history.messages.first().map_or(false, |m| m.role == "assistant") {
+            if self
+                .history
+                .messages
+                .first()
+                .map_or(false, |m| m.role == "assistant")
+            {
                 self.history.messages.remove(0);
             }
         }
@@ -233,13 +287,16 @@ impl LayeredContext {
             data["max_total_tokens"].as_u64().unwrap_or(32000) as usize,
         );
         if let Some(sys) = data["system"].as_array() {
-            ctx.system.messages = serde_json::from_value(serde_json::Value::Array(sys.clone())).unwrap_or_default();
+            ctx.system.messages =
+                serde_json::from_value(serde_json::Value::Array(sys.clone())).unwrap_or_default();
         }
         if let Some(proj) = data["project"].as_array() {
-            ctx.project.messages = serde_json::from_value(serde_json::Value::Array(proj.clone())).unwrap_or_default();
+            ctx.project.messages =
+                serde_json::from_value(serde_json::Value::Array(proj.clone())).unwrap_or_default();
         }
         if let Some(hist) = data["history"].as_array() {
-            ctx.history.messages = serde_json::from_value(serde_json::Value::Array(hist.clone())).unwrap_or_default();
+            ctx.history.messages =
+                serde_json::from_value(serde_json::Value::Array(hist.clone())).unwrap_or_default();
         }
         ctx
     }

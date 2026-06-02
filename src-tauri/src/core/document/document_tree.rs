@@ -59,7 +59,10 @@ impl DocumentTreeIndex {
         }
     }
 
-    fn save_trees(&self, trees: &std::collections::HashMap<String, Vec<TreeNode>>) -> Result<(), String> {
+    fn save_trees(
+        &self,
+        trees: &std::collections::HashMap<String, Vec<TreeNode>>,
+    ) -> Result<(), String> {
         let dir = self.meta_dir();
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let content = serde_json::to_string_pretty(trees).map_err(|e| e.to_string())?;
@@ -116,10 +119,7 @@ impl DocumentTreeIndex {
         for idx in page_indices {
             let page_path = doc_pages.join(format!("page_{}.txt", idx));
             if let Ok(content) = fs::read_to_string(&page_path) {
-                result.push(PageContent {
-                    page: idx,
-                    content,
-                });
+                result.push(PageContent { page: idx, content });
             }
         }
 

@@ -47,12 +47,22 @@ pub fn register(registry: &mut ToolRegistry, _project_root: &str) {
 
     // arxiv_raw — Agentic Data API
     registry.register_with_fn(
-        ToolInfo::new("arxiv_raw", "获取 arXiv 论文的完整内容（Markdown 格式）。适合深入阅读全文。", {
-            let mut p = HashMap::new();
-            p.insert("arxiv_id".into(), serde_json::json!({"type": "string", "description": "arXiv paper ID"}));
-            p.insert("token".into(), serde_json::json!({"type": "string", "description": "Optional API token"}));
-            p
-        }),
+        ToolInfo::new(
+            "arxiv_raw",
+            "获取 arXiv 论文的完整内容（Markdown 格式）。适合深入阅读全文。",
+            {
+                let mut p = HashMap::new();
+                p.insert(
+                    "arxiv_id".into(),
+                    serde_json::json!({"type": "string", "description": "arXiv paper ID"}),
+                );
+                p.insert(
+                    "token".into(),
+                    serde_json::json!({"type": "string", "description": "Optional API token"}),
+                );
+                p
+            },
+        ),
         Box::new(arxiv::tool_arxiv_raw),
     );
 

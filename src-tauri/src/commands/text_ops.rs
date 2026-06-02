@@ -12,7 +12,10 @@ pub struct TextChunkResult {
 #[tauri::command]
 pub fn text_chunk(text: String, chunk_size: usize, overlap: usize) -> TextChunkResult {
     if text.is_empty() || chunk_size == 0 {
-        return TextChunkResult { chunks: vec![], total_chunks: 0 };
+        return TextChunkResult {
+            chunks: vec![],
+            total_chunks: 0,
+        };
     }
 
     let chars: Vec<char> = text.chars().collect();
@@ -64,12 +67,18 @@ pub fn text_chunk(text: String, chunk_size: usize, overlap: usize) -> TextChunkR
     }
 
     let total = chunks.len();
-    TextChunkResult { chunks, total_chunks: total }
+    TextChunkResult {
+        chunks,
+        total_chunks: total,
+    }
 }
 
 /// Find the last occurrence of `target` in chars[start..end].
 fn find_rev(chars: &[char], start: usize, end: usize, target: char) -> Option<usize> {
-    chars[start..end].iter().rposition(|&c| c == target).map(|p| start + p)
+    chars[start..end]
+        .iter()
+        .rposition(|&c| c == target)
+        .map(|p| start + p)
 }
 
 #[cfg(test)]
@@ -80,8 +89,16 @@ mod tests {
     fn test_text_chunk_long_text() {
         let text = "a ".repeat(1000);
         let result = text_chunk(text, 512, 128);
-        assert!(result.total_chunks > 1, "Expected multiple chunks, got {}", result.total_chunks);
-        assert!(result.total_chunks < 100, "Too many chunks: {}", result.total_chunks);
+        assert!(
+            result.total_chunks > 1,
+            "Expected multiple chunks, got {}",
+            result.total_chunks
+        );
+        assert!(
+            result.total_chunks < 100,
+            "Too many chunks: {}",
+            result.total_chunks
+        );
     }
 
     #[test]

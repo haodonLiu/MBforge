@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { openProject } from '../api/tauri-bridge'
 import { FolderIcon, ArrowLeftIcon, MoleculeLogo, TrashIcon, XIcon } from './icons'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
@@ -65,6 +66,7 @@ interface Props {
 type Page = 'home' | 'create' | 'open'
 
 export default function Welcome({ onProjectOpened }: Props) {
+  const { t } = useTranslation()
   const [page, setPage] = useState<Page>('home')
   const [selectedDir, setSelectedDir] = useState('')
   const [projectName, setProjectName] = useState('')
@@ -86,7 +88,7 @@ export default function Welcome({ onProjectOpened }: Props) {
       if (resp.success && resp.project) {
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
-        showToast(resp.error || '打开失败，请确认路径有效', 'error')
+        showToast(resp.error || t('welcome.openProject') + ' ' + t('common.noResults'), 'error')
       }
     } catch (e) {
       showToast(`打开失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
@@ -104,7 +106,7 @@ export default function Welcome({ onProjectOpened }: Props) {
       if (resp.success && resp.project) {
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
-        showToast(resp.error || '创建失败', 'error')
+        showToast(resp.error || t('common.save') + ' ' + t('common.noResults'), 'error')
       }
     } catch (e) {
       showToast(`创建失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
@@ -121,7 +123,7 @@ export default function Welcome({ onProjectOpened }: Props) {
       if (resp.success && resp.project) {
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
-        showToast(resp.error || '无法打开，请确认该目录是有效的 MBForge 项目', 'error')
+        showToast(resp.error || t('welcome.openProject') + ' ' + t('common.noResults'), 'error')
       }
     } catch (e) {
       showToast(`打开失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
@@ -147,40 +149,40 @@ export default function Welcome({ onProjectOpened }: Props) {
               size="sm"
               onClick={() => { setPage('home'); setSelectedDir(''); setProjectName('') }}
             >
-              <ArrowLeftIcon size={16} /> 返回
+              <ArrowLeftIcon size={16} /> {t('common.cancel')}
             </Button>
           </div>
 
-          <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '24px' }}>新建项目</h2>
+          <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '24px' }}>{t('welcome.createProject')}</h2>
 
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-              项目目录
+              {t('welcome.selectFolder')}
             </label>
             <FolderPicker
               value={selectedDir}
               onChange={(path) => setSelectedDir(sanitizePath(path))}
-              placeholder="选择项目父目录"
-              title="选择项目父目录"
+              placeholder={t('welcome.selectFolder')}
+              title={t('welcome.selectFolder')}
             />
           </div>
 
           <div style={{ marginBottom: '16px' }}>
             <label style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-              项目名称
+              {t('welcome.projectName')}
             </label>
             <Input
               value={projectName}
               onChange={e => setProjectName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleCreate()}
-              placeholder="如: aspirin-study"
+              placeholder={t('welcome.projectNamePlaceholder')}
               autoFocus
             />
           </div>
 
           {selectedDir && projectName && (
             <div style={{ marginBottom: '16px', padding: '10px 14px', background: 'var(--bg-surface)', borderRadius: '8px' }}>
-              <Caption>将创建: <strong>{selectedDir}/{projectName}</strong></Caption>
+              <Caption>{t('welcome.create')}: <strong>{selectedDir}/{projectName}</strong></Caption>
             </div>
           )}
 
@@ -193,9 +195,9 @@ export default function Welcome({ onProjectOpened }: Props) {
             {loading ? (
               <>
                 <Spinner size={14} color="currentColor" />
-                创建中...
+                {t('common.loading')}
               </>
-            ) : '创建项目'}
+            ) : t('welcome.create')}
           </Button>
         </div>
       </motion.div>
@@ -219,23 +221,23 @@ export default function Welcome({ onProjectOpened }: Props) {
               size="sm"
               onClick={() => { setPage('home'); setSelectedDir('') }}
             >
-              <ArrowLeftIcon size={16} /> 返回
+              <ArrowLeftIcon size={16} /> {t('common.cancel')}
             </Button>
           </div>
 
-          <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '24px' }}>打开已有项目</h2>
+          <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '24px' }}>{t('welcome.openProject')}</h2>
 
           <div style={{ marginBottom: '20px' }}>
             <label style={{ display: 'block', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-              项目路径
+              {t('common.project')}
             </label>
             <FolderPicker
               value={selectedDir}
               onChange={(path) => {
                 setSelectedDir(sanitizePath(path))
               }}
-              placeholder="选择项目文件夹"
-              title="选择 MBForge 项目"
+              placeholder={t('welcome.selectFolder')}
+              title={t('welcome.openProject')}
             />
           </div>
 
@@ -248,9 +250,9 @@ export default function Welcome({ onProjectOpened }: Props) {
             {loading ? (
               <>
                 <Spinner size={14} color="currentColor" />
-                打开中...
+                {t('common.loading')}
               </>
-            ) : '打开项目'}
+            ) : t('welcome.openProject')}
           </Button>
         </div>
       </motion.div>
@@ -287,7 +289,7 @@ export default function Welcome({ onProjectOpened }: Props) {
 
           <StaggerItem>
             <BodyText size="lg" style={{ marginBottom: '40px' }}>
-              Molecular Knowledge Base - 分子知识库
+              {t('welcome.subtitle')}
             </BodyText>
           </StaggerItem>
 
@@ -300,7 +302,7 @@ export default function Welcome({ onProjectOpened }: Props) {
                 onClick={() => setPage('create')}
                 icon={<FolderIcon size={16} />}
               >
-                新建项目
+                {t('welcome.createProject')}
               </Button>
               <Button
                 variant="secondary"
@@ -308,7 +310,7 @@ export default function Welcome({ onProjectOpened }: Props) {
                 onClick={() => setPage('open')}
                 icon={<FolderIcon size={16} />}
               >
-                打开项目
+                {t('welcome.openProject')}
               </Button>
             </div>
           </StaggerItem>
@@ -323,11 +325,11 @@ export default function Welcome({ onProjectOpened }: Props) {
                   justifyContent: 'space-between',
                   marginBottom: '12px',
                 }}>
-                  <SectionTitle>最近项目</SectionTitle>
+                  <SectionTitle>{t('welcome.recentProjects')}</SectionTitle>
                   <IconButton
                     size={32}
                     active={editing}
-                    title={editing ? '完成' : '编辑'}
+                    title={editing ? t('common.close') : t('common.copy')}
                     onClick={() => { setEditing(!editing); setDeleting(null) }}
                   >
                     <TrashIcon size={16} />

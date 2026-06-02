@@ -71,7 +71,11 @@ impl ToolRegistry {
     }
 
     /// Register a tool with a native Rust function (no sidecar needed).
-    pub fn register_with_fn(&mut self, info: ToolInfo, func: Box<dyn Fn(&serde_json::Value) -> String + Send + Sync>) {
+    pub fn register_with_fn(
+        &mut self,
+        info: ToolInfo,
+        func: Box<dyn Fn(&serde_json::Value) -> String + Send + Sync>,
+    ) {
         let name = info.name.clone();
         self.tools.insert(name.clone(), info);
         self.native_funcs.insert(name, func);
@@ -82,7 +86,10 @@ impl ToolRegistry {
     }
 
     /// Get native function for a tool (returns None if it's a sidecar tool).
-    pub fn get_native(&self, name: &str) -> Option<&Box<dyn Fn(&serde_json::Value) -> String + Send + Sync>> {
+    pub fn get_native(
+        &self,
+        name: &str,
+    ) -> Option<&Box<dyn Fn(&serde_json::Value) -> String + Send + Sync>> {
         self.native_funcs.get(name)
     }
 

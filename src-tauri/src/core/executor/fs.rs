@@ -19,13 +19,17 @@ pub fn register(registry: &mut ToolRegistry, project_root: &str) {
     // grep_search — ripgrep
     let r = root.clone();
     registry.register_with_fn(
-        ToolInfo::new("grep_search", "在项目文件中正则搜索内容（ripgrep 级性能）", {
-            let mut p = HashMap::new();
-            p.insert("pattern".into(), serde_json::json!({"type": "string"}));
-            p.insert("path".into(), serde_json::json!({"type": "string"}));
-            p.insert("max_results".into(), serde_json::json!({"type": "integer"}));
-            p
-        }),
+        ToolInfo::new(
+            "grep_search",
+            "在项目文件中正则搜索内容（ripgrep 级性能）",
+            {
+                let mut p = HashMap::new();
+                p.insert("pattern".into(), serde_json::json!({"type": "string"}));
+                p.insert("path".into(), serde_json::json!({"type": "string"}));
+                p.insert("max_results".into(), serde_json::json!({"type": "integer"}));
+                p
+            },
+        ),
         Box::new(move |args| {
             let pattern = args["pattern"].as_str().unwrap_or("");
             let search_path = args["path"].as_str().unwrap_or("");
@@ -37,12 +41,16 @@ pub fn register(registry: &mut ToolRegistry, project_root: &str) {
     // list_files — ignore crate (.gitignore aware)
     let r = root.clone();
     registry.register_with_fn(
-        ToolInfo::new("list_files", "列出项目中的文件（遵循 .gitignore）", {
-            let mut p = HashMap::new();
-            p.insert("pattern".into(), serde_json::json!({"type": "string"}));
-            p.insert("max_results".into(), serde_json::json!({"type": "integer"}));
-            p
-        }),
+        ToolInfo::new(
+            "list_files",
+            "列出项目中的文件（遵循 .gitignore）",
+            {
+                let mut p = HashMap::new();
+                p.insert("pattern".into(), serde_json::json!({"type": "string"}));
+                p.insert("max_results".into(), serde_json::json!({"type": "integer"}));
+                p
+            },
+        ),
         Box::new(move |args| {
             let pattern = args["pattern"].as_str().unwrap_or("");
             let max_results = args["max_results"].as_u64().unwrap_or(50) as usize;
@@ -69,7 +77,11 @@ pub fn register(registry: &mut ToolRegistry, project_root: &str) {
     // get_project_info
     let r = root.clone();
     registry.register_with_fn(
-        ToolInfo::new("get_project_info", "获取项目基本信息（文件数、目录结构等）", HashMap::new()),
+        ToolInfo::new(
+            "get_project_info",
+            "获取项目基本信息（文件数、目录结构等）",
+            HashMap::new(),
+        ),
         Box::new(move |_args| native_get_project_info(&r)),
     );
 
@@ -110,13 +122,22 @@ fn native_grep_search(root: &str, pattern: &str, search_path: &str, max_results:
     let mut results = Vec::new();
     let mut searcher = SearcherBuilder::new().line_number(true).build();
 
-    let _ = searcher.search_path(&matcher, &target, UTF8(|line_number, line| {
-        if results.len() >= max_results {
-            return Ok(false);
-        }
-        results.push(format!("{}:{}:{}", target.display(), line_number, line.trim()));
-        Ok(true)
-    }));
+    let _ = searcher.search_path(
+        &matcher,
+        &target,
+        UTF8(|line_number, line| {
+            if results.len() >= max_results {
+                return Ok(false);
+            }
+            results.push(format!(
+                "{}:{}:{}",
+                target.display(),
+                line_number,
+                line.trim()
+            ));
+            Ok(true)
+        }),
+    );
 
     if results.is_empty() {
         "No matches found".to_string()
@@ -208,7 +229,10 @@ fn native_get_project_info(root: &str) -> String {
     }
 
     let mut lines = vec![
-        format!("Project: {}", root_path.file_name().unwrap_or_default().to_string_lossy()),
+        format!(
+            "Project: {}",
+            root_path.file_name().unwrap_or_default().to_string_lossy()
+        ),
         format!("Path: {}", root),
         format!("Files: {}", file_count),
         format!("Directories: {}", dir_count),

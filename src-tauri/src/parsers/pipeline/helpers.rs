@@ -1,6 +1,6 @@
 use crate::core::helpers::{generate_uuid, sha256_text};
 use crate::core::molecule_store::MoleculeRecord;
-use crate::parsers::doc_types::{CompoundEntry, ActivityEntry, PhysicochemicalProperty};
+use crate::parsers::doc_types::{ActivityEntry, CompoundEntry, PhysicochemicalProperty};
 
 /// CompoundEntry → MoleculeRecord 映射
 pub fn compound_entry_to_record(
@@ -87,8 +87,11 @@ pub fn activity_entry_to_record(
     };
     record.notes = format!(
         "Activity: {} {} {}. Source ref: {}. Confidence: {}.",
-        activity.activity_type, activity.value, activity.units,
-        activity.source_ref, activity.confidence
+        activity.activity_type,
+        activity.value,
+        activity.units,
+        activity.source_ref,
+        activity.confidence
     );
     record
 }

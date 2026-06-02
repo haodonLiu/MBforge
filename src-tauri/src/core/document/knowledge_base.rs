@@ -12,10 +12,10 @@ use tauri::Emitter;
 
 use crate::core::constants::EVT_KB_SEARCH_CHUNK;
 
+use super::super::vector_store::{SearchResult, SqliteVectorStore, VectorItem, VectorStore};
 use super::document_tree::DocumentTreeIndex;
 use super::semantic_cache::{SemanticCache, SemanticCacheConfig};
-use super::stream_search::{StreamingSearch, StreamingSearchConfig, StreamingResult};
-use super::super::vector_store::{SearchResult, SqliteVectorStore, VectorItem, VectorStore};
+use super::stream_search::{StreamingResult, StreamingSearch, StreamingSearchConfig};
 use crate::parsers::sections::{SectionChunk, TreeNode};
 
 pub use super::document_tree::PageContent;
@@ -61,7 +61,7 @@ impl KnowledgeBase {
                 id: format!("{}:sec{}", doc_id, i),
                 doc_id: doc_id.to_string(),
                 text: section.text.clone(),
-                embedding: vec![],  // FTS5 不需要 embedding
+                embedding: vec![], // FTS5 不需要 embedding
                 metadata: serde_json::json!({
                     "title": section.title,
                     "path": section.path,
@@ -73,7 +73,10 @@ impl KnowledgeBase {
 
         self.vector_store.upsert(items)?;
 
-        let tree = self.tree_index.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let tree = self
+            .tree_index
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         tree.index_document(doc_id, sections, page_texts)?;
         Ok(sections.len())
     }
@@ -107,7 +110,10 @@ impl KnowledgeBase {
 
     pub fn remove_document(&self, doc_id: &str) -> Result<(), String> {
         self.vector_store.delete(doc_id)?;
-        let tree = self.tree_index.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let tree = self
+            .tree_index
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         tree.remove_document(doc_id)
     }
 
@@ -143,26 +149,34 @@ pub static KB_CACHE: OnceLock<Mutex<HashMap<String, KnowledgeBase>>> = OnceLock:
 static SEMANTIC_CACHE: OnceLock<Mutex<HashMap<String, SemanticCache>>> = OnceLock::new();
 
 /// 获取或初始化 KB 实例（公共供 executor.rs 调用）
-pub fn get_or_init_kb(root: &str) -> Result<std::sync::MutexGuard<'static, HashMap<String, KnowledgeBase>>, String> {
+pub fn get_or_init_kb(
+    root: &str,
+) -> Result<std::sync::MutexGuard<'static, HashMap<String, KnowledgeBase>>, String> {
     let cache = KB_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let guard = cache.lock().map_err(|e| format!("KB cache lock error: {}", e))?;
+    let guard = cache
+        .lock()
+        .map_err(|e| format!("KB cache lock error: {}", e))?;
     if guard.contains_key(root) {
         return Ok(guard);
     }
     drop(guard);
     let kb = KnowledgeBase::new(std::path::Path::new(root))?;
-    let mut guard = cache.lock().map_err(|e| format!("KB cache lock error: {}", e))?;
+    let mut guard = cache
+        .lock()
+        .map_err(|e| format!("KB cache lock error: {}", e))?;
     guard.insert(root.to_string(), kb);
     Ok(guard)
 }
 
-fn get_or_init_semantic_cache(root: &str) -> std::sync::MutexGuard<'static, HashMap<String, SemanticCache>> {
+fn get_or_init_semantic_cache(
+    root: &str,
+) -> std::sync::MutexGuard<'static, HashMap<String, SemanticCache>> {
     let cache = SEMANTIC_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
     if !guard.contains_key(root) {
         let sc = SemanticCache::new(
             std::path::Path::new(root),
-            None,  // 无 embedder → 仅 L1 (hash) 模式
+            None, // 无 embedder → 仅 L1 (hash) 模式
             SemanticCacheConfig::default(),
         );
         guard.insert(root.to_string(), sc);
@@ -171,7 +185,11 @@ fn get_or_init_semantic_cache(root: &str) -> std::sync::MutexGuard<'static, Hash
 }
 
 /// 搜索核心逻辑：semantic_cache (L1) → FTS5 → cache store → stream_search
-pub fn search_with_cache(root: &str, query: &str, top_k: usize) -> Result<(Vec<serde_json::Value>, Vec<StreamingResult>), String> {
+pub fn search_with_cache(
+    root: &str,
+    query: &str,
+    top_k: usize,
+) -> Result<(Vec<serde_json::Value>, Vec<StreamingResult>), String> {
     // 1. L1 缓存命中？
     {
         let sc_guard = get_or_init_semantic_cache(root);
@@ -184,18 +202,22 @@ pub fn search_with_cache(root: &str, query: &str, top_k: usize) -> Result<(Vec<s
 
     // 2. FTS5 搜索
     let guard = get_or_init_kb(root)?;
-    let kb = guard.get(root).unwrap();
-    let results = kb.search(query, top_k)
+    let kb = guard.get(root)
+        .ok_or_else(|| format!("Knowledge base not initialized for root: {}", root))?;
+    let results = kb
+        .search(query, top_k)
         .map_err(|e| format!("Search failed: {}", e))?;
 
     let json_results: Vec<serde_json::Value> = results
         .into_iter()
-        .map(|r| serde_json::json!({
-            "id": r.id,
-            "text": r.text,
-            "metadata": r.metadata,
-            "score": r.score,
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id": r.id,
+                "text": r.text,
+                "metadata": r.metadata,
+                "score": r.score,
+            })
+        })
         .collect();
 
     // 3. 写入缓存
@@ -207,8 +229,8 @@ pub fn search_with_cache(root: &str, query: &str, top_k: usize) -> Result<(Vec<s
     }
 
     // 4. 流式分批
-    let stream = StreamingSearch::new(StreamingSearchConfig::default())
-        .execute(json_results.clone(), top_k);
+    let stream =
+        StreamingSearch::new(StreamingSearchConfig::default()).execute(json_results.clone(), top_k);
 
     Ok((json_results, stream))
 }
@@ -242,31 +264,32 @@ pub async fn kb_search_stream(
 
     // 通过事件逐 chunk 推送
     for chunk in chunks {
-        let _ = app.emit(EVT_KB_SEARCH_CHUNK, serde_json::json!({
-            "type": chunk.r#type,
-            "results": chunk.results,
-            "count": chunk.count,
-            "error": chunk.error,
-        }));
+        let _ = app.emit(
+            EVT_KB_SEARCH_CHUNK,
+            serde_json::json!({
+                "type": chunk.r#type,
+                "results": chunk.results,
+                "count": chunk.count,
+                "error": chunk.error,
+            }),
+        );
     }
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn kb_get_structure(
-    root: String,
-    doc_id: String,
-) -> Result<Option<Vec<TreeNode>>, String> {
+pub fn kb_get_structure(root: String, doc_id: String) -> Result<Option<Vec<TreeNode>>, String> {
     let guard = get_or_init_kb(&root)?;
-    let kb = guard.get(&root).unwrap();
+    let kb = guard.get(&root)
+        .ok_or_else(|| format!("Knowledge base not found for root: {}", root))?;
     Ok(kb.get_structure(&doc_id))
 }
 
 #[tauri::command]
 pub fn kb_get_pages(root: String, doc_id: String, pages: String) -> Vec<PageContent> {
     if let Ok(guard) = get_or_init_kb(&root) {
-        let kb = guard.get(&root).unwrap();
+        let kb = guard.get(&root).expect("KB just initialized for root");
         kb.get_pages(&doc_id, &pages)
     } else {
         Vec::new()

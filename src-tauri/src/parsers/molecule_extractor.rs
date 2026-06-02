@@ -18,20 +18,20 @@ use super::doc_types::ImageRef;
 // ---------------------------------------------------------------------------
 
 static NAMED_MOLECULE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(Compound|Example|Intermediate|Reference)\s+(\d+[a-zA-Z]?)").unwrap()
+    Regex::new(r"(?i)(Compound|Example|Intermediate|Reference)\s+(\d+[a-zA-Z]?)").expect("valid named molecule regex")
 });
 
 static ACTIVITY_RE: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     vec![
         // IC50 = 5.2 nM
         Regex::new(r"(?i)(IC50|EC50|EC90|Ki|Kd|IC90)\s*[=:]\s*([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM|%)")
-            .unwrap(),
+            .expect("valid activity IC50 regex"),
         // Ki of 3.4 nM
         Regex::new(r"(?i)(IC50|EC50|EC90|Ki|Kd|IC90)\s+of\s+([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM|%)")
-            .unwrap(),
+            .expect("valid activity of regex"),
         // 5.2 nM (IC50)
         Regex::new(r"(?i)([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM|%)\s*\(?\s*(IC50|EC50|EC90|Ki|Kd|IC90)\s*\)?")
-            .unwrap(),
+            .expect("valid activity paren regex"),
     ]
 });
 
@@ -39,27 +39,17 @@ static PHYSICOCHEMICAL_RE: LazyLock<Vec<(String, Regex)>> = LazyLock::new(|| {
     vec![
         (
             "mp".to_string(),
-            Regex::new(r"(?i)m\.?p\.?\s*[=:]\s*(\d+\.?\d*)\s*°?\s*C").unwrap(),
-        ),
-        (
-            "logP".to_string(),
-            Regex::new(r"(?i)log\s*P\s*[=:]\s*([\-]?\d+\.?\d*)").unwrap(),
-        ),
-        (
-            "solubility".to_string(),
+            Regex::new(r"(?i)m\.?p\.?\s*[=:]\s*(\d+\.?\d*)\s*°?\s*C").expect("valid mp regex"),
+            Regex::new(r"(?i)log\s*P\s*[=:]\s*([\-]?\d+\.?\d*)").expect("valid logP regex"),
             Regex::new(r"(?i)solubility\s*[=:]\s*([<>]?\d+\.?\d*)\s*(mg/mL|μg/mL|ug/mL|g/L|mg/L)")
-                .unwrap(),
-        ),
-        (
-            "MW".to_string(),
-            Regex::new(r"(?i)M\.?W\.?\s*[=:]\s*(\d+\.?\d*)\s*(Da|g/mol)?").unwrap(),
+                .expect("valid solubility regex"),
+            Regex::new(r"(?i)M\.?W\.?\s*[=:]\s*(\d+\.?\d*)\s*(Da|g/mol)?").expect("valid MW regex"),
         ),
     ]
 });
 
-static PAGE_HINT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\[?page\s*(\d+)\]?|\[?p\.?\s*(\d+)\]?").unwrap()
-});
+static PAGE_HINT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\[?page\s*(\d+)\]?|\[?p\.?\s*(\d+)\]?").expect("valid page hint regex"));
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -181,7 +171,9 @@ pub fn extract_named_molecule_series(text: &str) -> Vec<NamedMolecule> {
     molecules.sort_by(|a, b| {
         let a_score = scores.get(&a.name).copied().unwrap_or(0);
         let b_score = scores.get(&b.name).copied().unwrap_or(0);
-        b_score.cmp(&a_score).then_with(|| a.sequence_num.cmp(&b.sequence_num))
+        b_score
+            .cmp(&a_score)
+            .then_with(|| a.sequence_num.cmp(&b.sequence_num))
     });
 
     molecules
@@ -229,7 +221,10 @@ pub fn extract_properties_for_molecule(
                 continue;
             }
 
-            let source_quote = caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
+            let source_quote = caps
+                .get(0)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
             props.push(PhysicochemicalProperty {
                 property_type: prop_type.to_uppercase(),
                 value,
@@ -253,7 +248,10 @@ pub fn extract_properties_for_molecule(
             if !seen.insert(key) {
                 continue;
             }
-            let source_quote = caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
+            let source_quote = caps
+                .get(0)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
             props.push(PhysicochemicalProperty {
                 property_type: prop_type.clone(),
                 value,
@@ -410,7 +408,8 @@ mod tests {
 
     #[test]
     fn test_extract_named_molecule_series_basic() {
-        let text = "Compound 1 was synthesized. Compound 2 showed activity. Compound 3 was inactive.";
+        let text =
+            "Compound 1 was synthesized. Compound 2 showed activity. Compound 3 was inactive.";
         let mols = extract_named_molecule_series(text);
         assert_eq!(mols.len(), 3);
         assert_eq!(mols[0].name, "Compound 1");
@@ -498,7 +497,8 @@ mod tests {
 
     #[test]
     fn test_extract_properties_window_excludes_distant() {
-        let text = "Compound 1: IC50 = 5.2 nM.\n...very long separator...\nCompound 2: IC50 = 100 nM.";
+        let text =
+            "Compound 1: IC50 = 5.2 nM.\n...very long separator...\nCompound 2: IC50 = 100 nM.";
         let mols = extract_named_molecule_series(text);
         assert_eq!(mols.len(), 2);
         // 对 Compound 1 用小窗口，不应包含 Compound 2 的数据

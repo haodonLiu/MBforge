@@ -4,7 +4,6 @@
 /// 输出: Vec<SectionChunk>（唯一数据单元）
 ///
 /// SectionChunk 是向量索引、结构树、页码缓存的同源数据。
-
 pub use crate::core::types::{SectionChunk, TreeNode};
 
 use super::headings::Heading;
@@ -52,11 +51,13 @@ pub fn build_sections(
         update_path_stack(&mut path_stack, heading);
 
         // 计算 page 范围
-        let (page_start, page_end) = page_texts.map(|_pt| {
-            let ps = line_to_page(start_line, &lines);
-            let pe = line_to_page(end_line.saturating_sub(1), &lines);
-            (ps, pe)
-        }).unwrap_or((None, None));
+        let (page_start, page_end) = page_texts
+            .map(|_pt| {
+                let ps = line_to_page(start_line, &lines);
+                let pe = line_to_page(end_line.saturating_sub(1), &lines);
+                (ps, pe)
+            })
+            .unwrap_or((None, None));
 
         // 如果 section 太长，拆分
         if section_text.len() > max_chars {
@@ -208,8 +209,8 @@ impl TreeNode {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::headings::extract_headings;
+    use super::*;
 
     const DEFAULT_MAX_CHARS: usize = 8000;
 
@@ -244,8 +245,24 @@ mod tests {
     #[test]
     fn test_build_tree() {
         let sections = vec![
-            SectionChunk { title: "Title".into(), path: "Title".into(), text: "".into(), page_start: None, page_end: None, line_start: 0, line_end: 1 },
-            SectionChunk { title: "Section A".into(), path: "Title > Section A".into(), text: "".into(), page_start: None, page_end: None, line_start: 2, line_end: 3 },
+            SectionChunk {
+                title: "Title".into(),
+                path: "Title".into(),
+                text: "".into(),
+                page_start: None,
+                page_end: None,
+                line_start: 0,
+                line_end: 1,
+            },
+            SectionChunk {
+                title: "Section A".into(),
+                path: "Title > Section A".into(),
+                text: "".into(),
+                page_start: None,
+                page_end: None,
+                line_start: 2,
+                line_end: 3,
+            },
         ];
         let tree = build_tree(&sections);
         assert!(!tree.is_empty());

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::core::helpers::clean_path;
 use crate::core::notes::{delete_note, find_backlinks, get_note, list_notes, save_note, Note};
 
- #[tauri::command]
+#[tauri::command]
 pub fn notes_list(project_root: String) -> Result<Vec<Note>, String> {
     let root = clean_path(&project_root);
     let path = PathBuf::from(&root);

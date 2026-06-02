@@ -8,9 +8,8 @@ use crate::commands::extractor::{extract_activities, extract_esmiles_candidates}
 use crate::core::molecule_store::{MoleculeDatabase, MoleculeRecord};
 
 use super::doc_types::{
-    DocProcessingContext, DocStructure, DocumentMetadata, DocumentReport, ImageRef,
-    PdfParseResult, PostProcessResult, ProcessingLog, StageLog, StructuredData,
-    UncertainItem,
+    DocProcessingContext, DocStructure, DocumentMetadata, DocumentReport, ImageRef, PdfParseResult,
+    PostProcessResult, ProcessingLog, StageLog, StructuredData, UncertainItem,
 };
 
 mod extract;
@@ -109,16 +108,20 @@ pub async fn parse_pdf(
     let extracted = super::images::extract_images_from_pdf(
         &path,
         tmp_dir.path(),
-        20,  // max_images
-        2,   // max_size_mb
-    ).unwrap_or_default();
-    let images: Vec<ImageRef> = extracted.into_iter().map(|img| ImageRef {
-        filename: img.filename,
-        page: img.page,
-        region: None,
-        description: None,
-        esmiles: None,
-    }).collect();
+        20, // max_images
+        2,  // max_size_mb
+    )
+    .unwrap_or_default();
+    let images: Vec<ImageRef> = extracted
+        .into_iter()
+        .map(|img| ImageRef {
+            filename: img.filename,
+            page: img.page,
+            region: None,
+            description: None,
+            esmiles: None,
+        })
+        .collect();
 
     // Stage 2: Classification
     let pages: Vec<String> = content.split("\n\n").map(|s| s.to_string()).collect();
@@ -144,15 +147,13 @@ pub async fn parse_pdf(
         images,
         headings,
         sections,
-        page_texts: vec![],  // page_texts populated by post_process_pdf if available
+        page_texts: vec![], // page_texts populated by post_process_pdf if available
     })
 }
 
 /// Post-process PDF extraction results using LLM.
 #[tauri::command]
-pub fn post_process_pdf(
-    parse_result: PdfParseResult,
-) -> Result<PostProcessResult, String> {
+pub fn post_process_pdf(parse_result: PdfParseResult) -> Result<PostProcessResult, String> {
     super::post_process::post_process(&parse_result)
 }
 
@@ -165,15 +166,32 @@ pub enum DocProgressEvent {
     #[serde(rename = "classify")]
     Classify { parser: String, page_count: usize },
     #[serde(rename = "meta")]
-    Meta { doc_type: String, sections: Vec<String> },
+    Meta {
+        doc_type: String,
+        sections: Vec<String>,
+    },
     #[serde(rename = "plan")]
-    Plan { target_sections: Vec<String>, extraction_types: Vec<String> },
+    Plan {
+        target_sections: Vec<String>,
+        extraction_types: Vec<String>,
+    },
     #[serde(rename = "section")]
-    Section { name: String, status: String, compounds: usize, activities: usize },
+    Section {
+        name: String,
+        status: String,
+        compounds: usize,
+        activities: usize,
+    },
     #[serde(rename = "vlm")]
-    Vlm { image_count: usize, esmiles_found: usize },
+    Vlm {
+        image_count: usize,
+        esmiles_found: usize,
+    },
     #[serde(rename = "merge")]
-    Merge { total_compounds: usize, total_activities: usize },
+    Merge {
+        total_compounds: usize,
+        total_activities: usize,
+    },
     #[serde(rename = "persist")]
     Persist { saved: usize, skipped: usize },
     #[serde(rename = "report")]
@@ -191,7 +209,8 @@ async fn run_meta_analysis(ctx: &DocProcessingContext) -> Result<DocStructure, S
         &config,
         "你是文档分析专家。分析文档开头部分，判断文档类型和结构。只输出 JSON。",
         &prompt,
-    ).await?;
+    )
+    .await?;
 
     crate::parsers::intent::parse_meta_response(&response)
 }
@@ -225,10 +244,13 @@ pub async fn process_document(
 
     // ===== Stage 0: 文件分类 + 提取 =====
     {
-        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Classify {
-            parser: "auto".into(),
-            page_count: 0,
-        });
+        let _ = app.emit(
+            EVT_DOC_PROGRESS,
+            DocProgressEvent::Classify {
+                parser: "auto".into(),
+                page_count: 0,
+            },
+        );
 
         let classified = classify_and_extract(&path).await?;
         ctx.raw_text = classified.text;
@@ -238,12 +260,8 @@ pub async fn process_document(
 
         // Stage 0.5: Build sections
         ctx.headings = crate::parsers::headings::extract_headings(&ctx.raw_text);
-        ctx.sections = crate::parsers::sections::build_sections(
-            &ctx.raw_text,
-            &ctx.headings,
-            None,
-            8000,
-        );
+        ctx.sections =
+            crate::parsers::sections::build_sections(&ctx.raw_text, &ctx.headings, None, 8000);
 
         processing_log.stages.push(StageLog {
             stage: 0,
@@ -254,24 +272,32 @@ pub async fn process_document(
             errors: vec![],
         });
 
-        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Classify {
-            parser: ctx.parser_used.clone(),
-            page_count: ctx.page_count,
-        });
+        let _ = app.emit(
+            EVT_DOC_PROGRESS,
+            DocProgressEvent::Classify {
+                parser: ctx.parser_used.clone(),
+                page_count: ctx.page_count,
+            },
+        );
     }
 
     // ===== Stage 1: 快速结构分析（Meta Prompt）=====
     let doc_structure: DocStructure;
     {
-        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Meta {
-            doc_type: "analyzing".into(),
-            sections: vec![],
-        });
+        let _ = app.emit(
+            EVT_DOC_PROGRESS,
+            DocProgressEvent::Meta {
+                doc_type: "analyzing".into(),
+                sections: vec![],
+            },
+        );
 
         doc_structure = match run_meta_analysis(&ctx).await {
             Ok(s) => s,
             Err(e) => {
-                processing_log.warnings.push(format!("Meta analysis failed: {}", e));
+                processing_log
+                    .warnings
+                    .push(format!("Meta analysis failed: {}", e));
                 // Fallback: 用空结构继续
                 DocStructure {
                     doc_type: "unknown".into(),
@@ -296,19 +322,25 @@ pub async fn process_document(
             errors: vec![],
         });
 
-        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Meta {
-            doc_type: doc_structure.doc_type.clone(),
-            sections: doc_structure.estimated_sections.clone(),
-        });
+        let _ = app.emit(
+            EVT_DOC_PROGRESS,
+            DocProgressEvent::Meta {
+                doc_type: doc_structure.doc_type.clone(),
+                sections: doc_structure.estimated_sections.clone(),
+            },
+        );
     }
 
     // ===== Stage 1.5: 用户意图路由 =====
     let plan = crate::parsers::intent::interpret_request(&doc_structure, &user_req);
 
-    let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Plan {
-        target_sections: plan.target_sections.clone(),
-        extraction_types: plan.extraction_types.clone(),
-    });
+    let _ = app.emit(
+        EVT_DOC_PROGRESS,
+        DocProgressEvent::Plan {
+            target_sections: plan.target_sections.clone(),
+            extraction_types: plan.extraction_types.clone(),
+        },
+    );
 
     // ===== Stage 2: 逐 section 处理 =====
     let mut section_results: Vec<StructuredData> = Vec::new();
@@ -334,12 +366,15 @@ pub async fn process_document(
         .await
         {
             Ok(r) => {
-                let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Section {
-                    name: section_name.clone(),
-                    status: "ok".into(),
-                    compounds: r.data.compounds.len(),
-                    activities: r.data.activities.len(),
-                });
+                let _ = app.emit(
+                    EVT_DOC_PROGRESS,
+                    DocProgressEvent::Section {
+                        name: section_name.clone(),
+                        status: "ok".into(),
+                        compounds: r.data.compounds.len(),
+                        activities: r.data.activities.len(),
+                    },
+                );
 
                 Some(r.data)
             }
@@ -348,19 +383,20 @@ pub async fn process_document(
                     "Section '{}' processing failed: {}. Skipping.",
                     section_name, e
                 ));
-                processing_log.uncertain_items.push(
-                    UncertainItem {
-                        item_type: "section_processing_error".into(),
-                        content: format!("{} section could not be processed", section_name),
-                        reason: e,
-                        suggested_action: "Review this section manually".into(),
+                processing_log.uncertain_items.push(UncertainItem {
+                    item_type: "section_processing_error".into(),
+                    content: format!("{} section could not be processed", section_name),
+                    reason: e,
+                    suggested_action: "Review this section manually".into(),
+                });
+
+                let _ = app.emit(
+                    EVT_DOC_PROGRESS,
+                    DocProgressEvent::Error {
+                        stage: format!("section:{}", section_name),
+                        message: format!("Section processing failed, skipped"),
                     },
                 );
-
-                let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Error {
-                    stage: format!("section:{}", section_name),
-                    message: format!("Section processing failed, skipped"),
-                });
 
                 None
             }
@@ -397,7 +433,8 @@ pub async fn process_document(
             ctx.raw_text.clone()
         };
 
-        let named_mols = crate::parsers::molecule_extractor::extract_named_molecule_series(&full_text);
+        let named_mols =
+            crate::parsers::molecule_extractor::extract_named_molecule_series(&full_text);
         if !named_mols.is_empty() {
             let mut traces = crate::parsers::molecule_extractor::link_molecules_to_images(
                 &named_mols,
@@ -406,11 +443,12 @@ pub async fn process_document(
             );
             // 提取理化性质
             for trace in traces.iter_mut() {
-                trace.properties = crate::parsers::molecule_extractor::extract_properties_for_molecule(
-                    &trace.molecule,
-                    &full_text,
-                    500,
-                );
+                trace.properties =
+                    crate::parsers::molecule_extractor::extract_properties_for_molecule(
+                        &trace.molecule,
+                        &full_text,
+                        500,
+                    );
             }
             molecule_traces = traces;
         }
@@ -418,15 +456,20 @@ pub async fn process_document(
         // 解析 claims section
         let claims_text = extract_section_text(&ctx.raw_text, "claims");
         if !claims_text.is_empty() && claims_text.len() > 20 {
-            claim_graph = Some(crate::parsers::claim_parser::parse_claims_section(&claims_text));
+            claim_graph = Some(crate::parsers::claim_parser::parse_claims_section(
+                &claims_text,
+            ));
         }
 
-        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Section {
-            name: "patent_molecule_extraction".into(),
-            status: "ok".into(),
-            compounds: molecule_traces.len(),
-            activities: molecule_traces.iter().map(|t| t.properties.len()).sum(),
-        });
+        let _ = app.emit(
+            EVT_DOC_PROGRESS,
+            DocProgressEvent::Section {
+                name: "patent_molecule_extraction".into(),
+                status: "ok".into(),
+                compounds: molecule_traces.len(),
+                activities: molecule_traces.iter().map(|t| t.properties.len()).sum(),
+            },
+        );
     }
 
     // ===== Stage 2b: VLM 化学结构识别 =====
@@ -461,15 +504,20 @@ pub async fn process_document(
             vlm_esmiles_found = vlm_results.len();
         }
 
-        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Vlm {
-            image_count: chem_images.len(),
-            esmiles_found: vlm_esmiles_found,
-        });
+        let _ = app.emit(
+            EVT_DOC_PROGRESS,
+            DocProgressEvent::Vlm {
+                image_count: chem_images.len(),
+                esmiles_found: vlm_esmiles_found,
+            },
+        );
 
         // 回填 VLM 识别结果到 molecule_traces
         for trace in molecule_traces.iter_mut() {
             for img in &trace.related_images {
-                if let Some((_, chem_result)) = vlm_results.iter().find(|(fname, _)| fname == &img.filename) {
+                if let Some((_, chem_result)) =
+                    vlm_results.iter().find(|(fname, _)| fname == &img.filename)
+                {
                     trace.vlm_verified_esmiles = Some(chem_result.esmiles.clone());
                     trace.vlm_confidence = chem_result.confidence;
                 }
@@ -505,9 +553,10 @@ pub async fn process_document(
                     sar_analysis = sar;
                 }
                 Err(e) => {
-                    processing_log
-                        .warnings
-                        .push(format!("Merge analysis failed: {}. Using partial results.", e));
+                    processing_log.warnings.push(format!(
+                        "Merge analysis failed: {}. Using partial results.",
+                        e
+                    ));
                     // Fallback: 合并已有结果
                     let combined = merge_partial_results(&section_results, &vlm_results);
                     final_data = combined;
@@ -516,10 +565,13 @@ pub async fn process_document(
             }
         }
 
-        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Merge {
-            total_compounds: final_data.compounds.len(),
-            total_activities: final_data.activities.len(),
-        });
+        let _ = app.emit(
+            EVT_DOC_PROGRESS,
+            DocProgressEvent::Merge {
+                total_compounds: final_data.compounds.len(),
+                total_activities: final_data.activities.len(),
+            },
+        );
     }
 
     processing_log.stages.push(StageLog {
@@ -533,12 +585,16 @@ pub async fn process_document(
 
     // 专利数据增强：将 molecule_traces 的信息整合进 final_data
     if doc_structure.doc_type == "patent" {
-        enhance_patent_data(&mut final_data, &molecule_traces, &claim_graph, &mut processing_log);
+        enhance_patent_data(
+            &mut final_data,
+            &molecule_traces,
+            &claim_graph,
+            &mut processing_log,
+        );
     }
 
     // ===== Stage 4: 报告生成 =====
-    let report_md =
-        crate::parsers::report::generate_full_report(&final_data, Some(&sar_analysis));
+    let report_md = crate::parsers::report::generate_full_report(&final_data, Some(&sar_analysis));
 
     let report = DocumentReport {
         metadata: final_data.metadata.clone(),
@@ -550,17 +606,16 @@ pub async fn process_document(
         report_markdown: report_md.clone(),
     };
 
-    let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Report {
-        report_len: report_md.len(),
-    });
+    let _ = app.emit(
+        EVT_DOC_PROGRESS,
+        DocProgressEvent::Report {
+            report_len: report_md.len(),
+        },
+    );
 
     // ===== Stage 4.5: Persist extracted molecules to project store =====
     {
-        let source_doc = final_data
-            .metadata
-            .source_file
-            .as_deref()
-            .unwrap_or(&path);
+        let source_doc = final_data.metadata.source_file.as_deref().unwrap_or(&path);
         let source_type = &doc_structure.doc_type;
 
         if let Some(root) = find_project_root(&ctx.source_path, project_root.as_deref()) {
@@ -586,10 +641,7 @@ pub async fn process_document(
                             Ok(saved) => {
                                 let _ = app.emit(
                                     EVT_DOC_PROGRESS,
-                                    DocProgressEvent::Persist {
-                                        saved,
-                                        skipped,
-                                    },
+                                    DocProgressEvent::Persist { saved, skipped },
                                 );
                                 processing_log.stages.push(StageLog {
                                     stage: 5,
@@ -599,12 +651,7 @@ pub async fn process_document(
                                     tokens_used: 0,
                                     errors: vec![],
                                 });
-                                log::info!(
-                                    "Persisted {}/{} molecules to {:?}",
-                                    saved,
-                                    total,
-                                    root
-                                );
+                                log::info!("Persisted {}/{} molecules to {:?}", saved, total, root);
                             }
                             Err(e) => {
                                 let _ = app.emit(
@@ -633,10 +680,7 @@ pub async fn process_document(
             } else {
                 let _ = app.emit(
                     EVT_DOC_PROGRESS,
-                    DocProgressEvent::Persist {
-                        saved: 0,
-                        skipped,
-                    },
+                    DocProgressEvent::Persist { saved: 0, skipped },
                 );
             }
         } else {
@@ -777,12 +821,22 @@ mod tests {
     fn test_merge_partial_results_dedup() {
         use super::super::doc_types::{CompoundEntry, DocumentMetadata};
         let r1 = StructuredData {
-            metadata: DocumentMetadata { title: None, authors: vec![], document_type: "patent".into(), key_targets: vec![], source_file: None },
+            metadata: DocumentMetadata {
+                title: None,
+                authors: vec![],
+                document_type: "patent".into(),
+                key_targets: vec![],
+                source_file: None,
+            },
             summary: "".into(),
             compounds: vec![CompoundEntry {
-                name: "E041".into(), esmiles: Some("C1CC1".into()), category: None,
-                description: "test".into(), source_ref: "p5".into(),
-                confidence: "high".into(), uncertainty_reason: None,
+                name: "E041".into(),
+                esmiles: Some("C1CC1".into()),
+                category: None,
+                description: "test".into(),
+                source_ref: "p5".into(),
+                confidence: "high".into(),
+                uncertainty_reason: None,
                 physicochemical_props: None,
                 related_images: None,
                 vlm_verified_esmiles: None,
@@ -793,12 +847,22 @@ mod tests {
             uncertain_items: vec![],
         };
         let r2 = StructuredData {
-            metadata: DocumentMetadata { title: None, authors: vec![], document_type: "patent".into(), key_targets: vec![], source_file: None },
+            metadata: DocumentMetadata {
+                title: None,
+                authors: vec![],
+                document_type: "patent".into(),
+                key_targets: vec![],
+                source_file: None,
+            },
             summary: "".into(),
             compounds: vec![CompoundEntry {
-                name: "E041".into(), esmiles: Some("C1CC1".into()), category: None,
-                description: "test duplicate".into(), source_ref: "p12".into(),
-                confidence: "high".into(), uncertainty_reason: None,
+                name: "E041".into(),
+                esmiles: Some("C1CC1".into()),
+                category: None,
+                description: "test duplicate".into(),
+                source_ref: "p12".into(),
+                confidence: "high".into(),
+                uncertainty_reason: None,
                 physicochemical_props: None,
                 related_images: None,
                 vlm_verified_esmiles: None,
@@ -978,5 +1042,3 @@ mod tests {
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 }
-
-

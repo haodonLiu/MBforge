@@ -8,16 +8,16 @@
 use std::path::Path;
 
 use crate::core::markush;
-use crate::core::molecule_db::{
-    MoleculeRelation, MoleculeRelationDb, RelationStats,
-};
+use crate::core::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationStats};
 use crate::core::molecule_store::{MoleculeDatabase, MoleculeRecord};
 
 // Re-export types that callers need.
+pub use crate::core::markush::{MarkushOverlap, MarkushPattern};
 pub use crate::core::molecule_cluster::ClusterInfo;
 pub use crate::core::molecule_dedup::{DedupPair, DedupResult};
-pub use crate::core::markush::{MarkushOverlap, MarkushPattern};
-pub use crate::core::sar_query::{ActivityCliff, ActivitySummary, AnalogWithActivity, ScaffoldActivityRecord, ScaffoldProfile};
+pub use crate::core::sar_query::{
+    ActivityCliff, ActivitySummary, AnalogWithActivity, ScaffoldActivityRecord, ScaffoldProfile,
+};
 
 // ---------------------------------------------------------------------------
 // MoleculeEngine
@@ -92,6 +92,16 @@ impl MoleculeEngine {
         self.store.update_status(mol_id, status)
     }
 
+    pub fn update_molecule(&self, record: &MoleculeRecord) -> Result<bool, String> {
+        self.store.update_molecule(record)
+    }
+
+    pub fn update_molecules_batch(
+        &self,
+        records: &[MoleculeRecord],
+    ) -> Result<(usize, Vec<String>), String> {
+        self.store.update_molecules_batch(records)
+    }
     // =====================================================================
     // Relation operations (delegated to molecule_db.rs)
     // =====================================================================
@@ -162,7 +172,12 @@ impl MoleculeEngine {
         min_sim: f64,
     ) -> Result<Vec<AnalogWithActivity>, String> {
         let mconn = self.store.conn();
-        crate::core::sar_query::find_analogs_with_activity(mol_id, min_sim, &self.relation_db, mconn)
+        crate::core::sar_query::find_analogs_with_activity(
+            mol_id,
+            min_sim,
+            &self.relation_db,
+            mconn,
+        )
     }
 
     pub fn scaffold_profile(&self, scaffold: &str) -> Result<ScaffoldProfile, String> {
@@ -183,11 +198,7 @@ impl MoleculeEngine {
     // Dedup operations (delegated to molecule_dedup.rs)
     // =====================================================================
 
-    pub fn dedup_batch(
-        &self,
-        new_mols: &[(String, String)],
-        threshold: f64,
-    ) -> DedupResult {
+    pub fn dedup_batch(&self, new_mols: &[(String, String)], threshold: f64) -> DedupResult {
         let sidecar_url = crate::core::constants::sidecar_url();
         crate::core::molecule_dedup::run_dedup_batch(
             new_mols,
@@ -215,12 +226,7 @@ impl MoleculeEngine {
     // Markush operations (delegated to markush.rs — pure computation)
     // =====================================================================
 
-    pub fn check_markush(
-        &self,
-        esmiles: &str,
-        query: &str,
-        ctx: Option<&str>,
-    ) -> MarkushOverlap {
+    pub fn check_markush(&self, esmiles: &str, query: &str, ctx: Option<&str>) -> MarkushOverlap {
         markush::analyze_markush_coverage(esmiles, query, ctx)
     }
 
@@ -265,7 +271,10 @@ impl MoleculeEngine {
                 }
                 if let Ok(recs) = self.search_text(smiles) {
                     for r in recs {
-                        if !results.iter().any(|x: &MoleculeRecord| x.mol_id == r.mol_id) {
+                        if !results
+                            .iter()
+                            .any(|x: &MoleculeRecord| x.mol_id == r.mol_id)
+                        {
                             results.push(r);
                         }
                     }
@@ -314,10 +323,8 @@ impl MoleculeEngine {
                 Ok(serde_json::to_value(&clusters).map_err(|e| e.to_string())?)
             }
             "dedup_batch" => {
-                let mols: Vec<(String, String)> = serde_json::from_value(
-                    params["mols"].clone(),
-                )
-                .map_err(|e| format!("Invalid mols param: {}", e))?;
+                let mols: Vec<(String, String)> = serde_json::from_value(params["mols"].clone())
+                    .map_err(|e| format!("Invalid mols param: {}", e))?;
                 let threshold = params["threshold"].as_f64().unwrap_or(1.0);
                 let result = self.dedup_batch(&mols, threshold);
                 Ok(serde_json::to_value(&result).map_err(|e| e.to_string())?)
@@ -363,7 +370,9 @@ mod tests {
         let (_tmp, root) = temp_project();
         let engine = MoleculeEngine::new(&root).unwrap();
 
-        let result = engine.analyze("list", serde_json::json!({"limit": 10})).unwrap();
+        let result = engine
+            .analyze("list", serde_json::json!({"limit": 10}))
+            .unwrap();
         let mols: Vec<MoleculeRecord> = serde_json::from_value(result).unwrap();
         assert!(mols.is_empty());
     }
@@ -373,7 +382,9 @@ mod tests {
         let (_tmp, root) = temp_project();
         let engine = MoleculeEngine::new(&root).unwrap();
 
-        let err = engine.analyze("unknown_action", serde_json::json!({})).unwrap_err();
+        let err = engine
+            .analyze("unknown_action", serde_json::json!({}))
+            .unwrap_err();
         assert!(err.contains("Unknown molecule action"));
     }
 

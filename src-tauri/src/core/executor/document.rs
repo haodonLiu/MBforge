@@ -11,11 +11,15 @@ pub fn register(registry: &mut ToolRegistry, project_root: &str) {
     // read_document_abstract — 从 SummaryManager 读 L0
     let r = root.clone();
     registry.register_with_fn(
-        ToolInfo::new("read_document_abstract", "读取文档的一句话摘要（L0）", {
-            let mut p = HashMap::new();
-            p.insert("doc_id".into(), serde_json::json!({"type": "string"}));
-            p
-        }),
+        ToolInfo::new(
+            "read_document_abstract",
+            "读取文档的一句话摘要（L0）",
+            {
+                let mut p = HashMap::new();
+                p.insert("doc_id".into(), serde_json::json!({"type": "string"}));
+                p
+            },
+        ),
         Box::new(move |args| {
             let doc_id = args["doc_id"].as_str().unwrap_or("");
             native_read_document_abstract(&r, doc_id)
@@ -25,11 +29,15 @@ pub fn register(registry: &mut ToolRegistry, project_root: &str) {
     // read_document_overview — 从 SummaryManager 读 L1
     let r = root.clone();
     registry.register_with_fn(
-        ToolInfo::new("read_document_overview", "读取文档的结构化概览（L1）", {
-            let mut p = HashMap::new();
-            p.insert("doc_id".into(), serde_json::json!({"type": "string"}));
-            p
-        }),
+        ToolInfo::new(
+            "read_document_overview",
+            "读取文档的结构化概览（L1）",
+            {
+                let mut p = HashMap::new();
+                p.insert("doc_id".into(), serde_json::json!({"type": "string"}));
+                p
+            },
+        ),
         Box::new(move |args| {
             let doc_id = args["doc_id"].as_str().unwrap_or("");
             native_read_document_overview(&r, doc_id)
@@ -67,12 +75,16 @@ pub fn register(registry: &mut ToolRegistry, project_root: &str) {
     // read_document_detail — 读取文档完整内容
     let r = root.clone();
     registry.register_with_fn(
-        ToolInfo::new("read_document_detail", "读取文档的完整内容块（L2）", {
-            let mut p = HashMap::new();
-            p.insert("doc_id".into(), serde_json::json!({"type": "string"}));
-            p.insert("max_chars".into(), serde_json::json!({"type": "integer"}));
-            p
-        }),
+        ToolInfo::new(
+            "read_document_detail",
+            "读取文档的完整内容块（L2）",
+            {
+                let mut p = HashMap::new();
+                p.insert("doc_id".into(), serde_json::json!({"type": "string"}));
+                p.insert("max_chars".into(), serde_json::json!({"type": "integer"}));
+                p
+            },
+        ),
         Box::new(move |args| {
             let doc_id = args["doc_id"].as_str().unwrap_or("");
             let max_chars = args["max_chars"].as_u64().unwrap_or(4000) as usize;
@@ -83,13 +95,17 @@ pub fn register(registry: &mut ToolRegistry, project_root: &str) {
     // find_documents — 按关键词查找文档
     let r = root.clone();
     registry.register_with_fn(
-        ToolInfo::new("find_documents", "按关键词查找文档（支持 L0 摘要过滤）", {
-            let mut p = HashMap::new();
-            p.insert("keyword".into(), serde_json::json!({"type": "string"}));
-            p.insert("doc_type".into(), serde_json::json!({"type": "string"}));
-            p.insert("top_k".into(), serde_json::json!({"type": "integer"}));
-            p
-        }),
+        ToolInfo::new(
+            "find_documents",
+            "按关键词查找文档（支持 L0 摘要过滤）",
+            {
+                let mut p = HashMap::new();
+                p.insert("keyword".into(), serde_json::json!({"type": "string"}));
+                p.insert("doc_type".into(), serde_json::json!({"type": "string"}));
+                p.insert("top_k".into(), serde_json::json!({"type": "integer"}));
+                p
+            },
+        ),
         Box::new(move |args| {
             let keyword = args["keyword"].as_str().unwrap_or("");
             let doc_type = args["doc_type"].as_str().unwrap_or("");
@@ -131,19 +147,24 @@ fn native_list_documents(root: &str, doc_type: &str) -> String {
             let filtered: Vec<_> = if doc_type.is_empty() {
                 docs
             } else {
-                docs.into_iter().filter(|d| d.doc_type == doc_type).collect()
+                docs.into_iter()
+                    .filter(|d| d.doc_type == doc_type)
+                    .collect()
             };
-            let result: Vec<_> = filtered.iter().map(|d| {
-                serde_json::json!({
-                    "doc_id": d.doc_id,
-                    "path": d.path,
-                    "doc_type": d.doc_type,
-                    "title": d.title,
-                    "indexed": d.indexed,
+            let result: Vec<_> = filtered
+                .iter()
+                .map(|d| {
+                    serde_json::json!({
+                        "doc_id": d.doc_id,
+                        "path": d.path,
+                        "doc_type": d.doc_type,
+                        "title": d.title,
+                        "indexed": d.indexed,
+                    })
                 })
-            }).collect();
+                .collect();
             serde_json::to_string(&result).unwrap_or_else(|e| format!("Serialize error: {}", e))
-        },
+        }
         None => "Project not found".to_string(),
     }
 }
@@ -158,7 +179,12 @@ fn native_get_document_summary(root: &str, doc_id: &str) -> String {
                 } else {
                     &entry.hash
                 };
-                let filename = entry.path.split('/').last().or(entry.path.split('\\').last()).unwrap_or(&entry.path);
+                let filename = entry
+                    .path
+                    .split('/')
+                    .last()
+                    .or(entry.path.split('\\').last())
+                    .unwrap_or(&entry.path);
                 format!(
                     "文件名: {}\n类型: {}\n路径: {}\n已索引: {}\n哈希: {}...",
                     filename,
@@ -198,9 +224,17 @@ fn native_read_document_detail(root: &str, doc_id: &str, max_chars: usize) -> St
             Err(e) => format!("读取失败: {}", e),
         }
     } else {
-        let full_text: String = pages.iter().map(|p| p.content.as_str()).collect::<Vec<_>>().join("\n\n");
+        let full_text: String = pages
+            .iter()
+            .map(|p| p.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n");
         if full_text.len() > max_chars {
-            format!("[{}] 完整内容:\n{}...\n[已截断]", doc_id, &full_text[..max_chars])
+            format!(
+                "[{}] 完整内容:\n{}...\n[已截断]",
+                doc_id,
+                &full_text[..max_chars]
+            )
         } else {
             format!("[{}] 完整内容:\n{}", doc_id, full_text)
         }
@@ -211,14 +245,20 @@ fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: usiz
     let project_root = std::path::PathBuf::from(root);
 
     // 1. 用 KnowledgeBase 语义搜索获取候选文档
-    let candidates = match super::super::document::knowledge_base::KnowledgeBase::new(&project_root) {
+    let candidates = match super::super::document::knowledge_base::KnowledgeBase::new(&project_root)
+    {
         Ok(kb) => kb.search_sync(keyword, top_k * 3),
         Err(_) => vec![],
     };
 
     let candidate_ids: std::collections::HashSet<String> = candidates
         .iter()
-        .filter_map(|r| r.metadata.get("doc_id").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .filter_map(|r| {
+            r.metadata
+                .get("doc_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
         .collect();
 
     // 2. 加载候选文档的 L0 摘要，按关键词过滤
@@ -239,8 +279,12 @@ fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: usiz
             }
             if keyword_lower.contains(&s.l0_abstract.to_lowercase())
                 || s.l0_abstract.to_lowercase().contains(&keyword_lower)
-                || s.keywords.iter().any(|k| k.to_lowercase().contains(&keyword_lower))
-                || s.entity_tags.iter().any(|t| t.to_lowercase().contains(&keyword_lower))
+                || s.keywords
+                    .iter()
+                    .any(|k| k.to_lowercase().contains(&keyword_lower))
+                || s.entity_tags
+                    .iter()
+                    .any(|t| t.to_lowercase().contains(&keyword_lower))
             {
                 matched.push(MatchedSummary {
                     doc_id: s.doc_id.clone(),
@@ -256,16 +300,30 @@ fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: usiz
         if candidates.is_empty() {
             return format!("未找到与 \"{}\" 相关的文档", keyword);
         }
-        let mut lines = vec![format!("找到 {} 个相关文档（语义搜索）:", candidates.len().min(top_k))];
+        let mut lines = vec![format!(
+            "找到 {} 个相关文档（语义搜索）:",
+            candidates.len().min(top_k)
+        )];
         for r in candidates.iter().take(top_k) {
-            let doc_id = r.metadata.get("doc_id").and_then(|v| v.as_str()).unwrap_or("?");
-            let text = if r.text.len() > 120 { &r.text[..120] } else { &r.text };
+            let doc_id = r
+                .metadata
+                .get("doc_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let text = if r.text.len() > 120 {
+                &r.text[..120]
+            } else {
+                &r.text
+            };
             lines.push(format!("- {}: {}...", doc_id, text));
         }
         return lines.join("\n");
     }
 
-    let mut lines = vec![format!("找到 {} 个相关文档（按 L0 摘要过滤）:", matched.len().min(top_k))];
+    let mut lines = vec![format!(
+        "找到 {} 个相关文档（按 L0 摘要过滤）:",
+        matched.len().min(top_k)
+    )];
     for s in matched.iter().take(top_k) {
         let abstract_text = if s.l0_abstract.len() > 120 {
             &s.l0_abstract[..120]

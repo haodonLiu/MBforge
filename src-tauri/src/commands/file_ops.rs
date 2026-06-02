@@ -30,15 +30,19 @@ pub async fn upload_files(
             ],
         )
         .add_filter("All Files", &["*"])
-        .pick_files(move |files| { let _ = tx.send(files); });
+        .pick_files(move |files| {
+            let _ = tx.send(files);
+        });
 
-    let file_paths = rx.await
+    let file_paths = rx
+        .await
         .map_err(|_| "Dialog channel closed".to_string())?
         .ok_or_else(|| "No files selected".to_string())?;
 
     let mut entries = Vec::new();
     for fp in file_paths {
-        let src = fp.into_path()
+        let src = fp
+            .into_path()
             .map_err(|_| "Invalid file path".to_string())?;
 
         if !src.exists() {
@@ -54,12 +58,16 @@ pub async fn upload_files(
 
         // 路径遍历安全检查
         if let Err(e) = assert_within_root(&project.root.to_string_lossy(), &dest) {
-            log::error!("Path traversal blocked: {:?} escapes {:?}: {}", dest, project.root, e);
+            log::error!(
+                "Path traversal blocked: {:?} escapes {:?}: {}",
+                dest,
+                project.root,
+                e
+            );
             continue;
         }
 
-        std::fs::copy(&src, &dest)
-            .map_err(|e| format!("Failed to copy '{}': {}", name, e))?;
+        std::fs::copy(&src, &dest).map_err(|e| format!("Failed to copy '{}': {}", name, e))?;
 
         if let Some(entry) = project.add_file(&dest) {
             log::info!("Added file to project: {} -> {}", name, entry.doc_id);
@@ -106,8 +114,7 @@ pub fn read_text_file(project_root: String, path: String) -> Result<String, Stri
     if !path_buf.exists() {
         return Err(format!("File not found: {}", path));
     }
-    std::fs::read_to_string(&path_buf)
-        .map_err(|e| format!("Failed to read file: {}", e))
+    std::fs::read_to_string(&path_buf).map_err(|e| format!("Failed to read file: {}", e))
 }
 
 /// 使用系统默认程序打开文件。

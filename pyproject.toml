@@ -22,6 +22,8 @@ explicit = true
 torch = { index = "pytorch-cu128" }
 torchvision = { index = "pytorch-cu128" }
 torchaudio = { index = "pytorch-cu128" }
+# MolScribe 需要特定版本的 timm，不能用 PyPI 最新版
+timm = { git = "https://github.com/rwightman/pytorch-image-models.git", rev = "54a6cca27a9a3e092a07457f5d56709da56e3cf5" }
 
 [project]
 name = "mbforge"
@@ -65,6 +67,9 @@ dependencies = [
     "matplotlib>=3.7.0",
     "onnxruntime>=1.26.0",
     "python-multipart>=0.0.29",
+    # MolScribe dependencies (timm 版本通过 uv.sources 锁定)
+    "timm",
+    "OpenNMT-py==2.2.0",
 ]
 
 [project.optional-dependencies]

@@ -12,6 +12,7 @@ pub mod llm;
 pub mod markush;
 pub mod memory;
 pub mod molecule;
+pub mod notes;
 pub mod project;
 pub mod project_migrator;
 pub mod resource_manager;

@@ -1,17 +1,42 @@
 import { useEffect, useState, useMemo } from 'react'
-import { PageContainer, PageTitle, Tabs, Card, Button, Badge, EmptyState, AlertBanner, ResponsiveGrid } from './ui'
+import { PageContainer, PageTitle, Tabs, Button, EmptyState, AlertBanner, ResponsiveGrid } from './ui'
 import { FlaskIcon, BarChartIcon, SparklesIcon, TargetIcon, ExternalLinkIcon } from './icons'
 import CompoundCard from './sar/CompoundCard'
+import RGroupMatrix from './sar/RGroupMatrix'
 import CorrectionPanel from './molecule/CorrectionPanel'
-import { fetchSARList, MOCK_CORRECTION_ITEMS } from '../mocks/sarMocks'
 import { showToast } from '../hooks/useToast'
-import type { SARSession, SARCompound } from '../types'
+import { useAppContext } from '../context/AppContext'
+import { listMoleculesTauri } from '../api/tauri/molecule'
+import type { SARSession, SARCompound, MoleculeRecord } from '../types'
 
 // ============================================================================
 // 主页面
 // ============================================================================
 
+
+function moleculesToSession(molecules: MoleculeRecord[]): SARSession {
+  return {
+    id: 'session_current',
+    name: '当前项目分子',
+    target: undefined,
+    coreSmiles: undefined,
+    createdAt: new Date().toISOString(),
+    sourceDocs: [],
+    compounds: molecules.map(m => ({
+      id: m.mol_id,
+      name: m.name || m.mol_id,
+      smiles: m.esmiles,
+      rGroups: {},
+      activity: m.activity ?? undefined,
+      activityType: m.activity_type || undefined,
+      units: m.units || undefined,
+      notes: m.notes || undefined,
+    })),
+  }
+}
+
 export default function SARAnalysis() {
+  const { projectRoot } = useAppContext()
   const [sessions, setSessions] = useState<SARSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'overview' | 'correction' | 'rgroup'>('overview')
@@ -20,15 +45,21 @@ export default function SARAnalysis() {
 
   // 加载数据
   useEffect(() => {
+    if (!projectRoot) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
-    fetchSARList()
-      .then(list => {
-        setSessions(list)
-        if (list.length > 0) setActiveSessionId(list[0].id)
+    listMoleculesTauri(projectRoot, 200, 0)
+      .then(resp => {
+        const molecules = resp.success ? resp.molecules : []
+        const session = moleculesToSession(molecules)
+        setSessions([session])
+        setActiveSessionId(session.id)
       })
       .catch(e => showToast(`加载失败: ${e.message}`, 'error'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [projectRoot])
 
   const activeSession = useMemo(
     () => sessions.find(s => s.id === activeSessionId) ?? null,
@@ -96,7 +127,7 @@ export default function SARAnalysis() {
       <Tabs
         items={[
           { key: 'overview',   label: <><FlaskIcon size={14} /> 化合物列表</>, badge: activeSession?.compounds.length },
-          { key: 'correction', label: <><SparklesIcon size={14} /> OCR 矫正</>, badge: MOCK_CORRECTION_ITEMS.length },
+          { key: 'correction', label: <><SparklesIcon size={14} /> OCR 矫正</>, badge: 0 },
           { key: 'rgroup',     label: <><TargetIcon size={14} /> R-Group 分析</> },
         ]}
         activeKey={activeTab}
@@ -112,7 +143,16 @@ export default function SARAnalysis() {
           />
         )}
         {activeTab === 'correction' && <CorrectionTab />}
-        {activeTab === 'rgroup' && activeSession && <RGroupTab session={activeSession} />}
+        {activeTab === 'rgroup' && activeSession && (
+          <RGroupTab
+            session={activeSession}
+            onSelectCompound={c => {
+              setSelectedCompoundId(c.id)
+              setActiveTab('overview')
+              showToast(`已跳转到 ${c.name}`, 'info')
+            }}
+          />
+        )}
       </div>
     </PageContainer>
   )
@@ -270,7 +310,16 @@ function OverviewTab({
 // ============================================================================
 
 function CorrectionTab() {
-  const [items, setItems] = useState(MOCK_CORRECTION_ITEMS)
+  const [items, setItems] = useState<Array<{
+    id: string
+    ocrSmiles: string
+    ocrConfidence: number
+    name?: string
+    sourceDoc?: string
+    context?: string
+    status?: 'pending' | 'confirmed' | 'rejected' | 'corrected'
+    correctedSmiles?: string
+  }>>([])
 
   const handleComplete = (results: Array<{ id: string; finalSmiles: string; status: 'confirmed' | 'rejected' | 'corrected' }>) => {
     console.log('[SAR] Correction complete:', results)
@@ -306,47 +355,28 @@ function CorrectionTab() {
 // ============================================================================
 // Tab 3: R-Group 分析
 // ============================================================================
-
-function RGroupTab({ session }: { session: SARSession }) {
+function RGroupTab({
+  session,
+  onSelectCompound,
+}: {
+  session: SARSession
+  onSelectCompound?: (compound: SARCompound) => void
+}) {
+  // 从 session.coreSmiles 推断 lower_is_better：
+  // IC50/EC50/Ki 通常 lower is better，%inhibition 等设 false
+  // 默认 lower_is_better=true（药物化学 IC50 场景最常见）
   return (
     <div>
       <AlertBanner
         variant="info"
-        message="R-Group 分析需要化合物有共同的核心骨架与标记的 R 取代基位置。当前数据集中化合物结构差异较大，建议先在矫正流程中确认结构后，再进行 R-Group 分析。"
+        message="R-Group 分析自动从化合物结构中提取共同骨架（MCS 算法），无需手动标记 R 取代基位置。IC50 数值越低表示活性越高。"
       />
-      {session.coreSmiles && (
-        <Card style={{ marginBottom: 16, padding: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>核心骨架（Core Scaffold）</h3>
-              <p style={{ margin: '4px 0 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
-                所有化合物共享的结构
-              </p>
-            </div>
-            <Badge variant="info">{session.compounds.length} 个衍生物</Badge>
-          </div>
-          <div style={{
-            background: 'var(--bg-base)',
-            borderRadius: 8,
-            padding: 16,
-            fontFamily: 'monospace',
-            fontSize: 12,
-            color: 'var(--text-primary)',
-            wordBreak: 'break-all',
-          }}>
-            {session.coreSmiles}
-          </div>
-        </Card>
-      )}
-
-      <Card style={{ padding: 20 }}>
-        <h3 style={{ margin: '0 0 12px 0', fontSize: 15, fontWeight: 600 }}>占位</h3>
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-          R-Group 矩阵视图和活性热力图将在后续版本中提供。
-          当每个化合物都标注了 R 取代基（参见 <code style={{ background: 'var(--bg-base)', padding: '2px 6px', borderRadius: 4 }}>rGroups</code> 字段）后，
-          系统会自动识别共同骨架，并展示完整的构效关系矩阵。
-        </p>
-      </Card>
+      <RGroupMatrix
+        compounds={session.compounds}
+        coreSmiles={session.coreSmiles}
+        lowerIsBetter
+        onCompoundClick={onSelectCompound}
+      />
     </div>
   )
 }

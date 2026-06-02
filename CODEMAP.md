@@ -59,8 +59,9 @@ PDF 文件
   │
   ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│ Stage 0: 文本提取                                                │
+│ Stage 0: 文本提取 (pipeline/extract.rs)                          │
 │   pdf_inspector / mineru / llamaparse / liteparse / uniparser   │
+│   classify_and_extract() → DocStructure + Markdown              │
 │   IN: PDF path                OUT: Markdown + page_texts[]       │
 └──────────────────────┬───────────────────────────────────────────┘
                        │
@@ -168,7 +169,7 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 
 ## 三、Rust 模块清单 (src-tauri/src/)
 
-### 3.1 core/ — 核心层 (31 模块)
+### 3.1 core/ — 核心层 (21 顶层模块 + 4 子目录)
 
 | 模块 | 功能 | 依赖 | 状态 |
 |------|------|------|------|
@@ -180,37 +181,48 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 | `context` | 分层对话上下文 L0-L3 + token trimming + 文件持久化 | helpers, llm | ✅ |
 | `llm` | LLM 客户端: OpenAI/Anthropic 兼容, chat + streaming | config, context, constants | ✅ |
 | `tools` | 工具注册表 + OpenAI function-calling schema 导出 | 无 | ✅ |
-| `executor` | **工具执行引擎**: 24+ native 工具 + sidecar 回退 | helpers, markush, tools, kb, doc_tree, summary, molecule_engine, project, arxiv, http | ✅ |
+| `executor/mod.rs` | **工具执行引擎协调入口**: 25+ 工具注册 + 分发 | tools, kb, doc_tree, summary, molecule_engine, project, arxiv | ✅ |
+| `executor/fs.rs` | 文件系统工具: grep/list/read/save_text | helpers | ✅ |
+| `executor/kb.rs` | 知识库工具: search/search_stream/semantic_cache | knowledge_base, document_tree | ✅ |
+| `executor/document.rs` | 文档工具: summarize/extract_sections/get_structure | summary, post_process, knowledge_base | ✅ |
+| `executor/molecule.rs` | 分子工具: query/analyze/cluster/similarity | molecule_engine | ✅ |
+| `executor/literature.rs` | 文献工具: arxiv_search/pmc_search | arxiv, http | ✅ |
 | `agent` | **ReAct Agent**: 多步工具循环 + 流式输出 + 记忆 + Skills | config, constants, context, executor, llm, memory, skills, trajectory, http | ✅ |
 | `project` | 项目管理: open/create/scan/CRUD, .mbforge/index.json | constants, helpers, project_migrator | ✅ |
 | `project_migrator` | 版本迁移 v0→v1 + 备份恢复 | constants, helpers | ✅ |
-| `knowledge_base` | FTS5 知识库: 章节索引 + 搜索 + 结构/页面查询 | document_tree, vector_store, parsers::sections | ✅ |
-| `vector_store` | SQLite FTS5 向量存储: upsert/search/delete | 无 | ✅ |
-| `document_tree` | 文档结构树 + 页面级文本缓存 | types | ✅ |
-| `embedding` | Embedding 生成器: sidecar HTTP + 测试用确定性 embedder | config | ✅ 设计如此 |
-| `summary` | 三层文档摘要 L0/L1/L2 持久化 | constants | ✅ |
-| `memory` | 6 类结构化记忆: profile/preferences/entities/events/cases/patterns | constants, helpers, context, http | ✅ |
-| `skills` | 程序性知识管理: Markdown Skill CRUD + 自动创建 | constants, helpers, http | ✅ |
-| `trajectory` | 检索轨迹追踪: .mbforge/trajectory/ | constants, helpers | ✅ |
-| `molecule_db` | 分子关系数据库: similar/same_as/scaffold/cluster | constants, helpers | ✅ |
-| `molecule_engine` | **统一分子分析引擎**: 聚合 store + relation_db + cluster + SAR + dedup + markush | molecule_store, molecule_db, molecule_cluster, molecule_dedup, sar_query, markush | ✅ |
-| `molecule_store` | 分子记录数据库: FTS5 + 属性估算(无 RDKit) | constants, molecule_db | ✅ |
-| `molecule_cluster` | 分子聚类: assign/remove/members/list | molecule_db, helpers | ✅ |
-| `molecule_dedup` | 批量去重: exact SMILES match → same_as relation | molecule_db, helpers | ✅ |
-| `sar_query` | SAR 分析: 类似物/骨架谱/活性悬崖 | molecule_db | ✅ |
-| `markush` | E-SMILES Markush 专利分析: VF2 子结构匹配 + R-group | 无 | ✅ |
 | `arxiv` | arXiv/PMC 论文 API 客户端 (10 个工具函数) | 无 | ✅ |
-| `pending` | 暂存提取结果 → .mbforge/extractions/ | constants, types | ✅ 已实现但无调用方（仅模块声明） |
-| `semantic_cache` | 三级语义缓存: L1 hash/L2 embedding/L3 prefetch | embedding | ✅ 已接入（executor 通过 search_with_cache 调用） |
-| `stream_search` | 流式搜索: 分批返回 + 增量更新 | 无 | ✅ 已接入（knowledge_base::kb_search_stream） |
+| `markush` | E-SMILES Markush 专利分析: VF2 子结构匹配 + R-group | 无 | ✅ |
 | `resource_manager` | 统一资源管理: 11 资源注册 + 路径检查 + GPU 检测 | 无 | ✅ |
+| `molecule/` | **分子子目录** (5 模块) | | |
+| → `molecule_store` | 分子记录数据库: FTS5 + 属性估算(无 RDKit) | constants, molecule_db | ✅ |
+| → `molecule_db` | 分子关系数据库: similar/same_as/scaffold/cluster | constants, helpers | ✅ |
+| → `molecule_engine` | 统一分子分析引擎: 聚合 store+relation+cluster+SAR+dedup+markush | molecule_store, molecule_db, molecule_cluster, molecule_dedup, sar_query, markush | ✅ |
+| → `molecule_cluster` | 分子聚类: assign/remove/members/list | molecule_db, helpers | ✅ |
+| → `molecule_dedup` | 批量去重: exact SMILES match → same_as relation | molecule_db, helpers | ✅ |
+| `memory/` | **记忆子目录** (4 模块) | | |
+| → `memory` | 6 类结构化记忆: profile/preferences/entities/events/cases/patterns | constants, helpers, context, http | ✅ |
+| → `trajectory` | 检索轨迹追踪: .mbforge/trajectory/ | constants, helpers | ✅ |
+| → `skills` | 程序性知识管理: Markdown Skill CRUD + 自动创建 | constants, helpers, http | ✅ |
+| → `pending` | 暂存提取结果 → .mbforge/extractions/ | constants, types | ✅ 已实现但无调用方（仅模块声明） |
+| `document/` | **文档子目录** (5 模块) | | |
+| → `knowledge_base` | FTS5 知识库: 章节索引 + 搜索 + 结构/页面查询 | document_tree, vector_store, parsers::sections | ✅ |
+| → `vector_store` | SQLite FTS5 向量存储: upsert/search/delete | 无 | ✅ |
+| → `document_tree` | 文档结构树 + 页面级文本缓存 | types | ✅ |
+| → `summary` | 三层文档摘要 L0/L1/L2 持久化 | constants | ✅ |
+| → `semantic_cache` | 三级语义缓存: L1 hash/L2 embedding/L3 prefetch | embedding | ✅ 已接入（executor::kb 通过 search_with_cache 调用） |
+| → `stream_search` | 流式搜索: 分批返回 + 增量更新 | 无 | ✅ 已接入（knowledge_base::kb_search_stream） |
+| `embedding` | Embedding 生成器: sidecar HTTP + 测试用确定性 embedder | config | ✅ 设计如此 |
+| `sar_query` | SAR 分析: 类似物/骨架谱/活性悬崖 | molecule_db | ✅ |
 
-### 3.2 commands/ — Tauri 命令层 (10 模块)
+### 3.2 commands/ — Tauri 命令层 (12 模块，由 `mod.rs` 聚合)
 
 | 模块 | Tauri Commands | 依赖 |
 |------|---------------|------|
+| `mod.rs` | `handler()` 聚合函数: `generate_handler![...]` 注册全部 40+ 命令 | — |
 | `agent` | agent_init, agent_create_session, agent_chat, agent_chat_stream, agent_switch_project, agent_clear, agent_destroy_session, agent_get_history | core::agent, config, context |
-| `molecule` + `mol_store` | 统一通过 `MoleculeEngineState` 调度: store CRUD + relation + cluster + SAR + dedup (26 个命令) | core::molecule_engine |
+| `mol_engine` | mol_engine_init, mol_engine_destroy, mol_engine_status | core::molecule_engine |
+| `mol_store` | 统一通过 `MoleculeEngineState` 调度: store CRUD + relation + cluster + SAR + dedup (26 个命令) | core::molecule_engine |
+| `molecule` | 分子分析命令 (extract/smiles/query) | core::molecule_engine |
 | `pdf` | classify_pdf, extract_text | pdf_inspector crate |
 | `text_ops` | text_chunk | 无 |
 | `classifier` | classify_page, classify_document | core::helpers, parsers::association |
@@ -223,8 +235,8 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 
 | 模块 | 功能 | 依赖 |
 |------|------|------|
-| `types` | 管线类型: PdfParseResult/StructuredData/DocStructure/ExtractionPlan/PhysicochemicalProperty 等 | commands::classifier, extractor, core::types |
-| `pipeline` | **主管线**: Stage 0~7 编排 + 专利分子提取 + 范围评估 + 项目级批量索引 | 几乎所有 parsers + core |
+| `doc_types` | 管线类型: PdfParseResult/StructuredData/DocStructure/ExtractionPlan/PhysicochemicalProperty 等 | commands::classifier, extractor, core::types |
+| `pipeline` | **主管线入口**: Stage 0~7 编排 + 专利分子提取 + 范围评估 + 项目级批量索引 (内部拆分到 `pipeline/extract.rs`, `helpers.rs`, `merge.rs`) | 几乎所有 parsers + core |
 | `headings` | 多策略 heading 提取: Markdown #/全大写/冒号/编号 | core::types |
 | `sections` | 章节构建: headings→tree + 长章节分割 | core::types, headings |
 | `association` | 活性提取引擎: 化合物名/IC50/Ki/细胞系/靶点 | core::types |

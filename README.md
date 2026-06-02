@@ -43,11 +43,13 @@
 │  ┌──────────────────┐  ┌──────────────────────┐  │
 │  │ src-tauri/src/   │  │  FastAPI Sidecar     │  │
 │  │                   │  │  (port 18792)       │  │
-│  │  commands/  (6)   │  │  routers/      (15) │  │
-│  │  core/     (17)   │  │  models/       (5)  │  │
-│  │  parsers/  (12)   │  │  agent/        (4)  │  │
-│  │                   │  │  parsers/      (8)  │  │
-│  │  ~9,681 行 Rust   │  │  ~12,882 行 Python │  │
+│  │  commands/ (11→12) │  │  routers/      (16) │  │
+│  │  core/     (32→  ) │  │  models/       (7)  │  │
+│  │    memory/          │  │                     │  │
+│  │    document/        │  │  ~12,900 行 Python │  │
+│  │    molecule/        │  │                     │  │
+│  │  parsers/  (12→19) │  │                     │  │
+│  │  ~9,800 行 Rust   │  │                     │  │
 │  └──────────────────┘  └──────────────────────┘  │
 └──────────────────────────────────────────────────┘
 ```
@@ -138,36 +140,57 @@ MBForge/
 │   └── cli.py                    #   CLI 入口（mbforge 命令）
 │
 ├── src-tauri/src/                # Rust 代码（Tauri + Agent + Parser）
-│   ├── main.rs                   #   Tauri 入口，25+ 命令注册
+│   ├── main.rs                   #   Tauri 入口，40+ 命令注册（commands::handler()）
 │   ├── lib.rs                    #   模块导出
-│   ├── commands/                 #   Tauri 命令层（6 模块）
+│   ├── commands/                 #   Tauri 命令层（12 模块）
+│   │   ├── mod.rs                #   命令聚合（handler()）
 │   │   ├── pdf.rs                #   分类 & 文本提取
 │   │   ├── classifier.rs         #   页面/文档分类
 │   │   ├── extractor.rs          #   SMILES/活性/关联提取
 │   │   ├── molecule.rs           #   分子数据库 CRUD（18 命令）
+│   │   ├── mol_engine.rs         #   分子引擎状态管理
 │   │   ├── text_ops.rs           #   文本分块
 │   │   └── agent.rs              #   Agent 会话管理
-│   ├── core/                     #   Rust Agent + 数据层（17 模块）
+│   ├── core/                     #   Rust Agent + 数据层（32 模块，按域分组）
 │   │   ├── agent.rs              #   ReAct Agent 循环
 │   │   ├── llm.rs                #   LLM HTTP 客户端
 │   │   ├── http.rs               #   共享 HTTP 客户端工厂（按超时分类）
 │   │   ├── context.rs            #   分层会话上下文
-│   │   ├── executor.rs           #   ToolExecutor（20+ 工具）
-│   │   ├── molecule_store.rs     #   分子 SQLite 数据库
-│   │   ├── molecule_db.rs        #   分子关系数据库
-│   │   ├── molecule_dedup.rs     #   分子去重
-│   │   ├── molecule_cluster.rs   #   分子聚类
-│   │   ├── sar_query.rs          #   SAR 查询引擎
-│   │   ├── memory.rs             #   6 分类持久记忆
-│   │   ├── trajectory.rs         #   轨迹跟踪
-│   │   ├── skills.rs             #   技能管理
+│   │   ├── executor/             #   ToolExecutor（25+ 工具，按类别拆分）
+│   │   │   ├── mod.rs            #     协调入口
+│   │   │   ├── fs.rs             #     文件系统工具
+│   │   │   ├── kb.rs             #     知识库搜索工具
+│   │   │   ├── document.rs       #     文档摘要/结构工具
+│   │   │   ├── molecule.rs       #     分子分析工具
+│   │   │   └── literature.rs     #     文献检索工具
+│   │   ├── molecule/             #   分子相关模块（已分组）
+│   │   │   ├── molecule_store.rs #     SQLite + FTS5 分子数据库
+│   │   │   ├── molecule_db.rs    #     分子关系数据库
+│   │   │   ├── molecule_dedup.rs #     分子去重
+│   │   │   ├── molecule_cluster.rs #   分子聚类
+│   │   │   └── molecule_engine.rs #    统一分子分析引擎
+│   │   ├── memory/               #   记忆与轨迹（已分组）
+│   │   │   ├── memory.rs         #     6 分类持久记忆
+│   │   │   ├── trajectory.rs     #     轨迹跟踪
+│   │   │   ├── skills.rs         #     技能管理
+│   │   │   └── pending.rs        #     待处理提取
+│   │   ├── document/             #   文档处理（已分组）
+│   │   │   ├── knowledge_base.rs #     FTS5 知识库
+│   │   │   ├── document_tree.rs  #     文档结构树
+│   │   │   ├── summary.rs        #     文档摘要持久化
+│   │   │   ├── semantic_cache.rs #     三级语义缓存
+│   │   │   └── stream_search.rs  #     流式搜索
 │   │   ├── tools.rs              #   工具注册表
-│   │   ├── summary.rs            #   文档摘要持久化
-│   │   ├── pending.rs            #   待处理提取
+│   │   ├── sar_query.rs          #   SAR 查询引擎
+│   │   ├── markush.rs            #   E-SMILES Markush 分析
+│   │   ├── arxiv.rs              #   arXiv/PMC 论文 API
 │   │   └── project.rs            #   项目文档索引
-│   └── parsers/                  #   Rust PDF 解析（12 模块）
-│       ├── types.rs              #   共享数据结构
-│       ├── pipeline.rs           #   统一解析管线（Stage 1-6）
+│   └── parsers/                  #   Rust PDF 解析（19 模块）
+│       ├── doc_types.rs          #   管线共享数据结构（原 types.rs）
+│       ├── pipeline.rs           #   统一解析管线入口（Stage 0-7）
+│       │   └── extract.rs        #     Stage 0: 分类与提取
+│       │   └── helpers.rs        #     record 映射 + section 文本提取
+│       │   └── merge.rs          #     Stage 3: 合并 + SAR + 专利增强
 │       ├── images.rs             #   lopdf 图像提取
 │       ├── association.rs        #   分子-文本关联引擎
 │       ├── keywords.rs           #   关键词 & 实体提取
@@ -177,23 +200,39 @@ MBForge/
 │       ├── vlm_chem.rs           #   VLM 化学结构识别
 │       ├── uniparser.rs          #   UniParser API 客户端
 │       ├── llama_parse.rs        #   LlamaParse API 客户端
-│       └── mineru.rs             #   MinerU API 客户端
+│       ├── mineru.rs             #   MinerU API 客户端
+│       ├── molecule_extractor.rs #   专利命名化合物提取
+│       ├── claim_parser.rs       #   专利 Claims 解析
+│       └── claim_policy.rs       #   专利范围匹配
 │
 ├── frontend/                     # React + Vite 前端
 │   ├── src/
 │   │   ├── App.tsx               #   路由入口
 │   │   ├── api/                  #   HTTP + Tauri 桥接
 │   │   │   ├── client.ts         #   HTTP 客户端（fetchJson + sseStream）
-│   │   │   ├── tauri-bridge.ts   #   Tauri invoke（类型与 Rust 对齐）
+│   │   │   ├── tauri/            #   Tauri invoke 子模块（按域拆分）
+│   │   │   │   ├── _utils.ts     #     通用工具（listen/unlisten）
+│   │   │   │   ├── agent.ts      #     Agent 会话
+│   │   │   │   ├── kb.ts         #     知识库
+│   │   │   │   ├── molecule.ts   #     分子数据库
+│   │   │   │   ├── pdf.ts        #     PDF 操作
+│   │   │   │   ├── project.ts    #     项目管理
+│   │   │   │   ├── text.ts       #     文本处理
+│   │   │   │   └── environment.ts #    环境信息
 │   │   │   ├── settings.ts       #   设置 API
 │   │   │   └── download.ts       #   模型下载 API
-│   │   ├── components/           #   14 组件
+│   │   ├── components/           #   ~70 组件（页面级 + 原子 + 子模块）
 │   │   │   ├── Chat.tsx          #   对话界面
 │   │   │   ├── MoleculeLibrary.tsx
-│   │   │   ├── PDFViewer.tsx
+│   │   │   ├── ProjectView.tsx   #   项目仪表盘（协调层）
+│   │   │   ├── project/          #   项目子组件
+│   │   │   │   ├── PdfViewer.tsx #     PDF 阅读器 + 分子检测
+│   │   │   │   └── ProjectDashboard.tsx # 文档列表/统计/索引
 │   │   │   ├── Search.tsx
 │   │   │   ├── Workflow.tsx
+│   │   │   ├── ui/               #   ~40 原子组件
 │   │   │   └── ...
+│   │   ├── context/              #   React Context（AppContext 全局状态）
 │   │   ├── hooks/                #   React Hooks
 │   │   └── types/                #   TypeScript 类型
 │   └── vite.config.ts            #   Vite 配置（API 代理 18792）
@@ -204,8 +243,8 @@ MBForge/
 │   └── MolScribe/                #   MolScribe 完整代码
 │
 ├── tests/                        # 测试
-│   ├── unit/                     #   Python 测试（28 个）
-│   └── Rust 侧测试               #   99 个（src-tauri）
+│   ├── unit/                     #   Python 测试（83 个）
+│   └── Rust 侧测试               #   226 个（src-tauri）
 │
 ├── docs/                         # 项目文档
 │   ├── ARCHITECTURE.md           #   系统架构

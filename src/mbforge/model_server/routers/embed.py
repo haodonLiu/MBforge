@@ -1,12 +1,11 @@
 """Embedder 推理路由."""
 from typing import Any
 
-import asyncio
-
 from fastapi import APIRouter, Request
 
 from ...utils.exceptions import ModelNotAvailableError
 from ...utils.logger import get_logger
+from mbforge.models.base import run_sync_async
 from ..models.embedder import get_embedder
 from .health import set_model_status
 
@@ -23,8 +22,7 @@ async def embed(request: Request) -> dict[str, Any]:
             texts = [texts]
 
         embedder = get_embedder()
-        loop = asyncio.get_running_loop()
-        embeddings = await loop.run_in_executor(None, lambda: embedder.embed(texts))
+        embeddings = await run_sync_async(embedder.embed, texts)
         set_model_status("embedder", "ready")
         return {"embeddings": embeddings}
     except Exception as e:

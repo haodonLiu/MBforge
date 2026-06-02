@@ -1,5 +1,5 @@
 use super::post_process::extract_json;
-use super::types::{DocProcessingContext, DocStructure, ExtractionPlan};
+use super::doc_types::{DocProcessingContext, DocStructure, ExtractionPlan};
 
 /// === A1: 意图路由模块 ===
 

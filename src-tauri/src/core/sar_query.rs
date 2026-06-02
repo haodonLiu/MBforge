@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::molecule_db::MoleculeRelationDb;
+use super::molecule::molecule_db::MoleculeRelationDb;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalogWithActivity {

@@ -89,7 +89,7 @@ pub fn run_dedup_batch(
                 metadata: Some(serde_json::json!({
                     "reason": dup.reason,
                 })),
-                created_at: super::helpers::now_rfc3339(),
+                created_at: super::super::helpers::now_rfc3339(),
             };
             if db.add_relation(&rel).is_ok() {
                 relations_added += 1;
@@ -144,7 +144,7 @@ pub fn add_similarity_relation(
         relation_type: RelationType::Similar,
         score: Some(score),
         metadata: None,
-        created_at: super::helpers::now_rfc3339(),
+        created_at: super::super::helpers::now_rfc3339(),
     };
     db.add_relation(&rel)
 }

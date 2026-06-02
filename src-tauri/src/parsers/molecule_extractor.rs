@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
-use super::types::ImageRef;
+use super::doc_types::ImageRef;
 
 // ---------------------------------------------------------------------------
 // Regex patterns

@@ -6,8 +6,8 @@ use super::context::{LayeredContext, Message};
 use super::executor::ToolExecutor;
 use super::llm::{LlmClient, LlmResponse, StreamChunk, ToolCall};
 use super::memory::MemoryManager;
-use super::skills::SkillsManager;
-use super::trajectory::TrajectoryTracker;
+use super::memory::SkillsManager;
+use super::memory::TrajectoryTracker;
 
 const DEFAULT_SYSTEM_PROMPT: &str = r#"你是 MBForge 分子科学 AI 助手，服务于药物化学与分子生物学研究。
 

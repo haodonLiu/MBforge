@@ -121,7 +121,7 @@ impl MoleculeRelationDb {
             .metadata
             .as_ref()
             .map(|m| serde_json::to_string(m).unwrap_or_default());
-        let now = super::helpers::now_rfc3339();
+        let now = super::super::helpers::now_rfc3339();
 
         conn.execute(
             &format!(

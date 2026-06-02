@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::constants::{MEMORY_DIR, PROJECT_META_DIR};
+use super::super::constants::{MEMORY_DIR, PROJECT_META_DIR};
 
 pub const CATEGORIES: &[&str] = &["profile", "preferences", "entities", "events", "cases", "patterns"];
 
@@ -15,9 +15,9 @@ pub struct MemoryEntry {
     pub confidence: f64,
     #[serde(default)]
     pub source: String,
-    #[serde(default = "super::helpers::now_rfc3339")]
+    #[serde(default = "super::super::helpers::now_rfc3339")]
     pub created_at: String,
-    #[serde(default = "super::helpers::now_rfc3339")]
+    #[serde(default = "super::super::helpers::now_rfc3339")]
     pub updated_at: String,
     #[serde(default)]
     pub access_count: u32,
@@ -64,14 +64,14 @@ impl MemoryManager {
     fn load_all(&mut self) {
         for cat in CATEGORIES {
             let path = self.category_path(cat);
-            let entries: Vec<MemoryEntry> = super::helpers::load_json(&path).unwrap_or_default();
+            let entries: Vec<MemoryEntry> = super::super::helpers::load_json(&path).unwrap_or_default();
             self.cache.insert(cat.to_string(), entries);
         }
     }
 
     fn save_category(&self, category: &str) {
         if let Some(entries) = self.cache.get(category) {
-            let _ = super::helpers::save_json(&self.category_path(category), entries);
+            let _ = super::super::helpers::save_json(&self.category_path(category), entries);
         }
     }
 
@@ -83,7 +83,7 @@ impl MemoryManager {
                 existing.content = entry.content;
                 existing.confidence = entry.confidence;
                 existing.source = entry.source;
-                existing.updated_at = super::helpers::now_rfc3339();
+                existing.updated_at = super::super::helpers::now_rfc3339();
                 self.save_category(&cat);
                 return;
             }
@@ -156,7 +156,7 @@ impl MemoryManager {
     }
 
     /// 通过 sidecar LLM 从对话中自动提取记忆
-    pub async fn extract_from_conversation(&mut self, messages: &[super::context::Message], sidecar_url: &str) {
+    pub async fn extract_from_conversation(&mut self, messages: &[super::super::context::Message], sidecar_url: &str) {
         if messages.len() < 2 {
             return;
         }
@@ -185,7 +185,7 @@ impl MemoryManager {
         });
 
         let url = format!("{}/api/v1/llm/chat", sidecar_url.trim_end_matches('/'));
-        let client = super::http::client_30s();
+        let client = super::super::http::client_30s();
 
         let resp = match client.post(&url)
             .header("Content-Type", "application/json")

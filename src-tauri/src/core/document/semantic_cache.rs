@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use super::embedding::Embedder;
+use super::super::embedding::Embedder;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheEntry {

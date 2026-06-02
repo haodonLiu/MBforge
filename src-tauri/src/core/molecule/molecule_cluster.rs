@@ -24,7 +24,7 @@ pub fn assign_to_cluster(
         metadata: Some(serde_json::json!({
             "cluster_id": cluster_id,
         })),
-        created_at: super::helpers::now_rfc3339(),
+        created_at: super::super::helpers::now_rfc3339(),
     };
     db.add_relation(&rel)
 }

@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tauri::Emitter;
 
+use crate::core::constants::{sidecar_url, DEFAULT_SIDECAR_PORT};
+
 /// 构造 sidecar 日志事件 payload
 fn log_event(stream: &str, line: &str) -> serde_json::Value {
     serde_json::json!({
@@ -57,7 +59,7 @@ pub fn spawn_and_start_readers(inner: &Arc<SidecarInner>, app: &AppHandle) -> Re
         .arg("--host")
         .arg("127.0.0.1")
         .arg("--port")
-        .arg("18792")
+        .arg(DEFAULT_SIDECAR_PORT.to_string())
         .current_dir(&inner.resource_dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -158,7 +160,7 @@ pub fn start_health_monitor(inner: Arc<SidecarInner>, app: AppHandle) {
             std::thread::sleep(Duration::from_secs(INTERVAL_SECS));
 
             let resp = client
-                .get("http://127.0.0.1:18792/api/v1/health")
+                .get(format!("{}/api/v1/health", sidecar_url()))
                 .send();
 
             match resp {

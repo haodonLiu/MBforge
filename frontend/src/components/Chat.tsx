@@ -19,7 +19,7 @@ import {
 import type { ChatMessage } from '../api/tauri-bridge'
 import { SendIcon, UserIcon, BotIcon, FolderIcon, FileTextIcon, FlaskIcon } from './icons'
 
-import { getProjectRoot } from '../hooks/useProjectRoot'
+import { useAppContext } from '../context/AppContext'
 import { Avatar, TextArea, IconButton, Button, PageContainer } from '../components/ui/'
 import ChatContextChip from './ChatContextChip'
 
@@ -78,7 +78,7 @@ interface LocalMessage {
 }
 
 export default function Chat() {
-  const projectRoot = getProjectRoot()
+  const { projectRoot } = useAppContext()
   const sessionIdRef = useRef<string>('')
   const [messages, setMessages] = useState<LocalMessage[]>([
     { role: 'assistant', content: '你好！我是 MBForge AI 助手。有什么关于分子或文献的问题可以问我。' },

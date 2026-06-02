@@ -1,6 +1,7 @@
 pub mod association;
 pub mod claim_parser;
 pub mod claim_policy;
+pub mod doc_types;
 pub mod headings;
 pub mod images;
 pub mod intent;
@@ -14,6 +15,5 @@ pub mod post_process;
 pub mod report;
 pub mod sections;
 pub mod summary;
-pub mod types;
 pub mod uniparser;
 pub mod vlm_chem;

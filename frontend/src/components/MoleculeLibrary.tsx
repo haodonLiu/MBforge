@@ -3,7 +3,7 @@ import { listMolecules, searchMolecules } from '../api/client'
 import { isTauriAvailable, listMoleculesTauri, searchMoleculesTauri } from '../api/tauri-bridge'
 import type { MoleculeRecord } from '../types'
 import { FlaskIcon, SearchIcon } from './icons'
-import { getProjectRoot } from '../hooks/useProjectRoot'
+import { useAppContext } from '../context/AppContext'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import PageContainer from '../components/ui/PageContainer'
 import PageTitle from '../components/ui/PageTitle'
@@ -18,6 +18,7 @@ import EmptyState from '../components/ui/EmptyState'
 import { AddMoleculeDialog } from '../components/ui/AddMoleculeDialog'
 
 export default function MoleculeLibrary() {
+  const { projectRoot } = useAppContext()
   const [search, setSearch] = useState('')
   const [molecules, setMolecules] = useState<MoleculeRecord[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -25,7 +26,6 @@ export default function MoleculeLibrary() {
   const [showAddDialog, setShowAddDialog] = useState(false)
 
   const loadMolecules = async () => {
-    const projectRoot = getProjectRoot()
     if (!projectRoot) {
       setMolecules([])
       return
@@ -69,8 +69,6 @@ export default function MoleculeLibrary() {
       handleSearch()
     }
   }
-
-  const projectRoot = getProjectRoot()
 
   return (
     <PageContainer>

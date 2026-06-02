@@ -42,9 +42,9 @@ def _has_ultralytics() -> bool:
 
 
 def _has_molscribe() -> bool:
-    """运行时检查 molscribe 是否安装."""
+    """运行时检查 molscribe 是否可用（本地 molscribe_inference 包）."""
     try:
-        import molscribe  # noqa: F401
+        from .molscribe import MolScribe  # noqa: F401
         return True
     except ImportError:
         return False

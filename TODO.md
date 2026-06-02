@@ -68,13 +68,15 @@
 
 ---
 
-## 二、发现但未修复的问题
+## 二、已修复的问题
 
-### MolScribe 模型加载失败
+### MolScribe 模型加载失败 ✅
 - **现象**: `RuntimeError: Error(s) in loading state_dict for Encoder: size mismatch`
-- **原因**: checkpoint (`swin_base_char_aux_1m680k.pth`) 的 transformer 维度 (1024) 与代码中的 Swin-Tiny 模型 (512) 不匹配
-- **影响**: MolScribe 图像→SMILES 功能不可用
-- **需要**: 下载正确版本的 checkpoint，或修改模型架构代码匹配 checkpoint
+- **根因**: `molscribe_inference/transformer/` 缺少 `swin_transformer.py`，导致 timm 使用内置 Swin 而非 MolScribe 自定义的 `swin_base` (embed_dim=128, depths=[2,2,18,2])
+- **修复**: 从原始仓库复制 `swin_transformer.py`，注册自定义模型到 timm
+- **验证**: MolDet (0.955) + MolScribe (0.500) 完整管线通过
+
+## 三、发现但未修复的问题
 
 ### ChromaDB Windows 文件锁
 - **现象**: `PermissionError: [WinError 32]` 在 tempfile 清理时
@@ -89,11 +91,10 @@
 
 ---
 
-## 三、下一步计划
+## 四、下一步计划
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P0** | 修复 MolScribe checkpoint | 下载正确版本或修改架构匹配 |
 | **P1** | 前端 vitest 单测 | 当前 0 测试 |
 | **P2** | 跨语言 codegen | constants.yaml → constants.rs + constants.py |
 | **P2** | PDF 管线 Rust 集成测试 | 需要 Tauri 环境 |

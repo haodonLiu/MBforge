@@ -6,10 +6,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
-import { chatStream } from '../api/client'
-import { listDocuments, moleculeStats } from '../api/client'
 import {
-  isTauriAvailable,
   agentInit,
   agentCreateSession,
   agentChatStream,
@@ -103,8 +100,6 @@ export default function Chat() {
 
   // Initialize Tauri agent on mount
   useEffect(() => {
-    if (!isTauriAvailable()) return
-
     const initAgent = async () => {
       const sid = crypto.randomUUID()
       sessionIdRef.current = sid
@@ -131,7 +126,7 @@ export default function Chat() {
 
   // Load agent history when session is ready
   useEffect(() => {
-    if (!sessionIdRef.current || !isTauriAvailable()) return
+    if (!sessionIdRef.current) return
 
     agentGetHistory(sessionIdRef.current)
       .then((history: ChatMessage[]) => {
@@ -151,21 +146,12 @@ export default function Chat() {
 
   useEffect(() => {
     if (!projectRoot) return
-    if (isTauriAvailable()) {
-      listDocumentsTauri(projectRoot).then(resp => {
-        if (resp.success) setDocCount(resp.documents.length)
-      }).catch(() => {})
-      moleculeStatsTauri(projectRoot).then(resp => {
-        if (resp.success) setMolCount(resp.stats.total || 0)
-      }).catch(() => {})
-    } else {
-      listDocuments(projectRoot).then(resp => {
-        if (resp.success) setDocCount(resp.documents.length)
-      }).catch(() => {})
-      moleculeStats(projectRoot).then(resp => {
-        if (resp.success) setMolCount(resp.stats.total || 0)
-      }).catch(() => {})
-    }
+    listDocumentsTauri(projectRoot).then(resp => {
+      if (resp.success) setDocCount(resp.documents.length)
+    }).catch(() => {})
+    moleculeStatsTauri(projectRoot).then(resp => {
+      if (resp.success) setMolCount(resp.stats.total || 0)
+    }).catch(() => {})
   }, [projectRoot])
 
   const sendMessage = useCallback(async () => {
@@ -185,7 +171,7 @@ export default function Chat() {
     let settled = false
 
     try {
-      if (isTauriAvailable() && sessionIdRef.current) {
+      if (sessionIdRef.current) {
         await agentChatStream(
           sessionIdRef.current,
           userMsg,
@@ -212,38 +198,6 @@ export default function Chat() {
                   : m
                 )
               )
-            }
-          },
-        )
-      } else {
-        // Browser dev mode fallback: use HTTP chatStream
-        const chatMessages = allMessages.map(m => ({ role: m.role, content: m.content }))
-        chatStream(
-          chatMessages,
-          (event) => {
-            if (event.error) {
-              if (!settled) {
-                settled = true
-                setMessages(prev =>
-                  prev.map(m => m.id === assistantMsgId
-                    ? { ...m, content: `错误: ${event.error}` }
-                    : m
-                  )
-                )
-              }
-            } else {
-              fullContent += event.delta
-              setMessages(prev =>
-                prev.map(m => m.id === assistantMsgId
-                  ? { ...m, content: fullContent }
-                  : m
-                )
-              )
-              if (event.finish_reason) {
-                if (!settled) {
-                  settled = true
-                }
-              }
             }
           },
         )

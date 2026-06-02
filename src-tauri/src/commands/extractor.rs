@@ -161,11 +161,11 @@ fn extract_activities_with_positions(text: &str) -> Vec<(ActivityData, usize)> {
             let key = format!("{}|{}|{}", act_type.to_uppercase(), value, unit);
 
             if seen.insert(key.clone()) {
-                let pos = caps.get(0).unwrap().start();
+                let pos = caps.get(0).expect("matched regex has group 0").start();
                 let context = extract_context(
                     text,
-                    caps.get(0).unwrap().start(),
-                    caps.get(0).unwrap().end(),
+                    caps.get(0).expect("matched regex has group 0").start(),
+                    caps.get(0).expect("matched regex has group 0").end(),
                 );
                 results.push((
                     ActivityData {

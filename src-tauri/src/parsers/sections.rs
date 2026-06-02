@@ -117,7 +117,7 @@ pub fn build_tree(sections: &[SectionChunk]) -> Vec<TreeNode> {
         while let Some(top) = stack.last() {
             let top_level = top.path_level();
             if top_level >= level {
-                let completed = stack.pop().unwrap();
+                let completed = stack.pop().expect("stack non-empty during tree build");
                 if let Some(parent) = stack.last_mut() {
                     parent.nodes.push(completed);
                 } else {

@@ -4,7 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { FolderOpenIcon } from '../icons'
 import Button from './Button'
 import { showToast } from '../../hooks/useToast'
-import { isTauriAvailable } from '../../api/tauri-bridge'
+
 
 interface FolderPickerProps {
   value: string
@@ -28,11 +28,6 @@ export function FolderPicker({
   const effectiveTitle = title ?? t('folder.select')
 
   const handleSelect = async () => {
-    if (!isTauriAvailable()) {
-      showToast(t('folder.errorNotAvailable'), 'error')
-      return
-    }
-
     setLoading(true)
 
     try {

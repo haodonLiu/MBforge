@@ -91,11 +91,16 @@
 
 ---
 
-## 四、下一步计划
+## 四、已完成
+
+### 前端 vitest 单测 ✅
+- vitest + @testing-library/react + jsdom
+- 73 个测试: API (kb/agent/environment/download) + 组件 (Button) + hook (useToast)
+
+## 五、下一步计划
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P1** | 前端 vitest 单测 | 当前 0 测试 |
 | **P2** | 跨语言 codegen | constants.yaml → constants.rs + constants.py |
 | **P2** | PDF 管线 Rust 集成测试 | 需要 Tauri 环境 |
 

@@ -48,13 +48,25 @@ MBForge/
 ├── frontend/               # React + Vite 前端
 │   ├── src/
 │   │   ├── api/            # Tauri invoke 桥接 + HTTP fallback
-│   │   ├── components/     # 38 个 UI 组件（Chat, MoleculeLibrary, Search, ...）
-│   │   │   ├── ui/         # 21 个原子组件（Button, Modal, Card, ...）
+│   │   │   ├── tauri/      #   按域拆分的 Tauri invoke 子模块
+│   │   │   │   ├── _utils.ts   # 通用工具（listen/unlisten）
+│   │   │   │   ├── agent.ts    # Agent 会话
+│   │   │   │   ├── kb.ts       # 知识库
+│   │   │   │   ├── molecule.ts # 分子数据库
+│   │   │   │   ├── pdf.ts      # PDF 操作
+│   │   │   │   ├── project.ts  # 项目管理
+│   │   │   │   ├── text.ts     # 文本处理
+│   │   │   │   └── environment.ts # 环境信息
+│   │   │   └── tauri-bridge.ts # 9 行 barrel 导出
+│   │   ├── components/     # ~70 个 UI 组件
+│   │   │   ├── ui/         # ~40 个原子组件（Button, Modal, Card, ...）
 │   │   │   ├── settings/   # 设置/模型管理组件
 │   │   │   ├── animations/ # 动画包装组件
-│   │   │   └── project/    # 项目仪表盘组件
+│   │   │   └── project/    # 项目仪表盘子组件
+│   │   │       ├── PdfViewer.tsx       # PDF 阅读器 + 分子检测
+│   │   │       └── ProjectDashboard.tsx # 文档列表/统计/索引
 │   │   ├── hooks/          # React Hooks（useTheme, useToast, ...）
-│   │   ├── context/        # React Context 入口
+│   │   ├── context/        # React Context（AppContext 全局 projectRoot 状态）
 │   │   ├── types/          # TypeScript 类型定义
 │   │   ├── utils/          # 工具函数（ROI 文本提取）
 │   │   ├── styles/         # 全局 CSS 变量/主题
@@ -66,20 +78,26 @@ MBForge/
 │
 ├── src-tauri/              # Rust Tauri 后端
 │   ├── src/
-│   │   ├── main.rs         # Tauri 入口：30+ 命令注册 + Python sidecar 管理
+│   │   ├── main.rs         # Tauri 入口：40+ 命令注册 + Python sidecar 管理
 │   │   ├── lib.rs          # 模块导出
-│   │   ├── commands/       # Tauri IPC 命令层（11 模块，30+ 命令）
-│   │   ├── core/           # Agent + 数据层（32 模块）
+│   │   ├── commands/       # Tauri IPC 命令层（12 模块，40+ 命令）
+│   │   │   ├── mod.rs      #   命令聚合（handler() 函数）
+│   │   ├── core/           # Agent + 数据层（21 顶层 + 4 子目录）
 │   │   │   ├── agent.rs    # ReAct Agent 核心循环
-│   │   │   ├── executor.rs # 25+ 工具执行器
+│   │   │   ├── executor/   # 工具执行器（按类别拆分：mod.rs + fs/kb/document/molecule/literature）
 │   │   │   ├── llm.rs      # LLM HTTP 客户端
-│   │   │   ├── molecule_store.rs   # SQLite + FTS5 分子数据库
-│   │   │   ├── memory.rs           # 6 分类持久记忆
+│   │   │   ├── molecule/   # 分子模块（store/db/dedup/cluster/engine）
+│   │   │   ├── memory/     # 记忆与轨迹（memory/trajectory/skills/pending）
+│   │   │   ├── document/   # 文档处理（kb/tree/summary/semantic_cache/stream_search）
 │   │   │   ├── markush.rs          # E-SMILES Markush 分析
 │   │   │   ├── resource_manager.rs # 统一资源管理
 │   │   │   └── semantic_cache.rs   # 三级语义缓存
 │   │   └── parsers/        # PDF 解析管线（19 模块）
-│   │       ├── pipeline.rs # 统一解析管线（Stage 0-7）
+│   │       ├── doc_types.rs        # 管线共享数据结构（原 types.rs）
+│   │       ├── pipeline.rs         # 统一解析管线入口（Stage 0-7）
+│   │       │   ├── extract.rs      #   分类与提取逻辑
+│   │       │   ├── helpers.rs      #   record 映射与文本提取
+│   │       │   └── merge.rs        #   合并 + SAR + 专利增强
 │   │       ├── association.rs      # 分子-文本关联引擎
 │   │       ├── images.rs           # lopdf 图像提取
 │   │       ├── claim_parser.rs     # 专利 Claims 解析
@@ -337,12 +355,12 @@ uv run ruff format src/ --check
 1. **新增 Rust Tauri 命令**：
    - 在 `src-tauri/src/commands/` 的适当模块中定义 `#[tauri::command]` 函数
    - 命令函数命名：`{模块}_{动作}`，如 `agent_init`、`mol_store_search`
-   - 在 `src-tauri/src/main.rs` 的 `invoke_handler!` 宏中注册
+   - 在 `src-tauri/src/commands/mod.rs` 的 `handler()` 函数中通过 `generate_handler!` 注册
    - 如需新状态类型，在命令模块中定义 `*State` 结构体，在 `main.rs` 中 `.manage()`
 
 2. **新增 Rust Agent 工具**：
-   - 在 `src-tauri/src/core/executor.rs` 的 `ToolExecutor` 中注册 `ToolInfo`（名称、描述、参数 JSON Schema）
-   - 在同一文件的执行匹配分支中实现工具逻辑
+   - 在 `src-tauri/src/core/executor/mod.rs` 的 `ToolExecutor::tools()` 中注册 `ToolInfo`（名称、描述、参数 JSON Schema）
+   - 在同一文件 `execute()` 方法的匹配分支中实现工具逻辑（或按类别拆分到 `executor/` 子模块中，由 `mod.rs` 统一调用）
    - 工具名使用 `snake_case`，描述必须清晰说明输入输出格式
 
 3. **新增 FastAPI 路由**：

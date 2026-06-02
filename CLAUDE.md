@@ -110,9 +110,9 @@ Python fallback: `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py` (PyM
 
 | 模块 | 文件数 | 职责 | 关键类型 |
 |------|--------|------|----------|
-| `commands/` | 11 | Tauri invoke 命令层 | `classify_pdf`, `extract_text`, `mol_init`, `agent_init` 等 30+ 命令 |
-| `core/` | 32 | Agent + 数据层 | `Agent` (ReAct), `LlmClient`, `ToolExecutor`, `MoleculeStore`, `MemoryManager`, `ResourceManager` |
-| `parsers/` | 19 | PDF 解析管线 | `PdfParseResult`, `ExtractionResult`, `claim_parser`, `claim_policy`, `molecule_extractor` |
+| `commands/` | 12 | Tauri invoke 命令层（`mod.rs` 聚合） | `classify_pdf`, `extract_text`, `mol_init`, `agent_init` 等 40+ 命令 |
+| `core/` | 21 + 3 子目录 | Agent + 数据层（按域分组：`executor/`, `memory/`, `document/`, `molecule/`） | `Agent` (ReAct), `LlmClient`, `ToolExecutor`, `MoleculeEngine`, `MemoryManager`, `ResourceManager` |
+| `parsers/` | 19 | PDF 解析管线（`pipeline/` 子目录含 `extract.rs`, `helpers.rs`, `merge.rs`） | `PdfParseResult`, `ExtractionResult`, `claim_parser`, `claim_policy`, `molecule_extractor` |
 
 #### Python 侧 — `src/mbforge/`
 
@@ -130,7 +130,7 @@ Python fallback: `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py` (PyM
 - `Agent::new()` — 初始化 LLM client + ToolExecutor + context
 - `Agent::chat()` / `Agent::chat_stream()` — 循环：LLM 调用 → 工具执行 → 结果注入
 - `Agent::switch_project()` — 切换项目上下文
-- 25+ 工具注册在 `core/executor.rs`，含 KB 搜索、分子查询、SAR、文件操作、Agent 子代理
+- 25+ 工具注册在 `core/executor/`（按类别拆分为 `mod.rs` + `fs.rs`, `kb.rs`, `document.rs`, `molecule.rs`, `literature.rs`），含 KB 搜索、分子查询、SAR、文件操作、Agent 子代理
 - 记忆系统：`MemoryManager`（6 分类持久化）+ `TrajectoryTracker`（500 steps）
 - Python 模型服务器通过 `model_server/agent_manager.py` 桥接调用
 
@@ -180,20 +180,21 @@ PDF 解析 Python→Rust 迁移进展：
 
 | 文件 | 作用 |
 |------|------|
-| `src-tauri/src/main.rs` | Tauri 入口，25+ 命令注册，uvicorn sidecar 管理 |
+| `src-tauri/src/main.rs` | Tauri 入口，`commands::handler()` 聚合 40+ 命令注册，uvicorn sidecar 管理 |
 | `src-tauri/src/core/agent.rs` | **Rust ReAct Agent** 核心循环 |
 | `src-tauri/src/core/llm.rs` | LLM HTTP 客户端（OpenAI/Anthropic 兼容） |
-| `src-tauri/src/core/executor.rs` | 20+ 工具注册器 |
-| `src-tauri/src/core/molecule_store.rs` | SQLite 分子数据库 + FTS5 + 属性估算 |
-| `src-tauri/src/parsers/pipeline.rs` | 统一 PDF 解析管线（Stage 1-6） |
+| `src-tauri/src/core/executor/mod.rs` | 工具执行引擎协调入口（拆分为 `fs.rs`, `kb.rs`, `document.rs`, `molecule.rs`, `literature.rs`） |
+| `src-tauri/src/core/molecule/molecule_store.rs` | SQLite 分子数据库 + FTS5 + 属性估算 |
+| `src-tauri/src/parsers/pipeline.rs` | 统一 PDF 解析管线入口（Stage 0-7；内部拆分到 `pipeline/` 子模块） |
 | `src-tauri/src/parsers/images.rs` | lopdf 图像提取 |
 | `src-tauri/src/parsers/association.rs` | 分子-文本关联引擎 |
-| `src-tauri/src/commands/molecule.rs` | 18 个分子数据库 Tauri 命令 |
-| `src-tauri/src/commands/agent.rs` | Agent 会话 Tauri 命令 |
+| `src-tauri/src/commands/mod.rs` | 命令聚合模块（`handler()` 函数导出所有 40+ 命令） |
+| `src-tauri/src/commands/mol_engine.rs` | 分子数据库引擎 Tauri 命令 |
 | `src/mbforge/model_server/main.py` | FastAPI 模型服务器入口 |
 | `src/mbforge/core/knowledge_base.py` | ChromaDB 向量知识库 |
 | `frontend/src/App.tsx` | React 前端路由入口 |
-| `frontend/src/api/tauri-bridge.ts` | Tauri invoke 桥接 |
+| `frontend/src/context/AppContext.tsx` | 全局 React Context（projectRoot 管理） |
+| `frontend/src/api/tauri/` | Tauri invoke 子模块（按域拆分） |
 
 ## Code Patterns
 
@@ -206,17 +207,22 @@ pub fn my_command(arg: String) -> Result<String, String> {
     Ok(format!("processed: {}", arg))
 }
 
-// 2. 在 main.rs 中注册
-app.invoke_handler(tauri::generate_handler![
-    commands::my_command,
-    // ...
-]);
+// 2. 在 commands/mod.rs 中注册
+pub fn handler() -> impl Fn(Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        commands::my_command,
+        // ... (所有命令聚合于此)
+    ]
+}
+
+// 3. main.rs 中只需调用
+.invoke_handler(commands::handler())
 ```
 
 ### Adding a new Rust Agent tool
 
 ```rust
-// 1. 在 core/executor.rs 注册 ToolInfo
+// 1. 在 core/executor/ 的 `ToolExecutor::tools()` 注册 ToolInfo
 ToolInfo {
     name: "my_tool",
     description: "Description for LLM",
@@ -227,7 +233,7 @@ ToolInfo {
     }),
 }
 
-// 2. 在 core/executor.rs 添加执行逻辑
+// 2. 在 core/executor/mod.rs 的 `execute()` 匹配分支中添加逻辑
 "my_tool" => {
     let arg = args.get("arg").and_then(|v| v.as_str()).unwrap_or("");
     // 执行...

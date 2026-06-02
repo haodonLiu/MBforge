@@ -23,58 +23,29 @@ export function FolderPicker({
   const [loading, setLoading] = useState(false)
 
   const handleSelect = async () => {
-    console.log('[FolderPicker] === handleSelect START ===')
-    console.log('[FolderPicker] Title:', title)
-    console.log('[FolderPicker] Tauri available:', isTauriAvailable())
-    console.log('[FolderPicker] Current value:', value)
-    
     if (!isTauriAvailable()) {
-      console.error('[FolderPicker] Tauri is NOT available!')
       showToast('Tauri 环境不可用，请在桌面应用中打开', 'error')
       return
     }
-    
+
     setLoading(true)
-    
+
     try {
-      console.log('[FolderPicker] Calling dialog open...')
-      const startTime = Date.now()
-      
       const selected = await open({
         directory: true,
         multiple: false,
         title: title,
       })
-      
-      const elapsed = Date.now() - startTime
-      console.log('[FolderPicker] Dialog returned after', elapsed, 'ms')
-      console.log('[FolderPicker] Selected value:', JSON.stringify(selected))
-      console.log('[FolderPicker] Selected type:', typeof selected)
-      
+
       if (selected) {
         const raw = typeof selected === 'string' ? selected : Array.isArray(selected) ? selected[0] : ''
         if (raw) {
           const cleaned = raw.replace(/^\\\\\?\\/, '')
-          console.log('[FolderPicker] Path selected:', raw, '→ cleaned:', cleaned)
           onChange(cleaned)
         }
-      } else {
-        console.log('[FolderPicker] Dialog was cancelled (null/undefined)')
       }
     } catch (e: unknown) {
       const error = e as Error
-      console.error('[FolderPicker] === ERROR ===')
-      console.error('[FolderPicker] Error name:', error?.name)
-      console.error('[FolderPicker] Error message:', error?.message)
-      console.error('[FolderPicker] Error stack:', error?.stack)
-      console.error('[FolderPicker] Full error:', error)
-      
-      // Try to extract more details
-      if (typeof e === 'object') {
-        console.error('[FolderPicker] Error details:', JSON.stringify(e, null, 2))
-      }
-      
-      // Check for common error patterns
       const msg = error?.message || String(e)
       if (msg.includes('not allowed') || msg.includes('permission')) {
         showToast('权限不足：对话框被拒绝', 'error')
@@ -86,7 +57,6 @@ export function FolderPicker({
         showToast(`选择失败: ${msg}`, 'error')
       }
     } finally {
-      console.log('[FolderPicker] === handleSelect END ===')
       setLoading(false)
     }
   }

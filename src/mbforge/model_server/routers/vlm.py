@@ -3,12 +3,12 @@
 from __future__ import annotations
 from typing import Any
 
-import asyncio
 import os
 
 from fastapi import APIRouter, Request
 
 from ...utils.exceptions import ModelNotAvailableError, ValidationError
+from mbforge.models.base import run_sync_async
 from ...utils.helpers import decode_base64_to_tempfile
 from ...utils.logger import get_logger
 from ..models.moldet import get_moldet
@@ -34,9 +34,8 @@ async def describe(request: Request) -> dict[str, Any]:
         tmp_path = decode_base64_to_tempfile(image_base64, ext)
 
         vlm = get_vlm()
-        loop = asyncio.get_running_loop()
-        description = await loop.run_in_executor(
-            None, lambda: vlm.describe_image(tmp_path, prompt=prompt)
+        description = await run_sync_async(
+            vlm.describe_image, tmp_path, prompt=prompt
         )
         set_model_status("vlm", "ready")
         return {"description": description}
@@ -73,8 +72,7 @@ async def molscribe(request: Request) -> dict[str, Any]:
         if not model.is_available:
             raise ModelNotAvailableError(f"MolScribe not available: {model.error}")
 
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, lambda: model.predict(image))
+        result = await run_sync_async(model.predict, image)
 
         set_model_status("vlm", "ready")
         return {

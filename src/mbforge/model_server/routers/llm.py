@@ -3,14 +3,13 @@
 from __future__ import annotations
 from typing import Any
 
-import asyncio
 import json
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from starlette.requests import ClientDisconnect
 
-from mbforge.models.base import Message
+from mbforge.models.base import Message, run_sync_async
 from ...utils.exceptions import ModelNotAvailableError
 from ...utils.logger import get_logger
 from ..models.llm import get_llm
@@ -29,9 +28,8 @@ async def chat(request: Request) -> dict[str, Any]:
         max_tokens = body.get("max_tokens", 4096)
 
         llm = get_llm(None)
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, lambda: llm.chat(messages, temperature=temperature, max_tokens=max_tokens)
+        result = await run_sync_async(
+            llm.chat, messages, temperature=temperature, max_tokens=max_tokens
         )
         set_model_status("llm", "ready")
         return {"content": result, "finish_reason": "stop"}
@@ -51,11 +49,9 @@ async def chat_stream(request: Request) -> StreamingResponse:
             max_tokens = body.get("max_tokens", 4096)
 
             llm = get_llm(None)
-            loop = asyncio.get_running_loop()
-            # Run the sync stream generator in a thread to avoid blocking the event loop
-            def _sync_stream():
-                return list(llm.chat_stream(messages, temperature=temperature, max_tokens=max_tokens))
-            chunks = await loop.run_in_executor(None, _sync_stream)
+            chunks = await run_sync_async(
+                lambda: list(llm.chat_stream(messages, temperature=temperature, max_tokens=max_tokens))
+            )
             for chunk in chunks:
                 yield f"data: {json.dumps({'delta': chunk.delta, 'finish_reason': chunk.finish_reason})}\n\n"
             set_model_status("llm", "ready")

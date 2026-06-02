@@ -118,7 +118,7 @@ impl SemanticCache {
             return None;
         }
         let key = hash_query(query);
-        let mut inner = self.cache.lock().unwrap();
+        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
 
         let expired = inner
             .entries
@@ -148,7 +148,7 @@ impl SemanticCache {
         }
         let query_emb = self.embedder.as_ref()?.embed_single(query).ok()?;
 
-        let mut inner = self.cache.lock().unwrap();
+        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         let ttl = self.config.ttl_seconds;
         let threshold = self.config.similarity_threshold;
 
@@ -186,7 +186,7 @@ impl SemanticCache {
 
     /// L3 hot query prefetch
     pub fn prefetch_hot_queries(&self) {
-        let mut inner = self.cache.lock().unwrap();
+        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         let threshold = self.config.hot_query_threshold;
         inner.hot_queries = inner
             .entries
@@ -222,7 +222,7 @@ impl SemanticCache {
             last_hit: now,
         };
 
-        let mut inner = self.cache.lock().unwrap();
+        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
 
         if inner.entries.len() >= self.config.max_size && !inner.entries.contains_key(&key) {
             if let Some(evicted) = inner.lru.pop_front() {
@@ -247,7 +247,7 @@ impl SemanticCache {
                 Err(_) => return,
             };
 
-        let mut inner = self.cache.lock().unwrap();
+        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         for (key, item) in data {
             if let Ok(entry) = serde_json::from_value::<CacheEntry>(item) {
                 inner.entries.insert(key.clone(), entry);
@@ -260,14 +260,14 @@ impl SemanticCache {
     }
 
     fn save_to_disk(&self) {
-        let inner = self.cache.lock().unwrap();
+        let inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         if let Ok(data) = serde_json::to_string(&inner.entries) {
             let _ = std::fs::write(&self.cache_path, data);
         }
     }
 
     pub fn clear(&self) {
-        let mut inner = self.cache.lock().unwrap();
+        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         inner.entries.clear();
         inner.lru.clear();
         inner.hot_queries.clear();
@@ -278,7 +278,7 @@ impl SemanticCache {
     }
 
     pub fn stats(&self) -> serde_json::Value {
-        let inner = self.cache.lock().unwrap();
+        let inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         let total_hits: u64 = inner.entries.values().map(|e| e.hit_count).sum();
         serde_json::json!({
             "entries": inner.entries.len(),

@@ -1,6 +1,8 @@
 /** PDF processing — classify, extract, parse, full pipeline. */
 
 import { invoke } from '@tauri-apps/api/core'
+import { invokeWithError } from './_utils'
+import { ErrorCode } from '../../utils/errors'
 import type { ActivityData, DocumentClassification } from './text'
 
 // ---- pdf-inspector ----
@@ -26,11 +28,17 @@ export interface PdfExtraction {
 }
 
 export async function classifyPdf(path: string): Promise<PdfClassification> {
-  return invoke<PdfClassification>('classify_pdf', { path })
+  return invokeWithError(
+    () => invoke<PdfClassification>('classify_pdf', { path }),
+    ErrorCode.PdfParse,
+  )
 }
 
 export async function extractText(path: string): Promise<PdfExtraction> {
-  return invoke<PdfExtraction>('extract_text', { path })
+  return invokeWithError(
+    () => invoke<PdfExtraction>('extract_text', { path }),
+    ErrorCode.PdfParse,
+  )
 }
 
 // ---- pipeline ----
@@ -79,12 +87,15 @@ export async function parsePdf(
   overlap?: number,
   parser?: string,
 ): Promise<PdfParseResult> {
-  return invoke<PdfParseResult>('parse_pdf', {
-    path,
-    chunkSize: chunkSize ?? 512,
-    overlap: overlap ?? 128,
-    parser: parser ?? 'pdf_inspector',
-  })
+  return invokeWithError(
+    () => invoke<PdfParseResult>('parse_pdf', {
+      path,
+      chunkSize: chunkSize ?? 512,
+      overlap: overlap ?? 128,
+      parser: parser ?? 'pdf_inspector',
+    }),
+    ErrorCode.PdfParse,
+  )
 }
 
 // ---- process_document (A3: 完整文档处理管线) ----
@@ -99,9 +110,12 @@ export async function processDocument(
   userRequest?: string,
   projectRoot?: string,
 ): Promise<void> {
-  return invoke<void>('process_document', {
-    path,
-    userRequest: userRequest ?? '',
-    projectRoot,
-  })
+  return invokeWithError(
+    () => invoke<void>('process_document', {
+      path,
+      userRequest: userRequest ?? '',
+      projectRoot,
+    }),
+    ErrorCode.PdfParse,
+  )
 }

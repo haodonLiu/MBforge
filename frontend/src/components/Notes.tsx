@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { PageContainer, PageTitle, Button, Input, EmptyState, AlertBanner } from './ui'
 import { PlusIcon, SearchIcon, FlaskIcon, ClockIcon } from './icons'
 import NoteEditor, { type Note } from './notes/NoteEditor'
-import { MOCK_NOTES, MOCK_WIKILINK_SUGGESTIONS } from '../mocks/notesMocks'
 import { showToast } from '../hooks/useToast'
+import { useAppContext } from '../context/AppContext'
+import { notesList, notesSave, notesDelete } from '../api/tauri/notes'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 
 function relativeTime(iso: string): string {
@@ -16,9 +17,35 @@ function relativeTime(iso: string): string {
 }
 
 export default function Notes() {
-  const [notes, setNotes] = useState<Note[]>(MOCK_NOTES)
-  const [activeId, setActiveId] = useState<string | null>(MOCK_NOTES[0]?.id ?? null)
+  const { projectRoot } = useAppContext()
+  const [notes, setNotes] = useState<Note[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  const loadNotes = useCallback(async () => {
+    if (!projectRoot) {
+      setNotes([])
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    try {
+      const list = await notesList(projectRoot)
+      setNotes(list)
+      if (list.length > 0 && !activeId) {
+        setActiveId(list[0].id)
+      }
+    } catch (e) {
+      showToast('加载笔记失败', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, [projectRoot, activeId])
+
+  useEffect(() => {
+    loadNotes()
+  }, [loadNotes])
 
   const activeNote = useMemo(
     () => notes.find(n => n.id === activeId) ?? null,
@@ -49,7 +76,8 @@ export default function Notes() {
     return filteredNotes.filter(n => n.tags.includes(activeTag))
   }, [filteredNotes, activeTag])
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    if (!projectRoot) return
     const newNote: Note = {
       id: `note_${Date.now()}`,
       title: '新笔记',
@@ -59,22 +87,39 @@ export default function Notes() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
-    setNotes(prev => [newNote, ...prev])
-    setActiveId(newNote.id)
-    showToast('已创建新笔记', 'success')
-  }
-
-  const handleUpdate = (updated: Note) => {
-    setNotes(prev => prev.map(n => n.id === updated.id ? updated : n))
-  }
-
-  const handleDelete = (id: string) => {
-    if (!confirm('确定删除这条笔记？此操作不可撤销。')) return
-    setNotes(prev => prev.filter(n => n.id !== id))
-    if (activeId === id) {
-      setActiveId(notes[0]?.id ?? null)
+    try {
+      const saved = await notesSave(projectRoot, newNote)
+      setNotes(prev => [saved, ...prev])
+      setActiveId(saved.id)
+      showToast('已创建新笔记', 'success')
+    } catch (e) {
+      showToast('保存笔记失败', 'error')
     }
-    showToast('笔记已删除', 'success')
+  }
+
+  const handleUpdate = async (updated: Note) => {
+    if (!projectRoot) return
+    setNotes(prev => prev.map(n => n.id === updated.id ? updated : n))
+    try {
+      await notesSave(projectRoot, updated)
+    } catch (e) {
+      showToast('保存笔记失败', 'error')
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('确定删除这条笔记？此操作不可撤销。')) return
+    if (!projectRoot) return
+    try {
+      await notesDelete(projectRoot, id)
+      setNotes(prev => prev.filter(n => n.id !== id))
+      if (activeId === id) {
+        setActiveId(notes.find(n => n.id !== id)?.id ?? null)
+      }
+      showToast('笔记已删除', 'success')
+    } catch (e) {
+      showToast('删除笔记失败', 'error')
+    }
   }
 
   return (
@@ -85,6 +130,16 @@ export default function Notes() {
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
             知识库笔记 · 共 {notes.length} 条 · 支持 Markdown 与双链
           </div>
+          {loading && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+              正在加载笔记...
+            </div>
+          )}
+          {!projectRoot && (
+            <div style={{ fontSize: 12, color: 'var(--warning)', marginTop: 4 }}>
+              请先打开或创建一个项目
+            </div>
+          )}
         </div>
         <Button variant="primary" onClick={handleCreate}>
           <PlusIcon size={14} /> 新建笔记
@@ -162,7 +217,7 @@ export default function Notes() {
           note={activeNote}
           onChange={handleUpdate}
           onDelete={handleDelete}
-          wikilinkSuggestions={MOCK_WIKILINK_SUGGESTIONS}
+          wikilinkSuggestions={[]}
         />
       </div>
     </PageContainer>

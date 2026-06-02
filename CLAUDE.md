@@ -31,7 +31,7 @@ cd frontend && npm run dev
 # 启动模型服务器（FastAPI, port 18792）
 uv run uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792
 
-# Python 测试（28 个）
+# Python 测试（83 个）
 uv run pytest tests/ -v
 
 # 格式化

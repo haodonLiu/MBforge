@@ -5,6 +5,7 @@ pub mod file_ops;
 pub mod mol_engine;
 pub mod molecule;
 pub mod mol_store;
+pub mod notes;
 pub mod pdf;
 pub mod project_ops;
 pub mod sidecar;
@@ -85,6 +86,12 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         mol_store::mol_store_stats,
         mol_store::mol_store_search_by_smiles,
         mol_store::mol_store_list_by_doc,
+        // notes
+        notes::notes_list,
+        notes::notes_get,
+        notes::notes_save,
+        notes::notes_delete,
+        notes::notes_backlinks,
         // sidecar
         sidecar::sidecar_status,
         sidecar::sidecar_restart,

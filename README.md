@@ -274,15 +274,15 @@ MBForge/
 | **化学信息学** | RDKit (Python), MolScribe (Swin + Transformer), E-SMILES | — |
 | **PDF 解析** | lopdf (Rust), PyMuPDF, MinerU API, LlamaParse, UniParser | — |
 | **包管理** | uv workspace (Python) + Cargo (Rust) | — |
-| **测试** | Rust: `cargo test` (99), Python: `pytest` (28) | — |
+| **测试** | Rust: `cargo test` (226), Python: `pytest` (83) | — |
 
 ## 测试
 
 ```bash
-# Rust 测试（99 个）
+# Rust 测试（226 个）
 cd src-tauri && cargo test
 
-# Python 测试（28 个）
+# Python 测试（83 个）
 uv run pytest tests/ -v
 
 # 代码检查

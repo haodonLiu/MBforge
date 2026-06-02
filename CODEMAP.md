@@ -1,6 +1,6 @@
 # MBForge 代码逻辑树
 
-> 最后更新: 2026-06-01 | 版本: 0.2.0
+> 最后更新: 2026-06-02 | 版本: 0.2.0
 > 本文档记录项目每个模块的功能、依赖关系、I/O 和实现状态。
 > ⚠️ 本次修订基于实际代码审查，补充了断链、配置不同步和安全风险排查。
 
@@ -353,7 +353,7 @@ Rust agent.rs ──LLM──→ POST /api/v1/llm/chat
 
 Rust pipeline.rs ──index──→ POST /api/v1/kb/index-sections
 Rust vlm_chem.rs ──SMILES──→ POST /api/v1/vlm/molscribe
-Rust executor.rs ──fallback──→ POST /api/v1/tools/call (sidecar 回退)
+Rust executor/mod.rs ──fallback──→ POST /api/v1/tools/call (sidecar 回退)
 Rust resource_manager.rs ──python pkg──→ subprocess "python -c import X"
 ```
 

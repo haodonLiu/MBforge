@@ -333,9 +333,9 @@ uv run ruff format src/ --check
 
 | 层级 | 目录 | 职责 | 关键文件 |
 |------|------|------|----------|
-| **UI 层** | `frontend/src/` | React 组件、页面路由、状态管理 | `App.tsx`, `api/tauri-bridge.ts` |
+| **UI 层** | `frontend/src/` | React 组件、页面路由、状态管理 | `App.tsx`, `api/tauri/`, `context/AppContext.tsx` |
 | **命令层** | `src-tauri/src/commands/` | Tauri IPC 命令注册，桥接前端与 Rust 核心 | `main.rs` 中的 `invoke_handler` |
-| **核心层** | `src-tauri/src/core/` | Rust Agent、数据持久化、向量存储、分子数据库、项目迁移 | `agent.rs`, `executor.rs`, `molecule_store.rs`, `project_migrator.rs` |
+| **核心层** | `src-tauri/src/core/` | Rust Agent、数据持久化、向量存储、分子数据库、项目迁移 | `agent.rs`, `executor/`, `molecule/`, `memory/`, `document/`, `project_migrator.rs` |
 | **解析层** | `src-tauri/src/parsers/` | PDF 解析管线、图像提取、关联引擎 | `pipeline.rs`, `association.rs`, `images.rs` |
 | **模型服务** | `src/mbforge/model_server/` | FastAPI REST API、模型单例管理 | `main.py`, `routers/*.py` |
 

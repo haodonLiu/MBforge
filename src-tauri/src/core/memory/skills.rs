@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::constants::{PROJECT_META_DIR};
+use super::super::constants::{PROJECT_META_DIR};
 
 const SKILLS_DIR: &str = "skills";
 
@@ -139,7 +139,7 @@ impl SkillsManager {
             });
 
             let url = format!("{}/api/v1/llm/chat", sidecar_url.trim_end_matches('/'));
-            let client = super::http::client_15s();
+            let client = super::super::http::client_15s();
 
             let resp = match client.post(&url)
                 .header("Content-Type", "application/json")
@@ -180,7 +180,7 @@ impl SkillsManager {
             }
 
             // 清理文件名
-            let safe_name = super::helpers::safe_filename(&name);
+            let safe_name = super::super::helpers::safe_filename(&name);
 
             let path = skills_dir.join(format!("{}.md", safe_name));
             let _ = std::fs::write(&path, content);

@@ -1,7 +1,7 @@
 // TODO-AUDIT: DocumentMetadata is imported but rustc reports it as unused at top level.
 // It IS used inside mod tests via `use super::*` glob re-export, but the explicit
 // import is technically redundant. Move into tests block or remove explicit import.
-use super::types::StructuredData;
+use super::doc_types::StructuredData;
 
 use crate::parsers::post_process::generate_report as post_process_generate_report;
 
@@ -51,7 +51,7 @@ pub fn generate_full_report(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parsers::types::DocumentMetadata;
+    use crate::parsers::doc_types::DocumentMetadata;
 
     fn make_test_data() -> StructuredData {
         StructuredData {

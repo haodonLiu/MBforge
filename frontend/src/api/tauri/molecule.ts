@@ -1,0 +1,188 @@
+/** Molecule store + analysis wrappers (compatible with client.ts). */
+
+import { invoke } from '@tauri-apps/api/core'
+import type { MoleculeRecord } from '../../types'
+
+export interface MoleculeRecord_ {
+  mol_id: string
+  esmiles: string
+  name: string
+  source_doc: string
+  source_type: string
+  activity: number | null
+  activity_type: string
+  units: string
+  status: string
+  properties: Record<string, unknown>
+  tags: string[]
+  notes: string
+  created_at: string
+}
+
+export interface MolStoreStats {
+  total: number
+  with_activity: number
+  pending: number
+}
+
+export async function molStoreInit(projectRoot: string): Promise<void> {
+  return invoke<void>('mol_store_init', { projectRoot })
+}
+
+export async function molStoreAdd(
+  projectRoot: string,
+  molId: string,
+  esmiles: string,
+  name?: string,
+  sourceDoc?: string,
+  activity?: number,
+  activityType?: string,
+  units?: string,
+  sourceType?: string,
+): Promise<void> {
+  return invoke<void>('mol_store_add', {
+    projectRoot,
+    molId,
+    esmiles,
+    name: name ?? null,
+    sourceDoc: sourceDoc ?? null,
+    activity: activity ?? null,
+    activityType: activityType ?? null,
+    units: units ?? null,
+    sourceType: sourceType ?? null,
+  })
+}
+
+export async function molStoreList(
+  projectRoot: string,
+  limit?: number,
+  offset?: number,
+  sourceType?: string,
+  status?: string,
+): Promise<MoleculeRecord_[]> {
+  return invoke<MoleculeRecord_[]>('mol_store_list', {
+    projectRoot,
+    limit: limit ?? null,
+    offset: offset ?? null,
+    sourceType: sourceType ?? null,
+    status: status ?? null,
+  })
+}
+
+export async function molStoreGet(
+  projectRoot: string,
+  molId: string,
+): Promise<MoleculeRecord_ | null> {
+  return invoke<MoleculeRecord_ | null>('mol_store_get', { projectRoot, molId })
+}
+
+export async function molStoreSearch(
+  projectRoot: string,
+  query: string,
+): Promise<MoleculeRecord_[]> {
+  return invoke<MoleculeRecord_[]>('mol_store_search', { projectRoot, query })
+}
+
+export async function molStoreDelete(
+  projectRoot: string,
+  molId: string,
+): Promise<boolean> {
+  return invoke<boolean>('mol_store_delete', { projectRoot, molId })
+}
+
+export async function molStoreStats(
+  projectRoot: string,
+): Promise<MolStoreStats> {
+  return invoke<MolStoreStats>('mol_store_stats', { projectRoot })
+}
+
+export async function molStoreSearchBySmiles(
+  projectRoot: string,
+  esmiles: string,
+): Promise<MoleculeRecord_ | null> {
+  return invoke<MoleculeRecord_ | null>('mol_store_search_by_smiles', { projectRoot, esmiles })
+}
+
+export async function molStoreListByDoc(
+  projectRoot: string,
+  docId: string,
+): Promise<MoleculeRecord_[]> {
+  return invoke<MoleculeRecord_[]>('mol_store_list_by_doc', { projectRoot, docId })
+}
+
+// ---- client.ts compatible wrappers ----
+
+export interface MoleculeStats {
+  total: number
+  with_activity?: number
+  pending?: number
+}
+
+/** 分子统计（与 client.ts moleculeStats 兼容的包装） */
+export async function moleculeStatsTauri(
+  projectRoot: string,
+): Promise<{ success: boolean; stats: MoleculeStats; error?: string }> {
+  try {
+    const stats = await molStoreStats(projectRoot)
+    return { success: true, stats: stats as unknown as MoleculeStats }
+  } catch (e) {
+    return { success: false, stats: { total: 0 }, error: String(e) }
+  }
+}
+
+/** 列出分子（与 client.ts listMolecules 兼容的包装） */
+export async function listMoleculesTauri(
+  projectRoot: string,
+  limit = 100,
+  offset = 0,
+): Promise<{ success: boolean; molecules: MoleculeRecord[]; error?: string }> {
+  try {
+    const records = await molStoreList(projectRoot, limit, offset)
+    const molecules = records.map((r) => ({
+      mol_id: r.mol_id,
+      esmiles: r.esmiles,
+      name: r.name,
+      source_doc: r.source_doc,
+      source_type: r.source_type,
+      activity: r.activity,
+      activity_type: r.activity_type,
+      units: r.units,
+      status: r.status,
+      properties: r.properties,
+      tags: r.tags,
+      notes: r.notes,
+      created_at: r.created_at,
+    }))
+    return { success: true, molecules }
+  } catch (e) {
+    return { success: false, molecules: [], error: String(e) }
+  }
+}
+
+/** 搜索分子（与 client.ts searchMolecules 兼容的包装） */
+export async function searchMoleculesTauri(
+  projectRoot: string,
+  q: string,
+): Promise<{ success: boolean; molecules: MoleculeRecord[]; error?: string }> {
+  try {
+    const records = await molStoreSearch(projectRoot, q)
+    const molecules = records.map((r) => ({
+      mol_id: r.mol_id,
+      esmiles: r.esmiles,
+      name: r.name,
+      source_doc: r.source_doc,
+      source_type: r.source_type,
+      activity: r.activity,
+      activity_type: r.activity_type,
+      units: r.units,
+      status: r.status,
+      properties: r.properties,
+      tags: r.tags,
+      notes: r.notes,
+      created_at: r.created_at,
+    }))
+    return { success: true, molecules }
+  } catch (e) {
+    return { success: false, molecules: [], error: String(e) }
+  }
+}

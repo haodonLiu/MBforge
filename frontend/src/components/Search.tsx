@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { kbSearchStream, isTauriAvailable } from '../api/tauri-bridge'
 import { SearchIcon, FileTextIcon } from './icons'
-import { getProjectRoot } from '../hooks/useProjectRoot'
+import { useAppContext } from '../context/AppContext'
 import { tapScale } from '../hooks/useAnimations'
 import PageContainer from '../components/ui/PageContainer'
 import Card from '../components/ui/Card'
@@ -32,6 +32,7 @@ function mapResult(r: { text?: string; metadata?: Record<string, unknown> }, i: 
 }
 
 export default function Search() {
+  const { projectRoot } = useAppContext()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<ResultItem[]>([])
   const [hasSearched, setHasSearched] = useState(false)
@@ -46,7 +47,6 @@ export default function Search() {
   }, [])
 
   const doSearch = async (term: string) => {
-    const projectRoot = getProjectRoot()
     if (!projectRoot) {
       setResults([])
       setHasSearched(true)
@@ -110,8 +110,6 @@ export default function Search() {
     setQuery(term)
     doSearch(term)
   }
-
-  const projectRoot = getProjectRoot()
 
   return (
     <PageContainer>

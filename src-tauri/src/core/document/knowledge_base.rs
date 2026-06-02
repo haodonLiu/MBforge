@@ -13,7 +13,7 @@ use tauri::Emitter;
 use super::document_tree::DocumentTreeIndex;
 use super::semantic_cache::{SemanticCache, SemanticCacheConfig};
 use super::stream_search::{StreamingSearch, StreamingSearchConfig, StreamingResult};
-use super::vector_store::{SearchResult, SqliteVectorStore, VectorItem, VectorStore};
+use super::super::vector_store::{SearchResult, SqliteVectorStore, VectorItem, VectorStore};
 use crate::parsers::sections::{SectionChunk, TreeNode};
 
 pub use super::document_tree::PageContent;

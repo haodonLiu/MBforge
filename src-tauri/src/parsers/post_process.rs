@@ -1,4 +1,4 @@
-use super::types::{
+use super::doc_types::{
     ActivityEntry, CompoundEntry, DocumentMetadata, FindingEntry, PdfParseResult,
     PostProcessResult, StructuredData, UncertainItem,
 };

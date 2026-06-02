@@ -7,7 +7,7 @@ import {
   uploadFiles as uploadFilesTauri,
 } from '../api/tauri-bridge'
 import { PlusIcon } from './icons'
-import { getProjectRoot } from '../hooks/useProjectRoot'
+import { useAppContext } from '../context/AppContext'
 import { default as BaseTreeNode } from '../components/ui/TreeNode'
 import EmptyState from '../components/ui/EmptyState'
 import Button from '../components/ui/Button'
@@ -64,23 +64,23 @@ function TreeNode({ node, depth, onFileClick }: { node: FileNode; depth: number;
 }
 
 export default function FileTree({ onFileClick }: Props) {
+  const { projectRoot } = useAppContext()
   const [tree, setTree] = useState<FileNode[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState('')
 
   const loadTree = useCallback(async () => {
-    const root = getProjectRoot()
-    if (!root) return
+    if (!projectRoot) return
     setIsLoading(true)
     setError('')
     try {
       let treeData: FileNode[] = []
       if (isTauriAvailable()) {
-        const resp = await getFileTreeTauri(root)
+        const resp = await getFileTreeTauri(projectRoot)
         treeData = resp.tree
       } else {
-        const resp = await getFileTreeHttp(root)
+        const resp = await getFileTreeHttp(projectRoot)
         if (resp.success && resp.tree) {
           treeData = resp.tree as FileNode[]
         } else {
@@ -101,13 +101,12 @@ export default function FileTree({ onFileClick }: Props) {
   }, [loadTree])
 
   const handleImport = async () => {
-    const root = getProjectRoot()
-    if (!root) return
+    if (!projectRoot) return
 
     if (isTauriAvailable()) {
       setIsUploading(true)
       try {
-        await uploadFilesTauri(root)
+        await uploadFilesTauri(projectRoot)
         loadTree()
       } catch (err) {
         console.error('Upload failed:', err)
@@ -128,7 +127,7 @@ export default function FileTree({ onFileClick }: Props) {
       setIsUploading(true)
       for (let i = 0; i < files.length; i++) {
         try {
-          await uploadFile(root, files[i])
+          await uploadFile(projectRoot, files[i])
         } catch (err) {
           console.error('Upload failed:', err)
         }

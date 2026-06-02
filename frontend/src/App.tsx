@@ -17,14 +17,22 @@ import Dashboard from './components/Dashboard'
 import Notes from './components/Notes'
 import SettingsModal from './components/SettingsModal'
 import FileTree from './components/FileTree'
-import { useProjectRoot } from './hooks/useProjectRoot'
+import { AppProvider, useAppContext } from './context/AppContext'
 import { invoke } from '@tauri-apps/api/core'
 import { isTauriAvailable } from './api/tauri-bridge'
 import { showToast } from './hooks/useToast'
 import { useIsMobile, useIsTablet } from './styles/responsive'
 
 export default function App() {
-  const { projectRoot, setProjectRoot } = useProjectRoot()
+  return (
+    <AppProvider>
+      <AppInner />
+    </AppProvider>
+  )
+}
+
+function AppInner() {
+  const { projectRoot, setProjectRoot } = useAppContext()
   const [currentPage, setCurrentPage] = useState('project')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [fileTreeOpen, setFileTreeOpen] = useState(true)
@@ -125,7 +133,6 @@ export default function App() {
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        // 移动端：增加一些安全区
         paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0,
       }}>
         <ErrorBoundary>

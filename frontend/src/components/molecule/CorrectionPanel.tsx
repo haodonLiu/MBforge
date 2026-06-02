@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import MoleculeDisplay from './MoleculeDisplay'
 import Button from '../ui/Button'
 import Badge from '../ui/Badge'
 import { CheckIcon, XIcon, AlertIcon, ChevronLeftIcon, ChevronRightIcon } from '../icons'
-
+import { validateSmiles, type ValidationIssue } from '../../api/client'
 // ============================================================================
 // 类型
 // ============================================================================
@@ -94,6 +94,115 @@ function SmilesDiff({ before, after }: { before: string; after: string }) {
 }
 
 // ============================================================================
+// 结构校验结果展示
+// ============================================================================
+
+interface ValidationResultProps {
+  validation: {
+    smiles: string
+    issues: ValidationIssue[]
+    canonical: string | null
+    loading: boolean
+  } | null
+  onUseCanonical?: (canonical: string) => void
+}
+
+function ValidationResult({ validation, onUseCanonical }: ValidationResultProps) {
+  if (!validation) return null
+  const { issues, canonical, loading, smiles } = validation
+  const hasErrors = issues.some(i => i.severity === 'error')
+  const warnings = issues.filter(i => i.severity === 'warning')
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        padding: '8px 12px',
+        background: hasErrors
+          ? 'rgba(239, 68, 68, 0.08)'
+          : warnings.length > 0
+            ? 'rgba(245, 158, 11, 0.08)'
+            : 'rgba(34, 197, 94, 0.06)',
+        border: `1px solid ${
+          hasErrors
+            ? 'rgba(239, 68, 68, 0.3)'
+            : warnings.length > 0
+              ? 'rgba(245, 158, 11, 0.3)'
+              : 'rgba(34, 197, 94, 0.3)'
+        }`,
+        borderRadius: 8,
+        fontSize: 12,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {loading ? (
+          <>
+            <AlertIcon size={12} />
+            <span style={{ color: 'var(--text-muted)' }}>结构校验中…</span>
+          </>
+        ) : hasErrors ? (
+          <>
+            <XIcon size={12} />
+            <span style={{ color: 'var(--danger)', fontWeight: 600 }}>
+              结构错误：{issues.find(i => i.severity === 'error')?.message}
+            </span>
+          </>
+        ) : warnings.length > 0 ? (
+          <>
+            <AlertIcon size={12} />
+            <span style={{ color: 'var(--warning)', fontWeight: 600 }}>
+              警告：{warnings.length} 项
+            </span>
+          </>
+        ) : (
+          <>
+            <CheckIcon size={12} />
+            <span style={{ color: 'var(--success)', fontWeight: 600 }}>结构有效</span>
+          </>
+        )}
+      </div>
+
+      {issues.length > 0 && !loading && (
+        <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-secondary)' }}>
+          {issues.map((issue, i) => (
+            <li key={i} style={{ marginBottom: 2 }}>
+              <code style={{ fontSize: 11, color: 'var(--text-muted)' }}>{issue.code}</code>
+              {' — '}
+              {issue.message}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {canonical && canonical !== smiles && !hasErrors && onUseCanonical && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 8,
+            paddingTop: 4,
+            borderTop: '1px dashed var(--border)',
+          }}
+        >
+          <code style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            canonical: {canonical}
+          </code>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => onUseCanonical(canonical)}
+            title="使用规范化后的 SMILES 替换当前值"
+          >
+            采用
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
 // 主组件
 // ============================================================================
 
@@ -120,6 +229,15 @@ export default function CorrectionPanel({
     finalSmiles: string
   }>>({})
 
+  // 校验状态：防抖触发的后端结构校验
+  const [validation, setValidation] = useState<{
+    smiles: string
+    issues: ValidationIssue[]
+    canonical: string | null
+    loading: boolean
+  } | null>(null)
+  const validationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const total = items.length
   const current = items[currentIndex]
   const currentDecision = decisions[current?.id ?? '']
@@ -138,7 +256,6 @@ export default function CorrectionPanel({
       </div>
     )
   }
-
   const currentFinalSmiles = currentDecision?.finalSmiles ?? current.correctedSmiles ?? current.ocrSmiles
   const currentStatus: CorrectionItem['status'] = currentDecision?.status ?? current.status ?? 'pending'
   const isOcrConfident = current.ocrConfidence >= 0.8
@@ -156,6 +273,36 @@ export default function CorrectionPanel({
     // 任何编辑都标记为 corrected
     updateDecision('corrected', newSmiles)
   }
+
+  // 防抖触发后端 SMILES 校验 — 用户停止输入 600ms 后调用
+  useEffect(() => {
+    if (!currentFinalSmiles || currentFinalSmiles === current?.ocrSmiles) {
+      setValidation(null)
+      return
+    }
+    if (validationTimerRef.current) clearTimeout(validationTimerRef.current)
+    setValidation(prev => prev ? { ...prev, loading: true } : { smiles: currentFinalSmiles, issues: [], canonical: null, loading: true })
+    validationTimerRef.current = setTimeout(async () => {
+      try {
+        const resp = await validateSmiles(currentFinalSmiles)
+        if (!resp.success) {
+          setValidation({ smiles: currentFinalSmiles, issues: [], canonical: null, loading: false })
+          return
+        }
+        setValidation({
+          smiles: currentFinalSmiles,
+          issues: resp.issues,
+          canonical: resp.canonical_smiles,
+          loading: false,
+        })
+      } catch {
+        setValidation({ smiles: currentFinalSmiles, issues: [], canonical: null, loading: false })
+      }
+    }, 600)
+    return () => {
+      if (validationTimerRef.current) clearTimeout(validationTimerRef.current)
+    }
+  }, [currentFinalSmiles, current?.ocrSmiles])
 
   const handleConfirm = () => {
     updateDecision('confirmed', currentFinalSmiles)
@@ -339,6 +486,13 @@ export default function CorrectionPanel({
               <SmilesDiff before={current.ocrSmiles} after={currentFinalSmiles} />
             </div>
           )}
+          {/* RDKit 实时校验结果 */}
+          <div style={{ marginTop: 8 }}>
+            <ValidationResult
+              validation={validation}
+              onUseCanonical={canonical => handleSmilesEdit(canonical)}
+            />
+          </div>
         </div>
       </div>
 

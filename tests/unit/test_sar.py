@@ -19,7 +19,6 @@ from mbforge.csar.sar import (
     is_available,
 )
 
-
 # 苯胺衍生物 SAR 集 — 共享对位取代的 acetanilide 骨架
 PHENOL_SAR = [
     {

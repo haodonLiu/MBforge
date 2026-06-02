@@ -40,9 +40,18 @@ static PHYSICOCHEMICAL_RE: LazyLock<Vec<(String, Regex)>> = LazyLock::new(|| {
         (
             "mp".to_string(),
             Regex::new(r"(?i)m\.?p\.?\s*[=:]\s*(\d+\.?\d*)\s*°?\s*C").expect("valid mp regex"),
+        ),
+        (
+            "logP".to_string(),
             Regex::new(r"(?i)log\s*P\s*[=:]\s*([\-]?\d+\.?\d*)").expect("valid logP regex"),
+        ),
+        (
+            "solubility".to_string(),
             Regex::new(r"(?i)solubility\s*[=:]\s*([<>]?\d+\.?\d*)\s*(mg/mL|μg/mL|ug/mL|g/L|mg/L)")
                 .expect("valid solubility regex"),
+        ),
+        (
+            "MW".to_string(),
             Regex::new(r"(?i)M\.?W\.?\s*[=:]\s*(\d+\.?\d*)\s*(Da|g/mol)?").expect("valid MW regex"),
         ),
     ]

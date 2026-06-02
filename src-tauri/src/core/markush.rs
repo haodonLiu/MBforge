@@ -296,12 +296,12 @@ fn tokenize_smiles(smiles: &str) -> Vec<SmilesToken> {
 
                 // Strip charge suffix
                 if element.ends_with('+') || element.ends_with('-') {
-                    let c = element.pop().unwrap();
+                    let c = element.pop().expect("element non-empty after charge check");
                     charge = if c == '+' { 1 } else { -1 };
                     // Handle 2+, 3-, etc.
                     if element.ends_with(|d: char| d.is_ascii_digit()) {
                         let n: i32 =
-                            element.chars().last().unwrap().to_digit(10).unwrap_or(1) as i32;
+                            element.chars().last().expect("element non-empty after charge check").to_digit(10).unwrap_or(1) as i32;
                         element.pop();
                         charge *= n;
                     }
@@ -347,7 +347,7 @@ fn tokenize_smiles(smiles: &str) -> Vec<SmilesToken> {
                     let first = elem
                         .chars()
                         .next()
-                        .unwrap()
+                        .expect("elem non-empty after len >= 2 check")
                         .to_uppercase()
                         .next()
                         .unwrap_or('?');
@@ -428,7 +428,7 @@ fn has_substructure(pattern: &MoleculeGraph, query: &MoleculeGraph) -> Option<Ve
     });
 
     if backtrack(0, &order, pattern, query, &mut mapping, &mut used) {
-        Some(mapping.into_iter().map(|x| x.unwrap()).collect())
+        Some(mapping.into_iter().map(|x| x.expect("backtrack mapping must be complete")).collect())
     } else {
         None
     }
@@ -554,22 +554,22 @@ fn check_consistency(
 static ESMILES_SEP: &str = "<sep>";
 
 static ATOM_TAG_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<a>(\d+):([^<]+)</a>").unwrap());
+    LazyLock::new(|| Regex::new(r"<a>(\d+):([^<]+)</a>").expect("valid atom tag regex"));
 static RING_TAG_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<r>(\d+):([^<]+)</r>").unwrap());
+    LazyLock::new(|| Regex::new(r"<r>(\d+):([^<]+)</r>").expect("valid ring tag regex"));
 static CIRCLE_TAG_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"<c>(\d+):([^<]+)</c>").unwrap());
+    LazyLock::new(|| Regex::new(r"<c>(\d+):([^<]+)</c>").expect("valid circle tag regex"));
 static RGROUP_TEXT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)(?:R\[?(\d+)\]?\s*(?:is|represents|selected from|chosen from|independently|can be|are|may be)\s*:\s*)(.+?)(?:[.;]|and\s|or\s|where\s|provided\s|$)"
-    ).unwrap()
+    ).expect("valid Rgroup text regex")
 });
 static RGROUP_PAREN_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(?:R\[?(\d+)\]?\s*=\s*)([A-Za-z0-9\-, \{\}/]+)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)(?:R\[?(\d+)\]?\s*=\s*)([A-Za-z0-9\-, \{\}/]+)").expect("valid Rgroup paren regex"));
 static ALKYL_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkyl").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkyl").expect("valid alkyl regex"));
 static ALKOXY_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkoxy").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkoxy").expect("valid alkoxy regex"));
 
 /// Parse an E-SMILES string into a MarkushPattern.
 pub fn parse_esmiles(input: &str) -> MarkushPattern {

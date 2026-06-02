@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
-import { kbSearchStream, isTauriAvailable } from '../api/tauri-bridge'
+import { kbSearchStream } from '../api/tauri-bridge'
 import { SearchIcon, FileTextIcon } from './icons'
 import { useAppContext } from '../context/AppContext'
 import { tapScale } from '../hooks/useAnimations'
@@ -54,13 +54,6 @@ export default function Search() {
       setHasSearched(true)
       return
     }
-    if (!isTauriAvailable()) {
-      setResults([])
-      setHasSearched(true)
-      setError('搜索功能仅支持桌面应用环境')
-      return
-    }
-
     // 清理上一次搜索
     unlistenRef.current?.()
     setIsLoading(true)

@@ -1,10 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { getFileTree as getFileTreeHttp, uploadFile } from '../api/client'
 import {
-  isTauriAvailable,
-  getFileTree as getFileTreeTauri,
-  uploadFiles as uploadFilesTauri,
+  getFileTree,
+  uploadFiles,
 } from '../api/tauri-bridge'
 import { PlusIcon } from './icons'
 import { useAppContext } from '../context/AppContext'
@@ -75,19 +73,8 @@ export default function FileTree({ onFileClick }: Props) {
     setIsLoading(true)
     setError('')
     try {
-      let treeData: FileNode[] = []
-      if (isTauriAvailable()) {
-        const resp = await getFileTreeTauri(projectRoot)
-        treeData = resp.tree
-      } else {
-        const resp = await getFileTreeHttp(projectRoot)
-        if (resp.success && resp.tree) {
-          treeData = resp.tree
-        } else {
-          setError(resp.error || 'Failed to load file tree')
-        }
-      }
-      setTree(treeData)
+      const resp = await getFileTree(projectRoot)
+      setTree(resp.tree)
     } catch (e) {
       console.error(e)
       setError('Failed to load file tree')
@@ -103,39 +90,15 @@ export default function FileTree({ onFileClick }: Props) {
   const handleImport = async () => {
     if (!projectRoot) return
 
-    if (isTauriAvailable()) {
-      setIsUploading(true)
-      try {
-        await uploadFilesTauri(projectRoot)
-        loadTree()
-      } catch (err) {
-        console.error('Upload failed:', err)
-      } finally {
-        setIsUploading(false)
-      }
-      return
-    }
-
-    // Browser dev fallback: trigger hidden file input
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.pdf,.sdf,.mol,.pdb,.md,.txt,.csv'
-    input.multiple = true
-    input.onchange = async (e) => {
-      const files = (e.target as HTMLInputElement).files
-      if (!files || files.length === 0) return
-      setIsUploading(true)
-      for (let i = 0; i < files.length; i++) {
-        try {
-          await uploadFile(projectRoot, files[i])
-        } catch (err) {
-          console.error('Upload failed:', err)
-        }
-      }
-      setIsUploading(false)
+    setIsUploading(true)
+    try {
+      await uploadFiles(projectRoot)
       loadTree()
+    } catch (err) {
+      console.error('Upload failed:', err)
+    } finally {
+      setIsUploading(false)
     }
-    input.click()
   }
 
   if (error) {

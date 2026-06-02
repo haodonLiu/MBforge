@@ -122,7 +122,7 @@ fn emit_status(inner: &SidecarInner, app: &AppHandle) {
     let uptime = inner
         .start_time
         .lock()
-        .unwrap()
+        .expect("sidecar start_time lock poisoned")
         .map(|t| t.elapsed().as_secs())
         .unwrap_or(0);
     let state = if healthy { "online" } else { "offline" };

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Suspense, useState, lazy } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import AnimatedPage from './components/animations/AnimatedPage'
@@ -6,15 +6,8 @@ import { ToastContainer } from './components/ui'
 import ErrorBoundary from './components/ErrorBoundary'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
+// Welcome is above-the-fold and stays static for fast first paint.
 import Welcome from './components/Welcome'
-import Search from './components/Search'
-import Chat from './components/Chat'
-import MoleculeLibrary from './components/MoleculeLibrary'
-import Workflow from './components/Workflow'
-import ProjectView from './components/ProjectView'
-import SARAnalysis from './components/SARAnalysis'
-import Dashboard from './components/Dashboard'
-import Notes from './components/Notes'
 import SettingsModal from './components/SettingsModal'
 import FileTree from './components/FileTree'
 import { AppProvider, useAppContext } from './context/AppContext'
@@ -22,6 +15,38 @@ import { invoke } from '@tauri-apps/api/core'
 import { isTauriAvailable } from './api/tauri-bridge'
 import { showToast } from './hooks/useToast'
 import { useIsMobile, useIsTablet } from './styles/responsive'
+
+// Route-level code splitting — each page becomes its own chunk.
+// Heavy bundles (Chat, MoleculeLibrary, ProjectView, SARAnalysis) only
+// load when the user navigates to them, slashing initial TTI.
+const ProjectView = lazy(() => import('./components/ProjectView'))
+const Search = lazy(() => import('./components/Search'))
+const Chat = lazy(() => import('./components/Chat'))
+const MoleculeLibrary = lazy(() => import('./components/MoleculeLibrary'))
+const Workflow = lazy(() => import('./components/Workflow'))
+const SARAnalysis = lazy(() => import('./components/SARAnalysis'))
+const Dashboard = lazy(() => import('./components/Dashboard'))
+const Notes = lazy(() => import('./components/Notes'))
+
+/** Lightweight fallback shown while a route chunk is being fetched. */
+function RouteFallback() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        color: 'var(--text-muted)',
+        fontSize: '14px',
+      }}
+    >
+      Loading…
+    </div>
+  )
+}
 
 export default function App() {
   return (
@@ -150,15 +175,78 @@ function AppRoutes() {
   return (
     <AnimatePresence mode="wait">
       <Routes location={location} key={location.pathname}>
-        <Route path="/" element={<AnimatedPage><ProjectView /></AnimatedPage>} />
-        <Route path="/search" element={<AnimatedPage><Search /></AnimatedPage>} />
-        <Route path="/chat" element={<AnimatedPage><Chat /></AnimatedPage>} />
-        <Route path="/molecules" element={<AnimatedPage><MoleculeLibrary /></AnimatedPage>} />
-        <Route path="/workflow" element={<AnimatedPage><Workflow /></AnimatedPage>} />
-        <Route path="/project" element={<AnimatedPage><ProjectView /></AnimatedPage>} />
-        <Route path="/sar" element={<AnimatedPage><SARAnalysis /></AnimatedPage>} />
-        <Route path="/dashboard" element={<AnimatedPage><Dashboard /></AnimatedPage>} />
-        <Route path="/notes" element={<AnimatedPage><Notes /></AnimatedPage>} />
+        <Route
+          path="/"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><ProjectView /></AnimatedPage>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/search"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><Search /></AnimatedPage>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/chat"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><Chat /></AnimatedPage>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/molecules"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><MoleculeLibrary /></AnimatedPage>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/workflow"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><Workflow /></AnimatedPage>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/project"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><ProjectView /></AnimatedPage>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/sar"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><SARAnalysis /></AnimatedPage>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/dashboard"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><Dashboard /></AnimatedPage>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/notes"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><Notes /></AnimatedPage>
+            </Suspense>
+          }
+        />
       </Routes>
     </AnimatePresence>
   )

@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
+import i18n from '../i18n'
 import { SettingsIcon, XIcon, DownloadIcon } from './icons'
 import { getSettings, saveSettings } from '../api/settings'
 import { useTheme } from '../hooks/useTheme'
@@ -45,12 +47,13 @@ const DEFAULT_SETTINGS: SettingsState = {
 
 // ============ Section Renderers ============
 function GeneralSection({ settings, updateSetting }: { settings: SettingsState; updateSetting: (k: keyof SettingsState, v: string) => void }) {
+  const { t } = useTranslation()
   return (
     <SettingSection>
-      <SettingGroup title="项目">
+      <SettingGroup title={t('settings.llmConfig')}>
         <SettingItem
-          title="自动打开最近项目"
-          description="启动时自动加载上次使用的项目"
+          title={t('settings.autoOpenProject')}
+          description={t('settings.autoOpenProjectDesc')}
         >
           <label className="toggle">
             <input type="checkbox" defaultChecked />
@@ -58,8 +61,8 @@ function GeneralSection({ settings, updateSetting }: { settings: SettingsState; 
           </label>
         </SettingItem>
       </SettingGroup>
-      <SettingGroup title="语言">
-        <SettingItem title="界面语言">
+      <SettingGroup title={t('settings.language')}>
+        <SettingItem title={t('settings.language')}>
           <select
             className="settings-select"
             value={settings.language}
@@ -75,12 +78,13 @@ function GeneralSection({ settings, updateSetting }: { settings: SettingsState; 
 }
 
 function AISection({ settings, updateSetting, setSettings }: { settings: SettingsState; updateSetting: (k: keyof SettingsState, v: string) => void; setSettings: React.Dispatch<React.SetStateAction<SettingsState>> }) {
+  const { t } = useTranslation()
   return (
     <SettingSection>
-      <SettingGroup title="LLM 配置">
+      <SettingGroup title={t('settings.llmConfig')}>
         <SettingItem
-          title="Provider"
-          description="选择 LLM 服务提供商"
+          title={t('settings.llmProvider')}
+          description={t('settings.llmProviderDesc')}
         >
           <select
             className="settings-select"
@@ -88,7 +92,7 @@ function AISection({ settings, updateSetting, setSettings }: { settings: Setting
             onChange={e => {
               updateSetting('llm_provider', e.target.value)
               const models = LLM_MODELS[e.target.value]
-              if (models && models.length > 0) {
+              if (models.length > 0) {
                 updateSetting('llm_model', models[0].value)
               }
             }}
@@ -99,8 +103,8 @@ function AISection({ settings, updateSetting, setSettings }: { settings: Setting
           </select>
         </SettingItem>
         <SettingItem
-          title="Base URL"
-          description={settings.llm_provider === 'ollama' ? '默认: http://localhost:11434' : 'API 端点地址'}
+          title={t('settings.baseUrl')}
+          description={settings.llm_provider === 'ollama' ? '默认: http://localhost:11434' : t('settings.baseUrlDesc')}
         >
           <Input
             className="settings-input"
@@ -114,7 +118,7 @@ function AISection({ settings, updateSetting, setSettings }: { settings: Setting
           />
         </SettingItem>
         {settings.llm_provider !== 'ollama' && (
-          <SettingItem title="API Key">
+          <SettingItem title={t('settings.apiKey')}>
             <Input
               className="settings-input"
               type="password"
@@ -124,7 +128,7 @@ function AISection({ settings, updateSetting, setSettings }: { settings: Setting
             />
           </SettingItem>
         )}
-        <SettingItem title="Model" description="选择或输入模型名称" layout="stacked">
+        <SettingItem title={t('settings.model')} description={t('settings.modelDesc')} layout="stacked">
           <ModelSelector
             provider={settings.llm_provider}
             modelValue={settings.llm_model}
@@ -132,7 +136,7 @@ function AISection({ settings, updateSetting, setSettings }: { settings: Setting
             onChange={v => updateSetting('llm_model', v)}
           />
         </SettingItem>
-        <SettingItem title="Max Tokens" description="回复最大 token 数">
+        <SettingItem title={t('settings.maxTokens')} description={t('settings.maxTokensDesc')}>
           <input
             className="settings-input"
             type="number"
@@ -150,12 +154,13 @@ function AISection({ settings, updateSetting, setSettings }: { settings: Setting
 }
 
 function EmbeddingSection({ settings, updateSetting }: { settings: SettingsState; updateSetting: (k: keyof SettingsState, v: string) => void }) {
+  const { t } = useTranslation()
   return (
     <SettingSection>
-      <SettingGroup title="Embedding 配置">
+      <SettingGroup title={t('settings.embedConfig')}>
         <SettingItem
-          title="Provider"
-          description="本地推理推荐 Qwen3 或 Sentence Transformers"
+          title={t('settings.llmProvider')}
+          description={t('settings.embedProviderDesc')}
         >
           <select
             className="settings-select"
@@ -163,7 +168,7 @@ function EmbeddingSection({ settings, updateSetting }: { settings: SettingsState
             onChange={e => {
               updateSetting('embed_provider', e.target.value)
               const models = EMBED_MODELS[e.target.value]
-              if (models && models.length > 0) {
+              if (models.length > 0) {
                 updateSetting('embed_model', models[0].value)
               }
             }}
@@ -173,7 +178,7 @@ function EmbeddingSection({ settings, updateSetting }: { settings: SettingsState
             <option value="openai">OpenAI（API）</option>
           </select>
         </SettingItem>
-        <SettingItem title="Model" layout="stacked">
+        <SettingItem title={t('settings.model')} layout="stacked">
           <ModelSelector
             provider={settings.embed_provider}
             modelValue={settings.embed_model}
@@ -187,12 +192,13 @@ function EmbeddingSection({ settings, updateSetting }: { settings: SettingsState
 }
 
 function RerankerSection({ settings, updateSetting }: { settings: SettingsState; updateSetting: (k: keyof SettingsState, v: string) => void }) {
+  const { t } = useTranslation()
   return (
     <SettingSection>
-      <SettingGroup title="Reranker 配置">
+      <SettingGroup title={t('settings.rerankConfig')}>
         <SettingItem
-          title="Provider"
-          description="重排序模型用于提升检索精度"
+          title={t('settings.llmProvider')}
+          description={t('settings.rerankProviderDesc')}
         >
           <select
             className="settings-select"
@@ -200,7 +206,7 @@ function RerankerSection({ settings, updateSetting }: { settings: SettingsState;
             onChange={e => {
               updateSetting('rerank_provider', e.target.value)
               const models = RERANK_MODELS[e.target.value]
-              if (models && models.length > 0) {
+              if (models.length > 0) {
                 updateSetting('rerank_model', models[0].value)
               }
             }}
@@ -209,7 +215,7 @@ function RerankerSection({ settings, updateSetting }: { settings: SettingsState;
             <option value="sentence_transformers">Sentence Transformers（本地）</option>
           </select>
         </SettingItem>
-        <SettingItem title="Model" layout="stacked">
+        <SettingItem title={t('settings.model')} layout="stacked">
           <ModelSelector
             provider={settings.rerank_provider}
             modelValue={settings.rerank_model}
@@ -223,17 +229,18 @@ function RerankerSection({ settings, updateSetting }: { settings: SettingsState;
 }
 
 function AppearanceSection({ settings, updateSetting }: { settings: SettingsState; updateSetting: (k: keyof SettingsState, v: string) => void }) {
+  const { t } = useTranslation()
   return (
     <SettingSection>
-      <SettingGroup title="外观">
-        <SettingItem title="主题">
+      <SettingGroup title={t('settings.appearance')}>
+        <SettingItem title={t('settings.theme')}>
           <select
             className="settings-select"
             value={settings.theme}
             onChange={e => updateSetting('theme', e.target.value)}
           >
-            <option value="dark">深色</option>
-            <option value="light">浅色</option>
+            <option value="dark">{t('settings.dark')}</option>
+            <option value="light">{t('settings.light')}</option>
           </select>
         </SettingItem>
       </SettingGroup>
@@ -242,20 +249,22 @@ function AppearanceSection({ settings, updateSetting }: { settings: SettingsStat
 }
 
 function ServerSection() {
+  const { t } = useTranslation()
   return (
     <SettingSection>
-      <SettingGroup title="模型服务">
-        <SettingItem title="服务地址" description="127.0.0.1:18792" />
+      <SettingGroup title={t('settings.modelService')}>
+        <SettingItem title={t('settings.serverAddress')} description="127.0.0.1:18792" />
       </SettingGroup>
     </SettingSection>
   )
 }
 
 function AboutSection() {
+  const { t } = useTranslation()
   return (
     <SettingSection>
-      <SettingGroup title="关于 MBForge">
-        <SettingItem title="版本" description="0.2.0" />
+      <SettingGroup title={t('settings.aboutMbforge')}>
+        <SettingItem title={t('settings.version')} description="0.2.0" />
       </SettingGroup>
     </SettingSection>
   )
@@ -280,6 +289,7 @@ export default function SettingsModal({ open, onClose }: Props) {
   const [error, setError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
 
+  const { t } = useTranslation()
   const { setTheme } = useTheme()
 
   const loadSettings = useCallback(async () => {
@@ -340,11 +350,11 @@ export default function SettingsModal({ open, onClose }: Props) {
         setSaveSuccess(true)
         setTimeout(() => setSaveSuccess(false), 3000)
       } else {
-        setError(resp.error || 'Failed to save settings')
+        setError(resp.error || t('settings.saveFailed'))
       }
     } catch (e) {
       console.error(e)
-      setError('Failed to save settings')
+      setError(t('settings.saveFailed'))
     } finally {
       setIsLoading(false)
     }
@@ -355,11 +365,14 @@ export default function SettingsModal({ open, onClose }: Props) {
     if (key === 'theme') {
       setTheme(value as 'light' | 'dark')
     }
+    if (key === 'language') {
+      void i18n.changeLanguage(value)
+    }
   }
 
   useEffect(() => {
     if (open) {
-      loadSettings()
+      void loadSettings()
     }
   }, [open, loadSettings])
 
@@ -391,9 +404,10 @@ export default function SettingsModal({ open, onClose }: Props) {
 
   if (!open) return null
 
+  const sectionData = SETTING_SECTIONS.find(s => s.id === activeSection)
+
   return (
     <AnimatePresence>
-      {open && (
         <motion.div
           variants={fadeIn}
           initial="hidden"
@@ -453,8 +467,8 @@ export default function SettingsModal({ open, onClose }: Props) {
               padding: '16px 20px',
               borderBottom: '1px solid var(--border)',
             }}>
-              <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>设置</h2>
-              <IconButton size={32} onClick={onClose} title="关闭">
+              <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>{t('settings.title')}</h2>
+              <IconButton size={32} onClick={onClose} title={t('common.close')}>
                 <XIcon size={18} />
               </IconButton>
             </div>
@@ -495,7 +509,7 @@ export default function SettingsModal({ open, onClose }: Props) {
                     }}
                   >
                     {SECTION_ICONS[section.icon] || <SettingsIcon size={18} />}
-                    <span>{section.label}</span>
+                    <span>{t(section.labelKey)}</span>
                   </button>
                 ))}
               </div>
@@ -504,13 +518,13 @@ export default function SettingsModal({ open, onClose }: Props) {
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
                   <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0 }}>
-                    {SETTING_SECTIONS.find(s => s.id === activeSection)?.label}
+                    {sectionData ? t(sectionData.labelKey) : ''}
                   </h3>
                 </div>
 
                 <div style={{ flex: 1, padding: '16px 20px', overflowY: 'auto' }}>
                   {error && <AlertBanner variant="danger" message={error} onDismiss={() => setError('')} />}
-                  {saveSuccess && <AlertBanner variant="success" message="设置已保存" />}
+                  {saveSuccess && <AlertBanner variant="success" message={t('settings.saved')} />}
                   <motion.div key={activeSection} variants={fadeIn} initial="hidden" animate="visible">
                     {renderSection()}
                   </motion.div>
@@ -525,17 +539,16 @@ export default function SettingsModal({ open, onClose }: Props) {
                   borderTop: '1px solid var(--border)',
                 }}>
                   <Button variant="secondary" onClick={loadSettings} disabled={isLoading}>
-                    取消
+                    {t('common.cancel')}
                   </Button>
                   <Button variant="primary" onClick={handleSave} disabled={isLoading} loading={isLoading}>
-                    {isLoading ? '保存中...' : '保存设置'}
+                    {isLoading ? t('settings.saving') : t('common.save')}
                   </Button>
                 </div>
               </div>
             </div>
           </motion.div>
         </motion.div>
-      )}
     </AnimatePresence>
   )
 }

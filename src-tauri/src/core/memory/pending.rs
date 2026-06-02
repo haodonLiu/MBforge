@@ -60,12 +60,10 @@ pub fn load_pending(project_root: &Path, doc_id: &str) -> Vec<ExtractionResult> 
     }
 
     match std::fs::read_to_string(&path) {
-        Ok(content) => {
-            match serde_json::from_str::<PendingContainer>(&content) {
-                Ok(container) => container.results,
-                Err(_) => Vec::new(),
-            }
-        }
+        Ok(content) => match serde_json::from_str::<PendingContainer>(&content) {
+            Ok(container) => container.results,
+            Err(_) => Vec::new(),
+        },
         Err(_) => Vec::new(),
     }
 }
@@ -142,8 +140,10 @@ mod tests {
     #[test]
     fn test_pending_path_format() {
         let path = pending_path(Path::new("/project"), "doc-123");
-        assert!(path.ends_with(".mbforge\\extractions\\doc-123\\pending.json")
-            || path.ends_with(".mbforge/extractions/doc-123/pending.json"));
+        assert!(
+            path.ends_with(".mbforge\\extractions\\doc-123\\pending.json")
+                || path.ends_with(".mbforge/extractions/doc-123/pending.json")
+        );
     }
 
     #[test]

@@ -82,7 +82,7 @@ export default function FileTree({ onFileClick }: Props) {
       } else {
         const resp = await getFileTreeHttp(projectRoot)
         if (resp.success && resp.tree) {
-          treeData = resp.tree as FileNode[]
+          treeData = resp.tree
         } else {
           setError(resp.error || 'Failed to load file tree')
         }

@@ -6,7 +6,7 @@ import RGroupMatrix from './sar/RGroupMatrix'
 import CorrectionPanel from './molecule/CorrectionPanel'
 import { showToast } from '../hooks/useToast'
 import { useAppContext } from '../context/AppContext'
-import { listMoleculesTauri } from '../api/tauri/molecule'
+import { listMoleculesTauri, molStoreList, molStoreUpdateBatch } from '../api/tauri/molecule'
 import type { SARSession, SARCompound, MoleculeRecord } from '../types'
 
 // ============================================================================
@@ -61,6 +61,38 @@ export default function SARAnalysis() {
       .finally(() => setLoading(false))
   }, [projectRoot])
 
+  // 加载矫正候选项（status=pending 的分子）
+  const [correctionItems, setCorrectionItems] = useState<Array<{
+    id: string
+    ocrSmiles: string
+    ocrConfidence: number
+    name?: string
+    sourceDoc?: string
+    context?: string
+    status?: 'pending' | 'confirmed' | 'rejected' | 'corrected'
+    correctedSmiles?: string
+    sourceRecord?: MoleculeRecord
+  }>>([])
+
+  useEffect(() => {
+    if (activeTab !== 'correction' || !projectRoot) return
+    molStoreList(projectRoot, 200, 0, undefined, 'pending')
+      .then(records => {
+        setCorrectionItems(
+          records.map(r => ({
+            id: r.mol_id,
+            ocrSmiles: r.esmiles,
+            ocrConfidence: 0.5, // pending 视为低置信度
+            name: r.name || undefined,
+            sourceDoc: r.source_doc || undefined,
+            context: r.notes || undefined,
+            status: 'pending' as const,
+            sourceRecord: r,
+          })),
+        )
+      })
+      .catch(e => showToast(`加载待矫正分子失败: ${e instanceof Error ? e.message : String(e)}`, 'error'))
+  }, [activeTab, projectRoot])
   const activeSession = useMemo(
     () => sessions.find(s => s.id === activeSessionId) ?? null,
     [sessions, activeSessionId],
@@ -127,7 +159,7 @@ export default function SARAnalysis() {
       <Tabs
         items={[
           { key: 'overview',   label: <><FlaskIcon size={14} /> 化合物列表</>, badge: activeSession?.compounds.length },
-          { key: 'correction', label: <><SparklesIcon size={14} /> OCR 矫正</>, badge: 0 },
+          { key: 'correction', label: <><SparklesIcon size={14} /> OCR 矫正</>, badge: correctionItems.length },
           { key: 'rgroup',     label: <><TargetIcon size={14} /> R-Group 分析</> },
         ]}
         activeKey={activeTab}
@@ -142,7 +174,18 @@ export default function SARAnalysis() {
             onSelect={setSelectedCompoundId}
           />
         )}
-        {activeTab === 'correction' && <CorrectionTab />}
+        {activeTab === 'correction' && (
+          <CorrectionTab
+            projectRoot={projectRoot}
+            items={correctionItems}
+            onItemsChange={setCorrectionItems}
+            onComplete={(saved, failed) => {
+              if (failed === 0 && saved > 0) {
+                setCorrectionItems(prev => prev.filter(i => !i.sourceRecord || prev.find(p => p.id === i.id && p.status === 'pending')))
+              }
+            }}
+          />
+        )}
         {activeTab === 'rgroup' && activeSession && (
           <RGroupTab
             session={activeSession}
@@ -309,8 +352,14 @@ function OverviewTab({
 // Tab 2: OCR 矫正
 // ============================================================================
 
-function CorrectionTab() {
-  const [items, setItems] = useState<Array<{
+function CorrectionTab({
+  projectRoot,
+  items,
+  onItemsChange,
+  onComplete,
+}: {
+  projectRoot: string | null
+  items: Array<{
     id: string
     ocrSmiles: string
     ocrConfidence: number
@@ -319,35 +368,103 @@ function CorrectionTab() {
     context?: string
     status?: 'pending' | 'confirmed' | 'rejected' | 'corrected'
     correctedSmiles?: string
-  }>>([])
-
-  const handleComplete = (results: Array<{ id: string; finalSmiles: string; status: 'confirmed' | 'rejected' | 'corrected' }>) => {
-    console.log('[SAR] Correction complete:', results)
-    showToast(
-      `矫正完成：${results.length} 项（${results.filter(r => r.status === 'corrected').length} 项已修正）`,
-      'success',
-    )
-    // TODO: 调用 API 保存到后端
-  }
+    sourceRecord?: MoleculeRecord
+  }>
+  onItemsChange: (
+    items: Array<{
+      id: string
+      ocrSmiles: string
+      ocrConfidence: number
+      name?: string
+      sourceDoc?: string
+      context?: string
+      status?: 'pending' | 'confirmed' | 'rejected' | 'corrected'
+      correctedSmiles?: string
+      sourceRecord?: MoleculeRecord
+    }>,
+  ) => void
+  onComplete: (saved: number, failed: number) => void
+}) {
+  const [saving, setSaving] = useState(false)
 
   const handleItemChange = (id: string, finalSmiles: string, status: 'pending' | 'confirmed' | 'rejected' | 'corrected' | undefined) => {
-    console.log('[SAR] Item changed:', { id, finalSmiles, status })
-    setItems(prev => prev.map(item =>
-      item.id === id ? { ...item, correctedSmiles: finalSmiles, status: (status ?? 'pending') as typeof item.status } : item
-    ))
+    onItemsChange(
+      items.map(item =>
+        item.id === id
+          ? { ...item, correctedSmiles: finalSmiles, status: (status ?? 'pending') as typeof item.status }
+          : item,
+      ),
+    )
+  }
+
+  const handleComplete = async (results: Array<{ id: string; finalSmiles: string; status: 'confirmed' | 'rejected' | 'corrected' }>) => {
+    if (!projectRoot) {
+      showToast('未选择项目', 'warning')
+      return
+    }
+    if (results.length === 0) {
+      showToast('没有可保存的结果', 'info')
+      return
+    }
+
+    setSaving(true)
+    try {
+      // 构造 MoleculeRecord_ 列表，保留原 metadata，只覆盖 esmiles + status + notes
+      const records = results
+        .map(r => {
+          const item = items.find(i => i.id === r.id)
+          if (!item?.sourceRecord) return null
+          return {
+            ...item.sourceRecord,
+            esmiles: r.finalSmiles,
+            status: r.status,
+            notes: `${item.sourceRecord.notes || ''}\n[${new Date().toISOString()}] OCR 矫正: ${r.status}`.trim(),
+          }
+        })
+        .filter((r): r is NonNullable<typeof r> => r !== null)
+
+      if (records.length === 0) {
+        showToast('没有可保存的记录（缺少源数据）', 'warning')
+        return
+      }
+
+      const result = await molStoreUpdateBatch(projectRoot, records)
+      onComplete(result.updated, result.failed.length)
+      const correctedCount = results.filter(r => r.status === 'corrected').length
+      if (result.failed.length > 0) {
+        showToast(
+          `保存完成：${result.updated} 项已保存，${result.failed.length} 项失败`,
+          'warning',
+        )
+      } else {
+        showToast(
+          `保存完成：${result.updated} 项已写入数据库${correctedCount > 0 ? `，${correctedCount} 项已修正` : ''}`,
+          'success',
+        )
+      }
+    } catch (e) {
+      showToast(`保存失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <div>
       <AlertBanner
         variant="info"
-        message="OCR 自动识别的分子结构可能存在错误，请逐项核对并矫正。来源图像显示在左侧，OCR 识别结果显示在中间，您可以在右侧手动编辑 SMILES。"
+        message={'OCR 自动识别的分子结构可能存在错误。下方展示 status=pending 的待复核分子，请逐项核对并矫正。完成时点击『完成矫正』批量保存到数据库。'}
       />
       <CorrectionPanel
         items={items}
         onComplete={handleComplete}
         onItemChange={handleItemChange}
       />
+      {saving && (
+        <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+          正在批量保存到数据库…
+        </div>
+      )}
     </div>
   )
 }

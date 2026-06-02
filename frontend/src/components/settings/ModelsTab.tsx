@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import Button from '../ui/Button'
 import { listModels, downloadModel, listDownloaded, deleteModel, type DownloadModel, type DownloadedModel, type ProgressEvent } from '../../api/download'
 
@@ -18,6 +19,7 @@ interface DownloadState {
 
 // ============ Progress Bar ============
 function ProgressBar({ state }: { state: DownloadState[string] }) {
+  const { t } = useTranslation()
   if (!state || state.status === 'idle') return null
   const progress = state.progress || 0
 
@@ -25,7 +27,7 @@ function ProgressBar({ state }: { state: DownloadState[string] }) {
     <div style={{ marginTop: '8px' }}>
       {state.status === 'connecting' && (
         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-          连接中... {state.source && `(${state.source})`}
+          {t('models.downloading')} {state.source && t('models.fromSource', { source: state.source })}
         </span>
       )}
       {state.status === 'downloading' && (
@@ -46,12 +48,12 @@ function ProgressBar({ state }: { state: DownloadState[string] }) {
       )}
       {state.status === 'completed' && (
         <span style={{ fontSize: 11, color: 'var(--success)' }}>
-          下载完成 {state.source && `(来源: ${state.source})`}
+          {t('models.downloadComplete')} {state.source && t('models.fromSource', { source: state.source })}
         </span>
       )}
       {state.status === 'failed' && (
         <span style={{ fontSize: 11, color: 'var(--danger)' }}>
-          {state.error || '下载失败'}
+          {state.error || t('models.downloadFailed')}
         </span>
       )}
     </div>
@@ -70,6 +72,7 @@ function ModelCard({
   onDownload: () => void
   onCancel: () => void
 }) {
+  const { t } = useTranslation()
   const isDownloading = state && (state.status === 'connecting' || state.status === 'downloading')
 
   return (
@@ -78,7 +81,7 @@ function ModelCard({
         <div className="model-card-name">
           {model.name}
           {model.downloaded && (
-            <span style={{ marginLeft: '8px', fontSize: 10, padding: '1px 6px', background: 'var(--success)', color: 'white', borderRadius: 4 }}>已下载</span>
+            <span style={{ marginLeft: '8px', fontSize: 10, padding: '1px 6px', background: 'var(--success)', color: 'white', borderRadius: 4 }}>{t('models.downloaded')}</span>
           )}
           {model.license && (
             <a href={model.license_url || '#'} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '8px', fontSize: 10, color: 'var(--text-muted)' }}>
@@ -94,14 +97,14 @@ function ModelCard({
       </div>
       <div className="model-card-actions">
         {!model.downloaded && !isDownloading && (
-          <Button size="sm" variant="primary" onClick={onDownload}>下载</Button>
+          <Button size="sm" variant="primary" onClick={onDownload}>{t('models.download')}</Button>
         )}
         {isDownloading && (
-          <Button size="sm" variant="secondary" onClick={onCancel}>取消</Button>
+          <Button size="sm" variant="secondary" onClick={onCancel}>{t('models.cancel')}</Button>
         )}
-        {state?.status === 'completed' && <span style={{ fontSize: 11, color: 'var(--success)' }}>完成</span>}
+        {state?.status === 'completed' && <span style={{ fontSize: 11, color: 'var(--success)' }}>{t('models.done')}</span>}
         {state?.status === 'failed' && (
-          <Button size="sm" variant="secondary" onClick={onDownload}>重试</Button>
+          <Button size="sm" variant="secondary" onClick={onDownload}>{t('models.retry')}</Button>
         )}
       </div>
     </div>
@@ -124,6 +127,7 @@ function DownloadedModelItem({
   onConfirmDelete: () => void
   onCancelDelete: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <div style={{
       display: 'flex',
@@ -148,13 +152,13 @@ function DownloadedModelItem({
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         {deleteConfirm === model.id ? (
           <>
-            <span style={{ fontSize: 11, color: 'var(--danger)' }}>确认删除？</span>
-            <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 11 }} onClick={onCancelDelete}>取消</button>
-            <button className="btn btn-primary" style={{ padding: '4px 10px', fontSize: 11, background: 'var(--danger)' }} onClick={onConfirmDelete}>删除</button>
+            <span style={{ fontSize: 11, color: 'var(--danger)' }}>{t('models.confirmDelete')}</span>
+            <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 11 }} onClick={onCancelDelete}>{t('models.cancel')}</button>
+            <button className="btn btn-primary" style={{ padding: '4px 10px', fontSize: 11, background: 'var(--danger)' }} onClick={onConfirmDelete}>{t('models.delete')}</button>
           </>
         ) : (
           <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 11, color: 'var(--danger)' }} onClick={onDeleteClick}>
-            <TrashIcon size={12} /> 删除
+            <TrashIcon size={12} /> {t('models.delete')}
           </button>
         )}
       </div>
@@ -164,6 +168,7 @@ function DownloadedModelItem({
 
 // ============ Main Component ============
 export default function ModelsTab() {
+  const { t } = useTranslation()
   const [models, setModels] = useState<DownloadModel[]>([])
   const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([])
   const [modelDir, setModelDir] = useState('')
@@ -259,11 +264,11 @@ export default function ModelsTab() {
   }
 
   // Group models by type
-  const byType = (t: string) => models.filter(m => m.type === t)
+  const byType = (type_: string) => models.filter(m => m.type === type_)
   const typeLabels: Record<string, string> = {
-    embedding: 'Embedding 模型',
-    reranker: 'Reranker 模型',
-    detection: '分子检测模型',
+    embedding: t('models.embedding'),
+    reranker: t('models.reranker'),
+    detection: t('models.detection'),
   }
 
   return (
@@ -280,7 +285,7 @@ export default function ModelsTab() {
             }}
             onClick={() => setModelTab('catalog')}
           >
-            可用模型
+            {t('models.tabCatalog')}
           </Button>
           <Button
             size="sm"
@@ -291,7 +296,7 @@ export default function ModelsTab() {
             }}
             onClick={() => { setModelTab('downloaded'); loadDownloaded() }}
           >
-            已下载 ({downloadedModels.length})
+            {t('models.tabDownloaded', { count: downloadedModels.length })}
           </Button>
         </div>
 
@@ -307,7 +312,7 @@ export default function ModelsTab() {
           alignItems: 'center',
           gap: 8,
         }}>
-          <span style={{ color: 'var(--text-muted)' }}>模型目录:</span>
+          <span style={{ color: 'var(--text-muted)' }}>{t('models.modelDir')}</span>
           <code style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)', wordBreak: 'break-all' }}>
             {modelDir || '~/.cache/mbforge/models/'}
           </code>
@@ -325,7 +330,7 @@ export default function ModelsTab() {
               borderRadius: 8,
               border: '1px solid var(--border)',
             }}>
-              模型服务未启动，请先启动后端服务
+              {t('models.serverNotStarted')}
             </div>
           ) : (
             Object.entries(typeLabels).map(([type, label]) => {
@@ -363,8 +368,8 @@ export default function ModelsTab() {
               borderRadius: 8,
               border: '1px solid var(--border)',
             }}>
-              暂无已下载模型
-            </div>
+              {t('models.noDownloaded')}
+             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {downloadedModels.map(model => (
@@ -393,13 +398,11 @@ export default function ModelsTab() {
           color: 'var(--text-secondary)',
         }}>
           <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--text-primary)' }}>
-            使用其他模型
+            {t('models.customTitle')}
           </div>
-          <div>将模型文件下载到本地目录，然后在对应设置中填入<b>绝对路径</b>即可。</div>
-          <div style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>
-            Embedding / Reranker：直接填本地模型目录路径<br />
-            MolDet：放入模型目录<br />
-            API 模型（OpenAI / Anthropic）：填 Base URL + API Key + 模型名
+          <div>{t('models.customDesc')}</div>
+          <div style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'pre-line' }}>
+            {t('models.customHint')}
           </div>
         </div>
       </div>

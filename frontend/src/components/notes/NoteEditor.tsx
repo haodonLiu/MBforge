@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Button from '../ui/Button'
@@ -132,18 +133,21 @@ export interface NoteEditorProps {
   onDelete?: (id: string) => void
   /** 双链候选（点击 [[ 可触发） */
   wikilinkSuggestions?: Array<{ id: string; title: string; type: NoteLink['type'] }>
+  /** 点击 [[Title]] wikilink 时触发（由父组件实现跳转逻辑） */
+  onWikiLinkClick?: (title: string) => void
   className?: string
   style?: React.CSSProperties
 }
-
 export default function NoteEditor({
   note,
   onChange,
   onDelete,
   wikilinkSuggestions = [],
+  onWikiLinkClick,
   className,
   style,
 }: NoteEditorProps) {
+  const { t } = useTranslation()
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState(note)
   const [showWikilinkMenu, setShowWikilinkMenu] = useState(false)
@@ -172,7 +176,7 @@ export default function NoteEditor({
           ...style,
         }}
       >
-        选择一条笔记以开始阅读，或创建新笔记
+        {t('notes.noSelection')}
       </div>
     )
   }
@@ -280,7 +284,7 @@ export default function NoteEditor({
             type="text"
             value={draft!.title}
             onChange={e => setDraft({ ...draft!, title: e.target.value })}
-            placeholder="笔记标题..."
+            placeholder={t('notes.titlePlaceholder')}
             style={{
               flex: 1,
               background: 'transparent',
@@ -294,7 +298,7 @@ export default function NoteEditor({
         ) : (
           <div style={{ flex: 1 }}>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}>
-              {note.title || '(无标题)'}
+              {note.title || t('notes.untitled')}
             </h2>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
               最后更新：{new Date(note.updatedAt).toLocaleString('zh-CN')}
@@ -394,7 +398,7 @@ export default function NoteEditor({
             ref={textareaRef}
             value={draft!.content}
             onChange={e => handleTextChange(e.target.value)}
-            placeholder="开始写笔记... 支持 Markdown 语法&#10;输入 [[ 插入双链笔记引用"
+            placeholder={t('notes.placeholder')}
             style={{
               width: '100%',
               minHeight: 400,
@@ -416,10 +420,14 @@ export default function NoteEditor({
             color: 'var(--text-primary)',
           }}>
             {note.content.trim() ? (
-              <MarkdownWithWikiLinks content={note.content} />
+              <MarkdownWithWikiLinks
+                content={note.content}
+                onWikiLinkClick={onWikiLinkClick}
+                t={t}
+              />
             ) : (
               <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                （空笔记）
+                {t('notes.emptyNote')}
               </p>
             )}
           </div>
@@ -479,9 +487,11 @@ export default function NoteEditor({
 
 interface MarkdownWithWikiLinksProps {
   content: string
+  onWikiLinkClick?: (title: string) => void
+  t: (key: string, options?: Record<string, unknown>) => string
 }
 
-function MarkdownWithWikiLinks({ content }: MarkdownWithWikiLinksProps) {
+function MarkdownWithWikiLinks({ content, onWikiLinkClick, t }: MarkdownWithWikiLinksProps) {
   // 先把 [[X]] 转成自定义语法，markdown 不支持
   const preprocessed = content.replace(/\[\[([^\]]+)\]\]/g, (_match, title) => {
     return `[${title}](#wiki/${encodeURIComponent(title)})`
@@ -502,7 +512,9 @@ function MarkdownWithWikiLinks({ content }: MarkdownWithWikiLinksProps) {
                   href={href}
                   onClick={e => {
                     e.preventDefault()
-                    alert(`跳转到笔记：${title}`)
+                    if (onWikiLinkClick) {
+                      onWikiLinkClick(title)
+                    }
                   }}
                   style={{
                     color: 'var(--accent)',
@@ -511,7 +523,9 @@ function MarkdownWithWikiLinks({ content }: MarkdownWithWikiLinksProps) {
                     borderRadius: 3,
                     textDecoration: 'none',
                     fontSize: '0.9em',
+                    cursor: onWikiLinkClick ? 'pointer' : 'help',
                   }}
+                  title={onWikiLinkClick ? t('notes.jumpTo', { title }) : t('notes.unlinked', { title })}
                 >
                   {props.children}
                 </a>

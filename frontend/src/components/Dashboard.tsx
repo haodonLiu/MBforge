@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { PageContainer, PageTitle, Card, Button, Badge, ResponsiveStatGrid, EmptyState } from './ui'
 import {
@@ -96,6 +97,7 @@ interface DashboardStats {
 }
 
 export default function Dashboard() {
+  const { t } = useTranslation()
   const { projectRoot } = useAppContext()
   const [stats, setStats] = useState<DashboardStats>({
     documents: 0, indexed: 0, molecules: 0, confirmed: 0, conversations: 0, activeThisWeek: 0,
@@ -203,15 +205,15 @@ export default function Dashboard() {
         <StatCard
           label="分子总数"
           value={stats.molecules}
-          subValue={`${stats.confirmed} 已确认`}
+          subValue={`${stats.confirmed} ${t('dashboard.confirmed')}`}
           icon={<FlaskIcon size={18} />}
           color="var(--accent)"
           delay={0.05}
         />
         <StatCard
-          label="对话数"
+          label={t('dashboard.conversations')}
           value={stats.conversations}
-          subValue="本周活跃"
+          subValue={t('dashboard.weekActive')}
           icon={<ChatIcon size={18} />}
           color="var(--success)"
           delay={0.1}

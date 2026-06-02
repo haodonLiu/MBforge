@@ -87,7 +87,7 @@ fn split_into_batches(content: &str) -> Vec<String> {
 // ---------------------------------------------------------------------------
 
 /// Stage 2 系统提示：分子科学文档分析专家
-/// 
+///
 /// 角色定位：从科研文献（专利/论文/报告）提取结构化化合物和活性数据
 /// 核心能力：识别化合物名称、验证 SMILES、提取活性数据、理解药物化学术语
 /// 质量标准：来源可追溯、数据有效性、单位标准化、置信度诚实
@@ -121,7 +121,7 @@ fn sanitize_text(text: &str) -> String {
 }
 
 /// Stage 2 Prompt: 单批内容提取
-/// 
+///
 /// 输入：文档内容 + 预提取的 SMILES/活性数据候选
 /// 任务：识别化合物、验证结构、提取活性数据、标注不确定项
 fn build_batch_prompt(
@@ -146,7 +146,10 @@ fn build_batch_prompt(
         format!(
             "共 {} 个候选（需验证有效性）：\n{}",
             smiles.len(),
-            smiles.iter().take(30).enumerate()
+            smiles
+                .iter()
+                .take(30)
+                .enumerate()
                 .map(|(i, s)| format!("{}. {}", i + 1, s))
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -286,10 +289,16 @@ pub fn generate_report(data: &StructuredData) -> String {
     r.push_str("## 文档信息\n\n");
     r.push_str(&format!("- **类型**: {}\n", data.metadata.document_type));
     if !data.metadata.authors.is_empty() {
-        r.push_str(&format!("- **作者**: {}\n", data.metadata.authors.join(", ")));
+        r.push_str(&format!(
+            "- **作者**: {}\n",
+            data.metadata.authors.join(", ")
+        ));
     }
     if !data.metadata.key_targets.is_empty() {
-        r.push_str(&format!("- **关键靶点**: {}\n", data.metadata.key_targets.join(", ")));
+        r.push_str(&format!(
+            "- **关键靶点**: {}\n",
+            data.metadata.key_targets.join(", ")
+        ));
     }
     r.push('\n');
 
@@ -312,8 +321,13 @@ pub fn generate_report(data: &StructuredData) -> String {
             let esmiles = c.esmiles.as_deref().unwrap_or("-");
             r.push_str(&format!(
                 "| {} | {} | `{}` | {} | {} | {} | {} |\n",
-                i + 1, c.name, esmiles, c.category.as_deref().unwrap_or("-"),
-                c.description, conf, c.source_ref
+                i + 1,
+                c.name,
+                esmiles,
+                c.category.as_deref().unwrap_or("-"),
+                c.description,
+                conf,
+                c.source_ref
             ));
         }
         r.push('\n');
@@ -332,8 +346,14 @@ pub fn generate_report(data: &StructuredData) -> String {
             };
             r.push_str(&format!(
                 "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
-                i + 1, a.compound, a.activity_type, a.value, a.units,
-                a.target.as_deref().unwrap_or("-"), conf, a.source_ref
+                i + 1,
+                a.compound,
+                a.activity_type,
+                a.value,
+                a.units,
+                a.target.as_deref().unwrap_or("-"),
+                conf,
+                a.source_ref
             ));
         }
         r.push('\n');
@@ -360,8 +380,10 @@ pub fn generate_report(data: &StructuredData) -> String {
     if !data.uncertain_items.is_empty() {
         r.push_str("## ⚠️ 需要人工审核\n\n");
         for u in &data.uncertain_items {
-            r.push_str(&format!("- **[{}]** {} — {} (建议: {})\n",
-                u.item_type, u.content, u.reason, u.suggested_action));
+            r.push_str(&format!(
+                "- **[{}]** {} — {} (建议: {})\n",
+                u.item_type, u.content, u.reason, u.suggested_action
+            ));
         }
         r.push('\n');
     }
@@ -373,18 +395,33 @@ pub fn generate_report(data: &StructuredData) -> String {
 fn build_merge_prompt(batch_results: &[BatchResult], raw: &PdfParseResult) -> String {
     let mut batches_text = String::new();
     for (i, br) in batch_results.iter().enumerate() {
-        batches_text.push_str(&format!("--- 第 {} 批结果 ---\n{}\n\n", i + 1, br.data.summary));
+        batches_text.push_str(&format!(
+            "--- 第 {} 批结果 ---\n{}\n\n",
+            i + 1,
+            br.data.summary
+        ));
         for c in &br.data.compounds {
-            batches_text.push_str(&format!("  化合物: {} ({}) [{}]\n", c.name, c.esmiles.as_deref().unwrap_or("?"), c.confidence));
+            batches_text.push_str(&format!(
+                "  化合物: {} ({}) [{}]\n",
+                c.name,
+                c.esmiles.as_deref().unwrap_or("?"),
+                c.confidence
+            ));
         }
         for a in &br.data.activities {
-            batches_text.push_str(&format!("  活性: {} {} = {} {} [{}]\n", a.compound, a.activity_type, a.value, a.units, a.confidence));
+            batches_text.push_str(&format!(
+                "  活性: {} {} = {} {} [{}]\n",
+                a.compound, a.activity_type, a.value, a.units, a.confidence
+            ));
         }
         for f in &br.data.key_findings {
             batches_text.push_str(&format!("  发现: {} [{}]\n", f.finding, f.confidence));
         }
         for u in &br.data.uncertain_items {
-            batches_text.push_str(&format!("  ⚠️ {}: {} — {}\n", u.item_type, u.content, u.reason));
+            batches_text.push_str(&format!(
+                "  ⚠️ {}: {} — {}\n",
+                u.item_type, u.content, u.reason
+            ));
         }
     }
 
@@ -406,11 +443,18 @@ fn build_merge_prompt(batch_results: &[BatchResult], raw: &PdfParseResult) -> St
 4. 不确定项：汇总所有批次的 uncertain_items
 5. 只输出 JSON（metadata + summary + compounds + activities + key_findings + uncertain_items），不要其他字段
 只输出 JSON。"#,
-        title = raw.classification.metadata_hints.as_ref()
+        title = raw
+            .classification
+            .metadata_hints
+            .as_ref()
             .and_then(|v| v.get("title").and_then(|t| t.as_str()))
             .unwrap_or("未知"),
         page_count = raw.page_count,
-        doc_type = if raw.classification.is_scanned { "扫描版" } else { "文字版" },
+        doc_type = if raw.classification.is_scanned {
+            "扫描版"
+        } else {
+            "文字版"
+        },
         batches_text = batches_text,
     )
 }
@@ -443,11 +487,13 @@ fn build_llm_body(config: &LlmApiConfig, system: &str, user: &str) -> serde_json
 
 /// 解析 LLM 响应文本 → (content, tokens_used)
 fn parse_llm_response(text: &str) -> Result<(String, Option<u32>), String> {
-    let val: serde_json::Value = serde_json::from_str(text)
-        .map_err(|e| format!("LLM API JSON parse error: {}", e))?;
+    let val: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("LLM API JSON parse error: {}", e))?;
 
     let content = val["choices"][0]["message"]["content"]
-        .as_str().unwrap_or("").to_string();
+        .as_str()
+        .unwrap_or("")
+        .to_string();
     let tokens_used = val["usage"]["total_tokens"].as_u64().map(|v| v as u32);
 
     if content.is_empty() {
@@ -458,10 +504,18 @@ fn parse_llm_response(text: &str) -> Result<(String, Option<u32>), String> {
 
 /// 构建 HTTP 错误消息
 fn llm_http_error(status: reqwest::StatusCode, text: &str) -> String {
-    format!("LLM API HTTP {}: {}", status, &text[..text.floor_char_boundary(500)])
+    format!(
+        "LLM API HTTP {}: {}",
+        status,
+        &text[..text.floor_char_boundary(500)]
+    )
 }
 
-pub fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(String, Option<u32>), String> {
+pub fn call_llm_api(
+    config: &LlmApiConfig,
+    system: &str,
+    user: &str,
+) -> Result<(String, Option<u32>), String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(180))
         .build()
@@ -470,7 +524,8 @@ pub fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
     let body = build_llm_body(config, system, user);
 
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", config.api_key))
         .json(&body)
@@ -478,7 +533,9 @@ pub fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(
         .map_err(|e| format!("LLM API request failed: {}", e))?;
 
     let status = resp.status();
-    let text = resp.text().map_err(|e| format!("LLM API read error: {}", e))?;
+    let text = resp
+        .text()
+        .map_err(|e| format!("LLM API read error: {}", e))?;
 
     if !status.is_success() {
         return Err(llm_http_error(status, &text));
@@ -487,7 +544,11 @@ pub fn call_llm_api(config: &LlmApiConfig, system: &str, user: &str) -> Result<(
 }
 
 /// Async 版本 — 在 async 上下文中使用，不阻塞 Tokio 运行时
-pub async fn call_llm_api_async(config: &LlmApiConfig, system: &str, user: &str) -> Result<(String, Option<u32>), String> {
+pub async fn call_llm_api_async(
+    config: &LlmApiConfig,
+    system: &str,
+    user: &str,
+) -> Result<(String, Option<u32>), String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(180))
         .build()
@@ -496,7 +557,8 @@ pub async fn call_llm_api_async(config: &LlmApiConfig, system: &str, user: &str)
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
     let body = build_llm_body(config, system, user);
 
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", config.api_key))
         .json(&body)
@@ -505,7 +567,10 @@ pub async fn call_llm_api_async(config: &LlmApiConfig, system: &str, user: &str)
         .map_err(|e| format!("LLM API request failed: {}", e))?;
 
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("LLM API read error: {}", e))?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("LLM API read error: {}", e))?;
 
     if !status.is_success() {
         return Err(llm_http_error(status, &text));
@@ -527,11 +592,13 @@ pub fn extract_json(response: &str) -> Result<serde_json::Value, String> {
     };
 
     // Remove control characters (except \n, \r, \t) that break JSON parsing
-    let cleaned: String = after_think.chars()
+    let cleaned: String = after_think
+        .chars()
         .filter(|c| !(*c as u32 <= 0x1F && *c != '\n' && *c != '\r' && *c != '\t'))
         .collect();
 
-    let s = cleaned.trim()
+    let s = cleaned
+        .trim()
         .trim_start_matches("```json")
         .trim_start_matches("```")
         .trim_end_matches("```")
@@ -558,7 +625,8 @@ pub fn extract_json(response: &str) -> Result<serde_json::Value, String> {
     let preview: String = response.chars().take(100).collect();
     Err(format!(
         "JSON parse error (after repair attempt)\nResponse length: {} chars\nPreview: {}",
-        response.chars().count(), preview
+        response.chars().count(),
+        preview
     ))
 }
 
@@ -585,7 +653,9 @@ fn repair_truncated_json(s: &str) -> String {
             in_string = !in_string;
             continue;
         }
-        if in_string { continue; }
+        if in_string {
+            continue;
+        }
         match c {
             '{' => brace_count += 1,
             '}' => brace_count -= 1,
@@ -621,81 +691,134 @@ fn parse_batch_response(response: &str) -> Result<BatchResult, String> {
 }
 
 /// 解析合并响应为最终 PostProcessResult（程序化生成报告）
-fn parse_merge_response(response: &str, model: &str, tokens_used: Option<u32>, batch_count: usize) -> Result<PostProcessResult, String> {
+fn parse_merge_response(
+    response: &str,
+    model: &str,
+    tokens_used: Option<u32>,
+    batch_count: usize,
+) -> Result<PostProcessResult, String> {
     let val = extract_json(response)?;
 
     let data_val = val.get("data").unwrap_or(&val);
     let data = parse_structured_data(data_val)?;
     let report = generate_report(&data);
 
-    Ok(PostProcessResult { report, data, model: model.to_string(), tokens_used, batch_count })
+    Ok(PostProcessResult {
+        report,
+        data,
+        model: model.to_string(),
+        tokens_used,
+        batch_count,
+    })
 }
 
 pub fn parse_structured_data(val: &serde_json::Value) -> Result<StructuredData, String> {
     let metadata = DocumentMetadata {
         title: val["metadata"]["title"].as_str().map(|s| s.to_string()),
-        authors: val["metadata"]["authors"].as_array()
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        authors: val["metadata"]["authors"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default(),
-        document_type: val["metadata"]["document_type"].as_str().unwrap_or("unknown").to_string(),
-        key_targets: val["metadata"]["key_targets"].as_array()
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        document_type: val["metadata"]["document_type"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string(),
+        key_targets: val["metadata"]["key_targets"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default(),
-        source_file: val["metadata"]["source_file"].as_str().map(|s| s.to_string()),
+        source_file: val["metadata"]["source_file"]
+            .as_str()
+            .map(|s| s.to_string()),
     };
 
     let summary = val["summary"].as_str().unwrap_or("").to_string();
 
-    let compounds = val["compounds"].as_array()
-        .map(|arr| arr.iter().map(|v| CompoundEntry {
-            name: v["name"].as_str().unwrap_or("").to_string(),
-            esmiles: v["smiles"].as_str().map(|s| s.to_string()),
-            category: v["category"].as_str().map(|s| s.to_string()),
-            description: v["description"].as_str().unwrap_or("").to_string(),
-            source_ref: v["source_ref"].as_str().unwrap_or("").to_string(),
-            confidence: v["confidence"].as_str().unwrap_or("medium").to_string(),
-            uncertainty_reason: v["uncertainty_reason"].as_str().map(|s| s.to_string()),
-            physicochemical_props: None,
-            related_images: None,
-            vlm_verified_esmiles: None,
-            page_location: None,
-        }).collect())
+    let compounds = val["compounds"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|v| CompoundEntry {
+                    name: v["name"].as_str().unwrap_or("").to_string(),
+                    esmiles: v["smiles"].as_str().map(|s| s.to_string()),
+                    category: v["category"].as_str().map(|s| s.to_string()),
+                    description: v["description"].as_str().unwrap_or("").to_string(),
+                    source_ref: v["source_ref"].as_str().unwrap_or("").to_string(),
+                    confidence: v["confidence"].as_str().unwrap_or("medium").to_string(),
+                    uncertainty_reason: v["uncertainty_reason"].as_str().map(|s| s.to_string()),
+                    physicochemical_props: None,
+                    related_images: None,
+                    vlm_verified_esmiles: None,
+                    page_location: None,
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
-    let activities = val["activities"].as_array()
-        .map(|arr| arr.iter().map(|v| ActivityEntry {
-            compound: v["compound"].as_str().unwrap_or("").to_string(),
-            activity_type: v["activity_type"].as_str().unwrap_or("").to_string(),
-            value: v["value"].as_f64().unwrap_or(0.0),
-            units: v["units"].as_str().unwrap_or("").to_string(),
-            target: v["target"].as_str().map(|s| s.to_string()),
-            source_quote: v["source_quote"].as_str().unwrap_or("").to_string(),
-            source_ref: v["source_ref"].as_str().unwrap_or("").to_string(),
-            confidence: v["confidence"].as_str().unwrap_or("medium").to_string(),
-            uncertainty_reason: v["uncertainty_reason"].as_str().map(|s| s.to_string()),
-        }).collect())
+    let activities = val["activities"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|v| ActivityEntry {
+                    compound: v["compound"].as_str().unwrap_or("").to_string(),
+                    activity_type: v["activity_type"].as_str().unwrap_or("").to_string(),
+                    value: v["value"].as_f64().unwrap_or(0.0),
+                    units: v["units"].as_str().unwrap_or("").to_string(),
+                    target: v["target"].as_str().map(|s| s.to_string()),
+                    source_quote: v["source_quote"].as_str().unwrap_or("").to_string(),
+                    source_ref: v["source_ref"].as_str().unwrap_or("").to_string(),
+                    confidence: v["confidence"].as_str().unwrap_or("medium").to_string(),
+                    uncertainty_reason: v["uncertainty_reason"].as_str().map(|s| s.to_string()),
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
-    let key_findings = val["key_findings"].as_array()
-        .map(|arr| arr.iter().map(|v| FindingEntry {
-            finding: v["finding"].as_str().unwrap_or("").to_string(),
-            evidence: v["evidence"].as_str().unwrap_or("").to_string(),
-            source_ref: v["source_ref"].as_str().unwrap_or("").to_string(),
-            confidence: v["confidence"].as_str().unwrap_or("medium").to_string(),
-            uncertainty_reason: v["uncertainty_reason"].as_str().map(|s| s.to_string()),
-        }).collect())
+    let key_findings = val["key_findings"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|v| FindingEntry {
+                    finding: v["finding"].as_str().unwrap_or("").to_string(),
+                    evidence: v["evidence"].as_str().unwrap_or("").to_string(),
+                    source_ref: v["source_ref"].as_str().unwrap_or("").to_string(),
+                    confidence: v["confidence"].as_str().unwrap_or("medium").to_string(),
+                    uncertainty_reason: v["uncertainty_reason"].as_str().map(|s| s.to_string()),
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
-    let uncertain_items = val["uncertain_items"].as_array()
-        .map(|arr| arr.iter().map(|v| UncertainItem {
-            item_type: v["item_type"].as_str().unwrap_or("").to_string(),
-            content: v["content"].as_str().unwrap_or("").to_string(),
-            reason: v["reason"].as_str().unwrap_or("").to_string(),
-            suggested_action: v["suggested_action"].as_str().unwrap_or("").to_string(),
-        }).collect())
+    let uncertain_items = val["uncertain_items"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|v| UncertainItem {
+                    item_type: v["item_type"].as_str().unwrap_or("").to_string(),
+                    content: v["content"].as_str().unwrap_or("").to_string(),
+                    reason: v["reason"].as_str().unwrap_or("").to_string(),
+                    suggested_action: v["suggested_action"].as_str().unwrap_or("").to_string(),
+                })
+                .collect()
+        })
         .unwrap_or_default();
 
-    Ok(StructuredData { metadata, summary, compounds, activities, key_findings, uncertain_items })
+    Ok(StructuredData {
+        metadata,
+        summary,
+        compounds,
+        activities,
+        key_findings,
+        uncertain_items,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -709,17 +832,31 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
     // 分批
     let batches = split_into_batches(&raw.content);
     let batch_count = batches.len();
-    let activities_str = raw.activities.iter()
+    let activities_str = raw
+        .activities
+        .iter()
         .take(10)
         .map(|a| format!("{} = {} {}", a.activity_type, a.value, a.units))
         .collect::<Vec<_>>()
         .join("; ");
 
-    let pdf_type = if raw.classification.is_scanned { "Scanned" } else { "TextBased" };
+    let pdf_type = if raw.classification.is_scanned {
+        "Scanned"
+    } else {
+        "TextBased"
+    };
 
     if batch_count == 1 {
         // 单批：直接处理
-        let prompt = build_batch_prompt(&batches[0], 0, 1, &raw.esmiles, &activities_str, pdf_type, raw.page_count);
+        let prompt = build_batch_prompt(
+            &batches[0],
+            0,
+            1,
+            &raw.esmiles,
+            &activities_str,
+            pdf_type,
+            raw.page_count,
+        );
         let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
         let val = extract_json(&response)?;
         let data = parse_structured_data(&val)?;
@@ -737,7 +874,15 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
         let mut total_tokens = 0u32;
 
         for (i, batch) in batches.iter().enumerate() {
-            let prompt = build_batch_prompt(batch, i, batch_count, &raw.esmiles, &activities_str, pdf_type, raw.page_count);
+            let prompt = build_batch_prompt(
+                batch,
+                i,
+                batch_count,
+                &raw.esmiles,
+                &activities_str,
+                pdf_type,
+                raw.page_count,
+            );
             let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
             let br = parse_batch_response(&response)?;
             total_tokens += tokens.unwrap_or(0);
@@ -748,12 +893,18 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
         if batch_count > 1 {
             let merge_prompt = build_merge_prompt(&batch_results, raw);
             let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &merge_prompt)?;
-            let mut result = parse_merge_response(&response, &config.model, tokens.map(|t| t + total_tokens), batch_count)?;
+            let mut result = parse_merge_response(
+                &response,
+                &config.model,
+                tokens.map(|t| t + total_tokens),
+                batch_count,
+            )?;
             result.data.metadata.source_file = Some(raw.parser.clone());
             Ok(result)
         } else {
             // 单批：无需 LLM 合并，直接构造 PostProcessResult
-            let batch_result = batch_results.into_iter().next().unwrap();
+            let batch_result = batch_results.into_iter().next()
+                .ok_or_else(|| "No batch results in single-batch path".to_string())?;
             let report = generate_report(&batch_result.data);
             let mut data = batch_result.data;
             data.metadata.source_file = Some(raw.parser.clone());
@@ -807,10 +958,15 @@ pub async fn post_process_section(
             total_tokens += tokens.unwrap_or(0);
             batch_results.push(br);
         }
-        let merge_prompt = build_section_merge_prompt(&batch_results, content, pdf_type, page_count);
+        let merge_prompt =
+            build_section_merge_prompt(&batch_results, content, pdf_type, page_count);
         let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &merge_prompt)?;
-        let mut result =
-            parse_merge_response(&response, &config.model, tokens.map(|t| t + total_tokens), batch_count)?;
+        let mut result = parse_merge_response(
+            &response,
+            &config.model,
+            tokens.map(|t| t + total_tokens),
+            batch_count,
+        )?;
         result.data.metadata.source_file = Some(parser.to_string());
         Ok(result)
     }
@@ -825,7 +981,11 @@ fn build_section_merge_prompt(
 ) -> String {
     let mut batches_text = String::new();
     for (i, br) in batch_results.iter().enumerate() {
-        batches_text.push_str(&format!("--- 第 {} 批结果 ---\n{}\n\n", i + 1, br.data.summary));
+        batches_text.push_str(&format!(
+            "--- 第 {} 批结果 ---\n{}\n\n",
+            i + 1,
+            br.data.summary
+        ));
         for c in &br.data.compounds {
             batches_text.push_str(&format!(
                 "  化合物: {} ({}) [{}]\n",

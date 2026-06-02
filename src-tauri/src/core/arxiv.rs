@@ -5,7 +5,6 @@
 //! and three free search queries ("transformer", "attention mechanism",
 //! "large language model") require no token.
 
-
 use serde_json::Value;
 
 const BASE_ARXIV: &str = "https://data.rag.ac.cn/arxiv";
@@ -66,15 +65,11 @@ fn extract(args: &Value, key: &str) -> String {
 }
 
 fn extract_i64(args: &Value, key: &str, default: i64) -> i64 {
-    args.get(key)
-        .and_then(|v| v.as_i64())
-        .unwrap_or(default)
+    args.get(key).and_then(|v| v.as_i64()).unwrap_or(default)
 }
 
 fn extract_bool(args: &Value, key: &str) -> bool {
-    args.get(key)
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
+    args.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
 }
 
 fn args_err(msg: &str) -> String {
@@ -91,7 +86,10 @@ pub fn tool_arxiv_metadata(args: &Value) -> String {
         return args_err("arxiv_id is required");
     }
     let token = extract(args, "token");
-    let url = param_url(BASE_ARXIV, &[("type", "head"), ("arxiv_id", &id), ("token", &token)]);
+    let url = param_url(
+        BASE_ARXIV,
+        &[("type", "head"), ("arxiv_id", &id), ("token", &token)],
+    );
     match json(&url) {
         Ok(v) => v.to_string(),
         Err(e) => args_err(&e),
@@ -104,7 +102,10 @@ pub fn tool_arxiv_brief(args: &Value) -> String {
         return args_err("arxiv_id is required");
     }
     let token = extract(args, "token");
-    let url = param_url(BASE_ARXIV, &[("type", "brief"), ("arxiv_id", &id), ("token", &token)]);
+    let url = param_url(
+        BASE_ARXIV,
+        &[("type", "brief"), ("arxiv_id", &id), ("token", &token)],
+    );
     match json(&url) {
         Ok(v) => v.to_string(),
         Err(e) => args_err(&e),
@@ -139,7 +140,10 @@ pub fn tool_arxiv_raw(args: &Value) -> String {
         return args_err("arxiv_id is required");
     }
     let token = extract(args, "token");
-    let url = param_url(BASE_ARXIV, &[("type", "raw"), ("arxiv_id", &id), ("token", &token)]);
+    let url = param_url(
+        BASE_ARXIV,
+        &[("type", "raw"), ("arxiv_id", &id), ("token", &token)],
+    );
     match text(&url) {
         Ok(v) => serde_json::json!({"content": v}).to_string(),
         Err(e) => args_err(&e),
@@ -265,7 +269,10 @@ pub fn tool_pmc_metadata(args: &Value) -> String {
         return args_err("pmc_id is required");
     }
     let token = extract(args, "token");
-    let url = param_url(BASE_PMC, &[("type", "head"), ("pmc_id", &id), ("token", &token)]);
+    let url = param_url(
+        BASE_PMC,
+        &[("type", "head"), ("pmc_id", &id), ("token", &token)],
+    );
     match json(&url) {
         Ok(v) => v.to_string(),
         Err(e) => args_err(&e),
@@ -278,7 +285,10 @@ pub fn tool_pmc_json(args: &Value) -> String {
         return args_err("pmc_id is required");
     }
     let token = extract(args, "token");
-    let url = param_url(BASE_PMC, &[("type", "json"), ("pmc_id", &id), ("token", &token)]);
+    let url = param_url(
+        BASE_PMC,
+        &[("type", "json"), ("pmc_id", &id), ("token", &token)],
+    );
     match json(&url) {
         Ok(v) => v.to_string(),
         Err(e) => args_err(&e),

@@ -53,9 +53,7 @@ impl SummaryManager {
     ///
     /// Creates the summary directory if it doesn't exist.
     pub fn new(project_root: &Path) -> std::io::Result<Self> {
-        let summary_dir = project_root
-            .join(PROJECT_META_DIR)
-            .join(SUMMARY_DIR);
+        let summary_dir = project_root.join(PROJECT_META_DIR).join(SUMMARY_DIR);
         std::fs::create_dir_all(&summary_dir)?;
         Ok(Self { summary_dir })
     }
@@ -184,8 +182,7 @@ mod tests {
 
         let all = mgr.list_all();
         assert_eq!(all.len(), 3);
-        let ids: std::collections::HashSet<String> =
-            all.into_iter().map(|s| s.doc_id).collect();
+        let ids: std::collections::HashSet<String> = all.into_iter().map(|s| s.doc_id).collect();
         assert!(ids.contains("a"));
         assert!(ids.contains("b"));
         assert!(ids.contains("c"));

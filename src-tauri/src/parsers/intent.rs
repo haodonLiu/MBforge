@@ -1,17 +1,17 @@
-use super::post_process::extract_json;
 use super::doc_types::{DocProcessingContext, DocStructure, ExtractionPlan};
+use super::post_process::extract_json;
 
 /// === A1: 意图路由模块 ===
 
 /// Stage 1 Prompt: 文档结构分析
-/// 
+///
 /// 分析文档开头部分，判断：
 /// 1. 文档类型（专利/论文/报告）
 /// 2. 是否包含化合物表格、化学结构图、活性数据
 /// 3. 章节结构（通过标题识别）
 /// 4. 关键术语（靶点、活性指标、化合物代号等）
 /// 5. 推荐提取策略
-/// 
+///
 /// 输入：前 8000 字符 + 页码
 /// 输出：结构化元数据 JSON
 pub fn build_meta_prompt(context: &DocProcessingContext) -> String {
@@ -101,13 +101,26 @@ pub fn parse_meta_response(raw_response: &str) -> Result<DocStructure, String> {
     let has_compound_tables = val["has_compound_tables"].as_bool().unwrap_or(false);
     let has_chemical_structures = val["has_chemical_structures"].as_bool().unwrap_or(false);
     let has_activity_data = val["has_activity_data"].as_bool().unwrap_or(false);
-    let estimated_sections = val["estimated_sections"].as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+    let estimated_sections = val["estimated_sections"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
         .unwrap_or_default();
-    let key_terms = val["key_terms"].as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+    let key_terms = val["key_terms"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
         .unwrap_or_default();
-    let recommended_approach = val["recommended_approach"].as_str().unwrap_or("full").to_string();
+    let recommended_approach = val["recommended_approach"]
+        .as_str()
+        .unwrap_or("full")
+        .to_string();
 
     Ok(DocStructure {
         doc_type,
@@ -128,32 +141,36 @@ pub fn parse_meta_response(raw_response: &str) -> Result<DocStructure, String> {
 ///   - 化合物、SMILES、结构式 → compounds
 ///   - 无指令 → full（全量提取）
 pub fn interpret_request(structure: &DocStructure, user_request: &str) -> ExtractionPlan {
-    let to_strings = |slice: &[&str]| -> Vec<String> { slice.iter().map(|s| s.to_string()).collect() };
+    let to_strings =
+        |slice: &[&str]| -> Vec<String> { slice.iter().map(|s| s.to_string()).collect() };
 
-    let (target_sections, extraction_types): (Vec<String>, Vec<String>) = match infer_intent(user_request) {
-        UserIntent::TableOnly => (
-            to_strings(&["results", "table_1", "biological_data", "examples"]),
-            to_strings(&["compounds", "activities"]),
-        ),
-        UserIntent::ActivityData => (
-            to_strings(&["results", "table_1", "biological_data", "examples"]),
-            to_strings(&["activities"]),
-        ),
-        UserIntent::Compounds => (
-            to_strings(&["examples", "synthesis", "table_*", "claims"]),
-            to_strings(&["compounds"]),
-        ),
-        UserIntent::MetadataOnly => (
-            to_strings(&["title", "abstract", "background"]),
-            to_strings(&["metadata"]),
-        ),
-        UserIntent::Full => (
-            structure.estimated_sections.clone(),
-            to_strings(&["compounds", "activities", "metadata", "findings"]),
-        ),
-    };
+    let (target_sections, extraction_types): (Vec<String>, Vec<String>) =
+        match infer_intent(user_request) {
+            UserIntent::TableOnly => (
+                to_strings(&["results", "table_1", "biological_data", "examples"]),
+                to_strings(&["compounds", "activities"]),
+            ),
+            UserIntent::ActivityData => (
+                to_strings(&["results", "table_1", "biological_data", "examples"]),
+                to_strings(&["activities"]),
+            ),
+            UserIntent::Compounds => (
+                to_strings(&["examples", "synthesis", "table_*", "claims"]),
+                to_strings(&["compounds"]),
+            ),
+            UserIntent::MetadataOnly => (
+                to_strings(&["title", "abstract", "background"]),
+                to_strings(&["metadata"]),
+            ),
+            UserIntent::Full => (
+                structure.estimated_sections.clone(),
+                to_strings(&["compounds", "activities", "metadata", "findings"]),
+            ),
+        };
 
-    let skip_sections: Vec<String> = structure.estimated_sections.iter()
+    let skip_sections: Vec<String> = structure
+        .estimated_sections
+        .iter()
         .filter(|s| !target_sections.contains(s))
         .cloned()
         .collect();
@@ -178,8 +195,24 @@ fn infer_intent(request: &str) -> UserIntent {
     let r = request.to_lowercase();
 
     let table_keywords = ["table 1", "table ⅰ", "表1", "表格1", "table1"];
-    let activity_keywords = ["活性", "pIC50", "ic50", "ec50", "potency", "活性数据", "抑制率"];
-    let compound_keywords = ["化合物", "smiles", "结构", "分子", "实施例", "compound", "example"];
+    let activity_keywords = [
+        "活性",
+        "pIC50",
+        "ic50",
+        "ec50",
+        "potency",
+        "活性数据",
+        "抑制率",
+    ];
+    let compound_keywords = [
+        "化合物",
+        "smiles",
+        "结构",
+        "分子",
+        "实施例",
+        "compound",
+        "example",
+    ];
     let metadata_keywords = ["元数据", "标题", "metadata", "摘要", "abstract", "基本信息"];
 
     if table_keywords.iter().any(|k| r.contains(k)) {
@@ -212,7 +245,10 @@ mod tests {
     #[test]
     fn test_infer_intent_table() {
         assert_eq!(infer_intent("提取 TABLE 1 数据"), UserIntent::TableOnly);
-        assert_eq!(infer_intent("把表1的活性数据提取出来"), UserIntent::TableOnly);
+        assert_eq!(
+            infer_intent("把表1的活性数据提取出来"),
+            UserIntent::TableOnly
+        );
     }
 
     #[test]
@@ -241,7 +277,12 @@ mod tests {
             has_compound_tables: true,
             has_chemical_structures: true,
             has_activity_data: true,
-            estimated_sections: vec!["title".into(), "abstract".into(), "background".into(), "results".into()],
+            estimated_sections: vec![
+                "title".into(),
+                "abstract".into(),
+                "background".into(),
+                "results".into(),
+            ],
             key_terms: vec![],
             recommended_approach: "full".into(),
         };
@@ -258,12 +299,21 @@ mod tests {
             has_compound_tables: true,
             has_chemical_structures: true,
             has_activity_data: true,
-            estimated_sections: vec!["title".into(), "abstract".into(), "background".into(), "results".into(), "claims".into()],
+            estimated_sections: vec![
+                "title".into(),
+                "abstract".into(),
+                "background".into(),
+                "results".into(),
+                "claims".into(),
+            ],
             key_terms: vec![],
             recommended_approach: "full".into(),
         };
         let plan = interpret_request(&structure, "提取 TABLE 1");
-        assert_eq!(plan.target_sections, vec!["results", "table_1", "biological_data", "examples"]);
+        assert_eq!(
+            plan.target_sections,
+            vec!["results", "table_1", "biological_data", "examples"]
+        );
         // estimated_sections = [title, abstract, background, results, claims]
         // target_sections = [results, table_1, biological_data, examples]
         // 跳过: title, abstract, background, claims (4个)

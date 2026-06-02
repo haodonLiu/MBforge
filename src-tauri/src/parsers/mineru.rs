@@ -64,20 +64,23 @@ impl MineruClient {
             "enable_formula": true,
         });
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&api_url)
             .json(&body)
             .send()
             .map_err(|e| format!("MinerU agent request failed: {}", e))?;
 
-        let result: serde_json::Value = resp.json()
+        let result: serde_json::Value = resp
+            .json()
             .map_err(|e| format!("MinerU response error: {}", e))?;
 
         if result["code"].as_i64() != Some(0) {
             return Err(format!("MinerU error: {}", result["msg"]));
         }
 
-        result["data"]["task_id"].as_str()
+        result["data"]["task_id"]
+            .as_str()
             .map(|s: &str| s.to_string())
             .ok_or_else(|| "No task_id in response".into())
     }
@@ -87,12 +90,14 @@ impl MineruClient {
         let mut attempts = 0;
 
         loop {
-            let resp = self.client
+            let resp = self
+                .client
                 .get(&api_url)
                 .send()
                 .map_err(|e| format!("MinerU poll failed: {}", e))?;
 
-            let result: serde_json::Value = resp.json()
+            let result: serde_json::Value = resp
+                .json()
                 .map_err(|e| format!("MinerU poll response error: {}", e))?;
 
             if result["code"].as_i64() != Some(0) {
@@ -104,7 +109,9 @@ impl MineruClient {
                 "done" => {
                     let md_url = result["data"]["markdown_url"].as_str().unwrap_or("");
                     let markdown = if !md_url.is_empty() {
-                        self.client.get(md_url).send()
+                        self.client
+                            .get(md_url)
+                            .send()
                             .map_err(|e| format!("Failed to download markdown: {}", e))?
                             .text()
                             .map_err(|e| format!("Failed to read markdown: {}", e))?
@@ -134,7 +141,9 @@ impl MineruClient {
 
     fn parse_file_agent(&self, file_path: &str) -> Result<MineruResult, String> {
         let filename = std::path::Path::new(file_path)
-            .file_name().and_then(|n| n.to_str()).unwrap_or("document.pdf");
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("document.pdf");
 
         // Step 1: Get signed upload URL
         let api_url = format!("{}/api/v1/agent/parse/file", self.host);
@@ -145,28 +154,35 @@ impl MineruClient {
             "enable_formula": true,
         });
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&api_url)
             .json(&body)
             .send()
             .map_err(|e| format!("MinerU agent file request failed: {}", e))?;
 
-        let result: serde_json::Value = resp.json()
+        let result: serde_json::Value = resp
+            .json()
             .map_err(|e| format!("MinerU response error: {}", e))?;
 
         if result["code"].as_i64() != Some(0) {
             return Err(format!("MinerU error: {}", result["msg"]));
         }
 
-        let task_id = result["data"]["task_id"].as_str()
-            .ok_or("No task_id")?.to_string();
-        let file_url = result["data"]["file_url"].as_str()
-            .ok_or("No file_url")?.to_string();
+        let task_id = result["data"]["task_id"]
+            .as_str()
+            .ok_or("No task_id")?
+            .to_string();
+        let file_url = result["data"]["file_url"]
+            .as_str()
+            .ok_or("No file_url")?
+            .to_string();
 
         // Step 2: PUT file to OSS
-        let file_bytes = std::fs::read(file_path)
-            .map_err(|e| format!("Failed to read file: {}", e))?;
-        self.client.put(&file_url)
+        let file_bytes =
+            std::fs::read(file_path).map_err(|e| format!("Failed to read file: {}", e))?;
+        self.client
+            .put(&file_url)
             .body(file_bytes)
             .send()
             .map_err(|e| format!("Failed to upload file: {}", e))?;
@@ -187,21 +203,24 @@ impl MineruClient {
             "language": "ch",
         });
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&api_url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&body)
             .send()
             .map_err(|e| format!("MinerU precise request failed: {}", e))?;
 
-        let result: serde_json::Value = resp.json()
+        let result: serde_json::Value = resp
+            .json()
             .map_err(|e| format!("MinerU response error: {}", e))?;
 
         if result["code"].as_i64() != Some(0) {
             return Err(format!("MinerU error: {}", result["msg"]));
         }
 
-        result["data"]["task_id"].as_str()
+        result["data"]["task_id"]
+            .as_str()
             .map(|s: &str| s.to_string())
             .ok_or_else(|| "No task_id in response".into())
     }
@@ -211,13 +230,15 @@ impl MineruClient {
         let mut attempts = 0;
 
         loop {
-            let resp = self.client
+            let resp = self
+                .client
                 .get(&api_url)
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .send()
                 .map_err(|e| format!("MinerU poll failed: {}", e))?;
 
-            let result: serde_json::Value = resp.json()
+            let result: serde_json::Value = resp
+                .json()
                 .map_err(|e| format!("MinerU poll response error: {}", e))?;
 
             if result["code"].as_i64() != Some(0) {
@@ -257,28 +278,35 @@ impl MineruClient {
 
     fn download_and_extract_markdown(&self, zip_url: &str) -> Result<String, String> {
         // Download zip to temp file
-        let resp = self.client.get(zip_url).send()
+        let resp = self
+            .client
+            .get(zip_url)
+            .send()
             .map_err(|e| format!("Failed to download zip: {}", e))?;
-        let zip_bytes = resp.bytes()
+        let zip_bytes = resp
+            .bytes()
             .map_err(|e| format!("Failed to read zip: {}", e))?;
 
         let tmp_dir = tempfile::tempdir().map_err(|e| format!("Temp dir error: {}", e))?;
         let zip_path = tmp_dir.path().join("result.zip");
-        std::fs::write(&zip_path, &zip_bytes)
-            .map_err(|e| format!("Failed to write zip: {}", e))?;
+        std::fs::write(&zip_path, &zip_bytes).map_err(|e| format!("Failed to write zip: {}", e))?;
 
         // Extract zip
-        let zip_file = std::fs::File::open(&zip_path)
-            .map_err(|e| format!("Failed to open zip: {}", e))?;
+        let zip_file =
+            std::fs::File::open(&zip_path).map_err(|e| format!("Failed to open zip: {}", e))?;
         let mut archive = zip::ZipArchive::new(zip_file)
             .map_err(|e| format!("Failed to read zip archive: {}", e))?;
 
         // Find full.md in the archive
         for i in 0..archive.len() {
-            let entry = archive.by_index(i)
+            let entry = archive
+                .by_index(i)
                 .map_err(|e| format!("Zip entry error: {}", e))?;
             let name = entry.name().to_string();
-            if name.ends_with("full.md") || name.ends_with("full_markdown.md") || name.ends_with(".md") {
+            if name.ends_with("full.md")
+                || name.ends_with("full_markdown.md")
+                || name.ends_with(".md")
+            {
                 let mut content = String::new();
                 std::io::Read::read_to_string(&mut std::io::BufReader::new(entry), &mut content)
                     .map_err(|e| format!("Failed to read markdown from zip: {}", e))?;
@@ -293,7 +321,9 @@ impl MineruClient {
         // For precise API with local files, we need to upload first
         // Use the batch endpoint to get upload URLs
         let filename = std::path::Path::new(file_path)
-            .file_name().and_then(|n| n.to_str()).unwrap_or("document.pdf");
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("document.pdf");
 
         let api_url = format!("{}/api/v4/file-urls/batch", self.host);
         let body = serde_json::json!({
@@ -301,29 +331,36 @@ impl MineruClient {
             "model_version": "vlm",
         });
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&api_url)
             .header("Authorization", format!("Bearer {}", self.api_key))
             .json(&body)
             .send()
             .map_err(|e| format!("MinerU batch request failed: {}", e))?;
 
-        let result: serde_json::Value = resp.json()
+        let result: serde_json::Value = resp
+            .json()
             .map_err(|e| format!("MinerU response error: {}", e))?;
 
         if result["code"].as_i64() != Some(0) {
             return Err(format!("MinerU error: {}", result["msg"]));
         }
 
-        let batch_id = result["data"]["batch_id"].as_str()
-            .ok_or("No batch_id")?.to_string();
-        let upload_url = result["data"]["file_urls"][0].as_str()
-            .ok_or("No upload URL")?.to_string();
+        let batch_id = result["data"]["batch_id"]
+            .as_str()
+            .ok_or("No batch_id")?
+            .to_string();
+        let upload_url = result["data"]["file_urls"][0]
+            .as_str()
+            .ok_or("No upload URL")?
+            .to_string();
 
         // Upload file
-        let file_bytes = std::fs::read(file_path)
-            .map_err(|e| format!("Failed to read file: {}", e))?;
-        self.client.put(&upload_url)
+        let file_bytes =
+            std::fs::read(file_path).map_err(|e| format!("Failed to read file: {}", e))?;
+        self.client
+            .put(&upload_url)
             .body(file_bytes)
             .send()
             .map_err(|e| format!("Failed to upload file: {}", e))?;
@@ -337,20 +374,23 @@ impl MineruClient {
         let mut attempts = 0;
 
         loop {
-            let resp = self.client
+            let resp = self
+                .client
                 .get(&api_url)
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .send()
                 .map_err(|e| format!("MinerU batch poll failed: {}", e))?;
 
-            let result: serde_json::Value = resp.json()
+            let result: serde_json::Value = resp
+                .json()
                 .map_err(|e| format!("MinerU batch response error: {}", e))?;
 
             if result["code"].as_i64() != Some(0) {
                 return Err(format!("MinerU error: {}", result["msg"]));
             }
 
-            let results = result["data"]["extract_result"].as_array()
+            let results = result["data"]["extract_result"]
+                .as_array()
                 .ok_or("No extract_result")?;
 
             if let Some(first) = results.first() {

@@ -163,7 +163,8 @@ pub async fn run_merge_and_sar(
         &config,
         "你是分子科学文档分析专家。合并多部分提取结果，进行去重、验证和构效关系分析，输出 JSON。",
         &prompt,
-    ).await?;
+    )
+    .await?;
 
     let val = crate::parsers::post_process::extract_json(&response)?;
 
@@ -307,19 +308,31 @@ pub fn enhance_patent_data(
                 esmiles: trace.vlm_verified_esmiles.clone(),
                 category: None,
                 description,
-                source_ref: mol.page_hint.map(|p| format!("p.{}", p)).unwrap_or_else(|| mol.section.clone()),
+                source_ref: mol
+                    .page_hint
+                    .map(|p| format!("p.{}", p))
+                    .unwrap_or_else(|| mol.section.clone()),
                 confidence: if trace.vlm_verified_esmiles.is_some() {
                     "high"
                 } else {
                     "medium"
-                }.into(),
+                }
+                .into(),
                 uncertainty_reason: if trace.vlm_verified_esmiles.is_none() {
                     Some("缺少图像验证的化学结构".into())
                 } else {
                     None
                 },
-                physicochemical_props: if props.is_empty() { None } else { Some(props.clone()) },
-                related_images: if related_images.is_empty() { None } else { Some(related_images) },
+                physicochemical_props: if props.is_empty() {
+                    None
+                } else {
+                    Some(props.clone())
+                },
+                related_images: if related_images.is_empty() {
+                    None
+                } else {
+                    Some(related_images)
+                },
                 vlm_verified_esmiles: trace.vlm_verified_esmiles.clone(),
                 page_location: mol.page_hint,
             });
@@ -340,7 +353,10 @@ pub fn enhance_patent_data(
                     units: prop.unit.clone(),
                     target: None,
                     source_quote: prop.source_quote.clone(),
-                    source_ref: mol.page_hint.map(|p| format!("p.{}", p)).unwrap_or_default(),
+                    source_ref: mol
+                        .page_hint
+                        .map(|p| format!("p.{}", p))
+                        .unwrap_or_default(),
                     confidence: prop.confidence.clone(),
                     uncertainty_reason: None,
                 });
@@ -355,7 +371,10 @@ pub fn enhance_patent_data(
         .map(|a| format!("{}|{}|{}", a.compound, a.activity_type, a.value))
         .collect();
     for activity in new_activities {
-        let key = format!("{}|{}|{}", activity.compound, activity.activity_type, activity.value);
+        let key = format!(
+            "{}|{}|{}",
+            activity.compound, activity.activity_type, activity.value
+        );
         if !existing_activity_keys.contains(&key) {
             data.activities.push(activity);
         }
@@ -363,8 +382,7 @@ pub fn enhance_patent_data(
 
     // Claim 范围评估
     if let Some(ref graph) = claim_graph {
-        let assessments =
-            crate::parsers::claim_policy::assess_all_compounds(traces, graph);
+        let assessments = crate::parsers::claim_policy::assess_all_compounds(traces, graph);
 
         for assessment in &assessments {
             let finding_text = format!(
@@ -381,7 +399,8 @@ pub fn enhance_patent_data(
                     crate::parsers::claim_policy::RiskLevel::Medium => "medium",
                     crate::parsers::claim_policy::RiskLevel::Low => "low",
                     crate::parsers::claim_policy::RiskLevel::Clear => "high",
-                }.into(),
+                }
+                .into(),
                 uncertainty_reason: if assessment.covered_claims.is_empty() {
                     Some("未检测到权利要求覆盖".into())
                 } else {
@@ -390,13 +409,15 @@ pub fn enhance_patent_data(
             });
         }
 
-        processing_log.stages.push(crate::parsers::doc_types::StageLog {
-            stage: 3,
-            name: "专利范围评估".into(),
-            status: "ok".into(),
-            items_processed: assessments.len(),
-            tokens_used: 0,
-            errors: vec![],
-        });
+        processing_log
+            .stages
+            .push(crate::parsers::doc_types::StageLog {
+                stage: 3,
+                name: "专利范围评估".into(),
+                status: "ok".into(),
+                items_processed: assessments.len(),
+                tokens_used: 0,
+                errors: vec![],
+            });
     }
 }

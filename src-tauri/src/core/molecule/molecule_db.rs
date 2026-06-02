@@ -104,10 +104,7 @@ impl MoleculeRelationDb {
             CREATE INDEX IF NOT EXISTS idx_relations_a ON {}(mol_a_id);
             CREATE INDEX IF NOT EXISTS idx_relations_b ON {}(mol_b_id);
             "#,
-            MOL_RELATIONS_TABLE,
-            MOL_RELATIONS_TABLE,
-            MOL_RELATIONS_TABLE,
-            MOL_RELATIONS_TABLE
+            MOL_RELATIONS_TABLE, MOL_RELATIONS_TABLE, MOL_RELATIONS_TABLE, MOL_RELATIONS_TABLE
         );
 
         conn.execute_batch(&sql)
@@ -160,7 +157,10 @@ impl MoleculeRelationDb {
             .query(params![id])
             .map_err(|e| format!("Query failed: {}", e))?;
 
-        if let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+        if let Some(row) = rows
+            .next()
+            .map_err(|e| format!("Row fetch failed: {}", e))?
+        {
             Ok(Some(self.row_to_relation(row)?))
         } else {
             Ok(None)
@@ -181,7 +181,10 @@ impl MoleculeRelationDb {
             .map_err(|e| format!("Query failed: {}", e))?;
 
         let mut results = Vec::new();
-        while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("Row fetch failed: {}", e))?
+        {
             results.push(self.row_to_relation(row)?);
         }
         Ok(results)
@@ -207,7 +210,10 @@ impl MoleculeRelationDb {
             .map_err(|e| format!("Query failed: {}", e))?;
 
         let mut results = Vec::new();
-        while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("Row fetch failed: {}", e))?
+        {
             let rel = self.row_to_relation(row)?;
             if let Some(score) = rel.score {
                 results.push((rel, score));
@@ -231,7 +237,10 @@ impl MoleculeRelationDb {
             .map_err(|e| format!("Query failed: {}", e))?;
 
         let mut results = Vec::new();
-        while let Some(row) = rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("Row fetch failed: {}", e))?
+        {
             results.push(self.row_to_relation(row)?);
         }
         Ok(results)
@@ -242,8 +251,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn molecules_conn(&self) -> Result<Connection, String> {
-        Connection::open(&self.db_path)
-            .map_err(|e| format!("Failed to open molecules db: {}", e))
+        Connection::open(&self.db_path).map_err(|e| format!("Failed to open molecules db: {}", e))
     }
 
     pub fn get_stats(&self) -> Result<RelationStats, String> {
@@ -291,15 +299,13 @@ impl MoleculeRelationDb {
     fn row_to_relation(&self, row: &Row) -> Result<MoleculeRelation, String> {
         let rel_type_str: String = row.get(3).unwrap_or_default();
         let metadata_str: Option<String> = row.get(5).ok();
-        let metadata: Option<JsonValue> = metadata_str
-            .and_then(|s| serde_json::from_str(&s).ok());
+        let metadata: Option<JsonValue> = metadata_str.and_then(|s| serde_json::from_str(&s).ok());
 
         Ok(MoleculeRelation {
             id: row.get(0).ok(),
             mol_a_id: row.get(1).unwrap_or_default(),
             mol_b_id: row.get(2).unwrap_or_default(),
-            relation_type: RelationType::from_str(&rel_type_str)
-                .unwrap_or(RelationType::Similar),
+            relation_type: RelationType::from_str(&rel_type_str).unwrap_or(RelationType::Similar),
             score: row.get(4).ok(),
             metadata,
             created_at: row.get(6).unwrap_or_default(),

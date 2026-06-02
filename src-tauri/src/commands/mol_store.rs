@@ -109,6 +109,42 @@ pub async fn mol_store_delete(
     engine.delete_molecule(&mol_id).map_err(|e| e.to_string())
 }
 
+/// 更新分子的全部可编辑字段.
+///
+/// 用于 OCR 矫正流程：用户修正 SMILES 后批量写回数据库.
+/// 返回 true 表示 mol_id 存在并已更新;false 表示 mol_id 不存在.
+#[tauri::command]
+pub async fn mol_store_update(
+    state: tauri::State<'_, MoleculeEngineState>,
+    project_root: String,
+    record: MoleculeRecord,
+) -> Result<bool, String> {
+    get_or_init_engine(&state, &project_root).await?;
+    let guard = state.inner.lock().await;
+    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    engine.update_molecule(&record)
+}
+
+/// 批量更新多个分子.
+///
+/// 一次事务,部分失败不阻塞其他成功项.
+/// 返回 (updated_count, failed_mol_ids).
+#[tauri::command]
+pub async fn mol_store_update_batch(
+    state: tauri::State<'_, MoleculeEngineState>,
+    project_root: String,
+    records: Vec<MoleculeRecord>,
+) -> Result<serde_json::Value, String> {
+    get_or_init_engine(&state, &project_root).await?;
+    let guard = state.inner.lock().await;
+    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    let (updated, failed) = engine.update_molecules_batch(&records)?;
+    Ok(serde_json::json!({
+        "updated": updated,
+        "failed": failed,
+    }))
+}
+
 #[tauri::command]
 pub async fn mol_store_stats(
     state: tauri::State<'_, MoleculeEngineState>,

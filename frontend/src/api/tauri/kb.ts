@@ -3,6 +3,8 @@
 import { EVT } from '../tauri-events'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { invokeWithError } from './_utils'
+import { ErrorCode } from '../../utils/errors'
 
 export interface IndexResult {
   indexed: number
@@ -14,7 +16,7 @@ export async function indexProjectRust(root: string): Promise<IndexResult> {
   try {
     return await invoke<IndexResult>('index_project_rust', { root })
   } catch (e: unknown) {
-    const msg = (e as Error)?.message || String(e) || 'Unknown error'
+    const msg = e instanceof Error ? e.message : String(e)
     // Tauri v2 on Windows sometimes has transient IPC protocol failures
     if (msg.includes('ipc.localhost') || msg.includes('ERR_CONNECTION_REFUSED') || msg.includes('Failed to fetch')) {
       console.warn('[tauri-bridge] IPC transport failure, retrying once...')
@@ -37,7 +39,10 @@ export async function kbSearch(
   query: string,
   topK = 5,
 ): Promise<KbSearchResult[]> {
-  return invoke<KbSearchResult[]>('kb_search', { root: projectRoot, query, topK })
+  return invokeWithError(
+    () => invoke<KbSearchResult[]>('kb_search', { root: projectRoot, query, topK }),
+    ErrorCode.ApiError,
+  )
 }
 
 export interface KbSearchChunk {
@@ -54,7 +59,10 @@ export async function kbSearchStream(
   topK: number,
   onChunk: (chunk: KbSearchChunk) => void,
 ): Promise<() => void> {
-  invoke('kb_search_stream', { root: projectRoot, query, topK }).catch(err => {
+  invokeWithError(
+    () => invoke('kb_search_stream', { root: projectRoot, query, topK }),
+    ErrorCode.ApiError,
+  ).catch((err: unknown) => {
     onChunk({ type: 'complete', results: [], count: 0, error: String(err) })
   })
 
@@ -76,7 +84,10 @@ export async function kbGetStructure(
   projectRoot: string,
   docId: string,
 ): Promise<TreeNode[] | null> {
-  return invoke<TreeNode[] | null>('kb_get_structure', { projectRoot, docId })
+  return invokeWithError(
+    () => invoke<TreeNode[] | null>('kb_get_structure', { projectRoot, docId }),
+    ErrorCode.ApiError,
+  )
 }
 
 export interface PageContent {
@@ -89,5 +100,8 @@ export async function kbGetPages(
   docId: string,
   pages: string,
 ): Promise<PageContent[]> {
-  return invoke<PageContent[]>('kb_get_pages', { projectRoot, docId, pages })
+  return invokeWithError(
+    () => invoke<PageContent[]>('kb_get_pages', { projectRoot, docId, pages }),
+    ErrorCode.ApiError,
+  )
 }

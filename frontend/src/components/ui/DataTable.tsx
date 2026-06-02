@@ -70,7 +70,7 @@ type SortState = { key: string; direction: 'asc' | 'desc' } | null
 export default function DataTable<T extends Record<string, unknown>>({
   columns,
   data,
-  rowKey = 'key' as keyof T,
+  rowKey = 'key',
   loading = false,
   emptyText = '暂无数据',
   onRowClick,
@@ -90,7 +90,7 @@ export default function DataTable<T extends Record<string, unknown>>({
   const sizeStyle = sizeMap[size]
 
   const processedData = useMemo(() => {
-    let result = [...data]
+    const result = [...data]
     if (sort) {
       const col = columns.find(c => c.key === sort.key)
       const sorter = col?.sorter ?? ((a: T, b: T) => {

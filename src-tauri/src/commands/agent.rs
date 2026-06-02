@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tauri::Emitter;
+use tokio::sync::RwLock;
 
 use crate::core::constants::{EVT_AGENT_STREAM_CHUNK, EVT_AGENT_STREAM_DONE};
 
@@ -60,12 +60,12 @@ pub async fn agent_create_session(
 
     let root = project_root.as_deref().map(std::path::Path::new);
     let mut agent = Agent::new(config, sidecar_url, root);
-    
+
     // 尝试加载之前保存的上下文（跨会话持久化）
     if agent.load_context() {
         log::info!("Agent session {}: loaded persisted context", session_id);
     }
-    
+
     log::info!("Agent session created: {}", session_id);
 
     let mut agents = state.agents.write().await;
@@ -121,7 +121,10 @@ pub async fn agent_chat_stream(
                 log::error!("agent_chat_stream emit failed for session={}: {}", sid, e);
             }
         }
-        if let Err(e) = handle.emit(EVT_AGENT_STREAM_DONE, serde_json::json!({ "session_id": sid })) {
+        if let Err(e) = handle.emit(
+            EVT_AGENT_STREAM_DONE,
+            serde_json::json!({ "session_id": sid }),
+        ) {
             log::error!("agent_chat_stream done emit failed: {}", e);
         }
     });
@@ -145,20 +148,31 @@ pub async fn agent_switch_project(
         let agents = state.agents.write().await;
         if let Some(old_agent) = agents.get(&session_id) {
             old_agent.save_context();
-            log::info!("Agent session {}: old context saved before switch", session_id);
+            log::info!(
+                "Agent session {}: old context saved before switch",
+                session_id
+            );
         }
     }
 
     let root = std::path::Path::new(&project_root);
     let mut agent = Agent::new(config, sidecar_url, Some(root));
     agent.set_project_context(&project_name, &project_root);
-    
+
     // 尝试加载新项目的上下文
     if agent.load_context() {
-        log::info!("Agent session {}: loaded context for new project {}", session_id, project_name);
+        log::info!(
+            "Agent session {}: loaded context for new project {}",
+            session_id,
+            project_name
+        );
     }
-    
-    log::info!("Agent session switched project: {} -> {}", session_id, project_name);
+
+    log::info!(
+        "Agent session switched project: {} -> {}",
+        session_id,
+        project_name
+    );
 
     let mut agents = state.agents.write().await;
     agents.insert(session_id, agent);
@@ -208,8 +222,6 @@ pub async fn agent_get_history(
     session_id: String,
 ) -> Result<Vec<Message>, String> {
     let agents = state.agents.read().await;
-    let agent = agents
-        .get(&session_id)
-        .ok_or("Session not found")?;
+    let agent = agents.get(&session_id).ok_or("Session not found")?;
     Ok(agent.context.get_history_messages())
 }

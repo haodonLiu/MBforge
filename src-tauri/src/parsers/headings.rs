@@ -5,20 +5,17 @@
 /// - 策略 B: 全大写行 + 前后空行（专利格式：ABSTRACT, CLAIMS）
 /// - 策略 C: 冒号终止行（"Field of Invention:"）
 /// - 策略 D: 数字编号 + 大写开头（"1. Technical Field"）
-
 use regex::Regex;
 use std::sync::LazyLock;
 
 pub use crate::core::types::Heading;
 
 // 策略 A: Markdown # heading (最高优先级)
-static MD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.+)$").unwrap());
-// 策略 B: 全大写行（至少 3 个大写字母，不含小写）
-static UPPER_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([A-Z][A-Z\s]{2,})\s*$").unwrap());
-// 策略 C: 冒号终止行
-static COLON_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([A-Z][\w\s]+):\s*$").unwrap());
-// 策略 D: 数字编号 + 大写开头
-static NUM_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+)\.\s+([A-Z].+)$").unwrap());
+static MD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.+)$").expect("valid md heading regex"));
+static UPPER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*([A-Z][A-Z\s]{2,})\s*$").expect("valid upper heading regex"));
+static COLON_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([A-Z][\w\s]+):\s*$").expect("valid colon heading regex"));
+static NUM_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+)\.\s+([A-Z].+)$").expect("valid num heading regex"));
 
 /// 从文本中提取所有 heading
 pub fn extract_headings(text: &str) -> Vec<Heading> {
@@ -32,7 +29,11 @@ pub fn extract_headings(text: &str) -> Vec<Heading> {
         if let Some(caps) = MD_RE.captures(trimmed) {
             let level = caps[1].len();
             let title = caps[2].trim().to_string();
-            headings.push(Heading { level, title, line_num: i });
+            headings.push(Heading {
+                level,
+                title,
+                line_num: i,
+            });
             continue;
         }
 
@@ -43,7 +44,11 @@ pub fn extract_headings(text: &str) -> Vec<Heading> {
             let prev_empty = i == 0 || lines[i - 1].trim().is_empty();
             let next_empty = i + 1 >= lines.len() || lines[i + 1].trim().is_empty();
             if prev_empty && next_empty && title.len() >= 3 {
-                headings.push(Heading { level: 1, title, line_num: i });
+                headings.push(Heading {
+                    level: 1,
+                    title,
+                    line_num: i,
+                });
                 continue;
             }
         }
@@ -53,7 +58,11 @@ pub fn extract_headings(text: &str) -> Vec<Heading> {
             let title = caps[1].trim().to_string();
             // 排除太短的（如 "Note:"）和太长的
             if title.len() >= 5 && title.len() <= 60 {
-                headings.push(Heading { level: 2, title, line_num: i });
+                headings.push(Heading {
+                    level: 2,
+                    title,
+                    line_num: i,
+                });
                 continue;
             }
         }
@@ -61,7 +70,11 @@ pub fn extract_headings(text: &str) -> Vec<Heading> {
         // 策略 D: 数字编号
         if let Some(caps) = NUM_RE.captures(trimmed) {
             let title = format!("{}. {}", &caps[1], caps[2].trim());
-            headings.push(Heading { level: 2, title, line_num: i });
+            headings.push(Heading {
+                level: 2,
+                title,
+                line_num: i,
+            });
         }
     }
 

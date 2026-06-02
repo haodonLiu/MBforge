@@ -4,7 +4,14 @@ use std::path::{Path, PathBuf};
 
 use super::super::constants::{MEMORY_DIR, PROJECT_META_DIR};
 
-pub const CATEGORIES: &[&str] = &["profile", "preferences", "entities", "events", "cases", "patterns"];
+pub const CATEGORIES: &[&str] = &[
+    "profile",
+    "preferences",
+    "entities",
+    "events",
+    "cases",
+    "patterns",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MemoryEntry {
@@ -23,7 +30,9 @@ pub struct MemoryEntry {
     pub access_count: u32,
 }
 
-fn default_confidence() -> f64 { 1.0 }
+fn default_confidence() -> f64 {
+    1.0
+}
 
 pub struct MemoryManager {
     memory_dir: PathBuf,
@@ -64,7 +73,8 @@ impl MemoryManager {
     fn load_all(&mut self) {
         for cat in CATEGORIES {
             let path = self.category_path(cat);
-            let entries: Vec<MemoryEntry> = super::super::helpers::load_json(&path).unwrap_or_default();
+            let entries: Vec<MemoryEntry> =
+                super::super::helpers::load_json(&path).unwrap_or_default();
             self.cache.insert(cat.to_string(), entries);
         }
     }
@@ -101,7 +111,8 @@ impl MemoryManager {
 
     pub fn search(&self, query: &str) -> Vec<&MemoryEntry> {
         let q = query.to_lowercase();
-        self.cache.values()
+        self.cache
+            .values()
             .flat_map(|entries| entries.iter())
             .filter(|e| e.content.to_lowercase().contains(&q) || e.key.to_lowercase().contains(&q))
             .collect()
@@ -156,12 +167,20 @@ impl MemoryManager {
     }
 
     /// 通过 sidecar LLM 从对话中自动提取记忆
-    pub async fn extract_from_conversation(&mut self, messages: &[super::super::context::Message], sidecar_url: &str) {
+    pub async fn extract_from_conversation(
+        &mut self,
+        messages: &[super::super::context::Message],
+        sidecar_url: &str,
+    ) {
         if messages.len() < 2 {
             return;
         }
         // 取最近 10 条对话
-        let recent: Vec<String> = messages.iter().rev().take(10).rev()
+        let recent: Vec<String> = messages
+            .iter()
+            .rev()
+            .take(10)
+            .rev()
             .map(|m| format!("{}: {}", m.role, &m.content[..m.content.len().min(500)]))
             .collect();
         let conversation = recent.join("\n");
@@ -187,14 +206,16 @@ impl MemoryManager {
         let url = format!("{}/api/v1/llm/chat", sidecar_url.trim_end_matches('/'));
         let client = super::super::http::client_30s();
 
-        let resp = match client.post(&url)
+        let resp = match client
+            .post(&url)
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
-            .await {
-                Ok(r) => r,
-                Err(_) => return,
-            };
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => return,
+        };
 
         let text = match resp.text().await {
             Ok(t) => t,

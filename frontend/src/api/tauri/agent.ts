@@ -3,6 +3,8 @@
 import { EVT } from '../tauri-events'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { invokeWithError } from './_utils'
+import { ErrorCode } from '../../utils/errors'
 import type { PdfParseResult } from './pdf'
 
 // ---- agent (session-based, per-conversation isolation) ----
@@ -21,15 +23,24 @@ export async function agentInit(config: {
   temperature: number
   top_p: number
 }, sidecarUrl: string): Promise<void> {
-  await invoke('agent_init', { config, sidecarUrl })
+  await invokeWithError(
+    () => invoke('agent_init', { config, sidecarUrl }),
+    ErrorCode.TauriInvoke,
+  )
 }
 
 export async function agentCreateSession(sessionId: string, projectRoot?: string): Promise<void> {
-  await invoke('agent_create_session', { sessionId, projectRoot: projectRoot ?? null })
+  await invokeWithError(
+    () => invoke('agent_create_session', { sessionId, projectRoot: projectRoot ?? null }),
+    ErrorCode.TauriInvoke,
+  )
 }
 
 export async function agentChat(sessionId: string, userInput: string): Promise<string> {
-  return invoke<string>('agent_chat', { sessionId, userInput })
+  return invokeWithError(
+    () => invoke<string>('agent_chat', { sessionId, userInput }),
+    ErrorCode.TauriInvoke,
+  )
 }
 
 export type AgentStreamEvent = {
@@ -56,7 +67,10 @@ export async function agentChatStream(
   onError: (error: string) => void,
 ): Promise<() => void> {
   // Start streaming
-  invoke('agent_chat_stream', { sessionId, userInput }).catch(err => onError(String(err)))
+  invokeWithError(
+    () => invoke('agent_chat_stream', { sessionId, userInput }),
+    ErrorCode.TauriInvoke,
+  ).catch((err: unknown) => onError(err instanceof Error ? err.message : String(err)))
 
   // Listen for chunks
   const unlistenChunk = await listen<AgentStreamEvent>(EVT.AgentStreamChunk, (event) => {
@@ -82,19 +96,31 @@ export async function agentChatStream(
 }
 
 export async function agentSwitchProject(sessionId: string, projectRoot: string, projectName: string): Promise<void> {
-  await invoke('agent_switch_project', { sessionId, projectRoot, projectName })
+  await invokeWithError(
+    () => invoke('agent_switch_project', { sessionId, projectRoot, projectName }),
+    ErrorCode.TauriInvoke,
+  )
 }
 
 export async function agentClear(sessionId: string): Promise<void> {
-  await invoke('agent_clear', { sessionId })
+  await invokeWithError(
+    () => invoke('agent_clear', { sessionId }),
+    ErrorCode.TauriInvoke,
+  )
 }
 
 export async function agentDestroySession(sessionId: string): Promise<void> {
-  await invoke('agent_destroy_session', { sessionId })
+  await invokeWithError(
+    () => invoke('agent_destroy_session', { sessionId }),
+    ErrorCode.TauriInvoke,
+  )
 }
 
 export async function agentGetHistory(sessionId: string): Promise<ChatMessage[]> {
-  return invoke<ChatMessage[]>('agent_get_history', { sessionId })
+  return invokeWithError(
+    () => invoke<ChatMessage[]>('agent_get_history', { sessionId }),
+    ErrorCode.TauriInvoke,
+  )
 }
 
 // ---- post_process ----
@@ -162,5 +188,8 @@ export interface PostProcessResult {
 }
 
 export async function postProcessPdf(parseResult: PdfParseResult): Promise<PostProcessResult> {
-  return invoke<PostProcessResult>('post_process_pdf', { parseResult })
+  return invokeWithError(
+    () => invoke<PostProcessResult>('post_process_pdf', { parseResult }),
+    ErrorCode.PdfParse,
+  )
 }

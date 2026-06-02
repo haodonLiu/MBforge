@@ -1,7 +1,6 @@
 /// LLM 摘要生成 — 替代 Python DocumentSummarizer
 ///
 /// 生成 L0（一句话）和 L1（结构化概览）摘要。
-
 use serde::{Deserialize, Serialize};
 
 use super::keywords::extract_keywords;
@@ -26,11 +25,7 @@ pub fn generate_summary(content: &str, llm_url: &str) -> Result<DocumentSummary,
         "用一句话（不超过100字）概括以下文档的核心内容。只输出摘要，不要其他文字。\n\n{}",
         &content[..content.floor_char_boundary(4000)]
     );
-    let (l0, _) = super::post_process::call_llm_api(
-        &config,
-        "你是文档分析专家。",
-        &l0_prompt,
-    )?;
+    let (l0, _) = super::post_process::call_llm_api(&config, "你是文档分析专家。", &l0_prompt)?;
     let l0_abstract = l0.trim().trim_matches('"').to_string();
 
     // L1: 结构化概览
@@ -48,11 +43,8 @@ pub fn generate_summary(content: &str, llm_url: &str) -> Result<DocumentSummary,
 {}"#,
         &content[..content.floor_char_boundary(8000)]
     );
-    let (l1, _) = super::post_process::call_llm_api(
-        &config,
-        "你是文档分析专家。输出 JSON。",
-        &l1_prompt,
-    )?;
+    let (l1, _) =
+        super::post_process::call_llm_api(&config, "你是文档分析专家。输出 JSON。", &l1_prompt)?;
     let l1_overview = l1.trim().trim_matches('"').to_string();
 
     // 关键词提取（委托给 keywords.rs 的统一实现）

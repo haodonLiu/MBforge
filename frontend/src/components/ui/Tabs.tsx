@@ -47,7 +47,7 @@ export default function Tabs({
   activeKey,
   defaultActiveKey,
   onChange,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   position: _position = 'top',
   variant = 'default',
   size = 'md',

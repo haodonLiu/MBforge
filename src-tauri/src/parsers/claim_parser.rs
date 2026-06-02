@@ -13,24 +13,22 @@ use std::sync::LazyLock;
 // ---------------------------------------------------------------------------
 
 /// Claim 编号行 — 支持 "1. ", "1) ", "Claim 1. ", "Claim 1: " 等格式
-static CLAIM_NUMBER_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(?:Claim\s*)?(\d+)[\.:\)\-]\s*(.+)$").unwrap()
-});
+static CLAIM_NUMBER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:Claim\s*)?(\d+)[\.:\)\-]\s*(.+)$").expect("valid claim number regex"));
 
 /// 备用编号格式（仅数字+点号，更宽松）
-static CLAIM_NUMBER_LOOSE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*(\d+)[\.\)\-]\s+(.+)$").unwrap()
-});
+static CLAIM_NUMBER_LOOSE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*(\d+)[\.\)\-]\s+(.+)$").expect("valid claim loose regex"));
 
 /// 从属引用检测 — "claim 1", "claims 1 and 2", "claim 1 or 2", "claims 1-3"
 static DEPENDENCY_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)claim(?:s?)\s+(\d+)(?:\s*(?:and|or|,)\s*(\d+))?(?:\s*(?:and|or|,)\s*(\d+))?").unwrap()
+    Regex::new(r"(?i)claim(?:s?)\s+(\d+)(?:\s*(?:and|or|,)\s*(\d+))?(?:\s*(?:and|or|,)\s*(\d+))?")
+        .expect("valid dependency regex")
 });
 
 /// 范围引用 — "claims 1 to 5", "claims 1-5"
-static DEPENDENCY_RANGE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)claims?\s+(\d+)\s*(?:to|-)\s*(\d+)").unwrap()
-});
+static DEPENDENCY_RANGE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)claims?\s+(\d+)\s*(?:to|-)\s*(\d+)").expect("valid dependency range regex"));
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -121,10 +119,7 @@ pub fn parse_claims_section(claims_text: &str) -> ClaimDependencyGraph {
 
         // 构建 parent -> children 映射
         for parent in parents {
-            dependents_map
-                .entry(parent)
-                .or_default()
-                .push(num);
+            dependents_map.entry(parent).or_default().push(num);
         }
     }
 
@@ -136,7 +131,8 @@ pub fn parse_claims_section(claims_text: &str) -> ClaimDependencyGraph {
     let mut memo = HashMap::new();
     for claim in claims.iter_mut() {
         let mut visiting = HashSet::new();
-        claim.normalized_text = build_normalized_text(claim, &claims_snapshot, &mut memo, &mut visiting);
+        claim.normalized_text =
+            build_normalized_text(claim, &claims_snapshot, &mut memo, &mut visiting);
     }
 
     let independent_claims: Vec<u32> = claims
@@ -165,15 +161,21 @@ pub fn generate_normalized_claims_text(graph: &ClaimDependencyGraph) -> String {
     for claim in &graph.claims {
         let type_label = match claim.claim_type {
             ClaimType::Independent => "Independent".to_string(),
-            ClaimType::Dependent => format!("Dependent → {}", claim.parent_claims.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")),
+            ClaimType::Dependent => format!(
+                "Dependent → {}",
+                claim
+                    .parent_claims
+                    .iter()
+                    .map(|n| n.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             ClaimType::Method => "Method".to_string(),
             ClaimType::Composition => "Composition".to_string(),
         };
         lines.push(format!(
             "Claim {} ({}): {}",
-            claim.claim_number,
-            type_label,
-            claim.normalized_text
+            claim.claim_number, type_label, claim.normalized_text
         ));
     }
     lines.join("\n")
@@ -203,7 +205,10 @@ fn split_raw_claims(text: &str) -> Vec<(u32, String)> {
                 result.push((num, current_text.trim().to_string()));
             }
             current_num = caps.get(1).unwrap().as_str().parse::<u32>().ok();
-            current_text = caps.get(2).map(|m| m.as_str().to_string()).unwrap_or_default();
+            current_text = caps
+                .get(2)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
         } else if let Some(caps) = CLAIM_NUMBER_LOOSE_RE.captures(trimmed) {
             // 宽松格式（仅在严格匹配失败时使用，且要求数字递增）
             let num = caps.get(1).unwrap().as_str().parse::<u32>().ok();
@@ -214,7 +219,10 @@ fn split_raw_claims(text: &str) -> Vec<(u32, String)> {
                         result.push((prev, current_text.trim().to_string()));
                     }
                     current_num = Some(n);
-                    current_text = caps.get(2).map(|m| m.as_str().to_string()).unwrap_or_default();
+                    current_text = caps
+                        .get(2)
+                        .map(|m| m.as_str().to_string())
+                        .unwrap_or_default();
                     continue;
                 }
             }
@@ -277,17 +285,29 @@ fn classify_claim_type(text: &str, parents: &[u32]) -> ClaimType {
     // 如果有 parent，统一为 Dependent（从属权利要求）
     // 方法从属可额外检测，但当前枚举不支持组合值
     if !parents.is_empty() {
-        if lower.contains("method") || lower.contains("process") || lower.contains("use") || lower.contains("treating") {
+        if lower.contains("method")
+            || lower.contains("process")
+            || lower.contains("use")
+            || lower.contains("treating")
+        {
             return ClaimType::Method;
         }
         return ClaimType::Dependent;
     }
 
     // 独立权利要求的细分
-    if lower.contains("method") || lower.contains("process") || lower.contains("use") || lower.contains("treating") {
+    if lower.contains("method")
+        || lower.contains("process")
+        || lower.contains("use")
+        || lower.contains("treating")
+    {
         return ClaimType::Method;
     }
-    if lower.contains("composition") || lower.contains("compound") || lower.contains("salt") || lower.contains("formulation") {
+    if lower.contains("composition")
+        || lower.contains("compound")
+        || lower.contains("salt")
+        || lower.contains("formulation")
+    {
         return ClaimType::Composition;
     }
 
@@ -325,7 +345,10 @@ fn extract_compound_mentions(text: &str) -> Vec<String> {
     let mut mentions = Vec::new();
     let re = Regex::new(r"(?i)(Compound|Example|Intermediate)\s+(\d+[a-zA-Z]?)").unwrap();
     for caps in re.captures_iter(text) {
-        let full = caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
+        let full = caps
+            .get(0)
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default();
         if !mentions.contains(&full) {
             mentions.push(full);
         }
@@ -381,11 +404,7 @@ fn build_normalized_text(
     let normalized = if parent_texts.is_empty() {
         own_text
     } else {
-        format!(
-            "{} [附加限定: {}]",
-            parent_texts.join(" + "),
-            own_text
-        )
+        format!("{} [附加限定: {}]", parent_texts.join(" + "), own_text)
     };
 
     memo.insert(claim.claim_number, normalized.clone());
@@ -457,7 +476,8 @@ mod tests {
 
     #[test]
     fn test_independent_claims_identified() {
-        let text = "1. A compound.\n2. The compound of claim 1.\n3. A method.\n4. The method of claim 3.";
+        let text =
+            "1. A compound.\n2. The compound of claim 1.\n3. A method.\n4. The method of claim 3.";
         let graph = parse_claims_section(text);
         assert_eq!(graph.independent_claims, vec![1, 3]);
     }
@@ -478,7 +498,11 @@ mod tests {
         let graph = parse_claims_section(text);
         let claim1 = &graph.claims[0];
         assert!(!claim1.limitations.is_empty());
-        let lim_texts: Vec<String> = claim1.limitations.iter().map(|l| l.to_lowercase()).collect();
+        let lim_texts: Vec<String> = claim1
+            .limitations
+            .iter()
+            .map(|l| l.to_lowercase())
+            .collect();
         assert!(lim_texts.iter().any(|l| l.contains("r1 is methyl")));
         assert!(lim_texts.iter().any(|l| l.contains("r2 is ethyl")));
     }
@@ -488,7 +512,9 @@ mod tests {
         let text = "1. A compound of formula I.\n2. The compound of claim 1, wherein Compound 5 is excluded.";
         let graph = parse_claims_section(text);
         let claim2 = graph.claims.iter().find(|c| c.claim_number == 2).unwrap();
-        assert!(claim2.compounds_mentioned.contains(&"Compound 5".to_string()));
+        assert!(claim2
+            .compounds_mentioned
+            .contains(&"Compound 5".to_string()));
     }
 
     #[test]

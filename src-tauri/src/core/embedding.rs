@@ -13,7 +13,10 @@ pub trait EmbedderTrait: Send + Sync {
     fn embed_single(&self, text: &str) -> Result<Vec<f32>, String> {
         let texts = vec![text.to_string()];
         let results = self.embed(texts)?;
-        results.into_iter().next().ok_or_else(|| "Empty embedding result".to_string())
+        results
+            .into_iter()
+            .next()
+            .ok_or_else(|| "Empty embedding result".to_string())
     }
 }
 
@@ -181,7 +184,9 @@ mod tests {
     #[test]
     fn test_deterministic_embedder() {
         let emb = DeterministicEmbedder::new(384);
-        let result = emb.embed(vec!["hello".to_string(), "world".to_string()]).unwrap();
+        let result = emb
+            .embed(vec!["hello".to_string(), "world".to_string()])
+            .unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].len(), 384);
         // 相同输入产生相同输出

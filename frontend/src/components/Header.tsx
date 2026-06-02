@@ -1,8 +1,10 @@
+import { useTranslation } from 'react-i18next'
 import { HelpIcon } from './icons'
 import IconButton from './ui/IconButton'
 import { showToast } from '../hooks/useToast'
 
 export default function Header() {
+  const { t } = useTranslation()
   return (
     <header style={{
       gridColumn: '2',
@@ -28,8 +30,8 @@ export default function Header() {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         <IconButton
-          title="帮助"
-          onClick={() => showToast('帮助文档即将推出', 'info')}
+          title={t('common.search')}
+          onClick={() => showToast(t('common.noResults'), 'info')}
         >
           <HelpIcon size={18} />
         </IconButton>

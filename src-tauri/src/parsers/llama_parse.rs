@@ -36,10 +36,13 @@ pub async fn parse_with_llamaparse(
     let url = format!("{}/v1/file/upload", api_url.trim_end_matches('/'));
 
     let mut form = reqwest::multipart::Form::new()
-        .part("file", reqwest::multipart::Part::bytes(pdf_bytes)
-            .file_name("document.pdf")
-            .mime_str("application/pdf")
-            .map_err(|e| format!("MIME error: {}", e))?)
+        .part(
+            "file",
+            reqwest::multipart::Part::bytes(pdf_bytes)
+                .file_name("document.pdf")
+                .mime_str("application/pdf")
+                .map_err(|e| format!("MIME error: {}", e))?,
+        )
         .text("result_type", "markdown");
 
     if let Some(key) = api_key {
@@ -48,7 +51,8 @@ pub async fn parse_with_llamaparse(
         }
     }
 
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .multipart(form)
         .timeout(std::time::Duration::from_secs(120))
         .send()
@@ -61,7 +65,9 @@ pub async fn parse_with_llamaparse(
         return Err(format!("LlamaParse HTTP {}: {}", status, body));
     }
 
-    let parsed: LlamaParseResponse = resp.json().await
+    let parsed: LlamaParseResponse = resp
+        .json()
+        .await
         .map_err(|e| format!("LlamaParse response parse error: {}", e))?;
 
     if let Some(err) = parsed.error {

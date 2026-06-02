@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 # Load .env before anything else
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -19,9 +20,23 @@ from fastapi.responses import JSONResponse
 
 from ..utils.exceptions import MBForgeError
 from .routers import (
-    llm, embed, rerank, vlm, moldet, uniparser,
-    health, project, kb, molecule, file,
-    settings, download, chem, environment, resources,
+    chem,
+    download,
+    embed,
+    environment,
+    file,
+    health,
+    kb,
+    llm,
+    moldet,
+    molecule,
+    project,
+    rerank,
+    resources,
+    sar,
+    settings,
+    uniparser,
+    vlm,
 )
 
 logger = logging.getLogger("mbforge.startup")
@@ -31,6 +46,7 @@ def _prewarm_models():
     """在后台线程中预加载核心模型，避免首次请求阻塞."""
     try:
         from .models.llm import get_llm
+
         get_llm()
         logger.info("LLM model prewarmed")
     except Exception as e:
@@ -38,6 +54,7 @@ def _prewarm_models():
 
     try:
         from .models.embedder import get_embedder
+
         get_embedder()
         logger.info("Embedder model prewarmed")
     except Exception as e:
@@ -45,6 +62,7 @@ def _prewarm_models():
 
     try:
         from .models.reranker import get_reranker
+
         get_reranker()
         logger.info("Reranker model prewarmed")
     except Exception as e:
@@ -55,6 +73,7 @@ def _check_environment():
     """启动时环境检查 — 记录资源状态到日志."""
     try:
         from ..core.resource_manager import ResourceManager
+
         report = ResourceManager.check_all()
         logger.info(f"Environment check: {report.summary}")
         for r in report.resources:
@@ -88,6 +107,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Global exception handler for structured error responses
 @app.exception_handler(MBForgeError)
@@ -130,5 +150,8 @@ app.include_router(file.router, prefix="/api/v1/file", tags=["file"])
 app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])
 app.include_router(download.router, prefix="/api/v1/download", tags=["download"])
 app.include_router(chem.router, prefix="/api/v1/chem", tags=["chem"])
-app.include_router(environment.router, prefix="/api/v1/environment", tags=["environment"])
+app.include_router(
+    environment.router, prefix="/api/v1/environment", tags=["environment"]
+)
 app.include_router(resources.router, prefix="/api/v1/resources", tags=["resources"])
+app.include_router(sar.router, prefix="/api/v1/sar", tags=["sar"])

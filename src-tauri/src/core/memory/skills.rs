@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::super::constants::{PROJECT_META_DIR};
+use super::super::constants::PROJECT_META_DIR;
 
 const SKILLS_DIR: &str = "skills";
 
@@ -35,12 +35,17 @@ impl SkillsManager {
             for entry in entries.filter_map(|e| e.ok()) {
                 let path = entry.path();
                 if path.extension().and_then(|e| e.to_str()) == Some("md") {
-                    let name = path.file_stem()
+                    let name = path
+                        .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("unknown")
                         .to_string();
                     let content = std::fs::read_to_string(&path).unwrap_or_default();
-                    skills.push(Skill { name, content, path });
+                    skills.push(Skill {
+                        name,
+                        content,
+                        path,
+                    });
                 }
             }
         }
@@ -53,7 +58,11 @@ impl SkillsManager {
         let path = self.skills_dir.join(format!("{}.md", name));
         if path.exists() {
             let content = std::fs::read_to_string(&path).unwrap_or_default();
-            Some(Skill { name: name.to_string(), content, path })
+            Some(Skill {
+                name: name.to_string(),
+                content,
+                path,
+            })
         } else {
             None
         }
@@ -79,7 +88,8 @@ impl SkillsManager {
     /// 搜索 Skills（子串匹配）
     pub fn search(&self, query: &str) -> Vec<Skill> {
         let q = query.to_lowercase();
-        self.list().into_iter()
+        self.list()
+            .into_iter()
             .filter(|s| s.name.to_lowercase().contains(&q) || s.content.to_lowercase().contains(&q))
             .collect()
     }
@@ -104,9 +114,25 @@ impl SkillsManager {
     }
 
     /// 自动创建 Skill（从对话中提取程序性知识）
-    pub fn auto_create_from_conversation(&self, user_msg: &str, assistant_msg: &str, sidecar_url: &str) {
+    pub fn auto_create_from_conversation(
+        &self,
+        user_msg: &str,
+        assistant_msg: &str,
+        sidecar_url: &str,
+    ) {
         // 简单启发式：如果对话包含"步骤"、"方法"、"流程"等关键词，可能值得保存
-        let keywords = ["步骤", "方法", "流程", "教程", "如何", "怎么做", "step", "method", "how to", "workflow"];
+        let keywords = [
+            "步骤",
+            "方法",
+            "流程",
+            "教程",
+            "如何",
+            "怎么做",
+            "step",
+            "method",
+            "how to",
+            "workflow",
+        ];
         let combined = format!("{} {}", user_msg, assistant_msg).to_lowercase();
         let is_procedural = keywords.iter().any(|k| combined.contains(k));
 
@@ -141,14 +167,16 @@ impl SkillsManager {
             let url = format!("{}/api/v1/llm/chat", sidecar_url.trim_end_matches('/'));
             let client = super::super::http::client_15s();
 
-            let resp = match client.post(&url)
+            let resp = match client
+                .post(&url)
                 .header("Content-Type", "application/json")
                 .json(&body)
                 .send()
-                .await {
-                    Ok(r) => r,
-                    Err(_) => return,
-                };
+                .await
+            {
+                Ok(r) => r,
+                Err(_) => return,
+            };
 
             let text = match resp.text().await {
                 Ok(t) => t,
@@ -166,7 +194,8 @@ impl SkillsManager {
             }
 
             // 用第一行作为 skill 名称
-            let name = content.lines()
+            let name = content
+                .lines()
                 .next()
                 .unwrap_or("unnamed")
                 .trim_start_matches('#')
@@ -196,7 +225,8 @@ mod tests {
     fn test_skills_manager() {
         let dir = tempfile::tempdir().unwrap();
         let mgr = SkillsManager::new(dir.path());
-        mgr.save("test-skill", "# Test\nSteps: 1. Do X\n2. Do Y").unwrap();
+        mgr.save("test-skill", "# Test\nSteps: 1. Do X\n2. Do Y")
+            .unwrap();
         let skills = mgr.list();
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].name, "test-skill");

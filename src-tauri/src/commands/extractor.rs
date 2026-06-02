@@ -104,13 +104,13 @@ fn extract_activities_with_positions(text: &str) -> Vec<(ActivityData, usize)> {
         vec![
             Regex::new(
                 r"(?i)(IC50|EC50|EC90|Ki|Kd|IC90)\s*[=:]\s*([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM)",
-            ).unwrap(),
+            ).expect("valid activity IC50 regex"),
             Regex::new(
                 r"(?i)(IC50|EC50|EC90|Ki|Kd|IC90)\s+of\s+([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM)",
-            ).unwrap(),
+            ).expect("valid activity of regex"),
             Regex::new(
                 r"(?i)([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM)\s*\(?\s*(IC50|EC50|EC90|Ki|Kd|IC90)\s*\)?",
-            ).unwrap(),
+            ).expect("valid activity paren regex"),
         ]
     });
 
@@ -149,7 +149,11 @@ fn extract_activities_with_positions(text: &str) -> Vec<(ActivityData, usize)> {
                 continue;
             };
 
-            let value = match val_str.trim_start_matches(|c: char| c == '<' || c == '>').trim().parse::<f64>() {
+            let value = match val_str
+                .trim_start_matches(|c: char| c == '<' || c == '>')
+                .trim()
+                .parse::<f64>()
+            {
                 Ok(v) => v,
                 Err(_) => continue,
             };
@@ -158,7 +162,11 @@ fn extract_activities_with_positions(text: &str) -> Vec<(ActivityData, usize)> {
 
             if seen.insert(key.clone()) {
                 let pos = caps.get(0).unwrap().start();
-                let context = extract_context(text, caps.get(0).unwrap().start(), caps.get(0).unwrap().end());
+                let context = extract_context(
+                    text,
+                    caps.get(0).unwrap().start(),
+                    caps.get(0).unwrap().end(),
+                );
                 results.push((
                     ActivityData {
                         activity_type: act_type.to_uppercase(),
@@ -178,10 +186,7 @@ fn extract_activities_with_positions(text: &str) -> Vec<(ActivityData, usize)> {
 /// Extract esmiles from text and associate them with nearby activity data
 /// based on spatial proximity (200-character window).
 #[tauri::command]
-pub fn extract_associated_molecules(
-    text: String,
-    source_doc: String,
-) -> Vec<AssociatedMolecule> {
+pub fn extract_associated_molecules(text: String, source_doc: String) -> Vec<AssociatedMolecule> {
     let esmiles_list = extract_esmiles_with_positions(&text);
     let activities = extract_activities_with_positions(&text);
     let proximity_window: usize = 200;

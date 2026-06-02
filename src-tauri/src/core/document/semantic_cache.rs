@@ -87,7 +87,10 @@ impl SemanticCache {
         embedder: Option<Embedder>,
         config: SemanticCacheConfig,
     ) -> Self {
-        let cache_path = project_root.join(".mbforge").join("cache").join("semantic_cache.json");
+        let cache_path = project_root
+            .join(".mbforge")
+            .join("cache")
+            .join("semantic_cache.json");
 
         if let Some(parent) = cache_path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -204,7 +207,9 @@ impl SemanticCache {
         let key = hash_query(query);
 
         let embedding = if self.config.similarity_threshold > 0.0 {
-            self.embedder.as_ref().and_then(|e| e.embed_single(query).ok())
+            self.embedder
+                .as_ref()
+                .and_then(|e| e.embed_single(query).ok())
         } else {
             None
         };
@@ -292,10 +297,18 @@ impl SemanticCache {
 }
 
 fn cosine(a: &[f32], b: &[f32]) -> f64 {
-    let dot: f64 = a.iter().zip(b.iter()).map(|(x, y)| (*x as f64) * (*y as f64)).sum();
+    let dot: f64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| (*x as f64) * (*y as f64))
+        .sum();
     let na: f64 = a.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
     let nb: f64 = b.iter().map(|x| (*x as f64).powi(2)).sum::<f64>().sqrt();
-    if na == 0.0 || nb == 0.0 { 0.0 } else { dot / (na * nb) }
+    if na == 0.0 || nb == 0.0 {
+        0.0
+    } else {
+        dot / (na * nb)
+    }
 }
 
 fn move_to_back(lru: &mut VecDeque<String>, key: &str) {
@@ -348,10 +361,14 @@ mod tests {
     #[test]
     fn test_l1_hit() {
         let tmp = TempDir::new().unwrap();
-        let cache = SemanticCache::new(tmp.path(), None, SemanticCacheConfig {
-            disk_persist: false,
-            ..Default::default()
-        });
+        let cache = SemanticCache::new(
+            tmp.path(),
+            None,
+            SemanticCacheConfig {
+                disk_persist: false,
+                ..Default::default()
+            },
+        );
 
         let results = vec![serde_json::json!({"id": 1})];
         cache.store("hello", results.clone());
@@ -367,11 +384,15 @@ mod tests {
     #[test]
     fn test_l1_ttl_expiry() {
         let tmp = TempDir::new().unwrap();
-        let cache = SemanticCache::new(tmp.path(), None, SemanticCacheConfig {
-            ttl_seconds: 0.0,
-            disk_persist: false,
-            ..Default::default()
-        });
+        let cache = SemanticCache::new(
+            tmp.path(),
+            None,
+            SemanticCacheConfig {
+                ttl_seconds: 0.0,
+                disk_persist: false,
+                ..Default::default()
+            },
+        );
 
         cache.store("expire_me", vec![serde_json::json!({"x": 1})]);
         let result = cache.get_l1("expire_me");
@@ -381,11 +402,15 @@ mod tests {
     #[test]
     fn test_cache_eviction() {
         let tmp = TempDir::new().unwrap();
-        let cache = SemanticCache::new(tmp.path(), None, SemanticCacheConfig {
-            max_size: 2,
-            disk_persist: false,
-            ..Default::default()
-        });
+        let cache = SemanticCache::new(
+            tmp.path(),
+            None,
+            SemanticCacheConfig {
+                max_size: 2,
+                disk_persist: false,
+                ..Default::default()
+            },
+        );
 
         cache.store("a", vec![serde_json::json!({"k": "a"})]);
         cache.store("b", vec![serde_json::json!({"k": "b"})]);
@@ -401,11 +426,15 @@ mod tests {
     #[test]
     fn test_disabled_cache() {
         let tmp = TempDir::new().unwrap();
-        let cache = SemanticCache::new(tmp.path(), None, SemanticCacheConfig {
-            enabled: false,
-            disk_persist: false,
-            ..Default::default()
-        });
+        let cache = SemanticCache::new(
+            tmp.path(),
+            None,
+            SemanticCacheConfig {
+                enabled: false,
+                disk_persist: false,
+                ..Default::default()
+            },
+        );
 
         cache.store("x", vec![serde_json::json!({"k": "v"})]);
         assert!(cache.get_l1("x").is_none());
@@ -414,10 +443,14 @@ mod tests {
     #[test]
     fn test_clear() {
         let tmp = TempDir::new().unwrap();
-        let cache = SemanticCache::new(tmp.path(), None, SemanticCacheConfig {
-            disk_persist: false,
-            ..Default::default()
-        });
+        let cache = SemanticCache::new(
+            tmp.path(),
+            None,
+            SemanticCacheConfig {
+                disk_persist: false,
+                ..Default::default()
+            },
+        );
 
         cache.store("a", vec![serde_json::json!({"k": "v"})]);
         assert!(cache.get_l1("a").is_some());

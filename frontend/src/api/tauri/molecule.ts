@@ -139,6 +139,30 @@ export async function molStoreListByDoc(
   )
 }
 
+/** 更新单条分子记录（OCR 矫正后写回数据库用） */
+export async function molStoreUpdate(
+  projectRoot: string,
+  record: MoleculeRecord_,
+): Promise<boolean> {
+  return invokeWithError(
+    () => invoke<boolean>('mol_store_update', { projectRoot, record }),
+    ErrorCode.MoleculeSearch,
+  )
+}
+
+/** 批量更新多个分子. 返回 { updated: number, failed: string[] } */
+export async function molStoreUpdateBatch(
+  projectRoot: string,
+  records: MoleculeRecord_[],
+): Promise<{ updated: number; failed: string[] }> {
+  return invokeWithError(
+    () => invoke<{ updated: number; failed: string[] }>('mol_store_update_batch', {
+      projectRoot,
+      records,
+    }),
+    ErrorCode.MoleculeSearch,
+  )
+}
 // ---- client.ts compatible wrappers ----
 
 export interface MoleculeStats {

@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 /// 统一资源管理器 — Rust 侧
 ///
 /// 管理所有外部资源（模型、Python 包、二进制工具）的注册、检查、路径解析。
@@ -6,7 +7,6 @@
 /// - 模型默认从 ModelScope 下载（只下载权重 + 必要配置）
 /// - Python 包通过 pip + 清华源安装
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // 数据类型
@@ -39,11 +39,11 @@ pub struct ResourceInfo {
     pub size_mb: u64,
     pub license: &'static str,
     pub ms_repo: &'static str,
-    pub download_type: &'static str,  // "snapshot" | "file"
-    pub ms_file: &'static str,        // 单文件下载时的远程文件名
-    pub local_name: &'static str,     // 本地文件名/目录名
-    pub pip_name: &'static str,       // Python 包名（非空表示需要 pip 安装）
-    pub import_name: &'static str,    // Python import 名
+    pub download_type: &'static str, // "snapshot" | "file"
+    pub ms_file: &'static str,       // 单文件下载时的远程文件名
+    pub local_name: &'static str,    // 本地文件名/目录名
+    pub pip_name: &'static str,      // Python 包名（非空表示需要 pip 安装）
+    pub import_name: &'static str,   // Python import 名
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -266,7 +266,12 @@ fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
         let ms_org = info.ms_repo.split('/').next().unwrap_or("Qwen");
         for subdir in &["models", "hub/models"] {
             for name in &[repo_name, &repo_name.replace('.', "___")] {
-                let dir = home.join(".cache").join("modelscope").join(subdir).join(ms_org).join(name);
+                let dir = home
+                    .join(".cache")
+                    .join("modelscope")
+                    .join(subdir)
+                    .join(ms_org)
+                    .join(name);
                 if let Some(result) = check_dir_for_weights(info, &dir) {
                     return result;
                 }
@@ -313,7 +318,10 @@ fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
 }
 
 /// 检查目录中是否有模型权重文件
-fn check_dir_for_weights(info: &ResourceInfo, dir: &std::path::Path) -> Option<ResourceStatusResult> {
+fn check_dir_for_weights(
+    info: &ResourceInfo,
+    dir: &std::path::Path,
+) -> Option<ResourceStatusResult> {
     if !dir.exists() {
         return None;
     }
@@ -397,7 +405,10 @@ fn check_python_package(info: &ResourceInfo) -> ResourceStatusResult {
         info.import_name
     };
 
-    let cmd_code = format!("import {}; print(getattr({}, '__version__', ''))", import_name, import_name);
+    let cmd_code = format!(
+        "import {}; print(getattr({}, '__version__', ''))",
+        import_name, import_name
+    );
     // 尝试 python，再尝试 python3
     let output = ["python", "python3"].iter().find_map(|py| {
         std::process::Command::new(py)
@@ -429,12 +440,19 @@ fn check_python_package(info: &ResourceInfo) -> ResourceStatusResult {
 
 /// 检查 PDFium
 fn check_pdfium() -> ResourceStatusResult {
-    let info = RESOURCE_CATALOG.iter().find(|r| r.id == "pdfium").expect("pdfium must be in RESOURCE_CATALOG");
+    let info = RESOURCE_CATALOG
+        .iter()
+        .find(|r| r.id == "pdfium")
+        .expect("pdfium must be in RESOURCE_CATALOG");
 
     // Rust vendor 目录
     if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
         let pdfium_lib = PathBuf::from(manifest).join("vendor/pdfium/release/lib");
-        if pdfium_lib.exists() && std::fs::read_dir(&pdfium_lib).map(|mut d| d.next().is_some()).unwrap_or(false) {
+        if pdfium_lib.exists()
+            && std::fs::read_dir(&pdfium_lib)
+                .map(|mut d| d.next().is_some())
+                .unwrap_or(false)
+        {
             return ResourceStatusResult {
                 id: info.id.to_string(),
                 name: info.name.to_string(),
@@ -518,7 +536,11 @@ fn walk_dir_for_ext(dir: &std::path::Path, exts: &[&str], depth: u32) -> bool {
 fn dir_size(dir: &std::path::Path) -> u64 {
     // 使用 walkdir 处理符号链接循环（不跟随 symlink 目录）
     let mut total = 0u64;
-    for entry in walkdir::WalkDir::new(dir).follow_links(false).into_iter().flatten() {
+    for entry in walkdir::WalkDir::new(dir)
+        .follow_links(false)
+        .into_iter()
+        .flatten()
+    {
         if entry.file_type().is_file() {
             total += entry.metadata().map(|m| m.len()).unwrap_or(0);
         }
@@ -529,17 +551,20 @@ fn dir_size(dir: &std::path::Path) -> u64 {
 /// 获取 Python 版本
 fn get_python_version() -> String {
     let cmd = "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')";
-    ["python", "python3"].iter().find_map(|py| {
-        std::process::Command::new(py)
-            .args(["-c", cmd])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-    }).unwrap_or_else(|| "unknown".to_string())
+    ["python", "python3"]
+        .iter()
+        .find_map(|py| {
+            std::process::Command::new(py)
+                .args(["-c", cmd])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 /// 检测 GPU（通过 nvidia-smi）
@@ -612,7 +637,10 @@ pub fn check_all_resources() -> EnvironmentReport {
         resources.push(check_resource(info.id));
     }
 
-    let ready = resources.iter().filter(|r| r.status == ResourceStatus::Ready).count();
+    let ready = resources
+        .iter()
+        .filter(|r| r.status == ResourceStatus::Ready)
+        .count();
     let total = resources.len();
 
     EnvironmentReport {
@@ -650,14 +678,21 @@ pub fn write_resolved_paths() {
     for info in RESOURCE_CATALOG {
         if info.resource_type == ResourceType::Model {
             if let Some(p) = get_model_path(info.id) {
-                map.insert(info.id.to_string(), serde_json::Value::String(p.to_string_lossy().to_string()));
+                map.insert(
+                    info.id.to_string(),
+                    serde_json::Value::String(p.to_string_lossy().to_string()),
+                );
             }
         }
     }
 
     let json = serde_json::Value::Object(map);
     if let Ok(mut f) = std::fs::File::create(&path) {
-        let _ = f.write_all(serde_json::to_string_pretty(&json).unwrap_or_default().as_bytes());
+        let _ = f.write_all(
+            serde_json::to_string_pretty(&json)
+                .unwrap_or_default()
+                .as_bytes(),
+        );
         log::info!("Wrote resolved model paths to {}", path.display());
     }
 }
@@ -684,18 +719,21 @@ pub fn resources_get_model_path(resource_id: String) -> Option<String> {
 /// 获取资源目录（纯元数据，不含状态）
 #[tauri::command]
 pub fn resources_catalog() -> Vec<serde_json::Value> {
-    RESOURCE_CATALOG.iter().map(|info| {
-        serde_json::json!({
-            "id": info.id,
-            "name": info.name,
-            "type": info.resource_type,
-            "description": info.description,
-            "size_mb": info.size_mb,
-            "license": info.license,
-            "ms_repo": info.ms_repo,
-            "pip_name": info.pip_name,
+    RESOURCE_CATALOG
+        .iter()
+        .map(|info| {
+            serde_json::json!({
+                "id": info.id,
+                "name": info.name,
+                "type": info.resource_type,
+                "description": info.description,
+                "size_mb": info.size_mb,
+                "license": info.license,
+                "ms_repo": info.ms_repo,
+                "pip_name": info.pip_name,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

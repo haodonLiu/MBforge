@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::constants::{global_config_dir, DEFAULT_EMBED_BASE_URL, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL};
+use super::constants::{
+    global_config_dir, DEFAULT_EMBED_BASE_URL, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL,
+};
 use super::document::semantic_cache::SemanticCacheConfig;
 use super::document::stream_search::StreamingSearchConfig;
 
@@ -132,11 +134,21 @@ pub struct ModelServerConfig {
     pub health_check_interval: u32,
 }
 
-fn default_host() -> String { "127.0.0.1".into() }
-fn default_port() -> u16 { super::constants::DEFAULT_SIDECAR_PORT }
-fn default_true() -> bool { true }
-fn default_startup_timeout() -> u32 { 120 }
-fn default_health_check_interval() -> u32 { 5 }
+fn default_host() -> String {
+    "127.0.0.1".into()
+}
+fn default_port() -> u16 {
+    super::constants::DEFAULT_SIDECAR_PORT
+}
+fn default_true() -> bool {
+    true
+}
+fn default_startup_timeout() -> u32 {
+    120
+}
+fn default_health_check_interval() -> u32 {
+    5
+}
 
 impl Default for ModelServerConfig {
     fn default() -> Self {

@@ -98,6 +98,10 @@ pub fn global_config_dir() -> PathBuf {
 pub fn global_data_dir() -> PathBuf {
     directories::ProjectDirs::from("", "", "MBForge")
         .map(|d| d.data_dir().to_path_buf())
-        .unwrap_or_else(|| PathBuf::from(".").join(".local").join("share").join("MBForge"))
+        .unwrap_or_else(|| {
+            PathBuf::from(".")
+                .join(".local")
+                .join("share")
+                .join("MBForge")
+        })
 }
-

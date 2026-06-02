@@ -82,14 +82,18 @@ impl ToolExecutor {
     }
 
     async fn execute_sidecar(&self, name: &str, args: &serde_json::Value) -> String {
-        let url = format!("{}/api/v1/tools/call", self.sidecar_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/api/v1/tools/call",
+            self.sidecar_url.trim_end_matches('/')
+        );
         let body = serde_json::json!({
             "tool": name,
             "args": args,
             "project_root": self.project_root,
         });
         let client = crate::core::http::client_30s();
-        let resp = match client.post(&url)
+        let resp = match client
+            .post(&url)
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
@@ -107,7 +111,10 @@ impl ToolExecutor {
                 if val["success"].as_bool().unwrap_or(false) {
                     val["result"].as_str().unwrap_or("").to_string()
                 } else {
-                    val["error"].as_str().unwrap_or("Tool execution failed").to_string()
+                    val["error"]
+                        .as_str()
+                        .unwrap_or("Tool execution failed")
+                        .to_string()
                 }
             }
             Err(_) => text,

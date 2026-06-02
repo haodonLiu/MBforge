@@ -74,13 +74,13 @@ pub async fn image_to_esmiles(
     let val: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("MolScribe JSON parse error: {}", e))?;
 
-    let esmiles = val["smiles"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let esmiles = val["smiles"].as_str().unwrap_or("").to_string();
     let confidence = val["confidence"].as_f64().unwrap_or(0.0);
 
-    Ok(ChemImageResult { esmiles, confidence })
+    Ok(ChemImageResult {
+        esmiles,
+        confidence,
+    })
 }
 
 /// 用 MolScribe 批量识别多张图片
@@ -137,10 +137,7 @@ pub async fn describe_image(
 
     let client = crate::core::http::client_300s();
 
-    let url = format!(
-        "{}/api/v1/vlm/describe",
-        sidecar_url.trim_end_matches('/')
-    );
+    let url = format!("{}/api/v1/vlm/describe", sidecar_url.trim_end_matches('/'));
 
     let resp = client
         .post(&url)
@@ -166,10 +163,7 @@ pub async fn describe_image(
     let val: serde_json::Value =
         serde_json::from_str(&text).map_err(|e| format!("VLM JSON parse error: {}", e))?;
 
-    Ok(val["description"]
-        .as_str()
-        .unwrap_or("")
-        .to_string())
+    Ok(val["description"].as_str().unwrap_or("").to_string())
 }
 
 /// 判断一个图片是否可能是化学结构图（基于 MinerU 提供的元数据或文件名启发式）
@@ -210,11 +204,17 @@ mod tests {
 
     #[test]
     fn test_is_likely_chemical_structure() {
-        assert!(is_likely_chemical_structure("page_05_img_02.png", Some("structure")));
+        assert!(is_likely_chemical_structure(
+            "page_05_img_02.png",
+            Some("structure")
+        ));
         assert!(is_likely_chemical_structure("fig_table_1.png", None));
         assert!(is_likely_chemical_structure("mol_compound.png", None));
         assert!(!is_likely_chemical_structure("page_01_bg.png", None));
-        assert!(!is_likely_chemical_structure("header_logo.png", Some("decorative")));
+        assert!(!is_likely_chemical_structure(
+            "header_logo.png",
+            Some("decorative")
+        ));
     }
 
     #[test]

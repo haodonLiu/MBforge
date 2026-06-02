@@ -44,11 +44,7 @@ impl StreamingSearch {
     /// 1. `"first"` — first `yield_first` results (if results exist)
     /// 2. `"incremental"` — remaining results (if any)
     /// 3. `"complete"` — summary with total count
-    pub fn execute(
-        &self,
-        results: Vec<serde_json::Value>,
-        top_k: usize,
-    ) -> Vec<StreamingResult> {
+    pub fn execute(&self, results: Vec<serde_json::Value>, top_k: usize) -> Vec<StreamingResult> {
         if !self.config.enabled {
             let count = results.len();
             return vec![StreamingResult {
@@ -72,7 +68,8 @@ impl StreamingSearch {
 
         let mut chunks: Vec<StreamingResult> = Vec::new();
 
-        let first_batch: Vec<serde_json::Value> = results.iter().take(yield_first).cloned().collect();
+        let first_batch: Vec<serde_json::Value> =
+            results.iter().take(yield_first).cloned().collect();
         if !first_batch.is_empty() {
             chunks.push(StreamingResult {
                 r#type: "first".into(),

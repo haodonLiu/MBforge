@@ -6,7 +6,9 @@ use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tauri::Emitter;
 
-use crate::core::constants::{sidecar_url, DEFAULT_SIDECAR_PORT, EVT_SIDECAR_LOG, EVT_SIDECAR_STATUS};
+use crate::core::constants::{
+    sidecar_url, DEFAULT_SIDECAR_PORT, EVT_SIDECAR_LOG, EVT_SIDECAR_STATUS,
+};
 
 /// 构造 sidecar 日志事件 payload
 fn log_event(stream: &str, line: &str) -> serde_json::Value {
@@ -177,8 +179,7 @@ pub fn start_health_monitor(inner: Arc<SidecarInner>, app: AppHandle) {
                         let was_healthy = inner.healthy.swap(false, Ordering::Relaxed);
                         if was_healthy {
                             emit_status(&inner, &app);
-                            let restarts =
-                                inner.restart_count.fetch_add(1, Ordering::Relaxed);
+                            let restarts = inner.restart_count.fetch_add(1, Ordering::Relaxed);
                             if restarts < MAX_RESTARTS {
                                 let _ = app.emit(
                                     EVT_SIDECAR_LOG,
@@ -192,7 +193,8 @@ pub fn start_health_monitor(inner: Arc<SidecarInner>, app: AppHandle) {
                                     }),
                                 );
                                 if let Err(e) = spawn_and_start_readers(&inner, &app) {
-                                    *inner.last_error.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.clone());
+                                    *inner.last_error.lock().unwrap_or_else(|e| e.into_inner()) =
+                                        Some(e.clone());
                                     let _ = app.emit(
                                         EVT_SIDECAR_LOG,
                                         serde_json::json!({

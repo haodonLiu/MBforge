@@ -8,12 +8,7 @@ use std::path::{Path, PathBuf};
 // ---------------------------------------------------------------------------
 
 /// 计算像素/点的缩放比例（按宽度计算）。
-pub fn scale_from_page_size(
-    page_w_pts: f64,
-    _page_h_pts: f64,
-    image_w: u32,
-    _image_h: u32,
-) -> f64 {
+pub fn scale_from_page_size(page_w_pts: f64, _page_h_pts: f64, image_w: u32, _image_h: u32) -> f64 {
     if page_w_pts > 0.0 {
         image_w as f64 / page_w_pts
     } else {
@@ -73,8 +68,7 @@ pub fn extract_images_from_pdf(
     std::fs::create_dir_all(output_dir)
         .map_err(|e| format!("Failed to create output dir: {}", e))?;
 
-    let doc = Document::load(pdf_path)
-        .map_err(|e| format!("Failed to load PDF: {}", e))?;
+    let doc = Document::load(pdf_path).map_err(|e| format!("Failed to load PDF: {}", e))?;
 
     let max_bytes = (max_size_mb as u64) * 1024 * 1024;
     let mut images = Vec::new();
@@ -187,7 +181,13 @@ fn extract_image_data(doc: &Document, obj_id: ObjectId) -> Option<(Vec<u8>, &'st
 
     let filter_name = match filter_obj {
         Object::Name(n) => Some(n.as_slice()),
-        Object::Array(arr) => arr.first().and_then(|o| if let Object::Name(n) = o { Some(n.as_slice()) } else { None }),
+        Object::Array(arr) => arr.first().and_then(|o| {
+            if let Object::Name(n) = o {
+                Some(n.as_slice())
+            } else {
+                None
+            }
+        }),
         _ => None,
     };
 
@@ -243,12 +243,15 @@ mod tests {
         let page = Object::Dictionary({
             let mut dict = Dictionary::new();
             dict.set("Type", Object::Name(b"Page".to_vec()));
-            dict.set("MediaBox", Object::Array(vec![
-                Object::Integer(0),
-                Object::Integer(0),
-                Object::Integer(612),
-                Object::Integer(792),
-            ]));
+            dict.set(
+                "MediaBox",
+                Object::Array(vec![
+                    Object::Integer(0),
+                    Object::Integer(0),
+                    Object::Integer(612),
+                    Object::Integer(792),
+                ]),
+            );
             dict.set("Contents", Object::Reference(content_id));
             dict.set("Resources", resources);
             dict
@@ -293,8 +296,7 @@ mod tests {
         create_test_pdf(&pdf_path);
         let out_dir = tmp.path().join("images");
 
-        let images =
-            extract_images_from_pdf(pdf_path.to_str().unwrap(), &out_dir, 10, 2).unwrap();
+        let images = extract_images_from_pdf(pdf_path.to_str().unwrap(), &out_dir, 10, 2).unwrap();
         assert!(images.is_empty(), "No images expected");
     }
 

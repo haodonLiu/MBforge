@@ -10,10 +10,10 @@ pub use crate::core::types::ExtractionResult;
 
 static COMPOUND_NAME_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     vec![
-        Regex::new(r"(?i)Compound\s+(\d+[a-zA-Z]?)").unwrap(),
-        Regex::new(r"(?i)Fig(?:ure)?\.?\s*(\d+[a-zA-Z]?)").unwrap(),
-        Regex::new(r"(?i)Scheme\s+(\d+[a-zA-Z]?)").unwrap(),
-        Regex::new(r"(?i)Table\s+(\d+[a-zA-Z]?)").unwrap(),
+        Regex::new(r"(?i)Compound\s+(\d+[a-zA-Z]?)").expect("valid compound pattern regex"),
+        Regex::new(r"(?i)Fig(?:ure)?\.?\s*(\d+[a-zA-Z]?)").expect("valid fig pattern regex"),
+        Regex::new(r"(?i)Scheme\s+(\d+[a-zA-Z]?)").expect("valid scheme pattern regex"),
+        Regex::new(r"(?i)Table\s+(\d+[a-zA-Z]?)").expect("valid table pattern regex"),
     ]
 });
 
@@ -23,26 +23,26 @@ static ACTIVITY_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         Regex::new(
             r"(?i)(IC50|EC50|EC90|Ki|Kd|IC90)\s*[=:]\s*([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM)",
         )
-        .unwrap(),
+        .expect("valid activity IC50 regex"),
         // Ki of 3.4 nM
         Regex::new(
             r"(?i)(IC50|EC50|EC90|Ki|Kd|IC90)\s+of\s+([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM)",
         )
-        .unwrap(),
+        .expect("valid activity of regex"),
         // 5.2 nM (IC50)
         Regex::new(
             r"(?i)([<>]?\d+\.?\d*)\s*(nM|µM|uM|μM|mM|pM)\s*\(?\s*(IC50|EC50|EC90|Ki|Kd|IC90)\s*\)?",
         )
-        .unwrap(),
+        .expect("valid activity paren regex"),
     ]
 });
 
 static CELL_LINE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(\b[A-Z][a-zA-Z0-9\-]+\s+(cell|cells|line)\b)").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)(\b[A-Z][a-zA-Z0-9\-]+\s+(cell|cells|line)\b)").expect("valid cell line regex"));
 
 static TARGET_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(\b[A-Z][a-z]+\s+(receptor|kinase|protease|enzyme|channel|transporter)\b)")
-        .unwrap()
+        .expect("valid target regex")
 });
 
 // ---------------------------------------------------------------------------
@@ -71,7 +71,9 @@ fn normalize_unit(unit: &str) -> String {
 
 /// Parse a value string with optional `<`/`>` prefix, returning the float.
 fn parse_activity_value(val_str: &str) -> Option<f64> {
-    let cleaned = val_str.trim_start_matches(|c: char| c == '<' || c == '>').trim();
+    let cleaned = val_str
+        .trim_start_matches(|c: char| c == '<' || c == '>')
+        .trim();
     cleaned.parse::<f64>().ok()
 }
 
@@ -177,23 +179,27 @@ pub fn associate_single(result: &mut ExtractionResult) {
     // Ensure `result.properties` is a JSON object. We use a fresh map
     // local variable to avoid the unsafe `as_object_mut().unwrap()` that
     // would otherwise be required after re-assigning properties.
-    let mut map_owned: serde_json::Map<String, serde_json::Value> = match result.properties.as_object_mut() {
-        Some(m) => std::mem::take(m),
-        None => {
-            log::warn!("associate_single: properties is not a JSON object, resetting");
-            serde_json::Map::new()
-        }
-    };
+    let mut map_owned: serde_json::Map<String, serde_json::Value> =
+        match result.properties.as_object_mut() {
+            Some(m) => std::mem::take(m),
+            None => {
+                log::warn!("associate_single: properties is not a JSON object, resetting");
+                serde_json::Map::new()
+            }
+        };
 
     // 2. Activities
     let activities = extract_activities(text);
     if !activities.is_empty() {
         let first = &activities[0];
-        map_owned.entry("activity_type".to_string())
+        map_owned
+            .entry("activity_type".to_string())
             .or_insert(serde_json::json!(first.activity_type));
-        map_owned.entry("activity_value".to_string())
+        map_owned
+            .entry("activity_value".to_string())
             .or_insert(serde_json::json!(first.value));
-        map_owned.entry("activity_unit".to_string())
+        map_owned
+            .entry("activity_unit".to_string())
             .or_insert(serde_json::json!(first.unit));
 
         let activities_json: Vec<serde_json::Value> = activities
@@ -206,21 +212,24 @@ pub fn associate_single(result: &mut ExtractionResult) {
                 })
             })
             .collect();
-        map_owned.entry("activities".to_string())
+        map_owned
+            .entry("activities".to_string())
             .or_insert(serde_json::json!(activities_json));
     }
 
     // 3. Cell lines
     let cell_lines = extract_cell_lines(text);
     if !cell_lines.is_empty() {
-        map_owned.entry("cell_lines".to_string())
+        map_owned
+            .entry("cell_lines".to_string())
             .or_insert(serde_json::json!(cell_lines));
     }
 
     // 4. Targets
     let targets = extract_targets(text);
     if !targets.is_empty() {
-        map_owned.entry("targets".to_string())
+        map_owned
+            .entry("targets".to_string())
             .or_insert(serde_json::json!(targets));
     }
 

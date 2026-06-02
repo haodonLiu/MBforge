@@ -86,8 +86,7 @@ impl MoleculeRecord {
 
         let properties: serde_json::Value =
             serde_json::from_str(&properties_str).unwrap_or(serde_json::json!({}));
-        let tags: Vec<String> =
-            serde_json::from_str(&tags_str).unwrap_or_default();
+        let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
 
         Ok(Self {
             mol_id: row.get(0)?,
@@ -204,7 +203,7 @@ fn tokenize_smiles_atoms(smiles: &str) -> Vec<String> {
             _ if in_bracket => {
                 current.push(c);
             }
-                    c if c.is_ascii_alphabetic() => {
+            c if c.is_ascii_alphabetic() => {
                 if !current.is_empty() {
                     tokens.push(std::mem::take(&mut current));
                 }
@@ -229,10 +228,10 @@ fn tokenize_smiles_atoms(smiles: &str) -> Vec<String> {
 fn implicit_hydrogens(element: &str, is_aromatic: bool) -> u32 {
     if is_aromatic {
         return match element.to_uppercase().as_str() {
-            "C" => 1,   // aromatic CH
-            "N" => 1,   // aromatic NH (pyrrole) or N (pyridine)
-            "O" => 0,   // aromatic O (furan)
-            "S" => 0,   // aromatic S (thiophene)
+            "C" => 1, // aromatic CH
+            "N" => 1, // aromatic NH (pyrrole) or N (pyridine)
+            "O" => 0, // aromatic O (furan)
+            "S" => 0, // aromatic S (thiophene)
             _ => 0,
         };
     }
@@ -284,10 +283,7 @@ fn estimate_hbd_hba(smiles: &str) -> (u32, u32) {
 fn estimate_rotatable_bonds(smiles: &str) -> u32 {
     // Count single bonds that aren't in rings
     // Heuristic: count `-` (single bond symbol) not inside brackets
-    let single_bonds: u32 = smiles
-        .chars()
-        .filter(|&c| c == '-')
-        .count() as u32;
+    let single_bonds: u32 = smiles.chars().filter(|&c| c == '-').count() as u32;
     single_bonds.min(20) // cap at 20
 }
 
@@ -382,10 +378,9 @@ impl MoleculeDatabase {
             rec.properties = rec.compute_properties();
         }
 
-        let properties_str = serde_json::to_string(&rec.properties)
-            .unwrap_or_else(|_| "{}".to_string());
-        let tags_str =
-            serde_json::to_string(&rec.tags).unwrap_or_else(|_| "[]".to_string());
+        let properties_str =
+            serde_json::to_string(&rec.properties).unwrap_or_else(|_| "{}".to_string());
+        let tags_str = serde_json::to_string(&rec.tags).unwrap_or_else(|_| "[]".to_string());
 
         // 删除旧 FTS 条目（INSERT OR REPLACE 会改变 rowid，导致旧 FTS 残留）
         let _ = self.conn.execute(
@@ -442,10 +437,9 @@ impl MoleculeDatabase {
                 rec.properties = rec.compute_properties();
             }
 
-            let properties_str = serde_json::to_string(&rec.properties)
-                .unwrap_or_else(|_| "{}".to_string());
-            let tags_str =
-                serde_json::to_string(&rec.tags).unwrap_or_else(|_| "[]".to_string());
+            let properties_str =
+                serde_json::to_string(&rec.properties).unwrap_or_else(|_| "{}".to_string());
+            let tags_str = serde_json::to_string(&rec.tags).unwrap_or_else(|_| "[]".to_string());
 
             // Delete old FTS entries (INSERT OR REPLACE changes rowid)
             let _ = tx.execute(
@@ -500,7 +494,10 @@ impl MoleculeDatabase {
             .query(params![mol_id])
             .map_err(|e| format!("Query failed: {}", e))?;
 
-        match rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+        match rows
+            .next()
+            .map_err(|e| format!("Row fetch failed: {}", e))?
+        {
             Some(row) => {
                 let record = MoleculeRecord::row_to_record(row)
                     .map_err(|e| format!("Row parse failed: {}", e))?;
@@ -521,7 +518,10 @@ impl MoleculeDatabase {
             .query(params![esmiles])
             .map_err(|e| format!("Query failed: {}", e))?;
 
-        match rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+        match rows
+            .next()
+            .map_err(|e| format!("Row fetch failed: {}", e))?
+        {
             Some(row) => {
                 let record = MoleculeRecord::row_to_record(row)
                     .map_err(|e| format!("Row parse failed: {}", e))?;
@@ -684,6 +684,121 @@ impl MoleculeDatabase {
             )
             .map_err(|e| format!("Failed to update status: {}", e))?;
         Ok(affected > 0)
+    }
+
+    /// Update an existing molecule's editable fields.
+    ///
+    /// Updates: esmiles, name, source_doc, activity, activity_type, units,
+    /// source_type, status, properties, tags, notes.
+    /// `mol_id`, `created_at` 不可改 (作为稳定标识).
+    /// Returns true if the molecule existed and was updated.
+    pub fn update_molecule(&self, record: &MoleculeRecord) -> Result<bool, String> {
+        let tags_str = serde_json::to_string(&record.tags).unwrap_or_else(|_| "[]".to_string());
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE molecules SET
+                    esmiles = ?1,
+                    name = ?2,
+                    source_doc = ?3,
+                    activity = ?4,
+                    activity_type = ?5,
+                    units = ?6,
+                    source_type = ?7,
+                    status = ?8,
+                    properties = ?9,
+                    tags = ?10,
+                    notes = ?11
+                 WHERE mol_id = ?12",
+                params![
+                    record.esmiles,
+                    record.name,
+                    record.source_doc,
+                    record.activity,
+                    record.activity_type,
+                    record.units,
+                    record.source_type,
+                    record.status,
+                    serde_json::to_string(&record.properties).unwrap_or_else(|_| "{}".to_string()),
+                    tags_str,
+                    record.notes,
+                    record.mol_id,
+                ],
+            )
+            .map_err(|e| format!("Failed to update molecule: {}", e))?;
+
+        if affected == 0 {
+            return Ok(false);
+        }
+
+        // 同步 FTS5 索引 (mol_search)
+        let _ = self.conn.execute(
+            "DELETE FROM mol_search WHERE rowid = (SELECT rowid FROM molecules WHERE mol_id = ?1)",
+            params![record.mol_id],
+        );
+        let _ = self.conn.execute(
+            "INSERT INTO mol_search(rowid, name, notes, esmiles)
+             SELECT rowid, name, notes, esmiles FROM molecules WHERE mol_id = ?1",
+            params![record.mol_id],
+        );
+
+        Ok(true)
+    }
+
+    /// 批量更新多个分子.
+    ///
+    /// 在单个事务中执行，全部成功或全部回滚.
+    /// 返回 (成功数, 失败 mol_id 列表).
+    pub fn update_molecules_batch(
+        &self,
+        records: &[MoleculeRecord],
+    ) -> Result<(usize, Vec<String>), String> {
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Failed to start transaction: {}", e))?;
+
+        let mut updated = 0;
+        let mut failed: Vec<String> = Vec::new();
+        for rec in records {
+            let tags_str = serde_json::to_string(&rec.tags).unwrap_or_else(|_| "[]".to_string());
+            let affected = tx
+                .execute(
+                    "UPDATE molecules SET
+                        esmiles = ?1, name = ?2, source_doc = ?3, activity = ?4,
+                        activity_type = ?5, units = ?6, source_type = ?7, status = ?8,
+                        properties = ?9, tags = ?10, notes = ?11
+                     WHERE mol_id = ?12",
+                    params![
+                        rec.esmiles,
+                        rec.name,
+                        rec.source_doc,
+                        rec.activity,
+                        rec.activity_type,
+                        rec.units,
+                        rec.source_type,
+                        rec.status,
+                        serde_json::to_string(&rec.properties).unwrap_or_else(|_| "{}".to_string()),
+                        tags_str,
+                        rec.notes,
+                        rec.mol_id,
+                    ],
+                )
+                .map_err(|e| format!("Failed to update {}: {}", rec.mol_id, e));
+            match affected {
+                Ok(n) if n > 0 => updated += 1,
+                Ok(_) => failed.push(rec.mol_id.clone()), // 不存在
+                Err(e) => {
+                    failed.push(rec.mol_id.clone());
+                    log::warn!("Batch update: {}", e);
+                }
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| format!("Failed to commit batch update: {}", e))?;
+
+        Ok((updated, failed))
     }
 
     /// Return the database path (useful for debugging).

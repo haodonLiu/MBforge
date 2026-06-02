@@ -36,11 +36,10 @@ pub struct PdfClassification {
 /// that the frontend can surface to the user.
 #[tauri::command]
 pub fn classify_pdf(path: String) -> Result<PdfClassification, String> {
-    let result = pdf_inspector::detect_pdf(&path)
-        .map_err(|e| {
-            log::error!("classify_pdf failed for path={}: {}", path, e);
-            format!("pdf-inspector detect failed: {}", e)
-        })?;
+    let result = pdf_inspector::detect_pdf(&path).map_err(|e| {
+        log::error!("classify_pdf failed for path={}: {}", path, e);
+        format!("pdf-inspector detect failed: {}", e)
+    })?;
 
     let pdf_type = match result.pdf_type {
         pdf_inspector::PdfType::TextBased => "TextBased",
@@ -49,13 +48,23 @@ pub fn classify_pdf(path: String) -> Result<PdfClassification, String> {
         pdf_inspector::PdfType::ImageBased => "ImageBased",
     };
 
-    log::info!("classify_pdf: path={} type={} pages={} ocr={:?}", path, pdf_type, result.page_count, result.pages_needing_ocr);
+    log::info!(
+        "classify_pdf: path={} type={} pages={} ocr={:?}",
+        path,
+        pdf_type,
+        result.page_count,
+        result.pages_needing_ocr
+    );
 
     Ok(PdfClassification {
         pdf_type: pdf_type.to_string(),
         confidence: result.confidence as f64,
         page_count: result.page_count as usize,
-        pages_needing_ocr: result.pages_needing_ocr.iter().map(|&p| p as usize).collect(),
+        pages_needing_ocr: result
+            .pages_needing_ocr
+            .iter()
+            .map(|&p| p as usize)
+            .collect(),
         // text_density_avg requires full text extraction (ProcessMode::Full);
         // detect-only mode does not extract text, so this is 0.0 here.
         // The Python pipeline can compute a real value when it runs full extraction.
@@ -93,18 +102,26 @@ pub struct PdfExtraction {
 /// extraction including text, tables, and layout detection.
 #[tauri::command]
 pub fn extract_text(path: String) -> Result<PdfExtraction, String> {
-    let result = pdf_inspector::process_pdf(&path)
-        .map_err(|e| {
-            log::error!("extract_text failed for path={}: {}", path, e);
-            format!("pdf-inspector process failed: {}", e)
-        })?;
+    let result = pdf_inspector::process_pdf(&path).map_err(|e| {
+        log::error!("extract_text failed for path={}: {}", path, e);
+        format!("pdf-inspector process failed: {}", e)
+    })?;
 
-    log::info!("extract_text: path={} pages={} ocr={:?}", path, result.page_count, result.pages_needing_ocr);
+    log::info!(
+        "extract_text: path={} pages={} ocr={:?}",
+        path,
+        result.page_count,
+        result.pages_needing_ocr
+    );
 
     Ok(PdfExtraction {
         markdown: result.markdown.unwrap_or_default(),
         page_count: result.page_count as usize,
-        pages_needing_ocr: result.pages_needing_ocr.iter().map(|&p| p as usize).collect(),
+        pages_needing_ocr: result
+            .pages_needing_ocr
+            .iter()
+            .map(|&p| p as usize)
+            .collect(),
         confidence: result.confidence,
         has_complex_layout: result.layout.is_complex,
         has_encoding_issues: result.has_encoding_issues,

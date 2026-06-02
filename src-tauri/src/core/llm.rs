@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::config::ModelConfig;
-use super::context::Message;
 use super::constants::PROVIDER_ANTHROPIC;
+use super::context::Message;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmResponse {
@@ -35,14 +35,21 @@ impl LlmClient {
             .timeout(std::time::Duration::from_secs(120))
             .build()
             .expect("Failed to create HTTP client");
-        Self { config: config.clone(), http_client }
+        Self {
+            config: config.clone(),
+            http_client,
+        }
     }
 
     fn is_anthropic(&self) -> bool {
         self.config.provider.to_lowercase() == PROVIDER_ANTHROPIC
     }
 
-    pub async fn chat(&self, messages: &[Message], tools: Option<&[serde_json::Value]>) -> Result<LlmResponse, String> {
+    pub async fn chat(
+        &self,
+        messages: &[Message],
+        tools: Option<&[serde_json::Value]>,
+    ) -> Result<LlmResponse, String> {
         if self.is_anthropic() {
             self.chat_anthropic(messages, tools).await
         } else {
@@ -50,8 +57,15 @@ impl LlmClient {
         }
     }
 
-    async fn chat_openai(&self, messages: &[Message], tools: Option<&[serde_json::Value]>) -> Result<LlmResponse, String> {
-        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+    async fn chat_openai(
+        &self,
+        messages: &[Message],
+        tools: Option<&[serde_json::Value]>,
+    ) -> Result<LlmResponse, String> {
+        let url = format!(
+            "{}/chat/completions",
+            self.config.base_url.trim_end_matches('/')
+        );
         let mut body = serde_json::json!({
             "model": self.config.model_name,
             "messages": messages_to_openai(messages),
@@ -62,18 +76,27 @@ impl LlmClient {
         if let Some(tools) = tools {
             body["tools"] = serde_json::json!(tools);
         }
-        let resp = self.http_client.post(&url)
+        let resp = self
+            .http_client
+            .post(&url)
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", self.config.api_key))
             .json(&body)
             .send()
             .await
             .map_err(|e| format!("HTTP error: {}", e))?;
-        let text = resp.text().await.map_err(|e| format!("Read error: {}", e))?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("Read error: {}", e))?;
         parse_openai_response(&text)
     }
 
-    async fn chat_anthropic(&self, messages: &[Message], tools: Option<&[serde_json::Value]>) -> Result<LlmResponse, String> {
+    async fn chat_anthropic(
+        &self,
+        messages: &[Message],
+        tools: Option<&[serde_json::Value]>,
+    ) -> Result<LlmResponse, String> {
         let url = format!("{}/v1/messages", self.config.base_url.trim_end_matches('/'));
         let (system, msgs) = messages_to_anthropic(messages);
         let mut body = serde_json::json!({
@@ -90,7 +113,9 @@ impl LlmClient {
         if let Some(tools) = tools {
             body["tools"] = serde_json::json!(tools_to_anthropic(tools));
         }
-        let resp = self.http_client.post(&url)
+        let resp = self
+            .http_client
+            .post(&url)
             .header("Content-Type", "application/json")
             .header("x-api-key", &self.config.api_key)
             .header("anthropic-version", "2023-06-01")
@@ -98,11 +123,18 @@ impl LlmClient {
             .send()
             .await
             .map_err(|e| format!("HTTP error: {}", e))?;
-        let text = resp.text().await.map_err(|e| format!("Read error: {}", e))?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("Read error: {}", e))?;
         parse_anthropic_response(&text)
     }
 
-    pub async fn chat_stream(&self, messages: &[Message], tools: Option<&[serde_json::Value]>) -> Result<tokio::sync::mpsc::Receiver<StreamChunk>, String> {
+    pub async fn chat_stream(
+        &self,
+        messages: &[Message],
+        tools: Option<&[serde_json::Value]>,
+    ) -> Result<tokio::sync::mpsc::Receiver<StreamChunk>, String> {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         if self.is_anthropic() {
             self.stream_anthropic(messages, tools, tx).await?;
@@ -112,8 +144,16 @@ impl LlmClient {
         Ok(rx)
     }
 
-    async fn stream_openai(&self, messages: &[Message], tools: Option<&[serde_json::Value]>, tx: tokio::sync::mpsc::Sender<StreamChunk>) -> Result<(), String> {
-        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+    async fn stream_openai(
+        &self,
+        messages: &[Message],
+        tools: Option<&[serde_json::Value]>,
+        tx: tokio::sync::mpsc::Sender<StreamChunk>,
+    ) -> Result<(), String> {
+        let url = format!(
+            "{}/chat/completions",
+            self.config.base_url.trim_end_matches('/')
+        );
         let mut body = serde_json::json!({
             "model": self.config.model_name,
             "messages": messages_to_openai(messages),
@@ -125,7 +165,9 @@ impl LlmClient {
         if let Some(tools) = tools {
             body["tools"] = serde_json::json!(tools);
         }
-        let resp = self.http_client.post(&url)
+        let resp = self
+            .http_client
+            .post(&url)
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", self.config.api_key))
             .json(&body)
@@ -146,14 +188,29 @@ impl LlmClient {
                 }
                 let data = &line[6..];
                 if data == "[DONE]" {
-                    let _ = tx.send(StreamChunk { delta: String::new(), finish_reason: Some("stop".into()) }).await;
+                    let _ = tx
+                        .send(StreamChunk {
+                            delta: String::new(),
+                            finish_reason: Some("stop".into()),
+                        })
+                        .await;
                     return Ok(());
                 }
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(data) {
-                    let delta = val["choices"][0]["delta"]["content"].as_str().unwrap_or("").to_string();
-                    let finish = val["choices"][0]["finish_reason"].as_str().map(|s| s.to_string());
+                    let delta = val["choices"][0]["delta"]["content"]
+                        .as_str()
+                        .unwrap_or("")
+                        .to_string();
+                    let finish = val["choices"][0]["finish_reason"]
+                        .as_str()
+                        .map(|s| s.to_string());
                     if !delta.is_empty() || finish.is_some() {
-                        let _ = tx.send(StreamChunk { delta, finish_reason: finish }).await;
+                        let _ = tx
+                            .send(StreamChunk {
+                                delta,
+                                finish_reason: finish,
+                            })
+                            .await;
                     }
                 }
             }
@@ -161,7 +218,12 @@ impl LlmClient {
         Ok(())
     }
 
-    async fn stream_anthropic(&self, messages: &[Message], tools: Option<&[serde_json::Value]>, tx: tokio::sync::mpsc::Sender<StreamChunk>) -> Result<(), String> {
+    async fn stream_anthropic(
+        &self,
+        messages: &[Message],
+        tools: Option<&[serde_json::Value]>,
+        tx: tokio::sync::mpsc::Sender<StreamChunk>,
+    ) -> Result<(), String> {
         let url = format!("{}/v1/messages", self.config.base_url.trim_end_matches('/'));
         let (system, msgs) = messages_to_anthropic(messages);
         let mut body = serde_json::json!({
@@ -176,7 +238,9 @@ impl LlmClient {
         if let Some(tools) = tools {
             body["tools"] = serde_json::json!(tools_to_anthropic(tools));
         }
-        let resp = self.http_client.post(&url)
+        let resp = self
+            .http_client
+            .post(&url)
             .header("Content-Type", "application/json")
             .header("x-api-key", &self.config.api_key)
             .header("anthropic-version", "2023-06-01")
@@ -200,15 +264,27 @@ impl LlmClient {
                         match event_type {
                             "content_block_delta" => {
                                 if val["delta"]["type"].as_str() == Some("text_delta") {
-                                    let text = val["delta"]["text"].as_str().unwrap_or("").to_string();
+                                    let text =
+                                        val["delta"]["text"].as_str().unwrap_or("").to_string();
                                     if !text.is_empty() {
-                                        let _ = tx.send(StreamChunk { delta: text, finish_reason: None }).await;
+                                        let _ = tx
+                                            .send(StreamChunk {
+                                                delta: text,
+                                                finish_reason: None,
+                                            })
+                                            .await;
                                     }
                                 }
                             }
                             "message_delta" => {
-                                let stop = val["delta"]["stop_reason"].as_str().map(|s| s.to_string());
-                                let _ = tx.send(StreamChunk { delta: String::new(), finish_reason: stop }).await;
+                                let stop =
+                                    val["delta"]["stop_reason"].as_str().map(|s| s.to_string());
+                                let _ = tx
+                                    .send(StreamChunk {
+                                        delta: String::new(),
+                                        finish_reason: stop,
+                                    })
+                                    .await;
                             }
                             _ => {}
                         }
@@ -223,22 +299,25 @@ impl LlmClient {
 // --- Message format conversion ---
 
 pub fn messages_to_openai(messages: &[Message]) -> Vec<serde_json::Value> {
-    messages.iter().map(|m| {
-        let mut obj = serde_json::json!({
-            "role": m.role,
-            "content": m.content,
-        });
-        if let Some(ref tool_calls) = m.tool_calls {
-            obj["tool_calls"] = serde_json::json!(tool_calls);
-        }
-        if let Some(ref name) = m.name {
-            obj["name"] = serde_json::json!(name);
-        }
-        if let Some(ref tc_id) = m.tool_call_id {
-            obj["tool_call_id"] = serde_json::json!(tc_id);
-        }
-        obj
-    }).collect()
+    messages
+        .iter()
+        .map(|m| {
+            let mut obj = serde_json::json!({
+                "role": m.role,
+                "content": m.content,
+            });
+            if let Some(ref tool_calls) = m.tool_calls {
+                obj["tool_calls"] = serde_json::json!(tool_calls);
+            }
+            if let Some(ref name) = m.name {
+                obj["name"] = serde_json::json!(name);
+            }
+            if let Some(ref tc_id) = m.tool_call_id {
+                obj["tool_call_id"] = serde_json::json!(tc_id);
+            }
+            obj
+        })
+        .collect()
 }
 
 pub fn messages_to_anthropic(messages: &[Message]) -> (String, Vec<serde_json::Value>) {
@@ -297,34 +376,57 @@ pub fn messages_to_anthropic(messages: &[Message]) -> (String, Vec<serde_json::V
 }
 
 pub fn tools_to_anthropic(tools: &[serde_json::Value]) -> Vec<serde_json::Value> {
-    tools.iter().filter_map(|t| {
-        let func = &t["function"];
-        Some(serde_json::json!({
-            "name": func["name"].as_str()?,
-            "description": func["description"].as_str().unwrap_or(""),
-            "input_schema": func["parameters"],
-        }))
-    }).collect()
+    tools
+        .iter()
+        .filter_map(|t| {
+            let func = &t["function"];
+            Some(serde_json::json!({
+                "name": func["name"].as_str()?,
+                "description": func["description"].as_str().unwrap_or(""),
+                "input_schema": func["parameters"],
+            }))
+        })
+        .collect()
 }
 
 // --- Response parsing ---
 
 pub fn parse_openai_response(text: &str) -> Result<LlmResponse, String> {
-    let val: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("JSON parse error: {}", e))?;
-    let content = val["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string();
-    let finish_reason = val["choices"][0]["finish_reason"].as_str().unwrap_or("").to_string();
-    let tool_calls = val["choices"][0]["message"]["tool_calls"].as_array()
-        .map(|arr| arr.iter().map(|tc| ToolCall {
-            id: tc["id"].as_str().unwrap_or("").to_string(),
-            name: tc["function"]["name"].as_str().unwrap_or("").to_string(),
-            arguments: serde_json::from_str(tc["function"]["arguments"].as_str().unwrap_or("{}")).unwrap_or(serde_json::json!({})),
-        }).collect())
+    let val: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("JSON parse error: {}", e))?;
+    let content = val["choices"][0]["message"]["content"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let finish_reason = val["choices"][0]["finish_reason"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let tool_calls = val["choices"][0]["message"]["tool_calls"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|tc| ToolCall {
+                    id: tc["id"].as_str().unwrap_or("").to_string(),
+                    name: tc["function"]["name"].as_str().unwrap_or("").to_string(),
+                    arguments: serde_json::from_str(
+                        tc["function"]["arguments"].as_str().unwrap_or("{}"),
+                    )
+                    .unwrap_or(serde_json::json!({})),
+                })
+                .collect()
+        })
         .unwrap_or_default();
-    Ok(LlmResponse { content, tool_calls, finish_reason })
+    Ok(LlmResponse {
+        content,
+        tool_calls,
+        finish_reason,
+    })
 }
 
 pub fn parse_anthropic_response(text: &str) -> Result<LlmResponse, String> {
-    let val: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("JSON parse error: {}", e))?;
+    let val: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("JSON parse error: {}", e))?;
     let finish_reason = val["stop_reason"].as_str().unwrap_or("").to_string();
     let mut content = String::new();
     let mut tool_calls = Vec::new();
@@ -347,7 +449,11 @@ pub fn parse_anthropic_response(text: &str) -> Result<LlmResponse, String> {
             }
         }
     }
-    Ok(LlmResponse { content, tool_calls, finish_reason })
+    Ok(LlmResponse {
+        content,
+        tool_calls,
+        finish_reason,
+    })
 }
 
 #[cfg(test)]
@@ -356,10 +462,7 @@ mod tests {
 
     #[test]
     fn test_messages_to_openai() {
-        let msgs = vec![
-            Message::system("You are helpful"),
-            Message::user("Hello"),
-        ];
+        let msgs = vec![Message::system("You are helpful"), Message::user("Hello")];
         let result = messages_to_openai(&msgs);
         assert_eq!(result.len(), 2);
         assert_eq!(result[0]["role"], "system");
@@ -368,10 +471,7 @@ mod tests {
 
     #[test]
     fn test_messages_to_anthropic_system_extraction() {
-        let msgs = vec![
-            Message::system("System prompt"),
-            Message::user("Hello"),
-        ];
+        let msgs = vec![Message::system("System prompt"), Message::user("Hello")];
         let (system, anthropic_msgs) = messages_to_anthropic(&msgs);
         assert_eq!(system, "System prompt");
         assert_eq!(anthropic_msgs.len(), 1);

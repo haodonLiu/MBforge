@@ -145,7 +145,11 @@ fn parse_smiles(smiles: &str) -> Result<MoleculeGraph, String> {
     while i < tokens.len() {
         let tok = &tokens[i];
         match tok {
-            SmilesToken::Atom { element, aromatic, charge } => {
+            SmilesToken::Atom {
+                element,
+                aromatic,
+                charge,
+            } => {
                 let idx = atoms.len();
                 atoms.push(Atom {
                     element: element.clone(),
@@ -164,7 +168,11 @@ fn parse_smiles(smiles: &str) -> Result<MoleculeGraph, String> {
                     } else {
                         pending_bond
                     };
-                    bonds.push(Bond { from: prev, to: idx, bond_type: bt });
+                    bonds.push(Bond {
+                        from: prev,
+                        to: idx,
+                        bond_type: bt,
+                    });
                     adjacency[prev].push((idx, bt));
                     adjacency[idx].push((prev, bt));
                 }
@@ -212,7 +220,11 @@ fn parse_smiles(smiles: &str) -> Result<MoleculeGraph, String> {
         let a = entries[0];
         let b = entries[1];
         let bt = if a.1 == b.1 { a.1 } else { BondType::Single };
-        bonds.push(Bond { from: a.0, to: b.0, bond_type: bt });
+        bonds.push(Bond {
+            from: a.0,
+            to: b.0,
+            bond_type: bt,
+        });
         adjacency[a.0].push((b.0, bt));
         adjacency[b.0].push((a.0, bt));
     }
@@ -223,12 +235,20 @@ fn parse_smiles(smiles: &str) -> Result<MoleculeGraph, String> {
         adj.dedup_by(|a, b| a.0 == b.0);
     }
 
-    Ok(MoleculeGraph { atoms, bonds, adjacency })
+    Ok(MoleculeGraph {
+        atoms,
+        bonds,
+        adjacency,
+    })
 }
 
 #[derive(Debug, Clone)]
 enum SmilesToken {
-    Atom { element: String, aromatic: bool, charge: i32 },
+    Atom {
+        element: String,
+        aromatic: bool,
+        charge: i32,
+    },
     Bond(BondType),
     BranchOpen,
     BranchClose,
@@ -253,7 +273,9 @@ fn tokenize_smiles(smiles: &str) -> Vec<SmilesToken> {
             '/' | '\\' => tokens.push(SmilesToken::Bond(BondType::Single)),
             '%' => {
                 if i + 2 < chars.len() {
-                    let n: u32 = format!("{}{}", chars[i+1], chars[i+2]).parse().unwrap_or(0);
+                    let n: u32 = format!("{}{}", chars[i + 1], chars[i + 2])
+                        .parse()
+                        .unwrap_or(0);
                     tokens.push(SmilesToken::RingClosure(n));
                     i += 2;
                 }
@@ -268,7 +290,7 @@ fn tokenize_smiles(smiles: &str) -> Vec<SmilesToken> {
                     j += 1;
                 }
                 let bracket: String = chars[i..=j].iter().collect();
-                let inner = &bracket[1..bracket.len()-1];
+                let inner = &bracket[1..bracket.len() - 1];
                 let mut element = inner.to_string();
                 let mut charge = 0;
 
@@ -278,7 +300,8 @@ fn tokenize_smiles(smiles: &str) -> Vec<SmilesToken> {
                     charge = if c == '+' { 1 } else { -1 };
                     // Handle 2+, 3-, etc.
                     if element.ends_with(|d: char| d.is_ascii_digit()) {
-                        let n: i32 = element.chars().last().unwrap().to_digit(10).unwrap_or(1) as i32;
+                        let n: i32 =
+                            element.chars().last().unwrap().to_digit(10).unwrap_or(1) as i32;
                         element.pop();
                         charge *= n;
                     }
@@ -286,10 +309,20 @@ fn tokenize_smiles(smiles: &str) -> Vec<SmilesToken> {
                     let sign = &element[pos..];
                     let base = &element[..pos];
                     charge = if sign.contains('+') {
-                        let n: i32 = sign.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(1);
+                        let n: i32 = sign
+                            .chars()
+                            .filter(|c| c.is_ascii_digit())
+                            .collect::<String>()
+                            .parse()
+                            .unwrap_or(1);
                         n
                     } else {
-                        let n: i32 = sign.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse().unwrap_or(1);
+                        let n: i32 = sign
+                            .chars()
+                            .filter(|c| c.is_ascii_digit())
+                            .collect::<String>()
+                            .parse()
+                            .unwrap_or(1);
                         -n
                     };
                     element = base.to_string();
@@ -297,32 +330,61 @@ fn tokenize_smiles(smiles: &str) -> Vec<SmilesToken> {
 
                 // Strip isotope prefix
                 let elem = if element.starts_with(|c: char| c.is_ascii_digit()) {
-                    let pos = element.find(|c: char| !c.is_ascii_digit()).unwrap_or(element.len());
+                    let pos = element
+                        .find(|c: char| !c.is_ascii_digit())
+                        .unwrap_or(element.len());
                     element[pos..].to_string()
                 } else {
                     element
                 };
 
-                let aromatic = elem.chars().next().map_or(false, |c| c.is_lowercase() && c != 'c' && c != 's' && c != 'p' && c != 'n' && c != 'o');
+                let aromatic = elem.chars().next().map_or(false, |c| {
+                    c.is_lowercase() && c != 'c' && c != 's' && c != 'p' && c != 'n' && c != 'o'
+                });
                 let element = if elem.len() == 1 {
                     elem.to_uppercase()
                 } else if elem.len() >= 2 {
-                    let first = elem.chars().next().unwrap().to_uppercase().next().unwrap_or('?');
+                    let first = elem
+                        .chars()
+                        .next()
+                        .unwrap()
+                        .to_uppercase()
+                        .next()
+                        .unwrap_or('?');
                     format!("{}{}", first, &elem[1..])
                 } else {
                     elem.to_string()
                 };
 
-                tokens.push(SmilesToken::Atom { element, aromatic, charge });
+                tokens.push(SmilesToken::Atom {
+                    element,
+                    aromatic,
+                    charge,
+                });
                 i = j;
             }
             'A'..='Z' | 'a'..='z' | '*' => {
-                let aromatic = chars[i].is_lowercase() && chars[i] != 'c' && chars[i] != 's' && chars[i] != 'p' && chars[i] != 'n' && chars[i] != 'o';
+                let aromatic = chars[i].is_lowercase()
+                    && chars[i] != 'c'
+                    && chars[i] != 's'
+                    && chars[i] != 'p'
+                    && chars[i] != 'n'
+                    && chars[i] != 'o';
                 let element = if chars[i] == '*' {
                     "*".to_string()
                 } else if i + 1 < chars.len() {
-                    let two = format!("{}{}", chars[i], chars[i+1]);
-                    if ["Cl", "Br", "Na", "Mg", "Ca", "Fe", "Zn", "Cu", "Ni", "Co", "Mn", "Li", "Be", "Al", "Si", "Pt", "Au", "Hg", "Ag", "Sn", "Pb", "As", "Se", "Cd", "Cr", "Mo", "W", "V", "Ti", "Zr", "Ru", "Rh", "Pd", "Os", "Ir", "Bi", "Te", "Ba", "Sr", "Rb", "Cs", "Fr", "Ra", "Sc", "Y", "La", "Ce", "Pr", "Nd", "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Ac", "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md", "No", "Lr"].contains(&two.as_str()) {
+                    let two = format!("{}{}", chars[i], chars[i + 1]);
+                    if [
+                        "Cl", "Br", "Na", "Mg", "Ca", "Fe", "Zn", "Cu", "Ni", "Co", "Mn", "Li",
+                        "Be", "Al", "Si", "Pt", "Au", "Hg", "Ag", "Sn", "Pb", "As", "Se", "Cd",
+                        "Cr", "Mo", "W", "V", "Ti", "Zr", "Ru", "Rh", "Pd", "Os", "Ir", "Bi", "Te",
+                        "Ba", "Sr", "Rb", "Cs", "Fr", "Ra", "Sc", "Y", "La", "Ce", "Pr", "Nd",
+                        "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Ac",
+                        "Th", "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm", "Md",
+                        "No", "Lr",
+                    ]
+                    .contains(&two.as_str())
+                    {
                         i += 1;
                         two
                     } else {
@@ -391,9 +453,7 @@ fn backtrack(
     let candidates: Vec<usize> = if depth == 0 {
         // First atom: any compatible atom in query
         (0..query.atoms.len())
-            .filter(|&q_idx| {
-                !used[q_idx] && atoms_compatible(p_atom, &query.atoms[q_idx])
-            })
+            .filter(|&q_idx| !used[q_idx] && atoms_compatible(p_atom, &query.atoms[q_idx]))
             .collect()
     } else {
         // Use neighbors already mapped to constrain search
@@ -421,7 +481,10 @@ fn backtrack(
                 .filter(|&q_idx| !used[q_idx] && atoms_compatible(p_atom, &query.atoms[q_idx]))
                 .collect()
         } else {
-            cand_set.into_iter().filter(|&q_idx| atoms_compatible(p_atom, &query.atoms[q_idx])).collect()
+            cand_set
+                .into_iter()
+                .filter(|&q_idx| atoms_compatible(p_atom, &query.atoms[q_idx]))
+                .collect()
         }
     };
 
@@ -455,7 +518,10 @@ fn atoms_compatible(p_atom: &Atom, q_atom: &Atom) -> bool {
     let p_elem = p_atom.element.as_str();
     let q_elem = q_atom.element.as_str();
     // c (aromatic C) matches both "C" and aromatic C
-    if p_atom.is_aromatic && (q_elem == "C" || q_elem == "c" || q_elem == "C") && !q_atom.is_aromatic {
+    if p_atom.is_aromatic
+        && (q_elem == "C" || q_elem == "c" || q_elem == "C")
+        && !q_atom.is_aromatic
+    {
         // Allow aromatic C in pattern to match aliphatic C in query
         return p_elem == "C" || p_elem == "c";
     }
@@ -472,9 +538,9 @@ fn check_consistency(
     // For every mapped neighbor of p_idx, verify q_idx has a corresponding neighbor
     for &(p_nbr, p_bt) in &pattern.adjacency[p_idx] {
         if let Some(q_nbr) = mapping.get(p_nbr).and_then(|&m| m) {
-            let has_edge = query.adjacency[q_idx].iter().any(|&(qn, qbt)| {
-                qn == q_nbr && qbt.compatible_with(p_bt)
-            });
+            let has_edge = query.adjacency[q_idx]
+                .iter()
+                .any(|&(qn, qbt)| qn == q_nbr && qbt.compatible_with(p_bt));
             if !has_edge {
                 return false;
             }
@@ -487,23 +553,23 @@ fn check_consistency(
 
 static ESMILES_SEP: &str = "<sep>";
 
-static ATOM_TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<a>(\d+):([^<]+)</a>").unwrap());
-static RING_TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<r>(\d+):([^<]+)</r>").unwrap());
-static CIRCLE_TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<c>(\d+):([^<]+)</c>").unwrap());
+static ATOM_TAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<a>(\d+):([^<]+)</a>").unwrap());
+static RING_TAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<r>(\d+):([^<]+)</r>").unwrap());
+static CIRCLE_TAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<c>(\d+):([^<]+)</c>").unwrap());
 static RGROUP_TEXT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)(?:R\[?(\d+)\]?\s*(?:is|represents|selected from|chosen from|independently|can be|are|may be)\s*:\s*)(.+?)(?:[.;]|and\s|or\s|where\s|provided\s|$)"
     ).unwrap()
 });
-static RGROUP_PAREN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?:R\[?(\d+)\]?\s*=\s*)([A-Za-z0-9\-, \{\}/]+)").unwrap()
-});
-static ALKYL_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkyl").unwrap()
-});
-static ALKOXY_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkoxy").unwrap()
-});
+static RGROUP_PAREN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:R\[?(\d+)\]?\s*=\s*)([A-Za-z0-9\-, \{\}/]+)").unwrap());
+static ALKYL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkyl").unwrap());
+static ALKOXY_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkoxy").unwrap());
 
 /// Parse an E-SMILES string into a MarkushPattern.
 pub fn parse_esmiles(input: &str) -> MarkushPattern {
@@ -616,7 +682,10 @@ fn classify_rgroup_text(desc: &str) -> RGroupDef {
     if desc_lower.contains("hydroxyl") || desc_lower.contains("hydroxy") || desc_lower == "oh" {
         return RGroupDef::GenericClass(SubstituentClass::Hydroxyl);
     }
-    if desc_lower.contains("carboxyl") || desc_lower.contains("carboxy") || desc_lower.contains("cooh") {
+    if desc_lower.contains("carboxyl")
+        || desc_lower.contains("carboxy")
+        || desc_lower.contains("cooh")
+    {
         return RGroupDef::GenericClass(SubstituentClass::Carboxyl);
     }
     if desc_lower.contains("amino") || desc_lower.contains("nh2") {
@@ -628,7 +697,10 @@ fn classify_rgroup_text(desc: &str) -> RGroupDef {
     if desc_lower.contains("cyano") || desc_lower.contains("cn") {
         return RGroupDef::GenericClass(SubstituentClass::Cyano);
     }
-    if desc_lower.contains("aryl") || desc_lower.contains("phenyl") || desc_lower.contains("benzene") {
+    if desc_lower.contains("aryl")
+        || desc_lower.contains("phenyl")
+        || desc_lower.contains("benzene")
+    {
         return RGroupDef::GenericClass(SubstituentClass::Aryl);
     }
     if desc_lower.contains("heteroaryl") || desc_lower.contains("heteroaromatic") {
@@ -636,8 +708,14 @@ fn classify_rgroup_text(desc: &str) -> RGroupDef {
     }
     if desc_lower.contains("alkoxy") {
         if let Some(cap) = ALKOXY_RE.captures(&desc_lower) {
-            let min = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(1);
-            let max = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(6);
+            let min = cap
+                .get(1)
+                .and_then(|m| m.as_str().parse().ok())
+                .unwrap_or(1);
+            let max = cap
+                .get(2)
+                .and_then(|m| m.as_str().parse().ok())
+                .unwrap_or(6);
             return RGroupDef::GenericClass(SubstituentClass::Alkoxy { min, max });
         }
         return RGroupDef::GenericClass(SubstituentClass::Alkoxy { min: 1, max: 6 });
@@ -646,7 +724,8 @@ fn classify_rgroup_text(desc: &str) -> RGroupDef {
     if desc_lower.contains("h, ") || desc_lower.starts_with("h,") || desc_lower == "h" {
         // Could be hydrogen among other options — check for enumerated values
         if desc.len() < 10 {
-            let values: Vec<String> = desc.split(|c: char| c == ',' || c == '/' || c == ';')
+            let values: Vec<String> = desc
+                .split(|c: char| c == ',' || c == '/' || c == ';')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
@@ -659,7 +738,8 @@ fn classify_rgroup_text(desc: &str) -> RGroupDef {
 
     // Try enumerated list (comma-separated, short strings)
     if desc.len() < 50 && desc.contains(',') {
-        let values: Vec<String> = desc.split(|c: char| c == ',' || c == '/' || c == ';')
+        let values: Vec<String> = desc
+            .split(|c: char| c == ',' || c == '/' || c == ';')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty() && s.len() <= 10)
             .collect();
@@ -671,8 +751,14 @@ fn classify_rgroup_text(desc: &str) -> RGroupDef {
     // Generic alkyl
     if desc_lower.contains("alkyl") {
         if let Some(cap) = ALKYL_RE.captures(&desc_lower) {
-            let min = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(1);
-            let max = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(6);
+            let min = cap
+                .get(1)
+                .and_then(|m| m.as_str().parse().ok())
+                .unwrap_or(1);
+            let max = cap
+                .get(2)
+                .and_then(|m| m.as_str().parse().ok())
+                .unwrap_or(6);
             return RGroupDef::GenericClass(SubstituentClass::Alkyl { min, max });
         }
         return RGroupDef::GenericClass(SubstituentClass::Alkyl { min: 1, max: 6 });
@@ -737,7 +823,9 @@ pub fn check_overlap(markush: &MarkushPattern, query_smiles: &str) -> MarkushOve
             };
             details.push(format!(
                 "Core scaffold matched: {}/{} atoms ({:.1}%)",
-                matched, total_core_atoms, core_overlap_ratio * 100.0
+                matched,
+                total_core_atoms,
+                core_overlap_ratio * 100.0
             ));
 
             // Check R group compatibility
@@ -835,27 +923,46 @@ fn check_rgroup_scope(def: &RGroupDef, substituent: &str) -> Option<bool> {
     match def {
         RGroupDef::None => None,
         RGroupDef::Any => Some(true),
-        RGroupDef::Enumerated(values) => {
-            Some(values.iter().any(|v| v.to_lowercase() == substituent.to_lowercase()))
-        }
-        RGroupDef::GenericClass(class) => {
-            Some(match class {
-                SubstituentClass::Halogen => matches!(substituent, "F" | "Cl" | "Br" | "I" | "At"),
-                SubstituentClass::Hydrogen => substituent == "H",
-                SubstituentClass::Hydroxyl => substituent == "O" || substituent == "OH",
-                SubstituentClass::Carboxyl => substituent == "C(=O)O" || substituent == "CO2H" || substituent == "C" || substituent == "O",
-                SubstituentClass::Amino => substituent == "N" || substituent == "NH2",
-                SubstituentClass::Nitro => substituent == "NO2",
-                SubstituentClass::Cyano => substituent == "CN" || substituent == "N",
-                SubstituentClass::Trifluoromethyl => substituent == "CF3" || substituent == "C" || substituent == "F",
-                SubstituentClass::Aryl => substituent == "c" || substituent == "C",
-                SubstituentClass::Heteroaryl => substituent == "n" || substituent == "N" || substituent == "o" || substituent == "O" || substituent == "s" || substituent == "S",
-                SubstituentClass::Alkyl { .. } => substituent == "C",
-                SubstituentClass::Haloalkyl { .. } => substituent == "C" || substituent == "F" || substituent == "Cl" || substituent == "Br",
-                SubstituentClass::Alkoxy { .. } => substituent == "O",
-                SubstituentClass::Cycloalkyl { .. } => substituent == "C",
-            })
-        }
+        RGroupDef::Enumerated(values) => Some(
+            values
+                .iter()
+                .any(|v| v.to_lowercase() == substituent.to_lowercase()),
+        ),
+        RGroupDef::GenericClass(class) => Some(match class {
+            SubstituentClass::Halogen => matches!(substituent, "F" | "Cl" | "Br" | "I" | "At"),
+            SubstituentClass::Hydrogen => substituent == "H",
+            SubstituentClass::Hydroxyl => substituent == "O" || substituent == "OH",
+            SubstituentClass::Carboxyl => {
+                substituent == "C(=O)O"
+                    || substituent == "CO2H"
+                    || substituent == "C"
+                    || substituent == "O"
+            }
+            SubstituentClass::Amino => substituent == "N" || substituent == "NH2",
+            SubstituentClass::Nitro => substituent == "NO2",
+            SubstituentClass::Cyano => substituent == "CN" || substituent == "N",
+            SubstituentClass::Trifluoromethyl => {
+                substituent == "CF3" || substituent == "C" || substituent == "F"
+            }
+            SubstituentClass::Aryl => substituent == "c" || substituent == "C",
+            SubstituentClass::Heteroaryl => {
+                substituent == "n"
+                    || substituent == "N"
+                    || substituent == "o"
+                    || substituent == "O"
+                    || substituent == "s"
+                    || substituent == "S"
+            }
+            SubstituentClass::Alkyl { .. } => substituent == "C",
+            SubstituentClass::Haloalkyl { .. } => {
+                substituent == "C"
+                    || substituent == "F"
+                    || substituent == "Cl"
+                    || substituent == "Br"
+            }
+            SubstituentClass::Alkoxy { .. } => substituent == "O",
+            SubstituentClass::Cycloalkyl { .. } => substituent == "C",
+        }),
         RGroupDef::TextDescribed(_) => {
             // Cannot determine from atom type alone
             None

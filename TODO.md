@@ -97,11 +97,17 @@
 - vitest + @testing-library/react + jsdom
 - 73 个测试: API (kb/agent/environment/download) + 组件 (Button) + hook (useToast)
 
-## 五、下一步计划
+## 五、已完成
+
+### 跨语言 codegen ✅
+- constants.yaml: 25 个共享常量单一源
+- scripts/generate_constants.py: 生成 Rust + Python
+- `python scripts/generate_constants.py` 一键同步
+
+## 六、下一步计划
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P2** | 跨语言 codegen | constants.yaml → constants.rs + constants.py |
 | **P2** | PDF 管线 Rust 集成测试 | 需要 Tauri 环境 |
 
 ---

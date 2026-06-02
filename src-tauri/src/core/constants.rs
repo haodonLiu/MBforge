@@ -70,6 +70,9 @@ pub const AGENT_MAX_ITERATIONS: usize = 5;
 pub const AGENT_MAX_HISTORY_ROUNDS: usize = 20;
 pub const AGENT_MAX_TOTAL_TOKENS: usize = 32000;
 
+// Embedding base URL (same as sidecar URL)
+pub const DEFAULT_EMBED_BASE_URL: &str = "http://127.0.0.1:18792";
+
 // ===== Path helpers =====
 
 pub fn sidecar_url() -> String {

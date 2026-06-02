@@ -1,101 +1,82 @@
-"""MBForge 常量定义.
+"""MBForge 全局常量 — 从 constants.yaml 自动生成."""
 
-NOTE: Keep in sync with src-tauri/src/core/constants.rs (Rust side).
-When changing a value here, update the corresponding Rust constant.
-"""
+# ============================================================
+# AUTO-GENERATED from constants.yaml — DO NOT EDIT MANUALLY
+# Run: python scripts/generate_constants.py
+# ============================================================
 
+from __future__ import annotations
+
+import os
 from pathlib import Path
-from platformdirs import user_data_dir, user_config_dir
+
+try:
+    from platformdirs import user_config_dir, user_data_dir
+except ImportError:
+    user_config_dir = user_data_dir = lambda *a, **kw: str(Path.home() / ".config" / a[0] if a else ".config")
+
+# NOTE: Keep in sync with src-tauri/src/core/constants.rs (Rust side).
+# When changing a value here, update the corresponding Rust constant.
 
 APP_NAME = "MBForge"
-APP_AUTHOR = "MBForge"
-# Single source of truth for Python-side version
 APP_VERSION = "0.2.0"
+APP_AUTHOR = "MBForge"
 
-# 项目元数据格式版本号（与 Rust 侧 PROJECT_FORMAT_VERSION 保持同步）
 PROJECT_FORMAT_VERSION = 1
-
-# 隐藏目录名，存储在项目根目录
 PROJECT_META_DIR = ".mbforge"
 
-# 全局配置目录
-GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))
-GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
-
-# 默认模型配置 — Qwen3 系列（用户选型决策）
-DEFAULT_EMBED_MODEL = "Qwen/Qwen3-Embedding-0.6B"
-DEFAULT_RERANK_MODEL = "Qwen/Qwen3-Reranker-0.6B"
-DEFAULT_LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct-GGUF"
-DEFAULT_VLM_MODEL = "mimo-v2.5"
-
-# 国内模型下载镜像（ModelScope / HF-Mirror）
-DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
-
-# Embedding 任务指令前缀（Qwen3 Instruction Aware）
-EMBED_INSTRUCTION_RETRIEVAL = (
-    "Given a web search query, retrieve relevant passages that answer the query"
-)
-EMBED_INSTRUCTION_CLUSTER = (
-    "Given a document, retrieve relevant passages that are semantically similar"
-)
-
-# Reranker 默认指令（Qwen3-Reranker）
-RERANK_DEFAULT_INSTRUCTION = (
-    "Given a web search query, retrieve relevant passages that answer the query"
-)
-
-# 支持的文档类型
-SUPPORTED_DOC_EXTS = {".md", ".txt", ".pdf"}
-SUPPORTED_MOL_EXTS = {".sdf", ".mol", ".mol2", ".pdb", ".smi"}
-
-# ChromaDB 集合名
-KB_COLLECTION_DOCS = "documents"
-
-# PDF 解析参数
-PDF_CHUNK_SIZE = 512
-PDF_CHUNK_OVERLAP = 128
-
-# LLM 参数
-LLM_MAX_TOKENS = 4096
-LLM_TEMPERATURE = 0.7
-LLM_TOP_P = 0.9
-
-# 数据库
-MOL_DB_FILENAME = "molecules.db"
-
-# 元数据子目录/文件
 MEMORY_DIR = "memory"
 TRAJECTORY_DIR = "trajectory"
 TRAJECTORY_FILE = "trajectory.json"
 SUMMARY_DIR = "summaries"
-SETTINGS_FILE = "settings.json"
 INDEX_FILE = "index.json"
+SETTINGS_FILE = "settings.json"
+MOL_DB_FILENAME = "molecules.db"
+KB_COLLECTION_DOCS = "documents"
 
-# Provider 字符串
+DEFAULT_EMBED_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+DEFAULT_RERANK_MODEL = "Qwen/Qwen3-Reranker-0.6B"
+DEFAULT_LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct-GGUF"
+DEFAULT_VLM_MODEL = "mimo-v2.5"
+DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
+
 PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
 PROVIDER_ANTHROPIC = "anthropic"
-PROVIDER_SENTENCE_TRANSFORMERS = "sentence_transformers"
 PROVIDER_QWEN3 = "qwen3"
-PROVIDER_API = "api"
+PROVIDER_SENTENCE_TRANSFORMERS = "sentence_transformers"
 PROVIDER_OLLAMA = "ollama"
+PROVIDER_API = "api"
 PROVIDER_LOCAL = "local"
-
-# OCR Provider
 OCR_PROVIDER_NONE = "none"
 
-# Sidecar 端口
+LLM_MAX_TOKENS = 4096
+LLM_TEMPERATURE = 0.7
+LLM_TOP_P = 0.9
+
+PDF_CHUNK_SIZE = 512
+PDF_CHUNK_OVERLAP = 128
+
 DEFAULT_SIDECAR_PORT = 18792
+DEFAULT_SIDECAR_URL = "http://127.0.0.1:18792"
 
-# 模型下载目录（统一入口）
-def _default_model_cache_dir() -> str:
-    from pathlib import Path
-    return str(Path.home() / ".cache" / "mbforge" / "models")
+SUPPORTED_DOC_EXTS: set[str] = {".md", ".txt", ".pdf"}
+SUPPORTED_MOL_EXTS: set[str] = {".sdf", ".mol", ".mol2", ".pdb", ".smi"}
 
-MODEL_CACHE_DIR = _default_model_cache_dir()
+# ===== Python-only constants (not shared with Rust) =====
+
+# Qwen3 Embedding/Reranker 指令前缀
+EMBED_INSTRUCTION_RETRIEVAL = "Given a web search query, retrieve relevant passages that answer the query"
+EMBED_INSTRUCTION_CLUSTER = "Given a document, retrieve relevant passages that are semantically similar"
+RERANK_DEFAULT_INSTRUCTION = "Given a web search query, retrieve relevant passages that answer the query"
+
+# ===== Path helpers =====
+
+GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))
+GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
 
 
 def get_model_cache_dir() -> str:
-    """获取有效的模型下载目录（优先使用 config 中的配置）."""
+    """获取模型缓存目录（优先配置文件，其次默认路径）."""
     try:
         from .config import load_global_config
         cfg = load_global_config()
@@ -103,12 +84,15 @@ def get_model_cache_dir() -> str:
             return cfg.model_cache_dir
     except Exception:
         pass
-    return MODEL_CACHE_DIR
+    return str(Path.home() / MODEL_CACHE_DIR.replace(".", "").replace("/", os.sep).replace("~", str(Path.home())))
+
+
+# MODEL_CACHE_DIR is the relative path fragment used by get_model_cache_dir()
+MODEL_CACHE_DIR = ".cache/mbforge/models"
 
 
 def ensure_hf_mirror() -> None:
     """设置 HuggingFace 镜像环境变量（如果未设置）。"""
-    import os
-
-    if "HF_ENDPOINT" not in os.environ:
+    if not os.environ.get("HF_ENDPOINT"):
         os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
+

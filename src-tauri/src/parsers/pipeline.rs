@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
+use crate::core::constants::{EVT_DOC_PROGRESS, EVT_DOC_RESULT};
+
 use crate::commands::classifier::classify_document;
 use crate::commands::extractor::{extract_activities, extract_esmiles_candidates};
 use crate::core::molecule_store::{MoleculeDatabase, MoleculeRecord};
@@ -223,7 +225,7 @@ pub async fn process_document(
 
     // ===== Stage 0: 文件分类 + 提取 =====
     {
-        let _ = app.emit("doc-progress", DocProgressEvent::Classify {
+        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Classify {
             parser: "auto".into(),
             page_count: 0,
         });
@@ -252,7 +254,7 @@ pub async fn process_document(
             errors: vec![],
         });
 
-        let _ = app.emit("doc-progress", DocProgressEvent::Classify {
+        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Classify {
             parser: ctx.parser_used.clone(),
             page_count: ctx.page_count,
         });
@@ -261,7 +263,7 @@ pub async fn process_document(
     // ===== Stage 1: 快速结构分析（Meta Prompt）=====
     let doc_structure: DocStructure;
     {
-        let _ = app.emit("doc-progress", DocProgressEvent::Meta {
+        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Meta {
             doc_type: "analyzing".into(),
             sections: vec![],
         });
@@ -294,7 +296,7 @@ pub async fn process_document(
             errors: vec![],
         });
 
-        let _ = app.emit("doc-progress", DocProgressEvent::Meta {
+        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Meta {
             doc_type: doc_structure.doc_type.clone(),
             sections: doc_structure.estimated_sections.clone(),
         });
@@ -303,7 +305,7 @@ pub async fn process_document(
     // ===== Stage 1.5: 用户意图路由 =====
     let plan = crate::parsers::intent::interpret_request(&doc_structure, &user_req);
 
-    let _ = app.emit("doc-progress", DocProgressEvent::Plan {
+    let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Plan {
         target_sections: plan.target_sections.clone(),
         extraction_types: plan.extraction_types.clone(),
     });
@@ -332,7 +334,7 @@ pub async fn process_document(
         .await
         {
             Ok(r) => {
-                let _ = app.emit("doc-progress", DocProgressEvent::Section {
+                let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Section {
                     name: section_name.clone(),
                     status: "ok".into(),
                     compounds: r.data.compounds.len(),
@@ -355,7 +357,7 @@ pub async fn process_document(
                     },
                 );
 
-                let _ = app.emit("doc-progress", DocProgressEvent::Error {
+                let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Error {
                     stage: format!("section:{}", section_name),
                     message: format!("Section processing failed, skipped"),
                 });
@@ -419,7 +421,7 @@ pub async fn process_document(
             claim_graph = Some(crate::parsers::claim_parser::parse_claims_section(&claims_text));
         }
 
-        let _ = app.emit("doc-progress", DocProgressEvent::Section {
+        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Section {
             name: "patent_molecule_extraction".into(),
             status: "ok".into(),
             compounds: molecule_traces.len(),
@@ -459,7 +461,7 @@ pub async fn process_document(
             vlm_esmiles_found = vlm_results.len();
         }
 
-        let _ = app.emit("doc-progress", DocProgressEvent::Vlm {
+        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Vlm {
             image_count: chem_images.len(),
             esmiles_found: vlm_esmiles_found,
         });
@@ -514,7 +516,7 @@ pub async fn process_document(
             }
         }
 
-        let _ = app.emit("doc-progress", DocProgressEvent::Merge {
+        let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Merge {
             total_compounds: final_data.compounds.len(),
             total_activities: final_data.activities.len(),
         });
@@ -548,7 +550,7 @@ pub async fn process_document(
         report_markdown: report_md.clone(),
     };
 
-    let _ = app.emit("doc-progress", DocProgressEvent::Report {
+    let _ = app.emit(EVT_DOC_PROGRESS, DocProgressEvent::Report {
         report_len: report_md.len(),
     });
 
@@ -583,7 +585,7 @@ pub async fn process_document(
                         match db.add_molecules_batch(&records) {
                             Ok(saved) => {
                                 let _ = app.emit(
-                                    "doc-progress",
+                                    EVT_DOC_PROGRESS,
                                     DocProgressEvent::Persist {
                                         saved,
                                         skipped,
@@ -606,7 +608,7 @@ pub async fn process_document(
                             }
                             Err(e) => {
                                 let _ = app.emit(
-                                    "doc-progress",
+                                    EVT_DOC_PROGRESS,
                                     DocProgressEvent::Error {
                                         stage: "persist".into(),
                                         message: e.clone(),
@@ -630,7 +632,7 @@ pub async fn process_document(
                 }
             } else {
                 let _ = app.emit(
-                    "doc-progress",
+                    EVT_DOC_PROGRESS,
                     DocProgressEvent::Persist {
                         saved: 0,
                         skipped,
@@ -646,7 +648,7 @@ pub async fn process_document(
     }
 
     // 最终结果发射
-    let _ = app.emit("doc-result", &report);
+    let _ = app.emit(EVT_DOC_RESULT, &report);
 
     Ok(())
 }
@@ -700,7 +702,7 @@ pub async fn index_project_rust(
 
         // 发射进度事件
         let _ = app.emit(
-            "doc-progress",
+            EVT_DOC_PROGRESS,
             DocProgressEvent::Classify {
                 parser: format!("indexing {}/{}", i + 1, total),
                 page_count: 0,

@@ -13,51 +13,51 @@ use crate::core::helpers::clean_path;
 pub fn open_project(root: String, name: Option<String>) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     info!("project_ops: open_project START");
-    info!("[Rust project_ops] Root: {}", root);
-    info!("[Rust project_ops] Name: {:?}", name);
+    debug!("Root: {}", root);
+    debug!("Name: {:?}", name);
     
     let path = PathBuf::from(&root);
-    info!("[Rust project_ops] Path exists: {}", path.exists());
-    info!("[Rust project_ops] Path is directory: {}", path.is_dir());
+    debug!("Path exists: {}", path.exists());
+    debug!("Path is directory: {}", path.is_dir());
 
     // 确保目录存在（处理最近项目路径可能不存在的情况）
     if !path.exists() {
-        info!("[Rust project_ops] Creating directory...");
+        debug!("Creating directory...");
         match std::fs::create_dir_all(&path) {
-            Ok(_) => info!("[Rust project_ops] Directory created successfully"),
+            Ok(_) => debug!("Directory created successfully"),
             Err(e) => {
-                error!("[Rust project_ops] Failed to create directory: {}", e);
+                error!("Failed to create directory: {}", e);
                 return Err(format!("创建目录失败: {}", e));
             }
         }
     } else {
-        info!("[Rust project_ops] Directory already exists");
+        debug!("Directory already exists");
     }
 
     // 尝试打开已有项目
-    info!("[Rust project_ops] Attempting to open existing project...");
+    debug!("Attempting to open existing project...");
     if let Some(project) = crate::core::project::Project::open(&path) {
-        info!("[Rust project_ops] Found existing project, returning...");
-        info!("[Rust project_ops] Project name: {:?}", project.root.file_name());
+        debug!("Found existing project, returning...");
+        debug!("Project name: {:?}", project.root.file_name());
         let result = project_json(&project);
-        info!("[Rust project_ops] Result: {}", serde_json::to_string_pretty(&result).unwrap_or_default());
+        debug!("Result: {}", serde_json::to_string_pretty(&result).unwrap_or_default());
         info!("project_ops: open_project END (existing)");
         return Ok(result);
     }
 
-    info!("[Rust project_ops] No existing project, creating new one...");
+    debug!("No existing project, creating new one...");
     // 目录存在但不是项目 → 创建
     match crate::core::project::Project::create(&path) {
         Some(project) => {
-            info!("[Rust project_ops] Project created successfully");
-            info!("[Rust project_ops] Project name: {:?}", project.root.file_name());
+            debug!("Project created successfully");
+            debug!("Project name: {:?}", project.root.file_name());
             let result = project_json(&project);
-            info!("[Rust project_ops] Result: {}", serde_json::to_string_pretty(&result).unwrap_or_default());
+            debug!("Result: {}", serde_json::to_string_pretty(&result).unwrap_or_default());
             info!("project_ops: open_project END (created)");
             Ok(result)
         }
         None => {
-            error!("[Rust project_ops] Failed to create project");
+            error!("Failed to create project");
             warn!("project_ops: open_project END (ERROR)");
             Err("无法创建项目".to_string())
         }
@@ -69,18 +69,18 @@ pub fn open_project(root: String, name: Option<String>) -> Result<serde_json::Va
 pub fn scan_project_files(root: String) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     info!("project_ops: scan_project_files START");
-    info!("[Rust project_ops] Root: {}", root);
+    debug!("Root: {}", root);
     
     let path = PathBuf::from(&root);
     let mut project = crate::core::project::Project::open(&path)
         .ok_or_else(|| {
-            info!("[Rust project_ops] Project not found");
+            debug!("Project not found");
             format!("项目不存在: {}", root)
         })?;
 
-    info!("[Rust project_ops] Project found, scanning files...");
+    debug!("Project found, scanning files...");
     let docs = project.scan_files();
-    info!("[Rust project_ops] Found {} documents", docs.len());
+    debug!("Found {} documents", docs.len());
     
     let result = serde_json::json!({
         "success": true,
@@ -95,13 +95,13 @@ pub fn scan_project_files(root: String) -> Result<serde_json::Value, String> {
 pub fn list_project_documents(root: String, doc_type: Option<String>) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     info!("project_ops: list_project_documents START");
-    info!("[Rust project_ops] Root: {}", root);
-    info!("[Rust project_ops] Doc type filter: {:?}", doc_type);
+    debug!("Root: {}", root);
+    debug!("Doc type filter: {:?}", doc_type);
     
     let path = PathBuf::from(&root);
     let project = crate::core::project::Project::open(&path)
         .ok_or_else(|| {
-            info!("[Rust project_ops] Project not found");
+            debug!("Project not found");
             format!("项目不存在: {}", root)
         })?;
 
@@ -111,7 +111,7 @@ pub fn list_project_documents(root: String, doc_type: Option<String>) -> Result<
         _ => docs,
     };
 
-    info!("[Rust project_ops] Found {} documents", filtered.len());
+    debug!("Found {} documents", filtered.len());
     let result = serde_json::json!({
         "success": true,
         "documents": docs_json(&filtered),

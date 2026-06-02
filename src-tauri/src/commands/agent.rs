@@ -3,6 +3,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tauri::Emitter;
 
+use crate::core::constants::{EVT_AGENT_STREAM_CHUNK, EVT_AGENT_STREAM_DONE};
+
 use crate::core::agent::Agent;
 use crate::core::config::ModelConfig;
 use crate::core::context::Message;
@@ -115,11 +117,11 @@ pub async fn agent_chat_stream(
                 "delta": chunk.delta,
                 "finish_reason": chunk.finish_reason,
             });
-            if let Err(e) = handle.emit("agent-stream-chunk", &payload) {
+            if let Err(e) = handle.emit(EVT_AGENT_STREAM_CHUNK, &payload) {
                 log::error!("agent_chat_stream emit failed for session={}: {}", sid, e);
             }
         }
-        if let Err(e) = handle.emit("agent-stream-done", serde_json::json!({ "session_id": sid })) {
+        if let Err(e) = handle.emit(EVT_AGENT_STREAM_DONE, serde_json::json!({ "session_id": sid })) {
             log::error!("agent_chat_stream done emit failed: {}", e);
         }
     });

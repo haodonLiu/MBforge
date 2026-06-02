@@ -95,7 +95,7 @@ pub async fn batch_image_to_esmiles(
         match image_to_esmiles(full_path, config).await {
             Ok(result) => results.push((filename.clone(), result)),
             Err(e) => {
-                eprintln!("[vlm_chem] failed for {}: {}", filename, e);
+                log::warn!("[vlm_chem] failed for {}: {}", filename, e);
             }
         }
     }

@@ -81,7 +81,11 @@ fn native_get_document_structure(
     doc_id: &str,
 ) -> Result<Option<Vec<crate::parsers::sections::TreeNode>>, String> {
     let guard = crate::core::knowledge_base::get_or_init_kb(root)?;
-    let kb = guard.get(root).unwrap();
+    // get_or_init_kb guarantees `root` is present; the unwrap_or_else branch
+    // is defensive against future refactors that change that invariant.
+    let kb = guard
+        .get(root)
+        .ok_or_else(|| format!("KnowledgeBase not initialized for project: {}", root))?;
     Ok(kb.get_structure(doc_id))
 }
 
@@ -91,6 +95,8 @@ fn native_get_document_pages(
     pages: &str,
 ) -> Result<Vec<crate::core::knowledge_base::PageContent>, String> {
     let guard = crate::core::knowledge_base::get_or_init_kb(root)?;
-    let kb = guard.get(root).unwrap();
+    let kb = guard
+        .get(root)
+        .ok_or_else(|| format!("KnowledgeBase not initialized for project: {}", root))?;
     Ok(kb.get_pages(doc_id, pages))
 }

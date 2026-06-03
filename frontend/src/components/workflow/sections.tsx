@@ -1,4 +1,4 @@
-import { PageContainer, Skeleton } from '../ui'
+import { PageContainer, Skeleton, Card, SectionTitle } from '../ui'
 import ResponsiveStatGrid from '../ui/ResponsiveStatGrid'
 import PathCard from './PathCard'
 import ModelCard from './ModelCard'
@@ -25,36 +25,17 @@ export function LoadingSkeleton() {
 
       <ResponsiveStatGrid style={{ marginBottom: '24px' }}>
         {[0, 1, 2, 3].map(i => (
-          <div
-            key={i}
-            style={{
-              padding: '20px 16px',
-              background: 'var(--bg-surface)',
-              borderRadius: '12px',
-              border: '1px solid var(--border)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '10px',
-            }}
-          >
+          <Card key={i} padding="20px 16px" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <Skeleton variant="text" style={{ width: '60%', height: '10px' }} />
             <Skeleton variant="text" style={{ width: '80%', height: '24px' }} />
             <Skeleton variant="text" style={{ width: '50%', height: '10px' }} />
-          </div>
+          </Card>
         ))}
       </ResponsiveStatGrid>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {[0, 1].map(i => (
-          <div
-            key={i}
-            style={{
-              padding: '20px',
-              background: 'var(--bg-surface)',
-              borderRadius: '12px',
-              border: '1px solid var(--border)',
-            }}
-          >
+          <Card key={i}>
             <Skeleton variant="text" style={{ width: '120px', height: '12px', marginBottom: '16px' }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {[0, 1, 2].map(j => (
@@ -76,7 +57,7 @@ export function LoadingSkeleton() {
                 </div>
               ))}
             </div>
-          </div>
+          </Card>
         ))}
       </div>
     </PageContainer>
@@ -107,27 +88,10 @@ export function PathSection({
   onChange,
 }: PathSectionProps) {
   return (
-    <div
-      style={{
-        padding: '16px 20px',
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: '12px',
-        marginBottom: '24px',
-      }}
-    >
-      <div
-        style={{
-          fontSize: '12px',
-          fontWeight: 600,
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          marginBottom: '16px',
-        }}
-      >
+    <Card padding="16px 20px" style={{ marginBottom: '24px' }}>
+      <SectionTitle style={{ marginBottom: '16px' }}>
         Model Cache Paths
-      </div>
+      </SectionTitle>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {paths && (
@@ -161,7 +125,7 @@ export function PathSection({
           </>
         )}
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -183,26 +147,10 @@ export function ModelsSection({
   onDelete,
 }: ModelsSectionProps) {
   return (
-    <div
-      style={{
-        padding: '16px 20px',
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: '12px',
-      }}
-    >
-      <div
-        style={{
-          fontSize: '12px',
-          fontWeight: 600,
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          marginBottom: '16px',
-        }}
-      >
+    <Card padding="16px 20px">
+      <SectionTitle style={{ marginBottom: '16px' }}>
         AI Models ({downloadedCount}/{models.length} downloaded)
-      </div>
+      </SectionTitle>
 
       {models.length === 0 ? (
         <div
@@ -227,6 +175,6 @@ export function ModelsSection({
           ))}
         </div>
       )}
-    </div>
+    </Card>
   )
 }

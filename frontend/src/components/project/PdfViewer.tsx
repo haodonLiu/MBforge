@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { extractPage } from '../../api/moldet'
+import { parsePdf, type ImageRef } from '../../api/tauri/pdf'
 import { showToast } from '../../hooks/useToast'
 import { extractRoiText } from '../../utils/roiText'
 import type { DocumentEntry, ExtractionResult } from '../../types'
@@ -34,6 +35,9 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
   const [pageJumpInput, setPageJumpInput] = useState('')
   const [showTextPanel, setShowTextPanel] = useState(false)
   const [pdfPageCount, setPdfPageCount] = useState(0)
+  const [showImagePanel, setShowImagePanel] = useState(false)
+  const [extractedImages, setExtractedImages] = useState<ImageRef[]>([])
+  const [isLoadingImages, setIsLoadingImages] = useState(false)
 
   const currentDetections = pageDetections.get(currentPage) || []
   const isDetectMode = pdfViewMode === 'detect'
@@ -137,6 +141,36 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
   const handleZoomReset = useCallback(() => {
     setPdfScale(1.5)
   }, [])
+
+  const handleLoadImages = useCallback(async () => {
+    if (extractedImages.length > 0) {
+      setShowImagePanel(true)
+      return
+    }
+    setIsLoadingImages(true)
+    try {
+      const result = await parsePdf(doc.path, 512, 128, 'pdf_inspector')
+      setExtractedImages(result.images || [])
+      setShowImagePanel(true)
+    } catch (e) {
+      console.error('Failed to load images:', e)
+      showToast('图片提取失败', 'error')
+    } finally {
+      setIsLoadingImages(false)
+    }
+  }, [doc.path, extractedImages.length])
+
+  const resolveImageUrl = useCallback((img: ImageRef): string => {
+    if (img.rel_path) {
+      const absPath = `${projectRoot.replace(/\\$/,'')}\\${img.rel_path.replace(/\//g,'\\')}`
+      try {
+        return convertFileSrc(absPath)
+      } catch {
+        return ''
+      }
+    }
+    return ''
+  }, [projectRoot])
 
   const handleJumpToPage = useCallback(() => {
     const n = parseInt(pageJumpInput, 10)
@@ -265,6 +299,22 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
           </button>
         )}
 
+        {/* 图片提取按钮 */}
+        <button
+          onClick={handleLoadImages}
+          disabled={isLoadingImages}
+          style={{
+            padding: '4px 8px', fontSize: '11px', borderRadius: '4px', border: '1px solid var(--border)',
+            background: showImagePanel ? 'var(--bg-surface)' : 'transparent',
+            color: 'var(--text-muted)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '4px',
+            opacity: isLoadingImages ? 0.5 : 1,
+          }}
+          title={isLoadingImages ? '提取中...' : (showImagePanel ? '关闭图片面板' : '提取图片')}
+        >
+          🖼️{extractedImages.length > 0 ? ` ${extractedImages.length}` : ''}
+        </button>
+
         {/* OCR 状态标识 */}
         {pdfOcrSummary && (
           <span style={{
@@ -378,6 +428,86 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
             }}>
               <span>{currentTextItems.length} 段</span>
               <span>{currentTextTotal} 字符</span>
+            </div>
+          </div>
+        )}
+
+        {/* 图片面板（提取图片 + VLM 描述） */}
+        {showImagePanel && (
+          <div style={{
+            width: '300px', borderLeft: '1px solid var(--border)',
+            background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column',
+            overflow: 'hidden', flexShrink: 0,
+          }}>
+            <div style={{
+              padding: '8px 12px', borderBottom: '1px solid var(--border)',
+              fontSize: '11px', fontWeight: 600, display: 'flex',
+              justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <span>提取图片 ({extractedImages.length})</span>
+              <button
+                onClick={() => setShowImagePanel(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-muted)', fontSize: '14px', lineHeight: 1 }}
+              >✕</button>
+            </div>
+            <div style={{
+              flex: 1, overflow: 'auto', padding: '12px',
+              display: 'flex', flexDirection: 'column', gap: '12px',
+            }}>
+              {extractedImages.length === 0 && (
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  {isLoadingImages ? '提取中...' : '未提取到图片'}
+                </span>
+              )}
+              {extractedImages.map((img, idx) => {
+                const imgUrl = resolveImageUrl(img)
+                return (
+                  <div key={idx} style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: '6px', overflow: 'hidden',
+                    background: 'var(--bg-base)',
+                  }}>
+                    {imgUrl && (
+                      <img
+                        src={imgUrl}
+                        alt={img.filename}
+                        style={{ width: '100%', height: 'auto', display: 'block' }}
+                        loading="lazy"
+                      />
+                    )}
+                    <div style={{ padding: '8px 10px' }}>
+                      <div style={{
+                        fontSize: '10px', color: 'var(--text-muted)',
+                        marginBottom: '4px', display: 'flex', justifyContent: 'space-between',
+                      }}>
+                        <span>第 {img.page} 页</span>
+                        {img.esmiles && (
+                          <span style={{
+                            fontFamily: 'monospace', color: 'var(--success)',
+                            fontSize: '9px',
+                          }}>✓ SMILES</span>
+                        )}
+                      </div>
+                      {img.description && (
+                        <div style={{
+                          fontSize: '11px', color: 'var(--text-secondary)',
+                          lineHeight: 1.5,
+                        }}>
+                          {img.description}
+                        </div>
+                      )}
+                      {!img.description && !img.esmiles && (
+                        <div style={{
+                          fontSize: '10px', color: 'var(--text-muted)', fontStyle: 'italic',
+                        }}>
+                          暂无描述
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}

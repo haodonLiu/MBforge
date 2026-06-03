@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { PageContainer, PageTitle, Tabs, Button, EmptyState, AlertBanner, ResponsiveGrid } from './ui'
+import { PageContainer, PageTitle, SectionTitle, Tabs, Button, Card, EmptyState, AlertBanner, ResponsiveGrid } from './ui'
 import { FlaskIcon, BarChartIcon, SparklesIcon, TargetIcon, ExternalLinkIcon } from './icons'
 import CompoundCard from './sar/CompoundCard'
 import RGroupMatrix from './sar/RGroupMatrix'
@@ -267,14 +267,11 @@ function StatBox({ label, value, subValue, icon, variant = 'default' }: {
     danger: 'var(--danger)',
   }
   return (
-    <div style={{
-      background: variantBg[variant],
-      border: '1px solid var(--border)',
-      borderRadius: 10,
-      padding: 16,
+    <Card padding="16px" style={{
       display: 'flex',
       alignItems: 'center',
       gap: 12,
+      background: variantBg[variant],
     }}>
       <div style={{
         width: 36, height: 36, borderRadius: 8,
@@ -292,7 +289,7 @@ function StatBox({ label, value, subValue, icon, variant = 'default' }: {
         </div>
         {subValue && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{subValue}</div>}
       </div>
-    </div>
+    </Card>
   )
 }
 
@@ -320,15 +317,10 @@ function OverviewTab({
 
   return (
     <div>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 12,
-      }}>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-          按活性排序（IC50 从小到大）
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <SectionTitle style={{ margin: 0 }}>
+          化合物列表
+        </SectionTitle>
         <Button variant="ghost" size="sm" onClick={() => showToast('导出功能开发中', 'info')}>
           <ExternalLinkIcon size={14} /> 导出
         </Button>

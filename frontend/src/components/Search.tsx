@@ -7,6 +7,7 @@ import { useAppContext } from '../context/AppContext'
 import { tapScale } from '../hooks/useAnimations'
 import PageContainer from '../components/ui/PageContainer'
 import Card from '../components/ui/Card'
+import Badge from '../components/ui/Badge'
 import BodyText from '../components/ui/BodyText'
 import Skeleton from '../components/ui/Skeleton'
 
@@ -252,16 +253,9 @@ export default function Search() {
                         marginTop: '10px',
                       }}>
                         {r.tags.map(tag => (
-                          <span key={tag} style={{
-                            padding: '2px 8px',
-                            background: 'var(--accent-muted)',
-                            color: 'var(--accent)',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            fontWeight: 500,
-                          }}>
+                          <Badge key={tag} variant="info">
                             {tag}
-                          </span>
+                          </Badge>
                         ))}
                       </div>
                     )}

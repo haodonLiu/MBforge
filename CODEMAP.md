@@ -1,6 +1,6 @@
 # MBForge 代码逻辑树
 
-> 最后更新: 2026-06-02 | 版本: 0.2.0
+> 最后更新: 2026-06-03 | 版本: 0.2.1
 > 本文档记录项目每个模块的功能、依赖关系、I/O 和实现状态。
 > ⚠️ 本次修订基于实际代码审查，补充了断链、配置不同步和安全风险排查。
 
@@ -74,7 +74,7 @@ PDF 文件
   │ Stage 2: 分类 + 结构提取                                │
   │   classifier.rs → page classification                   │
   │   headings.rs → heading extraction                      │
-  │   sections.rs → section splitting                       │
+  │   sections.rs → section splitting (heading/语义分块)    │
   │   IN: raw_text      OUT: Vec<SectionChunk>              │
   └────────────────────┬───────────────────────────────────┘
                        │
@@ -231,17 +231,18 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 | `project_ops` | open_project, scan_project_files, list_project_documents, get_file_tree | core::project, constants |
 | `sidecar` | sidecar_status, sidecar_restart | sidecar |
 
-### 3.3 parsers/ — PDF 解析管线 (19 模块)
+### 3.3 parsers/ — PDF 解析管线 (20 模块)
 
 | 模块 | 功能 | 依赖 |
 |------|------|------|
 | `doc_types` | 管线类型: PdfParseResult/StructuredData/DocStructure/ExtractionPlan/PhysicochemicalProperty 等 | commands::classifier, extractor, core::types |
-| `pipeline` | **主管线入口**: Stage 0~7 编排 + 专利分子提取 + 范围评估 + 项目级批量索引 (内部拆分到 `pipeline/extract.rs`, `helpers.rs`, `merge.rs`) | 几乎所有 parsers + core |
+| `pipeline` | **主管线入口**: Stage 0~7 + 2c/3.5 编排 + 专利分子提取 + 范围评估 + 项目级批量索引 (内部拆分到 `pipeline/extract.rs`, `helpers.rs`, `merge.rs`) | 几乎所有 parsers + core |
 | `headings` | 多策略 heading 提取: Markdown #/全大写/冒号/编号 | core::types |
-| `sections` | 章节构建: headings→tree + 长章节分割 | core::types, headings |
+| `sections` | 章节构建: headings→tree + **语义分块** (30+ 中英文边界关键词，无 heading 文档不再全文作为一块) | core::types, headings |
 | `association` | 活性提取引擎: 化合物名/IC50/Ki/细胞系/靶点 | core::types |
 | `keywords` | 词频关键词 + 实体标签提取 | 无 |
-| `post_process` | LLM 后处理: 批分割/prompt/JSON 修复/结构化解析 | types, core::config |
+| `post_process` | LLM 后处理: 批分割/prompt/JSON 修复/结构化解析 + **sanitize_text** (控制字符/零宽字符/think 标签净化) | types, core::config, chem_validate |
+| `chem_validate` | **化学结构验证**: RDKit 校验 (/validate/batch) + LLM 输出净化 (sanitize_esmiles/sanitize_activity_value) | core::http, core::constants |
 | `images` | PDF 图像提取 (lopdf): JPG/JP2/TIFF/raw | lopdf crate |
 | `intent` | 用户意图路由: LLM 文档结构分析 + ExtractionPlan | post_process, types |
 | `report` | 报告生成: SAR 分析 + 不确定项 | types, post_process |
@@ -250,7 +251,7 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 | `uniparser` | UniParser 云 API 客户端 | 无 |
 | `llama_parse` | LlamaParse API 客户端 | core::http |
 | `liteparse` | LiteParse 本地解析 (PDFium) | liteparse crate |
-| `vlm_chem` | VLM 化学结构识别: MolScribe image→SMILES | core::constants, http |
+| `vlm_chem` | VLM 化学结构识别: MolScribe image→SMILES + **通用图片描述** (describe_image_cached) + **SHA-256 缓存** (ImageCaptionCache) | core::constants, http |
 | `molecule_extractor` | **专利命名化合物提取**: 连贯序列检测 + 理化性质关联 + 图像溯源 + VLM 验证 | types, vlm_chem |
 | `claim_parser` | **专利 Claims 结构化解析**: 编号/依赖图/类型分类/规范化文本 | 无 |
 | `claim_policy` | **专利范围政策匹配**: DirectMention/MarkushOverlap/SemanticMatch + 风险评估 | claim_parser, molecule_extractor |

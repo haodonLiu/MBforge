@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use super::error::{AppError, AppResult, ErrorCode};
 use super::helpers::{generate_uuid, now_rfc3339};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,33 +52,43 @@ fn notes_path(root: &Path) -> PathBuf {
         .join("notes.json")
 }
 
-fn load_index(root: &Path) -> Result<NotesIndex, String> {
+fn notes_path_str(root: &Path) -> String {
+    notes_path(root).to_string_lossy().to_string()
+}
+
+fn load_index(root: &Path) -> AppResult<NotesIndex> {
     let path = notes_path(root);
     if !path.exists() {
         return Ok(NotesIndex::default());
     }
-    let content = std::fs::read_to_string(&path).map_err(|e| format!("读取笔记失败: {e}"))?;
-    serde_json::from_str(&content).map_err(|e| format!("解析笔记失败: {e}"))
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| AppError::new(ErrorCode::FileRead, format!("读取笔记失败: {e}"))
+            .with_path(notes_path_str(root)))?;
+    serde_json::from_str(&content)
+        .map_err(|e| AppError::new(ErrorCode::Unknown, format!("解析笔记失败: {e}"))
+            .with_path(notes_path_str(root)))
 }
 
-fn save_index(root: &Path, index: &NotesIndex) -> Result<(), String> {
+fn save_index(root: &Path, index: &NotesIndex) -> AppResult<()> {
     let path = notes_path(root);
-    let content =
-        serde_json::to_string_pretty(index).map_err(|e| format!("序列化笔记失败: {e}"))?;
-    std::fs::write(&path, content).map_err(|e| format!("保存笔记失败: {e}"))
+    let content = serde_json::to_string_pretty(index)
+        .map_err(|e| AppError::new(ErrorCode::NoteSave, format!("序列化笔记失败: {e}")))?;
+    std::fs::write(&path, content)
+        .map_err(|e| AppError::new(ErrorCode::NoteSave, format!("保存笔记失败: {e}"))
+            .with_path(notes_path_str(root)))
 }
 
-pub fn list_notes(root: &Path) -> Result<Vec<Note>, String> {
+pub fn list_notes(root: &Path) -> AppResult<Vec<Note>> {
     let index = load_index(root)?;
     Ok(index.notes)
 }
 
-pub fn get_note(root: &Path, id: &str) -> Result<Option<Note>, String> {
+pub fn get_note(root: &Path, id: &str) -> AppResult<Option<Note>> {
     let index = load_index(root)?;
     Ok(index.notes.into_iter().find(|n| n.id == id))
 }
 
-pub fn save_note(root: &Path, note: Note) -> Result<Note, String> {
+pub fn save_note(root: &Path, note: Note) -> AppResult<Note> {
     let mut index = load_index(root)?;
     let id = note.id.clone();
     let pos = index.notes.iter().position(|n| n.id == id);
@@ -91,10 +102,11 @@ pub fn save_note(root: &Path, note: Note) -> Result<Note, String> {
     }
     save_index(root, &index)?;
     index.notes.into_iter().find(|n| n.id == id)
-        .ok_or_else(|| format!("Note {} saved but not found in index", id))
+        .ok_or_else(|| AppError::new(ErrorCode::NoteNotFound, format!("Note {id} saved but not found in index"))
+            .with_path(notes_path_str(root)))
 }
 
-pub fn delete_note(root: &Path, id: &str) -> Result<bool, String> {
+pub fn delete_note(root: &Path, id: &str) -> AppResult<bool> {
     let mut index = load_index(root)?;
     let pos = index.notes.iter().position(|n| n.id == id);
     if let Some(i) = pos {
@@ -117,7 +129,7 @@ pub fn delete_note(root: &Path, id: &str) -> Result<bool, String> {
 ///
 /// Returns:
 ///     引用了该笔记的其他笔记列表(仅元数据:id/title/updatedAt)
-pub fn find_backlinks(root: &Path, target_id: &str) -> Result<Vec<Note>, String> {
+pub fn find_backlinks(root: &Path, target_id: &str) -> AppResult<Vec<Note>> {
     let index = load_index(root)?;
     let target = index.notes.iter().find(|n| n.id == target_id);
     let target_title = match target {
@@ -125,12 +137,9 @@ pub fn find_backlinks(root: &Path, target_id: &str) -> Result<Vec<Note>, String>
         None => return Ok(Vec::new()),
     };
 
-    // 构造 wikilink 模式: [[<title>]]
-    // 注意:不能仅匹配 [[<title>],否则 "AA" 会误匹配 "[[AAExtra]]"
-    // 安全做法是匹配 [[<title>]] 或 [[<title>|alias]]
     let pattern_title = regex::escape(target_title);
     let re = regex::Regex::new(&format!(r"\[\[\s*{}\s*(\|[^\]]*)?\]\]", pattern_title))
-        .map_err(|e| format!("正则构造失败: {e}"))?;
+        .map_err(|e| AppError::new(ErrorCode::Unknown, format!("正则构造失败: {e}")))?;
 
     let backlinks: Vec<Note> = index
         .notes

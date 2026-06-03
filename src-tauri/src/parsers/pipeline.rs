@@ -258,7 +258,7 @@ pub async fn process_document(
         let mut cache_hit = false;
 
         if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
-            if let Ok(guard) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()) {
+            if let Ok(guard) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()).await {
                 if let Some(kb) = guard.get(root.to_string_lossy().as_ref()) {
                     match kb.file_cache().get(file_path) {
                         Ok(Some(cached)) => {
@@ -308,7 +308,7 @@ pub async fn process_document(
 
             // 写入文件缓存
             if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
-                if let Ok(guard) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()) {
+                if let Ok(guard) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()).await {
                     if let Some(kb) = guard.get(root.to_string_lossy().as_ref()) {
                         let sections_json = serde_json::to_string(&ctx.sections).unwrap_or_default();
                         let meta_json = serde_json::to_string(&serde_json::json!({
@@ -909,7 +909,9 @@ pub async fn index_project_rust(
     root: String,
 ) -> Result<IndexResult, String> {
     let project_root = std::path::PathBuf::from(&root);
-    let kb = crate::core::document::knowledge_base::KnowledgeBase::new(&project_root)
+    let config = crate::core::config::AppConfig::load();
+    let kb = crate::core::document::knowledge_base::KnowledgeBase::new(&project_root, Some(&config.embed))
+        .await
         .map_err(|e| format!("KB init failed: {}", e))?;
 
     // 扫描 PDF 文件
@@ -963,7 +965,7 @@ pub async fn index_project_rust(
         if let Some(sections) = cached_sections {
             // 缓存命中：直接索引，跳过 PDF 解析
             total_sections += sections.len();
-            match kb.index_document(&doc_id, &sections, &[]) {
+            match kb.index_document(&doc_id, &sections, &[]).await {
                 Ok(_) => {
                     indexed += 1;
                     cache_skipped += 1;
@@ -1000,7 +1002,7 @@ pub async fn index_project_rust(
                     log::warn!("File cache write failed for {}: {}", filename, e);
                 }
 
-                match kb.index_document(&doc_id, &sections, &[]) {
+                match kb.index_document(&doc_id, &sections, &[]).await {
                     Ok(_) => {
                         indexed += 1;
                     }

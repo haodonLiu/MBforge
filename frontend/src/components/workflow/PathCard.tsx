@@ -1,4 +1,5 @@
 import { FolderIcon, EditIcon } from '../icons'
+import Button from '../ui/Button'
 
 export interface PathCardProps {
   title: string
@@ -123,54 +124,17 @@ export default function PathCard({
 
         {isEditing ? (
           <div style={{ display: 'flex', gap: '4px' }}>
-            <button
-              onClick={onSave}
-              style={{
-                padding: '4px 10px',
-                background: 'var(--success)',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '11px',
-                color: 'white',
-              }}
-            >
+            <Button variant="primary" size="sm" onClick={onSave}>
               Save
-            </button>
-            <button
-              onClick={onCancel}
-              style={{
-                padding: '4px 10px',
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '11px',
-                color: 'var(--text-secondary)',
-              }}
-            >
+            </Button>
+            <Button variant="secondary" size="sm" onClick={onCancel}>
               Cancel
-            </button>
+            </Button>
           </div>
         ) : onEdit ? (
-          <button
-            onClick={onEdit}
-            style={{
-              padding: '4px 10px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border)',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '11px',
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <EditIcon size={12} />
+          <Button variant="secondary" size="sm" icon={<EditIcon size={12} />} onClick={onEdit}>
             Edit
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>

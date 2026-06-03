@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { RefreshCwIcon } from './icons'
-import { PageContainer, PageTitle } from './ui'
+import { PageContainer, PageTitle, Button } from './ui'
 import ResponsiveStatGrid from './ui/ResponsiveStatGrid'
 import StatCard from './workflow/StatCard'
 import LibrarySection, { type CapabilityStatus } from './workflow/LibrarySection'
@@ -170,28 +170,17 @@ export default function Environment() {
         }}
       >
         <PageTitle>Environment</PageTitle>
-        <button
+        <Button
+          variant="secondary"
+          icon={<RefreshCwIcon size={14} />}
           onClick={() => {
             fetchEnv()
             fetchModels()
             fetchPaths()
           }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '8px 16px',
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border)',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontSize: '13px',
-            color: 'var(--text-secondary)',
-          }}
         >
-          <RefreshCwIcon size={14} />
           Refresh
-        </button>
+        </Button>
       </div>
 
       {/* 统计卡片 */}

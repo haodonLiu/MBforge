@@ -49,6 +49,7 @@ export interface ImageRef {
   region: string | null
   description: string | null
   esmiles: string | null
+  rel_path: string | null
 }
 
 export interface Heading {

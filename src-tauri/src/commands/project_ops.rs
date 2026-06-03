@@ -3,6 +3,7 @@
 use log::{debug, error, info, warn};
 use std::path::PathBuf;
 
+use crate::core::error::{AppError, ErrorCode};
 use crate::core::helpers::clean_path;
 
 /// 创建或打开项目（Tauri 命令）
@@ -27,7 +28,7 @@ pub fn open_project(root: String, name: Option<String>) -> Result<serde_json::Va
             Ok(_) => debug!("Directory created successfully"),
             Err(e) => {
                 error!("Failed to create directory: {}", e);
-                return Err(format!("创建目录失败: {}", e));
+                return Err(AppError::new(ErrorCode::ProjectCreate, format!("创建目录失败: {e}")).to_string());
             }
         }
     } else {
@@ -65,7 +66,7 @@ pub fn open_project(root: String, name: Option<String>) -> Result<serde_json::Va
         None => {
             error!("Failed to create project");
             warn!("project_ops: open_project END (ERROR)");
-            Err("无法创建项目".to_string())
+            Err(AppError::new(ErrorCode::ProjectCreate, "无法创建项目").to_string())
         }
     }
 }
@@ -80,7 +81,7 @@ pub fn scan_project_files(root: String) -> Result<serde_json::Value, String> {
     let path = PathBuf::from(&root);
     let mut project = crate::core::project::Project::open(&path).ok_or_else(|| {
         debug!("Project not found");
-        format!("项目不存在: {}", root)
+        AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string()
     })?;
 
     debug!("Project found, scanning files...");
@@ -109,7 +110,7 @@ pub fn list_project_documents(
     let path = PathBuf::from(&root);
     let project = crate::core::project::Project::open(&path).ok_or_else(|| {
         debug!("Project not found");
-        format!("项目不存在: {}", root)
+        AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string()
     })?;
 
     let docs = project.list_documents().to_vec();
@@ -221,7 +222,7 @@ pub fn get_file_tree(root: String) -> Result<serde_json::Value, String> {
     let path = std::path::PathBuf::from(&root);
 
     let project = crate::core::project::Project::open(&path)
-        .ok_or_else(|| format!("Project not found: {}", root))?;
+        .ok_or_else(|| AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string())?;
 
     let tree = build_file_tree(&project.root);
     Ok(serde_json::json!({

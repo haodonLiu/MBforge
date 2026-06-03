@@ -365,6 +365,14 @@ impl MoleculeDatabase {
             )
             .map_err(|e| format!("Failed to create FTS5 table: {}", e))?;
 
+        // Add fingerprint column (migration, idempotent)
+        self.conn
+            .execute(
+                "ALTER TABLE molecules ADD COLUMN fingerprint BLOB",
+                [],
+            )
+            .ok(); // Ignore error if column already exists
+
         Ok(())
     }
 
@@ -812,6 +820,60 @@ impl MoleculeDatabase {
     /// access to the `molecules` table alongside relation data.
     pub(crate) fn conn(&self) -> &Connection {
         &self.conn
+    }
+
+    /// 存储分子的 Morgan 指纹（base64 解码后的 256 bytes）
+    pub fn set_fingerprint(&self, mol_id: &str, fp_bytes: &[u8]) -> Result<(), String> {
+        self.conn
+            .execute(
+                "UPDATE molecules SET fingerprint = ?1 WHERE mol_id = ?2",
+                rusqlite::params![fp_bytes, mol_id],
+            )
+            .map_err(|e| format!("set_fingerprint failed: {}", e))?;
+        Ok(())
+    }
+
+    /// 获取所有分子的 ID、SMILES 和指纹（用于子结构搜索预过滤）
+    pub fn get_all_fingerprints(&self) -> Result<Vec<(String, String, Vec<u8>)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT mol_id, esmiles, fingerprint FROM molecules WHERE fingerprint IS NOT NULL")
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let mol_id: String = row.get(0)?;
+                let esmiles: String = row.get(1)?;
+                let fp: Vec<u8> = row.get(2)?;
+                Ok((mol_id, esmiles, fp))
+            })
+            .map_err(|e| format!("Query failed: {}", e))?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row.map_err(|e| format!("Row error: {}", e))?);
+        }
+        Ok(results)
+    }
+
+    /// 获取所有分子的 SMILES 列表（用于子结构搜索候选集）
+    pub fn get_all_esmiles(&self) -> Result<Vec<(String, String)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT mol_id, esmiles FROM molecules WHERE status != 'deleted'")
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("Query failed: {}", e))?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row.map_err(|e| format!("Row error: {}", e))?);
+        }
+        Ok(results)
     }
 }
 

@@ -92,14 +92,18 @@ MBForge/
 │   │   │   ├── markush.rs          # E-SMILES Markush 分析
 │   │   │   ├── resource_manager.rs # 统一资源管理
 │   │   │   └── semantic_cache.rs   # 三级语义缓存
-│   │   └── parsers/        # PDF 解析管线（19 模块）
+│   │   └── parsers/        # PDF 解析管线（20 模块）
 │   │       ├── doc_types.rs        # 管线共享数据结构（原 types.rs）
-│   │       ├── pipeline.rs         # 统一解析管线入口（Stage 0-7）
-│   │       │   ├── extract.rs      #   分类与提取逻辑
+│   │       ├── pipeline.rs         # 统一解析管线入口（Stage 0-7 + 2c/3.5）
+│   │       │   ├── extract.rs      #   分类与提取逻辑 + 图片持久化到 media/
 │   │       │   ├── helpers.rs      #   record 映射与文本提取
 │   │       │   └── merge.rs        #   合并 + SAR + 专利增强
 │   │       ├── association.rs      # 分子-文本关联引擎
+│   │       ├── chem_validate.rs    # 化学结构验证: RDKit 校验 + LLM 输出净化 + 批量端点
+│   │       ├── post_process.rs     # LLM 后处理: 批处理/JSON 修复/结构化解析 + 文本净化
+│   │       ├── sections.rs         # 章节构建: heading 提取 + 语义分块 (30+ 边界关键词)
 │   │       ├── images.rs           # lopdf 图像提取
+│   │       ├── vlm_chem.rs         # VLM 化学识别: MolScribe + 通用图片描述 + SHA-256 缓存
 │   │       ├── claim_parser.rs     # 专利 Claims 解析
 │   │       ├── claim_policy.rs     # 专利范围匹配
 │   │       ├── molecule_extractor.rs # 专利命名化合物提取

@@ -1,7 +1,8 @@
-//! 知识库存储 — FTS5 全文搜索（无需 embedding 模型）
+//! 知识库存储 — FTS5 全文搜索
 //!
-//! 使用 SQLite FTS5 虚拟表实现文本搜索，替代向量相似度搜索。
-//! 不依赖任何 embedding 模型，纯本地运行。
+//! 使用 SQLite FTS5 虚拟表实现关键词搜索。
+//! 与 lance_store 配合：FTS5 处理精确匹配（化学名、SMILES），
+//! LanceDB 处理语义搜索（自然语言查询），通过 RRF 融合。
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -14,7 +15,7 @@ pub struct VectorItem {
     pub id: String,
     pub doc_id: String,
     pub text: String,
-    pub embedding: Vec<f32>, // 保留字段，FTS5 不使用
+    pub embedding: Vec<f32>, // 由 lance_store 消费，FTS5 不使用
     pub metadata: serde_json::Value,
 }
 

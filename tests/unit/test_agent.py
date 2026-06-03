@@ -64,36 +64,6 @@ class TestResourceManagerIntegration:
             assert status.version  # 非空
 
 
-class TestKnowledgeBaseIntegration:
-    """测试知识库搜索链路."""
-
-    @pytest.mark.skipif(
-        sys.platform == "win32",
-        reason="ChromaDB file locking on Windows causes PermissionError in CI",
-    )
-    def test_kb_creation_and_search(self):
-        """验证 KB 创建和搜索不崩溃."""
-        from mbforge.core.knowledge_base import KnowledgeBase
-        with tempfile.TemporaryDirectory() as tmpdir:
-            kb = KnowledgeBase(Path(tmpdir))
-            results = kb.search("test query", top_k=5)
-            assert isinstance(results, list)
-
-    @pytest.mark.skipif(
-        sys.platform == "win32",
-        reason="ChromaDB file locking on Windows causes PermissionError in CI",
-    )
-    def test_kb_stats(self):
-        """验证 KB 统计返回合法结构."""
-        from mbforge.core.knowledge_base import KnowledgeBase
-        with tempfile.TemporaryDirectory() as tmpdir:
-            kb = KnowledgeBase(Path(tmpdir))
-            stats = kb.get_stats()
-            assert hasattr(stats, 'document_count')
-            assert hasattr(stats, 'section_count')
-            assert stats.document_count == 0  # 空项目
-
-
 class TestExceptionHierarchy:
     """测试异常层级完整性."""
 

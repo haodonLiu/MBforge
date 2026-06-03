@@ -202,20 +202,6 @@ const RESOURCE_CATALOG: &[ResourceInfo] = &[
         pip_name: "ultralytics",
         import_name: "ultralytics",
     },
-    ResourceInfo {
-        id: "chromadb",
-        name: "ChromaDB",
-        resource_type: ResourceType::PythonPackage,
-        description: "向量数据库 (知识库)",
-        size_mb: 0,
-        license: "Apache-2.0",
-        ms_repo: "",
-        download_type: "",
-        ms_file: "",
-        local_name: "",
-        pip_name: "chromadb",
-        import_name: "chromadb",
-    },
     // ──── 二进制 ────
     ResourceInfo {
         id: "pdfium",

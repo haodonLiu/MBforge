@@ -269,7 +269,6 @@ fn get_or_init_semantic_cache(
     if !guard.contains_key(root) {
         let sc = SemanticCache::new(
             std::path::Path::new(root),
-            None,
             SemanticCacheConfig::default(),
         );
         guard.insert(root.to_string(), sc);

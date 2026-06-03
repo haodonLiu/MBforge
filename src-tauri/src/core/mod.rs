@@ -43,7 +43,6 @@ pub use document::stream_search::{StreamingResult, StreamingSearch, StreamingSea
 pub use document::summary;
 pub use document::summary::SummaryManager;
 pub use memory::memory::MemoryManager;
-pub use memory::pending::pending_path;
 pub use memory::skills::SkillsManager;
 pub use memory::trajectory::TrajectoryTracker;
 pub use molecule::molecule_cluster;

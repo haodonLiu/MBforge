@@ -78,12 +78,20 @@ PDF 文件
   │   IN: raw_text      OUT: Vec<SectionChunk>              │
   └────────────────────┬───────────────────────────────────┘
                        │
+                       │
+  ┌────────────────────┬─────────────────────────────────────────────────────│
+  │ Stage 2c: 图片描述 (vlm_chem.rs)                               │
+  │   非化学结构图 → describe_image_cached → ImageRef.desc           │
+  │   SHA-256 缓存: .mbforge/image-caption-cache.json            │
+  │   IN: Vec<ImageRef>   OUT: 回填 description                  │
+  └────────────────────┴─────────────────────────────────────────────────────│
   ┌────────────────────┴───────────────────────────────────┐
   │ Stage 3: 图像提取                                       │
   │   images.rs (lopdf) → embedded images                   │
   │   vlm_chem.rs → MolScribe image→SMILES                  │
   │   IN: PDF path      OUT: Vec<ExtractedImage>            │
-  └────────────────────┬───────────────────────────────────┘
+  │   extract.rs → persist_extracted_images → .mbforge/media   │
+  │   IN: PDF path      OUT: Vec<ImageRef> (含 rel_path)        │
                        │
   ┌────────────────────┴───────────────────────────────────┐
   │ Stage 4: 分子-文本关联                                  │
@@ -96,8 +104,16 @@ PDF 文件
   │ Stage 5: LLM 逐 section 处理                             │
   │   post_process.rs → batch prompt → LLM → JSON parse     │
   │   IN: section_text    OUT: StructuredData               │
+  │   sanitize_text: 控制字符/零宽字符/think 标签净化                      │
   └────────────────────┬───────────────────────────────────┘
                       │
+                       │
+  ┌────────────────────┬─────────────────────────────────────────────────────│
+  │ Stage 3.5: 化学结构验证 (chem_validate.rs)                       │
+  │   sanitize_esmiles → validate_smiles_batch (/validate/b)   │
+  │   无效结构自动降级 confidence，回填 canonical_smiles                  │
+  │   IN: StructuredData.compounds  OUT: 更新 confidence         │
+  └────────────────────┴─────────────────────────────────────────────────────│
   ┌────────────────────┴───────────────────────────────────┐
   │ Stage 6: 分子库持久化                                    │
   │   pipeline.rs → CompoundEntry/ActivityEntry →           │

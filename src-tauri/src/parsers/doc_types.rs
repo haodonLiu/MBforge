@@ -17,6 +17,9 @@ pub struct ImageRef {
     pub region: Option<String>,
     pub description: Option<String>,
     pub esmiles: Option<String>,
+    /// 图片在项目目录中的相对路径（如 "media/doc-slug/img-1.png"）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rel_path: Option<String>,
 }
 
 /// 文档处理上下文 — 整个 process 期间传递的状态

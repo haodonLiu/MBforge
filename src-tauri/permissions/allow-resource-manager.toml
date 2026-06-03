@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-resource-manager"
+description = "Allows resource manager queries (environment check, status, model path, catalog)"
+commands.allow = ["resources_check", "resources_status", "resources_get_model_path", "resources_catalog"]

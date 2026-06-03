@@ -1,5 +1,6 @@
 use base64::Engine;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 /// === A2: VLM 化学结构识别模块 ===
 ///
@@ -164,6 +165,117 @@ pub async fn describe_image(
         serde_json::from_str(&text).map_err(|e| format!("VLM JSON parse error: {}", e))?;
 
     Ok(val["description"].as_str().unwrap_or("").to_string())
+}
+
+/// VLM 图片描述缓存 — 基于 SHA-256 避免重复调用
+///
+/// 缓存文件存储在项目 .mbforge/image-caption-cache.json 中：
+/// { "sha256": { "caption": "...", "timestamp": 1234567890 } }
+pub struct ImageCaptionCache {
+    path: PathBuf,
+    entries: HashMap<String, CacheEntry>,
+    dirty: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct CacheEntry {
+    caption: String,
+    #[serde(default)]
+    timestamp: u64,
+}
+
+impl ImageCaptionCache {
+    /// 打开或创建指定项目根目录下的缓存
+    pub fn new(project_root: &Path) -> Self {
+        let path = project_root
+            .join(crate::core::constants::PROJECT_META_DIR)
+            .join("image-caption-cache.json");
+        let entries = if path.exists() {
+            std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<HashMap<String, CacheEntry>>(&s).ok())
+                .unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+        Self {
+            path,
+            entries,
+            dirty: false,
+        }
+    }
+
+    /// 根据图片 SHA-256 查找缓存
+    pub fn get(&self, sha256: &str) -> Option<String> {
+        self.entries.get(sha256).map(|e| e.caption.clone())
+    }
+
+    /// 写入缓存并标记脏
+    pub fn set(&mut self, sha256: &str, caption: &str) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.entries.insert(
+            sha256.to_string(),
+            CacheEntry {
+                caption: caption.to_string(),
+                timestamp: now,
+            },
+        );
+        self.dirty = true;
+    }
+
+    /// 持久化到磁盘（建议在批量操作后调用一次）
+    pub fn save(&mut self) -> Result<(), String> {
+        if !self.dirty {
+            return Ok(());
+        }
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create cache dir: {}", e))?;
+        }
+        let json = serde_json::to_string_pretty(&self.entries)
+            .map_err(|e| format!("Failed to serialize cache: {}", e))?;
+        std::fs::write(&self.path, json)
+            .map_err(|e| format!("Failed to write cache: {}", e))?;
+        self.dirty = false;
+        Ok(())
+    }
+
+    /// 计算文件 SHA-256
+    pub fn sha256_file(path: &Path) -> Result<String, String> {
+        use sha2::Digest;
+        let mut file = std::fs::File::open(path)
+            .map_err(|e| format!("Failed to open image {}: {}", path.display(), e))?;
+        let mut hasher = sha2::Sha256::new();
+        std::io::copy(&mut file, &mut hasher)
+            .map_err(|e| format!("Failed to hash image {}: {}", path.display(), e))?;
+        Ok(format!("{:x}", hasher.finalize()))
+    }
+}
+
+/// 带缓存的 VLM 图片描述
+///
+/// 先查缓存，未命中再调用 VLM API，成功后写入缓存。
+pub async fn describe_image_cached(
+    image_path: &str,
+    prompt: &str,
+    sidecar_url: &str,
+    cache: &mut ImageCaptionCache,
+) -> Result<String, String> {
+    let path = Path::new(image_path);
+    let hash = ImageCaptionCache::sha256_file(path)?;
+
+    if let Some(cached) = cache.get(&hash) {
+        log::debug!("[vlm_chem] Caption cache HIT for {}", image_path);
+        return Ok(cached);
+    }
+
+    log::debug!("[vlm_chem] Caption cache MISS for {}", image_path);
+    let caption = describe_image(image_path, prompt, sidecar_url).await?;
+    cache.set(&hash, &caption);
+    Ok(caption)
 }
 
 /// 判断一个图片是否可能是化学结构图（基于 MinerU 提供的元数据或文件名启发式）

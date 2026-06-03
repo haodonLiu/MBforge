@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-notes"
+description = "Allows project notes CRUD operations (list, get, save, delete, backlinks)"
+commands.allow = ["notes_list", "notes_get", "notes_save", "notes_delete", "notes_backlinks"]

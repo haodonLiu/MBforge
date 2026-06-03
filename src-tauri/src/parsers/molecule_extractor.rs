@@ -542,6 +542,7 @@ mod tests {
                 region: None,
                 description: None,
                 esmiles: None,
+                rel_path: None,
             },
             ImageRef {
                 filename: "page_3_img_1.png".into(),
@@ -549,6 +550,7 @@ mod tests {
                 region: None,
                 description: None,
                 esmiles: None,
+                rel_path: None,
             },
         ];
         let traces = link_molecules_to_images(&[mol], &images, &[]);
@@ -575,6 +577,7 @@ mod tests {
             region: None,
             description: None,
             esmiles: None,
+            rel_path: None,
         }];
         let traces = link_molecules_to_images(&[mol], &images, &[]);
         assert_eq!(traces[0].related_images.len(), 1);

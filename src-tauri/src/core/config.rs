@@ -22,7 +22,7 @@ impl Default for ModelConfig {
     fn default() -> Self {
         Self {
             provider: "openai_compatible".into(),
-            base_url: "http://localhost:8000/v1".into(),
+            base_url: "http://127.0.0.1:18792/v1".into(),
             api_key: String::new(),
             model_name: "default".into(),
             max_tokens: 4096,

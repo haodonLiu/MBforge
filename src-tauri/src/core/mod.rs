@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod arxiv;
+pub mod error;
 pub mod config;
 pub mod constants;
 pub mod context;
@@ -31,10 +32,10 @@ pub use document::knowledge_base;
 pub use document::file_cache;
 pub use document::file_cache::{CacheStats, FileCache};
 pub use document::knowledge_base::{
-    get_or_init_kb, get_or_init_kb_async, kb_get_pages, kb_get_structure, kb_search,
-    kb_search_stream, search_with_cache, KnowledgeBase,
+    get_or_init_kb, kb_get_pages, kb_get_structure, kb_search, kb_search_stream,
+    search_with_cache, KnowledgeBase,
 };
-pub use lance_store::{reciprocal_rank_fusion, LanceVectorStore};
+pub use lance_store::LanceVectorStore;
 pub use document::semantic_cache;
 pub use document::semantic_cache::{SemanticCache, SemanticCacheConfig};
 pub use document::stream_search;

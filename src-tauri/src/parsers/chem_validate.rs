@@ -82,11 +82,29 @@ pub async fn validate_smiles(esmiles: &str, sidecar_url: &str) -> Result<Validat
     })
 }
 
-/// 批量验证（串行，避免并发压垮 RDKit）
+/// 批量验证 — 调用 Python sidecar `/api/v1/chem/validate/batch`
+///
+/// 相比串行单条调用，减少 N-1 次 HTTP 往返开销。
 pub async fn validate_smiles_batch(
     esmiles_list: &[String],
     sidecar_url: &str,
 ) -> Vec<(String, ValidateResult)> {
+    if esmiles_list.is_empty() {
+        return Vec::new();
+    }
+
+    // 1. 尝试批量端点
+    match validate_smiles_batch_api(esmiles_list, sidecar_url).await {
+        Ok(results) => return results,
+        Err(e) => {
+            log::warn!(
+                "[chem_validate] Batch endpoint failed (falling back to serial): {}",
+                e
+            );
+        }
+    }
+
+    // 2. Fallback: 串行单条调用
     let mut results = Vec::new();
     for s in esmiles_list {
         match validate_smiles(s, sidecar_url).await {
@@ -109,6 +127,87 @@ pub async fn validate_smiles_batch(
         }
     }
     results
+}
+
+/// 调用批量验证 API
+async fn validate_smiles_batch_api(
+    esmiles_list: &[String],
+    sidecar_url: &str,
+) -> Result<Vec<(String, ValidateResult)>, String> {
+    let client = crate::core::http::client_120s();
+    let url = format!("{}/api/v1/chem/validate/batch", sidecar_url.trim_end_matches('/'));
+
+    let body = serde_json::json!({
+        "esmiles_list": esmiles_list,
+    });
+
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Batch validate request failed: {}", e))?;
+
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("Batch validate read error: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!(
+            "Batch validate HTTP {}: {}",
+            status,
+            &text[..text.floor_char_boundary(200)]
+        ));
+    }
+
+    let val: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("Batch validate JSON parse error: {}", e))?;
+
+    if !val["success"].as_bool().unwrap_or(false) {
+        return Err(format!(
+            "Batch validate API error: {}",
+            val["error"].as_str().unwrap_or("unknown")
+        ));
+    }
+
+    let results: Vec<(String, ValidateResult)> = val["results"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    let esmiles = v["esmiles"].as_str()?.to_string();
+                    let valid = v["valid"].as_bool().unwrap_or(false);
+                    let canonical = v["canonical_smiles"].as_str().map(|s| s.to_string());
+                    let issues: Vec<ValidateIssue> = v["issues"]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|i| {
+                                    Some(ValidateIssue {
+                                        code: i["code"].as_str()?.to_string(),
+                                        message: i["message"].as_str()?.to_string(),
+                                        severity: i["severity"].as_str()?.to_string(),
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    Some((
+                        esmiles,
+                        ValidateResult {
+                            valid,
+                            canonical_smiles: canonical,
+                            issues,
+                        },
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(results)
 }
 
 /// 净化 E-SMILES：去除空白、E-SMILES 标签等常见 LLM 污染

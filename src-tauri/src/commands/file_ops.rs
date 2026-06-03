@@ -3,8 +3,21 @@ use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
+use crate::core::error::{AppError, AppResult, ErrorCode};
 use crate::core::helpers::{assert_within_root, clean_path};
 use crate::core::project::DocumentEntry;
+
+fn wrap<T>(result: AppResult<T>) -> Result<T, String> {
+    result.map_err(|e| e.to_string())
+}
+
+fn resolve_path(project_root: &str) -> Result<PathBuf, AppError> {
+    let root = clean_path(project_root);
+    if root.is_empty() {
+        return Err(AppError::new(ErrorCode::ProjectOpen, "项目根路径为空"));
+    }
+    Ok(PathBuf::from(root))
+}
 
 /// 使用系统文件选择器导入文件到项目目录。
 ///
@@ -14,11 +27,11 @@ pub async fn upload_files(
     app: AppHandle,
     project_root: String,
 ) -> Result<Vec<DocumentEntry>, String> {
-    let root = clean_path(&project_root);
-    let root_path = PathBuf::from(&root);
+    let root_path = wrap(resolve_path(&project_root))?;
 
     let mut project = crate::core::project::Project::open(&root_path)
-        .ok_or_else(|| format!("Project not found: {}", root))?;
+        .ok_or_else(|| AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {}", root_path.display()))
+            .with_path(root_path.to_string_lossy()).to_string())?;
 
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
@@ -36,14 +49,14 @@ pub async fn upload_files(
 
     let file_paths = rx
         .await
-        .map_err(|_| "Dialog channel closed".to_string())?
-        .ok_or_else(|| "No files selected".to_string())?;
+        .map_err(|_| AppError::new(ErrorCode::TauriInvoke, "对话框通道关闭").to_string())?
+        .ok_or_else(|| AppError::new(ErrorCode::TauriInvoke, "未选择文件").to_string())?;
 
     let mut entries = Vec::new();
     for fp in file_paths {
         let src = fp
             .into_path()
-            .map_err(|_| "Invalid file path".to_string())?;
+            .map_err(|_| AppError::new(ErrorCode::FileRead, "无效文件路径").to_string())?;
 
         if !src.exists() {
             log::warn!("Selected file does not exist: {:?}", src);
@@ -67,7 +80,10 @@ pub async fn upload_files(
             continue;
         }
 
-        std::fs::copy(&src, &dest).map_err(|e| format!("Failed to copy '{}': {}", name, e))?;
+        std::fs::copy(&src, &dest).map_err(|e| {
+            AppError::new(ErrorCode::FileWrite, format!("复制文件失败: {e}"))
+                .with_path(dest.to_string_lossy()).to_string()
+        })?;
 
         if let Some(entry) = project.add_file(&dest) {
             log::info!("Added file to project: {} -> {}", name, entry.doc_id);
@@ -81,21 +97,22 @@ pub async fn upload_files(
 /// 删除项目中的文件（物理删除 + 索引移除）。
 #[tauri::command]
 pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, String> {
-    let root = clean_path(&project_root);
-    let root_path = PathBuf::from(&root);
+    let root_path = wrap(resolve_path(&project_root))?;
 
     let mut project = crate::core::project::Project::open(&root_path)
-        .ok_or_else(|| format!("Project not found: {}", root))?;
+        .ok_or_else(|| AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {}", root_path.display()))
+            .with_path(root_path.to_string_lossy()).to_string())?;
 
     let entry = project
         .get_document(&doc_id)
-        .ok_or_else(|| format!("Document not found: {}", doc_id))?;
+        .ok_or_else(|| AppError::new(ErrorCode::FileNotFound, format!("文档未找到: {doc_id}")).to_string())?;
 
     let full_path = project.root.join(&entry.path);
     if full_path.exists() {
         if let Err(e) = std::fs::remove_file(&full_path) {
             log::error!("Failed to delete file {:?}: {}", full_path, e);
-            return Err(format!("Failed to delete file: {}", e));
+            return Err(AppError::new(ErrorCode::FileWrite, format!("删除文件失败: {e}"))
+                .with_path(full_path.to_string_lossy()).to_string());
         }
         log::info!("Deleted file: {:?}", full_path);
     } else {
@@ -110,29 +127,38 @@ pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, S
 #[tauri::command]
 pub fn read_text_file(project_root: String, path: String) -> Result<String, String> {
     let path_buf = PathBuf::from(&path);
-    assert_within_root(&project_root, &path_buf)?;
-    if !path_buf.exists() {
-        return Err(format!("File not found: {}", path));
+    if let Err(e) = assert_within_root(&project_root, &path_buf) {
+        return Err(AppError::new(ErrorCode::FilePermission, "路径越权访问")
+            .with_path(path).to_string());
     }
-    std::fs::read_to_string(&path_buf).map_err(|e| format!("Failed to read file: {}", e))
+    if !path_buf.exists() {
+        return Err(AppError::new(ErrorCode::FileNotFound, format!("文件不存在: {}", path_buf.display()))
+            .with_path(path).to_string());
+    }
+    std::fs::read_to_string(&path_buf)
+        .map_err(|e| AppError::new(ErrorCode::FileRead, format!("读取文件失败: {e}"))
+            .with_path(path).to_string())
 }
 
 /// 使用系统默认程序打开文件。
 #[tauri::command]
 pub async fn open_file(project_root: String, path: String) -> Result<(), String> {
     let path_buf = PathBuf::from(&path);
-    assert_within_root(&project_root, &path_buf)?;
+    if let Err(e) = assert_within_root(&project_root, &path_buf) {
+        return Err(AppError::new(ErrorCode::FilePermission, "路径越权访问")
+            .with_path(path).to_string());
+    }
 
     if !path_buf.exists() {
         log::error!("open_file: file not found: {}", path);
-        return Err(format!("File not found: {:?}", path_buf));
+        return Err(AppError::new(ErrorCode::FileNotFound, format!("文件不存在: {}", path_buf.display()))
+            .with_path(path).to_string());
     }
 
     log::info!("open_file: {}", path);
 
     #[cfg(target_os = "windows")]
     {
-        // 用 ShellExecuteW 替代 cmd /c start，消除命令注入
         let path_str = path_buf.to_string_lossy();
         std::process::Command::new("rundll32.exe")
             .args(["url.dll,FileProtocolHandler", &path_str])
@@ -144,7 +170,7 @@ pub async fn open_file(project_root: String, path: String) -> Result<(), String>
             })
             .map_err(|e| {
                 log::error!("open_file failed for path={}: {}", path, e);
-                format!("Failed to open file: {}", e)
+                AppError::new(ErrorCode::FileWrite, format!("打开文件失败: {e}")).to_string()
             })?;
     }
 
@@ -155,7 +181,7 @@ pub async fn open_file(project_root: String, path: String) -> Result<(), String>
             .spawn()
             .map_err(|e| {
                 log::error!("open_file open failed for path={}: {}", path, e);
-                format!("Failed to open file: {}", e)
+                AppError::new(ErrorCode::FileWrite, format!("打开文件失败: {e}")).to_string()
             })?;
     }
 
@@ -166,7 +192,7 @@ pub async fn open_file(project_root: String, path: String) -> Result<(), String>
             .spawn()
             .map_err(|e| {
                 log::error!("open_file xdg-open failed for path={}: {}", path, e);
-                format!("Failed to open file: {}", e)
+                AppError::new(ErrorCode::FileWrite, format!("打开文件失败: {e}")).to_string()
             })?;
     }
 

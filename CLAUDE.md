@@ -97,7 +97,10 @@ PDF ─→ Rust parsers/pipeline.rs (Stage 1-6)
   ├─ 3. images:   images.rs (lopdf) → embedded images
   ├─ 4. associate: association.rs + keywords.rs → molecules + activities
   ├─ 5. pending:  pending.rs → save partial results
-  └─ 6. store:    molecule_store.rs → SQLite + FTS5
+  ├─ 6. store:    molecule_store.rs → SQLite + FTS5
+  ├─ 2c. images:  vlm_chem.rs → describe_image_cached (非化学结构图 VLM 描述)
+  ├─ 3.5. chem:   chem_validate.rs → batch validate → confidence 降级
+  └─ 7. report:   report.rs + knowledge_base.rs
        │
        └─→ Python side: LLM post_process → StructuredData → KnowledgeBase (ChromaDB)
 ```
@@ -157,7 +160,7 @@ Python fallback: `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py` (PyM
 | `/api/v1/settings` | 设置管理 |
 | `/api/v1/health` | 健康检查 |
 | `/api/v1/download` | 模型下载（ModelScope） |
-| `/api/v1/chem` | 化学操作 |
+| `/api/v1/chem` | 化学操作（Tanimoto、结构校验 /validate /validate/batch） |
 
 ### Phase 1–3 Migration Status
 
@@ -185,7 +188,10 @@ PDF 解析 Python→Rust 迁移进展：
 | `src-tauri/src/core/llm.rs` | LLM HTTP 客户端（OpenAI/Anthropic 兼容） |
 | `src-tauri/src/core/executor/mod.rs` | 工具执行引擎协调入口（拆分为 `fs.rs`, `kb.rs`, `document.rs`, `molecule.rs`, `literature.rs`） |
 | `src-tauri/src/core/molecule/molecule_store.rs` | SQLite 分子数据库 + FTS5 + 属性估算 |
-| `src-tauri/src/parsers/pipeline.rs` | 统一 PDF 解析管线入口（Stage 0-7；内部拆分到 `pipeline/` 子模块） |
+| `src-tauri/src/parsers/pipeline.rs` | 统一 PDF 解析管线入口（Stage 0-7 + 2c/3.5；内部拆分到 `pipeline/` 子模块） |
+| `src-tauri/src/parsers/chem_validate.rs` | 化学结构验证: RDKit 校验 + LLM 输出净化 + 批量端点 |
+| `src-tauri/src/parsers/post_process.rs` | LLM 后处理: JSON 修复/结构化解析 + 文本净化 |
+| `src-tauri/src/parsers/sections.rs` | 章节构建: heading 提取 + 语义分块 |
 | `src-tauri/src/parsers/images.rs` | lopdf 图像提取 |
 | `src-tauri/src/parsers/association.rs` | 分子-文本关联引擎 |
 | `src-tauri/src/commands/mod.rs` | 命令聚合模块（`handler()` 函数导出所有 40+ 命令） |

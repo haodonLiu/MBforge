@@ -54,6 +54,11 @@ impl MoleculeEngine {
         self.store.add_molecules_batch(records)
     }
 
+    /// 获取底层 MoleculeDatabase 引用
+    pub fn store(&self) -> &MoleculeDatabase {
+        &self.store
+    }
+
     pub fn get_molecule(&self, mol_id: &str) -> Result<Option<MoleculeRecord>, String> {
         self.store.get_molecule(mol_id)
     }

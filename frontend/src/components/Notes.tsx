@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../i18n'
-import { PageContainer, PageTitle, Button, Input, EmptyState, AlertBanner } from './ui'
+import { PageContainer, PageTitle, Button, Input, Card, Badge, EmptyState, AlertBanner } from './ui'
 import { PlusIcon, SearchIcon, FlaskIcon, ClockIcon } from './icons'
 import NoteEditor, { type Note } from './notes/NoteEditor'
 import { showToast } from '../hooks/useToast'
@@ -287,14 +287,7 @@ interface BacklinksPanelProps {
 function BacklinksPanel({ backlinks, onJump }: BacklinksPanelProps) {
   if (backlinks.length === 0) return null
   return (
-    <div
-      style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 12,
-        padding: 14,
-      }}
-    >
+    <Card padding="14px">
       <div
         style={{
           display: 'flex',
@@ -306,17 +299,9 @@ function BacklinksPanel({ backlinks, onJump }: BacklinksPanelProps) {
         <h4 style={{ margin: 0, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
           反向链接
         </h4>
-        <span
-          style={{
-            fontSize: 11,
-            color: 'var(--text-muted)',
-            padding: '1px 8px',
-            background: 'var(--bg-base)',
-            borderRadius: 10,
-          }}
-        >
+        <Badge variant="neutral">
           {backlinks.length} 条
-        </span>
+        </Badge>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {backlinks.map(n => (
@@ -355,7 +340,7 @@ function BacklinksPanel({ backlinks, onJump }: BacklinksPanelProps) {
           </button>
         ))}
       </div>
-    </div>
+    </Card>
   )
 }
 

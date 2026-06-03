@@ -317,3 +317,140 @@ pub async fn mol_dedup_batch(
     );
     Ok(engine.dedup_batch(&new_mols, same_as_threshold))
 }
+
+/// 子结构搜索：Tanimoto 预过滤 + RDKit 精确验证
+///
+/// 三级漏斗：
+/// 1. 加载所有分子的指纹（BLOB）
+/// 2. Tanimoto 预过滤（>0.3）快速排除不相关分子
+/// 3. RDKit HasSubstructMatch 精确验证
+#[tauri::command]
+pub async fn mol_search_substructure(
+    state: tauri::State<'_, MoleculeEngineState>,
+    query_smiles: String,
+    tanimoto_threshold: Option<f64>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let guard = state.inner.lock().await;
+    let engine = guard
+        .as_ref()
+        .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
+
+    let db = engine.store();
+    let threshold = tanimoto_threshold.unwrap_or(0.3);
+
+    // 1. 加载所有分子的指纹
+    let all_mols = db.get_all_esmiles().map_err(|e| format!("get_all_esmiles: {}", e))?;
+    if all_mols.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // 2. 调用 Python sidecar 计算查询分子指纹 + 批量 Tanimoto 预过滤
+    let sidecar_url = crate::core::constants::sidecar_url();
+    let client = reqwest::Client::new();
+
+    // 先计算查询分子指纹
+    let fp_resp = client
+        .post(format!("{}/api/v1/chem/fingerprint", sidecar_url))
+        .json(&serde_json::json!({"esmiles": query_smiles}))
+        .send()
+        .await
+        .map_err(|e| format!("Fingerprint request failed: {}", e))?;
+
+    let fp_json: serde_json::Value = fp_resp
+        .json()
+        .await
+        .map_err(|e| format!("Fingerprint parse failed: {}", e))?;
+
+    if !fp_json.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return Err(format!(
+            "Fingerprint failed: {}",
+            fp_json.get("error").and_then(|v| v.as_str()).unwrap_or("unknown")
+        ));
+    }
+
+    // 批量 Tanimoto 预过滤
+    let candidate_esmiles: Vec<String> = all_mols.iter().map(|(_, s)| s.clone()).collect();
+    let tanimoto_resp = client
+        .post(format!("{}/api/v1/chem/tanimoto/batch", sidecar_url))
+        .json(&serde_json::json!({
+            "target_esmiles": query_smiles,
+            "esmiles_list": candidate_esmiles,
+            "threshold": threshold,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Tanimoto batch request failed: {}", e))?;
+
+    let tanimoto_json: serde_json::Value = tanimoto_resp
+        .json()
+        .await
+        .map_err(|e| format!("Tanimoto parse failed: {}", e))?;
+
+    let filtered: Vec<String> = tanimoto_json
+        .get("results")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|r| r.get("esmiles").and_then(|v| v.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if filtered.is_empty() {
+        return Ok(vec![]);
+    }
+
+    log::info!(
+        "Substructure search: {} total → {} after Tanimoto (>{})",
+        all_mols.len(),
+        filtered.len(),
+        threshold
+    );
+
+    // 3. RDKit 子结构精确验证
+    let sub_resp = client
+        .post(format!("{}/api/v1/chem/substructure_search", sidecar_url))
+        .json(&serde_json::json!({
+            "query_smiles": query_smiles,
+            "candidate_esmiles": filtered,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Substructure search request failed: {}", e))?;
+
+    let sub_json: serde_json::Value = sub_resp
+        .json()
+        .await
+        .map_err(|e| format!("Substructure search parse failed: {}", e))?;
+
+    let matches: Vec<String> = sub_json
+        .get("matches")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // 构建返回结果（包含分子详情）
+    let mol_map: std::collections::HashMap<String, String> = all_mols.into_iter().collect();
+    let results: Vec<serde_json::Value> = matches
+        .iter()
+        .filter_map(|esmiles| {
+            let mol_id = mol_map.get(esmiles)?;
+            Some(serde_json::json!({
+                "mol_id": mol_id,
+                "esmiles": esmiles,
+            }))
+        })
+        .collect();
+
+    log::info!(
+        "Substructure search: {} final matches for '{}'",
+        results.len(),
+        query_smiles
+    );
+
+    Ok(results)
+}

@@ -288,3 +288,176 @@ async def validate_smiles(request: ValidateRequest) -> ValidateResponse:
             issues=[],
             error=str(e),
         )
+
+
+# ============================================================================
+# 批量结构校验（用于文档提取后批量验证）
+# ============================================================================
+
+
+class BatchValidateRequest(BaseModel):
+    """批量 SMILES 结构校验请求."""
+
+    esmiles_list: list[str] = Field(..., min_length=1, max_length=200, description="待校验的 E-SMILES 列表")
+
+
+class BatchValidateResponse(BaseModel):
+    """批量校验结果.
+
+    Attributes:
+        success: 是否成功处理（单条失败不影响整体 success）
+        results: 每条校验结果列表（顺序与请求一致）
+        error: 系统级错误
+    """
+
+    success: bool
+    results: list[dict] = Field(default_factory=list)
+    error: str | None = None
+
+
+@router.post("/validate/batch", response_model=BatchValidateResponse)
+async def batch_validate_smiles(request: BatchValidateRequest) -> BatchValidateResponse:
+    """批量校验 SMILES 结构.
+
+    用于文档提取管线：一次性验证 LLM 提取出的多个化合物结构。
+    """
+    try:
+        results = []
+        for esmiles in request.esmiles_list:
+            result = _validate_smiles(esmiles)
+            results.append(
+                {
+                    "esmiles": esmiles,
+                    "valid": result["valid"],
+                    "canonical_smiles": result["canonical_smiles"],
+                    "issues": result["issues"],
+                }
+            )
+        return BatchValidateResponse(success=True, results=results, error=None)
+    except Exception as e:
+        logger.error(f"Batch validate failed: {e}", exc_info=True)
+        return BatchValidateResponse(success=False, results=[], error=str(e))
+
+
+# ============================================================================
+# 指纹计算 + 子结构搜索
+# ============================================================================
+
+
+class FingerprintRequest(BaseModel):
+    """计算 Morgan 指纹."""
+
+    esmiles: str
+
+
+class FingerprintResponse(BaseModel):
+    success: bool
+    fingerprint: str | None = None  # base64 编码的 2048-bit Morgan 指纹
+    error: str | None = None
+
+
+@router.post("/fingerprint", response_model=FingerprintResponse)
+async def compute_fingerprint(request: FingerprintRequest) -> FingerprintResponse:
+    """计算单个分子的 Morgan 指纹 (radius=2, nbits=2048)."""
+    try:
+        if not _RDKIT_AVAILABLE:
+            return FingerprintResponse(success=False, error="RDKit not available")
+
+        mol = Chem.MolFromSmiles(request.esmiles)
+        if mol is None:
+            return FingerprintResponse(success=False, error="Invalid SMILES")
+
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
+        import base64
+
+        fp_bytes = fp.ToBitString().encode("ascii")
+        # 将 bit string 转为 bytes（每 8 bit 一个 byte）
+        fp_bytes_packed = bytes(
+            int(fp_bytes[i : i + 8], 2) for i in range(0, len(fp_bytes), 8)
+        )
+        fp_b64 = base64.b64encode(fp_bytes_packed).decode("ascii")
+        return FingerprintResponse(success=True, fingerprint=fp_b64)
+    except Exception as e:
+        logger.error(f"Fingerprint failed for {request.esmiles}: {e}", exc_info=True)
+        return FingerprintResponse(success=False, error=str(e))
+
+
+class FingerprintBatchRequest(BaseModel):
+    """批量计算 Morgan 指纹."""
+
+    esmiles_list: list[str]
+
+
+class FingerprintBatchResponse(BaseModel):
+    success: bool
+    fingerprints: list[str | None] = Field(default_factory=list)
+    error: str | None = None
+
+
+@router.post("/fingerprint/batch", response_model=FingerprintBatchResponse)
+async def batch_fingerprint(request: FingerprintBatchRequest) -> FingerprintBatchResponse:
+    """批量计算 Morgan 指纹."""
+    try:
+        if not _RDKIT_AVAILABLE:
+            return FingerprintBatchResponse(success=False, error="RDKit not available")
+
+        import base64
+
+        results = []
+        for esmiles in request.esmiles_list:
+            mol = Chem.MolFromSmiles(esmiles)
+            if mol is None:
+                results.append(None)
+                continue
+            fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
+            fp_bytes = fp.ToBitString().encode("ascii")
+            fp_bytes_packed = bytes(
+                int(fp_bytes[i : i + 8], 2) for i in range(0, len(fp_bytes), 8)
+            )
+            results.append(base64.b64encode(fp_bytes_packed).decode("ascii"))
+        return FingerprintBatchResponse(success=True, fingerprints=results)
+    except Exception as e:
+        logger.error(f"Batch fingerprint failed: {e}", exc_info=True)
+        return FingerprintBatchResponse(success=False, error=str(e))
+
+
+class SubstructureSearchRequest(BaseModel):
+    """子结构搜索请求."""
+
+    query_smiles: str
+    candidate_esmiles: list[str]
+
+
+class SubstructureSearchResponse(BaseModel):
+    success: bool
+    matches: list[str] = Field(default_factory=list)  # 匹配的 SMILES 列表
+    error: str | None = None
+
+
+@router.post("/substructure_search", response_model=SubstructureSearchResponse)
+async def substructure_search(
+    request: SubstructureSearchRequest,
+) -> SubstructureSearchResponse:
+    """对候选分子列表执行子结构搜索（RDKit HasSubstructMatch）."""
+    try:
+        if not _RDKIT_AVAILABLE:
+            return SubstructureSearchResponse(success=False, error="RDKit not available")
+
+        query_mol = Chem.MolFromSmiles(request.query_smiles)
+        if query_mol is None:
+            return SubstructureSearchResponse(
+                success=False, error="Invalid query SMILES"
+            )
+
+        matches = []
+        for esmiles in request.candidate_esmiles:
+            mol = Chem.MolFromSmiles(esmiles)
+            if mol is None:
+                continue
+            if mol.HasSubstructMatch(query_mol):
+                matches.append(esmiles)
+
+        return SubstructureSearchResponse(success=True, matches=matches)
+    except Exception as e:
+        logger.error(f"Substructure search failed: {e}", exc_info=True)
+        return SubstructureSearchResponse(success=False, error=str(e))

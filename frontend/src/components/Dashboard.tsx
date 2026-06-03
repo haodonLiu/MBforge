@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
-import { PageContainer, PageTitle, Card, Button, Badge, ResponsiveStatGrid, EmptyState } from './ui'
+import { PageContainer, PageTitle, Card, Button, Badge, SectionTitle, ResponsiveStatGrid, EmptyState } from './ui'
 import {
   FileTextIcon, FlaskIcon, ChatIcon, SparklesIcon,
   ExternalLinkIcon, RefreshCwIcon,
@@ -231,28 +231,20 @@ export default function Dashboard() {
       {/* 主要面板：2 列布局 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: 16, marginBottom: 16 }}>
         {/* Top 活性分子 */}
-        <Card style={{ padding: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>高活性分子</h3>
-              <p style={{ margin: '2px 0 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
-                按活性排序 · 前 3
-              </p>
-            </div>
-          </div>
+        <Card padding="20px">
+          <SectionTitle style={{ marginBottom: 16 }}>
+            高活性分子
+          </SectionTitle>
           {topMolecules.length === 0 ? (
             <EmptyState message="暂无带活性数据的分子" />
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
               {topMolecules.map(mol => (
-                <div key={mol.mol_id} style={{
+                <Card key={mol.mol_id} padding="12px" style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 12,
-                  padding: 12,
-                  background: 'var(--bg-base)',
-                  borderRadius: 8,
-                  border: '1px solid var(--border)',
+                  flexDirection: 'row',
                 }}>
                   <MoleculeDisplay
                     smiles={mol.esmiles}
@@ -278,38 +270,32 @@ export default function Dashboard() {
                       详情 <ExternalLinkIcon size={10} />
                     </Button>
                   </div>
-                </div>
+                </Card>
               ))}
             </div>
           )}
         </Card>
 
         {/* 项目概览 */}
-        <Card style={{ padding: 20 }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: 15, fontWeight: 600 }}>项目概览</h3>
+        <Card padding="20px">
+          <SectionTitle style={{ marginBottom: 16 }}>
+            项目概览
+          </SectionTitle>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-              <span style={{ color: 'var(--text-muted)' }}>项目路径</span>
-              <span style={{ color: 'var(--text-primary)', fontWeight: 500, wordBreak: 'break-all', textAlign: 'right' }}>
-                {projectRoot}
+            {[
+            ['项目路径', projectRoot, 'var(--text-primary)', 500],
+            ['文献数', stats.documents, 'var(--text-primary)', 600],
+            ['已索引', stats.indexed, 'var(--success)', 600],
+            ['分子数', stats.molecules, 'var(--accent)', 600],
+            ['已确认', stats.confirmed, 'var(--info)', 600],
+          ].map(([label, value, color, weight]) => (
+            <div key={String(label)} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
+              <span style={{ color: 'var(--text-muted)' }}>{String(label)}</span>
+              <span style={{ color: String(color), fontWeight: weight as number, wordBreak: label === '项目路径' ? 'break-all' as const : undefined, textAlign: label === '项目路径' ? 'right' as const : undefined }}>
+                {String(value)}
               </span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-              <span style={{ color: 'var(--text-muted)' }}>文献数</span>
-              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{stats.documents}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-              <span style={{ color: 'var(--text-muted)' }}>已索引</span>
-              <span style={{ color: 'var(--success)', fontWeight: 600 }}>{stats.indexed}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-              <span style={{ color: 'var(--text-muted)' }}>分子数</span>
-              <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{stats.molecules}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-              <span style={{ color: 'var(--text-muted)' }}>已确认</span>
-              <span style={{ color: 'var(--info)', fontWeight: 600 }}>{stats.confirmed}</span>
-            </div>
+          ))}
           </div>
         </Card>
       </div>

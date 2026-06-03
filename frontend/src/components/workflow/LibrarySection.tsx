@@ -1,4 +1,5 @@
 import { CheckIcon, XIcon } from '../icons'
+import SectionTitle from '../ui/SectionTitle'
 
 // 库展示元数据 (label + hint)
 export const LIBRARY_INFO: Record<string, { name: string; hint?: string }> = {
@@ -86,24 +87,15 @@ export default function LibrarySection({ title, libs }: LibrarySectionProps) {
   return (
     <div
       style={{
-        padding: '16px 20px',
         background: 'var(--bg-surface)',
         border: '1px solid var(--border)',
         borderRadius: '12px',
+        padding: '16px 20px',
       }}
     >
-      <div
-        style={{
-          fontSize: '12px',
-          fontWeight: 600,
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          marginBottom: '12px',
-        }}
-      >
+      <SectionTitle style={{ marginBottom: '12px' }}>
         {title}
-      </div>
+      </SectionTitle>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {libs.map(lib => (
           <LibRow key={lib.name} lib={lib} />

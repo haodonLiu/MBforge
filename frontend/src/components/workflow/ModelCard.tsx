@@ -1,4 +1,5 @@
 import { CheckIcon, TrashIcon, DownloadIcon } from '../icons'
+import Button from '../ui/Button'
 import type { ModelInfo } from './types'
 
 export interface ModelCardProps {
@@ -100,56 +101,17 @@ export default function ModelCard({ model, onDownload, onDelete }: ModelCardProp
         </span>
 
         {model.downloading ? (
-          <div
-            style={{
-              padding: '6px 12px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border)',
-              borderRadius: '6px',
-              fontSize: '12px',
-              color: 'var(--text-secondary)',
-            }}
-          >
+          <Button variant="secondary" size="sm" disabled>
             Downloading...
-          </div>
+          </Button>
         ) : model.downloaded ? (
-          <button
-            onClick={() => onDelete(model.id)}
-            style={{
-              padding: '6px 12px',
-              background: 'rgba(220, 38, 38, 0.08)',
-              border: '1px solid rgba(220, 38, 38, 0.2)',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              color: 'var(--danger)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <TrashIcon size={12} />
+          <Button variant="danger" size="sm" icon={<TrashIcon size={12} />} onClick={() => onDelete(model.id)}>
             Delete
-          </button>
+          </Button>
         ) : (
-          <button
-            onClick={() => onDownload(model.id)}
-            style={{
-              padding: '6px 12px',
-              background: 'var(--accent)',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '12px',
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <DownloadIcon size={12} />
+          <Button variant="primary" size="sm" icon={<DownloadIcon size={12} />} onClick={() => onDownload(model.id)}>
             Download
-          </button>
+          </Button>
         )}
       </div>
     </div>

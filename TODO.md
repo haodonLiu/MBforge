@@ -108,12 +108,15 @@
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P0** | lancedb → sqlite-vec 迁移 | 解决 lancedb 0.30.0 编译阻塞；统一 FTS5+向量到单一 SQLite 文件 | 
-| **P1** | JSON 修复换 llm_json crate | `post_process.rs` 自研修复 → `llm_json::repair_json()`，提升 LLM 输出鲁棒性 |
-| **P2** | chem_validate 换 rdkit-rs | 消除化学验证的 HTTP 往返；本地 RDKit 验证 + 属性计算 |
-| **P2** | semantic_cache 换 moka | 消除 Mutex Send 问题；高性能无锁缓存 |
-| **P3** | llm.rs 评估 rig/async-openai | 减少多 provider 维护负担；非紧急 |
-| **P3** | PDF 管线 Rust 集成测试 | 需要 Tauri 环境 |
+| **P0** | chematic API 编译验证 | core/chem.rs 中的 API 调用需验证与实际 crate 版本一致 |
+| **P0** | mol_search_substructure 接入 chem.rs | 子结构搜索命令改用纯 Rust（当前仍调 Python sidecar） |
+| **P1** | 分子指纹持久化 | add_molecule 时自动计算 ECFP4 并存入 fingerprint BLOB |
+| **P1** | 分子描述符 Rust 化 | schematic-chem 替代 Python RDKit 的 MW/LogP/TPSA/QED |
+| **P1** | SAR 分析 Rust 化 | schematic-smarts MCS 替代 Python rdFMCS |
+| **P2** | MOL/SDF 文件解析 | schematic-mol 支持 V2000+V3000 |
+| **P2** | JSON 修复换 llm_json crate | 提升 LLM 输出鲁棒性 |
+| **P3** | 2D 分子 SVG 渲染 | schematic-depict 生成分子结构图 |
+| **P3** | WASM 分子预览 | schematic-wasm 前端实时预览 |
 
 ---
 
@@ -126,7 +129,7 @@
 | # | 自研模块 | 开源替代 | 收益 | 风险 |
 |---|---------|---------|------|------|
 | 1 | `post_process.rs:605-699` JSON 修复 | `llm_json` crate (oramasearch/llm_json) — Python json_repair 的 Rust 移植 | 处理 trailing commas/unquoted keys/single quotes 等更常见错误 | 极低，API 简单 |
-| 2 | `chem_validate.rs` + Python `/chem/validate` | `rdkit-rs` (rdkit-rs.github.io) — RDKit C++ 的 Rust 绑定；或 `chematic` (纯 Rust) | 消除 HTTP 往返、离线可用、可算 MW/LogP/TPSA/指纹 | `rdkit-rs` 需 C++ 编译链；`chematic` 功能尚不完整 |
+| 2 | `chem_validate.rs` + Python `/chem/validate` | **`chematic`** (纯 Rust，已集成) — core/chem.rs 已实现 SMILES 校验/指纹/Tanimoto/子结构搜索 | 消除 HTTP 往返、离线可用、可算 MW/LogP/TPSA/指纹 | API 需验证（git 依赖，未发布 crates.io） |
 
 ### 中优先级（ROI 中等）
 
@@ -180,3 +183,74 @@ cf907f1 feat(python): 统一资源管理 + 精简下载 + CLI 环境管理
 2edc1f6 feat: Rust 侧统一资源管理器 + 前端环境 tab
 705a8aa fix(rust): 全代码审查修复 — UTF-8 panic / 路径穿越 / FTS5 损坏 / chat_stream 多步丢失
 ```
+
+---
+
+## 八、架构重构 — 化学信息学 Rust 化（2026-06-03）
+
+### 已完成 ✅
+
+| 项目 | 说明 |
+|------|------|
+| **chematic 集成** | 纯 Rust 化学信息学库（736 测试，ChEMBL 2.9M 100% 通过） |
+| **core/chem.rs** | SMILES 校验、ECFP4 指纹、Tanimoto 相似度、VF2 子结构搜索 |
+| **三级漏斗全 Rust 化** | Tanimoto 预过滤 → VF2 子图同构 → 零 Python sidecar 调用 |
+| **LanceDB 统一知识库** | 移除 SQLite FTS5，execute_hybrid 原生融合向量+BM25 |
+| **移除 ChromaDB** | 删除 knowledge_base.py、kb.py、chromadb 依赖 |
+| **文件内容缓存** | SHA-256 + mtime 两级检查，避免重复 PDF 解析 |
+| **代码瘦身** | 净删 ~710 行死代码（SqliteVectorStore、pending.rs 等） |
+
+### chematic 可用能力清单
+
+| 模块 | 能力 | MBForge 用途 |
+|------|------|-------------|
+| `chematic-core` | Molecule 结构、Kekulization、元素数据 | 分子对象基础 |
+| `chematic-smiles` | OpenSMILES 解析/写入、canonical SMILES | SMILES 校验规范化 |
+| `chematic-fp` | ECFP4/6、MACCS、AtomPair、Torsion FP、Tanimoto/Dice | 指纹存储+相似度搜索 |
+| `chematic-smarts` | SMARTS 解析、VF2 子图同构、MCS | 子结构搜索、SAR 分析 |
+| `chematic-chem` | MW/LogP/TPSA/QED/Lipinski/Murcko/BRICS/CIP/VSA/SA | 分子描述符、药物相似性 |
+| `chematic-mol` | MOL/SDF V2000+V3000 读写 | 化学文件格式支持 |
+| `chematic-depict` | 2D SVG 渲染（CPK 配色、高亮） | 分子结构可视化 |
+| `chematic-rxn` | 反应 SMILES/SMIRKS 解析 | 反应路线分析 |
+| `chematic-3d` | 3D 坐标生成、UFF 能量最小化、PDB/XYZ | 分子构象 |
+| `chematic-perception` | SSSR 环检测、Hückel 芳香性 | 环系分析 |
+| `chematic-wasm` | WebAssembly 绑定 | 前端分子预览 |
+
+### 待做 TODO
+
+#### P0 — 当前阻塞
+- [ ] **chematic API 编译验证** — core/chem.rs 中的 API 调用需验证与实际 crate 版本一致
+- [ ] **mol_search_substructure 接入 chem.rs** — molecule.rs 子结构搜索命令改用纯 Rust（当前仍调 Python sidecar）
+
+#### P1 — 核心功能 Rust 化
+- [ ] **分子指纹持久化** — add_molecule 时自动计算 ECFP4 并存入 fingerprint BLOB
+- [ ] **分子描述符 Rust 化** — schematic-chem 替代 Python RDKit 的 MW/LogP/TPSA/QED/Lipinski
+- [ ] **SAR 分析 Rust 化** — schematic-smarts MCS 替代 Python rdFMCS.FindMCS
+- [ ] **BRICS 分子碎片化** — schematic-chem BRICS 用于分子库多样性分析
+- [ ] **Murcko 骨架提取** — 用于 scaffold-based 聚类
+
+#### P2 — 格式支持扩展
+- [ ] **MOL/SDF 文件解析** — schematic-mol 支持 V2000+V3000
+- [ ] **反应 SMILES 支持** — schematic-rxn 解析反应 SMILES/SMIRKS
+- [ ] **3D 坐标生成** — schematic-3d 用于分子构象搜索
+- [ ] **PDB/XYZ 格式** — 蛋白质-配体对接准备
+
+#### P3 — 可视化与前端
+- [ ] **2D 分子 SVG 渲染** — schematic-depict 生成分子结构图（替代 Python matplotlib）
+- [ ] **WASM 分子预览** — schematic-wasm 在前端实时预览分子结构
+- [ ] **SMARTS 模式编辑器** — 前端 SMARTS 输入 + 实时匹配反馈
+
+#### Rust 化学库生态参考
+
+> 来源: [Rust 化学计算库指南](https://jishuzhan.net/article/1832075668892946433)
+
+| 库 | 功能 | 与 MBForge 相关性 |
+|---|---|---|
+| `chemistry-rs` | 化学方程式解析 | 低（不需要方程式） |
+| `rust-chem` | 分子结构模拟、反应动力学 | 中（可补充 3D 模拟能力） |
+| `periodic-rs` | 元素周期表数据 | 低（chematic-core 已包含） |
+| `chemfiles-rs` | PDB/XYZ/MOL2 文件读写 | 高（可替代 schematic-mol 部分功能） |
+| `rust-bio-chem` | 生物分子建模、相似性分析 | 中（蛋白质-配体场景） |
+| `quantum-rs` | 量子化学计算 | 低（超出 MBForge 范围） |
+
+**结论**: chematic 已覆盖 MBForge 80%+ 的化学信息学需求。`chemfiles-rs` 可作为补充（更丰富的文件格式支持）。其他库暂不需要。

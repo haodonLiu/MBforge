@@ -903,6 +903,57 @@ dependencies = [
 ]
 
 [[package]]
+name = "chematic-chem"
+version = "0.1.19"
+source = "git+https://github.com/kent-tokyo/chematic#47a69b17d1626ae9d5656135aef5a5ac7832b7d9"
+dependencies = [
+ "chematic-core",
+ "chematic-fp",
+ "chematic-perception",
+ "chematic-smarts",
+]
+
+[[package]]
+name = "chematic-core"
+version = "0.1.19"
+source = "git+https://github.com/kent-tokyo/chematic#47a69b17d1626ae9d5656135aef5a5ac7832b7d9"
+
+[[package]]
+name = "chematic-fp"
+version = "0.1.19"
+source = "git+https://github.com/kent-tokyo/chematic#47a69b17d1626ae9d5656135aef5a5ac7832b7d9"
+dependencies = [
+ "chematic-core",
+ "chematic-perception",
+ "chematic-smarts",
+]
+
+[[package]]
+name = "chematic-perception"
+version = "0.1.19"
+source = "git+https://github.com/kent-tokyo/chematic#47a69b17d1626ae9d5656135aef5a5ac7832b7d9"
+dependencies = [
+ "chematic-core",
+]
+
+[[package]]
+name = "chematic-smarts"
+version = "0.1.19"
+source = "git+https://github.com/kent-tokyo/chematic#47a69b17d1626ae9d5656135aef5a5ac7832b7d9"
+dependencies = [
+ "chematic-core",
+ "chematic-perception",
+]
+
+[[package]]
+name = "chematic-smiles"
+version = "0.1.19"
+source = "git+https://github.com/kent-tokyo/chematic#47a69b17d1626ae9d5656135aef5a5ac7832b7d9"
+dependencies = [
+ "chematic-core",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4764,6 +4815,11 @@ version = "0.2.0"
 dependencies = [
  "arrow",
  "base64 0.22.1",
+ "chematic-chem",
+ "chematic-core",
+ "chematic-fp",
+ "chematic-smarts",
+ "chematic-smiles",
  "chrono",
  "directories",
  "futures",

@@ -38,3 +38,9 @@ lopdf = { git = "https://github.com/J-F-Liu/lopdf", rev = "7a05512d831415b1f2b1c
 log = "0.4"
 lancedb = "0.30.0"
 arrow = "58.3.0"
+# 化学信息学（纯 Rust，替代 Python RDKit）
+chematic-core = { git = "https://github.com/kent-tokyo/chematic" }
+chematic-smiles = { git = "https://github.com/kent-tokyo/chematic" }
+chematic-fp = { git = "https://github.com/kent-tokyo/chematic" }
+chematic-smarts = { git = "https://github.com/kent-tokyo/chematic" }
+chematic-chem = { git = "https://github.com/kent-tokyo/chematic" }

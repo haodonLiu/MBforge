@@ -1,6 +1,6 @@
 # MBForge 工作状态记录
 
-> 更新时间: 2026-06-02
+> 更新时间: 2026-06-03
 
 ---
 
@@ -108,7 +108,55 @@
 
 | 优先级 | 任务 | 说明 |
 |--------|------|------|
-| **P2** | PDF 管线 Rust 集成测试 | 需要 Tauri 环境 |
+| **P0** | lancedb → sqlite-vec 迁移 | 解决 lancedb 0.30.0 编译阻塞；统一 FTS5+向量到单一 SQLite 文件 | 
+| **P1** | JSON 修复换 llm_json crate | `post_process.rs` 自研修复 → `llm_json::repair_json()`，提升 LLM 输出鲁棒性 |
+| **P2** | chem_validate 换 rdkit-rs | 消除化学验证的 HTTP 往返；本地 RDKit 验证 + 属性计算 |
+| **P2** | semantic_cache 换 moka | 消除 Mutex Send 问题；高性能无锁缓存 |
+| **P3** | llm.rs 评估 rig/async-openai | 减少多 provider 维护负担；非紧急 |
+| **P3** | PDF 管线 Rust 集成测试 | 需要 Tauri 环境 |
+
+---
+
+## 七、开源替代方案分析记录（2026-06-03）
+
+> 本次分析基于对代码库的全面审查 + Rust/Python/TS 生态调研，找出可直接用现成开源库替代的自研模块。
+
+### 高优先级（ROI 极高）
+
+| # | 自研模块 | 开源替代 | 收益 | 风险 |
+|---|---------|---------|------|------|
+| 1 | `post_process.rs:605-699` JSON 修复 | `llm_json` crate (oramasearch/llm_json) — Python json_repair 的 Rust 移植 | 处理 trailing commas/unquoted keys/single quotes 等更常见错误 | 极低，API 简单 |
+| 2 | `chem_validate.rs` + Python `/chem/validate` | `rdkit-rs` (rdkit-rs.github.io) — RDKit C++ 的 Rust 绑定；或 `chematic` (纯 Rust) | 消除 HTTP 往返、离线可用、可算 MW/LogP/TPSA/指纹 | `rdkit-rs` 需 C++ 编译链；`chematic` 功能尚不完整 |
+
+### 中优先级（ROI 中等）
+
+| # | 自研模块 | 开源替代 | 收益 | 风险 |
+|---|---------|---------|------|------|
+| 3 | `vector_store.rs` + `lance_store.rs` (LanceDB) | `sqlite-vec` + 自建 RRF；或 `cairn_search` crate | 解决 lancedb 0.30.0 编译阻塞；单一 SQLite 文件更稳定 | 需迁移数据 |
+| 4 | `semantic_cache.rs` (~493 行) | `moka` crate — 高性能并发缓存 | 消除 Mutex Send 问题；无锁；减少 ~400 行自研 | 需适配 disk_persist |
+| 5 | `llm.rs` (~516 行) | `async-openai` / `rig` 通用 LLM 框架 | 减少 provider API 变更维护 | 可能引入不需要的抽象 |
+
+### 不建议替代（自研合理）
+
+- `agent.rs` ReAct 循环 — 深度领域定制（分子科学系统提示、25+ 工具、记忆系统）
+- `memory/` 记忆系统 — 6 分类结构化记忆是领域设计
+- `association.rs` 分子-文本关联 — 领域特定正则引擎，无通用替代品
+- `parsers/pipeline.rs` PDF 解析编排 — 已基于多个开源后端，自研的是合理编排层
+
+### 推荐实施顺序
+
+```
+Phase 1（本周）:
+  ├─ ① llm_json 替换 JSON 修复（cargo add，一行替换）
+  └─ ② sqlite-vec 替换 lancedb（解决当前编译阻塞）
+
+Phase 2（本月）:
+  ├─ ③ rdkit-rs 替换 chem 验证 HTTP 层（评估 C++ 编译链）
+  └─ ④ moka 替换 semantic_cache（测试缓存命中率）
+
+Phase 3（后续）:
+  └─ ⑤ 评估 rig/async-openai 替换 llm.rs（非紧急）
+```
 
 ---
 

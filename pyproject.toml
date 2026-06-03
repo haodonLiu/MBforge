@@ -44,7 +44,6 @@ dependencies = [
     "pillow>=10.4.0",
     "rdkit>=2024.3.0",
     # AI / RAG
-    "chromadb>=0.4.0",
     "sentence-transformers>=2.5.0",
     "transformers>=4.51.0",
     "openai>=1.0.0",

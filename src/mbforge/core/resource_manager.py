@@ -207,15 +207,6 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         import_name="ultralytics",
         mirror=TSINGHUA_PIP,
     ),
-    "chromadb": ResourceInfo(
-        id="chromadb",
-        name="ChromaDB",
-        type=ResourceType.PYTHON_PACKAGE,
-        description="向量数据库 (知识库)",
-        pip_name="chromadb",
-        import_name="chromadb",
-        mirror=TSINGHUA_PIP,
-    ),
     # ──── 二进制工具 ────
     "pdfium": ResourceInfo(
         id="pdfium",

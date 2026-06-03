@@ -26,7 +26,6 @@ from .routers import (
     environment,
     file,
     health,
-    kb,
     llm,
     moldet,
     molecule,
@@ -144,7 +143,6 @@ app.include_router(moldet.router, prefix="/api/v1/moldet", tags=["moldet"])
 app.include_router(uniparser.router, prefix="/api/v1/uniparser", tags=["uniparser"])
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(project.router, prefix="/api/v1/project", tags=["project"])
-app.include_router(kb.router, prefix="/api/v1/kb", tags=["kb"])
 app.include_router(molecule.router, prefix="/api/v1/molecule", tags=["molecule"])
 app.include_router(file.router, prefix="/api/v1/file", tags=["file"])
 app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])

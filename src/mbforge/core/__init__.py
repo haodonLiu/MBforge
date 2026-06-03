@@ -6,7 +6,6 @@ __all__ = [
     "Project",
     "DocumentEntry",
     "ExtractedContent",
-    "KnowledgeBase",
     "MoleculeDatabase",
     "MoleculeRecord",
     "ProjectSettings",

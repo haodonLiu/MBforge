@@ -23,7 +23,10 @@
     "allow-text-ops",
     "allow-classifier",
     "allow-extractor",
-    "allow-file-ops"
+    "allow-file-ops",
+    "allow-notes",
+    "allow-sidecar",
+    "allow-resource-manager"
   ],
   "platforms": ["macOS", "windows", "linux", "android", "iOS"]
 }

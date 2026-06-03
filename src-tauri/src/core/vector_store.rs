@@ -59,6 +59,10 @@ impl SqliteVectorStore {
         )
         .map_err(|e| format!("Failed to create table: {}", e))?;
 
+        // 旧版 v0 schema 包含 `embedding BLOB NOT NULL` 列，写入路径不再维护该列，
+        // 直接 DROP COLUMN 升级到当前 FTS5-only schema（幂等执行）。
+        migrate_legacy_schema(&conn)?;
+
         // FTS5 虚拟表：用于全文搜索
         conn.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
@@ -78,6 +82,29 @@ impl SqliteVectorStore {
             conn: Mutex::new(conn),
         })
     }
+}
+
+/// 将旧版 v0 schema（含 `embedding` 列）迁移到当前 FTS5-only schema。
+///
+/// 通过 `PRAGMA table_info` 检测列名，若发现遗留的 `embedding` 列则执行
+/// `ALTER TABLE ... DROP COLUMN`。SQLite 3.35+ 支持 DROP COLUMN，
+/// `rusqlite` 的 `bundled` feature 自带 3.46+，无需额外检查版本。
+fn migrate_legacy_schema(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(sections)")
+        .map_err(|e| format!("Prepare PRAGMA failed: {}", e))?;
+    let column_names: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("Query PRAGMA failed: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if column_names.iter().any(|name| name == "embedding") {
+        log::info!("vector_store: dropping legacy `embedding` column from sections");
+        conn.execute("ALTER TABLE sections DROP COLUMN embedding", [])
+            .map_err(|e| format!("DROP COLUMN failed: {}", e))?;
+    }
+    Ok(())
 }
 
 impl VectorStore for SqliteVectorStore {
@@ -269,6 +296,7 @@ impl VectorStore for SqliteVectorStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::Connection;
 
     #[test]
     fn test_fts5_store() {
@@ -299,5 +327,69 @@ mod tests {
         let results = store.search("aspirin", 10, None).unwrap();
         assert!(!results.is_empty());
         assert!(results[0].text.contains("aspirin"));
+    }
+
+    /// 验证从旧版 v0 schema（含 `embedding BLOB NOT NULL`）迁移到 FTS5-only schema。
+    /// 旧 DB 直接 DROP COLUMN 后应能正常 upsert，不再触发 NOT NULL 约束错误。
+    #[test]
+    fn test_migrate_legacy_embedding_column() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("legacy.db");
+
+        // 1. 手工建一个旧 v0 schema 的 sections 表（含 embedding 列）
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute(
+                "CREATE TABLE sections (
+                    id TEXT PRIMARY KEY,
+                    doc_id TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    embedding BLOB NOT NULL,
+                    metadata TEXT NOT NULL
+                )",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO sections (id, doc_id, text, embedding, metadata) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["legacy-1", "doc1", "legacy text", vec![0u8], "{}"],
+            )
+            .unwrap();
+        }
+
+        // 2. 触发 migration
+        let store = SqliteVectorStore::new(&db_path).unwrap();
+
+        // 3. 验证：`embedding` 列已 DROP，列数为 4
+        let conn = Connection::open(&db_path).unwrap();
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(sections)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        assert!(
+            !cols.iter().any(|c| c == "embedding"),
+            "embedding column should be dropped, got cols: {:?}",
+            cols
+        );
+        assert_eq!(cols.len(), 4);
+
+        // 4. 验证：旧数据保留 + 新 upsert 不再触发 NOT NULL 约束
+        assert_eq!(store.count().unwrap(), 1);
+        store
+            .upsert(vec![VectorItem {
+                id: "new-1".into(),
+                doc_id: "doc2".into(),
+                text: "post-migration text".into(),
+                embedding: vec![],
+                metadata: serde_json::json!({}),
+            }])
+            .unwrap();
+        assert_eq!(store.count().unwrap(), 2);
+
+        // 5. 验证：再次打开 DB（再次跑 migration）也是幂等的
+        let _store2 = SqliteVectorStore::new(&db_path).unwrap();
     }
 }

@@ -120,6 +120,7 @@ pub async fn parse_pdf(
             region: None,
             description: None,
             esmiles: None,
+            rel_path: None,
         })
         .collect();
 
@@ -242,7 +243,7 @@ pub async fn process_document(
         warnings: vec![],
     };
 
-    // ===== Stage 0: 文件分类 + 提取 =====
+    // ===== Stage 0: 文件分类 + 提取（带文件缓存） =====
     {
         let _ = app.emit(
             EVT_DOC_PROGRESS,
@@ -252,16 +253,77 @@ pub async fn process_document(
             },
         );
 
-        let classified = classify_and_extract(&path).await?;
-        ctx.raw_text = classified.text;
-        ctx.page_count = classified.page_count;
-        ctx.parser_used = classified.parser;
-        ctx.images = classified.images;
+        // 尝试从文件缓存加载
+        let file_path = std::path::Path::new(&path);
+        let mut cache_hit = false;
 
-        // Stage 0.5: Build sections
-        ctx.headings = crate::parsers::headings::extract_headings(&ctx.raw_text);
-        ctx.sections =
-            crate::parsers::sections::build_sections(&ctx.raw_text, &ctx.headings, None, 8000);
+        if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
+            if let Ok(guard) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()) {
+                if let Some(kb) = guard.get(root.to_string_lossy().as_ref()) {
+                    match kb.file_cache().get(file_path) {
+                        Ok(Some(cached)) => {
+                            log::info!("File cache HIT for: {}", path);
+                            // 从缓存恢复上下文
+                            ctx.raw_text = cached.text;
+                            ctx.parser_used = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
+                                .ok()
+                                .and_then(|m| m.get("parser").and_then(|p| p.as_str()).map(String::from))
+                                .unwrap_or_else(|| "cached".into());
+                            ctx.page_count = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
+                                .ok()
+                                .and_then(|m| m.get("page_count").and_then(|p| p.as_u64()))
+                                .unwrap_or(0) as usize;
+                            ctx.images = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
+                                .ok()
+                                .and_then(|m| m.get("images").cloned())
+                                .and_then(|v| serde_json::from_value(v).ok())
+                                .unwrap_or_default();
+                            ctx.headings = crate::parsers::headings::extract_headings(&ctx.raw_text);
+                            ctx.sections = serde_json::from_str(&cached.sections_json)
+                                .unwrap_or_default();
+                            cache_hit = true;
+                        }
+                        Ok(None) => {
+                            log::debug!("File cache MISS for: {}", path);
+                        }
+                        Err(e) => {
+                            log::warn!("File cache error: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+
+        if !cache_hit {
+            let classified = classify_and_extract(&path).await?;
+            ctx.raw_text = classified.text;
+            ctx.page_count = classified.page_count;
+            ctx.parser_used = classified.parser;
+            ctx.images = classified.images;
+
+            // Stage 0.5: Build sections
+            ctx.headings = crate::parsers::headings::extract_headings(&ctx.raw_text);
+            ctx.sections =
+                crate::parsers::sections::build_sections(&ctx.raw_text, &ctx.headings, None, 8000);
+
+            // 写入文件缓存
+            if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
+                if let Ok(guard) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()) {
+                    if let Some(kb) = guard.get(root.to_string_lossy().as_ref()) {
+                        let sections_json = serde_json::to_string(&ctx.sections).unwrap_or_default();
+                        let meta_json = serde_json::to_string(&serde_json::json!({
+                            "parser": ctx.parser_used,
+                            "page_count": ctx.page_count,
+                            "images": ctx.images,
+                        }))
+                        .unwrap_or_default();
+                        if let Err(e) = kb.file_cache().put(file_path, &ctx.raw_text, &sections_json, &meta_json) {
+                            log::warn!("File cache write failed: {}", e);
+                        }
+                    }
+                }
+            }
+        }
 
         processing_log.stages.push(StageLog {
             stage: 0,
@@ -477,6 +539,24 @@ pub async fn process_document(
     let mut vlm_esmiles_found = 0usize;
     let mut vlm_results: Vec<(String, crate::parsers::vlm_chem::ChemImageResult)> = Vec::new();
 
+    // 解析图片的完整路径（优先使用持久化后的 rel_path）
+    let project_root = extract::find_project_root(&ctx.source_path, project_root.as_deref());
+    let resolve_image_path = |img: &crate::parsers::doc_types::ImageRef| -> Option<String> {
+        if let Some(ref rel) = img.rel_path {
+            if let Some(ref root) = project_root {
+                let full = root.join(rel);
+                if full.exists() {
+                    return Some(full.to_string_lossy().to_string());
+                }
+            }
+        }
+        ctx.source_path
+            .parent()
+            .map(|p| p.join(&img.filename))
+            .filter(|p| p.exists())
+            .map(|p| p.to_string_lossy().to_string())
+    };
+
     if !ctx.images.is_empty() {
         let chem_images: Vec<(String, String)> = ctx
             .images
@@ -487,15 +567,7 @@ pub async fn process_document(
                     img.region.as_deref(),
                 )
             })
-            .map(|img| {
-                (
-                    img.filename.clone(),
-                    ctx.source_path
-                        .parent()
-                        .map(|p| p.join(&img.filename).to_string_lossy().to_string())
-                        .unwrap_or_default(),
-                )
-            })
+            .filter_map(|img| resolve_image_path(img).map(|p| (img.filename.clone(), p)))
             .collect();
 
         if !chem_images.is_empty() {
@@ -521,6 +593,46 @@ pub async fn process_document(
                     trace.vlm_verified_esmiles = Some(chem_result.esmiles.clone());
                     trace.vlm_confidence = chem_result.confidence;
                 }
+            }
+        }
+    }
+
+    // ===== Stage 2c: VLM 图片描述（非化学结构图） =====
+    if !ctx.images.is_empty() {
+        if let Some(ref root) = project_root {
+            let mut cache = crate::parsers::vlm_chem::ImageCaptionCache::new(root);
+            let prompt = "请详细描述这张科学文献图片的内容。如果是图表，请说明其中的关键数据和趋势；如果是分子结构图，请描述其骨架特征和官能团；如果是实验流程图，请概述主要步骤。用中文回答，不超过100字。";
+
+            for img in ctx.images.iter_mut() {
+                // 跳过化学结构图（已由 MolScribe 处理）
+                if crate::parsers::vlm_chem::is_likely_chemical_structure(
+                    &img.filename,
+                    img.region.as_deref(),
+                ) {
+                    continue;
+                }
+                let Some(full_path) = resolve_image_path(img) else {
+                    continue;
+                };
+                match crate::parsers::vlm_chem::describe_image_cached(
+                    &full_path,
+                    prompt,
+                    &vlm_config.sidecar_url,
+                    &mut cache,
+                )
+                .await
+                {
+                    Ok(caption) => {
+                        img.description = Some(caption);
+                    }
+                    Err(e) => {
+                        log::warn!("[process_document] Image caption failed for {}: {}", img.filename, e);
+                    }
+                }
+            }
+
+            if let Err(e) = cache.save() {
+                log::warn!("[process_document] Failed to save caption cache: {}", e);
             }
         }
     }
@@ -574,6 +686,85 @@ pub async fn process_document(
         );
     }
 
+    // ===== Stage 3.5: 化学结构验证（LLM 输出净化 + RDKit 校验） =====
+    {
+        // 1. 先净化 LLM 输出的 SMILES
+        for compound in final_data.compounds.iter_mut() {
+            if let Some(ref raw) = compound.esmiles {
+                let cleaned = crate::parsers::chem_validate::sanitize_esmiles(raw);
+                if cleaned != *raw {
+                    compound.esmiles = Some(cleaned);
+                }
+            }
+        }
+
+        // 2. 批量调用 RDKit 验证
+        let esmiles_to_validate: Vec<String> = final_data
+            .compounds
+            .iter()
+            .filter_map(|c| c.esmiles.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if !esmiles_to_validate.is_empty() {
+            let validate_results = crate::parsers::chem_validate::validate_smiles_batch(
+                &esmiles_to_validate,
+                &crate::core::constants::sidecar_url(),
+            )
+            .await;
+
+            let mut validated_count = 0usize;
+            let mut invalid_count = 0usize;
+
+            for compound in final_data.compounds.iter_mut() {
+                let Some(ref esmiles) = compound.esmiles else { continue };
+                let Some((_, result)) = validate_results.iter().find(|(s, _)| s == esmiles) else {
+                    continue;
+                };
+
+                if result.valid {
+                    validated_count += 1;
+                    // 使用规范化后的 SMILES
+                    if let Some(ref canonical) = result.canonical_smiles {
+                        if canonical != esmiles {
+                            compound.esmiles = Some(canonical.clone());
+                        }
+                    }
+                    // 如果原本 confidence 不高，提升到 high
+                    if compound.confidence != "high" && result.issues.is_empty() {
+                        compound.confidence = "high".into();
+                    }
+                } else {
+                    invalid_count += 1;
+                    compound.confidence = "low".into();
+                    let issue_msgs: Vec<String> = result
+                        .issues
+                        .iter()
+                        .map(|i| format!("[{}] {}", i.code, i.message))
+                        .collect();
+                    compound.uncertainty_reason = Some(format!(
+                        "化学结构验证失败: {}",
+                        issue_msgs.join("; ")
+                    ));
+                }
+            }
+
+            processing_log.stages.push(StageLog {
+                stage: 3,
+                name: "化学结构验证".into(),
+                status: "ok".into(),
+                items_processed: validated_count + invalid_count,
+                tokens_used: 0,
+                errors: if invalid_count > 0 {
+                    vec![format!("{} 个化合物结构验证失败", invalid_count)]
+                } else {
+                    vec![]
+                },
+            });
+        }
+    }
+
     processing_log.stages.push(StageLog {
         stage: 3,
         name: "合并与验证".into(),
@@ -618,7 +809,7 @@ pub async fn process_document(
         let source_doc = final_data.metadata.source_file.as_deref().unwrap_or(&path);
         let source_type = &doc_structure.doc_type;
 
-        if let Some(root) = find_project_root(&ctx.source_path, project_root.as_deref()) {
+        if let Some(root) = find_project_root(&ctx.source_path, project_root.as_ref().and_then(|s| s.to_str())) {
             let mut records: Vec<MoleculeRecord> = Vec::new();
             let mut skipped = 0usize;
 
@@ -706,6 +897,9 @@ pub struct IndexResult {
     pub indexed: usize,
     pub sections: usize,
     pub errors: Vec<String>,
+    /// 从文件缓存跳过的文件数（避免重复解析）
+    #[serde(default)]
+    pub cache_skipped: usize,
 }
 
 /// 扫描项目目录下的所有 PDF，提取 → 分 section → 索引到本地知识库。
@@ -733,6 +927,7 @@ pub async fn index_project_rust(
     }
 
     let mut indexed = 0usize;
+    let mut cache_skipped = 0usize;
     let mut total_sections = 0usize;
     let mut errors = Vec::new();
     let total = pdf_files.len();
@@ -754,6 +949,33 @@ pub async fn index_project_rust(
         );
 
         let path_str = pdf_path.to_string_lossy().to_string();
+
+        // 先检查文件缓存
+        let cached_sections = match kb.file_cache().get(pdf_path) {
+            Ok(Some(cached)) => {
+                log::info!("Batch index: cache HIT for {}", filename);
+                serde_json::from_str::<Vec<crate::parsers::sections::SectionChunk>>(&cached.sections_json)
+                    .ok()
+            }
+            _ => None,
+        };
+
+        if let Some(sections) = cached_sections {
+            // 缓存命中：直接索引，跳过 PDF 解析
+            total_sections += sections.len();
+            match kb.index_document(&doc_id, &sections, &[]) {
+                Ok(_) => {
+                    indexed += 1;
+                    cache_skipped += 1;
+                }
+                Err(e) => {
+                    errors.push(format!("{}: {}", filename, e));
+                }
+            }
+            continue;
+        }
+
+        // 缓存未命中：走完整解析管线
         match classify_and_extract(&path_str).await {
             Ok(classified) => {
                 let headings = crate::parsers::headings::extract_headings(&classified.text);
@@ -765,6 +987,18 @@ pub async fn index_project_rust(
                 );
 
                 total_sections += sections.len();
+
+                // 写入文件缓存
+                let sections_json = serde_json::to_string(&sections).unwrap_or_default();
+                let meta_json = serde_json::to_string(&serde_json::json!({
+                    "parser": classified.parser,
+                    "page_count": classified.page_count,
+                    "images": classified.images,
+                }))
+                .unwrap_or_default();
+                if let Err(e) = kb.file_cache().put(pdf_path, &classified.text, &sections_json, &meta_json) {
+                    log::warn!("File cache write failed for {}: {}", filename, e);
+                }
 
                 match kb.index_document(&doc_id, &sections, &[]) {
                     Ok(_) => {
@@ -785,6 +1019,7 @@ pub async fn index_project_rust(
         indexed,
         sections: total_sections,
         errors,
+        cache_skipped,
     })
 }
 

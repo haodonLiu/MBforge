@@ -14,7 +14,26 @@ use std::process::Command;
 use tauri::Manager;
 
 fn load_dotenv() {
-    if let Ok(contents) = std::fs::read_to_string(".env") {
+    // Walk up from CWD looking for the first `.env` we can read.
+    // Dev mode runs the binary from `src-tauri/target/...`, so CWD-relative
+    // `.env` would miss the project-root copy. Search ancestors instead.
+    let mut dir: Option<&std::path::Path> = Some(std::path::Path::new("."));
+    let mut found: Option<std::path::PathBuf> = None;
+    for _ in 0..6 {
+        let Some(d) = dir else { break };
+        let candidate = d.join(".env");
+        if candidate.is_file() {
+            found = Some(candidate);
+            break;
+        }
+        dir = d.parent();
+    }
+    let Some(path) = found else {
+        log::debug!("[tauri] .env not found in cwd or ancestors; using process env only");
+        return;
+    };
+    log::info!("[tauri] loading .env from {}", path.display());
+    if let Ok(contents) = std::fs::read_to_string(&path) {
         for line in contents.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {

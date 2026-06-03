@@ -113,11 +113,31 @@ const SYSTEM_PROMPT: &str = r#"你是分子科学文档分析专家，负责从�
 - uncertain_items: 无法确认的条目列表
 "#;
 
-/// 清理文本中的控制字符（LLM 会原样输出导致 JSON 解析失败）
+/// 清理文本中的控制字符和 LLM 常见污染（LLM 会原样输出导致 JSON 解析失败）
 fn sanitize_text(text: &str) -> String {
-    text.chars()
+    // 1. 去除控制字符（保留 \n, \r, \t）
+    let mut s: String = text
+        .chars()
         .filter(|c| !(*c as u32 <= 0x1F && *c != '\n' && *c != '\r' && *c != '\t'))
-        .collect()
+        .collect();
+
+    // 2. 去除零宽字符（ZWNJ, ZWJ, ZWSP, BOM 等）
+    s.retain(|c| {
+        let cp = c as u32;
+        !matches!(cp, 0x200B | 0x200C | 0x200D | 0xFEFF)
+    });
+
+    // 3. 去除 think / reasoning 标签（部分模型会在 JSON 外包裹）
+    if let Some(start) = s.find("<think>") {
+        if let Some(end) = s.find("</think>") {
+            s.replace_range(start..=end + 8, "");
+        }
+    }
+
+    // 4. 规范化连续空白为单空格（保留换行结构）
+    s = s.split('\n').map(|line| line.split_whitespace().collect::<Vec<_>>().join(" ")).collect::<Vec<_>>().join("\n");
+
+    s.trim().to_string()
 }
 
 /// Stage 2 Prompt: 单批内容提取
@@ -746,18 +766,22 @@ pub fn parse_structured_data(val: &serde_json::Value) -> Result<StructuredData, 
         .as_array()
         .map(|arr| {
             arr.iter()
-                .map(|v| CompoundEntry {
-                    name: v["name"].as_str().unwrap_or("").to_string(),
-                    esmiles: v["smiles"].as_str().map(|s| s.to_string()),
-                    category: v["category"].as_str().map(|s| s.to_string()),
-                    description: v["description"].as_str().unwrap_or("").to_string(),
-                    source_ref: v["source_ref"].as_str().unwrap_or("").to_string(),
-                    confidence: v["confidence"].as_str().unwrap_or("medium").to_string(),
-                    uncertainty_reason: v["uncertainty_reason"].as_str().map(|s| s.to_string()),
-                    physicochemical_props: None,
-                    related_images: None,
-                    vlm_verified_esmiles: None,
-                    page_location: None,
+                .map(|v| {
+                    let raw_smiles = v["smiles"].as_str().map(|s| s.to_string());
+                    let cleaned_smiles = raw_smiles.as_deref().map(crate::parsers::chem_validate::sanitize_esmiles).filter(|s| !s.is_empty());
+                    CompoundEntry {
+                        name: sanitize_text(v["name"].as_str().unwrap_or("")),
+                        esmiles: cleaned_smiles,
+                        category: v["category"].as_str().map(|s| sanitize_text(s)),
+                        description: sanitize_text(v["description"].as_str().unwrap_or("")),
+                        source_ref: sanitize_text(v["source_ref"].as_str().unwrap_or("")),
+                        confidence: v["confidence"].as_str().unwrap_or("medium").to_string(),
+                        uncertainty_reason: v["uncertainty_reason"].as_str().map(|s| sanitize_text(s)),
+                        physicochemical_props: None,
+                        related_images: None,
+                        vlm_verified_esmiles: None,
+                        page_location: None,
+                    }
                 })
                 .collect()
         })
@@ -767,16 +791,21 @@ pub fn parse_structured_data(val: &serde_json::Value) -> Result<StructuredData, 
         .as_array()
         .map(|arr| {
             arr.iter()
-                .map(|v| ActivityEntry {
-                    compound: v["compound"].as_str().unwrap_or("").to_string(),
-                    activity_type: v["activity_type"].as_str().unwrap_or("").to_string(),
-                    value: v["value"].as_f64().unwrap_or(0.0),
-                    units: v["units"].as_str().unwrap_or("").to_string(),
-                    target: v["target"].as_str().map(|s| s.to_string()),
-                    source_quote: v["source_quote"].as_str().unwrap_or("").to_string(),
-                    source_ref: v["source_ref"].as_str().unwrap_or("").to_string(),
-                    confidence: v["confidence"].as_str().unwrap_or("medium").to_string(),
-                    uncertainty_reason: v["uncertainty_reason"].as_str().map(|s| s.to_string()),
+                .map(|v| {
+                    let raw_value = v["value"].as_f64().or_else(|| {
+                        v["value"].as_str().and_then(crate::parsers::chem_validate::sanitize_activity_value)
+                    }).unwrap_or(0.0);
+                    ActivityEntry {
+                        compound: sanitize_text(v["compound"].as_str().unwrap_or("")),
+                        activity_type: sanitize_text(v["activity_type"].as_str().unwrap_or("")),
+                        value: raw_value,
+                        units: sanitize_text(v["units"].as_str().unwrap_or("")),
+                        target: v["target"].as_str().map(|s| sanitize_text(s)),
+                        source_quote: sanitize_text(v["source_quote"].as_str().unwrap_or("")),
+                        source_ref: sanitize_text(v["source_ref"].as_str().unwrap_or("")),
+                        confidence: v["confidence"].as_str().unwrap_or("medium").to_string(),
+                        uncertainty_reason: v["uncertainty_reason"].as_str().map(|s| sanitize_text(s)),
+                    }
                 })
                 .collect()
         })

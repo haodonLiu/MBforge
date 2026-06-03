@@ -1,4 +1,5 @@
 pub mod association;
+pub mod chem_validate;
 pub mod claim_parser;
 pub mod claim_policy;
 pub mod doc_types;

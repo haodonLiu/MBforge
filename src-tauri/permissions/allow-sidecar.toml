@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-sidecar"
+description = "Allows Python sidecar status queries and restart"
+commands.allow = ["sidecar_status", "sidecar_restart"]

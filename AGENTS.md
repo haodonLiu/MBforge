@@ -262,6 +262,8 @@ uv run ruff format src/ --check
 
 ## 代码风格规范
 
+> 高层原则见 [`docs/specs/code-style.md`](docs/specs/code-style.md)。本节为具体执行细节。
+
 ### 通用原则
 
 1. **显式优于隐式**：类型注解、错误处理、返回值必须明确，禁止依赖隐式转换或全局魔术状态。
@@ -345,6 +347,8 @@ uv run ruff format src/ --check
 
 ### 目录与文件组织
 
+> 架构分层和模块边界见 [`docs/specs/architecture-conventions.md`](docs/specs/architecture-conventions.md)。
+
 | 规则 | 示例 |
 |------|------|
 | 一个文件一个主要职责 | `frontend/src/components/Chat.tsx` 只负责对话 UI |
@@ -355,6 +359,8 @@ uv run ruff format src/ --check
 | 常量集中管理 | Rust 用 `core/constants.rs`；Python 用 `utils/constants.py`；禁止魔法字符串散落 |
 
 ### 新增代码的约定
+
+> 以下约定的完整规范见 [`docs/specs/architecture-conventions.md`](docs/specs/architecture-conventions.md)。
 
 1. **新增 Rust Tauri 命令**：
    - 在 `src-tauri/src/commands/` 的适当模块中定义 `#[tauri::command]` 函数
@@ -661,5 +667,6 @@ export function myFn(arg: string): string {
 | PDF 迁移规划 | `docs/pipeline-migration-plan.md` | Python→Rust 迁移路线图 |
 | 管线重设计 | `docs/pipeline-redesign.md` | 解析管线增量重设计 |
 | PDF 提取工作流 | `docs/pdf-extraction-workflow.md` | 端到端 PDF 处理流程 |
-| E-SMILES 规范 | `src-tauri/docs/esmiles/` | E-SMILES 格式 + MBForge 集成 |
+| 分子表示规范 | `docs/specs/molecular-representation.md` | SMILES/E-SMILES/MoleCode 三层架构 |
+| E-SMILES 规范 | `src-tauri/docs/esmiles/` | E-SMILES 格式语法 + MBForge 集成 |
 | LiteParse API | `src-tauri/docs/liteparse/` | LiteParse API 参考存档 |

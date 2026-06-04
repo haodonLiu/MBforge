@@ -110,6 +110,7 @@
 |--------|------|------|
 | **P0** | chematic API 编译验证 | core/chem.rs 中的 API 调用需验证与实际 crate 版本一致 |
 | **P0** | mol_search_substructure 接入 chem.rs | 子结构搜索命令改用纯 Rust（当前仍调 Python sidecar） |
+| **P0** | **分子三层表示迁移** | SMILES(事实来源) + E-SMILES(语义插件) + MoleCode(推理层) |
 | **P1** | 分子指纹持久化 | add_molecule 时自动计算 ECFP4 并存入 fingerprint BLOB |
 | **P1** | 分子描述符 Rust 化 | schematic-chem 替代 Python RDKit 的 MW/LogP/TPSA/QED |
 | **P1** | SAR 分析 Rust 化 | schematic-smarts MCS 替代 Python rdFMCS |
@@ -117,6 +118,23 @@
 | **P2** | JSON 修复换 llm_json crate | 提升 LLM 输出鲁棒性 |
 | **P3** | 2D 分子 SVG 渲染 | schematic-depict 生成分子结构图 |
 | **P3** | WASM 分子预览 | schematic-wasm 前端实时预览 |
+
+### 分子三层表示迁移详情
+
+> 详见 ARCHITECTURE.md §四
+
+**迁移步骤**（按风险从低到高）：
+
+| # | 步骤 | 工作量 | 风险 |
+|---|------|--------|------|
+| 1 | 数据库 schema：加 `smiles` 列，`esmiles` 改 nullable | 小 | 需数据迁移脚本 |
+| 2 | 迁移脚本：现有 `esmiles` → 分离为 `smiles` + `esmiles`(nullable) + `tags`(JSON) | 小 | 一次性 |
+| 3 | FTS5 重建：从索引 `esmiles` 改为索引 `smiles` | 小 | 重建期间搜索不可用 |
+| 4 | Chematic/RDKit 调用点：去掉 `sanitize_esmiles()`，直接用 `smiles` | 中 | 20+ 处需检查 |
+| 5 | Agent 工具：新增 `smiles_to_molecode` 转换 | 中 | 依赖 Python sidecar 路由 |
+| 6 | 前端：分子详情页增加 MoleCode 图渲染 | 中 | 需 Mermaid 组件 |
+
+**总工作量**：约 2-3 天
 
 ---
 

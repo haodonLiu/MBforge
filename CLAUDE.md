@@ -278,6 +278,7 @@ ToolInfo {
 | PDF 迁移规划 | `docs/pipeline-migration-plan.md` |
 | 管线重设计 | `docs/pipeline-redesign.md` |
 | PDF 提取工作流 | `docs/pdf-extraction-workflow.md` |
+| 开发规范集 | `docs/specs/` | 架构约定、代码风格、分子表示 |
 | E-SMILES 规范 | `src-tauri/docs/esmiles/` |
 | LiteParse API 参考 | `src-tauri/docs/liteparse/` |
 

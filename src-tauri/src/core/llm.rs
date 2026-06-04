@@ -34,6 +34,7 @@ pub struct StreamChunk {
     pub delta: String,
     pub finish_reason: Option<String>,
  }
+#[derive(Clone)]
 pub struct LlmClient {
     config: ModelConfig,
     http_client: reqwest::Client,

@@ -87,6 +87,16 @@ impl ContextLayer {
         self.messages.clear();
     }
 
+    /// 取出本层所有消息拼成单个字符串（用于 system prompt 等单字符串场景）
+    pub fn content(&self) -> String {
+        self.messages
+            .iter()
+            .map(|m| m.content.as_str())
+            .collect::<Vec<_>>()
+            .join("
+")
+    }
+
     fn is_ephemeral(&self) -> bool {
         self.ephemeral
     }
@@ -154,6 +164,11 @@ impl LayeredContext {
                 .messages
                 .push(Message::system(&format!("[检索轨迹]\n{}", trajectory_text)));
         }
+    }
+
+    /// 取出 system prompt（specialist_agent 重新构造时用）
+    pub fn get_system_prompt(&self) -> String {
+        self.system.content()
     }
 
     pub fn add_user_message(&mut self, content: &str) {

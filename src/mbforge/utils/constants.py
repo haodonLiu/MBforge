@@ -74,6 +74,9 @@ RERANK_DEFAULT_INSTRUCTION = "Given a web search query, retrieve relevant passag
 GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))
 GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
 
+# MODEL_CACHE_DIR is the relative path fragment used by get_model_cache_dir()
+MODEL_CACHE_DIR = ".cache/mbforge/models"
+
 
 def get_model_cache_dir() -> str:
     """获取模型缓存目录（优先配置文件，其次默认路径）."""
@@ -84,11 +87,11 @@ def get_model_cache_dir() -> str:
             return cfg.model_cache_dir
     except Exception:
         pass
-    return str(Path.home() / MODEL_CACHE_DIR.replace(".", "").replace("/", os.sep).replace("~", str(Path.home())))
-
-
-# MODEL_CACHE_DIR is the relative path fragment used by get_model_cache_dir()
-MODEL_CACHE_DIR = ".cache/mbforge/models"
+    cache_dir = MODEL_CACHE_DIR.replace("/", os.sep).replace("~", str(Path.home()))
+    # Remove leading "./" if present, but preserve ".cache" etc.
+    if cache_dir.startswith("./"):
+        cache_dir = cache_dir[2:]
+    return str(Path.home() / cache_dir)
 
 
 def ensure_hf_mirror() -> None:

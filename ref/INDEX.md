@@ -68,7 +68,15 @@ ref/
 - **优先级**: P1/P2（OCSR fallback P1，Markush 存储 P2，跨文档追踪 P3）
 - **详情**: [molecode.md](molecode.md)
 
-### 6. 参考 Wiki 应用 — 提取管线设计
+### 6. MinerU-Popo — 文档级语义后处理模型
+- **来源**: MinerU 项目（4B 参数通用后处理模型）
+- **核心能力**: 将页面级 OCR 输出提升为文档级语义结构（标题层次、图文关联、表格修复）
+- **关键数据**: TEDS 53.7→90.6，Pharma RAG 71.6% vs 64.4%
+- **与 MBForge 关系**: 填补 association.rs 的图文关联空白，替代 sections.rs 的启发式标题检测
+- **优先级**: P0（图文关联）/ P1（标题层次）/ P2（表格修复）
+- **详情**: [mineru-popo.md](mineru-popo.md)
+
+### 7. 参考 Wiki 应用 — 提取管线设计
 - **来源**: 用户提供的 Tauri v2 桌面 Wiki 应用
 - **核心设计**: 多格式文件提取 → LLM 两阶段处理 → 文件变更监听 → 向量索引
 - **与 MBForge 关系**: 文件缓存、提取队列、语义分块等模式已部分采纳

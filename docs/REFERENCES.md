@@ -30,9 +30,11 @@ MBForge 的构建依赖于众多优秀的开源项目和服务。感谢以下项
 | [MolScribe](https://github.com/thomas0809/MolScribe) | MIT | 分子图像 → SMILES 识别 |
 | [OpenBabel](https://openbabel.org/) | GPL-2.0 | 分子格式转换 |
 | [E-SMILES](https://github.com/thomas0809/MolScribe) | — | 扩展 SMILES 分子格式规范 |
-
+| [E-SMILES](https://github.com/thomas0809/MolScribe) | — | 扩展 SMILES 分子格式规范 |
+## LLM 抽取方法论
+| 项目 | 许可证 | 用途 |
+| [Dagdelen et al. 2024 (Nature Comm. 15:1418)](https://doi.org/10.1038/s41467-024-45563-x) | — | LLM-NERRE：联合 NER + 关系抽取。我们的 post-process prompt 借鉴其 JSON schema 设计与"规范化即抽取"原则 |
 ### MolScribe 子依赖
-
 MolScribe 内部使用了以下组件（均已包含在 `setup/MolScribe/` 中）：
 
 | 组件 | 许可证 | 来源 |

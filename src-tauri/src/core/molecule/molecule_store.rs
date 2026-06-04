@@ -487,12 +487,19 @@ impl MoleculeDatabase {
             params![rec.mol_id],
         );
 
+        // 计算指纹（如果 smiles 非空且指纹尚未提供）
+        let fingerprint_bytes: Option<Vec<u8>> = if rec.smiles.len() >= 2 {
+            crate::core::chem::compute_ecfp4_as_bytes(&rec.smiles).ok()
+        } else {
+            None
+        };
+
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO molecules
                  (mol_id, smiles, esmiles, name, source_doc, activity, activity_type,
-                  units, source_type, status, properties, labels, semantic_tags, notes)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                  units, source_type, status, properties, labels, semantic_tags, notes, fingerprint)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     rec.mol_id,
                     rec.smiles,
@@ -508,6 +515,7 @@ impl MoleculeDatabase {
                     labels_str,
                     semantic_tags_str.as_deref(),
                     rec.notes,
+                    fingerprint_bytes,
                 ],
             )
             .map_err(|e| format!("Failed to insert molecule: {}", e))?;

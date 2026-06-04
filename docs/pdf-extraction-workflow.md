@@ -338,7 +338,7 @@ pub struct DocumentMetadata {
        ├─ 对每个 PDF 调用 parse_pdf (Tauri 命令)
        │    返回 PdfParseResult
        │
-       ├─ 存入 ChromaDB 向量库 (via /api/v1/kb/index)
+        ├─ 存入 SQLite vectors.db 向量库 + FTS5 (via Rust knowledge_base::index_document)
        │
        └─ SSE 流式返回进度
             ├─ { status: "indexing", file, current, total }

@@ -77,6 +77,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         molecule::mol_find_activity_cliffs,
         molecule::mol_dedup_batch,
         molecule::mol_search_substructure,
+        molecule::chem_validate_smiles,
+        molecule::chem_tanimoto_similarity,
+        molecule::chem_tanimoto_batch_filter,
         // mol_store
         mol_store::mol_store_init,
         mol_store::mol_store_add,

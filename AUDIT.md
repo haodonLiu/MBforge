@@ -12,8 +12,8 @@
 | Rust 代码 | ~24,700 行（22 core + 21 parser + 13 command 模块） |
 | Python 代码 | ~13,100 行（17 router + 模型管理 + 解析器） |
 | 测试总数 | ~451 个（Rust 267 + Python 111 + Frontend 73） |
-| 外部依赖 | Rust: lancedb+arrow（重）, chematic（git）, rusqlite, reqwest 等 |
-| 数据库 | LanceDB（知识库）+ SQLite（分子库+缓存） |
+| 外部依赖 | Rust: chematic（git）, rusqlite, reqwest 等 |
+| 数据库 | SQLite (molecules.db + vectors.db) + semantic_cache.json |
 | 核心流程 | PDF → 解析 → LLM 提取 → 分子入库 → 知识库索引 |
 
 ---
@@ -22,9 +22,8 @@
 
 ### 主审（Explore Agent）观点
 - 代码库结构清晰，无循环依赖
-- TODO 中有 2 项已过时（ChromaDB lock、config 重复）
+- TODO 中有 1 项已过时（config 重复）
 - `chem_validate.rs` 与 `core/chem.rs` 功能重叠
-- LanceDB 依赖链重，可考虑 sqlite-vec 替代
 - vector_store.rs 已退化为 15 行类型定义
 
 ### 架构分析观点
@@ -35,7 +34,6 @@
 
 ### 魔鬼代言人观点 ⚠️
 - **chematic 风险大**：1 star，0 forks，单人维护，未发布 crates.io
-- **LanceDB 过度工程**：FTS5 对 <20K chunks 足够，protoc 依赖重
 - **Agent 架构不需要复杂化**：单 Agent ReAct 循环是正确架构
 - **参考文献收集不行动**：Memvid 与化学无关，论文是综述非实现
 - **TODO 列表虚胖**：P1/P2 多数是"nice to have"伪装
@@ -52,21 +50,14 @@
 **评估**: 有道理。chematic 未发布 crates.io，API 可能随时变化。
 **决策**: 保留 Python RDKit sidecar 作为权威路径，chematic 仅用于快速路径（指纹/Tanimoto 预筛）。
 
-### 论点 2: LanceDB 解决了不存在的问题
-
-> "FTS5 对 <20K chunks 足够，用户从未抱怨搜索慢。"
-
-**评估**: 部分正确。当前用户规模下 FTS5 够用。但 LanceDB 的 BM25+向量融合确实比手动 RRF 更优雅。
-**决策**: 保留 LanceDB，但不升级版本（锁定 0.30.0），遇到编译问题时可回退 FTS5。
-
-### 论点 3: 27 分钟管线是真正的问题
+### 论点 2: 27 分钟管线是真正的问题
 
 > "你在优化分子描述符 Rust 化和 WASM 预览，却忽略了最大的性能瓶颈。"
 
 **评估**: 完全正确。管线瓶颈是 LLM 串行批处理（~32 次 HTTP 调用/文档）。
 **决策**: 这应该是 P0，不是 TODO 里没有的。
 
-### 论点 4: TODO 列表需要大幅削减
+### 论点 3: TODO 列表需要大幅削减
 
 > "分子描述符 Rust 化、SAR 分析、BRICS 碎片化、3D 坐标 — 这些对药物发现用户不重要。"
 
@@ -83,7 +74,7 @@
 |---|------|------|--------|
 | 1 | **chematic API 编译验证** | git 依赖，API 可能不匹配 | 小 |
 | 2 | **chem_validate.rs 接入 core/chem.rs** | 消除不必要的 Python sidecar 调用 | 中 |
-| 3 | **清理过时 TODO 条目** | ChromaDB lock、config 重复已解决 | 小 |
+| 3 | **清理过时 TODO 条目** | config 重复已解决 | 小 |
 | 4 | **管线并行化评估** | 27 分钟瓶颈，LLM 串行调用是根因 | 大 |
 
 ### P1 — 本月做（提升可靠性）
@@ -130,13 +121,13 @@
 | 2 | vector_store.rs 退化为 15 行类型定义 | 低 | 待清理 |
 | 3 | 多个 std::sync::Mutex 在 async 上下文中 | 高 | 待迁移 |
 | 4 | TODO 第三节有 2 条过时条目 | 低 | 待清理 |
-| 5 | LanceDB protoc 构建依赖重 | 中 | 已锁定版本 |
+| 5 | （已删除 LanceDB — 改用 SQLite FTS5 + semantic_cache） | — | — |
 
 ### 需要讨论的架构决策
 
 | # | 决策 | 选项 A | 选项 B | 魔鬼代言人建议 |
 |---|------|--------|--------|---------------|
-| 1 | 知识库存储 | 保持 LanceDB | 回退 FTS5 | 回退（解决不存在的问题） |
+| 1 | 知识库存储 | SQLite FTS5 + semantic_cache | — | — |
 | 2 | 化学后端 | 纯 chematic | chematic 快速路径 + RDKit 权威 | 双路径（降低风险） |
 | 3 | Agent 复杂度 | 保持单 Agent | 引入多 Agent | 保持单 Agent（够用） |
 | 4 | SQLite 统一 | 保持分离 | 合并为单一 DB | 保持分离（简单清晰） |
@@ -160,7 +151,6 @@
 | 风险 | 概率 | 影响 | 缓解措施 |
 |------|------|------|---------|
 | chematic 仓库删除/停止维护 | 中 | 高 | 保留 RDKit sidecar 作为后备 |
-| LanceDB 重新许可 | 低 | 高 | 锁定版本，准备 FTS5 回退方案 |
 | Python sidecar 崩溃 | 中 | 高 | 添加自动重启 + 健康检查 |
 | Tauri v3 破坏性变更 | 确定 | 中 | 不急于升级，等稳定后迁移 |
 | Python 依赖腐烂 | 中 | 中 | uv.lock 锁定，集成测试覆盖 |
@@ -203,5 +193,4 @@ MinerU-Popo 是 MBForge 文档解析层缺失的关键一块：
 - ❌ 不添加情景记忆/自适应上下文
 - ❌ 不支持 MOL/SDF/PDB/XYZ 格式
 - ❌ 不做 WASM 分子预览
-- ❌ 不升级 LanceDB 版本（除非有具体需求）
 - ❌ 不移除 Python RDKit sidecar（保留为权威路径）

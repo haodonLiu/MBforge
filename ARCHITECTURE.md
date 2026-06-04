@@ -34,7 +34,7 @@
 ├─────────────────────────────────────────────────────────────────┤
 │               Layer 3: Context Management (上下文)                │
 │  短期: 对话窗口 · 长期: MemoryManager · 情景: Episodes            │
-│  语义: LanceDB KB · 持久: 文件缓存 · 向量: Embedder               │
+│  语义: SQLite FTS5 + semantic_cache · 持久: 文件缓存 · 向量: Embedder │
 ├─────────────────────────────────────────────────────────────────┤
 │                Layer 2: Tool Interface (工具接口)                  │
 │  ToolRegistry (25+ 工具) · 分子工具 · 文档工具 · KB 工具           │
@@ -42,7 +42,7 @@
 ├─────────────────────────────────────────────────────────────────┤
 │             Layer 1: Execution Environment (执行环境)             │
 │  Tauri Shell · Python Sidecar (FastAPI:18792) · 进程管理           │
-│  SQLite · LanceDB · 文件系统 · HTTP 客户端                        │
+│  SQLite (molecules.db + vectors.db) · 文件系统 · HTTP 客户端        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -70,8 +70,8 @@
 │  │   Core      │ │  Core    │ │ Core   │ │Core  │ │              │    │
 │  │             │ │          │ │        │ │      │ │              │    │
 │  │ ┌─────────┐ │ │┌────────┐│ │┌──────┐│ │┌────┐│ │              │    │
-│  │ │ReAct    │ │ ││LanceDB ││ ││SQLite││ ││Pipe││ │  模型下载     │    │
-│  │ │循环     │ │ ││+ FTS5  ││ ││+FTS5 ││ ││line││ │  路径管理     │    │
+│  │ │ReAct    │ │ ││FTS5+  ││ ││SQLite││ ││Pipe││ │  模型下载     │    │
+│  │ │循环     │ │ ││Cache  ││ ││+FTS5 ││ ││line││ │  路径管理     │    │
 │  │ └────┬────┘ │ │└───┬────┘│ │└──┬───┘│ │└─┬──┘│ │  GPU 检测     │    │
 │  │ ┌────▼────┐ │ │┌───▼────┐│ │┌──▼───┐│ │┌─▼──┐│ │              │    │
 │  │ │Context  │ │ ││Embedder││ ││Chem  ││ ││Stag││ │              │    │
@@ -275,7 +275,7 @@ PDF 输入
 ┌─────────────────────────────────────────────────────────────┐
 │ Stage 4: 持久化                                              │
 │   ├── FileCache.put() — 文件缓存（不可变帧）                    │
-│   ├── KnowledgeBase.index_document() — LanceDB 知识库         │
+│   ├── KnowledgeBase.index_document() — vectors.db 知识库 (FTS5 + embedding)         │
 │   ├── MoleculeDatabase.add_molecule() — SQLite 分子库          │
 │   └── ECFP4 指纹计算 + 持久化                                  │
 └─────────────────────────────────────────────────────────────┘
@@ -287,20 +287,19 @@ PDF 输入
 
 ```
 .mbforge/
-├── knowledge_base/
-│   ├── vectors.db          ← SQLite: file_cache + content_cache
-│   └── lancedb/            ← LanceDB: 向量 + BM25 混合搜索
-│       ├── chunks table    (chunk_id, doc_id, text, metadata, vector)
-│       └── FTS index       (BM25 on text column)
-│
 ├── molecules.db            ← SQLite: 分子记录 + FTS5 + 指纹 BLOB
 │   ├── molecules table     (mol_id, smiles NOT NULL, esmiles NULL, tags JSON, name, activity, fingerprint BLOB, ...)
 │   ├── mol_search FTS5     (name, notes, smiles) — 索引纯净 SMILES
-│   ├── molecule_relations  (mol_a_id, mol_b_id, relation_type, score)
-│   └── episodes table      (新增: 情景记忆)
+│   └── molecule_relations  (mol_a_id, mol_b_id, relation_type, score)
+│
+├── knowledge_base/
+│   └── vectors.db          ← SQLite: 向量 + FTS5 + file_cache
+│       ├── vectors table   (chunk_id, doc_id, text, metadata, embedding)
+│       ├── sections_fts    (FTS5 on vectors.text)
+│       └── file_cache      (SHA-256 hash, path, mtime, text, sections JSON)
 │
 ├── cache/
-│   └── semantic_cache.json ← L1 查询结果缓存
+│   └── semantic_cache.json ← L1 查询结果缓存（TTL 1 小时）
 │
 ├── doc_trees.json          ← 文档结构树
 ├── pages/{doc_id}/         ← 逐页文本
@@ -319,7 +318,7 @@ PDF 输入
 
 | 存储 | 用途 | 查询方式 |
 |------|------|---------|
-| LanceDB (chunks) | 知识库文档搜索 | 向量 ANN + BM25 混合 |
+| SQLite FTS5 + vectors (vectors.db) | 知识库文档搜索 | FTS5 + 向量余弦 + RRF 融合 |
 | SQLite (molecules) | 分子记录 + 化学搜索 | FTS5 + 指纹 Tanimoto + VF2 子结构 |
 | SQLite (vectors.db) | 文件/内容缓存 | SHA-256 hash + mtime |
 | SQLite (episodes) | 情景记忆 | embedding 相似度 + 时间过滤 |
@@ -436,8 +435,7 @@ Frontend ←──Tauri Events listen()──→ Rust (push)
 Rust ←──HTTP REST──→ Python Sidecar (port 18792)
 Rust ←──HTTP SSE──→ Python Sidecar (流式)
 Rust ←──Child Process──→ Python uvicorn (spawn/kill)
-Rust ←──SQLite file I/O──→ 数据库文件
-Rust ←──LanceDB file I/O──→ 向量数据库
+Rust ←──SQLite file I/O──→ 数据库文件 (molecules.db + vectors.db)
 ```
 
 ### 7.2 事件总线
@@ -690,7 +688,7 @@ pub fn check_groundedness(
 | **Agent** | LlmClient, ToolExecutor, Context, Memory | Commands | 直接调用 |
 | **LlmClient** | HTTP | Python sidecar | HTTP/SSE |
 | **ToolExecutor** | ToolRegistry, 各工具模块 | Agent | 直接调用 |
-| **KnowledgeBase** | LanceDB, FileCache, Embedder | Commands, Agent | 直接调用 |
+| **KnowledgeBase** | vectors.db (FTS5 + embedding), FileCache, Embedder | Commands, Agent | 直接调用 |
 | **MoleculeEngine** | MoleculeStore, RelationDb, Chematic | Commands, Agent | 直接调用 |
 | **Pipeline** | OCR, Popo, LLM, Chematic, KB | Commands | 直接调用 |
 | **Embedder** | HTTP | Python sidecar | HTTP |
@@ -707,10 +705,10 @@ pub fn check_groundedness(
 | # | 债务 | 严重性 | 修复方案 |
 |---|------|--------|---------|
 | 1 | chem_validate.rs 与 core/chem.rs 重叠 | 中 | 合并到 chem.rs |
-| 2 | vector_store.rs 退化为 15 行 | 低 | 内联到 lance_store.rs |
+| 2 | vector_store.rs 退化为 15 行 | 低 | 清理 |
 | 3 | 多个 std::sync::Mutex 在 async 上下文 | 高 | 迁移到 tokio::sync::Mutex |
 | 4 | TODO 有 2 条过时条目 | 低 | 清理 |
-| 5 | LanceDB protoc 构建依赖重 | 中 | 锁定版本，准备 FTS5 回退 |
+| 5 | （LanceDB 已移除，改用 SQLite FTS5 + semantic_cache） | — | — |
 | 6 | chematic git 依赖无 tag | 中 | 锁定到特定 commit |
 | 7 | Python sidecar 单进程无连接池 | 中 | 添加连接池 + 优雅降级 |
 | 8 | 无结构化 tracing | 高 | 新增 observability.rs |
@@ -751,7 +749,7 @@ pub fn check_groundedness(
 ### Phase 1: 骨架加固（与 Task A 并行）
 - [ ] chematic API 编译验证 + 锁定 commit
 - [ ] chem_validate.rs 合并到 chem.rs
-- [ ] 清理过时 TODO（ChromaDB lock、config 重复）
+- [ ] 清理过时 TODO（config 重复）
 - [ ] Mutex → tokio::sync::Mutex 迁移
 
 ### Phase 2: 数据库重构（Task A → Task B）

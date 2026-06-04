@@ -15,11 +15,11 @@ PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询
 
 - **前端**：React 19 + Vite 6 + TypeScript 5.7，运行于浏览器/Tauri WebView
 - **桌面壳**：Tauri v2（Rust），负责系统调用、SQLite 持久化、PDF 原生解析、Agent ReAct 循环
-- **Python 侧载（Sidecar）**：FastAPI 模型服务器（port 18792），负责 LLM/Embedding/VLM 推理、ChromaDB 向量库、MolScribe 分子图像识别
+- **Python 侧载（Sidecar）**：FastAPI 模型服务器（port 18792），负责 LLM/Embedding/VLM 推理、MolScribe 分子图像识别
 
 **双语言分工**：
-- **Rust**（`src-tauri/src/`）：Agent 循环、PDF 原生解析（lopdf）、分子 SQLite 数据库、Tauri IPC 命令层
-- **Python**（`src/mbforge/`）：FastAPI REST API、LLM/Embedding/VLM 模型推理、ChromaDB、MolScribe
+- **Rust**（`src-tauri/src/`）：Agent 循环、PDF 原生解析（lopdf）、统一 SQLite 数据库（molecules.db + vectors.db + semantic_cache.json）、Tauri IPC 命令层
+- **Python**（`src/mbforge/`）：FastAPI REST API、LLM/Embedding/VLM 模型推理、MolScribe
 
 ---
 
@@ -31,7 +31,7 @@ PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询
 | 桌面壳 | Tauri v2 | Rust 2021 edition |
 | Rust 核心 | lopdf, rusqlite, reqwest, tokio, serde, regex | 见 `src-tauri/Cargo.toml` |
 | Python 服务 | FastAPI, uvicorn | >=0.115, >=0.34 |
-| 向量数据库 | ChromaDB | >=0.4 |
+| 向量数据库 | SQLite FTS5 (Rust) + semantic_cache | — |
 | 化学信息学 | RDKit, OpenBabel | >=2024.3 |
 | 深度学习 | PyTorch (CUDA 12.8) | >=2.6 |
 | Embedding | sentence-transformers | >=2.5 |
@@ -89,6 +89,7 @@ MBForge/
 │   │   │   ├── molecule/   # 分子模块（store/db/dedup/cluster/engine）
 │   │   │   ├── memory/     # 记忆与轨迹（memory/trajectory/skills/pending）
 │   │   │   ├── document/   # 文档处理（kb/tree/summary/semantic_cache/stream_search）
+│   │   │   ├── db.rs               # 统一 SQLite 数据库连接管理（molecules.db + vectors.db）
 │   │   │   ├── markush.rs          # E-SMILES Markush 分析
 │   │   │   ├── resource_manager.rs # 统一资源管理
 │   │   │   └── semantic_cache.rs   # 三级语义缓存
@@ -122,8 +123,8 @@ MBForge/
 │   │   └── routers/        # 16 个 API 路由模块
 │   ├── core/               # Python 数据层
 │   │   ├── project.py      # Vault 项目管理
-│   │   ├── knowledge_base.py       # ChromaDB 向量知识库
-│   │   ├── mol_database.py         # SQLite 分子数据库
+│   │   ├── knowledge_base.py       # 向量知识库（Rust 侧 FTS5 为主，Python sidecar 辅助）
+│   │   ├── mol_database.py         # SQLite 分子数据库（fallback）
 │   │   ├── resource_manager.py     # 资源管理 + ModelScope 下载
 │   │   └── summarizer.py           # L0/L1/L2 分层摘要
 │   ├── models/             # AI 模型抽象层
@@ -220,7 +221,7 @@ cd src-tauri && cargo tauri build
 
 ### Rust 测试
 
-Rust 侧测试数量较多（~145 个），**开发时优先运行目标模块测试**，全量测试仅用于 CI/发布前。
+Rust 侧测试数量较多（~226 个），**开发时优先运行目标模块测试**，全量测试仅用于 CI/发布前。
 
 ```bash
 # 核心数据层
@@ -335,7 +336,7 @@ uv run ruff format src/ --check
 
 ## 模块边界与架构约定
 
-### 三层架构
+### 五层架构
 
 | 层级 | 目录 | 职责 | 关键文件 |
 |------|------|------|----------|
@@ -396,9 +397,9 @@ uv run ruff format src/ --check
 
 本项目处于 **Python → Rust 迁移期**，必须遵守：
 
-- **Rust 新代码优先，Python 代码冻结**（除 bugfix 外不修改）
+- **Rust 新代码优先，Python 代码冻结**（除 bugfix 及工程化补全如 type hints/错误处理外不修改核心逻辑）
 - **新增功能必须在 Rust 侧实现**
-- **Python sidecar 仅保留**：模型推理（Embedding/VLM/LLM）、MolDetv2 分子检测、MolScribe 图像识别
+- **Python sidecar 仅保留**：模型推理（LLM/Embedding/VLM）、MolDet 分子检测、MolScribe 图像识别
 - **前端调用逐步从 HTTP API 迁移到 Tauri `invoke()`**
 
 ---
@@ -655,6 +656,103 @@ export function myFn(arg: string): string {
 - **requests.Session 复用**：UniParser 客户端使用持久连接，减少 TCP 握手开销
 
 ---
+
+## 统一数据库
+
+项目采用 **3 个独立存储**（2 SQLite + 1 JSON），通过 `core/db.rs` 统一管理连接：
+
+### ① molecules.db — 分子库
+
+```
+.mbforge/molecules.db
+│
+├─ molecules 表（分子主表）
+│   mol_id         TEXT PRIMARY KEY
+│   smiles         TEXT NOT NULL      ← Layer 1: 纯净 SMILES（事实来源）
+│   esmiles        TEXT               ← Layer 2: 可选 E-SMILES 插件
+│   name           TEXT
+│   source_doc     TEXT
+│   activity       REAL
+│   activity_type  TEXT
+│   units          TEXT DEFAULT 'nM'
+│   source_type    TEXT DEFAULT 'text'
+│   status         TEXT DEFAULT 'confirmed'
+│   properties     TEXT               ← JSON
+│   labels         TEXT               ← JSON 数组
+│   semantic_tags  TEXT               ← JSON
+│   notes          TEXT
+│   fingerprint    BLOB               ← 2048-bit Morgan 指纹
+│   created_at     TIMESTAMP
+│
+├─ mol_search FTS5（分子全文搜索）
+│   索引: name, notes, smiles
+│   content='molecules', content_rowid='rowid'
+│
+└─ molecule_relations 表（分子关系）
+    id              INTEGER PRIMARY KEY
+    mol_a_id        TEXT NOT NULL
+    mol_b_id        TEXT NOT NULL
+    relation_type   TEXT CHECK('similar','same_as','scaffold','cluster')
+    score           REAL
+    metadata        TEXT
+    created_at      TEXT
+    UNIQUE(mol_a_id, mol_b_id, relation_type)
+```
+
+### ② vectors.db — 知识库
+
+```
+.mbforge/knowledge_base/vectors.db
+│
+├─ vectors 表（向量存储）
+│   chunk_id    TEXT PRIMARY KEY     ← "{doc_id}:sec{i}"
+│   doc_id      TEXT NOT NULL
+│   text        TEXT NOT NULL
+│   metadata    TEXT NOT NULL        ← JSON: title, path, page_start, page_end
+│   embedding   BLOB NOT NULL        ← 384 维 f32 向量（小端序，1536 bytes）
+│
+├─ sections_fts FTS5（全文搜索）
+│   索引: id, text
+│   content='vectors', content_rowid='rowid'
+│
+└─ file_cache 表（文件解析缓存）
+    file_hash      TEXT PRIMARY KEY   ← SHA-256 of file bytes
+    file_path      TEXT NOT NULL
+    mtime          REAL NOT NULL
+    text           TEXT NOT NULL      ← 提取的原始文本
+    sections_json  TEXT NOT NULL      ← Vec<SectionChunk> JSON
+    metadata_json  TEXT NOT NULL      ← parser, page_count, images
+    created_at     REAL NOT NULL
+    hit_count      INTEGER DEFAULT 0
+```
+
+### ③ semantic_cache.json — 查询缓存（JSON 文件）
+
+```
+.mbforge/cache/semantic_cache.json
+└─ HashMap<query_hash, CacheEntry>
+    query_hash: SHA-256(query_text) 前 16 字节
+    results: Vec<Value>            ← 搜索结果快照
+    hit_count: u64
+    created_at: f64                ← TTL 1 小时
+```
+
+**搜索流程**：
+- 有 Embedder → 混合搜索（FTS5 + 向量余弦 + RRF 融合）
+- 无 Embedder → 纯 FTS5 关键词搜索
+
+**数据流**：
+```
+PDF 输入
+  → classify_and_extract()     ← 检查 file_cache
+  → process_document()         ← LLM 提取
+  → index_document()
+      ├─ vectors 表            ← 文本 + 向量
+      ├─ sections_fts          ← FTS5 同步
+      └─ molecules 表          ← 分子记录 + 指纹
+```
+
+**迁移机制**：`migrate_v0_to_v1()` 检测旧 schema（只有 esmiles）→ 自动添加 `smiles` 列并迁移数据。幂等，用 `.ok()` 忽略 "column already exists"。
 
 ## 关键文档索引
 

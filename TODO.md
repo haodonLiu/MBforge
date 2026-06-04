@@ -78,11 +78,11 @@
 
 ## 三、发现但未修复的问题
 
-### ChromaDB Windows 文件锁
+### SQLite 文件锁（Windows）
 - **现象**: `PermissionError: [WinError 32]` 在 tempfile 清理时
-- **原因**: ChromaDB SQLite 连接未正确关闭时 Windows 文件锁
-- **影响**: KB 集成测试在 Windows 上跳过
-- **需要**: 确保 `KnowledgeBase.close()` 在所有退出路径被调用
+- **原因**: SQLite 连接未正确关闭时 Windows 文件锁
+- **影响**: 某些集成测试在 Windows 上跳过
+- **需要**: 确保数据库连接在退出路径中被正确关闭
 
 ### 跨语言常量/Config 重复
 - `constants.rs` 和 `constants.py` 定义相同常量
@@ -91,15 +91,13 @@
 
 ---
 
-## 四、已完成
+## 四、前端 vitest 单测 ✅
 
-### 前端 vitest 单测 ✅
 - vitest + @testing-library/react + jsdom
 - 73 个测试: API (kb/agent/environment/download) + 组件 (Button) + hook (useToast)
 
-## 五、已完成
+## 五、跨语言 codegen ✅
 
-### 跨语言 codegen ✅
 - constants.yaml: 25 个共享常量单一源
 - scripts/generate_constants.py: 生成 Rust + Python
 - `python scripts/generate_constants.py` 一键同步
@@ -153,7 +151,7 @@
 
 | # | 自研模块 | 开源替代 | 收益 | 风险 |
 |---|---------|---------|------|------|
-| 3 | `vector_store.rs` + `lance_store.rs` (LanceDB) | `sqlite-vec` + 自建 RRF；或 `cairn_search` crate | 解决 lancedb 0.30.0 编译阻塞；单一 SQLite 文件更稳定 | 需迁移数据 |
+| 3 | （已删除 LanceDB，改用 SQLite FTS5 + semantic_cache） | — | — |
 | 4 | `semantic_cache.rs` (~493 行) | `moka` crate — 高性能并发缓存 | 消除 Mutex Send 问题；无锁；减少 ~400 行自研 | 需适配 disk_persist |
 | 5 | `llm.rs` (~516 行) | `async-openai` / `rig` 通用 LLM 框架 | 减少 provider API 变更维护 | 可能引入不需要的抽象 |
 
@@ -169,7 +167,7 @@
 ```
 Phase 1（本周）:
   ├─ ① llm_json 替换 JSON 修复（cargo add，一行替换）
-  └─ ② sqlite-vec 替换 lancedb（解决当前编译阻塞）
+  └─ ② （LanceDB 已移除，SQLite FTS5 + semantic_cache 已到位）
 
 Phase 2（本月）:
   ├─ ③ rdkit-rs 替换 chem 验证 HTTP 层（评估 C++ 编译链）
@@ -181,7 +179,7 @@ Phase 3（后续）:
 
 ---
 
-## 四、Git 提交记录
+## 七、Git 提交记录
 
 ```
 3a08f39 test(python): 新增 Agent + 管线集成测试 (22 个)
@@ -213,8 +211,8 @@ cf907f1 feat(python): 统一资源管理 + 精简下载 + CLI 环境管理
 | **chematic 集成** | 纯 Rust 化学信息学库（736 测试，ChEMBL 2.9M 100% 通过） |
 | **core/chem.rs** | SMILES 校验、ECFP4 指纹、Tanimoto 相似度、VF2 子结构搜索 |
 | **三级漏斗全 Rust 化** | Tanimoto 预过滤 → VF2 子图同构 → 零 Python sidecar 调用 |
-| **LanceDB 统一知识库** | 移除 SQLite FTS5，execute_hybrid 原生融合向量+BM25 |
-| **移除 ChromaDB** | 删除 knowledge_base.py、kb.py、chromadb 依赖 |
+| **SQLite FTS5 + vectors.db** | 单一 SQLite 存储向量 + BM25，Rust 侧 `document/knowledge_base.rs` 统一管理 |
+| **semantic_cache** | SHA-256 查询缓存 + TTL 1小时，取代旧 JSON 方案 |
 | **文件内容缓存** | SHA-256 + mtime 两级检查，避免重复 PDF 解析 |
 | **代码瘦身** | 净删 ~710 行死代码（SqliteVectorStore、pending.rs 等） |
 

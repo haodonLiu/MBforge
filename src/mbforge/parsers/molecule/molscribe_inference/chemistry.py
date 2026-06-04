@@ -595,47 +595,6 @@ def convert_graph_to_smiles(coords, symbols, edges, images=None, num_workers=16)
     return smiles_list, molblock_list, r_success
 
 
-def _postprocess_smiles(smiles, coords=None, symbols=None, edges=None, molblock=False, debug=False):
-    if type(smiles) is not str or smiles == '':
-        return '', False
-    mol = None
-    pred_molblock = ''
-    try:
-        pred_smiles = smiles
-        pred_smiles, mappings = _replace_functional_group(pred_smiles)
-        if coords is not None and symbols is not None and edges is not None:
-            pred_smiles = pred_smiles.replace('@', '').replace('/', '').replace('\\', '')
-            mol = Chem.RWMol(Chem.MolFromSmiles(pred_smiles, sanitize=False))
-            mol = _verify_chirality(mol, coords, symbols, edges, debug)
-        else:
-            mol = Chem.MolFromSmiles(pred_smiles, sanitize=False)
-        # pred_smiles = Chem.MolToSmiles(mol, isomericSmiles=True, canonical=True)
-        if molblock:
-            pred_molblock = Chem.MolToMolBlock(mol)
-        pred_smiles, mol = _expand_functional_group(mol, mappings)
-        success = True
-    except Exception as e:
-        if debug:
-            print(traceback.format_exc())
-        pred_smiles = smiles
-        pred_molblock = ''
-        success = False
-    if debug:
-        return pred_smiles, pred_molblock, mol, success
-    return pred_smiles, pred_molblock, success
-
-
-def postprocess_smiles(smiles, coords=None, symbols=None, edges=None, molblock=False, num_workers=16):
-    with multiprocessing.Pool(num_workers) as p:
-        if coords is not None and symbols is not None and edges is not None:
-            results = p.starmap(_postprocess_smiles, zip(smiles, coords, symbols, edges), chunksize=128)
-        else:
-            results = p.map(_postprocess_smiles, smiles, chunksize=128)
-    smiles_list, molblock_list, success = zip(*results)
-    r_success = np.mean(success)
-    return smiles_list, molblock_list, r_success
-
-
 def _keep_main_molecule(smiles, debug=False):
     try:
         mol = Chem.MolFromSmiles(smiles)

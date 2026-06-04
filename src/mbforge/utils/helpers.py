@@ -97,18 +97,6 @@ def split_text_chunks(
     return [c for c in chunks if c]
 
 
-def format_molecule_info(
-    esmiles: str, name: str = "", activity: float | None = None
-) -> str:
-    """格式化分子信息为文本."""
-    lines = [f"**E-SMILES**: `{esmiles}`"]
-    if name:
-        lines.append(f"**Name**: {name}")
-    if activity is not None:
-        lines.append(f"**Activity**: {activity} nM")
-    return "\n".join(lines)
-
-
 def ensure_dir(path: Path) -> None:
     """确保目录存在."""
     path.mkdir(parents=True, exist_ok=True)

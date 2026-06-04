@@ -325,6 +325,105 @@ PDF 输入
 | SQLite (episodes) | 情景记忆 | embedding 相似度 + 时间过滤 |
 | JSON 文件 | 配置、记忆、语义缓存 | 直接读取 |
 
+### 6.1 数据库抽象层设计
+
+**目标**: 消除手写 SQL DDL 散落、row.get(0) 按索引映射、迁移管理为零的问题。
+**原则**: 不引入 Diesel/SeaORM，继续使用 rusqlite 底层，但用 Rust 类型系统消除手写 SQL。
+
+#### 三层 API
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 1: Schema 定义（声明式）                               │
+│  struct + derive macro → DDL + from_row + to_params          │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ #[derive(Table)]                                       │  │
+│  │ #[table(name = "molecules")]                           │  │
+│  │ struct MoleculeRow {                                   │  │
+│  │     #[column(primary_key)]  mol_id: String,            │  │
+│  │     #[column(not_null)]     smiles: String,            │  │
+│  │     #[column(nullable)]     esmiles: Option<String>,   │  │
+│  │     #[column(nullable,json)] tags: Option<Value>,      │  │
+│  │     #[column(index)]        source_doc: String,        │  │
+│  │     #[column(nullable)]     fingerprint: Option<Vec<u8>>,│
+│  │ }                                                      │  │
+│  │ #[derive(Fts5Table)]                                   │  │
+│  │ #[fts5(content="molecules", content_rowid="rowid")]    │  │
+│  │ struct MoleculeSearch { name, notes, smiles }          │  │
+│  └────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 2: 数据库连接（Schema 管理）                           │
+│  DbConnection::open() → register::<T>() → 自动建表+索引+迁移  │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ let mut db = DbConnection::open(&path)?;               │  │
+│  │ db.register::<MoleculeRow>()?;        // 主表           │  │
+│  │ db.register_fts5::<MoleculeSearch>()?; // FTS5          │  │
+│  │ db.register::<MoleculeRelationRow>()?; // 关系表        │  │
+│  └────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 3: 类型安全查询（Builder 模式）                        │
+│  db.query::<T>().select().where_(Field, Op, Value).fetch()   │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ db.query::<MoleculeRow>()                              │  │
+│  │   .select()                                            │  │
+│  │   .where_(MoleculeRow::source_doc, Eq, doc_id)         │  │
+│  │   .order_by(MoleculeRow::created_at, Desc)             │  │
+│  │   .limit(50)                                           │  │
+│  │   .fetch()  // → Result<Vec<MoleculeRow>, String>      │  │
+│  └────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 迁移系统
+
+```
+#[derive(Table)]
+#[table(name = "molecules")]
+#[migration(version = 1, name = "add_fingerprint",
+    up = "ALTER TABLE molecules ADD COLUMN fingerprint BLOB")]
+#[migration(version = 2, name = "esmiles_to_smiles",
+    up = "ALTER TABLE molecules ADD COLUMN smiles TEXT; \
+          UPDATE molecules SET smiles = esmiles WHERE smiles IS NULL;")]
+
+自动维护 _migrations 表:
+┌────────────┬─────────┬─────────────────────┐
+│ table_name │ version │ applied_at          │
+├────────────┼─────────┼─────────────────────┤
+│ molecules  │ 1       │ 2026-06-04 12:00:00 │
+│ molecules  │ 2       │ 2026-06-04 12:00:01 │
+└────────────┴─────────┴─────────────────────┘
+```
+
+#### FTS5 自动同步
+
+```
+Fts5Table trait 自动生成:
+  - sync_insert_sql()  → INSERT INTO mol_search (name, notes, smiles) VALUES (?, ?, ?)
+  - sync_update_sql()  → INSERT INTO mol_search (name, notes, smiles) VALUES (?, ?, ?)
+  - sync_delete_sql()  → DELETE FROM mol_search WHERE rowid = ?
+
+调用点只需:
+  db.query::<MoleculeRow>().insert(&row)?;
+  db.execute(&MoleculeSearch::sync_insert_sql(), [&row.name, &row.notes, &row.smiles])?;
+```
+
+#### 当前 → 目标对比
+
+| 维度 | 当前（手写 SQL） | 目标（类型安全） |
+|------|----------------|----------------|
+| Schema 定义 | CREATE TABLE 散落 6+ 文件 | struct 定义集中于 schema.rs |
+| 行映射 | row.get(0) 按索引 | from_row() 自动派生，编译时检查 |
+| 查询 | 手写 SQL 字符串 | builder 链式调用 |
+| FTS5 同步 | 每个 insert/update/delete 各写一遍 | Fts5Table::sync_* 自动生成 |
+| 迁移 | ALTER TABLE .ok() hack | 版本化 Migration 系统 |
+| 新增字段 | 改 struct + SQL + row_to_x + insert params（4 处） | 改 struct 一处 |
+
 ---
 
 ## 七、通信拓扑
@@ -622,29 +721,73 @@ pub fn check_groundedness(
 
 ## 十五、实施路线图
 
-### Phase 1: 骨架加固（本周）
+### 并行任务依赖图
+
+```
+          ┌─────────────────────────────────────────────────────────┐
+          │              Task A: 数据库抽象层                        │
+          │  Table trait + derive macro + 迁移系统 + QueryBuilder    │
+          │  难度: ★★★★☆ · 工作量: 3-4 天                           │
+          └────────────────────────┬────────────────────────────────┘
+                                   │ 阻塞
+          ┌────────────────────────▼────────────────────────────────┐
+          │              Task B: 分子三层迁移                        │
+          │  SMILES(事实) + E-SMILES(插件) + MoleCode(推理)          │
+          │  + molecule_store 重写 + FTS5 重建 + 数据迁移脚本        │
+          │  难度: ★★★☆☆ · 工作量: 2-3 天                           │
+          └─────────────────────────────────────────────────────────┘
+
+  ┌────────────────────────────────────┐  ┌────────────────────────────────────┐
+  │       Task C: 可观测性层            │  │       Task D: 管线优化              │
+  │  observability.rs + tracing        │  │  LLM 并行化 + Popo 图文关联        │
+  │  + BudgetEnforcer + AuditLog       │  │  + 文件缓存优化 + 提取基准          │
+  │  难度: ★★★☆☆ · 工作量: 2-3 天      │  │  难度: ★★★★☆ · 工作量: 3-5 天      │
+  │  依赖: 无（可立即开始）              │  │  依赖: 无（可立即开始）              │
+  └────────────────────────────────────┘  └────────────────────────────────────┘
+```
+
+**并行规则**: Task A/B 串行（A 阻塞 B），Task C/D 独立可并行，与 A/B 同时启动。
+
+### Phase 1: 骨架加固（与 Task A 并行）
 - [ ] chematic API 编译验证 + 锁定 commit
 - [ ] chem_validate.rs 合并到 chem.rs
-- [ ] 清理过时 TODO
+- [ ] 清理过时 TODO（ChromaDB lock、config 重复）
 - [ ] Mutex → tokio::sync::Mutex 迁移
 
-### Phase 2: 管线优化（本月）
-- [ ] LLM 调用并行化（27min → 5min）
-- [ ] 提取准确率基准测试
-- [ ] 分子指纹持久化（ECFP4 BLOB）
-- [ ] MinerU-Popo 图文关联集成
+### Phase 2: 数据库重构（Task A → Task B）
+- [ ] Task A: core/db/ 模块搭建（Table trait + 迁移框架 + QueryBuilder）
+- [ ] Task B: molecule_store 重写 + SMILES/E-SMILES/MoleCode 三层迁移
+- [ ] Task B: FTS5 重建（从 esmiles → smiles 索引）
+- [ ] Task B: 数据迁移脚本（现有 esmiles → smiles + tags 分离）
 
-### Phase 3: 可观测性（本季度）
-- [ ] observability.rs — 结构化 tracing
-- [ ] BudgetEnforcer — 成本追踪
-- [ ] Episodes 情景记忆
+### Phase 3: 管线优化（Task D）
+- [ ] LLM 调用并行化（27min → 5min）
+- [ ] MinerU-Popo 图文关联集成
+- [ ] 提取准确率基准测试（20 篇真实 PDF）
+- [ ] 分子指纹持久化（ECFP4 BLOB，依赖 Task B 的新 schema）
+
+### Phase 4: 可观测性（Task C）
+- [ ] observability.rs — 结构化 tracing + TraceContext
+- [ ] BudgetEnforcer — 成本追踪 + 预算执行
+- [ ] Episodes 情景记忆表
 - [ ] Agent 输出接地检查
 
-### Phase 4: 分子表示增强（下季度）
-- [ ] MoleCode 双轨表示
+### Phase 5: 表示增强（远期）
+- [ ] MoleCode 双轨表示（Agent 推理时临时转换）
 - [ ] 分子描述符 Rust 化（schematic-chem）
 - [ ] SAR/MCS Rust 化（schematic-smarts）
 - [ ] 标题层次 Popo 替换
+
+### 任务文件位置
+
+| 任务 | 文件 | 说明 |
+|------|------|------|
+| A | `tasks/A-database-layer.md` | 数据库抽象层（基础，阻塞 B） |
+| B | `tasks/B-molecule-three-layer.md` | 分子三层迁移（依赖 A） |
+| C | `tasks/C-observability.md` | 可观测性层（独立） |
+| D | `tasks/D-pipeline-optimization.md` | 管线优化（独立） |
+| 规范 | `tasks/STANDARDS.md` | 开发规范（所有任务共用） |
+| 索引 | `tasks/INDEX.md` | 任务总索引 |
 
 ---
 

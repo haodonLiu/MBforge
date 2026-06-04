@@ -5,18 +5,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What MBForge Is
 
 React+Vite+Tauri 桌面应用，用于分子科学/药物发现研究。双语言架构：
-- **Rust** (`src-tauri/src/`): Agent ReAct 循环、PDF 原生解析（lopdf）、分子 SQLite 数据库、Tauri 命令层
+- **Rust** (`src-tauri/src/`): Agent ReAct 循环、PDF 原生解析（lopdf）、分子 SQLite 数据库、Tauri 命令层、化学信息学（chematic crate）
 - **Python** (`src/mbforge/`): FastAPI 模型服务器（port 18792）、LLM/Embedding/VLM 推理、MolScribe
 
 核心流程：PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询。
 不允许任何基于假设或者推测的代码出现
+
 ## Build / Test / Lint Commands
 
 ```bash
 # Rust 编译检查
 cd src-tauri && cargo check
 
-# Rust 测试（~226 个）
+# Rust 测试（~323 个）
 cd src-tauri && cargo test
 
 # 安装 Python 依赖
@@ -105,7 +106,24 @@ PDF ─→ Rust parsers/pipeline.rs (Stage 1-6)
         └─→ Python side: LLM post_process → StructuredData → KnowledgeBase (FTS5 + semantic_cache)
 ```
 
-Python fallback: `PDFParserPipeline` in `src/mbforge/parsers/pdf_parser.py` (PyMuPDF) is used when Rust pipeline is unavailable (CLI `index` command).
+Python fallback: PyMuPDF (`fitz`) is used when Rust pipeline is unavailable（CLI `extract` 命令，见 `src/mbforge/parsers/workflow.py`）。
+
+### 分子三层表示
+
+MBForge 使用三层分子表示，逐层可逆：
+
+| 层级 | 格式 | 存储 | 用途 |
+|------|------|------|------|
+| Layer 1 | SMILES | `molecules.db` `smiles` 列 (NOT NULL) | RDKit 兼容、指纹计算、子结构搜索 |
+| Layer 2 | E-SMILES | `molecules.db` `esmiles` 列 (nullable) | 语义标签（`<a>N:GROUP</a>`），Markush 结构 |
+| Layer 3 | MoleCode | 运行时生成（不持久化） | LLM 推理用，Mermaid 图语法，显式拓扑 |
+
+转换通路（纯 Rust，`core/esmiles.rs` + `core/molecode.rs`）：
+- SMILES → E-SMILES：`smiles_to_esmiles(smiles, tags)` — 添加 `<sep>` + 标签
+- E-SMILES → SMILES：`parse_esmiles_tags(esmiles)` — 取 `<sep>` 前的内容
+- E-SMILES → MoleCode：`esmiles_to_molecode(esmiles, name)` — chematic 解析 → kekulize → Mermaid 文本
+
+化学信息学使用 `chematic` crate（git: `kent-tokyo/chematic`），提供 SMILES 解析、ECFP4 指纹、Tanimoto 相似度、VF2 子结构匹配。
 
 ### Adding a new Rust Agent tool
 
@@ -134,6 +152,21 @@ ToolInfo {
 1. Create router in `src/mbforge/model_server/routers/` using `APIRouter`
 2. Register in `main.py` via `app.include_router()`
 
+### PDF 分子提取工作流
+
+```bash
+# CLI（Python，走 sidecar HTTP）
+uv run python -m mbforge extract paper.pdf --output ./output/
+
+# CLI（无 sidecar，直接加载模型）
+uv run python -m mbforge extract paper.pdf --output ./out/ --no-sidecar
+
+# Tauri invoke（前端调用）
+invoke('extract_pdf_workflow_cmd', { path: '...', outputDir: '...' })
+```
+
+输出结构：`<output>/<pdf_name>/text.md` + `molecules/manifest.json` + 裁剪图片。提取完成后自动写入 SQLite。
+
 ### Adding a new PDF parser backend
 
 1. Create client in `src-tauri/src/parsers/` (e.g., `myparser.rs`)
@@ -154,13 +187,17 @@ ToolInfo {
 | 文档 | 位置 |
 |------|------|
 | Agent 工作规范 | `AGENTS.md` |
-| 代码逻辑树（最详细） | `CODEMAP.md` |
+| 代码逻辑树 | `CODEMAP.md` |
+| 目标架构设计 | `ARCHITECTURE.md` |
+| 审计报告 | `AUDIT.md` |
+| 任务看板 | `TODO/INDEX.md` |
+| 管线重设计（设计稿） | `docs/pipeline-redesign.md` |
 | 技术栈详情 | `docs/TECH_STACK.md` |
 | 第三方引用 | `docs/REFERENCES.md` |
-| PDF 迁移规划 | `docs/pipeline-migration-plan.md` |
-| 管线重设计 | `docs/pipeline-redesign.md` |
-| PDF 提取工作流 | `docs/pdf-extraction-workflow.md` |
-| 开发规范集 | `docs/specs/` | 架构约定、代码风格、分子表示 |
-| E-SMILES 规范 | `src-tauri/docs/esmiles/` |
+| 开发规范集 | `docs/specs/` |
+| E-SMILES 规范 | `docs/esmiles-spec.md` |
+| MoleCode 规范 | `docs/molecode-spec.md` |
+| MoleCode 参考实现 | `ref/MoleCode/` |
 | LiteParse API 参考 | `src-tauri/docs/liteparse/` |
+| 归档文档 | `docs/archive/` |
 

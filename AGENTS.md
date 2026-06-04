@@ -80,9 +80,9 @@ MBForge/
 │   ├── src/
 │   │   ├── main.rs         # Tauri 入口：40+ 命令注册 + Python sidecar 管理
 │   │   ├── lib.rs          # 模块导出
-│   │   ├── commands/       # Tauri IPC 命令层（12 模块，40+ 命令）
+│   │   ├── commands/       # Tauri IPC 命令层（12 模块，80+ 命令）
 │   │   │   ├── mod.rs      #   命令聚合（handler() 函数）
-│   │   ├── core/           # Agent + 数据层（21 顶层 + 4 子目录）
+│   │   ├── core/           # Agent + 数据层（32 模块 + 子目录）
 │   │   │   ├── agent.rs    # ReAct Agent 核心循环
 │   │   │   ├── executor/   # 工具执行器（按类别拆分：mod.rs + fs/kb/document/molecule/literature）
 │   │   │   ├── llm.rs      # LLM HTTP 客户端
@@ -91,23 +91,28 @@ MBForge/
 │   │   │   ├── document/   # 文档处理（kb/tree/summary/semantic_cache/stream_search）
 │   │   │   ├── db.rs               # 统一 SQLite 数据库连接管理（molecules.db + vectors.db）
 │   │   │   ├── markush.rs          # E-SMILES Markush 分析
+│   │   │   ├── esmiles.rs          # E-SMILES 标签生成/解析（SMILES ↔ E-SMILES）
+│   │   │   ├── molecode.rs         # MoleCode 生成（E-SMILES → Mermaid 图文本）
+│   │   │   ├── chem.rs             # 化学信息学（SMILES 验证、ECFP4、Tanimoto、子结构搜索）
 │   │   │   ├── resource_manager.rs # 统一资源管理
 │   │   │   └── semantic_cache.rs   # 三级语义缓存
 │   │   └── parsers/        # PDF 解析管线（20 模块）
 │   │       ├── doc_types.rs        # 管线共享数据结构（原 types.rs）
 │   │       ├── pipeline.rs         # 统一解析管线入口（Stage 0-7 + 2c/3.5）
-│   │       │   ├── extract.rs      #   分类与提取逻辑 + 图片持久化到 media/
-│   │       │   ├── helpers.rs      #   record 映射与文本提取
+│   │       │   ├── extract.rs      #   分类与提取逻辑 + extract_pdf_workflow()
+│   │       │   ├── helpers.rs      #   record 映射与文本提取 + MoleCode 嵌入
 │   │       │   └── merge.rs        #   合并 + SAR + 专利增强
+│   │       ├── moldet_client.rs    # MolDet/MolScribe sidecar 客户端（检测+裁剪+识别）
 │   │       ├── association.rs      # 分子-文本关联引擎
-│   │       ├── chem_validate.rs    # 化学结构验证: RDKit 校验 + LLM 输出净化 + 批量端点
-│   │       ├── post_process.rs     # LLM 后处理: 批处理/JSON 修复/结构化解析 + 文本净化
-│   │       ├── sections.rs         # 章节构建: heading 提取 + 语义分块 (30+ 边界关键词)
+│   │       ├── chem_validate.rs    # 化学结构验证 + E-SMILES 三层分离
+│   │       ├── post_process.rs     # LLM 后处理: 批处理/JSON 修复/结构化解析
+│   │       ├── sections.rs         # 章节构建: heading 提取 + 语义分块
 │   │       ├── images.rs           # lopdf 图像提取
-│   │       ├── vlm_chem.rs         # VLM 化学识别: MolScribe + 通用图片描述 + SHA-256 缓存
+│   │       ├── vlm_chem.rs         # VLM 化学识别 + SHA-256 缓存
 │   │       ├── claim_parser.rs     # 专利 Claims 解析
 │   │       ├── claim_policy.rs     # 专利范围匹配
 │   │       ├── molecule_extractor.rs # 专利命名化合物提取
+│   │       ├── liteparse.rs        # LiteParse 客户端（文本+截图）
 │   │       ├── mineru.rs           # MinerU API 客户端
 │   │       ├── llama_parse.rs      # LlamaParse API 客户端
 │   │       └── uniparser.rs        # UniParser API 客户端
@@ -221,7 +226,7 @@ cd src-tauri && cargo tauri build
 
 ### Rust 测试
 
-Rust 侧测试数量较多（~226 个），**开发时优先运行目标模块测试**，全量测试仅用于 CI/发布前。
+Rust 侧测试数量较多（~323 个），**开发时优先运行目标模块测试**，全量测试仅用于 CI/发布前。
 
 ```bash
 # 核心数据层
@@ -628,7 +633,7 @@ export function myFn(arg: string): string {
 
 ### 前端测试
 
-- **单元测试**：工具函数使用 Vitest（尚未配置，后续接入）
+- **单元测试**：工具函数使用 Vitest（已配置，`npm run test`）
 - **组件测试**：关键交互组件（Chat、MoleculeLibrary）使用 React Testing Library
 - **E2E 测试**：Tauri 应用使用 WebDriver 或手动测试关键路径
 
@@ -758,13 +763,16 @@ PDF 输入
 
 | 文档 | 位置 | 内容 |
 |------|------|------|
-| 代码逻辑树（最详细） | `CODEMAP.md` | 每个模块的功能、依赖、实现状态 |
-| AI 编码指南 | `CLAUDE.md` | 项目概要 + 构建/测试命令 |
+| AI 编码指南 | `CLAUDE.md` | 项目概要 + 构建/测试命令 + 文档总索引 |
+| 代码逻辑树 | `CODEMAP.md` | 每个模块的功能、依赖、实现状态 |
+| 目标架构设计 | `ARCHITECTURE.md` | ETCLOVG 七层架构 + 目标状态 |
+| 审计报告 | `AUDIT.md` | 项目审计 + 优先级建议 |
+| 任务看板 | `TODO/INDEX.md` | 当前任务状态与依赖关系 |
+| 管线重设计（设计稿） | `docs/pipeline-redesign.md` | 解析管线增量重设计 |
 | 技术栈详情 | `docs/TECH_STACK.md` | 所有依赖的技术选型、版本、使用场景 |
 | 第三方引用 | `docs/REFERENCES.md` | 外部库、论文、数据引用 |
-| PDF 迁移规划 | `docs/pipeline-migration-plan.md` | Python→Rust 迁移路线图 |
-| 管线重设计 | `docs/pipeline-redesign.md` | 解析管线增量重设计 |
-| PDF 提取工作流 | `docs/pdf-extraction-workflow.md` | 端到端 PDF 处理流程 |
 | 分子表示规范 | `docs/specs/molecular-representation.md` | SMILES/E-SMILES/MoleCode 三层架构 |
-| E-SMILES 规范 | `src-tauri/docs/esmiles/` | E-SMILES 格式语法 + MBForge 集成 |
+| E-SMILES 规范 | `docs/esmiles-spec.md` | E-SMILES 格式语法 + MBForge 集成 |
+| MoleCode 规范 | `docs/molecode-spec.md` | MoleCode 图语法 + 缩写展开规则 |
+| 归档文档 | `docs/archive/` | 已过时的迁移计划文档 |
 | LiteParse API | `src-tauri/docs/liteparse/` | LiteParse API 参考存档 |

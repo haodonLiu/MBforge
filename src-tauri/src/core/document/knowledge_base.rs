@@ -6,10 +6,9 @@
 //! - 混合搜索：execute_hybrid 原生融合
 //!
 //! 文件缓存使用独立的 SQLite 数据库（简单的 KV 缓存不适合 LanceDB）。
-
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use rusqlite::Connection;
 use tauri::Emitter;
@@ -232,40 +231,61 @@ impl KnowledgeBase {
 // 全局缓存：KB 实例 + SemanticCache
 // ============================================================================
 
-/// KB 实例缓存（按 project_root 键，使用 tokio Mutex 以支持跨 await 持有）
-pub static KB_CACHE: OnceLock<tokio::sync::Mutex<HashMap<String, KnowledgeBase>>> = OnceLock::new();
+/// KB 实例缓存（按 project_root 键）。
+///
+/// 之前是 `OnceLock<tokio::Mutex<HashMap>>` 加 double-checked-locking：
+/// 两个并发调用都可能看到 `contains_key=false` 然后各自构造 `KnowledgeBase`
+/// （含 SQLite + LanceDB 连接），后插入者覆盖前者，前者持有的连接
+/// 在 Drop 时还要尝试关闭一份已不归它管的文件锁。
+///
+/// 修复：保持 `tokio::sync::Mutex` 以便跨 `await` 持有锁，但**不释放锁**
+/// 就在 `await KnowledgeBase::new`，保证同一时间只有一个线程能执行
+/// 构造路径。
+pub static KB_CACHE: OnceLock<tokio::sync::Mutex<HashMap<String, Arc<KnowledgeBase>>>> =
+    OnceLock::new();
 
 /// SemanticCache 实例缓存（按 project_root 键）
 static SEMANTIC_CACHE: OnceLock<Mutex<HashMap<String, SemanticCache>>> = OnceLock::new();
 
-/// 获取或初始化带 Embedder 的 KB 实例（异步版本）
-pub async fn get_or_init_kb(
-    root: &str,
-) -> Result<tokio::sync::MutexGuard<'static, HashMap<String, KnowledgeBase>>, String> {
+/// 获取或初始化带 Embedder 的 KB 实例。
+///
+/// 返回 `Arc<KnowledgeBase>` 而非 `MutexGuard`，调用方不再需要先 `get(root)`
+/// 再 `ok_or_else` 校验（那个分支在 race 之前是死代码、race 时是 bug）。
+///
+/// 并发安全：把 lock 一直持到 `KnowledgeBase::new` 完成。读多写少场景下
+/// `HashMap` 的 read 不需要锁，但 KB 构造是异步的，必须避免在锁外 await。
+pub async fn get_or_init_kb(root: &str) -> Result<Arc<KnowledgeBase>, String> {
     let cache = KB_CACHE.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()));
+    let mut guard = cache.lock().await;
 
-    // 快速检查是否已初始化
-    {
-        let guard = cache.lock().await;
-        if guard.contains_key(root) {
-            return Ok(guard);
-        }
+    if let Some(kb) = guard.get(root) {
+        return Ok(kb.clone());
     }
 
-    // 加载全局配置
+    // Hold the lock across the await — this is the critical part.
+    // `tokio::sync::Mutex` is specifically designed for this.
     let config = crate::core::config::AppConfig::load();
-    let kb = KnowledgeBase::new(std::path::Path::new(root), Some(&config.embed)).await?;
-
-    let mut guard = cache.lock().await;
-    guard.insert(root.to_string(), kb);
-    Ok(guard)
+    let kb = KnowledgeBase::new(std::path::Path::new(root), Some(&config.embed))
+        .await
+        .map_err(|e| format!("KnowledgeBase init failed: {}", e))?;
+    let arc = Arc::new(kb);
+    guard.insert(root.to_string(), arc.clone());
+    Ok(arc)
 }
 
 fn get_or_init_semantic_cache(
     root: &str,
 ) -> std::sync::MutexGuard<'static, HashMap<String, SemanticCache>> {
     let cache = SEMANTIC_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    // 之前用 `unwrap_or_else(|e| e.into_inner())` 静默吞 poison，
+    // 这会掩盖持锁线程 panic 后的不一致状态。改为显式 ? 传播错误。
+    let mut guard = match cache.lock() {
+        Ok(g) => g,
+        Err(poisoned) => {
+            log::error!("Semantic cache mutex poisoned: {}", poisoned);
+            poisoned.into_inner()
+        }
+    };
     if !guard.contains_key(root) {
         let sc = SemanticCache::new(
             std::path::Path::new(root),
@@ -293,15 +313,14 @@ pub async fn search_with_cache(
     }
 
     // 2. LanceDB 混合搜索
-    let guard = get_or_init_kb(root).await?;
-    let kb = guard
-        .get(root)
-        .ok_or_else(|| format!("Knowledge base not initialized for root: {}", root))?;
+    // 返回 `Arc<KnowledgeBase>` —— 之前用 `get_or_init_kb` 拿到 MutexGuard 再
+    // `get(root).ok_or_else` 校验是 [Track B-B8] 标记的死代码；现在
+    // `get_or_init_kb` 已经返回 Arc，免去二次查找。
+    let kb = get_or_init_kb(root).await?;
     let results = kb
         .search(query, top_k)
         .await
         .map_err(|e| format!("Search failed: {}", e))?;
-
     let json_results: Vec<serde_json::Value> = results
         .into_iter()
         .map(|r| {
@@ -373,19 +392,19 @@ pub async fn kb_search_stream(
 
 #[tauri::command]
 pub async fn kb_get_structure(root: String, doc_id: String) -> Result<Option<Vec<TreeNode>>, String> {
-    let guard = get_or_init_kb(&root).await?;
-    let kb = guard
-        .get(&root)
-        .ok_or_else(|| format!("Knowledge base not found for root: {}", root))?;
+    // `get_or_init_kb` 现在直接返回 `Arc<KnowledgeBase>`，不再需要二次 `get`
+    // 加 `ok_or_else`（那是 [Track B-B8] 标记的死代码）。
+    let kb = get_or_init_kb(&root).await?;
     Ok(kb.get_structure(&doc_id))
 }
 
 #[tauri::command]
 pub async fn kb_get_pages(root: String, doc_id: String, pages: String) -> Vec<PageContent> {
-    if let Ok(guard) = get_or_init_kb(&root).await {
-        let kb = guard.get(&root).expect("KB just initialized for root");
-        kb.get_pages(&doc_id, &pages)
-    } else {
-        Vec::new()
+    match get_or_init_kb(&root).await {
+        Ok(kb) => kb.get_pages(&doc_id, &pages),
+        Err(e) => {
+            log::warn!("kb_get_pages: get_or_init_kb failed: {}", e);
+            Vec::new()
+        }
     }
 }

@@ -82,8 +82,8 @@ fn extract_text_routed(
 }
 
 /// 跑单个 PDF 的完整管线
-fn run_pipeline(label: &str, pdf_path: &str) {
-    let pdf_path = std::path::Path::new(pdf_path);
+/// 跑单个 PDF 的完整管线
+async fn run_pipeline(label: &str, pdf_path: &str) {
     assert!(pdf_path.exists(), "PDF not found: {}", pdf_path.display());
     let file_size = std::fs::metadata(pdf_path).unwrap().len();
 
@@ -224,17 +224,17 @@ fn run_pipeline(label: &str, pdf_path: &str) {
         let _ = std::fs::remove_dir_all(&kb_dir);
     }
     let t0 = std::time::Instant::now();
-    let kb =
-        mbforge::core::knowledge_base::KnowledgeBase::new(&project_root).expect("KB init failed");
+    // [Track D-D15] `KnowledgeBase::new` 改为 async + 接受 `Option<&EmbedConfig>`。
+    let kb = mbforge::core::knowledge_base::KnowledgeBase::new(&project_root, None)
+        .await
+        .expect("KB init failed");
     let doc_id = format!("test_{}", label);
     let indexed = kb
         .index_document(&doc_id, &sections, &pages)
+        .await
         .expect("index failed");
     let dt = t0.elapsed();
     println!("  indexed {} sections in {:.2?}", indexed, dt);
-
-    // ── Stage 7: 检索验证 ──
-    println!("\n[Stage 7] KB Search Verification");
     let queries: Vec<(&str, &str)> = match label {
         "patent_us20260027089" => vec![
             ("MRGPRX2 antagonist", "应返回关于MRGPRX2拮抗剂"),
@@ -336,11 +336,12 @@ fn run_pipeline(label: &str, pdf_path: &str) {
         let (id, t) = r.unwrap();
         println!("    {} → {}", id, t);
     }
-
     // ── Stage 9: 结构树 ──
     println!("\n[Stage 9] Document Tree Structure");
-    if let Some(tree) = kb.get_structure(&doc_id) {
-        println!("  root nodes: {}", tree.len());
+    let tree: Option<Vec<mbforge::parsers::sections::TreeNode>> = kb.get_structure(&doc_id);
+    if let Some(tree) = tree {
+        let count: usize = tree.len();
+        println!("  root nodes: {}", count);
         for n in tree.iter().take(3) {
             println!("    • {} (children={})", n.title, n.nodes.len());
         }
@@ -352,7 +353,6 @@ fn run_pipeline(label: &str, pdf_path: &str) {
     println!("\n📊 [{}] Summary", label);
     println!("  Type:           {}", classification.pdf_type);
     println!("  Pages:          {}", classification.page_count);
-    println!("  Parser used:    {}", parser_used);
     println!("  Content size:   {} chars", content.len());
     println!("  Headings:       {}", headings.len());
     println!("  Sections:       {}", sections.len());
@@ -362,7 +362,11 @@ fn run_pipeline(label: &str, pdf_path: &str) {
     println!("  Search queries: {} all OK", queries.len());
 }
 
+// [Track D-D16] 整个测试需要真实 PDF 文件 + MINERU_API_KEY，
+// CI 上文件不存在会 panic。已统一 `#[ignore]`，需要时显式
+// `cargo test --test test_e2e_real_pdf -- --ignored` 跑。
 #[test]
+#[ignore = "requires real PDFs (../e2e_test) and MINERU_API_KEY env"]
 fn test_e2e_real_pdfs() {
     let _ = dotenvy::dotenv();
 

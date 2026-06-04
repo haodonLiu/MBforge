@@ -243,53 +243,18 @@ mod tests {
     // VectorStore (FTS5)
     // ===================================================================
 
-    #[test]
-    fn test_vector_store_crud() {
-        use mbforge::core::vector_store::{SqliteVectorStore, VectorItem, VectorStore};
+    // ===================================================================
+    // VectorStore (FTS5) — 暂时整体删除
+    // ===================================================================
+    //
+    // 旧 `SqliteVectorStore` / `VectorItem` / `VectorStore` 已被 LanceDB
+    // 替代（`core/vector_store.rs` 顶部注释已说明）。本测试在迁移期间
+    // 暂时整段移除——即使 `#[ignore]` 也会触发 type check 导致
+    // `unresolved import`。等 KB 集成测试统一迁到 `LanceVectorStore`
+    // 后再加回来（或永久删除）。见 [Track D-D15]。
 
-        let dir = std::env::temp_dir().join(format!("vs_test_{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        let db_path = dir.join("test.db");
-
-        let store = SqliteVectorStore::new(&db_path).unwrap();
-
-        // Insert
-        store
-            .upsert(vec![
-                VectorItem {
-                    id: "doc1:sec0".into(),
-                    doc_id: "doc1".into(),
-                    text: "Molecular docking simulation results".into(),
-                    embedding: vec![],
-                    metadata: serde_json::json!({"title": "Results"}),
-                },
-                VectorItem {
-                    id: "doc1:sec1".into(),
-                    doc_id: "doc1".into(),
-                    text: "Binding affinity measurements using fluorescence".into(),
-                    embedding: vec![],
-                    metadata: serde_json::json!({"title": "Methods"}),
-                },
-            ])
-            .unwrap();
-
-        // Count
-        let count = store.count().unwrap();
-        assert_eq!(count, 2);
-
-        // Search
-        let results = store.search("docking", 5, None).unwrap();
-        assert!(!results.is_empty());
-        assert!(results[0].text.contains("docking"));
-
-        // Delete
-        store.delete("doc1").unwrap();
-        let count = store.count().unwrap();
-        assert_eq!(count, 0);
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
+    // ===================================================================
+    // KnowledgeBase (FTS5 + DocumentTree)
     // ===================================================================
     // KnowledgeBase (FTS5 + DocumentTree)
     // ===================================================================
@@ -299,12 +264,21 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("kb_test_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
 
-        let kb = mbforge::core::knowledge_base::KnowledgeBase::new(&dir);
-        assert!(kb.is_ok());
-        let kb = kb.unwrap();
+        // [Track D-D15] `KnowledgeBase::new` 已改为 async + 接受 EmbedConfig
+        // `None` 即可禁用 embedder。本测试原本是 sync，临时包一层 tokio runtime
+        // 跑异步逻辑，迁移期产物。后续可改 `#[tokio::test]` 重写。
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("rt");
+        let kb = rt.block_on(async {
+            mbforge::core::knowledge_base::KnowledgeBase::new(&dir, None)
+                .await
+                .expect("KB init failed")
+        });
 
         // Index
-        let sections = vec![
+        let sections: Vec<mbforge::parsers::sections::SectionChunk> = vec![
             mbforge::parsers::sections::SectionChunk {
                 title: "Background".into(),
                 path: "Background".into(),
@@ -316,17 +290,17 @@ mod tests {
             },
         ];
         let page_texts: Vec<String> = vec!["Full page text.".into()];
-        let result = kb.index_document("doc1", &sections, &page_texts);
+        let result = rt.block_on(kb.index_document("doc1", &sections, &page_texts));
         assert!(result.is_ok());
 
         // Search
-        let results = kb.search("docking", 5);
+        let results = rt.block_on(kb.search("docking", 5));
         assert!(results.is_ok());
         let results = results.unwrap();
         assert!(!results.is_empty());
 
         // Stats
-        let stats = kb.stats();
+        let stats = rt.block_on(kb.stats());
         assert_eq!(stats.document_count, 1);
 
         // Cleanup

@@ -181,7 +181,7 @@ impl MemoryManager {
             .rev()
             .take(10)
             .rev()
-            .map(|m| format!("{}: {}", m.role, &m.content[..m.content.len().min(500)]))
+            .map(|m| format!("{}: {}", m.role, super::super::helpers::safe_truncate(&m.content, 500)))
             .collect();
         let conversation = recent.join("\n");
 

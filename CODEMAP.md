@@ -125,7 +125,7 @@ PDF 文件
   │                                                         │
   │ Stage 7: 合并 + 报告                                    │
   │   report.rs → merge + SAR analysis → DocumentReport     │
-  │   knowledge_base.rs → ChromaDB 向量索引                  │
+   │   knowledge_base.rs → SQLite FTS5 向量索引                  │
   │   IN: all results     OUT: report + DB                  │
   └────────────────────────────────────────────────────────┘
 ```
@@ -286,7 +286,7 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 | `types` | ExtractedContent 中心数据类型 | document_tree | core::types |
 | `settings` | 项目级设置 .mbforge/settings.json | constants, helpers | — (Rust 侧独立实现) |
 | `project` | 项目管理: open/create/scan/CRUD | settings, constants, helpers | core::project |
-| `knowledge_base` | ChromaDB 向量知识库 + 混合搜索 | types, document_tree, summarizer | core::knowledge_base (FTS5) |
+| `knowledge_base` | SQLite FTS5 向量知识库 + 混合搜索 | types, document_tree, summarizer | core::knowledge_base (FTS5) |
 | `mol_database` | SQLite 分子数据库 + FTS5 | constants, molecules::schema | core::molecule_store |
 | `document_tree` | 文档结构树 + 页面缓存 | constants, helpers | core::document_tree |
 | `summarizer` | 三层摘要 L0/L1/L2 + LLM 生成 | types, constants | core::summary |
@@ -491,7 +491,7 @@ ExtractionResult ← association.rs (图像分子)                  │
 | 2 | **stream_search** | core/stream_search.rs (181 行) | ✅ 已接入 Rust + 前端 | `search_with_cache()` 输出流式 chunks；`kb_search_stream` Tauri 命令通过事件推送；前端 `Search.tsx` + `tauri-bridge:kbSearchStream` 流式接收 |
 | 3 | **embedding native** | core/embedding.rs | ✅ 设计如此 | Rust 侧通过 HTTP 调 Python sidecar，无需本地 embedding 实现 |
 | 4 | **Python MoleculeDatabase** | core/mol_database.py | ⚠️ 双份实现 | Rust `molecule_store.rs` 已完全替代，Python 版仅作 browser fallback |
-| 5 | **Python KnowledgeBase** | core/knowledge_base.py | ⚠️ 仅 fallback | 搜索已完全迁移到 Rust FTS5 + semantic_cache；Python ChromaDB 仅作浏览器 dev 模式 fallback |
+| 5 | **Python KnowledgeBase** | core/knowledge_base.py | ⚠️ 仅辅助 | 搜索已完全迁移到 Rust FTS5 + semantic_cache |
 | 6 | **MolScribe 路径** | molscribe_inference/download.py | ⚠️ 已修复但脆弱 | ResourceManager 路径 → env var → 默认路径三级回退，依赖 ModelScope 缓存布局 |
 | 7 | **LLM 多 Provider** | models/anthropic_llm.py | ✅ 已实现 | Anthropic SDK 兼容，但 Rust 侧 llm.rs 也独立实现了 Anthropic 协议 |
 | 8 | **arXiv 工具** | core/arxiv.rs (10 个工具) | ✅ 已实现 | 已注册到 executor，通过 data.rag.ac.cn API |

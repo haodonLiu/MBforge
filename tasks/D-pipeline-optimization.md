@@ -24,7 +24,7 @@
   Stage 1:   LLM meta 分析     ~5s     (1 次 LLM 调用)
   Stage 2:   逐 Section 提取   ~25min  (10 节 × 3 批次 × (1 调用 + 1 合并) = ~60 次 LLM)
   Stage 3:   合并 + SAR        ~30s    (1 次 LLM 调用)
-  Stage 4:   持久化            ~5s     (SQLite + LanceDB 写入)
+  Stage 4:   持久化            ~5s     (SQLite molecules.db + vectors.db 写入)
 
 瓶颈: Stage 2 的 LLM 调用是串行的
 ```

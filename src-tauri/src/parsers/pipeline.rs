@@ -1194,11 +1194,11 @@ mod tests {
 
         let rec = compound_entry_to_record(&compound, "test.pdf", "patent").unwrap();
         assert_eq!(rec.name, "Compound-1");
-        assert_eq!(rec.esmiles, "CCO");
+        assert_eq!(rec.esmiles, Some("CCO".to_string()));
         assert_eq!(rec.status, "confirmed");
         assert_eq!(rec.source_type, "patent");
         assert_eq!(rec.source_doc, "test.pdf");
-        assert!(rec.tags.contains(&"inhibitor".to_string()));
+        assert!(rec.labels.contains(&"inhibitor".to_string()));
         assert_eq!(rec.properties["IC50"]["value"], 12.5);
         assert!(rec.notes.contains("VLM verified"));
     }
@@ -1242,7 +1242,7 @@ mod tests {
 
         let rec = activity_entry_to_record(&activity, "test.pdf", "patent");
         assert_eq!(rec.name, "Compound-1");
-        assert_eq!(rec.esmiles, "");
+        assert_eq!(rec.esmiles, None);
         assert_eq!(rec.activity, Some(12.5));
         assert_eq!(rec.activity_type, "IC50");
         assert_eq!(rec.units, "nM");
@@ -1275,5 +1275,153 @@ mod tests {
         assert_eq!(root, Some(tmp.clone()));
 
         std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    /// 有监督的全流程集成测试：US20260027089A1.PDF
+    /// 覆盖 Stage 0(提取) → Stage 0.5(分块) → Stage 1(向量入库)
+    #[test]
+    #[ignore] // 需要 sidecar 运行，手动执行: cargo test --lib parsers::pipeline::tests::test_supervised_pipeline_us_patent -- --ignored
+    fn test_supervised_pipeline_us_patent() {
+        use super::extract::ClassifyResult;
+
+        // 加载 .env 使 MINERU_API_KEY 等环境变量可用
+        let _ = dotenvy::dotenv();
+
+        let pdf_path = r"C:\Users\10954\Desktop\X2\US20260027089A1.PDF";
+        let project_root = std::path::Path::new(r"C:\Users\10954\Desktop\X2");
+        let mbforge_dir = project_root.join(".mbforge");
+
+        // 清理旧产物，确保测试可重复
+        if mbforge_dir.exists() {
+            std::fs::remove_dir_all(&mbforge_dir).unwrap();
+        }
+
+        // 诊断：检测 PDF 类型
+        let pdf_type = pdf_inspector::detect_pdf(pdf_path).expect("PDF 类型检测失败");
+        println!("[DIAG] PDF 类型检测: {:?}", pdf_type);
+
+        // ===== Stage 0: 提取（MinerU 解析在 spawn_blocking 中执行，避免 runtime 嵌套） =====
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let classified: ClassifyResult = rt.block_on(async {
+            let path = pdf_path.to_string();
+            tokio::task::spawn_blocking(move || {
+                // 先尝试 pdf_inspector
+                let pdf_result = pdf_inspector::process_pdf(&path)
+                    .map_err(|e| format!("pdf-inspector failed: {}", e))
+                    .unwrap();
+                let md = pdf_result.markdown.unwrap_or_default();
+                let page_count = pdf_result.page_count as usize;
+
+                println!(
+                    "[DIAG] pdf_inspector: text_len={}, page_count={}",
+                    md.len(), page_count
+                );
+
+                // 若文本不足，降级到 MinerU
+                if md.len() < 100 && page_count > 0 && std::env::var("MINERU_API_KEY").is_ok() {
+                    println!("[DIAG] 降级到 MinerU...");
+                    let host = std::env::var("MINERU_HOST")
+                        .unwrap_or_else(|_| "https://mineru.net".to_string());
+                    let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
+                    let client = crate::parsers::mineru::MineruClient::new(&host, &api_key);
+                    let result = client.parse_file(&path).expect("MinerU 解析失败");
+                    return ClassifyResult {
+                        text: result.markdown,
+                        page_count: 0,
+                        parser: "mineru".into(),
+                        images: vec![],
+                    };
+                }
+
+                ClassifyResult {
+                    text: md,
+                    page_count,
+                    parser: "pdf_inspector".into(),
+                    images: vec![],
+                }
+            })
+            .await
+            .unwrap()
+        });
+
+        assert!(
+            !classified.text.is_empty(),
+            "提取文本为空，parser={}",
+            classified.parser
+        );
+        println!(
+            "Stage 0 完成: parser={}, pages={}, text_len={}, images={}",
+            classified.parser,
+            classified.page_count,
+            classified.text.len(),
+            classified.images.len()
+        );
+
+        // ===== Stage 0.5: headings + sections =====
+        let headings = crate::parsers::headings::extract_headings(&classified.text);
+        let sections = crate::parsers::sections::build_sections(
+            &classified.text,
+            &headings,
+            None,
+            8000,
+        );
+        assert!(!sections.is_empty(), "分块结果为空");
+        log::info!(
+            "Stage 0.5 完成: headings={}, sections={}",
+            headings.len(),
+            sections.len()
+        );
+        for (i, sec) in sections.iter().take(5).enumerate() {
+            log::info!(
+                "  Section[{}]: title='{}', path='{}', chars={}, pages={:?}",
+                i,
+                sec.title,
+                sec.path,
+                sec.text.len(),
+                (sec.page_start, sec.page_end)
+            );
+        }
+
+        // ===== Stage 1: KnowledgeBase + index_document =====
+        let embed_config = crate::core::config::EmbedConfig {
+            provider: "qwen3".into(),
+            model_name: crate::core::constants::DEFAULT_EMBED_MODEL.into(),
+            base_url: "http://127.0.0.1:18792".into(),
+            api_key: "test".into(), // 非空以触发 SidecarEmbedder
+            device: "cuda".into(),
+            mrl_dim: None,
+            instruction: String::new(),
+        };
+
+        let kb = crate::core::document::knowledge_base::KnowledgeBase::new(
+            project_root,
+            Some(&embed_config),
+        )
+        .expect("KnowledgeBase 创建失败");
+        assert!(kb.has_vector_search(), "Embedder 未初始化");
+
+        let doc_id = uuid::Uuid::new_v4().to_string();
+        let indexed = kb.index_document(&doc_id, &sections, &[])
+            .expect("index_document 失败");
+        assert!(indexed > 0, "未索引任何 section");
+        log::info!("Stage 1 完成: indexed={} sections into vectors.db", indexed);
+
+        // ===== 验证产物 =====
+        assert!(mbforge_dir.exists(), ".mbforge 目录未创建");
+        assert!(
+            mbforge_dir.join("knowledge_base").join("vectors.db").exists(),
+            "vectors.db 未创建"
+        );
+        assert!(
+            mbforge_dir.join("knowledge_base").join("cache.db").exists(),
+            "cache.db 未创建"
+        );
+
+        // 验证向量搜索可用
+        let search_results = kb.search("compound", 5).expect("搜索失败");
+        log::info!("向量搜索测试: query='compound', results={}", search_results.len());
+        for (i, r) in search_results.iter().take(3).enumerate() {
+            log::info!("  Result[{}]: score={:.4}, text_len={}", i, r.score, r.text.len());
+        }
     }
 }

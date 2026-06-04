@@ -69,6 +69,30 @@ pub fn validate_smiles(smiles: &str) -> SmilesValidation {
     }
 }
 
+/// 计算 ECFP4 指纹并返回为字节向量（256 bytes）。
+///
+/// 用于 SQLite BLOB 存储。SMILES 解析失败时返回 Err。
+pub fn compute_ecfp4_as_bytes(smiles: &str) -> Result<Vec<u8>, String> {
+    let fp = compute_ecfp4(smiles)?;
+    Ok(bitvec_to_bytes(&fp))
+}
+
+/// BitVec2048 → 256 bytes（小端序，每 8 bit 打包为 1 byte）
+fn bitvec_to_bytes(fp: &BitVec2048) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(256);
+    for byte_idx in 0..256 {
+        let mut byte: u8 = 0;
+        for bit_idx in 0..8 {
+            let global_bit = byte_idx * 8 + bit_idx;
+            if fp.get(global_bit) {
+                byte |= 1 << bit_idx;
+            }
+        }
+        bytes.push(byte);
+    }
+    bytes
+}
+
 /// 计算 ECFP4 指纹（2048 bit）。
 ///
 /// # 错误

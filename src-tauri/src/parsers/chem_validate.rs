@@ -226,6 +226,65 @@ pub fn sanitize_esmiles(raw: &str) -> String {
     s.trim().to_string()
 }
 
+/// 三层分离：从 E-SMILES 中提取纯净 SMILES + 语义标签
+///
+/// E-SMILES 格式示例：`<c>1:R1</c>CC(=O)Oc1ccccc1C(=O)O`
+/// - 标签: `<c>1:R1</c>` → semantic_tags: {"R1": "Me", ...}
+/// - 纯净 SMILES: `CC(=O)Oc1ccccc1C(=O)O`
+///
+/// 返回 (clean_smiles, original_esmiles, semantic_tags_json)
+pub fn separate_esmiles_layers(raw: &str) -> (String, Option<String>, Option<serde_json::Value>) {
+    let cleaned = sanitize_esmiles(raw);
+    if cleaned.is_empty() {
+        return (String::new(), None, None);
+    }
+
+    // 检测是否包含 E-SMILES 标签（<c>N:VALUE</c> 或 <TAG>VALUE</TAG> 格式）
+    let tag_re = regex::Regex::new(r"<[a-zA-Z]>\d+:[^<]+</[a-zA-Z]>").unwrap();
+    let tags: Vec<(String, String)> = tag_re
+        .find_iter(&cleaned)
+        .filter_map(|m| {
+            let tag_str = m.as_str();
+            // 解析 <c>1:R1</c> → ("c", "R1") 或更精确地提取编号和值
+            let inner = tag_str
+                .split('>')
+                .nth(1)?
+                .split('<')
+                .next()?;
+            let parts: Vec<&str> = inner.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                Some((format!("tag_{}", parts[0]), parts[1].to_string()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // 剥离标签得到纯净 SMILES
+    let clean_smiles: String = tag_re.replace_all(&cleaned, "").to_string();
+    let clean_smiles = clean_smiles.trim().to_string();
+
+    // 构建 semantic_tags JSON
+    let semantic_tags = if tags.is_empty() {
+        None
+    } else {
+        let map: serde_json::Map<String, serde_json::Value> = tags
+            .into_iter()
+            .map(|(k, v)| (k, serde_json::Value::String(v)))
+            .collect();
+        Some(serde_json::Value::Object(map))
+    };
+
+    // 如果有标签，保留原始 E-SMILES；否则不存
+    let esmiles = if semantic_tags.is_some() {
+        Some(cleaned)
+    } else {
+        None
+    };
+
+    (clean_smiles, esmiles, semantic_tags)
+}
+
 /// 安全解析数值（处理 LLM 输出的各种格式问题）
 pub fn sanitize_activity_value(raw: &str) -> Option<f64> {
     let cleaned: String = raw

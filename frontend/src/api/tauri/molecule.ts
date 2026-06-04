@@ -239,3 +239,38 @@ export async function searchMoleculesTauri(
     return { success: false, molecules: [], error: String(e) }
   }
 }
+
+// ============================================================================
+// 纯 Rust chematic 化学信息学（无 Python sidecar）
+// ============================================================================
+
+/** SMILES 校验结果（与 Rust `SmilesValidation` 对应） */
+export interface SmilesValidation {
+  valid: boolean
+  canonical_smiles: string | null
+  error: string | null
+}
+
+/** 校验 SMILES — 纯 Rust，无后端依赖 */
+export async function chemValidateSmiles(smiles: string): Promise<SmilesValidation> {
+  return await invoke<SmilesValidation>('chem_validate_smiles', { smiles })
+}
+
+/** 计算两个 SMILES 之间的 Tanimoto 相似度（ECFP4，0.0–1.0） */
+export async function chemTanimotoSimilarity(smilesA: string, smilesB: string): Promise<number> {
+  return await invoke<number>('chem_tanimoto_similarity', { smilesA, smilesB })
+}
+
+/** 批量 Tanimoto 预过滤候选。
+ *  返回 `[(mol_id, smiles, score), ...]`，按 score 降序 */
+export async function chemTanimotoBatchFilter(
+  querySmiles: string,
+  candidates: Array<[string, string]>,
+  threshold = 0.5,
+): Promise<Array<[string, string, number]>> {
+  return await invoke<Array<[string, string, number]>>('chem_tanimoto_batch_filter', {
+    querySmiles,
+    candidates,
+    threshold,
+  })
+}

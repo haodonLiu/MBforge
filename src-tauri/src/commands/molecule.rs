@@ -454,3 +454,42 @@ pub async fn mol_search_substructure(
 
     Ok(results)
 }
+
+// ============================================================================
+// 纯 Rust chematic 化学信息学（无 Python sidecar 依赖）
+// ============================================================================
+
+/// 校验 SMILES — 调用本地 chematic，纯 Rust。
+///
+/// 前端可代替 Python 端 `validate_smiles`，避免启动 model_server。
+#[tauri::command]
+pub async fn chem_validate_smiles(smiles: String) -> crate::core::chem::SmilesValidation {
+    crate::core::chem::validate_smiles(&smiles)
+}
+
+/// 计算两个 SMILES 之间的 Tanimoto 相似度（ECFP4）。
+#[tauri::command]
+pub async fn chem_tanimoto_similarity(
+    smiles_a: String,
+    smiles_b: String,
+) -> Result<f64, String> {
+    crate::core::chem::tanimoto_similarity(&smiles_a, &smiles_b)
+}
+
+/// 批量 Tanimoto 预过滤。
+///
+/// # Arguments
+/// - `query_smiles`: 查询 SMILES
+/// - `candidates`: `[(mol_id, smiles), ...]`
+/// - `threshold`: Tanimoto 阈值（默认 0.5）
+///
+/// # Returns
+/// 超过阈值的 `[(mol_id, smiles, score), ...]`，按 score 降序
+#[tauri::command]
+pub async fn chem_tanimoto_batch_filter(
+    query_smiles: String,
+    candidates: Vec<(String, String)>,
+    threshold: Option<f64>,
+) -> Result<Vec<(String, String, f64)>, String> {
+    crate::core::chem::tanimoto_batch_filter(&query_smiles, &candidates, threshold.unwrap_or(0.5))
+}

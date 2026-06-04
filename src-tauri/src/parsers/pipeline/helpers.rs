@@ -2,29 +2,43 @@ use crate::core::helpers::{generate_uuid, sha256_text};
 use crate::core::molecule_store::MoleculeRecord;
 use crate::parsers::doc_types::{ActivityEntry, CompoundEntry, PhysicochemicalProperty};
 
-/// CompoundEntry → MoleculeRecord 映射
+/// CompoundEntry → MoleculeRecord 映射（三层分离）
+///
+/// 将 LLM 提取的 E-SMILES 分离为：
+/// - `smiles`: 纯净 SMILES（Layer 1，事实来源）
+/// - `esmiles`: 原始 E-SMILES（Layer 2，可选，仅当含标签时）
+/// - `semantic_tags`: 标签元数据（Layer 2，JSON）
 pub fn compound_entry_to_record(
     compound: &CompoundEntry,
     source_doc: &str,
     source_type: &str,
 ) -> Option<MoleculeRecord> {
-    let esmiles = compound.esmiles.as_ref()?;
-    if esmiles.is_empty() {
+    let raw_esmiles = compound.esmiles.as_ref()?;
+    if raw_esmiles.is_empty() {
         return None;
     }
+
+    // 三层分离
+    let (clean_smiles, esmiles, semantic_tags) =
+        crate::parsers::chem_validate::separate_esmiles_layers(raw_esmiles);
+
+    // 用纯净 SMILES 作为 mol_id 的一部分（保证相同分子不同标签产生相同 ID）
     let mol_id = if compound.name.is_empty() {
         generate_uuid()
     } else {
-        sha256_text(&format!("{}|{}", compound.name, esmiles))
+        sha256_text(&format!("{}|{}", compound.name, clean_smiles))
     };
+
     let status = match compound.confidence.as_str() {
         "high" => "confirmed".to_string(),
         _ => "pending".to_string(),
     };
+
     let mut labels = Vec::new();
     if let Some(ref cat) = compound.category {
         labels.push(cat.clone());
     }
+
     let mut properties = serde_json::json!({});
     if let Some(ref props) = compound.physicochemical_props {
         let mut map = serde_json::Map::new();
@@ -41,6 +55,7 @@ pub fn compound_entry_to_record(
         }
         properties = serde_json::Value::Object(map);
     }
+
     let mut notes = format!(
         "Auto-extracted from {}. Confidence: {}.",
         source_type, compound.confidence
@@ -51,11 +66,12 @@ pub fn compound_entry_to_record(
     if let Some(ref reason) = compound.uncertainty_reason {
         notes.push_str(&format!(" Uncertainty: {}.", reason));
     }
+
     Some(MoleculeRecord {
         mol_id,
-        smiles: esmiles.clone(),
-        esmiles: Some(esmiles.clone()),
-        semantic_tags: None,
+        smiles: clean_smiles,      // Layer 1: 纯净 SMILES
+        esmiles,                    // Layer 2: 原始 E-SMILES（仅含标签时）
+        semantic_tags,              // Layer 2: 语义标签 JSON
         name: compound.name.clone(),
         source_doc: source_doc.to_string(),
         activity: None,

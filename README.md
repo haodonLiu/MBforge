@@ -14,7 +14,7 @@
 - **PDF 解析流水线** — Rust 原生解析（lopdf）→ LLM 结构化 → 分子关联 → 摘要 → 向量索引
 - **AI Agent 对话** — 本地 Rust ReAct Agent（20+ 工具），支持上下文增强检索
 - **分子数据库** — SQLite + FTS5，含 SMILES 属性估算（MW/HBD/HBA/RotBonds）
-- **知识库检索** — ChromaDB 语义搜索 + Rerank 重排序
+- **知识库检索** — SQLite FTS5 + semantic_cache 混合搜索 + Rerank 重排序
 - **模型服务器** — FastAPI（port 18792），启动预热 + 异步非阻塞，提供 LLM/Embedding/Rerank/VLM/Agent/KB 等 15 个 API 路由
 - **模型管理** — 统一模型目录，支持下载/查看/删除，含许可证和大小信息
 - **SAR 分析** — 结构-活性关系引擎，支持 Scaffold 聚类、活性悬崖检测
@@ -54,7 +54,7 @@
 └──────────────────────────────────────────────────┘
 ```
 
-**双语言分工**: Rust 负责 Agent 循环、PDF 原生解析、分子数据库、SQLite 持久化；Python 负责 LLM/Embedding/VLM 模型推理、ChromaDB 向量库、MolScribe 推理、FastAPI REST API。
+**双语言分工**: Rust 负责 Agent 循环、PDF 原生解析、SQLite 数据库（molecules.db + vectors.db + semantic_cache.json）、Tauri IPC 命令层；Python 负责 LLM/Embedding/VLM 模型推理、MolScribe 推理、FastAPI REST API。
 
 **性能优化要点**:
 - **Rust 共享 HTTP 客户端** — `core/http.rs` 提供 4 个按超时分类的 `LazyLock` 单例，避免每次请求新建连接池
@@ -97,7 +97,7 @@ cd frontend && npm run dev
 cd src-tauri && cargo tauri build
 ```
 
-详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 和 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
+详见 [ARCHITECTURE.md](ARCHITECTURE.md) 和 [AGENTS.md](AGENTS.md)。
 
 ## 项目结构
 
@@ -112,7 +112,7 @@ MBForge/
 │   │   └── routers/              #   /api/v1/{llm,embed,agent,kb,molecule,...}
 │   ├── core/                     # Python 侧核心
 │   │   ├── project.py            #   Vault 项目管理
-│   │   ├── knowledge_base.py     #   ChromaDB 向量知识库
+│   │   ├── knowledge_base.py     #   向量知识库（Rust 侧 FTS5 为主，Python 辅助）
 │   │   ├── mol_database.py       #   SQLite 分子数据库（FTS5）
 │   │   ├── summarizer.py         #   L0/L1/L2 分层摘要
 │   │   ├── document_tree.py      #   文档标题树索引
@@ -244,7 +244,7 @@ MBForge/
 │
 ├── tests/                        # 测试
 │   ├── unit/                     #   Python 测试（83 个）
-│   └── Rust 侧测试               #   226 个（src-tauri）
+│   └── Rust 侧测试               #   ~226 个（src-tauri）
 │
 ├── docs/                         # 项目文档
 │   ├── ARCHITECTURE.md           #   系统架构
@@ -269,7 +269,7 @@ MBForge/
 | 类别 | 技术 | 行数 |
 |------|------|------|
 | **Rust 核心** | Tauri v2, lopdf, rusqlite, serde, regex, reqwest, tokio | ~9,800 |
-| **Python 服务** | FastAPI, uvicorn, ChromaDB, PyMuPDF, sentence-transformers | ~12,900 |
+| **Python 服务** | FastAPI, uvicorn, PyMuPDF, sentence-transformers | ~12,900 |
 | **前端** | React 19, TypeScript, Vite 6 | — |
 | **化学信息学** | RDKit (Python), MolScribe (Swin + Transformer), E-SMILES | — |
 | **PDF 解析** | lopdf (Rust), PyMuPDF, MinerU API, LlamaParse, UniParser | — |
@@ -293,10 +293,10 @@ uv run ruff check src/ && uv run ruff format src/ --check
 
 | 文档 | 位置 |
 |------|------|
-| 系统架构 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| 公共 API | [docs/API.md](docs/API.md) |
+| 系统架构 | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Agent 规范 | [AGENTS.md](AGENTS.md) |
 | 技术栈 | [docs/TECH_STACK.md](docs/TECH_STACK.md) |
-| 开发指南 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| 编码指南 | [CLAUDE.md](CLAUDE.md) |
 | 第三方引用 | [docs/REFERENCES.md](docs/REFERENCES.md) |
 | PDF 迁移规划 | [docs/pipeline-migration-plan.md](docs/pipeline-migration-plan.md) |
 | 管线重设计 | [docs/pipeline-redesign.md](docs/pipeline-redesign.md) |

@@ -13,7 +13,7 @@
 | **Frontend** | React + Vite + TypeScript | 19 / 6 / 5.7 | Browser UI |
 | **Desktop Shell** | Tauri | v2 | Native desktop wrapper |
 | **Backend** | FastAPI + uvicorn | >= 0.115 / >= 0.34 | REST API server |
-| **Vector DB** | ChromaDB | >= 0.4 | Semantic search |
+| **Vector DB** | SQLite FTS5 + semantic_cache (Rust) | — | Semantic search |
 | **Cheminformatics** | RDKit | >= 2024.3 | Molecule processing |
 | **PDF Processing** | PyMuPDF | >= 1.25 | PDF text/image extraction |
 | **Deep Learning** | PyTorch | >= 2.6 (CUDA 12.8) | Local model inference |
@@ -90,13 +90,9 @@ sentence-transformers>=2.5.0
 
 **Why:** Local embedding (Qwen3-Embedding) and reranking (BGE-reranker). No API costs for local inference.
 
-### ChromaDB
+### SQLite FTS5 + semantic_cache
 
-```toml
-chromadb>=0.4.0
-```
-
-**Why:** Vector database for semantic search. Stores document embeddings for knowledge base queries.
+Rust 侧使用 SQLite FTS5 全文搜索 + `semantic_cache.json` 查询缓存。有 Embedder 时叠加向量余弦相似度 + RRF 融合排序。
 
 ---
 

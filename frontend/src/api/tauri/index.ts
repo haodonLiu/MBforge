@@ -9,6 +9,7 @@
  * - molecule:  molecule store + analysis wrappers
  * - project:   project open, scan, file ops
  * - environment: resource manager / env check
+ * - gesim:       graph-based molecular similarity (GESim)
  *
  * Use specific submodules directly to keep bundle splitting clean;
  * importing this barrel pulls in everything.
@@ -22,3 +23,4 @@ export * from './kb'
 export * from './molecule'
 export * from './project'
 export * from './environment'
+export * from './gesim'

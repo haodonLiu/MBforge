@@ -1,16 +1,23 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { extractPage } from '../../api/moldet'
-import { parsePdf, type ImageRef } from '../../api/tauri/pdf'
+import { parsePdf, type ImageRef, getDocumentOcrLayout, type OcrBlock } from '../../api/tauri/pdf'
 import { showToast } from '../../hooks/useToast'
 import { extractRoiText } from '../../utils/roiText'
 import type { DocumentEntry, ExtractionResult } from '../../types'
 import PdfCanvas from '../PdfCanvas'
 import MoleculeOverlay from '../MoleculeOverlay'
+import OcrOverlay from '../OcrOverlay'
+import MoleculeDetailPanel from '../molecule/MoleculeDetailPanel'
+import OcrResultPanel from '../OcrResultPanel'
 import Toolbar from '../ui/Toolbar'
 import IconButton from '../ui/IconButton'
 import Caption from '../ui/Caption'
 import { ArrowLeftIcon, SearchIcon } from '../icons'
+
+const MermaidCode = lazy(() =>
+  import('../ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
+)
 
 interface Props {
   doc: DocumentEntry
@@ -19,7 +26,7 @@ interface Props {
 }
 
 export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
-  const [pdfViewMode, setPdfViewMode] = useState<'read' | 'detect'>('read')
+  const [pdfViewMode, setPdfViewMode] = useState<'read' | 'detect' | 'ocr'>('read')
   const [currentPage, setCurrentPage] = useState(1)
   const [pageDetections, setPageDetections] = useState<Map<number, ExtractionResult[]>>(new Map())
   const [isDetecting, setIsDetecting] = useState(false)
@@ -39,8 +46,16 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
   const [extractedImages, setExtractedImages] = useState<ImageRef[]>([])
   const [isLoadingImages, setIsLoadingImages] = useState(false)
 
+  // OCR 可视化状态
+  const [ocrBlocks, setOcrBlocks] = useState<OcrBlock[]>([])
+  const [showOcrPanel, setShowOcrPanel] = useState(false)
+  const [selectedOcrIndex, setSelectedOcrIndex] = useState<number | null>(null)
+  const [hoveredOcrIndex, setHoveredOcrIndex] = useState<number | null>(null)
+  const [isLoadingOcr, setIsLoadingOcr] = useState(false)
+
   const currentDetections = pageDetections.get(currentPage) || []
   const isDetectMode = pdfViewMode === 'detect'
+  const isOcrMode = pdfViewMode === 'ocr'
   const currentTextItems = pageTextItems.get(currentPage) || []
   const currentTextTotal = currentTextItems.reduce((s, i) => s + i.str.length, 0)
   const hasTextLayer = currentTextTotal > 10
@@ -115,6 +130,23 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
     setPdfPageCount(count)
   }, [])
 
+  // 保存编辑后的分子
+  const handleSaveMolecule = useCallback((newSmiles: string) => {
+    if (selectedDetection === null) return
+    setPageDetections(prev => {
+      const next = new Map(prev)
+      const detections = next.get(currentPage) || []
+      const updated = [...detections]
+      updated[selectedDetection] = {
+        ...updated[selectedDetection],
+        esmiles: newSmiles,
+      }
+      next.set(currentPage, updated)
+      return next
+    })
+    showToast('分子已更新', 'success')
+  }, [selectedDetection, currentPage])
+
   const handleTextContent = useCallback((_page: number, items: { str: string; x: number; y: number; width: number; height: number }[]) => {
     setPageTextItems(prev => {
       const next = new Map(prev)
@@ -159,6 +191,29 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
       setIsLoadingImages(false)
     }
   }, [doc.path, extractedImages.length])
+
+  const handleLoadOcr = useCallback(async () => {
+    if (ocrBlocks.length > 0) {
+      setShowOcrPanel(true)
+      return
+    }
+    setIsLoadingOcr(true)
+    try {
+      const result = await getDocumentOcrLayout(doc.path)
+      setOcrBlocks(result.blocks || [])
+      setShowOcrPanel(true)
+      if (result.blocks.length > 0) {
+        showToast(`加载 ${result.blocks.length} 个 OCR 块`, 'success')
+      } else {
+        showToast('未找到 OCR 布局数据', 'info')
+      }
+    } catch (e) {
+      console.error('Failed to load OCR layout:', e)
+      showToast('OCR 布局加载失败', 'error')
+    } finally {
+      setIsLoadingOcr(false)
+    }
+  }, [doc.path, ocrBlocks.length])
 
   const resolveImageUrl = useCallback((img: ImageRef): string => {
     if (img.rel_path) {
@@ -249,9 +304,9 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
           <button
             style={{
               padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: 'none',
-              background: !isDetectMode ? 'var(--bg-surface)' : 'transparent',
-              color: !isDetectMode ? 'var(--text-primary)' : 'var(--text-muted)',
-              cursor: 'pointer', fontWeight: !isDetectMode ? 600 : 400,
+              background: pdfViewMode === 'read' ? 'var(--bg-surface)' : 'transparent',
+              color: pdfViewMode === 'read' ? 'var(--text-primary)' : 'var(--text-muted)',
+              cursor: 'pointer', fontWeight: pdfViewMode === 'read' ? 600 : 400,
             }}
             onClick={() => setPdfViewMode('read')}
           >阅读</button>
@@ -266,6 +321,25 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
             onClick={() => setPdfViewMode('detect')}
           >
             <SearchIcon size={11} /> 分子
+          </button>
+          <button
+            style={{
+              padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: 'none',
+              background: isOcrMode ? 'var(--bg-surface)' : 'transparent',
+              color: isOcrMode ? 'var(--text-primary)' : 'var(--text-muted)',
+              cursor: 'pointer', fontWeight: isOcrMode ? 600 : 400,
+            }}
+            onClick={() => {
+              if (!isOcrMode) {
+                setPdfViewMode('ocr')
+                handleLoadOcr()
+              } else {
+                setPdfViewMode('read')
+              }
+            }}
+            disabled={isLoadingOcr}
+          >
+            {isLoadingOcr ? '加载中...' : 'OCR'}
           </button>
         </div>
 
@@ -362,8 +436,8 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
         {/* PDF 内容 */}
         <div style={{
           flex: 1, overflow: 'auto',
-          background: isDetectMode ? 'var(--bg-base)' : '#525659',
-          display: 'flex', justifyContent: 'center', padding: isDetectMode ? '20px' : '0',
+          background: isDetectMode || isOcrMode ? 'var(--bg-base)' : '#525659',
+          display: 'flex', justifyContent: 'center', padding: isDetectMode || isOcrMode ? '20px' : '0',
         }}>
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <PdfCanvas
@@ -390,6 +464,19 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
                 scale={pageInfo.scale}
                 selectedIndex={selectedDetection ?? undefined}
                 onSelect={setSelectedDetection}
+              />
+            )}
+            {isOcrMode && pageInfo && ocrBlocks.length > 0 && (
+              <OcrOverlay
+                blocks={ocrBlocks}
+                renderWidth={pageInfo.width}
+                renderHeight={pageInfo.height}
+                originalHeight={pageInfo.originalHeight}
+                scale={pageInfo.scale}
+                page={currentPage}
+                selectedIndex={selectedOcrIndex ?? undefined}
+                onSelect={setSelectedOcrIndex}
+                onHover={setHoveredOcrIndex}
               />
             )}
           </div>
@@ -430,6 +517,18 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
               <span>{currentTextTotal} 字符</span>
             </div>
           </div>
+        )}
+
+        {/* OCR 结果面板 */}
+        {showOcrPanel && (
+          <OcrResultPanel
+            blocks={ocrBlocks}
+            currentPage={currentPage}
+            selectedIndex={selectedOcrIndex}
+            hoveredIndex={hoveredOcrIndex}
+            onSelect={setSelectedOcrIndex}
+            onClose={() => setShowOcrPanel(false)}
+          />
         )}
 
         {/* 图片面板（提取图片 + VLM 描述） */}
@@ -515,44 +614,11 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
 
       {/* 检测详情面板 */}
       {isDetectMode && selectedDetection !== null && currentDetections[selectedDetection] && (
-        <div style={{
-          borderTop: '1px solid var(--border)',
-          padding: '12px 16px',
-          background: 'var(--bg-surface)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-        }}>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px' }}>
-                分子 #{selectedDetection + 1}
-              </div>
-              <div style={{ fontSize: '11px', fontFamily: 'monospace', wordBreak: 'break-all', color: 'var(--text-secondary)' }}>
-                {currentDetections[selectedDetection].esmiles}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0 }}>
-              <span>检测: {Math.round(currentDetections[selectedDetection].moldet_conf * 100)}%</span>
-              <span>识别: {Math.round(currentDetections[selectedDetection].scribe_conf * 100)}%</span>
-              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                综合: {Math.round(currentDetections[selectedDetection].composite_conf * 100)}%
-              </span>
-            </div>
-          </div>
-          {/* 上下文文本（ROI 提取） */}
-          {currentDetections[selectedDetection].context_text && (
-            <div style={{
-              fontSize: '11px', color: 'var(--text-secondary)',
-              background: 'var(--bg-base)', padding: '8px 10px',
-              borderRadius: '6px', border: '1px solid var(--border)',
-              lineHeight: 1.5, maxHeight: '80px', overflow: 'auto',
-            }}>
-              <span style={{ fontWeight: 600, color: 'var(--text-muted)', marginRight: '6px' }}>上下文:</span>
-              {currentDetections[selectedDetection].context_text}
-            </div>
-          )}
-        </div>
+        <MoleculeDetailPanel
+          detection={currentDetections[selectedDetection]}
+          index={selectedDetection}
+          onSave={handleSaveMolecule}
+        />
       )}
     </div>
   )

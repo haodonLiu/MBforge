@@ -10,20 +10,35 @@
 
 ## 1. Core Thesis
 
-Even highly capable LLMs produce systematic failures in long-horizon settings
-without proper infrastructure. The paper formalizes **harness engineering** as
-the joint optimization of both the *harness* (the surrounding infrastructure)
-and the *model* it supports. A well-designed harness unlocks latent model
-potential through three mechanisms:
+> "Even highly capable LLMs produce systematic failures in long-horizon settings without adequate system support." — 论文摘要
+
+> "These stem from a structural mismatch between the single-turn generative interface of LLMs and the stateful, iterative nature of real-world problem solving." — 论文核心诊断
+
+The paper formalizes **harness engineering** as "the joint optimization of both the harness and the model it supports." The harness is defined as "the surrounding infrastructure."
+
+### 协同关系（论文原文）
+
+> "Structured memory, error recovery, and adaptive context management unlock model potential, while strong models enable sophisticated workflows."
+
+This relationship is "inherently synergistic" — 好的 harness 释放模型潜力，强的模型使更复杂的工作流成为可能。
+
+A well-designed harness unlocks latent model potential through three mechanisms:
 
 - **Memory** — maintaining state and knowledge across turns
 - **Error recovery** — detecting, diagnosing, and correcting failures
-- **Adaptive context** — dynamically adjusting what the model sees based on
-  task phase and complexity
+- **Adaptive context** — dynamically adjusting what the model sees based on task phase and complexity
 
-The key insight: the model alone is insufficient. The harness is not a wrapper
-—it is a co-equal component that determines whether a capable model succeeds
-or fails in practice.
+### 五个研究贡献
+
+1. **结构化分类法** — "agent workflows, memory systems, skill libraries, and multi-agent orchestration"
+2. **性能贡献分析** — "how each component contributes to system-level performance"
+3. **设计原则** — "distilled design principles and architectural trade-offs"
+4. **优化策略** — "optimization strategies from both the scaffold and model sides"
+5. **评估基准** — "evaluation benchmarks across software engineering, deep research, tool use, computer use, and scientific discovery"
+
+### 定位
+
+论文旨在成为 "a practical reference for building reliable, scalable, and controllable agent systems through principled harness engineering."
 
 ---
 

@@ -3,7 +3,9 @@ use std::path::PathBuf;
 
 use crate::commands::classifier::DocumentClassification;
 use crate::commands::extractor::ActivityData;
+use crate::parsers::moldet_client::DetectedMolecule;
 use crate::core::types::{Heading, SectionChunk};
+use crate::parsers::vlm_chem::ChemImageResult;
 
 // ---------------------------------------------------------------------------
 // Core pipeline types
@@ -22,6 +24,25 @@ pub struct ImageRef {
     pub rel_path: Option<String>,
 }
 
+/// OCR 布局块 — MinerU layout.json 解析出的单个文本/图像/表格区域
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OcrBlock {
+    /// 页码（1-based）
+    pub page: usize,
+    /// 块类型: text, image, table, formula, chart, header, footer, seal 等
+    pub block_type: String,
+    /// 边界框 [x1, y1, x2, y2]（PDF 原始坐标，左下角原点）
+    pub bbox: [f64; 4],
+    /// 文本内容（仅 text 类型有意义）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    /// 块在页面中的序号
+    pub index: usize,
+    /// 旋转角度（0/90/180/270）
+    #[serde(default)]
+    pub angle: i32,
+}
+
 /// 文档处理上下文 — 整个 process 期间传递的状态
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocProcessingContext {
@@ -35,8 +56,21 @@ pub struct DocProcessingContext {
     pub headings: Vec<Heading>,
     pub sections: Vec<SectionChunk>,
     pub page_texts: Vec<String>,
+    /// Stage 2b 分子图像检测结果（filename → ChemImageResult）。
+    ///
+    /// 之前在 pipeline.rs 是 local 变量，没挂到 ctx 上 → DocumentReport
+    /// / 前端看不到"VLM 识别了哪些分子图"。[方案 2] 修复。
+    #[serde(default)]
+    pub chem_images: std::collections::HashMap<String, ChemImageResult>,
+    /// Stage 2b 检测到的分子原始记录（DetectedMolecule 列表）。
+    /// 包含 page / crop_path / moldet_confidence 等元数据。
+    #[serde(default)]
+    pub detected_molecules: Vec<DetectedMolecule>,
+    /// LitAgent 是否在 Stage 4 后做过二次审阅
+    /// ([方案 3] 后续 PR 接 LiteratureAgent 时写入)
+    #[serde(default)]
+    pub lit_reviewed: bool,
 }
-
 impl DocProcessingContext {
     pub fn new(path: &str, user_request: &str) -> Self {
         Self {
@@ -50,6 +84,9 @@ impl DocProcessingContext {
             headings: Vec::new(),
             sections: Vec::new(),
             page_texts: Vec::new(),
+            chem_images: std::collections::HashMap::new(),
+            detected_molecules: Vec::new(),
+            lit_reviewed: false,
         }
     }
 }
@@ -158,7 +195,6 @@ pub struct CompoundEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vlm_verified_esmiles: Option<String>,
     /// 化合物在原文中的页码位置
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page_location: Option<usize>,
 }
 
@@ -244,6 +280,12 @@ pub struct DocumentReport {
     pub sar_analysis: String,
     pub uncertain_items: Vec<UncertainItem>,
     pub report_markdown: String,
+    /// LitAgent 是否在 Stage 4 后做过二次审阅（[方案 3]）
+    #[serde(default)]
+    pub lit_reviewed: bool,
+    /// LitAgent 决策摘要（仅当 lit_reviewed=true 时有意义）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lit_decision_summary: Option<String>,
 }
 
 /// 处理阶段日志
@@ -263,4 +305,78 @@ pub struct ProcessingLog {
     pub stages: Vec<StageLog>,
     pub uncertain_items: Vec<UncertainItem>,
     pub warnings: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// [方案 2] 验证 chem_images / detected_molecules / lit_reviewed 字段
+    /// 在 new() 时正确初始化为空状态，调用方可以无 panic 地填充。
+    #[test]
+    fn test_doc_processing_context_new_initializes_new_fields() {
+        let ctx = DocProcessingContext::new("/tmp/p.pdf", "extract mols");
+        assert!(ctx.chem_images.is_empty());
+        assert!(ctx.detected_molecules.is_empty());
+        assert!(!ctx.lit_reviewed);
+    }
+
+    /// [方案 2] chem_images 用 filename 作 key，可以多次插入不同图。
+    #[test]
+    fn test_doc_processing_context_chem_images_insert() {
+        let mut ctx = DocProcessingContext::new("/tmp/p.pdf", "");
+        ctx.chem_images.insert(
+            "page_0003_mol_000.png".to_string(),
+            ChemImageResult {
+                esmiles: "CCO".to_string(),
+                confidence: 0.91,
+            },
+        );
+        assert_eq!(ctx.chem_images.len(), 1);
+        assert_eq!(ctx.chem_images.get("page_0003_mol_000.png").unwrap().esmiles, "CCO");
+    }
+
+    /// [方案 2] detected_molecules 是 Vec，可以 append 多次 Stage 2b 的结果。
+    #[test]
+    fn test_doc_processing_context_detected_molecules_append() {
+        let mut ctx = DocProcessingContext::new("/tmp/p.pdf", "");
+        ctx.detected_molecules.push(DetectedMolecule {
+            esmiles: "CCO".into(),
+            confidence: 0.87,
+            moldet_conf: 0.92,
+            page: 3,
+            crop_path: "/tmp/page_0003_mol_000.png".into(),
+        });
+        assert_eq!(ctx.detected_molecules.len(), 1);
+        assert_eq!(ctx.detected_molecules[0].page, 3);
+        assert_eq!(ctx.detected_molecules[0].esmiles, "CCO");
+    }
+
+    /// [方案 3] DocumentReport.lit_reviewed 默认 false，lit_decision_summary 默认 None。
+    /// 这保证旧的 JSON 序列化数据反序列化不报错（向后兼容）。
+    #[test]
+    fn test_document_report_lit_fields_default() {
+        // 序列化为 JSON 再反序列化 — 模拟 cache hit / 旧数据
+        let report = DocumentReport {
+            metadata: DocumentMetadata {
+                title: None,
+                authors: vec![],
+                document_type: String::new(),
+                key_targets: vec![],
+                source_file: None,
+            },
+            compounds: vec![],
+            activities: vec![],
+            key_findings: vec![],
+            sar_analysis: String::new(),
+            uncertain_items: vec![],
+            report_markdown: String::new(),
+            lit_reviewed: false,
+            lit_decision_summary: None,
+        };
+        let json = serde_json::to_string(&report).unwrap();
+        let parsed: DocumentReport = serde_json::from_str(&json).unwrap();
+        assert!(!parsed.lit_reviewed);
+        assert!(parsed.lit_decision_summary.is_none());
+    }
 }

@@ -152,8 +152,8 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         size_mb=6186,
         license="MIT",
         license_url="https://github.com/thomas0809/MolScribe/blob/main/LICENSE",
-        ms_repo="yujieq/MolScribe",
-        hf_repo="yujieq/MolScribe",
+        ms_repo="polyai/MolScribe",
+        hf_repo="polyai/MolScribe",
         download_type="snapshot",
         local_name="MolScribe",
         source_url="https://github.com/thomas0809/MolScribe",
@@ -392,7 +392,11 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
         try:
             from modelscope import snapshot_download as ms_snapshot
             _emit({"status": "downloading", "progress": 0})
-            ms_snapshot(info.ms_repo, local_dir=str(dest), local_dir_use_symlinks=False)
+            try:
+                ms_snapshot(info.ms_repo, local_dir=str(dest), local_dir_use_symlinks=False)
+            except TypeError:
+                # 新版 modelscope 不支持 local_dir_use_symlinks
+                ms_snapshot(info.ms_repo, local_dir=str(dest))
             _emit({"status": "completed", "source": "modelscope"})
             return True
         except ImportError:

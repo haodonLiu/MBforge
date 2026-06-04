@@ -12,6 +12,7 @@ from mbforge.models.base import run_sync_async
 from ...utils.helpers import decode_base64_to_tempfile
 from ...utils.logger import get_logger
 from ..models.moldet import get_moldet
+from ..models.molscribe import get_molscribe
 from ..models.vlm import get_vlm
 from .health import set_model_status
 
@@ -65,10 +66,9 @@ async def molscribe(request: Request) -> dict[str, Any]:
         tmp_path = decode_base64_to_tempfile(image_base64, ext)
 
         from PIL import Image
-        from ...parsers.molecule.molscribe import MolScribe
 
         image = Image.open(tmp_path)
-        model = MolScribe()
+        model = get_molscribe()
         if not model.is_available:
             raise ModelNotAvailableError(f"MolScribe not available: {model.error}")
 

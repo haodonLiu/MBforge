@@ -5,7 +5,6 @@ from typing import Any
 
 import asyncio
 
-import numpy as np
 from fastapi import APIRouter, Request
 
 from ...utils.exceptions import ModelNotAvailableError, ValidationError
@@ -70,12 +69,6 @@ async def extract_page(request: Request) -> dict[str, Any]:
             raise ValidationError("image_w and image_h are required")
 
         image = decode_base64_image(image_base64)
-        arr = np.array(image)
-        h, w = arr.shape[:2]
-        if image_w == 0:
-            image_w = w
-        if image_h == 0:
-            image_h = h
 
         pipeline = get_moldet()
         if pipeline is None or not pipeline.is_available():

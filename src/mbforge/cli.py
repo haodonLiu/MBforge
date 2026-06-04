@@ -46,6 +46,14 @@ def main() -> int:
                            choices=["all", "moldet", "molscribe"],
                            help="要下载的模型（默认 all）")
 
+    # extract 命令 — PDF 分子提取工作流
+    extract_parser = subparsers.add_parser("extract", help="PDF 分子提取：文本 + 分子图片 + SMILES")
+    extract_parser.add_argument("pdf", type=str, help="PDF 文件路径")
+    extract_parser.add_argument("--output", "-o", type=str, default="./extract_output",
+                                help="输出目录（默认 ./extract_output）")
+    extract_parser.add_argument("--no-sidecar", action="store_true",
+                                help="不依赖 sidecar，直接加载模型（额外 GPU 内存）")
+
     # env 命令 — 环境管理
     env_parser = subparsers.add_parser("env", help="环境管理（检查/搭建）")
     env_sub = env_parser.add_subparsers(dest="env_command")
@@ -70,6 +78,8 @@ def main() -> int:
         return _cmd_init(args)
     elif args.command == "download":
         return _cmd_download(args)
+    elif args.command == "extract":
+        return _cmd_extract(args)
     elif args.command == "env":
         if args.env_command == "check":
             return _cmd_env_check(args)
@@ -458,6 +468,50 @@ def _cmd_env_setup(args) -> int:
             print(f"    \033[31m✗ {r.name} 失败: {result.error}\033[0m")
 
     print(f"\n  搭建完成: {success_count}/{len(missing)} 成功\n")
+    return 0
+
+
+# ---- PDF 分子提取工作流 ----
+
+def _cmd_extract(args) -> int:
+    """PDF 分子提取：文本 + 分子图片 + SMILES → 输出目录."""
+    setup_logging()
+
+    pdf_path = args.pdf
+    output_dir = args.output
+
+    if not Path(pdf_path).exists():
+        print(f"\033[31m✗ PDF 不存在: {pdf_path}\033[0m")
+        return 1
+
+    print("\n\033[36m=== PDF 分子提取工作流 ===\033[0m")
+    print(f"  输入: {pdf_path}")
+    print(f"  输出: {output_dir}\n")
+
+    try:
+        from .parsers.workflow import extract_pdf_workflow
+        result = extract_pdf_workflow(
+            pdf_path, output_dir,
+            use_sidecar=not getattr(args, "no_sidecar", False),
+        )
+    except FileNotFoundError as e:
+        print(f"\033[31m✗ {e}\033[0m")
+        return 1
+    except RuntimeError as e:
+        print(f"\033[31m✗ {e}\033[0m")
+        return 1
+    except Exception as e:
+        logger.error("Extract workflow failed: %s", e, exc_info=True)
+        print(f"\033[31m✗ 提取失败: {e}\033[0m")
+        return 1
+
+    print("\033[32m✓ 提取完成\033[0m")
+    print(f"  文本:      {result.text_path}")
+    print(f"  分子清单:  {result.manifest_path}")
+    print(f"  页数:      {result.page_count}")
+    print(f"  分子数:    {result.molecule_count}")
+    print(f"  解析器:    {result.parser}")
+    print(f"  输出目录:  {result.output_dir}")
     return 0
 
 

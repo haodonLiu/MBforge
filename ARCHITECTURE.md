@@ -137,32 +137,81 @@
 
 ---
 
-## 四、分子四层表示架构
+## 四、分子三层表示架构
 
 ```
-Layer 4: 化学语义层 ──── Agent 推理时的功能基团、药理性质、SAR
-   ▲                          │
-   │  Agent 系统提示           │ LLM 推理输出
-   │                          ▼
-Layer 3: 显式图层 ────── MoleCode 图（持久 ID + 显式边）
-   ▲                          │
-   │  mermaid_to_mol()        │ mol_to_molecode()
-   │                          ▼
-Layer 2: 分子对象层 ──── Chematic Mol / RDKit Mol
-   ▲                          │
-   │  SmilesParser::parse()   │ mol.to_smiles()
-   │                          ▼
-Layer 1: 线性字符串层 ── E-SMILES（存储、交换、数据库）
-
-存储路径: Layer 1 (E-SMILES) ──→ molecule_store.rs SQLite
-推理路径: Layer 1 → Layer 2 → Layer 3 → Agent → Layer 4
-验证路径: Layer 1 → Layer 2 → Chematic/RDKit 校验
+┌─────────────────────────────────────────────────────────┐
+│  Layer 3: MoleCode（Agent 交互层）                       │
+│  ─────────────────────────────────────────────────────  │
+│  职责: LLM 可见的分子表示                                  │
+│  场景: Agent 分子编辑、Markush 分析、合成路线推理            │
+│  特点: 显式图、人类可读、可局部修改                         │
+│  状态: 运行时临时生成，不持久化                             │
+└─────────────────────────────────────────────────────────┘
+                            ▲
+                            │ 双向转换（调用 Python sidecar）
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│  Layer 2: E-SMILES（语义插件层，可选）                    │
+│  ─────────────────────────────────────────────────────  │
+│  职责: SMILES 的语义扩展                                   │
+│  格式: SMILES + MBForge 标签                               │
+│         例: <c>1:R1</c>CC(=O)Oc1ccccc1C(=O)O             │
+│  场景: Markush R-group 标注、提取来源追踪、置信度标记        │
+│  特点: 可插拔——简单分子纯 SMILES，复杂分子加标签            │
+│  状态: 数据库可选字段 (esmiles TEXT, tags JSON)             │
+└─────────────────────────────────────────────────────────┘
+                            ▲
+                            │ 解析（去掉标签 → 纯 SMILES）
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│  Layer 1: SMILES（事实来源层）                            │
+│  ─────────────────────────────────────────────────────  │
+│  职责: 唯一的持久化存储格式                                  │
+│  场景: 数据库主键、RDKit 计算、子结构搜索、指纹、外部交换     │
+│  特点: 化学信息学标准、紧凑、工具链原生支持                   │
+│  状态: 数据库 NOT NULL 主字段 (smiles TEXT NOT NULL)        │
+└─────────────────────────────────────────────────────────┘
 ```
 
-**关键规则**:
-- 存储只用 Layer 1（E-SMILES），兼容所有工具链
-- Agent 推理时转 Layer 3（MoleCode），减少 LLM 认知负荷
-- 验证用 Layer 2（Chematic/RDKit），确保化学正确性
+### 为什么 E-SMILES 是"插件"而非"主格式"
+
+```
+纯 SMILES 分子              E-SMILES 增强分子
+     │                           │
+     ▼                           ▼
+CCO                      <c>1:R1</c>CC(=O)Oc1ccccc1C(=O)O
+     │                           │
+     │                    ┌──────┴──────┐
+     │                    ▼             ▼
+     │              纯 SMILES       语义标签
+     │              (进 RDKit)      (元数据)
+     │                    │
+     └────────────────────┘
+              │
+              ▼
+        数据库 schema:
+        ┌─────────────┬──────────────┬─────────────┐
+        │ smiles      │ esmiles      │ tags        │
+        │ (NOT NULL)  │ (NULLABLE)   │ (JSON)      │
+        │ CCO         │ NULL         │ {}          │
+        │ CC(=O)...   │ <c>1:R1</c>  │ {"R1":"Me"} │
+        └─────────────┴──────────────┴─────────────┘
+```
+
+**E-SMILES 的语义标签本质上是附着在 SMILES 上的 JSON 元数据。** 降级为插件后：
+- 数据库用标准 `smiles` 做主键，FTS5 索引干净的 SMILES
+- RDKit 直接读 `smiles`，不需要字符串清洗
+- E-SMILES 的额外信息存在 `tags` JSON 字段，按需读取
+
+### 数据流
+
+```
+存储路径: SMILES (Layer 1) ──→ molecule_store.rs SQLite
+推理路径: SMILES → MoleCode (Layer 3) → Agent → 化学语义
+验证路径: SMILES → Chematic/RDKit 校验
+标注路径: SMILES + tags → E-SMILES (Layer 2，可选)
+```
 
 ---
 
@@ -206,7 +255,8 @@ PDF 输入
 ┌─────────────────────────────────────────────────────────────┐
 │ Stage 2: 逐 Section LLM 提取                                 │
 │   post_process_section() → StructuredData[]                  │
-│   ├── 化合物提取 → E-SMILES + 活性数据                        │
+│   ├── 化合物提取 → SMILES + 活性数据                          │
+│   ├── E-SMILES 标签解析 → (smiles, esmiles, tags) 分离        │
 │   ├── 专利 Claim 解析                                         │
 │   └── VLM 化学结构识别 (MolScribe)                            │
 └─────────────────────┬───────────────────────────────────────┘
@@ -215,7 +265,7 @@ PDF 输入
 ┌─────────────────────────────────────────────────────────────┐
 │ Stage 3: 合并 + 验证                                         │
 │   merge_partial_results() → 最终 StructuredData              │
-│   ├── Chematic SMILES 校验 (Rust 原生)                        │
+│   ├── Chematic SMILES 校验 (Rust 原生，直接用 smiles 字段)    │
 │   ├── RDKit 精确验证 (Python sidecar，权威路径)                │
 │   ├── 分子去重 (Tanimoto 预筛 + 精确匹配)                      │
 │   └── SAR 分析                                                │
@@ -244,8 +294,8 @@ PDF 输入
 │       └── FTS index       (BM25 on text column)
 │
 ├── molecules.db            ← SQLite: 分子记录 + FTS5 + 指纹 BLOB
-│   ├── molecules table     (mol_id, esmiles, name, activity, fingerprint BLOB, ...)
-│   ├── mol_search FTS5     (name, notes, esmiles)
+│   ├── molecules table     (mol_id, smiles NOT NULL, esmiles NULL, tags JSON, name, activity, fingerprint BLOB, ...)
+│   ├── mol_search FTS5     (name, notes, smiles) — 索引纯净 SMILES
 │   ├── molecule_relations  (mol_a_id, mol_b_id, relation_type, score)
 │   └── episodes table      (新增: 情景记忆)
 │

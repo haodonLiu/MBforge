@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -6,6 +6,10 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
+
+const MermaidCode = lazy(() =>
+  import('./ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
+)
 import {
   agentInit,
   agentCreateSession,
@@ -335,6 +339,14 @@ export default function Chat() {
                                     />
                                     <code style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{text}</code>
                                   </span>
+                                )
+                              }
+                              // Mermaid 代码块渲染
+                              if (className === 'language-mermaid') {
+                                return (
+                                  <Suspense fallback={<div>Loading diagram...</div>}>
+                                    <MermaidCode code={text} />
+                                  </Suspense>
                                 )
                               }
                               const isBlock = className?.startsWith('language-')

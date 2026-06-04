@@ -120,3 +120,29 @@ export async function processDocument(
     ErrorCode.PdfParse,
   )
 }
+
+// ---- OCR 布局可视化 ----
+
+export interface OcrBlock {
+  page: number
+  block_type: string
+  bbox: [number, number, number, number]
+  content: string | null
+  index: number
+  angle: number
+}
+
+export interface OcrLayoutResult {
+  path: string
+  parser: string
+  page_count: number
+  blocks: OcrBlock[]
+  from_cache: boolean
+}
+
+export async function getDocumentOcrLayout(path: string): Promise<OcrLayoutResult> {
+  return invokeWithError(
+    () => invoke<OcrLayoutResult>('get_document_ocr_layout', { path }),
+    ErrorCode.PdfParse,
+  )
+}

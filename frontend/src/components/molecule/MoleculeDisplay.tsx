@@ -1,6 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { CheckIcon, RefreshCwIcon, AlertIcon, InfoIcon } from '../icons'
+import { invoke } from '@tauri-apps/api/core'
+
+const MermaidCode = lazy(() =>
+  import('../ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
+)
 
 // ============================================================================
 // 类型
@@ -155,6 +160,10 @@ export default function MoleculeDisplay({
   const [draftSmiles, setDraftSmiles] = useState(smiles)
   const [validating, setValidating] = useState(false)
   const [validationMsg, setValidationMsg] = useState<string | null>(null)
+  const [showMoleCode, setShowMoleCode] = useState(false)
+  const [moleCodeText, setMoleCodeText] = useState<string | null>(null)
+  const [moleCodeLoading, setMoleCodeLoading] = useState(false)
+  const [moleCodeError, setMoleCodeError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // 当外部 smiles 变化时同步
@@ -168,6 +177,32 @@ export default function MoleculeDisplay({
     const result = basicValidate(smiles)
     onValidate?.(result.valid, result.message)
   }, [smiles, onValidate])
+
+  // 获取 MoleCode
+  const fetchMoleCode = async () => {
+    if (moleCodeText) return
+    setMoleCodeLoading(true)
+    setMoleCodeError(null)
+    try {
+      const mermaidText = await invoke<string>('esmiles_to_molecode_cmd', {
+        esmiles: smiles,
+        name: name || 'Molecule',
+      })
+      setMoleCodeText(mermaidText)
+    } catch (err) {
+      setMoleCodeError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setMoleCodeLoading(false)
+    }
+  }
+
+  // 切换 MoleCode 视图
+  const toggleMoleCode = () => {
+    if (!showMoleCode) {
+      fetchMoleCode()
+    }
+    setShowMoleCode(!showMoleCode)
+  }
 
   const handleStartEdit = () => {
     setIsEditing(true)
@@ -344,6 +379,22 @@ export default function MoleculeDisplay({
               </button>
             </div>
           </div>
+        ) : showMoleCode ? (
+          <div style={{ width: '100%', padding: 8 }}>
+            {moleCodeLoading ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                Loading MoleCode...
+              </div>
+            ) : moleCodeError ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--danger, #e74c3c)', fontSize: 12 }}>
+                {moleCodeError}
+              </div>
+            ) : moleCodeText ? (
+              <Suspense fallback={<div>Loading...</div>}>
+                <MermaidCode code={moleCodeText} />
+              </Suspense>
+            ) : null}
+          </div>
         ) : imgError || !validation.valid ? (
           <div style={{
             display: 'flex',
@@ -403,52 +454,81 @@ export default function MoleculeDisplay({
         </div>
       )}
 
-      {/* 编辑模式工具栏 */}
-      {mode === 'edit' && !isEditing && (
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            onClick={handleStartEdit}
-            style={{
-              flex: 1,
-              padding: '6px 10px',
-              background: 'var(--bg-elevated)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-            }}
-          >
-            <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-              <path d="M12 20h9" />
-              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-            </svg>
-            手动编辑
-          </button>
-          <button
-            onClick={handleReOCR}
-            disabled={validating}
-            title="重新 OCR 识别"
-            style={{
-              padding: '6px 10px',
-              background: 'var(--bg-elevated)',
-              color: 'var(--text-secondary)',
-              border: '1px solid var(--border)',
-              borderRadius: 6,
-              fontSize: 12,
-              cursor: validating ? 'wait' : 'pointer',
-              opacity: validating ? 0.5 : 1,
-            }}
-          >
-            {validating ? '识别中...' : <RefreshCwIcon size={12} />}
-          </button>
-        </div>
-      )}
+      {/* 工具栏 */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {/* MoleCode 切换按钮（所有模式可见） */}
+        <button
+          onClick={toggleMoleCode}
+          title="MoleCode 图视图"
+          style={{
+            padding: '6px 10px',
+            background: showMoleCode ? 'var(--accent)' : 'var(--bg-elevated)',
+            color: showMoleCode ? 'white' : 'var(--text-secondary)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            fontSize: 12,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 4,
+          }}
+        >
+          <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <circle cx="12" cy="12" r="10" />
+            <path d="M8 12h8" />
+            <path d="M12 8v8" />
+          </svg>
+          MoleCode
+        </button>
+
+        {/* 编辑模式专用按钮 */}
+        {mode === 'edit' && !isEditing && (
+          <>
+            <button
+              onClick={handleStartEdit}
+              style={{
+                flex: 1,
+                padding: '6px 10px',
+                background: 'var(--bg-elevated)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+              }}
+            >
+              <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+              手动编辑
+            </button>
+            <button
+              onClick={handleReOCR}
+              disabled={validating}
+              title="重新 OCR 识别"
+              style={{
+                padding: '6px 10px',
+                background: 'var(--bg-elevated)',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                fontSize: 12,
+                cursor: validating ? 'wait' : 'pointer',
+                opacity: validating ? 0.5 : 1,
+              }}
+            >
+              {validating ? '识别中...' : <RefreshCwIcon size={12} />}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }

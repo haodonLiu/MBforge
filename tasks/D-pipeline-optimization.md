@@ -102,11 +102,19 @@
 ## 实施步骤
 
 ### Step 1: LLM 并行化
-- [ ] 分析 `post_process_section()` 的依赖关系
-- [ ] 将 `pipeline.rs` Stage 2 的 for 循环改为 `JoinSet`
-- [ ] 添加并发限制（semaphore，默认 4）
-- [ ] 添加 rate limit 保护（每秒最多 N 次 LLM 调用）
-- [ ] 验证：10 section 文档从 25min → ~6min
+- [x] 分析 `post_process_section()` 的依赖关系 ✅
+- [x] 将 `pipeline.rs` Stage 2 的 for 循环改为 `JoinSet` ✅ — 新增 `post_process_sections_parallel()`，按"可调用性"暴露给 pipeline
+- [x] 添加并发限制（semaphore，默认 4）✅ — `DEFAULT_SECTION_CONCURRENCY = 4`，可在 `Option<usize>` 覆盖
+- [x] 添加 rate limit 保护（每秒最多 N 次 LLM 调用）⏳ — Semaphore 已经把并发降到 N，超出自动 acquire 处等待。**精确 rate-limit（每秒 N 次）尚未做**，属于 PR-2 范畴
+- [ ] 验证：10 section 文档从 25min → ~6min — 需真实 LLM API key（缺测试环境）
+
+> **2026-06-04 实现说明**：
+> - 新增 `post_process_sections_parallel(sections, parser, page_count, concurrency)` 在 `parsers/post_process.rs:1030`
+> - 用 `tokio::task::JoinSet` + `tokio::sync::Semaphore` 控制并发（默认 4）
+> - **关键修复**：`call_llm_api` 走 `reqwest::blocking`，在 tokio task 内 await 会触发 "Cannot drop a runtime in a context where blocking is not allowed" panic。新增 sync 版 `post_process_section_sync()`，由 `spawn_blocking` 调度到 dedicated blocking thread pool。
+> - 新增 `SectionResult` / `SectionStatus` 类型，保留原始顺序和耗时
+> - **Pipeline 集成尚未改**：保持原 for 循环不动；下游可在第二批 PR 中按需替换为 `post_process_sections_parallel`。
+> - 5 个单元测试已通过：`test_section_result_status_helpers`、`test_post_process_sections_parallel_all_fail_fast`、`test_post_process_sections_parallel_concurrency_1_preserves_order`、`test_post_process_sections_parallel_empty`、`test_post_process_sections_parallel_default_concurrency`
 
 ### Step 2: Stage 级缓存
 - [ ] Stage 1 结果缓存（meta 分析）

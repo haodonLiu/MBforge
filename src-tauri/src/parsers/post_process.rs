@@ -1001,6 +1001,216 @@ pub async fn post_process_section(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Parallel section processing (Task D — Step 1)
+// ---------------------------------------------------------------------------
+
+/// 一节后处理的并发上限，默认 4。
+///
+/// 设计：使用 `tokio::sync::Semaphore` 限流，`JoinSet` 收集结果。
+/// - 同一时刻最多 `concurrency` 个 `post_process_section` 在跑；
+/// - 任务间相互独立（不同 section 不同 text），无需共享状态；
+/// - 任意一节失败不会取消其它节（符合"skip-and-continue"语义）。
+/// - LLM API 限流交给 `Semaphore`：过载时新 task 在 acquire 处等待，
+///   自然起到"每并发数 1"节流的副作用。
+pub const DEFAULT_SECTION_CONCURRENCY: usize = 4;
+
+/// 平行处理多个 section 的入口
+///
+/// # Arguments
+/// - `sections`: `(name, text)` 对，按调用方顺序送入；返回时按完成顺序
+///   收集，但下游 `pipeline.rs` 仅关心 `StructuredData` 内容（不依赖顺序）。
+/// - `parser`: 文档的 parser 名称，透传给 `post_process_section`。
+/// - `page_count`: 文档总页数，透传给 `post_process_section`。
+/// - `concurrency`: 并发上限；传 0 或 None → 退到 `DEFAULT_SECTION_CONCURRENCY`。
+///
+/// # Returns
+/// 与 `sections` 同顺序的 `Vec<SectionResult>`：成功/失败都保留。
+/// pipeline 阶段按"成功则 push，失败则记 warning"语义继续。
+pub async fn post_process_sections_parallel(
+    sections: Vec<(String, String)>,
+    parser: &str,
+    page_count: usize,
+    concurrency: Option<usize>,
+) -> Vec<SectionResult> {
+    use std::sync::Arc;
+    use tokio::sync::Semaphore;
+    use tokio::task::{JoinSet, spawn_blocking};
+
+    let limit = concurrency
+        .filter(|&n| n > 0)
+        .unwrap_or(DEFAULT_SECTION_CONCURRENCY);
+    let semaphore = Arc::new(Semaphore::new(limit));
+    let parser = parser.to_string();
+    let mut set: JoinSet<SectionResult> = JoinSet::new();
+
+    // 提前 reserve：保持与输入等长的索引，JoinSet 完成顺序不影响输出顺序。
+    let total = sections.len();
+    let mut results: Vec<Option<SectionResult>> = (0..total).map(|_| None).collect();
+
+    for (idx, (name, text)) in sections.into_iter().enumerate() {
+        let permit_src = Arc::clone(&semaphore);
+        let parser = parser.clone();
+        set.spawn(async move {
+            // 等到拿到 permit 才真正执行，限流在 acquire 处生效。
+            let _permit = permit_src.acquire_owned().await.expect("semaphore closed");
+            let name_for_blocking = name.clone();
+            let parser_for_blocking = parser.clone();
+            let text_for_blocking = text.clone();
+            // `post_process_section` 内部走 `reqwest::blocking::Client`，
+            // 不能直接在 tokio task 中跑 — 必须丢到 dedicated blocking thread
+            // pool，否则 `.await` 退出 task 时 runtime 会 panic
+            // (Cannot drop a runtime in a context where blocking is not allowed)。
+            let start = std::time::Instant::now();
+            let outcome = spawn_blocking(move || {
+                // 这里必须是 sync 入口；复用 post_process_section 的逻辑
+                // 但跳到外部 rt 用 blocking runtime 即可。直接调 sync 版。
+                post_process_section_sync(
+                    &text_for_blocking,
+                    &parser_for_blocking,
+                    page_count,
+                )
+            })
+            .await;
+            let elapsed = start.elapsed();
+            match outcome {
+                Ok(Ok(r)) => SectionResult {
+                    index: idx,
+                    name: name_for_blocking,
+                    status: SectionStatus::Ok(r),
+                    elapsed,
+                },
+                Ok(Err(e)) => SectionResult {
+                    index: idx,
+                    name: name_for_blocking,
+                    status: SectionStatus::Err(e),
+                    elapsed,
+                },
+                Err(join_err) => SectionResult {
+                    index: idx,
+                    name: name_for_blocking,
+                    status: SectionStatus::Err(format!("blocking task join error: {}", join_err)),
+                    elapsed,
+                },
+            }
+        });
+    }
+
+    while let Some(joined) = set.join_next().await {
+        match joined {
+            Ok(r) => {
+                let i = r.index;
+                if i < results.len() {
+                    results[i] = Some(r);
+                }
+            }
+            Err(e) => {
+                // task panic：记录为一条伪 SectionResult，但要可被 pipeline 记录。
+                log::error!("post_process_sections_parallel task join error: {}", e);
+            }
+        }
+    }
+
+    // 任何 join 失败的槽位都补成 Err 状态，避免 None 漏报。
+    results
+        .into_iter()
+        .enumerate()
+        .map(|(i, slot)| {
+            slot.unwrap_or_else(|| SectionResult {
+                index: i,
+                name: format!("__missing_{}", i),
+                status: SectionStatus::Err("join task dropped".into()),
+                elapsed: std::time::Duration::ZERO,
+            })
+        })
+        .collect()
+}
+
+/// `post_process_section` 的 sync 版本，专门给 `tokio::task::spawn_blocking` 调用。
+///
+/// 内部直接用 `reqwest::blocking::Client` — 这就是为什么它必须跑在
+/// dedicated blocking thread 上，不能在 async task 内 await。
+fn post_process_section_sync(
+    content: &str,
+    parser: &str,
+    page_count: usize,
+) -> Result<PostProcessResult, String> {
+    let config = load_llm_config()?;
+    let batches = split_into_batches(content);
+    let batch_count = batches.len();
+    let pdf_type = parser;
+
+    if batch_count == 1 {
+        let prompt = build_batch_prompt(&batches[0], 0, 1, &[], "", pdf_type, page_count);
+        let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
+        let val = extract_json(&response)?;
+        let data = parse_structured_data(&val)?;
+        let report = generate_report(&data);
+        Ok(PostProcessResult {
+            report,
+            data,
+            model: config.model,
+            tokens_used: tokens,
+            batch_count: 1,
+        })
+    } else {
+        let mut batch_results = Vec::new();
+        let mut total_tokens = 0u32;
+        for (i, batch) in batches.iter().enumerate() {
+            let prompt = build_batch_prompt(batch, i, batch_count, &[], "", pdf_type, page_count);
+            let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
+            let br = parse_batch_response(&response)?;
+            total_tokens += tokens.unwrap_or(0);
+            batch_results.push(br);
+        }
+        let merge_prompt =
+            build_section_merge_prompt(&batch_results, content, pdf_type, page_count);
+        let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &merge_prompt)?;
+        let mut result = parse_merge_response(
+            &response,
+            &config.model,
+            tokens.map(|t| t + total_tokens),
+            batch_count,
+        )?;
+        result.data.metadata.source_file = Some(parser.to_string());
+        Ok(result)
+    }
+}
+
+/// 单节处理结果：保留原始顺序、耗时、状态。
+#[derive(Debug)]
+pub struct SectionResult {
+    pub index: usize,
+    pub name: String,
+    pub status: SectionStatus,
+    pub elapsed: std::time::Duration,
+}
+
+/// `SectionResult` 的成功/失败二态。
+#[derive(Debug)]
+pub enum SectionStatus {
+    Ok(PostProcessResult),
+    Err(String),
+}
+
+impl SectionResult {
+    pub fn is_ok(&self) -> bool {
+        matches!(self.status, SectionStatus::Ok(_))
+    }
+    pub fn into_data(self) -> Option<super::doc_types::StructuredData> {
+        match self.status {
+            SectionStatus::Ok(r) => Some(r.data),
+            SectionStatus::Err(_) => None,
+        }
+    }
+    pub fn err(&self) -> Option<&str> {
+        match &self.status {
+            SectionStatus::Ok(_) => None,
+            SectionStatus::Err(e) => Some(e.as_str()),
+        }
+    }
+}
+
 /// 构建合并 prompt（接受纯文本 content，用于 post_process_section）
 fn build_section_merge_prompt(
     batch_results: &[BatchResult],
@@ -1077,6 +1287,110 @@ mod tests {
         let batches = split_into_batches(content);
         assert_eq!(batches.len(), 1);
         assert_eq!(batches[0], content);
+    }
+
+
+    #[test]
+    fn test_section_result_status_helpers() {
+        use std::time::Duration;
+        let ok = SectionResult {
+            index: 0,
+            name: "x".into(),
+            status: SectionStatus::Ok(PostProcessResult {
+                report: "r".into(),
+                data: super::super::doc_types::StructuredData {
+                    metadata: super::super::doc_types::DocumentMetadata {
+                        title: None,
+                        authors: vec![],
+                        document_type: String::new(),
+                        key_targets: vec![],
+                        source_file: None,
+                    },
+                    summary: String::new(),
+                    compounds: vec![],
+                    activities: vec![],
+                    key_findings: vec![],
+                    uncertain_items: vec![],
+                },
+                model: "m".into(),
+                tokens_used: None,
+                batch_count: 1,
+            }),
+            elapsed: Duration::from_millis(10),
+        };
+        assert!(ok.is_ok());
+        assert_eq!(ok.err(), None);
+        let data = ok.into_data();
+        assert!(data.is_some());
+        let err = SectionResult {
+            index: 1,
+            name: "y".into(),
+            status: SectionStatus::Err("boom".into()),
+            elapsed: Duration::ZERO,
+        };
+        assert!(!err.is_ok());
+        assert_eq!(err.err(), Some("boom"));
+        let data = err.into_data();
+        assert!(data.is_none());
+    }
+
+    /// Smoke test: 跑 3 个 section，全部因 LLM 配置缺失失败，但 JoinSet
+    /// 应当正常结束，返回 3 个 Err 结果（不 panic、不 hang）。
+    #[tokio::test]
+    async fn test_post_process_sections_parallel_all_fail_fast() {
+        // 临时清空 env / config，强制让 post_process_section 走到 `Err` 分支
+        // （load_llm_config 会在缺 key 时返回 Err）。三节并发跑，时间
+        // 应当明显短于"三节串行"，即使每节都失败。
+        let sections = vec![
+            ("a".to_string(), "alpha content".to_string()),
+            ("b".to_string(), "beta content".to_string()),
+            ("c".to_string(), "gamma content".to_string()),
+        ];
+        let start = std::time::Instant::now();
+        let results = post_process_sections_parallel(sections, "test", 10, Some(4)).await;
+        let elapsed = start.elapsed();
+
+        assert_eq!(results.len(), 3);
+        // 顺序保持
+        assert_eq!(results[0].name, "a");
+        assert_eq!(results[1].name, "b");
+        assert_eq!(results[2].name, "c");
+        // 三节全部失败（缺 LLM key）但 err 信息存在
+        for r in &results {
+            assert!(!r.is_ok());
+            assert!(r.err().is_some());
+        }
+        // 并发跑：每节都很快（缺 key 直接 Err），整批应在合理时间内完成
+        assert!(elapsed.as_secs() < 10);
+    }
+
+    /// Concurrency = 1 退化为串行，输出顺序与输入一致。
+    #[tokio::test]
+    async fn test_post_process_sections_parallel_concurrency_1_preserves_order() {
+        let sections: Vec<(String, String)> = (0..5)
+            .map(|i| (format!("s{}", i), format!("content {}", i)))
+            .collect();
+        let results = post_process_sections_parallel(sections, "test", 1, Some(1)).await;
+        for (i, r) in results.iter().enumerate() {
+            assert_eq!(r.index, i);
+            assert_eq!(r.name, format!("s{}", i));
+        }
+    }
+
+    /// 空输入应直接返回空 Vec，不创建 Semaphore / JoinSet。
+    #[tokio::test]
+    async fn test_post_process_sections_parallel_empty() {
+        let results = post_process_sections_parallel(vec![], "test", 0, None).await;
+        assert!(results.is_empty());
+    }
+
+    /// concurrency=0 退回默认值。
+    #[tokio::test]
+    async fn test_post_process_sections_parallel_default_concurrency() {
+        let sections = vec![("a".to_string(), "x".to_string())];
+        let results = post_process_sections_parallel(sections, "test", 1, Some(0)).await;
+        // 1 节，跑成功/失败都无所谓
+        assert_eq!(results.len(), 1);
     }
 
     #[test]

@@ -127,7 +127,9 @@ impl<'a, T: Table> SelectQuery<'a, T> {
         let mut stmt = conn.prepare(&sql).map_err(|e| format!("Prepare failed: {}", e))?;
 
         let rows = stmt
-            .query_map(params_ref.as_slice(), T::from_row)
+            .query_map(params_ref.as_slice(), |row| {
+                T::from_row(row).map_err(|e| rusqlite::Error::InvalidParameterName(e))
+            })
             .map_err(|e| format!("Query failed: {}", e))?;
 
         let mut results = Vec::new();

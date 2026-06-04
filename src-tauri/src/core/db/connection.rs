@@ -1,13 +1,13 @@
 //! 数据库连接管理
 //!
 //! 封装 rusqlite::Connection，提供统一的表注册和查询接口。
+//! Schema 管理采用幂等策略：CREATE TABLE IF NOT EXISTS + ALTER TABLE .ok()
 
 use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::{Connection, ToSql};
 
-use super::migration::MigrationSet;
 use super::table::{Fts5Table, Table};
 
 /// 数据库连接
@@ -52,13 +52,16 @@ impl DbConnection {
         })
     }
 
-    /// 注册表结构
+    /// 注册表结构（CREATE TABLE IF NOT EXISTS + 索引）
     pub fn register<T: Table>(&self) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+
+        // 建表（幂等）
         let ddl = T::ddl_sql();
         conn.execute(&ddl, [])
             .map_err(|e| format!("Create table {} failed: {}", T::table_name(), e))?;
 
+        // 建索引（幂等）
         for idx_sql in T::index_sqls() {
             conn.execute(&idx_sql, [])
                 .map_err(|e| format!("Create index on {} failed: {}", T::table_name(), e))?;
@@ -68,20 +71,23 @@ impl DbConnection {
         Ok(())
     }
 
-    /// 注册表结构 + 迁移
-    pub fn register_with_migrations<T: Table>(&self, migrations: &MigrationSet) -> Result<(), String> {
-        self.register::<T>()?;
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
-        migrations.run(&conn)?;
-        Ok(())
+    /// 幂等添加列（ALTER TABLE ADD COLUMN，忽略"column already exists"错误）
+    ///
+    /// 用于 schema 向后兼容演进。新列默认 nullable。
+    pub fn add_column_if_missing(&self, table: &str, column: &str, col_type: &str) {
+        let sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, col_type);
+        if let Ok(conn) = self.conn.lock() {
+            let _ = conn.execute(&sql, []); // 忽略 "duplicate column" 错误
+        }
     }
 
-    /// 注册 FTS5 虚拟表
+    /// 注册 FTS5 虚拟表（幂等）
     pub fn register_fts5<T: Fts5Table>(&self) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
         let ddl = T::ddl_sql();
         conn.execute(&ddl, [])
             .map_err(|e| format!("Create FTS5 {} failed: {}", T::table_name(), e))?;
+
         log::info!("Registered FTS5 table: {}", T::table_name());
         Ok(())
     }
@@ -134,6 +140,7 @@ impl DbConnection {
 mod tests {
     use super::*;
     use super::super::table::ColumnDef;
+    use rusqlite::ToSql;
 
     struct TestRow {
         pub id: String,
@@ -186,6 +193,28 @@ mod tests {
             .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "test");
+    }
+
+    #[test]
+    fn test_add_column_if_missing() {
+        let db = DbConnection::open_in_memory().unwrap();
+        db.register::<TestRow>().unwrap();
+
+        // 第一次加列 — 成功
+        db.add_column_if_missing("test_items", "score", "REAL DEFAULT 0.0");
+
+        // 第二次加列 — 幂等，忽略错误
+        db.add_column_if_missing("test_items", "score", "REAL DEFAULT 0.0");
+
+        // 验证列存在
+        let col_count: i64 = db.raw_conn().lock().unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('test_items') WHERE name='score'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(col_count, 1);
     }
 
     impl DbConnection {

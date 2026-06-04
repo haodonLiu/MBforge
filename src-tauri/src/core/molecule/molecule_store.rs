@@ -13,7 +13,14 @@ use crate::core::molecule_db::MOL_DB_FILENAME;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MoleculeRecord {
     pub mol_id: String,
-    pub esmiles: String,
+    /// Layer 1: 纯净 SMILES，事实来源，RDKit/Chematic 直接可用。
+    pub smiles: String,
+    /// Layer 2: 可选 E-SMILES（含语义标签如 `<c>1:R1</c>`）。
+    #[serde(default)]
+    pub esmiles: Option<String>,
+    /// Layer 2: 语义标签元数据（JSON），如 `{"R1": "Me", "source": "claim_parser"}`。
+    #[serde(default)]
+    pub semantic_tags: Option<serde_json::Value>,
     #[serde(default)]
     pub name: String,
     #[serde(default)]
@@ -30,8 +37,9 @@ pub struct MoleculeRecord {
     pub status: String,
     #[serde(default)]
     pub properties: serde_json::Value,
+    /// 用户标签列表（原 `tags`，数据库列已重命名为 `labels`）。
     #[serde(default)]
-    pub tags: Vec<String>,
+    pub labels: Vec<String>,
     #[serde(default)]
     pub notes: String,
     #[serde(default)]
@@ -39,10 +47,16 @@ pub struct MoleculeRecord {
 }
 
 impl MoleculeRecord {
-    pub fn new(mol_id: &str, esmiles: &str) -> Self {
+    /// 创建新的分子记录。
+    ///
+    /// `smiles` 为纯净 SMILES（Layer 1 事实来源）。
+    /// `esmiles` 为可选的带标签原始字符串（Layer 2 语义插件）。
+    pub fn new(mol_id: &str, smiles: &str) -> Self {
         Self {
             mol_id: mol_id.to_string(),
-            esmiles: esmiles.to_string(),
+            smiles: smiles.to_string(),
+            esmiles: None,
+            semantic_tags: None,
             name: String::new(),
             source_doc: String::new(),
             activity: None,
@@ -51,7 +65,7 @@ impl MoleculeRecord {
             source_type: "text".to_string(),
             status: "confirmed".to_string(),
             properties: serde_json::json!({}),
-            tags: Vec::new(),
+            labels: Vec::new(),
             notes: String::new(),
             created_at: None,
         }
@@ -63,14 +77,14 @@ impl MoleculeRecord {
     /// heuristics since RDKit is unavailable in Rust.
     /// Complex properties (LogP, TPSA) are left for the sidecar.
     pub fn compute_properties(&self) -> serde_json::Value {
-        let esmiles = &self.esmiles;
-        if esmiles.is_empty() {
+        let smiles = &self.smiles;
+        if smiles.is_empty() {
             return serde_json::json!({});
         }
 
-        let mw = estimate_molecular_weight(esmiles);
-        let (hbd, hba) = estimate_hbd_hba(esmiles);
-        let rotatable = estimate_rotatable_bonds(esmiles);
+        let mw = estimate_molecular_weight(smiles);
+        let (hbd, hba) = estimate_hbd_hba(smiles);
+        let rotatable = estimate_rotatable_bonds(smiles);
 
         serde_json::json!({
             "MW": mw,
@@ -81,27 +95,32 @@ impl MoleculeRecord {
     }
 
     pub fn row_to_record(row: &rusqlite::Row) -> SqlResult<Self> {
-        let properties_str: String = row.get(9).unwrap_or_default();
-        let tags_str: String = row.get(10).unwrap_or_default();
+        let properties_str: String = row.get(10).unwrap_or_default();
+        let labels_str: String = row.get(11).unwrap_or_default();
+        let semantic_tags_str: Option<String> = row.get(12).ok();
 
         let properties: serde_json::Value =
             serde_json::from_str(&properties_str).unwrap_or(serde_json::json!({}));
-        let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+        let labels: Vec<String> = serde_json::from_str(&labels_str).unwrap_or_default();
+        let semantic_tags: Option<serde_json::Value> =
+            semantic_tags_str.and_then(|s| serde_json::from_str(&s).ok());
 
         Ok(Self {
             mol_id: row.get(0)?,
-            esmiles: row.get(1)?,
-            name: row.get(2).unwrap_or_default(),
-            source_doc: row.get(3).unwrap_or_default(),
-            activity: row.get(4).ok(),
-            activity_type: row.get(5).unwrap_or_default(),
-            units: row.get(6).unwrap_or_else(|_| "nM".to_string()),
-            source_type: row.get(7).unwrap_or_default(),
-            status: row.get(8).unwrap_or_default(),
+            smiles: row.get(1)?,
+            esmiles: row.get(2).ok(),
+            semantic_tags,
+            name: row.get(3).unwrap_or_default(),
+            source_doc: row.get(4).unwrap_or_default(),
+            activity: row.get(5).ok(),
+            activity_type: row.get(6).unwrap_or_default(),
+            units: row.get(7).unwrap_or_else(|_| "nM".to_string()),
+            source_type: row.get(8).unwrap_or_default(),
+            status: row.get(9).unwrap_or_default(),
             properties,
-            tags,
-            notes: row.get(11).unwrap_or_default(),
-            created_at: row.get(12).ok(),
+            labels,
+            notes: row.get(13).unwrap_or_default(),
+            created_at: row.get(14).ok(),
         })
     }
 }

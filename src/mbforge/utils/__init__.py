@@ -16,7 +16,6 @@ from .helpers import (
     safe_filename,
     truncate_text,
     split_text_chunks,
-    format_molecule_info,
 )
 
 __all__ = [
@@ -26,7 +25,6 @@ __all__ = [
     "safe_filename",
     "truncate_text",
     "split_text_chunks",
-    "format_molecule_info",
     "load_global_config",
     "save_global_config",
     "AppConfig",

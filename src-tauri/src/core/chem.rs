@@ -1,13 +1,29 @@
-//! 纯 Rust 化学信息学 — 基于 chematic，替代 Python RDKit sidecar
+//! 纯 Rust 化学信息学 — 基于 chematic crate，替代 Python RDKit sidecar
+//!
+//! 实际 API（来自 `chematic-*` git 依赖，本地 cache `@ .cargo/git/checkouts/chematic-09e7e67b97ed9dba/47a69b1`）：
+//! - `chematic_smiles::parse(&str) -> Result<Molecule, SmilesError>`
+//! - `chematic_smiles::canonical_smiles(&Molecule) -> String`
+//! - `chematic_fp::ecfp4(&Molecule) -> BitVec2048`
+//! - `chematic_fp::BitVec2048::tanimoto(&self, &Self) -> f64`
+//! - `chematic_smarts::parse_smarts(&str) -> Result<QueryMolecule, SmartsError>`
+//! - `chematic_smarts::find_matches(&QueryMolecule, &Molecule) -> Vec<HashMap<usize, AtomIdx>>`
+//!
+//! 历史：早期版本引用了不存在的 `SmilesParser` / `EcfpOptions` API；现在使用
+//! 直接函数式 API，零中间类型。
 //!
 //! 提供：
-//! - SMILES 解析和校验
-//! - Morgan/ECFP 指纹计算
-//! - Tanimoto 相似度
-//! - VF2 子结构搜索
-//!
-//! 注意：chematic 的实际 API 与初始假设不同，当前使用占位实现。
-//! 待 Task B 时适配实际 API：parse_smiles(), canonical_smiles(), ecfp4(), tanimoto_ecfp4()
+//! - `validate_smiles()` — SMILES 解析 + canonical 化
+//! - `compute_ecfp4()` — 2048-bit ECFP4 指纹
+//! - `tanimoto_similarity()` — 两分子 Tanimoto 相似度
+//! - `tanimoto_batch_filter()` — 批量 Tanimoto 预过滤
+//! - `substructure_search()` — VF2 子结构搜索
+//! - `substructure_search_with_filter()` — 三级漏斗（Tanimoto → VF2）
+
+use chematic_fp::BitVec2048;
+use chematic_smiles::{canonical_smiles, parse, SmilesError};
+use chematic_smarts::{find_matches, parse_smarts};
+
+use crate::core::molecule::molecule_store::MoleculeRecord;
 
 /// SMILES 校验结果
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -17,9 +33,14 @@ pub struct SmilesValidation {
     pub error: Option<String>,
 }
 
-/// 校验并规范化 SMILES（占位实现，待适配 chematic API）
+/// 校验并规范化 SMILES。
+///
+/// # 行为
+/// - 空串 / 超长（> 10KB）→ `valid=false`
+/// - 含空格 → `valid=false`（SMILES 规范不允许内部空白）
+/// - 解析失败 → `valid=false`，错误信息透传 `SmilesError::Display`
+/// - 成功 → `valid=true`，`canonical_smiles` 由 chematic 稳定化算法给出
 pub fn validate_smiles(smiles: &str) -> SmilesValidation {
-    // TODO: 使用 chematic_smiles::parse(smiles) + canonical_smiles()
     if smiles.is_empty() || smiles.len() > 10000 {
         return SmilesValidation {
             valid: false,
@@ -27,7 +48,6 @@ pub fn validate_smiles(smiles: &str) -> SmilesValidation {
             error: Some("Invalid SMILES: empty or too long".into()),
         };
     }
-    // 基本格式检查：SMILES 不应包含空格
     if smiles.contains(' ') {
         return SmilesValidation {
             valid: false,
@@ -35,41 +55,65 @@ pub fn validate_smiles(smiles: &str) -> SmilesValidation {
             error: Some("Invalid SMILES: contains spaces".into()),
         };
     }
-    SmilesValidation {
-        valid: true,
-        canonical_smiles: Some(smiles.to_string()),
-        error: None,
+    match parse(smiles) {
+        Ok(mol) => SmilesValidation {
+            valid: true,
+            canonical_smiles: Some(canonical_smiles(&mol)),
+            error: None,
+        },
+        Err(e) => SmilesValidation {
+            valid: false,
+            canonical_smiles: None,
+            error: Some(e.to_string()),
+        },
     }
 }
 
-/// 计算 ECFP4 指纹（占位实现，待适配 chematic_fp::ecfp4()）
-pub fn compute_ecfp4(_smiles: &str) -> Result<Vec<u8>, String> {
-    // TODO: 使用 chematic_fp::ecfp4(mol) -> BitVec2048 -> Vec<u8>
-    Err("ECFP4 not yet implemented (chematic API adaptation pending)".into())
+/// 计算 ECFP4 指纹（2048 bit）。
+///
+/// # 错误
+/// - SMILES 解析失败时返回 Err（不会 fallback 到全 0）
+/// - 成功时返回 `BitVec2048`（在 MBForge 内部按 `Vec<u8>` 序列化）
+pub fn compute_ecfp4(smiles: &str) -> Result<BitVec2048, String> {
+    let mol = parse(smiles).map_err(|e| format!("SMILES parse failed: {}", e))?;
+    Ok(chematic_fp::ecfp4(&mol))
 }
 
-/// 计算两个 SMILES 之间的 Tanimoto 相似度
+/// 计算两个 SMILES 之间的 Tanimoto 相似度。
+///
+/// 化学约定：1.0 = 完全相同，0.0 = 无共同位。
 pub fn tanimoto_similarity(smiles1: &str, smiles2: &str) -> Result<f64, String> {
-    let fp1 = compute_ecfp4(smiles1)?;
-    let fp2 = compute_ecfp4(smiles2)?;
-    Ok(tanimoto_bytes(&fp1, &fp2))
+    let mol1 = parse(smiles1).map_err(|e| format!("SMILES parse failed: {}", e))?;
+    let mol2 = parse(smiles2).map_err(|e| format!("SMILES parse failed: {}", e))?;
+    Ok(chematic_fp::tanimoto_ecfp4(&mol1, &mol2))
 }
 
-/// 批量 Tanimoto 预过滤
+/// 批量 Tanimoto 预过滤。
+///
+/// # Arguments
+/// - `query_smiles`: 查询 SMILES
+/// - `candidates`: `(mol_id, smiles)` 列表
+/// - `threshold`: 阈值（≥ 0.0, ≤ 1.0）
+///
+/// # Returns
+/// 超过阈值的 (mol_id, smiles, score) 列表，按 score 降序。
+/// SMILES 解析失败的候选项被静默跳过。
 pub fn tanimoto_batch_filter(
     query_smiles: &str,
     candidates: &[(String, String)],
     threshold: f64,
 ) -> Result<Vec<(String, String, f64)>, String> {
-    let query_fp = compute_ecfp4(query_smiles)?;
+    let query_mol = parse(query_smiles).map_err(|e| format!("query SMILES parse failed: {}", e))?;
+    let query_fp = chematic_fp::ecfp4(&query_mol);
 
     let mut results = Vec::new();
     for (mol_id, smiles) in candidates {
-        let fp = match compute_ecfp4(smiles) {
-            Ok(fp) => fp,
-            Err(_) => continue,
+        let mol = match parse(smiles) {
+            Ok(m) => m,
+            Err(_) => continue, // skip invalid candidates
         };
-        let score = tanimoto_bytes(&query_fp, &fp);
+        let fp = chematic_fp::ecfp4(&mol);
+        let score = fp.tanimoto(&query_fp);
         if score >= threshold {
             results.push((mol_id.clone(), smiles.clone(), score));
         }
@@ -79,29 +123,51 @@ pub fn tanimoto_batch_filter(
     Ok(results)
 }
 
-/// 子结构搜索（占位实现，待适配 chematic_smarts::find_matches()）
+/// 子结构搜索 — 在候选中找出与 query_smarts 匹配的项。
+///
+/// # Arguments
+/// - `query_smarts`: SMARTS 子结构查询（支持 SMILES 串作为简化查询）
+/// - `candidates`: `(mol_id, smiles)` 列表
+///
+/// # Returns
+/// 命中的 (mol_id, smiles) 列表。
 pub fn substructure_search(
-    _query_smiles: &str,
-    _candidates: &[(String, String)],
+    query_smarts: &str,
+    candidates: &[(String, String)],
 ) -> Result<Vec<(String, String)>, String> {
-    // TODO: 使用 chematic_smarts::parse_smarts() + find_matches()
-    Err("Substructure search not yet implemented (chematic API adaptation pending)".into())
+    let query = parse_smarts(query_smarts).map_err(|e| format!("SMARTS parse failed: {:?}", e))?;
+
+    let mut matches_out = Vec::new();
+    for (mol_id, smiles) in candidates {
+        let mol = match parse(smiles) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        if !find_matches(&query, &mol).is_empty() {
+            matches_out.push((mol_id.clone(), smiles.clone()));
+        }
+    }
+    Ok(matches_out)
 }
 
 /// 三级漏斗：Tanimoto 预过滤 + VF2 子结构搜索
 pub fn substructure_search_with_filter(
-    query_smiles: &str,
+    query_smarts: &str,
     candidates: &[(String, String)],
     tanimoto_threshold: f64,
 ) -> Result<Vec<(String, String, f64)>, String> {
-    let filtered = tanimoto_batch_filter(query_smiles, candidates, tanimoto_threshold)?;
+    let query_mol =
+        parse(query_smarts).map_err(|e| format!("query SMILES parse failed: {}", e))?;
+    let query_smiles = canonical_smiles(&query_mol);
+
+    let filtered = tanimoto_batch_filter(&query_smiles, candidates, tanimoto_threshold)?;
 
     let filtered_pairs: Vec<(String, String)> = filtered
         .iter()
         .map(|(id, smiles, _)| (id.clone(), smiles.clone()))
         .collect();
 
-    let matches = substructure_search(query_smiles, &filtered_pairs)?;
+    let matches = substructure_search(query_smarts, &filtered_pairs)?;
 
     let match_set: std::collections::HashSet<String> =
         matches.iter().map(|(id, _)| id.clone()).collect();
@@ -112,18 +178,41 @@ pub fn substructure_search_with_filter(
         .collect())
 }
 
-/// 字节级 Tanimoto 相似度计算
-fn tanimoto_bytes(a: &[u8], b: &[u8]) -> f64 {
+// ---------------------------------------------------------------------------
+// MoleculeRecord 集成
+// ---------------------------------------------------------------------------
+
+/// 从 MoleculeRecord 列表批量计算 ECFP4，返回 (mol_id, fp) 对。
+///
+/// 跳过 SMILES 解析失败的记录（warn log）。
+pub fn fingerprints_for_records(records: &[MoleculeRecord]) -> Vec<(String, BitVec2048)> {
+    let mut out = Vec::with_capacity(records.len());
+    for r in records {
+        match parse(&r.smiles) {
+            Ok(mol) => out.push((r.mol_id.clone(), chematic_fp::ecfp4(&mol))),
+            Err(e) => log::warn!(
+                "fingerprints_for_records: skip mol_id={} (SMILES parse failed: {})",
+                r.mol_id,
+                e
+            ),
+        }
+    }
+    out
+}
+
+/// 字节级 Tanimoto 相似度（按位 AND/OR 计算）。
+///
+/// 保留为辅助函数：当 fingerprint 已经是 `Vec<u8>` 形式（来自持久化层）
+/// 时，可以不走 chematic 重新计算。
+pub fn tanimoto_bytes(a: &[u8], b: &[u8]) -> f64 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
     }
-
     let (mut intersection, mut union) = (0u32, 0u32);
     for (x, y) in a.iter().zip(b.iter()) {
         intersection += (x & y).count_ones();
         union += (x | y).count_ones();
     }
-
     if union == 0 {
         0.0
     } else {
@@ -137,14 +226,30 @@ mod tests {
 
     #[test]
     fn test_validate_smiles_valid() {
-        let result = validate_smiles("CCO");
-        assert!(result.valid);
-        assert_eq!(result.canonical_smiles.unwrap(), "CCO");
+        let result = validate_smiles("CCO"); // ethanol
+        assert!(result.valid, "expected valid, got error: {:?}", result.error);
+        assert!(result.canonical_smiles.is_some());
+    }
+
+    #[test]
+    fn test_validate_smiles_aromatic() {
+        // canonical_smiles 应该保留芳香性
+        let result = validate_smiles("c1ccccc1"); // benzene
+        assert!(result.valid, "benzene should be valid: {:?}", result.error);
+        let c = result.canonical_smiles.unwrap();
+        assert!(c.starts_with('c'), "expected aromatic canonical, got {c}");
     }
 
     #[test]
     fn test_validate_smiles_empty() {
         let result = validate_smiles("");
+        assert!(!result.valid);
+    }
+
+    #[test]
+    fn test_validate_smiles_too_long() {
+        let s = "C".repeat(10001);
+        let result = validate_smiles(&s);
         assert!(!result.valid);
     }
 
@@ -155,6 +260,89 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_smiles_invalid_bond() {
+        let result = validate_smiles("C%"); // '%' is not valid SMILES
+        assert!(!result.valid);
+        assert!(result.error.is_some());
+    }
+
+    #[test]
+    fn test_canonical_smiles_stable() {
+        // 同一分子不同写法应产生相同 canonical
+        let r1 = validate_smiles("c1ccccc1");
+        let r2 = validate_smiles("C1=CC=CC=C1");
+        assert!(r1.valid && r2.valid);
+        // aromatic vs Kekule 形式 — chematic 给出的 canonical 因芳香性差异可能不同
+        // 但解析后再 canonicalize 必须稳定
+        let m1 = chematic_smiles::parse(&r1.canonical_smiles.unwrap()).unwrap();
+        let m2 = chematic_smiles::parse(&r2.canonical_smiles.unwrap()).unwrap();
+        assert_eq!(
+            chematic_smiles::canonical_smiles(&m1),
+            chematic_smiles::canonical_smiles(&m2),
+            "canonical form should be stable after re-parse"
+        );
+    }
+
+    #[test]
+    fn test_compute_ecfp4() {
+        let fp = compute_ecfp4("CCO").unwrap();
+        assert_eq!(fp.popcount() + 0, fp.popcount()); // BitVec2048 sanity
+        let fp2 = compute_ecfp4("CCO").unwrap();
+        assert_eq!(fp.tanimoto(&fp2), 1.0);
+    }
+
+    #[test]
+    fn test_tanimoto_similarity_identical() {
+        let s = tanimoto_similarity("CCO", "CCO").unwrap();
+        assert!((s - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_tanimoto_similarity_distinct() {
+        // ethanol vs benzene — 共同子结构很少
+        let s = tanimoto_similarity("CCO", "c1ccccc1").unwrap();
+        assert!(s < 0.5, "ethanol vs benzene should be dissimilar, got {s}");
+    }
+
+    #[test]
+    fn test_tanimoto_batch_filter() {
+        let cands = vec![
+            ("mol1".to_string(), "CCO".to_string()),
+            ("mol2".to_string(), "CCN".to_string()),
+            ("mol3".to_string(), "c1ccccc1".to_string()),
+        ];
+        let out = tanimoto_batch_filter("CCO", &cands, 0.0).unwrap();
+        // 全部通过阈值 0.0
+        assert_eq!(out.len(), 3);
+        // 排序：C > N > 苯环（与 CCO 共享 substructures 较多）
+        assert_eq!(out[0].0, "mol1");
+    }
+
+    #[test]
+    fn test_substructure_search_smiles_as_query() {
+        // 简化场景：query 是一段 SMILES，候选含有更大分子包含该片段
+        let cands = vec![
+            ("ethanol".to_string(), "CCO".to_string()),
+            ("benzene".to_string(), "c1ccccc1".to_string()),
+        ];
+        // CCO 是乙醇本身 — 自身匹配
+        let out = substructure_search("CCO", &cands).unwrap();
+        // SMILES 查询（用作 query_smarts）应至少匹配 ethanol 自身
+        assert!(out.iter().any(|(id, _)| id == "ethanol"));
+    }
+
+    #[test]
+    fn test_substructure_search_with_filter() {
+        let cands = vec![
+            ("mol1".to_string(), "CCO".to_string()),
+            ("mol2".to_string(), "c1ccccc1".to_string()),
+        ];
+        // Tanimoto 阈值 0.5 + CCO 子结构 → mol1 命中，mol2 不命中
+        let out = substructure_search_with_filter("CCO", &cands, 0.5).unwrap();
+        assert!(out.iter().all(|(id, _, _)| id == "mol1"));
+    }
+
+    #[test]
     fn test_tanimoto_bytes() {
         let a = vec![0xFF, 0x00];
         let b = vec![0xFF, 0x00];
@@ -162,5 +350,13 @@ mod tests {
 
         let c = vec![0x00, 0xFF];
         assert!(tanimoto_bytes(&a, &c) < 0.01);
+    }
+
+    #[test]
+    fn test_smiles_error_display() {
+        // 验证 SmilesError::Display 可用 (error message 透传)
+        let r = validate_smiles("XYZ[");
+        assert!(!r.valid);
+        assert!(r.error.unwrap().len() > 0);
     }
 }

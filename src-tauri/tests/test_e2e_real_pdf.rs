@@ -84,9 +84,9 @@ fn extract_text_routed(
 /// 跑单个 PDF 的完整管线
 /// 跑单个 PDF 的完整管线
 async fn run_pipeline(label: &str, pdf_path: &str) {
+    let pdf_path = std::path::Path::new(pdf_path);
     assert!(pdf_path.exists(), "PDF not found: {}", pdf_path.display());
     let file_size = std::fs::metadata(pdf_path).unwrap().len();
-
     println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("📄 [{}] {}", label, pdf_path.display());
     println!("   Size: {:.2} MB", file_size as f64 / 1024.0 / 1024.0);
@@ -263,7 +263,7 @@ async fn run_pipeline(label: &str, pdf_path: &str) {
     let mut search_results: Vec<serde_json::Value> = Vec::new();
     for (q, desc) in &queries {
         let t0 = std::time::Instant::now();
-        let results = kb.search(q, 3).expect("search failed");
+        let results = kb.search(q, 3).await.expect("search failed");
         let dt = t0.elapsed();
         let top_score = results.first().map(|r| r.score).unwrap_or(0.0);
         println!(
@@ -353,6 +353,7 @@ async fn run_pipeline(label: &str, pdf_path: &str) {
     println!("\n📊 [{}] Summary", label);
     println!("  Type:           {}", classification.pdf_type);
     println!("  Pages:          {}", classification.page_count);
+    println!("  Parser used:    {}", parser_used);
     println!("  Content size:   {} chars", content.len());
     println!("  Headings:       {}", headings.len());
     println!("  Sections:       {}", sections.len());
@@ -384,23 +385,29 @@ fn test_e2e_real_pdfs() {
     let _ = std::fs::remove_dir_all(&out_dir);
     std::fs::create_dir_all(&out_dir).unwrap();
 
+    // [Track D-D15] `run_pipeline` 已变 async；用 current_thread runtime 跑
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("rt");
+
     // ====== 测试 1: 扫描型专利 PDF (走 MinerU OCR) ======
-    run_pipeline(
+    rt.block_on(run_pipeline(
         "patent_us20260027089",
         "C:/Users/10954/Desktop/MBForge/e2e_test/US20260027089A1.PDF",
-    );
+    ));
 
     // ====== 测试 2: 文本型专利 PDF (走 pdf_inspector 本地) ======
-    run_pipeline(
+    rt.block_on(run_pipeline(
         "cn_text",
         "C:/Users/10954/Desktop/MBForge/e2e_test/CN120118069A_text.pdf",
-    );
+    ));
 
     // ====== 测试 3: 期刊论文 PDF ======
-    run_pipeline(
+    rt.block_on(run_pipeline(
         "elsevier_paper",
         "C:/Users/10954/Desktop/MBForge/e2e_test/elsevier_paper.pdf",
-    );
+    ));
 
     // 列出所有输出
     println!("\n\n📁 Output files:");

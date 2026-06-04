@@ -15,7 +15,9 @@ ref/
 ├── harness-engineering.md — Agent Harness Engineering 综述（ETCLOVG 七层框架）
 ├── harness-systems.md    — Agent Systems with Harness Engineering（联合优化理论）
 ├── chematic.md           — 纯 Rust 化学信息学库（已在项目中集成）
-└── wiki-app-notes.md     — 参考 Wiki 应用的提取管线设计笔记
+├── molecode.md           — 显式图分子表示 + VLM OCSR（MoleCode 论文）
+├── wiki-app-notes.md     — 参考 Wiki 应用的提取管线设计笔记
+└── MoleCode/             — MoleCode 代码仓库（本地克隆）
 ```
 
 ---
@@ -58,7 +60,15 @@ ref/
 - **优先级**: P0（已集成，API 验证中）
 - **详情**: [chematic.md](chematic.md)
 
-### 5. 参考 Wiki 应用 — 提取管线设计
+### 5. MoleCode — 显式图分子表示
+- **来源**: ref/MoleCode（本地仓库）+ 论文
+- **核心创新**: Subgraph–Node–Edge 语法，将分子表示为显式图而非线性字符串
+- **关键数据**: Markush 准确率 38.1% → 84.0%，总 token 成本降低 5 倍
+- **与 MBForge 关系**: 可作为 Agent 推理的分子表示层（双轨制：存储用 E-SMILES，推理用 MoleCode）
+- **优先级**: P1/P2（OCSR fallback P1，Markush 存储 P2，跨文档追踪 P3）
+- **详情**: [molecode.md](molecode.md)
+
+### 6. 参考 Wiki 应用 — 提取管线设计
 - **来源**: 用户提供的 Tauri v2 桌面 Wiki 应用
 - **核心设计**: 多格式文件提取 → LLM 两阶段处理 → 文件变更监听 → 向量索引
 - **与 MBForge 关系**: 文件缓存、提取队列、语义分块等模式已部分采纳

@@ -83,7 +83,16 @@ pub fn register(registry: &mut ToolRegistry, project_root: &str) {
 }
 
 // ===== Native implementations =====
-// 使用 knowledge_base.rs 中的共享 KB_CACHE，避免重复缓存
+// 使用 knowledge_base.rs 中的共享 KB_CACHE。
+//
+// 这里不能简单地 `tokio::runtime::Handle::current().block_on(...)`：
+//   1. 闭包被注册为 sync `Box<dyn Fn>`，由 executor 同步调用；
+//   2. 如果直接 `block_on`，Tauri 的 tokio runtime 上会 panic /
+//      deadlock（"Cannot drop a runtime in a context where blocking is
+//      not allowed"）。
+// 解决：让 native 闭包自己 spawn 一个任务来 await 异步函数；调用方
+// `executor.execute` 必须包成 async（见 [Track C-C11] 修复）。
+// 这里先转成 sync-with-handle 的形式，配合 executor 层的 spawn_blocking。
 
 fn native_search_knowledge_base(
     root: &str,
@@ -100,10 +109,8 @@ fn native_get_document_structure(
     doc_id: &str,
 ) -> Result<Option<Vec<crate::parsers::sections::TreeNode>>, String> {
     let rt = tokio::runtime::Handle::current();
-    let guard = rt.block_on(crate::core::knowledge_base::get_or_init_kb(root))?;
-    let kb = guard
-        .get(root)
-        .ok_or_else(|| format!("KnowledgeBase not initialized for project: {}", root))?;
+    // 新 API 直接返回 Arc，无需二次 get。
+    let kb = rt.block_on(crate::core::knowledge_base::get_or_init_kb(root))?;
     Ok(kb.get_structure(doc_id))
 }
 
@@ -113,9 +120,6 @@ fn native_get_document_pages(
     pages: &str,
 ) -> Result<Vec<crate::core::knowledge_base::PageContent>, String> {
     let rt = tokio::runtime::Handle::current();
-    let guard = rt.block_on(crate::core::knowledge_base::get_or_init_kb(root))?;
-    let kb = guard
-        .get(root)
-        .ok_or_else(|| format!("KnowledgeBase not initialized for project: {}", root))?;
+    let kb = rt.block_on(crate::core::knowledge_base::get_or_init_kb(root))?;
     Ok(kb.get_pages(doc_id, pages))
 }

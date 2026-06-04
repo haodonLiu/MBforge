@@ -214,7 +214,8 @@ fn native_read_document_detail(root: &str, doc_id: &str, max_chars: usize) -> St
                 Some(s) => {
                     let content = format!("{}\n\n{}", s.l0_abstract, s.l1_overview);
                     if content.len() > max_chars {
-                        format!("[{}] 内容:\n{}...\n[已截断]", doc_id, &content[..max_chars])
+                        let cut = super::super::helpers::safe_truncate(&content, max_chars);
+                        format!("[{}] 内容:\n{}...\n[已截断]", doc_id, cut)
                     } else {
                         format!("[{}] 内容:\n{}", doc_id, content)
                     }
@@ -230,10 +231,11 @@ fn native_read_document_detail(root: &str, doc_id: &str, max_chars: usize) -> St
             .collect::<Vec<_>>()
             .join("\n\n");
         if full_text.len() > max_chars {
+            let cut = super::super::helpers::safe_truncate(&full_text, max_chars);
             format!(
                 "[{}] 完整内容:\n{}...\n[已截断]",
                 doc_id,
-                &full_text[..max_chars]
+                cut
             )
         } else {
             format!("[{}] 完整内容:\n{}", doc_id, full_text)
@@ -313,7 +315,7 @@ fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: usiz
                 .and_then(|v| v.as_str())
                 .unwrap_or("?");
             let text = if r.text.len() > 120 {
-                &r.text[..120]
+                super::super::helpers::safe_truncate(&r.text, 120)
             } else {
                 &r.text
             };
@@ -328,9 +330,9 @@ fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: usiz
     )];
     for s in matched.iter().take(top_k) {
         let abstract_text = if s.l0_abstract.len() > 120 {
-            &s.l0_abstract[..120]
+            super::super::helpers::safe_truncate(&s.l0_abstract, 120)
         } else {
-            &s.l0_abstract
+            s.l0_abstract.as_str()
         };
         lines.push(format!("- {}: {}...", s.doc_id, abstract_text));
         if !s.entity_tags.is_empty() {

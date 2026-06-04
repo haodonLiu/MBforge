@@ -537,6 +537,7 @@ ExtractionResult ← association.rs (图像分子)                  │
 | 1 | 2026-06-01 | AI | AGENTS.md §项目结构 | 移除不存在的 `pdf_parser.py`；标注 `csar/` 为占位模块；更正 AGENTS.md 模块统计（core 26→31, commands 6→10, routes 15→16） | ✅ 已确认 |
 | 2 | 2026-06-01 | AI | AGENTS.md, CLAUDE.md, CODEMAP.md | 同步三文件至当前代码库：CLAUDE.md 模块计数更新（commands 11/core 32/parsers 19/routers 16）、待审核移入 CODEMAP；AGENTS.md 项目结构移除不存在的 agent/ 目录、补充 frontend/ 文件清单、修正 typo；CODEMAP.md 表头补齐"状态"列 | ⚠️ 待审核 |
 | 3 | 2026-06-01 | AI | CODEMAP.md §2.1, §3.1, §7.2 | 修复内部矛盾：① §2.1 管线图 Stage 5（pending.rs 虚设）重编为 Stage 5 LLM 处理 + Stage 6 分子库持久化；② §3.1 semantic_cache/stream_search 状态从 ⚠️ 更新为 ✅ 并注明接入方式；③ §7.2 #1 semantic_cache 状态同步更新。pending.rs 确认为死代码（仅 mod.rs 声明，无调用方） | ⚠️ 待审核 |
+| 4 | 2026-06-04 | Claude | `ref/harness-engineering.md` | 新增参考文档：Agent Harness Engineering 论文笔记，含 ETCLOVG 七层分类法定义、MBForge 架构逐层映射、四项差距分析（Observability/Verification/Governance/Lifecycle）及优先级路线图 | ⚠️ 待审核 |
 
 ---
 

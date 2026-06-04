@@ -258,37 +258,36 @@ pub async fn process_document(
         let mut cache_hit = false;
 
         if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
-            if let Ok(guard) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()).await {
-                if let Some(kb) = guard.get(root.to_string_lossy().as_ref()) {
-                    match kb.file_cache().get(file_path) {
-                        Ok(Some(cached)) => {
-                            log::info!("File cache HIT for: {}", path);
-                            // 从缓存恢复上下文
-                            ctx.raw_text = cached.text;
-                            ctx.parser_used = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
-                                .ok()
-                                .and_then(|m| m.get("parser").and_then(|p| p.as_str()).map(String::from))
-                                .unwrap_or_else(|| "cached".into());
-                            ctx.page_count = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
-                                .ok()
-                                .and_then(|m| m.get("page_count").and_then(|p| p.as_u64()))
-                                .unwrap_or(0) as usize;
-                            ctx.images = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
-                                .ok()
-                                .and_then(|m| m.get("images").cloned())
-                                .and_then(|v| serde_json::from_value(v).ok())
-                                .unwrap_or_default();
-                            ctx.headings = crate::parsers::headings::extract_headings(&ctx.raw_text);
-                            ctx.sections = serde_json::from_str(&cached.sections_json)
-                                .unwrap_or_default();
-                            cache_hit = true;
-                        }
-                        Ok(None) => {
-                            log::debug!("File cache MISS for: {}", path);
-                        }
-                        Err(e) => {
-                            log::warn!("File cache error: {}", e);
-                        }
+            // 新 API: get_or_init_kb 直接返回 `Arc<KnowledgeBase>`，不再走 `guard.get(...)`。
+            if let Ok(kb) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()).await {
+                match kb.file_cache().get(file_path) {
+                    Ok(Some(cached)) => {
+                        log::info!("File cache HIT for: {}", path);
+                        // 从缓存恢复上下文
+                        ctx.raw_text = cached.text;
+                        ctx.parser_used = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
+                            .ok()
+                            .and_then(|m| m.get("parser").and_then(|p| p.as_str()).map(String::from))
+                            .unwrap_or_else(|| "cached".into());
+                        ctx.page_count = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
+                            .ok()
+                            .and_then(|m| m.get("page_count").and_then(|p| p.as_u64()))
+                            .unwrap_or(0) as usize;
+                        ctx.images = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
+                            .ok()
+                            .and_then(|m| m.get("images").cloned())
+                            .and_then(|v| serde_json::from_value(v).ok())
+                            .unwrap_or_default();
+                        ctx.headings = crate::parsers::headings::extract_headings(&ctx.raw_text);
+                        ctx.sections = serde_json::from_str(&cached.sections_json)
+                            .unwrap_or_default();
+                        cache_hit = true;
+                    }
+                    Ok(None) => {
+                        log::debug!("File cache MISS for: {}", path);
+                    }
+                    Err(e) => {
+                        log::warn!("File cache error: {}", e);
                     }
                 }
             }
@@ -308,23 +307,21 @@ pub async fn process_document(
 
             // 写入文件缓存
             if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
-                if let Ok(guard) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()).await {
-                    if let Some(kb) = guard.get(root.to_string_lossy().as_ref()) {
-                        let sections_json = serde_json::to_string(&ctx.sections).unwrap_or_default();
-                        let meta_json = serde_json::to_string(&serde_json::json!({
-                            "parser": ctx.parser_used,
-                            "page_count": ctx.page_count,
-                            "images": ctx.images,
-                        }))
-                        .unwrap_or_default();
-                        if let Err(e) = kb.file_cache().put(file_path, &ctx.raw_text, &sections_json, &meta_json) {
-                            log::warn!("File cache write failed: {}", e);
-                        }
+                // 新 API: 直接拿到 Arc<KnowledgeBase>，无需二次 get。
+                if let Ok(kb) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()).await {
+                    let sections_json = serde_json::to_string(&ctx.sections).unwrap_or_default();
+                    let meta_json = serde_json::to_string(&serde_json::json!({
+                        "parser": ctx.parser_used,
+                        "page_count": ctx.page_count,
+                        "images": ctx.images,
+                    }))
+                    .unwrap_or_default();
+                    if let Err(e) = kb.file_cache().put(file_path, &ctx.raw_text, &sections_json, &meta_json) {
+                        log::warn!("File cache write failed: {}", e);
                     }
                 }
             }
         }
-
         processing_log.stages.push(StageLog {
             stage: 0,
             name: "文件分类与提取".into(),

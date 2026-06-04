@@ -45,6 +45,27 @@ pub fn truncate_text(text: &str, max_len: usize) -> String {
     }
 }
 
+/// Truncate text to at most `max_bytes` bytes, never splitting a UTF-8 character.
+///
+/// Returns the longest valid `&str` prefix whose byte length is `<= max_bytes`.
+/// Use this anywhere `&text[..N]` would otherwise panic on a multi-byte boundary
+/// (CJK, emoji, combining marks). When `text.len() <= max_bytes` the slice is
+/// returned unchanged — no allocation.
+///
+/// Backed by the stable [`str::floor_char_boundary`] method, so it is safe for
+/// Backed by manual `is_char_boundary` walk — `str::floor_char_boundary` is
+/// still nightly-only as of rustc 1.81, so we use the stable alternative.
+pub fn safe_truncate(text: &str, max_bytes: usize) -> &str {
+    if text.len() <= max_bytes {
+        return text;
+    }
+    let mut i = max_bytes;
+    while i > 0 && !text.is_char_boundary(i) {
+        i -= 1;
+    }
+    &text[..i]
+}
+
 /// Safe filename: replace illegal characters with underscore.
 pub fn safe_filename(name: &str) -> String {
     name.chars()
@@ -198,14 +219,31 @@ mod tests {
     }
 
     #[test]
-    fn test_safe_filename() {
-        assert_eq!(safe_filename("a/b:c*d?e"), "a_b_c_d_e");
-    }
+    fn test_safe_truncate() {
+        // ASCII short input: returned unchanged
+        assert_eq!(safe_truncate("hi", 10), "hi");
 
-    #[test]
-    fn test_estimate_tokens() {
-        let tokens = estimate_tokens("Hello 你好");
-        assert!(tokens > 0);
+        // ASCII truncation: simple cut
+        assert_eq!(safe_truncate("hello world", 5), "hello");
+
+        // CJK: 药 takes 3 bytes (E8 8D AF). Floor must not panic on 500.
+        let s = "药".repeat(200); // 600 bytes
+        let cut = safe_truncate(&s, 500);
+        // Must end on a complete character and be <= 500 bytes
+        assert!(cut.len() <= 500);
+        // Result must be a valid string prefix
+        assert!(s.starts_with(cut));
+        // The next byte after cut is the start of a new char (or end of string)
+        if cut.len() < s.len() {
+            assert!(s.is_char_boundary(cut.len()));
+        }
+
+        // Emoji: 🚀 takes 4 bytes (F0 9F 9A 80). Floor must respect 4-byte width.
+        let s = "🚀".repeat(150); // 600 bytes
+        let cut = safe_truncate(&s, 500);
+        assert!(cut.len() <= 500);
+        // 500 / 4 = 125 complete emoji (no partial 4-byte sequences)
+        assert_eq!(cut.len() % 4, 0);
     }
 
     #[test]
@@ -274,5 +312,16 @@ mod tests {
         let joined = safe_join(root, "docs");
         assert!(joined.is_ok(), "Expected Ok but got: {:?}", joined);
         assert!(joined.unwrap().to_string_lossy().contains("docs"));
+    }
+
+    #[test]
+    fn test_safe_filename() {
+        assert_eq!(safe_filename("a/b:c*d?e"), "a_b_c_d_e");
+    }
+
+    #[test]
+    fn test_estimate_tokens() {
+        let tokens = estimate_tokens("Hello 你好");
+        assert!(tokens > 0);
     }
 }

@@ -97,7 +97,9 @@ fn test_full_pipeline_with_real_patent() {
     println!("  Activity records: {}", activities.len());
 
     println!("\n========== Stage 6: Assemble PdfParseResult ==========");
-    let parse_result = mbforge::parsers::pipeline::PdfParseResult {
+    println!("\n========== Stage 6: Assemble PdfParseResult ==========");
+    // [Track D-D15] `PdfParseResult` 已迁移到 `parsers::doc_types` 公开导出。
+    let parse_result = mbforge::parsers::doc_types::PdfParseResult {
         content: content.clone(),
         classification: doc_classification,
         chunks: chunk_result.chunks,
@@ -109,7 +111,7 @@ fn test_full_pipeline_with_real_patent() {
         headings: vec![],
         sections: vec![],
         page_texts: vec![],
-    };
+     };
     let parse_json = serde_json::to_string_pretty(&parse_result).unwrap();
     write_file("06_parse_result.json", &parse_json);
     println!("  assembled PdfParseResult ({} chars)", parse_json.len());

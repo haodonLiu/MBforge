@@ -102,9 +102,9 @@ impl SkillsManager {
         }
         let mut lines = Vec::new();
         for s in &skills {
-            // 取前 200 字符作为摘要
+            // 截断到 200 字节，使用 safe_truncate 避免在 CJK / emoji 字符中间切
             let preview = if s.content.len() > 200 {
-                format!("{}...", &s.content[..200])
+                format!("{}...", super::super::helpers::safe_truncate(&s.content, 200))
             } else {
                 s.content.clone()
             };

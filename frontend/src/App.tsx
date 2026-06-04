@@ -18,6 +18,7 @@ import { isTauriAvailable } from './api/tauri-bridge'
 import { showToast } from './hooks/useToast'
 import { useIsMobile, useIsTablet } from './styles/responsive'
 import { registerGlobalErrorHandlers } from './api/tauri/_utils'
+import { useSidecarEvents } from './hooks/useSidecarEvents'
 
 // Route-level code splitting — each page becomes its own chunk.
 // Heavy bundles (Chat, MoleculeLibrary, ProjectView, SARAnalysis) only
@@ -70,6 +71,8 @@ function AppInner() {
   const isMobile = useIsMobile()
   const isTablet = useIsTablet()
   const { t } = useTranslation()
+
+  useSidecarEvents()
 
   useEffect(() => {
     const cleanup = registerGlobalErrorHandlers()

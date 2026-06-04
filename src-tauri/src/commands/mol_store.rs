@@ -160,12 +160,12 @@ pub async fn mol_store_stats(
 pub async fn mol_store_search_by_smiles(
     state: tauri::State<'_, MoleculeEngineState>,
     project_root: String,
-    esmiles: String,
+    smiles: String,
 ) -> Result<Option<MoleculeRecord>, String> {
     get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
     let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
-    engine.search_by_esmiles(&esmiles).map_err(|e| e.to_string())
+    engine.search_by_smiles(&smiles).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

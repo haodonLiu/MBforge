@@ -342,14 +342,14 @@ impl MoleculeDatabase {
     }
 
     fn init_schema(&self) -> Result<(), String> {
-        // Create the molecules table if it doesn't exist (also created by
-        // MoleculeRelationDb, but we may be used standalone).
+        // Phase 0: Create base table (backward-compat for new databases)
         self.conn
             .execute_batch(
                 "
             CREATE TABLE IF NOT EXISTS molecules (
                 mol_id TEXT PRIMARY KEY,
-                esmiles TEXT NOT NULL,
+                smiles TEXT NOT NULL,
+                esmiles TEXT,
                 name TEXT,
                 source_doc TEXT,
                 activity REAL,
@@ -358,11 +358,13 @@ impl MoleculeDatabase {
                 source_type TEXT DEFAULT 'text',
                 status TEXT DEFAULT 'confirmed',
                 properties TEXT,
-                tags TEXT,
+                labels TEXT,
+                semantic_tags TEXT,
                 notes TEXT,
+                fingerprint BLOB,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-            CREATE INDEX IF NOT EXISTS idx_mol_esmiles ON molecules(esmiles);
+            CREATE INDEX IF NOT EXISTS idx_mol_smiles ON molecules(smiles);
             CREATE INDEX IF NOT EXISTS idx_mol_source ON molecules(source_doc);
             CREATE INDEX IF NOT EXISTS idx_mol_status ON molecules(status);
             CREATE INDEX IF NOT EXISTS idx_mol_source_type ON molecules(source_type);
@@ -371,12 +373,15 @@ impl MoleculeDatabase {
             )
             .map_err(|e| format!("Failed to create schema: {}", e))?;
 
-        // Create FTS5 virtual table for text search
+        // Phase 1: Migrate old schema (esmiles-only → smiles + esmiles)
+        self.migrate_v0_to_v1()?;
+
+        // Phase 2: Create FTS5 virtual table for text search (indexing smiles)
         self.conn
             .execute_batch(
                 "
             CREATE VIRTUAL TABLE IF NOT EXISTS mol_search USING fts5(
-                name, notes, esmiles,
+                name, notes, smiles,
                 content='molecules',
                 content_rowid='rowid'
             );
@@ -384,14 +389,76 @@ impl MoleculeDatabase {
             )
             .map_err(|e| format!("Failed to create FTS5 table: {}", e))?;
 
-        // Add fingerprint column (migration, idempotent)
+        Ok(())
+    }
+
+    /// Migrate legacy schema (v0: esmiles-only) to v1 (smiles + esmiles).
+    fn migrate_v0_to_v1(&self) -> Result<(), String> {
+        // Check if old 'esmiles' column exists without 'smiles'
+        let has_smiles: bool = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('molecules') WHERE name = 'smiles'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+            > 0;
+
+        if has_smiles {
+            return Ok(()); // Already migrated
+        }
+
+        log::info!("Migrating molecules table from v0 (esmiles-only) to v1 (smiles + esmiles)");
+
+        // Step 1: Add new columns
+        self.conn
+            .execute("ALTER TABLE molecules ADD COLUMN smiles TEXT", [])
+            .map_err(|e| format!("Failed to add smiles column: {}", e))?;
+        self.conn
+            .execute("ALTER TABLE molecules ADD COLUMN semantic_tags TEXT", [])
+            .ok(); // Optional, ignore if exists
+
+        // Step 2: Migrate esmiles → smiles (strip E-SMILES tags)
         self.conn
             .execute(
-                "ALTER TABLE molecules ADD COLUMN fingerprint BLOB",
+                "UPDATE molecules SET smiles = COALESCE(
+                    NULLIF(trim(replace(replace(replace(replace(esmiles,
+                        '<a>', ''), '</a>', ''),
+                        '<r>', ''), '</r>', ''),
+                        '<c>', ''), '</c>', ''),
+                        '<sep>', ''), ''),
+                    ''
+                ), esmiles) WHERE smiles IS NULL OR smiles = ''",
                 [],
             )
-            .ok(); // Ignore error if column already exists
+            .ok();
 
+        // Step 3: Ensure no NULL smiles (fallback: copy esmiles raw)
+        self.conn
+            .execute("UPDATE molecules SET smiles = esmiles WHERE smiles IS NULL OR smiles = ''", [])
+            .map_err(|e| format!("Failed to backfill smiles: {}", e))?;
+
+        // Step 4: Make esmiles nullable (keep original for reference)
+        // SQLite doesn't support ALTER COLUMN, but we just stop requiring it in INSERTs
+
+        // Step 5: Rename tags → labels if old column exists
+        let has_old_tags: bool = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('molecules') WHERE name = 'tags'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+            > 0;
+        if has_old_tags {
+            self.conn
+                .execute("ALTER TABLE molecules RENAME COLUMN tags TO labels", [])
+                .ok();
+        }
+
+        log::info!("Migration v0→v1 complete");
         Ok(())
     }
 
@@ -407,7 +474,12 @@ impl MoleculeDatabase {
 
         let properties_str =
             serde_json::to_string(&rec.properties).unwrap_or_else(|_| "{}".to_string());
-        let tags_str = serde_json::to_string(&rec.tags).unwrap_or_else(|_| "[]".to_string());
+        let labels_str = serde_json::to_string(&rec.labels).unwrap_or_else(|_| "[]".to_string());
+        let semantic_tags_str = rec
+            .semantic_tags
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()));
+        let esmiles_str = rec.esmiles.as_deref().unwrap_or("");
 
         // 删除旧 FTS 条目（INSERT OR REPLACE 会改变 rowid，导致旧 FTS 残留）
         let _ = self.conn.execute(
@@ -418,12 +490,13 @@ impl MoleculeDatabase {
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO molecules
-                 (mol_id, esmiles, name, source_doc, activity, activity_type,
-                  units, source_type, status, properties, tags, notes)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 (mol_id, smiles, esmiles, name, source_doc, activity, activity_type,
+                  units, source_type, status, properties, labels, semantic_tags, notes)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     rec.mol_id,
-                    rec.esmiles,
+                    rec.smiles,
+                    esmiles_str,
                     rec.name,
                     rec.source_doc,
                     rec.activity,
@@ -432,7 +505,8 @@ impl MoleculeDatabase {
                     rec.source_type,
                     rec.status,
                     properties_str,
-                    tags_str,
+                    labels_str,
+                    semantic_tags_str.as_deref(),
                     rec.notes,
                 ],
             )
@@ -440,9 +514,9 @@ impl MoleculeDatabase {
 
         // Sync FTS5 index
         let _ = self.conn.execute(
-            "INSERT INTO mol_search(rowid, name, notes, esmiles)
+            "INSERT INTO mol_search(rowid, name, notes, smiles)
              VALUES (last_insert_rowid(), ?1, ?2, ?3)",
-            params![rec.name, rec.notes, rec.esmiles],
+            params![rec.name, rec.notes, rec.smiles],
         );
 
         Ok(())
@@ -466,7 +540,12 @@ impl MoleculeDatabase {
 
             let properties_str =
                 serde_json::to_string(&rec.properties).unwrap_or_else(|_| "{}".to_string());
-            let tags_str = serde_json::to_string(&rec.tags).unwrap_or_else(|_| "[]".to_string());
+            let labels_str = serde_json::to_string(&rec.labels).unwrap_or_else(|_| "[]".to_string());
+            let semantic_tags_str = rec
+                .semantic_tags
+                .as_ref()
+                .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()));
+            let esmiles_str = rec.esmiles.as_deref().unwrap_or("");
 
             // Delete old FTS entries (INSERT OR REPLACE changes rowid)
             let _ = tx.execute(
@@ -476,12 +555,13 @@ impl MoleculeDatabase {
 
             tx.execute(
                 "INSERT OR REPLACE INTO molecules
-                 (mol_id, esmiles, name, source_doc, activity, activity_type,
-                  units, source_type, status, properties, tags, notes)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                 (mol_id, smiles, esmiles, name, source_doc, activity, activity_type,
+                  units, source_type, status, properties, labels, semantic_tags, notes)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     rec.mol_id,
-                    rec.esmiles,
+                    rec.smiles,
+                    esmiles_str,
                     rec.name,
                     rec.source_doc,
                     rec.activity,
@@ -490,7 +570,8 @@ impl MoleculeDatabase {
                     rec.source_type,
                     rec.status,
                     properties_str,
-                    tags_str,
+                    labels_str,
+                    semantic_tags_str.as_deref(),
                     rec.notes,
                 ],
             )
@@ -498,9 +579,9 @@ impl MoleculeDatabase {
 
             // Sync FTS5 index
             let _ = tx.execute(
-                "INSERT INTO mol_search(rowid, name, notes, esmiles)
+                "INSERT INTO mol_search(rowid, name, notes, smiles)
                  VALUES (last_insert_rowid(), ?1, ?2, ?3)",
-                params![rec.name, rec.notes, rec.esmiles],
+                params![rec.name, rec.notes, rec.smiles],
             );
         }
 
@@ -534,15 +615,15 @@ impl MoleculeDatabase {
         }
     }
 
-    /// Search molecule by exact esmiles match.
-    pub fn search_by_esmiles(&self, esmiles: &str) -> Result<Option<MoleculeRecord>, String> {
+    /// Search molecule by exact SMILES match.
+    pub fn search_by_smiles(&self, smiles: &str) -> Result<Option<MoleculeRecord>, String> {
         let mut stmt = self
             .conn
-            .prepare("SELECT * FROM molecules WHERE esmiles = ?")
+            .prepare("SELECT * FROM molecules WHERE smiles = ?")
             .map_err(|e| format!("Prepare failed: {}", e))?;
 
         let mut rows = stmt
-            .query(params![esmiles])
+            .query(params![smiles])
             .map_err(|e| format!("Query failed: {}", e))?;
 
         match rows
@@ -715,30 +796,38 @@ impl MoleculeDatabase {
 
     /// Update an existing molecule's editable fields.
     ///
-    /// Updates: esmiles, name, source_doc, activity, activity_type, units,
-    /// source_type, status, properties, tags, notes.
+    /// Updates: smiles, esmiles, name, source_doc, activity, activity_type, units,
+    /// source_type, status, properties, labels, semantic_tags, notes.
     /// `mol_id`, `created_at` 不可改 (作为稳定标识).
     /// Returns true if the molecule existed and was updated.
     pub fn update_molecule(&self, record: &MoleculeRecord) -> Result<bool, String> {
-        let tags_str = serde_json::to_string(&record.tags).unwrap_or_else(|_| "[]".to_string());
+        let labels_str = serde_json::to_string(&record.labels).unwrap_or_else(|_| "[]".to_string());
+        let semantic_tags_str = record
+            .semantic_tags
+            .as_ref()
+            .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()));
+        let esmiles_str = record.esmiles.as_deref().unwrap_or("");
         let affected = self
             .conn
             .execute(
                 "UPDATE molecules SET
-                    esmiles = ?1,
-                    name = ?2,
-                    source_doc = ?3,
-                    activity = ?4,
-                    activity_type = ?5,
-                    units = ?6,
-                    source_type = ?7,
-                    status = ?8,
-                    properties = ?9,
-                    tags = ?10,
-                    notes = ?11
-                 WHERE mol_id = ?12",
+                    smiles = ?1,
+                    esmiles = ?2,
+                    name = ?3,
+                    source_doc = ?4,
+                    activity = ?5,
+                    activity_type = ?6,
+                    units = ?7,
+                    source_type = ?8,
+                    status = ?9,
+                    properties = ?10,
+                    labels = ?11,
+                    semantic_tags = ?12,
+                    notes = ?13
+                 WHERE mol_id = ?14",
                 params![
-                    record.esmiles,
+                    record.smiles,
+                    esmiles_str,
                     record.name,
                     record.source_doc,
                     record.activity,
@@ -747,7 +836,8 @@ impl MoleculeDatabase {
                     record.source_type,
                     record.status,
                     serde_json::to_string(&record.properties).unwrap_or_else(|_| "{}".to_string()),
-                    tags_str,
+                    labels_str,
+                    semantic_tags_str.as_deref(),
                     record.notes,
                     record.mol_id,
                 ],
@@ -764,8 +854,8 @@ impl MoleculeDatabase {
             params![record.mol_id],
         );
         let _ = self.conn.execute(
-            "INSERT INTO mol_search(rowid, name, notes, esmiles)
-             SELECT rowid, name, notes, esmiles FROM molecules WHERE mol_id = ?1",
+            "INSERT INTO mol_search(rowid, name, notes, smiles)
+             SELECT rowid, name, notes, smiles FROM molecules WHERE mol_id = ?1",
             params![record.mol_id],
         );
 
@@ -788,16 +878,22 @@ impl MoleculeDatabase {
         let mut updated = 0;
         let mut failed: Vec<String> = Vec::new();
         for rec in records {
-            let tags_str = serde_json::to_string(&rec.tags).unwrap_or_else(|_| "[]".to_string());
+            let labels_str = serde_json::to_string(&rec.labels).unwrap_or_else(|_| "[]".to_string());
+            let semantic_tags_str = rec
+                .semantic_tags
+                .as_ref()
+                .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()));
+            let esmiles_str = rec.esmiles.as_deref().unwrap_or("");
             let affected = tx
                 .execute(
                     "UPDATE molecules SET
-                        esmiles = ?1, name = ?2, source_doc = ?3, activity = ?4,
-                        activity_type = ?5, units = ?6, source_type = ?7, status = ?8,
-                        properties = ?9, tags = ?10, notes = ?11
-                     WHERE mol_id = ?12",
+                        smiles = ?1, esmiles = ?2, name = ?3, source_doc = ?4, activity = ?5,
+                        activity_type = ?6, units = ?7, source_type = ?8, status = ?9,
+                        properties = ?10, labels = ?11, semantic_tags = ?12, notes = ?13
+                     WHERE mol_id = ?14",
                     params![
-                        rec.esmiles,
+                        rec.smiles,
+                        esmiles_str,
                         rec.name,
                         rec.source_doc,
                         rec.activity,
@@ -806,7 +902,8 @@ impl MoleculeDatabase {
                         rec.source_type,
                         rec.status,
                         serde_json::to_string(&rec.properties).unwrap_or_else(|_| "{}".to_string()),
-                        tags_str,
+                        labels_str,
+                        semantic_tags_str.as_deref(),
                         rec.notes,
                         rec.mol_id,
                     ],
@@ -856,15 +953,15 @@ impl MoleculeDatabase {
     pub fn get_all_fingerprints(&self) -> Result<Vec<(String, String, Vec<u8>)>, String> {
         let mut stmt = self
             .conn
-            .prepare("SELECT mol_id, esmiles, fingerprint FROM molecules WHERE fingerprint IS NOT NULL")
+            .prepare("SELECT mol_id, smiles, fingerprint FROM molecules WHERE fingerprint IS NOT NULL")
             .map_err(|e| format!("Prepare failed: {}", e))?;
 
         let rows = stmt
             .query_map([], |row| {
                 let mol_id: String = row.get(0)?;
-                let esmiles: String = row.get(1)?;
+                let smiles: String = row.get(1)?;
                 let fp: Vec<u8> = row.get(2)?;
-                Ok((mol_id, esmiles, fp))
+                Ok((mol_id, smiles, fp))
             })
             .map_err(|e| format!("Query failed: {}", e))?;
 
@@ -876,10 +973,10 @@ impl MoleculeDatabase {
     }
 
     /// 获取所有分子的 SMILES 列表（用于子结构搜索候选集）
-    pub fn get_all_esmiles(&self) -> Result<Vec<(String, String)>, String> {
+    pub fn get_all_smiles(&self) -> Result<Vec<(String, String)>, String> {
         let mut stmt = self
             .conn
-            .prepare("SELECT mol_id, esmiles FROM molecules WHERE status != 'deleted'")
+            .prepare("SELECT mol_id, smiles FROM molecules WHERE status != 'deleted'")
             .map_err(|e| format!("Prepare failed: {}", e))?;
 
         let rows = stmt
@@ -901,8 +998,8 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn make_record(mol_id: &str, esmiles: &str) -> MoleculeRecord {
-        MoleculeRecord::new(mol_id, esmiles)
+    fn make_record(mol_id: &str, smiles: &str) -> MoleculeRecord {
+        MoleculeRecord::new(mol_id, smiles)
     }
 
     #[test]
@@ -915,7 +1012,7 @@ mod tests {
 
         let loaded = db.get_molecule("mol-1").unwrap().unwrap();
         assert_eq!(loaded.mol_id, "mol-1");
-        assert_eq!(loaded.esmiles, "CC(=O)Oc1ccccc1C(=O)O");
+        assert_eq!(loaded.smiles, "CC(=O)Oc1ccccc1C(=O)O");
 
         // Properties should be auto-computed
         let mw = loaded.properties["MW"].as_f64().unwrap();
@@ -930,14 +1027,14 @@ mod tests {
     }
 
     #[test]
-    fn test_search_by_esmiles() {
+    fn test_search_by_smiles() {
         let tmp = TempDir::new().unwrap();
         let db = MoleculeDatabase::open(tmp.path()).unwrap();
 
         db.add_molecule(&make_record("m1", "CCO")).unwrap();
         db.add_molecule(&make_record("m2", "CCCO")).unwrap();
 
-        let found = db.search_by_esmiles("CCO").unwrap().unwrap();
+        let found = db.search_by_smiles("CCO").unwrap().unwrap();
         assert_eq!(found.mol_id, "m1");
     }
 
@@ -1094,7 +1191,7 @@ mod tests {
         let all = db.list_all(100, 0, None, None).unwrap();
         assert_eq!(all.len(), 3);
 
-        let ethanol = db.search_by_esmiles("CCO").unwrap().unwrap();
+        let ethanol = db.search_by_smiles("CCO").unwrap().unwrap();
         assert_eq!(ethanol.name, "Ethanol");
 
         let from_search = db.search_text("Propanol").unwrap();

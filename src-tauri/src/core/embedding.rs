@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use reqwest::blocking::Client;
+use reqwest::header::{HeaderName, HeaderValue};
 
 /// Embedder trait — 实现类必须实现 `embed` 和 `embed_single`
 pub trait EmbedderTrait: Send + Sync {
@@ -18,7 +19,16 @@ pub trait EmbedderTrait: Send + Sync {
             .next()
             .ok_or_else(|| "Empty embedding result".to_string())
     }
-}
+    /// 带 trace context 的版本 — Sidecar 会注入 X-Trace-Id / X-Span-Id header。
+    /// 默认 fallback 到 `embed()`，本地 embedder 不消耗 trace。
+    fn embed_with_trace(
+        &self,
+        texts: Vec<String>,
+        _trace: Option<&super::observability::TraceContext>,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        self.embed(texts)
+    }
+ }
 
 /// Embedding 生成器（统一入口）
 pub struct Embedder {
@@ -45,6 +55,15 @@ impl Embedder {
 
     pub fn embed_single(&self, text: &str) -> Result<Vec<f32>, String> {
         self.inner.embed_single(text)
+    }
+
+    /// 带 trace context 调用 — 跨边界追踪关键路径。
+    pub fn embed_with_trace(
+        &self,
+        texts: Vec<String>,
+        trace: Option<&super::observability::TraceContext>,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        self.inner.embed_with_trace(texts, trace)
     }
 }
 
@@ -77,6 +96,14 @@ impl SidecarEmbedder {
 
 impl EmbedderTrait for SidecarEmbedder {
     fn embed(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
+        self.embed_with_trace(texts, None)
+    }
+
+    fn embed_with_trace(
+        &self,
+        texts: Vec<String>,
+        trace: Option<&super::observability::TraceContext>,
+    ) -> Result<Vec<Vec<f32>>, String> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
@@ -84,10 +111,25 @@ impl EmbedderTrait for SidecarEmbedder {
         let url = format!("{}/api/v1/embed", self.base_url);
         let body = serde_json::json!({ "texts": texts });
 
-        let resp = self
-            .client
-            .post(&url)
-            .json(&body)
+        // 构造 base request
+        let mut req = self.client.post(&url).json(&body);
+
+        // 注入 trace headers（如果提供）
+        if let Some(t) = trace {
+            for (k, v) in t.to_headers() {
+                let name = HeaderName::from_static(match k {
+                    "X-Trace-Id" => "x-trace-id",
+                    "X-Span-Id" => "x-span-id",
+                    // 其它 trace 相关 header 按需扩展
+                    _ => continue,
+                });
+                if let Ok(value) = HeaderValue::from_str(&v) {
+                    req = req.header(name, value);
+                }
+            }
+        }
+
+        let resp = req
             .send()
             .map_err(|e| format!("Embedding request failed: {}", e))?;
 

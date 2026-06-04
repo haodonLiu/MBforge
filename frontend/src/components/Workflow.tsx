@@ -67,7 +67,7 @@ export default function Environment() {
 
   const downloadModel = async (modelId: string) => {
     try {
-      const response = await fetch(`/api/v1/download/${modelId}`, { method: 'POST' })
+      const response = await fetch(`/api/v1/download/download/${modelId}`, { method: 'POST' })
       if (response.ok) {
         const checkStatus = setInterval(() => {
           fetchModels()

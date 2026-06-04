@@ -60,7 +60,7 @@ export interface ActivityData {
 }
 
 export async function extractSmilesCandidates(text: string): Promise<string[]> {
-  return invoke<string[]>('extract_smiles_candidates', { text })
+  return invoke<string[]>('extract_esmiles_candidates', { text })
 }
 
 export async function extractActivities(text: string): Promise<ActivityData[]> {

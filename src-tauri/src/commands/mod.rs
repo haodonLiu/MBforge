@@ -47,6 +47,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         agent::agent_switch_project,
         agent::agent_clear,
         agent::agent_destroy_session,
+        agent::audit_log_get,
         agent::agent_get_history,
         // parsers
         crate::parsers::pipeline::parse_pdf,
@@ -58,7 +59,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::core::knowledge_base::kb_search_stream,
         crate::core::knowledge_base::kb_get_structure,
         crate::core::knowledge_base::kb_get_pages,
-        // molecule
         molecule::mol_init,
         molecule::mol_add_relation,
         molecule::mol_delete_relation,

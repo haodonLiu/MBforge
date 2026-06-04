@@ -39,8 +39,6 @@ base64 = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }
 log = "0.4"
 lopdf = { git = "https://github.com/J-F-Liu/lopdf", rev = "7a05512d831415b1f2b1ce522391d6beab8a1284", version = "0.40.0" }
-lancedb = "0.30.0"
-arrow = "58.3.0"
 # 化学信息学（纯 Rust，替代 Python RDKit）
 chematic-core = { git = "https://github.com/kent-tokyo/chematic" }
 chematic-smiles = { git = "https://github.com/kent-tokyo/chematic" }

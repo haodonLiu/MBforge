@@ -247,11 +247,10 @@ fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: usiz
     let project_root = std::path::PathBuf::from(root);
 
     // 1. 用 KnowledgeBase 语义搜索获取候选文档
-    let rt = tokio::runtime::Handle::current();
     let config = crate::core::config::AppConfig::load();
-    let candidates = match rt.block_on(super::super::document::knowledge_base::KnowledgeBase::new(&project_root, Some(&config.embed)))
+    let candidates = match super::super::document::knowledge_base::KnowledgeBase::new(&project_root, Some(&config.embed))
     {
-        Ok(kb) => rt.block_on(kb.search_sync(keyword, top_k * 3)),
+        Ok(kb) => kb.search_sync(keyword, top_k * 3),
         Err(_) => vec![],
     };
 

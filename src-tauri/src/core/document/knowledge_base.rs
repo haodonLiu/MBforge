@@ -1,21 +1,21 @@
-//! 知识库 — LanceDB 统一存储（向量 + BM25 混合搜索）
+//! 知识库 — SQLite 统一存储（向量 + FTS5 + 文件缓存）
 //!
-//! 使用 LanceDB 作为唯一知识库存储：
-//! - 向量搜索：语义相似度（自然语言查询）
-//! - BM25 全文搜索：精确关键词匹配（化学名、SMILES）
-//! - 混合搜索：execute_hybrid 原生融合
-//!
-//! 文件缓存使用独立的 SQLite 数据库（简单的 KV 缓存不适合 LanceDB）。
+//! 纯 SQLite 实现，零额外依赖：
+//! - 向量搜索：BLOB 存储 + Rust 余弦计算（<20K chunks 时 <10ms）
+//! - FTS5 全文搜索：精确关键词匹配（化学名、SMILES）
+//! - 混合搜索：RRF 融合向量 + FTS5 结果
+//! - 文件缓存：SHA-256 + mtime 检查
+
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 
 use rusqlite::Connection;
 use tauri::Emitter;
 
 use crate::core::constants::EVT_KB_SEARCH_CHUNK;
 use crate::core::embedding::Embedder;
-use crate::core::lance_store::LanceVectorStore;
+use crate::core::sqlite_vector_store::{SqliteVectorStore, reciprocal_rank_fusion};
 
 use super::super::vector_store::SearchResult;
 use super::document_tree::DocumentTreeIndex;
@@ -36,17 +36,18 @@ pub struct KbStats {
     pub total_sections: usize,
 }
 
-/// 知识库：LanceDB（向量 + BM25）+ 文件缓存（SQLite）
+/// 知识库：SQLite（向量 + FTS5）+ 文件缓存
 pub struct KnowledgeBase {
-    lance_store: LanceVectorStore,
+    vector_store: SqliteVectorStore,
+    fts_conn: Mutex<Connection>,
     tree_index: Mutex<DocumentTreeIndex>,
     file_cache: FileCache,
     embedder: Option<Embedder>,
 }
 
 impl KnowledgeBase {
-    /// 初始化知识库（必须在 async 上下文中调用）
-    pub async fn new(
+    /// 初始化知识库
+    pub fn new(
         project_root: &Path,
         embed_config: Option<&crate::core::config::EmbedConfig>,
     ) -> Result<Self, String> {
@@ -54,25 +55,31 @@ impl KnowledgeBase {
         std::fs::create_dir_all(&kb_dir)
             .map_err(|e| format!("Failed to create KB dir: {}", e))?;
 
-        let lance_dir = kb_dir.join("lancedb");
+        let vectors_db_path = kb_dir.join("vectors.db");
         let cache_db_path = kb_dir.join("cache.db");
 
-        // 初始化 LanceDB（知识库存储）
-        let lance_store = LanceVectorStore::new(&lance_dir, 384).await?;
+        // 向量存储
+        let vector_store = SqliteVectorStore::open(&vectors_db_path, 384)?;
 
-        // 尝试创建 FTS 索引（幂等操作）
-        if let Err(e) = lance_store.create_fts_index().await {
-            log::warn!("FTS index creation skipped (may already exist): {}", e);
-        }
+        // FTS5 全文搜索（独立连接，避免锁冲突）
+        let fts_conn = Connection::open(&vectors_db_path)
+            .map_err(|e| format!("Failed to open FTS DB: {}", e))?;
+        fts_conn
+            .execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
+                    id, text, content='vectors', content_rowid='rowid'
+                )",
+            )
+            .map_err(|e| format!("Failed to create FTS5: {}", e))?;
 
-        // 初始化 SQLite 文件缓存
+        // 文件缓存
         let cache_conn = Connection::open(&cache_db_path)
             .map_err(|e| format!("Failed to open cache DB: {}", e))?;
         let file_cache = FileCache::new(cache_conn)?;
 
         let tree_index = DocumentTreeIndex::new(project_root);
 
-        // 初始化 Embedder
+        // Embedder
         let embedder = embed_config.and_then(|config| {
             if !config.api_key.is_empty() || config.provider == "qwen3" {
                 Some(Embedder::new(config))
@@ -82,19 +89,21 @@ impl KnowledgeBase {
         });
 
         Ok(Self {
-            lance_store,
+            vector_store,
+            fts_conn: Mutex::new(fts_conn),
             tree_index: Mutex::new(tree_index),
             file_cache,
             embedder,
         })
     }
 
-    /// 是否有向量搜索能力（需要 Embedder）
+    /// 是否有向量搜索能力
     pub fn has_vector_search(&self) -> bool {
         self.embedder.is_some()
     }
 
-    pub async fn index_document(
+    /// 索引文档
+    pub fn index_document(
         &self,
         doc_id: &str,
         sections: &[SectionChunk],
@@ -119,7 +128,7 @@ impl KnowledgeBase {
             })
             .collect();
 
-        // 计算 embeddings（如果有 Embedder）
+        // 计算 embeddings
         let vectors: Vec<Vec<f32>> = if let Some(embedder) = &self.embedder {
             match embedder.embed(texts.clone()) {
                 Ok(v) => v,
@@ -132,12 +141,28 @@ impl KnowledgeBase {
             vec![vec![0.0; 384]; sections.len()]
         };
 
-        // 写入 LanceDB
-        self.lance_store
-            .upsert_vectors(&chunk_ids, doc_id, &texts, &metadatas, &vectors)
-            .await?;
+        // 写入向量表
+        self.vector_store
+            .upsert_vectors(&chunk_ids, doc_id, &texts, &metadatas, &vectors)?;
 
-        // 更新文档树索引
+        // 同步 FTS5
+        {
+            let conn = self.fts_conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+            // 先删除旧条目
+            let _ = conn.execute(
+                "DELETE FROM sections_fts WHERE rowid IN (SELECT rowid FROM vectors WHERE doc_id = ?1)",
+                rusqlite::params![doc_id],
+            );
+            // 插入新条目
+            for (i, text) in texts.iter().enumerate() {
+                let _ = conn.execute(
+                    "INSERT INTO sections_fts (id, text) VALUES (?1, ?2)",
+                    rusqlite::params![chunk_ids[i], text],
+                );
+            }
+        }
+
+        // 更新文档树
         let tree = self
             .tree_index
             .lock()
@@ -147,29 +172,98 @@ impl KnowledgeBase {
         Ok(sections.len())
     }
 
-    /// 搜索：有 Embedder 时用混合搜索，否则纯 BM25
-    pub async fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
-        if let Some(embedder) = &self.embedder {
-            // 混合搜索：向量 + BM25
-            match embedder.embed_single(query) {
-                Ok(embedding) => {
-                    self.lance_store
-                        .search_hybrid(query, &embedding, top_k, None)
-                        .await
-                }
-                Err(e) => {
-                    log::warn!("Embedding failed, falling back to BM25: {}", e);
-                    self.lance_store.search_text(query, top_k, None).await
-                }
-            }
+    /// 搜索：有 Embedder 时用混合搜索，否则纯 FTS5
+    pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
+        if self.has_vector_search() {
+            self.hybrid_search(query, top_k)
         } else {
-            // 纯 BM25 文本搜索
-            self.lance_store.search_text(query, top_k, None).await
+            self.fts_search(query, top_k)
         }
     }
 
-    pub async fn search_sync(&self, query: &str, top_k: usize) -> Vec<SearchResult> {
-        match self.search(query, top_k).await {
+    /// FTS5 全文搜索
+    fn fts_search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
+        let clean_query = query
+            .replace('"', "")
+            .replace("'", "")
+            .replace('-', " ")
+            .split_whitespace()
+            .filter(|w| w.len() >= 2)
+            .collect::<Vec<_>>()
+            .join(" OR ");
+
+        if clean_query.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.fts_conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT v.chunk_id, v.text, v.metadata, rank
+                 FROM sections_fts f
+                 JOIN vectors v ON f.id = v.chunk_id
+                 WHERE sections_fts MATCH ?1
+                 ORDER BY rank
+                 LIMIT ?2",
+            )
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+
+        let rows = stmt
+            .query_map(rusqlite::params![clean_query, top_k as i64], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, f64>(3).unwrap_or(0.0),
+                ))
+            })
+            .map_err(|e| format!("Query failed: {}", e))?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let (id, text, meta_str, rank) = row.map_err(|e| format!("Row error: {}", e))?;
+            let metadata: serde_json::Value =
+                serde_json::from_str(&meta_str).unwrap_or(serde_json::json!({}));
+            let score: f32 = if rank < 0.0 {
+                1.0 / (1.0 + rank.abs() as f32)
+            } else {
+                0.5
+            };
+            results.push(SearchResult {
+                id,
+                text,
+                metadata,
+                score,
+            });
+        }
+
+        Ok(results)
+    }
+
+    /// 混合搜索：FTS5 + 向量 + RRF 融合
+    fn hybrid_search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
+        let fts_results = self.fts_search(query, top_k * 3)?;
+
+        let vec_results = if let Some(embedder) = &self.embedder {
+            match embedder.embed_single(query) {
+                Ok(embedding) => self
+                    .vector_store
+                    .search_vector(&embedding, top_k * 3, None)
+                    .unwrap_or_default(),
+                Err(e) => {
+                    log::warn!("Embedding failed, FTS5-only: {}", e);
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+        Ok(reciprocal_rank_fusion(fts_results, vec_results, top_k))
+    }
+
+    pub fn search_sync(&self, query: &str, top_k: usize) -> Vec<SearchResult> {
+        match self.search(query, top_k) {
             Ok(results) => results,
             Err(e) => {
                 log::warn!("KnowledgeBase search_sync failed: {}", e);
@@ -191,8 +285,8 @@ impl KnowledgeBase {
             .unwrap_or_default()
     }
 
-    pub async fn remove_document(&self, doc_id: &str) -> Result<(), String> {
-        self.lance_store.delete_doc(doc_id).await?;
+    pub fn remove_document(&self, doc_id: &str) -> Result<(), String> {
+        self.vector_store.delete_doc(doc_id)?;
 
         let tree = self
             .tree_index
@@ -201,8 +295,8 @@ impl KnowledgeBase {
         tree.remove_document(doc_id)
     }
 
-    pub async fn stats(&self) -> KbStats {
-        let total_sections = self.lance_store.count().await.unwrap_or(0);
+    pub fn stats(&self) -> KbStats {
+        let total_sections = self.vector_store.count().unwrap_or(0);
         let (document_count, section_count) = self
             .tree_index
             .lock()
@@ -221,71 +315,46 @@ impl KnowledgeBase {
         }
     }
 
-    /// 获取文件缓存引用
     pub fn file_cache(&self) -> &FileCache {
         &self.file_cache
     }
 }
 
 // ============================================================================
-// 全局缓存：KB 实例 + SemanticCache
+// 全局缓存
 // ============================================================================
 
-/// KB 实例缓存（按 project_root 键）。
-///
-/// 之前是 `OnceLock<tokio::Mutex<HashMap>>` 加 double-checked-locking：
-/// 两个并发调用都可能看到 `contains_key=false` 然后各自构造 `KnowledgeBase`
-/// （含 SQLite + LanceDB 连接），后插入者覆盖前者，前者持有的连接
-/// 在 Drop 时还要尝试关闭一份已不归它管的文件锁。
-///
-/// 修复：保持 `tokio::sync::Mutex` 以便跨 `await` 持有锁，但**不释放锁**
-/// 就在 `await KnowledgeBase::new`，保证同一时间只有一个线程能执行
-/// 构造路径。
-pub static KB_CACHE: OnceLock<tokio::sync::Mutex<HashMap<String, Arc<KnowledgeBase>>>> =
-    OnceLock::new();
-
-/// SemanticCache 实例缓存（按 project_root 键）
+pub static KB_CACHE: OnceLock<Mutex<HashMap<String, KnowledgeBase>>> = OnceLock::new();
 static SEMANTIC_CACHE: OnceLock<Mutex<HashMap<String, SemanticCache>>> = OnceLock::new();
 
-/// 获取或初始化带 Embedder 的 KB 实例。
-///
-/// 返回 `Arc<KnowledgeBase>` 而非 `MutexGuard`，调用方不再需要先 `get(root)`
-/// 再 `ok_or_else` 校验（那个分支在 race 之前是死代码、race 时是 bug）。
-///
-/// 并发安全：把 lock 一直持到 `KnowledgeBase::new` 完成。读多写少场景下
-/// `HashMap` 的 read 不需要锁，但 KB 构造是异步的，必须避免在锁外 await。
-pub async fn get_or_init_kb(root: &str) -> Result<Arc<KnowledgeBase>, String> {
-    let cache = KB_CACHE.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()));
-    let mut guard = cache.lock().await;
-
-    if let Some(kb) = guard.get(root) {
-        return Ok(kb.clone());
+/// 获取或初始化 KB 实例
+pub fn get_or_init_kb(
+    root: &str,
+) -> Result<std::sync::MutexGuard<'static, HashMap<String, KnowledgeBase>>, String> {
+    let cache = KB_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let guard = cache
+        .lock()
+        .map_err(|e| format!("KB cache lock error: {}", e))?;
+    if guard.contains_key(root) {
+        return Ok(guard);
     }
+    drop(guard);
 
-    // Hold the lock across the await — this is the critical part.
-    // `tokio::sync::Mutex` is specifically designed for this.
     let config = crate::core::config::AppConfig::load();
-    let kb = KnowledgeBase::new(std::path::Path::new(root), Some(&config.embed))
-        .await
-        .map_err(|e| format!("KnowledgeBase init failed: {}", e))?;
-    let arc = Arc::new(kb);
-    guard.insert(root.to_string(), arc.clone());
-    Ok(arc)
+    let kb = KnowledgeBase::new(std::path::Path::new(root), Some(&config.embed))?;
+
+    let mut guard = cache
+        .lock()
+        .map_err(|e| format!("KB cache lock error: {}", e))?;
+    guard.insert(root.to_string(), kb);
+    Ok(guard)
 }
 
 fn get_or_init_semantic_cache(
     root: &str,
 ) -> std::sync::MutexGuard<'static, HashMap<String, SemanticCache>> {
     let cache = SEMANTIC_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    // 之前用 `unwrap_or_else(|e| e.into_inner())` 静默吞 poison，
-    // 这会掩盖持锁线程 panic 后的不一致状态。改为显式 ? 传播错误。
-    let mut guard = match cache.lock() {
-        Ok(g) => g,
-        Err(poisoned) => {
-            log::error!("Semantic cache mutex poisoned: {}", poisoned);
-            poisoned.into_inner()
-        }
-    };
+    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
     if !guard.contains_key(root) {
         let sc = SemanticCache::new(
             std::path::Path::new(root),
@@ -296,8 +365,8 @@ fn get_or_init_semantic_cache(
     guard
 }
 
-/// 搜索核心逻辑：semantic_cache (L1) → LanceDB hybrid → cache store → stream_search
-pub async fn search_with_cache(
+/// 搜索核心逻辑
+pub fn search_with_cache(
     root: &str,
     query: &str,
     top_k: usize,
@@ -312,15 +381,15 @@ pub async fn search_with_cache(
         }
     }
 
-    // 2. LanceDB 混合搜索
-    // 返回 `Arc<KnowledgeBase>` —— 之前用 `get_or_init_kb` 拿到 MutexGuard 再
-    // `get(root).ok_or_else` 校验是 [Track B-B8] 标记的死代码；现在
-    // `get_or_init_kb` 已经返回 Arc，免去二次查找。
-    let kb = get_or_init_kb(root).await?;
+    // 2. 搜索
+    let guard = get_or_init_kb(root)?;
+    let kb = guard
+        .get(root)
+        .ok_or_else(|| format!("Knowledge base not initialized for root: {}", root))?;
     let results = kb
         .search(query, top_k)
-        .await
         .map_err(|e| format!("Search failed: {}", e))?;
+
     let json_results: Vec<serde_json::Value> = results
         .into_iter()
         .map(|r| {
@@ -349,22 +418,20 @@ pub async fn search_with_cache(
 }
 
 // ============================================================================
-// Tauri 命令层
+// Tauri 命令
 // ============================================================================
 
-/// 搜索（返回完整结果）
 #[tauri::command]
-pub async fn kb_search(
+pub fn kb_search(
     root: String,
     query: String,
     top_k: Option<usize>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let top_k = top_k.unwrap_or(5);
-    let (results, _) = search_with_cache(&root, &query, top_k).await?;
+    let (results, _) = search_with_cache(&root, &query, top_k)?;
     Ok(results)
 }
 
-/// 流式搜索（通过 Tauri 事件分批推送结果）
 #[tauri::command]
 pub async fn kb_search_stream(
     app: tauri::AppHandle,
@@ -373,7 +440,7 @@ pub async fn kb_search_stream(
     top_k: Option<usize>,
 ) -> Result<(), String> {
     let top_k = top_k.unwrap_or(5);
-    let (_results, chunks) = search_with_cache(&root, &query, top_k).await?;
+    let (_results, chunks) = search_with_cache(&root, &query, top_k)?;
 
     for chunk in chunks {
         let _ = app.emit(
@@ -391,20 +458,20 @@ pub async fn kb_search_stream(
 }
 
 #[tauri::command]
-pub async fn kb_get_structure(root: String, doc_id: String) -> Result<Option<Vec<TreeNode>>, String> {
-    // `get_or_init_kb` 现在直接返回 `Arc<KnowledgeBase>`，不再需要二次 `get`
-    // 加 `ok_or_else`（那是 [Track B-B8] 标记的死代码）。
-    let kb = get_or_init_kb(&root).await?;
+pub fn kb_get_structure(root: String, doc_id: String) -> Result<Option<Vec<TreeNode>>, String> {
+    let guard = get_or_init_kb(&root)?;
+    let kb = guard
+        .get(&root)
+        .ok_or_else(|| format!("Knowledge base not found for root: {}", root))?;
     Ok(kb.get_structure(&doc_id))
 }
 
 #[tauri::command]
-pub async fn kb_get_pages(root: String, doc_id: String, pages: String) -> Vec<PageContent> {
-    match get_or_init_kb(&root).await {
-        Ok(kb) => kb.get_pages(&doc_id, &pages),
-        Err(e) => {
-            log::warn!("kb_get_pages: get_or_init_kb failed: {}", e);
-            Vec::new()
-        }
+pub fn kb_get_pages(root: String, doc_id: String, pages: String) -> Vec<PageContent> {
+    if let Ok(guard) = get_or_init_kb(&root) {
+        let kb = guard.get(&root).expect("KB just initialized for root");
+        kb.get_pages(&doc_id, &pages)
+    } else {
+        Vec::new()
     }
 }

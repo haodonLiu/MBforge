@@ -339,7 +339,7 @@ pub async fn mol_search_substructure(
     let threshold = tanimoto_threshold.unwrap_or(0.3);
 
     // 1. 加载所有分子的指纹
-    let all_mols = db.get_all_esmiles().map_err(|e| format!("get_all_esmiles: {}", e))?;
+    let all_mols = db.get_all_smiles().map_err(|e| format!("get_all_smiles: {}", e))?;
     if all_mols.is_empty() {
         return Ok(vec![]);
     }

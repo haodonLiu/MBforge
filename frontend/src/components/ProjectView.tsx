@@ -40,6 +40,22 @@ export default function ProjectView() {
 
   useEffect(() => {
     loadDocs()
+
+    // Listen for per-document parse completion and refresh the list
+    let unlistenResult: (() => void) | null = null
+    const setup = async () => {
+      unlistenResult = await listen<Record<string, unknown>>(EVT.DocResult, (event) => {
+        const report = event.payload
+        console.log('[doc-result] Parsed', report)
+        // Refresh document list so newly-parsed items appear
+        loadDocs()
+      })
+    }
+    setup().catch(console.error)
+
+    return () => {
+      unlistenResult?.()
+    }
   }, [])
 
   const handleScan = async () => {

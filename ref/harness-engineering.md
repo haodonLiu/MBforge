@@ -14,15 +14,32 @@
 
 ## 2. Core Thesis
 
+> "Task execution reliability depends less on the underlying model than on the infrastructure layer that wraps it." — 论文摘要
+
 LLM agent reliability in production depends more on the **infrastructure (harness)** wrapping the model than on the model itself. The base model provides capability; the harness determines whether that capability translates into dependable real-world behavior.
 
-Three-phase evolution of agent engineering practice:
+### 三个核心论点（论文原文）
 
-1. **Prompt engineering** — crafting better instructions for the LLM (2022-2023)
-2. **Context engineering** — managing what information reaches the model window (2023-2024)
-3. **Harness engineering** — building the full infrastructure stack around the agent (2024-present)
+1. **"The agent harness is an independent system layer whose engineering quality significantly impacts real-world reliability."** — Harness 是独立的系统层，不是模型的附属品。
+
+2. **ETCLOVG 分类法** — "extends prior six-component frameworks by treating observability and governance as independent architectural concerns." — 将可观测性和治理提升为独立架构关注点。
+
+3. **170+ 开源项目映射** — 揭示 "ecosystem patterns, coverage gaps, and emerging design principles"。从 OpenAI、Anthropic、LangChain 的生产部署中提炼工程原则。
+
+### 三阶段工程演进
+
+1. **Prompt engineering** — 为 LLM 编写更好的指令（2022-2023）
+2. **Context engineering** — 管理什么信息进入模型窗口（2023-2024）
+3. **Harness engineering** — 围绕 Agent 构建完整基础设施栈（2024-至今）
 
 The harness is the difference between a demo and a product. A weak harness makes even the strongest model unreliable; a strong harness makes a modest model useful.
+
+### 三个设计张力
+
+论文识别出三个贯穿 Agent 系统设计的根本张力：
+- **Cost–Quality–Speed 三难困境** — 更好的结果需要更多计算和更长延迟
+- **Capability–Control 权衡** — 更强大的 Agent 需要更多治理
+- **Harness 耦合问题** — 基础设施与模型过度耦合导致难以独立演进
 
 ## 3. ETCLOVG Seven-Layer Taxonomy
 

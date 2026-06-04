@@ -1,18 +1,43 @@
 # MoleCode — 显式图分子表示 + VLM OCSR
 
 > 来源: ref/MoleCode（本地仓库）
-> 论文: MoleCode — Subgraph–Node–Edge 语法表示分子结构
+> 论文: "MoleCode unlocks structural intelligence in large language models"
+> arXiv: 2605.16480 (2026-05-15)
+> 作者: Zhiyuan Yan, Chen Liu, Boxuan Zhao, Kaiqing Lin, Jixiang Zhao, Yimi Wang, Liuzhenghao Lv, Hao Li, Shanzhuo Zhang, Li Yuan, Fanyang Mo
+> 许可: CC0 1.0 (Public Domain)
 > 状态: 待评估集成
 
 ## 核心论文贡献
 
+> "Molecules are graphs, but large language models are usually asked to reason about them through linear strings." — 论文开篇
+
 MoleCode 不是新工具，而是**表示理论**：科学对象的 LLM 接口应将结构本身作为语言，而非从文本解码结构。
+
+### 论文定义
+
+> "MoleCode is an LLM-native, training-free, graph-explicit molecular language in which all molecular components are represented as typed entities with persistent identifiers and explicit relations."
+
+> "MoleCode makes molecular topology directly readable, editable and auditable within the language context, allowing an LLM to operate on structure rather than recover it from syntax."
 
 ### 关键发现
 
+> "This representational shift improves frontier LLMs most strongly when structural access is limiting: unfamiliar molecules, topology-sensitive operations, larger structures and repetitive polymers."
+
 > "It changes how inference is allocated, replacing long reasoning traces devoted to implicit structural reconstruction with shorter, more chemically directed reasoning over explicit atoms and bonds."
 
-表示格式的改变改变认知负荷分配——从"语法解析"转向"化学推理"。
+> "In molecular optimization, this enables localized, property-aligned edits that preserve structural similarity to the starting compounds."
+
+### 表示格式的本质差异
+
+SMILES 的问题（论文诊断）：
+> "SMILES compresses atoms, bonds, branches and rings into a compact sequence in which topology is implicit, forcing LLMs to reconstruct molecular structure before performing the requested chemical operation."
+
+MoleCode 的解决方案：
+> "When the object of reasoning is relational, the structure itself should be part of the language."
+
+### 广泛适用性
+
+> "The same Subgraph–Node–Edge grammar extends beyond small molecules to polymers, Markush structures, mechanism-style transformations and interleaved scientific documents, including research articles and patent disclosures in which chemical information is distributed across text and images."
 
 ### 实证数据
 

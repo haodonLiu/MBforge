@@ -21,6 +21,11 @@ router = APIRouter()
 
 @router.post("/chat")
 async def chat(request: Request) -> dict[str, Any]:
+    # 读取跨语言 trace 上下文（来自 Rust 端 observability 层）
+    trace_id = request.headers.get("X-Trace-Id")
+    span_id = request.headers.get("X-Span-Id")
+    if trace_id:
+        logger.info(f"[trace={trace_id} span={span_id}] LLM chat started")
     try:
         body = await request.json()
         messages = [Message(**m) for m in body.get("messages", [])]
@@ -32,15 +37,20 @@ async def chat(request: Request) -> dict[str, Any]:
             llm.chat, messages, temperature=temperature, max_tokens=max_tokens
         )
         set_model_status("llm", "ready")
+        if trace_id:
+            logger.info(f"[trace={trace_id} span={span_id}] LLM chat done")
         return {"content": result, "finish_reason": "stop"}
     except Exception as e:
         set_model_status("llm", "error")
-        logger.error(f"LLM chat failed: {e}", exc_info=True)
+        log_extra = f" trace={trace_id}" if trace_id else ""
+        logger.error(f"LLM chat failed{log_extra}: {e}", exc_info=True)
         raise ModelNotAvailableError(str(e))
-
-
 @router.post("/chat-stream")
 async def chat_stream(request: Request) -> StreamingResponse:
+    trace_id = request.headers.get("X-Trace-Id")
+    span_id = request.headers.get("X-Span-Id")
+    if trace_id:
+        logger.info(f"[trace={trace_id} span={span_id}] LLM stream started")
     async def event_generator():
         try:
             body = await request.json()
@@ -58,7 +68,8 @@ async def chat_stream(request: Request) -> StreamingResponse:
         except ClientDisconnect:
             logger.debug("Client disconnected during LLM stream")
         except Exception as e:
-            logger.error(f"LLM stream failed: {e}", exc_info=True)
+            log_extra = f" trace={trace_id}" if trace_id else ""
+            logger.error(f"LLM stream failed{log_extra}: {e}", exc_info=True)
             yield f"data: {json.dumps({'delta': '', 'finish_reason': 'error', 'error': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

@@ -23,7 +23,7 @@ pub mod resource_manager;
 pub mod sar_query;
 pub mod tools;
 pub mod types;
-pub mod lance_store;
+pub mod sqlite_vector_store;
 pub mod vector_store;
 
 // Backward-compat re-exports — allow existing `crate::core::xxx` paths
@@ -38,7 +38,7 @@ pub use document::knowledge_base::{
     get_or_init_kb, kb_get_pages, kb_get_structure, kb_search, kb_search_stream,
     search_with_cache, KnowledgeBase,
 };
-pub use lance_store::LanceVectorStore;
+pub use sqlite_vector_store::{SqliteVectorStore, reciprocal_rank_fusion};
 pub use document::semantic_cache;
 pub use document::semantic_cache::{SemanticCache, SemanticCacheConfig};
 pub use document::stream_search;

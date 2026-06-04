@@ -21,9 +21,9 @@ pub fn compound_entry_to_record(
         "high" => "confirmed".to_string(),
         _ => "pending".to_string(),
     };
-    let mut tags = Vec::new();
+    let mut labels = Vec::new();
     if let Some(ref cat) = compound.category {
-        tags.push(cat.clone());
+        labels.push(cat.clone());
     }
     let mut properties = serde_json::json!({});
     if let Some(ref props) = compound.physicochemical_props {
@@ -53,7 +53,9 @@ pub fn compound_entry_to_record(
     }
     Some(MoleculeRecord {
         mol_id,
-        esmiles: esmiles.clone(),
+        smiles: esmiles.clone(),
+        esmiles: Some(esmiles.clone()),
+        semantic_tags: None,
         name: compound.name.clone(),
         source_doc: source_doc.to_string(),
         activity: None,
@@ -62,7 +64,7 @@ pub fn compound_entry_to_record(
         source_type: source_type.to_string(),
         status: status.to_string(),
         properties,
-        tags,
+        labels,
         notes,
         created_at: None,
     })

@@ -225,3 +225,28 @@ pub async fn agent_get_history(
     let agent = agents.get(&session_id).ok_or("Session not found")?;
     Ok(agent.context.get_history_messages())
 }
+
+/// 读取项目审计日志。
+///
+/// # Arguments
+/// - `project_root`: 项目根目录；审计日志在 `<root>/.mbforge/audit.jsonl`
+/// - `trace_id`: 可选 — 若提供，仅返回匹配的条目
+/// - `limit`: 最多返回条数（默认 200）
+#[tauri::command]
+pub async fn audit_log_get(
+    project_root: String,
+    trace_id: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::core::observability::AuditEntry>, String> {
+    let log = crate::core::observability::AuditLog::new(std::path::Path::new(&project_root))?;
+    let limit = limit.unwrap_or(200);
+    match trace_id {
+        Some(tid) => log.read_by_trace(&tid, limit),
+        None => {
+            let mut all = log.read_all()?;
+            all.reverse();
+            all.truncate(limit);
+            Ok(all)
+        }
+    }
+}

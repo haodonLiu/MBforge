@@ -99,8 +99,7 @@ fn native_search_knowledge_base(
     query: &str,
     top_k: usize,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let rt = tokio::runtime::Handle::current();
-    let (results, _) = rt.block_on(crate::core::knowledge_base::search_with_cache(root, query, top_k))?;
+    let (results, _) = crate::core::knowledge_base::search_with_cache(root, query, top_k)?;
     Ok(results)
 }
 
@@ -108,9 +107,9 @@ fn native_get_document_structure(
     root: &str,
     doc_id: &str,
 ) -> Result<Option<Vec<crate::parsers::sections::TreeNode>>, String> {
-    let rt = tokio::runtime::Handle::current();
-    // 新 API 直接返回 Arc，无需二次 get。
-    let kb = rt.block_on(crate::core::knowledge_base::get_or_init_kb(root))?;
+    let guard = crate::core::knowledge_base::get_or_init_kb(root)?;
+    let kb = guard.get(root)
+        .ok_or_else(|| format!("KB not found for root: {}", root))?;
     Ok(kb.get_structure(doc_id))
 }
 
@@ -119,7 +118,8 @@ fn native_get_document_pages(
     doc_id: &str,
     pages: &str,
 ) -> Result<Vec<crate::core::knowledge_base::PageContent>, String> {
-    let rt = tokio::runtime::Handle::current();
-    let kb = rt.block_on(crate::core::knowledge_base::get_or_init_kb(root))?;
+    let guard = crate::core::knowledge_base::get_or_init_kb(root)?;
+    let kb = guard.get(root)
+        .ok_or_else(|| format!("KB not found for root: {}", root))?;
     Ok(kb.get_pages(doc_id, pages))
 }

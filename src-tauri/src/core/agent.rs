@@ -72,6 +72,9 @@ pub struct Agent {
     pub max_iterations: usize,
     pub project_root: Option<PathBuf>,
     pub sidecar_url: String,
+    /// 可选审计日志 — 跨请求持久化到 `<project_root>/.mbforge/audit.jsonl`。
+    /// 为 `None` 时所有 LLM / 工具调用静默跳过审计（不报错）。
+    pub audit_log: Option<super::observability::AuditLog>,
 }
 
 impl Agent {
@@ -118,6 +121,12 @@ impl Agent {
             }
         }
 
+        // 初始化审计日志（如果项目根可用）。失败时静默退化为 None，
+        // 不阻断 agent 启动。
+        let audit_log = project_root.and_then(|p| {
+            super::observability::AuditLog::new(p).ok()
+        });
+
         Self {
             llm,
             executor,
@@ -128,6 +137,7 @@ impl Agent {
             max_iterations: AGENT_MAX_ITERATIONS,
             project_root: project_root.map(|p| p.to_path_buf()),
             sidecar_url: sidecar_url.to_string(),
+            audit_log,
         }
     }
 
@@ -143,17 +153,53 @@ impl Agent {
     pub async fn chat(&mut self, user_input: &str) -> Result<String, String> {
         self.context.add_user_message(user_input);
 
+        // ==== 可观测性：创建本轮对话的 TraceContext ====
+        // 传给 LlmClient → HTTP header → Python sidecar 日志
+        // 传给 AuditLog → 持久化到 audit.jsonl
+        let mut trace = super::observability::TraceContext::new();
+        trace.span_id = "agent-chat".to_string();
+
         let tool_schemas = self.executor.registry.to_openai_schemas();
         let has_tools = !tool_schemas.is_empty();
         let mut final_answer = String::new();
 
         for _ in 0..self.max_iterations {
             let messages = self.context.build_messages(true, true);
+            let iter_start = std::time::Instant::now();
             let response = if has_tools {
-                self.llm.chat(&messages, Some(&tool_schemas)).await?
+                self.llm
+                    .chat(&messages, Some(&tool_schemas), Some(&trace))
+                    .await?
             } else {
-                self.llm.chat(&messages, None).await?
+                self.llm
+                    .chat(&messages, None, Some(&trace))
+                    .await?
             };
+            let iter_ms = iter_start.elapsed().as_millis() as u64;
+
+            // 累加 LLM 响应中的 usage 到 trace
+            if let Some(usage) = &response.usage {
+                trace.record_llm_response(
+                    &self.llm.model_name(),
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                );
+            }
+            // 审计日志：LLM 调用
+            if let Some(audit) = &self.audit_log {
+                let _ = audit.append_llm_call(
+                    &trace.trace_id,
+                    Some(&trace.span_id),
+                    &self.llm.model_name(),
+                    response.usage.as_ref().map(|u| u.prompt_tokens).unwrap_or(0),
+                    response
+                        .usage
+                        .as_ref()
+                        .map(|u| u.completion_tokens)
+                        .unwrap_or(0),
+                    iter_ms,
+                );
+            }
 
             if let Some(answer) = self.run_react_turn(&response).await {
                 final_answer = answer;
@@ -180,6 +226,10 @@ impl Agent {
     ) -> Result<tokio::sync::mpsc::Receiver<StreamChunk>, String> {
         self.context.add_user_message(user_input);
 
+        // ==== 可观测性 ====
+        let mut trace = super::observability::TraceContext::new();
+        trace.span_id = "agent-stream".to_string();
+
         let tool_schemas = self.executor.registry.to_openai_schemas();
         let has_tools = !tool_schemas.is_empty();
 
@@ -187,13 +237,42 @@ impl Agent {
         if has_tools {
             for _ in 0..self.max_iterations {
                 let messages = self.context.build_messages(true, true);
-                let response = self.llm.chat(&messages, Some(&tool_schemas)).await?;
+                let iter_start = std::time::Instant::now();
+                let response = self
+                    .llm
+                    .chat(&messages, Some(&tool_schemas), Some(&trace))
+                    .await?;
+                let iter_ms = iter_start.elapsed().as_millis() as u64;
+                 if let Some(usage) = &response.usage {
+                    trace.record_llm_response(
+                        &self.llm.model_name(),
+                        usage.prompt_tokens,
+                        usage.completion_tokens,
+                    );
+                }
+                if let Some(audit) = &self.audit_log {
+                    let _ = audit.append_llm_call(
+                        &trace.trace_id,
+                        Some(&trace.span_id),
+                        &self.llm.model_name(),
+                        response
+                            .usage
+                            .as_ref()
+                            .map(|u| u.prompt_tokens)
+                            .unwrap_or(0),
+                        response
+                            .usage
+                            .as_ref()
+                            .map(|u| u.completion_tokens)
+                            .unwrap_or(0),
+                        iter_ms,
+                    );
+                }
                 if self.run_react_turn(&response).await.is_some() {
                     break;
                 }
             }
         }
-
         // 最终流式输出（工具循环结束后或无工具时）
         self.context.clear_tool_results();
         let messages = self.context.build_messages(true, true);
@@ -202,6 +281,7 @@ impl Agent {
             .chat_stream(
                 &messages,
                 if has_tools { Some(&tool_schemas) } else { None },
+                Some(&trace),
             )
             .await?;
         let (tx, new_rx) = tokio::sync::mpsc::channel(64);
@@ -516,6 +596,7 @@ mod tests {
             content: "Hello".into(),
             tool_calls: vec![],
             finish_reason: "stop".into(),
+            usage: None,
         };
         let (content, tc) = Agent::parse_response_static(&resp);
         assert_eq!(content, "Hello");
@@ -530,6 +611,7 @@ mod tests {
             content: "Hi there".into(),
             tool_calls: vec![],
             finish_reason: "stop".into(),
+            usage: None,
         };
         let result = agent.run_react_turn(&response).await;
         assert_eq!(result, Some("Hi there".to_string()));
@@ -548,6 +630,7 @@ mod tests {
                 arguments: serde_json::json!({"msg": "world"}),
             }],
             finish_reason: "tool_calls".into(),
+            usage: None,
         };
         let result = agent.run_react_turn(&response).await;
         assert!(result.is_none()); // 需要继续循环

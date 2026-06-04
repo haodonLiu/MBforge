@@ -4,11 +4,22 @@ use super::config::ModelConfig;
 use super::constants::PROVIDER_ANTHROPIC;
 use super::context::Message;
 
+/// OpenAI 风格的 usage 字段（Anthropic 也用相同的字段名）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LlmUsage {
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub total_tokens: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmResponse {
     pub content: String,
     pub tool_calls: Vec<ToolCall>,
     pub finish_reason: String,
+    /// LLM 响应里的 `usage` 字段 — 可观测性层用其累加 token 计数。
+    /// 某些本地模型 / proxy 不返回 usage 时为 `None`。
+    pub usage: Option<LlmUsage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,8 +33,7 @@ pub struct ToolCall {
 pub struct StreamChunk {
     pub delta: String,
     pub finish_reason: Option<String>,
-}
-
+ }
 pub struct LlmClient {
     config: ModelConfig,
     http_client: reqwest::Client,
@@ -41,6 +51,16 @@ impl LlmClient {
         }
     }
 
+    /// 当前 LLM 模型名（供审计 / 监控使用）
+    pub fn model_name(&self) -> &str {
+        &self.config.model_name
+    }
+
+    /// 当前 provider（openai / anthropic / ...）
+    pub fn provider(&self) -> &str {
+        &self.config.provider
+    }
+
     fn is_anthropic(&self) -> bool {
         self.config.provider.to_lowercase() == PROVIDER_ANTHROPIC
     }
@@ -49,18 +69,22 @@ impl LlmClient {
         &self,
         messages: &[Message],
         tools: Option<&[serde_json::Value]>,
+        trace: Option<&super::observability::TraceContext>,
     ) -> Result<LlmResponse, String> {
         if self.is_anthropic() {
-            self.chat_anthropic(messages, tools).await
+            self.chat_anthropic(messages, tools, trace).await
         } else {
-            self.chat_openai(messages, tools).await
+            self.chat_openai(messages, tools, trace).await
         }
     }
 
+    /// `trace` 传 `None` 时不注入 header；保持向后兼容（已有调用方编译不破坏）。
+    /// 在新代码里（Agent::chat / process_document）应当传 `Some(&trace_ctx)`。
     async fn chat_openai(
         &self,
         messages: &[Message],
         tools: Option<&[serde_json::Value]>,
+        trace: Option<&super::observability::TraceContext>,
     ) -> Result<LlmResponse, String> {
         let url = format!(
             "{}/chat/completions",
@@ -76,11 +100,17 @@ impl LlmClient {
         if let Some(tools) = tools {
             body["tools"] = serde_json::json!(tools);
         }
-        let resp = self
+        let mut req = self
             .http_client
             .post(&url)
             .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", self.config.api_key))
+            .header("Authorization", format!("Bearer {}", self.config.api_key));
+        if let Some(t) = trace {
+            for (k, v) in t.to_headers() {
+                req = req.header(k, v);
+            }
+        }
+        let resp = req
             .json(&body)
             .send()
             .await
@@ -96,6 +126,7 @@ impl LlmClient {
         &self,
         messages: &[Message],
         tools: Option<&[serde_json::Value]>,
+        trace: Option<&super::observability::TraceContext>,
     ) -> Result<LlmResponse, String> {
         let url = format!("{}/v1/messages", self.config.base_url.trim_end_matches('/'));
         let (system, msgs) = messages_to_anthropic(messages);
@@ -113,12 +144,18 @@ impl LlmClient {
         if let Some(tools) = tools {
             body["tools"] = serde_json::json!(tools_to_anthropic(tools));
         }
-        let resp = self
+        let mut req = self
             .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .header("x-api-key", &self.config.api_key)
-            .header("anthropic-version", "2023-06-01")
+            .header("anthropic-version", "2023-06-01");
+        if let Some(t) = trace {
+            for (k, v) in t.to_headers() {
+                req = req.header(k, v);
+            }
+        }
+        let resp = req
             .json(&body)
             .send()
             .await
@@ -134,12 +171,13 @@ impl LlmClient {
         &self,
         messages: &[Message],
         tools: Option<&[serde_json::Value]>,
+        trace: Option<&super::observability::TraceContext>,
     ) -> Result<tokio::sync::mpsc::Receiver<StreamChunk>, String> {
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         if self.is_anthropic() {
-            self.stream_anthropic(messages, tools, tx).await?;
+            self.stream_anthropic(messages, tools, tx, trace).await?;
         } else {
-            self.stream_openai(messages, tools, tx).await?;
+            self.stream_openai(messages, tools, tx, trace).await?;
         }
         Ok(rx)
     }
@@ -149,6 +187,7 @@ impl LlmClient {
         messages: &[Message],
         tools: Option<&[serde_json::Value]>,
         tx: tokio::sync::mpsc::Sender<StreamChunk>,
+        trace: Option<&super::observability::TraceContext>,
     ) -> Result<(), String> {
         let url = format!(
             "{}/chat/completions",
@@ -165,11 +204,17 @@ impl LlmClient {
         if let Some(tools) = tools {
             body["tools"] = serde_json::json!(tools);
         }
-        let resp = self
+        let mut req = self
             .http_client
             .post(&url)
             .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", self.config.api_key))
+            .header("Authorization", format!("Bearer {}", self.config.api_key));
+        if let Some(t) = trace {
+            for (k, v) in t.to_headers() {
+                req = req.header(k, v);
+            }
+        }
+        let resp = req
             .json(&body)
             .send()
             .await
@@ -217,12 +262,12 @@ impl LlmClient {
         }
         Ok(())
     }
-
     async fn stream_anthropic(
         &self,
         messages: &[Message],
         tools: Option<&[serde_json::Value]>,
         tx: tokio::sync::mpsc::Sender<StreamChunk>,
+        trace: Option<&super::observability::TraceContext>,
     ) -> Result<(), String> {
         let url = format!("{}/v1/messages", self.config.base_url.trim_end_matches('/'));
         let (system, msgs) = messages_to_anthropic(messages);
@@ -238,12 +283,18 @@ impl LlmClient {
         if let Some(tools) = tools {
             body["tools"] = serde_json::json!(tools_to_anthropic(tools));
         }
-        let resp = self
+        let mut req = self
             .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .header("x-api-key", &self.config.api_key)
-            .header("anthropic-version", "2023-06-01")
+            .header("anthropic-version", "2023-06-01");
+        if let Some(t) = trace {
+            for (k, v) in t.to_headers() {
+                req = req.header(k, v);
+            }
+        }
+        let resp = req
             .json(&body)
             .send()
             .await
@@ -417,10 +468,38 @@ pub fn parse_openai_response(text: &str) -> Result<LlmResponse, String> {
                 .collect()
         })
         .unwrap_or_default();
+    let usage = parse_usage_openai(&val);
     Ok(LlmResponse {
         content,
         tool_calls,
         finish_reason,
+        usage,
+    })
+}
+
+/// 从 OpenAI 风格响应里提取 usage 字段。
+/// OpenAI: `{"usage": {"prompt_tokens": N, "completion_tokens": N, "total_tokens": N}}`
+fn parse_usage_openai(val: &serde_json::Value) -> Option<LlmUsage> {
+    val.get("usage").and_then(|u| {
+        Some(LlmUsage {
+            prompt_tokens: u.get("prompt_tokens")?.as_u64()?,
+            completion_tokens: u.get("completion_tokens")?.as_u64()?,
+            total_tokens: u.get("total_tokens").and_then(|t| t.as_u64()).unwrap_or(0),
+        })
+    })
+}
+
+/// 从 Anthropic 风格响应里提取 usage 字段。
+/// Anthropic: `{"usage": {"input_tokens": N, "output_tokens": N}}`
+fn parse_usage_anthropic(val: &serde_json::Value) -> Option<LlmUsage> {
+    val.get("usage").and_then(|u| {
+        let prompt = u.get("input_tokens")?.as_u64()?;
+        let completion = u.get("output_tokens")?.as_u64()?;
+        Some(LlmUsage {
+            prompt_tokens: prompt,
+            completion_tokens: completion,
+            total_tokens: prompt + completion,
+        })
     })
 }
 
@@ -449,13 +528,14 @@ pub fn parse_anthropic_response(text: &str) -> Result<LlmResponse, String> {
             }
         }
     }
+    let usage = parse_usage_anthropic(&val);
     Ok(LlmResponse {
         content,
         tool_calls,
         finish_reason,
+        usage,
     })
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

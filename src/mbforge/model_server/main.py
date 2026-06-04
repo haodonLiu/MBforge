@@ -34,6 +34,7 @@ from .routers import (
     resources,
     sar,
     settings,
+    tools,
     uniparser,
     vlm,
 )
@@ -153,3 +154,4 @@ app.include_router(
 )
 app.include_router(resources.router, prefix="/api/v1/resources", tags=["resources"])
 app.include_router(sar.router, prefix="/api/v1/sar", tags=["sar"])
+app.include_router(tools.router, prefix="/api/v1/tools", tags=["tools"])

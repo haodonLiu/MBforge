@@ -1,7 +1,6 @@
 //! 搜索结果类型定义
 //!
-//! SearchResult 被 lance_store 和 knowledge_base 共用。
-//! 旧的 SqliteVectorStore 已移除，知识库搜索完全由 LanceDB 接管。
+//! SearchResult 被 sqlite_vector_store 和 knowledge_base 共用。
 
 use serde::{Deserialize, Serialize};
 

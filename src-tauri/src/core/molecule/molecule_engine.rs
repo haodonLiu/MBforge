@@ -63,8 +63,8 @@ impl MoleculeEngine {
         self.store.get_molecule(mol_id)
     }
 
-    pub fn search_by_esmiles(&self, esmiles: &str) -> Result<Option<MoleculeRecord>, String> {
-        self.store.search_by_esmiles(esmiles)
+    pub fn search_by_smiles(&self, smiles: &str) -> Result<Option<MoleculeRecord>, String> {
+        self.store.search_by_smiles(smiles)
     }
 
     pub fn search_by_source(&self, doc_id: &str) -> Result<Vec<MoleculeRecord>, String> {
@@ -271,7 +271,7 @@ impl MoleculeEngine {
             "search_by_smiles" => {
                 let smiles = params["smiles"].as_str().unwrap_or("");
                 let mut results = Vec::new();
-                if let Ok(Some(rec)) = self.search_by_esmiles(smiles) {
+                if let Ok(Some(rec)) = self.search_by_smiles(smiles) {
                     results.push(rec);
                 }
                 if let Ok(recs) = self.search_text(smiles) {

@@ -341,7 +341,8 @@ mod tests {
         // 药 (U+836F) is E8 8D AF in UTF-8 — the legacy `c as u8` bug produced
         // `%6F` (a single 'o'). The correct encoding is the full 3-byte sequence.
         assert_eq!(urlencoding("药"), "%E8%8D%AF");
-        assert_eq!(urlencoding("药物化学"), "%E8%8D%AF%E7%89%A9%E5%8C%96");
+        // 4-char CJK string → 12 bytes total
+        assert_eq!(urlencoding("药物化学"), "%E8%8D%AF%E7%89%A9%E5%8C%96%E5%AD%A6");
     }
 
     #[test]

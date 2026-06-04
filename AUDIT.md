@@ -177,8 +177,17 @@
 
 1. **本周**: 验证 chematic API + 清理过时 TODO + 合并 chem_validate 到 chem.rs
 2. **本月**: 管线并行化（27 分钟 → 5 分钟）+ 提取准确率基准 + fingerprint 持久化
-3. **本季度**: 分子描述符 Rust 化 + SAR Rust 化 + sidecar 健壮性
+3. **本季度**: 分子描述符 Rust 化 + SAR Rust 化 + sidecar 健壮性 + MoleCode OCSR fallback
 4. **暂缓**: 所有 P3 功能（格式扩展、可视化、高级 Agent 特性）
+
+### 新增参考: MoleCode 显式图表示
+
+MoleCode 论文提供了关键的表示理论洞察：
+- **双轨制**: 存储用 E-SMILES（紧凑），推理/编辑用 MoleCode（显式图）
+- **OCSR fallback**: MolScribe 失败时 → VLM + MoleCode prompt → 显式图 → SMILES
+- **Markush 创新**: 显式 R-group 节点，准确率 38% → 84%
+- **跨文档分子追踪**: 利用持久原子 ID 建立分子精确对应
+- **分子版本控制**: MoleCode 的 git diff 有意义（局部图操作 vs SMILES 整行变化）
 
 ### 不做的事
 

@@ -21,6 +21,7 @@ pub mod project;
 pub mod project_migrator;
 pub mod resource_manager;
 pub mod sar_query;
+pub mod specialist_agent;
 pub mod tools;
 pub mod types;
 pub mod sqlite_vector_store;

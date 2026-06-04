@@ -104,6 +104,19 @@ impl ToolRegistry {
     pub fn names(&self) -> Vec<&str> {
         self.tools.keys().map(|s| s.as_str()).collect()
     }
+
+    /// 克隆**仅** schema 信息（不含 native 函数），用于把 registry
+    /// 移交给另一个 owner（典型场景：把 schema 注入到 ）。
+    ///
+    /// native 函数留在原 registry，**不**被克隆 — 否则会共享同一份闭包，
+    /// 难以追踪 lifetime / Send 边界。
+    pub fn clone_schemas(&self) -> Self {
+        let mut new_reg = Self::new();
+        for tool in self.tools.values() {
+            new_reg.tools.insert(tool.name.clone(), tool.clone());
+        }
+        new_reg
+    }
 }
 
 #[cfg(test)]

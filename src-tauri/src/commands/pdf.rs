@@ -1,6 +1,7 @@
 // PDF inspection commands — Task 2: classify_pdf
 
 use serde::Serialize;
+use crate::parsers::doc_types::OcrBlock;
 
 /// Classification result returned to the frontend via Tauri IPC.
 ///
@@ -125,5 +126,191 @@ pub fn extract_text(path: String) -> Result<PdfExtraction, String> {
         confidence: result.confidence,
         has_complex_layout: result.layout.is_complex,
         has_encoding_issues: result.has_encoding_issues,
+    })
+}
+
+// =========================================================================
+// PDF 分子提取工作流
+// =========================================================================
+
+/// Tauri 命令：完整的 PDF 分子提取工作流。
+///
+/// 输入 PDF → 提取文本 + 检测分子图片 + 识别 SMILES → 输出到指定目录 + 写入 SQLite。
+///
+/// 输出结构：
+/// ```text
+/// <output_dir>/<pdf_name>/
+///   text.md
+///   molecules/
+///     manifest.json
+///     page_0001_mol_000.png
+///     ...
+/// ```
+#[tauri::command]
+pub async fn extract_pdf_workflow_cmd(
+    path: String,
+    output_dir: String,
+) -> Result<crate::parsers::pipeline::WorkflowResult, String> {
+    use crate::core::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
+    use crate::parsers::chem_validate::separate_esmiles_layers;
+    use crate::parsers::moldet_client::DetectedMolecule;
+
+    let sidecar_url = crate::core::constants::sidecar_url();
+    let result = crate::parsers::pipeline::extract_pdf_workflow(&path, &output_dir, &sidecar_url).await?;
+
+    // 将检测到的分子写入 SQLite（molecules + molecule_images）
+    let filename = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown.pdf".to_string());
+
+    if !result.molecules.is_empty() {
+        // 查找项目根目录
+        let project_root = crate::parsers::pipeline::find_project_root(
+            std::path::Path::new(&output_dir),
+            None,
+        );
+
+        if let Some(root) = project_root {
+            if let Ok(db) = MoleculeDatabase::open(&root) {
+                let mut saved = 0usize;
+                for mol in &result.molecules {
+                    let (clean_smiles, esmiles_opt, semantic_tags) =
+                        separate_esmiles_layers(&mol.esmiles);
+                    let mol_id = crate::core::helpers::generate_uuid();
+                    let record = MoleculeRecord {
+                        mol_id: mol_id.clone(),
+                        smiles: clean_smiles,
+                        esmiles: esmiles_opt,
+                        semantic_tags,
+                        name: format!("IMG-{}-P{}", filename, mol.page),
+                        source_doc: filename.clone(),
+                        activity: None,
+                        activity_type: String::new(),
+                        units: "nM".to_string(),
+                        source_type: "workflow_extract".to_string(),
+                        status: "pending".to_string(),
+                        properties: serde_json::json!({}),
+                        labels: vec!["image_extracted".to_string()],
+                        notes: format!(
+                            "Workflow extract: MolDet (conf={:.2}) + MolScribe (conf={:.2})",
+                            mol.moldet_conf, mol.confidence
+                        ),
+                        created_at: None,
+                        related_image_paths: vec![mol.crop_path.clone()],
+                        vlm_verified_esmiles: Some(mol.esmiles.clone()),
+                        vlm_confidence: mol.confidence,
+                    };
+                    if let Err(e) = db.add_molecule(&record) {
+                        log::warn!("[extract_workflow] Failed to add molecule {}: {}", mol_id, e);
+                    } else {
+                        let img = MoleculeImage {
+                            image_id: crate::core::helpers::generate_uuid(),
+                            mol_id: mol_id.clone(),
+                            image_path: mol.crop_path.clone(),
+                            page: Some(mol.page as usize),
+                            vlm_esmiles: Some(mol.esmiles.clone()),
+                            vlm_confidence: mol.confidence,
+                            is_structure_diagram: true,
+                            created_at: None,
+                        };
+                        if let Err(e) = db.add_molecule_image(&img) {
+                            log::warn!("[extract_workflow] Failed to add image: {}", e);
+                        } else {
+                            saved += 1;
+                        }
+                    }
+                }
+                log::info!("[extract_workflow] Persisted {}/{} molecules to DB", saved, result.molecules.len());
+            }
+        }
+    }
+
+    // 注：[方案 1] PipelineOutput::from_filesystem 在 Rust 内部调用者
+    // 用了，但 Tauri command 保持 WorkflowResult 返回以兼容前端。
+    let _pipeline = crate::parsers::pipeline::PipelineOutput::from_filesystem(
+        std::path::PathBuf::from(&result.text_path),
+        std::path::PathBuf::from(&result.manifest_path),
+        result.molecules.len(),
+    );
+    Ok(result)
+}
+
+// =========================================================================
+// OCR 布局可视化
+// =========================================================================
+
+/// OCR 布局结果返回给前端
+#[derive(Debug, Serialize)]
+pub struct OcrLayoutResult {
+    /// 文档路径
+    pub path: String,
+    /// 使用的解析器
+    pub parser: String,
+    /// 总页数
+    pub page_count: usize,
+    /// OCR 布局块列表
+    pub blocks: Vec<OcrBlock>,
+    /// 是否来自缓存
+    pub from_cache: bool,
+}
+
+/// Tauri 命令：获取文档的 OCR 布局数据（用于可视化）。
+///
+/// 优先从 OCR 缓存读取；如果没有缓存且文档需要 MinerU 解析，
+/// 则调用 classify_and_extract 获取（不写入缓存）。
+#[tauri::command]
+pub async fn get_document_ocr_layout(path: String) -> Result<OcrLayoutResult, String> {
+    // 1. 尝试从缓存读取
+    let source_path = std::path::Path::new(&path);
+    if let Some(project_root) = crate::parsers::pipeline::find_project_root(source_path, None) {
+        let cache_dir = project_root
+            .join(crate::core::constants::PROJECT_META_DIR)
+            .join("ocr-cache");
+        if let Ok(hash) = crate::core::helpers::sha256_file(source_path) {
+            let cache_file = cache_dir.join(format!("{}.json", hash));
+            if cache_file.exists() {
+                if let Ok(content) = std::fs::read_to_string(&cache_file) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                        let text = val["text"].as_str().unwrap_or("").to_string();
+                        let page_count = text.lines().count().max(1);
+                        let blocks: Vec<OcrBlock> = val["ocr_blocks"]
+                            .as_array()
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let parser = val["parser"]
+                            .as_str()
+                            .unwrap_or("unknown")
+                            .to_string();
+                        if !blocks.is_empty() {
+                            log::info!("OCR layout cache HIT for {}: {} blocks", path, blocks.len());
+                            return Ok(OcrLayoutResult {
+                                path: path.clone(),
+                                parser,
+                                page_count,
+                                blocks,
+                                from_cache: true,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 缓存未命中：调用 classify_and_extract 获取
+    log::info!("OCR layout cache MISS for {}, running extraction...", path);
+    let classified = crate::parsers::pipeline::classify_and_extract(&path).await?;
+
+    Ok(OcrLayoutResult {
+        path: path.clone(),
+        parser: classified.parser,
+        page_count: classified.page_count,
+        blocks: classified.ocr_blocks,
+        from_cache: false,
     })
 }

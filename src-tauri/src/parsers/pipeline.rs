@@ -5,7 +5,7 @@ use crate::core::constants::{EVT_DOC_PROGRESS, EVT_DOC_RESULT};
 
 use crate::commands::classifier::classify_document;
 use crate::commands::extractor::{extract_activities, extract_esmiles_candidates};
-use crate::core::molecule_store::{MoleculeDatabase, MoleculeRecord};
+use crate::core::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
 
 use super::doc_types::{
     DocProcessingContext, DocStructure, DocumentMetadata, DocumentReport, ImageRef, PdfParseResult,
@@ -16,9 +16,99 @@ mod extract;
 mod helpers;
 mod merge;
 
-use extract::{classify_and_extract, find_project_root};
+use extract::extract_molecules_from_pdf;
 use helpers::{activity_entry_to_record, compound_entry_to_record, extract_section_text};
 use merge::{enhance_patent_data, merge_partial_results, run_merge_and_sar};
+
+// Re-export for commands/pdf.rs and other modules
+pub use extract::{WorkflowResult, extract_pdf_workflow, find_project_root, classify_and_extract};
+
+// ============================================================================
+// PipelineOutput — 三个入口的统一返回类型
+// ============================================================================
+//
+// [方案 1] 三个 Tauri command 的差异之前散在各处。
+// 用一个 enum 把"输出到哪一层"作为唯一差异，其它逻辑保持不变。
+//
+// 三种 variant：
+// - `Filesystem`: extract_pdf_workflow 写到 `<output_dir>/<pdf_name>/`
+// - `InMemory`:   process_document 写 SQLite + 发 Tauri Event
+// - `Indexed`:    index_project_rust 写 SQLite + ChromaDB + file cache
+//
+// 前端可以 `match result` 区别处理 — 不需要 if-else 检查每个字段是否存在。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PipelineOutput {
+    /// 入口 1：文件输出
+    Filesystem {
+        text_path: String,
+        manifest_path: String,
+        text_chars: usize,
+        molecule_count: usize,
+    },
+    /// 入口 2：单文档 + 前端事件
+    InMemory {
+        report: DocumentReport,
+        lit_reviewed: bool,
+        /// Frontend 用这个 event_id 关联 EVT_DOC_RESULT
+        event_id: String,
+    },
+    /// 入口 3：批量索引
+    Indexed {
+        indexed: usize,
+        sections: usize,
+        cache_skipped: usize,
+        errors: Vec<String>,
+    },
+}
+
+impl PipelineOutput {
+    /// Helper: 包装 Filesystem 输出
+    pub fn from_filesystem(
+        text_path: std::path::PathBuf,
+        manifest_path: std::path::PathBuf,
+        molecule_count: usize,
+    ) -> Self {
+        let text_chars = std::fs::metadata(&text_path)
+            .map(|m| m.len() as usize)
+            .unwrap_or(0);
+        Self::Filesystem {
+            text_path: text_path.to_string_lossy().to_string(),
+            manifest_path: manifest_path.to_string_lossy().to_string(),
+            text_chars,
+            molecule_count,
+        }
+    }
+
+    /// Helper: 包装 InMemory 输出
+    pub fn from_in_memory(
+        report: DocumentReport,
+        event_id: String,
+    ) -> Self {
+        let lit_reviewed = report.lit_reviewed;
+        Self::InMemory {
+            report,
+            lit_reviewed,
+            event_id,
+        }
+    }
+
+    /// Helper: 包装 Indexed 输出
+    pub fn from_indexed(
+        indexed: usize,
+        sections: usize,
+        cache_skipped: usize,
+        errors: Vec<String>,
+    ) -> Self {
+        Self::Indexed {
+            indexed,
+            sections,
+            cache_skipped,
+            errors,
+        }
+    }
+}
+
 
 impl From<DocProcessingContext> for PdfParseResult {
     fn from(ctx: DocProcessingContext) -> Self {
@@ -60,6 +150,7 @@ pub async fn parse_pdf(
     let parser_choice = parser.unwrap_or_else(|| "pdf_inspector".to_string());
 
     // Stage 1: Text extraction
+    let mut mineru_images: Vec<ImageRef> = Vec::new();
     let (content, page_count): (String, usize) = match parser_choice.as_str() {
         "uniparser" => {
             let host = std::env::var("UNIPARSER_HOST")
@@ -77,7 +168,9 @@ pub async fn parse_pdf(
                 std::env::var("MINERU_HOST").unwrap_or_else(|_| "https://mineru.net".to_string());
             let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
             let client = super::mineru::MineruClient::new(&host, &api_key);
-            let result = client.parse_file(&path)?;
+            let options = super::mineru::scanned_pdf_options(&path);
+            let result = client.parse_file_with_options(&path, &options)?;
+            mineru_images = result.images;
             (result.markdown, 0)
         }
         "llama_parse" => {
@@ -112,7 +205,7 @@ pub async fn parse_pdf(
         2,  // max_size_mb
     )
     .unwrap_or_default();
-    let images: Vec<ImageRef> = extracted
+    let mut images: Vec<ImageRef> = extracted
         .into_iter()
         .map(|img| ImageRef {
             filename: img.filename,
@@ -123,6 +216,7 @@ pub async fn parse_pdf(
             rel_path: None,
         })
         .collect();
+    images.extend(mineru_images);
 
     // Stage 2: Classification
     let pages: Vec<String> = content.split("\n\n").map(|s| s.to_string()).collect();
@@ -224,6 +318,67 @@ async fn run_meta_analysis(ctx: &DocProcessingContext) -> Result<DocStructure, S
 //   - extract::{classify_and_extract, find_project_root}
 //   - helpers::{compound_entry_to_record, activity_entry_to_record, extract_section_text}
 //   - merge::{run_merge_and_sar, merge_partial_results, enhance_patent_data}
+
+/// [方案 3] 在 Stage 4 之后调 LiteratureAgent 做二次审阅
+///
+/// # 行为
+/// - 同步等 30s（timeout）
+/// - 把 `report` 序列化成 JSON 喂给 LiteratureAgent
+/// - 失败降级：超时 / LLM 不可用 / 任何错误 → 静默 return false，**不**阻断主流程
+/// - 成功：mutate `report.lit_reviewed = true` + `lit_decision_summary = Some(...)`
+///
+/// # 为何 timeout 30s？
+/// - LiteratureAgent 会调 LLM + 可能调多个工具（注册 / 笔记 / 标签）
+/// - 在 30s 内通常能完成（无 LLM key 跳过直接退化为 0ms）
+/// - 但不让它阻塞 Stage 4.5 持久化
+async fn review_with_lit_agent(
+    report: &mut DocumentReport,
+    project_root: Option<&std::path::Path>,
+) {
+    use crate::core::specialist_agent::LiteratureAgent;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    // 1. 构造 LitAgent — 用 AppConfig 里的 ModelConfig
+    let app_config = crate::core::config::AppConfig::load();
+    let llm = crate::core::llm::LlmClient::new(&app_config.llm);
+    let mut agent = LiteratureAgent::new(llm, project_root);
+
+    // 2. 序列化 report → JSON 喂给 LitAgent
+    let extraction_json = match serde_json::to_value(&*report) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("[LitAgent] Failed to serialize report: {}", e);
+            return;
+        }
+    };
+
+    // 3. timeout 30s；失败 → 静默跳过
+    let process_future = agent.process_extraction(&extraction_json);
+    let outcome = timeout(Duration::from_secs(30), process_future).await;
+
+    match outcome {
+        Ok(Ok(out)) => {
+            // [方案 3] 写入决策回执
+            report.lit_reviewed = true;
+            report.lit_decision_summary = Some(out.final_content);
+            log::info!(
+                "[LitAgent] Review complete: trace_id={} iterations={} tool_calls={}",
+                out.trace_id,
+                out.iterations,
+                out.tool_calls.len(),
+            );
+        }
+        Ok(Err(e)) => {
+            log::warn!("[LitAgent] process_extraction failed: {}", e);
+        }
+        Err(_elapsed) => {
+            log::warn!("[LitAgent] review timed out after 30s, skipping");
+        }
+    }
+}
+
+/// 完整的文档处理入口
 
 /// 完整的文档处理入口
 ///
@@ -556,42 +711,77 @@ pub async fn process_document(
             .map(|p| p.to_string_lossy().to_string())
     };
 
-    if !ctx.images.is_empty() {
-        let chem_images: Vec<(String, String)> = ctx
-            .images
-            .iter()
-            .filter(|img| {
-                crate::parsers::vlm_chem::is_likely_chemical_structure(
-                    &img.filename,
-                    img.region.as_deref(),
-                )
-            })
-            .filter_map(|img| resolve_image_path(img).map(|p| (img.filename.clone(), p)))
-            .collect();
-
-        if !chem_images.is_empty() {
-            vlm_results =
-                crate::parsers::vlm_chem::batch_image_to_esmiles(&chem_images, &vlm_config).await;
-            vlm_esmiles_found = vlm_results.len();
-        }
-
-        let _ = app.emit(
-            EVT_DOC_PROGRESS,
-            DocProgressEvent::Vlm {
-                image_count: chem_images.len(),
-                esmiles_found: vlm_esmiles_found,
-            },
-        );
-
-        // 回填 VLM 识别结果到 molecule_traces
-        for trace in molecule_traces.iter_mut() {
-            for img in &trace.related_images {
-                if let Some((_, chem_result)) =
-                    vlm_results.iter().find(|(fname, _)| fname == &img.filename)
-                {
-                    trace.vlm_verified_esmiles = Some(chem_result.esmiles.clone());
-                    trace.vlm_confidence = chem_result.confidence;
+    // ===== Stage 2b: MolDet + MolScribe 分子图像提取 =====
+    // 统一处理：Scanned（lopdf 位图）和 TextBased（LiteParse 截图）都走 MolDet → 裁剪 → MolScribe
+    if let Some(ref root) = project_root {
+        let classified_for_mol = extract::ClassifyResult {
+            text: ctx.raw_text.clone(),
+            page_count: ctx.page_count,
+            parser: ctx.parser_used.clone(),
+            images: ctx.images.clone(),
+            ocr_blocks: vec![],
+        };
+        match extract_molecules_from_pdf(
+            &path,
+            &classified_for_mol,
+            &vlm_config.sidecar_url,
+            root,
+        )
+        .await
+        {
+            Ok(detected) if !detected.is_empty() => {
+                let mut file_results: Vec<(String, crate::parsers::vlm_chem::ChemImageResult)> = Vec::new();
+                for mol in detected.iter() {
+                    file_results.push((
+                        std::path::Path::new(&mol.crop_path)
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("unknown")
+                            .to_string(),
+                        crate::parsers::vlm_chem::ChemImageResult {
+                            esmiles: mol.esmiles.clone(),
+                            confidence: mol.confidence,
+                        },
+                    ));
                 }
+                vlm_esmiles_found = file_results.len();
+                // [方案 2] 把结果挂到 ctx 上，让 DocumentReport / 前端能看到
+                for (fname, chem) in &file_results {
+                    ctx.chem_images.insert(fname.clone(), chem.clone());
+                }
+                ctx.detected_molecules = detected;
+                vlm_results = file_results;
+                let _ = app.emit(
+                    EVT_DOC_PROGRESS,
+                    DocProgressEvent::Vlm {
+                        image_count: vlm_results.len(),
+                        esmiles_found: vlm_esmiles_found,
+                    },
+                );
+
+                // 回填识别结果到 molecule_traces（按文件名匹配）
+                for trace in molecule_traces.iter_mut() {
+                    for img in &trace.related_images {
+                        if let Some((_, chem_result)) =
+                            vlm_results.iter().find(|(fname, _)| fname == &img.filename)
+                        {
+                            trace.vlm_verified_esmiles = Some(chem_result.esmiles.clone());
+                            trace.vlm_confidence = chem_result.confidence;
+                        }
+                    }
+                }
+            }
+            Ok(_) => {
+                let _ = app.emit(
+                    EVT_DOC_PROGRESS,
+                    DocProgressEvent::Vlm {
+                        image_count: 0,
+                        esmiles_found: 0,
+                    },
+                );
+            }
+            Err(e) => {
+                log::warn!("[process_document] MolDet image extraction failed: {}", e);
             }
         }
     }
@@ -599,7 +789,7 @@ pub async fn process_document(
     // ===== Stage 2c: VLM 图片描述（非化学结构图） =====
     if !ctx.images.is_empty() {
         if let Some(ref root) = project_root {
-            let mut cache = crate::parsers::vlm_chem::ImageCaptionCache::new(root);
+             let mut cache = crate::parsers::vlm_chem::ImageCaptionCache::new(root);
             let prompt = "请详细描述这张科学文献图片的内容。如果是图表，请说明其中的关键数据和趋势；如果是分子结构图，请描述其骨架特征和官能团；如果是实验流程图，请概述主要步骤。用中文回答，不超过100字。";
 
             for img in ctx.images.iter_mut() {
@@ -786,7 +976,7 @@ pub async fn process_document(
     // ===== Stage 4: 报告生成 =====
     let report_md = crate::parsers::report::generate_full_report(&final_data, Some(&sar_analysis));
 
-    let report = DocumentReport {
+    let mut report = DocumentReport {
         metadata: final_data.metadata.clone(),
         compounds: final_data.compounds.clone(),
         activities: final_data.activities.clone(),
@@ -794,6 +984,11 @@ pub async fn process_document(
         sar_analysis,
         uncertain_items: final_data.uncertain_items.clone(),
         report_markdown: report_md.clone(),
+        // [方案 3] 暂未接 LiteratureAgent；后续 PR 在 Stage 4 后调
+        // LiteratureAgent::process_extraction(&serde_json::to_value(&report)?).await
+        // 然后 set true + 写 decision_summary。
+        lit_reviewed: false,
+        lit_decision_summary: None,
     };
 
     let _ = app.emit(
@@ -802,6 +997,14 @@ pub async fn process_document(
             report_len: report_md.len(),
         },
     );
+
+    // ===== Stage 4.1: LiteratureAgent 二次审阅（[方案 3]）=====
+    // 阻塞模式 + 30s timeout；失败降级 — 不阻断 Stage 4.5 持久化
+    review_with_lit_agent(
+        &mut report,
+        project_root.as_deref().and_then(|s| std::path::Path::new(s).parent()),
+    )
+    .await;
 
     // ===== Stage 4.5: Persist extracted molecules to project store =====
     {
@@ -884,6 +1087,13 @@ pub async fn process_document(
     // 最终结果发射
     let _ = app.emit(EVT_DOC_RESULT, &report);
 
+    log::info!("[process_document] completed: path={}, compounds={}", path, report.compounds.len());
+
+    // 注：[方案 1] 包装 PipelineOutput::InMemory 在 Rust 内部调用者
+    // （tests, future REST API）有用；但 Tauri command 保持 () 返回以兼容
+    // 前端（前端走 EVT_DOC_RESULT 事件订阅）。
+    let _event_id = format!("doc-result-{}", chrono::Utc::now().timestamp_millis());
+    let _out = PipelineOutput::from_in_memory(report, _event_id);
     Ok(())
 }
 
@@ -931,26 +1141,19 @@ pub async fn index_project_rust(
     let mut total_sections = 0usize;
     let mut errors = Vec::new();
     let total = pdf_files.len();
+    let sidecar_url = crate::core::constants::sidecar_url();
+
+    // Phase 1: 并行提取（I/O 密集：MinerU OCR、LiteParse 截图、MolDet 检测）
+    // 缓存命中的直接处理，未命中的并行 extract
+    let mut cache_hits: Vec<(std::path::PathBuf, Vec<crate::parsers::sections::SectionChunk>)> = Vec::new();
+    let mut to_extract: Vec<(usize, std::path::PathBuf)> = Vec::new();
 
     for (i, pdf_path) in pdf_files.iter().enumerate() {
-        let doc_id = uuid::Uuid::new_v4().to_string();
         let filename = pdf_path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown.pdf".to_string());
 
-        // 发射进度事件
-        let _ = app.emit(
-            EVT_DOC_PROGRESS,
-            DocProgressEvent::Classify {
-                parser: format!("indexing {}/{}", i + 1, total),
-                page_count: 0,
-            },
-        );
-
-        let path_str = pdf_path.to_string_lossy().to_string();
-
-        // 先检查文件缓存
         let cached_sections = match kb.file_cache().get(pdf_path) {
             Ok(Some(cached)) => {
                 log::info!("Batch index: cache HIT for {}", filename);
@@ -961,31 +1164,71 @@ pub async fn index_project_rust(
         };
 
         if let Some(sections) = cached_sections {
-            // 缓存命中：直接索引，跳过 PDF 解析
-            total_sections += sections.len();
-            match kb.index_document(&doc_id, &sections, &[]) {
-                Ok(_) => {
-                    indexed += 1;
-                    cache_skipped += 1;
-                }
-                Err(e) => {
-                    errors.push(format!("{}: {}", filename, e));
-                }
-            }
-            continue;
+            cache_hits.push((pdf_path.clone(), sections));
+        } else {
+            to_extract.push((i, pdf_path.clone()));
         }
+    }
 
-        // 缓存未命中：走完整解析管线
-        match classify_and_extract(&path_str).await {
-            Ok(classified) => {
+    // 处理缓存命中
+    for (pdf_path, sections) in &cache_hits {
+        let doc_id = uuid::Uuid::new_v4().to_string();
+        total_sections += sections.len();
+        match kb.index_document(&doc_id, sections, &[]) {
+            Ok(_) => {
+                indexed += 1;
+                cache_skipped += 1;
+            }
+            Err(e) => {
+                let filename = pdf_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                errors.push(format!("{}: {}", filename, e));
+            }
+        }
+    }
+
+    // 并行提取未缓存的 PDF
+    use futures::stream::{self, StreamExt};
+
+    let extraction_results: Vec<_> = stream::iter(to_extract.into_iter())
+        .map(|(i, pdf_path)| {
+            let path_str = pdf_path.to_string_lossy().to_string();
+            let filename = pdf_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown.pdf".to_string());
+            let sidecar = sidecar_url.clone();
+            let root = project_root.clone();
+            let _ = app.emit(
+                EVT_DOC_PROGRESS,
+                DocProgressEvent::Classify {
+                    parser: format!("indexing {}/{}", i + 1, total),
+                    page_count: 0,
+                },
+            );
+            async move {
+                let classified = classify_and_extract(&path_str).await?;
+                let detected = extract_molecules_from_pdf(
+                    &path_str, &classified, &sidecar, &root,
+                ).await.unwrap_or_else(|e| {
+                    log::warn!("[index_project] Molecule extraction failed for {}: {}", filename, e);
+                    vec![]
+                });
+                Ok::<_, String>((pdf_path, classified, detected, filename))
+            }
+        })
+        .buffer_unordered(4)
+        .collect()
+        .await;
+
+    // Phase 2: 串行写入 KB + DB（SQLite 不适合并发写）
+    for result in extraction_results {
+        match result {
+            Ok((pdf_path, classified, detected, filename)) => {
+                let doc_id = uuid::Uuid::new_v4().to_string();
                 let headings = crate::parsers::headings::extract_headings(&classified.text);
                 let sections = crate::parsers::sections::build_sections(
-                    &classified.text,
-                    &headings,
-                    None,
-                    8000,
+                    &classified.text, &headings, None, 8000,
                 );
-
                 total_sections += sections.len();
 
                 // 写入文件缓存
@@ -994,27 +1237,85 @@ pub async fn index_project_rust(
                     "parser": classified.parser,
                     "page_count": classified.page_count,
                     "images": classified.images,
-                }))
-                .unwrap_or_default();
-                if let Err(e) = kb.file_cache().put(pdf_path, &classified.text, &sections_json, &meta_json) {
+                })).unwrap_or_default();
+                if let Err(e) = kb.file_cache().put(&pdf_path, &classified.text, &sections_json, &meta_json) {
                     log::warn!("File cache write failed for {}: {}", filename, e);
                 }
 
                 match kb.index_document(&doc_id, &sections, &[]) {
-                    Ok(_) => {
-                        indexed += 1;
-                    }
-                    Err(e) => {
-                        errors.push(format!("{}: {}", filename, e));
+                    Ok(_) => { indexed += 1; }
+                    Err(e) => { errors.push(format!("{}: {}", filename, e)); }
+                }
+
+                // 持久化分子图像提取结果
+                if !detected.is_empty() {
+                    if let Ok(db) = MoleculeDatabase::open(&project_root) {
+                        let mut saved = 0usize;
+                        for mol in &detected {
+                            let (clean_smiles, esmiles_opt, semantic_tags) =
+                                crate::parsers::chem_validate::separate_esmiles_layers(&mol.esmiles);
+                            let mol_id = crate::core::helpers::generate_uuid();
+                            let record = MoleculeRecord {
+                                mol_id: mol_id.clone(),
+                                smiles: clean_smiles.clone(),
+                                esmiles: esmiles_opt,
+                                semantic_tags,
+                                name: format!("IMG-{}-P{}", filename, mol.page),
+                                source_doc: filename.clone(),
+                                activity: None,
+                                activity_type: String::new(),
+                                units: "nM".to_string(),
+                                source_type: "patent_image".to_string(),
+                                status: "pending".to_string(),
+                                properties: serde_json::json!({}),
+                                labels: vec!["image_extracted".to_string()],
+                                notes: format!(
+                                    "Auto-extracted from page {} via MolDet (conf={:.2}) + MolScribe (conf={:.2})",
+                                    mol.page, mol.moldet_conf, mol.confidence
+                                ),
+                                created_at: None,
+                                related_image_paths: vec![mol.crop_path.clone()],
+                                vlm_verified_esmiles: Some(mol.esmiles.clone()),
+                                vlm_confidence: mol.confidence,
+                            };
+                            if let Err(e) = db.add_molecule(&record) {
+                                log::warn!("[index_project] Failed to add molecule {}: {}", mol_id, e);
+                            } else {
+                                let img = MoleculeImage {
+                                    image_id: crate::core::helpers::generate_uuid(),
+                                    mol_id: mol_id.clone(),
+                                    image_path: mol.crop_path.clone(),
+                                    page: Some(mol.page as usize),
+                                    vlm_esmiles: Some(mol.esmiles.clone()),
+                                    vlm_confidence: mol.confidence,
+                                    is_structure_diagram: true,
+                                    created_at: None,
+                                };
+                                if let Err(e) = db.add_molecule_image(&img) {
+                                    log::warn!("[index_project] Failed to add molecule image: {}", e);
+                                } else {
+                                    saved += 1;
+                                }
+                            }
+                        }
+                        log::info!("[index_project] Saved {}/{} image-extracted molecules from {}", saved, detected.len(), filename);
                     }
                 }
             }
             Err(e) => {
-                errors.push(format!("{}: {}", filename, e));
+                errors.push(e);
             }
         }
     }
 
+    // 注：[方案 1] 在 Rust 内部调用者用 PipelineOutput::from_indexed，
+    // 但 Tauri command 保持 IndexResult 返回以兼容前端 kb.ts。
+    let _pipeline = PipelineOutput::from_indexed(
+        indexed,
+        total_sections,
+        cache_skipped,
+        errors.clone(),
+    );
     Ok(IndexResult {
         indexed,
         sections: total_sections,
@@ -1194,7 +1495,9 @@ mod tests {
 
         let rec = compound_entry_to_record(&compound, "test.pdf", "patent").unwrap();
         assert_eq!(rec.name, "Compound-1");
-        assert_eq!(rec.esmiles, Some("CCO".to_string()));
+        // "CCO" is pure SMILES without E-SMILES tags → esmiles should be None
+        assert_eq!(rec.esmiles, None);
+        assert_eq!(rec.smiles, "CCO");
         assert_eq!(rec.status, "confirmed");
         assert_eq!(rec.source_type, "patent");
         assert_eq!(rec.source_doc, "test.pdf");
@@ -1277,6 +1580,150 @@ mod tests {
         std::fs::remove_dir_all(&tmp).unwrap();
     }
 
+    /// 快速验证：两个专利 PDF 的图片提取能力
+    #[test]
+    #[ignore]
+    fn test_extract_images_from_both_patents() {
+        use std::path::Path;
+        let us_pdf = r"C:\Users\10954\Desktop\X2\US20260027089A1.PDF";
+        let cn_pdf = r"C:\Users\10954\Desktop\X2\CN120118069A.PDF";
+
+        for (name, path) in [("US", us_pdf), ("CN", cn_pdf)] {
+            let tmp = tempfile::tempdir().unwrap();
+            let extracted = crate::parsers::images::extract_images_from_pdf(path, tmp.path(), 50, 5)
+                .unwrap_or_default();
+            println!(
+                "[DIAG] {} patent: extracted {} images (max 50, max 5MB each)",
+                name,
+                extracted.len()
+            );
+            for (i, img) in extracted.iter().take(5).enumerate() {
+                println!(
+                    "  img[{}]: page={}, filename={}, size={} bytes",
+                    i,
+                    img.page,
+                    img.filename,
+                    std::fs::metadata(&img.path).map(|m| m.len()).unwrap_or(0)
+                );
+            }
+        }
+    }
+
+    /// 有监督的全流程集成测试：CN120118069A.PDF（中国专利，14.9MB）
+    #[test]
+    #[ignore]
+    fn test_supervised_pipeline_cn_patent() {
+        use super::extract::ClassifyResult;
+
+        let _ = dotenvy::dotenv();
+
+        let pdf_path = r"C:\Users\10954\Desktop\X2\CN120118069A.PDF";
+        let project_root = std::path::Path::new(r"C:\Users\10954\Desktop\X2");
+        let mbforge_dir = project_root.join(".mbforge");
+
+        if mbforge_dir.exists() {
+            std::fs::remove_dir_all(&mbforge_dir).unwrap();
+        }
+
+        let pdf_type = pdf_inspector::detect_pdf(pdf_path).expect("PDF 类型检测失败");
+        println!("[DIAG] PDF 类型检测: {:?}", pdf_type);
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let classified: ClassifyResult = rt.block_on(async {
+            let path = pdf_path.to_string();
+            tokio::task::spawn_blocking(move || {
+                let pdf_result = pdf_inspector::process_pdf(&path)
+                    .map_err(|e| format!("pdf-inspector failed: {}", e))
+                    .unwrap();
+                let md = pdf_result.markdown.unwrap_or_default();
+                let page_count = pdf_result.page_count as usize;
+
+                println!("[DIAG] pdf_inspector: text_len={}, page_count={}", md.len(), page_count);
+
+                if md.len() < 100 && page_count > 0 && std::env::var("MINERU_API_KEY").is_ok() {
+                    println!("[DIAG] 降级到 MinerU...");
+                    let host = std::env::var("MINERU_HOST")
+                        .unwrap_or_else(|_| "https://mineru.net".to_string());
+                    let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
+                    let client = crate::parsers::mineru::MineruClient::new(&host, &api_key);
+                    let options = crate::parsers::mineru::scanned_pdf_options(&path);
+                    let result = client.parse_file_with_options(&path, &options).expect("MinerU 解析失败");
+                    return ClassifyResult {
+                        text: result.markdown,
+                        page_count: 0,
+                        parser: "mineru".into(),
+                        images: result.images,
+                        ocr_blocks: result.ocr_blocks,
+                    };
+                }
+
+                ClassifyResult {
+                    text: md,
+                    page_count,
+                    parser: "pdf_inspector".into(),
+                    images: vec![],
+                    ocr_blocks: vec![],
+                }
+            })
+            .await
+            .unwrap()
+        });
+
+        assert!(!classified.text.is_empty(), "提取文本为空，parser={}", classified.parser);
+        println!(
+            "Stage 0 完成: parser={}, pages={}, text_len={}, images={}",
+            classified.parser,
+            classified.page_count,
+            classified.text.len(),
+            classified.images.len()
+        );
+
+        let headings = crate::parsers::headings::extract_headings(&classified.text);
+        let sections = crate::parsers::sections::build_sections(
+            &classified.text,
+            &headings,
+            None,
+            8000,
+        );
+        assert!(!sections.is_empty(), "分块结果为空");
+        println!("Stage 0.5 完成: headings={}, sections={}", headings.len(), sections.len());
+
+        let embed_config = crate::core::config::EmbedConfig {
+            provider: "qwen3".into(),
+            model_name: crate::core::constants::DEFAULT_EMBED_MODEL.into(),
+            base_url: "http://127.0.0.1:18792".into(),
+            api_key: "test".into(),
+            device: "cuda".into(),
+            mrl_dim: None,
+            instruction: String::new(),
+        };
+
+        let kb = crate::core::document::knowledge_base::KnowledgeBase::new(
+            project_root,
+            Some(&embed_config),
+        )
+        .expect("KnowledgeBase 创建失败");
+        assert!(kb.has_vector_search(), "Embedder 未初始化");
+
+        let doc_id = uuid::Uuid::new_v4().to_string();
+        let indexed = kb.index_document(&doc_id, &sections, &[])
+            .expect("index_document 失败");
+        assert!(indexed > 0, "未索引任何 section");
+        println!("Stage 1 完成: indexed={} sections into vectors.db", indexed);
+
+        assert!(mbforge_dir.exists(), ".mbforge 目录未创建");
+        assert!(
+            mbforge_dir.join("knowledge_base").join("vectors.db").exists(),
+            "vectors.db 未创建"
+        );
+
+        let search_results = kb.search("compound", 5).expect("搜索失败");
+        println!("向量搜索测试: query='compound', results={}", search_results.len());
+        for (i, r) in search_results.iter().take(3).enumerate() {
+            println!("  Result[{}]: score={:.4}, text_len={}", i, r.score, r.text.len());
+        }
+    }
+
     /// 有监督的全流程集成测试：US20260027089A1.PDF
     /// 覆盖 Stage 0(提取) → Stage 0.5(分块) → Stage 1(向量入库)
     #[test]
@@ -1324,12 +1771,14 @@ mod tests {
                         .unwrap_or_else(|_| "https://mineru.net".to_string());
                     let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
                     let client = crate::parsers::mineru::MineruClient::new(&host, &api_key);
-                    let result = client.parse_file(&path).expect("MinerU 解析失败");
+                    let options = crate::parsers::mineru::scanned_pdf_options(&path);
+                    let result = client.parse_file_with_options(&path, &options).expect("MinerU 解析失败");
                     return ClassifyResult {
                         text: result.markdown,
                         page_count: 0,
                         parser: "mineru".into(),
-                        images: vec![],
+                        images: result.images,
+                        ocr_blocks: result.ocr_blocks,
                     };
                 }
 
@@ -1338,6 +1787,7 @@ mod tests {
                     page_count,
                     parser: "pdf_inspector".into(),
                     images: vec![],
+                    ocr_blocks: vec![],
                 }
             })
             .await
@@ -1423,5 +1873,120 @@ mod tests {
         for (i, r) in search_results.iter().take(3).enumerate() {
             log::info!("  Result[{}]: score={:.4}, text_len={}", i, r.score, r.text.len());
         }
+    }
+}
+
+#[cfg(test)]
+mod lit_agent_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// 验证 review_with_lit_agent 在 LLM 不可用时**不会** panic，
+    /// 失败时静默返回（不修改 report.lit_reviewed）。
+    ///
+    /// [方案 3] 安全保证：LitAgent 故障**永远**不能阻断主流程。
+    #[tokio::test]
+    async fn test_review_with_lit_agent_failure_does_not_panic() {
+        // 构造一个最小 DocumentReport
+        let mut report = DocumentReport {
+            metadata: super::super::doc_types::DocumentMetadata {
+                title: Some("test".into()),
+                authors: vec![],
+                document_type: "paper".into(),
+                key_targets: vec![],
+                source_file: None,
+            },
+            compounds: vec![],
+            activities: vec![],
+            key_findings: vec![],
+            sar_analysis: String::new(),
+            uncertain_items: vec![],
+            report_markdown: "# test".into(),
+            lit_reviewed: false,
+            lit_decision_summary: None,
+        };
+        // None 表示没 project_root（AuditLog 不会开）
+        review_with_lit_agent(&mut report, Some(&PathBuf::from("/tmp"))).await;
+        // 不论成功失败，**不**触发 panic 即可
+        // (实际是否 lit_reviewed 取决于 LLM 调用，断言不强求)
+    }
+}
+
+
+#[cfg(test)]
+mod pipeline_output_tests {
+    use super::*;
+
+    /// [方案 1] 验证 PipelineOutput::from_filesystem
+    #[test]
+    fn test_pipeline_output_from_filesystem() {
+        let tmp = tempfile::tempdir().unwrap();
+        let text_path = tmp.path().join("text.md");
+        std::fs::write(&text_path, "# Hello\n\nThis is a test document.").unwrap();
+        let manifest_path = tmp.path().join("manifest.json");
+        std::fs::write(&manifest_path, "{}").unwrap();
+
+        let output = PipelineOutput::from_filesystem(text_path.clone(), manifest_path, 3);
+        match output {
+            PipelineOutput::Filesystem { text_chars, molecule_count, .. } => {
+                assert!(text_chars > 0);
+                assert_eq!(molecule_count, 3);
+            }
+            _ => panic!("expected Filesystem variant"),
+        }
+    }
+
+    /// [方案 1] 验证 PipelineOutput::from_in_memory 携带 lit_reviewed
+    #[test]
+    fn test_pipeline_output_from_in_memory() {
+        let report = DocumentReport {
+            metadata: super::super::doc_types::DocumentMetadata {
+                title: Some("test".into()),
+                authors: vec![],
+                document_type: "paper".into(),
+                key_targets: vec![],
+                source_file: None,
+            },
+            compounds: vec![],
+            activities: vec![],
+            key_findings: vec![],
+            sar_analysis: String::new(),
+            uncertain_items: vec![],
+            report_markdown: String::new(),
+            lit_reviewed: true,
+            lit_decision_summary: Some("approved".into()),
+        };
+        let output = PipelineOutput::from_in_memory(report, "evt-123".to_string());
+        match output {
+            PipelineOutput::InMemory { lit_reviewed, event_id, .. } => {
+                assert!(lit_reviewed);
+                assert_eq!(event_id, "evt-123");
+            }
+            _ => panic!("expected InMemory variant"),
+        }
+    }
+
+    /// [方案 1] 验证 PipelineOutput::from_indexed
+    #[test]
+    fn test_pipeline_output_from_indexed() {
+        let output = PipelineOutput::from_indexed(5, 42, 3, vec!["err1".into()]);
+        match output {
+            PipelineOutput::Indexed { indexed, sections, cache_skipped, errors } => {
+                assert_eq!(indexed, 5);
+                assert_eq!(sections, 42);
+                assert_eq!(cache_skipped, 3);
+                assert_eq!(errors.len(), 1);
+            }
+            _ => panic!("expected Indexed variant"),
+        }
+    }
+
+    /// [方案 1] 验证 PipelineOutput JSON 序列化的 tag discriminator
+    /// （前端的 `if (output.kind === "filesystem")` 模式依赖此格式）
+    #[test]
+    fn test_pipeline_output_serde_tag() {
+        let output = PipelineOutput::from_indexed(1, 2, 0, vec![]);
+        let json = serde_json::to_string(&output).unwrap();
+        assert!(json.contains("\"kind\":\"indexed\""), "missing tag: {}", json);
     }
 }

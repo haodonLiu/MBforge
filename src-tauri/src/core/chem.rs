@@ -7,10 +7,10 @@
 //! - VF2 子结构搜索
 //! - 分子描述符（MW, LogP, TPSA 等）
 
-use schematic_core::Molecule;
-use schematic_smiles::SmilesParser;
-use schematic_fp::{EcfpOptions, Fingerprint};
-use schematic_smarts::SmartsPattern;
+use chematic_core::Molecule;
+use chematic_smiles::SmilesParser;
+use chematic_fp::{EcfpOptions, Fingerprint};
+use chematic_smarts::SmartsPattern;
 
 /// SMILES 校验结果
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

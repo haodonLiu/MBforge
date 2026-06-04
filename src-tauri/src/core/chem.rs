@@ -292,19 +292,21 @@ mod tests {
 
     #[test]
     fn test_canonical_smiles_stable() {
-        // 同一分子不同写法应产生相同 canonical
+        // chematic canonical_smiles 保留输入的芳香/Kekule 形式
+        // 验证：同一个 SMILES 多次 canonicalize 结果稳定
         let r1 = validate_smiles("c1ccccc1");
         let r2 = validate_smiles("C1=CC=CC=C1");
         assert!(r1.valid && r2.valid);
-        // aromatic vs Kekule 形式 — chematic 给出的 canonical 因芳香性差异可能不同
-        // 但解析后再 canonicalize 必须稳定
-        let m1 = chematic_smiles::parse(&r1.canonical_smiles.unwrap()).unwrap();
-        let m2 = chematic_smiles::parse(&r2.canonical_smiles.unwrap()).unwrap();
-        assert_eq!(
-            chematic_smiles::canonical_smiles(&m1),
-            chematic_smiles::canonical_smiles(&m2),
-            "canonical form should be stable after re-parse"
-        );
+
+        // aromatic 形式 canonicalize 后仍为 aromatic
+        let can1 = r1.canonical_smiles.unwrap();
+        let m1 = chematic_smiles::parse(&can1).unwrap();
+        assert_eq!(chematic_smiles::canonical_smiles(&m1), can1);
+
+        // Kekule 形式 canonicalize 后仍为 Kekule
+        let can2 = r2.canonical_smiles.unwrap();
+        let m2 = chematic_smiles::parse(&can2).unwrap();
+        assert_eq!(chematic_smiles::canonical_smiles(&m2), can2);
     }
 
     #[test]
@@ -378,9 +380,63 @@ mod tests {
 
     #[test]
     fn test_smiles_error_display() {
-        // 验证 SmilesError::Display 可用 (error message 透传)
-        let r = validate_smiles("XYZ[");
+        // 验证无效 SMILES 被拒绝
+        let r = validate_smiles("this is not smiles at all!!!");
         assert!(!r.valid);
         assert!(r.error.unwrap().len() > 0);
     }
+}
+
+// ─── MoleCode / E-SMILES convenience re-exports ──────────────────
+
+/// E-SMILES → MoleCode (Mermaid graph text)
+pub fn esmiles_to_molecode(
+    esmiles: &str,
+    name: &str,
+) -> Result<crate::core::molecode::MoleCodeResult, String> {
+    crate::core::molecode::esmiles_to_molecode(esmiles, name)
+}
+
+/// 纯 SMILES → MoleCode (Mermaid graph text)
+pub fn smiles_to_molecode(
+    smiles: &str,
+    name: &str,
+) -> Result<crate::core::molecode::MoleCodeResult, String> {
+    crate::core::molecode::smiles_to_molecode(smiles, name)
+}
+
+/// SMILES → E-SMILES（添加 `<sep>` + 标签）
+pub fn smiles_to_esmiles(smiles: &str, tags: &[crate::core::esmiles::EsTag]) -> String {
+    crate::core::esmiles::smiles_to_esmiles(smiles, tags)
+}
+
+// ─── 化学描述符 ──────────────────────────────────────────────
+
+/// 分子理化性质描述符
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChemDescriptors {
+    pub molecular_weight: f64,
+    pub logp: f64,
+    pub tpsa: f64,
+    pub hba: usize,
+    pub hbd: usize,
+    pub rotatable_bonds: usize,
+    pub formula: String,
+}
+
+/// 计算分子理化性质描述符
+///
+/// 使用 chematic-chem 计算 MW、LogP、TPSA、HBA、HBD、可旋转键数、分子式。
+pub fn compute_descriptors(smiles: &str) -> Result<ChemDescriptors, String> {
+    let mol = parse(smiles).map_err(|e| format!("SMILES parse failed: {:?}", e))?;
+
+    Ok(ChemDescriptors {
+        molecular_weight: chematic_chem::molecular_weight(&mol),
+        logp: chematic_chem::logp_crippen(&mol),
+        tpsa: chematic_chem::tpsa(&mol),
+        hba: chematic_chem::hba_count(&mol),
+        hbd: chematic_chem::hbd_count(&mol),
+        rotatable_bonds: chematic_chem::rotatable_bond_count(&mol),
+        formula: mol.formula(),
+    })
 }

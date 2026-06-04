@@ -585,18 +585,20 @@ pub fn parse_esmiles(input: &str) -> MarkushPattern {
         for cap in ATOM_TAG_RE.captures_iter(ext) {
             let idx: u32 = cap[1].parse().unwrap_or(0);
             let group = cap[2].to_string();
+            let normalized = crate::core::abbreviation_map::normalize_abbrev_name(&group);
             r_groups.push(RGroupAttachment {
                 atom_index: idx,
-                group_name: group.clone(),
+                group_name: normalized,
                 definition: RGroupDef::None,
             });
         }
         for cap in RING_TAG_RE.captures_iter(ext) {
             let idx: u32 = cap[1].parse().unwrap_or(0);
             let group = cap[2].to_string();
+            let normalized = crate::core::abbreviation_map::normalize_abbrev_name(&group);
             r_groups.push(RGroupAttachment {
                 atom_index: idx,
-                group_name: group.clone(),
+                group_name: normalized,
                 definition: RGroupDef::None,
             });
         }
@@ -838,7 +840,15 @@ pub fn check_overlap(markush: &MarkushPattern, query_smiles: &str) -> MarkushOve
                     if q_idx < query_graph.atoms.len() {
                         let q_atom = &query_graph.atoms[q_idx];
                         let subst = q_atom.element.clone();
-                        let in_scope = check_rgroup_scope(&rg.definition, &subst);
+
+                        // 尝试缩写展开匹配
+                        let normalized_name = crate::core::abbreviation_map::normalize_abbrev_name(&rg.group_name);
+                        let in_scope = if let Some(single_atom) = crate::core::abbreviation_map::get_single_atom_label(&normalized_name) {
+                            // 缩写有单原子等价，用等价标签匹配
+                            check_rgroup_scope(&rg.definition, single_atom)
+                        } else {
+                            check_rgroup_scope(&rg.definition, &subst)
+                        };
                         (Some(subst), in_scope)
                     } else {
                         (None, None)
@@ -994,7 +1004,7 @@ mod tests {
         let p = parse_esmiles("*c1ccccc1<sep><a>0:R[1]</a>");
         assert_eq!(p.core_smiles, "*c1ccccc1");
         assert_eq!(p.r_groups.len(), 1);
-        assert_eq!(p.r_groups[0].group_name, "R[1]");
+        assert_eq!(p.r_groups[0].group_name, "R1"); // 归一化后
         assert_eq!(p.r_groups[0].atom_index, 0);
     }
 
@@ -1022,7 +1032,7 @@ mod tests {
     fn test_parse_complex_markush() {
         let p = parse_esmiles("**C1*C(*)=C(C(*)(*)C2=CC=NC=C2)N=1<sep><a>0:R[4]</a><a>1:X</a><r>1:R[5]?n</r><a>3:Z</a>");
         assert_eq!(p.r_groups.len(), 4);
-        assert!(p.r_groups.iter().any(|r| r.group_name == "R[4]"));
+        assert!(p.r_groups.iter().any(|r| r.group_name == "R4")); // 归一化后
         assert!(p.r_groups.iter().any(|r| r.group_name == "X"));
     }
 
@@ -1145,5 +1155,19 @@ mod tests {
         let g = parse_smiles("*c1ccccc1").unwrap();
         assert_eq!(g.atoms[0].element, "*");
         assert_eq!(g.atoms.len(), 7);
+    }
+
+    #[test]
+    fn test_parse_esmiles_normalizes_rgroup_names() {
+        // R[1] 应归一化为 R1
+        let p = parse_esmiles("*c1ccccc1<sep><a>0:R[1]</a>");
+        assert_eq!(p.r_groups[0].group_name, "R1");
+    }
+
+    #[test]
+    fn test_parse_esmiles_normalizes_abbrev() {
+        // boc 应归一化为 Boc
+        let p = parse_esmiles("*c1ccccc1<sep><a>0:boc</a>");
+        assert_eq!(p.r_groups[0].group_name, "Boc");
     }
 }

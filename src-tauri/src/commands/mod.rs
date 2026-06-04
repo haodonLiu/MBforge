@@ -2,9 +2,11 @@ pub mod agent;
 pub mod classifier;
 pub mod extractor;
 pub mod file_ops;
+pub mod gesim;
 pub mod mol_engine;
 pub mod mol_store;
 pub mod molecule;
+pub mod molecode;
 pub mod notes;
 pub mod pdf;
 pub mod project_ops;
@@ -30,6 +32,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // pdf
         pdf::classify_pdf,
         pdf::extract_text,
+        pdf::extract_pdf_workflow_cmd,
+        pdf::get_document_ocr_layout,
         // text_ops
         text_ops::text_chunk,
         // classifier
@@ -80,6 +84,13 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         molecule::chem_validate_smiles,
         molecule::chem_tanimoto_similarity,
         molecule::chem_tanimoto_batch_filter,
+        // gesim
+        gesim::gesim_similarity_cmd,
+        gesim::gesim_similarity_raw_cmd,
+        gesim::gesim_match_mapping_cmd,
+        // molecode
+        molecode::esmiles_to_molecode_cmd,
+        molecode::chem_descriptors_cmd,
         // mol_store
         mol_store::mol_store_init,
         mol_store::mol_store_add,

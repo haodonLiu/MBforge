@@ -44,6 +44,43 @@ pub struct MoleculeRecord {
     pub notes: String,
     #[serde(default)]
     pub created_at: Option<String>,
+    /// 关联的化学结构图路径列表（非数据库列，由调用方填充）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub related_image_paths: Vec<String>,
+    /// VLM (MolScribe) 验证后的 E-SMILES（非数据库列）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vlm_verified_esmiles: Option<String>,
+    /// VLM 识别置信度（非数据库列）。
+    #[serde(default)]
+    pub vlm_confidence: f64,
+}
+
+/// 分子关联的化学结构图记录。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoleculeImage {
+    pub image_id: String,
+    pub mol_id: String,
+    pub image_path: String,
+    pub page: Option<usize>,
+    pub vlm_esmiles: Option<String>,
+    pub vlm_confidence: f64,
+    pub is_structure_diagram: bool,
+    pub created_at: Option<String>,
+}
+
+impl MoleculeImage {
+    pub fn new(image_id: &str, mol_id: &str, image_path: &str) -> Self {
+        Self {
+            image_id: image_id.to_string(),
+            mol_id: mol_id.to_string(),
+            image_path: image_path.to_string(),
+            page: None,
+            vlm_esmiles: None,
+            vlm_confidence: 0.0,
+            is_structure_diagram: true,
+            created_at: None,
+        }
+    }
 }
 
 impl MoleculeRecord {
@@ -68,6 +105,9 @@ impl MoleculeRecord {
             labels: Vec::new(),
             notes: String::new(),
             created_at: None,
+            related_image_paths: Vec::new(),
+            vlm_verified_esmiles: None,
+            vlm_confidence: 0.0,
         }
     }
 
@@ -121,6 +161,9 @@ impl MoleculeRecord {
             labels,
             notes: row.get(13).unwrap_or_default(),
             created_at: row.get(14).ok(),
+            related_image_paths: Vec::new(),
+            vlm_verified_esmiles: None,
+            vlm_confidence: 0.0,
         })
     }
 }
@@ -385,6 +428,19 @@ impl MoleculeDatabase {
                 content='molecules',
                 content_rowid='rowid'
             );
+            CREATE TABLE IF NOT EXISTS molecule_images (
+                image_id TEXT PRIMARY KEY,
+                mol_id TEXT NOT NULL,
+                image_path TEXT NOT NULL,
+                page INTEGER,
+                vlm_esmiles TEXT,
+                vlm_confidence REAL,
+                is_structure_diagram INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (mol_id) REFERENCES molecules(mol_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_molimg_mol_id ON molecule_images(mol_id);
+            CREATE INDEX IF NOT EXISTS idx_molimg_path ON molecule_images(image_path);
             ",
             )
             .map_err(|e| format!("Failed to create FTS5 table: {}", e))?;
@@ -532,8 +588,7 @@ impl MoleculeDatabase {
 
     /// Batch add or update molecule records inside a single transaction.
     ///
-    /// Returns the number of records processed. On error the transaction
-    /// is rolled back and no partial writes remain.
+    /// 同时写入关联的 molecule_images 记录。
     pub fn add_molecules_batch(&self, records: &[MoleculeRecord]) -> Result<usize, String> {
         let tx = self
             .conn
@@ -555,17 +610,27 @@ impl MoleculeDatabase {
                 .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()));
             let esmiles_str = rec.esmiles.as_deref().unwrap_or("");
 
-            // Delete old FTS entries (INSERT OR REPLACE changes rowid)
+            let fingerprint_bytes: Option<Vec<u8>> = if rec.smiles.len() >= 2 {
+                crate::core::chem::compute_ecfp4_as_bytes(&rec.smiles).ok()
+            } else {
+                None
+            };
+
+            // Delete old FTS entries and images (INSERT OR REPLACE changes rowid)
             let _ = tx.execute(
                 "DELETE FROM mol_search WHERE rowid IN (SELECT rowid FROM molecules WHERE mol_id = ?1)",
+                params![rec.mol_id],
+            );
+            let _ = tx.execute(
+                "DELETE FROM molecule_images WHERE mol_id = ?1",
                 params![rec.mol_id],
             );
 
             tx.execute(
                 "INSERT OR REPLACE INTO molecules
                  (mol_id, smiles, esmiles, name, source_doc, activity, activity_type,
-                  units, source_type, status, properties, labels, semantic_tags, notes)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                  units, source_type, status, properties, labels, semantic_tags, notes, fingerprint)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                 params![
                     rec.mol_id,
                     rec.smiles,
@@ -581,9 +646,27 @@ impl MoleculeDatabase {
                     labels_str,
                     semantic_tags_str.as_deref(),
                     rec.notes,
+                    fingerprint_bytes,
                 ],
             )
             .map_err(|e| format!("Failed to insert molecule {}: {}", rec.mol_id, e))?;
+
+            // 写入关联图片
+            for img_path in &rec.related_image_paths {
+                let img_id = crate::core::helpers::sha256_text(&format!("{}|{}", rec.mol_id, img_path));
+                let _ = tx.execute(
+                    "INSERT OR REPLACE INTO molecule_images
+                     (image_id, mol_id, image_path, vlm_esmiles, vlm_confidence)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        img_id,
+                        rec.mol_id,
+                        img_path,
+                        rec.vlm_verified_esmiles.as_deref().unwrap_or(""),
+                        rec.vlm_confidence,
+                    ],
+                );
+            }
 
             // Sync FTS5 index
             let _ = tx.execute(
@@ -746,6 +829,11 @@ impl MoleculeDatabase {
 
     /// Delete a molecule by ID.
     pub fn delete_molecule(&self, mol_id: &str) -> Result<bool, String> {
+        // 先清理关联图片
+        let _ = self.conn.execute(
+            "DELETE FROM molecule_images WHERE mol_id = ?1",
+            params![mol_id],
+        );
         // 先清理 FTS 条目
         let _ = self.conn.execute(
             "DELETE FROM mol_search WHERE rowid IN (SELECT rowid FROM molecules WHERE mol_id = ?1)",
@@ -756,6 +844,92 @@ impl MoleculeDatabase {
             .execute("DELETE FROM molecules WHERE mol_id = ?", params![mol_id])
             .map_err(|e| format!("Failed to delete molecule: {}", e))?;
         Ok(affected > 0)
+    }
+
+    // ---------------------------------------------------------------------------
+    // Molecule Image CRUD
+    // ---------------------------------------------------------------------------
+
+    /// 为分子添加关联的化学结构图记录。
+    pub fn add_molecule_image(&self, img: &MoleculeImage) -> Result<(), String> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO molecule_images
+                 (image_id, mol_id, image_path, page, vlm_esmiles, vlm_confidence, is_structure_diagram)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    img.image_id,
+                    img.mol_id,
+                    img.image_path,
+                    img.page.map(|p| p as i64),
+                    img.vlm_esmiles.as_deref().unwrap_or(""),
+                    img.vlm_confidence,
+                    img.is_structure_diagram as i32,
+                ],
+            )
+            .map_err(|e| format!("Failed to add molecule image: {}", e))?;
+        Ok(())
+    }
+
+    /// 获取指定分子的所有关联图片。
+    pub fn get_molecule_images(&self, mol_id: &str) -> Result<Vec<MoleculeImage>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT image_id, mol_id, image_path, page, vlm_esmiles, vlm_confidence, is_structure_diagram, created_at
+                 FROM molecule_images WHERE mol_id = ? ORDER BY page",
+            )
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+
+        let rows = stmt
+            .query_map(params![mol_id], |row| {
+                Ok(MoleculeImage {
+                    image_id: row.get(0).unwrap_or_default(),
+                    mol_id: row.get(1).unwrap_or_default(),
+                    image_path: row.get(2).unwrap_or_default(),
+                    page: row.get::<_, Option<i64>>(3).ok().flatten().map(|p| p as usize),
+                    vlm_esmiles: row.get::<_, Option<String>>(4).ok().flatten().filter(|s| !s.is_empty()),
+                    vlm_confidence: row.get(5).unwrap_or(0.0),
+                    is_structure_diagram: row.get::<_, i32>(6).unwrap_or(1) != 0,
+                    created_at: row.get(7).ok(),
+                })
+            })
+            .map_err(|e| format!("Query failed: {}", e))?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row.map_err(|e| format!("Row parse failed: {}", e))?);
+        }
+        Ok(results)
+    }
+
+    /// 根据图片路径查找关联的分子图片记录。
+    pub fn get_image_by_path(&self, image_path: &str) -> Result<Option<MoleculeImage>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT image_id, mol_id, image_path, page, vlm_esmiles, vlm_confidence, is_structure_diagram, created_at
+                 FROM molecule_images WHERE image_path = ? LIMIT 1",
+            )
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+
+        let mut rows = stmt
+            .query(params![image_path])
+            .map_err(|e| format!("Query failed: {}", e))?;
+
+        match rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+            Some(row) => Ok(Some(MoleculeImage {
+                image_id: row.get(0).unwrap_or_default(),
+                mol_id: row.get(1).unwrap_or_default(),
+                image_path: row.get(2).unwrap_or_default(),
+                page: row.get::<_, Option<i64>>(3).ok().flatten().map(|p| p as usize),
+                vlm_esmiles: row.get::<_, Option<String>>(4).ok().flatten().filter(|s| !s.is_empty()),
+                vlm_confidence: row.get(5).unwrap_or(0.0),
+                is_structure_diagram: row.get::<_, i32>(6).unwrap_or(1) != 0,
+                created_at: row.get(7).ok(),
+            })),
+            None => Ok(None),
+        }
     }
 
     /// Get database statistics.
@@ -1228,5 +1402,46 @@ mod tests {
 
         let loaded = db.get_molecule("m1").unwrap().unwrap();
         assert_eq!(loaded.name, "Updated");
+    }
+
+    #[test]
+    fn test_molecule_images_crud() {
+        let tmp = TempDir::new().unwrap();
+        let db = MoleculeDatabase::open(tmp.path()).unwrap();
+
+        // 构造带图片路径的分子记录
+        let mut rec = make_record("mol-img-1", "CCO");
+        rec.name = "Ethanol".to_string();
+        rec.related_image_paths = vec![
+            ".mbforge/media/doc1/fig1.png".to_string(),
+            ".mbforge/media/doc1/fig2.png".to_string(),
+        ];
+        rec.vlm_verified_esmiles = Some("CCO<sep><a>0:OH</a>".to_string());
+        rec.vlm_confidence = 0.95;
+
+        // 批量入库
+        db.add_molecules_batch(&[rec]).unwrap();
+
+        // 验证分子主表
+        let loaded = db.get_molecule("mol-img-1").unwrap().unwrap();
+        assert_eq!(loaded.mol_id, "mol-img-1");
+        // 注意：related_image_paths / vlm_* 是内存字段，不入主表
+
+        // 验证图片关联表
+        let images = db.get_molecule_images("mol-img-1").unwrap();
+        assert_eq!(images.len(), 2, "应写入 2 条图片记录");
+        assert_eq!(images[0].image_path, ".mbforge/media/doc1/fig1.png");
+        assert_eq!(images[1].image_path, ".mbforge/media/doc1/fig2.png");
+        assert_eq!(images[0].vlm_esmiles, Some("CCO<sep><a>0:OH</a>".to_string()));
+        assert!((images[0].vlm_confidence - 0.95).abs() < 1e-9);
+
+        // 验证按路径查询
+        let img = db.get_image_by_path(".mbforge/media/doc1/fig1.png").unwrap().unwrap();
+        assert_eq!(img.mol_id, "mol-img-1");
+
+        // 验证删除分子时级联删除图片
+        db.delete_molecule("mol-img-1").unwrap();
+        assert!(db.get_molecule("mol-img-1").unwrap().is_none());
+        assert!(db.get_molecule_images("mol-img-1").unwrap().is_empty());
     }
 }

@@ -10,6 +10,7 @@ pub mod keywords;
 pub mod liteparse;
 pub mod llama_parse;
 pub mod mineru;
+pub mod moldet_client;
 pub mod molecule_extractor;
 pub mod pipeline;
 pub mod post_process;

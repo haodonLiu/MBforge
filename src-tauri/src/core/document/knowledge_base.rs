@@ -67,7 +67,7 @@ impl KnowledgeBase {
         fts_conn
             .execute_batch(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
-                    id, text, content='vectors', content_rowid='rowid'
+                    id, text
                 )",
             )
             .map_err(|e| format!("Failed to create FTS5: {}", e))?;
@@ -150,7 +150,7 @@ impl KnowledgeBase {
             let conn = self.fts_conn.lock().map_err(|e| format!("Lock error: {}", e))?;
             // 先删除旧条目
             let _ = conn.execute(
-                "DELETE FROM sections_fts WHERE rowid IN (SELECT rowid FROM vectors WHERE doc_id = ?1)",
+                "DELETE FROM sections_fts WHERE id LIKE ?1 || '%'",
                 rusqlite::params![doc_id],
             );
             // 插入新条目

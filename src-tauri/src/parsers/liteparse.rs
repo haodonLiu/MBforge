@@ -140,4 +140,30 @@ mod tests {
         assert_eq!(result.pages.len(), 1);
         assert_eq!(result.parser, "liteparse");
     }
+
+    /// 诊断测试：验证 LiteParse 截图 CN 专利（TextBased，矢量图）
+    #[test]
+    #[ignore]
+    fn test_screenshot_cn_patent() {
+        let path = r"C:\Users\10954\Desktop\X2\CN120118069A.PDF";
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let screenshots = rt.block_on(async {
+            screenshot_with_liteparse(path, Some(vec![1, 2, 3])).await
+        });
+        match screenshots {
+            Ok(ss) => {
+                println!("[DIAG] Screenshot {} pages from CN patent", ss.len());
+                for s in &ss {
+                    println!(
+                        "  page={}, size={}x{}, bytes={}",
+                        s.page_num, s.width, s.height, s.image_bytes.len()
+                    );
+                }
+                assert!(!ss.is_empty(), "Should have at least one screenshot");
+            }
+            Err(e) => {
+                panic!("LiteParse screenshot failed: {}", e);
+            }
+        }
+    }
 }

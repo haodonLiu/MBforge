@@ -23,7 +23,7 @@ impl Default for VlmConfig {
 }
 
 /// MolScribe 识别结果
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChemImageResult {
     pub esmiles: String,
     pub confidence: f64,

@@ -5,7 +5,5 @@ from __future__ import annotations
 __all__ = [
     "Project",
     "DocumentEntry",
-    "MoleculeDatabase",
-    "MoleculeRecord",
     "ProjectSettings",
 ]

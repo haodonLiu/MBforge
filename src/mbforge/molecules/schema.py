@@ -1,7 +1,6 @@
 """molecules/schema.py — MBForge 分子数据契约（唯一宪法）
 
-所有模块（parsers, clustering, mcs, sar, csar_io, core/mol_database）
-统一使用此 schema 作为输入输出格式。
+所有模块（parsers, clustering, mcs, sar, csar_io）统一使用此 schema 作为输入输出格式。
 不依赖 RDKit 以外的任何上层模块。
 """
 

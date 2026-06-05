@@ -126,7 +126,11 @@ function AppInner() {
         current={currentPage}
         onNavigate={setCurrentPage}
         onSettingsOpen={() => setSettingsOpen(true)}
-        onSwitchProject={() => setProjectRoot('')}
+        onSwitchProject={() => {
+          if (window.confirm(t('nav.confirmSwitchProject'))) {
+            setProjectRoot('')
+          }
+        }}
         fileTreeOpen={fileTreeOpen}
         onToggleFileTree={() => setFileTreeOpen(!fileTreeOpen)}
       />

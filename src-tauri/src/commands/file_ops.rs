@@ -123,9 +123,9 @@ pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, S
     Ok(true)
 }
 
-/// 读取文本文件内容（UTF-8）。
+/// 读取文本文件内容（UTF-8，异步不阻塞 UI）。
 #[tauri::command]
-pub fn read_text_file(project_root: String, path: String) -> Result<String, String> {
+pub async fn read_text_file(project_root: String, path: String) -> Result<String, String> {
     let path_buf = PathBuf::from(&path);
     if let Err(e) = assert_within_root(&project_root, &path_buf) {
         return Err(AppError::new(ErrorCode::FilePermission, "路径越权访问")
@@ -135,7 +135,7 @@ pub fn read_text_file(project_root: String, path: String) -> Result<String, Stri
         return Err(AppError::new(ErrorCode::FileNotFound, format!("文件不存在: {}", path_buf.display()))
             .with_path(path).to_string());
     }
-    std::fs::read_to_string(&path_buf)
+    tokio::fs::read_to_string(&path_buf).await
         .map_err(|e| AppError::new(ErrorCode::FileRead, format!("读取文件失败: {e}"))
             .with_path(path).to_string())
 }

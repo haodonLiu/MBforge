@@ -21,6 +21,7 @@
   "nav.workflow": "工作流",
   "nav.fileTree": "文件树",
   "nav.switchProject": "切换项目",
+  "nav.confirmSwitchProject": "确定要切换项目吗？未保存的更改将丢失。",
   "nav.settings": "设置",
 
   "welcome.title": "MBForge",
@@ -44,6 +45,7 @@
   "settings.appearance": "外观",
   "settings.server": "模型服务",
   "settings.about": "关于",
+  "settings.unsavedChanges": "有未保存的更改，确定要关闭吗？",
   "settings.saved": "设置已保存",
   "settings.saveFailed": "保存设置失败",
   "settings.saving": "保存中…",

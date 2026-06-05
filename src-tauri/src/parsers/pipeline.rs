@@ -333,16 +333,29 @@ async fn run_meta_analysis(ctx: &DocProcessingContext) -> Result<DocStructure, S
 /// - 但不让它阻塞 Stage 4.5 持久化
 async fn review_with_lit_agent(
     report: &mut DocumentReport,
-    project_root: Option<&std::path::Path>,
+    _project_root: Option<&std::path::Path>,
 ) {
-    use crate::core::specialist_agent::LiteratureAgent;
+    use crate::core::agent::rig_adapter::{MbforgeAgent, MbforgeAgentSpec, MbforgeProviderConfig};
     use std::time::Duration;
     use tokio::time::timeout;
 
-    // 1. 构造 LitAgent — 用 AppConfig 里的 ModelConfig
-    let app_config = crate::core::config::AppConfig::load();
-    let llm = crate::core::llm::LlmClient::new(&app_config.llm);
-    let mut agent = LiteratureAgent::new(llm, project_root);
+    // 1. 构造 LitAgent — 走 MbforgeAgent (rig-core adapter)。
+    //    spec 的 system_prompt 已经从 specialist_agent 迁移过来 (M5)；
+    //    factory 走 from_config() 按 AppConfig 自动选 OpenAI/Anthropic 路径。
+    //    旧 LiteratureAgent 的 AuditLog 钩子 M6 删除 specialist_agent 时一并下线。
+    let agent = match MbforgeProviderConfig::from_app_config() {
+        Ok(cfg) => match MbforgeAgent::from_config(&cfg, &MbforgeAgentSpec::literature(), Vec::new()) {
+            Ok(a) => a,
+            Err(e) => {
+                log::warn!("[LitAgent] Failed to build MbforgeAgent: {}", e);
+                return;
+            }
+        },
+        Err(e) => {
+            log::warn!("[LitAgent] Failed to load provider config: {}", e);
+            return;
+        }
+    };
 
     // 2. 序列化 report → JSON 喂给 LitAgent
     let extraction_json = match serde_json::to_value(&*report) {
@@ -352,25 +365,26 @@ async fn review_with_lit_agent(
             return;
         }
     };
+    let prompt_text = match serde_json::to_string(&extraction_json) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("[LitAgent] Failed to stringify report: {}", e);
+            return;
+        }
+    };
 
     // 3. timeout 30s；失败 → 静默跳过
-    let process_future = agent.process_extraction(&extraction_json);
-    let outcome = timeout(Duration::from_secs(30), process_future).await;
+    let outcome = timeout(Duration::from_secs(30), agent.prompt(&prompt_text)).await;
 
     match outcome {
-        Ok(Ok(out)) => {
+        Ok(Ok(text)) => {
             // [方案 3] 写入决策回执
             report.lit_reviewed = true;
-            report.lit_decision_summary = Some(out.final_content);
-            log::info!(
-                "[LitAgent] Review complete: trace_id={} iterations={} tool_calls={}",
-                out.trace_id,
-                out.iterations,
-                out.tool_calls.len(),
-            );
+            report.lit_decision_summary = Some(text);
+            log::info!("[LitAgent] Review complete (MbforgeAgent single-shot)");
         }
         Ok(Err(e)) => {
-            log::warn!("[LitAgent] process_extraction failed: {}", e);
+            log::warn!("[LitAgent] prompt failed: {}", e);
         }
         Err(_elapsed) => {
             log::warn!("[LitAgent] review timed out after 30s, skipping");
@@ -413,8 +427,7 @@ pub async fn process_document(
         let mut cache_hit = false;
 
         if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
-            if let Ok(guard) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()) {
-                if let Some(kb) = guard.get(root.to_string_lossy().as_ref()) {
+            if let Ok(kb) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()) {
                 match kb.file_cache().get(file_path) {
                     Ok(Some(cached)) => {
                         log::info!("File cache HIT for: {}", path);
@@ -445,7 +458,6 @@ pub async fn process_document(
                         log::warn!("File cache error: {}", e);
                     }
                 }
-                }
             }
         }
 
@@ -463,8 +475,7 @@ pub async fn process_document(
 
             // 写入文件缓存
             if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
-                if let Ok(guard) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()) {
-                if let Some(kb) = guard.get(root.to_string_lossy().as_ref()) {
+                if let Ok(kb) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()) {
                     let sections_json = serde_json::to_string(&ctx.sections).unwrap_or_default();
                     let meta_json = serde_json::to_string(&serde_json::json!({
                         "parser": ctx.parser_used,
@@ -475,7 +486,6 @@ pub async fn process_document(
                     if let Err(e) = kb.file_cache().put(file_path, &ctx.raw_text, &sections_json, &meta_json) {
                         log::warn!("File cache write failed: {}", e);
                     }
-                }
                 }
             }
         }

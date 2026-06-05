@@ -107,9 +107,7 @@ pub fn native_get_document_structure(
     root: &str,
     doc_id: &str,
 ) -> Result<Option<Vec<crate::parsers::structure::sections::TreeNode>>, String> {
-    let guard = crate::core::document::knowledge_base::get_or_init_kb(root).map_err(|e| e.to_string())?;
-    let kb = guard.get(root)
-        .ok_or_else(|| format!("KB not found for root: {}", root))?;
+    let kb = crate::core::document::knowledge_base::get_or_init_kb(root).map_err(|e| e.to_string())?;
     Ok(kb.get_structure(doc_id))
 }
 
@@ -118,8 +116,6 @@ pub fn native_get_document_pages(
     doc_id: &str,
     pages: &str,
 ) -> Result<Vec<crate::core::document::knowledge_base::PageContent>, String> {
-    let guard = crate::core::document::knowledge_base::get_or_init_kb(root).map_err(|e| e.to_string())?;
-    let kb = guard.get(root)
-        .ok_or_else(|| format!("KB not found for root: {}", root))?;
+    let kb = crate::core::document::knowledge_base::get_or_init_kb(root).map_err(|e| e.to_string())?;
     Ok(kb.get_pages(doc_id, pages))
 }

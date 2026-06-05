@@ -8,9 +8,10 @@
 //!
 //! 存储文件：`.mbforge/knowledge_base.db`（单文件，替代旧的 vectors.db + cache.db）
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
+
+use dashmap::DashMap;
 
 use rusqlite::Connection;
 use tauri::Emitter;
@@ -386,41 +387,38 @@ impl KnowledgeBase {
 // 全局缓存
 // ============================================================================
 
-pub static KB_CACHE: OnceLock<Mutex<HashMap<String, KnowledgeBase>>> = OnceLock::new();
-static SEMANTIC_CACHE: OnceLock<Mutex<HashMap<String, SemanticCache>>> = OnceLock::new();
+pub static KB_CACHE: OnceLock<DashMap<String, KnowledgeBase>> = OnceLock::new();
+static SEMANTIC_CACHE: OnceLock<DashMap<String, SemanticCache>> = OnceLock::new();
 
 /// 获取或初始化 KB 实例
 pub fn get_or_init_kb(
     root: &str,
-) -> AppResult<std::sync::MutexGuard<'static, HashMap<String, KnowledgeBase>>> {
-    let cache = KB_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let guard = cache.lock().map_err(|e| e.to_string())?;
-    if guard.contains_key(root) {
-        return Ok(guard);
+) -> AppResult<dashmap::mapref::one::Ref<'static, String, KnowledgeBase>> {
+    let cache = KB_CACHE.get_or_init(|| DashMap::new());
+    if let Some(entry) = cache.get(root) {
+        return Ok(entry);
     }
-    drop(guard);
 
     let config = crate::core::config::settings::AppConfig::load();
     let kb = KnowledgeBase::new(std::path::Path::new(root), Some(&config.embed))?;
 
-    let mut guard = cache.lock().map_err(|e| e.to_string())?;
-    guard.insert(root.to_string(), kb);
-    Ok(guard)
+    cache.insert(root.to_string(), kb);
+    Ok(cache.get(root).expect("just inserted"))
 }
 
 fn get_or_init_semantic_cache(
     root: &str,
-) -> std::sync::MutexGuard<'static, HashMap<String, SemanticCache>> {
-    let cache = SEMANTIC_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    if !guard.contains_key(root) {
-        let sc = SemanticCache::new(
-            std::path::Path::new(root),
-            SemanticCacheConfig::default(),
-        );
-        guard.insert(root.to_string(), sc);
+) -> dashmap::mapref::one::Ref<'static, String, SemanticCache> {
+    let cache = SEMANTIC_CACHE.get_or_init(|| DashMap::new());
+    if let Some(entry) = cache.get(root) {
+        return entry;
     }
-    guard
+    let sc = SemanticCache::new(
+        std::path::Path::new(root),
+        SemanticCacheConfig::default(),
+    );
+    cache.insert(root.to_string(), sc);
+    cache.get(root).expect("just inserted")
 }
 
 /// 搜索核心逻辑
@@ -431,8 +429,8 @@ pub fn search_with_cache(
 ) -> AppResult<(Vec<serde_json::Value>, Vec<StreamingResult>)> {
     // 1. L1 缓存命中？
     {
-        let sc_guard = get_or_init_semantic_cache(root);
-        if let Some(cached) = sc_guard.get(root).and_then(|sc| sc.get_l1(query)) {
+        let sc = get_or_init_semantic_cache(root);
+        if let Some(cached) = sc.value().get_l1(query) {
             let stream = StreamingSearch::new(StreamingSearchConfig::default())
                 .execute(cached.clone(), top_k);
             return Ok((cached, stream));
@@ -440,10 +438,7 @@ pub fn search_with_cache(
     }
 
     // 2. 搜索
-    let guard = get_or_init_kb(root)?;
-    let kb = guard
-        .get(root)
-        .ok_or_else(|| format!("Knowledge base not initialized for root: {}", root))?;
+    let kb = get_or_init_kb(root)?;
     let results = kb.search(query, top_k)?;
 
     let json_results: Vec<serde_json::Value> = results
@@ -460,10 +455,8 @@ pub fn search_with_cache(
 
     // 3. 写入缓存
     {
-        let mut sc_guard = get_or_init_semantic_cache(root);
-        if let Some(sc) = sc_guard.get_mut(root) {
-            sc.store(query, json_results.clone());
-        }
+        let sc = get_or_init_semantic_cache(root);
+        sc.value().store(query, json_results.clone());
     }
 
     // 4. 流式分批
@@ -515,20 +508,14 @@ pub async fn kb_search_stream(
 
 #[tauri::command]
 pub fn kb_get_structure(root: String, doc_id: String) -> Result<Option<Vec<TreeNode>>, String> {
-    let guard = get_or_init_kb(&root).map_err(|e| e.to_string())?;
-    let kb = guard
-        .get(&root)
-        .ok_or_else(|| format!("Knowledge base not found for root: {}", root))?;
+    let kb = get_or_init_kb(&root).map_err(|e| e.to_string())?;
     Ok(kb.get_structure(&doc_id))
 }
 
 #[tauri::command]
 pub fn kb_get_pages(root: String, doc_id: String, pages: String) -> Vec<PageContent> {
-    if let Ok(guard) = get_or_init_kb(&root) {
-        match guard.get(&root) {
-            Some(kb) => kb.get_pages(&doc_id, &pages),
-            None => Vec::new(),
-        }
+    if let Ok(kb) = get_or_init_kb(&root) {
+        kb.get_pages(&doc_id, &pages)
     } else {
         Vec::new()
     }

@@ -12,9 +12,10 @@ pub mod llm;
 pub mod memory;
 pub mod molecule;
 pub mod observability;
-// pub mod rig_adapter;    // WIP, not yet compilable
+pub mod rig_adapter;
 pub mod skills;
 pub mod specialist_agent;
 pub mod tools;
 pub mod trajectory;
+pub mod rig_hooks;
 pub mod rig_memory;

@@ -166,7 +166,32 @@ impl MbforgeAgentSpec {
     pub fn literature() -> Self {
         Self {
             name: "literature_agent".into(),
-            system_prompt: String::new(),
+            // Migrated from `specialist_agent::LITERATURE_AGENT_SYSTEM_PROMPT` in M5.
+            // M6 will delete the legacy constant.
+            system_prompt: String::from(
+                "你是文献处理 agent — **最上游**的角色。\n\
+                 \n\
+                 # 输入\n\
+                 - PDF 抽取结果（结构化 JSON）：compounds / activities / key_findings\n\
+                 - 不要再做抽取\n\
+                 \n\
+                 # 工具（4 个）\n\
+                 - `lit_mol_register` — 注册分子到项目 molecule store\n\
+                 - `lit_note_add` — 添加结构化笔记\n\
+                 - `lit_label_apply` — 给已注册分子打标签\n\
+                 - `lit_chem_validate` — 校验 SMILES 合法性\n\
+                 \n\
+                 # 输出\n\
+                 - 自然语言总结：注册了哪些分子 / 哪些需要人工审核 / 关键发现\n\
+                 - 不需要再调下游工具\n\
+                 \n\
+                 # 规则\n\
+                 1. 一次 process() 调 = 一次完整处理，不要跨调用维持上下文\n\
+                 2. 不在工具集里：不要试图调 KB search / file read / literature search\n\
+                 3. 遇到 SMILES 合法性问题：先调 `lit_chem_validate`，失败则不调 `lit_mol_register`\n\
+                 4. 批量注册：使用多次 `lit_mol_register` 调用，一次注册一个分子\n\
+                 5. 置信度诚实：description 不清晰就改用 `lit_note_add` 留待人工审核\n",
+            ),
             max_turns: 8,
             max_tokens: None,
             temperature: None,

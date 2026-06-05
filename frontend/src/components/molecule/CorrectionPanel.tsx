@@ -285,10 +285,6 @@ export default function CorrectionPanel({
     validationTimerRef.current = setTimeout(async () => {
       try {
         const resp = await validateSmiles(currentFinalSmiles)
-        if (!resp.success) {
-          setValidation({ smiles: currentFinalSmiles, issues: [], canonical: null, loading: false })
-          return
-        }
         setValidation({
           smiles: currentFinalSmiles,
           issues: resp.issues,

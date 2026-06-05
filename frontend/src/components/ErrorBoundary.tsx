@@ -13,12 +13,13 @@ interface State {
   error?: Error
   copied: boolean
   expanded: boolean
+  retryKey: number
 }
 
 export default class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props)
-    this.state = { hasError: false, copied: false, expanded: false }
+    this.state = { hasError: false, copied: false, expanded: false, retryKey: 0 }
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
@@ -31,7 +32,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   handleReset = () => {
-    this.setState({ hasError: false, error: undefined, copied: false, expanded: false })
+    this.setState({ hasError: false, error: undefined, copied: false, expanded: false, retryKey: this.state.retryKey + 1 })
   }
 
   handleRefresh = () => {
@@ -206,6 +207,6 @@ export default class ErrorBoundary extends Component<Props, State> {
       )
     }
 
-    return this.props.children
+    return <div key={this.state.retryKey}>{this.props.children}</div>
   }
 }

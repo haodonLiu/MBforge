@@ -12,7 +12,7 @@ pub fn sidecar_status(state: State<Arc<SidecarInner>>) -> serde_json::Value {
     let uptime: u64 = state
         .start_time
         .lock()
-        .expect("sidecar state lock poisoned")
+        .unwrap_or_else(|e| e.into_inner())
         .map(|t: std::time::Instant| t.elapsed().as_secs())
         .unwrap_or(0);
     let state_str = if healthy { "online" } else { "offline" };

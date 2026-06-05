@@ -66,14 +66,8 @@ export async function agentChatStream(
   onDone: () => void,
   onError: (error: string) => void,
 ): Promise<() => void> {
-  // Start streaming
-  invokeWithError(
-    () => invoke('agent_chat_stream', { session_id: sessionId, user_input: userInput }),
-    ErrorCode.TauriInvoke,
-  ).catch((err: unknown) => onError(err instanceof Error ? err.message : String(err)))
-
-  // Listen for chunks
-  const unlistenChunk = await listen<AgentStreamEvent>(EVT.AgentStreamChunk, (event) => {
+  // Set up listeners BEFORE invoking to avoid missing early events
+  const unlistenChunk = listen<AgentStreamEvent>(EVT.AgentStreamChunk, (event) => {
     if (event.payload.session_id === sessionId) {
       onChunk(event.payload.delta)
       if (event.payload.finish_reason) {
@@ -82,16 +76,25 @@ export async function agentChatStream(
     }
   })
 
-  // Listen for done signal
-  const unlistenDone = await listen<{ session_id: string }>(EVT.AgentStreamDone, (event) => {
+  const unlistenDone = listen<{ session_id: string }>(EVT.AgentStreamDone, (event) => {
     if (event.payload.session_id === sessionId) {
       onDone()
     }
   })
 
+  // Start streaming (await so errors propagate to caller)
+  try {
+    await invokeWithError(
+      () => invoke('agent_chat_stream', { session_id: sessionId, user_input: userInput }),
+      ErrorCode.TauriInvoke,
+    )
+  } catch (err) {
+    onError(err instanceof Error ? err.message : String(err))
+  }
+
   return () => {
-    unlistenChunk()
-    unlistenDone()
+    unlistenChunk.then(fn => fn())
+    unlistenDone.then(fn => fn())
   }
 }
 

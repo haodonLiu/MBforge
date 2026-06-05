@@ -525,8 +525,10 @@ pub fn kb_get_structure(root: String, doc_id: String) -> Result<Option<Vec<TreeN
 #[tauri::command]
 pub fn kb_get_pages(root: String, doc_id: String, pages: String) -> Vec<PageContent> {
     if let Ok(guard) = get_or_init_kb(&root) {
-        let kb = guard.get(&root).expect("KB just initialized for root");
-        kb.get_pages(&doc_id, &pages)
+        match guard.get(&root) {
+            Some(kb) => kb.get_pages(&doc_id, &pages),
+            None => Vec::new(),
+        }
     } else {
         Vec::new()
     }

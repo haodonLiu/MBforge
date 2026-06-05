@@ -204,14 +204,14 @@ fn split_raw_claims(text: &str) -> Vec<(u32, String)> {
             if let Some(num) = current_num {
                 result.push((num, current_text.trim().to_string()));
             }
-            current_num = caps.get(1).expect("CLAIM_NUMBER_RE has group 1").as_str().parse::<u32>().ok();
+            current_num = caps.get(1).and_then(|m| m.as_str().parse::<u32>().ok());
             current_text = caps
                 .get(2)
                 .map(|m| m.as_str().to_string())
                 .unwrap_or_default();
         } else if let Some(caps) = CLAIM_NUMBER_LOOSE_RE.captures(trimmed) {
             // 宽松格式（仅在严格匹配失败时使用，且要求数字递增）
-            let num = caps.get(1).expect("CLAIM_NUMBER_LOOSE_RE has group 1").as_str().parse::<u32>().ok();
+            let num = caps.get(1).and_then(|m| m.as_str().parse::<u32>().ok());
             if let Some(n) = num {
                 let expected_next = current_num.map(|c| c + 1).unwrap_or(n);
                 if n == expected_next || current_num.is_none() {
@@ -255,8 +255,8 @@ fn extract_parent_claims(text: &str) -> Vec<u32> {
 
     // 先尝试范围匹配
     for caps in DEPENDENCY_RANGE_RE.captures_iter(text) {
-        let start = caps.get(1).expect("DEPENDENCY_RANGE_RE has group 1").as_str().parse::<u32>().unwrap_or(0);
-        let end = caps.get(2).expect("DEPENDENCY_RANGE_RE has group 2").as_str().parse::<u32>().unwrap_or(0);
+        let start = caps.get(1).and_then(|m| m.as_str().parse::<u32>().ok()).unwrap_or(0);
+        let end = caps.get(2).and_then(|m| m.as_str().parse::<u32>().ok()).unwrap_or(0);
         for n in start..=end {
             seen.entry(n).or_insert(true);
         }

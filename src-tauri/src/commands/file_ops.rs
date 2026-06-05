@@ -80,7 +80,7 @@ pub async fn upload_files(
             continue;
         }
 
-        std::fs::copy(&src, &dest).map_err(|e| {
+        tokio::fs::copy(&src, &dest).await.map_err(|e| {
             AppError::new(ErrorCode::FileWrite, format!("复制文件失败: {e}"))
                 .with_path(dest.to_string_lossy()).to_string()
         })?;
@@ -109,7 +109,7 @@ pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, S
 
     let full_path = project.root.join(&entry.path);
     if full_path.exists() {
-        if let Err(e) = std::fs::remove_file(&full_path) {
+        if let Err(e) = tokio::fs::remove_file(&full_path).await {
             log::error!("Failed to delete file {:?}: {}", full_path, e);
             return Err(AppError::new(ErrorCode::FileWrite, format!("删除文件失败: {e}"))
                 .with_path(full_path.to_string_lossy()).to_string());

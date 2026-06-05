@@ -12,12 +12,20 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString()
 
+const DOC_CACHE_MAX = 3
 const docCache = new Map<string, Promise<PDFDocumentProxy>>()
 
 function getCachedDoc(url: string): Promise<PDFDocumentProxy> {
   let promise = docCache.get(url)
   if (!promise) {
     promise = pdfjsLib.getDocument(url).promise
+    docCache.set(url, promise)
+    if (docCache.size > DOC_CACHE_MAX) {
+      const oldest = docCache.keys().next().value
+      if (oldest) docCache.delete(oldest)
+    }
+  } else {
+    docCache.delete(url)
     docCache.set(url, promise)
   }
   return promise

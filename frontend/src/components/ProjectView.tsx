@@ -4,6 +4,7 @@ import { listProjectDocuments, scanProjectFiles, indexProjectRust, type IndexRes
 import { listen } from '@tauri-apps/api/event'
 import type { DocumentEntry } from '../types'
 import { useAppContext } from '../context/AppContext'
+import { showToast } from '../hooks/useToast'
 
 import PdfViewer from './project/PdfViewer'
 import ProjectDashboard from './project/ProjectDashboard'
@@ -51,7 +52,10 @@ export default function ProjectView() {
         loadDocs()
       })
     }
-    setup().catch(console.error)
+    setup().catch((e) => {
+      console.error(e)
+      showToast('监听文档解析事件失败，文档列表可能不会自动刷新', 'warning')
+    })
 
     return () => {
       unlistenResult?.()
@@ -107,8 +111,14 @@ export default function ProjectView() {
       }
     })
 
+    const INDEX_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
     try {
-      const result: IndexResult = await indexProjectRust(projectRoot)
+      const result: IndexResult = await Promise.race([
+        indexProjectRust(projectRoot),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('索引超时，请检查后端状态或稍后重试')), INDEX_TIMEOUT_MS)
+        ),
+      ])
       setIndexResult({ indexed: result.indexed, sections: result.sections })
       if (result.errors.length > 0) {
         console.warn('Index errors:', result.errors)
@@ -118,6 +128,8 @@ export default function ProjectView() {
       const msg = String(e)
       if (msg.includes('ipc.localhost') || msg.includes('Failed to fetch') || msg.includes('ERR_CONNECTION_REFUSED')) {
         setError('索引引擎通信失败，请重启应用后重试')
+      } else if (msg.includes('索引超时')) {
+        setError('索引操作超时（超过5分钟），请检查后端状态或稍后重试')
       } else {
         setError(msg)
       }

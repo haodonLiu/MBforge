@@ -1,6 +1,11 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import Input from '../ui/Input'
 import Caption from '../ui/Caption'
+import Badge from '../ui/Badge'
+import Button from '../ui/Button'
+import Spinner from '../ui/Spinner'
+import { TrashIcon } from '../icons'
 
 // ============ ModelSelector ============
 interface ModelSelectorProps {
@@ -11,6 +16,7 @@ interface ModelSelectorProps {
 }
 
 export function ModelSelector({ provider, modelValue, models, onChange }: ModelSelectorProps) {
+  const { t } = useTranslation()
   const [customModel, setCustomModel] = useState('')
   const options = models[provider] || []
   const isKnown = options.some(o => o.value === modelValue) || modelValue === 'custom' || modelValue === ''
@@ -34,7 +40,7 @@ export function ModelSelector({ provider, modelValue, models, onChange }: ModelS
         {options.map(o => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
-        <option value="custom">自定义...</option>
+        <option value="custom">{t('models.customModel')}</option>
       </select>
       {showCustom && (
         <Input
@@ -44,7 +50,7 @@ export function ModelSelector({ provider, modelValue, models, onChange }: ModelS
             setCustomModel(e.target.value)
             onChange(e.target.value)
           }}
-          placeholder="输入模型名称"
+          placeholder={t('models.enterModelName')}
           style={{ marginTop: '8px', maxWidth: '100%' }}
         />
       )}
@@ -68,14 +74,16 @@ interface DownloadProgressBarProps {
 }
 
 export function DownloadProgressBar({ state }: DownloadProgressBarProps) {
+  const { t } = useTranslation()
   const progress = state.progress || 0
 
   return (
     <div style={{ marginTop: '8px' }}>
       {state.status === 'connecting' && (
-        <Caption style={{ marginBottom: '4px', display: 'block' }}>
-          连接中... {state.source && `(${state.source})`}
-        </Caption>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Spinner size={12} />
+          <Caption>{t('models.connecting')} {state.source && `(${state.source})`}</Caption>
+        </div>
       )}
       {state.status === 'downloading' && (
         <>
@@ -95,12 +103,12 @@ export function DownloadProgressBar({ state }: DownloadProgressBarProps) {
       )}
       {state.status === 'completed' && (
         <Caption color="var(--success)" style={{ display: 'block' }}>
-          下载完成 {state.source && `(来源: ${state.source})`}
+          ✓ {t('models.downloadComplete')} {state.source && `(${state.source})`}
         </Caption>
       )}
       {state.status === 'failed' && (
         <Caption color="var(--danger)" style={{ display: 'block' }}>
-          {state.error || '下载失败'}
+          {state.error || t('models.downloadFailed')}
         </Caption>
       )}
     </div>
@@ -108,8 +116,6 @@ export function DownloadProgressBar({ state }: DownloadProgressBarProps) {
 }
 
 // ============ ModelCard ============
-import Badge from '../ui/Badge'
-import Button from '../ui/Button'
 
 interface DownloadModel {
   id: string
@@ -132,13 +138,17 @@ interface ModelCardProps {
 }
 
 export function ModelCard({ model, state, isDownloading, onDownload, onCancel, onRetry }: ModelCardProps) {
+  const { t } = useTranslation()
+
   return (
     <div className="model-card">
       <div className="model-card-info">
         <div className="model-card-name">
           {model.name}
           {model.downloaded && (
-            <Badge variant="success" style={{ marginLeft: '8px', fontWeight: 400 }}>已下载</Badge>
+            <Badge variant="success" style={{ marginLeft: '8px', fontWeight: 400 }}>
+              {t('models.downloaded')}
+            </Badge>
           )}
           {model.license && (
             <a
@@ -163,18 +173,20 @@ export function ModelCard({ model, state, isDownloading, onDownload, onCancel, o
       <div className="model-card-actions">
         {!model.downloaded && !isDownloading && (
           <Button size="sm" variant="primary" onClick={onDownload}>
-            下载
+            {t('models.download')}
           </Button>
         )}
         {isDownloading && state?.status === 'downloading' && (
           <Button size="sm" variant="secondary" onClick={onCancel}>
-            取消
+            {t('common.cancel')}
           </Button>
         )}
-        {state?.status === 'completed' && <Caption color="var(--success)">完成</Caption>}
+        {state?.status === 'completed' && (
+          <Caption color="var(--success)">{t('models.complete')}</Caption>
+        )}
         {state?.status === 'failed' && (
           <Button size="sm" variant="secondary" onClick={onRetry}>
-            重试
+            {t('models.retry')}
           </Button>
         )}
       </div>
@@ -183,7 +195,6 @@ export function ModelCard({ model, state, isDownloading, onDownload, onCancel, o
 }
 
 // ============ DownloadedModelItem ============
-import { TrashIcon } from '../icons'
 
 interface DownloadedModel {
   id: string
@@ -208,17 +219,10 @@ export function DownloadedModelItem({
   onConfirmDelete,
   onCancelDelete,
 }: DownloadedModelItemProps) {
+  const { t } = useTranslation()
+
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      padding: '12px 14px',
-      background: 'var(--bg-base)',
-      border: '1px solid var(--border)',
-      borderRadius: '8px',
-      gap: '12px',
-    }}>
+    <div className="downloaded-model-item">
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: '13px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span>{model.name}</span>
@@ -226,15 +230,9 @@ export function DownloadedModelItem({
             {model.size_mb > 0 ? `${model.size_mb} MB` : ''}
           </Caption>
           {model.in_catalog && (
-            <span style={{
-              fontSize: '10px',
-              color: 'var(--success)',
-              background: 'rgba(34,197,94,0.1)',
-              padding: '1px 6px',
-              borderRadius: '4px',
-            }}>
-              官方
-            </span>
+            <Badge variant="success" style={{ fontSize: '10px', fontWeight: 400 }}>
+              {t('models.official')}
+            </Badge>
           )}
         </div>
         <Caption style={{ marginTop: '2px', fontFamily: 'monospace', wordBreak: 'break-all', display: 'block' }}>
@@ -244,21 +242,21 @@ export function DownloadedModelItem({
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
         {deleteConfirm === model.id ? (
           <>
-            <span style={{ fontSize: '11px', color: 'var(--danger)' }}>确认删除？</span>
-            <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={onCancelDelete}>
-              取消
-            </button>
-            <button className="btn btn-primary" style={{ padding: '4px 10px', fontSize: '11px', background: 'var(--danger)' }} onClick={onConfirmDelete}>
-              删除
-            </button>
+            <Caption color="var(--danger)">{t('models.confirmDelete')}</Caption>
+            <Button size="sm" variant="secondary" onClick={onCancelDelete}>
+              {t('common.cancel')}
+            </Button>
+            <Button size="sm" variant="primary" style={{ background: 'var(--danger)' }} onClick={onConfirmDelete}>
+              {t('common.delete')}
+            </Button>
           </>
         ) : (
           <button
             className="btn btn-secondary"
-            style={{ padding: '4px 10px', fontSize: '11px', color: 'var(--danger' }}
+            style={{ padding: '4px 10px', fontSize: '11px', color: 'var(--danger)' }}
             onClick={onDeleteClick}
           >
-            <TrashIcon size={12} /> 删除
+            <TrashIcon size={12} /> {t('common.delete')}
           </button>
         )}
       </div>

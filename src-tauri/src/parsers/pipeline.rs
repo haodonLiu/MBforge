@@ -175,7 +175,7 @@ pub async fn parse_pdf(
         }
         "llama_parse" => {
             let pdf_bytes =
-                std::fs::read(&path).map_err(|e| format!("Failed to read PDF: {}", e))?;
+                tokio::fs::read(&path).await.map_err(|e| format!("Failed to read PDF: {}", e))?;
             let result = super::pdf::llama_parse::parse_with_llamaparse_sync(
                 &crate::core::constants::sidecar_url(),
                 pdf_bytes,

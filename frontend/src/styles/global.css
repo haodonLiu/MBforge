@@ -646,6 +646,68 @@ body {
   margin-left: 12px;
 }
 
+/* Downloaded model item */
+.downloaded-model-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  gap: 12px;
+  transition: border-color 0.15s;
+}
+
+.downloaded-model-item:hover {
+  border-color: var(--border-light);
+}
+
+/* Resource item */
+.resource-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--bg-secondary, rgba(255,255,255,0.03));
+  margin-bottom: 4px;
+  transition: background 0.15s;
+}
+
+.resource-item:hover {
+  background: var(--bg-hover, rgba(255,255,255,0.06));
+}
+
+/* Environment overview grid */
+.env-overview-grid {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 8px;
+  padding: 8px 0;
+  align-items: center;
+}
+
+/* Resource type label */
+.resource-type-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  margin-top: 8px;
+}
+
+/* Inline code */
+.inline-code {
+  background: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+}
+
 .setting-number {
   padding: 8px 12px;
   background: var(--bg-surface);

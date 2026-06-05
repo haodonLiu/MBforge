@@ -176,7 +176,7 @@ export default function ModelsTab() {
   const [downloadState, setDownloadState] = useState<DownloadState>({})
   const [modelTab, setModelTab] = useState<'catalog' | 'downloaded'>('catalog')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
-  const abortRef = useRef<(() => void) | null>(null)
+  const abortMapRef = useRef<Map<string, () => void>>(new Map())
 
   // Load models
   const loadModels = useCallback(async () => {
@@ -212,7 +212,7 @@ export default function ModelsTab() {
     }))
 
     // 优先使用 Tauri 原生下载，失败时回退到 Python sidecar HTTP
-    abortRef.current = downloadModelTauri(modelId, (event: DownloadProgress) => {
+    const cleanup = downloadModelTauri(modelId, (event: DownloadProgress) => {
       setDownloadState(prev => {
         const current = prev[modelId] || { progress: 0, status: 'idle' }
         switch (event.status) {
@@ -240,7 +240,7 @@ export default function ModelsTab() {
           case 'failed':
             // Tauri 下载失败，回退到 HTTP
             console.warn('[Tauri download failed, falling back to HTTP]', event.error)
-            abortRef.current = downloadModel(modelId, (httpEvent: ProgressEvent) => {
+            const httpCleanup = downloadModel(modelId, (httpEvent: ProgressEvent) => {
               setDownloadState(prev => {
                 const current = prev[modelId] || { progress: 0, status: 'idle' }
                 switch (httpEvent.status) {
@@ -272,16 +272,19 @@ export default function ModelsTab() {
                 }
               })
             })
+            abortMapRef.current.set(modelId, httpCleanup)
             return { ...prev, [modelId]: { ...current, status: 'connecting' } }
           default:
             return prev
         }
       })
     })
+    abortMapRef.current.set(modelId, cleanup)
   }
 
   const handleCancel = (modelId: string) => {
-    abortRef.current?.()
+    abortMapRef.current.get(modelId)?.()
+    abortMapRef.current.delete(modelId)
     setDownloadState(prev => ({ ...prev, [modelId]: { progress: 0, status: 'idle' } }))
   }
 

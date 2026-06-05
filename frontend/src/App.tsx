@@ -188,7 +188,7 @@ function AppInner() {
 function AppRoutes() {
   const location = useLocation()
   return (
-    <AnimatePresence mode="wait">
+    <AnimatePresence>
       <Routes location={location} key={location.pathname}>
         <Route
           path="/"

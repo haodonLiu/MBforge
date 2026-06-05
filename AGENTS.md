@@ -80,7 +80,7 @@ MBForge/
 │   ├── src/
 │   │   ├── main.rs         # Tauri 入口：40+ 命令注册 + Python sidecar 管理
 │   │   ├── lib.rs          # 模块导出
-│   │   ├── commands/       # Tauri IPC 命令层（12 模块，80+ 命令）
+│   │   ├── commands/       # Tauri IPC 命令层（15 模块，80+ 命令）
 │   │   │   ├── mod.rs      #   命令聚合（handler() 函数）
 │   │   ├── core/           # Agent + 数据层（32 模块 + 子目录）
 │   │   │   ├── agent.rs    # ReAct Agent 核心循环
@@ -125,11 +125,10 @@ MBForge/
 │   │   ├── main.py         # 入口 + 路由注册
 │   │   ├── dependencies.py # 依赖注入
 │   │   ├── models/         # LLM/Embed/Rerank/VLM/MolDet 单例管理
-│   │   └── routers/        # 16 个 API 路由模块
+│   │   └── routers/        # 13 个 API 路由模块
 │   ├── core/               # Python 数据层
 │   │   ├── project.py      # Vault 项目管理
 │   │   ├── knowledge_base.py       # 向量知识库（Rust 侧 FTS5 为主，Python sidecar 辅助）
-│   │   ├── mol_database.py         # SQLite 分子数据库（fallback）
 │   │   ├── resource_manager.py     # 资源管理 + ModelScope 下载
 │   │   └── summarizer.py           # L0/L1/L2 分层摘要
 │   ├── models/             # AI 模型抽象层
@@ -156,10 +155,8 @@ MBForge/
 ├── docs/                   # 项目文档
 │   ├── TECH_STACK.md
 │   ├── REFERENCES.md
-│   ├── pdf-extraction-workflow.md
-│   ├── pipeline-migration-plan.md
 │   ├── pipeline-redesign.md
-│   └── migration-agent-*.md # 迁移代理日志
+│   └── esmiles-spec.md / molecode-spec.md
 │
 ├── CODEMAP.md              # 代码逻辑树（最详细模块清单）
 ├── pyproject.toml          # Python 项目配置（uv + setuptools）
@@ -361,7 +358,7 @@ uv run ruff format src/ --check
 | 组件超过 300 行必须拆分 | 将子组件提取到同一目录的独立文件 |
 | UI 组件按功能分组 | `frontend/src/components/ui/` 放置通用原子组件（Button、Input、Avatar） |
 | Rust 模块按职责分组 | `commands/`（IPC）、`core/`（业务）、`parsers/`（解析），禁止跨层直接调用 |
-| Python 路由模块化 | 每个路由模块只处理一类资源（`llm.py`、`molecule.py`、`project.py`） |
+| Python 路由模块化 | 每个路由模块只处理一类资源（`llm.py`、`vlm.py`、`moldet.py`） |
 | 常量集中管理 | Rust 用 `core/constants.rs`；Python 用 `utils/constants.py`；禁止魔法字符串散落 |
 
 ### 新增代码的约定
@@ -759,14 +756,80 @@ PDF 输入
 
 **迁移机制**：`migrate_v0_to_v1()` 检测旧 schema（只有 esmiles）→ 自动添加 `smiles` 列并迁移数据。幂等，用 `.ok()` 忽略 "column already exists"。
 
+---
+
+## 设计原则
+
+1. **Harness > Model** — 基础设施质量比模型能力更重要（Harness Engineering 论文核心论点）
+2. **Rust 优先，Python 必要时** — 高频操作 Rust 原生，ML 推理走 Python sidecar
+3. **双轨分子表示** — 存储用 E-SMILES，LLM 推理用 MoleCode（详见分子三层表示）
+4. **追加写入 + 不可变帧** — 文档索引结果不可变，支持崩溃恢复和审计
+5. **可观测性是一等公民** — 每个跨边界调用有 trace ID，每个 Agent 决策可审计
+
+---
+
+## 分子三层表示
+
+| 层级 | 格式 | 存储 | 用途 |
+|------|------|------|------|
+| Layer 1 | SMILES | `molecules.smiles` (NOT NULL) | RDKit/chematic 兼容、指纹、子结构搜索 |
+| Layer 2 | E-SMILES | `molecules.esmiles` (nullable) | 语义标签（`<a>N:GROUP</a>`），Markush 结构 |
+| Layer 3 | MoleCode | 运行时生成 | LLM 推理用，Mermaid 图语法，显式拓扑 |
+
+转换通路（纯 Rust，`core/esmiles.rs` + `core/molecode.rs` + `core/abbreviation_map.rs`）：
+- SMILES → E-SMILES：`smiles_to_esmiles(smiles, tags)` — 添加 `<sep>` + 标签
+- E-SMILES → SMILES：`parse_esmiles_tags(esmiles)` — 取 `<sep>` 前的内容
+- E-SMILES → MoleCode：`esmiles_to_molecode(esmiles, name)` — chematic 解析 → kekulize → Mermaid 文本
+
+化学信息学使用 `chematic` crate（git: `kent-tokyo/chematic`），提供 SMILES 解析、ECFP4 指纹、Tanimoto 相似度、VF2 子结构匹配、CIP 立体化学、Kekulize。
+
+---
+
+## 技术债务
+
+| # | 债务 | 严重性 | 修复方案 |
+|---|------|--------|---------|
+| 1 | chem_validate.rs 与 core/chem.rs 重叠 | 中 | 合并到 chem.rs |
+| 2 | vector_store.rs 退化为 15 行 | 低 | 清理 |
+| 3 | 多个 std::sync::Mutex 在 async 上下文 | 高 | 迁移到 tokio::sync::Mutex |
+| 4 | chematic git 依赖无 tag | 中 | 锁定到特定 commit |
+| 5 | Python sidecar 单进程无连接池 | 中 | 添加连接池 + 优雅降级 |
+| 6 | 无结构化 tracing | 高 | 新增 observability.rs |
+| 7 | 无成本追踪 | 中 | 新增 BudgetEnforcer |
+| 8 | 27 分钟管线瓶颈 | 高 | LLM 调用并行化（已部分完成） |
+
+---
+
+## 风险清单
+
+| 风险 | 概率 | 影响 | 缓解措施 |
+|------|------|------|----------|
+| chematic 被删除或改 API | 中 | 高 | 锁定 commit + 响应式解析器 |
+| Python sidecar 崩溃 | 低 | 中 | 健康检查 + 自动重启 |
+| Tauri v3 破坏性变更 | 中 | 中 | 关注迁移指南 |
+| Python 依赖腐化 | 中 | 低 | lock 文件 + 定期更新 |
+| 管线瓶颈（LLM 串行） | 高 | 高 | 并行化（已部分完成） |
+
+---
+
+## 当前状态
+
+| 指标 | 数值 |
+|------|------|
+| Rust 代码 | ~24,700 行（30 core + 20 parser + 12 command 模块） |
+| Python 代码 | ~13,100 行 |
+| 测试总数 | ~323 个（Rust 323 + Python 111） |
+| 数据库 | SQLite (molecules.db + vectors.db) + semantic_cache.json |
+| 核心流程 | PDF → 解析 → LLM 提取 → 分子入库 → 知识库索引 |
+
+---
+
 ## 关键文档索引
 
 | 文档 | 位置 | 内容 |
 |------|------|------|
 | AI 编码指南 | `CLAUDE.md` | 项目概要 + 构建/测试命令 + 文档总索引 |
 | 代码逻辑树 | `CODEMAP.md` | 每个模块的功能、依赖、实现状态 |
-| 目标架构设计 | `ARCHITECTURE.md` | ETCLOVG 七层架构 + 目标状态 |
-| 审计报告 | `AUDIT.md` | 项目审计 + 优先级建议 |
 | 任务看板 | `TODO/INDEX.md` | 当前任务状态与依赖关系 |
 | 管线重设计（设计稿） | `docs/pipeline-redesign.md` | 解析管线增量重设计 |
 | 技术栈详情 | `docs/TECH_STACK.md` | 所有依赖的技术选型、版本、使用场景 |

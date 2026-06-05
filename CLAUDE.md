@@ -70,7 +70,7 @@ cd src-tauri && cargo tauri build
 │  ┌───────────────────────┴─────────────────────────┐    │
 │  │  Rust Agent + Parsers (src-tauri/src/)           │    │
 │  │                                                   │    │
-│  │  commands/ (15) core/ (32)  parsers/ (20)        │    │
+│  │  commands/ (15) core/ (27+5子目录)  parsers/ (20) │    │
 │  │  │              │              │                  │    │
 │  │  │  Tauri API   │  ReAct Loop  │  PDF Pipeline    │    │
 │  │  │  invoke →    │  LLM+Tools+  │  lopdf +         │    │

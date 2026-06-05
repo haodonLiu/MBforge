@@ -82,12 +82,12 @@ MBForge/
 │   │   ├── lib.rs          # 模块导出
 │   │   ├── commands/       # Tauri IPC 命令层（15 模块，80+ 命令）
 │   │   │   ├── mod.rs      #   命令聚合（handler() 函数）
-│   │   ├── core/           # Agent + 数据层（32 模块 + 子目录）
-│   │   │   ├── agent.rs    # ReAct Agent 核心循环
-│   │   │   ├── executor/   # 工具执行器（按类别拆分：mod.rs + fs/kb/document/molecule/literature）
-│   │   │   ├── llm.rs      # LLM HTTP 客户端
+│   │   ├── core/           # Agent + 数据层（5 子目录 + 顶层模块）
+│   │   │   ├── agent/      # Agent 子系统（agent/context/llm/tools/observability/specialist_agent）
+│   │   │   ├── chem/       # 化学信息学（chem/esmiles/molecode/markush/abbreviation_map/gesim）
+│   │   │   ├── executor/   # 工具执行器（fs/kb/document/molecule/literature + arxiv）
 │   │   │   ├── molecule/   # 分子模块（store/db/dedup/cluster/engine）
-│   │   │   ├── memory/     # 记忆与轨迹（memory/trajectory/skills/pending）
+│   │   │   ├── memory/     # 记忆与轨迹（memory/trajectory/skills）
 │   │   │   ├── document/   # 文档处理（kb/tree/summary/semantic_cache/stream_search）
 │   │   │   ├── db.rs               # 统一 SQLite 数据库连接管理（molecules.db + vectors.db）
 │   │   │   ├── markush.rs          # E-SMILES Markush 分析

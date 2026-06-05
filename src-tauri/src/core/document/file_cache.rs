@@ -1,6 +1,6 @@
 //! 文件内容缓存 — 避免重复解析 PDF
 //!
-//! 在 vectors.db 同库中新增 file_cache 表，使用 SHA-256 + mtime 两级检查。
+//! 在 knowledge_base.db 同库中新增 file_cache 表，使用 SHA-256 + mtime 两级检查。
 //! 命中缓存时直接返回已提取的文本和 sections，跳过昂贵的 PDF 解析。
 
 use std::path::Path;
@@ -8,6 +8,8 @@ use std::sync::Mutex;
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+
+use crate::core::error::AppResult;
 
 /// 缓存条目：完整的文件解析结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,8 +30,16 @@ pub struct FileCache {
 }
 
 impl FileCache {
-    /// 在已有 SQLite 连接上创建 file_cache 表（复用 vectors.db）
-    pub fn new(conn: Connection) -> Result<Self, String> {
+    /// 在已有 SQLite 连接上创建 file_cache 表（复用 knowledge_base.db）
+    pub fn new(conn: Connection) -> AppResult<Self> {
+        Self::setup_schema(&conn)?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    /// 初始化表结构（pub 供 KnowledgeBase 迁移时调用）
+    pub fn setup_schema(conn: &Connection) -> AppResult<()> {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS file_cache (
                 file_hash      TEXT PRIMARY KEY,
@@ -42,24 +52,20 @@ impl FileCache {
                 hit_count      INTEGER DEFAULT 0
             )",
             [],
-        )
-        .map_err(|e| format!("Failed to create file_cache table: {}", e))?;
+        )?;
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_file_cache_path ON file_cache(file_path)",
             [],
-        )
-        .map_err(|e| format!("Failed to create file_cache index: {}", e))?;
+        )?;
 
-        Ok(Self {
-            conn: Mutex::new(conn),
-        })
+        Ok(())
     }
 
     /// 查询缓存：先比对 mtime，再比对 hash
     ///
     /// 返回 Some(CachedDoc) 表示命中缓存，None 表示需要重新解析。
-    pub fn get(&self, path: &Path) -> Result<Option<CachedDoc>, String> {
+    pub fn get(&self, path: &Path) -> AppResult<Option<CachedDoc>> {
         let path_str = path.to_string_lossy().to_string();
 
         // 读取当前文件 mtime
@@ -73,7 +79,7 @@ impl FileCache {
             Err(_) => return Ok(None), // 文件不存在，缓存无效
         };
 
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
         // 先按 file_path 查找
         let result = conn.query_row(
@@ -96,21 +102,22 @@ impl FileCache {
 
         match result {
             Ok(cached) => {
-                // mtime 相同 → 命中
-                if (cached.mtime - current_mtime).abs() < 1.0 {
+                // mtime 相同 → 命中（容差 1ms，避免快速测试中误判）
+                if (cached.mtime - current_mtime).abs() < 0.001 {
                     // 更新 hit_count
                     conn.execute(
                         "UPDATE file_cache SET hit_count = hit_count + 1 WHERE file_path = ?1",
                         params![path_str],
                     )
                     .ok();
+                    let mut cached = cached;
+                    cached.hit_count += 1;
                     log::debug!("file_cache: HIT (mtime match) for {}", path_str);
                     return Ok(Some(cached));
                 }
 
                 // mtime 不同 → 计算 hash
-                let current_hash = crate::core::helpers::sha256_file(path)
-                    .map_err(|e| format!("SHA256 failed: {}", e))?;
+                let current_hash = crate::core::helpers::sha256_file(path)?;
 
                 if cached.file_hash == current_hash {
                     // hash 相同，更新 mtime
@@ -119,6 +126,9 @@ impl FileCache {
                         params![current_mtime, path_str],
                     )
                     .ok();
+                    let mut cached = cached;
+                    cached.hit_count += 1;
+                    cached.mtime = current_mtime;
                     log::debug!("file_cache: HIT (hash match) for {}", path_str);
                     return Ok(Some(cached));
                 }
@@ -136,7 +146,7 @@ impl FileCache {
                 log::debug!("file_cache: MISS (not found) for {}", path_str);
                 Ok(None)
             }
-            Err(e) => Err(format!("file_cache query error: {}", e)),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -147,10 +157,9 @@ impl FileCache {
         text: &str,
         sections_json: &str,
         metadata_json: &str,
-    ) -> Result<(), String> {
+    ) -> AppResult<()> {
         let path_str = path.to_string_lossy().to_string();
-        let file_hash =
-            crate::core::helpers::sha256_file(path).map_err(|e| format!("SHA256 failed: {}", e))?;
+        let file_hash = crate::core::helpers::sha256_file(path)?;
 
         let mtime = std::fs::metadata(path)
             .ok()
@@ -164,49 +173,44 @@ impl FileCache {
             .map(|d| d.as_secs_f64())
             .unwrap_or(0.0);
 
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "INSERT OR REPLACE INTO file_cache (file_hash, file_path, mtime, text, sections_json, metadata_json, created_at, hit_count)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
             params![file_hash, path_str, mtime, text, sections_json, metadata_json, now],
-        )
-        .map_err(|e| format!("file_cache insert failed: {}", e))?;
+        )?;
 
         log::info!("file_cache: STORE for {}", path_str);
         Ok(())
     }
 
     /// 手动失效某文件的缓存
-    pub fn invalidate(&self, path: &Path) -> Result<(), String> {
+    pub fn invalidate(&self, path: &Path) -> AppResult<()> {
         let path_str = path.to_string_lossy().to_string();
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "DELETE FROM file_cache WHERE file_path = ?1",
             params![path_str],
-        )
-        .map_err(|e| format!("file_cache delete failed: {}", e))?;
+        )?;
         Ok(())
     }
 
     /// 清空所有缓存
-    pub fn clear(&self) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
-        conn.execute("DELETE FROM file_cache", [])
-            .map_err(|e| format!("file_cache clear failed: {}", e))?;
+    pub fn clear(&self) -> AppResult<()> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM file_cache", [])?;
         Ok(())
     }
 
     /// 缓存统计
-    pub fn stats(&self) -> Result<CacheStats, String> {
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub fn stats(&self) -> AppResult<CacheStats> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM file_cache", [], |r| r.get(0))
-            .map_err(|e| format!("Count failed: {}", e))?;
+            .query_row("SELECT COUNT(*) FROM file_cache", [], |r| r.get(0))?;
         let total_hits: i64 = conn
             .query_row("SELECT COALESCE(SUM(hit_count), 0) FROM file_cache", [], |r| {
                 r.get(0)
-            })
-            .map_err(|e| format!("Sum failed: {}", e))?;
+            })?;
         Ok(CacheStats {
             entry_count: count as usize,
             total_hits: total_hits as usize,

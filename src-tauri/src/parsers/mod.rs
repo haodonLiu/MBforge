@@ -1,20 +1,8 @@
-pub mod association;
-pub mod chem_validate;
-pub mod claim_parser;
-pub mod claim_policy;
-pub mod doc_types;
-pub mod headings;
-pub mod images;
-pub mod intent;
-pub mod keywords;
-pub mod liteparse;
-pub mod llama_parse;
-pub mod mineru;
-pub mod moldet_client;
-pub mod molecule_extractor;
+// Subdirectories
+pub mod chem;
+pub mod pdf;
 pub mod pipeline;
-pub mod post_process;
-pub mod report;
-pub mod sections;
-pub mod uniparser;
-pub mod vlm_chem;
+pub mod structure;
+
+// Top-level modules
+pub mod doc_types;

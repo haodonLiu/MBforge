@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use super::super::arxiv;
+use super::arxiv;
 use super::super::tools::{ToolInfo, ToolRegistry};
 
 /// Register all literature native tools.

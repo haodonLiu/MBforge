@@ -72,8 +72,11 @@ impl Project {
             return None;
         }
 
-        // Version check & migration
-        let version = super::project_migrator::ProjectMigrator::read_version(&root);
+        // Version check（仅向前兼容，不支持降级打开）
+        let version_path = root.join(".mbforge").join("version.json");
+        let version: u32 = super::helpers::load_json(&version_path)
+            .and_then(|v: serde_json::Value| v["version"].as_u64().map(|n| n as u32))
+            .unwrap_or(0);
         log::trace!("[Rust Project::open] Project version: {}", version);
         if version > PROJECT_FORMAT_VERSION {
             log::error!(
@@ -81,20 +84,7 @@ impl Project {
                 version,
                 PROJECT_FORMAT_VERSION
             );
-            log::trace!("[Rust Project::open] Version too new, returning None");
             return None;
-        }
-
-        if let Err(e) = super::project_migrator::ProjectMigrator::migrate(&root) {
-            log::error!("Migration failed: {}, attempting recovery", e);
-            log::trace!("[Rust Project::open] Migration failed: {}", e);
-            if let Err(e2) = super::project_migrator::ProjectMigrator::recover(&root) {
-                log::error!("Recovery also failed: {}", e2);
-                log::trace!("[Rust Project::open] Recovery also failed: {}", e2);
-                return None;
-            }
-        } else {
-            log::trace!("[Rust Project::open] Migration succeeded or not needed");
         }
 
         // Load index
@@ -158,9 +148,10 @@ impl Project {
         }
         log::trace!("[Rust Project::create] Meta dir created");
 
-        if super::project_migrator::ProjectMigrator::write_version(&root, PROJECT_FORMAT_VERSION)
-            .is_err()
-        {
+        // 写入版本信息
+        let version_path = root.join(".mbforge").join("version.json");
+        let version_data = serde_json::json!({ "version": PROJECT_FORMAT_VERSION });
+        if super::helpers::save_json(&version_path, &version_data).is_err() {
             log::trace!("[Rust Project::create] Failed to write version");
             return None;
         }

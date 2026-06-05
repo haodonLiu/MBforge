@@ -318,12 +318,12 @@ pub async fn mol_dedup_batch(
     Ok(engine.dedup_batch(&new_mols, same_as_threshold))
 }
 
-/// 子结构搜索：Tanimoto 预过滤 + RDKit 精确验证
+/// 子结构搜索：Tanimoto 预过滤 + VF2 精确验证（纯 Rust）
 ///
 /// 三级漏斗：
-/// 1. 加载所有分子的指纹（BLOB）
+/// 1. 加载所有分子的 SMILES
 /// 2. Tanimoto 预过滤（>0.3）快速排除不相关分子
-/// 3. RDKit HasSubstructMatch 精确验证
+/// 3. VF2 子结构精确验证
 #[tauri::command]
 pub async fn mol_search_substructure(
     state: tauri::State<'_, MoleculeEngineState>,
@@ -338,111 +338,28 @@ pub async fn mol_search_substructure(
     let db = engine.store();
     let threshold = tanimoto_threshold.unwrap_or(0.3);
 
-    // 1. 加载所有分子的指纹
+    // 1. 加载所有分子
     let all_mols = db.get_all_smiles().map_err(|e| format!("get_all_smiles: {}", e))?;
     if all_mols.is_empty() {
         return Ok(vec![]);
     }
 
-    // 2. 调用 Python sidecar 计算查询分子指纹 + 批量 Tanimoto 预过滤
-    let sidecar_url = crate::core::constants::sidecar_url();
-    let client = reqwest::Client::new();
+    // 2. 纯 Rust Tanimoto 预过滤 + VF2 子结构搜索
+    let candidates: Vec<(String, String)> = all_mols.iter().map(|(id, s)| (id.clone(), s.clone())).collect();
+    let matches = crate::core::chem::chem::substructure_search_with_filter(
+        &query_smiles,
+        &candidates,
+        threshold,
+    ).map_err(|e| format!("Substructure search failed: {}", e))?;
 
-    // 先计算查询分子指纹
-    let fp_resp = client
-        .post(format!("{}/api/v1/chem/fingerprint", sidecar_url))
-        .json(&serde_json::json!({"esmiles": query_smiles}))
-        .send()
-        .await
-        .map_err(|e| format!("Fingerprint request failed: {}", e))?;
-
-    let fp_json: serde_json::Value = fp_resp
-        .json()
-        .await
-        .map_err(|e| format!("Fingerprint parse failed: {}", e))?;
-
-    if !fp_json.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
-        return Err(format!(
-            "Fingerprint failed: {}",
-            fp_json.get("error").and_then(|v| v.as_str()).unwrap_or("unknown")
-        ));
-    }
-
-    // 批量 Tanimoto 预过滤
-    let candidate_esmiles: Vec<String> = all_mols.iter().map(|(_, s)| s.clone()).collect();
-    let tanimoto_resp = client
-        .post(format!("{}/api/v1/chem/tanimoto/batch", sidecar_url))
-        .json(&serde_json::json!({
-            "target_esmiles": query_smiles,
-            "esmiles_list": candidate_esmiles,
-            "threshold": threshold,
-        }))
-        .send()
-        .await
-        .map_err(|e| format!("Tanimoto batch request failed: {}", e))?;
-
-    let tanimoto_json: serde_json::Value = tanimoto_resp
-        .json()
-        .await
-        .map_err(|e| format!("Tanimoto parse failed: {}", e))?;
-
-    let filtered: Vec<String> = tanimoto_json
-        .get("results")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|r| r.get("esmiles").and_then(|v| v.as_str()).map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    if filtered.is_empty() {
-        return Ok(vec![]);
-    }
-
-    log::info!(
-        "Substructure search: {} total → {} after Tanimoto (>{})",
-        all_mols.len(),
-        filtered.len(),
-        threshold
-    );
-
-    // 3. RDKit 子结构精确验证
-    let sub_resp = client
-        .post(format!("{}/api/v1/chem/substructure_search", sidecar_url))
-        .json(&serde_json::json!({
-            "query_smiles": query_smiles,
-            "candidate_esmiles": filtered,
-        }))
-        .send()
-        .await
-        .map_err(|e| format!("Substructure search request failed: {}", e))?;
-
-    let sub_json: serde_json::Value = sub_resp
-        .json()
-        .await
-        .map_err(|e| format!("Substructure search parse failed: {}", e))?;
-
-    let matches: Vec<String> = sub_json
-        .get("matches")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // 构建返回结果（包含分子详情）
-    let mol_map: std::collections::HashMap<String, String> = all_mols.into_iter().collect();
+    // 构建返回结果
     let results: Vec<serde_json::Value> = matches
         .iter()
-        .filter_map(|esmiles| {
-            let mol_id = mol_map.get(esmiles)?;
-            Some(serde_json::json!({
+        .map(|(mol_id, smiles, _score)| {
+            serde_json::json!({
                 "mol_id": mol_id,
-                "esmiles": esmiles,
-            }))
+                "esmiles": smiles,
+            })
         })
         .collect();
 
@@ -463,8 +380,8 @@ pub async fn mol_search_substructure(
 ///
 /// 前端可代替 Python 端 `validate_smiles`，避免启动 model_server。
 #[tauri::command]
-pub async fn chem_validate_smiles(smiles: String) -> crate::core::chem::SmilesValidation {
-    crate::core::chem::validate_smiles(&smiles)
+pub async fn chem_validate_smiles(smiles: String) -> crate::core::chem::chem::SmilesValidation {
+    crate::core::chem::chem::validate_smiles(&smiles)
 }
 
 /// 计算两个 SMILES 之间的 Tanimoto 相似度（ECFP4）。
@@ -473,7 +390,7 @@ pub async fn chem_tanimoto_similarity(
     smiles_a: String,
     smiles_b: String,
 ) -> Result<f64, String> {
-    crate::core::chem::tanimoto_similarity(&smiles_a, &smiles_b)
+    crate::core::chem::chem::tanimoto_similarity(&smiles_a, &smiles_b)
 }
 
 /// 批量 Tanimoto 预过滤。
@@ -491,5 +408,5 @@ pub async fn chem_tanimoto_batch_filter(
     candidates: Vec<(String, String)>,
     threshold: Option<f64>,
 ) -> Result<Vec<(String, String, f64)>, String> {
-    crate::core::chem::tanimoto_batch_filter(&query_smiles, &candidates, threshold.unwrap_or(0.5))
+    crate::core::chem::chem::tanimoto_batch_filter(&query_smiles, &candidates, threshold.unwrap_or(0.5))
 }

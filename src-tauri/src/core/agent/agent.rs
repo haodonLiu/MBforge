@@ -1,13 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use super::config::ModelConfig;
-use super::constants::{AGENT_MAX_HISTORY_ROUNDS, AGENT_MAX_ITERATIONS, AGENT_MAX_TOTAL_TOKENS};
+use crate::core::config::ModelConfig;
+use crate::core::constants::{AGENT_MAX_HISTORY_ROUNDS, AGENT_MAX_ITERATIONS, AGENT_MAX_TOTAL_TOKENS};
 use super::context::{LayeredContext, Message};
-use super::executor::ToolExecutor;
+use crate::core::executor::ToolExecutor;
 use super::llm::{LlmClient, LlmResponse, StreamChunk, ToolCall};
-use super::memory::MemoryManager;
-use super::memory::SkillsManager;
-use super::memory::TrajectoryTracker;
+use crate::core::memory::memory::MemoryManager;
+use crate::core::memory::skills::SkillsManager;
+use crate::core::memory::trajectory::TrajectoryTracker;
 
 const DEFAULT_SYSTEM_PROMPT: &str = r#"你是 MBForge 分子科学 AI 助手，服务于药物化学与分子生物学研究。
 
@@ -474,7 +474,7 @@ impl Agent {
     }
 
     async fn sidecar_llm_call(url: &str, body: &serde_json::Value) -> Result<String, String> {
-        let client = super::http::client_15s();
+        let client = crate::core::http::client_15s();
         let resp = client
             .post(url)
             .header("Content-Type", "application/json")
@@ -555,7 +555,7 @@ impl Agent {
             return;
         }
 
-        let safe_name = super::helpers::safe_filename(&name);
+        let safe_name = crate::core::helpers::safe_filename(&name);
 
         let _ = std::fs::write(skills_dir.join(format!("{}.md", safe_name)), content);
     }

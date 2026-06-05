@@ -1,39 +1,42 @@
+// Subdirectory modules
 pub mod agent;
-pub mod arxiv;
 pub mod chem;
-pub mod config;
-pub mod abbreviation_map;
-pub mod constants;
-pub mod context;
-pub mod db;
-pub mod esmiles;
-pub mod gesim;
 pub mod document;
-pub mod embedding;
 pub mod executor;
+pub mod memory;
+pub mod molecule;
+
+// Top-level modules
+pub mod config;
+pub mod constants;
+pub mod embedding;
 pub mod error;
 pub mod helpers;
 pub mod http;
-pub mod llm;
-pub mod markush;
-pub mod memory;
-pub mod molecode;
-pub mod molecule;
 pub mod notes;
-pub mod observability;
 pub mod project;
-pub mod project_migrator;
 pub mod resource_manager;
 pub mod sar_query;
-pub mod specialist_agent;
-pub mod tools;
-pub mod types;
 pub mod sqlite_vector_store;
+pub mod types;
 pub mod vector_store;
 
-// Backward-compat re-exports — allow existing `crate::core::xxx` paths
-// used by commands/ and parsers/ to continue working after the
-// `core/memory/`, `core/document/`, `core/molecule/` refactor.
+// Backward-compat re-exports for chem modules
+pub use chem::abbreviation_map;
+pub use chem::chem as chem_functions;
+pub use chem::esmiles;
+pub use chem::gesim;
+pub use chem::markush;
+pub use chem::molecode;
+
+// Backward-compat re-exports for agent modules
+pub use agent::context;
+pub use agent::llm;
+pub use agent::observability;
+pub use agent::specialist_agent;
+pub use agent::tools;
+
+// Backward-compat re-exports for document modules
 pub use document::document_tree;
 pub use document::document_tree::{DocumentTreeIndex, PageContent};
 pub use document::knowledge_base;
@@ -50,9 +53,13 @@ pub use document::stream_search;
 pub use document::stream_search::{StreamingResult, StreamingSearch, StreamingSearchConfig};
 pub use document::summary;
 pub use document::summary::SummaryManager;
+
+// Backward-compat re-exports for memory modules
 pub use memory::memory::MemoryManager;
 pub use memory::skills::SkillsManager;
 pub use memory::trajectory::TrajectoryTracker;
+
+// Backward-compat re-exports for molecule modules
 pub use molecule::molecule_cluster;
 pub use molecule::molecule_cluster::ClusterInfo;
 pub use molecule::molecule_db;

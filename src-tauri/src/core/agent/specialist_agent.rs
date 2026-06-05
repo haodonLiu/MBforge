@@ -597,7 +597,7 @@ mod tests {
         let mut cfg = SpecialistConfig::literature_agent();
         cfg.tools = Some(vec![LIT_MOL_REGISTER.to_string()]);
 
-        let llm = LlmClient::new(&super::super::config::ModelConfig::default());
+        let llm = LlmClient::new(&crate::core::config::ModelConfig::default());
         let agent = SpecialistAgent::new(cfg, llm, None);
         let schemas = agent.tool_schemas();
 
@@ -612,7 +612,7 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
             let cfg = SpecialistConfig::literature_agent();
-            let llm = LlmClient::new(&super::super::config::ModelConfig::default());
+            let llm = LlmClient::new(&crate::core::config::ModelConfig::default());
             let agent = SpecialistAgent::new(cfg, llm, None);
             let trace = TraceContext::new();
             let r = agent

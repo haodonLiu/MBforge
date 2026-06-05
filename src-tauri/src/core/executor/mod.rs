@@ -15,6 +15,7 @@ use super::document::knowledge_base::KnowledgeBase;
 use super::document::summary::SummaryManager;
 use super::tools::{ToolInfo, ToolRegistry};
 
+pub mod arxiv;
 pub mod document;
 pub mod fs;
 pub mod kb;

@@ -4,8 +4,6 @@
 - POST /api/v1/sar/scaffold       共同骨架提取
 - POST /api/v1/sar/matrix         构建 R-group 矩阵
 - POST /api/v1/sar/heatmap        活性热力图
-- POST /api/v1/sar/decompose      单分子 R-group 分解
-- GET  /api/v1/sar/health         健康检查（RDkit 可用性）
 """
 
 from __future__ import annotations
@@ -18,7 +16,6 @@ from pydantic import BaseModel, Field
 from ...csar.sar import (
     build_activity_heatmap,
     build_rgroup_matrix,
-    decompose_compound,
     find_common_scaffold,
     is_available,
 )
@@ -95,31 +92,6 @@ class HeatmapResponse(BaseModel):
     error: str | None = None
 
 
-class DecomposeRequest(BaseModel):
-    """单分子分解请求."""
-
-    smiles: str
-    core_smiles: str
-    compound_id: str = ""
-    compound_name: str = ""
-
-
-class DecomposeResponse(BaseModel):
-    success: bool
-    compound_id: str = ""
-    compound_name: str = ""
-    smiles: str = ""
-    core_matches: bool = False
-    r_groups: list[dict[str, Any]] = []
-    error: str | None = None
-
-
-class HealthResponse(BaseModel):
-    available: bool
-    rdkit_version: str | None = None
-    error: str | None = None
-
-
 # ---------------------------------------------------------------------------
 # 辅助
 # ---------------------------------------------------------------------------
@@ -143,20 +115,6 @@ def _matrix_from_dict(d: dict[str, Any]):
 # ---------------------------------------------------------------------------
 # 端点
 # ---------------------------------------------------------------------------
-
-
-@router.get("/health", response_model=HealthResponse)
-async def sar_health() -> HealthResponse:
-    """SAR 服务健康检查."""
-    if not is_available():
-        return HealthResponse(available=False, error="RDKit not available")
-    try:
-        from rdkit import rdBase
-
-        version = rdBase.rdkitVersion
-    except Exception:
-        version = None
-    return HealthResponse(available=True, rdkit_version=version)
 
 
 @router.post("/scaffold", response_model=ScaffoldResponse)
@@ -239,36 +197,3 @@ async def get_heatmap(request: HeatmapRequest) -> HeatmapResponse:
     except Exception as e:
         logger.error(f"heatmap build failed: {e}", exc_info=True)
         return HeatmapResponse(success=False, error=str(e))
-
-
-@router.post("/decompose", response_model=DecomposeResponse)
-async def decompose(request: DecomposeRequest) -> DecomposeResponse:
-    """分解单个分子到骨架 + R-group."""
-    if not is_available():
-        return DecomposeResponse(success=False, error="RDKit not available")
-    try:
-        result = decompose_compound(
-            smiles=request.smiles,
-            core_smiles=request.core_smiles,
-            compound_id=request.compound_id,
-            compound_name=request.compound_name,
-        )
-        return DecomposeResponse(
-            success=True,
-            compound_id=result.compound_id,
-            compound_name=result.compound_name,
-            smiles=result.smiles,
-            core_matches=result.core_matches,
-            r_groups=[
-                {
-                    "position": r.position,
-                    "label": r.label,
-                    "substituent_smiles": r.substituent_smiles,
-                    "substituent_atoms": r.substituent_atoms,
-                }
-                for r in result.r_groups
-            ],
-        )
-    except Exception as e:
-        logger.error(f"decompose failed: {e}", exc_info=True)
-        return DecomposeResponse(success=False, error=str(e))

@@ -31,9 +31,7 @@ pub const PROVIDER_OPENAI_COMPATIBLE: &str = "openai_compatible";
 pub const PROVIDER_ANTHROPIC: &str = "anthropic";
 pub const PROVIDER_QWEN3: &str = "qwen3";
 pub const PROVIDER_SENTENCE_TRANSFORMERS: &str = "sentence_transformers";
-pub const PROVIDER_OLLAMA: &str = "ollama";
 pub const PROVIDER_API: &str = "api";
-pub const PROVIDER_LOCAL: &str = "local";
 
 pub const MEMORY_DIR: &str = "memory";
 pub const TRAJECTORY_DIR: &str = "trajectory";
@@ -70,19 +68,33 @@ pub const AGENT_MAX_ITERATIONS: usize = 5;
 pub const AGENT_MAX_HISTORY_ROUNDS: usize = 20;
 pub const AGENT_MAX_TOTAL_TOKENS: usize = 32000;
 
-// Embedding base URL (same as sidecar URL)
-pub const DEFAULT_EMBED_BASE_URL: &str = "http://127.0.0.1:18792";
-
 // ===== Path helpers =====
 
 pub fn sidecar_url() -> String {
     std::env::var("MBFORGE_SIDECAR_URL").unwrap_or_else(|_| DEFAULT_SIDECAR_URL.to_string())
 }
 
+/// Embedding base URL — derived from sidecar_url (always sidecar + /v1)
+pub fn embed_base_url() -> String {
+    format!("{}/v1", sidecar_url())
+}
+
 pub fn model_cache_dir() -> PathBuf {
+    // 1. 环境变量（最高优先级）
     if let Ok(dir) = std::env::var("MBFORGE_MODEL_CACHE_DIR") {
         return PathBuf::from(dir);
     }
+    // 2. 用户配置（设置页面配置的路径）
+    if let Ok(config) = std::fs::read_to_string(global_config_dir().join("config.json")) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&config) {
+            if let Some(dir) = val.get("model_cache_dir").and_then(|v| v.as_str()) {
+                if !dir.is_empty() {
+                    return PathBuf::from(dir);
+                }
+            }
+        }
+    }
+    // 3. 默认路径
     if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf()) {
         return home.join(".cache").join("mbforge").join("models");
     }

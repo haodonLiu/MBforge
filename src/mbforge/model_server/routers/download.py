@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -17,12 +16,15 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
 from ...core.resource_manager import (
-    RESOURCE_CATALOG, ResourceManager, ResourceType, ResourceStatus,
+    RESOURCE_CATALOG,
+    ResourceManager,
+    ResourceStatus,
+    ResourceType,
 )
+from ...utils.config import load_global_config
 from ...utils.constants import get_model_cache_dir
 from ...utils.exceptions import ResourceNotAvailableError, ValidationError
 from ...utils.logger import get_logger
-from ...utils.config import load_global_config, save_global_config
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -167,16 +169,6 @@ def _download_from_modelscope(model_id: str, *, timeout: int = 300):
             yield {"status": "failed", "error": f"下载失败: {e}"}
 
 
-def _get_dir_size(path: Path) -> float:
-    if not path.exists():
-        return 0.0
-    try:
-        size_bytes = sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
-        return round(size_bytes / 1024 / 1024, 1)
-    except Exception:
-        return 0.0
-
-
 # ---------------------------------------------------------------------------
 # Endpoints — 错误通过全局异常处理器统一返回
 # ---------------------------------------------------------------------------
@@ -214,45 +206,6 @@ async def list_models() -> dict[str, Any]:
             },
         })
     return {"success": True, "models": result}
-
-
-@router.get("/model-paths")
-async def get_model_paths() -> dict[str, Any]:
-    """返回所有模型相关的缓存路径."""
-    return {
-        "success": True,
-        "paths": {
-            "mbforge": {
-                "path": str(_get_model_cache_dir()),
-                "exists": _get_model_cache_dir().exists(),
-                "size_mb": _get_dir_size(_get_model_cache_dir()),
-            },
-            "huggingface": {
-                "path": str(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))),
-                "env_var": "HF_HOME",
-                "exists": Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))).exists(),
-                "size_mb": _get_dir_size(Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface")))),
-            },
-            "modelscope": {
-                "path": str(os.environ.get("MODELSCOPE_CACHE", str(Path.home() / ".cache" / "modelscope"))),
-                "env_var": "MODELSCOPE_CACHE",
-                "exists": Path(os.environ.get("MODELSCOPE_CACHE", str(Path.home() / ".cache" / "modelscope"))).exists(),
-                "size_mb": _get_dir_size(Path(os.environ.get("MODELSCOPE_CACHE", str(Path.home() / ".cache" / "modelscope")))),
-            },
-        },
-    }
-
-
-@router.post("/model-dir")
-async def set_model_dir(path: str) -> dict[str, Any]:
-    """设置 MBForge 模型缓存目录."""
-    new_path = Path(path).expanduser().absolute()
-    if not new_path.parent.exists():
-        raise ValidationError("父目录不存在")
-    cfg = load_global_config()
-    cfg.model_cache_dir = str(new_path)
-    save_global_config(cfg)
-    return {"success": True, "model_dir": str(new_path), "message": "模型目录已更新，重启后生效"}
 
 
 @router.get("/model-dir")

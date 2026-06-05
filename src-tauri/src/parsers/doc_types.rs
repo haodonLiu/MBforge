@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use crate::commands::classifier::DocumentClassification;
 use crate::commands::extractor::ActivityData;
-use crate::parsers::moldet_client::DetectedMolecule;
+use crate::parsers::chem::vlm_chem::DetectedMolecule;
 use crate::core::types::{Heading, SectionChunk};
-use crate::parsers::vlm_chem::ChemImageResult;
+use crate::parsers::chem::vlm_chem::ChemImageResult;
 
 // ---------------------------------------------------------------------------
 // Core pipeline types

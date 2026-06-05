@@ -3,7 +3,7 @@ pub mod agent;
 pub mod chem;
 pub mod config;
 pub mod document;
-pub mod executor;
+pub mod models;
 pub mod molecule;
 pub mod project;
 pub mod vector;

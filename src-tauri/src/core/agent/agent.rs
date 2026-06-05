@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::core::config::settings::ModelConfig;
 use crate::core::config::constants::{AGENT_MAX_HISTORY_ROUNDS, AGENT_MAX_ITERATIONS, AGENT_MAX_TOTAL_TOKENS};
 use super::context::{LayeredContext, Message};
-use crate::core::executor::ToolExecutor;
+use super::executor::ToolExecutor;
 use super::llm::{LlmClient, LlmResponse, StreamChunk, ToolCall};
 use super::memory::MemoryManager;
 use super::skills::SkillsManager;

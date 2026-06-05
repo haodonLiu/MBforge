@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use super::constants::{
-    global_config_dir, DEFAULT_EMBED_BASE_URL, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL,
+    global_config_dir, embed_base_url, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL,
 };
 use crate::core::document::semantic_cache::SemanticCacheConfig;
 use crate::core::document::stream_search::StreamingSearchConfig;
@@ -50,7 +50,7 @@ impl Default for EmbedConfig {
         Self {
             provider: "qwen3".into(),
             model_name: DEFAULT_EMBED_MODEL.into(),
-            base_url: DEFAULT_EMBED_BASE_URL.into(),
+            base_url: embed_base_url(),
             api_key: String::new(),
             device: "cpu".into(),
             mrl_dim: None,

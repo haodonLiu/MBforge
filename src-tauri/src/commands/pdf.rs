@@ -152,8 +152,8 @@ pub async fn extract_pdf_workflow_cmd(
     output_dir: String,
 ) -> Result<crate::parsers::pipeline::WorkflowResult, String> {
     use crate::core::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
-    use crate::parsers::chem_validate::separate_esmiles_layers;
-    use crate::parsers::moldet_client::DetectedMolecule;
+    use crate::parsers::chem::chem_validate::separate_esmiles_layers;
+    use crate::parsers::chem::vlm_chem::DetectedMolecule;
 
     let sidecar_url = crate::core::constants::sidecar_url();
     let result = crate::parsers::pipeline::extract_pdf_workflow(&path, &output_dir, &sidecar_url).await?;

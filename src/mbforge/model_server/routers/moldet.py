@@ -1,9 +1,9 @@
 """MolDet 分子检测与识别路由."""
 
 from __future__ import annotations
-from typing import Any
 
 import asyncio
+from typing import Any
 
 from fastapi import APIRouter, Request
 
@@ -91,54 +91,3 @@ async def extract_page(request: Request) -> dict[str, Any]:
         set_model_status("moldet", "error")
         logger.error(f"MolDet extract-page failed: {e}", exc_info=True)
         raise ModelNotAvailableError(str(e))
-
-
-@router.post("/extract-region")
-async def extract_region(request: Request) -> dict[str, Any]:
-    try:
-        body = await request.json()
-        image_base64 = body.get("image_base64", "")
-        if not image_base64:
-            raise ValidationError("image_base64 is required")
-
-        page_idx = body.get("page_idx", 0)
-        bbox_pdf = body.get("bbox_pdf")
-
-        image = decode_base64_image(image_base64)
-        pipeline = get_moldet()
-        if pipeline is None or not pipeline.is_available():
-            raise ModelNotAvailableError("MolDet pipeline not available")
-
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, lambda: pipeline.extract_region(
-                image, page_idx, tuple(bbox_pdf) if bbox_pdf else None
-            )
-        )
-        set_model_status("moldet", "ready")
-        return {"result": result.to_dict()}
-    except (ValidationError, ModelNotAvailableError):
-        raise
-    except Exception as e:
-        set_model_status("moldet", "error")
-        logger.error(f"MolDet extract-region failed: {e}", exc_info=True)
-        raise ModelNotAvailableError(str(e))
-
-
-@router.get("/health")
-async def moldet_health() -> dict[str, Any]:
-    try:
-        pipeline = get_moldet()
-        available = pipeline is not None and pipeline.is_available()
-        status = "ready" if available else "loading"
-        set_model_status("moldet", status)
-        return {
-            "status": status,
-            "doc_detector": pipeline.doc_detector.is_available() if pipeline else False,
-            "general_detector": pipeline.general_detector.is_available() if pipeline else False,
-            "recognizer": pipeline.recognizer.is_available() if pipeline else False,
-        }
-    except Exception as e:
-        set_model_status("moldet", "error")
-        logger.error(f"MolDet health check failed: {e}", exc_info=True)
-        return {"status": "error", "error": str(e)}

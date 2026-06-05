@@ -94,7 +94,7 @@ pub fn register(registry: &mut ToolRegistry, project_root: &str) {
 // `executor.execute` 必须包成 async（见 [Track C-C11] 修复）。
 // 这里先转成 sync-with-handle 的形式，配合 executor 层的 spawn_blocking。
 
-fn native_search_knowledge_base(
+pub fn native_search_knowledge_base(
     root: &str,
     query: &str,
     top_k: usize,
@@ -103,7 +103,7 @@ fn native_search_knowledge_base(
     Ok(results)
 }
 
-fn native_get_document_structure(
+pub fn native_get_document_structure(
     root: &str,
     doc_id: &str,
 ) -> Result<Option<Vec<crate::parsers::structure::sections::TreeNode>>, String> {
@@ -113,7 +113,7 @@ fn native_get_document_structure(
     Ok(kb.get_structure(doc_id))
 }
 
-fn native_get_document_pages(
+pub fn native_get_document_pages(
     root: &str,
     doc_id: &str,
     pages: &str,

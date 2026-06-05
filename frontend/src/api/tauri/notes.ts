@@ -22,28 +22,28 @@ export interface Note {
 
 export async function notesList(projectRoot: string): Promise<Note[]> {
   return invokeWithError(
-    () => invoke<Note[]>('notes_list', { projectRoot }),
+    () => invoke<Note[]>('notes_list', { project_root: projectRoot }),
     ErrorCode.ApiError,
   )
 }
 
 export async function notesGet(projectRoot: string, id: string): Promise<Note | null> {
   return invokeWithError(
-    () => invoke<Note | null>('notes_get', { projectRoot, id }),
+    () => invoke<Note | null>('notes_get', { project_root: projectRoot, id }),
     ErrorCode.ApiError,
   )
 }
 
 export async function notesSave(projectRoot: string, note: Note): Promise<Note> {
   return invokeWithError(
-    () => invoke<Note>('notes_save', { projectRoot, note }),
+    () => invoke<Note>('notes_save', { project_root: projectRoot, note }),
     ErrorCode.ApiError,
   )
 }
 
 export async function notesDelete(projectRoot: string, id: string): Promise<boolean> {
   return invokeWithError(
-    () => invoke<boolean>('notes_delete', { projectRoot, id }),
+    () => invoke<boolean>('notes_delete', { project_root: projectRoot, id }),
     ErrorCode.ApiError,
   )
 }
@@ -54,7 +54,7 @@ export async function notesBacklinks(
   targetId: string,
 ): Promise<Note[]> {
   return invokeWithError(
-    () => invoke<Note[]>('notes_backlinks', { projectRoot, targetId }),
+    () => invoke<Note[]>('notes_backlinks', { project_root: projectRoot, target_id: targetId }),
     ErrorCode.ApiError,
   )
 }

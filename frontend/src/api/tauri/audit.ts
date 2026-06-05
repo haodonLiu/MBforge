@@ -38,8 +38,8 @@ export async function auditLogGet(
   return invokeWithError(
     () =>
       invoke<AuditEntry[]>('audit_log_get', {
-        projectRoot,
-        traceId: traceId ?? null,
+        project_root: projectRoot,
+        trace_id: traceId ?? null,
         limit,
       }),
     ErrorCode.ApiError,

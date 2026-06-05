@@ -29,7 +29,7 @@ export interface MolStoreStats {
 
 export async function molStoreInit(projectRoot: string): Promise<void> {
   return invokeWithError(
-    () => invoke<void>('mol_store_init', { projectRoot }),
+    () => invoke<void>('mol_store_init', { project_root: projectRoot }),
     ErrorCode.MoleculeSearch,
   )
 }
@@ -47,15 +47,15 @@ export async function molStoreAdd(
 ): Promise<void> {
   return invokeWithError(
     () => invoke<void>('mol_store_add', {
-      projectRoot,
-      molId,
+      project_root: projectRoot,
+      mol_id: molId,
       esmiles,
       name: name ?? null,
-      sourceDoc: sourceDoc ?? null,
+      source_doc: sourceDoc ?? null,
       activity: activity ?? null,
-      activityType: activityType ?? null,
+      activity_type: activityType ?? null,
       units: units ?? null,
-      sourceType: sourceType ?? null,
+      source_type: sourceType ?? null,
     }),
     ErrorCode.MoleculeSearch,
   )
@@ -70,10 +70,10 @@ export async function molStoreList(
 ): Promise<MoleculeRecord_[]> {
   return invokeWithError(
     () => invoke<MoleculeRecord_[]>('mol_store_list', {
-      projectRoot,
+      project_root: projectRoot,
       limit: limit ?? null,
       offset: offset ?? null,
-      sourceType: sourceType ?? null,
+      source_type: sourceType ?? null,
       status: status ?? null,
     }),
     ErrorCode.MoleculeSearch,
@@ -85,7 +85,7 @@ export async function molStoreGet(
   molId: string,
 ): Promise<MoleculeRecord_ | null> {
   return invokeWithError(
-    () => invoke<MoleculeRecord_ | null>('mol_store_get', { projectRoot, molId }),
+    () => invoke<MoleculeRecord_ | null>('mol_store_get', { project_root: projectRoot, mol_id: molId }),
     ErrorCode.MoleculeSearch,
   )
 }
@@ -105,7 +105,7 @@ export async function molStoreDelete(
   molId: string,
 ): Promise<boolean> {
   return invokeWithError(
-    () => invoke<boolean>('mol_store_delete', { projectRoot, molId }),
+    () => invoke<boolean>('mol_store_delete', { project_root: projectRoot, mol_id: molId }),
     ErrorCode.MoleculeSearch,
   )
 }
@@ -114,7 +114,7 @@ export async function molStoreStats(
   projectRoot: string,
 ): Promise<MolStoreStats> {
   return invokeWithError(
-    () => invoke<MolStoreStats>('mol_store_stats', { projectRoot }),
+    () => invoke<MolStoreStats>('mol_store_stats', { project_root: projectRoot }),
     ErrorCode.MoleculeSearch,
   )
 }
@@ -124,7 +124,7 @@ export async function molStoreSearchBySmiles(
   esmiles: string,
 ): Promise<MoleculeRecord_ | null> {
   return invokeWithError(
-    () => invoke<MoleculeRecord_ | null>('mol_store_search_by_smiles', { projectRoot, esmiles }),
+    () => invoke<MoleculeRecord_ | null>('mol_store_search_by_smiles', { project_root: projectRoot, smiles: esmiles }),
     ErrorCode.MoleculeSearch,
   )
 }
@@ -134,7 +134,7 @@ export async function molStoreListByDoc(
   docId: string,
 ): Promise<MoleculeRecord_[]> {
   return invokeWithError(
-    () => invoke<MoleculeRecord_[]>('mol_store_list_by_doc', { projectRoot, docId }),
+    () => invoke<MoleculeRecord_[]>('mol_store_list_by_doc', { project_root: projectRoot, doc_id: docId }),
     ErrorCode.MoleculeSearch,
   )
 }
@@ -145,7 +145,7 @@ export async function molStoreUpdate(
   record: MoleculeRecord_,
 ): Promise<boolean> {
   return invokeWithError(
-    () => invoke<boolean>('mol_store_update', { projectRoot, record }),
+    () => invoke<boolean>('mol_store_update', { project_root: projectRoot, record }),
     ErrorCode.MoleculeSearch,
   )
 }
@@ -157,7 +157,7 @@ export async function molStoreUpdateBatch(
 ): Promise<{ updated: number; failed: string[] }> {
   return invokeWithError(
     () => invoke<{ updated: number; failed: string[] }>('mol_store_update_batch', {
-      projectRoot,
+      project_root: projectRoot,
       records,
     }),
     ErrorCode.MoleculeSearch,
@@ -258,7 +258,7 @@ export async function chemValidateSmiles(smiles: string): Promise<SmilesValidati
 
 /** 计算两个 SMILES 之间的 Tanimoto 相似度（ECFP4，0.0–1.0） */
 export async function chemTanimotoSimilarity(smilesA: string, smilesB: string): Promise<number> {
-  return await invoke<number>('chem_tanimoto_similarity', { smilesA, smilesB })
+  return await invoke<number>('chem_tanimoto_similarity', { smiles_a: smilesA, smiles_b: smilesB })
 }
 
 /** 批量 Tanimoto 预过滤候选。
@@ -269,7 +269,7 @@ export async function chemTanimotoBatchFilter(
   threshold = 0.5,
 ): Promise<Array<[string, string, number]>> {
   return await invoke<Array<[string, string, number]>>('chem_tanimoto_batch_filter', {
-    querySmiles,
+    query_smiles: querySmiles,
     candidates,
     threshold,
   })

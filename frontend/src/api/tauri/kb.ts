@@ -40,7 +40,7 @@ export async function kbSearch(
   topK = 5,
 ): Promise<KbSearchResult[]> {
   return invokeWithError(
-    () => invoke<KbSearchResult[]>('kb_search', { root: projectRoot, query, topK }),
+    () => invoke<KbSearchResult[]>('kb_search', { root: projectRoot, query, top_k: topK }),
     ErrorCode.ApiError,
   )
 }
@@ -60,7 +60,7 @@ export async function kbSearchStream(
   onChunk: (chunk: KbSearchChunk) => void,
 ): Promise<() => void> {
   invokeWithError(
-    () => invoke('kb_search_stream', { root: projectRoot, query, topK }),
+    () => invoke('kb_search_stream', { root: projectRoot, query, top_k: topK }),
     ErrorCode.ApiError,
   ).catch((err: unknown) => {
     onChunk({ type: 'complete', results: [], count: 0, error: String(err) })
@@ -85,7 +85,7 @@ export async function kbGetStructure(
   docId: string,
 ): Promise<TreeNode[] | null> {
   return invokeWithError(
-    () => invoke<TreeNode[] | null>('kb_get_structure', { projectRoot, docId }),
+    () => invoke<TreeNode[] | null>('kb_get_structure', { root: projectRoot, doc_id: docId }),
     ErrorCode.ApiError,
   )
 }
@@ -101,7 +101,7 @@ export async function kbGetPages(
   pages: string,
 ): Promise<PageContent[]> {
   return invokeWithError(
-    () => invoke<PageContent[]>('kb_get_pages', { projectRoot, docId, pages }),
+    () => invoke<PageContent[]>('kb_get_pages', { root: projectRoot, doc_id: docId, pages }),
     ErrorCode.ApiError,
   )
 }

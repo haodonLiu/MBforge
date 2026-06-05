@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use super::constants::{
     global_config_dir, DEFAULT_EMBED_BASE_URL, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL,
 };
-use super::document::semantic_cache::SemanticCacheConfig;
-use super::document::stream_search::StreamingSearchConfig;
+use crate::core::document::semantic_cache::SemanticCacheConfig;
+use crate::core::document::stream_search::StreamingSearchConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
@@ -204,11 +204,11 @@ impl AppConfig {
 
     pub fn load() -> Self {
         let path = Self::config_path();
-        super::helpers::load_json(&path).unwrap_or_default()
+        crate::core::helpers::load_json(&path).unwrap_or_default()
     }
 
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        super::helpers::save_json(&Self::config_path(), self)
+        crate::core::helpers::save_json(&Self::config_path(), self)
     }
 }
 

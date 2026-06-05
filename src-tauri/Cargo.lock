@@ -2913,6 +2913,7 @@ dependencies = [
 name = "mbforge"
 version = "0.2.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "base64 0.22.1",
  "chematic-chem",
@@ -2947,6 +2948,7 @@ dependencies = [
  "tauri-plugin-fs",
  "tauri-plugin-shell",
  "tempfile",
+ "thiserror 1.0.69",
  "tokio",
  "urlencoding",
  "uuid",

@@ -5,7 +5,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::core::error::{AppError, AppResult, ErrorCode};
 use crate::core::helpers::{assert_within_root, clean_path};
-use crate::core::project::DocumentEntry;
+use crate::core::project::project::DocumentEntry;
 
 fn wrap<T>(result: AppResult<T>) -> Result<T, String> {
     result.map_err(|e| e.to_string())
@@ -29,7 +29,7 @@ pub async fn upload_files(
 ) -> Result<Vec<DocumentEntry>, String> {
     let root_path = wrap(resolve_path(&project_root))?;
 
-    let mut project = crate::core::project::Project::open(&root_path)
+    let mut project = crate::core::project::project::Project::open(&root_path)
         .ok_or_else(|| AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {}", root_path.display()))
             .with_path(root_path.to_string_lossy()).to_string())?;
 

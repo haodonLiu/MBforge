@@ -2,8 +2,8 @@ use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::core::constants::PROJECT_META_DIR;
-use crate::core::molecule_db::MOL_DB_FILENAME;
+use crate::core::config::constants::PROJECT_META_DIR;
+use crate::core::molecule::molecule_db::MOL_DB_FILENAME;
 
 // ---------------------------------------------------------------------------
 // MoleculeRecord — port of Python `MoleculeRecord` from

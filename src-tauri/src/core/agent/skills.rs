@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::super::constants::PROJECT_META_DIR;
+use crate::core::config::constants::PROJECT_META_DIR;
 
 const SKILLS_DIR: &str = "skills";
 
@@ -104,7 +104,7 @@ impl SkillsManager {
         for s in &skills {
             // 截断到 200 字节，使用 safe_truncate 避免在 CJK / emoji 字符中间切
             let preview = if s.content.len() > 200 {
-                format!("{}...", super::super::helpers::safe_truncate(&s.content, 200))
+                format!("{}...", crate::core::helpers::safe_truncate(&s.content, 200))
             } else {
                 s.content.clone()
             };
@@ -165,7 +165,7 @@ impl SkillsManager {
             });
 
             let url = format!("{}/api/v1/llm/chat", sidecar_url.trim_end_matches('/'));
-            let client = super::super::http::client_15s();
+            let client = crate::core::http::client_15s();
 
             let resp = match client
                 .post(&url)
@@ -209,7 +209,7 @@ impl SkillsManager {
             }
 
             // 清理文件名
-            let safe_name = super::super::helpers::safe_filename(&name);
+            let safe_name = crate::core::helpers::safe_filename(&name);
 
             let path = skills_dir.join(format!("{}.md", safe_name));
             let _ = std::fs::write(&path, content);

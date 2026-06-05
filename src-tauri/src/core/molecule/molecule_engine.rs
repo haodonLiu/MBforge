@@ -7,15 +7,15 @@
 
 use std::path::Path;
 
-use crate::core::markush;
-use crate::core::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationStats};
-use crate::core::molecule_store::{MoleculeDatabase, MoleculeRecord};
+use crate::core::chem::markush;
+use crate::core::molecule::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationStats};
+use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeRecord};
 
 // Re-export types that callers need.
-pub use crate::core::markush::{MarkushOverlap, MarkushPattern};
-pub use crate::core::molecule_cluster::ClusterInfo;
-pub use crate::core::molecule_dedup::{DedupPair, DedupResult};
-pub use crate::core::sar_query::{
+pub use crate::core::chem::markush::{MarkushOverlap, MarkushPattern};
+pub use crate::core::molecule::molecule_cluster::ClusterInfo;
+pub use crate::core::molecule::molecule_dedup::{DedupPair, DedupResult};
+pub use crate::core::chem::sar_query::{
     ActivityCliff, ActivitySummary, AnalogWithActivity, ScaffoldActivityRecord, ScaffoldProfile,
 };
 

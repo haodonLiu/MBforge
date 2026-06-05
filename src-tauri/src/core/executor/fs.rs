@@ -9,8 +9,8 @@ use grep_searcher::sinks::UTF8;
 use grep_searcher::SearcherBuilder;
 use ignore::WalkBuilder;
 
-use super::super::helpers;
-use super::super::tools::{ToolInfo, ToolRegistry};
+use crate::core::helpers;
+use crate::core::agent::tools::{ToolInfo, ToolRegistry};
 
 /// Register all file-system native tools.
 pub fn register(registry: &mut ToolRegistry, project_root: &str) {

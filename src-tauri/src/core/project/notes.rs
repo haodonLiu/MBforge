@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use super::error::{AppError, AppResult, ErrorCode};
-use super::helpers::{generate_uuid, now_rfc3339};
+use crate::core::error::{AppError, AppResult, ErrorCode};
+use crate::core::helpers::{generate_uuid, now_rfc3339};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,7 +48,7 @@ struct NotesIndex {
 }
 
 fn notes_path(root: &Path) -> PathBuf {
-    root.join(super::constants::PROJECT_META_DIR)
+    root.join(crate::core::config::constants::PROJECT_META_DIR)
         .join("notes.json")
 }
 
@@ -172,7 +172,7 @@ mod tests {
     }
 
     fn write_test_index(dir: &Path, index: &NotesIndex) {
-        fs::create_dir_all(dir.join(super::super::constants::PROJECT_META_DIR)).unwrap();
+        fs::create_dir_all(dir.join(crate::core::config::constants::PROJECT_META_DIR)).unwrap();
         let path = notes_path(dir);
         let content = serde_json::to_string_pretty(index).unwrap();
         fs::write(&path, content).unwrap();

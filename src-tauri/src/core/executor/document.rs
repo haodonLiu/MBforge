@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use super::super::tools::{ToolInfo, ToolRegistry};
+use crate::core::agent::tools::{ToolInfo, ToolRegistry};
 
 /// Register all document-access native tools.
 pub fn register(registry: &mut ToolRegistry, project_root: &str) {
@@ -119,7 +119,7 @@ pub fn register(registry: &mut ToolRegistry, project_root: &str) {
 
 fn native_read_document_abstract(root: &str, doc_id: &str) -> String {
     let project_root = std::path::PathBuf::from(root);
-    match super::super::document::summary::SummaryManager::new(&project_root) {
+    match crate::core::document::summary::SummaryManager::new(&project_root) {
         Ok(mgr) => match mgr.load(doc_id) {
             Some(s) => s.l0_abstract,
             None => format!("No summary found for doc_id: {}", doc_id),
@@ -130,7 +130,7 @@ fn native_read_document_abstract(root: &str, doc_id: &str) -> String {
 
 fn native_read_document_overview(root: &str, doc_id: &str) -> String {
     let project_root = std::path::PathBuf::from(root);
-    match super::super::document::summary::SummaryManager::new(&project_root) {
+    match crate::core::document::summary::SummaryManager::new(&project_root) {
         Ok(mgr) => match mgr.load(doc_id) {
             Some(s) => s.l1_overview,
             None => format!("No summary found for doc_id: {}", doc_id),
@@ -141,7 +141,7 @@ fn native_read_document_overview(root: &str, doc_id: &str) -> String {
 
 fn native_list_documents(root: &str, doc_type: &str) -> String {
     let project_root = std::path::PathBuf::from(root);
-    match super::super::project::Project::open(&project_root) {
+    match crate::core::project::project::Project::open(&project_root) {
         Some(project) => {
             let docs = project.list_documents().to_vec();
             let filtered: Vec<_> = if doc_type.is_empty() {
@@ -171,7 +171,7 @@ fn native_list_documents(root: &str, doc_type: &str) -> String {
 
 fn native_get_document_summary(root: &str, doc_id: &str) -> String {
     let project_root = std::path::PathBuf::from(root);
-    match super::super::project::Project::open(&project_root) {
+    match crate::core::project::project::Project::open(&project_root) {
         Some(project) => match project.get_document(doc_id) {
             Some(entry) => {
                 let hash_prefix = if entry.hash.len() > 16 {
@@ -204,17 +204,17 @@ fn native_read_document_detail(root: &str, doc_id: &str, max_chars: usize) -> St
     let project_root = std::path::PathBuf::from(root);
 
     // 尝试从 document_tree 读取页面内容
-    let tree_index = super::super::document::document_tree::DocumentTreeIndex::new(&project_root);
+    let tree_index = crate::core::document::document_tree::DocumentTreeIndex::new(&project_root);
     let pages = tree_index.get_pages(doc_id, "1-50");
 
     if pages.is_empty() {
         // 回退：尝试从 summary 读取 L1 overview
-        match super::super::document::summary::SummaryManager::new(&project_root) {
+        match crate::core::document::summary::SummaryManager::new(&project_root) {
             Ok(mgr) => match mgr.load(doc_id) {
                 Some(s) => {
                     let content = format!("{}\n\n{}", s.l0_abstract, s.l1_overview);
                     if content.len() > max_chars {
-                        let cut = super::super::helpers::safe_truncate(&content, max_chars);
+                        let cut = crate::core::helpers::safe_truncate(&content, max_chars);
                         format!("[{}] 内容:\n{}...\n[已截断]", doc_id, cut)
                     } else {
                         format!("[{}] 内容:\n{}", doc_id, content)
@@ -231,7 +231,7 @@ fn native_read_document_detail(root: &str, doc_id: &str, max_chars: usize) -> St
             .collect::<Vec<_>>()
             .join("\n\n");
         if full_text.len() > max_chars {
-            let cut = super::super::helpers::safe_truncate(&full_text, max_chars);
+            let cut = crate::core::helpers::safe_truncate(&full_text, max_chars);
             format!(
                 "[{}] 完整内容:\n{}...\n[已截断]",
                 doc_id,
@@ -247,8 +247,8 @@ fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: usiz
     let project_root = std::path::PathBuf::from(root);
 
     // 1. 用 KnowledgeBase 语义搜索获取候选文档
-    let config = crate::core::config::AppConfig::load();
-    let candidates = match super::super::document::knowledge_base::KnowledgeBase::new(&project_root, Some(&config.embed))
+    let config = crate::core::config::settings::AppConfig::load();
+    let candidates = match crate::core::document::knowledge_base::KnowledgeBase::new(&project_root, Some(&config.embed))
     {
         Ok(kb) => kb.search_sync(keyword, top_k * 3),
         Err(_) => vec![],
@@ -314,7 +314,7 @@ fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: usiz
                 .and_then(|v| v.as_str())
                 .unwrap_or("?");
             let text = if r.text.len() > 120 {
-                super::super::helpers::safe_truncate(&r.text, 120)
+                crate::core::helpers::safe_truncate(&r.text, 120)
             } else {
                 &r.text
             };
@@ -329,7 +329,7 @@ fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: usiz
     )];
     for s in matched.iter().take(top_k) {
         let abstract_text = if s.l0_abstract.len() > 120 {
-            super::super::helpers::safe_truncate(&s.l0_abstract, 120)
+            crate::core::helpers::safe_truncate(&s.l0_abstract, 120)
         } else {
             s.l0_abstract.as_str()
         };

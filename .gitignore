@@ -111,3 +111,17 @@ package-lock.json
 src-tauri/target/
 src-tauri/gen/
 src-tauri/vendor/pdfium/release/
+
+# ============================================================================
+# Vendored reference repos (ref/)
+# ============================================================================
+# ref/{GESim,chematic,paddleocr-vl-local,MoleCode}/ are local clones of external repos.
+# Each has its own .git/. Use  to fetch/update.
+# Not tracked by MBForge git.
+ref/GESim/
+ref/chematic/
+ref/paddleocr-vl-local/
+ref/MoleCode/
+
+# Legacy workspace files
+frontend/tsclog.txt

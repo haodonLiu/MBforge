@@ -24,7 +24,7 @@ pub trait EmbedderTrait: Send + Sync {
     fn embed_with_trace(
         &self,
         texts: Vec<String>,
-        _trace: Option<&super::observability::TraceContext>,
+        _trace: Option<&crate::core::agent::observability::TraceContext>,
     ) -> Result<Vec<Vec<f32>>, String> {
         self.embed(texts)
     }
@@ -36,7 +36,7 @@ pub struct Embedder {
 }
 
 impl Embedder {
-    pub fn new(config: &super::config::EmbedConfig) -> Self {
+    pub fn new(config: &crate::core::config::settings::EmbedConfig) -> Self {
         if config.api_key.is_empty() {
             // 无 API key，使用确定性 embedder（用于测试）
             Self {
@@ -61,7 +61,7 @@ impl Embedder {
     pub fn embed_with_trace(
         &self,
         texts: Vec<String>,
-        trace: Option<&super::observability::TraceContext>,
+        trace: Option<&crate::core::agent::observability::TraceContext>,
     ) -> Result<Vec<Vec<f32>>, String> {
         self.inner.embed_with_trace(texts, trace)
     }
@@ -102,7 +102,7 @@ impl EmbedderTrait for SidecarEmbedder {
     fn embed_with_trace(
         &self,
         texts: Vec<String>,
-        trace: Option<&super::observability::TraceContext>,
+        trace: Option<&crate::core::agent::observability::TraceContext>,
     ) -> Result<Vec<Vec<f32>>, String> {
         if texts.is_empty() {
             return Ok(Vec::new());
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_embedder_wrapper() {
-        use super::super::config::EmbedConfig;
+        use crate::core::config::settings::EmbedConfig;
         let config = EmbedConfig::default();
         let emb = Embedder::new(&config);
         let result = emb.embed(vec!["test".to_string()]).unwrap();

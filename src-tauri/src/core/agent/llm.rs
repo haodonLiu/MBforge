@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::core::config::ModelConfig;
-use crate::core::constants::PROVIDER_ANTHROPIC;
+use crate::core::config::settings::ModelConfig;
+use crate::core::config::constants::PROVIDER_ANTHROPIC;
 use super::context::Message;
 
 /// OpenAI 风格的 usage 字段（Anthropic 也用相同的字段名）。

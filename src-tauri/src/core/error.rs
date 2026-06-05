@@ -1,4 +1,3 @@
-use std::fmt;
 use serde::{Deserialize, Serialize};
 
 /// 机器可读的错误码，与前端 `ErrorCode` 枚举对齐。
@@ -27,8 +26,8 @@ pub enum ErrorCode {
     KbSearch,
 }
 
-impl fmt::Display for ErrorCode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ErrorCode::Unknown => write!(f, "UNKNOWN"),
             ErrorCode::Network => write!(f, "NETWORK"),
@@ -64,7 +63,8 @@ impl fmt::Display for ErrorCode {
 /// - `suggestion`：可选，修复建议
 ///
 /// Tauri 命令边界通过 `.map_err(|e| e.to_string())` 转换为字符串。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
+#[error("[{code}] {message}{}", path.as_ref().map(|p| format!(" (path: {p})")).unwrap_or_default())]
 pub struct AppError {
     pub code: ErrorCode,
     pub message: String,
@@ -92,21 +92,6 @@ impl AppError {
         self
     }
 }
-
-impl fmt::Display for AppError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}] {}", self.code, self.message)?;
-        if let Some(path) = &self.path {
-            write!(f, " (path: {path})")?;
-        }
-        if let Some(suggestion) = &self.suggestion {
-            write!(f, " — {suggestion}")?;
-        }
-        Ok(())
-    }
-}
-
-impl std::error::Error for AppError {}
 
 /// 从字符串构造 AppError（用于兼容旧代码的快速迁移）。
 /// 解析格式 `[ERROR_CODE] message`，无法解析时 fallback 到 Unknown。
@@ -164,5 +149,11 @@ impl From<std::io::Error> for AppError {
 impl From<serde_json::Error> for AppError {
     fn from(e: serde_json::Error) -> Self {
         AppError::new(ErrorCode::Unknown, format!("JSON 序列化失败: {e}"))
+    }
+}
+
+impl From<rusqlite::Error> for AppError {
+    fn from(e: rusqlite::Error) -> Self {
+        AppError::new(ErrorCode::Unknown, format!("数据库错误: {e}"))
     }
 }

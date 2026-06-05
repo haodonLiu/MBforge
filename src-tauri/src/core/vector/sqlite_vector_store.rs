@@ -9,6 +9,7 @@ use std::sync::Mutex;
 
 use rusqlite::{params, Connection, ToSql};
 
+use crate::core::error::AppResult;
 use super::vector_store::SearchResult;
 
 /// SQLite 向量存储
@@ -19,20 +20,18 @@ pub struct SqliteVectorStore {
 
 impl SqliteVectorStore {
     /// 打开或创建向量数据库
-    pub fn open(db_path: &Path, dim: usize) -> Result<Self, String> {
+    pub fn open(db_path: &Path, dim: usize) -> AppResult<Self> {
         if let Some(parent) = db_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Create dir failed: {}", e))?;
+            std::fs::create_dir_all(parent)?;
         }
 
-        let conn = Connection::open(db_path)
-            .map_err(|e| format!("Open DB failed: {}", e))?;
+        let conn = Connection::open(db_path)?;
 
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA busy_timeout=5000;",
         )
-        .map_err(|e| format!("Set pragma failed: {}", e))?;
+        ?;
 
         // 向量表
         conn.execute(
@@ -45,13 +44,13 @@ impl SqliteVectorStore {
             )",
             [],
         )
-        .map_err(|e| format!("Create vectors table failed: {}", e))?;
+        ?;
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_vectors_doc_id ON vectors(doc_id)",
             [],
         )
-        .map_err(|e| format!("Create index failed: {}", e))?;
+        ?;
 
         Ok(Self {
             conn: Mutex::new(conn),
@@ -67,19 +66,16 @@ impl SqliteVectorStore {
         texts: &[String],
         metadatas: &[String],
         vectors: &[Vec<f32>],
-    ) -> Result<(), String> {
+    ) -> AppResult<()> {
         if chunk_ids.is_empty() {
             return Ok(());
         }
 
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
-        let tx = conn
-            .unchecked_transaction()
-            .map_err(|e| format!("Transaction failed: {}", e))?;
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let tx = conn.unchecked_transaction()?;
 
         // 先删除该 doc_id 的旧数据
-        tx.execute("DELETE FROM vectors WHERE doc_id = ?1", params![doc_id])
-            .map_err(|e| format!("Delete old vectors failed: {}", e))?;
+        tx.execute("DELETE FROM vectors WHERE doc_id = ?1", params![doc_id])?;
 
         // 插入新数据
         for i in 0..chunk_ids.len() {
@@ -89,10 +85,10 @@ impl SqliteVectorStore {
                  VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![chunk_ids[i], doc_id, texts[i], metadatas[i], fp_bytes],
             )
-            .map_err(|e| format!("Insert vector failed: {}", e))?;
+            ?;
         }
 
-        tx.commit().map_err(|e| format!("Commit failed: {}", e))?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -102,8 +98,8 @@ impl SqliteVectorStore {
         query_embedding: &[f32],
         top_k: usize,
         filter_doc_id: Option<&str>,
-    ) -> Result<Vec<SearchResult>, String> {
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    ) -> AppResult<Vec<SearchResult>> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
         let (sql, query_params): (&str, Vec<Box<dyn ToSql>>) = if let Some(doc_id) = filter_doc_id {
             (
@@ -117,27 +113,22 @@ impl SqliteVectorStore {
             )
         };
 
-        let mut stmt = conn
-            .prepare(sql)
-            .map_err(|e| format!("Prepare failed: {}", e))?;
+        let mut stmt = conn.prepare(sql)?;
 
         let param_refs: Vec<&dyn ToSql> = query_params.iter().map(|p| p.as_ref()).collect();
-        let rows = stmt
-            .query_map(param_refs.as_slice(), |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, Vec<u8>>(3)?,
-                ))
-            })
-            .map_err(|e| format!("Query failed: {}", e))?;
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Vec<u8>>(3)?,
+            ))
+        })?;
 
         // 计算余弦相似度并排序
         let mut scored: Vec<(String, String, serde_json::Value, f32)> = Vec::new();
         for row in rows {
-            let (chunk_id, text, meta_str, embedding_bytes) =
-                row.map_err(|e| format!("Row error: {}", e))?;
+            let (chunk_id, text, meta_str, embedding_bytes) = row?;
 
             let embedding = bytes_to_f32_vec(&embedding_bytes);
             let similarity = cosine_similarity_f32(query_embedding, &embedding);
@@ -164,7 +155,7 @@ impl SqliteVectorStore {
     }
 
     /// 删除指定文档的所有向量
-    pub fn delete_doc(&self, doc_id: &str) -> Result<(), String> {
+    pub fn delete_doc(&self, doc_id: &str) -> AppResult<()> {
         let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
         conn.execute("DELETE FROM vectors WHERE doc_id = ?1", params![doc_id])
             .map_err(|e| format!("Delete failed: {}", e))?;
@@ -172,7 +163,7 @@ impl SqliteVectorStore {
     }
 
     /// 向量数量
-    pub fn count(&self) -> Result<usize, String> {
+    pub fn count(&self) -> AppResult<usize> {
         let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM vectors", [], |r| r.get(0))

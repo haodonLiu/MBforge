@@ -1,4 +1,4 @@
-use crate::core::constants::{PROJECT_META_DIR, SUMMARY_DIR};
+use crate::core::config::constants::{PROJECT_META_DIR, SUMMARY_DIR};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 

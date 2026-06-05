@@ -10,10 +10,10 @@
 //! The orchestrator below wires them all into a single [`ToolRegistry`]
 //! and exposes the [`ToolExecutor`] facade that the Agent uses.
 
-use super::document::document_tree::DocumentTreeIndex;
-use super::document::knowledge_base::KnowledgeBase;
-use super::document::summary::SummaryManager;
-use super::tools::{ToolInfo, ToolRegistry};
+use crate::core::document::document_tree::DocumentTreeIndex;
+use crate::core::document::knowledge_base::KnowledgeBase;
+use crate::core::document::summary::SummaryManager;
+use crate::core::agent::tools::{ToolInfo, ToolRegistry};
 
 pub mod arxiv;
 pub mod document;

@@ -2,8 +2,8 @@
 
 use std::collections::HashMap;
 
-use super::super::markush;
-use super::super::tools::{ToolInfo, ToolRegistry};
+use crate::core::chem::markush;
+use crate::core::agent::tools::{ToolInfo, ToolRegistry};
 
 /// Register all molecule/markush native tools.
 pub fn register(registry: &mut ToolRegistry, _project_root: &str) {
@@ -50,7 +50,7 @@ fn native_molecule_analysis(root: &str, action: &str, params: serde_json::Value)
     if !project_root.join(".mbforge").join("molecules.db").exists() {
         return "No molecule database found".to_string();
     }
-    match super::super::molecule::molecule_engine::MoleculeEngine::new(project_root) {
+    match crate::core::molecule::molecule_engine::MoleculeEngine::new(project_root) {
         Ok(engine) => match engine.analyze(action, params) {
             Ok(result) => {
                 serde_json::to_string(&result).unwrap_or_else(|e| format!("Serialize error: {}", e))

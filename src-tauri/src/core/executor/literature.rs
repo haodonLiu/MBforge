@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use super::arxiv;
-use super::super::tools::{ToolInfo, ToolRegistry};
+use crate::core::agent::tools::{ToolInfo, ToolRegistry};
 
 /// Register all literature native tools.
 pub fn register(registry: &mut ToolRegistry, _project_root: &str) {

@@ -13,11 +13,12 @@ use std::sync::{Mutex, OnceLock};
 use rusqlite::Connection;
 use tauri::Emitter;
 
-use crate::core::constants::EVT_KB_SEARCH_CHUNK;
-use crate::core::embedding::Embedder;
-use crate::core::sqlite_vector_store::{SqliteVectorStore, reciprocal_rank_fusion};
+use crate::core::config::constants::EVT_KB_SEARCH_CHUNK;
+use crate::core::error::AppResult;
+use crate::core::vector::embedding::Embedder;
+use crate::core::vector::sqlite_vector_store::{SqliteVectorStore, reciprocal_rank_fusion};
 
-use super::super::vector_store::SearchResult;
+use crate::core::vector::vector_store::SearchResult;
 use super::document_tree::DocumentTreeIndex;
 use super::file_cache::FileCache;
 use super::semantic_cache::{SemanticCache, SemanticCacheConfig};
@@ -49,11 +50,10 @@ impl KnowledgeBase {
     /// 初始化知识库
     pub fn new(
         project_root: &Path,
-        embed_config: Option<&crate::core::config::EmbedConfig>,
-    ) -> Result<Self, String> {
+        embed_config: Option<&crate::core::config::settings::EmbedConfig>,
+    ) -> AppResult<Self> {
         let kb_dir = project_root.join(".mbforge").join("knowledge_base");
-        std::fs::create_dir_all(&kb_dir)
-            .map_err(|e| format!("Failed to create KB dir: {}", e))?;
+        std::fs::create_dir_all(&kb_dir)?;
 
         let vectors_db_path = kb_dir.join("vectors.db");
         let cache_db_path = kb_dir.join("cache.db");
@@ -62,19 +62,15 @@ impl KnowledgeBase {
         let vector_store = SqliteVectorStore::open(&vectors_db_path, 384)?;
 
         // FTS5 全文搜索（独立连接，避免锁冲突）
-        let fts_conn = Connection::open(&vectors_db_path)
-            .map_err(|e| format!("Failed to open FTS DB: {}", e))?;
-        fts_conn
-            .execute_batch(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
-                    id, text
-                )",
-            )
-            .map_err(|e| format!("Failed to create FTS5: {}", e))?;
+        let fts_conn = Connection::open(&vectors_db_path)?;
+        fts_conn.execute_batch(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
+                id, text
+            )",
+        )?;
 
         // 文件缓存
-        let cache_conn = Connection::open(&cache_db_path)
-            .map_err(|e| format!("Failed to open cache DB: {}", e))?;
+        let cache_conn = Connection::open(&cache_db_path)?;
         let file_cache = FileCache::new(cache_conn)?;
 
         let tree_index = DocumentTreeIndex::new(project_root);
@@ -108,7 +104,7 @@ impl KnowledgeBase {
         doc_id: &str,
         sections: &[SectionChunk],
         page_texts: &[String],
-    ) -> Result<usize, String> {
+    ) -> AppResult<usize> {
         let chunk_ids: Vec<String> = sections
             .iter()
             .enumerate()
@@ -147,7 +143,7 @@ impl KnowledgeBase {
 
         // 同步 FTS5
         {
-            let conn = self.fts_conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+            let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
             // 先删除旧条目
             let _ = conn.execute(
                 "DELETE FROM sections_fts WHERE id LIKE ?1 || '%'",
@@ -163,17 +159,14 @@ impl KnowledgeBase {
         }
 
         // 更新文档树
-        let tree = self
-            .tree_index
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+        let tree = self.tree_index.lock().map_err(|e| e.to_string())?;
         tree.index_document(doc_id, sections, page_texts)?;
 
         Ok(sections.len())
     }
 
     /// 搜索：有 Embedder 时用混合搜索，否则纯 FTS5
-    pub fn search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
+    pub fn search(&self, query: &str, top_k: usize) -> AppResult<Vec<SearchResult>> {
         if self.has_vector_search() {
             self.hybrid_search(query, top_k)
         } else {
@@ -182,7 +175,7 @@ impl KnowledgeBase {
     }
 
     /// FTS5 全文搜索
-    fn fts_search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
+    fn fts_search(&self, query: &str, top_k: usize) -> AppResult<Vec<SearchResult>> {
         let clean_query = query
             .replace('"', "")
             .replace("'", "")
@@ -196,32 +189,28 @@ impl KnowledgeBase {
             return Ok(Vec::new());
         }
 
-        let conn = self.fts_conn.lock().map_err(|e| format!("Lock error: {}", e))?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT v.chunk_id, v.text, v.metadata, rank
-                 FROM sections_fts f
-                 JOIN vectors v ON f.id = v.chunk_id
-                 WHERE sections_fts MATCH ?1
-                 ORDER BY rank
-                 LIMIT ?2",
-            )
-            .map_err(|e| format!("Prepare failed: {}", e))?;
+        let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare(
+            "SELECT v.chunk_id, v.text, v.metadata, rank
+             FROM sections_fts f
+             JOIN vectors v ON f.id = v.chunk_id
+             WHERE sections_fts MATCH ?1
+             ORDER BY rank
+             LIMIT ?2",
+        )?;
 
-        let rows = stmt
-            .query_map(rusqlite::params![clean_query, top_k as i64], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, f64>(3).unwrap_or(0.0),
-                ))
-            })
-            .map_err(|e| format!("Query failed: {}", e))?;
+        let rows = stmt.query_map(rusqlite::params![clean_query, top_k as i64], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, f64>(3).unwrap_or(0.0),
+            ))
+        })?;
 
         let mut results = Vec::new();
         for row in rows {
-            let (id, text, meta_str, rank) = row.map_err(|e| format!("Row error: {}", e))?;
+            let (id, text, meta_str, rank) = row?;
             let metadata: serde_json::Value =
                 serde_json::from_str(&meta_str).unwrap_or(serde_json::json!({}));
             let score: f32 = if rank < 0.0 {
@@ -241,7 +230,7 @@ impl KnowledgeBase {
     }
 
     /// 混合搜索：FTS5 + 向量 + RRF 融合
-    fn hybrid_search(&self, query: &str, top_k: usize) -> Result<Vec<SearchResult>, String> {
+    fn hybrid_search(&self, query: &str, top_k: usize) -> AppResult<Vec<SearchResult>> {
         let fts_results = self.fts_search(query, top_k * 3)?;
 
         let vec_results = if let Some(embedder) = &self.embedder {
@@ -285,14 +274,11 @@ impl KnowledgeBase {
             .unwrap_or_default()
     }
 
-    pub fn remove_document(&self, doc_id: &str) -> Result<(), String> {
+    pub fn remove_document(&self, doc_id: &str) -> AppResult<()> {
         self.vector_store.delete_doc(doc_id)?;
 
-        let tree = self
-            .tree_index
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        tree.remove_document(doc_id)
+        let tree = self.tree_index.lock().map_err(|e| e.to_string())?;
+        tree.remove_document(doc_id).map_err(|e| crate::core::error::AppError::new(crate::core::error::ErrorCode::Unknown, e))
     }
 
     pub fn stats(&self) -> KbStats {
@@ -330,22 +316,18 @@ static SEMANTIC_CACHE: OnceLock<Mutex<HashMap<String, SemanticCache>>> = OnceLoc
 /// 获取或初始化 KB 实例
 pub fn get_or_init_kb(
     root: &str,
-) -> Result<std::sync::MutexGuard<'static, HashMap<String, KnowledgeBase>>, String> {
+) -> AppResult<std::sync::MutexGuard<'static, HashMap<String, KnowledgeBase>>> {
     let cache = KB_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let guard = cache
-        .lock()
-        .map_err(|e| format!("KB cache lock error: {}", e))?;
+    let guard = cache.lock().map_err(|e| e.to_string())?;
     if guard.contains_key(root) {
         return Ok(guard);
     }
     drop(guard);
 
-    let config = crate::core::config::AppConfig::load();
+    let config = crate::core::config::settings::AppConfig::load();
     let kb = KnowledgeBase::new(std::path::Path::new(root), Some(&config.embed))?;
 
-    let mut guard = cache
-        .lock()
-        .map_err(|e| format!("KB cache lock error: {}", e))?;
+    let mut guard = cache.lock().map_err(|e| e.to_string())?;
     guard.insert(root.to_string(), kb);
     Ok(guard)
 }
@@ -370,7 +352,7 @@ pub fn search_with_cache(
     root: &str,
     query: &str,
     top_k: usize,
-) -> Result<(Vec<serde_json::Value>, Vec<StreamingResult>), String> {
+) -> AppResult<(Vec<serde_json::Value>, Vec<StreamingResult>)> {
     // 1. L1 缓存命中？
     {
         let sc_guard = get_or_init_semantic_cache(root);
@@ -386,9 +368,7 @@ pub fn search_with_cache(
     let kb = guard
         .get(root)
         .ok_or_else(|| format!("Knowledge base not initialized for root: {}", root))?;
-    let results = kb
-        .search(query, top_k)
-        .map_err(|e| format!("Search failed: {}", e))?;
+    let results = kb.search(query, top_k)?;
 
     let json_results: Vec<serde_json::Value> = results
         .into_iter()
@@ -428,7 +408,7 @@ pub fn kb_search(
     top_k: Option<usize>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let top_k = top_k.unwrap_or(5);
-    let (results, _) = search_with_cache(&root, &query, top_k)?;
+    let (results, _) = search_with_cache(&root, &query, top_k).map_err(|e| e.to_string())?;
     Ok(results)
 }
 
@@ -440,7 +420,7 @@ pub async fn kb_search_stream(
     top_k: Option<usize>,
 ) -> Result<(), String> {
     let top_k = top_k.unwrap_or(5);
-    let (_results, chunks) = search_with_cache(&root, &query, top_k)?;
+    let (_results, chunks) = search_with_cache(&root, &query, top_k).map_err(|e| e.to_string())?;
 
     for chunk in chunks {
         let _ = app.emit(
@@ -459,7 +439,7 @@ pub async fn kb_search_stream(
 
 #[tauri::command]
 pub fn kb_get_structure(root: String, doc_id: String) -> Result<Option<Vec<TreeNode>>, String> {
-    let guard = get_or_init_kb(&root)?;
+    let guard = get_or_init_kb(&root).map_err(|e| e.to_string())?;
     let kb = guard
         .get(&root)
         .ok_or_else(|| format!("Knowledge base not found for root: {}", root))?;

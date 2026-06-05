@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::constants::{
+use crate::core::config::constants::{
     INDEX_FILE, PROJECT_FORMAT_VERSION, PROJECT_META_DIR, SUPPORTED_DOC_EXTS, SUPPORTED_MOL_EXTS,
 };
-use super::helpers::{generate_uuid, now_rfc3339, sha256_file};
+use crate::core::helpers::{generate_uuid, now_rfc3339, sha256_file};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentEntry {
@@ -74,7 +74,7 @@ impl Project {
 
         // Version check（仅向前兼容，不支持降级打开）
         let version_path = root.join(".mbforge").join("version.json");
-        let version: u32 = super::helpers::load_json(&version_path)
+        let version: u32 = crate::core::helpers::load_json(&version_path)
             .and_then(|v: serde_json::Value| v["version"].as_u64().map(|n| n as u32))
             .unwrap_or(0);
         log::trace!("[Rust Project::open] Project version: {}", version);
@@ -95,7 +95,7 @@ impl Project {
             index_path.exists()
         );
 
-        let index: ProjectIndex = match super::helpers::load_json::<ProjectIndex>(&index_path) {
+        let index: ProjectIndex = match crate::core::helpers::load_json::<ProjectIndex>(&index_path) {
             Some(idx) => {
                 log::trace!(
                     "[Rust Project::open] Loaded existing index with {} documents",
@@ -151,7 +151,7 @@ impl Project {
         // 写入版本信息
         let version_path = root.join(".mbforge").join("version.json");
         let version_data = serde_json::json!({ "version": PROJECT_FORMAT_VERSION });
-        if super::helpers::save_json(&version_path, &version_data).is_err() {
+        if crate::core::helpers::save_json(&version_path, &version_data).is_err() {
             log::trace!("[Rust Project::create] Failed to write version");
             return None;
         }
@@ -229,7 +229,7 @@ impl Project {
                         .unwrap_or("Untitled")
                         .to_string(),
                     indexed: false,
-                    added_at: super::helpers::now_rfc3339(),
+                    added_at: crate::core::helpers::now_rfc3339(),
                     hash,
                     mtime: 0.0,
                 };
@@ -316,7 +316,7 @@ impl Project {
             updated_at: now_rfc3339(),
             documents: self.index.clone(),
         };
-        let _ = super::helpers::save_json(&self.meta_dir.join(INDEX_FILE), &index);
+        let _ = crate::core::helpers::save_json(&self.meta_dir.join(INDEX_FILE), &index);
     }
 }
 

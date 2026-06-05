@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use super::super::constants::{PROJECT_META_DIR, TRAJECTORY_DIR, TRAJECTORY_FILE};
-use super::super::helpers::now_rfc3339;
+use crate::core::config::constants::{PROJECT_META_DIR, TRAJECTORY_DIR, TRAJECTORY_FILE};
+use crate::core::helpers::now_rfc3339;
 
 const MAX_STEPS: usize = 500;
 
@@ -47,7 +47,7 @@ impl TrajectoryTracker {
     }
 
     fn load_from_file(path: &Path) -> Vec<TrajectoryStep> {
-        let data: Option<TrajectoryData> = super::super::helpers::load_json(path);
+        let data: Option<TrajectoryData> = crate::core::helpers::load_json(path);
         data.map(|d| d.steps).unwrap_or_default()
     }
 
@@ -56,7 +56,7 @@ impl TrajectoryTracker {
             steps: self.steps.clone(),
             updated_at: now_rfc3339(),
         };
-        let _ = super::super::helpers::save_json(&self.path, &data);
+        let _ = crate::core::helpers::save_json(&self.path, &data);
     }
 
     pub fn add_step(&mut self, step: TrajectoryStep) {

@@ -1,7 +1,7 @@
 # MBForge 前端待办清单
 
 > 本文档汇总前端代码优化和新功能开发中的所有待办事项，按优先级和模块分组。
-> 最后更新：2024-12-15
+> 最后更新：2026-06-05
 
 ---
 
@@ -53,6 +53,8 @@
 ---
 
 ## B. SAR Analysis + 分子编辑 进一步优化
+
+- [x] **结构验证** — 用 RDKit 后端做 canonicalize、立体化学校验 ✅ (AddMoleculeDialog 用 chemValidateSmiles 实时校验，AddMoleculeDialog.handleSubmit 在提交前再校验一次)
 
 ### B.1 OCR 矫正流程强化
 - [P1] **后端 API 接入** — 把 mock 的 `handleReOCR` 替换为真实调用 `tessera-mol/recognize`
@@ -238,15 +240,15 @@
 ### G.1 真实数据替换 mock
 - [P1] **dashboardMocks.ts** → `/api/dashboard/*` 端点
 - [P1] **sarMocks.ts** → `/api/sar/*` 端点
-- [P1] **notesMocks.ts** → `/api/notes/*` 端点
-- [P2] **MoleculeLibrary** → 移除 fallback，直接用 Tauri
+- [x] **notesMocks.ts** → `/api/notes/*` 端点 ✅ (notes.ts 已有 notesList/notesGet/notesSave/notesDelete/notesBacklinks，Notes.tsx 已对接)
+- [x] **MoleculeLibrary** → 移除 fallback，直接用 Tauri ✅ (已用 listMoleculesTauri/searchMoleculesTauri)
 
 ### G.2 新 API 端点需求
 - [P1] **后端支持 R-Group 矩阵计算** — 共同骨架提取
 - [P1] **后端支持双链图谱** — 笔记关系查询
 - [P1] **后端支持图表数据** — 聚合查询优化
 - [P2] **后端支持全文搜索** — 笔记/分子/文献
-- [P2] **后端支持活动流** — audit log
+- [x] **后端支持活动流** — audit log ✅ (audit.ts 桥接 + auditLogGet + AuditEntry 类型 + 4 个单元测试)
 
 ---
 
@@ -292,4 +294,4 @@
 ---
 
 **维护者**：AI Coding Assistant
-**状态**：持续更新中
+**状态**：持续更新中 — 2026-06-05 完成 auditLogGet 桥接 + useDocResult hook + AddMoleculeDialog chemValidateSmiles 集成

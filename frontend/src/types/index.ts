@@ -133,3 +133,76 @@ export interface SARSession {
   /** 创建时间 */
   createdAt: string
 }
+
+
+// ---- DocumentReport (EVT_DOC_RESULT payload) ----
+
+/** 化合物（与 Rust `CompoundEntry` 对应）*/
+export interface CompoundEntry {
+  name: string
+  /** ESMILES 字符串（optional） */
+  esmiles?: string | null
+  /** 类别（lead / hit / reference / intermediate） */
+  category?: string | null
+  description: string
+  /** 缩写 / 代号（Dagdelen 2024 spirit） */
+  acronym?: string | null
+  /** 晶系 / 结构（cubic / Fd3m / layered ...）*/
+  structure_or_phase?: string[]
+  source_ref: string
+  confidence: 'high' | 'medium' | 'low'
+  uncertainty_reason?: string | null
+}
+
+/** 活性数据条目 */
+export interface ActivityEntry {
+  compound: string
+  activity_type: string
+  value: number
+  units: string
+  target?: string | null
+  source_quote: string
+  source_ref: string
+  confidence: 'high' | 'medium' | 'low'
+}
+
+/** 关键发现 */
+export interface FindingEntry {
+  finding: string
+  evidence: string
+  source_ref: string
+  confidence: 'high' | 'medium' | 'low'
+}
+
+/** 不确定项 */
+export interface UncertainItem {
+  item_type: 'compound' | 'activity' | 'finding' | 'classification'
+  content: string
+  reason: string
+  suggested_action: string
+}
+
+/** 文档元数据 */
+export interface DocumentMetadata {
+  title?: string | null
+  authors: string[]
+  document_type: string
+  key_targets: string[]
+  source_file?: string | null
+}
+
+/** EVT_DOC_RESULT 事件 payload — Rust `DocumentReport` */
+export interface DocumentReport {
+  metadata: DocumentMetadata
+  compounds: CompoundEntry[]
+  activities: ActivityEntry[]
+  key_findings: FindingEntry[]
+  sar_analysis: string
+  uncertain_items: UncertainItem[]
+  report_markdown: string
+  /** LiteratureAgent 二次审阅标志（[方案 3]）*/
+  lit_reviewed: boolean
+  /** LitAgent 决策摘要 */
+  lit_decision_summary?: string | null
+}
+

@@ -1,5 +1,6 @@
 import { useState, FormEvent, ChangeEvent, useEffect } from 'react'
 import { molStoreAdd, molStoreSearchBySmiles } from '../../api/tauri-bridge'
+import { chemValidateSmiles } from '../../api/tauri/molecule'
 import Button from './Button'
 import Input from './Input'
 import Modal from './Modal'
@@ -40,10 +41,28 @@ export function AddMoleculeDialog({ open, onClose, projectRoot, onAdded }: AddMo
     setEsmiles(value)
     setError(null)
     setDuplicateWarning(null)
-    
-    if (value.trim().length > 5) {
+
+    const trimmed = value.trim()
+    if (trimmed.length === 0) return
+
+    // [B.1] 实时 SMILES 校验 — 走 Rust chematic，零后端依赖
+    if (trimmed.length > 1) {
       try {
-        const existing = await molStoreSearchBySmiles(projectRoot, value.trim())
+        const v = await chemValidateSmiles(trimmed)
+        if (!v.valid) {
+          setError(v.error ?? 'Invalid SMILES')
+        } else if (v.canonical_smiles && v.canonical_smiles !== trimmed) {
+          // 自动规范化：原始输入不合法但 canonical 形式合法时替换
+          setEsmiles(v.canonical_smiles)
+        }
+      } catch {
+        // 静默：用户输入还没敲完，不要每按一个键就 Toast
+      }
+    }
+
+    if (trimmed.length > 5) {
+      try {
+        const existing = await molStoreSearchBySmiles(projectRoot, trimmed)
         if (existing) {
           setDuplicateWarning(`Molecule already exists as "${existing.name}" (${existing.mol_id})`)
         }
@@ -57,6 +76,18 @@ export function AddMoleculeDialog({ open, onClose, projectRoot, onAdded }: AddMo
     e.preventDefault()
     if (!esmiles.trim()) {
       setError('SMILES is required')
+      return
+    }
+
+    // [B.1] 提交前最后一次 chematic 校验 — 阻止非法 SMILES 写入 store
+    try {
+      const v = await chemValidateSmiles(esmiles.trim())
+      if (!v.valid) {
+        setError(v.error ?? 'Invalid SMILES')
+        return
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'SMILES validation failed')
       return
     }
 

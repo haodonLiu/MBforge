@@ -10,6 +10,7 @@ pub mod molecode;
 pub mod notes;
 pub mod pdf;
 pub mod project_ops;
+pub mod settings;
 pub mod sidecar;
 pub mod text_ops;
 
@@ -112,6 +113,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // sidecar
         sidecar::sidecar_status,
         sidecar::sidecar_restart,
+        // settings
+        settings::get_settings,
+        settings::save_settings,
         // resource_manager
         crate::core::resource_manager::resources_check,
         crate::core::resource_manager::resources_status,

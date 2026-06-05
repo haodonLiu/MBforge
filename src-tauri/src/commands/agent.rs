@@ -5,9 +5,9 @@ use tokio::sync::RwLock;
 
 use crate::core::constants::{EVT_AGENT_STREAM_CHUNK, EVT_AGENT_STREAM_DONE};
 
-use crate::core::agent::Agent;
+use crate::core::agent::agent::Agent;
 use crate::core::config::ModelConfig;
-use crate::core::context::Message;
+use crate::core::agent::context::Message;
 
 macro_rules! log_err {
     ($msg:expr) => {{

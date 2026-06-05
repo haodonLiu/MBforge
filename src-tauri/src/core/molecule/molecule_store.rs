@@ -545,7 +545,7 @@ impl MoleculeDatabase {
 
         // 计算指纹（如果 smiles 非空且指纹尚未提供）
         let fingerprint_bytes: Option<Vec<u8>> = if rec.smiles.len() >= 2 {
-            crate::core::chem::compute_ecfp4_as_bytes(&rec.smiles).ok()
+            crate::core::chem::chem::compute_ecfp4_as_bytes(&rec.smiles).ok()
         } else {
             None
         };
@@ -611,7 +611,7 @@ impl MoleculeDatabase {
             let esmiles_str = rec.esmiles.as_deref().unwrap_or("");
 
             let fingerprint_bytes: Option<Vec<u8>> = if rec.smiles.len() >= 2 {
-                crate::core::chem::compute_ecfp4_as_bytes(&rec.smiles).ok()
+                crate::core::chem::chem::compute_ecfp4_as_bytes(&rec.smiles).ok()
             } else {
                 None
             };

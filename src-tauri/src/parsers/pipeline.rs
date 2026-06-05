@@ -899,9 +899,7 @@ pub async fn process_document(
         if !esmiles_to_validate.is_empty() {
             let validate_results = crate::parsers::chem_validate::validate_smiles_batch(
                 &esmiles_to_validate,
-                &crate::core::constants::sidecar_url(),
-            )
-            .await;
+            );
 
             let mut validated_count = 0usize;
             let mut invalid_count = 0usize;

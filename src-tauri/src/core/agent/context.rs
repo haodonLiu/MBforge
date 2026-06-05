@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::helpers::estimate_tokens;
+use crate::core::helpers::estimate_tokens;
 
 /// A single message in the conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]

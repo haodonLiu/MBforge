@@ -248,6 +248,12 @@ cf907f1 feat(python): 统一资源管理 + 精简下载 + CLI 环境管理
 - [ ] **chematic API 编译验证** — core/chem.rs 中的 API 调用需验证与实际 crate 版本一致
 - [x] **mol_search_substructure 接入 chem.rs** — molecule.rs 子结构搜索命令改用纯 Rust（✅ 已完成）
 
+#### P2 — 测试修复
+- [ ] **file_cache 测试失败** — `test_file_cache_roundtrip` 和 `test_file_cache_mtime_change` 断言失败（既有 bug，非重构引起）
+- [ ] **ingest_queue 测试挂起** — `test_queue_enqueue_dequeue` 和 `test_queue_retry` 超时 60s+（疑似异步运行时死锁）
+- [ ] **liteparse 测试 ignored** — `test_screenshot_cn_patent` 需要外部服务
+- [ ] **pipeline 集成测试 ignored** — `test_extract_images_from_both_patents`、`test_supervised_pipeline_cn_patent`、`test_supervised_pipeline_us_patent` 需要 sidecar 运行
+
 #### P1 — 核心功能 Rust 化
 - [ ] **分子指纹持久化** — add_molecule 时自动计算 ECFP4 并存入 fingerprint BLOB
 - [ ] **分子描述符 Rust 化** — schematic-chem 替代 Python RDKit 的 MW/LogP/TPSA/QED/Lipinski

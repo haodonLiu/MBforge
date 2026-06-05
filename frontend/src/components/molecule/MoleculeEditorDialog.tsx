@@ -88,6 +88,15 @@ export default function MoleculeEditorDialog({
     }
   }, [onSave, onClose])
 
+  // Escape 键关闭对话框
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   return (
     <div
       style={{

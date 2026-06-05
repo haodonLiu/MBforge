@@ -21,6 +21,7 @@
   "nav.workflow": "Workflow",
   "nav.fileTree": "File Tree",
   "nav.switchProject": "Switch Project",
+  "nav.confirmSwitchProject": "Are you sure you want to switch projects? Unsaved changes will be lost.",
   "nav.settings": "Settings",
 
   "welcome.title": "MBForge",
@@ -44,6 +45,7 @@
   "settings.appearance": "Appearance",
   "settings.server": "Server",
   "settings.about": "About",
+  "settings.unsavedChanges": "You have unsaved changes. Are you sure you want to close?",
   "settings.saved": "Settings saved",
   "settings.saveFailed": "Failed to save settings",
   "settings.saving": "Saving…",

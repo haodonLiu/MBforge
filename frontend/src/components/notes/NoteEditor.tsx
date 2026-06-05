@@ -140,6 +140,24 @@ export default function NoteEditor({
     setIsEditing(false)
   }, [note, onChange, draftTitle, draftContent])
 
+  // 自动保存：内容变化后 1.5 秒自动保存（防抖）
+  useEffect(() => {
+    if (!note || !isEditing) return
+    // 跳过初始加载
+    if (draftContent === note.content && draftTitle === note.title) return
+
+    const timer = setTimeout(() => {
+      onChange({
+        ...note,
+        title: draftTitle,
+        content: draftContent,
+        updatedAt: new Date().toISOString(),
+      })
+    }, 1500)
+
+    return () => clearTimeout(timer)
+  }, [note, draftContent, draftTitle, isEditing, onChange])
+
   const handleDelete = useCallback(() => {
     if (!note || !onDelete) return
     if (confirm(t('notes.confirmDelete'))) onDelete(note.id)

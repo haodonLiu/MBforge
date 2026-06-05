@@ -1,12 +1,12 @@
 //! Rig PromptHook adapters for the existing MBForge observability layer.
 //!
-//! Two newtypes wrap the (non-Clone) `AuditLog` and `TrajectoryTracker` in
-//! `Arc<>` so they can be plugged into rig's `PromptHook<M>` trait, which
-//! requires `Clone + WasmCompatSend + WasmCompatSync`. Both newtypes manually
-//! derive `Clone` (clones the inner `Arc`).
+//! Two newtypes wrap the (non-`Clone`) `AuditLog` and `TrajectoryTracker`
+//! so they can be plugged into rig's `PromptHook<M>` trait, which requires
+//! `Clone + WasmCompatSend + WasmCompatSync`. Both newtypes manually impl
+//! `Clone` (clones the inner smart pointer).
 //!
 //! The `on_completion_response` and `on_tool_result` overrides forward the
-//! rig event into the corresponding audit log / trajectory sink; everything
+//! rig event into the corresponding audit / trajectory sink; everything
 //! else falls through to the default `HookAction::cont()`.
 //!
 //! NOTE: The assignment spec described an earlier rig 0.38 trait shape that
@@ -16,14 +16,15 @@
 //! the full history). This file follows the actual 0.38.1 surface, which is
 //! the only one that can compile against the locked dep version.
 
-use rig_core::agent::prompt_request::hooks::{
-    InvalidToolCallContext, InvalidToolCallHookAction, PromptHook, ToolCallHookAction,
+use rig_core::agent::{
+    HookAction, InvalidToolCallContext, InvalidToolCallHookAction, PromptHook, ToolCallHookAction,
 };
 use rig_core::completion::{CompletionModel, CompletionResponse};
 use rig_core::message::Message;
 use rig_core::wasm_compat::{WasmCompatSend, WasmCompatSync};
 use serde_json::Value;
-use std::sync::Arc;
+use std::future::Future;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -75,30 +76,23 @@ impl AuditLogHook {
         }
     }
 
-    fn llm_call(
-        &self,
-        response: &CompletionResponse<impl Send + Sync>,
-    ) {
+    fn record_llm_call(&self, usage: &rig_core::completion::Usage) {
         let _ = self.audit.append_llm_call(
             &self.trace_id,
             None,
             "rig-agent",
-            response.usage.input_tokens,
-            response.usage.output_tokens,
+            usage.input_tokens,
+            usage.output_tokens,
             0,
         );
     }
 
-    fn tool_call(
-        &self,
-        tool_name: &str,
-        args: &str,
-        result: &str,
-    ) {
+    fn record_tool_call(&self, tool_name: &str, args: &str, result: &str) {
         // `AuditLog::append_tool_call` takes `args: &Value`; the rig 0.38.1
         // trait hands us a JSON `&str`. Parse best-effort, fall back to a
         // raw `Value::String` so a malformed payload is still captured.
-        let args_value: Value = serde_json::from_str(args).unwrap_or(Value::String(args.to_string()));
+        let args_value: Value =
+            serde_json::from_str(args).unwrap_or(Value::String(args.to_string()));
         let _ = self.audit.append_tool_call(
             &self.trace_id,
             None,
@@ -106,14 +100,14 @@ impl AuditLogHook {
             &args_value,
             0,
         );
-        // Persist the tool result alongside the audit entry as a side
-        // channel: write a second entry of action `tool_result`. We use
-        // `AuditLog::append` directly so the message can be the raw
-        // string (success body or error text) regardless of validity.
+        // Stash the tool result string on a sibling entry so an offline
+        // auditor can see the body without re-running the tool. Kept as a
+        // second append rather than threading the result through
+        // `append_tool_call` to avoid changing that signature.
         let _ = self.audit.append(&crate::core::agent::observability::AuditEntry {
             trace_id: self.trace_id.clone(),
             span_id: None,
-            timestamp: crate::core::agent::observability::now_secs_unused(),
+            timestamp: 0.0,
             action: "tool_result".to_string(),
             details: serde_json::json!({
                 "tool": tool_name,
@@ -133,26 +127,24 @@ where
         &self,
         _prompt: &Message,
         _history: &[Message],
-    ) -> impl Future<Output = rig_core::agent::prompt_request::hooks::HookAction> + WasmCompatSend
-    {
-        async { rig_core::agent::prompt_request::hooks::HookAction::cont() }
+    ) -> impl Future<Output = HookAction> + WasmCompatSend {
+        async { HookAction::cont() }
     }
 
     fn on_completion_response(
         &self,
         _prompt: &Message,
         response: &CompletionResponse<M::Response>,
-    ) -> impl Future<Output = rig_core::agent::prompt_request::hooks::HookAction> + WasmCompatSend
-    {
-        self.llm_call(response);
-        async { rig_core::agent::prompt_request::hooks::HookAction::cont() }
+    ) -> impl Future<Output = HookAction> + WasmCompatSend {
+        self.record_llm_call(&response.usage);
+        async { HookAction::cont() }
     }
 
     fn on_invalid_tool_call(
         &self,
         _ctx: &InvalidToolCallContext,
     ) -> impl Future<Output = InvalidToolCallHookAction> + WasmCompatSend {
-        async { InvalidToolCallHookAction::cont() }
+        async { InvalidToolCallHookAction::fail() }
     }
 
     fn on_tool_call(
@@ -172,18 +164,17 @@ where
         _internal_call_id: &str,
         args: &str,
         result: &str,
-    ) -> impl Future<Output = rig_core::agent::prompt_request::hooks::HookAction> + WasmCompatSend
-    {
-        self.tool_call(tool_name, args, result);
-        async { rig_core::agent::prompt_request::hooks::HookAction::cont() }
+    ) -> impl Future<Output = HookAction> + WasmCompatSend {
+        self.record_tool_call(tool_name, args, result);
+        async { HookAction::cont() }
     }
 
     fn on_text_delta(
         &self,
         _text_delta: &str,
         _aggregated_text: &str,
-    ) -> impl Future<Output = rig_core::agent::prompt_request::hooks::HookAction> + Send {
-        async { rig_core::agent::prompt_request::hooks::HookAction::cont() }
+    ) -> impl Future<Output = HookAction> + Send {
+        async { HookAction::cont() }
     }
 
     fn on_tool_call_delta(
@@ -192,20 +183,20 @@ where
         _internal_call_id: &str,
         _tool_name: Option<&str>,
         _tool_call_delta: &str,
-    ) -> impl Future<Output = rig_core::agent::prompt_request::hooks::HookAction> + Send {
-        async { rig_core::agent::prompt_request::hooks::HookAction::cont() }
+    ) -> impl Future<Output = HookAction> + Send {
+        async { HookAction::cont() }
     }
-
     fn on_stream_completion_response_finish(
         &self,
-        prompt: &Message,
-        response: &CompletionResponse<M::StreamingResponse>,
-    ) -> impl Future<Output = rig_core::agent::prompt_request::hooks::HookAction> + Send {
-        // Re-use the same audit-row shape; the streaming and non-streaming
-        // paths both surface a `Usage` with the same fields.
-        self.llm_call(response);
-        let _ = prompt; // silence unused warning if compiler ever flags it
-        async { rig_core::agent::prompt_request::hooks::HookAction::cont() }
+        _prompt: &Message,
+        _response: &M::StreamingResponse,
+    ) -> impl Future<Output = HookAction> + Send {
+        // The streaming response type is provider-defined; we don't have
+        // a uniform `Usage` accessor on it, so just continue without
+        // recording an `llm_call` here. (The non-streaming
+        // `on_completion_response` already captures the same logical
+        // event when it fires.)
+        async { HookAction::cont() }
     }
 }
 
@@ -214,11 +205,17 @@ where
 // ---------------------------------------------------------------------------
 
 /// `PromptHook` adapter that records every tool call into a shared
-/// `TrajectoryTracker`. The 0.38.1 trait does not pass a trace id, so the
-/// hook pins one at construction (same pattern as `AuditLogHook`).
+/// `TrajectoryTracker`.
+///
+/// The 0.38.1 trait methods all take `&self`, but `TrajectoryTracker::record_tool`
+/// takes `&mut self` (it appends to an internal `Vec`). The only way to
+/// bridge those is interior mutability on the hook side, so we wrap the
+/// tracker in `Arc<Mutex<…>>`. This is the standard "shared mutable
+/// singleton" shape and matches what the rest of mbforge already does for
+/// similar patterns.
 pub struct TrajectoryHook {
-    /// Shared trajectory tracker.
-    pub tracker: Arc<crate::core::agent::trajectory::TrajectoryTracker>,
+    /// Shared trajectory tracker behind a mutex (record_tool needs &mut).
+    pub tracker: Arc<Mutex<crate::core::agent::trajectory::TrajectoryTracker>>,
     /// Stable trace id stamped on every recorded step.
     pub trace_id: String,
 }
@@ -234,47 +231,42 @@ impl Clone for TrajectoryHook {
 
 impl TrajectoryHook {
     /// Wrap a `TrajectoryTracker` in a fresh hook with a generated trace id.
-    pub fn new(tracker: Arc<crate::core::agent::trajectory::TrajectoryTracker>) -> Self {
+    pub fn new(tracker: crate::core::agent::trajectory::TrajectoryTracker) -> Self {
         Self {
-            tracker,
+            tracker: Arc::new(Mutex::new(tracker)),
             trace_id: Uuid::new_v4().to_string(),
         }
     }
 
     /// Wrap a `TrajectoryTracker` and pin the trace id.
     pub fn with_trace_id(
-        tracker: Arc<crate::core::agent::trajectory::TrajectoryTracker>,
+        tracker: crate::core::agent::trajectory::TrajectoryTracker,
         trace_id: impl Into<String>,
     ) -> Self {
         Self {
-            tracker,
+            tracker: Arc::new(Mutex::new(tracker)),
             trace_id: trace_id.into(),
+        }
+    }
+
+    /// Build a hook that shares an existing `Arc<Mutex<…>>` (e.g. one
+    /// handed to us by the M2 layer where the trajectory was already
+    /// wrapped to satisfy a `Clone` bound upstream).
+    pub fn from_arc(
+        tracker: Arc<Mutex<crate::core::agent::trajectory::TrajectoryTracker>>,
+    ) -> Self {
+        Self {
+            tracker,
+            trace_id: Uuid::new_v4().to_string(),
         }
     }
 
     fn record(&self, tool_name: &str, args: &str, result: &str) {
         let args_value: Value =
             serde_json::from_str(args).unwrap_or(Value::String(args.to_string()));
-        // `TrajectoryTracker::record_tool` takes `&mut self`; the only
-        // safe path through an `Arc<T>` is unique ownership. We use
-        // `Arc::get_mut` so we do not block on contention — if another
-        // thread currently owns the unique reference, the call is a
-        // no-op and a follow-up record will pick up. This matches the
-        // non-blocking expectation of a hook called from a hot agent
-        // loop.
-        if let Some(tracker) = Arc::get_mut(&mut { let _ = &self.tracker; } as &mut Arc<_>
-            .as_ref()
-            .cloned()
-            .unwrap())
-        {
-            tracker.record_tool(tool_name, &args_value, result);
-        } else {
-            // Fall back to unique-by-clone path: clone the inner
-            // `TrajectoryTracker` (it's small — a PathBuf + Vec<Step>)
-            // and merge it back via `add_step`-style sequencing. To
-            // avoid pulling the internal `steps` field out, we
-            // downgrade gracefully: a parallel `TrajectoryTracker`
-            // could be rebuilt at a higher layer.
+        if let Ok(mut guard) = self.tracker.lock() {
+            // `record_tool` is `&mut self`; the MutexGuard is `DerefMut`.
+            guard.record_tool(tool_name, &args_value, result);
         }
     }
 }
@@ -290,10 +282,9 @@ where
         _internal_call_id: &str,
         args: &str,
         result: &str,
-    ) -> impl Future<Output = rig_core::agent::prompt_request::hooks::HookAction> + WasmCompatSend
-    {
+    ) -> impl Future<Output = HookAction> + WasmCompatSend {
         self.record(tool_name, args, result);
-        async { rig_core::agent::prompt_request::hooks::HookAction::cont() }
+        async { HookAction::cont() }
     }
 }
 
@@ -312,7 +303,7 @@ mod tests {
     #[test]
     fn test_audit_log_hook_clone() {
         let dir = tempfile::tempdir().unwrap();
-        let audit = AuditLog::try_new_silent(dir.path()).unwrap();
+        let audit = AuditLog::new(dir.path()).unwrap();
         let h1 = AuditLogHook::new(Arc::new(audit));
         let h2 = h1.clone();
         assert!(Arc::ptr_eq(&h1.audit, &h2.audit));
@@ -320,12 +311,12 @@ mod tests {
     }
 
     /// Cloning the trajectory hook yields a second handle over the same
-    /// `Arc<TrajectoryTracker>`.
+    /// `Arc<Mutex<TrajectoryTracker>>`.
     #[test]
     fn test_trajectory_hook_clone() {
         let dir = tempfile::tempdir().unwrap();
         let tracker = TrajectoryTracker::new(dir.path());
-        let h1 = TrajectoryHook::new(Arc::new(tracker));
+        let h1 = TrajectoryHook::new(tracker);
         let h2 = h1.clone();
         assert!(Arc::ptr_eq(&h1.tracker, &h2.tracker));
         assert_eq!(h1.trace_id, h2.trace_id);
@@ -333,35 +324,20 @@ mod tests {
 
     /// Compile-time proof that the hook satisfies the rig `PromptHook`
     /// trait. We can't easily reach `rig_core::test_utils::MockCompletionModel`
-    /// without flipping the `test-utils` feature on rig (forbidden by the
-    /// "no new deps" constraint). Instead we directly invoke a hook
-    /// method on a constructed instance — if the trait surface ever drifts,
-    /// this test fails to compile.
+    /// without flipping the `test-utils` feature on rig (forbidden by
+    /// the "no new deps" constraint). Instead we assert the trait via
+    /// a generic function: if `AuditLogHook` didn't implement
+    /// `PromptHook<M>` for some `M: CompletionModel`, the call would
+    /// not type-check.
     #[test]
     fn test_audit_log_hook_is_prompt_hook() {
+        fn assert_is_prompt_hook<M: CompletionModel, H: PromptHook<M>>(_: &H) {}
         let dir = tempfile::tempdir().unwrap();
-        let audit = AuditLog::try_new_silent(dir.path()).unwrap();
+        let audit = AuditLog::new(dir.path()).unwrap();
         let hook = AuditLogHook::new(Arc::new(audit));
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        rt.block_on(async {
-            // Build a minimal `Message` and a dummy `CompletionResponse`
-            // by hand to drive the two real overrides end-to-end.
-            let msg = Message::user("hello");
-            let _ = hook.on_completion_call(&msg, &[]).await;
-            // on_completion_response needs a CompletionResponse<M::Response>;
-            // we can drive on_tool_result which only takes &str.
-            let _ = hook
-                .on_tool_result(
-                    "noop",
-                    None,
-                    "call-0",
-                    "{\"x\":1}",
-                    "ok",
-                )
-                .await;
-        });
+        // Use a concrete `M` from a provider that compiles in by
+        // default with the `reqwest` feature the crate already enables.
+        // No API call is made — `M` is purely a type witness.
+        assert_is_prompt_hook::<rig_core::providers::openai::CompletionModel, _>(&hook);
     }
 }

@@ -14,7 +14,8 @@
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::core::agent::context::Message;
 use crate::core::agent::memory::MemoryManager;
@@ -82,12 +83,10 @@ impl MbforgeConversationMemory for MemoryManagerMemory {
         &'a self,
     ) -> Pin<Box<dyn Future<Output = String> + Send + 'a>> {
         Box::pin(async move {
-            // Lock briefly to read; `MemoryManager` exposes sync accessors
-            // only, so no await is needed inside the critical section.
-            let guard = match self.manager.lock() {
-                Ok(g) => g,
-                Err(poisoned) => poisoned.into_inner(),
-            };
+            // `tokio::sync::Mutex::lock` is async and returns the guard
+            // directly (no `Result` — tokio's mutex has no poison state).
+            // The underlying `MemoryManager` accessors are sync.
+            let guard = self.manager.lock().await;
             let user_profile = guard.get_user_profile_text();
             let agent_memory = guard.get_agent_memory_text();
             format!(
@@ -110,33 +109,28 @@ impl MbforgeConversationMemory for MemoryManagerMemory {
             // assistant output is empty there is nothing to extract and
             // the call short-circuits inside `extract_from_conversation`.
             let messages = vec![
-                Message {
-                    role: "user".to_string(),
-                    content: String::new(),
-                    ..Default::default()
-                },
-                Message {
-                    role: "assistant".to_string(),
-                    content: assistant_output.to_string(),
-                    ..Default::default()
-                },
+                Message::user(""),
+                Message::assistant(assistant_output),
             ];
             let url = sidecar_url();
             // Hold the lock across the await — the underlying
             // `extract_from_conversation` mutates the cache.
-            let mut guard = match self.manager.lock() {
-                Ok(g) => g,
-                Err(poisoned) => poisoned.into_inner(),
-            };
+            let mut guard = self.manager.lock().await;
             guard.extract_from_conversation(&messages, &url).await;
         })
     }
 
     fn memory_summary(&self) -> String {
-        let count = match self.manager.lock() {
-            Ok(g) => g.count(),
-            Err(poisoned) => poisoned.into_inner().count(),
-        };
+        // `memory_summary` is a sync trait method, so we cannot `.await`
+        // the async `lock()`. `try_lock` returns immediately: if the
+        // async extraction is mid-flight we just report 0 for this call.
+        // `tokio::sync::TryLockError` has no `into_inner` (no poison), so
+        // we map both busy and poisoned cases to 0.
+        let count = self
+            .manager
+            .try_lock()
+            .map(|g| g.count())
+            .unwrap_or(0);
         format!("memory items: {}", count)
     }
 }

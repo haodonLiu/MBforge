@@ -286,11 +286,22 @@ interface Props {
 export default function SettingsModal({ open, onClose }: Props) {
   const [activeSection, setActiveSection] = useState<Section>('general')
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS)
+  const [initialSettings, setInitialSettings] = useState<SettingsState>(DEFAULT_SETTINGS)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
 
   const { t } = useTranslation()
+
+  // 脏状态检测
+  const isDirty = JSON.stringify(settings) !== JSON.stringify(initialSettings)
+
+  const confirmClose = useCallback(() => {
+    if (isDirty && !window.confirm(t('settings.unsavedChanges'))) {
+      return
+    }
+    onClose()
+  }, [isDirty, onClose, t])
   const { setTheme } = useTheme()
 
   const loadSettings = useCallback(async () => {
@@ -299,7 +310,7 @@ export default function SettingsModal({ open, onClose }: Props) {
       const resp = await getSettings()
       if (resp.success && resp.settings) {
         const s = resp.settings
-        setSettings({
+        const loaded = {
           theme: s.theme || 'dark',
           language: s.language || 'zh',
           llm_provider: s.llm?.provider || 'openai_compatible',
@@ -312,7 +323,9 @@ export default function SettingsModal({ open, onClose }: Props) {
           rerank_provider: s.rerank?.provider || 'qwen3',
           rerank_model: s.rerank?.model_name || '',
           model_cache_dir: s.model_cache_dir || '',
-        })
+        }
+        setSettings(loaded)
+        setInitialSettings(loaded)
       }
     } catch (e) {
       showToast('加载设置失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
@@ -427,7 +440,7 @@ export default function SettingsModal({ open, onClose }: Props) {
         >
           {/* Backdrop */}
           <motion.div
-            onClick={onClose}
+            onClick={confirmClose}
             variants={fadeIn}
             initial="hidden"
             animate="visible"
@@ -471,7 +484,7 @@ export default function SettingsModal({ open, onClose }: Props) {
               borderBottom: '1px solid var(--border)',
             }}>
               <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>{t('settings.title')}</h2>
-              <IconButton size={32} onClick={onClose} title={t('common.close')}>
+              <IconButton size={32} onClick={confirmClose} title={t('common.close')}>
                 <XIcon size={18} />
               </IconButton>
             </div>

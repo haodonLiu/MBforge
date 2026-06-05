@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { showToast } from '../hooks/useToast'
 import { RefreshCwIcon } from './icons'
 import { PageContainer, PageTitle, Button } from './ui'
 import ResponsiveStatGrid from './ui/ResponsiveStatGrid'
@@ -75,7 +76,7 @@ export default function Environment() {
         setTimeout(() => clearInterval(checkStatus), 30000)
       }
     } catch (e) {
-      console.error('Download error:', e)
+      showToast(`Download failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
     }
   }
 
@@ -89,10 +90,10 @@ export default function Environment() {
       if (result.success) {
         fetchModels()
       } else {
-        console.error('Delete failed:', result.error)
+        showToast(`Delete failed: ${result.error || 'Unknown error'}`, 'error')
       }
     } catch (e) {
-      console.error('Delete error:', e)
+      showToast(`Delete failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
     }
   }
 
@@ -108,12 +109,12 @@ export default function Environment() {
       if (result.success) {
         setEditingPath(null)
         fetchPaths()
-        alert('Path updated! Please restart the app for changes to take effect.')
+        showToast('Path updated! Please restart the app for changes to take effect.', 'info')
       } else {
-        alert('Failed to update path: ' + result.error)
+        showToast(`Failed to update path: ${result.error}`, 'error')
       }
     } catch (e) {
-      console.error('Save path error:', e)
+      showToast(`Save path failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
     }
   }
 

@@ -114,9 +114,9 @@ export default function Dashboard() {
     setLoading(true)
     try {
       const [docResp, molResp, molListResp] = await Promise.all([
-        listProjectDocuments(projectRoot).catch(() => ({ documents: [] })),
-        moleculeStatsTauri(projectRoot).catch(() => ({ success: false, stats: { total: 0, pending: 0 } })),
-        listMoleculesTauri(projectRoot, 3, 0).catch(() => ({ success: false, molecules: [] })),
+        listProjectDocuments(projectRoot),
+        moleculeStatsTauri(projectRoot),
+        listMoleculesTauri(projectRoot, 3, 0),
       ])
 
       const docs = docResp.documents ?? []

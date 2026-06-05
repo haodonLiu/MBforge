@@ -62,6 +62,7 @@ pub const EVT_SIDECAR_STATUS: &str = "sidecar://status";
 pub const EVT_AGENT_STREAM_CHUNK: &str = "agent-stream-chunk";
 pub const EVT_AGENT_STREAM_DONE: &str = "agent-stream-done";
 pub const EVT_KB_SEARCH_CHUNK: &str = "kb-search-chunk";
+pub const EVT_MODEL_DOWNLOAD_PROGRESS: &str = "model-download-progress";
 
 // Agent config
 pub const AGENT_MAX_ITERATIONS: usize = 5;

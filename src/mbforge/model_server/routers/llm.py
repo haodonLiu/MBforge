@@ -1,15 +1,16 @@
 """LLM 推理路由."""
 
 from __future__ import annotations
-from typing import Any
 
 import json
+from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from starlette.requests import ClientDisconnect
 
 from mbforge.models.base import Message, run_sync_async
+
 from ...utils.exceptions import ModelNotAvailableError
 from ...utils.logger import get_logger
 from ..models.llm import get_llm
@@ -44,7 +45,9 @@ async def chat(request: Request) -> dict[str, Any]:
         set_model_status("llm", "error")
         log_extra = f" trace={trace_id}" if trace_id else ""
         logger.error(f"LLM chat failed{log_extra}: {e}", exc_info=True)
-        raise ModelNotAvailableError(str(e))
+        raise ModelNotAvailableError(str(e)) from e
+
+
 @router.post("/chat-stream")
 async def chat_stream(request: Request) -> StreamingResponse:
     trace_id = request.headers.get("X-Trace-Id")
@@ -59,10 +62,7 @@ async def chat_stream(request: Request) -> StreamingResponse:
             max_tokens = body.get("max_tokens", 4096)
 
             llm = get_llm(None)
-            chunks = await run_sync_async(
-                lambda: list(llm.chat_stream(messages, temperature=temperature, max_tokens=max_tokens))
-            )
-            for chunk in chunks:
+            async for chunk in llm.achat_stream(messages, temperature=temperature, max_tokens=max_tokens):
                 yield f"data: {json.dumps({'delta': chunk.delta, 'finish_reason': chunk.finish_reason})}\n\n"
             set_model_status("llm", "ready")
         except ClientDisconnect:

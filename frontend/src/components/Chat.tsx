@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
+import { showToast } from '../hooks/useToast'
 
 const MermaidCode = lazy(() =>
   import('./ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
@@ -102,7 +103,7 @@ export default function Chat() {
     virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' })
   }
 
-  // Initialize Tauri agent on mount
+  // Initialize Tauri agent on mount + load history
   useEffect(() => {
     const initAgent = async () => {
       const sid = crypto.randomUUID()
@@ -114,11 +115,25 @@ export default function Chat() {
         ? JSON.parse(savedConfig)
         : { provider: 'openai_compatible', base_url: 'http://localhost:8000/v1', api_key: '', model_name: 'default', max_tokens: 4096, temperature: 0.7, top_p: 0.9 }
 
-      await agentInit(config, 'http://127.0.0.1:18792')
-      await agentCreateSession(sid, projectRoot ?? undefined)
+      try {
+        await agentInit(config, 'http://127.0.0.1:18792')
+        await agentCreateSession(sid, projectRoot ?? undefined)
+
+        // Load history after session is created
+        const history = await agentGetHistory(sid)
+        if (history.length > 0) {
+          setMessages(history.map(m => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })))
+        }
+      } catch (e) {
+        showToast(`Agent 初始化失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
+        console.error('Agent init failed:', e)
+      }
     }
 
-    initAgent().catch(console.error)
+    initAgent()
 
     return () => {
       // Cleanup session on unmount
@@ -127,22 +142,6 @@ export default function Chat() {
       }
     }
   }, [projectRoot])
-
-  // Load agent history when session is ready
-  useEffect(() => {
-    if (!sessionIdRef.current) return
-
-    agentGetHistory(sessionIdRef.current)
-      .then((history: ChatMessage[]) => {
-        if (history.length > 0) {
-          setMessages(history.map(m => ({
-            role: m.role as 'user' | 'assistant',
-            content: m.content,
-          })))
-        }
-      })
-      .catch(() => {})
-  }, [sessionIdRef.current])
 
   useEffect(() => {
     scrollToBottom()

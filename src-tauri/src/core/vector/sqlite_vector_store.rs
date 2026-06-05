@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use rusqlite::{params, Connection, ToSql};
 
-use crate::core::error::AppResult;
+use crate::core::error::{AppError, AppResult, ErrorCode};
 use super::vector_store::SearchResult;
 
 /// SQLite 向量存储
@@ -26,36 +26,64 @@ impl SqliteVectorStore {
         }
 
         let conn = Connection::open(db_path)?;
+        Self::setup_schema(&conn, dim)?;
 
-        conn.execute_batch(
+        Ok(Self {
+            conn: Mutex::new(conn),
+            dim,
+        })
+    }
+
+    /// 从已有连接创建（用于多表共享同一数据库文件）
+    pub fn from_conn(conn: Connection, dim: usize) -> AppResult<Self> {
+        Self::setup_schema(&conn, dim)?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+            dim,
+        })
+    }
+
+    /// 初始化/迁移表结构（pub 供 KnowledgeBase 迁移时调用）
+    pub fn setup_schema(conn: &Connection, dim: usize) -> AppResult<()> {
+        conn.execute_batch(&format!(
             "PRAGMA journal_mode=WAL;
-             PRAGMA busy_timeout=5000;",
-        )
-        ?;
+             PRAGMA busy_timeout=5000;
+             PRAGMA wal_autocheckpoint=1000;
+             PRAGMA user_version = {dim};"
+        ))?;
 
-        // 向量表
+        // 向量表 — 带 dim 校验列（用于检测 embedding 模型变更）
         conn.execute(
             "CREATE TABLE IF NOT EXISTS vectors (
                 chunk_id TEXT PRIMARY KEY,
                 doc_id TEXT NOT NULL,
                 text TEXT NOT NULL,
                 metadata TEXT NOT NULL,
-                embedding BLOB NOT NULL
+                embedding BLOB NOT NULL,
+                dim INTEGER NOT NULL
             )",
             [],
-        )
-        ?;
+        )?;
+
+        // 向后兼容：旧表没有 dim 列时添加
+        let has_dim: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('vectors') WHERE name = 'dim'",
+            [],
+            |r| r.get(0),
+        ).unwrap_or(0) > 0;
+        if !has_dim {
+            conn.execute(
+                "ALTER TABLE vectors ADD COLUMN dim INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_vectors_doc_id ON vectors(doc_id)",
             [],
-        )
-        ?;
+        )?;
 
-        Ok(Self {
-            conn: Mutex::new(conn),
-            dim,
-        })
+        Ok(())
     }
 
     /// 写入向量（upsert 语义）
@@ -71,6 +99,20 @@ impl SqliteVectorStore {
             return Ok(());
         }
 
+        // 维度校验
+        for (i, v) in vectors.iter().enumerate() {
+            if v.len() != self.dim {
+                return Err(AppError::new(
+                    ErrorCode::Unknown,
+                    format!(
+                        "Vector dimension mismatch at index {i}: expected {}, got {}",
+                        self.dim,
+                        v.len()
+                    ),
+                ));
+            }
+        }
+
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let tx = conn.unchecked_transaction()?;
 
@@ -78,14 +120,14 @@ impl SqliteVectorStore {
         tx.execute("DELETE FROM vectors WHERE doc_id = ?1", params![doc_id])?;
 
         // 插入新数据
+        let dim_i = self.dim as i64;
         for i in 0..chunk_ids.len() {
             let fp_bytes = f32_vec_to_bytes(&vectors[i]);
             tx.execute(
-                "INSERT OR REPLACE INTO vectors (chunk_id, doc_id, text, metadata, embedding)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![chunk_ids[i], doc_id, texts[i], metadatas[i], fp_bytes],
-            )
-            ?;
+                "INSERT OR REPLACE INTO vectors (chunk_id, doc_id, text, metadata, embedding, dim)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![chunk_ids[i], doc_id, texts[i], metadatas[i], fp_bytes, dim_i],
+            )?;
         }
 
         tx.commit()?;
@@ -156,18 +198,15 @@ impl SqliteVectorStore {
 
     /// 删除指定文档的所有向量
     pub fn delete_doc(&self, doc_id: &str) -> AppResult<()> {
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
-        conn.execute("DELETE FROM vectors WHERE doc_id = ?1", params![doc_id])
-            .map_err(|e| format!("Delete failed: {}", e))?;
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM vectors WHERE doc_id = ?1", params![doc_id])?;
         Ok(())
     }
 
     /// 向量数量
     pub fn count(&self) -> AppResult<usize> {
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM vectors", [], |r| r.get(0))
-            .map_err(|e| format!("Count failed: {}", e))?;
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM vectors", [], |r| r.get(0))?;
         Ok(count as usize)
     }
 }
@@ -273,6 +312,24 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].id, "c1"); // 最相似
         assert!(results[0].score > results[1].score);
+    }
+
+    #[test]
+    fn test_dimension_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let store = SqliteVectorStore::open(&db_path, 4).unwrap();
+
+        let result = store.upsert_vectors(
+            &["c1".into()],
+            "doc1",
+            &["text".into()],
+            &["{}".into()],
+            &[vec![1.0, 0.0, 0.0]], // 3-d instead of 4
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("dimension mismatch"));
     }
 
     #[test]

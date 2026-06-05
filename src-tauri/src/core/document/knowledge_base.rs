@@ -5,6 +5,8 @@
 //! - FTS5 全文搜索：精确关键词匹配（化学名、SMILES）
 //! - 混合搜索：RRF 融合向量 + FTS5 结果
 //! - 文件缓存：SHA-256 + mtime 检查
+//!
+//! 存储文件：`.mbforge/knowledge_base.db`（单文件，替代旧的 vectors.db + cache.db）
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -14,7 +16,7 @@ use rusqlite::Connection;
 use tauri::Emitter;
 
 use crate::core::config::constants::EVT_KB_SEARCH_CHUNK;
-use crate::core::error::AppResult;
+use crate::core::error::{AppError, AppResult, ErrorCode};
 use crate::core::vector::embedding::Embedder;
 use crate::core::vector::sqlite_vector_store::{SqliteVectorStore, reciprocal_rank_fusion};
 
@@ -23,7 +25,7 @@ use super::document_tree::DocumentTreeIndex;
 use super::file_cache::FileCache;
 use super::semantic_cache::{SemanticCache, SemanticCacheConfig};
 use super::stream_search::{StreamingResult, StreamingSearch, StreamingSearchConfig};
-use crate::parsers::sections::{SectionChunk, TreeNode};
+use crate::core::types::{SectionChunk, TreeNode};
 
 pub use super::document_tree::PageContent;
 
@@ -52,26 +54,39 @@ impl KnowledgeBase {
         project_root: &Path,
         embed_config: Option<&crate::core::config::settings::EmbedConfig>,
     ) -> AppResult<Self> {
-        let kb_dir = project_root.join(".mbforge").join("knowledge_base");
-        std::fs::create_dir_all(&kb_dir)?;
+        let meta_dir = project_root.join(".mbforge");
+        std::fs::create_dir_all(&meta_dir)?;
 
-        let vectors_db_path = kb_dir.join("vectors.db");
-        let cache_db_path = kb_dir.join("cache.db");
+        let db_path = meta_dir.join("knowledge_base.db");
+        let legacy_vec = meta_dir.join("knowledge_base").join("vectors.db");
+        let legacy_cache = meta_dir.join("knowledge_base").join("cache.db");
 
-        // 向量存储
-        let vector_store = SqliteVectorStore::open(&vectors_db_path, 384)?;
+        // 向后兼容：从旧数据库迁移（仅当新库不存在且旧库存在时）
+        if !db_path.exists() && (legacy_vec.exists() || legacy_cache.exists()) {
+            log::info!("Migrating legacy KB databases to knowledge_base.db");
+            Self::migrate_legacy(&db_path, &legacy_vec, &legacy_cache)?;
+        }
 
-        // FTS5 全文搜索（独立连接，避免锁冲突）
-        let fts_conn = Connection::open(&vectors_db_path)?;
+        // 主连接：向量存储
+        let vec_conn = Connection::open(&db_path)?;
+        let vector_store = SqliteVectorStore::from_conn(vec_conn, 384)?;
+
+        // 第二个连接：文件缓存（同一文件，WAL 模式下并发读安全）
+        let cache_conn = Connection::open(&db_path)?;
+        let file_cache = FileCache::new(cache_conn)?;
+
+        // 第三个连接：FTS5（独立连接避免写锁冲突）
+        let fts_conn = Connection::open(&db_path)?;
+        fts_conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA busy_timeout=5000;
+             PRAGMA wal_autocheckpoint=1000;",
+        )?;
         fts_conn.execute_batch(
             "CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
                 id, text
             )",
         )?;
-
-        // 文件缓存
-        let cache_conn = Connection::open(&cache_db_path)?;
-        let file_cache = FileCache::new(cache_conn)?;
 
         let tree_index = DocumentTreeIndex::new(project_root);
 
@@ -91,6 +106,65 @@ impl KnowledgeBase {
             file_cache,
             embedder,
         })
+    }
+
+    /// 从旧的 vectors.db + cache.db 迁移到统一的 knowledge_base.db
+    fn migrate_legacy(
+        new_path: &Path,
+        legacy_vec: &Path,
+        legacy_cache: &Path,
+    ) -> AppResult<()> {
+        let conn = Connection::open(new_path)?;
+
+        // 初始化新库 schema
+        SqliteVectorStore::setup_schema(&conn, 384)?;
+        FileCache::setup_schema(&conn)?;
+
+        // 迁移 vectors 表
+        if legacy_vec.exists() {
+            let vec_path = legacy_vec.to_string_lossy();
+            conn.execute_batch(&format!(
+                "ATTACH DATABASE '{}' AS old_vec",
+                vec_path.replace('\\', "/").replace('\'', "''")
+            ))?;
+
+            // 复制 vectors 数据（旧表可能没有 dim 列）
+            conn.execute(
+                "INSERT INTO vectors (chunk_id, doc_id, text, metadata, embedding, dim)
+                 SELECT chunk_id, doc_id, text, metadata, embedding, 0
+                 FROM old_vec.vectors",
+                [],
+            )?;
+
+            // 重建 FTS5
+            conn.execute_batch(
+                "INSERT INTO sections_fts (id, text)
+                 SELECT chunk_id, text FROM vectors"
+            )?;
+
+            conn.execute_batch("DETACH DATABASE old_vec")?;
+            log::info!("Migrated vectors from legacy database");
+        }
+
+        // 迁移 file_cache 表
+        if legacy_cache.exists() {
+            let cache_path = legacy_cache.to_string_lossy();
+            conn.execute_batch(&format!(
+                "ATTACH DATABASE '{}' AS old_cache",
+                cache_path.replace('\\', "/").replace('\'', "''")
+            ))?;
+
+            conn.execute(
+                "INSERT INTO file_cache
+                 SELECT * FROM old_cache.file_cache",
+                [],
+            )?;
+
+            conn.execute_batch("DETACH DATABASE old_cache")?;
+            log::info!("Migrated file_cache from legacy database");
+        }
+
+        Ok(())
     }
 
     /// 是否有向量搜索能力
@@ -160,7 +234,8 @@ impl KnowledgeBase {
 
         // 更新文档树
         let tree = self.tree_index.lock().map_err(|e| e.to_string())?;
-        tree.index_document(doc_id, sections, page_texts)?;
+        tree.index_document(doc_id, sections, page_texts)
+            .map_err(|e| AppError::new(ErrorCode::Unknown, e))?;
 
         Ok(sections.len())
     }
@@ -178,7 +253,7 @@ impl KnowledgeBase {
     fn fts_search(&self, query: &str, top_k: usize) -> AppResult<Vec<SearchResult>> {
         let clean_query = query
             .replace('"', "")
-            .replace("'", "")
+            .replace('\'', "")
             .replace('-', " ")
             .split_whitespace()
             .filter(|w| w.len() >= 2)
@@ -278,7 +353,8 @@ impl KnowledgeBase {
         self.vector_store.delete_doc(doc_id)?;
 
         let tree = self.tree_index.lock().map_err(|e| e.to_string())?;
-        tree.remove_document(doc_id).map_err(|e| crate::core::error::AppError::new(crate::core::error::ErrorCode::Unknown, e))
+        tree.remove_document(doc_id)
+            .map_err(|e| AppError::new(ErrorCode::Unknown, e))
     }
 
     pub fn stats(&self) -> KbStats {

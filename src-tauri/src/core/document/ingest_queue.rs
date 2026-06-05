@@ -1,19 +1,23 @@
 //! 提取队列 — 持久化的文档处理队列，支持重试和取消
 //!
-//! 灵感来自 wiki 应用的 ingest-queue 模式：
-//! - 文件进入项目目录 → 入队
-//! - 异步处理 → 重试（最多 3 次）→ 完成/失败
-//! - 支持取消、暂停（项目切换时）
-//! - 持久化到 .mbforge/ingest-queue.json
+//! 使用 SQLite 存储（共享 knowledge_base.db），替代旧的 JSON 文件。
+//! 相比全量 JSON 重写，SQLite 的优势：
+//! - 状态更新只需单条 UPDATE（O(1) vs O(n) 序列化）
+//! - 统计查询用 COUNT(*) GROUP BY（无需遍历全表）
+//! - 事务保证一致性
 
 use std::collections::VecDeque;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+
+use crate::core::error::AppResult;
 
 /// 队列任务状态
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum IngestStatus {
     /// 等待处理
     Pending,
@@ -25,6 +29,29 @@ pub enum IngestStatus {
     Failed,
     /// 已取消
     Cancelled,
+}
+
+impl IngestStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            IngestStatus::Pending => "pending",
+            IngestStatus::Processing => "processing",
+            IngestStatus::Done => "done",
+            IngestStatus::Failed => "failed",
+            IngestStatus::Cancelled => "cancelled",
+        }
+    }
+
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "pending" => Some(IngestStatus::Pending),
+            "processing" => Some(IngestStatus::Processing),
+            "done" => Some(IngestStatus::Done),
+            "failed" => Some(IngestStatus::Failed),
+            "cancelled" => Some(IngestStatus::Cancelled),
+            _ => None,
+        }
+    }
 }
 
 /// 单个提取任务
@@ -63,246 +90,347 @@ impl IngestTask {
     }
 }
 
-/// 队列持久化格式
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct QueueData {
-    tasks: Vec<IngestTask>,
-}
-
-/// 提取队列
+/// 提取队列 — SQLite 后端
 pub struct IngestQueue {
-    tasks: Arc<Mutex<VecDeque<IngestTask>>>,
-    queue_path: PathBuf,
+    conn: Mutex<Connection>,
 }
 
 impl IngestQueue {
-    pub fn new(project_root: &PathBuf) -> Self {
-        let queue_path = project_root.join(".mbforge").join("ingest-queue.json");
-        let tasks = Self::load_from_disk(&queue_path);
-        Self {
-            tasks: Arc::new(Mutex::new(tasks)),
-            queue_path,
+    /// 打开或创建队列数据库（共享 knowledge_base.db）
+    pub fn new(project_root: &Path) -> AppResult<Self> {
+        let db_path = project_root.join(".mbforge").join("knowledge_base.db");
+        let conn = Connection::open(&db_path)?;
+        Self::setup_schema(&conn)?;
+
+        // 向后兼容：从旧 JSON 文件迁移
+        let legacy_path = project_root.join(".mbforge").join("ingest-queue.json");
+        if legacy_path.exists() {
+            Self::migrate_from_json(&conn, &legacy_path)?;
+            // 重命名旧文件（保留作为备份）
+            let backup = project_root.join(".mbforge").join("ingest-queue.json.bak");
+            let _ = std::fs::rename(&legacy_path, &backup);
         }
+
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
-    /// 从磁盘加载队列
-    fn load_from_disk(path: &PathBuf) -> VecDeque<IngestTask> {
-        match std::fs::read_to_string(path) {
-            Ok(data) => serde_json::from_str::<QueueData>(&data)
-                .map(|d| d.tasks.into())
-                .unwrap_or_default(),
-            Err(_) => VecDeque::new(),
-        }
-    }
+    fn setup_schema(conn: &Connection) -> AppResult<()> {
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA busy_timeout=5000;",
+        )?;
 
-    /// 保存到磁盘
-    fn save_to_disk(&self) -> Result<(), String> {
-        let tasks = self
-            .tasks
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        let data = QueueData {
-            tasks: tasks.iter().cloned().collect(),
-        };
-        let json =
-            serde_json::to_string_pretty(&data).map_err(|e| format!("Serialize error: {}", e))?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ingest_queue (
+                id          TEXT PRIMARY KEY,
+                file_path   TEXT NOT NULL,
+                doc_id      TEXT NOT NULL,
+                status      TEXT NOT NULL,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                max_retries INTEGER NOT NULL DEFAULT 3,
+                error       TEXT,
+                created_at  REAL NOT NULL,
+                updated_at  REAL NOT NULL
+            )",
+            [],
+        )?;
 
-        if let Some(parent) = self.queue_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Create dir failed: {}", e))?;
-        }
-        std::fs::write(&self.queue_path, json)
-            .map_err(|e| format!("Write queue failed: {}", e))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ingest_status ON ingest_queue(status)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ingest_doc_id ON ingest_queue(doc_id)",
+            [],
+        )?;
+
         Ok(())
     }
 
+    fn migrate_from_json(conn: &Connection, path: &Path) -> AppResult<()> {
+        let data = std::fs::read_to_string(path).ok();
+        if let Some(data) = data {
+            #[derive(Deserialize)]
+            struct QueueData {
+                tasks: Vec<IngestTask>,
+            }
+            if let Ok(queue_data) = serde_json::from_str::<QueueData>(&data) {
+                let tx = conn.unchecked_transaction()?;
+                let task_count = queue_data.tasks.len();
+                for task in queue_data.tasks {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO ingest_queue
+                         (id, file_path, doc_id, status, retry_count, max_retries, error, created_at, updated_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                        params![
+                            task.id,
+                            task.file_path,
+                            task.doc_id,
+                            task.status.as_str(),
+                            task.retry_count as i64,
+                            task.max_retries as i64,
+                            task.error,
+                            task.created_at,
+                            task.updated_at,
+                        ],
+                    )?;
+                }
+                tx.commit()?;
+                log::info!("Migrated {} tasks from ingest-queue.json", task_count);
+            }
+        }
+        Ok(())
+    }
+
+    fn row_to_task(row: &rusqlite::Row) -> Result<IngestTask, rusqlite::Error> {
+        Ok(IngestTask {
+            id: row.get(0)?,
+            file_path: row.get(1)?,
+            doc_id: row.get(2)?,
+            status: IngestStatus::from_str(&row.get::<_, String>(3)?)
+                .unwrap_or(IngestStatus::Pending),
+            retry_count: row.get::<_, i64>(4)? as u32,
+            max_retries: row.get::<_, i64>(5)? as u32,
+            error: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+        })
+    }
+
     /// 入队一个文件
-    pub fn enqueue(&self, file_path: String, doc_id: String) -> Result<String, String> {
+    pub fn enqueue(&self, file_path: String, doc_id: String) -> AppResult<String> {
         let task = IngestTask::new(file_path, doc_id);
         let id = task.id.clone();
+        let now = task.created_at;
 
-        {
-            let mut tasks = self
-                .tasks
-                .lock()
-                .map_err(|e| format!("Lock error: {}", e))?;
-            tasks.push_back(task);
-        }
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO ingest_queue
+             (id, file_path, doc_id, status, retry_count, max_retries, error, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                &task.id,
+                &task.file_path,
+                &task.doc_id,
+                task.status.as_str(),
+                task.retry_count as i64,
+                task.max_retries as i64,
+                task.error.as_ref(),
+                now,
+                now,
+            ],
+        )?;
 
-        self.save_to_disk()?;
         log::info!("IngestQueue: enqueued {}", id);
         Ok(id)
     }
 
     /// 取出下一个待处理任务
-    pub fn dequeue(&self) -> Result<Option<IngestTask>, String> {
-        let mut tasks = self
-            .tasks
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+    pub fn dequeue(&self) -> AppResult<Option<IngestTask>> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
         // 找第一个 Pending 或可重试的 Failed 任务
-        let idx = tasks.iter().position(|t| {
-            t.status == IngestStatus::Pending || t.can_retry()
-        });
+        let mut stmt = conn.prepare(
+            "SELECT id, file_path, doc_id, status, retry_count, max_retries, error, created_at, updated_at
+             FROM ingest_queue
+             WHERE status = 'pending'
+                OR (status = 'failed' AND retry_count < max_retries)
+             ORDER BY created_at ASC
+             LIMIT 1",
+        )?;
 
-        if let Some(idx) = idx {
-            let mut task = tasks[idx].clone();
-            task.status = IngestStatus::Processing;
-            task.updated_at = now_secs();
-            tasks[idx] = task.clone();
-            self.save_to_disk()?;
-            Ok(Some(task))
+        let mut rows = stmt.query([])?;
+        let mut task = if let Some(row) = rows.next()? {
+            Some(Self::row_to_task(row)?)
         } else {
-            Ok(None)
+            None
+        };
+
+        drop(rows);
+        drop(stmt);
+
+        if let Some(ref mut task) = task {
+            let now = now_secs();
+            conn.execute(
+                "UPDATE ingest_queue
+                 SET status = 'processing', updated_at = ?1
+                 WHERE id = ?2",
+                params![now, &task.id],
+            )?;
+            task.status = IngestStatus::Processing;
+            task.updated_at = now;
         }
+
+        Ok(task)
     }
 
     /// 标记任务完成
-    pub fn mark_done(&self, task_id: &str) -> Result<(), String> {
-        let mut tasks = self
-            .tasks
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-
-        if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
-            task.status = IngestStatus::Done;
-            task.error = None;
-            task.updated_at = now_secs();
-        }
-
-        self.save_to_disk()?;
+    pub fn mark_done(&self, task_id: &str) -> AppResult<()> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = now_secs();
+        conn.execute(
+            "UPDATE ingest_queue
+             SET status = 'done', error = NULL, updated_at = ?1
+             WHERE id = ?2",
+            params![now, task_id],
+        )?;
         Ok(())
     }
 
     /// 标记任务失败（自动判断是否可重试）
-    pub fn mark_failed(&self, task_id: &str, error: String) -> Result<(), String> {
-        let mut tasks = self
-            .tasks
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+    pub fn mark_failed(&self, task_id: &str, error: String) -> AppResult<()> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = now_secs();
 
-        if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
-            task.retry_count += 1;
-            task.error = Some(error.clone());
-            task.updated_at = now_secs();
+        // 先读取当前重试次数和上限
+        let (retry_count, max_retries): (i64, i64) = conn.query_row(
+            "SELECT retry_count, max_retries FROM ingest_queue WHERE id = ?1",
+            params![task_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
 
-            if task.retry_count >= task.max_retries {
-                task.status = IngestStatus::Failed; // 永久失败
-                log::warn!(
-                    "IngestQueue: task {} permanently failed after {} retries: {}",
-                    task_id,
-                    task.retry_count,
-                    error
-                );
-            } else {
-                task.status = IngestStatus::Pending; // 重新入队
-                log::info!(
-                    "IngestQueue: task {} will retry ({}/{}): {}",
-                    task_id,
-                    task.retry_count,
-                    task.max_retries,
-                    error
-                );
-            }
-        }
+        let new_retry = retry_count + 1;
+        let new_status = if new_retry >= max_retries {
+            log::warn!(
+                "IngestQueue: task {} permanently failed after {} retries: {}",
+                task_id,
+                new_retry,
+                error
+            );
+            "failed"
+        } else {
+            log::info!(
+                "IngestQueue: task {} will retry ({}/{}): {}",
+                task_id,
+                new_retry,
+                max_retries,
+                error
+            );
+            "pending"
+        };
 
-        self.save_to_disk()?;
+        conn.execute(
+            "UPDATE ingest_queue
+             SET status = ?1, retry_count = ?2, error = ?3, updated_at = ?4
+             WHERE id = ?5",
+            params![new_status, new_retry, &error, now, task_id],
+        )?;
+
         Ok(())
     }
 
     /// 取消一个任务
-    pub fn cancel(&self, task_id: &str) -> Result<(), String> {
-        let mut tasks = self
-            .tasks
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-
-        if let Some(task) = tasks.iter_mut().find(|t| t.id == task_id) {
-            task.status = IngestStatus::Cancelled;
-            task.updated_at = now_secs();
-        }
-
-        self.save_to_disk()?;
+    pub fn cancel(&self, task_id: &str) -> AppResult<()> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = now_secs();
+        conn.execute(
+            "UPDATE ingest_queue
+             SET status = 'cancelled', updated_at = ?1
+             WHERE id = ?2",
+            params![now, task_id],
+        )?;
         Ok(())
     }
 
     /// 取消所有待处理任务（项目切换时暂停）
-    pub fn cancel_all_pending(&self) -> Result<usize, String> {
-        let mut tasks = self
-            .tasks
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-
-        let mut cancelled = 0;
-        for task in tasks.iter_mut() {
-            if task.status == IngestStatus::Pending || task.status == IngestStatus::Processing {
-                task.status = IngestStatus::Cancelled;
-                task.updated_at = now_secs();
-                cancelled += 1;
-            }
-        }
-
-        self.save_to_disk()?;
-        Ok(cancelled)
+    pub fn cancel_all_pending(&self) -> AppResult<usize> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = now_secs();
+        let changed = conn.execute(
+            "UPDATE ingest_queue
+             SET status = 'cancelled', updated_at = ?1
+             WHERE status IN ('pending', 'processing')",
+            params![now],
+        )?;
+        Ok(changed)
     }
 
     /// 清理已完成/取消的任务
-    pub fn cleanup(&self) -> Result<usize, String> {
-        let mut tasks = self
-            .tasks
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-
-        let before = tasks.len();
-        tasks.retain(|t| t.status == IngestStatus::Pending || t.status == IngestStatus::Processing || t.can_retry());
-        let removed = before - tasks.len();
-
-        if removed > 0 {
-            self.save_to_disk()?;
-        }
-
-        Ok(removed)
+    pub fn cleanup(&self) -> AppResult<usize> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let changed = conn.execute(
+            "DELETE FROM ingest_queue
+             WHERE status IN ('done', 'cancelled')",
+            [],
+        )?;
+        Ok(changed)
     }
 
     /// 队列统计
-    pub fn stats(&self) -> Result<QueueStats, String> {
-        let tasks = self
-            .tasks
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
+    pub fn stats(&self) -> AppResult<QueueStats> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        let total: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM ingest_queue",
+            [],
+            |r| r.get(0),
+        )?;
+
+        let mut stmt = conn.prepare(
+            "SELECT status, COUNT(*) FROM ingest_queue GROUP BY status",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+
+        let mut pending = 0usize;
+        let mut processing = 0usize;
+        let mut done = 0usize;
+        let mut failed = 0usize;
+        let mut cancelled = 0usize;
+
+        for row in rows {
+            let (status, count) = row?;
+            let count = count as usize;
+            match status.as_str() {
+                "pending" => pending = count,
+                "processing" => processing = count,
+                "done" => done = count,
+                "failed" => failed = count,
+                "cancelled" => cancelled = count,
+                _ => {}
+            }
+        }
 
         Ok(QueueStats {
-            total: tasks.len(),
-            pending: tasks.iter().filter(|t| t.status == IngestStatus::Pending).count(),
-            processing: tasks.iter().filter(|t| t.status == IngestStatus::Processing).count(),
-            done: tasks.iter().filter(|t| t.status == IngestStatus::Done).count(),
-            failed: tasks.iter().filter(|t| t.status == IngestStatus::Failed).count(),
-            cancelled: tasks.iter().filter(|t| t.status == IngestStatus::Cancelled).count(),
+            total: total as usize,
+            pending,
+            processing,
+            done,
+            failed,
+            cancelled,
         })
     }
 
     /// 获取所有任务（用于 UI 展示）
-    pub fn list_all(&self) -> Result<Vec<IngestTask>, String> {
-        let tasks = self
-            .tasks
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        Ok(tasks.iter().cloned().collect())
+    pub fn list_all(&self) -> AppResult<Vec<IngestTask>> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare(
+            "SELECT id, file_path, doc_id, status, retry_count, max_retries, error, created_at, updated_at
+             FROM ingest_queue
+             ORDER BY created_at ASC",
+        )?;
+
+        let rows = stmt.query_map([], Self::row_to_task)?;
+        let mut tasks = Vec::new();
+        for row in rows {
+            tasks.push(row?);
+        }
+        Ok(tasks)
     }
 
-    /// 检查文件是否已在队列中（避免重复入队）
-    pub fn contains_file(&self, file_path: &str) -> Result<bool, String> {
-        let tasks = self
-            .tasks
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        Ok(tasks.iter().any(|t| {
-            t.file_path == file_path
-                && (t.status == IngestStatus::Pending
-                    || t.status == IngestStatus::Processing
-                    || t.status == IngestStatus::Done)
-        }))
+    /// 检查文件是否已在队列中（Pending/Processing/Done 状态）
+    pub fn contains_file(&self, file_path: &str) -> AppResult<bool> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM ingest_queue
+             WHERE file_path = ?1 AND status IN ('pending', 'processing', 'done')",
+            params![file_path],
+            |r| r.get(0),
+        )?;
+        Ok(count > 0)
     }
 }
 
@@ -327,13 +455,17 @@ fn now_secs() -> f64 {
 mod tests {
     use super::*;
 
+    fn setup_queue() -> (tempfile::TempDir, IngestQueue) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join(".mbforge")).unwrap();
+        let queue = IngestQueue::new(root).unwrap();
+        (dir, queue)
+    }
+
     #[test]
     fn test_queue_enqueue_dequeue() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        std::fs::create_dir_all(root.join(".mbforge")).unwrap();
-
-        let queue = IngestQueue::new(&root);
+        let (_dir, queue) = setup_queue();
 
         let id = queue.enqueue("test.pdf".into(), "doc1".into()).unwrap();
         assert_eq!(queue.stats().unwrap().pending, 1);
@@ -348,16 +480,12 @@ mod tests {
 
     #[test]
     fn test_queue_retry() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        std::fs::create_dir_all(root.join(".mbforge")).unwrap();
-
-        let queue = IngestQueue::new(&root);
+        let (_dir, queue) = setup_queue();
         let id = queue.enqueue("test.pdf".into(), "doc1".into()).unwrap();
 
         // 第一次失败 → 重试
         queue.mark_failed(&id, "LLM timeout".into()).unwrap();
-        assert_eq!(queue.stats().unwrap().pending, 1); // 重新入队
+        assert_eq!(queue.stats().unwrap().pending, 1);
 
         // 第二次失败 → 重试
         let task = queue.dequeue().unwrap().unwrap();
@@ -373,11 +501,7 @@ mod tests {
 
     #[test]
     fn test_queue_contains_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
-        std::fs::create_dir_all(root.join(".mbforge")).unwrap();
-
-        let queue = IngestQueue::new(&root);
+        let (_dir, queue) = setup_queue();
         assert!(!queue.contains_file("test.pdf").unwrap());
 
         queue.enqueue("test.pdf".into(), "doc1".into()).unwrap();
@@ -387,20 +511,71 @@ mod tests {
     #[test]
     fn test_queue_persistence() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().to_path_buf();
+        let root = dir.path();
         std::fs::create_dir_all(root.join(".mbforge")).unwrap();
 
         // 写入
         {
-            let queue = IngestQueue::new(&root);
+            let queue = IngestQueue::new(root).unwrap();
             queue.enqueue("a.pdf".into(), "d1".into()).unwrap();
             queue.enqueue("b.pdf".into(), "d2".into()).unwrap();
         }
 
         // 重新加载
         {
-            let queue = IngestQueue::new(&root);
+            let queue = IngestQueue::new(root).unwrap();
             assert_eq!(queue.stats().unwrap().total, 2);
         }
+    }
+
+    #[test]
+    fn test_queue_cleanup() {
+        let (_dir, queue) = setup_queue();
+        let id = queue.enqueue("test.pdf".into(), "doc1".into()).unwrap();
+        queue.mark_done(&id).unwrap();
+
+        queue.enqueue("test2.pdf".into(), "doc2".into()).unwrap();
+
+        let removed = queue.cleanup().unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(queue.stats().unwrap().total, 1);
+    }
+
+    #[test]
+    fn test_legacy_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join(".mbforge")).unwrap();
+
+        // 写入旧格式 JSON
+        let legacy = serde_json::json!({
+            "tasks": [
+                {
+                    "id": "legacy-1",
+                    "file_path": "old.pdf",
+                    "doc_id": "doc-old",
+                    "status": "pending",
+                    "retry_count": 0,
+                    "max_retries": 3,
+                    "error": null,
+                    "created_at": 1234567890.0,
+                    "updated_at": 1234567890.0
+                }
+            ]
+        });
+        std::fs::write(
+            root.join(".mbforge").join("ingest-queue.json"),
+            serde_json::to_string_pretty(&legacy).unwrap(),
+        ).unwrap();
+
+        // 新队列应自动迁移
+        let queue = IngestQueue::new(root).unwrap();
+        let stats = queue.stats().unwrap();
+        assert_eq!(stats.total, 1);
+        assert_eq!(stats.pending, 1);
+
+        // 旧文件应被重命名
+        assert!(!root.join(".mbforge").join("ingest-queue.json").exists());
+        assert!(root.join(".mbforge").join("ingest-queue.json.bak").exists());
     }
 }

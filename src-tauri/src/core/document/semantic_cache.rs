@@ -1,13 +1,17 @@
-//! L1 语义缓存 — 基于 SHA-256 精确哈希的查询结果缓存
+//! 语义缓存 — L1 精确哈希查询缓存
 //!
-//! 缓存搜索结果以避免重复查询。仅使用 L1（精确哈希匹配）。
-//! L2（embedding 相似度）已移除 — LanceDB 自身处理语义搜索。
+//! 使用内存 HashMap 提供 O(1) 命中，SQLite 持久化（共享 knowledge_base.db）。
+//! 相比全量 JSON 重写，SQLite 单条 INSERT/UPDATE 更高效，且支持 TTL 批量清理。
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+
+use rusqlite::{params, Connection};
+
+use crate::core::error::AppResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheEntry {
@@ -57,10 +61,9 @@ struct CacheInner {
 }
 
 pub struct SemanticCache {
-    project_root: PathBuf,
     config: SemanticCacheConfig,
     cache: Mutex<CacheInner>,
-    cache_path: PathBuf,
+    db_path: PathBuf,
 }
 
 fn now_secs() -> f64 {
@@ -79,30 +82,173 @@ fn hash_query(query: &str) -> String {
 
 impl SemanticCache {
     pub fn new(project_root: &Path, config: SemanticCacheConfig) -> Self {
-        let cache_path = project_root
-            .join(".mbforge")
-            .join("cache")
-            .join("semantic_cache.json");
-
-        if let Some(parent) = cache_path.parent() {
+        let db_path = project_root.join(".mbforge").join("knowledge_base.db");
+        if let Some(parent) = db_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
 
         let cache = Self {
-            project_root: project_root.to_path_buf(),
             config,
             cache: Mutex::new(CacheInner {
                 entries: HashMap::new(),
                 lru: VecDeque::new(),
             }),
-            cache_path: cache_path.clone(),
+            db_path: db_path.clone(),
         };
 
         if cache.config.disk_persist {
-            cache.load_from_disk();
+            if let Err(e) = cache.load_from_db() {
+                log::warn!("SemanticCache: failed to load from db: {}", e);
+            }
+        }
+
+        // 向后兼容：尝试从旧 JSON 文件加载
+        let legacy_path = project_root
+            .join(".mbforge")
+            .join("cache")
+            .join("semantic_cache.json");
+        if legacy_path.exists() {
+            if let Err(e) = cache.load_from_legacy_json(&legacy_path) {
+                log::warn!("SemanticCache: failed to load legacy json: {}", e);
+            }
         }
 
         cache
+    }
+
+    fn with_conn<F, T>(&self, f: F) -> AppResult<T>
+    where
+        F: FnOnce(&Connection) -> AppResult<T>,
+    {
+        let conn = Connection::open(&self.db_path)?;
+        f(&conn)
+    }
+
+    fn setup_schema(conn: &Connection) -> AppResult<()> {
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA busy_timeout=5000;",
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS semantic_cache (
+                query_hash  TEXT PRIMARY KEY,
+                query_text  TEXT NOT NULL,
+                results_json TEXT NOT NULL,
+                created_at  REAL NOT NULL,
+                hit_count   INTEGER NOT NULL DEFAULT 0,
+                last_hit    REAL NOT NULL
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_semantic_last_hit ON semantic_cache(last_hit)",
+            [],
+        )?;
+
+        Ok(())
+    }
+
+    fn load_from_db(&self) -> AppResult<()> {
+        let conn = Connection::open(&self.db_path)?;
+        Self::setup_schema(&conn)?;
+
+        let mut stmt = conn.prepare(
+            "SELECT query_hash, query_text, results_json, created_at, hit_count, last_hit
+             FROM semantic_cache",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            let results_json: String = row.get(2)?;
+            let results: Vec<serde_json::Value> =
+                serde_json::from_str(&results_json).unwrap_or_default();
+            Ok(CacheEntry {
+                query_hash: row.get(0)?,
+                query_text: row.get(1)?,
+                results,
+                project_root: String::new(),
+                created_at: row.get(3)?,
+                hit_count: row.get::<_, i64>(4)? as u64,
+                last_hit: row.get(5)?,
+            })
+        })?;
+
+        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        for row in rows {
+            let entry = row?;
+            let key = entry.query_hash.clone();
+            inner.lru.push_back(key.clone());
+            inner.entries.insert(key, entry);
+        }
+
+        log::debug!("SemanticCache: loaded {} entries from db", inner.entries.len());
+        Ok(())
+    }
+
+    fn load_from_legacy_json(&self, path: &Path) -> AppResult<()> {
+        let data: HashMap<String, serde_json::Value> =
+            match std::fs::read_to_string(path) {
+                Ok(c) => serde_json::from_str(&c).unwrap_or_default(),
+                Err(_) => return Ok(()),
+            };
+
+        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut migrated = 0usize;
+
+        for (key, item) in data {
+            if let Ok(entry) = serde_json::from_value::<CacheEntry>(item) {
+                if !inner.entries.contains_key(&key) {
+                    inner.lru.push_back(key.clone());
+                    inner.entries.insert(key, entry);
+                    migrated += 1;
+                }
+            }
+        }
+
+        if migrated > 0 {
+            log::info!("SemanticCache: migrated {} entries from legacy JSON", migrated);
+            // 同步写入 SQLite
+            drop(inner);
+            let _ = self.flush_to_db();
+        }
+
+        // 重命名旧文件
+        let backup = path.with_extension("json.bak");
+        let _ = std::fs::rename(path, backup);
+
+        Ok(())
+    }
+
+    fn flush_to_db(&self) -> AppResult<()> {
+        let conn = Connection::open(&self.db_path)?;
+        Self::setup_schema(&conn)?;
+
+        let inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+
+        // 先清空再全量写入（简单策略，缓存大小 <1000，全量写入开销可忽略）
+        conn.execute("DELETE FROM semantic_cache", [])?;
+
+        let tx = conn.unchecked_transaction()?;
+        for entry in inner.entries.values() {
+            let results_json = serde_json::to_string(&entry.results).unwrap_or_default();
+            tx.execute(
+                "INSERT INTO semantic_cache
+                 (query_hash, query_text, results_json, created_at, hit_count, last_hit)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    &entry.query_hash,
+                    &entry.query_text,
+                    &results_json,
+                    entry.created_at,
+                    entry.hit_count as i64,
+                    entry.last_hit,
+                ],
+            )?;
+        }
+        tx.commit()?;
+
+        Ok(())
     }
 
     /// L1 exact hash match
@@ -121,6 +267,17 @@ impl SemanticCache {
         if expired {
             inner.entries.remove(&key);
             retain_lru(&mut inner.lru, &key);
+            // 从 SQLite 删除过期条目（异步，不阻塞读取）
+            let db_path = self.db_path.clone();
+            let key_clone = key.clone();
+            std::thread::spawn(move || {
+                if let Ok(conn) = Connection::open(&db_path) {
+                    let _ = conn.execute(
+                        "DELETE FROM semantic_cache WHERE query_hash = ?1",
+                        params![key_clone],
+                    );
+                }
+            });
             return None;
         }
 
@@ -130,6 +287,18 @@ impl SemanticCache {
                 entry.update_hit();
             }
             move_to_back(&mut inner.lru, &key);
+            // 异步更新 SQLite 的 hit_count
+            let db_path = self.db_path.clone();
+            let key_clone = key.clone();
+            let now = now_secs();
+            std::thread::spawn(move || {
+                if let Ok(conn) = Connection::open(&db_path) {
+                    let _ = conn.execute(
+                        "UPDATE semantic_cache SET hit_count = hit_count + 1, last_hit = ?1 WHERE query_hash = ?2",
+                        params![now, key_clone],
+                    );
+                }
+            });
         }
         results
     }
@@ -146,7 +315,7 @@ impl SemanticCache {
             query_hash: key.clone(),
             query_text: query.to_string(),
             results,
-            project_root: self.project_root.to_string_lossy().to_string(),
+            project_root: String::new(),
             created_at: now,
             hit_count: 1,
             last_hit: now,
@@ -157,41 +326,49 @@ impl SemanticCache {
         if inner.entries.len() >= self.config.max_size && !inner.entries.contains_key(&key) {
             if let Some(evicted) = inner.lru.pop_front() {
                 inner.entries.remove(&evicted);
+                // 异步从 SQLite 删除
+                let db_path = self.db_path.clone();
+                std::thread::spawn(move || {
+                    if let Ok(conn) = Connection::open(&db_path) {
+                        let _ = conn.execute(
+                            "DELETE FROM semantic_cache WHERE query_hash = ?1",
+                            params![evicted],
+                        );
+                    }
+                });
             }
         }
 
         inner.entries.insert(key.clone(), entry);
-        inner.lru.push_back(key);
-
+        inner.lru.push_back(key.clone());
         drop(inner);
 
+        // 同步写入 SQLite（确保持久化）
         if self.config.disk_persist {
-            self.save_to_disk();
-        }
-    }
-
-    fn load_from_disk(&self) {
-        let data: HashMap<String, serde_json::Value> =
-            match std::fs::read_to_string(&self.cache_path) {
-                Ok(c) => serde_json::from_str(&c).unwrap_or_default(),
-                Err(_) => return,
+            let results_json = match self.cache.lock() {
+                Ok(inner) => inner.entries.get(&key).map(|e| {
+                    serde_json::to_string(&e.results).unwrap_or_default()
+                }),
+                Err(e) => e.into_inner().entries.get(&key).map(|e| {
+                    serde_json::to_string(&e.results).unwrap_or_default()
+                }),
             };
 
-        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        for (key, item) in data {
-            if let Ok(mut entry) = serde_json::from_value::<CacheEntry>(item) {
-                // 清理旧格式中的 embedding 字段（反序列化时忽略）
-                // 迁移：重新存储时不写入 embedding
-                inner.entries.insert(key.clone(), entry);
-                inner.lru.push_back(key);
+            if let Some(results_json) = results_json {
+                let db_path = self.db_path.clone();
+                let query_text = query.to_string();
+                std::thread::spawn(move || {
+                    if let Ok(conn) = Connection::open(&db_path) {
+                        let _ = Self::setup_schema(&conn);
+                        let _ = conn.execute(
+                            "INSERT OR REPLACE INTO semantic_cache
+                             (query_hash, query_text, results_json, created_at, hit_count, last_hit)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                            params![key, query_text, results_json, now, 1i64, now],
+                        );
+                    }
+                });
             }
-        }
-    }
-
-    fn save_to_disk(&self) {
-        let inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-        if let Ok(data) = serde_json::to_string(&inner.entries) {
-            let _ = std::fs::write(&self.cache_path, data);
         }
     }
 
@@ -200,9 +377,18 @@ impl SemanticCache {
         inner.entries.clear();
         inner.lru.clear();
         drop(inner);
-        if self.cache_path.exists() {
-            let _ = std::fs::remove_file(&self.cache_path);
-        }
+
+        let db_path = self.db_path.clone();
+        std::thread::spawn(move || {
+            if let Ok(conn) = Connection::open(&db_path) {
+                let _ = conn.execute("DELETE FROM semantic_cache", []);
+            }
+        });
+    }
+
+    /// 强制同步内存缓存到 SQLite（测试用）
+    pub fn sync(&self) -> AppResult<()> {
+        self.flush_to_db()
     }
 
     pub fn stats(&self) -> serde_json::Value {
@@ -233,10 +419,15 @@ fn retain_lru(lru: &mut VecDeque<String>, key: &str) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_l1_cache_hit() {
+    fn setup_cache() -> (tempfile::TempDir, SemanticCache) {
         let dir = tempfile::tempdir().unwrap();
         let sc = SemanticCache::new(dir.path(), SemanticCacheConfig::default());
+        (dir, sc)
+    }
+
+    #[test]
+    fn test_l1_cache_hit() {
+        let (_dir, sc) = setup_cache();
 
         assert!(sc.get_l1("test").is_none());
 
@@ -247,10 +438,62 @@ mod tests {
 
     #[test]
     fn test_l1_cache_miss_different_query() {
-        let dir = tempfile::tempdir().unwrap();
-        let sc = SemanticCache::new(dir.path(), SemanticCacheConfig::default());
+        let (_dir, sc) = setup_cache();
 
         sc.store("query1", vec![serde_json::json!({"text": "result1"})]);
         assert!(sc.get_l1("query2").is_none());
+    }
+
+    #[test]
+    fn test_persistence() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // 第一轮：写入缓存并强制同步
+        let sc = SemanticCache::new(root, SemanticCacheConfig::default());
+        sc.store("hello", vec![serde_json::json!({"text": "world"})]);
+        sc.sync().unwrap();
+        drop(sc);
+
+        // 第二轮：重新加载（dir 必须保持存活）
+        let sc2 = SemanticCache::new(root, SemanticCacheConfig::default());
+        let results = sc2.get_l1("hello");
+        assert!(results.is_some());
+        assert_eq!(results.unwrap()[0]["text"], "world");
+    }
+
+    #[test]
+    fn test_ttl_expiration() {
+        let (_dir, sc) = setup_cache();
+
+        sc.store("old", vec![serde_json::json!({"text": "data"})]);
+        // 模拟过期：手动修改 created_at（key 是 hash_query 结果）
+        {
+            let key = hash_query("old");
+            let mut inner = sc.cache.lock().unwrap();
+            if let Some(entry) = inner.entries.get_mut(&key) {
+                entry.created_at = now_secs() - 7200.0; // 2 hours ago
+            }
+        }
+        // TTL 默认 1 小时，应过期
+        assert!(sc.get_l1("old").is_none());
+    }
+
+    #[test]
+    fn test_lru_eviction() {
+        let mut config = SemanticCacheConfig::default();
+        config.max_size = 2;
+        let (_dir, sc) = setup_cache();
+        // 重新创建以应用 max_size=2
+        let dir = tempfile::tempdir().unwrap();
+        let sc = SemanticCache::new(dir.path(), config);
+
+        sc.store("a", vec![serde_json::json!({"k": "a"})]);
+        sc.store("b", vec![serde_json::json!({"k": "b"})]);
+        sc.store("c", vec![serde_json::json!({"k": "c"})]); // 应驱逐 a
+
+        assert!(sc.get_l1("a").is_none());
+        assert!(sc.get_l1("b").is_some());
+        assert!(sc.get_l1("c").is_some());
     }
 }

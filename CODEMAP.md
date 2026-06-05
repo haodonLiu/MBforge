@@ -187,7 +187,7 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 
 ## 三、Rust 模块清单 (src-tauri/src/)
 
-### 3.1 core/ — 核心层 (21 顶层模块 + 4 子目录)
+### 3.1 core/ — 核心层 (14 顶层模块 + 5 子目录)
 
 | 模块 | 功能 | 依赖 | 状态 |
 |------|------|------|------|
@@ -538,6 +538,7 @@ ExtractionResult ← association.rs (图像分子)                  │
 | 3 | 2026-06-01 | AI | CODEMAP.md §2.1, §3.1, §7.2 | 修复内部矛盾：① §2.1 管线图 Stage 5（pending.rs 虚设）重编为 Stage 5 LLM 处理 + Stage 6 分子库持久化；② §3.1 semantic_cache/stream_search 状态从 ⚠️ 更新为 ✅ 并注明接入方式；③ §7.2 #1 semantic_cache 状态同步更新。pending.rs 确认为死代码（仅 mod.rs 声明，无调用方） | ⚠️ 待审核 |
 | 4 | 2026-06-04 | Claude | `ref/harness-engineering.md` | 新增参考文档：Agent Harness Engineering 论文笔记，含 ETCLOVG 七层分类法定义、MBForge 架构逐层映射、四项差距分析（Observability/Verification/Governance/Lifecycle）及优先级路线图 | ⚠️ 待审核 |
 | 5 | 2026-06-05 | AI | CLAUDE.md, AGENTS.md, CODEMAP.md, README.md | Python→Rust 迁移文档同步：移除已删除的 routers/chem.py、molecule.py、project.py、settings.py、core/mol_database.py 引用；更新路由数 16→13、命令数 12→15；更新 chem_validate.rs 描述为纯 Rust chematic；前端 settings 改用 Tauri invoke | ⚠️ 待审核 |
+| 6 | 2026-06-05 | AI | src-tauri/src/core/ | core/ 目录重构：删除死代码 project_migrator.rs + db/；新建 chem/（abbreviation_map/esmiles/molecode/markush/chem/gesim）和 agent/（agent/context/llm/tools/observability/specialist_agent）；移动 arxiv.rs → executor/；project.rs 简化移除迁移逻辑 | ⚠️ 待审核 |
 
 ---
 

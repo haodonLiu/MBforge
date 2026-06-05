@@ -11,6 +11,7 @@ import Button from './ui/Button'
 import IconButton from './ui/IconButton'
 import Input from './ui/Input'
 import SettingSection, { SettingGroup, SettingItem } from './ui/SettingSection'
+import { showToast } from '../hooks/useToast'
 import { EnvironmentSection, ModelsTab, ModelSelector } from './settings'
 import { SETTING_SECTIONS, LLM_MODELS, EMBED_MODELS, RERANK_MODELS, type Section } from './settings/modelConfigs'
 
@@ -314,7 +315,7 @@ export default function SettingsModal({ open, onClose }: Props) {
         })
       }
     } catch (e) {
-      console.error(e)
+      showToast('加载设置失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally {
       setIsLoading(false)
     }
@@ -350,11 +351,13 @@ export default function SettingsModal({ open, onClose }: Props) {
         setSaveSuccess(true)
         setTimeout(() => setSaveSuccess(false), 3000)
       } else {
-        setError(resp.error || t('settings.saveFailed'))
+        const msg = resp.error || t('settings.saveFailed')
+        setError(msg)
+        showToast(msg, 'error')
       }
     } catch (e) {
-      console.error(e)
       setError(t('settings.saveFailed'))
+      showToast(t('settings.saveFailed') + ': ' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally {
       setIsLoading(false)
     }

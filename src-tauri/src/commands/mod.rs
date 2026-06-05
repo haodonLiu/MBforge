@@ -121,5 +121,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::core::resource_manager::resources_status,
         crate::core::resource_manager::resources_get_model_path,
         crate::core::resource_manager::resources_catalog,
+        crate::core::resource_manager::models_download,
+        crate::core::resource_manager::models_cancel_download,
     ]
 }

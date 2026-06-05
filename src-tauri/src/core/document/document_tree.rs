@@ -169,11 +169,12 @@ fn build_tree_nodes(sections: &[SectionChunk]) -> Vec<TreeNode> {
 
         // Pop stack frames that are at same or deeper depth
         while stack.len() > 1 && stack[stack.len() - 1].depth >= depth {
-            let entry = stack.pop().expect("stack non-empty during tree build");
-            if let Some(parent) = stack.last_mut() {
-                parent.node.nodes.push(entry.node);
-            } else {
-                roots.push(entry.node);
+            if let Some(entry) = stack.pop() {
+                if let Some(parent) = stack.last_mut() {
+                    parent.node.nodes.push(entry.node);
+                } else {
+                    roots.push(entry.node);
+                }
             }
         }
 
@@ -183,11 +184,12 @@ fn build_tree_nodes(sections: &[SectionChunk]) -> Vec<TreeNode> {
 
     // Flush remaining stack to roots
     while stack.len() > 1 {
-        let entry = stack.pop().expect("stack non-empty during tree flush");
-        if let Some(parent) = stack.last_mut() {
-            parent.node.nodes.push(entry.node);
-        } else {
-            roots.push(entry.node);
+        if let Some(entry) = stack.pop() {
+            if let Some(parent) = stack.last_mut() {
+                parent.node.nodes.push(entry.node);
+            } else {
+                roots.push(entry.node);
+            }
         }
     }
     if let Some(entry) = stack.pop() {

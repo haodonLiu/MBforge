@@ -6,6 +6,7 @@ import {
 } from '../api/tauri-bridge'
 import { PlusIcon } from './icons'
 import { useAppContext } from '../context/AppContext'
+import { showToast } from '../hooks/useToast'
 import { default as BaseTreeNode } from '../components/ui/TreeNode'
 import EmptyState from '../components/ui/EmptyState'
 import Button from '../components/ui/Button'
@@ -95,7 +96,7 @@ export default function FileTree({ onFileClick }: Props) {
       await uploadFiles(projectRoot)
       loadTree()
     } catch (err) {
-      console.error('Upload failed:', err)
+      showToast('导入失败: ' + (err instanceof Error ? err.message : String(err)), 'error')
     } finally {
       setIsUploading(false)
     }

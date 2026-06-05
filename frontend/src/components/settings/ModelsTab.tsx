@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import Button from '../ui/Button'
 import { listModels, downloadModel, listDownloaded, deleteModel, type DownloadModel, type DownloadedModel, type ProgressEvent } from '../../api/download'
+import { downloadModelTauri, type DownloadProgress } from '../../api/tauri/download'
 
 // ============ Types ============
 interface DownloadState {
@@ -196,10 +197,10 @@ export default function ModelsTab() {
   }, [])
 
   // Load on mount
-  useState(() => {
+  useEffect(() => {
     loadModels()
     loadDownloaded()
-  })
+  }, [loadModels, loadDownloaded])
 
   // Download handler
   const handleDownload = (modelId: string) => {
@@ -210,16 +211,17 @@ export default function ModelsTab() {
       [modelId]: { progress: 0, status: 'connecting' },
     }))
 
-    abortRef.current = downloadModel(modelId, (event: ProgressEvent) => {
+    // 优先使用 Tauri 原生下载，失败时回退到 Python sidecar HTTP
+    abortRef.current = downloadModelTauri(modelId, (event: DownloadProgress) => {
       setDownloadState(prev => {
         const current = prev[modelId] || { progress: 0, status: 'idle' }
         switch (event.status) {
           case 'connecting':
-            return { ...prev, [modelId]: { ...current, status: 'connecting', source: event.source } }
+            return { ...prev, [modelId]: { ...current, status: 'connecting' } }
           case 'downloading': {
-            const progress = event.progress ?? (event.file_progress != null && event.total_files
-              ? Math.round(((event.file_index || 1) - 1) * 100 / event.total_files + (event.file_progress || 0) / event.total_files)
-              : current.progress)
+            const progress = event.total_files > 0
+              ? Math.round(((event.file_index) * 100 / event.total_files) + (event.file_progress * 100 / event.total_files))
+              : current.progress
             return {
               ...prev,
               [modelId]: {
@@ -234,9 +236,43 @@ export default function ModelsTab() {
           }
           case 'completed':
             loadModels()
-            return { ...prev, [modelId]: { progress: 100, status: 'completed', source: event.source } }
+            return { ...prev, [modelId]: { progress: 100, status: 'completed' } }
           case 'failed':
-            return { ...prev, [modelId]: { ...current, status: 'failed', error: event.error } }
+            // Tauri 下载失败，回退到 HTTP
+            console.warn('[Tauri download failed, falling back to HTTP]', event.error)
+            abortRef.current = downloadModel(modelId, (httpEvent: ProgressEvent) => {
+              setDownloadState(prev => {
+                const current = prev[modelId] || { progress: 0, status: 'idle' }
+                switch (httpEvent.status) {
+                  case 'connecting':
+                    return { ...prev, [modelId]: { ...current, status: 'connecting', source: httpEvent.source } }
+                  case 'downloading': {
+                    const progress = httpEvent.progress ?? (httpEvent.file_progress != null && httpEvent.total_files
+                      ? Math.round(((httpEvent.file_index || 1) - 1) * 100 / httpEvent.total_files + (httpEvent.file_progress || 0) / httpEvent.total_files)
+                      : current.progress)
+                    return {
+                      ...prev,
+                      [modelId]: {
+                        ...current,
+                        status: 'downloading',
+                        progress,
+                        fileName: httpEvent.file,
+                        fileIndex: httpEvent.file_index,
+                        totalFiles: httpEvent.total_files,
+                      },
+                    }
+                  }
+                  case 'completed':
+                    loadModels()
+                    return { ...prev, [modelId]: { progress: 100, status: 'completed', source: httpEvent.source } }
+                  case 'failed':
+                    return { ...prev, [modelId]: { ...current, status: 'failed', error: httpEvent.error } }
+                  default:
+                    return prev
+                }
+              })
+            })
+            return { ...prev, [modelId]: { ...current, status: 'connecting' } }
           default:
             return prev
         }

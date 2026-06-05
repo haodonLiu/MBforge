@@ -233,17 +233,6 @@ export default function MoleculeDisplay({
     else if (e.key === 'Escape') handleCancelEdit()
   }
 
-  // 简单的 re-OCR 模拟（实际应该调用后端）
-  const handleReOCR = async () => {
-    setValidating(true)
-    setValidationMsg(null)
-    // 模拟异步请求
-    await new Promise(r => setTimeout(r, 800))
-    // 演示：保留原 SMILES，但提示用户手动检查
-    setValidationMsg('建议手动核对当前 SMILES 是否与图像一致')
-    setValidating(false)
-  }
-
   const formula = showMetadata ? estimateFormula(smiles) : null
   const mw = showMetadata ? estimateMW(smiles) : null
   const validation = basicValidate(smiles)
@@ -395,7 +384,44 @@ export default function MoleculeDisplay({
               </Suspense>
             ) : null}
           </div>
-        ) : imgError || !validation.valid ? (
+        ) : imgError ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 8,
+            padding: 24,
+            color: 'var(--text-muted)',
+            textAlign: 'center',
+          }}>
+            <div style={{ opacity: 0.4, marginBottom: 4 }}>
+              <svg width={48} height={48} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="20" height="20" rx="3" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="m21 15-5-5L5 21" />
+              </svg>
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 500 }}>网络不可用</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', opacity: 0.7 }}>
+              {validation.valid ? '无法加载分子结构图，请检查网络连接' : (validation.message ?? '无法渲染此 SMILES')}
+            </div>
+            <button
+              onClick={() => setImgError(false)}
+              style={{
+                marginTop: 4,
+                padding: '4px 12px',
+                fontSize: 11,
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+              }}
+            >
+              重试
+            </button>
+          </div>
+        ) : !validation.valid ? (
           <div style={{
             display: 'flex',
             flexDirection: 'column',
@@ -406,7 +432,7 @@ export default function MoleculeDisplay({
             textAlign: 'center',
           }}>
             <InfoIcon size={32} />
-            <div style={{ fontSize: 12 }}>{validation.message ?? '无法渲染此 SMILES'}</div>
+            <div style={{ fontSize: 12 }}>{validation.message}</div>
           </div>
         ) : (
           <motion.img
@@ -508,23 +534,6 @@ export default function MoleculeDisplay({
                 <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
               </svg>
               手动编辑
-            </button>
-            <button
-              onClick={handleReOCR}
-              disabled={validating}
-              title="重新 OCR 识别"
-              style={{
-                padding: '6px 10px',
-                background: 'var(--bg-elevated)',
-                color: 'var(--text-secondary)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                fontSize: 12,
-                cursor: validating ? 'wait' : 'pointer',
-                opacity: validating ? 0.5 : 1,
-              }}
-            >
-              {validating ? '识别中...' : <RefreshCwIcon size={12} />}
             </button>
           </>
         )}

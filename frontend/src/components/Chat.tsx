@@ -99,6 +99,12 @@ export default function Chat() {
     measureElement: (el) => el.getBoundingClientRect().height,
     overscan: 5,
   })
+  const isNearBottom = () => {
+    const el = messagesContainerRef.current
+    if (!el) return true
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 100
+  }
+
   const scrollToBottom = () => {
     virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' })
   }
@@ -144,7 +150,7 @@ export default function Chat() {
   }, [projectRoot])
 
   useEffect(() => {
-    scrollToBottom()
+    if (isNearBottom()) scrollToBottom()
   }, [messages])
 
   useEffect(() => {

@@ -296,12 +296,15 @@ fn tokenize_smiles(smiles: &str) -> Vec<SmilesToken> {
 
                 // Strip charge suffix
                 if element.ends_with('+') || element.ends_with('-') {
-                    let c = element.pop().expect("element non-empty after charge check");
+                    let c = element.pop().unwrap_or('+');
                     charge = if c == '+' { 1 } else { -1 };
                     // Handle 2+, 3-, etc.
                     if element.ends_with(|d: char| d.is_ascii_digit()) {
-                        let n: i32 =
-                            element.chars().last().expect("element non-empty after charge check").to_digit(10).unwrap_or(1) as i32;
+                        let n: i32 = element
+                            .chars()
+                            .last()
+                            .and_then(|c| c.to_digit(10))
+                            .unwrap_or(1) as i32;
                         element.pop();
                         charge *= n;
                     }
@@ -347,7 +350,7 @@ fn tokenize_smiles(smiles: &str) -> Vec<SmilesToken> {
                     let first = elem
                         .chars()
                         .next()
-                        .expect("elem non-empty after len >= 2 check")
+                        .unwrap_or('?')
                         .to_uppercase()
                         .next()
                         .unwrap_or('?');
@@ -428,7 +431,7 @@ fn has_substructure(pattern: &MoleculeGraph, query: &MoleculeGraph) -> Option<Ve
     });
 
     if backtrack(0, &order, pattern, query, &mut mapping, &mut used) {
-        Some(mapping.into_iter().map(|x| x.expect("backtrack mapping must be complete")).collect())
+        Some(mapping.into_iter().flatten().collect())
     } else {
         None
     }

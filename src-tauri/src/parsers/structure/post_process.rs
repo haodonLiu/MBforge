@@ -960,7 +960,17 @@ pub async fn post_process_sections_parallel(
         let parser = parser.clone();
         set.spawn(async move {
             // 等到拿到 permit 才真正执行，限流在 acquire 处生效。
-            let _permit = permit_src.acquire_owned().await.expect("semaphore closed");
+            let _permit = match permit_src.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    return SectionResult {
+                        index: idx,
+                        name,
+                        status: SectionStatus::Err("concurrency semaphore closed".to_string()),
+                        elapsed: std::time::Duration::ZERO,
+                    };
+                }
+            };
             let name_for_blocking = name.clone();
             let parser_for_blocking = parser.clone();
             let text_for_blocking = text.clone();

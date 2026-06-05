@@ -17,3 +17,4 @@ pub mod skills;
 pub mod specialist_agent;
 pub mod tools;
 pub mod trajectory;
+pub mod rig_memory;

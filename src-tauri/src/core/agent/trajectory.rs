@@ -41,7 +41,9 @@ impl TrajectoryTracker {
             .join(PROJECT_META_DIR)
             .join(TRAJECTORY_DIR)
             .join(TRAJECTORY_FILE);
-        let _ = std::fs::create_dir_all(path.parent().expect("trajectory path has parent"));
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         let steps = Self::load_from_file(&path);
         Self { path, steps }
     }

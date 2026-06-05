@@ -20,7 +20,6 @@ from fastapi.responses import JSONResponse
 
 from ..utils.exceptions import MBForgeError
 from .routers import (
-    chem,
     download,
     embed,
     environment,
@@ -28,12 +27,9 @@ from .routers import (
     health,
     llm,
     moldet,
-    molecule,
-    project,
     rerank,
     resources,
     sar,
-    settings,
     tools,
     uniparser,
     vlm,
@@ -143,12 +139,8 @@ app.include_router(vlm.router, prefix="/api/v1/vlm", tags=["vlm"])
 app.include_router(moldet.router, prefix="/api/v1/moldet", tags=["moldet"])
 app.include_router(uniparser.router, prefix="/api/v1/uniparser", tags=["uniparser"])
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
-app.include_router(project.router, prefix="/api/v1/project", tags=["project"])
-app.include_router(molecule.router, prefix="/api/v1/molecule", tags=["molecule"])
 app.include_router(file.router, prefix="/api/v1/file", tags=["file"])
-app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])
 app.include_router(download.router, prefix="/api/v1/download", tags=["download"])
-app.include_router(chem.router, prefix="/api/v1/chem", tags=["chem"])
 app.include_router(
     environment.router, prefix="/api/v1/environment", tags=["environment"]
 )

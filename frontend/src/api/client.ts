@@ -147,8 +147,10 @@ export function extractScaffold(smiles_list: string[]) {
 }
 
 // ============================================================================
-// SMILES 结构校验（OCR 矫正后实时反馈）
+// SMILES 结构校验（纯 Rust，通过 Tauri invoke）
 // ============================================================================
+
+import { invoke } from '@tauri-apps/api/core'
 
 export interface ValidationIssue {
   code: string
@@ -157,17 +159,11 @@ export interface ValidationIssue {
 }
 
 export interface ValidateResponse {
-  success: boolean
-  esmiles: string
   valid: boolean
   canonical_smiles: string | null
   issues: ValidationIssue[]
-  error?: string | null
 }
 
-export function validateSmiles(esmiles: string): Promise<ValidateResponse> {
-  return fetchJson<ValidateResponse>(`${API_BASE}/chem/validate`, {
-    method: 'POST',
-    body: JSON.stringify({ esmiles }),
-  })
+export function validateSmiles(smiles: string): Promise<ValidateResponse> {
+  return invoke<ValidateResponse>('chem_validate_smiles', { smiles })
 }

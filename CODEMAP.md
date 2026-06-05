@@ -44,7 +44,7 @@
 │  └───────────────────────────────────────────────────────────┘   │
 │  ┌───────────────────────────────────────────────────────────┐   │
 │  │  Python Sidecar (port 18792, spawned by Tauri)            │   │
-│  │  FastAPI model_server: 16 routers, 5 model singletons     │   │
+│  │  FastAPI model_server: 13 routers, 5 model singletons     │   │
 │  │  LLM / Embed / Rerank / VLM / MolDet / KB / MolScribe    │   │
 │  └───────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────┘
@@ -112,7 +112,7 @@ PDF 文件
                        │
   ┌────────────────────┬─────────────────────────────────────────────────────│
   │ Stage 3.5: 化学结构验证 (chem_validate.rs)                       │
-  │   sanitize_esmiles → validate_smiles_batch (/validate/b)   │
+  │   sanitize_esmiles → validate_smiles_batch (纯 Rust chematic)   │
   │   无效结构自动降级 confidence，回填 canonical_smiles                  │
   │   IN: StructuredData.compounds  OUT: 更新 confidence         │
   └────────────────────┴─────────────────────────────────────────────────────│
@@ -233,7 +233,7 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 | `embedding` | Embedding 生成器: sidecar HTTP + 测试用确定性 embedder | config | ✅ 设计如此 |
 | `sar_query` | SAR 分析: 类似物/骨架谱/活性悬崖 | molecule_db | ✅ |
 
-### 3.2 commands/ — Tauri 命令层 (12 模块，由 `mod.rs` 聚合)
+### 3.2 commands/ — Tauri 命令层 (15 模块，由 `mod.rs` 聚合)
 
 | 模块 | Tauri Commands | 依赖 |
 |------|---------------|------|
@@ -261,7 +261,7 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 | `association` | 活性提取引擎: 化合物名/IC50/Ki/细胞系/靶点 | core::types |
 | `keywords` | 词频关键词 + 实体标签提取 | 无 |
 | `post_process` | LLM 后处理: 批分割/prompt/JSON 修复/结构化解析 + **sanitize_text** (控制字符/零宽字符/think 标签净化) | types, core::config, chem_validate |
-| `chem_validate` | **化学结构验证**: RDKit 校验 (/validate/batch) + LLM 输出净化 (sanitize_esmiles/sanitize_activity_value) | core::http, core::constants |
+| `chem_validate` | **化学结构验证**: 纯 Rust chematic 校验 + LLM 输出净化 (sanitize_esmiles/sanitize_activity_value) | core::chem |
 | `images` | PDF 图像提取 (lopdf): JPG/JP2/TIFF/raw | lopdf crate |
 | `intent` | 用户意图路由: LLM 文档结构分析 + ExtractionPlan | post_process, types |
 | `report` | 报告生成: SAR 分析 + 不确定项 | types, post_process |
@@ -287,7 +287,6 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 | `settings` | 项目级设置 .mbforge/settings.json | constants, helpers | — (Rust 侧独立实现) |
 | `project` | 项目管理: open/create/scan/CRUD | settings, constants, helpers | core::project |
 | `knowledge_base` | SQLite FTS5 向量知识库 + 混合搜索 | types, document_tree, summarizer | core::knowledge_base (FTS5) |
-| `mol_database` | SQLite 分子数据库 + FTS5 | constants, molecules::schema | core::molecule_store |
 | `document_tree` | 文档结构树 + 页面缓存 | constants, helpers | core::document_tree |
 | `summarizer` | 三层摘要 L0/L1/L2 + LLM 生成 | types, constants | core::summary |
 | `resource_manager` | 统一资源管理: 11 资源 + 下载 + pip | constants | core::resource_manager |
@@ -304,7 +303,7 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 | `rerank_qwen3` | Qwen3-Reranker 专用实现 | CausalLM 方式 |
 | `vlm` | API VLM: OpenAI 兼容视觉模型 | 纯 API 客户端 |
 
-### 4.3 model_server/ — FastAPI 服务 (16 路由)
+### 4.3 model_server/ — FastAPI 服务 (13 路由)
 
 | 路由 | 前缀 | 端点 | 用途 |
 |------|------|------|------|
@@ -313,17 +312,14 @@ MolDet         → /api/v1/moldet/* (始终 HTTP, GPU 依赖 Python)
 | `rerank` | /api/v1 | POST /rerank | 结果重排 |
 | `vlm` | /api/v1/vlm | POST /describe, /molscribe | VLM + MolScribe |
 | `moldet` | /api/v1/moldet | POST /detect-page, /extract-page, /extract-region | 分子检测 |
-| `kb` | /api/v1/kb | POST /search, /index-sections | 知识库 |
-| `molecule` | /api/v1/molecule | GET /list, /stats, /search | 分子数据库 |
-| `project` | /api/v1/project | GET /list, /file-tree | 项目管理 |
 | `file` | /api/v1/file | GET /content, /pdf, POST /upload | 文件操作 |
-| `settings` | /api/v1/settings | GET /, POST / | 全局配置 |
 | `download` | /api/v1/download | GET /models, POST /download/{id} | 模型下载 |
-| `chem` | /api/v1/chem | POST /tanimoto, /tanimoto/batch | 化学计算 |
 | `environment` | /api/v1/environment | GET /check | 环境检测 |
 | `resources` | /api/v1/resources | GET /check, POST /ensure/{id} | 资源管理 |
 | `health` | /api/v1 | GET /health | 健康检查 |
 | `uniparser` | /api/v1/uniparser | POST /parse, /result | PDF 解析代理 |
+| `sar` | /api/v1/sar | POST /scaffold, /matrix, /heatmap | SAR 分析 |
+| `tools` | /api/v1/tools | POST /validate, /fingerprint | 工具端点 |
 
 ### 4.4 parsers/ — Python 解析器
 
@@ -480,7 +476,7 @@ ExtractionResult ← association.rs (图像分子)                  │
 |---|------|------|------|------|
 | L1-1 | **csar CLI 入口** | `pyproject.toml` | ✅ 无此问题 | pyproject.toml 中无 csar 入口条目（grep 0 匹配），csar/ 仅为空占位模块 |
 | L1-2 | **agent_manager 导入** | `model_server/main.py` | ✅ 无此问题 | 实际代码无此导入（grep 0 匹配），探索报告误报 |
-| L1-3 | **chem 路由** | `routers/chem.py` | ✅ 已实现 | 两个端点有完整 RDKit Morgan 指纹 + Tanimoto 实现；`_RDKIT_AVAILABLE` 拼写正确；RDKit 未安装时优雅降级 |
+| L1-3 | **chem 路由** | `routers/chem.py` | ✅ 已删除 | 功能已迁移至 Rust `core::chem.rs` + `commands/molecule.rs`（纯 chematic 实现） |
 | L1-4 | **pdf_parser.py** | `src/mbforge/parsers/` | ✅ 设计如此 | PDF 解析全在 Rust 侧（parsers/pipeline.rs），Python 侧不需要 pdf_parser.py |
 
 ### 7.2 二级断链：CODEMAP 已知的断链（状态核实）
@@ -490,7 +486,7 @@ ExtractionResult ← association.rs (图像分子)                  │
 | 1 | **semantic_cache** | core/semantic_cache.rs (452 行) | ✅ 已接入全部调用方 | `kb_search`/`kb_search_stream` 走 `search_with_cache()`；`executor::native_search_knowledge_base()` 原绕过缓存，已修复为调用 `search_with_cache()` |
 | 2 | **stream_search** | core/stream_search.rs (181 行) | ✅ 已接入 Rust + 前端 | `search_with_cache()` 输出流式 chunks；`kb_search_stream` Tauri 命令通过事件推送；前端 `Search.tsx` + `tauri-bridge:kbSearchStream` 流式接收 |
 | 3 | **embedding native** | core/embedding.rs | ✅ 设计如此 | Rust 侧通过 HTTP 调 Python sidecar，无需本地 embedding 实现 |
-| 4 | **Python MoleculeDatabase** | core/mol_database.py | ⚠️ 双份实现 | Rust `molecule_store.rs` 已完全替代，Python 版仅作 browser fallback |
+| 4 | **Python MoleculeDatabase** | core/mol_database.py | ✅ 已删除 | Rust `molecule_store.rs` 已完全替代，Python 版已移除 |
 | 5 | **Python KnowledgeBase** | core/knowledge_base.py | ⚠️ 仅辅助 | 搜索已完全迁移到 Rust FTS5 + semantic_cache |
 | 6 | **MolScribe 路径** | molscribe_inference/download.py | ⚠️ 已修复但脆弱 | ResourceManager 路径 → env var → 默认路径三级回退，依赖 ModelScope 缓存布局 |
 | 7 | **LLM 多 Provider** | models/anthropic_llm.py | ✅ 已实现 | Anthropic SDK 兼容，但 Rust 侧 llm.rs 也独立实现了 Anthropic 协议 |
@@ -504,7 +500,7 @@ ExtractionResult ← association.rs (图像分子)                  │
 
 | # | 声称 | 来源 | 实际状态 |
 |---|------|------|---------|
-| T1 | "16 路由" | CODEMAP §4.3 / AGENTS.md | 实际注册 16 个 `APIRouter`，chem 的 2 个端点均已有完整实现（探索报告误判为桩） |
+| T1 | "16 路由" | CODEMAP §4.3 / AGENTS.md | 已清理至 13 个 `APIRouter`，chem/molecule/project/settings 已迁移至 Rust Tauri 命令 |
 | T2 | "~25 组件, ~6,500 行前端" | AGENTS.md | 实际 53 个 `.tsx/.ts` 文件（早期预估偏保守） |
 | T3 | "csar/ SAR 分析工具箱" | CODEMAP §4.4, pyproject.toml | 已清理为空占位模块（`__init__.py` 仅注明计划），pyproject.toml 入口已移除 |
 | T4 | "ui/ 目录" | `src/mbforge/` 目录存在 | 已删除（空目录，无任何文件） |
@@ -517,7 +513,7 @@ ExtractionResult ← association.rs (图像分子)                  │
 | C1 | **LLM 默认模型** | `Qwen/Qwen2.5-7B-Instruct-GGUF` (`constants.rs:15`) | `Qwen/Qwen2.5-7B-Instruct-GGUF` (`constants.py:28`) | `Qwen/Qwen2.5-7B-Instruct-GGUF` (`:31`) | ✅ 三侧一致 |
 | C2 | **VLM 默认模型** | — (Rust 侧未使用 VLM) | `mimo-v2.5` (`constants.py:29`) | `mimo-v2.5` (`:55`，已注释) | ✅ Python/Rust 无冲突 |
 | C3 | **Embed/Rerank 默认模型** | `DEFAULT_EMBED_MODEL` / `DEFAULT_RERANK_MODEL` (`constants.rs:13-14`) | `Qwen/Qwen3-Embedding-0.6B` / `Qwen/Qwen3-Reranker-0.6B` (`constants.py:26-27`) | `Qwen/Qwen3-Embedding-0.6B` / `Qwen/Qwen3-Reranker-0.6B` (`:40,48`) | ✅ 三侧一致 |
-| C4 | **AGENTS.md 模块数** | core 声称 26，实际 31；commands 声称 6，实际 10；API routes 声称 15，实际 16 | — | — | ✅ 已同步 |
+| C4 | **AGENTS.md 模块数** | core 声称 26，实际 31；commands 声称 6，实际 15；API routes 声称 13，实际 13 | — | — | ✅ 已同步 |
 | C5 | **PROVIDER_API / PROVIDER_LOCAL** | 缺失（原仅 Python `constants.py:79,81` 有） | 已于 Rust `constants.rs` 补加 `PROVIDER_API` / `PROVIDER_LOCAL` | ✅ 已同步 | ✅ |
 | C6 | **OCR_PROVIDER_PYMUPDF** | Python `constants.py:84` 标记已废弃 | 已删除（PyMuPDF 已从项目移除） | ✅ 已清理 | ✅ |
 | C7 | **DEFAULT_SIDECAR_PORT** | 仅 Rust `constants.rs:56` 有定义 | 已补加 Python `constants.py`，`cli.py` 中 8 处硬编码改为引用常量 | ✅ 已同步 | ✅ |
@@ -541,6 +537,7 @@ ExtractionResult ← association.rs (图像分子)                  │
 | 2 | 2026-06-01 | AI | AGENTS.md, CLAUDE.md, CODEMAP.md | 同步三文件至当前代码库：CLAUDE.md 模块计数更新（commands 11/core 32/parsers 19/routers 16）、待审核移入 CODEMAP；AGENTS.md 项目结构移除不存在的 agent/ 目录、补充 frontend/ 文件清单、修正 typo；CODEMAP.md 表头补齐"状态"列 | ⚠️ 待审核 |
 | 3 | 2026-06-01 | AI | CODEMAP.md §2.1, §3.1, §7.2 | 修复内部矛盾：① §2.1 管线图 Stage 5（pending.rs 虚设）重编为 Stage 5 LLM 处理 + Stage 6 分子库持久化；② §3.1 semantic_cache/stream_search 状态从 ⚠️ 更新为 ✅ 并注明接入方式；③ §7.2 #1 semantic_cache 状态同步更新。pending.rs 确认为死代码（仅 mod.rs 声明，无调用方） | ⚠️ 待审核 |
 | 4 | 2026-06-04 | Claude | `ref/harness-engineering.md` | 新增参考文档：Agent Harness Engineering 论文笔记，含 ETCLOVG 七层分类法定义、MBForge 架构逐层映射、四项差距分析（Observability/Verification/Governance/Lifecycle）及优先级路线图 | ⚠️ 待审核 |
+| 5 | 2026-06-05 | AI | CLAUDE.md, AGENTS.md, CODEMAP.md, README.md | Python→Rust 迁移文档同步：移除已删除的 routers/chem.py、molecule.py、project.py、settings.py、core/mol_database.py 引用；更新路由数 16→13、命令数 12→15；更新 chem_validate.rs 描述为纯 Rust chematic；前端 settings 改用 Tauri invoke | ⚠️ 待审核 |
 
 ---
 

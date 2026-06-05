@@ -6,7 +6,7 @@
 [![React 19](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2-orange.svg)](https://tauri.app/)
 [![Rust](https://img.shields.io/badge/Rust-2021_edition-red)](https://www.rust-lang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](LICENSE)
 
 ## 核心特性
 
@@ -15,7 +15,7 @@
 - **AI Agent 对话** — 本地 Rust ReAct Agent（20+ 工具），支持上下文增强检索
 - **分子数据库** — SQLite + FTS5，含 SMILES 属性估算（MW/HBD/HBA/RotBonds）
 - **知识库检索** — SQLite FTS5 + semantic_cache 混合搜索 + Rerank 重排序
-- **模型服务器** — FastAPI（port 18792），启动预热 + 异步非阻塞，提供 LLM/Embedding/Rerank/VLM/Agent/KB 等 15 个 API 路由
+- **模型服务器** — FastAPI（port 18792），启动预热 + 异步非阻塞，提供 LLM/Embedding/Rerank/VLM/MolDet 等 13 个 API 路由
 - **模型管理** — 统一模型目录，支持下载/查看/删除，含许可证和大小信息
 - **SAR 分析** — 结构-活性关系引擎，支持 Scaffold 聚类、活性悬崖检测
 - **MolScribe 集成** — 分子图像 → SMILES 识别（Swin Transformer + Transformer Decoder）
@@ -54,7 +54,9 @@
 └──────────────────────────────────────────────────┘
 ```
 
-**双语言分工**: Rust 负责 Agent 循环、PDF 原生解析、SQLite 数据库（molecules.db + vectors.db + semantic_cache.json）、Tauri IPC 命令层；Python 负责 LLM/Embedding/VLM 模型推理、MolScribe 推理、FastAPI REST API。
+**双语言分工**: 
+Rust 负责 Agent 循环、PDF 原生解析、SQLite 数据库（molecules.db + vectors.db + semantic_cache.json）、Tauri IPC 命令层；
+Python 负责 LLM/Embedding/VLM 模型推理、MolScribe 推理、FastAPI REST API。
 
 **性能优化要点**:
 - **Rust 共享 HTTP 客户端** — `core/http.rs` 提供 4 个按超时分类的 `LazyLock` 单例，避免每次请求新建连接池
@@ -97,33 +99,27 @@ cd frontend && npm run dev
 cd src-tauri && cargo tauri build
 ```
 
-详见 [ARCHITECTURE.md](ARCHITECTURE.md) 和 [AGENTS.md](AGENTS.md)。
+详见 [AGENTS.md](AGENTS.md)。
 
 ## 项目结构
 
 ```
 MBForge/
 ├── src/mbforge/                  # Python 模型服务器 & CLI
-│   ├── model_server/             # FastAPI 服务（15 路由）
+│   ├── model_server/             # FastAPI 服务（13 路由）
 │   │   ├── main.py               #   入口 + 路由注册
 │   │   ├── agent_manager.py      #   Agent 单例管理
 │   │   ├── dependencies.py       #   依赖注入
 │   │   ├── models/               #   LLM/Embed/Rerank/VLM/MolDet 单例
-│   │   └── routers/              #   /api/v1/{llm,embed,agent,kb,molecule,...}
+│   │   └── routers/              #   /api/v1/{llm,embed,rerank,vlm,moldet,...}
 │   ├── core/                     # Python 侧核心
 │   │   ├── project.py            #   Vault 项目管理
 │   │   ├── knowledge_base.py     #   向量知识库（Rust 侧 FTS5 为主，Python 辅助）
-│   │   ├── mol_database.py       #   SQLite 分子数据库（FTS5）
 │   │   ├── summarizer.py         #   L0/L1/L2 分层摘要
 │   │   ├── document_tree.py      #   文档标题树索引
 │   │   └── types.py              #   数据模型定义
 │   ├── parsers/                  # Python 侧解析
-│   │   ├── pdf_parser.py         #   PDFParserPipeline
-│   │   ├── pdf_classifier.py     #   文档类型分类
-│   │   ├── ocr_router.py         #   OCR 路由选择
 │   │   └── molecule/             #   分子提取管线
-│   │       ├── molecule_extractor.py    # 正则 SMILES 提取
-│   │       ├── association_engine.py    # 分子-文本关联
 │   │       ├── mol_image_pipeline.py    # 图像→SMILES 管线
 │   │       └── molscribe_inference/     # MolScribe 推理
 │   ├── models/                   # AI 模型抽象层
@@ -133,9 +129,6 @@ MBForge/
 │   │   ├── embedding.py          #   SentenceTransformer / API
 │   │   ├── rerank.py / rerank_qwen3.py
 │   │   └── vlm.py                #   视觉语言模型
-│   ├── agent/                    # Python 侧工具框架
-│   │   ├── executor.py           #   ToolExecutor（10 工具）
-│   │   └── optimizations/        #   语义缓存、流式搜索、SPS
 │   ├── molecules/schema.py       #   分子数据合约
 │   └── cli.py                    #   CLI 入口（mbforge 命令）
 │
@@ -247,14 +240,11 @@ MBForge/
 │   └── Rust 侧测试               #   ~226 个（src-tauri）
 │
 ├── docs/                         # 项目文档
-│   ├── ARCHITECTURE.md           #   系统架构
-│   ├── API.md                    #   公共 API 参考
-│   ├── TECH_STACK.md             #   技术栈
-│   ├── DEVELOPMENT.md            #   开发指南
-│   ├── pipeline-migration-plan.md # PDF 解析 Python→Rust 迁移规划
+│   ├── esmiles-spec.md           #   E-SMILES 格式规范
+│   ├── molecode-spec.md          #   MoleCode 图语法规范
 │   ├── pipeline-redesign.md      #   管线增量重设计
-│   ├── pdf-extraction-workflow.md # PDF 提取工作流
-│   └── pdf-pipeline-test/        #   管线测试用例
+│   ├── TECH_STACK.md             #   技术栈
+│   └── archive/                  #   归档文档
 │
 ├── src-tauri/docs/               # Rust 侧本地文档
 │   ├── esmiles/                  #   E-SMILES 格式规范 + MBForge 集成
@@ -271,7 +261,7 @@ MBForge/
 | **Rust 核心** | Tauri v2, lopdf, rusqlite, serde, regex, reqwest, tokio | ~9,800 |
 | **Python 服务** | FastAPI, uvicorn, PyMuPDF, sentence-transformers | ~12,900 |
 | **前端** | React 19, TypeScript, Vite 6 | — |
-| **化学信息学** | RDKit (Python), MolScribe (Swin + Transformer), E-SMILES | — |
+| **化学信息学** | chematic (Rust), RDKit (Python fallback), MolScribe (Swin + Transformer), E-SMILES | — |
 | **PDF 解析** | lopdf (Rust), PyMuPDF, MinerU API, LlamaParse, UniParser | — |
 | **包管理** | uv workspace (Python) + Cargo (Rust) | — |
 | **测试** | Rust: `cargo test` (226), Python: `pytest` (83) | — |
@@ -293,17 +283,14 @@ uv run ruff check src/ && uv run ruff format src/ --check
 
 | 文档 | 位置 |
 |------|------|
-| 系统架构 | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Agent 规范 | [AGENTS.md](AGENTS.md) |
+| Agent 规范 + 架构 | [AGENTS.md](AGENTS.md) |
+| 编码指南 | [CLAUDE.md](CLAUDE.md) |
+| 代码逻辑树 | [CODEMAP.md](CODEMAP.md) |
+| E-SMILES 规范 | [docs/esmiles-spec.md](docs/esmiles-spec.md) |
+| MoleCode 规范 | [docs/molecode-spec.md](docs/molecode-spec.md) |
 | 技术栈 | [docs/TECH_STACK.md](docs/TECH_STACK.md) |
-| 编码指南 | [CLAUDE.md](CLAUDE.md) |
-| 第三方引用 | [docs/REFERENCES.md](docs/REFERENCES.md) |
-| PDF 迁移规划 | [docs/pipeline-migration-plan.md](docs/pipeline-migration-plan.md) |
 | 管线重设计 | [docs/pipeline-redesign.md](docs/pipeline-redesign.md) |
-| E-SMILES 规范 | [src-tauri/docs/esmiles/](src-tauri/docs/esmiles/) |
-| LiteParse API | [src-tauri/docs/liteparse/](src-tauri/docs/liteparse/) |
-| 编码指南 | [CLAUDE.md](CLAUDE.md) |
 
 ## 许可
 
-MIT License
+CC BY-NC-SA 4.0 (非商用，禁止商业使用)

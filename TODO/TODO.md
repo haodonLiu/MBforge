@@ -246,7 +246,7 @@ cf907f1 feat(python): 统一资源管理 + 精简下载 + CLI 环境管理
 
 #### P0 — 当前阻塞
 - [ ] **chematic API 编译验证** — core/chem.rs 中的 API 调用需验证与实际 crate 版本一致
-- [ ] **mol_search_substructure 接入 chem.rs** — molecule.rs 子结构搜索命令改用纯 Rust（当前仍调 Python sidecar）
+- [x] **mol_search_substructure 接入 chem.rs** — molecule.rs 子结构搜索命令改用纯 Rust（✅ 已完成）
 
 #### P1 — 核心功能 Rust 化
 - [ ] **分子指纹持久化** — add_molecule 时自动计算 ECFP4 并存入 fingerprint BLOB

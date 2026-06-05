@@ -70,7 +70,7 @@ cd src-tauri && cargo tauri build
 │  ┌───────────────────────┴─────────────────────────┐    │
 │  │  Rust Agent + Parsers (src-tauri/src/)           │    │
 │  │                                                   │    │
-│  │  commands/ (12) core/ (32)  parsers/ (20)        │    │
+│  │  commands/ (15) core/ (32)  parsers/ (20)        │    │
 │  │  │              │              │                  │    │
 │  │  │  Tauri API   │  ReAct Loop  │  PDF Pipeline    │    │
 │  │  │  invoke →    │  LLM+Tools+  │  lopdf +         │    │
@@ -79,7 +79,7 @@ cd src-tauri && cargo tauri build
 │  │  └──────────────┴──────────────┴──────────────────┘    │
 │  ┌──────────────────────────────────────────────────┐    │
 │  │  FastAPI Sidecar (port 18792, spawned by Tauri)  │    │
-│  │  routers/ (16)  models/  parsers/  molecules/    │    │
+│  │  routers/ (13)  models/  parsers/  molecules/    │    │
 │  │  LLM / Embed / Rerank / VLM / KB / MolScribe    │    │
 │  └──────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────┘
@@ -186,18 +186,15 @@ invoke('extract_pdf_workflow_cmd', { path: '...', outputDir: '...' })
 
 | 文档 | 位置 |
 |------|------|
-| Agent 工作规范 | `AGENTS.md` |
+| Agent 工作规范 + 架构 | `AGENTS.md` |
+| 编码指南 | `CLAUDE.md` |
 | 代码逻辑树 | `CODEMAP.md` |
-| 目标架构设计 | `ARCHITECTURE.md` |
-| 审计报告 | `AUDIT.md` |
 | 任务看板 | `TODO/INDEX.md` |
+| E-SMILES 规范 | `docs/esmiles-spec.md` |
+| MoleCode 规范 | `docs/molecode-spec.md` |
 | 管线重设计（设计稿） | `docs/pipeline-redesign.md` |
 | 技术栈详情 | `docs/TECH_STACK.md` |
 | 第三方引用 | `docs/REFERENCES.md` |
-| 开发规范集 | `docs/specs/` |
-| E-SMILES 规范 | `docs/esmiles-spec.md` |
-| MoleCode 规范 | `docs/molecode-spec.md` |
 | MoleCode 参考实现 | `ref/MoleCode/` |
-| LiteParse API 参考 | `src-tauri/docs/liteparse/` |
 | 归档文档 | `docs/archive/` |
 

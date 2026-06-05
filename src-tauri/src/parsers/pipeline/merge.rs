@@ -2,7 +2,7 @@ use crate::parsers::doc_types::{
     CompoundEntry, DocStructure, DocumentMetadata, FindingEntry, PhysicochemicalProperty,
     StructuredData, UncertainItem,
 };
-use crate::parsers::vlm_chem::ChemImageResult;
+use crate::parsers::chem::vlm_chem::ChemImageResult;
 
 /// Stage 3: 多 section 结果合并 + 构效关系 (SAR) 分析
 ///
@@ -158,18 +158,18 @@ pub async fn run_merge_and_sar(
         },
     );
 
-    let config = crate::parsers::post_process::load_llm_config()?;
-    let (response, _tokens) = crate::parsers::post_process::call_llm_api_async(
+    let config = crate::parsers::structure::post_process::load_llm_config()?;
+    let (response, _tokens) = crate::parsers::structure::post_process::call_llm_api_async(
         &config,
         "你是分子科学文档分析专家。合并多部分提取结果，进行去重、验证和构效关系分析，输出 JSON。",
         &prompt,
     )
     .await?;
 
-    let val = crate::parsers::post_process::extract_json(&response)?;
+    let val = crate::parsers::structure::post_process::extract_json(&response)?;
 
     let data_val = val.get("data").unwrap_or(&val);
-    let data = crate::parsers::post_process::parse_structured_data(data_val)?;
+    let data = crate::parsers::structure::post_process::parse_structured_data(data_val)?;
     let sar = val["sar_analysis"].as_str().unwrap_or("").to_string();
 
     Ok((data, sar))
@@ -233,8 +233,8 @@ pub fn merge_partial_results(
 /// 4. 若有 claim_graph，执行范围评估并加入 key_findings
 pub fn enhance_patent_data(
     data: &mut StructuredData,
-    traces: &[crate::parsers::molecule_extractor::MoleculeTrace],
-    claim_graph: &Option<crate::parsers::claim_parser::ClaimDependencyGraph>,
+    traces: &[crate::parsers::chem::molecule_extractor::MoleculeTrace],
+    claim_graph: &Option<crate::parsers::chem::claim_parser::ClaimDependencyGraph>,
     processing_log: &mut crate::parsers::doc_types::ProcessingLog,
 ) {
     let mut existing_names: std::collections::HashSet<String> =
@@ -382,7 +382,7 @@ pub fn enhance_patent_data(
 
     // Claim 范围评估
     if let Some(ref graph) = claim_graph {
-        let assessments = crate::parsers::claim_policy::assess_all_compounds(traces, graph);
+        let assessments = crate::parsers::chem::claim_policy::assess_all_compounds(traces, graph);
 
         for assessment in &assessments {
             let finding_text = format!(
@@ -395,10 +395,10 @@ pub fn enhance_patent_data(
                 evidence,
                 source_ref: "claims_section".into(),
                 confidence: match assessment.risk_level {
-                    crate::parsers::claim_policy::RiskLevel::High => "high",
-                    crate::parsers::claim_policy::RiskLevel::Medium => "medium",
-                    crate::parsers::claim_policy::RiskLevel::Low => "low",
-                    crate::parsers::claim_policy::RiskLevel::Clear => "high",
+                    crate::parsers::chem::claim_policy::RiskLevel::High => "high",
+                    crate::parsers::chem::claim_policy::RiskLevel::Medium => "medium",
+                    crate::parsers::chem::claim_policy::RiskLevel::Low => "low",
+                    crate::parsers::chem::claim_policy::RiskLevel::Clear => "high",
                 }
                 .into(),
                 uncertainty_reason: if assessment.covered_claims.is_empty() {

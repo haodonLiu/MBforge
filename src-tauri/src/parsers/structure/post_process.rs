@@ -307,120 +307,6 @@ fn build_batch_prompt(
     )
 }
 
-/// 从 StructuredData 生成 Markdown 报告（程序化生成，不依赖 LLM）
-pub fn generate_report(data: &StructuredData) -> String {
-    let mut r = String::new();
-
-    // Title
-    let title = data.metadata.title.as_deref().unwrap_or("未知文档");
-    r.push_str(&format!("# {}\n\n", title));
-
-    // Metadata
-    r.push_str("## 文档信息\n\n");
-    r.push_str(&format!("- **类型**: {}\n", data.metadata.document_type));
-    if !data.metadata.authors.is_empty() {
-        r.push_str(&format!(
-            "- **作者**: {}\n",
-            data.metadata.authors.join(", ")
-        ));
-    }
-    if !data.metadata.key_targets.is_empty() {
-        r.push_str(&format!(
-            "- **关键靶点**: {}\n",
-            data.metadata.key_targets.join(", ")
-        ));
-    }
-    r.push('\n');
-
-    // Summary
-    r.push_str("## 摘要\n\n");
-    r.push_str(&data.summary);
-    r.push_str("\n\n");
-
-    // Compounds
-    if !data.compounds.is_empty() {
-        r.push_str("## 化合物清单\n\n");
-        r.push_str("| # | 名称 | SMILES | 类别 | 描述 | 置信度 | 出处 |\n");
-        r.push_str("|---|------|--------|------|------|--------|------|\n");
-        for (i, c) in data.compounds.iter().enumerate() {
-            let conf = match c.confidence.as_str() {
-                "high" => "✅",
-                "medium" => "⚠️",
-                _ => "❌",
-            };
-            let esmiles = c.esmiles.as_deref().unwrap_or("-");
-            r.push_str(&format!(
-                "| {} | {} | `{}` | {} | {} | {} | {} |\n",
-                i + 1,
-                c.name,
-                esmiles,
-                c.category.as_deref().unwrap_or("-"),
-                c.description,
-                conf,
-                c.source_ref
-            ));
-        }
-        r.push('\n');
-    }
-
-    // Activities
-    if !data.activities.is_empty() {
-        r.push_str("## 活性数据\n\n");
-        r.push_str("| # | 化合物 | 类型 | 值 | 单位 | 靶点 | 置信度 | 出处 |\n");
-        r.push_str("|---|--------|------|-----|------|------|--------|------|\n");
-        for (i, a) in data.activities.iter().enumerate() {
-            let conf = match a.confidence.as_str() {
-                "high" => "✅",
-                "medium" => "⚠️",
-                _ => "❌",
-            };
-            r.push_str(&format!(
-                "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
-                i + 1,
-                a.compound,
-                a.activity_type,
-                a.value,
-                a.units,
-                a.target.as_deref().unwrap_or("-"),
-                conf,
-                a.source_ref
-            ));
-        }
-        r.push('\n');
-    }
-
-    // Key Findings
-    if !data.key_findings.is_empty() {
-        r.push_str("## 关键发现\n\n");
-        for (i, f) in data.key_findings.iter().enumerate() {
-            let conf = match f.confidence.as_str() {
-                "high" => "✅",
-                "medium" => "⚠️",
-                _ => "❌",
-            };
-            r.push_str(&format!("{}. **[{}]** {}\n", i + 1, conf, f.finding));
-            if !f.evidence.is_empty() {
-                r.push_str(&format!("   > 原文引用: \"{}\"\n", f.evidence));
-            }
-            r.push_str(&format!("   > 来源: {}\n\n", f.source_ref));
-        }
-    }
-
-    // Uncertain items
-    if !data.uncertain_items.is_empty() {
-        r.push_str("## ⚠️ 需要人工审核\n\n");
-        for u in &data.uncertain_items {
-            r.push_str(&format!(
-                "- **[{}]** {} — {} (建议: {})\n",
-                u.item_type, u.content, u.reason, u.suggested_action
-            ));
-        }
-        r.push('\n');
-    }
-
-    r
-}
-
 /// 构建最终合并的 prompt — 将多批结果合并为一份数据
 fn build_merge_prompt(batch_results: &[BatchResult], raw: &PdfParseResult) -> String {
     let mut batches_text = String::new();
@@ -731,7 +617,7 @@ fn parse_merge_response(
 
     let data_val = val.get("data").unwrap_or(&val);
     let data = parse_structured_data(data_val)?;
-    let report = generate_report(&data);
+    let report = super::report::generate_report(&data);
 
     Ok(PostProcessResult {
         report,
@@ -910,7 +796,7 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
         let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
         let val = extract_json(&response)?;
         let data = parse_structured_data(&val)?;
-        let report = generate_report(&data);
+        let report = super::report::generate_report(&data);
         Ok(PostProcessResult {
             report,
             data,
@@ -955,7 +841,7 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
             // 单批：无需 LLM 合并，直接构造 PostProcessResult
             let batch_result = batch_results.into_iter().next()
                 .ok_or_else(|| "No batch results in single-batch path".to_string())?;
-            let report = generate_report(&batch_result.data);
+            let report = super::report::generate_report(&batch_result.data);
             let mut data = batch_result.data;
             data.metadata.source_file = Some(raw.parser.clone());
             Ok(PostProcessResult {
@@ -990,7 +876,7 @@ pub async fn post_process_section(
         let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
         let val = extract_json(&response)?;
         let data = parse_structured_data(&val)?;
-        let report = generate_report(&data);
+        let report = super::report::generate_report(&data);
         Ok(PostProcessResult {
             report,
             data,
@@ -1166,7 +1052,7 @@ fn post_process_section_sync(
         let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
         let val = extract_json(&response)?;
         let data = parse_structured_data(&val)?;
-        let report = generate_report(&data);
+        let report = super::report::generate_report(&data);
         Ok(PostProcessResult {
             report,
             data,

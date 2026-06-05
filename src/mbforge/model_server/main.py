@@ -27,11 +27,8 @@ from .routers import (
     health,
     llm,
     moldet,
-    rerank,
-    resources,
     sar,
     tools,
-    uniparser,
     vlm,
 )
 
@@ -134,16 +131,13 @@ async def generic_error_handler(request: Request, exc: Exception) -> JSONRespons
 # 注册路由
 app.include_router(llm.router, prefix="/api/v1/llm", tags=["llm"])
 app.include_router(embed.router, prefix="/api/v1", tags=["embed"])
-app.include_router(rerank.router, prefix="/api/v1", tags=["rerank"])
 app.include_router(vlm.router, prefix="/api/v1/vlm", tags=["vlm"])
 app.include_router(moldet.router, prefix="/api/v1/moldet", tags=["moldet"])
-app.include_router(uniparser.router, prefix="/api/v1/uniparser", tags=["uniparser"])
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(file.router, prefix="/api/v1/file", tags=["file"])
 app.include_router(download.router, prefix="/api/v1/download", tags=["download"])
 app.include_router(
     environment.router, prefix="/api/v1/environment", tags=["environment"]
 )
-app.include_router(resources.router, prefix="/api/v1/resources", tags=["resources"])
 app.include_router(sar.router, prefix="/api/v1/sar", tags=["sar"])
 app.include_router(tools.router, prefix="/api/v1/tools", tags=["tools"])

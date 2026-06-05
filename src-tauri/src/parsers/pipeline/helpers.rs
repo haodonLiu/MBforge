@@ -20,7 +20,7 @@ pub fn compound_entry_to_record(
 
     // 三层分离
     let (clean_smiles, esmiles, semantic_tags) =
-        crate::parsers::chem_validate::separate_esmiles_layers(raw_esmiles);
+        crate::parsers::chem::chem_validate::separate_esmiles_layers(raw_esmiles);
 
     // 用纯净 SMILES 作为 mol_id 的一部分（保证相同分子不同标签产生相同 ID）
     let mol_id = if compound.name.is_empty() {

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::helpers::SMILES_RE;
 
-use crate::parsers::association::{self, ActivityEntry};
+use crate::parsers::chem::association::{self, ActivityEntry};
 
 // ---------------------------------------------------------------------------
 // Types

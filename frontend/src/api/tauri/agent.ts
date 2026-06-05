@@ -24,21 +24,21 @@ export async function agentInit(config: {
   top_p: number
 }, sidecarUrl: string): Promise<void> {
   await invokeWithError(
-    () => invoke('agent_init', { config, sidecarUrl }),
+    () => invoke('agent_init', { config, sidecar_url: sidecarUrl }),
     ErrorCode.TauriInvoke,
   )
 }
 
 export async function agentCreateSession(sessionId: string, projectRoot?: string): Promise<void> {
   await invokeWithError(
-    () => invoke('agent_create_session', { sessionId, projectRoot: projectRoot ?? null }),
+    () => invoke('agent_create_session', { session_id: sessionId, project_root: projectRoot ?? null }),
     ErrorCode.TauriInvoke,
   )
 }
 
 export async function agentChat(sessionId: string, userInput: string): Promise<string> {
   return invokeWithError(
-    () => invoke<string>('agent_chat', { sessionId, userInput }),
+    () => invoke<string>('agent_chat', { session_id: sessionId, user_input: userInput }),
     ErrorCode.TauriInvoke,
   )
 }
@@ -68,7 +68,7 @@ export async function agentChatStream(
 ): Promise<() => void> {
   // Start streaming
   invokeWithError(
-    () => invoke('agent_chat_stream', { sessionId, userInput }),
+    () => invoke('agent_chat_stream', { session_id: sessionId, user_input: userInput }),
     ErrorCode.TauriInvoke,
   ).catch((err: unknown) => onError(err instanceof Error ? err.message : String(err)))
 
@@ -97,28 +97,28 @@ export async function agentChatStream(
 
 export async function agentSwitchProject(sessionId: string, projectRoot: string, projectName: string): Promise<void> {
   await invokeWithError(
-    () => invoke('agent_switch_project', { sessionId, projectRoot, projectName }),
+    () => invoke('agent_switch_project', { session_id: sessionId, project_root: projectRoot, project_name: projectName }),
     ErrorCode.TauriInvoke,
   )
 }
 
 export async function agentClear(sessionId: string): Promise<void> {
   await invokeWithError(
-    () => invoke('agent_clear', { sessionId }),
+    () => invoke('agent_clear', { session_id: sessionId }),
     ErrorCode.TauriInvoke,
   )
 }
 
 export async function agentDestroySession(sessionId: string): Promise<void> {
   await invokeWithError(
-    () => invoke('agent_destroy_session', { sessionId }),
+    () => invoke('agent_destroy_session', { session_id: sessionId }),
     ErrorCode.TauriInvoke,
   )
 }
 
 export async function agentGetHistory(sessionId: string): Promise<ChatMessage[]> {
   return invokeWithError(
-    () => invoke<ChatMessage[]>('agent_get_history', { sessionId }),
+    () => invoke<ChatMessage[]>('agent_get_history', { session_id: sessionId }),
     ErrorCode.TauriInvoke,
   )
 }
@@ -189,7 +189,7 @@ export interface PostProcessResult {
 
 export async function postProcessPdf(parseResult: PdfParseResult): Promise<PostProcessResult> {
   return invokeWithError(
-    () => invoke<PostProcessResult>('post_process_pdf', { parseResult }),
+    () => invoke<PostProcessResult>('post_process_pdf', { parse_result: parseResult }),
     ErrorCode.PdfParse,
   )
 }

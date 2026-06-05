@@ -6,3 +6,4 @@ pub mod structure;
 
 // Top-level modules
 pub mod doc_types;
+pub mod keywords;

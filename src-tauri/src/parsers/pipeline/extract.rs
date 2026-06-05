@@ -1,5 +1,5 @@
 use crate::parsers::doc_types::{ImageRef, OcrBlock};
-use crate::parsers::moldet_client::{process_page_image, DetectedMolecule};
+use crate::parsers::chem::vlm_chem::{process_page_image, DetectedMolecule};
 use std::path::{Path, PathBuf};
 
 /// 分类并提取文件（自动检测 parser）
@@ -15,7 +15,7 @@ pub struct ClassifyResult {
 /// 将提取的图片持久化到项目 .mbforge/media/ 下
 fn persist_extracted_images(
     path: &str,
-    extracted: &[crate::parsers::images::ExtractedImage],
+    extracted: &[crate::parsers::pdf::images::ExtractedImage],
 ) -> Vec<ImageRef> {
     let source_path = Path::new(path);
     let project_root = find_project_root(source_path, None);
@@ -216,7 +216,7 @@ pub async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> 
 
     // 提取嵌入图片并持久化到项目目录
     let tmp_dir = tempfile::tempdir().map_err(|e| format!("Temp dir error: {}", e))?;
-    let extracted = crate::parsers::images::extract_images_from_pdf(path, tmp_dir.path(), 50, 5)
+    let extracted = crate::parsers::pdf::images::extract_images_from_pdf(path, tmp_dir.path(), 50, 5)
         .unwrap_or_default();
     let images = persist_extracted_images(path, &extracted);
 
@@ -245,10 +245,10 @@ pub async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> 
             let host =
                 std::env::var("MINERU_HOST").unwrap_or_else(|_| "https://mineru.net".to_string());
             let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
-            let client = crate::parsers::mineru::MineruClient::new(&host, &api_key);
+            let client = crate::parsers::pdf::mineru::MineruClient::new(&host, &api_key);
 
             // 扫描文档使用优化参数：启用 OCR + 自动语言推断 + VLM 模型
-            let options = crate::parsers::mineru::scanned_pdf_options(path);
+            let options = crate::parsers::pdf::mineru::scanned_pdf_options(path);
             log::info!(
                 "[MinerU] Parsing scanned PDF with options: is_ocr={}, language={}, model={}",
                 options.is_ocr, options.language, options.model_version
@@ -284,7 +284,7 @@ pub async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> 
             }
         }
         // 回退到 LiteParse（本地 OCR）
-        if let Ok(result) = crate::parsers::liteparse::parse_with_liteparse(path, true, None).await
+        if let Ok(result) = crate::parsers::pdf::liteparse::parse_with_liteparse(path, true, None).await
         {
             if !result.text.trim().is_empty() {
                 return Ok(ClassifyResult {
@@ -408,7 +408,7 @@ pub async fn extract_molecules_from_pdf(
             let batch_end = (batch_start + batch_size).min(page_numbers.len());
             let batch_pages: Vec<u32> = page_numbers[batch_start..batch_end].to_vec();
 
-            match crate::parsers::liteparse::screenshot_with_liteparse(path, Some(batch_pages))
+            match crate::parsers::pdf::liteparse::screenshot_with_liteparse(path, Some(batch_pages))
                 .await
             {
                 Ok(screenshots) => {
@@ -507,7 +507,7 @@ pub struct WorkflowResult {
     /// 提取结果（文本、页数、解析器、图片引用）
     pub classify: ClassifyResult,
     /// 检测到的分子列表
-    pub molecules: Vec<crate::parsers::moldet_client::DetectedMolecule>,
+    pub molecules: Vec<crate::parsers::chem::vlm_chem::DetectedMolecule>,
 }
 
 /// 单个分子的元数据（写入 manifest.json）
@@ -553,7 +553,7 @@ pub async fn extract_pdf_workflow(
     output_dir: &str,
     sidecar_url: &str,
 ) -> Result<WorkflowResult, String> {
-    use crate::parsers::chem_validate::separate_esmiles_layers;
+    use crate::parsers::chem::chem_validate::separate_esmiles_layers;
 
     let pdf = std::path::Path::new(pdf_path);
     if !pdf.exists() {

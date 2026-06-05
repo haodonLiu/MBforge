@@ -157,7 +157,7 @@ function AppInner() {
               return
             }
             if (path.toLowerCase().endsWith('.pdf')) {
-              invoke('open_file', { projectRoot, path }).catch((e: unknown) => {
+              invoke('open_file', { project_root: projectRoot, path }).catch((e: unknown) => {
                 showToast(`${t('error.title')}: ${String(e)}`, 'error')
               })
             } else {

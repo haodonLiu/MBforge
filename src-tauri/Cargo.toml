@@ -49,8 +49,17 @@ chematic-fp = { git = "https://github.com/kent-tokyo/chematic" }
 chematic-smarts = { git = "https://github.com/kent-tokyo/chematic" }
 chematic-chem = { git = "https://github.com/kent-tokyo/chematic" }
 
+# LLM agent framework — replaces hand-rolled ReAct loop, multi-provider LLM
+# client, tool dispatch, and streaming. Pinned to 0.38.x (latest as of 2026-06).
+# The `derive` feature brings in `rig-derive` for the `#[rig_tool]` proc macro.
+rig-core = { version = "0.38", features = ["derive", "reqwest", "rustls"] }
+rig-derive = "0.38"
+
+# Schemars is re-exported from rig-core but we need it as a direct dep
+# so the JsonSchema derive works on our tool Args structs.
+schemars = "1.0"
+
 [dev-dependencies]
-# HTTP mocking for unit tests of LLM/arxiv clients
 mockito = "1.5"
 # Load .env files in integration tests (dotenvy is a sync/async-friendly dotenv)
 dotenvy = "0.15"

@@ -159,7 +159,7 @@ pub async fn parse_pdf(
             if api_key.is_empty() {
                 return Err("UNIPARSER_API_KEY not set".into());
             }
-            let client = super::uniparser::UniParserClient::new(&host, &api_key);
+            let client = super::pdf::uniparser::UniParserClient::new(&host, &api_key);
             let result = client.parse_pdf(&path)?;
             (result.content, result.page_count)
         }
@@ -167,8 +167,8 @@ pub async fn parse_pdf(
             let host =
                 std::env::var("MINERU_HOST").unwrap_or_else(|_| "https://mineru.net".to_string());
             let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
-            let client = super::mineru::MineruClient::new(&host, &api_key);
-            let options = super::mineru::scanned_pdf_options(&path);
+            let client = super::pdf::mineru::MineruClient::new(&host, &api_key);
+            let options = super::pdf::mineru::scanned_pdf_options(&path);
             let result = client.parse_file_with_options(&path, &options)?;
             mineru_images = result.images;
             (result.markdown, 0)
@@ -176,7 +176,7 @@ pub async fn parse_pdf(
         "llama_parse" => {
             let pdf_bytes =
                 std::fs::read(&path).map_err(|e| format!("Failed to read PDF: {}", e))?;
-            let result = super::llama_parse::parse_with_llamaparse_sync(
+            let result = super::pdf::llama_parse::parse_with_llamaparse_sync(
                 &crate::core::constants::sidecar_url(),
                 pdf_bytes,
                 None,
@@ -184,7 +184,7 @@ pub async fn parse_pdf(
             (result.markdown, result.page_count)
         }
         "liteparse" => {
-            let result = super::liteparse::parse_with_liteparse(&path, false, None).await?;
+            let result = super::pdf::liteparse::parse_with_liteparse(&path, false, None).await?;
             let page_count = result.pages.len();
             (result.text, page_count)
         }
@@ -198,7 +198,7 @@ pub async fn parse_pdf(
 
     // Stage 1.5: Extract embedded images from PDF (lopdf)
     let tmp_dir = tempfile::tempdir().map_err(|e| format!("Temp dir error: {}", e))?;
-    let extracted = super::images::extract_images_from_pdf(
+    let extracted = super::pdf::images::extract_images_from_pdf(
         &path,
         tmp_dir.path(),
         20, // max_images
@@ -223,8 +223,8 @@ pub async fn parse_pdf(
     let classification = classify_document(pages, None);
 
     // Stage 3: Section-based chunking (PageIndex)
-    let headings = super::headings::extract_headings(&content);
-    let sections = super::sections::build_sections(&content, &headings, None, chunk_size);
+    let headings = super::structure::sections::extract_headings(&content);
+    let sections = super::structure::sections::build_sections(&content, &headings, None, chunk_size);
     let chunks: Vec<String> = sections.iter().map(|s| s.text.clone()).collect();
 
     // Stage 4: Molecule extraction (text regex)
@@ -249,7 +249,7 @@ pub async fn parse_pdf(
 /// Post-process PDF extraction results using LLM.
 #[tauri::command]
 pub fn post_process_pdf(parse_result: PdfParseResult) -> Result<PostProcessResult, String> {
-    super::post_process::post_process(&parse_result)
+    super::structure::post_process::post_process(&parse_result)
 }
 
 /// ===== 以下为 A3: 完整文档处理管线 =====
@@ -297,17 +297,17 @@ pub enum DocProgressEvent {
 
 /// Stage 1: 调用 LLM 做文档结构分析
 async fn run_meta_analysis(ctx: &DocProcessingContext) -> Result<DocStructure, String> {
-    let prompt = crate::parsers::intent::build_meta_prompt(ctx);
+    let prompt = crate::parsers::structure::intent::build_meta_prompt(ctx);
 
-    let config = crate::parsers::post_process::load_llm_config()?;
-    let (response, _tokens) = crate::parsers::post_process::call_llm_api_async(
+    let config = crate::parsers::structure::post_process::load_llm_config()?;
+    let (response, _tokens) = crate::parsers::structure::post_process::call_llm_api_async(
         &config,
         "你是文档分析专家。分析文档开头部分，判断文档类型和结构。只输出 JSON。",
         &prompt,
     )
     .await?;
 
-    crate::parsers::intent::parse_meta_response(&response)
+    crate::parsers::structure::intent::parse_meta_response(&response)
 }
 
 // ---------------------------------------------------------------------------
@@ -433,7 +433,7 @@ pub async fn process_document(
                             .and_then(|m| m.get("images").cloned())
                             .and_then(|v| serde_json::from_value(v).ok())
                             .unwrap_or_default();
-                        ctx.headings = crate::parsers::headings::extract_headings(&ctx.raw_text);
+                        ctx.headings = crate::parsers::structure::sections::extract_headings(&ctx.raw_text);
                         ctx.sections = serde_json::from_str(&cached.sections_json)
                             .unwrap_or_default();
                         cache_hit = true;
@@ -457,9 +457,9 @@ pub async fn process_document(
             ctx.images = classified.images;
 
             // Stage 0.5: Build sections
-            ctx.headings = crate::parsers::headings::extract_headings(&ctx.raw_text);
+            ctx.headings = crate::parsers::structure::sections::extract_headings(&ctx.raw_text);
             ctx.sections =
-                crate::parsers::sections::build_sections(&ctx.raw_text, &ctx.headings, None, 8000);
+                crate::parsers::structure::sections::build_sections(&ctx.raw_text, &ctx.headings, None, 8000);
 
             // 写入文件缓存
             if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
@@ -548,7 +548,7 @@ pub async fn process_document(
     }
 
     // ===== Stage 1.5: 用户意图路由 =====
-    let plan = crate::parsers::intent::interpret_request(&doc_structure, &user_req);
+    let plan = crate::parsers::structure::intent::interpret_request(&doc_structure, &user_req);
 
     let _ = app.emit(
         EVT_DOC_PROGRESS,
@@ -574,7 +574,7 @@ pub async fn process_document(
 
         let section_text = extract_section_text(&ctx.raw_text, section_name);
 
-        let result = match super::post_process::post_process_section(
+        let result = match super::structure::post_process::post_process_section(
             &section_text,
             &ctx.parser_used,
             ctx.page_count,
@@ -633,8 +633,8 @@ pub async fn process_document(
     });
 
     // ===== Stage 2a: 专利命名化合物提取（仅专利文档）=====
-    let mut molecule_traces: Vec<crate::parsers::molecule_extractor::MoleculeTrace> = Vec::new();
-    let mut claim_graph: Option<crate::parsers::claim_parser::ClaimDependencyGraph> = None;
+    let mut molecule_traces: Vec<crate::parsers::chem::molecule_extractor::MoleculeTrace> = Vec::new();
+    let mut claim_graph: Option<crate::parsers::chem::claim_parser::ClaimDependencyGraph> = None;
 
     if doc_structure.doc_type == "patent" {
         // 合并所有 section 的文本用于分子提取
@@ -650,9 +650,9 @@ pub async fn process_document(
         };
 
         let named_mols =
-            crate::parsers::molecule_extractor::extract_named_molecule_series(&full_text);
+            crate::parsers::chem::molecule_extractor::extract_named_molecule_series(&full_text);
         if !named_mols.is_empty() {
-            let mut traces = crate::parsers::molecule_extractor::link_molecules_to_images(
+            let mut traces = crate::parsers::chem::molecule_extractor::link_molecules_to_images(
                 &named_mols,
                 &ctx.images,
                 &[],
@@ -660,7 +660,7 @@ pub async fn process_document(
             // 提取理化性质
             for trace in traces.iter_mut() {
                 trace.properties =
-                    crate::parsers::molecule_extractor::extract_properties_for_molecule(
+                    crate::parsers::chem::molecule_extractor::extract_properties_for_molecule(
                         &trace.molecule,
                         &full_text,
                         500,
@@ -672,7 +672,7 @@ pub async fn process_document(
         // 解析 claims section
         let claims_text = extract_section_text(&ctx.raw_text, "claims");
         if !claims_text.is_empty() && claims_text.len() > 20 {
-            claim_graph = Some(crate::parsers::claim_parser::parse_claims_section(
+            claim_graph = Some(crate::parsers::chem::claim_parser::parse_claims_section(
                 &claims_text,
             ));
         }
@@ -689,9 +689,9 @@ pub async fn process_document(
     }
 
     // ===== Stage 2b: VLM 化学结构识别 =====
-    let vlm_config = crate::parsers::vlm_chem::VlmConfig::default();
+    let vlm_config = crate::parsers::chem::vlm_chem::VlmConfig::default();
     let mut vlm_esmiles_found = 0usize;
-    let mut vlm_results: Vec<(String, crate::parsers::vlm_chem::ChemImageResult)> = Vec::new();
+    let mut vlm_results: Vec<(String, crate::parsers::chem::vlm_chem::ChemImageResult)> = Vec::new();
 
     // 解析图片的完整路径（优先使用持久化后的 rel_path）
     let project_root = extract::find_project_root(&ctx.source_path, project_root.as_deref());
@@ -730,7 +730,7 @@ pub async fn process_document(
         .await
         {
             Ok(detected) if !detected.is_empty() => {
-                let mut file_results: Vec<(String, crate::parsers::vlm_chem::ChemImageResult)> = Vec::new();
+                let mut file_results: Vec<(String, crate::parsers::chem::vlm_chem::ChemImageResult)> = Vec::new();
                 for mol in detected.iter() {
                     file_results.push((
                         std::path::Path::new(&mol.crop_path)
@@ -738,7 +738,7 @@ pub async fn process_document(
                             .and_then(|s| s.to_str())
                             .unwrap_or("unknown")
                             .to_string(),
-                        crate::parsers::vlm_chem::ChemImageResult {
+                        crate::parsers::chem::vlm_chem::ChemImageResult {
                             esmiles: mol.esmiles.clone(),
                             confidence: mol.confidence,
                         },
@@ -789,12 +789,12 @@ pub async fn process_document(
     // ===== Stage 2c: VLM 图片描述（非化学结构图） =====
     if !ctx.images.is_empty() {
         if let Some(ref root) = project_root {
-             let mut cache = crate::parsers::vlm_chem::ImageCaptionCache::new(root);
+             let mut cache = crate::parsers::chem::vlm_chem::ImageCaptionCache::new(root);
             let prompt = "请详细描述这张科学文献图片的内容。如果是图表，请说明其中的关键数据和趋势；如果是分子结构图，请描述其骨架特征和官能团；如果是实验流程图，请概述主要步骤。用中文回答，不超过100字。";
 
             for img in ctx.images.iter_mut() {
                 // 跳过化学结构图（已由 MolScribe 处理）
-                if crate::parsers::vlm_chem::is_likely_chemical_structure(
+                if crate::parsers::chem::vlm_chem::is_likely_chemical_structure(
                     &img.filename,
                     img.region.as_deref(),
                 ) {
@@ -803,7 +803,7 @@ pub async fn process_document(
                 let Some(full_path) = resolve_image_path(img) else {
                     continue;
                 };
-                match crate::parsers::vlm_chem::describe_image_cached(
+                match crate::parsers::chem::vlm_chem::describe_image_cached(
                     &full_path,
                     prompt,
                     &vlm_config.sidecar_url,
@@ -880,7 +880,7 @@ pub async fn process_document(
         // 1. 先净化 LLM 输出的 SMILES
         for compound in final_data.compounds.iter_mut() {
             if let Some(ref raw) = compound.esmiles {
-                let cleaned = crate::parsers::chem_validate::sanitize_esmiles(raw);
+                let cleaned = crate::parsers::chem::chem_validate::sanitize_esmiles(raw);
                 if cleaned != *raw {
                     compound.esmiles = Some(cleaned);
                 }
@@ -897,7 +897,7 @@ pub async fn process_document(
             .collect();
 
         if !esmiles_to_validate.is_empty() {
-            let validate_results = crate::parsers::chem_validate::validate_smiles_batch(
+            let validate_results = crate::parsers::chem::chem_validate::validate_smiles_batch(
                 &esmiles_to_validate,
             );
 
@@ -972,7 +972,7 @@ pub async fn process_document(
     }
 
     // ===== Stage 4: 报告生成 =====
-    let report_md = crate::parsers::report::generate_full_report(&final_data, Some(&sar_analysis));
+    let report_md = crate::parsers::structure::report::generate_full_report(&final_data, Some(&sar_analysis));
 
     let mut report = DocumentReport {
         metadata: final_data.metadata.clone(),
@@ -1143,7 +1143,7 @@ pub async fn index_project_rust(
 
     // Phase 1: 并行提取（I/O 密集：MinerU OCR、LiteParse 截图、MolDet 检测）
     // 缓存命中的直接处理，未命中的并行 extract
-    let mut cache_hits: Vec<(std::path::PathBuf, Vec<crate::parsers::sections::SectionChunk>)> = Vec::new();
+    let mut cache_hits: Vec<(std::path::PathBuf, Vec<crate::parsers::structure::sections::SectionChunk>)> = Vec::new();
     let mut to_extract: Vec<(usize, std::path::PathBuf)> = Vec::new();
 
     for (i, pdf_path) in pdf_files.iter().enumerate() {
@@ -1155,7 +1155,7 @@ pub async fn index_project_rust(
         let cached_sections = match kb.file_cache().get(pdf_path) {
             Ok(Some(cached)) => {
                 log::info!("Batch index: cache HIT for {}", filename);
-                serde_json::from_str::<Vec<crate::parsers::sections::SectionChunk>>(&cached.sections_json)
+                serde_json::from_str::<Vec<crate::parsers::structure::sections::SectionChunk>>(&cached.sections_json)
                     .ok()
             }
             _ => None,
@@ -1223,8 +1223,8 @@ pub async fn index_project_rust(
         match result {
             Ok((pdf_path, classified, detected, filename)) => {
                 let doc_id = uuid::Uuid::new_v4().to_string();
-                let headings = crate::parsers::headings::extract_headings(&classified.text);
-                let sections = crate::parsers::sections::build_sections(
+                let headings = crate::parsers::structure::sections::extract_headings(&classified.text);
+                let sections = crate::parsers::structure::sections::build_sections(
                     &classified.text, &headings, None, 8000,
                 );
                 total_sections += sections.len();
@@ -1251,7 +1251,7 @@ pub async fn index_project_rust(
                         let mut saved = 0usize;
                         for mol in &detected {
                             let (clean_smiles, esmiles_opt, semantic_tags) =
-                                crate::parsers::chem_validate::separate_esmiles_layers(&mol.esmiles);
+                                crate::parsers::chem::chem_validate::separate_esmiles_layers(&mol.esmiles);
                             let mol_id = crate::core::helpers::generate_uuid();
                             let record = MoleculeRecord {
                                 mol_id: mol_id.clone(),
@@ -1353,7 +1353,7 @@ mod tests {
 
     #[test]
     fn test_merge_partial_results_dedup() {
-        use super::super::doc_types::{CompoundEntry, DocumentMetadata};
+        use crate::parsers::doc_types::{CompoundEntry, DocumentMetadata};
         let r1 = StructuredData {
             metadata: DocumentMetadata {
                 title: None,
@@ -1438,12 +1438,12 @@ mod tests {
             parser: "test".into(),
             page_count: 1,
             images: vec![],
-            headings: vec![crate::parsers::headings::Heading {
+            headings: vec![crate::parsers::structure::sections::Heading {
                 level: 1,
                 title: "Introduction".into(),
                 line_num: 0,
             }],
-            sections: vec![crate::parsers::sections::SectionChunk {
+            sections: vec![crate::parsers::structure::sections::SectionChunk {
                 title: "Introduction".into(),
                 path: "Introduction".into(),
                 text: "intro text".into(),
@@ -1469,7 +1469,7 @@ mod tests {
 
     #[test]
     fn test_compound_entry_to_record() {
-        use super::super::doc_types::{CompoundEntry, PhysicochemicalProperty};
+        use crate::parsers::doc_types::{CompoundEntry, PhysicochemicalProperty};
 
         let compound = CompoundEntry {
             name: "Compound-1".into(),
@@ -1506,7 +1506,7 @@ mod tests {
 
     #[test]
     fn test_compound_entry_to_record_skips_empty_esmiles() {
-        use super::super::doc_types::CompoundEntry;
+        use crate::parsers::doc_types::CompoundEntry;
 
         let compound = CompoundEntry {
             name: "No-Structure".into(),
@@ -1527,7 +1527,7 @@ mod tests {
 
     #[test]
     fn test_activity_entry_to_record() {
-        use super::super::doc_types::ActivityEntry;
+        use crate::parsers::doc_types::ActivityEntry;
 
         let activity = ActivityEntry {
             compound: "Compound-1".into(),
@@ -1588,7 +1588,7 @@ mod tests {
 
         for (name, path) in [("US", us_pdf), ("CN", cn_pdf)] {
             let tmp = tempfile::tempdir().unwrap();
-            let extracted = crate::parsers::images::extract_images_from_pdf(path, tmp.path(), 50, 5)
+            let extracted = crate::parsers::pdf::images::extract_images_from_pdf(path, tmp.path(), 50, 5)
                 .unwrap_or_default();
             println!(
                 "[DIAG] {} patent: extracted {} images (max 50, max 5MB each)",
@@ -1643,8 +1643,8 @@ mod tests {
                     let host = std::env::var("MINERU_HOST")
                         .unwrap_or_else(|_| "https://mineru.net".to_string());
                     let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
-                    let client = crate::parsers::mineru::MineruClient::new(&host, &api_key);
-                    let options = crate::parsers::mineru::scanned_pdf_options(&path);
+                    let client = crate::parsers::pdf::mineru::MineruClient::new(&host, &api_key);
+                    let options = crate::parsers::pdf::mineru::scanned_pdf_options(&path);
                     let result = client.parse_file_with_options(&path, &options).expect("MinerU 解析失败");
                     return ClassifyResult {
                         text: result.markdown,
@@ -1676,8 +1676,8 @@ mod tests {
             classified.images.len()
         );
 
-        let headings = crate::parsers::headings::extract_headings(&classified.text);
-        let sections = crate::parsers::sections::build_sections(
+        let headings = crate::parsers::structure::sections::extract_headings(&classified.text);
+        let sections = crate::parsers::structure::sections::build_sections(
             &classified.text,
             &headings,
             None,
@@ -1768,8 +1768,8 @@ mod tests {
                     let host = std::env::var("MINERU_HOST")
                         .unwrap_or_else(|_| "https://mineru.net".to_string());
                     let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
-                    let client = crate::parsers::mineru::MineruClient::new(&host, &api_key);
-                    let options = crate::parsers::mineru::scanned_pdf_options(&path);
+                    let client = crate::parsers::pdf::mineru::MineruClient::new(&host, &api_key);
+                    let options = crate::parsers::pdf::mineru::scanned_pdf_options(&path);
                     let result = client.parse_file_with_options(&path, &options).expect("MinerU 解析失败");
                     return ClassifyResult {
                         text: result.markdown,
@@ -1806,8 +1806,8 @@ mod tests {
         );
 
         // ===== Stage 0.5: headings + sections =====
-        let headings = crate::parsers::headings::extract_headings(&classified.text);
-        let sections = crate::parsers::sections::build_sections(
+        let headings = crate::parsers::structure::sections::extract_headings(&classified.text);
+        let sections = crate::parsers::structure::sections::build_sections(
             &classified.text,
             &headings,
             None,
@@ -1887,7 +1887,7 @@ mod lit_agent_tests {
     async fn test_review_with_lit_agent_failure_does_not_panic() {
         // 构造一个最小 DocumentReport
         let mut report = DocumentReport {
-            metadata: super::super::doc_types::DocumentMetadata {
+            metadata: crate::parsers::doc_types::DocumentMetadata {
                 title: Some("test".into()),
                 authors: vec![],
                 document_type: "paper".into(),
@@ -1938,7 +1938,7 @@ mod pipeline_output_tests {
     #[test]
     fn test_pipeline_output_from_in_memory() {
         let report = DocumentReport {
-            metadata: super::super::doc_types::DocumentMetadata {
+            metadata: crate::parsers::doc_types::DocumentMetadata {
                 title: Some("test".into()),
                 authors: vec![],
                 document_type: "paper".into(),

@@ -531,14 +531,14 @@ export default function SettingsModal({ open, onClose }: Props) {
               </div>
 
               {/* Right content */}
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
                 <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
                   <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0 }}>
                     {sectionData ? t(sectionData.labelKey) : ''}
                   </h3>
                 </div>
 
-                <div style={{ flex: 1, padding: '16px 20px', overflowY: 'auto' }}>
+                <div style={{ flex: 1, minHeight: 0, padding: '16px 20px', overflowY: 'auto' }}>
                   {error && <AlertBanner variant="danger" message={error} onDismiss={() => setError('')} />}
                   {saveSuccess && <AlertBanner variant="success" message={t('settings.saved')} />}
                   <motion.div key={activeSection} variants={fadeIn} initial="hidden" animate="visible">

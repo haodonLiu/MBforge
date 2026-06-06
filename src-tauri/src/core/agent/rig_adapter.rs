@@ -101,39 +101,62 @@ pub struct MbforgeProviderConfig {
 }
 
 impl MbforgeProviderConfig {
-    /// Build a config from the global `AppConfig` settings.
+    /// Build a config from environment variables (`.env` injected at startup
+    /// by `main::load_dotenv()`) and `AppConfig` settings.
+    ///
+    /// Resolution order, first non-empty wins:
+    /// 1. Process env: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
+    /// 2. `~/.config/MBForge/config.json` `llm.{base_url,api_key,model_name}`
+    ///
+    /// The env-var path is the canonical home for the actual secret values
+    /// (it lives in `.env`, which is gitignored). The config.json path is
+    /// a fallback for advanced users who prefer to keep deployment-specific
+    /// values in version-controlled config (e.g. shared dev environments
+    /// with a fixed internal proxy).
     pub fn from_app_config() -> Result<Self, String> {
         let app = crate::core::config::AppConfig::load();
         let kind = match app.llm.provider.as_str() {
             "anthropic" => MbforgeProviderKind::Anthropic,
             _ => MbforgeProviderKind::OpenAICompatible,
         };
-        let base_url = match kind {
-            MbforgeProviderKind::OpenAICompatible | MbforgeProviderKind::Anthropic => {
-                app.llm.base_url.clone()
-            }
-        };
+
+        let env_base_url = std::env::var("LLM_BASE_URL")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
+        let env_api_key = std::env::var("LLM_API_KEY")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
+        let env_model = std::env::var("LLM_MODEL")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
+
+        let base_url = env_base_url.unwrap_or_else(|| app.llm.base_url.clone());
+        let api_key = env_api_key.unwrap_or_else(|| app.llm.api_key.clone());
+        let model = env_model.unwrap_or_else(|| app.llm.model_name.clone());
+
         if base_url.trim().is_empty() {
             return Err(format!(
-                "LLM base_url is not configured. Set `llm.base_url` in {} to an OpenAI-compatible \
-                 endpoint (e.g. https://api.openai.com/v1, https://openrouter.ai/api/v1, \
+                "LLM base_url is not configured. Set `LLM_BASE_URL` in the project-root .env \
+                 (recommended) or `llm.base_url` in {} to an OpenAI-compatible endpoint \
+                 (e.g. https://api.openai.com/v1, https://openrouter.ai/api/v1, \
                  https://api.deepseek.com/v1, or a self-hosted llama.cpp server). \
                  The MBForge sidecar on :18792 is *not* an OpenAI-compatible endpoint and \
                  must not be used here.",
                 crate::core::config::settings::AppConfig::config_path().display(),
             ));
         }
-        if app.llm.api_key.is_empty() {
+        if api_key.trim().is_empty() {
             return Err(format!(
-                "LLM api_key is not configured. Set `llm.api_key` in {}.",
+                "LLM api_key is not configured. Set `LLM_API_KEY` in the project-root .env \
+                 (recommended) or `llm.api_key` in {}.",
                 crate::core::config::settings::AppConfig::config_path().display(),
             ));
         }
         Ok(Self {
             kind,
             base_url,
-            api_key: app.llm.api_key.clone(),
-            model: app.llm.model_name.clone(),
+            api_key,
+            model,
             timeout_secs: 120,
             anthropic_betas: Vec::new(),
         })

@@ -47,6 +47,7 @@ export { default as Tooltip } from './Tooltip'
 export { default as TreeNode } from './TreeNode'
 export { ResponsiveLayout, ShowOn, HideOn, ResponsiveGrid } from './ResponsiveContainer'
 export { default as ResponsiveStatGrid } from './ResponsiveStatGrid'
+export { default as ScrollColumn, type ScrollColumnProps } from './ScrollColumn'
 
 // 类型导出
 export type * from './types'

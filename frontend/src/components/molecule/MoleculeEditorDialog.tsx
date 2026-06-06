@@ -4,6 +4,7 @@ import { Editor } from 'ketcher-react'
 import { StandaloneStructServiceProvider } from 'ketcher-standalone'
 import 'ketcher-react/dist/index.css'
 import { XIcon } from '../icons'
+import ScrollColumn from '../ui/ScrollColumn'
 
 const structServiceProvider = new StandaloneStructServiceProvider()
 
@@ -209,7 +210,7 @@ export default function MoleculeEditorDialog({
 
           {/* 右侧：MoleCode 文本 */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '12px 16px', flex: 1, overflow: 'auto' }}>
+            <ScrollColumn padding="12px 16px">
               <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-secondary)' }}>
                 MoleCode 文本
               </div>
@@ -231,7 +232,7 @@ export default function MoleculeEditorDialog({
               >
                 {moleCodeLoading ? 'Loading MoleCode...' : (moleCodeText || '无法生成 MoleCode')}
               </pre>
-            </div>
+            </ScrollColumn>
           </div>
         </div>
       </div>

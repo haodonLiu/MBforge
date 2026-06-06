@@ -113,6 +113,22 @@ impl MbforgeProviderConfig {
                 app.llm.base_url.clone()
             }
         };
+        if base_url.trim().is_empty() {
+            return Err(format!(
+                "LLM base_url is not configured. Set `llm.base_url` in {} to an OpenAI-compatible \
+                 endpoint (e.g. https://api.openai.com/v1, https://openrouter.ai/api/v1, \
+                 https://api.deepseek.com/v1, or a self-hosted llama.cpp server). \
+                 The MBForge sidecar on :18792 is *not* an OpenAI-compatible endpoint and \
+                 must not be used here.",
+                crate::core::config::settings::AppConfig::config_path().display(),
+            ));
+        }
+        if app.llm.api_key.is_empty() {
+            return Err(format!(
+                "LLM api_key is not configured. Set `llm.api_key` in {}.",
+                crate::core::config::settings::AppConfig::config_path().display(),
+            ));
+        }
         Ok(Self {
             kind,
             base_url,

@@ -22,7 +22,15 @@ impl Default for ModelConfig {
     fn default() -> Self {
         Self {
             provider: "openai_compatible".into(),
-            base_url: "http://127.0.0.1:18792/v1".into(),
+            // Empty by default — we don't want a guess that silently points at
+            // an endpoint the user hasn't actually configured. The MBForge
+            // sidecar (FastAPI on :18792) is *not* an OpenAI-compatible
+            // endpoint; only the rig OpenAI/Anthropic clients in core/agent
+            // are used, and they need a real base_url (api.openai.com/v1,
+            // OpenRouter, DeepSeek, a self-hosted llama.cpp server, …).
+            // `from_app_config` surfaces the empty-string case as a clear
+            // "configure your LLM base_url in settings.json" error.
+            base_url: String::new(),
             api_key: String::new(),
             model_name: "default".into(),
             max_tokens: 4096,

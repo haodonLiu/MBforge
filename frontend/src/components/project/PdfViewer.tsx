@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { extractPage } from '../../api/moldet'
 import { parsePdf, type ImageRef, getDocumentOcrLayout, type OcrBlock } from '../../api/tauri/pdf'
@@ -14,10 +14,6 @@ import Toolbar from '../ui/Toolbar'
 import IconButton from '../ui/IconButton'
 import Caption from '../ui/Caption'
 import { ArrowLeftIcon, SearchIcon } from '../icons'
-
-const MermaidCode = lazy(() =>
-  import('../ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
-)
 
 interface Props {
   doc: DocumentEntry

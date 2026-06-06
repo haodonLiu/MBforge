@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { motion } from 'framer-motion'
-import { CheckIcon, RefreshCwIcon, AlertIcon, InfoIcon } from '../icons'
+import { CheckIcon, AlertIcon, InfoIcon } from '../icons'
 import { invoke } from '@tauri-apps/api/core'
 
 const MermaidCode = lazy(() =>
@@ -158,7 +158,7 @@ export default function MoleculeDisplay({
   const [imgError, setImgError] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [draftSmiles, setDraftSmiles] = useState(smiles)
-  const [validating, setValidating] = useState(false)
+  const [validating, _setValidating] = useState(false)
   const [validationMsg, setValidationMsg] = useState<string | null>(null)
   const [showMoleCode, setShowMoleCode] = useState(false)
   const [moleCodeText, setMoleCodeText] = useState<string | null>(null)

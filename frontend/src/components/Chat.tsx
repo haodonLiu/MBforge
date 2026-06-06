@@ -20,7 +20,6 @@ import {
   listDocumentsTauri,
   moleculeStatsTauri,
 } from '../api/tauri-bridge'
-import type { ChatMessage } from '../api/tauri-bridge'
 import { SendIcon, UserIcon, BotIcon, FolderIcon, FileTextIcon, FlaskIcon } from './icons'
 
 import { useAppContext } from '../context/AppContext'

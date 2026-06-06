@@ -52,6 +52,7 @@ export default function EnvironmentSection() {
   const { t } = useTranslation()
   const [report, setReport] = useState<EnvironmentReport | null>(null)
   const [loading, setLoading] = useState(true)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'ready' | 'not_ready'>('all')
 
   useEffect(() => {
     setLoading(true)
@@ -79,10 +80,12 @@ export default function EnvironmentSection() {
   }
 
   const resourcesByType: Record<string, ResourceItem[]> = {}
-  report.resources.forEach(r => {
-    if (!resourcesByType[r.type]) resourcesByType[r.type] = []
-    resourcesByType[r.type].push(r)
-  })
+  report.resources
+    .filter(r => statusFilter === 'all' || r.status === statusFilter)
+    .forEach(r => {
+      if (!resourcesByType[r.type]) resourcesByType[r.type] = []
+      resourcesByType[r.type].push(r)
+    })
 
   const typeLabels: Record<string, string> = {
     model: t('env.models'),
@@ -91,6 +94,11 @@ export default function EnvironmentSection() {
   }
 
   const hasUnreadyResources = report.resources.some(r => r.status !== 'ready')
+  const counts = {
+    all: report.resources.length,
+    ready: report.resources.filter(r => r.status === 'ready').length,
+    not_ready: report.resources.filter(r => r.status !== 'ready').length,
+  }
 
   return (
     <div className="settings-section">
@@ -109,7 +117,20 @@ export default function EnvironmentSection() {
       </div>
 
       <div className="settings-group">
-        <h3 className="settings-group-title">{t('env.resourceStatus')}</h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <h3 className="settings-group-title" style={{ margin: 0 }}>{t('env.resourceStatus')}</h3>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <FilterPill active={statusFilter === 'all'} onClick={() => setStatusFilter('all')}>
+              {t('env.filterAll')} ({counts.all})
+            </FilterPill>
+            <FilterPill active={statusFilter === 'ready'} onClick={() => setStatusFilter('ready')}>
+              {t('env.filterReady')} ({counts.ready})
+            </FilterPill>
+            <FilterPill active={statusFilter === 'not_ready'} onClick={() => setStatusFilter('not_ready')}>
+              {t('env.filterNotReady')} ({counts.not_ready})
+            </FilterPill>
+          </div>
+        </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           {Object.entries(typeLabels).map(([type, label]) => {
             const items = resourcesByType[type]
@@ -134,5 +155,27 @@ export default function EnvironmentSection() {
         </div>
       )}
     </div>
+  )
+}
+
+function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: '2px 10px',
+        background: active ? 'var(--accent-muted)' : 'var(--bg-elevated)',
+        color: active ? 'var(--accent)' : 'var(--text-secondary)',
+        border: 'none',
+        borderRadius: 12,
+        cursor: 'pointer',
+        fontSize: 11,
+        fontWeight: 500,
+        transition: 'all 0.1s',
+      }}
+    >
+      {children}
+    </button>
   )
 }

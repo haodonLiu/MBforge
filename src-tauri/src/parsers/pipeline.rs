@@ -299,9 +299,7 @@ pub enum DocProgressEvent {
 async fn run_meta_analysis(ctx: &DocProcessingContext) -> Result<DocStructure, String> {
     let prompt = crate::parsers::structure::intent::build_meta_prompt(ctx);
 
-    let config = crate::parsers::structure::post_process::load_llm_config()?;
     let (response, _tokens) = crate::parsers::structure::post_process::call_llm_api_async(
-        &config,
         "你是文档分析专家。分析文档开头部分，判断文档类型和结构。只输出 JSON。",
         &prompt,
     )
@@ -885,19 +883,10 @@ pub async fn process_document(
         );
     }
 
-    // ===== Stage 3.5: 化学结构验证（LLM 输出净化 + RDKit 校验） =====
+    // ===== Stage 3.5: 化学结构验证（RDKit 校验 + 规范化） =====
     {
-        // 1. 先净化 LLM 输出的 SMILES
-        for compound in final_data.compounds.iter_mut() {
-            if let Some(ref raw) = compound.esmiles {
-                let cleaned = crate::parsers::chem::chem_validate::sanitize_esmiles(raw);
-                if cleaned != *raw {
-                    compound.esmiles = Some(cleaned);
-                }
-            }
-        }
-
-        // 2. 批量调用 RDKit 验证
+        // 1. 收集待验证的 SMILES（去重）。`validate_smiles_batch` 内部会做净化，
+        //    故无需在此处额外 sanitize（O-10 收尾：移除冗余净化循环）。
         let esmiles_to_validate: Vec<String> = final_data
             .compounds
             .iter()

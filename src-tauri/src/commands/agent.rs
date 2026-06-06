@@ -12,7 +12,8 @@ use crate::core::agent::context::{LayeredContext, Message};
 use crate::core::agent::memory::MemoryManager;
 use crate::core::agent::observability::AuditLog;
 use crate::core::agent::rig_adapter::{
-    MbforgeAgent, MbforgeAgentSpec, MbforgeProviderConfig, MbforgeProviderKind, MbforgeStreamItem,
+    ConcreteHook, MbforgeAgent, MbforgeAgentSpec, MbforgeProviderConfig, MbforgeProviderKind,
+    MbforgeStreamItem,
 };
 use crate::core::agent::rig_hooks::{AuditLogHook, TrajectoryHook};
 use crate::core::agent::rig_memory::{
@@ -535,10 +536,19 @@ pub async fn create_session_for_config(
         });
         (composite, None, None, None, None)
     };
-
     // 3. 构造 `MbforgeAgent`
-    let agent = build_mbforge_agent(&cfg, &spec)?;
-
+    // O-05：传递项目级 hook（audit + trajectory 复用 session 已有的实例），
+    //       保证 LLM 循环写到项目根的 `.mbforge/audit.jsonl`。
+    //       audit 创建失败或无 project_root 时传 None，fallback 到临时 hook。
+    //       clone 是廉价的：内部 Arc refcount +1。
+    let project_hook = match (audit_hook.clone(), trajectory_hook.clone()) {
+        (Some(a), Some(t)) => Some(ConcreteHook {
+            audit: a,
+            trajectory: t,
+        }),
+        _ => None,
+    };
+    let agent = build_mbforge_agent(&cfg, &spec, project_hook)?;
     // 4. 构造一个最小可用的 `LayeredContext`（系统 prompt 留空 —
     //    真正的 preamble 在 rig 端；这里只保留 L1 project / L3 history）
     let context = LayeredContext::new("", 20, 32_000);
@@ -582,19 +592,25 @@ fn mbforge_provider_config_from_model(
         anthropic_betas: Vec::new(),
     }
 }
-
 /// 调对应的 rig factory 构造 `MbforgeAgent`。
 ///
-/// M4 之后，工厂签名多了一个 `hook: ConcreteHook` 形参（audit log +
-/// trajectory 复合钩子）。M5 阶段命令层还没有按项目根路径构造真
-/// `ConcreteHook` 的接口，所以这里退一步用 rig_adapter 暴露的
-/// `build_default_concrete_hook()` 兜底：基于 `tempfile::tempdir` 拼一个
-/// 临时 hook，等 M6 接入项目根的 `.mbforge/audit.jsonl` 时再换实现。
+/// 优先用调用方传入的 `project_hook`（项目级 audit + trajectory 复合钩子），
+/// 保证 LLM 循环的审计/轨迹数据落到项目根的 `.mbforge/audit.jsonl`。
+/// 失败 fallback 到临时 hook（保持向后兼容 + 测试场景）。
+///
+/// 历史：M4 引入 ConcreteHook，M5 命令层未提供按 project_root 构造真
+/// ConcreteHook 的接口，临时用 `build_default_concrete_hook()` 兑底。
+/// O-05（2026-06-06）：补上「接受传入 hook」接口，调用点有 project_root
+/// 且 audit 创建成功时传项目级 hook。
 fn build_mbforge_agent(
     cfg: &MbforgeProviderConfig,
     spec: &MbforgeAgentSpec,
+    project_hook: Option<ConcreteHook>,
 ) -> Result<MbforgeAgent, String> {
-    let hook = crate::core::agent::rig_adapter::build_default_concrete_hook()?;
+    let hook = match project_hook {
+        Some(h) => h,
+        None => crate::core::agent::rig_adapter::build_default_concrete_hook()?,
+    };
     match cfg.kind {
         MbforgeProviderKind::OpenAICompatible => {
             MbforgeAgent::from_openai_compatible(cfg, spec, vec![], hook)

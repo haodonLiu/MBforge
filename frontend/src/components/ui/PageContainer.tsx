@@ -25,14 +25,15 @@ export default function PageContainer({ children, noPadding = false, style, clas
       className={className}
       style={{
         flex: 1,
+        minHeight: 0,
         padding,
-        overflow: 'auto',
+        overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         ...style,
       }}
     >
-      {children}
-    </div>
+       {children}
+     </div>
   )
 }

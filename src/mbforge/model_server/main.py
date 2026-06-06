@@ -19,18 +19,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ..utils.exceptions import MBForgeError
-from .routers import (
-    download,
-    embed,
-    environment,
-    file,
-    health,
-    llm,
-    moldet,
-    sar,
-    tools,
-    vlm,
-)
+from .routers import download
+from .routers import embed
+from .routers import environment
+from .routers import file
+from .routers import health
+from .routers import llm
+from .routers import moldet
+from .routers import tools
+from .routers import vlm
 
 logger = logging.getLogger("mbforge.startup")
 

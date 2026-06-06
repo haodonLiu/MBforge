@@ -35,7 +35,7 @@ export async function resourcesCheck(): Promise<EnvironmentReport> {
 /** 检查单个资源状态 */
 export async function resourcesStatus(resourceId: string): Promise<ResourceStatusItem> {
   return invokeWithError(
-    () => invoke<ResourceStatusItem>('resources_status', { resource_id: resourceId }),
+    () => invoke<ResourceStatusItem>('resources_status', { resourceId }),
     ErrorCode.ApiError,
   )
 }
@@ -43,7 +43,7 @@ export async function resourcesStatus(resourceId: string): Promise<ResourceStatu
 /** 获取已下载模型的本地路径 */
 export async function resourcesGetModelPath(resourceId: string): Promise<string | null> {
   return invokeWithError(
-    () => invoke<string | null>('resources_get_model_path', { resource_id: resourceId }),
+    () => invoke<string | null>('resources_get_model_path', { resourceId }),
     ErrorCode.ApiError,
   )
 }

@@ -259,6 +259,7 @@ export default function Chat() {
         ref={messagesContainerRef}
         style={{
           flex: 1,
+          minHeight: 0,
           overflowY: 'auto',
           position: 'relative',
           padding: '8px 0',
@@ -279,146 +280,154 @@ export default function Chat() {
                   width: '100%',
                   transform: `translateY(${virtualItem.start}px)`,
                   padding: '0 16px',
+                  boxSizing: 'border-box',
                 }}
               >
+                {/* 外层 column flex：用 align-items 控制左右对齐（虚拟列表 absolute 父级下 margin:auto 不可靠）*/}
                 <div style={{
                   display: 'flex',
-                  gap: '10px',
-                  maxWidth: '88%',
-                  marginLeft: msg.role === 'user' ? 'auto' : '0',
-                  marginRight: msg.role === 'user' ? '0' : 'auto',
+                  flexDirection: 'column',
+                  alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
                   marginBottom: '20px',
                 }}>
-                  {msg.role === 'assistant' && (
-                    <div style={{ flexShrink: 0, marginTop: '4px' }}>
-                      <Avatar size={32} variant="bot">
-                        <BotIcon size={16} />
-                      </Avatar>
-                    </div>
-                  )}
                   <div style={{
-                    position: 'relative',
-                    padding: '14px 18px',
-                    background: msg.role === 'user'
-                      ? 'var(--user-bg)'
-                      : 'var(--ai-bg)',
-                    color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
-                    borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
-                    boxShadow: msg.role === 'user'
-                      ? '0 4px 12px rgba(99,102,241,0.30)'
-                      : '0 2px 8px var(--ai-shadow)',
-                    border: msg.role === 'user' ? 'none' : '1px solid var(--ai-border)',
-                    lineHeight: 1.65,
-                    fontSize: '14px',
+                    display: 'flex',
+                    gap: '10px',
+                    maxWidth: '88%',
+                    flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
                   }}>
-                    {msg.role === 'assistant' ? (
-                      <div className="chat-markdown" style={{
-                        '--chat-code-bg': 'var(--bg-hover)',
-                      } as React.CSSProperties}>
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            p: ({ children }) => {
-                              const processed = renderInlineLatex(children)
-                              return <p style={{ margin: '8px 0', '&:first-child': { marginTop: 0 } } as React.CSSProperties}>{processed}</p>
-                            },
-                            img: ({ node, ...props }) => (
-                              <img
-                                {...props}
-                                style={{ maxWidth: '100%', borderRadius: '8px', margin: '8px 0', cursor: 'pointer' }}
-                                onClick={() => props.src && window.open(props.src, '_blank')}
-                              />
-                            ),
-                            code: ({ node, className, children, ...props }) => {
-                              const text = String(children).trim()
-                              if (!className && isSmiles(text)) {
-                                return (
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', verticalAlign: 'middle' }}>
-                                    <img
-                                      src={smilesToImgUrl(text)}
-                                      alt={text}
-                                      style={{ height: '32px', borderRadius: '4px', cursor: 'pointer' }}
-                                      onClick={() => window.open(smilesToImgUrl(text), '_blank')}
-                                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                                    />
-                                    <code style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{text}</code>
-                                  </span>
-                                )
-                              }
-                              // Mermaid 代码块渲染
-                              if (className === 'language-mermaid') {
-                                return (
-                                  <Suspense fallback={<div>Loading diagram...</div>}>
-                                    <MermaidCode code={text} />
-                                  </Suspense>
-                                )
-                              }
-                              const isBlock = className?.startsWith('language-')
-                              if (isBlock) {
-                                return (
-                                  <div style={{
-                                    background: 'var(--bg-hover)',
-                                    borderRadius: '10px',
-                                    padding: '14px 16px',
-                                    margin: '8px 0',
-                                    overflowX: 'auto',
-                                    fontSize: '13px',
-                                    border: '1px solid var(--border)',
-                                  }}>
-                                    <code className={className} {...props}>{children}</code>
-                                  </div>
-                                )
-                              }
-                              return (
-                                <code className={className} {...props}
-                                  style={{
-                                    background: 'var(--bg-hover)',
-                                    padding: '2px 6px',
-                                    borderRadius: '4px',
-                                    fontSize: '13px',
-                                  }}
-                                >{children}</code>
-                              )
-                            },
-                            ul: ({ children }) => <ul style={{ paddingLeft: '20px', margin: '6px 0' }}>{children}</ul>,
-                            ol: ({ children }) => <ol style={{ paddingLeft: '20px', margin: '6px 0' }}>{children}</ol>,
-                            table: ({ children }) => (
-                              <div style={{ overflowX: 'auto', margin: '8px 0' }}>
-                                <table style={{ borderCollapse: 'collapse', fontSize: '13px', width: '100%' }}>
-                                  {children}
-                                </table>
-                              </div>
-                            ),
-                            th: ({ children }) => <th style={{ border: '1px solid var(--border)', padding: '6px 10px', background: 'var(--bg-hover)', textAlign: 'left' }}>{children}</th>,
-                            td: ({ children }) => <td style={{ border: '1px solid var(--border)', padding: '6px 10px' }}>{children}</td>,
-                            h1: ({ children }) => <h1 style={{ fontSize: '16px', fontWeight: 600, margin: '12px 0 6px' }}>{children}</h1>,
-                            h2: ({ children }) => <h2 style={{ fontSize: '15px', fontWeight: 600, margin: '10px 0 5px' }}>{children}</h2>,
-                            h3: ({ children }) => <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '8px 0 4px' }}>{children}</h3>,
-                            blockquote: ({ children }) => (
-                              <blockquote style={{
-                                margin: '8px 0',
-                                padding: '6px 12px',
-                                borderLeft: '3px solid var(--accent)',
-                                background: 'var(--bg-hover)',
-                                borderRadius: '0 6px 6px 0',
-                                color: 'var(--text-secondary)',
-                              }}>{children}</blockquote>
-                            ),
-                            hr: () => <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '12px 0' }} />,
-                          }}
-                        >{msg.content}</ReactMarkdown>
+                    {msg.role === 'assistant' && (
+                      <div style={{ flexShrink: 0, marginTop: '4px' }}>
+                        <Avatar size={32} variant="bot">
+                          <BotIcon size={16} />
+                        </Avatar>
                       </div>
-                    ) : (
-                      <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                    )}
+                    <div style={{
+                      position: 'relative',
+                      padding: '14px 18px',
+                      background: msg.role === 'user'
+                        ? 'var(--user-bg)'
+                        : 'var(--ai-bg)',
+                      color: msg.role === 'user' ? '#fff' : 'var(--text-primary)',
+                      borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '4px 18px 18px 18px',
+                      boxShadow: msg.role === 'user'
+                        ? '0 4px 12px rgba(99,102,241,0.30)'
+                        : '0 2px 8px var(--ai-shadow)',
+                      border: msg.role === 'user' ? 'none' : '1px solid var(--ai-border)',
+                      lineHeight: 1.65,
+                      fontSize: '14px',
+                    }}>
+                      {msg.role === 'assistant' ? (
+                        <div className="chat-markdown" style={{
+                          '--chat-code-bg': 'var(--bg-hover)',
+                        }}>
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              p: ({ children }) => {
+                                const processed = renderInlineLatex(children)
+                                // 间距由 .chat-markdown p（global.css）统一控制，无需 inline style
+                                return <p>{processed}</p>
+                              },
+                              img: ({ node, ...props }) => (
+                                <img
+                                  {...props}
+                                  style={{ maxWidth: '100%', borderRadius: '8px', margin: '8px 0', cursor: 'pointer' }}
+                                  onClick={() => props.src && window.open(props.src, '_blank')}
+                                />
+                              ),
+                              code: ({ node, className, children, ...props }) => {
+                                const text = String(children).trim()
+                                if (!className && isSmiles(text)) {
+                                  return (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', verticalAlign: 'middle' }}>
+                                      <img
+                                        src={smilesToImgUrl(text)}
+                                        alt={text}
+                                        style={{ height: '32px', borderRadius: '4px', cursor: 'pointer' }}
+                                        onClick={() => window.open(smilesToImgUrl(text), '_blank')}
+                                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                                      />
+                                      <code style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{text}</code>
+                                    </span>
+                                  )
+                                }
+                                // Mermaid 代码块渲染
+                                if (className === 'language-mermaid') {
+                                  return (
+                                    <Suspense fallback={<div>Loading diagram...</div>}>
+                                      <MermaidCode code={text} />
+                                    </Suspense>
+                                  )
+                                }
+                                const isBlock = className?.startsWith('language-')
+                                if (isBlock) {
+                                  return (
+                                    <div style={{
+                                      background: 'var(--bg-hover)',
+                                      borderRadius: '10px',
+                                      padding: '14px 16px',
+                                      margin: '8px 0',
+                                      overflowX: 'auto',
+                                      fontSize: '13px',
+                                      border: '1px solid var(--border)',
+                                    }}>
+                                      <code className={className} {...props}>{children}</code>
+                                    </div>
+                                  )
+                                }
+                                return (
+                                  <code className={className} {...props}
+                                    style={{
+                                      background: 'var(--bg-hover)',
+                                      padding: '2px 6px',
+                                      borderRadius: '4px',
+                                      fontSize: '13px',
+                                    }}
+                                  >{children}</code>
+                                )
+                              },
+                              ul: ({ children }) => <ul style={{ paddingLeft: '20px', margin: '6px 0' }}>{children}</ul>,
+                              ol: ({ children }) => <ol style={{ paddingLeft: '20px', margin: '6px 0' }}>{children}</ol>,
+                              table: ({ children }) => (
+                                <div style={{ overflowX: 'auto', margin: '8px 0' }}>
+                                  <table style={{ borderCollapse: 'collapse', fontSize: '13px', width: '100%' }}>
+                                    {children}
+                                  </table>
+                                </div>
+                              ),
+                              th: ({ children }) => <th style={{ border: '1px solid var(--border)', padding: '6px 10px', background: 'var(--bg-hover)', textAlign: 'left' }}>{children}</th>,
+                              td: ({ children }) => <td style={{ border: '1px solid var(--border)', padding: '6px 10px' }}>{children}</td>,
+                              h1: ({ children }) => <h1 style={{ fontSize: '16px', fontWeight: 600, margin: '12px 0 6px' }}>{children}</h1>,
+                              h2: ({ children }) => <h2 style={{ fontSize: '15px', fontWeight: 600, margin: '10px 0 5px' }}>{children}</h2>,
+                              h3: ({ children }) => <h3 style={{ fontSize: '14px', fontWeight: 600, margin: '8px 0 4px' }}>{children}</h3>,
+                              blockquote: ({ children }) => (
+                                <blockquote style={{
+                                  margin: '8px 0',
+                                  padding: '6px 12px',
+                                  borderLeft: '3px solid var(--accent)',
+                                  background: 'var(--bg-hover)',
+                                  borderRadius: '0 6px 6px 0',
+                                  color: 'var(--text-secondary)',
+                                }}>{children}</blockquote>
+                              ),
+                              hr: () => <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '12px 0' }} />,
+                            }}
+                          >{msg.content}</ReactMarkdown>
+                        </div>
+                      ) : (
+                        <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                      )}
+                    </div>
+                    {msg.role === 'user' && (
+                      <div style={{ flexShrink: 0, marginTop: '4px' }}>
+                        <Avatar size={32} variant="user">
+                          <UserIcon size={16} />
+                        </Avatar>
+                      </div>
                     )}
                   </div>
-                  {msg.role === 'user' && (
-                    <div style={{ flexShrink: 0, marginTop: '4px' }}>
-                      <Avatar size={32} variant="user">
-                        <UserIcon size={16} />
-                      </Avatar>
-                    </div>
-                  )}
                 </div>
               </div>
             )
@@ -458,7 +467,7 @@ export default function Chat() {
         )}
       </div>
 
-      {/* 快捷操作 + 输入框 — 底部 */}
+      {/* 快捷操作 + 输入框 — 底部（flex-shrink:0 永远在视口底部）*/}
       <div style={{ flexShrink: 0 }}>
         <div style={{
           display: 'flex', gap: '8px', marginBottom: '10px', flexWrap: 'wrap',
@@ -494,7 +503,3 @@ export default function Chat() {
     </PageContainer>
   )
 }
-
-
-
-

@@ -70,7 +70,7 @@ export async function listProjectDocuments(
   docType?: string,
 ): Promise<{ success: boolean; documents: DocumentEntry[] }> {
   return invokeWithError(
-    () => invoke('list_project_documents', { root, doc_type: docType ?? null }),
+    () => invoke('list_project_documents', { root, docType: docType ?? null }),
     ErrorCode.ProjectOpen,
   )
 }
@@ -96,7 +96,7 @@ export async function getFileTree(
 /** 使用系统对话框导入文件到项目 */
 export async function uploadFiles(projectRoot: string): Promise<DocumentEntry[]> {
   return invokeWithError(
-    () => invoke<DocumentEntry[]>('upload_files', { project_root: projectRoot }),
+    () => invoke<DocumentEntry[]>('upload_files', { projectRoot }),
     ErrorCode.ProjectOpen,
   )
 }
@@ -104,7 +104,7 @@ export async function uploadFiles(projectRoot: string): Promise<DocumentEntry[]>
 /** 删除项目中的文件 */
 export async function deleteFile(projectRoot: string, docId: string): Promise<boolean> {
   return invokeWithError(
-    () => invoke<boolean>('delete_file', { project_root: projectRoot, doc_id: docId }),
+    () => invoke<boolean>('delete_file', { projectRoot, docId }),
     ErrorCode.ProjectOpen,
   )
 }
@@ -112,7 +112,7 @@ export async function deleteFile(projectRoot: string, docId: string): Promise<bo
 /** 读取文本文件内容（Rust 直接读取，无需 HTTP） */
 export async function readTextFile(projectRoot: string, path: string): Promise<string> {
   return invokeWithError(
-    () => invoke<string>('read_text_file', { project_root: projectRoot, path }),
+    () => invoke<string>('read_text_file', { projectRoot, path }),
     ErrorCode.ProjectOpen,
   )
 }

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import MoleculeDisplay from './MoleculeDisplay'
+import ConfidenceThresholdSlider from './ConfidenceThresholdSlider'
+import { useConfidenceThreshold } from '../../hooks/useConfidenceThreshold'
 import Button from '../ui/Button'
 import Badge from '../ui/Badge'
 import { CheckIcon, XIcon, AlertIcon, ChevronLeftIcon, ChevronRightIcon } from '../icons'
@@ -214,6 +216,10 @@ function ValidationResult({ validation, onUseCanonical }: ValidationResultProps)
  *   2. 用户选择：确认 / 修正 / 拒绝
  *   3. 修正模式下可手动编辑 SMILES
  *   4. 完成后回调，通知上游保存
+ *
+ * O-01：顶部 ConfidenceThresholdSlider 让用户调整"自动确认门槛"。
+ *       `handleFinish` 对未手动处理的项根据 `ocrConfidence >= threshold` 决定确认或拒绝。
+ * O-03：校验失败时（`validateSmiles` catch）暴露错误为 issue，让用户看到。
  */
 export default function CorrectionPanel({
   items,
@@ -228,6 +234,9 @@ export default function CorrectionPanel({
     status: 'confirmed' | 'rejected' | 'corrected'
     finalSmiles: string
   }>>({})
+
+  // O-01：自动确认门槛 — 来自 useConfidenceThreshold hook（持久化到 localStorage）
+  const [autoConfirmThreshold] = useConfidenceThreshold()
 
   // 校验状态：防抖触发的后端结构校验
   const [validation, setValidation] = useState<{
@@ -258,7 +267,7 @@ export default function CorrectionPanel({
   }
   const currentFinalSmiles = currentDecision?.finalSmiles ?? current.correctedSmiles ?? current.ocrSmiles
   const currentStatus: CorrectionItem['status'] = currentDecision?.status ?? current.status ?? 'pending'
-  const isOcrConfident = current.ocrConfidence >= 0.8
+  const isOcrConfident = current.ocrConfidence >= autoConfirmThreshold
 
   const updateDecision = (status: 'confirmed' | 'rejected' | 'corrected', smiles?: string) => {
     const finalSmiles = smiles ?? currentFinalSmiles
@@ -291,8 +300,15 @@ export default function CorrectionPanel({
           canonical: resp.canonical_smiles,
           loading: false,
         })
-      } catch {
-        setValidation({ smiles: currentFinalSmiles, issues: [], canonical: null, loading: false })
+      } catch (err) {
+        // O-03：失败时不再静默吞错 — 把错误暴露为 issue
+        const message = err instanceof Error ? err.message : String(err)
+        setValidation({
+          smiles: currentFinalSmiles,
+          issues: [{ code: 'NETWORK', severity: 'error', message: `结构校验失败：${message}` }],
+          canonical: null,
+          loading: false,
+        })
       }
     }, 600)
     return () => {
@@ -327,7 +343,7 @@ export default function CorrectionPanel({
       return {
         id: item.id,
         finalSmiles: item.ocrSmiles,
-        status: item.ocrConfidence >= 0.8 ? 'confirmed' as const : 'rejected' as const,
+        status: item.ocrConfidence >= autoConfirmThreshold ? 'confirmed' as const : 'rejected' as const,
       }
     })
     onComplete(results)
@@ -382,6 +398,9 @@ export default function CorrectionPanel({
           />
         </div>
       </div>
+
+      {/* O-01：置信度阈值滑块（自动确认门槛）*/}
+      <ConfidenceThresholdSlider />
 
       {/* 主体：并排对比 */}
       <div style={{
@@ -482,7 +501,7 @@ export default function CorrectionPanel({
               <SmilesDiff before={current.ocrSmiles} after={currentFinalSmiles} />
             </div>
           )}
-          {/* RDKit 实时校验结果 */}
+          {/* O-03：RDKit 实时校验结果（结构错误/警告/canonical 提示）*/}
           <div style={{ marginTop: 8 }}>
             <ValidationResult
               validation={validation}
@@ -506,7 +525,7 @@ export default function CorrectionPanel({
           fontSize: 12,
         }}>
           <AlertIcon size={14} />
-          <span>OCR 置信度较低（{Math.round(current.ocrConfidence * 100)}%），建议仔细核对分子结构。</span>
+          <span>OCR 置信度 {Math.round(current.ocrConfidence * 100)}% 低于阈值 {Math.round(autoConfirmThreshold * 100)}%，建议仔细核对分子结构。</span>
         </div>
       )}
 

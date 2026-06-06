@@ -42,28 +42,46 @@ export default function Environment() {
   const fetchEnv = () => {
     setLoading(true)
     fetch('/api/v1/environment/check')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
       .then(setEnv)
-      .catch(console.error)
+      .catch((e) => {
+        showToast('Python sidecar 未启动，Environment 页面不可用', 'warning')
+        setEnv(null)
+      })
       .finally(() => setLoading(false))
   }
 
   const fetchModels = () => {
     fetch('/api/v1/download/models')
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
       .then(data => {
         if (data.success) setModels(data.models)
       })
-      .catch(console.error)
+      .catch((e) => {
+        showToast('Python sidecar 未启动，模型列表不可用', 'warning')
+        setModels([])
+      })
   }
 
   const fetchPaths = () => {
-    fetch('/api/v1/download/model-paths')
-      .then(r => r.json())
+    fetch('/api/v1/download/model-dir')
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
       .then(data => {
         if (data.success) setPaths(data.paths)
       })
-      .catch(console.error)
+      .catch((e) => {
+        showToast('Python sidecar 未启动，模型路径不可用', 'warning')
+        setPaths(null)
+      })
   }
 
   const downloadModel = async (modelId: string) => {

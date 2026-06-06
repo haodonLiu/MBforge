@@ -161,7 +161,7 @@ function AppInner() {
               return
             }
             if (path.toLowerCase().endsWith('.pdf')) {
-              invoke('open_file', { project_root: projectRoot, path }).catch((e: unknown) => {
+              invoke('open_file', { projectRoot, path }).catch((e: unknown) => {
                 showToast(`${t('error.title')}: ${String(e)}`, 'error')
               })
             } else {
@@ -180,7 +180,9 @@ function AppInner() {
         paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0,
       }}>
         <ErrorBoundary>
-          <AppRoutes />
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+            <AppRoutes />
+          </div>
         </ErrorBoundary>
       </main>
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />

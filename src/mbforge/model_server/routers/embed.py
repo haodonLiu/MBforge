@@ -15,6 +15,11 @@ router = APIRouter()
 
 @router.post("/embed")
 async def embed(request: Request) -> dict[str, Any]:
+    """Compute text embeddings.
+
+    Called by Rust:
+      - src-tauri/src/core/vector/embedding.rs::embed_with_trace
+    """
     # 读取跨语言 trace 上下文
     trace_id = request.headers.get("X-Trace-Id")
     span_id = request.headers.get("X-Span-Id")

@@ -22,6 +22,12 @@ router = APIRouter()
 
 @router.post("/chat")
 async def chat(request: Request) -> dict[str, Any]:
+    """LLM chat completion (non-streaming).
+
+    Called by Rust:
+      - src-tauri/src/core/agent/memory.rs::extract_from_conversation
+      - src-tauri/src/core/agent/skills.rs::auto_create_from_conversation
+    """
     # 读取跨语言 trace 上下文（来自 Rust 端 observability 层）
     trace_id = request.headers.get("X-Trace-Id")
     span_id = request.headers.get("X-Span-Id")
@@ -50,6 +56,10 @@ async def chat(request: Request) -> dict[str, Any]:
 
 @router.post("/chat-stream")
 async def chat_stream(request: Request) -> StreamingResponse:
+    """LLM chat completion (SSE streaming).
+
+    (no direct Rust caller; only invoked from the frontend via HTTP)
+    """
     trace_id = request.headers.get("X-Trace-Id")
     span_id = request.headers.get("X-Span-Id")
     if trace_id:

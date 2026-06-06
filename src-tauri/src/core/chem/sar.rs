@@ -373,6 +373,89 @@ pub fn sar_build_matrix(
     build_rgroup_matrix(&compounds, core_smiles.as_deref(), true, Some(5000))
 }
 
+// ─── 活性热力图 ──────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeatmapCell {
+    pub substituent_smiles: String,
+    pub avg_activity: f64,
+    pub count: usize,
+    pub min: f64,
+    pub max: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityHeatmap {
+    pub r_label: String,
+    pub cells: Vec<HeatmapCell>,
+}
+
+/// 基于 R-group 矩阵 + 活性数据构建热力图
+pub fn build_activity_heatmap(
+    matrix: &RGroupMatrix,
+    lower_is_better: bool,
+) -> Vec<ActivityHeatmap> {
+    let mut heatmaps = Vec::new();
+
+    for (col_idx, r_label) in matrix.r_labels.iter().enumerate() {
+        let mut bucket: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+
+        for (row_idx, row) in matrix.rows.iter().enumerate() {
+            if col_idx >= row.len() {
+                continue;
+            }
+            let sub = &row[col_idx];
+            if sub == "—" || sub.is_empty() {
+                continue;
+            }
+            if let Some(compound) = matrix.compounds.get(row_idx) {
+                if let Some(activity) = compound.get("activity").and_then(|v| v.as_f64()) {
+                    bucket.entry(sub.clone()).or_default().push(activity);
+                }
+            }
+        }
+
+        let mut cells: Vec<HeatmapCell> = bucket
+            .into_iter()
+            .map(|(sub_smiles, values)| {
+                let count = values.len();
+                let sum: f64 = values.iter().sum();
+                HeatmapCell {
+                    substituent_smiles: sub_smiles,
+                    avg_activity: sum / count as f64,
+                    count,
+                    min: values.iter().cloned().fold(f64::INFINITY, f64::min),
+                    max: values.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+                }
+            })
+            .collect();
+
+        cells.sort_by(|a, b| {
+            if lower_is_better {
+                a.avg_activity.partial_cmp(&b.avg_activity).unwrap_or(std::cmp::Ordering::Equal)
+            } else {
+                b.avg_activity.partial_cmp(&a.avg_activity).unwrap_or(std::cmp::Ordering::Equal)
+            }
+        });
+
+        heatmaps.push(ActivityHeatmap {
+            r_label: r_label.clone(),
+            cells,
+        });
+    }
+
+    heatmaps
+}
+
+/// Tauri 命令：构建热力图
+#[tauri::command]
+pub fn sar_heatmap(
+    matrix: RGroupMatrix,
+    lower_is_better: bool,
+) -> Vec<ActivityHeatmap> {
+    build_activity_heatmap(&matrix, lower_is_better)
+}
+
 // ─── 测试 ────────────────────────────────────────────────────────
 
 #[cfg(test)]

@@ -1,21 +1,15 @@
-pub mod agent;
 pub mod arxiv;
-// pub mod arxiv_rig;      // WIP, not yet compilable
+pub mod arxiv_rig;
 pub mod context;
 pub mod document;
-pub mod executor;
-// pub mod executor_rig;   // WIP, not yet compilable
+pub mod executor_rig;
 pub mod fs;
 pub mod kb;
-pub mod literature;
-pub mod llm;
 pub mod memory;
 pub mod molecule;
 pub mod observability;
 pub mod rig_adapter;
-pub mod skills;
-pub mod specialist_agent;
-pub mod tools;
-pub mod trajectory;
 pub mod rig_hooks;
 pub mod rig_memory;
+pub mod skills;
+pub mod trajectory;

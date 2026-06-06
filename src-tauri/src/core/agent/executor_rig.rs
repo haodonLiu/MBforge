@@ -293,9 +293,9 @@ impl Tool for SearchKbTool {
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let top_k = args.top_k.unwrap_or(5) as usize;
         match kb_src::native_search_knowledge_base(&self.project_root, &args.query, top_k) {
-            Ok(results) => serde_json::to_string(&results)
-                .unwrap_or_else(|e| format!("Serialize error: {}", e)),
-            Err(e) => format!("Search error: {}", e),
+            Ok(results) => Ok(serde_json::to_string(&results)
+                .unwrap_or_else(|e| format!("Serialize error: {}", e))),
+            Err(e) => Ok(format!("Search error: {}", e)),
         }
     }
 }
@@ -335,9 +335,9 @@ impl Tool for GetDocumentStructureTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         match kb_src::native_get_document_structure(&self.project_root, &args.doc_id) {
-            Ok(tree) => serde_json::to_string(&tree)
-                .unwrap_or_else(|e| format!("Serialize error: {}", e)),
-            Err(e) => format!("Structure error: {}", e),
+            Ok(tree) => Ok(serde_json::to_string(&tree)
+                .unwrap_or_else(|e| format!("Serialize error: {}", e))),
+            Err(e) => Ok(format!("Structure error: {}", e)),
         }
     }
 }
@@ -380,9 +380,9 @@ impl Tool for GetDocumentPagesTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         match kb_src::native_get_document_pages(&self.project_root, &args.doc_id, &args.pages) {
-            Ok(p) => serde_json::to_string(&p)
-                .unwrap_or_else(|e| format!("Serialize error: {}", e)),
-            Err(e) => format!("Pages error: {}", e),
+            Ok(p) => Ok(serde_json::to_string(&p)
+                .unwrap_or_else(|e| format!("Serialize error: {}", e))),
+            Err(e) => Ok(format!("Pages error: {}", e)),
         }
     }
 }

@@ -17,7 +17,7 @@ use arxiv_src::{args_err, param_url, json, text, BASE_ARXIV, BASE_PMC, urlencodi
         token = "Optional API token (free papers 2409.05591, 2504.21776 don't need it)",
     )
 )]
-async fn arxiv_metadata(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
+pub async fn arxiv_metadata(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
 
     let id = arxiv_id.clone();
     if id.is_empty() {
@@ -42,7 +42,7 @@ async fn arxiv_metadata(arxiv_id: String, token: String) -> Result<String, rig_c
         token = "Optional API token",
     )
 )]
-async fn arxiv_brief(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
+pub async fn arxiv_brief(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
 
     let id = arxiv_id.clone();
     if id.is_empty() {
@@ -68,7 +68,7 @@ async fn arxiv_brief(arxiv_id: String, token: String) -> Result<String, rig_core
         token = "Optional API token",
     )
 )]
-async fn arxiv_preview(arxiv_id: String, characters: String, token: String) -> Result<String, rig_core::tool::ToolError> {
+pub async fn arxiv_preview(arxiv_id: String, characters: String, token: String) -> Result<String, rig_core::tool::ToolError> {
 
     let id = arxiv_id.clone();
     if id.is_empty() {
@@ -99,7 +99,7 @@ async fn arxiv_preview(arxiv_id: String, characters: String, token: String) -> R
         token = "Optional API token",
     )
 )]
-async fn arxiv_raw(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
+pub async fn arxiv_raw(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
 
     let id = arxiv_id.clone();
     if id.is_empty() {
@@ -125,7 +125,7 @@ async fn arxiv_raw(arxiv_id: String, token: String) -> Result<String, rig_core::
         token = "Optional API token",
     )
 )]
-async fn arxiv_section(arxiv_id: String, section: String, token: String) -> Result<String, rig_core::tool::ToolError> {
+pub async fn arxiv_section(arxiv_id: String, section: String, token: String) -> Result<String, rig_core::tool::ToolError> {
 
     let id = arxiv_id.clone();
     if id.is_empty() || section.is_empty() {
@@ -167,7 +167,7 @@ async fn arxiv_section(arxiv_id: String, section: String, token: String) -> Resu
         token = "Optional API token",
     )
 )]
-async fn arxiv_search(query: String, source: String, top_k: String, offset: String, authors: String, orgs: String, categories: String, date_search_type: String, date_str: String, min_citation: String, use_fine_rerank: String, return_contents: String, return_roc: String, token: String) -> Result<String, rig_core::tool::ToolError> {
+pub async fn arxiv_search(query: String, source: String, top_k: String, offset: String, authors: String, orgs: String, categories: String, date_search_type: String, date_str: String, min_citation: String, use_fine_rerank: String, return_contents: String, return_roc: String, token: String) -> Result<String, rig_core::tool::ToolError> {
 
     if query.is_empty() {
         return Ok(args_err("query is required"));
@@ -242,7 +242,7 @@ async fn arxiv_search(query: String, source: String, top_k: String, offset: Stri
         token = "API token（必需）",
     )
 )]
-async fn arxiv_trending(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
+pub async fn arxiv_trending(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
 
     let id = arxiv_id.clone();
     if id.is_empty() {
@@ -269,7 +269,7 @@ async fn arxiv_trending(arxiv_id: String, token: String) -> Result<String, rig_c
         token = "Optional API token (free papers PMC544940, PMC514704 don't need it)",
     )
 )]
-async fn pmc_metadata(pmc_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
+pub async fn pmc_metadata(pmc_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
 
     let id = pmc_id.clone();
     if id.is_empty() {
@@ -294,7 +294,7 @@ async fn pmc_metadata(pmc_id: String, token: String) -> Result<String, rig_core:
         token = "Optional API token",
     )
 )]
-async fn pmc_json(pmc_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
+pub async fn pmc_json(pmc_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
 
     let id = pmc_id.clone();
     if id.is_empty() {

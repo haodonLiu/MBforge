@@ -1,13 +1,27 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use futures::StreamExt;
 use tauri::Emitter;
 use tokio::sync::RwLock;
 
 use crate::core::constants::{EVT_AGENT_STREAM_CHUNK, EVT_AGENT_STREAM_DONE};
 
-use crate::core::agent::agent::Agent;
-use crate::core::config::ModelConfig;
-use crate::core::agent::context::Message;
+use crate::core::agent::context::{LayeredContext, Message};
+use crate::core::agent::memory::MemoryManager;
+use crate::core::agent::observability::AuditLog;
+use crate::core::agent::rig_adapter::{
+    MbforgeAgent, MbforgeAgentSpec, MbforgeProviderConfig, MbforgeProviderKind, MbforgeStreamItem,
+};
+use crate::core::agent::rig_hooks::{AuditLogHook, TrajectoryHook};
+use crate::core::agent::rig_memory::{
+    CompositeMemory, MemoryManagerMemory, MbforgeConversationMemory, SkillsManagerMemory,
+};
+use crate::core::agent::skills::SkillsManager;
+use crate::core::agent::trajectory::TrajectoryTracker;
+use crate::core::config::constants::PROJECT_META_DIR;
+use crate::core::config::settings::ModelConfig;
 
 macro_rules! log_err {
     ($msg:expr) => {{
@@ -22,8 +36,78 @@ macro_rules! log_err {
     }};
 }
 
+/// 长时记忆 / 工具调用上下文的会话单元 — 取代老的 `Agent` 平铺字段。
+///
+/// 字段说明：
+/// - `agent`：rig 适配器暴露的 `prompt` / `stream` 入口
+/// - `context`：保留 `LayeredContext` 以便 `save_to_file` / `load_from_file` /
+///   `get_history_messages` 这类与 LLM 无关的能力继续工作
+/// - `memory`：以 `Arc` 持有，让 `tokio::spawn` 的 fire-and-forget
+///   `observe_turn` 拿得到一个拥有所有权的句柄
+/// - `audit` / `trajectory`：以 `Arc` 持有，让 rig hook 在 LLM 循环里共享同一份
+///   文件 / 内存存储
+/// - `project_root`：决定上下文文件 `<root>/.mbforge/memory/agent_context.json`
+///   的写入位置
+pub struct AgentSession {
+    pub agent: MbforgeAgent,
+    pub context: LayeredContext,
+    pub memory: Arc<CompositeMemory>,
+    pub sidecar_url: String,
+    pub audit: Option<Arc<AuditLog>>,
+    pub trajectory: Option<Arc<Mutex<TrajectoryTracker>>>,
+    pub audit_hook: Option<AuditLogHook>,
+    pub trajectory_hook: Option<TrajectoryHook>,
+    pub project_root: Option<PathBuf>,
+}
+
+impl AgentSession {
+    fn context_path(&self) -> Option<PathBuf> {
+        self.project_root
+            .as_ref()
+            .map(|root| root.join(PROJECT_META_DIR).join("memory").join("agent_context.json"))
+    }
+
+    fn save_context(&self) {
+        if let Some(path) = self.context_path() {
+            if let Err(e) = self.context.save_to_file(&path) {
+                log::error!("save_context failed for {:?}: {}", path, e);
+            } else {
+                log::info!("Agent session context saved to {:?}", path);
+            }
+        }
+    }
+
+    fn load_context(&mut self) -> bool {
+        if let Some(path) = self.context_path() {
+            if let Some(loaded) = LayeredContext::load_from_file(&path) {
+                // 保留本会话已构建的 system prompt（rig preamble 已注入
+                // memory / skills），其余层用磁盘上的版本覆盖。
+                let new_system = self.context.get_system_prompt();
+                let mut ctx = loaded;
+                ctx.set_system_prompt(&new_system);
+                self.context = ctx;
+                return true;
+            }
+        }
+        false
+    }
+
+    fn clear(&mut self) {
+        self.context.clear_history();
+        if let Some(path) = self.context_path() {
+            if path.exists() {
+                if let Err(e) = std::fs::remove_file(&path) {
+                    log::error!("clear: remove_file {:?} failed: {}", path, e);
+                } else {
+                    log::info!("Agent session context file removed: {:?}", path);
+                }
+            }
+        }
+    }
+}
+
 pub struct AgentState {
-    pub agents: Arc<RwLock<HashMap<String, Agent>>>,
+    pub agents: Arc<RwLock<HashMap<String, AgentSession>>>,
     pub default_config: Arc<RwLock<Option<(ModelConfig, String)>>>,
 }
 
@@ -57,19 +141,24 @@ pub async fn agent_create_session(
     let (config, sidecar_url) = config_guard
         .as_ref()
         .ok_or_else(|| log_err!("Agent not initialized, call agent_init first"))?;
+    let (config, sidecar_url) = (config.clone(), sidecar_url.clone());
 
-    let root = project_root.as_deref().map(std::path::Path::new);
-    let mut agent = Agent::new(config, sidecar_url, root);
+    let root_path = project_root.as_ref().map(PathBuf::from);
+    let mut session = create_session_for_config(&config, &sidecar_url, root_path.as_deref())
+        .await
+        .map_err(|e| {
+            log::error!("agent_create_session: create_session_for_config failed: {}", e);
+            e
+        })?;
 
-    // 尝试加载之前保存的上下文（跨会话持久化）
-    if agent.load_context() {
+    if session.load_context() {
         log::info!("Agent session {}: loaded persisted context", session_id);
     }
 
     log::info!("Agent session created: {}", session_id);
 
     let mut agents = state.agents.write().await;
-    agents.insert(session_id, agent);
+    agents.insert(session_id, session);
     Ok(())
 }
 
@@ -79,14 +168,36 @@ pub async fn agent_chat(
     session_id: String,
     user_input: String,
 ) -> Result<String, String> {
-    let mut agents = state.agents.write().await;
-    let agent = agents
-        .get_mut(&session_id)
-        .ok_or_else(|| log_err!("agent_chat: session not found: {}", session_id))?;
-    agent.chat(&user_input).await.map_err(|e| {
+    // 先取出 prompt() 所需的所有 owned 句柄，再释放 sessions 读锁，
+    // 避免在等 LLM 响应时阻塞其他会话。`MbforgeAgent` 内部 rig agent 用
+    // `Arc<M>` 共享模型，clone 廉价。
+    let (memory, agent) = {
+        let agents = state.agents.read().await;
+        let session = agents
+            .get(&session_id)
+            .ok_or_else(|| log_err!("agent_chat: session not found: {}", session_id))?;
+        (Arc::clone(&session.memory), session.agent.clone())
+    };
+
+    let result = agent.prompt(&user_input).await.map_err(|e| {
         log::error!("agent_chat failed for session={}: {}", session_id, e);
         e
-    })
+    })?;
+
+    // Fire-and-forget：复制到堆上再 spawn，让 observe_turn 异步跑记忆 / 技能
+    // 抽取。`Arc<CompositeMemory>` 是 Send + Sync，trait 返回的 `Pin<Box<dyn
+    // Future<Output = ()> + Send>>` 借用 spawn 闭包里的 `&Arc<…>` — Arc 本身
+    // 是 `'static`，所以 future 满足 `'static` 约束。
+    let memory_for_observe = Arc::clone(&memory);
+    let user_input_owned = user_input.clone();
+    let result_owned = result.clone();
+    tokio::spawn(async move {
+        let _ = memory_for_observe
+            .observe_turn(&user_input_owned, &result_owned)
+            .await;
+    });
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -96,36 +207,86 @@ pub async fn agent_chat_stream(
     session_id: String,
     user_input: String,
 ) -> Result<(), String> {
-    let rx = {
-        let mut agents = state.agents.write().await;
-        let agent = agents
-            .get_mut(&session_id)
+    let stream = {
+        let agents = state.agents.read().await;
+        let session = agents
+            .get(&session_id)
             .ok_or_else(|| log_err!("agent_chat_stream: session not found: {}", session_id))?;
-        agent.chat_stream(&user_input).await.map_err(|e| {
-            log::error!("agent_chat_stream failed for session={}: {}", session_id, e);
-            e
-        })?
+        session.agent.stream(&user_input)
     };
 
     let handle = app.clone();
     let sid = session_id.clone();
     tokio::spawn(async move {
-        let mut rx = rx;
-        while let Some(chunk) = rx.recv().await {
-            let payload = serde_json::json!({
-                "session_id": sid,
-                "delta": chunk.delta,
-                "finish_reason": chunk.finish_reason,
-            });
-            if let Err(e) = handle.emit(EVT_AGENT_STREAM_CHUNK, &payload) {
-                log::error!("agent_chat_stream emit failed for session={}: {}", sid, e);
+        let mut stream = stream;
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(MbforgeStreamItem::TextDelta(delta)) => {
+                    let payload = serde_json::json!({
+                        "session_id": sid,
+                        "delta": delta,
+                        "finish_reason": Option::<String>::None,
+                    });
+                    if let Err(e) = handle.emit(EVT_AGENT_STREAM_CHUNK, &payload) {
+                        log::error!(
+                            "agent_chat_stream emit EVT_AGENT_STREAM_CHUNK failed for session={}: {}",
+                            sid,
+                            e
+                        );
+                    }
+                }
+                Ok(MbforgeStreamItem::ToolCall { id, name, arguments }) => {
+                    log::debug!(
+                        "agent_chat_stream session={} tool_call id={} name={} args={}",
+                        sid,
+                        id,
+                        name,
+                        arguments
+                    );
+                }
+                Ok(MbforgeStreamItem::ToolResult { id, name, result }) => {
+                    log::debug!(
+                        "agent_chat_stream session={} tool_result id={} name={} len={}",
+                        sid,
+                        id,
+                        name,
+                        result.len()
+                    );
+                }
+                Ok(MbforgeStreamItem::Final {
+                    content,
+                    prompt_tokens,
+                    completion_tokens,
+                }) => {
+                    let payload = serde_json::json!({
+                        "session_id": sid,
+                        "content": content,
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                    });
+                    if let Err(e) = handle.emit(EVT_AGENT_STREAM_DONE, &payload) {
+                        log::error!(
+                            "agent_chat_stream emit EVT_AGENT_STREAM_DONE failed for session={}: {}",
+                            sid,
+                            e
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::error!("agent_chat_stream session={} stream error: {}", sid, e);
+                    let payload = serde_json::json!({
+                        "session_id": sid,
+                        "error": e,
+                    });
+                    if let Err(emit_err) = handle.emit(EVT_AGENT_STREAM_DONE, &payload) {
+                        log::error!(
+                            "agent_chat_stream done emit failed after error: {}",
+                            emit_err
+                        );
+                    }
+                    break;
+                }
             }
-        }
-        if let Err(e) = handle.emit(
-            EVT_AGENT_STREAM_DONE,
-            serde_json::json!({ "session_id": sid }),
-        ) {
-            log::error!("agent_chat_stream done emit failed: {}", e);
         }
     });
     Ok(())
@@ -142,12 +303,13 @@ pub async fn agent_switch_project(
     let (config, sidecar_url) = config_guard
         .as_ref()
         .ok_or_else(|| log_err!("Agent not initialized, call agent_init first"))?;
+    let (config, sidecar_url) = (config.clone(), sidecar_url.clone());
 
     // 先保存旧 Agent 的上下文
     {
-        let agents = state.agents.write().await;
-        if let Some(old_agent) = agents.get(&session_id) {
-            old_agent.save_context();
+        let agents = state.agents.read().await;
+        if let Some(old) = agents.get(&session_id) {
+            old.save_context();
             log::info!(
                 "Agent session {}: old context saved before switch",
                 session_id
@@ -155,12 +317,22 @@ pub async fn agent_switch_project(
         }
     }
 
-    let root = std::path::Path::new(&project_root);
-    let mut agent = Agent::new(config, sidecar_url, Some(root));
-    agent.set_project_context(&project_name, &project_root);
+    let root_path = PathBuf::from(&project_root);
+    let mut session =
+        create_session_for_config(&config, &sidecar_url, Some(&root_path))
+            .await
+            .map_err(|e| {
+                log::error!(
+                    "agent_switch_project: create_session_for_config failed: {}",
+                    e
+                );
+                e
+            })?;
+    session
+        .context
+        .set_project_context(&format!("项目: {}\n路径: {}", project_name, project_root));
 
-    // 尝试加载新项目的上下文
-    if agent.load_context() {
+    if session.load_context() {
         log::info!(
             "Agent session {}: loaded context for new project {}",
             session_id,
@@ -175,7 +347,7 @@ pub async fn agent_switch_project(
     );
 
     let mut agents = state.agents.write().await;
-    agents.insert(session_id, agent);
+    agents.insert(session_id, session);
     Ok(())
 }
 
@@ -185,18 +357,10 @@ pub async fn agent_clear(
     session_id: String,
 ) -> Result<(), String> {
     let mut agents = state.agents.write().await;
-    let agent = agents
+    let session = agents
         .get_mut(&session_id)
         .ok_or_else(|| log_err!("agent_clear: session not found: {}", session_id))?;
-    agent.clear();
-    // 清除后删除持久化文件
-    if let Some(ref root) = agent.project_root {
-        let path = root.join(".mbforge/memory/agent_context.json");
-        if path.exists() {
-            let _ = std::fs::remove_file(&path);
-            log::info!("Agent session {}: context file removed", session_id);
-        }
-    }
+    session.clear();
     log::info!("Agent session cleared: {}", session_id);
     Ok(())
 }
@@ -207,9 +371,8 @@ pub async fn agent_destroy_session(
     session_id: String,
 ) -> Result<(), String> {
     let mut agents = state.agents.write().await;
-    // 销毁前先保存上下文
-    if let Some(agent) = agents.get(&session_id) {
-        agent.save_context();
+    if let Some(session) = agents.get(&session_id) {
+        session.save_context();
         log::info!("Agent session {}: context saved before destroy", session_id);
     }
     agents.remove(&session_id);
@@ -222,8 +385,10 @@ pub async fn agent_get_history(
     session_id: String,
 ) -> Result<Vec<Message>, String> {
     let agents = state.agents.read().await;
-    let agent = agents.get(&session_id).ok_or("Session not found")?;
-    Ok(agent.context.get_history_messages())
+    let session = agents
+        .get(&session_id)
+        .ok_or("Session not found")?;
+    Ok(session.context.get_history_messages())
 }
 
 /// 读取项目审计日志。
@@ -238,7 +403,7 @@ pub async fn audit_log_get(
     trace_id: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<crate::core::observability::AuditEntry>, String> {
-    let log = crate::core::observability::AuditLog::new(std::path::Path::new(&project_root))?;
+    let log = crate::core::observability::AuditLog::new(Path::new(&project_root))?;
     let limit = limit.unwrap_or(200);
     match trace_id {
         Some(tid) => log.read_by_trace(&tid, limit),
@@ -247,6 +412,195 @@ pub async fn audit_log_get(
             all.reverse();
             all.truncate(limit);
             Ok(all)
+        }
+    }
+}
+
+// ============================================================================
+// 会话构造助手 — 取代 `Agent::new(config, sidecar_url, project_root)`
+// ============================================================================
+
+/// 根据 `ModelConfig` + `sidecar_url` + 可选 `project_root` 构造一个新的
+/// rig 代理 + 配套的 `LayeredContext` / 长时记忆 / 审计 / 轨迹。
+///
+/// 选择哪种 provider 完全跟随 `ModelConfig::provider`：
+/// - `"anthropic"` → `MbforgeProviderKind::Anthropic`，直连 Anthropic Messages API
+/// - 其它（含 `"openai_compatible"`、空串）→ OpenAI 兼容分支（sidecar / OpenRouter / 真 OpenAI）
+///
+/// 构造顺序：
+/// 1. 把 `ModelConfig` 翻译成 `MbforgeProviderConfig`
+/// 2. 在 `project_root` 可用时准备 `LayeredContext`（system prompt 留空 —
+///    rig 代理持有自己的 preamble）+ `MemoryManager` / `SkillsManager` /
+///    `AuditLog` / `TrajectoryTracker`
+/// 3. **预先**把记忆 / 技能摘要烤进 `MbforgeAgentSpec::system_prompt` —
+///    这是 M5 阶段 rig `ContextBuilder` 还没暴露 `append_preamble` 时最稳妥的
+///    折中方案：会话内记忆快照静态化（与老 `Agent` 的"创建时注入"语义对齐）
+/// 4. 调对应 factory 构造 `MbforgeAgent`，hooks 在 `AgentSession` 里持有，
+///    留给 M4 / M6 之后接 `agent_builder.hook(...)` 时使用
+pub async fn create_session_for_config(
+    config: &ModelConfig,
+    sidecar_url: &str,
+    project_root: Option<&Path>,
+) -> Result<AgentSession, String> {
+    let cfg = mbforge_provider_config_from_model(config, sidecar_url);
+
+    // 1. 构造 spec（rig 适配器要求的 system prompt + max_turns）
+    let mut spec = MbforgeAgentSpec::general();
+    // 兼容 ModelConfig 的可选字段
+    if config.max_tokens > 0 {
+        spec.max_tokens = Some(config.max_tokens as u64);
+    }
+    if config.temperature > 0.0 {
+        spec.temperature = Some(config.temperature as f64);
+    }
+
+    // 2. 在有 project_root 的情况下拉起长时记忆 / 技能 / 审计 / 轨迹
+    let (memory, audit, trajectory, audit_hook, trajectory_hook) = if let Some(root) = project_root
+    {
+        // 长时记忆 + 技能摘要 → 预烤进 spec preamble
+        let mut preamble = String::new();
+        let mem = MemoryManager::new(root);
+        let mem_text = mem.get_user_profile_text();
+        if !mem_text.is_empty() {
+            preamble.push_str("[用户记忆]\n");
+            preamble.push_str(&mem_text);
+            preamble.push('\n');
+        }
+        let agent_mem = mem.get_agent_memory_text();
+        if !agent_mem.is_empty() {
+            preamble.push_str("[Agent 经验]\n");
+            preamble.push_str(&agent_mem);
+            preamble.push('\n');
+        }
+
+        let skills = SkillsManager::new(root);
+        let skills_text = skills.get_all_summary();
+        if !skills_text.is_empty() {
+            preamble.push_str("[已掌握的技能]\n");
+            preamble.push_str(&skills_text);
+            preamble.push('\n');
+        }
+
+        // 给 spec 一个最小功能 preamble（rig 端要求非空）
+        if preamble.is_empty() {
+            preamble.push_str(
+                "你是 MBForge 分子科学 AI 助手，服务于药物化学与分子生物学研究。",
+            );
+        }
+        spec.system_prompt = preamble;
+
+        // 复合记忆实例（供 `tokio::spawn(observe_turn)` 复用）
+        let composite = Arc::new(CompositeMemory {
+            memory: Some(MemoryManagerMemory::new(root)),
+            skills: Some(SkillsManagerMemory::new(root)),
+        });
+
+        // 审计日志：失败时静默退化为 None（不阻断会话创建）
+        let audit = match AuditLog::new(root) {
+            Ok(a) => Some(Arc::new(a)),
+            Err(e) => {
+                log::warn!(
+                    "create_session_for_config: AuditLog::new failed for {:?}: {}",
+                    root,
+                    e
+                );
+                None
+            }
+        };
+        let audit_hook = audit
+            .as_ref()
+            .map(|arc| AuditLogHook::new(Arc::clone(arc)));
+
+        // 轨迹追踪：构造即可（内部会自己 create_dir_all）。先
+        // 持 `Arc<Mutex<…>>` 再 `from_arc` 复用同一份存储给 hook 与 session。
+        let traj = Arc::new(Mutex::new(TrajectoryTracker::new(root)));
+        let trajectory_hook = Some(TrajectoryHook::from_arc(Arc::clone(&traj)));
+
+        (
+            composite,
+            audit,
+            Some(traj),
+            audit_hook,
+            trajectory_hook,
+        )
+    } else {
+        // 无 project_root：rig 仍可用，但记忆 / 审计 / 轨迹全部走 None
+        if spec.system_prompt.is_empty() {
+            spec.system_prompt =
+                "你是 MBForge 分子科学 AI 助手，服务于药物化学与分子生物学研究。".into();
+        }
+        let composite = Arc::new(CompositeMemory {
+            memory: None,
+            skills: None,
+        });
+        (composite, None, None, None, None)
+    };
+
+    // 3. 构造 `MbforgeAgent`
+    let agent = build_mbforge_agent(&cfg, &spec)?;
+
+    // 4. 构造一个最小可用的 `LayeredContext`（系统 prompt 留空 —
+    //    真正的 preamble 在 rig 端；这里只保留 L1 project / L3 history）
+    let context = LayeredContext::new("", 20, 32_000);
+
+    Ok(AgentSession {
+        agent,
+        context,
+        memory,
+        sidecar_url: sidecar_url.to_string(),
+        audit,
+        trajectory,
+        audit_hook,
+        trajectory_hook,
+        project_root: project_root.map(PathBuf::from),
+    })
+}
+
+/// 把 `ModelConfig` 翻译成 `MbforgeProviderConfig`。
+///
+/// 优先使用 `agent_init` 时用户传的 `sidecar_url`（与老 `Agent::new(config, sidecar_url, _)` 的
+/// 行为一致 — 老 `Agent` 是直接吃这个 sidecar URL 的，不读 `AppConfig`）。
+/// Anthropic 分支则用 `config.base_url`（允许 proxy / 自部署）。
+fn mbforge_provider_config_from_model(
+    config: &ModelConfig,
+    sidecar_url: &str,
+) -> MbforgeProviderConfig {
+    let kind = match config.provider.as_str() {
+        "anthropic" => MbforgeProviderKind::Anthropic,
+        _ => MbforgeProviderKind::OpenAICompatible,
+    };
+    let base_url = match kind {
+        MbforgeProviderKind::OpenAICompatible => sidecar_url.to_string(),
+        MbforgeProviderKind::Anthropic => config.base_url.clone(),
+    };
+    MbforgeProviderConfig {
+        kind,
+        base_url,
+        api_key: config.api_key.clone(),
+        model: config.model_name.clone(),
+        timeout_secs: 120,
+        anthropic_betas: Vec::new(),
+    }
+}
+
+/// 调对应的 rig factory 构造 `MbforgeAgent`。
+///
+/// M4 之后，工厂签名多了一个 `hook: ConcreteHook` 形参（audit log +
+/// trajectory 复合钩子）。M5 阶段命令层还没有按项目根路径构造真
+/// `ConcreteHook` 的接口，所以这里退一步用 rig_adapter 暴露的
+/// `build_default_concrete_hook()` 兜底：基于 `tempfile::tempdir` 拼一个
+/// 临时 hook，等 M6 接入项目根的 `.mbforge/audit.jsonl` 时再换实现。
+fn build_mbforge_agent(
+    cfg: &MbforgeProviderConfig,
+    spec: &MbforgeAgentSpec,
+) -> Result<MbforgeAgent, String> {
+    let hook = crate::core::agent::rig_adapter::build_default_concrete_hook()?;
+    match cfg.kind {
+        MbforgeProviderKind::OpenAICompatible => {
+            MbforgeAgent::from_openai_compatible(cfg, spec, vec![], hook)
+        }
+        MbforgeProviderKind::Anthropic => {
+            MbforgeAgent::from_anthropic(cfg, spec, vec![], hook)
         }
     }
 }

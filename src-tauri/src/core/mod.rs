@@ -25,12 +25,7 @@ pub use chem::sar_query;
 
 // Backward-compat re-exports for agent modules
 pub use agent::context;
-pub use agent::llm;
 pub use agent::observability;
-pub use agent::specialist_agent;
-pub use agent::tools;
-
-// Backward-compat re-exports for document modules
 pub use document::document_tree;
 pub use document::document_tree::{DocumentTreeIndex, PageContent};
 pub use document::knowledge_base;

@@ -158,9 +158,7 @@ pub async fn run_merge_and_sar(
         },
     );
 
-    let config = crate::parsers::structure::post_process::load_llm_config()?;
     let (response, _tokens) = crate::parsers::structure::post_process::call_llm_api_async(
-        &config,
         "你是分子科学文档分析专家。合并多部分提取结果，进行去重、验证和构效关系分析，输出 JSON。",
         &prompt,
     )

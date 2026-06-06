@@ -1,42 +1,13 @@
+use rig_core::client::CompletionClient;
+use rig_core::completion::{AssistantContent, CompletionModel};
+use rig_core::providers::anthropic::Client as AnthropicClient;
+use rig_core::providers::openai::CompletionsClient as OpenAiClient;
+
+use crate::core::agent::rig_adapter::{MbforgeProviderConfig, MbforgeProviderKind};
 use crate::parsers::doc_types::{
     ActivityEntry, CompoundEntry, DocumentMetadata, FindingEntry, PdfParseResult,
     PostProcessResult, StructuredData, UncertainItem,
 };
-
-// ---------------------------------------------------------------------------
-// Internal: LLM API config
-// ---------------------------------------------------------------------------
-
-pub struct LlmApiConfig {
-    pub base_url: String,
-    pub api_key: String,
-    pub model: String,
-}
-
-/// 从 AppConfig 加载 LLM 配置（统一配置源，不再直接读 env var）。
-pub fn load_llm_config() -> Result<LlmApiConfig, String> {
-    let app_config = crate::core::config::settings::AppConfig::load();
-    let llm = &app_config.llm;
-
-    if llm.api_key.is_empty() {
-        // 兼容：如果 config.json 中 api_key 为空，尝试从环境变量读取
-        let api_key = std::env::var("MBFORGE_LLM_API_KEY").unwrap_or_default();
-        if api_key.is_empty() {
-            return Err("LLM API key not configured. Set it in Settings or via MBFORGE_LLM_API_KEY env var.".into());
-        }
-        return Ok(LlmApiConfig {
-            base_url: llm.base_url.clone(),
-            api_key,
-            model: llm.model_name.clone(),
-        });
-    }
-
-    Ok(LlmApiConfig {
-        base_url: llm.base_url.clone(),
-        api_key: llm.api_key.clone(),
-        model: llm.model_name.clone(),
-    })
-}
 
 // ---------------------------------------------------------------------------
 // Batch splitting
@@ -385,113 +356,116 @@ struct BatchResult {
 }
 
 // ---------------------------------------------------------------------------
-// LLM API call
+// LLM API call — 走项目内 MbforgeProviderConfig + rig 内部函数，
+// 不再自己拼 HTTP / Bearer auth / OpenAI JSON 协议。
+// 详见 src-tauri/src/core/agent/rig_adapter.rs。
 // ---------------------------------------------------------------------------
 
-/// 构建 LLM 请求体
-fn build_llm_body(config: &LlmApiConfig, system: &str, user: &str) -> serde_json::Value {
-    serde_json::json!({
-        "model": config.model,
-        "messages": [
-            { "role": "system", "content": system },
-            { "role": "user", "content": user }
-        ],
-        "max_tokens": 8192,
-        "temperature": 0.2,
-    })
-}
-
-/// 解析 LLM 响应文本 → (content, tokens_used)
-fn parse_llm_response(text: &str) -> Result<(String, Option<u32>), String> {
-    let val: serde_json::Value =
-        serde_json::from_str(text).map_err(|e| format!("LLM API JSON parse error: {}", e))?;
-
-    let content = val["choices"][0]["message"]["content"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
-    let tokens_used = val["usage"]["total_tokens"].as_u64().map(|v| v as u32);
-
-    if content.is_empty() {
-        return Err("LLM returned empty content".into());
-    }
-    Ok((content, tokens_used))
-}
-
-/// 构建 HTTP 错误消息
-fn llm_http_error(status: reqwest::StatusCode, text: &str) -> String {
-    format!(
-        "LLM API HTTP {}: {}",
-        status,
-        &text[..text.floor_char_boundary(500)]
-    )
-}
-
-pub fn call_llm_api(
-    config: &LlmApiConfig,
-    system: &str,
-    user: &str,
-) -> Result<(String, Option<u32>), String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(180))
+/// 同步入口：自建当前线程 tokio runtime 跑 async 实现。
+/// PDF 解析流水线在同步上下文调用，包装一次 runtime 比强制整个 post_process async 化更稳。
+pub fn call_llm_api(system: &str, user: &str) -> Result<(String, Option<u32>), String> {
+    let cfg = MbforgeProviderConfig::from_app_config()?;
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
         .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
-
-    let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-    let body = build_llm_body(config, system, user);
-
-    let resp = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", config.api_key))
-        .json(&body)
-        .send()
-        .map_err(|e| format!("LLM API request failed: {}", e))?;
-
-    let status = resp.status();
-    let text = resp
-        .text()
-        .map_err(|e| format!("LLM API read error: {}", e))?;
-
-    if !status.is_success() {
-        return Err(llm_http_error(status, &text));
-    }
-    parse_llm_response(&text)
+        .map_err(|e| format!("create tokio runtime: {e}"))?;
+    rt.block_on(dispatch_chat(&cfg, system, user))
 }
 
-/// Async 版本 — 在 async 上下文中使用，不阻塞 Tokio 运行时
+/// Async 入口：Tauri 命令 / pipeline 异步上下文直接调。
 pub async fn call_llm_api_async(
-    config: &LlmApiConfig,
     system: &str,
     user: &str,
 ) -> Result<(String, Option<u32>), String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(180))
-        .build()
-        .map_err(|e| format!("HTTP client error: {}", e))?;
+    let cfg = MbforgeProviderConfig::from_app_config()?;
+    dispatch_chat(&cfg, system, user).await
+}
 
-    let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
-    let body = build_llm_body(config, system, user);
-
-    let resp = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", config.api_key))
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("LLM API request failed: {}", e))?;
-
-    let status = resp.status();
-    let text = resp
-        .text()
-        .await
-        .map_err(|e| format!("LLM API read error: {}", e))?;
-
-    if !status.is_success() {
-        return Err(llm_http_error(status, &text));
+/// 核心：按 provider kind 选 rig 客户端，发起单次 chat。
+/// 返回 (content, total_tokens)。tokens 用于未来用量统计，目前未消费故加下划线。
+async fn dispatch_chat(
+    cfg: &MbforgeProviderConfig,
+    system: &str,
+    user: &str,
+) -> Result<(String, Option<u32>), String> {
+    match cfg.kind {
+        MbforgeProviderKind::OpenAICompatible => {
+            let mut b = OpenAiClient::builder().api_key(&cfg.api_key);
+            if !cfg.base_url.is_empty() {
+                b = b.base_url(&cfg.base_url);
+            }
+            let client = b
+                .build()
+                .map_err(|e| format!("openai client build failed: {e}"))?;
+            let model = client.completion_model(&cfg.model);
+            let request = model
+                .completion_request(user)
+                .preamble(system.to_owned())
+                .temperature(0.2)
+                .max_tokens(8192)
+                .build();
+            let resp = model
+                .completion(request)
+                .await
+                .map_err(|e| format!("LLM completion failed: {e}"))?;
+            let tokens = resp
+                .usage
+                .input_tokens
+                .checked_add(resp.usage.output_tokens)
+                .map(|t| t as u32);
+            let text = extract_text(&resp.choice);
+            if text.is_empty() {
+                return Err("LLM returned empty content".into());
+            }
+            Ok((text, tokens))
+        }
+        MbforgeProviderKind::Anthropic => {
+            let mut b = AnthropicClient::builder().api_key(&cfg.api_key);
+            if !cfg.base_url.is_empty() {
+                b = b.base_url(&cfg.base_url);
+            }
+            if !cfg.anthropic_betas.is_empty() {
+                let betas: Vec<&str> = cfg.anthropic_betas.iter().map(String::as_str).collect();
+                b = b.anthropic_betas(&betas);
+            }
+            let client = b
+                .build()
+                .map_err(|e| format!("anthropic client build failed: {e}"))?;
+            let model = client.completion_model(&cfg.model);
+            let request = model
+                .completion_request(user)
+                .preamble(system.to_owned())
+                .temperature(0.2)
+                .max_tokens(8192)
+                .build();
+            let resp = model
+                .completion(request)
+                .await
+                .map_err(|e| format!("LLM completion failed: {e}"))?;
+            let tokens = resp
+                .usage
+                .input_tokens
+                .checked_add(resp.usage.output_tokens)
+                .map(|t| t as u32);
+            let text = extract_text(&resp.choice);
+            if text.is_empty() {
+                return Err("LLM returned empty content".into());
+            }
+            Ok((text, tokens))
+        }
     }
-    parse_llm_response(&text)
+}
+
+/// 从 rig `OneOrMany<AssistantContent>` 提取所有 text 拼接成单字符串。
+/// `OneOrMany::first()` 返回 `T`（不是 Option）—— 单元素 OneOrMany 必定成功。
+fn extract_text(choice: &rig_core::OneOrMany<AssistantContent>) -> String {
+    let mut buf = String::new();
+    for item in choice.iter() {
+        if let AssistantContent::Text(t) = item {
+            buf.push_str(&t.text);
+        }
+    }
+    buf
 }
 
 // ---------------------------------------------------------------------------
@@ -763,7 +737,8 @@ pub fn parse_structured_data(val: &serde_json::Value) -> Result<StructuredData, 
 
 /// Post-process PDF extraction results using LLM — 分批处理 + 合并
 pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
-    let config = load_llm_config()?;
+    let cfg = MbforgeProviderConfig::from_app_config()?;
+    let model = cfg.model.clone();
 
     // 分批
     let batches = split_into_batches(&raw.content);
@@ -793,14 +768,14 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
             pdf_type,
             raw.page_count,
         );
-        let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
+        let (response, tokens) = call_llm_api(SYSTEM_PROMPT, &prompt)?;
         let val = extract_json(&response)?;
         let data = parse_structured_data(&val)?;
         let report = super::report::generate_report(&data);
         Ok(PostProcessResult {
             report,
             data,
-            model: config.model,
+            model: model.clone(),
             tokens_used: tokens,
             batch_count: 1,
         })
@@ -819,7 +794,7 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
                 pdf_type,
                 raw.page_count,
             );
-            let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
+            let (response, tokens) = call_llm_api(SYSTEM_PROMPT, &prompt)?;
             let br = parse_batch_response(&response)?;
             total_tokens += tokens.unwrap_or(0);
             batch_results.push(br);
@@ -828,10 +803,10 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
         // 合并
         if batch_count > 1 {
             let merge_prompt = build_merge_prompt(&batch_results, raw);
-            let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &merge_prompt)?;
+            let (response, tokens) = call_llm_api(SYSTEM_PROMPT, &merge_prompt)?;
             let mut result = parse_merge_response(
                 &response,
-                &config.model,
+                &model,
                 tokens.map(|t| t + total_tokens),
                 batch_count,
             )?;
@@ -847,7 +822,7 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
             Ok(PostProcessResult {
                 report,
                 data,
-                model: config.model.clone(),
+                model: model.clone(),
                 tokens_used: Some(total_tokens),
                 batch_count: 1,
             })
@@ -866,14 +841,15 @@ pub async fn post_process_section(
     parser: &str,
     page_count: usize,
 ) -> Result<PostProcessResult, String> {
-    let config = load_llm_config()?;
+    let config = MbforgeProviderConfig::from_app_config()?;
+    let model = config.model.clone();
     let batches = split_into_batches(content);
     let batch_count = batches.len();
     let pdf_type = parser;
 
     if batch_count == 1 {
         let prompt = build_batch_prompt(&batches[0], 0, 1, &[], "", pdf_type, page_count);
-        let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
+        let (response, tokens) = call_llm_api(SYSTEM_PROMPT, &prompt)?;
         let val = extract_json(&response)?;
         let data = parse_structured_data(&val)?;
         let report = super::report::generate_report(&data);
@@ -889,14 +865,14 @@ pub async fn post_process_section(
         let mut total_tokens = 0u32;
         for (i, batch) in batches.iter().enumerate() {
             let prompt = build_batch_prompt(batch, i, batch_count, &[], "", pdf_type, page_count);
-            let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
+            let (response, tokens) = call_llm_api(SYSTEM_PROMPT, &prompt)?;
             let br = parse_batch_response(&response)?;
             total_tokens += tokens.unwrap_or(0);
             batch_results.push(br);
         }
         let merge_prompt =
             build_section_merge_prompt(&batch_results, content, pdf_type, page_count);
-        let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &merge_prompt)?;
+        let (response, tokens) = call_llm_api(SYSTEM_PROMPT, &merge_prompt)?;
         let mut result = parse_merge_response(
             &response,
             &config.model,
@@ -1045,21 +1021,22 @@ pub async fn post_process_sections_parallel(
 
 /// `post_process_section` 的 sync 版本，专门给 `tokio::task::spawn_blocking` 调用。
 ///
-/// 内部直接用 `reqwest::blocking::Client` — 这就是为什么它必须跑在
-/// dedicated blocking thread 上，不能在 async task 内 await。
+/// 内部走 `call_llm_api`（自建当前线程 tokio runtime）— 不依赖调用方的
+/// tokio runtime，所以可以跑在 dedicated blocking thread 上。
 fn post_process_section_sync(
     content: &str,
     parser: &str,
     page_count: usize,
 ) -> Result<PostProcessResult, String> {
-    let config = load_llm_config()?;
+    let config = MbforgeProviderConfig::from_app_config()?;
+    let model = config.model.clone();
     let batches = split_into_batches(content);
     let batch_count = batches.len();
     let pdf_type = parser;
 
     if batch_count == 1 {
         let prompt = build_batch_prompt(&batches[0], 0, 1, &[], "", pdf_type, page_count);
-        let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
+        let (response, tokens) = call_llm_api(SYSTEM_PROMPT, &prompt)?;
         let val = extract_json(&response)?;
         let data = parse_structured_data(&val)?;
         let report = super::report::generate_report(&data);
@@ -1075,14 +1052,14 @@ fn post_process_section_sync(
         let mut total_tokens = 0u32;
         for (i, batch) in batches.iter().enumerate() {
             let prompt = build_batch_prompt(batch, i, batch_count, &[], "", pdf_type, page_count);
-            let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &prompt)?;
+            let (response, tokens) = call_llm_api(SYSTEM_PROMPT, &prompt)?;
             let br = parse_batch_response(&response)?;
             total_tokens += tokens.unwrap_or(0);
             batch_results.push(br);
         }
         let merge_prompt =
             build_section_merge_prompt(&batch_results, content, pdf_type, page_count);
-        let (response, tokens) = call_llm_api(&config, SYSTEM_PROMPT, &merge_prompt)?;
+        let (response, tokens) = call_llm_api(SYSTEM_PROMPT, &merge_prompt)?;
         let mut result = parse_merge_response(
             &response,
             &config.model,
@@ -1256,7 +1233,7 @@ mod tests {
     #[tokio::test]
     async fn test_post_process_sections_parallel_all_fail_fast() {
         // 临时清空 env / config，强制让 post_process_section 走到 `Err` 分支
-        // （load_llm_config 会在缺 key 时返回 Err）。三节并发跑，时间
+        // （MbforgeProviderConfig::from_app_config 会在缺 key 时返回 Err）。三节并发跑，时间
         // 应当明显短于"三节串行"，即使每节都失败。
         let sections = vec![
             ("a".to_string(), "alpha content".to_string()),

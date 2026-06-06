@@ -7,9 +7,13 @@
 //!
 //! Two providers are supported in the factory layer:
 //!
-//! 1. **OpenAI-compatible** — the MBForge sidecar (Python FastAPI on
-//!    `localhost:18792`) speaks the OpenAI Chat Completions API. We use the
-//!    rig `openai::CompletionsClient` with a custom `base_url`.
+//! 1. **OpenAI-compatible** — any service that speaks the OpenAI Chat
+//!    Completions API (real OpenAI, OpenRouter, DeepSeek, a self-hosted
+//!    llama.cpp server, etc.). We use the rig `openai::CompletionsClient`
+//!    with `base_url` from `AppConfig.llm.base_url`. The MBForge sidecar
+//!    (FastAPI on `localhost:18792`) is **not** an OpenAI-compatible
+//!    endpoint — it exposes `/api/v1/llm/chat` only. Don't point this
+//!    provider at the sidecar.
 //! 2. **Anthropic** — direct access to the Anthropic Messages API. We use
 //!    `rig_core::providers::anthropic::Client` and the `anthropic_betas`
 //!    builder to enable beta features (extended thinking, prompt caching,
@@ -105,10 +109,7 @@ impl MbforgeProviderConfig {
             _ => MbforgeProviderKind::OpenAICompatible,
         };
         let base_url = match kind {
-            MbforgeProviderKind::OpenAICompatible => {
-                crate::core::config::constants::sidecar_url()
-            }
-            MbforgeProviderKind::Anthropic => {
+            MbforgeProviderKind::OpenAICompatible | MbforgeProviderKind::Anthropic => {
                 app.llm.base_url.clone()
             }
         };

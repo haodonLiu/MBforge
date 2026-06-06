@@ -1,5 +1,6 @@
 import { useState } from 'react'
-
+import LowConfidenceBanner from './molecule/LowConfidenceBanner'
+import { useConfidenceThreshold } from '../hooks/useConfidenceThreshold'
 export interface Molecule {
   id: string
   smiles: string
@@ -28,6 +29,8 @@ export default function MoleculeReviewPanel({
 }: MoleculeReviewPanelProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editSmiles, setEditSmiles] = useState('')
+  // O-01/O-02 共用阈值 — 与 CorrectionPanel.handleFinish 同一份 localStorage
+  const [threshold] = useConfidenceThreshold()
 
   const handleEdit = (molecule: Molecule) => {
     setEditingId(molecule.id)
@@ -57,6 +60,9 @@ export default function MoleculeReviewPanel({
         </div>
       </div>
 
+      {/* O-02：项目级低置信度全局提醒 — 复用 O-01 阈值 */}
+      <LowConfidenceBanner molecules={molecules} />
+
       <div className="molecule-list">
         {molecules.map((molecule) => (
           <div
@@ -77,8 +83,9 @@ export default function MoleculeReviewPanel({
             <div className="molecule-info">
               <div className="smiles">{molecule.smiles}</div>
               {molecule.name && <div className="name">{molecule.name}</div>}
+              {/* O-02：复用 O-01 阈值（默认 0.5），不再硬编码 0.6 */}
               <div
-                className={`confidence ${molecule.confidence < 0.6 ? 'low' : ''}`}
+                className={`confidence ${molecule.confidence < threshold ? 'low' : ''}`}
               >
                 Confidence: {(molecule.confidence * 100).toFixed(1)}%
               </div>

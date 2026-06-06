@@ -1,3 +1,6 @@
+import type { HealthResponse } from '../types'
+import { invoke } from '@tauri-apps/api/core'
+
 const API_BASE = '/api/v1'
 
 export async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -58,9 +61,8 @@ export function sseStream<T>(
 
 // Health
 export function getHealth() {
-  return fetchJson<import('../types').HealthResponse>(`${API_BASE}/health`)
+  return fetchJson<HealthResponse>(`${API_BASE}/health`)
 }
-
 // ============================================================================
 // SAR (Structure-Activity Relationship) Analysis
 // ============================================================================
@@ -115,8 +117,6 @@ export interface ActivityHeatmapResponse {
 // SMILES 结构校验（纯 Rust，通过 Tauri invoke）
 // ============================================================================
 
-import { invoke } from '@tauri-apps/api/core'
-
 export interface ValidationIssue {
   code: string
   message: string
@@ -128,7 +128,29 @@ export interface ValidateResponse {
   canonical_smiles: string | null
   issues: ValidationIssue[]
 }
-
 export function validateSmiles(smiles: string): Promise<ValidateResponse> {
-  return invoke<ValidateResponse>('chem_validate_smiles', { smiles })
+  return invoke<RawValidation>('chem_validate_smiles', { smiles }).then(elevate)
+}
+
+/** 后端原始响应 — Rust `SmilesValidation` 仅含 valid/canonical_smiles/error */
+interface RawValidation {
+  valid: boolean
+  canonical_smiles: string | null
+  error: string | null
+}
+
+/**
+ * 将后端非结构化 `error` 字符串提升为 `ValidationIssue` 数组，
+ * 让 CorrectionPanel/MoleculeDisplay 的标红与 issue 列表逻辑能正确触发。
+ */
+function elevate(raw: RawValidation): ValidateResponse {
+  if (raw.valid) {
+    return { valid: true, canonical_smiles: raw.canonical_smiles, issues: [] }
+  }
+  const message = raw.error ?? 'SMILES 解析失败'
+  return {
+    valid: false,
+    canonical_smiles: raw.canonical_smiles,
+    issues: [{ code: 'SYNTAX', severity: 'error', message }],
+  }
 }

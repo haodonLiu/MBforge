@@ -298,7 +298,6 @@ async def delete_model(model_id: str) -> dict[str, Any]:
     if target.is_dir():
         shutil.rmtree(target)
     else:
-    else:
         target.unlink()
     return {"success": True, "deleted": str(target)}
 

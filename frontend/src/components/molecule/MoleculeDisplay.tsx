@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { CheckIcon, AlertIcon, InfoIcon } from '../icons'
 import { invoke } from '@tauri-apps/api/core'
+import { validateSmiles, type ValidationIssue } from '../../api/client'
 
 const MermaidCode = lazy(() =>
   import('../ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
@@ -47,7 +48,7 @@ function smilesToImgUrl(smiles: string, size = 300): string {
   return `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/${encoded}/PNG?image_size=${size}x${size}`
 }
 
-/** SMILES 基础验证：检查字符集 */
+/** SMILES 基础验证：检查字符集（前端快速失败，与后端 chematic 解析互补）*/
 function basicValidate(smiles: string): { valid: boolean; message?: string } {
   if (!smiles || smiles.trim().length === 0) {
     return { valid: false, message: 'SMILES 为空' }
@@ -55,7 +56,6 @@ function basicValidate(smiles: string): { valid: boolean; message?: string } {
   if (smiles.length > 200) {
     return { valid: false, message: 'SMILES 过长（>200字符）' }
   }
-  // 检查允许的字符
   if (!/^[A-Za-z0-9@+\-\[\]()\\/#%=.:]+$/.test(smiles.trim())) {
     return { valid: false, message: '包含非法字符' }
   }
@@ -140,6 +140,9 @@ function ConfidenceBadge({ value }: { value: number }) {
  * - view:   只读显示
  * - edit:   可编辑（手动矫正 SMILES）
  * - compare:对比模式（多张图并排）
+ *
+ * O-03：通过 `validateSmiles`（Rust chematic 解析）防抖校验，失败时
+ *       边框标红 + 内联错误提示，错误信息不静默吞错。
  */
 export default function MoleculeDisplay({
   smiles,
@@ -164,6 +167,10 @@ export default function MoleculeDisplay({
   const [moleCodeText, setMoleCodeText] = useState<string | null>(null)
   const [moleCodeLoading, setMoleCodeLoading] = useState(false)
   const [moleCodeError, setMoleCodeError] = useState<string | null>(null)
+  // O-03：后端结构校验（Rust chematic 解析）— 用于标红 + 错误提示
+  const [backendIssue, setBackendIssue] = useState<ValidationIssue | null>(null)
+  const [backendLoading, setBackendLoading] = useState(false)
+  const backendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // 当外部 smiles 变化时同步
@@ -172,11 +179,41 @@ export default function MoleculeDisplay({
     setImgError(false)
   }, [smiles])
 
-  // 初始验证
+  // O-03：防抖触发后端结构校验 — 任何 smiles 变化都校验（无论是否编辑）
   useEffect(() => {
-    const result = basicValidate(smiles)
-    onValidate?.(result.valid, result.message)
-  }, [smiles, onValidate])
+    if (backendTimerRef.current) clearTimeout(backendTimerRef.current)
+    setBackendLoading(true)
+    backendTimerRef.current = setTimeout(async () => {
+      try {
+        const resp = await validateSmiles(smiles)
+        const errorIssue = resp.issues.find(i => i.severity === 'error') ?? null
+        setBackendIssue(errorIssue)
+      } catch (err) {
+        // O-03：失败时不再静默吞错 — 把网络错误暴露为 issue
+        const message = err instanceof Error ? err.message : String(err)
+        setBackendIssue({
+          code: 'NETWORK',
+          severity: 'error',
+          message: `结构校验失败：${message}`,
+        })
+      } finally {
+        setBackendLoading(false)
+      }
+    }, 400)
+    return () => {
+      if (backendTimerRef.current) clearTimeout(backendTimerRef.current)
+    }
+  }, [smiles])
+
+  // 初始验证（向 onValidate 回调暴露整体有效性）
+  useEffect(() => {
+    if (backendIssue) {
+      onValidate?.(false, backendIssue.message)
+    } else {
+      const result = basicValidate(smiles)
+      onValidate?.(result.valid, result.message)
+    }
+  }, [smiles, backendIssue, onValidate])
 
   // 获取 MoleCode
   const fetchMoleCode = async () => {
@@ -216,6 +253,15 @@ export default function MoleculeDisplay({
       setValidationMsg(result.message ?? '格式错误')
       return
     }
+    // O-03：等待后端校验完成，且不允许应用已知无效的 SMILES
+    if (backendLoading) {
+      setValidationMsg('正在校验…')
+      return
+    }
+    if (backendIssue && backendIssue.severity === 'error') {
+      setValidationMsg(backendIssue.message)
+      return
+    }
     onChange?.(trimmed)
     setIsEditing(false)
     setValidationMsg(null)
@@ -236,6 +282,11 @@ export default function MoleculeDisplay({
   const formula = showMetadata ? estimateFormula(smiles) : null
   const mw = showMetadata ? estimateMW(smiles) : null
   const validation = basicValidate(smiles)
+  // O-03：合并 local + backend 校验 — 任一失败即边框标红 + 显示错误
+  const effectiveError: string | null =
+    validationMsg
+    ?? (validation.valid ? null : validation.message)
+    ?? (backendIssue?.severity === 'error' ? backendIssue.message : null)
 
   return (
     <div
@@ -245,7 +296,7 @@ export default function MoleculeDisplay({
         flexDirection: 'column',
         gap: 8,
         background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
+        border: `1px solid ${effectiveError ? 'var(--danger)' : 'var(--border)'}`,
         borderRadius: 12,
         padding: 12,
         ...style,
@@ -309,14 +360,14 @@ export default function MoleculeDisplay({
                 fontFamily: 'monospace',
                 fontSize: 13,
                 background: 'var(--bg-base)',
-                border: `1px solid ${validationMsg ? 'var(--danger)' : 'var(--border)'}`,
+                border: `1px solid ${effectiveError ? 'var(--danger)' : 'var(--border)'}`,
                 borderRadius: 6,
                 color: 'var(--text-primary)',
                 outline: 'none',
                 boxSizing: 'border-box',
               }}
             />
-            {validationMsg && (
+            {effectiveError && (
               <div style={{
                 marginTop: 6,
                 fontSize: 11,
@@ -325,7 +376,8 @@ export default function MoleculeDisplay({
                 alignItems: 'center',
                 gap: 4,
               }}>
-                <AlertIcon size={12} /> {validationMsg}
+                <AlertIcon size={12} /> {effectiveError}
+                {backendLoading && <span style={{ color: 'var(--text-muted)' }}>（校验中…）</span>}
               </div>
             )}
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
@@ -434,6 +486,23 @@ export default function MoleculeDisplay({
             <InfoIcon size={32} />
             <div style={{ fontSize: 12 }}>{validation.message}</div>
           </div>
+        ) : backendIssue && backendIssue.severity === 'error' && !backendLoading ? (
+          // O-03：后端校验失败占位（local basicValidate 通过但 chematic 解析失败）
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 8,
+            padding: 24,
+            color: 'var(--danger)',
+            textAlign: 'center',
+          }}>
+            <AlertIcon size={32} />
+            <div style={{ fontSize: 12, fontWeight: 600 }}>化学结构无效</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              {backendIssue.message}
+            </div>
+          </div>
         ) : (
           <motion.img
             key={smiles}
@@ -454,9 +523,10 @@ export default function MoleculeDisplay({
       <div style={{
         fontFamily: 'monospace',
         fontSize: 11,
-        color: 'var(--text-muted)',
+        color: effectiveError ? 'var(--danger)' : 'var(--text-muted)',
         padding: '4px 8px',
-        background: 'var(--bg-base)',
+        background: effectiveError ? 'rgba(239, 68, 68, 0.06)' : 'var(--bg-base)',
+        border: `1px solid ${effectiveError ? 'rgba(239, 68, 68, 0.3)' : 'transparent'}`,
         borderRadius: 4,
         wordBreak: 'break-all',
         maxHeight: 60,
@@ -482,7 +552,6 @@ export default function MoleculeDisplay({
 
       {/* 工具栏 */}
       <div style={{ display: 'flex', gap: 6 }}>
-        {/* MoleCode 切换按钮（所有模式可见） */}
         <button
           onClick={toggleMoleCode}
           title="MoleCode 图视图"
@@ -508,34 +577,31 @@ export default function MoleculeDisplay({
           MoleCode
         </button>
 
-        {/* 编辑模式专用按钮 */}
         {mode === 'edit' && !isEditing && (
-          <>
-            <button
-              onClick={handleStartEdit}
-              style={{
-                flex: 1,
-                padding: '6px 10px',
-                background: 'var(--bg-elevated)',
-                color: 'var(--text-primary)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 4,
-              }}
-            >
-              <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-              </svg>
-              手动编辑
-            </button>
-          </>
+          <button
+            onClick={handleStartEdit}
+            style={{
+              flex: 1,
+              padding: '6px 10px',
+              background: 'var(--bg-elevated)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 4,
+            }}
+          >
+            <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+            手动编辑
+          </button>
         )}
       </div>
     </div>

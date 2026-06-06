@@ -13,7 +13,7 @@ export interface TextChunkResult {
 
 export async function textChunk(text: string, chunkSize = 512, overlap = 128): Promise<TextChunkResult> {
   return invokeWithError(
-    () => invoke<TextChunkResult>('text_chunk', { text, chunk_size: chunkSize, overlap }),
+    () => invoke<TextChunkResult>('text_chunk', { text, chunkSize, overlap }),
     ErrorCode.ApiError,
   )
 }
@@ -38,7 +38,7 @@ export interface DocumentClassification {
 
 export async function classifyPage(pageText: string, pageIdx: number): Promise<PageClassification> {
   return invokeWithError(
-    () => invoke<PageClassification>('classify_page', { page_text: pageText, page_idx: pageIdx }),
+    () => invoke<PageClassification>('classify_page', { pageText, pageIdx }),
     ErrorCode.ApiError,
   )
 }

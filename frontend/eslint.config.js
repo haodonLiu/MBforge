@@ -2,6 +2,7 @@ import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
+import local from './eslint-local-rules/index.js'
 
 export default tseslint.config(
   { ignores: ['dist'] },
@@ -17,6 +18,7 @@ export default tseslint.config(
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
+      local,
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
@@ -41,6 +43,10 @@ export default tseslint.config(
       // Data-fetching in useEffect is intentional
       'react-hooks/exhaustive-deps': 'warn',
       'react-hooks/set-state-in-effect': 'off',
+
+      // Local rules
+      // 禁止 React 内联 style 中使用 SCSS 父选择器 `&:xxx` 语法
+      'local/no-ampersand-style': 'error',
     },
   },
 )

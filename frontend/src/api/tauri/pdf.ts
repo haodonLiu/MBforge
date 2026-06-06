@@ -91,7 +91,7 @@ export async function parsePdf(
   return invokeWithError(
     () => invoke<PdfParseResult>('parse_pdf', {
       path,
-      chunk_size: chunkSize ?? 512,
+      chunkSize: chunkSize ?? 512,
       overlap: overlap ?? 128,
       parser: parser ?? 'pdf_inspector',
     }),
@@ -114,8 +114,8 @@ export async function processDocument(
   return invokeWithError(
     () => invoke<void>('process_document', {
       path,
-      user_request: userRequest ?? '',
-      project_root: projectRoot,
+      userRequest: userRequest ?? '',
+      projectRoot,
     }),
     ErrorCode.PdfParse,
   )

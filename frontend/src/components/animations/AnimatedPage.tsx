@@ -12,7 +12,7 @@ export default function AnimatedPage({ children }: Props) {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -8 }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}
+      style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'auto', minHeight: 0 }}
     >
       {children}
     </motion.div>

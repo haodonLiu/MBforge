@@ -36,7 +36,7 @@ export function downloadModelTauri(
 
   // 发起下载
   invokeWithError(
-    () => invoke<string>('models_download', { resource_id: resourceId }),
+    () => invoke<string>('models_download', { resourceId }),
     ErrorCode.ApiError,
   ).catch((err) => {
     onProgress({
@@ -52,6 +52,6 @@ export function downloadModelTauri(
   // 返回取消函数
   return () => {
     unlisten?.()
-    invoke('models_cancel_download', { resource_id: resourceId }).catch(() => {})
+    invoke('models_cancel_download', { resourceId }).catch(() => {})
   }
 }

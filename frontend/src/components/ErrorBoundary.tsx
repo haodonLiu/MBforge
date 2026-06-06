@@ -207,6 +207,13 @@ export default class ErrorBoundary extends Component<Props, State> {
       )
     }
 
-    return <div key={this.state.retryKey}>{this.props.children}</div>
+    return (
+      <div
+        key={this.state.retryKey}
+        style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
+      >
+        {this.props.children}
+      </div>
+    )
   }
 }

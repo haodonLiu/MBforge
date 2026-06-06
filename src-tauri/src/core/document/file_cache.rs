@@ -281,6 +281,9 @@ mod tests {
 
         cache.put(&file_path, "v1 text", "[]", "{}").unwrap();
 
+        // 等待确保 mtime 变化（Windows NTFS 精度问题）
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
         // 修改文件内容（mtime 会变，hash 也会变）
         std::fs::write(&file_path, b"v2 different content").unwrap();
 

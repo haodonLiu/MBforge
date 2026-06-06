@@ -179,46 +179,6 @@ impl LayeredContext {
         self.history.messages.push(Message::assistant(content));
     }
 
-    pub fn add_assistant_message_with_tool_calls(
-        &mut self,
-        content: &str,
-        tool_calls: &[super::llm::ToolCall],
-    ) {
-        let tc_values: Vec<serde_json::Value> = tool_calls
-            .iter()
-            .map(|tc| {
-                serde_json::json!({
-                    "id": tc.id,
-                    "function": {
-                        "name": tc.name,
-                        "arguments": tc.arguments.to_string(),
-                    }
-                })
-            })
-            .collect();
-        self.history.messages.push(Message {
-            role: "assistant".into(),
-            content: content.to_string(),
-            tool_calls: Some(tc_values),
-            name: None,
-            tool_call_id: None,
-        });
-    }
-
-    pub fn add_tool_result(&mut self, tool_name: &str, result: &str, tool_call_id: &str) {
-        let truncated = if result.len() > 4000 {
-            &result[..result.floor_char_boundary(4000)]
-        } else {
-            result
-        };
-        self.history
-            .messages
-            .push(Message::tool(tool_name, truncated, tool_call_id));
-    }
-
-    pub fn clear_tool_results(&mut self) {
-        self.tools.clear();
-    }
 
     /// Clear history and all ephemeral layers.
     pub fn clear_history(&mut self) {

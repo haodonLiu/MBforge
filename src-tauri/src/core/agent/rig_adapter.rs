@@ -21,8 +21,12 @@
 //! layer doesn't have to know about rig's internals.
 
 use std::pin::Pin;
+use std::sync::Arc;
 
 use futures::Stream;
+use rig_core::client::CompletionClient;
+use rig_core::completion::{Chat, Prompt};
+use rig_core::message::Message;
 
 // ============================================================================
 // Stream types
@@ -105,7 +109,7 @@ impl MbforgeProviderConfig {
                 crate::core::config::constants::sidecar_url()
             }
             MbforgeProviderKind::Anthropic => {
-                app.llm.base_url.clone().unwrap_or_default()
+                app.llm.base_url.clone()
             }
         };
         Ok(Self {
@@ -203,13 +207,105 @@ impl MbforgeAgentSpec {
 // MbforgeAgent — factory + provider-agnostic surface
 // ============================================================================
 
-/// Type-erased rig agent. Wraps either an OpenAI-compatible or an Anthropic
-/// rig agent and exposes the same `prompt` / `stream` API surface.
-pub enum MbforgeAgent {
-    OpenAI(rig_core::agent::Agent<rig_core::providers::openai::CompletionModel, ()>),
-    Anthropic(rig_core::agent::Agent<rig_core::providers::anthropic::completion::CompletionModel, ()>),
+// ============================================================================
+// ConcreteHook — composite rig PromptHook wiring audit + trajectory
+// ============================================================================
+
+/// `PromptHook` that fans every rig event out to both the audit log and the
+/// trajectory tracker. Required because the rig 0.38.1 `Agent<M, P>` generic
+/// is invariant in `P` — passing the unit hook (`()`) would lose both
+/// observability sinks. Keeping them in a single struct means each rig agent
+/// owns exactly one concrete hook and we don't need trait objects.
+///
+/// `PromptHook` (rig 0.38.1) requires `Clone + WasmCompatSend + WasmCompatSync`,
+/// so `ConcreteHook` derives `Clone`. The inner `AuditLogHook` and
+/// `TrajectoryHook` each wrap their state in `Arc<…>` and implement `Clone`
+/// manually, so cloning `ConcreteHook` is cheap (just bumps the `Arc` refs).
+#[derive(Clone)]
+pub struct ConcreteHook {
+    pub audit: crate::core::agent::rig_hooks::AuditLogHook,
+    pub trajectory: crate::core::agent::rig_hooks::TrajectoryHook,
 }
 
+impl<M> rig_core::agent::PromptHook<M> for ConcreteHook
+where
+    M: rig_core::completion::CompletionModel + 'static,
+{
+    /// Record an `llm_call` audit entry. The trajectory hook has no override
+    /// for this event (it only tracks tool calls), so the default `cont()`
+    /// handles that side. We bypass `AuditLogHook::record_llm_call` (a
+    /// private method on the inner hook) and call the public `AuditLog`
+    /// directly. This keeps the trait-object-free call graph and avoids
+    /// needing `CompletionResponse: Clone` (only `Usage` is extracted, and
+    /// `Usage` is `Copy`).
+    fn on_completion_response(
+        &self,
+        _prompt: &Message,
+        response: &rig_core::completion::CompletionResponse<M::Response>,
+    ) -> impl std::future::Future<Output = rig_core::agent::HookAction>
+    + rig_core::wasm_compat::WasmCompatSend {
+        let audit_log = self.audit.audit.clone();
+        let trace_id = self.audit.trace_id.clone();
+        let usage = response.usage;
+        async move {
+            let _ = audit_log.append_llm_call(
+                &trace_id,
+                None,
+                "rig-agent",
+                usage.input_tokens,
+                usage.output_tokens,
+                0,
+            );
+            rig_core::agent::HookAction::cont()
+        }
+    }
+
+    /// Forward to both inner sinks. The audit hook records a `tool_call`
+    /// entry; the trajectory hook records a step. We replicate the inner
+    /// hooks' formatting (best-effort JSON parse of args, append+fsync) so we
+    /// don't need to expose their private helpers.
+    fn on_tool_result(
+        &self,
+        tool_name: &str,
+        _tool_call_id: Option<String>,
+        _internal_call_id: &str,
+        args: &str,
+        result: &str,
+    ) -> impl std::future::Future<Output = rig_core::agent::HookAction>
+    + rig_core::wasm_compat::WasmCompatSend {
+        let audit_log = self.audit.audit.clone();
+        let trace_id_audit = self.audit.trace_id.clone();
+        let trajectory_tracker = self.trajectory.tracker.clone();
+        let tool_name = tool_name.to_owned();
+        let args = args.to_owned();
+        let result = result.to_owned();
+        async move {
+            // Audit sink: same shape as `AuditLogHook::record_tool_call`.
+            let args_value: serde_json::Value = serde_json::from_str(&args)
+                .unwrap_or(serde_json::Value::String(args.clone()));
+            let _ = audit_log.append_tool_call(
+                &trace_id_audit,
+                None,
+                &tool_name,
+                &args_value,
+                0,
+            );
+            // Trajectory sink: same shape as `TrajectoryHook::record`.
+            if let Ok(mut guard) = trajectory_tracker.lock() {
+                guard.record_tool(&tool_name, &args_value, &result);
+            }
+            rig_core::agent::HookAction::cont()
+        }
+    }
+}
+
+/// Type-erased rig agent. Wraps either an OpenAI-compatible or an Anthropic
+/// rig agent and exposes the same `prompt` / `stream` API surface.
+#[derive(Clone)]
+pub enum MbforgeAgent {
+    OpenAI(rig_core::agent::Agent<rig_core::providers::openai::CompletionModel, ConcreteHook>),
+    Anthropic(rig_core::agent::Agent<rig_core::providers::anthropic::completion::CompletionModel, ConcreteHook>),
+}
 impl MbforgeAgent {
     /// Identify the underlying provider.
     pub fn provider_kind(&self) -> MbforgeProviderKind {
@@ -236,42 +332,44 @@ impl MbforgeAgent {
     }
 
     /// Open a streaming prompt. The stream normalizes rig's internal
-    /// `MultiTurnStreamItem` into the MBForge format.
+    /// `MultiTurnStreamItem` into the MBForge format via `map_rig_stream`.
     ///
-    /// NOTE: the M2 release ships the `MbforgeStreamItem` types + the factories
-    /// below. The full stream-mapping (turn-by-turn text deltas + tool calls)
-    /// is implemented in M4 alongside the AgentBuilder rewiring. For now,
-    /// `stream()` resolves to a one-shot prompt and emits a single `Final` item,
-    /// which is enough for the M2 acceptance test (Tauri command layer does
-    /// blocking `prompt()` calls; streaming is opt-in).
+    /// Each rig event becomes 0–1 `MbforgeStreamItem`s:
+    /// - `StreamedAssistantContent::Text(t)`       → `TextDelta(t.text)`
+    /// - `StreamedAssistantContent::ToolCall{..}`  → `ToolCall{ id, name, arguments }`
+    /// - `StreamedUserContent::ToolResult{..}`     → `ToolResult{ id, name=internal_call_id, result }`
+    /// - `FinalResponse`                            → `Final{ content, prompt_tokens, completion_tokens }`
+    /// - deltas, reasoning, `CompletionCall`        → dropped (the underlying
+    ///   hook still sees them; the frontend only needs terminal events)
     pub fn stream(&self, input: &str) -> MbforgeStream {
-        // M4: replace with `agent.stream_prompt(input).multi_turn(N).await` once the
-        // async_stream / stream::unfold path is settled.
-        match self.clone_prompt_then_collect(input) {
-            Some(s) => s,
-            None => Box::pin(futures::stream::empty()),
+        let input = input.to_owned();
+        let max_turns = self.default_max_turns();
+        match self {
+            Self::OpenAI(agent) => {
+                let agent = agent.clone();
+                map_rig_stream(async move {
+                    use rig_core::streaming::StreamingPrompt;
+                    agent.stream_prompt(input).multi_turn(max_turns).await
+                })
+            }
+            Self::Anthropic(agent) => {
+                let agent = agent.clone();
+                map_rig_stream(async move {
+                    use rig_core::streaming::StreamingPrompt;
+                    agent.stream_prompt(input).multi_turn(max_turns).await
+                })
+            }
         }
     }
 
-    fn clone_prompt_then_collect(&self, input: &str) -> Option<MbforgeStream> {
-        // Placeholder: pre-collect the result. M4 will replace with real streaming.
-        let input = input.to_owned();
-        let fut = async move {
-            match self_clone_prompt(self, &input).await {
-                Ok(content) => Ok(MbforgeStreamItem::Final {
-                    content,
-                    prompt_tokens: 0,
-                    completion_tokens: 0,
-                }),
-                Err(e) => Err(e),
-            }
-        };
-        Some(Box::pin(futures::stream::once(fut)))
+    /// Pull the `default_max_turns` off whichever inner agent we hold. Used
+    /// by `stream()` to bound the agent loop the same way the spec did.
+    fn default_max_turns(&self) -> usize {
+        match self {
+            Self::OpenAI(agent) => agent.default_max_turns.unwrap_or(5),
+            Self::Anthropic(agent) => agent.default_max_turns.unwrap_or(5),
+        }
     }
-}
-
-async fn self_clone_prompt(agent: &MbforgeAgent, input: &str) -> Result<String, String> {
-    agent.prompt(input).await
 }
 
 // ============================================================================
@@ -282,11 +380,15 @@ impl MbforgeAgent {
     /// Build a fresh OpenAI-compatible agent from a provider config + spec.
     /// `extra_tools` are any pre-built `rig::tool::Tool` impls the caller
     /// wants to register (in production, this is where the 30+ native tools
-    /// from `executor_rig.rs` + `arxiv_rig.rs` plug in).
+    /// from `executor_rig.rs` + `arxiv_rig.rs` plug in). `hook` is the
+    /// concrete observability hook (audit + trajectory) that rig fires
+    /// during the prompt loop. The agent's `P` generic parameter is fixed
+    /// to `ConcreteHook`; the unit hook `()` is no longer supported.
     pub fn from_openai_compatible(
         cfg: &MbforgeProviderConfig,
         spec: &MbforgeAgentSpec,
         extra_tools: Vec<Box<dyn rig_core::tool::ToolDyn>>,
+        hook: ConcreteHook,
     ) -> Result<Self, String> {
         if cfg.kind != MbforgeProviderKind::OpenAICompatible {
             return Err(format!(
@@ -294,22 +396,18 @@ impl MbforgeAgent {
                 cfg.kind
             ));
         }
-        let client = rig_core::providers::openai::Client::builder()
-            .api_key(&cfg.api_key)
+        // The MBForge sidecar speaks the OpenAI Chat Completions protocol on
+        // a custom base_url. We always go through `CompletionsClient` so the
+        // return type is a single `Client<OpenAICompletionsExt>`, which makes
+        // the `Self::OpenAI` arm of the enum carry a homogeneous model type.
+        let mut cb = rig_core::providers::openai::CompletionsClient::builder()
+            .api_key(&cfg.api_key);
+        if !cfg.base_url.is_empty() {
+            cb = cb.base_url(&cfg.base_url);
+        }
+        let completions = cb
             .build()
-            .map_err(|e| format!("openai client build failed: {e}"))?;
-        // The MBForge sidecar speaks Chat Completions (not Responses), so we
-        // route via CompletionsClient. For direct OpenAI usage the same client
-        // works. The custom base_url comes from the config.
-        let completions = if cfg.base_url.is_empty() {
-            client
-        } else {
-            rig_core::providers::openai::CompletionsClient::builder()
-                .api_key(&cfg.api_key)
-                .base_url(&cfg.base_url)
-                .build()
-                .map_err(|e| format!("openai completions client build failed: {e}"))?
-        };
+            .map_err(|e| format!("openai completions client build failed: {e}"))?;
         let mut builder = completions
             .agent(&cfg.model)
             .preamble(&spec.system_prompt)
@@ -320,11 +418,13 @@ impl MbforgeAgent {
         if let Some(n) = spec.max_tokens {
             builder = builder.max_tokens(n);
         }
-        let builder = if extra_tools.is_empty() {
-            builder
-        } else {
-            builder.tools(extra_tools)
-        };
+        // `.tools()` consumes the builder and changes the `ToolState` type
+        // parameter, so we must call it unconditionally to keep the
+        // if/else arms homogeneous. An empty vec is a no-op at runtime.
+        // `.hook()` similarly consumes the builder to flip the `P` generic
+        // parameter; the order (tools → hook → build) is irrelevant as long
+        // as both run before `.build()`.
+        let builder = builder.tools(extra_tools).hook(hook);
         Ok(Self::OpenAI(builder.build()))
     }
 
@@ -334,6 +434,7 @@ impl MbforgeAgent {
         cfg: &MbforgeProviderConfig,
         spec: &MbforgeAgentSpec,
         extra_tools: Vec<Box<dyn rig_core::tool::ToolDyn>>,
+        hook: ConcreteHook,
     ) -> Result<Self, String> {
         if cfg.kind != MbforgeProviderKind::Anthropic {
             return Err(format!(
@@ -363,28 +464,247 @@ impl MbforgeAgent {
         if let Some(n) = spec.max_tokens {
             agent_builder = agent_builder.max_tokens(n);
         }
-        let agent_builder = if extra_tools.is_empty() {
-            agent_builder
-        } else {
-            agent_builder.tools(extra_tools)
-        };
+        // `.tools()` consumes the builder and changes the `ToolState` type
+        // parameter, so we must call it unconditionally to keep the
+        // if/else arms homogeneous. An empty vec is a no-op at runtime.
+        // `.hook()` flips the `P` generic; ordering with `.tools()` does not
+        // matter as long as both fire before `.build()`.
+        let agent_builder = agent_builder.tools(extra_tools).hook(hook);
         Ok(Self::Anthropic(agent_builder.build()))
     }
 
-    /// Convenience: pick the right factory based on `cfg.kind`.
+    /// Convenience: pick the right factory based on `cfg.kind`. The
+    /// observability hook is built internally from a fresh `tempfile::tempdir`
+    /// — call sites that need a real audit log + trajectory file should use
+    /// `from_openai_compatible_with_all_tools` / `from_anthropic_with_all_tools`
+    /// directly and pass a `ConcreteHook` constructed against a real
+    /// `project_root`.
     pub fn from_config(
         cfg: &MbforgeProviderConfig,
         spec: &MbforgeAgentSpec,
         extra_tools: Vec<Box<dyn rig_core::tool::ToolDyn>>,
     ) -> Result<Self, String> {
+        let hook = build_default_concrete_hook()?;
         match cfg.kind {
             MbforgeProviderKind::OpenAICompatible => {
-                Self::from_openai_compatible(cfg, spec, extra_tools)
+                Self::from_openai_compatible(cfg, spec, extra_tools, hook)
             }
             MbforgeProviderKind::Anthropic => {
-                Self::from_anthropic(cfg, spec, extra_tools)
+                Self::from_anthropic(cfg, spec, extra_tools, hook)
             }
         }
+    }
+
+    /// Convenience: build an OpenAI-compatible agent with all 25 rig-native
+    /// tools wired up (16 executor tools + 9 arxiv tools). `project_root`
+    /// is the MBForge project directory the tools' `executor_rig::*` files
+    /// will read from. `hook` carries the audit + trajectory sinks; pass a
+    /// hook built against the same `project_root` for the audit entries to
+    /// land in `<project_root>/.mbforge/audit.jsonl`.
+    pub fn from_openai_compatible_with_all_tools(
+        cfg: &MbforgeProviderConfig,
+        spec: &MbforgeAgentSpec,
+        project_root: &str,
+        hook: ConcreteHook,
+    ) -> Result<Self, String> {
+        let tools = assemble_rig_tool_vec(project_root);
+        Self::from_openai_compatible(cfg, spec, tools, hook)
+    }
+
+    /// Anthropic counterpart of `from_openai_compatible_with_all_tools`.
+    /// Same 25-tool set; differs only in the provider client.
+    pub fn from_anthropic_with_all_tools(
+        cfg: &MbforgeProviderConfig,
+        spec: &MbforgeAgentSpec,
+        project_root: &str,
+        hook: ConcreteHook,
+    ) -> Result<Self, String> {
+        let tools = assemble_rig_tool_vec(project_root);
+        Self::from_anthropic(cfg, spec, tools, hook)
+    }
+}
+
+// ============================================================================
+// Helpers (tool assembly + default hook construction)
+// ============================================================================
+
+use crate::core::agent::arxiv_rig::{
+    ArxivBrief, ArxivMetadata, ArxivPreview, ArxivRaw, ArxivSearch, ArxivSection, ArxivTrending,
+    PmcJson, PmcMetadata,
+};
+use crate::core::agent::executor_rig::{
+    CheckMarkushTool, FindDocumentsTool, GetDocumentPagesTool, GetDocumentStructureTool,
+    GetDocumentSummaryTool, GetProjectInfoTool, GlobSearchTool, GrepSearchTool, ListDocumentsTool,
+    ListFilesTool, MoleculeAnalysisTool, ReadDocumentAbstractTool, ReadDocumentDetailTool,
+    ReadDocumentOverviewTool, ReadFileTool, SearchKbTool,
+};
+use crate::core::agent::observability::AuditLog;
+use crate::core::agent::rig_hooks::{AuditLogHook, TrajectoryHook};
+use crate::core::agent::trajectory::TrajectoryTracker;
+
+/// Assemble the 25 rig-native tools the MBForge agent stack expects:
+/// 16 from `executor_rig` (file system, KB, document, molecule) and 9
+/// from `arxiv_rig` (arxiv + PMC literature). They are boxed in declaration
+/// order so tool names sort the same way across runs.
+///
+/// This bypasses `executor_rig::register_rig_executor_tools` /
+/// `arxiv_rig::register_rig_tools`, which mutate a `ToolSet` we cannot
+/// drain back out (`ToolSet::tools` is `pub(crate)` and `ToolSet` has no
+/// `IntoIterator` impl in rig 0.38.1). Constructing the tool instances
+/// directly here gives us a `Vec<Box<dyn ToolDyn>>` ready for the
+/// `AgentBuilder::tools(...)` call.
+pub(crate) fn assemble_rig_tool_vec(project_root: &str) -> Vec<Box<dyn rig_core::tool::ToolDyn>> {
+    let mut tools: Vec<Box<dyn rig_core::tool::ToolDyn>> = Vec::with_capacity(25);
+    // 16 executor tools.
+    tools.push(Box::new(GrepSearchTool::new(project_root)));
+    tools.push(Box::new(ListFilesTool::new(project_root)));
+    tools.push(Box::new(ReadFileTool::new(project_root)));
+    tools.push(Box::new(GetProjectInfoTool::new(project_root)));
+    tools.push(Box::new(GlobSearchTool::new(project_root)));
+    tools.push(Box::new(SearchKbTool::new(project_root)));
+    tools.push(Box::new(GetDocumentStructureTool::new(project_root)));
+    tools.push(Box::new(GetDocumentPagesTool::new(project_root)));
+    tools.push(Box::new(CheckMarkushTool::new()));
+    tools.push(Box::new(MoleculeAnalysisTool::new(project_root)));
+    tools.push(Box::new(ReadDocumentAbstractTool::new(project_root)));
+    tools.push(Box::new(ReadDocumentOverviewTool::new(project_root)));
+    tools.push(Box::new(ListDocumentsTool::new(project_root)));
+    tools.push(Box::new(GetDocumentSummaryTool::new(project_root)));
+    tools.push(Box::new(ReadDocumentDetailTool::new(project_root)));
+    tools.push(Box::new(FindDocumentsTool::new(project_root)));
+    // 9 arxiv tools (unit structs; the `#[rig_tool]` macro generates
+    // `pub struct FooTool;` from `pub async fn foo_tool(...)`).
+    tools.push(Box::new(ArxivMetadata));
+    tools.push(Box::new(ArxivBrief));
+    tools.push(Box::new(ArxivPreview));
+    tools.push(Box::new(ArxivRaw));
+    tools.push(Box::new(ArxivSection));
+    tools.push(Box::new(ArxivSearch));
+    tools.push(Box::new(ArxivTrending));
+    tools.push(Box::new(PmcMetadata));
+    tools.push(Box::new(PmcJson));
+    tools
+}
+
+/// Build a `ConcreteHook` from a fresh `tempfile::tempdir()`. Used by
+/// `from_config` which has no `project_root` argument and by tests that
+/// need a hook without setting up a real audit directory.
+///
+/// Returns an error only if the tempdir / audit-log file cannot be created,
+/// which in practice means a permission / disk issue at the OS layer.
+pub(crate) fn build_default_concrete_hook() -> Result<ConcreteHook, String> {
+    let dir = tempfile::tempdir().map_err(|e| format!("tempfile::tempdir failed: {e}"))?;
+    let audit = AuditLog::new(dir.path())
+        .map_err(|e| format!("AuditLog::new({}) failed: {e}", dir.path().display()))?;
+    let audit_hook = AuditLogHook::new(Arc::new(audit));
+    let trajectory = TrajectoryTracker::new(dir.path());
+    let trajectory_hook = TrajectoryHook::new(trajectory);
+    Ok(ConcreteHook {
+        audit: audit_hook,
+        trajectory: trajectory_hook,
+    })
+}
+
+
+// ============================================================================
+// Stream mapping (rig MultiTurnStreamItem -> MbforgeStreamItem)
+// ============================================================================
+
+use rig_core::agent::{MultiTurnStreamItem, StreamingError, StreamingResult};
+use rig_core::completion::message::ToolResultContent;
+use rig_core::streaming::{StreamedAssistantContent, StreamedUserContent};
+
+/// Take the future that rig's `stream_prompt().multi_turn(N).await` returns
+/// and re-shape it into a `MbforgeStream`. The future resolves to a
+/// `StreamingResult<R>` (a `Pin<Box<dyn Stream<…> + Send>>`); we drive it
+/// with `futures::stream::unfold` so each rig item becomes 0–1
+/// `MbforgeStreamItem`s.
+///
+/// This avoids pulling in `async-stream` (a transitive rig-core dep that
+/// isn't a direct Cargo dep) while still giving the call site an
+/// ordinary `Stream` to consume.
+pub(crate) fn map_rig_stream<R, F>(fut: F) -> MbforgeStream
+where
+    F: std::future::Future<Output = StreamingResult<R>> + Send + 'static,
+    R: Send + 'static,
+{
+    use futures::stream::StreamExt;
+    // `stream::once` yields the inner stream once, then we `flat_map` to
+    // unfold it into a stream of `MbforgeStreamItem`s.
+    let outer = futures::stream::once(fut).flat_map(|mut inner: StreamingResult<R>| {
+        futures::stream::unfold(inner, move |mut inner| async move {
+            match inner.next().await {
+                Some(Ok(item)) => Some((map_multi_turn_item(item), inner)),
+                Some(Err(e)) => Some((Err(format_streaming_error(&e)), inner)),
+                None => None,
+            }
+        })
+    });
+    Box::pin(outer)
+}
+
+fn format_streaming_error(e: &StreamingError) -> String {
+    format!("{e}")
+}
+/// Convert one rig multi-turn stream item to a `MbforgeStreamItem`. Returns
+/// `Ok(MbforgeStreamItem::TextDelta(String::new()))` (a no-op delta) for items
+/// we don't surface to the frontend; callers can filter these out if needed.
+fn map_multi_turn_item<R>(item: MultiTurnStreamItem<R>) -> Result<MbforgeStreamItem, String> {
+    match item {
+        MultiTurnStreamItem::StreamAssistantItem(content) => Ok(match content {
+            StreamedAssistantContent::Text(text) => MbforgeStreamItem::TextDelta(text.text),
+            StreamedAssistantContent::ToolCall { tool_call, .. } => {
+                MbforgeStreamItem::ToolCall {
+                    id: tool_call.id,
+                    name: tool_call.function.name,
+                    arguments: tool_call.function.arguments,
+                }
+            }
+            // Deltas, reasoning, and the embedded `Final(R)` are dropped from
+            // the frontend stream; the hook still sees them and the terminal
+            // `FinalResponse` carries the aggregated text + usage.
+            StreamedAssistantContent::ToolCallDelta { .. }
+            | StreamedAssistantContent::Reasoning(_)
+            | StreamedAssistantContent::ReasoningDelta { .. }
+            | StreamedAssistantContent::Final(_) => MbforgeStreamItem::TextDelta(String::new()),
+        }),
+        MultiTurnStreamItem::StreamUserItem(StreamedUserContent::ToolResult {
+            tool_result,
+            internal_call_id,
+        }) => {
+            // Concatenate the text fragments of the tool result content; the
+            // MBForge frontend only needs the rendered string.
+            let result = tool_result
+                .content
+                .into_iter()
+                .map(|c| match c {
+                    ToolResultContent::Text(t) => t.text,
+                    ToolResultContent::Image(_) => String::new(),
+                })
+                .collect::<Vec<_>>()
+                .join("");
+            Ok(MbforgeStreamItem::ToolResult {
+                id: tool_result.id,
+                name: internal_call_id,
+                result,
+            })
+        }
+        MultiTurnStreamItem::CompletionCall(_) => {
+            // Per-completion usage events are dropped from the frontend
+            // stream; the aggregated usage comes through on `FinalResponse`.
+            Ok(MbforgeStreamItem::TextDelta(String::new()))
+        }
+        MultiTurnStreamItem::FinalResponse(final_response) => {
+            let usage = final_response.usage();
+            Ok(MbforgeStreamItem::Final {
+                content: final_response.response().to_string(),
+                prompt_tokens: usage.input_tokens,
+                completion_tokens: usage.output_tokens,
+            })
+        }
+        // `MultiTurnStreamItem` is `#[non_exhaustive]`. Future rig versions
+        // may add new variants; treat them as no-op deltas so we don't break.
+        _ => Ok(MbforgeStreamItem::TextDelta(String::new())),
     }
 }
 
@@ -430,5 +750,53 @@ mod tests {
     fn test_mbforge_provider_kind_as_str() {
         assert_eq!(MbforgeProviderKind::OpenAICompatible.as_str(), "openai_compatible");
         assert_eq!(MbforgeProviderKind::Anthropic.as_str(), "anthropic");
+    }
+
+    /// Verify the `ConcreteHook` composes the inner audit + trajectory
+    /// hooks correctly and exposes the trait's default methods. We pick
+    /// `rig_core::providers::openai::CompletionModel` as the `M` parameter
+    /// for `PromptHook<M>` because it's already in scope as a re-export
+    /// of the actual `GenericCompletionModel<OpenAICompletionsExt, H>`
+    /// — the test never instantiates it, just needs a type that
+    /// implements `CompletionModel` so the trait method is callable.
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_concrete_hook_default_methods() {
+        use rig_core::agent::PromptHook;
+        type M = rig_core::providers::openai::CompletionModel;
+        let hook = build_default_concrete_hook().expect("default hook builds");
+        // The struct composes the two inner hooks (cheap `Clone` via `Arc`).
+        let _clone = hook.clone();
+        // Default `on_completion_call` (we didn't override it) returns `cont`.
+        let action = <ConcreteHook as PromptHook<M>>::on_completion_call(
+            &hook,
+            &Message::user("test"),
+            &[],
+        )
+        .await;
+        assert!(
+            matches!(action, rig_core::agent::HookAction::Continue),
+            "default on_completion_call should be HookAction::Continue"
+        );
+        // Sanity-check that the inner hooks survived the construction.
+        assert!(!hook.audit.trace_id.is_empty());
+        assert!(!hook.trajectory.trace_id.is_empty());
+    }
+
+    /// Verify the `from_openai_compatible` factory rejects an Anthropic
+    /// config. This guards the runtime check in the factory; if the check
+    /// ever regresses the test fails immediately.
+    #[test]
+    fn test_from_openai_compatible_validates_kind() {
+        let cfg = MbforgeProviderConfig::for_tests_anthropic();
+        let spec = MbforgeAgentSpec::general();
+        let hook = build_default_concrete_hook().expect("default hook builds");
+        let res = MbforgeAgent::from_openai_compatible(&cfg, &spec, Vec::new(), hook);
+        match res {
+            Err(msg) => assert!(
+                msg.contains("from_openai_compatible called with non-OpenAI"),
+                "unexpected error message: {msg}"
+            ),
+            Ok(_) => panic!("expected Err for non-OpenAI config, got Ok"),
+        }
     }
 }

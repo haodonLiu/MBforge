@@ -1230,3 +1230,127 @@ _Questions this graph is uniquely positioned to answer:_
   _Cohesion score 0.023703800444038137 - nodes in this community are weakly interconnected._
 - **Should `Frontend Chat` be split into smaller, more focused modules?**
   _Cohesion score 0.0111731843575419 - nodes in this community are weakly interconnected._
+
+---
+
+## Isolated Node Deep Audit
+
+- **2717 nodes with degree ≤ 1** (39.6% of corpus) — 1135 more than the fully-disconnected count in Knowledge Gaps above.
+- **Degree = 0:** 1582 nodes (fully disconnected)
+- **Degree = 1:** 1135 nodes (single connection, often to a generic type)
+- Verdict: most isolation is structural (vendored deps, i18n tokens, config files, AST artifacts) rather than dead code, with three exceptions flagged below.
+
+### Isolation by Category
+
+| Category | Nodes | Share | Source Files | Verdict |
+|----------|-------|-------|--------------|---------|
+| Vendor: setup/MolScribe (full copy) | 583 | 21.5% | 32 files | Expected — install-only artifacts |
+| Frontend source | 403 | 14.8% | 87 files | Low risk — components/types used via imports graphify did not trace |
+| Frontend i18n (en + zh-CN) | 356 | 13.1% | 3 files | Expected — translation keys are leaf nodes by design |
+| Attached docs/concepts | 323 | 11.9% | 52 files | Documentation debt — rationale nodes without cross-references |
+| Orphan docs/concepts (no source) | 248 | 9.1% | N/A | Documentation debt — unanchored ideas and TODOs |
+| Rust: Core layer | 239 | 8.8% | 21 files | **Review needed** — includes business logic, not just generics |
+| Vendor: molscribe_inference (runtime) | 112 | 4.1% | 15 files | Review needed — parallel copy of setup/MolScribe inference modules |
+| Tests | 91 | 3.3% | 11 files | Expected — test functions are naturally leaf-heavy |
+| Rust: Parsers layer | 85 | 3.1% | 14 files | Review needed — pipeline.rs, vlm_chem.rs, post_process.rs |
+| Frontend config | 66 | 2.4% | 3 files | Expected — package.json / tsconfig.json leaf fields |
+| Rust: Commands layer | 49 | 1.8% | 11 files | Low risk — Tauri command wrappers with single-call patterns |
+| PDF pipeline test data (JSON) | 48 | 1.8% | 6 files | Expected — fixture data |
+| Python: mbforge source | 40 | 1.5% | 17 files | Low risk — sidecar utilities with narrow API surface |
+| Shell setup scripts | 33 | 1.2% | 11 files | Expected — install scripts |
+| Other JSON configs | 20 | 0.7% | 2 files | Low risk — tauri.conf.json, capabilities |
+| Rust: Other | 12 | 0.4% | 3 files | Low risk — sidecar.rs, build.rs, lib.rs |
+| Python: Other | 3 | 0.1% | 2 files | Low risk — ref scripts |
+| Other | 6 | 0.2% | 4 files | Low risk — eslint, vite configs |
+
+### Rust Core Exceptions (need human review)
+
+These files contain **business-logic nodes** (not just `Box`/`Result` generics) that have ≤1 edge in the graph:
+
+- `src-tauri/src/core/chem/markush.rs` — `MarkushOverlap`, `MarkushPattern`, `analyze_markush_coverage()` (14 nodes)
+- `src-tauri/src/core/molecule/molecule_engine.rs` — engine methods and state types (10 nodes)
+- `src-tauri/src/core/agent/rig_adapter.rs` — `AuditLogHook`, `MultiTurnStreamItem`, `StreamingError` (11 nodes)
+- `src-tauri/src/core/document/semantic_cache.rs` — cache entry types and eviction logic (9 nodes)
+- `src-tauri/src/core/chem/abbreviation_map.rs` — `build_non_expandable()`, `find_abbrev()` (9 nodes)
+
+**Question:** Are these functions/types truly unreferenced, or does graphify fail to trace Rust trait implementations and macro-generated calls?
+
+### Frontend Source Breakdown
+
+Isolated frontend nodes cluster in three areas:
+
+1. **Animation constants** (`frontend/src/hooks/useAnimations.ts`, 15 nodes) — `scaleIn`, `slideFromLeft`, `staggerContainer` etc. These are exported object properties consumed by JSX spread; graphify does not trace object-property usage across TSX files.
+2. **Type definitions** (`frontend/src/types/index.ts`, 12 nodes) — TS `interface`/`type` nodes have no outgoing edges because graphify does not resolve type-import references.
+3. **Top-level components** (`App.tsx`, `SettingsModal.tsx`, `SARAnalysis.tsx`) — root components import children but are not imported by any higher module (they are the tree root), so their in-degree is low.
+
+Verdict: **Not dead code** — artifact of AST-only extraction without TSX/JSX call-graph resolution.
+
+---
+
+## Vendor Duplication Analysis
+
+- **MolScribe appears twice** in the graph:
+  - `setup/MolScribe/` — 583 nodes, 32 files (full training + inference distribution)
+  - `src/mbforge/parsers/molecule/molscribe_inference/` — 112 nodes, 15 files (runtime inference subset)
+- The runtime copy is a **strict structural subset** of the full distribution.
+
+### Module-by-module comparison
+
+| File | setup/MolScribe nodes | molscribe_inference nodes | Verdict |
+|------|----------------------|---------------------------|---------|
+| `transformer/swin_transformer.py` | 23 | 23 | Identical |
+| `transformer/decoder.py` | 14 | 14 | Identical |
+| `tokenizer.py` | 14 | 13 | Near-identical (-1 node) |
+| `chemistry.py` | 16 | 18 | Near-identical (docstring variance) |
+| `utils.py` | 10 | 10 | Identical |
+| `inference/beam_search.py` | 10 | 10 | Identical |
+| `inference/decode_strategy.py` | 8 | 8 | Identical |
+| `inference/greedy_search.py` | 9 | 9 | Identical |
+| `vocab/vocab_chars.json` | 43 | 43 | Identical |
+| `vocab/vocab_uspto.json` | **415** | **0** | Runtime does not need USPTO vocab |
+| `indigo/__init__.py` | 19 | 0 | Setup-only Indigo bindings |
+| `train.py`, `evaluate.py`, `dataset.py`, `loss.py` | 16 total | 0 | Training-only artifacts |
+
+### Recommendations
+
+1. **Exclude `setup/MolScribe/` from future graphify scans** (or mark as `install-only`) — it contributes 583 isolated nodes (21.5% of all isolated nodes) and pollutes community detection with duplicate transformer/decoder communities.
+2. If the runtime copy (`molscribe_inference/`) is the only code executed at runtime, establish a one-way sync policy: changes to inference files must be mirrored back to `setup/MolScribe/` only if the full distribution is still used for model retraining.
+
+---
+
+## Cross-Layer Dependency Assessment
+
+### Rust Commands → Core → Parsers connectivity
+
+The graph shows a **healthy funnel** from Commands (49 isolated, mostly wrappers) through Core (239 isolated, mixed generics + business logic) to Parsers (85 isolated). However, three potential disconnects exist:
+
+1. `core/chem/markush.rs` (14 isolated business nodes) does not appear to send edges to `parsers/pipeline.rs` or `parsers/chem/chem_validate.rs`. If Markush parsing is a pipeline stage, the connection should exist.
+2. `core/document/semantic_cache.rs` (9 isolated nodes) has no edges to `core/document/knowledge_base.rs`, suggesting the semantic cache layer and the KB layer are not yet wired together in the AST.
+3. `core/agent/rig_adapter.rs` (11 isolated nodes) bridges the RIG framework to MBForge, but its adapter types (`MultiTurnStreamItem`, `StreamingError`) do not connect to `commands/agent.rs` or `core/agent/context.rs`.
+
+### Python sidecar → Rust bridge
+
+The Python sidecar (`src/mbforge/`) contributes 40 isolated nodes. In a Tauri + sidecar architecture, cross-process calls (HTTP over localhost:18792) are **invisible to AST extraction**. Therefore, all Python router nodes and model-manager nodes will always appear isolated in the graph. This is expected, but it means the graph **cannot validate** whether a Python endpoint has a matching Rust caller without manual inspection.
+
+### Frontend → Rust bridge
+
+Frontend API files (`frontend/src/api/tauri/`) are surprisingly isolated:
+- `api/tauri/agent.ts` — 9 isolated nodes
+- `api/tauri/pdf.ts` — 6 isolated nodes
+
+These files wrap `invoke()` calls to Rust commands. The low edge count suggests graphify does not trace the string-literal command names in `invoke('agent_chat')` back to the Rust `#[tauri::command]` definitions. This is a **known limitation**, not a bug — but it means the frontend-to-Rust call graph is missing from the graph.
+
+---
+
+## Updated Suggested Questions
+
+_Additional questions raised by this audit:_
+
+- **Is `markush.rs` actually called by the PDF pipeline, or is it dead code waiting for integration?**
+  _14 business-logic nodes in this file have no outgoing edges to parsers or commands._
+- **Does the runtime MolScribe copy (`molscribe_inference/`) drift from the setup copy when bugfixes are applied?**
+  _The two copies share identical node counts across 9 parallel files, but manual edits could desynchronize them._
+- **Why do frontend API bridge files (`api/tauri/agent.ts`, `api/tauri/pdf.ts`) have no edges to Rust command modules?**
+  _Cross-language invoke() calls use string literals, which AST extraction does not resolve into edges._
+- **Should the 248 unanchored concept nodes (no source_file) be archived or linked to roadmap issues?**
+  _They represent design ideas and TODOs that currently float outside the code structure._

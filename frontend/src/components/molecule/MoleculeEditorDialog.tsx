@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { Editor } from 'ketcher-react'
 import { StandaloneStructServiceProvider } from 'ketcher-standalone'
 import 'ketcher-react/dist/index.css'
-import { CloseIcon } from '../icons'
+import { XIcon } from '../icons'
 
 const structServiceProvider = new StandaloneStructServiceProvider()
 
@@ -171,7 +171,7 @@ export default function MoleculeEditorDialog({
                 alignItems: 'center',
               }}
             >
-              <CloseIcon size={14} />
+              <XIcon size={14} />
             </button>
           </div>
         </div>

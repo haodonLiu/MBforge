@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import type { ReactNode } from 'react'
 import IconButton from './IconButton'
+import ScrollColumn from './ScrollColumn'
 import { XIcon } from '../icons'
 import { useIsMobile } from '../../styles/responsive'
 
@@ -110,9 +111,9 @@ export default function Modal({
             )}
 
             {/* Content */}
-            <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
+            <ScrollColumn padding="16px 20px">
               {children}
-            </div>
+            </ScrollColumn>
 
             {/* Footer */}
             {footer && (

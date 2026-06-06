@@ -10,6 +10,7 @@ import { showToast } from '../hooks/useToast'
 import { default as BaseTreeNode } from '../components/ui/TreeNode'
 import EmptyState from '../components/ui/EmptyState'
 import Button from '../components/ui/Button'
+import ScrollColumn from '../components/ui/ScrollColumn'
 
 interface FileNode {
   name: string
@@ -116,11 +117,11 @@ export default function FileTree({ onFileClick }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ overflow: 'auto', flex: 1 }}>
+      <ScrollColumn>
         {tree.map(node => (
           <TreeNode key={node.path} node={node} depth={0} onFileClick={onFileClick} />
         ))}
-      </div>
+      </ScrollColumn>
       <div style={{
         padding: '10px 12px',
         borderTop: '1px solid var(--border)',

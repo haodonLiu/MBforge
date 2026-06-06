@@ -180,12 +180,11 @@ function AppInner() {
         paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0,
       }}>
         <ErrorBoundary>
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
             <AppRoutes />
           </div>
         </ErrorBoundary>
       </main>
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <ToastContainer />
     </div>
   )

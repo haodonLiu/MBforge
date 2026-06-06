@@ -43,11 +43,11 @@ thiserror = "1"
 anyhow = "1"
 lopdf = { git = "https://github.com/J-F-Liu/lopdf", rev = "7a05512d831415b1f2b1ce522391d6beab8a1284", version = "0.40.0" }
 # 化学信息学（纯 Rust，替代 Python RDKit）
-chematic-core = { git = "https://github.com/kent-tokyo/chematic" }
-chematic-smiles = { git = "https://github.com/kent-tokyo/chematic" }
-chematic-fp = { git = "https://github.com/kent-tokyo/chematic" }
-chematic-smarts = { git = "https://github.com/kent-tokyo/chematic" }
-chematic-chem = { git = "https://github.com/kent-tokyo/chematic" }
+chematic-core = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
+chematic-smiles = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
+chematic-fp = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
+chematic-smarts = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
+chematic-chem = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
 
 # LLM agent framework — replaces hand-rolled ReAct loop, multi-provider LLM
 # client, tool dispatch, and streaming. Pinned to 0.38.x (latest as of 2026-06).

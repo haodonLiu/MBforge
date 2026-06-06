@@ -74,7 +74,10 @@ def check_command(cmd: str) -> bool:
 
 @router.get("/check", response_model=EnvironmentCheckResult)
 async def check_environment() -> EnvironmentCheckResult:
-    """检测当前运行环境的能力."""
+    """检测当前运行环境的能力.
+
+    (no direct Rust caller; only invoked from the frontend via HTTP)
+    """
     
     capabilities: list[CapabilityStatus] = []
     

@@ -139,5 +139,4 @@ app.include_router(download.router, prefix="/api/v1/download", tags=["download"]
 app.include_router(
     environment.router, prefix="/api/v1/environment", tags=["environment"]
 )
-app.include_router(sar.router, prefix="/api/v1/sar", tags=["sar"])
 app.include_router(tools.router, prefix="/api/v1/tools", tags=["tools"])

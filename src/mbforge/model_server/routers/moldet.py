@@ -19,6 +19,11 @@ router = APIRouter()
 
 @router.post("/detect-page")
 async def detect_page(request: Request) -> dict[str, Any]:
+    """Detect molecule bounding boxes on a single page image.
+
+    Called by Rust:
+      - src-tauri/src/parsers/chem/vlm_chem.rs::detect_page
+    """
     try:
         body = await request.json()
         image_base64 = body.get("image_base64", "")
@@ -52,6 +57,10 @@ async def detect_page(request: Request) -> dict[str, Any]:
 
 @router.post("/extract-page")
 async def extract_page(request: Request) -> dict[str, Any]:
+    """Extract molecule regions + recognition results from a single page image.
+
+    (no direct Rust caller; only invoked from the frontend via HTTP)
+    """
     try:
         body = await request.json()
         image_base64 = body.get("image_base64", "")

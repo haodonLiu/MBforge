@@ -5,7 +5,7 @@ import type {
   RGroupMatrix as RGroupMatrixData,
   ActivityHeatmapEntry,
 } from '../../api/client'
-import { buildRGroupMatrix, buildActivityHeatmap } from '../../api/client'
+import { sarBuildMatrix, sarHeatmap } from '../../api/tauri/sar'
 import CoreScaffoldCard from './rgroup/CoreScaffoldCard'
 import MatrixTable from './rgroup/MatrixTable'
 import HeatmapPanel from './rgroup/HeatmapPanel'
@@ -53,7 +53,7 @@ export default function RGroupMatrixView({
   const [error, setError] = useState<string | null>(null)
   const [showHeatmap, setShowHeatmap] = useState(true)
 
-  // 后端 matrix 调用
+  // 后端 matrix 调用（Rust Tauri 命令）
   useEffect(() => {
     if (!compounds || compounds.length < 2) {
       setMatrix(null)
@@ -63,32 +63,25 @@ export default function RGroupMatrixView({
     let cancelled = false
     setLoading(true)
     setError(null)
-    buildRGroupMatrix(
+    sarBuildMatrix(
       compounds.map(c => ({
         id: c.id,
         name: c.name,
         smiles: c.smiles,
-        activity: c.activity ?? null,
-        activity_type: c.activityType ?? null,
-        units: c.units ?? null,
+        activity: c.activity ?? undefined,
+        activity_type: c.activityType ?? undefined,
+        units: c.units ?? undefined,
       })),
       coreSmiles,
-      !coreSmiles,
     )
       .then(resp => {
         if (cancelled) return
-        if (!resp.success || !resp.core_smiles) {
-          setError(resp.error || '未找到共同骨架')
+        if (!resp.core_smiles) {
+          setError('未找到共同骨架')
           setMatrix(null)
           return
         }
-        setMatrix({
-          core_smiles: resp.core_smiles,
-          r_labels: resp.r_labels ?? [],
-          rows: resp.rows ?? [],
-          compounds: resp.compounds ?? [],
-          unmatched_count: resp.unmatched_count ?? 0,
-        })
+        setMatrix(resp)
       })
       .catch(e => {
         if (cancelled) return
@@ -103,17 +96,17 @@ export default function RGroupMatrixView({
     }
   }, [compounds, coreSmiles])
 
-  // heatmap 调用
+  // heatmap 调用（Rust Tauri 命令）
   useEffect(() => {
     if (!matrix) {
       setHeatmaps([])
       return
     }
     let cancelled = false
-    buildActivityHeatmap(matrix, lowerIsBetter)
+    sarHeatmap(matrix, lowerIsBetter)
       .then(resp => {
         if (cancelled) return
-        if (resp.success) setHeatmaps(resp.heatmaps)
+        setHeatmaps(resp as unknown as ActivityHeatmapEntry[])
       })
       .catch(() => {
         // 热力图失败不阻塞矩阵展示

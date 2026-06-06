@@ -22,6 +22,11 @@ router = APIRouter()
 
 @router.post("/describe")
 async def describe(request: Request) -> dict[str, Any]:
+    """Generic VLM image captioning.
+
+    Called by Rust:
+      - src-tauri/src/parsers/chem/vlm_chem.rs::describe_image
+    """
     tmp_path = None
     try:
         body = await request.json()
@@ -53,7 +58,12 @@ async def describe(request: Request) -> dict[str, Any]:
 
 @router.post("/molscribe")
 async def molscribe(request: Request) -> dict[str, Any]:
-    """化学结构图像 → SMILES（MolScribe）. Uses standalone molscribe module."""
+    """化学结构图像 → SMILES（MolScribe）. Uses standalone molscribe module.
+
+    Called by Rust:
+      - src-tauri/src/parsers/chem/vlm_chem.rs::image_to_esmiles
+      - src-tauri/src/parsers/chem/vlm_chem.rs::molscribe
+    """
     tmp_path = None
     try:
         body = await request.json()

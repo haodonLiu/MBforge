@@ -111,41 +111,6 @@ export interface ActivityHeatmapResponse {
   error?: string
 }
 
-export function buildRGroupMatrix(
-  compounds: SARCompoundInput[],
-  core_smiles?: string,
-  auto_extract_scaffold = true,
-): Promise<RGroupMatrixResponse> {
-  return fetchJson<RGroupMatrixResponse>(`${API_BASE}/sar/matrix`, {
-    method: 'POST',
-    body: JSON.stringify({
-      compounds,
-      core_smiles: core_smiles ?? null,
-      auto_extract_scaffold,
-    }),
-  })
-}
-
-export function buildActivityHeatmap(
-  matrix: RGroupMatrix,
-  lower_is_better = true,
-): Promise<ActivityHeatmapResponse> {
-  return fetchJson<ActivityHeatmapResponse>(`${API_BASE}/sar/heatmap`, {
-    method: 'POST',
-    body: JSON.stringify({ matrix, lower_is_better }),
-  })
-}
-
-export function extractScaffold(smiles_list: string[]) {
-  return fetchJson<{ success: boolean; core_smiles: string | null; error?: string }>(
-    `${API_BASE}/sar/scaffold`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ smiles_list }),
-    },
-  )
-}
-
 // ============================================================================
 // SMILES 结构校验（纯 Rust，通过 Tauri invoke）
 // ============================================================================

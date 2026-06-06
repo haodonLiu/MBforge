@@ -30,7 +30,11 @@ class ToolCallResponse(BaseModel):
 
 @router.post("/call")
 def call_tool(req: ToolCallRequest) -> ToolCallResponse:
-    """Execute a tool by name (stub — returns informative fallback)."""
+    """Execute a tool by name (stub — returns informative fallback).
+
+    Called by Rust:
+      - src-tauri/src/core/executor/mod.rs::execute_sidecar
+    """
     return ToolCallResponse(
         success=False,
         result="",

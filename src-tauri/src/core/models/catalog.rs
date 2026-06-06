@@ -133,20 +133,6 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
     },
     // ──── Python 包 ────
     ResourceInfo {
-        id: "rdkit",
-        name: "RDKit",
-        resource_type: ResourceType::PythonPackage,
-        description: "分子信息学: SMILES 解析、分子属性计算",
-        size_mb: 0,
-        license: "BSD-3",
-        ms_repo: "",
-        download_type: "",
-        ms_file: "",
-        local_name: "",
-        pip_name: "rdkit",
-        import_name: "rdkit",
-    },
-    ResourceInfo {
         id: "torch",
         name: "PyTorch",
         resource_type: ResourceType::PythonPackage,

@@ -175,7 +175,10 @@ def _download_from_modelscope(model_id: str, *, timeout: int = 300):
 
 @router.get("/models")
 async def list_models() -> dict[str, Any]:
-    """列出所有模型及其状态."""
+    """列出所有模型及其状态.
+
+    (no direct Rust caller; only invoked from the frontend via HTTP)
+    """
     result = []
     for mid, info in RESOURCE_CATALOG.items():
         if info.type != ResourceType.MODEL:
@@ -210,14 +213,20 @@ async def list_models() -> dict[str, Any]:
 
 @router.get("/model-dir")
 async def get_model_dir() -> dict[str, Any]:
-    """返回当前模型下载目录路径."""
+    """返回当前模型下载目录路径.
+
+    (no direct Rust caller; only invoked from the frontend via HTTP)
+    """
     cfg = load_global_config()
     return {"success": True, "model_dir": str(_get_model_cache_dir()), "config_dir": cfg.model_cache_dir or "(default)"}
 
 
 @router.get("/list-downloaded")
 async def list_downloaded() -> dict[str, Any]:
-    """扫描模型目录，返回所有已下载模型的信息."""
+    """扫描模型目录，返回所有已下载模型的信息.
+
+    (no direct Rust caller; only invoked from the frontend via HTTP)
+    """
     cache_dir = _get_model_cache_dir()
     downloaded = []
     if cache_dir.exists():
@@ -262,7 +271,10 @@ async def list_downloaded() -> dict[str, Any]:
 
 @router.delete("/delete/{model_id}")
 async def delete_model(model_id: str) -> dict[str, Any]:
-    """删除已下载的模型."""
+    """删除已下载的模型.
+
+    (no direct Rust caller; only invoked from the frontend via HTTP)
+    """
     cache_dir = _get_model_cache_dir()
 
     if model_id in RESOURCE_CATALOG:
@@ -286,13 +298,17 @@ async def delete_model(model_id: str) -> dict[str, Any]:
     if target.is_dir():
         shutil.rmtree(target)
     else:
+    else:
         target.unlink()
     return {"success": True, "deleted": str(target)}
 
 
 @router.post("/download/{model_id}")
 async def download_model(model_id: str):
-    """下载模型（SSE 流式进度）."""
+    """下载模型（SSE 流式进度）.
+
+    (no direct Rust caller; only invoked from the frontend via HTTP)
+    """
     if model_id not in RESOURCE_CATALOG:
         raise ValidationError(f"未知模型: {model_id}")
     info = RESOURCE_CATALOG[model_id]
@@ -322,7 +338,10 @@ async def download_model(model_id: str):
 
 @router.get("/status/{model_id}")
 async def model_status(model_id: str) -> dict[str, Any]:
-    """查询单个模型状态."""
+    """查询单个模型状态.
+
+    (no direct Rust caller; only invoked from the frontend via HTTP)
+    """
     if model_id not in RESOURCE_CATALOG:
         raise ValidationError(f"未知模型: {model_id}")
     status = ResourceManager.check(model_id)

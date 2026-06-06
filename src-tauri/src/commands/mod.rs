@@ -123,5 +123,10 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::core::resource_manager::resources_catalog,
         crate::core::resource_manager::models_download,
         crate::core::resource_manager::models_cancel_download,
+        // SAR analysis
+        crate::core::chem::sar::sar_find_scaffold,
+        crate::core::chem::sar::sar_decompose,
+        crate::core::chem::sar::sar_build_matrix,
+        crate::core::chem::sar::sar_heatmap,
     ]
 }

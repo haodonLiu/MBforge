@@ -21,7 +21,10 @@ router = APIRouter()
 
 @router.get("/pdf")
 async def serve_pdf(path: str, project_root: str | None = None):
-    """Serve a PDF file for preview."""
+    """Serve a PDF file for preview.
+
+    (no direct Rust caller; browser dev fallback only — main path is in Rust/Tauri)
+    """
     try:
         file_path = Path(path)
         if project_root:

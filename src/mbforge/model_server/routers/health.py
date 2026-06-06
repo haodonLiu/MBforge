@@ -33,6 +33,11 @@ _RESOURCE_CACHE_TTL = 60.0  # 60 秒刷新一次
 
 @router.get("/health")
 async def health_check() -> dict[str, Any]:
+    """Aggregate health check across loaded models + resources.
+
+    Called by Rust:
+      - src-tauri/src/sidecar.rs::start_health_monitor
+    """
     # 尝试初始化各模型（触发懒加载）
     try:
         get_llm()

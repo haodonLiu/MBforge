@@ -114,14 +114,11 @@ export default function Chat() {
       const sid = crypto.randomUUID()
       sessionIdRef.current = sid
 
-      // Load saved LLM config from localStorage (set by Settings)
-      const savedConfig = localStorage.getItem('mbforge_llm_config')
-      const config = savedConfig
-        ? JSON.parse(savedConfig)
-        : { provider: 'openai_compatible', base_url: 'http://localhost:8000/v1', api_key: '', model_name: 'default', max_tokens: 4096, temperature: 0.7, top_p: 0.9 }
-
       try {
-        await agentInit(config, 'http://127.0.0.1:18792')
+        // LLM config is env-driven (see commands/llm.rs) — Settings cannot
+        // override it. We only pass the sidecar URL here, used for the
+        // orthogonal long-term-memory / skill-summarization calls.
+        await agentInit('http://127.0.0.1:18792')
         await agentCreateSession(sid, projectRoot ?? undefined)
 
         // Load history after session is created

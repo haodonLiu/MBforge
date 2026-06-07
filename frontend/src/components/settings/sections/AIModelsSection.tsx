@@ -1,6 +1,8 @@
 // AI Models 栏目 — LLM / Embedding / Reranker 三个 tab。
-// 每个 tab 共享一个「Provider + 联动 Base URL + 可选 API Key」布局，
-// 各自附加特有字段。
+//
+// LLM tab 是只读的状态卡 — LLM 由 env (`MBFORGE_LLM_*`) 唯一驱动，
+// Settings 不能覆盖；这里只是把 env 当前值 + 联通状态显示出来。
+// Embedding / Reranker 还是普通可编辑设置（这部分走 sidecar，与 LLM 无关）。
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -8,8 +10,8 @@ import Tabs, { TabPanel } from '../../ui/Tabs'
 import SettingSection, { SettingGroup } from '../../ui/SettingSection'
 import { TextField, NumberField, CustomField, ProviderField } from '../SettingRow'
 import { ModelSelector } from '../ModelComponents'
+import LlmStatusCard from '../LlmStatusCard'
 import {
-  LLM_MODELS,
   EMBED_MODELS,
   RERANK_MODELS,
   PROVIDER_META,
@@ -50,75 +52,7 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
       <TabPanel activeKey={tab} tabKey="llm">
         <SettingSection>
           <SettingGroup title={t('settings.llmConfig')}>
-            <ProviderField
-              label={t('settings.llmProvider')}
-              description={t('settings.llmProviderDesc')}
-              provider={settings.llm_provider}
-              onProviderChange={v => setSettings(s => ({ ...s, llm_provider: v }))}
-              baseUrl={settings.llm_base_url}
-              onBaseUrlChange={v => setSettings(s => ({ ...s, llm_base_url: v }))}
-              apiKey={settings.llm_api_key}
-              onApiKeyChange={v => setSettings(s => ({ ...s, llm_api_key: v }))}
-              providerOptions={providerOptions(LLM_MODELS)}
-              needsKey={PROVIDER_META[settings.llm_provider]?.needsKey ?? true}
-              baseUrlPlaceholder={PROVIDER_META[settings.llm_provider]?.defaultUrl}
-            />
-            <CustomField
-              label={t('settings.model')}
-              description={t('settings.modelDesc')}
-            >
-              <ModelSelector
-                provider={settings.llm_provider}
-                modelValue={settings.llm_model}
-                models={LLM_MODELS}
-                onChange={v => setSettings(s => ({ ...s, llm_model: v }))}
-              />
-            </CustomField>
-          </SettingGroup>
-
-          <SettingGroup title={t('settings.llmSampling')}>
-            <NumberField
-              label="Max Tokens"
-              description={t('settings.maxTokensDesc')}
-              value={settings.llm_max_tokens}
-              onChange={v => setSettings(s => ({ ...s, llm_max_tokens: v }))}
-              min={256}
-              max={128000}
-              step={256}
-            />
-            <NumberField
-              label="Temperature"
-              description={t('settings.temperatureDesc')}
-              value={settings.llm_temperature}
-              onChange={v => setSettings(s => ({ ...s, llm_temperature: v }))}
-              min={0}
-              max={2}
-              step={0.1}
-              width={100}
-              placeholder="0.7"
-            />
-            <NumberField
-              label="Top P"
-              description={t('settings.topPDesc')}
-              value={settings.llm_top_p}
-              onChange={v => setSettings(s => ({ ...s, llm_top_p: v }))}
-              min={0}
-              max={1}
-              step={0.05}
-              width={100}
-              placeholder="0.9"
-            />
-            <NumberField
-              label={t('settings.requestTimeout')}
-              description={t('settings.requestTimeoutDesc')}
-              value={settings.llm_request_timeout}
-              onChange={v => setSettings(s => ({ ...s, llm_request_timeout: v }))}
-              min={5}
-              max={3600}
-              step={5}
-              width={100}
-              placeholder="120"
-            />
+            <LlmStatusCard />
           </SettingGroup>
         </SettingSection>
       </TabPanel>

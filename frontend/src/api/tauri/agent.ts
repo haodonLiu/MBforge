@@ -1,4 +1,4 @@
-/** Agent session management + post-process PDF reporting. */
+/** Agent session management + LLM env-config probe + post-process PDF reporting. */
 
 import { EVT } from '../tauri-events'
 import { invoke } from '@tauri-apps/api/core'
@@ -14,17 +14,66 @@ export interface ChatMessage {
   content: string
 }
 
-export async function agentInit(config: {
+// ---- LLM env config (read-only display + link-status probe) ----
+
+/**
+ * Link status as reported by the Rust side after `test_llm_connection`.
+ * Mirrors `LlmLinkStatus` in `src-tauri/src/commands/llm.rs`.
+ */
+export type LlmLinkStatus =
+  | 'not_configured'
+  | 'ok'
+  | 'unreachable'
+  | 'http_error'
+  | 'auth_error'
+
+/**
+ * Read-only view of the LLM env config + last probe result. The
+ * Settings UI displays this verbatim; the actual `api_key` is never
+ * returned — only `api_key_set` so the UI can show a warning.
+ */
+export interface LlmEnvStatus {
   provider: string
   base_url: string
-  api_key: string
-  model_name: string
-  max_tokens: number
-  temperature: number
-  top_p: number
-}, sidecarUrl: string): Promise<void> {
+  api_key_set: boolean
+  model: string
+  status: LlmLinkStatus
+  error: string | null
+  http_status: number | null
+  latency_ms: number | null
+}
+
+/**
+ * Initialize the agent subsystem. The LLM has no per-session override —
+ * Settings is read-only with respect to LLM. `sidecarUrl` is still
+ * needed for long-term-memory and skill-summarization calls.
+ */
+export async function agentInit(sidecarUrl: string): Promise<void> {
   await invokeWithError(
-    () => invoke('agent_init', { config, sidecarUrl }),
+    () => invoke('agent_init', { sidecarUrl }),
+    ErrorCode.TauriInvoke,
+  )
+}
+
+/**
+ * Read the current env-derived LLM config for display. Does not perform
+ * a network probe.
+ */
+export async function getLlmEnvConfig(): Promise<LlmEnvStatus> {
+  return invokeWithError(
+    () => invoke<LlmEnvStatus>('get_llm_env_config'),
+    ErrorCode.TauriInvoke,
+  )
+}
+
+/**
+ * Probe the configured LLM endpoint with a minimal request and report
+ * the link status. This is what the Settings UI calls to populate the
+ * "Link status" indicator.
+ */
+export async function testLlmConnection(): Promise<LlmEnvStatus> {
+  return invokeWithError(
+    () => invoke<LlmEnvStatus>('test_llm_connection'),
     ErrorCode.TauriInvoke,
   )
 }

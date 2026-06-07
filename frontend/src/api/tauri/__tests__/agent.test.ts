@@ -19,6 +19,8 @@ import {
   agentClear,
   agentDestroySession,
   agentGetHistory,
+  getLlmEnvConfig,
+  testLlmConnection,
 } from '../agent'
 
 const mockInvoke = vi.mocked(invoke)
@@ -30,25 +32,54 @@ describe('agent API', () => {
   })
 
   describe('agentInit', () => {
-    it('calls invoke with config and sidecarUrl', async () => {
+    it('calls invoke with sidecarUrl only (LLM is env-driven)', async () => {
       mockInvoke.mockResolvedValue(undefined)
 
-      const config = {
-        provider: 'openai_compatible',
-        base_url: 'http://localhost:18792',
-        api_key: 'test',
-        model_name: 'test-model',
-        max_tokens: 4096,
-        temperature: 0.7,
-        top_p: 0.9,
-      }
-
-      await agentInit(config, 'http://localhost:18792')
+      await agentInit('http://localhost:18792')
 
       expect(invoke).toHaveBeenCalledWith('agent_init', {
-        config,
         sidecarUrl: 'http://localhost:18792',
       })
+    })
+  })
+
+  describe('getLlmEnvConfig / testLlmConnection', () => {
+    it('getLlmEnvConfig calls invoke with no args', async () => {
+      const envStatus = {
+        provider: 'openai_compatible',
+        base_url: 'https://api.openai.com/v1',
+        api_key_set: true,
+        model: 'gpt-4o',
+        status: 'ok' as const,
+        error: null,
+        http_status: 200,
+        latency_ms: 123,
+      }
+      mockInvoke.mockResolvedValue(envStatus)
+
+      const result = await getLlmEnvConfig()
+
+      expect(invoke).toHaveBeenCalledWith('get_llm_env_config')
+      expect(result).toEqual(envStatus)
+    })
+
+    it('testLlmConnection calls invoke with no args', async () => {
+      const envStatus = {
+        provider: 'openai_compatible',
+        base_url: 'https://api.openai.com/v1',
+        api_key_set: true,
+        model: 'gpt-4o',
+        status: 'ok' as const,
+        error: null,
+        http_status: 200,
+        latency_ms: 456,
+      }
+      mockInvoke.mockResolvedValue(envStatus)
+
+      const result = await testLlmConnection()
+
+      expect(invoke).toHaveBeenCalledWith('test_llm_connection')
+      expect(result).toEqual(envStatus)
     })
   })
 

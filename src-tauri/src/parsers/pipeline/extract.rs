@@ -693,6 +693,7 @@ pub async fn extract_pdf_workflow(
         crate::parsers::pipeline::markdown_augment::augment_markdown_with_images(
             &classified.text,
             &classified.images,
+            Some(&classified.ocr_blocks),
         );
 
     // 写入 text.md (first pass — without VLM captions)
@@ -751,6 +752,7 @@ pub async fn extract_pdf_workflow(
             crate::parsers::pipeline::markdown_augment::augment_markdown_with_images(
                 &classified.text,
                 &classified.images,
+                Some(&classified.ocr_blocks),
             );
         std::fs::write(&text_path, &enriched_text)
             .map_err(|e| format!("Failed to re-write text.md: {}", e))?;

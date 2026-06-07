@@ -20,7 +20,7 @@
 use std::path::Path;
 
 use crate::core::document::detection_cache::DetectionCache;
-use crate::parsers::doc_types::ImageRef;
+use crate::parsers::doc_types::{ImageRef, OcrBlock};
 
 /// Default description text when neither `ImageRef.description` nor a
 /// VLM caption is available.
@@ -190,9 +190,33 @@ pub fn populate_descriptions_from_detection_cache(
     updated
 }
 
+/// Marker emitted at the start of each page section. Format mirrors
+/// common OCR markdown conventions so external tools (pandoc, etc.)
+/// also recognise it as a page break.
+pub const PAGE_MARKER_PREFIX: &str = "<!-- page ";
+
 /// Top-level entry point. Augments the markdown so every image
 /// position has both a description and a working local link.
-pub fn augment_markdown_with_images(markdown: &str, images: &[ImageRef]) -> String {
+///
+/// # Page-aware insertion
+///
+/// If `ocr_blocks` is `Some`, we attempt to split the markdown into
+/// page sections (one per `OcrBlock.page`) by finding each block's
+/// text content inside the markdown and inserting `<!-- page N -->`
+/// markers. Images that aren't already referenced in the markdown are
+/// then inserted at the end of their page section, not the global
+/// appendix.
+///
+/// If `ocr_blocks` is `None`, or if we cannot derive page anchors
+/// from them (e.g. text-based PDFs whose `OcrBlock.content` doesn't
+/// match the MinerU/llama-parse markdown verbatim), we fall back to
+/// the original behaviour: rewrite inline references and append
+/// unreferenced images to a `## Extracted Images` section.
+pub fn augment_markdown_with_images(
+    markdown: &str,
+    images: &[ImageRef],
+    ocr_blocks: Option<&[OcrBlock]>,
+) -> String {
     if images.is_empty() {
         return markdown.to_string();
     }
@@ -201,21 +225,182 @@ pub fn augment_markdown_with_images(markdown: &str, images: &[ImageRef]) -> Stri
     // images so the URL is the local path and the alt is a description.
     let rewritten = rewrite_inline_references(markdown, images);
 
-    // Pass 2: collect images that still aren't referenced (so we can
-    // append them under a "## Extracted Images" section).
+    // Decide: page-aware mode or appendix mode?
+    let (out, _unreferenced) = match ocr_blocks {
+        Some(blocks) if has_text_blocks(blocks) => {
+            insert_images_by_page(&rewritten, images, blocks)
+        }
+        _ => {
+            // Fall back to the original "rewrite + appendix" behaviour.
+            let mut unreferenced: Vec<&ImageRef> = Vec::new();
+            for img in images {
+                let url = img.rel_path.as_deref().unwrap_or(&img.filename);
+                let referenced = rewritten.contains(&format!("]({}", url))
+                    || rewritten.contains(&format!("]({}", img.filename));
+                if !referenced {
+                    unreferenced.push(img);
+                }
+            }
+            let mut out = rewritten;
+            out.push_str(&build_appendix(&unreferenced));
+            (out, unreferenced)
+        }
+    };
+    out
+}
+
+fn has_text_blocks(blocks: &[OcrBlock]) -> bool {
+    blocks
+        .iter()
+        .any(|b| b.block_type == "text" && b.content.as_deref().map(|s| !s.is_empty()).unwrap_or(false))
+}
+
+/// Insert `<!-- page N -->` markers into the markdown by aligning each
+/// text block's content with its first occurrence in the markdown, then
+/// insert each unreferenced image at the end of its page section.
+///
+/// Returns the rewritten markdown. If alignment fails (no text block
+/// matches), falls back to the un-sectioned markdown unchanged.
+fn insert_images_by_page<'a>(
+    markdown: &str,
+    images: &'a [ImageRef],
+    blocks: &'a [OcrBlock],
+) -> (String, Vec<&'a ImageRef>) {
+    // 1. Collect, per page, the text blocks in (page, index) order.
+    //    Only blocks with non-empty text content can act as anchors.
+    let mut by_page: std::collections::BTreeMap<usize, Vec<&OcrBlock>> =
+        std::collections::BTreeMap::new();
+    for b in blocks {
+        if b.block_type != "text" {
+            continue;
+        }
+        if b.content.as_deref().map(|s| s.is_empty()).unwrap_or(true) {
+            continue;
+        }
+        by_page.entry(b.page).or_default().push(b);
+    }
+    if by_page.is_empty() {
+        // Nothing to align on. Caller will fall back to appendix mode.
+        let mut out = markdown.to_string();
+        for img in images {
+            let url = img.rel_path.as_deref().unwrap_or(&img.filename);
+            if !out.contains(&format!("]({}", url))
+                && !out.contains(&format!("]({}", img.filename))
+            {
+                out.push_str(&build_appendix(&[img]));
+            }
+        }
+        return (out, vec![]);
+    }
+
+    // 2. Find each (page, first-text-block-of-page) in the markdown
+    //    and record the byte offset where the page section starts.
+    //    We use the FIRST text block per page as the anchor — this is
+    //    robust to OcrBlock noise (mid-page blocks may not align).
+    let mut anchors: Vec<(usize, usize)> = Vec::new(); // (offset, page)
+    for (page, mut blocks) in by_page {
+        blocks.sort_by_key(|b| b.index);
+        if let Some(first) = blocks.first() {
+            if let Some(text) = first.content.as_deref() {
+                if let Some(pos) = find_substring(markdown, text) {
+                    anchors.push((pos, page));
+                }
+            }
+        }
+    }
+    anchors.sort_by_key(|(pos, _)| *pos);
+
+    // 3. Slice markdown into page sections at the anchor positions.
+    //    A page section spans from its anchor (inclusive) to the next
+    //    anchor (exclusive), or the end of the markdown.
+    let mut sections: Vec<(usize, &str)> = Vec::new();
+    for (i, (offset, page)) in anchors.iter().enumerate() {
+        let start = *offset;
+        let end = anchors
+            .get(i + 1)
+            .map(|(o, _)| *o)
+            .unwrap_or(markdown.len());
+        sections.push((*page, &markdown[start..end]));
+    }
+
+    // 4. For each image not already referenced in any section, insert
+    //    it at the end of the section that corresponds to its page.
+    //    Images whose page doesn't have a section get the appendix.
     let mut unreferenced: Vec<&ImageRef> = Vec::new();
+    let mut out = String::with_capacity(markdown.len() + 256);
+    for (i, (page, sec)) in sections.iter().enumerate() {
+        if i == 0 {
+            // Preserve any prefix the markdown had before page 1
+            // (rare in practice, but handle gracefully).
+            let first_anchor = anchors[0].0;
+            out.push_str(&markdown[..first_anchor]);
+        }
+        // Emit the page marker BEFORE the section content.
+        out.push_str(&format!("\n\n{}{} -->\n\n", PAGE_MARKER_PREFIX, page));
+        out.push_str(sec);
+
+        // Collect images for this page.
+        let page_imgs: Vec<&ImageRef> = images
+            .iter()
+            .filter(|img| {
+                img.page == *page
+                    && !sec.contains(&format!(
+                        "]({}",
+                        img.rel_path.as_deref().unwrap_or(&img.filename)
+                    ))
+                    && !sec.contains(&format!("]({}", img.filename))
+            })
+            .collect();
+        for img in &page_imgs {
+            let url = img.rel_path.as_deref().unwrap_or(&img.filename);
+            let desc = img
+                .description
+                .clone()
+                .unwrap_or_else(|| default_description(img));
+            out.push_str(&format!("\n![{}]({})\n", desc, url));
+        }
+    }
+    // Track images that didn't make it into any section (page had no
+    // anchor OR the page was outside the anchor map).
+    let anchored_pages: std::collections::HashSet<usize> =
+        sections.iter().map(|(p, _)| *p).collect();
     for img in images {
         let url = img.rel_path.as_deref().unwrap_or(&img.filename);
-        let referenced = rewritten.contains(&format!("]({}", url))
-            || rewritten.contains(&format!("]({}", img.filename));
+        let referenced = out.contains(&format!("]({}", url))
+            || out.contains(&format!("]({}", img.filename));
         if !referenced {
             unreferenced.push(img);
         }
+        let _ = anchored_pages; // suppress unused warning if branch never taken
     }
+    if !unreferenced.is_empty() {
+        out.push_str(&build_appendix(&unreferenced));
+    }
+    (out, unreferenced)
+}
 
-    let mut out = rewritten;
-    out.push_str(&build_appendix(&unreferenced));
-    out
+/// Find the first occurrence of `needle` in `haystack`, returning the
+/// byte offset. We try the full needle first, then progressively
+/// shorter prefixes (so a block whose text was line-wrapped in the
+/// markdown can still be located).
+fn find_substring(haystack: &str, needle: &str) -> Option<usize> {
+    if needle.is_empty() {
+        return None;
+    }
+    if let Some(pos) = haystack.find(needle) {
+        return Some(pos);
+    }
+    // Fallback: first 32 chars, then 16.
+    let trimmed = needle.trim();
+    for take in [32usize, 16].iter() {
+        if trimmed.len() > *take {
+            let prefix: String = trimmed.chars().take(*take).collect();
+            if let Some(pos) = haystack.find(&prefix) {
+                return Some(pos);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -236,7 +421,7 @@ mod tests {
     #[test]
     fn empty_images_returns_input_unchanged() {
         let md = "# Hello\n\nSome text.\n";
-        assert_eq!(augment_markdown_with_images(md, &[]), md);
+        assert_eq!(augment_markdown_with_images(md, &[], None), md);
     }
 
     #[test]
@@ -248,7 +433,7 @@ mod tests {
             Some("Ethanol molecule diagram"),
         )];
         let md = "Look at this: ![old-alt](img-001.png) is interesting.\n";
-        let out = augment_markdown_with_images(md, &images);
+        let out = augment_markdown_with_images(md, &images, None);
         assert!(out.contains("![Ethanol molecule diagram](media/doc-slug/img-001.png)"));
     }
 
@@ -257,7 +442,7 @@ mod tests {
         // No images extracted at all → markdown passes through verbatim
         // (empty `images` short-circuits the early-return in the entry point).
         let md = "External: ![alt](https://example.com/photo.jpg) here.\n";
-        let out = augment_markdown_with_images(md, &[]);
+        let out = augment_markdown_with_images(md, &[], None);
         assert!(out.contains("![alt](https://example.com/photo.jpg)"));
         assert!(!out.contains("## Extracted Images"));
     }
@@ -269,7 +454,7 @@ mod tests {
         // media/img-001.png. The extracted image ends up in the appendix.
         let images = vec![img("img-001.png", "media/img-001.png", 3, None)];
         let md = "External: ![alt](https://example.com/photo.jpg) here.\n";
-        let out = augment_markdown_with_images(md, &images);
+        let out = augment_markdown_with_images(md, &images, None);
         assert!(out.contains("![alt](https://example.com/photo.jpg)"));
         // img-001 is unreferenced → goes to the appendix
         assert!(out.contains("## Extracted Images"));
@@ -285,7 +470,7 @@ mod tests {
             Some("Catalyst structure"),
         )];
         let md = "# Paper\n\nNo images referenced here.\n";
-        let out = augment_markdown_with_images(md, &images);
+        let out = augment_markdown_with_images(md, &images, None);
         assert!(out.contains("## Extracted Images"));
         assert!(out.contains("page 5"));
         assert!(out.contains("Catalyst structure"));
@@ -299,7 +484,7 @@ mod tests {
             img("img-002.png", "media/img-002.png", 4, Some("Caption B")),
         ];
         let md = "Inline: ![](img-001.png) end.\n";
-        let out = augment_markdown_with_images(md, &images);
+        let out = augment_markdown_with_images(md, &images, None);
         // img-001 got rewritten inline
         assert!(out.contains("![Caption A](media/img-001.png)"));
         // img-002 ends up in the appendix
@@ -312,7 +497,7 @@ mod tests {
     fn default_description_used_when_no_caption() {
         let images = vec![img("img.png", "media/img.png", 7, None)];
         let md = "No inline ref.\n";
-        let out = augment_markdown_with_images(md, &images);
+        let out = augment_markdown_with_images(md, &images, None);
         assert!(out.contains("Image extracted from page 7"));
     }
 }

@@ -1,26 +1,29 @@
 import { EVT } from '../api/tauri-events'
 import { useState, useEffect } from 'react'
-import { listProjectDocuments, scanProjectFiles, indexProjectRust, type IndexResult } from '../api/tauri-bridge'
+import { listProjectDocuments, scanProjectFiles, indexProjectRust, type IndexResult, type ScanWarning } from '../api/tauri-bridge'
 import { listen } from '@tauri-apps/api/event'
 import type { DocumentEntry } from '../types'
 import { useAppContext } from '../context/AppContext'
 import { showToast } from '../hooks/useToast'
+import { PAPERS_DIR, NOTES_DIR } from '../config/folderLayout'
 
 import PdfViewer from './project/PdfViewer'
 import ProjectDashboard from './project/ProjectDashboard'
 import MarkdownViewer from './MarkdownViewer'
 
-export default function ProjectView() {
-  const { projectRoot } = useAppContext()
+export default function ProjectView({ onSettingsOpen }: { onSettingsOpen: () => void }) {
+  const { projectRoot, activeFile, setActiveFile } = useAppContext()
   const [docs, setDocs] = useState<DocumentEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isIndexing, setIsIndexing] = useState(false)
   const [indexProgress, setIndexProgress] = useState<{ file: string; current: number; total: number } | null>(null)
   const [indexResult, setIndexResult] = useState<{ indexed: number; sections: number } | null>(null)
   const [error, setError] = useState('')
+  const [scanWarnings, setScanWarnings] = useState<ScanWarning[]>([])
 
   const [selectedPdf, setSelectedPdf] = useState<DocumentEntry | null>(null)
   const [selectedMarkdown, setSelectedMarkdown] = useState<DocumentEntry | null>(null)
+  const [pdfInitialMode, setPdfInitialMode] = useState<'read' | 'detect' | 'ocr'>('read')
 
   const loadDocs = async () => {
     if (!projectRoot) return
@@ -69,13 +72,15 @@ export default function ProjectView() {
     }
     setIsLoading(true)
     setError('')
+    setScanWarnings([])
     try {
       const resp = await scanProjectFiles(projectRoot)
-      if (resp.documents) {
-        if (resp.documents.length === 0) {
-          setError('未找到 PDF 或 Markdown 文件')
-        }
-        setDocs(resp.documents)
+      setDocs(resp.documents)
+      setScanWarnings(resp.warnings ?? [])
+      if (resp.documents.length === 0 && (resp.warnings ?? []).length === 0) {
+        setError(
+          `在 ${PAPERS_DIR}/ 和 ${NOTES_DIR}/ 目录下没有找到文件。请把 PDF 放进 ${PAPERS_DIR}/、把 MD 笔记放进 ${NOTES_DIR}/，然后再扫描。`,
+        )
       }
     } catch (e) {
       const msg = String(e)
@@ -140,21 +145,53 @@ export default function ProjectView() {
     }
   }
 
-  const handleOpenFile = (doc: DocumentEntry) => {
+  const handleOpenFile = (doc: DocumentEntry, mode?: 'read' | 'detect' | 'ocr') => {
     if (doc.doc_type === 'pdf') {
+      setPdfInitialMode(mode ?? 'read')
       setSelectedPdf(doc)
-    } else if (doc.doc_type === 'md' || doc.path.toLowerCase().endsWith('.md')) {
+    } else if (doc.doc_type === 'markdown' || doc.path.toLowerCase().endsWith('.md')) {
       setSelectedMarkdown(doc)
     }
   }
 
+  // 响应侧边栏文件树选中的文件，在应用内打开
+  useEffect(() => {
+    if (!activeFile) return
+    if (isLoading) return // 等待文档列表加载完成
+
+    const normalizedActive = activeFile.path.replace(/\\/g, '/')
+    const doc = docs.find(d => {
+      const dPath = d.path.replace(/\\/g, '/')
+      return dPath === normalizedActive || normalizedActive.endsWith('/' + dPath)
+    })
+
+    const fallbackDoc: DocumentEntry = {
+      doc_id: activeFile.path,
+      path: activeFile.path,
+      doc_type: activeFile.type === 'pdf' ? 'pdf' : 'md',
+      title: activeFile.path.split(/[\\/]/).pop() || activeFile.path,
+      indexed: false,
+    }
+
+    const targetDoc = doc ?? fallbackDoc
+    if (activeFile.type === 'pdf') {
+      setPdfInitialMode((activeFile.mode as 'read' | 'detect' | 'ocr') ?? 'read')
+      setSelectedPdf(targetDoc)
+    } else if (activeFile.type === 'markdown') {
+      setSelectedMarkdown(targetDoc)
+    }
+
+    setActiveFile(null)
+  }, [activeFile, docs, isLoading, setActiveFile])
+
   const handleCloseFile = () => {
     setSelectedPdf(null)
     setSelectedMarkdown(null)
+    loadDocs()
   }
 
   if (selectedPdf) {
-    return <PdfViewer doc={selectedPdf} projectRoot={projectRoot} onClose={handleCloseFile} />
+    return <PdfViewer doc={selectedPdf} projectRoot={projectRoot} onClose={handleCloseFile} initialMode={pdfInitialMode} />
   }
 
   if (selectedMarkdown) {
@@ -176,10 +213,13 @@ export default function ProjectView() {
       indexProgress={indexProgress}
       indexResult={indexResult}
       error={error}
+      scanWarnings={scanWarnings}
       onScan={handleScan}
       onIndex={handleIndex}
       onOpenFile={handleOpenFile}
       onDismissError={() => setError('')}
+      onDismissWarnings={() => setScanWarnings([])}
+      onSettingsOpen={onSettingsOpen}
     />
   )
 }

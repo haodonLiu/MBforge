@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { extractPage } from '../../api/moldet'
 import { parsePdf, type ImageRef, getDocumentOcrLayout, type OcrBlock } from '../../api/tauri/pdf'
@@ -6,6 +6,7 @@ import { showToast } from '../../hooks/useToast'
 import { extractRoiText } from '../../utils/roiText'
 import type { DocumentEntry, ExtractionResult } from '../../types'
 import PdfCanvas from '../PdfCanvas'
+import PdfContinuousViewer from '../PdfContinuousViewer'
 import MoleculeOverlay from '../MoleculeOverlay'
 import OcrOverlay from '../OcrOverlay'
 import MoleculeDetailPanel from '../molecule/MoleculeDetailPanel'
@@ -13,16 +14,47 @@ import OcrResultPanel from '../OcrResultPanel'
 import Toolbar from '../ui/Toolbar'
 import IconButton from '../ui/IconButton'
 import Caption from '../ui/Caption'
+import ScrollColumn from '../ui/ScrollColumn'
+import Spinner from '../ui/Spinner'
 import { ArrowLeftIcon, SearchIcon } from '../icons'
 
 interface Props {
   doc: DocumentEntry
   projectRoot: string
   onClose: () => void
+  initialMode?: 'read' | 'detect' | 'ocr'
 }
 
-export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
-  const [pdfViewMode, setPdfViewMode] = useState<'read' | 'detect' | 'ocr'>('read')
+export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Props) {
+  const [pdfViewMode, setPdfViewMode] = useState<Props['initialMode']>(initialMode ?? 'read')
+  const [scrollMode, setScrollMode] = useState<'single' | 'continuous'>('continuous')
+
+  // 检测 / OCR 模式强制单页
+  const isSinglePageMode = isDetectMode || isOcrMode || scrollMode === 'single'
+
+  // 若初始模式为 OCR，组件挂载后自动加载 OCR 布局
+  const autoLoadOcrDone = useRef(false)
+  useEffect(() => {
+    if (initialMode === 'ocr' && !autoLoadOcrDone.current) {
+      autoLoadOcrDone.current = true
+      setIsLoadingOcr(true)
+      getDocumentOcrLayout(doc.path, doc.doc_id)
+        .then(result => {
+          setOcrBlocks(result.blocks || [])
+          setShowOcrPanel(true)
+          if (result.blocks.length > 0) {
+            showToast(`加载 ${result.blocks.length} 个 OCR 块`, 'success')
+          } else {
+            showToast('未找到 OCR 布局数据', 'info')
+          }
+        })
+        .catch(e => {
+          console.error('Failed to load OCR layout:', e)
+          showToast('OCR 布局加载失败', 'error')
+        })
+        .finally(() => setIsLoadingOcr(false))
+    }
+  }, [doc.path, doc.doc_id, initialMode])
   const [currentPage, setCurrentPage] = useState(1)
   const [pageDetections, setPageDetections] = useState<Map<number, ExtractionResult[]>>(new Map())
   const [isDetecting, setIsDetecting] = useState(false)
@@ -30,6 +62,8 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
   const [pageInfo, setPageInfo] = useState<{
     width: number; height: number; originalWidth: number; originalHeight: number; scale: number
   } | null>(null)
+  const pdfScrollRef = useRef<HTMLDivElement>(null)
+  const pageInfoRef = useRef(pageInfo)
   const [currentPageDataUrl, setCurrentPageDataUrl] = useState<string | null>(null)
   const [pdfScale, setPdfScale] = useState(1.5)
   const [showTextLayer, setShowTextLayer] = useState(true)
@@ -52,21 +86,42 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
   const currentDetections = pageDetections.get(currentPage) || []
   const isDetectMode = pdfViewMode === 'detect'
   const isOcrMode = pdfViewMode === 'ocr'
+  useEffect(() => {
+    if (isDetectMode || isOcrMode) {
+      setScrollMode('single')
+    }
+  }, [isDetectMode, isOcrMode])
   const currentTextItems = pageTextItems.get(currentPage) || []
   const currentTextTotal = currentTextItems.reduce((s, i) => s + i.str.length, 0)
   const hasTextLayer = currentTextTotal > 10
 
-  const pdfUrl = useMemo(() => {
+  const [pdfUrl, setPdfUrl] = useState<string>('')
+  const [pdfLoading, setPdfLoading] = useState(true)
+  useEffect(() => {
+    let cancelled = false
+    setPdfUrl('')
+    setPdfLoading(true)
+
     const root = projectRoot
-    if (!root) return ''
-    const absPath = doc.path.includes(':') || doc.path.startsWith('/')
-      ? doc.path
-      : `${root.replace(/\\$/,'')}\\${doc.path.replace(/\//g,'\\')}`
-    try {
-      return convertFileSrc(absPath)
-    } catch {
-      return `/api/v1/file/pdf?path=${encodeURIComponent(absPath)}&project_root=${encodeURIComponent(root)}`
+    if (!root) {
+      setPdfLoading(false)
+      return
     }
+    const normalizePath = (p: string) =>
+      p.replace(/^\\\\\?\\/, '').replace(/^\?\//, '').replace(/\\/g, '/')
+    const absPath = doc.path.includes(':') || doc.path.startsWith('/')
+      ? normalizePath(doc.path)
+      : `${normalizePath(root).replace(/\/$/, '')}/${doc.path.replace(/\\/g, '/')}`
+
+    // 使用自定义协议 mbforge:// 让 pdf.js 直接走 Range 请求按需加载页，
+    // 无需等待整个文件通过 IPC 读进内存。
+    const url = convertFileSrc(absPath, 'mbforge')
+    if (!cancelled) {
+      setPdfUrl(url)
+      setPdfLoading(false)
+    }
+
+    return () => { cancelled = true }
   }, [doc.path, projectRoot])
 
   const handleDetectPage = useCallback(async () => {
@@ -116,7 +171,10 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
   const handlePageRendered = useCallback((info: {
     pageNumber: number; width: number; height: number
     originalWidth: number; originalHeight: number; scale: number
-  }) => { setPageInfo(info) }, [])
+  }) => {
+    setPageInfo(info)
+    pageInfoRef.current = info
+  }, [])
 
   const handleImageReady = useCallback((_num: number, dataUrl: string) => {
     setCurrentPageDataUrl(dataUrl)
@@ -195,7 +253,7 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
     }
     setIsLoadingOcr(true)
     try {
-      const result = await getDocumentOcrLayout(doc.path)
+      const result = await getDocumentOcrLayout(doc.path, doc.doc_id)
       setOcrBlocks(result.blocks || [])
       setShowOcrPanel(true)
       if (result.blocks.length > 0) {
@@ -209,19 +267,25 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
     } finally {
       setIsLoadingOcr(false)
     }
-  }, [doc.path, ocrBlocks.length])
+  }, [doc.path, doc.doc_id, ocrBlocks.length])
 
-  const resolveImageUrl = useCallback((img: ImageRef): string => {
-    if (img.rel_path) {
-      const absPath = `${projectRoot.replace(/\\$/,'')}\\${img.rel_path.replace(/\//g,'\\')}`
-      try {
-        return convertFileSrc(absPath)
-      } catch {
-        return ''
-      }
+  // 使用自定义协议直接渲染图片，无需 IPC 全量读取
+  const [imageBlobUrls, setImageBlobUrls] = useState<Map<string, string>>(new Map())
+  useEffect(() => {
+    if (!projectRoot || extractedImages.length === 0) {
+      setImageBlobUrls(new Map())
+      return
     }
-    return ''
-  }, [projectRoot])
+    const cleanRoot = projectRoot.replace(/^\\\\\?\\/, '').replace(/^\?\//, '').replace(/\\/g, '/').replace(/\/$/, '')
+    const newMap = new Map<string, string>()
+    for (const img of extractedImages) {
+      if (!img.rel_path) continue
+      const absPath = `${cleanRoot}/${img.rel_path.replace(/\\/g, '/')}`
+      const url = convertFileSrc(absPath, 'mbforge')
+      newMap.set(img.rel_path, url)
+    }
+    setImageBlobUrls(newMap)
+  }, [extractedImages, projectRoot])
 
   const handleJumpToPage = useCallback(() => {
     const n = parseInt(pageJumpInput, 10)
@@ -231,6 +295,42 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
       setPageJumpInput('')
     }
   }, [pageJumpInput, pageInfo])
+
+  // 键盘翻页：← ↑ PageUp 上一页，→ ↓ PageDown Space 下一页
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+      e.preventDefault()
+      setCurrentPage(p => Math.max(1, p - 1))
+      setSelectedDetection(null)
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+      e.preventDefault()
+      setCurrentPage(p => Math.min(pdfPageCount || 1, p + 1))
+      setSelectedDetection(null)
+    }
+  }, [pdfPageCount])
+
+  // 滚轮翻页：滚动到顶继续上滚 → 上一页；滚动到底继续下滚 → 下一页
+  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    const el = pdfScrollRef.current
+    if (!el || pdfLoading || !pdfUrl) return
+    const { scrollTop, scrollHeight, clientHeight } = el
+    const atTop = scrollTop <= 0
+    const atBottom = scrollTop + clientHeight >= scrollHeight - 1
+    if (e.deltaY < 0 && atTop) {
+      e.preventDefault()
+      setCurrentPage(p => Math.max(1, p - 1))
+      setSelectedDetection(null)
+    } else if (e.deltaY > 0 && atBottom) {
+      e.preventDefault()
+      setCurrentPage(p => Math.min(pdfPageCount || 1, p + 1))
+      setSelectedDetection(null)
+    }
+  }, [pdfLoading, pdfUrl, pdfPageCount])
+
+  // 挂载后自动聚焦，确保键盘事件可被捕获
+  useEffect(() => {
+    pdfScrollRef.current?.focus()
+  }, [doc.doc_id])
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
@@ -294,6 +394,32 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
             onClick={() => setCurrentPage(p => p + 1)}
           >→</button>
         </div>
+
+        {/* 滚动模式切换（仅在阅读模式显示） */}
+        {!isDetectMode && !isOcrMode && (
+          <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-base)', borderRadius: '6px', padding: '2px' }}>
+            <button
+              style={{
+                padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: 'none',
+                background: scrollMode === 'continuous' ? 'var(--bg-surface)' : 'transparent',
+                color: scrollMode === 'continuous' ? 'var(--text-primary)' : 'var(--text-muted)',
+                cursor: 'pointer', fontWeight: scrollMode === 'continuous' ? 600 : 400,
+              }}
+              onClick={() => setScrollMode('continuous')}
+              title="连续滚动"
+            >📜</button>
+            <button
+              style={{
+                padding: '4px 10px', fontSize: '11px', borderRadius: '4px', border: 'none',
+                background: scrollMode === 'single' ? 'var(--bg-surface)' : 'transparent',
+                color: scrollMode === 'single' ? 'var(--text-primary)' : 'var(--text-muted)',
+                cursor: 'pointer', fontWeight: scrollMode === 'single' ? 600 : 400,
+              }}
+              onClick={() => setScrollMode('single')}
+              title="单页"
+            >📄</button>
+          </div>
+        )}
 
         {/* 模式切换 */}
         <div style={{ display: 'flex', gap: '2px', background: 'var(--bg-base)', borderRadius: '6px', padding: '2px' }}>
@@ -430,27 +556,52 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
         flex: 1, display: 'flex', overflow: 'hidden',
       }}>
         {/* PDF 内容 */}
-        <div style={{
-          flex: 1, overflow: 'auto',
-          background: isDetectMode || isOcrMode ? 'var(--bg-base)' : '#525659',
-          display: 'flex', justifyContent: 'center', padding: isDetectMode || isOcrMode ? '20px' : '0',
-        }}>
+        <ScrollColumn
+          ref={pdfScrollRef}
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          onWheel={handleWheel}
+          style={{
+            background: isDetectMode || isOcrMode ? 'var(--bg-base)' : '#525659',
+            display: 'flex', justifyContent: 'center', padding: isDetectMode || isOcrMode ? '20px' : '0',
+            outline: 'none',
+          }}
+        >
           <div style={{ position: 'relative', display: 'inline-block' }}>
-            <PdfCanvas
-              url={pdfUrl}
-              pageNumber={currentPage}
-              scale={pdfScale}
-              generateImage={isDetectMode}
-              showTextLayer={showTextLayer && hasTextLayer}
-              onPageRendered={handlePageRendered}
-              onImageReady={handleImageReady}
-              onTextContent={handleTextContent}
-              onPageCount={handlePageCount}
-              style={{
-                background: '#fff',
-                boxShadow: isDetectMode ? '0 2px 12px rgba(0,0,0,0.15)' : 'none',
-              }}
-            />
+            {pdfLoading || !pdfUrl ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '60vh',
+                minWidth: '320px',
+                color: 'var(--text-muted)',
+                gap: '14px',
+              }}>
+                <Spinner size={32} />
+                <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                  {doc.title || doc.path.split(/[\\/]/).pop()}
+                </div>
+                <div style={{ fontSize: '12px', opacity: 0.7 }}>读取文件中，请稍候…</div>
+              </div>
+            ) : (
+              <PdfCanvas
+                url={pdfUrl}
+                pageNumber={currentPage}
+                scale={pdfScale}
+                generateImage={isDetectMode}
+                showTextLayer={showTextLayer && hasTextLayer}
+                onPageRendered={handlePageRendered}
+                onImageReady={handleImageReady}
+                onTextContent={handleTextContent}
+                onPageCount={handlePageCount}
+                style={{
+                  background: '#fff',
+                  boxShadow: isDetectMode ? '0 2px 12px rgba(0,0,0,0.15)' : 'none',
+                }}
+              />
+            )}
             {isDetectMode && pageInfo && currentDetections.length > 0 && (
               <MoleculeOverlay
                 detections={currentDetections}
@@ -476,7 +627,7 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
               />
             )}
           </div>
-        </div>
+        </ScrollColumn>
 
         {/* 文本面板（OCR 侧栏） */}
         {showTextPanel && hasTextLayer && (
@@ -497,13 +648,13 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
                   color: 'var(--text-muted)', fontSize: '14px', lineHeight: 1 }}
               >✕</button>
             </div>
-            <div style={{
-              flex: 1, overflow: 'auto', padding: '12px',
+            <ScrollColumn style={{
+              padding: '12px',
               fontSize: '11px', lineHeight: 1.6, color: 'var(--text-secondary)',
               whiteSpace: 'pre-wrap', wordBreak: 'break-word',
             }}>
               {currentTextItems.map(item => item.str).join(' ')}
-            </div>
+            </ScrollColumn>
             <div style={{
               padding: '6px 12px', borderTop: '1px solid var(--border)',
               fontSize: '10px', color: 'var(--text-muted)',
@@ -522,7 +673,28 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
             currentPage={currentPage}
             selectedIndex={selectedOcrIndex}
             hoveredIndex={hoveredOcrIndex}
-            onSelect={setSelectedOcrIndex}
+            onSelect={(index) => {
+              const block = ocrBlocks[index]
+              if (!block) return
+              const needPageChange = block.page !== currentPage
+              if (needPageChange) {
+                setCurrentPage(block.page)
+              }
+              setSelectedOcrIndex(index)
+              const doScroll = () => {
+                const info = pageInfoRef.current
+                const container = pdfScrollRef.current
+                if (!info || !container) return
+                const [, , , y2] = block.bbox
+                const cssY = (info.originalHeight - y2) * info.scale
+                container.scrollTo({ top: Math.max(0, cssY - 40), behavior: 'smooth' })
+              }
+              if (needPageChange) {
+                setTimeout(doScroll, 300)
+              } else {
+                doScroll()
+              }
+            }}
             onClose={() => setShowOcrPanel(false)}
           />
         )}
@@ -546,8 +718,8 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
                   color: 'var(--text-muted)', fontSize: '14px', lineHeight: 1 }}
               >✕</button>
             </div>
-            <div style={{
-              flex: 1, overflow: 'auto', padding: '12px',
+            <ScrollColumn style={{
+              padding: '12px',
               display: 'flex', flexDirection: 'column', gap: '12px',
             }}>
               {extractedImages.length === 0 && (
@@ -556,7 +728,7 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
                 </span>
               )}
               {extractedImages.map((img, idx) => {
-                const imgUrl = resolveImageUrl(img)
+                const imgUrl = img.rel_path ? (imageBlobUrls.get(img.rel_path) ?? '') : ''
                 return (
                   <div key={idx} style={{
                     border: '1px solid var(--border)',
@@ -603,7 +775,7 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
                   </div>
                 )
               })}
-            </div>
+            </ScrollColumn>
           </div>
         )}
       </div>

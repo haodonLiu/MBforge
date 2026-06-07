@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 import { readTextFile } from '../api/tauri-bridge'
 import Toolbar from './ui/Toolbar'
 import IconButton from './ui/IconButton'
 import Caption from './ui/Caption'
-import { ArrowLeftIcon } from './icons'
+import { ArrowLeftIcon, HashIcon, NoteIcon } from './icons'
 
 interface Props {
   /** 项目根目录绝对路径 */
@@ -20,6 +21,7 @@ export default function MarkdownViewer({ projectRoot, filePath, onClose }: Props
   const [content, setContent] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered')
 
   const filename = filePath.split(/[/\\]/).pop() || filePath
 
@@ -50,9 +52,57 @@ export default function MarkdownViewer({ projectRoot, filePath, onClose }: Props
         <IconButton size={32} onClick={onClose}>
           <ArrowLeftIcon size={18} />
         </IconButton>
-        <Caption truncate style={{ fontSize: '13px', fontWeight: 500 }}>
+        <Caption truncate style={{ fontSize: '13px', fontWeight: 500, flex: 1 }}>
           {filename}
         </Caption>
+
+        {/* 渲染 / 源码 切换 */}
+        <div style={{
+          display: 'flex',
+          gap: '2px',
+          background: 'var(--bg-base)',
+          borderRadius: '6px',
+          padding: '2px',
+        }}>
+          <button
+            onClick={() => setViewMode('rendered')}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              borderRadius: '4px',
+              border: 'none',
+              background: viewMode === 'rendered' ? 'var(--bg-surface)' : 'transparent',
+              color: viewMode === 'rendered' ? 'var(--text-primary)' : 'var(--text-muted)',
+              cursor: 'pointer',
+              fontWeight: viewMode === 'rendered' ? 600 : 400,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+            title="预览"
+          >
+            <NoteIcon size={11} /> 预览
+          </button>
+          <button
+            onClick={() => setViewMode('source')}
+            style={{
+              padding: '4px 10px',
+              fontSize: '11px',
+              borderRadius: '4px',
+              border: 'none',
+              background: viewMode === 'source' ? 'var(--bg-surface)' : 'transparent',
+              color: viewMode === 'source' ? 'var(--text-primary)' : 'var(--text-muted)',
+              cursor: 'pointer',
+              fontWeight: viewMode === 'source' ? 600 : 400,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+            title="源码"
+          >
+            <HashIcon size={11} /> 源码
+          </button>
+        </div>
       </Toolbar>
 
       {/* Markdown 内容 */}
@@ -78,12 +128,23 @@ export default function MarkdownViewer({ projectRoot, filePath, onClose }: Props
           }}>
             {error}
           </div>
-        ) : (
+        ) : viewMode === 'rendered' ? (
           <div className="markdown-preview">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
               {content}
             </ReactMarkdown>
           </div>
+        ) : (
+          <pre style={{
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: '12px',
+            lineHeight: 1.6,
+            color: 'var(--text-secondary)',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}>
+            {content}
+          </pre>
         )}
       </div>
     </div>

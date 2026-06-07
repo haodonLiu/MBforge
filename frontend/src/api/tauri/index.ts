@@ -10,6 +10,7 @@
  * - project:   project open, scan, file ops
  * - environment: resource manager / env check
  * - gesim:       graph-based molecular similarity (GESim)
+ * - file:        file-level IPC (read PDF bytes for in-app render)
  *
  * Use specific submodules directly to keep bundle splitting clean;
  * importing this barrel pulls in everything.
@@ -24,3 +25,4 @@ export * from './molecule'
 export * from './project'
 export * from './environment'
 export * from './gesim'
+export * from './file'

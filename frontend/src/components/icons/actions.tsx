@@ -97,3 +97,23 @@ export const RefreshCwIcon: FC<IconProps> = ({ size = 14 }) =>
     </>,
     size,
   )
+
+export const EyeIcon: FC<IconProps> = ({ size = 16 }) =>
+  baseSvg(
+    <>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </>,
+    size,
+  )
+
+export const EyeOffIcon: FC<IconProps> = ({ size = 16 }) =>
+  baseSvg(
+    <>
+      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-6.5 0-10-7-10-7a19.83 19.83 0 0 1 4.22-5.39" />
+      <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c6.5 0 10 7 10 7a19.86 19.86 0 0 1-3.17 4.19" />
+      <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </>,
+    size,
+  )

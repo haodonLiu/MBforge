@@ -140,9 +140,9 @@ export interface OcrLayoutResult {
   from_cache: boolean
 }
 
-export async function getDocumentOcrLayout(path: string): Promise<OcrLayoutResult> {
+export async function getDocumentOcrLayout(path: string, doc_id?: string): Promise<OcrLayoutResult> {
   return invokeWithError(
-    () => invoke<OcrLayoutResult>('get_document_ocr_layout', { path }),
+    () => invoke<OcrLayoutResult>('get_document_ocr_layout', { path, doc_id }),
     ErrorCode.PdfParse,
   )
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import Input from '../ui/Input'
 import Caption from '../ui/Caption'
@@ -8,52 +8,39 @@ import Spinner from '../ui/Spinner'
 import { TrashIcon } from '../icons'
 
 // ============ ModelSelector ============
+// 自由文本输入 + <datalist> 建议：用户可以键入任意模型名，
+// 浏览器在下拉里展示 provider 推荐的模型，便于复用也允许自定义。
 interface ModelSelectorProps {
   provider: string
   modelValue: string
   models: Record<string, { value: string; label: string }[]>
   onChange: (v: string) => void
+  placeholder?: string
 }
 
-export function ModelSelector({ provider, modelValue, models, onChange }: ModelSelectorProps) {
+export function ModelSelector({ provider, modelValue, models, onChange, placeholder }: ModelSelectorProps) {
   const { t } = useTranslation()
-  const [customModel, setCustomModel] = useState('')
+  const listId = useId()
   const options = models[provider] || []
-  const isKnown = options.some(o => o.value === modelValue) || modelValue === 'custom' || modelValue === ''
-  const showCustom = modelValue === 'custom' || (!isKnown && modelValue !== '')
 
   return (
     <>
-      <select
-        className="settings-select"
-        value={isKnown ? modelValue : 'custom'}
-        onChange={e => {
-          const v = e.target.value
-          if (v === 'custom') {
-            onChange(customModel || modelValue)
-          } else {
-            onChange(v)
-            setCustomModel('')
-          }
-        }}
-      >
+      <Input
+        className="settings-input"
+        value={modelValue}
+        onChange={e => onChange(e.target.value)}
+        list={listId}
+        placeholder={placeholder ?? t('models.enterModelName')}
+        style={{ maxWidth: '100%' }}
+      />
+      <datalist id={listId}>
         {options.map(o => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}
-        <option value="custom">{t('models.customModel')}</option>
-      </select>
-      {showCustom && (
-        <Input
-          className="settings-input"
-          value={isKnown ? customModel : modelValue}
-          onChange={e => {
-            setCustomModel(e.target.value)
-            onChange(e.target.value)
-          }}
-          placeholder={t('models.enterModelName')}
-          style={{ marginTop: '8px', maxWidth: '100%' }}
-        />
-      )}
+      </datalist>
+      <Caption style={{ marginTop: '6px', display: 'block' }}>
+        {t('models.modelHint')}
+      </Caption>
     </>
   )
 }

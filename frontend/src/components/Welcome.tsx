@@ -5,6 +5,7 @@ import { openProject } from '../api/tauri-bridge'
 import { FolderIcon, ArrowLeftIcon, MoleculeLogo, TrashIcon, XIcon } from './icons'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import { showToast } from '../hooks/useToast'
+import { cleanWindowsPath } from '../utils/path'
 import {
   fadeIn,
   slideFromRight,
@@ -21,6 +22,7 @@ import BodyText from '../components/ui/BodyText'
 import Caption from '../components/ui/Caption'
 import Spinner from '../components/ui/Spinner'
 import { FolderPicker } from '../components/ui/FolderPicker'
+import { FOLDER_SPECS, PAPERS_DIR, NOTES_DIR } from '../config/folderLayout'
 
 interface RecentProject {
   name: string
@@ -32,17 +34,19 @@ const MAX_RECENT = 20
 
 function loadRecent(): RecentProject[] {
   try {
-    return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
+    const raw: RecentProject[] = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
+    return raw.map(r => ({ ...r, path: cleanWindowsPath(r.path) }))
   } catch {
     return []
   }
 }
 
 function persistRecent(path: string, name: string) {
+  const cleaned = cleanWindowsPath(path)
   const list = loadRecent()
-  const filtered = list.filter(p => p.path !== path)
+  const filtered = list.filter(p => p.path !== cleaned)
   const next = [
-    { name: name || path.split(/[/\\]/).pop() || path, path },
+    { name: name || cleaned.split(/[/\\]/).pop() || cleaned, path: cleaned },
     ...filtered,
   ].slice(0, MAX_RECENT)
   localStorage.setItem(RECENT_KEY, JSON.stringify(next))
@@ -295,7 +299,7 @@ export default function Welcome({ onProjectOpened }: Props) {
 
           {/* 操作按钮 */}
           <StaggerItem>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '48px' }}>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '32px' }}>
               <Button
                 variant="primary"
                 size="lg"
@@ -312,6 +316,36 @@ export default function Welcome({ onProjectOpened }: Props) {
               >
                 {t('welcome.openProject')}
               </Button>
+            </div>
+          </StaggerItem>
+
+          {/* 目录规范提示 */}
+          <StaggerItem>
+            <div
+              style={{
+                textAlign: 'left',
+                padding: '14px 16px',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border)',
+                borderRadius: '10px',
+                marginBottom: '32px',
+                fontSize: '12px',
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: '8px' }}>项目目录规范</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', color: 'var(--text-muted)' }}>
+                {FOLDER_SPECS.map((spec) => (
+                  <div key={spec.name} style={{ fontFamily: 'monospace' }}>
+                    <span style={{ color: 'var(--text-primary)' }}>{spec.name}/</span>
+                    {' — '}
+                    <span>{spec.accepts}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: '8px', color: 'var(--text-muted)' }}>
+                创建项目后，app 会自动建好这 6 个目录。把 PDF 放进{' '}
+                <code>{PAPERS_DIR}/</code>，笔记放进 <code>{NOTES_DIR}/</code>，其余由 pipeline 写入。
+              </div>
             </div>
           </StaggerItem>
 

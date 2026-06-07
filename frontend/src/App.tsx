@@ -13,8 +13,7 @@ import Welcome from './components/Welcome'
 import SettingsModal from './components/SettingsModal'
 import FileTree from './components/FileTree'
 import { AppProvider, useAppContext } from './context/AppContext'
-import { invoke } from '@tauri-apps/api/core'
-import { isTauriAvailable } from './api/tauri-bridge'
+import { ask } from '@tauri-apps/plugin-dialog'
 import { showToast } from './hooks/useToast'
 import { useIsMobile, useIsTablet } from './styles/responsive'
 import { registerGlobalErrorHandlers } from './api/tauri/_utils'
@@ -64,7 +63,7 @@ export default function App() {
 }
 
 function AppInner() {
-  const { projectRoot, setProjectRoot } = useAppContext()
+  const { projectRoot, setProjectRoot, setActiveFile } = useAppContext()
   const [currentPage, setCurrentPage] = useState('project')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [fileTreeOpen, setFileTreeOpen] = useState(true)
@@ -102,7 +101,9 @@ function AppInner() {
         }}>
           <Welcome onProjectOpened={handleProjectOpened} />
         </main>
-        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        <ErrorBoundary>
+          <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        </ErrorBoundary>
         <ToastContainer />
       </div>
     )
@@ -126,10 +127,12 @@ function AppInner() {
         current={currentPage}
         onNavigate={setCurrentPage}
         onSettingsOpen={() => setSettingsOpen(true)}
-        onSwitchProject={() => {
-          if (window.confirm(t('nav.confirmSwitchProject'))) {
-            setProjectRoot('')
-          }
+        onSwitchProject={async () => {
+          const ok = await ask(t('nav.confirmSwitchProject'), {
+            title: t('nav.switchProject') || t('nav.confirmSwitchProject'),
+            kind: 'warning',
+          })
+          if (ok) setProjectRoot('')
         }}
         fileTreeOpen={fileTreeOpen}
         onToggleFileTree={() => setFileTreeOpen(!fileTreeOpen)}
@@ -156,14 +159,13 @@ function AppInner() {
             {t('nav.fileTree')}
           </div>
           <FileTree onFileClick={(path) => {
-            if (!isTauriAvailable()) {
-              showToast(t('error.description'), 'info')
-              return
-            }
-            if (path.toLowerCase().endsWith('.pdf')) {
-              invoke('open_file', { projectRoot, path }).catch((e: unknown) => {
-                showToast(`${t('error.title')}: ${String(e)}`, 'error')
-              })
+            // 走 setActiveFile → ProjectView.useEffect → 应用内 PdfViewer/MarkdownViewer
+            // 不要用 invoke('open_file', ...)，那个会调系统默认程序打开（PDF 弹外部阅读器）
+            const lower = path.toLowerCase()
+            if (lower.endsWith('.pdf')) {
+              setActiveFile({ path, type: 'pdf', mode: 'read' })
+            } else if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
+              setActiveFile({ path, type: 'markdown' })
             } else {
               showToast(`${t('common.project')}: ${path}`, 'info')
             }
@@ -181,16 +183,19 @@ function AppInner() {
       }}>
         <ErrorBoundary>
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            <AppRoutes />
+            <AppRoutes onSettingsOpen={() => setSettingsOpen(true)} />
           </div>
         </ErrorBoundary>
       </main>
+      <ErrorBoundary>
+        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      </ErrorBoundary>
       <ToastContainer />
     </div>
   )
 }
 
-function AppRoutes() {
+function AppRoutes({ onSettingsOpen }: { onSettingsOpen: () => void }) {
   const location = useLocation()
   return (
     <AnimatePresence>
@@ -199,7 +204,7 @@ function AppRoutes() {
           path="/"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><ProjectView /></AnimatedPage>
+              <AnimatedPage><ProjectView onSettingsOpen={onSettingsOpen} /></AnimatedPage>
             </Suspense>
           }
         />
@@ -239,7 +244,7 @@ function AppRoutes() {
           path="/project"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><ProjectView /></AnimatedPage>
+              <AnimatedPage><ProjectView onSettingsOpen={onSettingsOpen} /></AnimatedPage>
             </Suspense>
           }
         />

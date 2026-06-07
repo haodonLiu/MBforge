@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { resourcesCheck, type EnvironmentReport } from '../../api/tauri-bridge'
+import { isTauriAvailable } from '../../api/tauri/_utils'
 import Spinner from '../ui/Spinner'
 import Caption from '../ui/Caption'
 import Badge from '../ui/Badge'
@@ -56,10 +57,18 @@ export default function EnvironmentSection() {
 
   useEffect(() => {
     setLoading(true)
+    // 在 Tauri 外部（浏览器开发模式）不调用 IPC，避免抛错造成页面崩溃。
+    if (!isTauriAvailable()) {
+      setReport(null)
+      setLoading(false)
+      return
+    }
+    let cancelled = false
     resourcesCheck()
-      .then(r => setReport(r))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+      .then(r => { if (!cancelled) setReport(r) })
+      .catch(() => { if (!cancelled) setReport(null) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [])
 
   if (loading) {

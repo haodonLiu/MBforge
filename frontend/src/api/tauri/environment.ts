@@ -52,3 +52,12 @@ export async function resourcesGetModelPath(resourceId: string): Promise<string 
 export async function resourcesCatalog(): Promise<Record<string, unknown>[]> {
   return invoke<Record<string, unknown>[]>('resources_catalog')
 }
+
+/** 获取模型缓存目录信息 */
+export async function modelsCacheDirInfo(): Promise<{
+  mbforge: { path: string; exists: boolean; size_mb: number }
+  huggingface: { path: string; exists: boolean; size_mb: number; env_var: string }
+  modelscope: { path: string; exists: boolean; size_mb: number; env_var: string }
+}> {
+  return invoke('models_cache_dir_info')
+}

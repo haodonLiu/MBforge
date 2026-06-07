@@ -1,21 +1,24 @@
 import { useState, useCallback } from 'react'
+import { cleanWindowsPath } from '../utils/path'
 
 const STORAGE_KEY = 'mbforge_project_root'
 
 export function getProjectRoot(): string {
-  return localStorage.getItem(STORAGE_KEY) || ''
+  const raw = localStorage.getItem(STORAGE_KEY) || ''
+  return cleanWindowsPath(raw)
 }
 
 export function setProjectRoot(root: string): void {
-  localStorage.setItem(STORAGE_KEY, root)
+  localStorage.setItem(STORAGE_KEY, cleanWindowsPath(root))
 }
 
 export function useProjectRoot() {
   const [projectRoot, setProjectRootState] = useState(getProjectRoot)
 
   const updateProjectRoot = useCallback((root: string) => {
-    setProjectRoot(root)
-    setProjectRootState(root)
+    const cleaned = cleanWindowsPath(root)
+    setProjectRoot(cleaned)
+    setProjectRootState(cleaned)
   }, [])
 
   return { projectRoot, setProjectRoot: updateProjectRoot }

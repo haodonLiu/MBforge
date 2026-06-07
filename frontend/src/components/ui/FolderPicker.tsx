@@ -4,6 +4,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { FolderOpenIcon } from '../icons'
 import Button from './Button'
 import { showToast } from '../../hooks/useToast'
+import { cleanWindowsPath } from '../../utils/path'
 
 
 interface FolderPickerProps {
@@ -40,8 +41,7 @@ export function FolderPicker({
       if (selected) {
         const raw = typeof selected === 'string' ? selected : Array.isArray(selected) ? selected[0] : ''
         if (raw) {
-          const cleaned = raw.replace(/^\\\\\?\\/, '')
-          onChange(cleaned)
+          onChange(cleanWindowsPath(raw))
         }
       }
     } catch (e: unknown) {
@@ -66,7 +66,7 @@ export function FolderPicker({
       <input
         type="text"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(cleanWindowsPath(e.target.value))}
         placeholder={effectivePlaceholder}
         disabled={disabled}
         style={{

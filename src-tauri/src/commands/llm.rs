@@ -16,8 +16,6 @@ use crate::core::agent::rig_adapter::{
 
 /// Status string returned to the frontend (mirrors an enum on the TS side).
 ///
-/// `NotConfigured` — env didn't set base_url or api_key (still returned,
-///                  frontend shows a clear "set MBFORGE_LLM_BASE_URL" message).
 /// `Ok`           — the probe request got a 2xx.
 /// `Unreachable`  — TCP/DNS/TLS error before any HTTP response.
 /// `HttpError`    — server responded with non-2xx (carries status + body excerpt).
@@ -25,7 +23,6 @@ use crate::core::agent::rig_adapter::{
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LlmLinkStatus {
-    NotConfigured,
     Ok,
     Unreachable,
     HttpError,
@@ -54,23 +51,21 @@ pub struct LlmEnvStatus {
 }
 
 impl LlmEnvStatus {
-    fn from_env() -> Self {
-        let cfg = MbforgeProviderConfig::peek_from_env();
-        let status = if cfg.base_url.trim().is_empty() || cfg.api_key.trim().is_empty() {
-            LlmLinkStatus::NotConfigured
-        } else {
-            LlmLinkStatus::Ok // "configured" — not yet probed
-        };
-        Self {
+    /// Strict read: env is the source of truth. If any required var is
+    /// missing, this returns the env error verbatim — the Settings UI
+    /// surfaces it as a hard error, no silent "Not configured" status.
+    fn from_env() -> Result<Self, String> {
+        let cfg = MbforgeProviderConfig::from_app_config()?;
+        Ok(Self {
             provider: cfg.kind.as_str().to_string(),
             base_url: cfg.base_url,
             api_key_set: !cfg.api_key.is_empty(),
             model: cfg.model,
-            status,
+            status: LlmLinkStatus::Ok, // configured — not yet probed
             error: None,
             http_status: None,
             latency_ms: None,
-        }
+        })
     }
 }
 
@@ -79,7 +74,7 @@ impl LlmEnvStatus {
 /// `test_llm_connection` separately.
 #[tauri::command]
 pub async fn get_llm_env_config() -> Result<LlmEnvStatus, String> {
-    Ok(LlmEnvStatus::from_env())
+    LlmEnvStatus::from_env()
 }
 
 /// Probe the configured LLM endpoint with a minimal request and report
@@ -99,11 +94,10 @@ pub async fn get_llm_env_config() -> Result<LlmEnvStatus, String> {
 /// it does not exercise tool calling.
 #[tauri::command]
 pub async fn test_llm_connection() -> Result<LlmEnvStatus, String> {
-    let cfg = MbforgeProviderConfig::peek_from_env();
-    let mut status = LlmEnvStatus::from_env();
-    if matches!(status.status, LlmLinkStatus::NotConfigured) {
-        return Ok(status);
-    }
+    // Env resolution is strict — if anything is missing, the env error
+    // bubbles up. The Settings UI renders it verbatim.
+    let cfg = MbforgeProviderConfig::from_app_config()?;
+    let mut status = LlmEnvStatus::from_env()?;
 
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(15))

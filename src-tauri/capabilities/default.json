@@ -31,7 +31,8 @@
     "allow-notes",
     "allow-sidecar",
     "allow-settings",
-    "allow-resource-manager"
+    "allow-resource-manager",
+    "allow-llm"
   ],
   "platforms": ["macOS", "windows", "linux", "android", "iOS"]
 }

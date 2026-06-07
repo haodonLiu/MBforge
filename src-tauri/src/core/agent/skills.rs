@@ -164,8 +164,11 @@ impl SkillsManager {
             )
             .await
             {
-                Some(s) => s,
-                None => return,
+                Ok(s) => s,
+                Err(e) => {
+                    log::warn!("skills extract: LLM call skipped: {e}");
+                    return;
+                }
             };
             if content.is_empty() {
                 return;

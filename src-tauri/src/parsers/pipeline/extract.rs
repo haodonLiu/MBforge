@@ -620,6 +620,13 @@ struct MoleculeEntry {
     index: usize,
     smiles: String,
     esmiles: Option<String>,
+    /// MoleCode (Mermaid graph text) — auto-generated from E-SMILES
+    /// (or bare SMILES) so the frontend can render the molecular
+    /// structure inline without re-running the chem pipeline.
+    /// `None` if the SMILES parse failed or the converter returned an
+    /// error (the rest of the entry is still useful).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    molcode: Option<String>,
     name: String,
     page: i32,
     moldet_confidence: f64,
@@ -766,11 +773,21 @@ pub async fn extract_pdf_workflow(
             // 裁剪图片文件名格式: page_XXXX_mol_YYY.png
             let image_file = format!("page_{:04}_mol_{:03}.png", mol.page, i);
             let (smiles, esmiles_opt, _tags) = separate_esmiles_layers(&mol.esmiles);
+            let mol_name = format!("IMG-{}-P{}", pdf_name, mol.page);
+            // Auto-generate MoleCode (Mermaid graph) from E-SMILES, falling
+            // back to bare SMILES. Failures are non-fatal — the entry is
+            // still emitted with `molcode: None` so the rest of the
+            // pipeline is unaffected.
+            let molcode = esmiles_to_molecode_opt(
+                esmiles_opt.as_deref().unwrap_or(&smiles),
+                &mol_name,
+            );
             MoleculeEntry {
                 index: i,
                 smiles,
                 esmiles: esmiles_opt,
-                name: format!("IMG-{}-P{}", pdf_name, mol.page),
+                molcode,
+                name: mol_name,
                 page: mol.page,
                 moldet_confidence: mol.moldet_conf,
                 molscribe_confidence: mol.confidence,
@@ -809,4 +826,26 @@ pub async fn extract_pdf_workflow(
     );
 
     Ok(result)
+}
+
+/// Best-effort wrapper around `esmiles_to_molecode` for the manifest
+/// generation path. Returns `None` on parse failure or empty input so
+/// the rest of `MoleculeEntry` is still useful.
+fn esmiles_to_molecode_opt(input: &str, name: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match crate::core::chem::chem::esmiles_to_molecode(trimmed, name) {
+        Ok(r) => Some(r.mermaid),
+        Err(e) => {
+            log::warn!(
+                "[molcode] esmiles_to_molecode failed for {} ({} chars): {}",
+                name,
+                trimmed.len(),
+                e
+            );
+            None
+        }
+    }
 }

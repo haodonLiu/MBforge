@@ -14,10 +14,12 @@ use super::doc_types::{
 
 mod extract;
 mod helpers;
+mod markdown_augment;
 mod merge;
 
 use extract::extract_molecules_from_pdf;
 use helpers::{activity_entry_to_record, compound_entry_to_record, extract_section_text};
+use markdown_augment::augment_markdown_with_images;
 use merge::{enhance_patent_data, merge_partial_results, run_merge_and_sar};
 
 // Re-export for commands/pdf.rs and other modules

@@ -26,8 +26,7 @@ const ProjectView = lazy(() => import('./components/ProjectView'))
 const Search = lazy(() => import('./components/Search'))
 const Chat = lazy(() => import('./components/Chat'))
 const MoleculeLibrary = lazy(() => import('./components/MoleculeLibrary'))
-const Workflow = lazy(() => import('./components/Workflow'))
-const SARAnalysis = lazy(() => import('./components/SARAnalysis'))
+const Environment = lazy(() => import('./components/Environment'))
 const Dashboard = lazy(() => import('./components/Dashboard'))
 const Notes = lazy(() => import('./components/Notes'))
 
@@ -233,10 +232,10 @@ function AppRoutes({ onSettingsOpen }: { onSettingsOpen: () => void }) {
           }
         />
         <Route
-          path="/workflow"
+          path="/environment"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><Workflow /></AnimatedPage>
+              <AnimatedPage><Environment /></AnimatedPage>
             </Suspense>
           }
         />
@@ -245,14 +244,6 @@ function AppRoutes({ onSettingsOpen }: { onSettingsOpen: () => void }) {
           element={
             <Suspense fallback={<RouteFallback />}>
               <AnimatedPage><ProjectView onSettingsOpen={onSettingsOpen} /></AnimatedPage>
-            </Suspense>
-          }
-        />
-        <Route
-          path="/sar"
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><SARAnalysis /></AnimatedPage>
             </Suspense>
           }
         />

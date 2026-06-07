@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { listMoleculesTauri, searchMoleculesTauri } from '../api/tauri/molecule'
 import type { MoleculeRecord } from '../types'
-import { FlaskIcon, SearchIcon } from './icons'
+import { FlaskIcon, SearchIcon, TargetIcon } from './icons'
 import { useAppContext } from '../context/AppContext'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import PageContainer from '../components/ui/PageContainer'
@@ -15,11 +15,17 @@ import BodyText from '../components/ui/BodyText'
 import Skeleton from '../components/ui/Skeleton'
 import Button from '../components/ui/Button'
 import EmptyState from '../components/ui/EmptyState'
+import Tabs, { TabPanel } from '../components/ui/Tabs'
 import { AddMoleculeDialog } from '../components/ui/AddMoleculeDialog'
+import SARAnalysis from './SARAnalysis'
 
 export default function MoleculeLibrary() {
   const { projectRoot } = useAppContext()
   const { t } = useTranslation()
+  // 顶层 tab：'library' = 分子列表；'sar' = SAR 分析。
+  // 原来是独立路由 /sar 的 SARAnalysis 页面，合并到这里作为子 tab。
+  type LibraryTab = 'library' | 'sar'
+  const [activeTab, setActiveTab] = useState<LibraryTab>('library')
   const [search, setSearch] = useState('')
   const [molecules, setMolecules] = useState<MoleculeRecord[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -73,12 +79,39 @@ export default function MoleculeLibrary() {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '24px',
+        marginBottom: '16px',
       }}>
         <PageTitle>{t('mol.title')}</PageTitle>
         <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)}>{t('mol.add')}</Button>
       </div>
 
+      {/* 顶层 tab：library / sar */}
+      <Tabs
+        items={[
+          {
+            key: 'library',
+            label: (
+              <>
+                <FlaskIcon size={14} /> {t('mol.title')}
+              </>
+            ),
+            badge: molecules.length,
+          },
+          {
+            key: 'sar',
+            label: (
+              <>
+                <TargetIcon size={14} /> SAR 分析
+              </>
+            ),
+          },
+        ]}
+        activeKey={activeTab}
+        onChange={(k) => setActiveTab(k as LibraryTab)}
+      />
+
+      {activeTab === 'library' && (
+        <TabPanel activeKey={activeTab} tabKey="library">
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -172,6 +205,16 @@ export default function MoleculeLibrary() {
           projectRoot={projectRoot}
           onAdded={loadMolecules}
         />
+      )}
+        </TabPanel>
+      )}
+
+      {activeTab === 'sar' && (
+        <TabPanel activeKey={activeTab} tabKey="sar">
+          {/* 复用原 SARAnalysis 组件的所有内部 state（correction items、
+              selected compound 等）。它自己 fetch + 自己管 state。 */}
+          <SARAnalysis />
+        </TabPanel>
       )}
     </PageContainer>
   )

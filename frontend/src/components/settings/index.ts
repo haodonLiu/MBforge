@@ -1,4 +1,3 @@
-export { default as EnvironmentSection } from './EnvironmentSection'
 export { ModelSelector, DownloadProgressBar, ModelCard, DownloadedModelItem } from './ModelComponents'
 export { default as ModelsTab } from './ModelsTab'
 export { default as LlmStatusCard } from './LlmStatusCard'

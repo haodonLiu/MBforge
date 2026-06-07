@@ -117,7 +117,6 @@ export type SectionId =
   | 'ai_models'
   | 'model_service'
   | 'model_downloads'
-  | 'diagnostics'
   | 'about'
 
 export interface SectionDef {
@@ -131,7 +130,6 @@ export const SECTIONS: SectionDef[] = [
   { id: 'ai_models', labelKey: 'settings.aiModels', icon: 'cpu' },
   { id: 'model_service', labelKey: 'settings.modelService', icon: 'layout' },
   { id: 'model_downloads', labelKey: 'settings.modelDownloads', icon: 'download' },
-  { id: 'diagnostics', labelKey: 'settings.diagnostics', icon: 'flask' },
   { id: 'about', labelKey: 'settings.about', icon: 'info' },
 ]
 

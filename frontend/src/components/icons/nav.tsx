@@ -52,7 +52,7 @@ export const LayoutIcon: FC<IconProps> = ({ size = 20 }) =>
     size,
   )
 
-export const WorkflowIcon: FC<IconProps> = ({ size = 20 }) =>
+export const EnvironmentIcon: FC<IconProps> = ({ size = 20 }) =>
   baseSvg(
     <>
       <rect x="3" y="3" width="6" height="6" rx="1" />

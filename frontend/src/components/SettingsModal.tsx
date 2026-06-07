@@ -28,7 +28,6 @@ import IconButton from './ui/IconButton'
 import { ScrollColumn } from './ui'
 import ErrorBoundary from './ErrorBoundary'
 import { showToast } from '../hooks/useToast'
-import EnvironmentSection from './settings/EnvironmentSection'
 
 import {
   SECTIONS, type SectionId, type SectionDef,
@@ -158,8 +157,6 @@ export default function SettingsModal({ open, onClose }: Props) {
         return <ModelServiceSection settings={settings} setSettings={setSettings} />
       case 'model_downloads':
         return <ModelDownloadsSection settings={settings} setSettings={setSettings} />
-      case 'diagnostics':
-        return <EnvironmentSection />
       case 'about':
         return (
           <AboutSection

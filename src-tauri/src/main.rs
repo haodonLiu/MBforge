@@ -19,16 +19,21 @@ fn load_dotenv() {
     // Walk up from CWD looking for the first `.env` we can read.
     // Dev mode runs the binary from `src-tauri/target/...`, so CWD-relative
     // `.env` would miss the project-root copy. Search ancestors instead.
-    let mut dir: Option<&std::path::Path> = Some(std::path::Path::new("."));
+    //
+    // Canonicalize first — `Path::new(".").parent()` returns `Some("")` (not
+    // a real parent), so a naive `dir = d.parent()` loop never walks up. We
+    // need an absolute path before `.parent()` actually moves us toward `/`.
+    let start = std::env::current_dir().ok().and_then(|p| p.canonicalize().ok());
+    let mut dir: Option<std::path::PathBuf> = start;
     let mut found: Option<std::path::PathBuf> = None;
-    for _ in 0..6 {
-        let Some(d) = dir else { break };
+    for _ in 0..8 {
+        let Some(d) = dir.as_deref() else { break };
         let candidate = d.join(".env");
         if candidate.is_file() {
             found = Some(candidate);
             break;
         }
-        dir = d.parent();
+        dir = d.parent().map(|p| p.to_path_buf());
     }
     let Some(path) = found else {
         log::debug!("[tauri] .env not found in cwd or ancestors; using process env only");

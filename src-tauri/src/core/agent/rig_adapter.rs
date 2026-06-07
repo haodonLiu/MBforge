@@ -120,38 +120,21 @@ impl MbforgeProviderConfig {
     /// Build a config from environment variables (`.env` injected at startup
     /// by `main::load_dotenv()`).
     ///
-    /// Resolution — **env-only**, no fallback to `~/.config/MBForge/config.json`:
+    /// Resolution — **env-only, no fallback**. The project-root `.env` is the
+    /// single source of truth; if any required var is missing, this function
+    /// returns an error and the caller surfaces it. There is no default
+    /// endpoint, no `config.json` fallback, and no graceful "not configured"
+    /// status — the LLM simply cannot be used without env configuration.
+    ///
     /// - Provider kind: `MBFORGE_LLM_PROVIDER` (`anthropic` → Anthropic,
     ///   anything else → OpenAI-compatible).
     /// - Base URL / API key / model: `MBFORGE_LLM_BASE_URL` /
-    ///   `MBFORGE_LLM_API_KEY` / `MBFORGE_LLM_MODEL`.
+    ///   `MBFORGE_LLM_API_KEY` / `MBFORGE_LLM_MODEL` (all required).
     ///
     /// The Settings UI cannot override these — they are the single source of
     /// truth, in line with the project convention (`MBFORGE_SIDECAR_URL`,
     /// `MBFORGE_MODEL_CACHE_DIR`, etc.).
     pub fn from_app_config() -> Result<Self, String> {
-        let cfg = Self::peek_from_env();
-        if cfg.base_url.trim().is_empty() {
-            return Err(format!(
-                "LLM base_url is not configured. Set `MBFORGE_LLM_BASE_URL` in the project-root .env \
-                 to an OpenAI-compatible endpoint (e.g. https://api.openai.com/v1, \
-                 https://openrouter.ai/api/v1, https://api.deepseek.com/v1, or a self-hosted \
-                 llama.cpp server). The MBForge sidecar on :18792 is *not* an OpenAI-compatible \
-                 endpoint and must not be used here."
-            ));
-        }
-        if cfg.api_key.trim().is_empty() {
-            return Err(format!(
-                "LLM api_key is not configured. Set `MBFORGE_LLM_API_KEY` in the project-root .env."
-            ));
-        }
-        Ok(cfg)
-    }
-
-    /// Non-throwing variant: read the env values verbatim and return whatever
-    /// is set (or empty strings). Used by the Settings UI to display the
-    /// current state without surfacing a hard error when something is missing.
-    pub fn peek_from_env() -> Self {
         let env_provider = std::env::var("MBFORGE_LLM_PROVIDER")
             .ok()
             .filter(|s| !s.trim().is_empty());
@@ -160,14 +143,36 @@ impl MbforgeProviderConfig {
             _ => MbforgeProviderKind::OpenAICompatible,
         };
         let env = |k: &str| std::env::var(k).ok().filter(|s| !s.trim().is_empty());
-        Self {
+        let base_url = env("MBFORGE_LLM_BASE_URL").unwrap_or_default();
+        let api_key = env("MBFORGE_LLM_API_KEY").unwrap_or_default();
+        let model = env("MBFORGE_LLM_MODEL").unwrap_or_default();
+        if base_url.trim().is_empty() {
+            return Err(format!(
+                "LLM base_url is not configured. Set `MBFORGE_LLM_BASE_URL` in the project-root .env \
+                 to an OpenAI-compatible endpoint (e.g. https://api.openai.com/v1, \
+                 https://openrouter.ai/api/v1, https://api.deepseek.com/v1, or a self-hosted \
+                 llama.cpp server). The MBForge sidecar on :18792 is *not* an OpenAI-compatible \
+                 endpoint and must not be used here."
+            ));
+        }
+        if api_key.trim().is_empty() {
+            return Err(format!(
+                "LLM api_key is not configured. Set `MBFORGE_LLM_API_KEY` in the project-root .env."
+            ));
+        }
+        if model.trim().is_empty() {
+            return Err(format!(
+                "LLM model is not configured. Set `MBFORGE_LLM_MODEL` in the project-root .env."
+            ));
+        }
+        Ok(Self {
             kind,
-            base_url: env("MBFORGE_LLM_BASE_URL").unwrap_or_default(),
-            api_key: env("MBFORGE_LLM_API_KEY").unwrap_or_default(),
-            model: env("MBFORGE_LLM_MODEL").unwrap_or_default(),
+            base_url,
+            api_key,
+            model,
             timeout_secs: 120,
             anthropic_betas: Vec::new(),
-        }
+        })
     }
 
     /// Test-only config (no real network calls).

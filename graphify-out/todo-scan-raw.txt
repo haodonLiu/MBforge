@@ -1,7 +1,0 @@
-src\mbforge\parsers\molecule\molscribe_inference\chemistry.py:40:        # TODO-AUDIT: bare except — swallows SystemExit/KeyboardInterrupt; RDKit-only so
-src\mbforge\parsers\molecule\molscribe_inference\chemistry.py:69:        # TODO-AUDIT: bare except — silently returns 0 for malformed SMILES.
-src\mbforge\parsers\molecule\molscribe_inference\chemistry.py:418:        # TODO-AUDIT: bare except — silently returns None for malformed SMILES.
-src\mbforge\parsers\molecule\molscribe_inference\chemistry.py:558:        # TODO: move to an util function
-src\mbforge\parsers\molecule\molscribe_inference\chemistry.py:565:        # TODO: make sure molblock has the abbreviation information
-src\mbforge\parsers\molecule\molscribe_inference\tokenizer.py:6:# TODO-AUDIT: atomwise_tokenizer is called by chemistry._replace_functional_group,
-src\mbforge\parsers\molecule\molscribe_inference\transformer\decoder.py:479:        # TODO change the way attns is returned dict => list or tuple (onnx)

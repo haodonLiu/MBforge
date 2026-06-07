@@ -1,24 +1,34 @@
-// AI Models 栏目 — LLM / Embedding / Reranker 三个 tab。
+// AI Models 栏目 — LLM / Embedding / Reranker / VLM / OCR 五个 tab。
 //
-// LLM tab 是只读的状态卡 — LLM 由 env (`MBFORGE_LLM_*`) 唯一驱动，
-// Settings 不能覆盖；这里只是把 env 当前值 + 联通状态显示出来。
-// Embedding / Reranker 还是普通可编辑设置（这部分走 sidecar，与 LLM 无关）。
+// 视觉模型（VLM、OCR）从原 VisionSection 合并过来；侧边栏只保留
+// "AI 模型" 一项。LLM tab 是只读的状态卡 — LLM 由 env
+// (`MBFORGE_LLM_*`) 唯一驱动，Settings 不能覆盖；这里只是把 env 当前值 +
+// 联通状态显示出来。其它四个 tab 还是普通可编辑设置（走 sidecar，
+// 与 LLM 无关）。
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Tabs, { TabPanel } from '../../ui/Tabs'
 import SettingSection, { SettingGroup } from '../../ui/SettingSection'
-import { TextField, NumberField, CustomField, ProviderField } from '../SettingRow'
+import {
+  TextField,
+  NumberField,
+  CustomField,
+  ProviderField,
+  ToggleField,
+} from '../SettingRow'
 import { ModelSelector } from '../ModelComponents'
 import LlmStatusCard from '../LlmStatusCard'
 import {
   EMBED_MODELS,
   RERANK_MODELS,
+  VLM_MODELS,
+  OCR_MODELS,
   PROVIDER_META,
 } from '../modelConfigs'
 import type { SettingsState } from '../types'
 
-type Tab = 'llm' | 'embed' | 'rerank'
+type Tab = 'llm' | 'embed' | 'rerank' | 'vlm' | 'ocr'
 
 interface Props {
   settings: SettingsState
@@ -42,6 +52,8 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
           { key: 'llm', label: t('settings.tabLlm') },
           { key: 'embed', label: t('settings.tabEmbed') },
           { key: 'rerank', label: t('settings.tabRerank') },
+          { key: 'vlm', label: t('settings.tabVlm') },
+          { key: 'ocr', label: t('settings.tabOcr') },
         ]}
         activeKey={tab}
         onChange={k => setTab(k as Tab)}
@@ -49,6 +61,7 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
         size="sm"
       />
 
+      {/* ---------- LLM (read-only env-driven status) ---------- */}
       <TabPanel activeKey={tab} tabKey="llm">
         <SettingSection>
           <SettingGroup title={t('settings.llmConfig')}>
@@ -57,6 +70,7 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
         </SettingSection>
       </TabPanel>
 
+      {/* ---------- Embedding ---------- */}
       <TabPanel activeKey={tab} tabKey="embed">
         <SettingSection>
           <SettingGroup title={t('settings.embedConfig')}>
@@ -124,6 +138,7 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
         </SettingSection>
       </TabPanel>
 
+      {/* ---------- Reranker ---------- */}
       <TabPanel activeKey={tab} tabKey="rerank">
         <SettingSection>
           <SettingGroup title={t('settings.rerankConfig')}>
@@ -178,6 +193,79 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
               step={256}
               width={120}
               placeholder="8192"
+            />
+          </SettingGroup>
+        </SettingSection>
+      </TabPanel>
+
+      {/* ---------- VLM (moved from former VisionSection) ---------- */}
+      <TabPanel activeKey={tab} tabKey="vlm">
+        <SettingSection>
+          <SettingGroup title="VLM">
+            <ProviderField
+              label={t('settings.vlmProvider')}
+              description={t('settings.vlmProviderDesc')}
+              provider={settings.vlm_provider}
+              onProviderChange={v => setSettings(s => ({ ...s, vlm_provider: v }))}
+              baseUrl={settings.vlm_base_url}
+              onBaseUrlChange={v => setSettings(s => ({ ...s, vlm_base_url: v }))}
+              apiKey={settings.vlm_api_key}
+              onApiKeyChange={v => setSettings(s => ({ ...s, vlm_api_key: v }))}
+              providerOptions={providerOptions(VLM_MODELS)}
+              needsKey={PROVIDER_META[settings.vlm_provider]?.needsKey ?? true}
+              baseUrlPlaceholder={PROVIDER_META[settings.vlm_provider]?.defaultUrl}
+            />
+            <CustomField label={t('settings.model')}>
+              <ModelSelector
+                provider={settings.vlm_provider}
+                modelValue={settings.vlm_model}
+                models={VLM_MODELS}
+                onChange={v => setSettings(s => ({ ...s, vlm_model: v }))}
+              />
+            </CustomField>
+          </SettingGroup>
+        </SettingSection>
+      </TabPanel>
+
+      {/* ---------- OCR (moved from former VisionSection) ---------- */}
+      <TabPanel activeKey={tab} tabKey="ocr">
+        <SettingSection>
+          <SettingGroup title="OCR">
+            <ProviderField
+              label={t('settings.ocrProvider')}
+              description={t('settings.ocrProviderDesc')}
+              provider={settings.ocr_provider}
+              onProviderChange={v => setSettings(s => ({ ...s, ocr_provider: v }))}
+              baseUrl={settings.ocr_base_url}
+              onBaseUrlChange={v => setSettings(s => ({ ...s, ocr_base_url: v }))}
+              apiKey={settings.ocr_api_key}
+              onApiKeyChange={v => setSettings(s => ({ ...s, ocr_api_key: v }))}
+              providerOptions={providerOptions(OCR_MODELS)}
+              needsKey={PROVIDER_META[settings.ocr_provider]?.needsKey ?? false}
+              baseUrlPlaceholder={PROVIDER_META[settings.ocr_provider]?.defaultUrl}
+            />
+            <CustomField label={t('settings.model')}>
+              <ModelSelector
+                provider={settings.ocr_provider}
+                modelValue={settings.ocr_model}
+                models={OCR_MODELS}
+                onChange={v => setSettings(s => ({ ...s, ocr_model: v }))}
+              />
+            </CustomField>
+          </SettingGroup>
+
+          <SettingGroup title={t('settings.ocrFlags')}>
+            <ToggleField
+              label={t('settings.useHfMirror')}
+              description={t('settings.useHfMirrorDesc')}
+              value={settings.ocr_use_hf_mirror}
+              onChange={v => setSettings(s => ({ ...s, ocr_use_hf_mirror: v }))}
+            />
+            <ToggleField
+              label={t('settings.usePdfInspector')}
+              description={t('settings.usePdfInspectorDesc')}
+              value={settings.ocr_use_pdf_inspector}
+              onChange={v => setSettings(s => ({ ...s, ocr_use_pdf_inspector: v }))}
             />
           </SettingGroup>
         </SettingSection>

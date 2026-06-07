@@ -379,22 +379,26 @@ interface NoteListItemProps {
   onClick: () => void
 }
 
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/^#+ .*$/gm, '')           // 标题
+    .replace(/\*\*([^*]+)\*\*/g, '$1')  // bold
+    .replace(/\*([^*]+)\*/g, '$1')     // italic
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')// wikilink
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // markdown link
+    .replace(/```[\s\S]*?```/g, '')     // code blocks
+    .replace(/`([^`]+)`/g, '$1')       // inline code
+    .replace(/^[-*+] /gm, '')          // list markers
+    .replace(/^> /gm, '')              // blockquote
+    .replace(/\|/g, ' ')               // table
+    .replace(/\n+/g, ' ')
+    .trim()
+}
+
 function NoteListItem({ note, active, onClick }: NoteListItemProps) {
   // 提取首段纯文本作为摘要
   const excerpt = useMemo(() => {
-    const text = note.content
-      .replace(/^#+ .*$/gm, '')           // 标题
-      .replace(/\*\*([^*]+)\*\*/g, '$1')  // bold
-      .replace(/\*([^*]+)\*/g, '$1')     // italic
-      .replace(/\[\[([^\]]+)\]\]/g, '$1')// wikilink
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // markdown link
-      .replace(/```[\s\S]*?```/g, '')     // code blocks
-      .replace(/`([^`]+)`/g, '$1')       // inline code
-      .replace(/^[-*+] /gm, '')          // list markers
-      .replace(/^> /gm, '')              // blockquote
-      .replace(/\|/g, ' ')               // table
-      .replace(/\n+/g, ' ')
-      .trim()
+    const text = stripMarkdown(note.content)
     return text.length > 100 ? text.slice(0, 100) + '...' : text
   }, [note.content])
 

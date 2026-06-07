@@ -171,10 +171,21 @@ impl LayeredContext {
         self.system.content()
     }
 
+    // The conversation-history mutators below are dead in production
+    // as of the multi-turn refactor — history is now persisted in
+    // `SqliteConversationMemory` and the rig agent reads/writes it via
+    // the `ConversationMemory` trait. `LayeredContext` is now a
+    // projection of the project-level layers (system prompt, project
+    // context) only. These methods are kept for the in-file unit
+    // tests and may be revived when the broader session API
+    // stabilizes; the `#[allow(dead_code)]` keeps the
+    // `cargo build` clean.
+    #[allow(dead_code)]
     pub fn add_user_message(&mut self, content: &str) {
         self.history.messages.push(Message::user(content));
     }
 
+    #[allow(dead_code)]
     pub fn add_assistant_message(&mut self, content: &str) {
         self.history.messages.push(Message::assistant(content));
     }
@@ -187,6 +198,7 @@ impl LayeredContext {
     }
 
     /// Trim history to fit token limits.
+    #[allow(dead_code)]
     pub fn trim_history(&mut self) {
         // Round-based trimming
         let max_msgs = self.max_history_rounds * 2;
@@ -223,6 +235,7 @@ impl LayeredContext {
     /// Ephemeral layers (e.g. `tools`) are included when requested and then
     /// automatically cleared so their content does not persist to the next
     /// turn.
+    #[allow(dead_code)]
     pub fn build_messages(&mut self, include_tools: bool, include_history: bool) -> Vec<Message> {
         let mut result = Vec::new();
         result.extend(self.system.messages.clone());

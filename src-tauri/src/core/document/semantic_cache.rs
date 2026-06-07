@@ -12,6 +12,7 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection};
 
 use crate::core::error::AppResult;
+use crate::core::helpers::LockResultExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheEntry {
@@ -176,7 +177,7 @@ impl SemanticCache {
             })
         })?;
 
-        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut inner = self.cache.lock().into_inner();
         for row in rows {
             let entry = row?;
             let key = entry.query_hash.clone();
@@ -195,7 +196,7 @@ impl SemanticCache {
                 Err(_) => return Ok(()),
             };
 
-        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut inner = self.cache.lock().into_inner();
         let mut migrated = 0usize;
 
         for (key, item) in data {
@@ -226,7 +227,7 @@ impl SemanticCache {
         let conn = Connection::open(&self.db_path)?;
         Self::setup_schema(&conn)?;
 
-        let inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let inner = self.cache.lock().into_inner();
 
         // 先清空再全量写入（简单策略，缓存大小 <1000，全量写入开销可忽略）
         conn.execute("DELETE FROM semantic_cache", [])?;
@@ -259,7 +260,7 @@ impl SemanticCache {
             return None;
         }
         let key = hash_query(query);
-        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut inner = self.cache.lock().into_inner();
 
         let expired = inner
             .entries
@@ -323,7 +324,7 @@ impl SemanticCache {
             last_hit: now,
         };
 
-        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut inner = self.cache.lock().into_inner();
 
         if inner.entries.len() >= self.config.max_size && !inner.entries.contains_key(&key) {
             if let Some(evicted) = inner.lru.pop_front() {
@@ -375,7 +376,7 @@ impl SemanticCache {
     }
 
     pub fn clear(&self) {
-        let mut inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let mut inner = self.cache.lock().into_inner();
         inner.entries.clear();
         inner.lru.clear();
         drop(inner);
@@ -394,7 +395,7 @@ impl SemanticCache {
     }
 
     pub fn stats(&self) -> serde_json::Value {
-        let inner = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        let inner = self.cache.lock().into_inner();
         let total_hits: u64 = inner.entries.values().map(|e| e.hit_count).sum();
         serde_json::json!({
             "entries": inner.entries.len(),

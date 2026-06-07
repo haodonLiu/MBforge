@@ -5,6 +5,7 @@
 //! `crate::core::document::knowledge_base::KnowledgeBase`.
 
 pub mod content_cache;
+pub mod detection_cache;
 pub mod document_tree;
 pub mod file_cache;
 pub mod ingest_queue;

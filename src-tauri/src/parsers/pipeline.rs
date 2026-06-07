@@ -342,13 +342,26 @@ async fn review_with_lit_agent(
     //    factory 走 from_config() 按 AppConfig 自动选 OpenAI/Anthropic 路径。
     //    旧 LiteratureAgent 的 AuditLog 钩子 M6 删除 specialist_agent 时一并下线。
     let agent = match MbforgeProviderConfig::from_app_config() {
-        Ok(cfg) => match MbforgeAgent::from_config(&cfg, &MbforgeAgentSpec::literature(), Vec::new()) {
-            Ok(a) => a,
-            Err(e) => {
-                log::warn!("[LitAgent] Failed to build MbforgeAgent: {}", e);
-                return;
+        Ok(cfg) => {
+            use rig_core::memory::InMemoryConversationMemory;
+            let memory = std::sync::Arc::new(
+                crate::core::agent::managed_memory::MbforgeManagedMemory::new(
+                    std::sync::Arc::new(InMemoryConversationMemory::new()),
+                ),
+            );
+            match MbforgeAgent::from_config(
+                &cfg,
+                &MbforgeAgentSpec::literature(),
+                Vec::new(),
+                memory,
+            ) {
+                Ok(a) => a,
+                Err(e) => {
+                    log::warn!("[LitAgent] Failed to build MbforgeAgent: {}", e);
+                    return;
+                }
             }
-        },
+        }
         Err(e) => {
             log::warn!("[LitAgent] Failed to load provider config: {}", e);
             return;
@@ -372,7 +385,14 @@ async fn review_with_lit_agent(
     };
 
     // 3. timeout 30s；失败 → 静默跳过
-    let outcome = timeout(Duration::from_secs(30), agent.prompt(&prompt_text)).await;
+    let outcome = timeout(
+        Duration::from_secs(30),
+        agent.prompt(
+            &crate::core::agent::session_id::SessionId::from("lit-review-oneshot"),
+            &prompt_text,
+        ),
+    )
+    .await;
 
     match outcome {
         Ok(Ok(text)) => {

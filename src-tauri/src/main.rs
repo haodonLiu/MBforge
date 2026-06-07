@@ -13,6 +13,7 @@ use commands::mol_engine::MoleculeEngineState;
 
 use std::process::Command;
 use tauri::Manager;
+use crate::core::helpers::LockResultExt;
 
 fn load_dotenv() {
     // Walk up from CWD looking for the first `.env` we can read.
@@ -141,7 +142,7 @@ fn main() {
         .on_window_event(|app, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 if let Some(state) = app.try_state::<std::sync::Arc<sidecar::SidecarInner>>() {
-                    let mut child = state.child.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut child = state.child.lock().into_inner();
                     if let Some(ref mut c) = *child {
                         let _ = c.kill();
                     }

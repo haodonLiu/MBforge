@@ -5,8 +5,10 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use crate::core::constants::INDEX_DIR;
+use crate::core::helpers::LockResultExt;
 
 pub const MOL_RELATIONS_TABLE: &str = "molecule_relations";
+pub const MOL_DETECTIONS_TABLE: &str = "molecule_detections";
 pub const MOL_DB_FILENAME: &str = "molecules.db";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -64,6 +66,22 @@ pub struct MoleculeRelationDb {
     conn: Mutex<Connection>,
 }
 
+/// One row of `molecule_detections` — links a molecule (in `molecules`)
+/// to a specific PDF page detection. `molecule_detections` is a join table
+/// that the PdfViewer uses to render bbox overlays on a known page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoleculeDetectionRow {
+    pub mol_id: String,
+    pub doc_id: String,
+    pub page: usize,
+    pub bbox: [f64; 4],
+    pub crop_relpath: Option<String>,
+    pub conf_moldet: Option<f64>,
+    pub conf_molscribe: Option<f64>,
+    pub vlm_verified_esmiles: Option<String>,
+    pub vlm_confidence: Option<f64>,
+}
+
 impl MoleculeRelationDb {
     pub fn new(project_root: &std::path::Path) -> Result<Self, String> {
         let db_dir = project_root.join(INDEX_DIR);
@@ -83,7 +101,7 @@ impl MoleculeRelationDb {
     }
 
     fn init_schema(&self) -> Result<(), String> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.conn.lock().into_inner();
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(|e| format!("Failed to enable foreign_keys: {}", e))?;
 
@@ -109,11 +127,46 @@ impl MoleculeRelationDb {
 
         conn.execute_batch(&sql)
             .map_err(|e| format!("Failed to create schema: {}", e))?;
+
+        // molecule_detections：每个分子在 PDF 哪一页哪个位置被检测到。
+        // 这是 DetectionCache（per-page JSON）的关系镜像 —— JSON 是
+        // 完整原始结果，这个表只存关键索引供 SQL 查询（"在所有 PDF
+        // 里找这个分子 / 这页有哪些分子"）。
+        //
+        // 设计：UNIQUE(mol_id, doc_id, page) 保证同一分子在同一 PDF
+        // 同一页只存一次（重复检测时 UPSERT）。
+        let det_sql = format!(
+            r#"
+            CREATE TABLE IF NOT EXISTS {} (
+                id INTEGER PRIMARY KEY,
+                mol_id TEXT NOT NULL,
+                doc_id TEXT NOT NULL,
+                page INTEGER NOT NULL,
+                bbox_x0 REAL NOT NULL,
+                bbox_y0 REAL NOT NULL,
+                bbox_x1 REAL NOT NULL,
+                bbox_y1 REAL NOT NULL,
+                crop_relpath TEXT,
+                conf_moldet REAL,
+                conf_molscribe REAL,
+                vlm_verified_esmiles TEXT,
+                vlm_confidence REAL,
+                detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(mol_id, doc_id, page)
+            );
+            CREATE INDEX IF NOT EXISTS idx_detect_doc_page ON {}(doc_id, page);
+            CREATE INDEX IF NOT EXISTS idx_detect_mol ON {}(mol_id);
+            "#,
+            MOL_DETECTIONS_TABLE, MOL_DETECTIONS_TABLE, MOL_DETECTIONS_TABLE
+        );
+        conn.execute_batch(&det_sql)
+            .map_err(|e| format!("Failed to create detections schema: {}", e))?;
+
         Ok(())
     }
 
     pub fn add_relation(&self, rel: &MoleculeRelation) -> Result<i64, String> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.conn.lock().into_inner();
         let metadata_json = rel
             .metadata
             .as_ref()
@@ -141,7 +194,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn delete_relation(&self, id: i64) -> Result<bool, String> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.conn.lock().into_inner();
         let affected = conn
             .execute("DELETE FROM molecule_relations WHERE id = ?", params![id])
             .map_err(|e| format!("Failed to delete relation {}: {}", id, e))?;
@@ -149,7 +202,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn get_relation(&self, id: i64) -> Result<Option<MoleculeRelation>, String> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.conn.lock().into_inner();
         let mut stmt = conn
             .prepare("SELECT * FROM molecule_relations WHERE id = ?")
             .map_err(|e| format!("Prepare failed: {}", e))?;
@@ -168,7 +221,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn find_by_molecule(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.conn.lock().into_inner();
         let mut stmt = conn
             .prepare(
                 "SELECT * FROM molecule_relations
@@ -195,7 +248,7 @@ impl MoleculeRelationDb {
         mol_id: &str,
         min_score: f64,
     ) -> Result<Vec<(MoleculeRelation, f64)>, String> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.conn.lock().into_inner();
         let mut stmt = conn
             .prepare(
                 "SELECT * FROM molecule_relations
@@ -223,7 +276,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn find_same_as(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.conn.lock().into_inner();
         let mut stmt = conn
             .prepare(
                 "SELECT * FROM molecule_relations
@@ -247,7 +300,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn relations_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().unwrap_or_else(|e| e.into_inner())
+        self.conn.lock().into_inner()
     }
 
     pub fn molecules_conn(&self) -> Result<Connection, String> {
@@ -255,7 +308,7 @@ impl MoleculeRelationDb {
     }
 
     pub fn get_stats(&self) -> Result<RelationStats, String> {
-        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let conn = self.conn.lock().into_inner();
         let total: i64 = conn
             .query_row("SELECT COUNT(*) FROM molecule_relations", [], |r| r.get(0))
             .unwrap_or(0);
@@ -310,5 +363,129 @@ impl MoleculeRelationDb {
             metadata,
             created_at: row.get(6).unwrap_or_default(),
         })
+    }
+
+
+    /// Insert or update a detection record. `INSERT OR REPLACE` is safe
+    /// because `UNIQUE(mol_id, doc_id, page)` guarantees idempotency.
+    pub fn upsert_detection(&self, row: &MoleculeDetectionRow) -> Result<(), String> {
+        let conn = self.conn.lock().into_inner();
+        let sql = format!(
+            r#"INSERT OR REPLACE INTO {}
+               (mol_id, doc_id, page, bbox_x0, bbox_y0, bbox_x1, bbox_y1,
+                crop_relpath, conf_moldet, conf_molscribe,
+                vlm_verified_esmiles, vlm_confidence)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"#,
+            MOL_DETECTIONS_TABLE
+        );
+        conn.execute(
+            &sql,
+            params![
+                row.mol_id,
+                row.doc_id,
+                row.page as i64,
+                row.bbox[0],
+                row.bbox[1],
+                row.bbox[2],
+                row.bbox[3],
+                row.crop_relpath,
+                row.conf_moldet,
+                row.conf_molscribe,
+                row.vlm_verified_esmiles,
+                row.vlm_confidence,
+            ],
+        )
+        .map_err(|e| format!("Failed to upsert detection: {}", e))?;
+        Ok(())
+    }
+
+    /// All detections for a single PDF page (used by PdfViewer when
+    /// rendering bbox overlays).
+    pub fn detections_for_page(
+        &self,
+        doc_id: &str,
+        page: usize,
+    ) -> Result<Vec<MoleculeDetectionRow>, String> {
+        let conn = self.conn.lock().into_inner();
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT mol_id, doc_id, page, bbox_x0, bbox_y0, bbox_x1, bbox_y1,
+                        crop_relpath, conf_moldet, conf_molscribe,
+                        vlm_verified_esmiles, vlm_confidence
+                 FROM {} WHERE doc_id = ?1 AND page = ?2",
+                MOL_DETECTIONS_TABLE
+            ))
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+        let rows = stmt
+            .query_map(params![doc_id, page as i64], |row| {
+                Ok(MoleculeDetectionRow {
+                    mol_id: row.get(0)?,
+                    doc_id: row.get(1)?,
+                    page: row.get::<_, i64>(2)? as usize,
+                    bbox: [row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?],
+                    crop_relpath: row.get(7)?,
+                    conf_moldet: row.get(8)?,
+                    conf_molscribe: row.get(9)?,
+                    vlm_verified_esmiles: row.get(10)?,
+                    vlm_confidence: row.get(11)?,
+                })
+            })
+            .map_err(|e| format!("Query failed: {}", e))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Row fetch failed: {}", e))
+    }
+
+    /// All pages in a document that have at least one detection.
+    pub fn detected_pages_for_doc(&self, doc_id: &str) -> Result<Vec<usize>, String> {
+        let conn = self.conn.lock().into_inner();
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT DISTINCT page FROM {} WHERE doc_id = ?1 ORDER BY page",
+                MOL_DETECTIONS_TABLE
+            ))
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+        let rows = stmt
+            .query_map(params![doc_id], |row| row.get::<_, i64>(0))
+            .map_err(|e| format!("Query failed: {}", e))?;
+        rows.map(|r| r.map(|n| n as usize))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Row fetch failed: {}", e))
+    }
+
+    /// All documents/places a given molecule was detected in.
+    pub fn detection_locations_for_mol(
+        &self,
+        mol_id: &str,
+    ) -> Result<Vec<(String, usize)>, String> {
+        let conn = self.conn.lock().into_inner();
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT doc_id, page FROM {} WHERE mol_id = ?1 ORDER BY detected_at DESC",
+                MOL_DETECTIONS_TABLE
+            ))
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+        let rows = stmt
+            .query_map(params![mol_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+            })
+            .map_err(|e| format!("Query failed: {}", e))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Row fetch failed: {}", e))
+    }
+
+    /// Delete all detections for one document (called when a doc is removed
+    /// from the project, or when the PDF hash changes).
+    pub fn delete_detections_for_doc(&self, doc_id: &str) -> Result<usize, String> {
+        let conn = self.conn.lock().into_inner();
+        let n = conn
+            .execute(
+                &format!(
+                    "DELETE FROM {} WHERE doc_id = ?1",
+                    MOL_DETECTIONS_TABLE
+                ),
+                params![doc_id],
+            )
+            .map_err(|e| format!("Failed to delete detections: {}", e))?;
+        Ok(n)
     }
 }

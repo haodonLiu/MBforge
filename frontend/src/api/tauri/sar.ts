@@ -38,7 +38,7 @@ export interface RGroupMatrix {
   core_smiles: string
   r_labels: string[]
   rows: string[][]
-  compounds: Record<string, unknown>[]
+  compounds: Array<Record<string, unknown> & { id: string; name: string; smiles: string; matches: boolean }>
   unmatched_count: number
 }
 

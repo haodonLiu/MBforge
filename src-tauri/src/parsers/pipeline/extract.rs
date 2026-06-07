@@ -1,3 +1,6 @@
+use crate::core::document::detection_cache::{
+    Detection as CachedDetection, DetectionCache, PageDetection, DETECTION_CACHE_SCHEMA_VERSION,
+};
 use crate::parsers::doc_types::{ImageRef, OcrBlock};
 use crate::parsers::chem::vlm_chem::{process_page_image, DetectedMolecule};
 use std::path::{Path, PathBuf};
@@ -311,6 +314,74 @@ pub async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> 
 // 分子图像提取
 // ---------------------------------------------------------------------------
 
+/// Write a single page's detections to the persistent detection cache.
+///
+/// Best-effort: any I/O error is logged but does not fail the pipeline.
+/// `doc_slug` is used as the cache directory name (matches the existing
+/// `molecules/<doc_slug>/` convention) so the cache is stable across
+/// sessions and survives doc_id UUID regeneration.
+fn write_detection_cache(
+    project_root: &Path,
+    doc_slug: &str,
+    page: usize,
+    pdf_hash: &str,
+    pdf_mtime: f64,
+    detections: &[DetectedMolecule],
+) {
+    let cache = DetectionCache::new(project_root);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+
+    let cached: Vec<CachedDetection> = detections
+        .iter()
+        .map(|d| {
+            // crop_path from VLM Chem may be absolute or project-relative;
+            // normalize to project-root-relative.
+            let crop_abs = std::path::Path::new(&d.crop_path);
+            let crop_rel = crop_abs
+                .strip_prefix(project_root)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| d.crop_path.clone());
+            CachedDetection {
+                // BBox in PDF coords is not currently returned by vlm_chem
+                // (only image-px coords). Use zeros as a placeholder until
+                // the on-demand path also writes bboxes.
+                bbox_pdf: [0.0, 0.0, 0.0, 0.0],
+                // vlm_chem returns esmiles only; SMILES inference happens
+                // downstream in chem_validate. Leave empty here.
+                smiles: String::new(),
+                esmiles: d.esmiles.clone(),
+                conf_moldet: d.moldet_conf,
+                conf_molscribe: d.confidence,
+                vlm_caption: None,
+                vlm_esmiles: None,
+                crop_relpath: crop_rel,
+            }
+        })
+        .collect();
+
+    let entry = PageDetection {
+        doc_id: doc_slug.to_string(),
+        page,
+        pdf_hash: pdf_hash.to_string(),
+        mtime: pdf_mtime,
+        detected_at: now,
+        schema_version: DETECTION_CACHE_SCHEMA_VERSION,
+        detections: cached,
+    };
+
+    if let Err(e) = cache.put(&entry) {
+        log::warn!(
+            "[detection_cache] Failed to write cache for {} page {}: {}",
+            doc_slug,
+            page,
+            e
+        );
+    }
+}
+
 /// 从 PDF 中提取分子图像（MolDet + MolScribe）
 ///
 /// 根据 PDF 类型选择不同策略：
@@ -345,6 +416,18 @@ pub async fn extract_molecules_from_pdf(
 
     let mut all_results = Vec::new();
 
+    // PDF hash + mtime for the detection cache key. We re-hash on every
+    // batch extract call, but a single batch re-reads at most one file,
+    // so the cost is negligible. The on-demand path uses an in-memory
+    // LRU to skip this on repeat calls within a session.
+    let pdf_hash = crate::core::helpers::sha256_file(source_path).unwrap_or_default();
+    let pdf_mtime = std::fs::metadata(source_path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+
     if is_scanned {
         // Scanned: 使用 lopdf 提取的位图
         log::info!(
@@ -377,6 +460,19 @@ pub async fn extract_molecules_from_pdf(
             .await
             {
                 Ok(results) => {
+                    // Persist this page's detections to the detection cache.
+                    // (Scanned PDFs may have multiple images per page; each
+                    // call extends the same per-page entry.)
+                    if !results.is_empty() && !pdf_hash.is_empty() {
+                        write_detection_cache(
+                            project_root,
+                            doc_slug,
+                            page_idx as usize,
+                            &pdf_hash,
+                            pdf_mtime,
+                            &results,
+                        );
+                    }
                     all_results.extend(results);
                 }
                 Err(e) => {
@@ -432,6 +528,16 @@ pub async fn extract_molecules_from_pdf(
                         .await
                         {
                             Ok(results) => {
+                                if !results.is_empty() && !pdf_hash.is_empty() {
+                                    write_detection_cache(
+                                        project_root,
+                                        doc_slug,
+                                        page_idx as usize,
+                                        &pdf_hash,
+                                        pdf_mtime,
+                                        &results,
+                                    );
+                                }
                                 all_results.extend(results);
                             }
                             Err(e) => {

@@ -16,13 +16,26 @@ use crate::parsers::doc_types::DocumentReport;
 /// - 30s timeout so it never blocks Stage 4.5 persistence.
 pub async fn review_document_report(report: &mut DocumentReport, _project_root: Option<&std::path::Path>) {
     let agent = match MbforgeProviderConfig::from_app_config() {
-        Ok(cfg) => match MbforgeAgent::from_config(&cfg, &MbforgeAgentSpec::literature(), Vec::new()) {
-            Ok(a) => a,
-            Err(e) => {
-                log::warn!("[LitAgent] Failed to build MbforgeAgent: {}", e);
-                return;
+        Ok(cfg) => {
+            use rig_core::memory::InMemoryConversationMemory;
+            let memory = std::sync::Arc::new(
+                crate::core::agent::managed_memory::MbforgeManagedMemory::new(
+                    std::sync::Arc::new(InMemoryConversationMemory::new()),
+                ),
+            );
+            match MbforgeAgent::from_config(
+                &cfg,
+                &MbforgeAgentSpec::literature(),
+                Vec::new(),
+                memory,
+            ) {
+                Ok(a) => a,
+                Err(e) => {
+                    log::warn!("[LitAgent] Failed to build MbforgeAgent: {}", e);
+                    return;
+                }
             }
-        },
+        }
         Err(e) => {
             log::warn!("[LitAgent] Failed to load provider config: {}", e);
             return;
@@ -44,7 +57,14 @@ pub async fn review_document_report(report: &mut DocumentReport, _project_root: 
         }
     };
 
-    let outcome = timeout(Duration::from_secs(30), agent.prompt(&prompt_text)).await;
+    let outcome = timeout(
+        Duration::from_secs(30),
+        agent.prompt(
+            &crate::core::agent::session_id::SessionId::from("lit-review-oneshot"),
+            &prompt_text,
+        ),
+    )
+    .await;
 
     match outcome {
         Ok(Ok(text)) => {

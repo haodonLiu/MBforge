@@ -2,6 +2,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::sidecar::SidecarInner;
+use crate::core::helpers::LockResultExt;
 
 #[tauri::command]
 pub fn sidecar_status(state: State<Arc<SidecarInner>>) -> serde_json::Value {
@@ -21,7 +22,7 @@ pub fn sidecar_status(state: State<Arc<SidecarInner>>) -> serde_json::Value {
         "restartCount": restarts,
         "state": state_str,
         "uptimeSecs": uptime,
-        "lastError": *state.last_error.lock().unwrap_or_else(|e| e.into_inner()),
+        "lastError": *state.last_error.lock().into_inner(),
     })
 }
 

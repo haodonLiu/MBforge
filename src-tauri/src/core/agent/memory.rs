@@ -28,6 +28,14 @@ pub struct MemoryEntry {
     pub updated_at: String,
     #[serde(default)]
     pub access_count: u32,
+    /// Optional audit/trace correlation id. Set when the entry is
+    /// extracted from a session that the audit log + trajectory tracker
+    /// are also recording; lets us join memory rows to the matching
+    /// trajectory. Serde-defaulted so existing on-disk JSON files load
+    /// unchanged. See `core::agent::demotion::EpisodicDemotionHook` for
+    /// the writer.
+    #[serde(default)]
+    pub trace_id: Option<String>,
 }
 
 fn default_confidence() -> f64 {

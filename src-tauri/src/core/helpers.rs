@@ -194,6 +194,17 @@ pub fn safe_join(root: &Path, relative: &str) -> Result<PathBuf, String> {
     assert_within_root(root.to_string_lossy().as_ref(), &target).map(|c| c.canonical)
 }
 
+/// 统一 Mutex poison 处理：将 `unwrap_or_else(|e| e.into_inner())` 简化为 `.into_inner()`。
+pub trait LockResultExt<T> {
+    fn into_inner(self) -> T;
+}
+
+impl<T> LockResultExt<T> for std::sync::LockResult<T> {
+    fn into_inner(self) -> T {
+        self.unwrap_or_else(|e| e.into_inner())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

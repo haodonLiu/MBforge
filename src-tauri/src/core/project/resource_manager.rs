@@ -96,3 +96,96 @@ pub fn models_cancel_download(_resource_id: String) -> Result<(), String> {
     // TODO: 实现下载取消逻辑
     Ok(())
 }
+
+/// 删除已下载的模型
+#[tauri::command]
+pub fn models_delete(resource_id: String) -> Result<(), String> {
+    let info = RESOURCE_CATALOG.iter().find(|r| r.id == resource_id);
+    let cache_dir = crate::core::config::constants::model_cache_dir();
+
+    let target = if let Some(info) = info {
+        if info.resource_type != ResourceType::Model {
+            return Err(format!("{} 不是模型资源", resource_id));
+        }
+        if info.download_type == "file" {
+            cache_dir.join(&info.local_name)
+        } else {
+            cache_dir.join(info.ms_repo.split('/').last().unwrap_or(info.ms_repo))
+        }
+    } else {
+        let file_target = cache_dir.join(format!("{}.pt", resource_id));
+        if file_target.exists() {
+            file_target
+        } else {
+            cache_dir.join(&resource_id)
+        }
+    };
+
+    if !target.exists() {
+        return Err(format!("模型不存在: {}", target.display()));
+    }
+
+    if target.is_dir() {
+        std::fs::remove_dir_all(&target).map_err(|e| format!("删除目录失败: {}", e))?;
+    } else {
+        std::fs::remove_file(&target).map_err(|e| format!("删除文件失败: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// 获取模型缓存目录信息
+#[tauri::command]
+pub fn models_cache_dir_info() -> Result<serde_json::Value, String> {
+    let mbforge = crate::core::config::constants::model_cache_dir();
+    let mbforge_exists = mbforge.exists();
+    let mbforge_size = if mbforge_exists {
+        crate::core::models::resolve::dir_size(&mbforge) as f64 / 1024.0 / 1024.0
+    } else {
+        0.0
+    };
+
+    let huggingface = std::env::var("HF_HOME").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+        directories::UserDirs::new()
+            .map(|u| u.home_dir().join(".cache").join("huggingface"))
+            .unwrap_or_default()
+    });
+    let hf_exists = huggingface.exists();
+    let hf_size = if hf_exists {
+        crate::core::models::resolve::dir_size(&huggingface) as f64 / 1024.0 / 1024.0
+    } else {
+        0.0
+    };
+
+    let modelscope = std::env::var("MODELSCOPE_CACHE").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+        directories::UserDirs::new()
+            .map(|u| u.home_dir().join(".cache").join("modelscope"))
+            .unwrap_or_default()
+    });
+    let ms_exists = modelscope.exists();
+    let ms_size = if ms_exists {
+        crate::core::models::resolve::dir_size(&modelscope) as f64 / 1024.0 / 1024.0
+    } else {
+        0.0
+    };
+
+    Ok(serde_json::json!({
+        "mbforge": {
+            "path": mbforge.to_string_lossy().to_string(),
+            "exists": mbforge_exists,
+            "size_mb": mbforge_size,
+        },
+        "huggingface": {
+            "path": huggingface.to_string_lossy().to_string(),
+            "exists": hf_exists,
+            "size_mb": hf_size,
+            "env_var": "HF_HOME",
+        },
+        "modelscope": {
+            "path": modelscope.to_string_lossy().to_string(),
+            "exists": ms_exists,
+            "size_mb": ms_size,
+            "env_var": "MODELSCOPE_CACHE",
+        },
+    }))
+}

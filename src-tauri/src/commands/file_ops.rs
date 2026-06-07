@@ -198,3 +198,26 @@ pub async fn open_file(project_root: String, path: String) -> Result<(), String>
 
     Ok(())
 }
+
+/// 在应用内读取任意文件字节流（不依赖 system PDF 阅读器，也不走 asset protocol）。
+///
+/// 通过 Tauri IPC 返回 `Vec<u8>`，前端用 `new Blob([bytes], {type:...})` 渲染。
+/// 这样：
+/// - dev 模式（Vite :5173）下避开 `asset.localhost` 跨域问题
+/// - 不走 sidecar HTTP，不依赖任何系统级 PDF 阅读器
+#[tauri::command]
+pub async fn read_file_bytes(project_root: String, path: String) -> Result<Vec<u8>, String> {
+    let path_buf = PathBuf::from(&path);
+    if let Err(e) = assert_within_root(&project_root, &path_buf) {
+        return Err(AppError::new(ErrorCode::FilePermission, "路径越权访问")
+            .with_path(path).to_string());
+    }
+    if !path_buf.exists() {
+        return Err(AppError::new(ErrorCode::FileNotFound, format!("文件不存在: {}", path_buf.display()))
+            .with_path(path).to_string());
+    }
+    tokio::fs::read(&path_buf).await.map_err(|e| {
+        AppError::new(ErrorCode::FileRead, format!("读取文件失败: {e}"))
+            .with_path(path).to_string()
+    })
+}

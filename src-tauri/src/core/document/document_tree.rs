@@ -3,12 +3,13 @@
 //! 提供文档导航（结构树）和按页读取原文的能力，供 Agent B/C 调用。
 //!
 //! 存储格式：
-//!   - 结构树：`.mbforge/doc_trees.json`  — `{doc_id: TreeNode[]}` 的 JSON
-//!   - 页缓存：`.mbforge/pages/{doc_id}/page_{i}.txt` — 每页一个文件
+//!   - 结构树：`index/doc_trees.json`  — `{doc_id: TreeNode[]}` 的 JSON
+//!   - 页缓存：`index/pages/{doc_id}/page_{i}.txt` — 每页一个文件
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::core::config::constants::INDEX_DIR;
 use crate::core::types::{SectionChunk, TreeNode};
 
 const DOC_TREES_FILE: &str = "doc_trees.json";
@@ -32,16 +33,16 @@ impl DocumentTreeIndex {
         }
     }
 
-    fn meta_dir(&self) -> PathBuf {
-        self.project_root.join(".mbforge")
+    fn index_dir(&self) -> PathBuf {
+        self.project_root.join(INDEX_DIR)
     }
 
     fn trees_path(&self) -> PathBuf {
-        self.meta_dir().join(DOC_TREES_FILE)
+        self.index_dir().join(DOC_TREES_FILE)
     }
 
     fn pages_dir(&self) -> PathBuf {
-        self.meta_dir().join(PAGES_DIR)
+        self.index_dir().join(PAGES_DIR)
     }
 
     fn doc_pages_dir(&self, doc_id: &str) -> PathBuf {
@@ -63,7 +64,7 @@ impl DocumentTreeIndex {
         &self,
         trees: &std::collections::HashMap<String, Vec<TreeNode>>,
     ) -> Result<(), String> {
-        let dir = self.meta_dir();
+        let dir = self.index_dir();
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let content = serde_json::to_string_pretty(trees).map_err(|e| e.to_string())?;
         fs::write(self.trees_path(), content).map_err(|e| e.to_string())
@@ -76,7 +77,7 @@ impl DocumentTreeIndex {
         sections: &[SectionChunk],
         page_texts: &[String],
     ) -> Result<(), String> {
-        let meta_dir = self.meta_dir();
+        let meta_dir = self.index_dir();
         fs::create_dir_all(&meta_dir).map_err(|e| e.to_string())?;
 
         // 构建 TreeNode 树

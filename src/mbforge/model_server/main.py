@@ -4,7 +4,40 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
+
+# Windows console 默认 codepage（cp1252 / GBK）编码不了 ✓/✗ 这类 Unicode，
+# Python logging 一旦 encode 失败会在 StreamHandler 抛 UnicodeEncodeError，
+# 进而让 lifespan 里的 _check_environment 线程整个崩。
+# 强制把 stdout/stderr 切到 UTF-8，errors="backslashreplace" 兜底防止异常字符。
+#
+# 两道防线：
+#   1) 先尝试 reconfigure —— 对 console 输出最干净；
+#   2) reconfigure 失败时（旧 Python / 管道不支持），用 TextIOWrapper
+#      重包 sys.stdout.buffer / sys.stderr.buffer，强制 UTF-8 编码。
+if sys.platform == "win32":
+    import io as _io
+
+    for _stream_name in ("stdout", "stderr"):
+        _stream = getattr(sys, _stream_name)
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, OSError, ValueError):
+            # reconfigure 失败（管道不支持 / 旧版本） —— 用 TextIOWrapper 重包 buffer
+            try:
+                _buffer = _stream.buffer
+                _new_stream = _io.TextIOWrapper(
+                    _buffer,
+                    encoding="utf-8",
+                    errors="backslashreplace",
+                    line_buffering=True,
+                )
+                setattr(sys, _stream_name, _new_stream)
+            except (AttributeError, OSError):
+                # 既不能 reconfigure 也没有 buffer —— 最后只能放弃，让 StreamHandler
+                # 自行兜底（这种情况下 Python 极老，可能性很小）
+                pass
 
 # Load .env before anything else
 try:
@@ -19,10 +52,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ..utils.exceptions import MBForgeError
-from .routers import download
 from .routers import embed
 from .routers import environment
-from .routers import file
 from .routers import health
 from .routers import llm
 from .routers import moldet
@@ -131,9 +162,7 @@ app.include_router(embed.router, prefix="/api/v1", tags=["embed"])
 app.include_router(vlm.router, prefix="/api/v1/vlm", tags=["vlm"])
 app.include_router(moldet.router, prefix="/api/v1/moldet", tags=["moldet"])
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
-app.include_router(file.router, prefix="/api/v1/file", tags=["file"])
-app.include_router(download.router, prefix="/api/v1/download", tags=["download"])
+app.include_router(tools.router, prefix="/api/v1/tools", tags=["tools"])
 app.include_router(
     environment.router, prefix="/api/v1/environment", tags=["environment"]
 )
-app.include_router(tools.router, prefix="/api/v1/tools", tags=["tools"])

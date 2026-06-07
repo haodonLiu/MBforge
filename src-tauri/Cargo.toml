@@ -28,6 +28,7 @@ reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls", "multi
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 async-trait = "0.1"
 futures = "0.3"
+base64 = "0.22"
 dashmap = "6"
 urlencoding = "2"
 grep-searcher = "0.1"
@@ -35,12 +36,12 @@ grep-regex = "0.1"
 ignore = "0.4"
 globset = "0.4"
 zip = "0.6"
-base64 = "0.22"
 image = "0.25"
 rusqlite = { version = "0.32", features = ["bundled"] }
 log = "0.4"
 thiserror = "1"
 anyhow = "1"
+ctrlc = "3"
 lopdf = { git = "https://github.com/J-F-Liu/lopdf", rev = "7a05512d831415b1f2b1ce522391d6beab8a1284", version = "0.40.0" }
 # 化学信息学（纯 Rust，替代 Python RDKit）
 chematic-core = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }

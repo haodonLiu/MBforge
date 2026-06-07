@@ -2,7 +2,7 @@ use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::core::config::constants::PROJECT_META_DIR;
+use crate::core::config::constants::INDEX_DIR;
 use crate::core::molecule::molecule_db::MOL_DB_FILENAME;
 
 // ---------------------------------------------------------------------------
@@ -367,9 +367,9 @@ impl MoleculeDatabase {
     ///
     /// Uses the same SQLite file as `MoleculeRelationDb`.
     pub fn open(project_root: &Path) -> Result<Self, String> {
-        let db_dir = project_root.join(PROJECT_META_DIR);
+        let db_dir = project_root.join(INDEX_DIR);
         std::fs::create_dir_all(&db_dir)
-            .map_err(|e| format!("Failed to create meta dir: {}", e))?;
+            .map_err(|e| format!("Failed to create index dir: {}", e))?;
         let db_path = db_dir.join(MOL_DB_FILENAME);
 
         let conn = Connection::open(&db_path)

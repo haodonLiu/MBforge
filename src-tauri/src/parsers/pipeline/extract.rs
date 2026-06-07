@@ -12,7 +12,7 @@ pub struct ClassifyResult {
     pub ocr_blocks: Vec<OcrBlock>,
 }
 
-/// 将提取的图片持久化到项目 .mbforge/media/ 下
+/// 将提取的图片持久化到项目 reports/figures/<doc>/ 下
 fn persist_extracted_images(
     path: &str,
     extracted: &[crate::parsers::pdf::images::ExtractedImage],
@@ -26,8 +26,8 @@ fn persist_extracted_images(
         .to_string();
 
     let media_dir = project_root.as_ref().map(|root| {
-        root.join(crate::core::constants::PROJECT_META_DIR)
-            .join("media")
+        root.join(crate::core::constants::REPORTS_DIR)
+            .join("figures")
             .join(&doc_slug)
     });
 
@@ -83,7 +83,7 @@ fn persist_extracted_images(
 /// 返回项目 OCR 缓存目录
 fn ocr_cache_dir(project_root: &Path) -> PathBuf {
     project_root
-        .join(crate::core::constants::PROJECT_META_DIR)
+        .join(crate::core::constants::INDEX_DIR)
         .join("ocr-cache")
 }
 
@@ -154,10 +154,10 @@ fn persist_mineru_images(
         .unwrap_or("unknown");
 
     let media_dir = project_root
-        .join(crate::core::constants::PROJECT_META_DIR)
-        .join("media")
+        .join(crate::core::constants::REPORTS_DIR)
+        .join("figures")
         .join(doc_slug)
-        .join("mineru-images");
+        .join("mineru");
 
     if std::fs::create_dir_all(&media_dir).is_err() {
         log::warn!("Failed to create mineru-images dir: {}", media_dir.display());
@@ -337,10 +337,8 @@ pub async fn extract_molecules_from_pdf(
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
     let mol_dir = project_root
-        .join(crate::core::constants::PROJECT_META_DIR)
-        .join("media")
-        .join(doc_slug)
-        .join("molecules");
+        .join(crate::core::constants::MOLECULES_DIR)
+        .join(doc_slug);
 
     std::fs::create_dir_all(&mol_dir)
         .map_err(|e| format!("Failed to create molecule dir: {}", e))?;

@@ -13,6 +13,36 @@ pub const APP_VERSION: &str = "0.2.0";
 pub const PROJECT_FORMAT_VERSION: u32 = 1;
 pub const PROJECT_META_DIR: &str = ".mbforge";
 
+// ============================================================
+// Canonical project folder layout (strict convention)
+// ============================================================
+//
+// Every MBForge project MUST have these 6 directories at its root:
+//   papers/    — INPUT:  user drops .pdf files here
+//   notes/     — INPUT:  user-written .md/.txt notes
+//   molecules/ — OUTPUT: pipeline extracts .sdf/.mol/.pdb/.smi here
+//   index/     — OUTPUT: vector DB, FTS, semantic cache
+//   reports/   — OUTPUT: generated reports and figures
+//   .mbforge/  — META:   app-managed (version.json, index.json, etc.)
+//
+// The scanner only walks papers/ and notes/. Anything placed in
+// the project root directly, or in a non-canonical subfolder, is
+// ignored and reported as a warning. The pipeline is the only
+// writer to molecules/, index/, and reports/.
+// ============================================================
+pub const PAPERS_DIR: &str = "papers";
+pub const NOTES_DIR: &str = "notes";
+pub const MOLECULES_DIR: &str = "molecules";
+pub const INDEX_DIR: &str = "index";
+pub const REPORTS_DIR: &str = "reports";
+
+/// Per-folder extension whitelist.
+/// - `papers/`  accepts only .pdf
+/// - `notes/`   accepts .md and .txt
+/// Files with other extensions in either folder are reported as warnings.
+pub const PAPERS_EXTS: &[&str] = &["pdf"];
+pub const NOTES_EXTS: &[&str] = &["md", "txt"];
+
 pub const DEFAULT_EMBED_MODEL: &str = "Qwen/Qwen3-Embedding-0.6B";
 pub const DEFAULT_RERANK_MODEL: &str = "Qwen/Qwen3-Reranker-0.6B";
 pub const DEFAULT_LLM_MODEL: &str = "Qwen/Qwen2.5-7B-Instruct-GGUF";

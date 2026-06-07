@@ -137,15 +137,19 @@ pub fn extract_text(path: String) -> Result<PdfExtraction, String> {
 ///
 /// 输入 PDF → 提取文本 + 检测分子图片 + 识别 SMILES → 输出到指定目录 + 写入 SQLite。
 ///
-/// 输出结构：
+/// 输出结构（写入项目根目录下的规范位置，不再使用 `output_dir`）：
 /// ```text
-/// <output_dir>/<pdf_name>/
-///   text.md
+/// <project_root>/
+///   reports/
+///     <pdf_name>/text.md
+///     figures/<pdf_name>/...
 ///   molecules/
-///     manifest.json
-///     page_0001_mol_000.png
-///     ...
+///     <pdf_name>/manifest.json
+///     <pdf_name>/page_*_mol_*.png
 /// ```
+///
+/// `output_dir` 仍作为入参保留（向后兼容），但只有当它能解析为
+/// 项目根目录时才会被使用；否则我们从 `path` 推导项目根。
 #[tauri::command]
 pub async fn extract_pdf_workflow_cmd(
     path: String,
@@ -165,11 +169,17 @@ pub async fn extract_pdf_workflow_cmd(
         .unwrap_or_else(|| "unknown.pdf".to_string());
 
     if !result.molecules.is_empty() {
-        // 查找项目根目录
+        // 优先从 path 推导项目根（canonical），output_dir 作为兜底
         let project_root = crate::parsers::pipeline::find_project_root(
-            std::path::Path::new(&output_dir),
+            std::path::Path::new(&path),
             None,
-        );
+        )
+        .or_else(|| {
+            crate::parsers::pipeline::find_project_root(
+                std::path::Path::new(&output_dir),
+                None,
+            )
+        });
 
         if let Some(root) = project_root {
             if let Ok(db) = MoleculeDatabase::open(&root) {
@@ -259,43 +269,58 @@ pub struct OcrLayoutResult {
 ///
 /// 优先从 OCR 缓存读取；如果没有缓存且文档需要 MinerU 解析，
 /// 则调用 classify_and_extract 获取（不写入缓存）。
+/// 若提供 doc_id，会在处理前后更新项目 index 中的 ocr_status。
 #[tauri::command]
-pub async fn get_document_ocr_layout(path: String) -> Result<OcrLayoutResult, String> {
-    // 1. 尝试从缓存读取
+pub async fn get_document_ocr_layout(
+    path: String,
+    doc_id: Option<String>,
+) -> Result<OcrLayoutResult, String> {
     let source_path = std::path::Path::new(&path);
-    if let Some(project_root) = crate::parsers::pipeline::find_project_root(source_path, None) {
-        let cache_dir = project_root
+    let project_root = crate::parsers::pipeline::find_project_root(source_path, None);
+    let file_hash = crate::core::helpers::sha256_file(source_path).unwrap_or_default();
+
+    // 辅助：更新 OCR 状态
+    let mut update_status = |status: &str| {
+        if let (Some(root), Some(id)) = (&project_root, &doc_id) {
+            if let Some(mut project) = crate::core::project::Project::open(root) {
+                project.set_document_ocr(id, status, &file_hash);
+            }
+        }
+    };
+
+    // 1. 尝试从缓存读取
+    if let Some(ref root) = project_root {
+        let cache_dir = root
             .join(crate::core::constants::PROJECT_META_DIR)
             .join("ocr-cache");
-        if let Ok(hash) = crate::core::helpers::sha256_file(source_path) {
-            let cache_file = cache_dir.join(format!("{}.json", hash));
-            if cache_file.exists() {
-                if let Ok(content) = std::fs::read_to_string(&cache_file) {
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                        let text = val["text"].as_str().unwrap_or("").to_string();
-                        let page_count = text.lines().count().max(1);
-                        let blocks: Vec<OcrBlock> = val["ocr_blocks"]
-                            .as_array()
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        let parser = val["parser"]
-                            .as_str()
-                            .unwrap_or("unknown")
-                            .to_string();
-                        if !blocks.is_empty() {
-                            log::info!("OCR layout cache HIT for {}: {} blocks", path, blocks.len());
-                            return Ok(OcrLayoutResult {
-                                path: path.clone(),
-                                parser,
-                                page_count,
-                                blocks,
-                                from_cache: true,
-                            });
-                        }
+        let cache_file = cache_dir.join(format!("{}.json", file_hash));
+        if cache_file.exists() {
+            if let Ok(content) = std::fs::read_to_string(&cache_file) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    let text = val["text"].as_str().unwrap_or("").to_string();
+                    let page_count = text.lines().count().max(1);
+                    let blocks: Vec<OcrBlock> = val["ocr_blocks"]
+                        .as_array()
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let parser = val["parser"]
+                        .as_str()
+                        .unwrap_or("unknown")
+                        .to_string();
+                    if !blocks.is_empty() {
+                        log::info!("OCR layout cache HIT for {}: {} blocks", path, blocks.len());
+                        update_status("completed");
+                        return Ok(OcrLayoutResult {
+                            path: path.clone(),
+                            parser,
+                            page_count,
+                            blocks,
+                            from_cache: true,
+                        });
                     }
                 }
             }
@@ -304,13 +329,25 @@ pub async fn get_document_ocr_layout(path: String) -> Result<OcrLayoutResult, St
 
     // 2. 缓存未命中：调用 classify_and_extract 获取
     log::info!("OCR layout cache MISS for {}, running extraction...", path);
-    let classified = crate::parsers::pipeline::classify_and_extract(&path).await?;
+    update_status("processing");
 
-    Ok(OcrLayoutResult {
-        path: path.clone(),
-        parser: classified.parser,
-        page_count: classified.page_count,
-        blocks: classified.ocr_blocks,
-        from_cache: false,
-    })
+    let result = crate::parsers::pipeline::classify_and_extract(&path).await;
+
+    match result {
+        Ok(classified) => {
+            let has_blocks = !classified.ocr_blocks.is_empty();
+            update_status(if has_blocks { "completed" } else { "not_processed" });
+            Ok(OcrLayoutResult {
+                path: path.clone(),
+                parser: classified.parser,
+                page_count: classified.page_count,
+                blocks: classified.ocr_blocks,
+                from_cache: false,
+            })
+        }
+        Err(e) => {
+            update_status("error");
+            Err(e)
+        }
+    }
 }

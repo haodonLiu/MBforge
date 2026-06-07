@@ -82,7 +82,9 @@ fn hash_query(query: &str) -> String {
 
 impl SemanticCache {
     pub fn new(project_root: &Path, config: SemanticCacheConfig) -> Self {
-        let db_path = project_root.join(".mbforge").join("knowledge_base.db");
+        let db_path = project_root
+            .join(crate::core::constants::INDEX_DIR)
+            .join("knowledge_base.db");
         if let Some(parent) = db_path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }

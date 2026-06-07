@@ -1,4 +1,4 @@
-use crate::core::config::constants::{PROJECT_META_DIR, SUMMARY_DIR};
+use crate::core::config::constants::{INDEX_DIR, SUMMARY_DIR};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -40,7 +40,7 @@ impl DocumentSummary {
 
 /// Project-level summary manager.
 ///
-/// Stores summaries under `{project_root}/.mbforge/summaries/{doc_id}.json`.
+/// Stores summaries under `{project_root}/index/summaries/{doc_id}.json`.
 ///
 /// Port of `SummaryManager` from
 /// `src/mbforge/core/summarizer.py`.
@@ -53,7 +53,7 @@ impl SummaryManager {
     ///
     /// Creates the summary directory if it doesn't exist.
     pub fn new(project_root: &Path) -> std::io::Result<Self> {
-        let summary_dir = project_root.join(PROJECT_META_DIR).join(SUMMARY_DIR);
+        let summary_dir = project_root.join(INDEX_DIR).join(SUMMARY_DIR);
         std::fs::create_dir_all(&summary_dir)?;
         Ok(Self { summary_dir })
     }

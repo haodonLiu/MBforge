@@ -1,13 +1,30 @@
-//! Hand-rolled `impl Tool` for closure-based tools.
+//! Agent tool implementations for the rig-core agent stack.
 //!
-//! The script in `ref/migrate_to_rig.py` generates `#[rig_tool]` impls for
-//! free functions (arxiv.rs). This file covers the closure-based tools
-//! (fs.rs, kb.rs, molecule.rs, document.rs) where the original code captures
-//! `project_root` from the surrounding scope.
+//! Defines 16 of the 25 tools the MBForge agent uses, all wired with the
+//! `#[derive(Deserialize, JsonSchema)]` + `impl Tool` pattern so rig-core can
+//! introspect JSON Schema for LLM tool selection. The 9 literature tools
+//! (`arxiv_*` / `pmc_*`) live next door in `arxiv_rig.rs` and are assembled
+//! together with these 16 by `rig_adapter::assemble_rig_tool_vec`.
 //!
-//! Each tool follows the same pattern:
-//!   - A struct `<Name>Tool { project_root: String }`
-//!   - An `<Name>ToolArgs` struct (derive `Deserialize` + `JsonSchema`)
+//! Categories covered here:
+//! - File system  (grep_search, list_files, read_file, get_project_info, glob_search)
+//! - Knowledge base  (search_knowledge_base, get_document_structure, get_document_pages)
+//! - Document access  (read_document_abstract / overview / detail, list_documents,
+//!   get_document_summary, find_documents)
+//! - Molecule  (check_markush_overlap, molecule_analysis)
+//!
+//! Each tool follows the same shape:
+//!   - A struct `<Name>Tool { project_root: String }` (or unit struct for
+//!     stateless tools like `CheckMarkushTool`)
+//!   - An `<Name>Args` struct with `#[derive(Deserialize, JsonSchema)]` for
+//!     LLM-friendly JSON Schema generation
+//!   - An `impl Tool for <Name>Tool` block that dispatches to a function
+//!     in `core::document::*` / `core::molecule::*` / `core::chem::markush` /
+//!     `core::agent::arxiv`
+//!
+//! To add a new tool: declare the struct + Args + impl, then push one
+//! `Box::new(...)` line in `rig_adapter::assemble_rig_tool_vec`. No other
+//! wiring is needed — the agent picks it up automatically.
 use rig_core::completion::ToolDefinition;
 use rig_core::schemars::JsonSchema;
 use rig_core::tool::{Tool, ToolError};
@@ -17,7 +34,7 @@ use super::fs as fs_src;
 use super::kb as kb_src;
 use super::molecule as molecule_src;
 // ============================================================================
-// File-system tools (fs.rs)
+// File-system tools (grep / list / read / project info / glob)
 // ============================================================================
 
 /// `grep_search` — ripgrep-level regex search across the project.
@@ -250,7 +267,7 @@ impl Tool for GlobSearchTool {
 }
 
 // ============================================================================
-// Knowledge-base tools (kb.rs)
+// Knowledge-base tools (semantic search / structure / pages)
 // ============================================================================
 
 /// `search_knowledge_base` — semantic search across the project's KB cache.
@@ -388,7 +405,7 @@ impl Tool for GetDocumentPagesTool {
 }
 
 // ============================================================================
-// Molecule tools (molecule.rs)
+// Molecule tools (Markush overlap / unified analysis)
 // ============================================================================
 
 /// `check_markush_overlap` — does a SMILES fall under a Markush patent's coverage?
@@ -490,7 +507,7 @@ impl Tool for MoleculeAnalysisTool {
 }
 
 // ============================================================================
-// Document tools (document.rs)
+// Document access tools (L0/L1/L2 reads, list, summary, find)
 // ============================================================================
 
 /// `read_document_abstract` — read a document's L0 summary.
@@ -732,32 +749,4 @@ impl Tool for FindDocumentsTool {
         let top_k = args.top_k.unwrap_or(10) as usize;
         Ok(document_src::native_find_documents(&self.project_root, &args.keyword, &args.doc_type, top_k))
     }
-}
-
-// ============================================================================
-// Aggregator
-// ============================================================================
-/// Add all closure-migrated tools to a `ToolSet`. Pass the same `project_root`
-/// used when constructing the original `ToolRegistry`.
-pub fn register_rig_executor_tools(set: &mut rig_core::tool::ToolSet, project_root: &str) {
-    // File-system tools
-    set.add_tool(GrepSearchTool::new(project_root));
-    set.add_tool(ListFilesTool::new(project_root));
-    set.add_tool(ReadFileTool::new(project_root));
-    set.add_tool(GetProjectInfoTool::new(project_root));
-    set.add_tool(GlobSearchTool::new(project_root));
-    // Knowledge-base tools
-    set.add_tool(SearchKbTool::new(project_root));
-    set.add_tool(GetDocumentStructureTool::new(project_root));
-    set.add_tool(GetDocumentPagesTool::new(project_root));
-    // Molecule tools
-    set.add_tool(CheckMarkushTool::new());
-    set.add_tool(MoleculeAnalysisTool::new(project_root));
-    // Document tools
-    set.add_tool(ReadDocumentAbstractTool::new(project_root));
-    set.add_tool(ReadDocumentOverviewTool::new(project_root));
-    set.add_tool(ListDocumentsTool::new(project_root));
-    set.add_tool(GetDocumentSummaryTool::new(project_root));
-    set.add_tool(ReadDocumentDetailTool::new(project_root));
-    set.add_tool(FindDocumentsTool::new(project_root));
 }

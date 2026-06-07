@@ -1,0 +1,11 @@
+[[permission]]
+identifier = "allow-settings"
+description = "Allows global app settings: get, save, build info, export, reset, config dir lookup"
+commands.allow = [
+  "get_settings",
+  "save_settings",
+  "app_build_info",
+  "export_settings",
+  "reset_settings",
+  "config_dir_path",
+]

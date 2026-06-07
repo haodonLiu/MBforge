@@ -27,6 +27,8 @@ interface Props {
 
 export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Props) {
   const [pdfViewMode, setPdfViewMode] = useState<Props['initialMode']>(initialMode ?? 'read')
+  const isDetectMode = pdfViewMode === 'detect'
+  const isOcrMode = pdfViewMode === 'ocr'
   const [scrollMode, setScrollMode] = useState<'single' | 'continuous'>('continuous')
 
   // 检测 / OCR 模式强制单页
@@ -84,8 +86,6 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
   const [isLoadingOcr, setIsLoadingOcr] = useState(false)
 
   const currentDetections = pageDetections.get(currentPage) || []
-  const isDetectMode = pdfViewMode === 'detect'
-  const isOcrMode = pdfViewMode === 'ocr'
   useEffect(() => {
     if (isDetectMode || isOcrMode) {
       setScrollMode('single')
@@ -556,28 +556,88 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
         flex: 1, display: 'flex', overflow: 'hidden',
       }}>
         {/* PDF 内容 */}
-        <ScrollColumn
-          ref={pdfScrollRef}
-          tabIndex={0}
-          onKeyDown={handleKeyDown}
-          onWheel={handleWheel}
-          style={{
-            background: isDetectMode || isOcrMode ? 'var(--bg-base)' : '#525659',
-            display: 'flex', justifyContent: 'center', padding: isDetectMode || isOcrMode ? '20px' : '0',
-            outline: 'none',
-          }}
-        >
-          <div style={{ position: 'relative', display: 'inline-block' }}>
+        {isSinglePageMode ? (
+          <ScrollColumn
+            ref={pdfScrollRef}
+            tabIndex={0}
+            onKeyDown={handleKeyDown}
+            onWheel={handleWheel}
+            style={{
+              background: isDetectMode || isOcrMode ? 'var(--bg-base)' : '#525659',
+              display: 'flex', justifyContent: 'center', padding: isDetectMode || isOcrMode ? '20px' : '0',
+              outline: 'none',
+            }}
+          >
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              {pdfLoading || !pdfUrl ? (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '60vh',
+                  minWidth: '320px',
+                  color: 'var(--text-muted)',
+                  gap: '14px',
+                }}>
+                  <Spinner size={32} />
+                  <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                    {doc.title || doc.path.split(/[\\/]/).pop()}
+                  </div>
+                  <div style={{ fontSize: '12px', opacity: 0.7 }}>读取文件中，请稍候…</div>
+                </div>
+              ) : (
+                <PdfCanvas
+                  url={pdfUrl}
+                  pageNumber={currentPage}
+                  scale={pdfScale}
+                  generateImage={isDetectMode}
+                  showTextLayer={showTextLayer && hasTextLayer}
+                  onPageRendered={handlePageRendered}
+                  onImageReady={handleImageReady}
+                  onTextContent={handleTextContent}
+                  onPageCount={handlePageCount}
+                  style={{
+                    background: '#fff',
+                    boxShadow: isDetectMode ? '0 2px 12px rgba(0,0,0,0.15)' : 'none',
+                  }}
+                />
+              )}
+              {isDetectMode && pageInfo && currentDetections.length > 0 && (
+                <MoleculeOverlay
+                  detections={currentDetections}
+                  renderWidth={pageInfo.width}
+                  renderHeight={pageInfo.height}
+                  originalHeight={pageInfo.originalHeight}
+                  scale={pageInfo.scale}
+                  selectedIndex={selectedDetection ?? undefined}
+                  onSelect={setSelectedDetection}
+                />
+              )}
+              {isOcrMode && pageInfo && ocrBlocks.length > 0 && (
+                <OcrOverlay
+                  blocks={ocrBlocks}
+                  renderWidth={pageInfo.width}
+                  renderHeight={pageInfo.height}
+                  originalHeight={pageInfo.originalHeight}
+                  scale={pageInfo.scale}
+                  page={currentPage}
+                  selectedIndex={selectedOcrIndex ?? undefined}
+                  onSelect={setSelectedOcrIndex}
+                  onHover={setHoveredOcrIndex}
+                />
+              )}
+            </div>
+          </ScrollColumn>
+        ) : (
+          <div style={{
+            flex: 1, background: '#525659', overflow: 'hidden',
+          }}>
             {pdfLoading || !pdfUrl ? (
               <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '60vh',
-                minWidth: '320px',
-                color: 'var(--text-muted)',
-                gap: '14px',
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                height: '100%', color: 'var(--text-muted)', gap: '14px',
               }}>
                 <Spinner size={32} />
                 <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-secondary)' }}>
@@ -586,48 +646,15 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
                 <div style={{ fontSize: '12px', opacity: 0.7 }}>读取文件中，请稍候…</div>
               </div>
             ) : (
-              <PdfCanvas
+              <PdfContinuousViewer
                 url={pdfUrl}
-                pageNumber={currentPage}
                 scale={pdfScale}
-                generateImage={isDetectMode}
-                showTextLayer={showTextLayer && hasTextLayer}
-                onPageRendered={handlePageRendered}
-                onImageReady={handleImageReady}
-                onTextContent={handleTextContent}
+                onPageChange={setCurrentPage}
                 onPageCount={handlePageCount}
-                style={{
-                  background: '#fff',
-                  boxShadow: isDetectMode ? '0 2px 12px rgba(0,0,0,0.15)' : 'none',
-                }}
-              />
-            )}
-            {isDetectMode && pageInfo && currentDetections.length > 0 && (
-              <MoleculeOverlay
-                detections={currentDetections}
-                renderWidth={pageInfo.width}
-                renderHeight={pageInfo.height}
-                originalHeight={pageInfo.originalHeight}
-                scale={pageInfo.scale}
-                selectedIndex={selectedDetection ?? undefined}
-                onSelect={setSelectedDetection}
-              />
-            )}
-            {isOcrMode && pageInfo && ocrBlocks.length > 0 && (
-              <OcrOverlay
-                blocks={ocrBlocks}
-                renderWidth={pageInfo.width}
-                renderHeight={pageInfo.height}
-                originalHeight={pageInfo.originalHeight}
-                scale={pageInfo.scale}
-                page={currentPage}
-                selectedIndex={selectedOcrIndex ?? undefined}
-                onSelect={setSelectedOcrIndex}
-                onHover={setHoveredOcrIndex}
               />
             )}
           </div>
-        </ScrollColumn>
+        )}
 
         {/* 文本面板（OCR 侧栏） */}
         {showTextPanel && hasTextLayer && (
@@ -778,16 +805,36 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
             </ScrollColumn>
           </div>
         )}
-      </div>
 
-      {/* 检测详情面板 */}
-      {isDetectMode && selectedDetection !== null && currentDetections[selectedDetection] && (
-        <MoleculeDetailPanel
-          detection={currentDetections[selectedDetection]}
-          index={selectedDetection}
-          onSave={handleSaveMolecule}
-        />
-      )}
+        {/* 检测详情面板（右侧） */}
+        {isDetectMode && selectedDetection !== null && currentDetections[selectedDetection] && (
+          <div style={{
+            width: '320px', borderLeft: '1px solid var(--border)',
+            background: 'var(--bg-surface)', display: 'flex', flexDirection: 'column',
+            overflow: 'hidden', flexShrink: 0,
+          }}>
+            <div style={{
+              padding: '8px 12px', borderBottom: '1px solid var(--border)',
+              fontSize: '11px', fontWeight: 600, display: 'flex',
+              justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <span>分子详情</span>
+              <button
+                onClick={() => setSelectedDetection(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-muted)', fontSize: '14px', lineHeight: 1 }}
+              >✕</button>
+            </div>
+            <ScrollColumn style={{ padding: 0 }}>
+              <MoleculeDetailPanel
+                detection={currentDetections[selectedDetection]}
+                index={selectedDetection}
+                onSave={handleSaveMolecule}
+              />
+            </ScrollColumn>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

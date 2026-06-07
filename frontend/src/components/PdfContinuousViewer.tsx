@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
 import * as pdfjsLib from 'pdfjs-dist'
 
 const DOC_CACHE_MAX = 3

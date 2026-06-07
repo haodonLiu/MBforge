@@ -684,9 +684,18 @@ pub async fn extract_pdf_workflow(
     // Stage 1: 文本提取 + 分类
     let classified = classify_and_extract(pdf_path).await?;
 
+    // 用提取出来的图片列表给 markdown 补全：
+    // - 已存在的 `![](xxx)` 引用换成本地 `rel_path` + 描述作为 alt
+    // - 未在正文中被引用的图片追加 `## Extracted Images` 段
+    let augmented_text =
+        crate::parsers::pipeline::markdown_augment::augment_markdown_with_images(
+            &classified.text,
+            &classified.images,
+        );
+
     // 写入 text.md
     let text_path = base_dir.join("text.md");
-    std::fs::write(&text_path, &classified.text)
+    std::fs::write(&text_path, &augmented_text)
         .map_err(|e| format!("Failed to write text.md: {}", e))?;
 
     log::info!(

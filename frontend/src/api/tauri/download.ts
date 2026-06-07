@@ -55,3 +55,11 @@ export function downloadModelTauri(
     invoke('models_cancel_download', { resourceId }).catch(() => {})
   }
 }
+
+/** 删除已下载的模型 */
+export async function deleteModel(resourceId: string): Promise<void> {
+  await invokeWithError(
+    () => invoke<void>('models_delete', { resourceId }),
+    ErrorCode.ApiError,
+  )
+}

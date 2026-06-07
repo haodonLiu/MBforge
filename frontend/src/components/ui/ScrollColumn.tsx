@@ -16,7 +16,7 @@
 
 import { forwardRef, type CSSProperties, type ReactNode } from 'react'
 
-export interface ScrollColumnProps {
+export interface ScrollColumnProps extends React.HTMLAttributes<HTMLDivElement> {
   children: ReactNode
   /** 透传 className */
   className?: string
@@ -35,7 +35,7 @@ export interface ScrollColumnProps {
 }
 
 const ScrollColumn = forwardRef<HTMLDivElement, ScrollColumnProps>(
-  function ScrollColumn({ children, className, style, padding, as: Tag = 'div' }, ref) {
+  function ScrollColumn({ children, className, style, padding, as: Tag = 'div', ...rest }, ref) {
     return (
       <Tag
         ref={ref as React.Ref<HTMLDivElement>}
@@ -47,6 +47,7 @@ const ScrollColumn = forwardRef<HTMLDivElement, ScrollColumnProps>(
           padding,
           ...style,
         }}
+        {...rest}
       >
         {children}
       </Tag>

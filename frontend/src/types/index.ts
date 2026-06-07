@@ -17,6 +17,8 @@ export interface DocumentEntry {
   doc_type: string
   title: string
   indexed: boolean
+  ocr_status?: string
+  ocr_hash?: string
 }
 
 export interface SearchResult {

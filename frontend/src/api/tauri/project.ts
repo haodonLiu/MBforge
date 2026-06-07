@@ -50,16 +50,32 @@ export interface DocumentEntry {
   doc_type: string
   title: string
   indexed: boolean
+  /** 规范化文件夹：papers / notes */
+  folder?: string
   added_at: string
   hash: string
+  ocr_status?: string
+  ocr_hash?: string
+}
+
+/** 扫描时发现的位置不合规文件 */
+export interface ScanWarning {
+  path: string
+  reason: string
+  folder: string
+}
+
+export interface ScanResponse {
+  success: boolean
+  documents: DocumentEntry[]
+  new_documents?: DocumentEntry[]
+  warnings: ScanWarning[]
 }
 
 /** 扫描项目文件 */
-export async function scanProjectFiles(
-  root: string,
-): Promise<{ success: boolean; documents: DocumentEntry[] }> {
+export async function scanProjectFiles(root: string): Promise<ScanResponse> {
   return invokeWithError(
-    () => invoke('scan_project_files', { root }),
+    () => invoke<ScanResponse>('scan_project_files', { root }),
     ErrorCode.ProjectOpen,
   )
 }

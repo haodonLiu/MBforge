@@ -1,5 +1,16 @@
 export { default as EnvironmentSection } from './EnvironmentSection'
 export { ModelSelector, DownloadProgressBar, ModelCard, DownloadedModelItem } from './ModelComponents'
 export { default as ModelsTab } from './ModelsTab'
-export { EMBED_MODELS, RERANK_MODELS, LLM_MODELS, SETTING_SECTIONS } from './modelConfigs'
-export type { Section } from './modelConfigs'
+export {
+  LLM_MODELS,
+  EMBED_MODELS,
+  RERANK_MODELS,
+  VLM_MODELS,
+  OCR_MODELS,
+  PROVIDER_META,
+} from './modelConfigs'
+export type { ModelOption, ModelMap } from './modelConfigs'
+
+// 栏目定义与状态类型已迁出 modelConfigs.ts（避免 modelConfigs.ts 被 settings UI 强耦合）。
+export { SECTIONS, DEFAULT_SETTINGS, flattenSettings, toBackendPayload, isSettingsEqual } from './types'
+export type { SettingsState, SectionId, SectionDef } from './types'

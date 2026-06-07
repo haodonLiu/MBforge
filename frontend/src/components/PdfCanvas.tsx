@@ -217,7 +217,7 @@ export default function PdfCanvas({
         height: viewport.height / dpr,
         originalWidth: originalViewport.width,
         originalHeight: originalViewport.height,
-        scale: scale * dpr,
+        scale: scale,
       })
 
       if (generateImageRef.current) {

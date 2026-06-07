@@ -11,6 +11,9 @@ import {
   ModelsSection,
 } from './workflow/sections'
 import type { ModelInfo, ModelPaths } from './workflow/types'
+import { resourcesCatalog, resourcesStatus, modelsCacheDirInfo } from '../api/tauri/environment'
+import { downloadModelTauri, deleteModel } from '../api/tauri/download'
+import { saveSettings } from '../api/settings'
 
 interface EnvironmentCheckResult {
   python_version: string
@@ -54,62 +57,75 @@ export default function Environment() {
       .finally(() => setLoading(false))
   }
 
-  const fetchModels = () => {
-    fetch('/api/v1/download/models')
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
-      .then(data => {
-        if (data.success) setModels(data.models)
-      })
-      .catch((e) => {
-        showToast('Python sidecar 未启动，模型列表不可用', 'warning')
-        setModels([])
-      })
+  const fetchModels = async () => {
+    try {
+      const catalog = await resourcesCatalog()
+      const modelItems = catalog.filter((item: any) => item.type === 'model')
+
+      const models = await Promise.all(
+        modelItems.map(async (item: any) => {
+          const status = await resourcesStatus(item.id)
+          return {
+            id: item.id,
+            name: item.name,
+            type: item.type,
+            description: item.description,
+            downloaded: status.status === 'ready',
+            downloading: false,
+            size_mb: item.size_mb,
+            actual_size_mb: status.size_mb || 0,
+            license: item.license,
+            location: {
+              found: status.status === 'ready',
+              primary: status.status === 'ready' ? 'modelscope' as const : null,
+              locations: status.status === 'ready'
+                ? [{ source: 'modelscope' as const, path: status.local_path, size_mb: status.size_mb }]
+                : [],
+            },
+          }
+        }),
+      )
+
+      setModels(models)
+    } catch {
+      showToast('获取模型列表失败', 'warning')
+      setModels([])
+    }
   }
 
-  const fetchPaths = () => {
-    fetch('/api/v1/download/model-dir')
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
-      .then(data => {
-        if (data.success) setPaths(data.paths)
-      })
-      .catch((e) => {
-        showToast('Python sidecar 未启动，模型路径不可用', 'warning')
-        setPaths(null)
-      })
+  const fetchPaths = async () => {
+    try {
+      const info = await modelsCacheDirInfo()
+      setPaths(info)
+    } catch (e) {
+      showToast('获取模型路径失败', 'warning')
+      setPaths(null)
+    }
   }
 
   const downloadModel = async (modelId: string) => {
     try {
-      const response = await fetch(`/api/v1/download/download/${modelId}`, { method: 'POST' })
-      if (response.ok) {
-        const checkStatus = setInterval(() => {
+      let completed = false
+      const cancel = downloadModelTauri(modelId, (progress) => {
+        if (progress.status === 'completed' || progress.status === 'failed') {
+          completed = true
           fetchModels()
-        }, 2000)
-        setTimeout(() => clearInterval(checkStatus), 30000)
-      }
+        }
+      })
+      setTimeout(() => {
+        cancel()
+        if (!completed) fetchModels()
+      }, 30000)
     } catch (e) {
       showToast(`Download failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
     }
   }
 
-  const deleteModel = async (modelId: string) => {
+  const handleDeleteModel = async (modelId: string) => {
     if (!confirm('Are you sure you want to delete this model?')) return
     try {
-      const response = await fetch(`/api/v1/download/delete/${modelId}`, {
-        method: 'DELETE',
-      })
-      const result = await response.json()
-      if (result.success) {
-        fetchModels()
-      } else {
-        showToast(`Delete failed: ${result.error || 'Unknown error'}`, 'error')
-      }
+      await deleteModel(modelId)
+      fetchModels()
     } catch (e) {
       showToast(`Delete failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
     }
@@ -118,12 +134,7 @@ export default function Environment() {
   const savePath = async () => {
     if (!editValue.trim()) return
     try {
-      const response = await fetch('/api/v1/download/model-dir', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: editValue.trim() }),
-      })
-      const result = await response.json()
+      const result = await saveSettings({ model_cache_dir: editValue.trim() })
       if (result.success) {
         setEditingPath(null)
         fetchPaths()
@@ -253,7 +264,7 @@ export default function Environment() {
         models={models}
         downloadedCount={downloadedModels}
         onDownload={downloadModel}
-        onDelete={deleteModel}
+        onDelete={handleDeleteModel}
       />
     </PageContainer>
   )

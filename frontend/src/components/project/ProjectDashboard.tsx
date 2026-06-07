@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import type { DocumentEntry } from '../../types'
+import type { ScanWarning } from '../../api/tauri-bridge'
 import PageContainer from '../ui/PageContainer'
 import PageTitle from '../ui/PageTitle'
 import SectionTitle from '../ui/SectionTitle'
@@ -13,8 +14,9 @@ import Skeleton from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import ResponsiveStatGrid from '../ui/ResponsiveStatGrid'
 import AlertBanner from '../ui/AlertBanner'
-import { FolderIcon, FileTextIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon } from '../icons'
+import { FolderIcon, FileTextIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon, AlertIcon } from '../icons'
 import { StaggerContainer, StaggerItem } from '../animations/StaggerContainer'
+import { FOLDER_SPECS, PAPERS_DIR, NOTES_DIR } from '../../config/folderLayout'
 
 interface IndexProgress {
   file: string
@@ -30,10 +32,13 @@ interface Props {
   indexProgress: IndexProgress | null
   indexResult: { indexed: number; sections: number } | null
   error: string
+  scanWarnings: ScanWarning[]
   onScan: () => void
   onIndex: () => void
   onOpenFile: (doc: DocumentEntry) => void
   onDismissError: () => void
+  onDismissWarnings: () => void
+  onSettingsOpen: () => void
 }
 
 export default function ProjectDashboard({
@@ -44,16 +49,62 @@ export default function ProjectDashboard({
   indexProgress,
   indexResult,
   error,
+  scanWarnings,
   onScan,
   onIndex,
   onOpenFile,
   onDismissError,
+  onDismissWarnings,
+  onSettingsOpen,
 }: Props) {
   const projectName = projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目'
 
   return (
     <PageContainer>
       {error && <AlertBanner variant="danger" message={error} onDismiss={onDismissError} />}
+
+      {/* 扫描警告：放错位置的文件 */}
+      {scanWarnings.length > 0 && (
+        <Card
+          padding="14px 18px"
+          style={{
+            marginBottom: '20px',
+            borderRadius: '10px',
+            background: 'rgba(234,179,8,0.08)',
+            borderColor: 'rgba(234,179,8,0.35)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <div style={{ color: '#ca8a04', flexShrink: 0, marginTop: '2px' }}>
+              <AlertIcon size={18} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <BodyText size="sm" style={{ fontWeight: 600, marginBottom: '6px' }}>
+                扫描时跳过 {scanWarnings.length} 个文件（位置或类型不合规）
+              </BodyText>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '160px', overflow: 'auto' }}>
+                {scanWarnings.slice(0, 50).map((w, i) => (
+                  <Caption key={i} style={{ fontFamily: 'monospace' }}>
+                    <strong style={{ color: 'var(--text-primary)' }}>{w.path}</strong>
+                    <span style={{ color: 'var(--text-muted)' }}> — {w.reason}</span>
+                  </Caption>
+                ))}
+                {scanWarnings.length > 50 && (
+                  <Caption style={{ color: 'var(--text-muted)' }}>
+                    ……及其他 {scanWarnings.length - 50} 个
+                  </Caption>
+                )}
+              </div>
+              <Caption style={{ marginTop: '6px', color: 'var(--text-muted)' }}>
+                请把 PDF 移到 <code>{PAPERS_DIR}/</code>，把 MD/TXT 移到 <code>{NOTES_DIR}/</code>，然后重新扫描
+              </Caption>
+            </div>
+            <Button variant="ghost" size="sm" onClick={onDismissWarnings}>
+              知道了
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* 头部 */}
       <div style={{
@@ -96,6 +147,7 @@ export default function ProjectDashboard({
             variant="secondary"
             size="md"
             icon={<SettingsIcon size={14} />}
+            onClick={onSettingsOpen}
           >
             项目设置
           </Button>
@@ -152,6 +204,76 @@ export default function ProjectDashboard({
         </ResponsiveStatGrid>
       </StaggerContainer>
 
+      {/* 项目目录结构规范 */}
+      <Card
+        padding="14px 18px"
+        style={{ marginBottom: '20px', borderRadius: '10px' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
+          <BodyText size="sm" style={{ fontWeight: 600 }}>项目目录规范</BodyText>
+          <Caption style={{ color: 'var(--text-muted)' }}>
+            <code>{projectRoot || '请先打开项目'}</code>
+          </Caption>
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '8px',
+          }}
+        >
+          {FOLDER_SPECS.map((spec) => {
+            const roleColor =
+              spec.role === 'input'
+                ? 'rgba(22,163,74,0.18)'
+                : spec.role === 'output'
+                  ? 'rgba(59,130,246,0.18)'
+                  : 'rgba(148,163,184,0.18)'
+            return (
+              <div
+                key={spec.name}
+                style={{
+                  padding: '8px 12px',
+                  background: 'var(--bg-surface-2, rgba(255,255,255,0.02))',
+                  border: '1px solid var(--border)',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                }}
+              >
+                <span
+                  style={{
+                    flexShrink: 0,
+                    marginTop: '4px',
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    background: roleColor,
+                    color: 'var(--text-primary)',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {spec.role === 'input' ? 'IN' : spec.role === 'output' ? 'OUT' : 'META'}
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'monospace' }}>
+                    {spec.name}/
+                  </div>
+                  <Caption style={{ color: 'var(--text-muted)' }}>
+                    {spec.accepts}
+                  </Caption>
+                  <Caption style={{ color: 'var(--text-muted)', display: 'block' }}>
+                    {spec.description}
+                  </Caption>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </Card>
+
       {/* 索引进度条 */}
       {isIndexing && indexProgress && (
         <Card padding="14px 18px" style={{ marginBottom: '16px', borderRadius: '10px' }}>
@@ -206,6 +328,19 @@ export default function ProjectDashboard({
                 transition: { delay: index * 0.03, duration: 0.3 }
               },
             }
+
+            const ocrStatus = doc.ocr_status || 'not_processed'
+            const ocrBadge =
+              doc.doc_type !== 'pdf'
+                ? null
+                : ocrStatus === 'completed'
+                  ? <Badge variant="success">已 OCR</Badge>
+                  : ocrStatus === 'processing'
+                    ? <Badge variant="warning">OCR 中</Badge>
+                    : ocrStatus === 'error'
+                      ? <Badge variant="danger">OCR 失败</Badge>
+                      : <Badge variant="neutral">未 OCR</Badge>
+
             return (
               <motion.div
                 key={doc.doc_id}
@@ -220,6 +355,7 @@ export default function ProjectDashboard({
                   <FileTextIcon size={16} />
                   <BodyText size="md" style={{ flex: 1 }}>{doc.title || doc.path}</BodyText>
                   <Badge variant="neutral">{doc.doc_type}</Badge>
+                  {ocrBadge}
                   {doc.indexed ? (
                     <Badge variant="success">已索引</Badge>
                   ) : (

@@ -12,6 +12,7 @@ export interface InputProps {
   disabled?: boolean
   error?: boolean
   autoFocus?: boolean
+  list?: string
   style?: React.CSSProperties
   className?: string
 }
@@ -28,6 +29,7 @@ export default function Input({
   disabled = false,
   error = false,
   autoFocus,
+  list,
   style,
   className,
 }: InputProps) {
@@ -43,6 +45,7 @@ export default function Input({
       placeholder={placeholder}
       disabled={disabled}
       autoFocus={autoFocus}
+      list={list}
       className={`input ${className || ''}`}
       style={{
         width: '100%',

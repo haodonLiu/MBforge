@@ -1,0 +1,52 @@
+// 常规栏目 — 语言、主题、启动行为。
+
+import { useTranslation } from 'react-i18next'
+import SettingSection, { SettingGroup } from '../../ui/SettingSection'
+import { SelectField, ToggleField } from '../SettingRow'
+import type { SettingsState } from '../types'
+
+interface Props {
+  settings: SettingsState
+  setSettings: React.Dispatch<React.SetStateAction<SettingsState>>
+}
+
+export default function GeneralSection({ settings, setSettings }: Props) {
+  const { t } = useTranslation()
+  return (
+    <SettingSection>
+      <SettingGroup title={t('settings.appearance')}>
+        <SelectField
+          label={t('settings.theme')}
+          description={t('settings.themeDesc')}
+          value={settings.theme}
+          onChange={v => setSettings(s => ({ ...s, theme: v as SettingsState['theme'] }))}
+          options={[
+            { value: 'dark', label: t('settings.dark') },
+            { value: 'light', label: t('settings.light') },
+            { value: 'system', label: t('settings.system') },
+          ]}
+        />
+        <SelectField
+          label={t('settings.language')}
+          description={t('settings.languageDesc')}
+          value={settings.language}
+          onChange={v => setSettings(s => ({ ...s, language: v as SettingsState['language'] }))}
+          options={[
+            { value: 'zh', label: '中文' },
+            { value: 'en', label: 'English' },
+          ]}
+        />
+      </SettingGroup>
+
+      <SettingGroup title={t('settings.startup')}>
+        <ToggleField
+          label={t('settings.autoOpenProject')}
+          description={t('settings.autoOpenProjectDesc')}
+          value={settings.auto_open_project}
+          onChange={v => setSettings(s => ({ ...s, auto_open_project: v }))}
+        />
+      </SettingGroup>
+    </SettingSection>
+
+  )
+}

@@ -18,7 +18,7 @@
   "nav.chat": "对话",
   "nav.molecules": "分子库",
   "nav.sar": "SAR 分析",
-  "nav.workflow": "工作流",
+  "nav.environment": "环境",
   "nav.fileTree": "文件树",
   "nav.switchProject": "切换项目",
   "nav.confirmSwitchProject": "确定要切换项目吗？未保存的更改将丢失。",

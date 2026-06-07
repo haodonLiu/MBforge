@@ -10,7 +10,16 @@
 //! 2. **Append** — any extracted image that is **not** referenced in the
 //!    markdown gets a bullet entry under `## Extracted Images` so the
 //!    user can still navigate to it from the markdown.
+//!
+//! `populate_descriptions_from_detection_cache` (separate helper) joins
+//! each `ImageRef` against the per-page `DetectionCache` written by the
+//! VLM chem pipeline and copies the resulting `vlm_caption` into
+//! `ImageRef.description`. Run it after the VLM pass so the markdown
+//! augmentation picks up real captions instead of fallbacks.
 
+use std::path::Path;
+
+use crate::core::document::detection_cache::DetectionCache;
 use crate::parsers::doc_types::ImageRef;
 
 /// Default description text when neither `ImageRef.description` nor a
@@ -117,6 +126,68 @@ fn build_appendix(unreferenced: &[&ImageRef]) -> String {
         s.push_str(&format!("  `{}`\n", url));
     }
     s
+}
+
+/// Look up each `ImageRef` in the per-page `DetectionCache` written by
+/// the VLM chem pipeline and copy the matching detection's
+/// `vlm_caption` into `ImageRef.description`.
+///
+/// Matching is best-effort because the `DetectionCache` stores the
+/// *cropped* molecule path (a region of the original image), while
+/// `ImageRef.rel_path` is the full extracted image. We match by:
+/// - the cropped path being inside the extracted image (suffix match), or
+/// - the cropped path's basename matching the extracted image's basename
+///   (handles cases where the relative paths differ only by directory).
+///
+/// `images` whose `description` is already populated are skipped
+/// (callers can pre-populate with VLM-direct captions to win over the
+/// cache). `images` whose lookup misses the cache are left alone —
+/// `augment_markdown_with_images` will fall back to "Image extracted
+/// from page N".
+///
+/// Returns the number of images that received a new description.
+pub fn populate_descriptions_from_detection_cache(
+    images: &mut [ImageRef],
+    project_root: &Path,
+    doc_id: &str,
+    pdf_hash: &str,
+) -> usize {
+    if images.is_empty() {
+        return 0;
+    }
+    let cache = DetectionCache::new(project_root);
+    let mut updated = 0usize;
+    for img in images.iter_mut() {
+        if img.description.is_some() {
+            continue;
+        }
+        let page_det = match cache.get(doc_id, img.page, pdf_hash) {
+            Some(p) => p,
+            None => continue,
+        };
+        let img_rel = img.rel_path.as_deref().unwrap_or(&img.filename);
+        let img_basename = std::path::Path::new(img_rel)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(img_rel);
+        let match_ = page_det.detections.iter().find(|d| {
+            // exact match
+            d.crop_relpath == img_rel
+                // cropped path is inside the extracted image
+                || d.crop_relpath.ends_with(img_basename)
+                // or the extracted image ends with the cropped path
+                || img_rel.ends_with(&d.crop_relpath)
+        });
+        if let Some(d) = match_ {
+            if let Some(cap) = d.vlm_caption.as_ref() {
+                if !cap.trim().is_empty() {
+                    img.description = Some(cap.clone());
+                    updated += 1;
+                }
+            }
+        }
+    }
+    updated
 }
 
 /// Top-level entry point. Augments the markdown so every image

@@ -682,18 +682,20 @@ pub async fn extract_pdf_workflow(
     );
 
     // Stage 1: 文本提取 + 分类
-    let classified = classify_and_extract(pdf_path).await?;
+    let mut classified = classify_and_extract(pdf_path).await?;
 
-    // 用提取出来的图片列表给 markdown 补全：
-    // - 已存在的 `![](xxx)` 引用换成本地 `rel_path` + 描述作为 alt
-    // - 未在正文中被引用的图片追加 `## Extracted Images` 段
+    // First pass at text.md: enrich inline `![]()` references and add
+    // the "## Extracted Images" appendix. Descriptions are still the
+    // generic "Image extracted from page N" — VLM captions are
+    // unavailable until Stage 2 (extract_molecules_from_pdf) populates
+    // the detection cache.
     let augmented_text =
         crate::parsers::pipeline::markdown_augment::augment_markdown_with_images(
             &classified.text,
             &classified.images,
         );
 
-    // 写入 text.md
+    // 写入 text.md (first pass — without VLM captions)
     let text_path = base_dir.join("text.md");
     std::fs::write(&text_path, &augmented_text)
         .map_err(|e| format!("Failed to write text.md: {}", e))?;
@@ -705,7 +707,7 @@ pub async fn extract_pdf_workflow(
         classified.parser
     );
 
-    // Stage 2: 分子图像检测 + 识别
+    // Stage 2: 分子图像检测 + 识别（同时把 VLM 写进 detection cache）
     let detected = extract_molecules_from_pdf(
         pdf_path,
         &classified,
@@ -722,6 +724,37 @@ pub async fn extract_pdf_workflow(
         "[workflow] Detected {} molecules",
         detected.len()
     );
+
+    // Second pass at text.md: pull VLM captions out of the detection
+    // cache the Stage 2 just wrote, then re-augment. The detection
+    // cache key uses the PDF file stem (matches the molecules/<stem>/
+    // convention), and the per-PDF hash for invalidation.
+    let doc_slug = Path::new(pdf_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+    let pdf_hash = crate::core::helpers::sha256_file(Path::new(pdf_path))
+        .unwrap_or_default();
+    let n_captioned = crate::parsers::pipeline::markdown_augment::
+        populate_descriptions_from_detection_cache(
+            &mut classified.images,
+            &base_dir,
+            doc_slug,
+            &pdf_hash,
+        );
+    if n_captioned > 0 {
+        log::info!(
+            "[workflow] Injected {} VLM caption(s) into markdown augmentation",
+            n_captioned
+        );
+        let enriched_text =
+            crate::parsers::pipeline::markdown_augment::augment_markdown_with_images(
+                &classified.text,
+                &classified.images,
+            );
+        std::fs::write(&text_path, &enriched_text)
+            .map_err(|e| format!("Failed to re-write text.md: {}", e))?;
+    }
 
     // Stage 3: 生成 manifest.json
     let molecules: Vec<MoleculeEntry> = detected

@@ -593,7 +593,7 @@ use crate::core::agent::trajectory::TrajectoryTracker;
 /// `IntoIterator` impl in rig 0.38.1). Constructing the tool instances
 /// directly here gives us a `Vec<Box<dyn ToolDyn>>` ready for the
 /// `AgentBuilder::tools(...)` call.
-pub(crate) fn assemble_rig_tool_vec(project_root: &str) -> Vec<Box<dyn rig_core::tool::ToolDyn>> {
+pub fn assemble_rig_tool_vec(project_root: &str) -> Vec<Box<dyn rig_core::tool::ToolDyn>> {
     let mut tools: Vec<Box<dyn rig_core::tool::ToolDyn>> = Vec::with_capacity(25);
     // 16 executor tools.
     tools.push(Box::new(GrepSearchTool::new(project_root)));

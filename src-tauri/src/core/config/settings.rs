@@ -16,6 +16,8 @@ pub struct ModelConfig {
     pub max_tokens: u32,
     pub temperature: f32,
     pub top_p: f32,
+    #[serde(default = "default_request_timeout")]
+    pub request_timeout: u32,
 }
 
 impl Default for ModelConfig {
@@ -36,6 +38,7 @@ impl Default for ModelConfig {
             max_tokens: 4096,
             temperature: 0.7,
             top_p: 0.9,
+            request_timeout: 120,
         }
     }
 }
@@ -156,6 +159,9 @@ fn default_startup_timeout() -> u32 {
 }
 fn default_health_check_interval() -> u32 {
     5
+}
+fn default_request_timeout() -> u32 {
+    120
 }
 
 impl Default for ModelServerConfig {

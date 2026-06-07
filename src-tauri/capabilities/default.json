@@ -7,11 +7,15 @@
     "core:default",
     "dialog:default",
     "dialog:allow-open",
+    "dialog:allow-ask",
+    "dialog:allow-confirm",
+    "dialog:allow-message",
     "fs:default",
     "fs:allow-read-dir",
     "shell:default",
     "allow-classify-pdf",
     "allow-extract-text",
+    "allow-get-document-ocr-layout",
     "allow-open-file",
     "allow-open-project",
     "allow-agent",
@@ -26,6 +30,7 @@
     "allow-file-ops",
     "allow-notes",
     "allow-sidecar",
+    "allow-settings",
     "allow-resource-manager"
   ],
   "platforms": ["macOS", "windows", "linux", "android", "iOS"]

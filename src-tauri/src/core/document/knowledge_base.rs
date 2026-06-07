@@ -16,7 +16,7 @@ use dashmap::DashMap;
 use rusqlite::Connection;
 use tauri::Emitter;
 
-use crate::core::config::constants::EVT_KB_SEARCH_CHUNK;
+use crate::core::config::constants::{EVT_KB_SEARCH_CHUNK, INDEX_DIR, PROJECT_META_DIR};
 use crate::core::error::{AppError, AppResult, ErrorCode};
 use crate::core::vector::embedding::Embedder;
 use crate::core::vector::sqlite_vector_store::{SqliteVectorStore, reciprocal_rank_fusion};
@@ -55,12 +55,14 @@ impl KnowledgeBase {
         project_root: &Path,
         embed_config: Option<&crate::core::config::settings::EmbedConfig>,
     ) -> AppResult<Self> {
-        let meta_dir = project_root.join(".mbforge");
-        std::fs::create_dir_all(&meta_dir)?;
+        let index_dir = project_root.join(INDEX_DIR);
+        std::fs::create_dir_all(&index_dir)?;
 
-        let db_path = meta_dir.join("knowledge_base.db");
-        let legacy_vec = meta_dir.join("knowledge_base").join("vectors.db");
-        let legacy_cache = meta_dir.join("knowledge_base").join("cache.db");
+        let db_path = index_dir.join("knowledge_base.db");
+        // Legacy paths live in .mbforge/ for one-time migration only.
+        let legacy_meta = project_root.join(PROJECT_META_DIR);
+        let legacy_vec = legacy_meta.join("knowledge_base").join("vectors.db");
+        let legacy_cache = legacy_meta.join("knowledge_base").join("cache.db");
 
         // 向后兼容：从旧数据库迁移（仅当新库不存在且旧库存在时）
         if !db_path.exists() && (legacy_vec.exists() || legacy_cache.exists()) {

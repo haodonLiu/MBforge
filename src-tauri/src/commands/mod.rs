@@ -23,6 +23,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // file_ops
         file_ops::open_file,
         file_ops::read_text_file,
+        file_ops::read_file_bytes,
         file_ops::upload_files,
         file_ops::delete_file,
         // project_ops
@@ -116,13 +117,18 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // settings
         settings::get_settings,
         settings::save_settings,
-        // resource_manager
+        settings::app_build_info,
+        settings::export_settings,
+        settings::reset_settings,
+        settings::config_dir_path,
         crate::core::resource_manager::resources_check,
         crate::core::resource_manager::resources_status,
         crate::core::resource_manager::resources_get_model_path,
         crate::core::resource_manager::resources_catalog,
         crate::core::resource_manager::models_download,
         crate::core::resource_manager::models_cancel_download,
+        crate::core::resource_manager::models_delete,
+        crate::core::resource_manager::models_cache_dir_info,
         // SAR analysis
         crate::core::chem::sar::sar_find_scaffold,
         crate::core::chem::sar::sar_decompose,

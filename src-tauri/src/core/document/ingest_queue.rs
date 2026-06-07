@@ -98,7 +98,9 @@ pub struct IngestQueue {
 impl IngestQueue {
     /// 打开或创建队列数据库（共享 knowledge_base.db）
     pub fn new(project_root: &Path) -> AppResult<Self> {
-        let db_path = project_root.join(".mbforge").join("knowledge_base.db");
+        let db_path = project_root
+            .join(crate::core::constants::INDEX_DIR)
+            .join("knowledge_base.db");
         let conn = Connection::open(&db_path)?;
         Self::setup_schema(&conn)?;
 

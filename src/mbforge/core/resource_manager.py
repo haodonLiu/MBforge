@@ -343,7 +343,8 @@ def _check_python_package(info: ResourceInfo) -> ResourceStatusResult:
 def _check_pdfium() -> ResourceStatusResult:
     """检查 PDFium 是否已设置."""
     # 检查 Rust vendor 目录
-    project_root = Path(__file__).resolve().parent.parent.parent
+    # __file__ = src/mbforge/core/resource_manager.py → 项目根目录需要 4 层 parent
+    project_root = Path(__file__).resolve().parent.parent.parent.parent
     pdfium_lib = project_root / "src-tauri" / "vendor" / "pdfium" / "release" / "lib"
     if pdfium_lib.exists():
         libs = list(pdfium_lib.glob("*"))

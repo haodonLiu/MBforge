@@ -69,7 +69,26 @@ def setup_logging(
 
     # 控制台输出
     if console:
-        console_handler = logging.StreamHandler(sys.stdout)
+        # Windows zh-CN locale 下 sys.stdout.encoding 可能是 gbk，无法编码 ✓/✗
+        # 这类 Unicode 字符。优先用环境变量注入的 UTF-8（见 src-tauri/src/sidecar.rs
+        # 的 PYTHONIOENCODING=utf-8），如果 stdout 实际不是 utf-8 就用
+        # backslashreplace 包一层兜底，保证 ✓ 不会让 StreamHandler 在 emit 时崩。
+        console_stream = sys.stdout
+        stdout_encoding = getattr(console_stream, "encoding", None)
+        if stdout_encoding and stdout_encoding.lower().replace("-", "") != "utf8":
+            try:
+                import io
+
+                console_stream = io.TextIOWrapper(
+                    console_stream.buffer,
+                    encoding="utf-8",
+                    errors="backslashreplace",
+                    line_buffering=True,
+                )
+            except (AttributeError, OSError):
+                # 已经是 wrapper 或没有 buffer 属性 —— 退回到原 stream
+                pass
+        console_handler = logging.StreamHandler(console_stream)
         console_handler.setLevel(level)
         console_handler.setFormatter(
             logging.Formatter(_CONSOLE_FORMAT, datefmt=_DATE_FORMAT)

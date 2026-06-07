@@ -4,7 +4,7 @@ use serde_json::Value as JsonValue;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use crate::core::constants::PROJECT_META_DIR;
+use crate::core::constants::INDEX_DIR;
 
 pub const MOL_RELATIONS_TABLE: &str = "molecule_relations";
 pub const MOL_DB_FILENAME: &str = "molecules.db";
@@ -66,9 +66,9 @@ pub struct MoleculeRelationDb {
 
 impl MoleculeRelationDb {
     pub fn new(project_root: &std::path::Path) -> Result<Self, String> {
-        let db_dir = project_root.join(PROJECT_META_DIR);
+        let db_dir = project_root.join(INDEX_DIR);
         std::fs::create_dir_all(&db_dir)
-            .map_err(|e| format!("Failed to create meta dir: {}", e))?;
+            .map_err(|e| format!("Failed to create index dir: {}", e))?;
         let db_path = db_dir.join(MOL_DB_FILENAME);
 
         let conn = Connection::open(&db_path)

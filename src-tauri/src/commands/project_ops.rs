@@ -85,15 +85,33 @@ pub fn scan_project_files(root: String) -> Result<serde_json::Value, String> {
     })?;
 
     debug!("Project found, scanning files...");
-    let docs = project.scan_files();
-    debug!("Found {} documents", docs.len());
+    let (new_docs, warnings) = project.scan_files();
+    debug!("Found {} documents, {} warnings", new_docs.len(), warnings.len());
 
+    // All known documents (existing + newly scanned) so the UI sees the
+    // full picture, not just deltas.
+    let all_docs: Vec<_> = project.list_documents().to_vec();
     let result = serde_json::json!({
         "success": true,
-        "documents": docs_json(&docs),
+        "documents": docs_json(&all_docs),
+        "new_documents": docs_json(&new_docs),
+        "warnings": warnings_json(&warnings),
     });
     info!("project_ops: scan_project_files END");
     Ok(result)
+}
+
+fn warnings_json(warnings: &[crate::core::project::ScanWarning]) -> Vec<serde_json::Value> {
+    warnings
+        .iter()
+        .map(|w| {
+            serde_json::json!({
+                "path": w.path,
+                "reason": w.reason,
+                "folder": w.folder,
+            })
+        })
+        .collect()
 }
 
 /// 列出项目文档
@@ -156,6 +174,8 @@ fn docs_json(docs: &[crate::core::project::DocumentEntry]) -> Vec<serde_json::Va
                 "doc_type": d.doc_type,
                 "title": d.title,
                 "indexed": d.indexed,
+                "ocr_status": d.ocr_status,
+                "ocr_hash": d.ocr_hash,
             })
         })
         .collect()

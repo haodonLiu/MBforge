@@ -283,7 +283,7 @@ struct CacheEntry {
 impl ImageCaptionCache {
     pub fn new(project_root: &Path) -> Self {
         let path = project_root
-            .join(crate::core::config::constants::PROJECT_META_DIR)
+            .join(crate::core::config::constants::INDEX_DIR)
             .join("image-caption-cache.json");
         let entries = if path.exists() {
             std::fs::read_to_string(&path).ok()

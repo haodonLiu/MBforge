@@ -196,40 +196,17 @@ impl MemoryManager {
             conversation
         );
 
-        let body = serde_json::json!({
-            "messages": [
-                {"role": "system", "content": "你是一位记忆提取专家。"},
-                {"role": "user", "content": prompt}
-            ]
-        });
-
-        let url = format!("{}/api/v1/llm/chat", sidecar_url.trim_end_matches('/'));
-        let client = crate::core::http::client_30s();
-
-        let resp = match client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await
+        let _ = sidecar_url; // 保留参数位（调用方仍在传），未来可移除
+        let content = match crate::core::agent::llm_client::chat_simple_with_timeout(
+            "你是一位记忆提取专家。",
+            &prompt,
+            30,
+        )
+        .await
         {
-            Ok(r) => r,
-            Err(_) => return,
+            Some(s) => s,
+            None => return,
         };
-
-        let text = match resp.text().await {
-            Ok(t) => t,
-            Err(_) => return,
-        };
-
-        let val: serde_json::Value = match serde_json::from_str(&text) {
-            Ok(v) => v,
-            Err(_) => return,
-        };
-
-        let content = val["choices"][0]["message"]["content"]
-            .as_str()
-            .unwrap_or("");
 
         // 提取 JSON 数组
         if let Some(start) = content.find('[') {

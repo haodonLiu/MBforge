@@ -140,7 +140,8 @@ impl SkillsManager {
             return;
         }
 
-        // 通过 sidecar LLM 生成 Skill 内容
+        // 通过 env LLM 直接生成 Skill 内容（不再走 sidecar — sidecar 不再
+        // 提供 LLM 端点；LLM 由 Rust 直连 MBFORGE_LLM_* 端点）。
         let prompt = format!(
             "从以下对话中提取程序性知识，生成一个简洁的 Markdown 格式 Skill。\n\
              要求：\n\
@@ -155,40 +156,17 @@ impl SkillsManager {
 
         let _rt = tokio::runtime::Handle::current();
         let skills_dir = self.skills_dir.clone();
-        let sidecar_url = sidecar_url.to_string();
+        let _ = sidecar_url; // 保留参数位（调用方仍在传），未来可移除
         tokio::spawn(async move {
-            let body = serde_json::json!({
-                "messages": [
-                    {"role": "system", "content": "你是一位知识提取专家。从对话中提取可复用的程序性知识。"},
-                    {"role": "user", "content": prompt}
-                ]
-            });
-
-            let url = format!("{}/api/v1/llm/chat", sidecar_url.trim_end_matches('/'));
-            let client = crate::core::http::client_15s();
-
-            let resp = match client
-                .post(&url)
-                .header("Content-Type", "application/json")
-                .json(&body)
-                .send()
-                .await
+            let content = match crate::core::agent::llm_client::chat_simple(
+                "你是一位知识提取专家。从对话中提取可复用的程序性知识。",
+                &prompt,
+            )
+            .await
             {
-                Ok(r) => r,
-                Err(_) => return,
+                Some(s) => s,
+                None => return,
             };
-
-            let text = match resp.text().await {
-                Ok(t) => t,
-                Err(_) => return,
-            };
-
-            let val: serde_json::Value = match serde_json::from_str(&text) {
-                Ok(v) => v,
-                Err(_) => return,
-            };
-
-            let content = val["content"].as_str().unwrap_or("");
             if content.is_empty() {
                 return;
             }

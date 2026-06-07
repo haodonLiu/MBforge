@@ -1,13 +1,18 @@
-"""健康检查路由 — 集成 ResourceManager 资源状态."""
+"""Health check route — aggregates ResourceManager resource status + loaded
+embed / rerank / VLM / moldet model health.
+
+The LLM is no longer hosted by this sidecar (it's called directly from
+Rust via `core::agent::rig_adapter` against the user-supplied
+`MBFORGE_LLM_*` endpoint), so it is **not** part of this health check.
+"""
 from typing import Any
 
 import time
 
 from fastapi import APIRouter
 
-from ...core.resource_manager import ResourceManager, ResourceStatus
+from ...core.resource_manager import ResourceManager
 from ...utils.logger import get_logger
-from ..models.llm import get_llm
 from ..models.embedder import get_embedder
 from ..models.reranker import get_reranker
 from ..models.vlm import get_vlm
@@ -17,7 +22,6 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 _model_status = {
-    "llm": "loading",
     "embedder": "loading",
     "reranker": "loading",
     "vlm": "loading",
@@ -39,13 +43,6 @@ async def health_check() -> dict[str, Any]:
       - src-tauri/src/sidecar.rs::start_health_monitor
     """
     # 尝试初始化各模型（触发懒加载）
-    try:
-        get_llm()
-        _model_status["llm"] = "ready"
-    except Exception as e:
-        _model_status["llm"] = "error"
-        logger.debug(f"LLM health check failed: {e}")
-
     try:
         get_embedder()
         _model_status["embedder"] = "ready"
@@ -102,7 +99,7 @@ async def health_check() -> dict[str, Any]:
         _model_status["moldet"] = "error"
         logger.debug(f"MolDet health check failed: {e}")
 
-    # 计算整体状态
+    # 计算整体状态（不再含 llm — 见模块 docstring）
     statuses = list(_model_status.values())
     if all(s == "ready" for s in statuses):
         overall = "online"

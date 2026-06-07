@@ -5,6 +5,7 @@ pub mod document;
 pub mod executor_rig;
 pub mod fs;
 pub mod kb;
+pub mod llm_client;
 pub mod memory;
 pub mod molecule;
 pub mod observability;

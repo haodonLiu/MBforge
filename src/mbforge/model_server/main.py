@@ -55,7 +55,6 @@ from ..utils.exceptions import MBForgeError
 from .routers import embed
 from .routers import environment
 from .routers import health
-from .routers import llm
 from .routers import moldet
 from .routers import tools
 from .routers import vlm
@@ -64,15 +63,11 @@ logger = logging.getLogger("mbforge.startup")
 
 
 def _prewarm_models():
-    """在后台线程中预加载核心模型，避免首次请求阻塞."""
-    try:
-        from .models.llm import get_llm
+    """在后台线程中预加载核心模型，避免首次请求阻塞.
 
-        get_llm()
-        logger.info("LLM model prewarmed")
-    except Exception as e:
-        logger.warning(f"LLM prewarm failed: {e}")
-
+    注意：LLM **不**在这里预热 — LLM 由 Rust core 直接调用
+    `MBFORGE_LLM_*` 端点（参见 `core/agent/rig_adapter`），不再经过此 sidecar。
+    """
     try:
         from .models.embedder import get_embedder
 
@@ -156,8 +151,7 @@ async def generic_error_handler(request: Request, exc: Exception) -> JSONRespons
     )
 
 
-# 注册路由
-app.include_router(llm.router, prefix="/api/v1/llm", tags=["llm"])
+# 注册路由（注意：LLM 路由已移除 — LLM 由 Rust core 直连 MBFORGE_LLM_* 端点）
 app.include_router(embed.router, prefix="/api/v1", tags=["embed"])
 app.include_router(vlm.router, prefix="/api/v1/vlm", tags=["vlm"])
 app.include_router(moldet.router, prefix="/api/v1/moldet", tags=["moldet"])

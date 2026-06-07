@@ -3,7 +3,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { fadeIn } from '../../hooks/useAnimations'
 
 interface TooltipProps {
-  text: string
+  /** 旧 API：纯文本。保留向下兼容。 */
+  text?: string
+  /** 新 API：可放任意 JSX（如两行布局）。优先于 text。 */
+  content?: ReactNode
   children: ReactNode
   /** 显示在子元素的哪一侧 */
   position?: 'right' | 'left' | 'top' | 'bottom'
@@ -20,11 +23,13 @@ const positionStyles: Record<NonNullable<TooltipProps['position']>, React.CSSPro
 
 export default function Tooltip({
   text,
+  content,
   children,
   position = 'right',
   trigger = 'hover',
 }: TooltipProps) {
   const [show, setShow] = useState(false)
+  const isRich = content !== undefined
 
   const eventHandlers = trigger === 'hover'
     ? { onMouseEnter: () => setShow(true), onMouseLeave: () => setShow(false) }
@@ -45,16 +50,18 @@ export default function Tooltip({
               ...positionStyles[position],
               background: 'var(--accent)',
               color: '#fff',
-              padding: '4px 10px',
+              padding: isRich ? '8px 12px' : '4px 10px',
               borderRadius: '6px',
               fontSize: '12px',
               fontWeight: 500,
-              whiteSpace: 'nowrap',
+              whiteSpace: isRich ? 'normal' : 'nowrap',
               pointerEvents: 'none',
               zIndex: 100,
+              minWidth: isRich ? 'max-content' : undefined,
+              boxShadow: isRich ? '0 4px 12px rgba(0,0,0,0.2)' : undefined,
             }}
           >
-            {text}
+            {content ?? text}
           </motion.div>
         )}
       </AnimatePresence>

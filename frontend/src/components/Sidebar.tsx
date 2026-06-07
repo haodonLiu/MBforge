@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { FlaskIcon, SearchIcon, ChatIcon, WorkflowIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon, TargetIcon, BarChartIcon, NoteIcon } from './icons'
+import { FlaskIcon, SearchIcon, ChatIcon, EnvironmentIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon, BarChartIcon, NoteIcon } from './icons'
 import IconButton from '../components/ui/IconButton'
 import Tooltip from '../components/ui/Tooltip'
 
@@ -21,8 +21,7 @@ const NAV_ITEMS = [
   { id: 'search', path: '/search', icon: SearchIcon, labelKey: 'nav.search' },
   { id: 'chat', path: '/chat', icon: ChatIcon, labelKey: 'nav.chat' },
   { id: 'molecules', path: '/molecules', icon: FlaskIcon, labelKey: 'nav.molecules' },
-  { id: 'sar', path: '/sar', icon: TargetIcon, labelKey: 'nav.sar' },
-  { id: 'workflow', path: '/workflow', icon: WorkflowIcon, labelKey: 'nav.workflow' },
+  { id: 'environment', path: '/environment', icon: EnvironmentIcon, labelKey: 'nav.environment' },
 ]
 
 function NavButton({

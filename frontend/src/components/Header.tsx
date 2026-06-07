@@ -1,10 +1,12 @@
-import { useTranslation } from 'react-i18next'
+import { useRef, useState } from 'react'
 import { HelpIcon } from './icons'
 import IconButton from './ui/IconButton'
-import { showToast } from '../hooks/useToast'
+import HelpPopover from './HelpPopover'
 
 export default function Header() {
-  const { t } = useTranslation()
+  const [helpOpen, setHelpOpen] = useState(false)
+  const helpBtnRef = useRef<HTMLButtonElement | null>(null)
+
   return (
     <header style={{
       gridColumn: '2',
@@ -29,13 +31,19 @@ export default function Header() {
         MBForge
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <IconButton
-          title={t('common.search')}
-          onClick={() => showToast(t('common.noResults'), 'info')}
-        >
-          <HelpIcon size={18} />
-        </IconButton>
+        <span ref={helpBtnRef} style={{ display: 'inline-flex' }}>
+          <IconButton
+            title="项目目录规范"
+            onClick={() => setHelpOpen((v) => !v)}
+            active={helpOpen}
+          >
+            <HelpIcon size={18} />
+          </IconButton>
+        </span>
       </div>
+      {helpOpen && (
+        <HelpPopover anchorRef={helpBtnRef} onClose={() => setHelpOpen(false)} />
+      )}
     </header>
   )
 }

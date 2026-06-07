@@ -212,8 +212,11 @@ impl MemoryManager {
         )
         .await
         {
-            Some(s) => s,
-            None => return,
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("memory extract: LLM call skipped: {e}");
+                return;
+            }
         };
 
         // 提取 JSON 数组

@@ -1,0 +1,7 @@
+[[permission]]
+identifier = "allow-llm"
+description = "Allows reading the env-derived LLM config and probing the configured endpoint for connectivity"
+commands.allow = [
+  "get_llm_env_config",
+  "test_llm_connection",
+]

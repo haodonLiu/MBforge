@@ -147,14 +147,17 @@ impl MbforgeManagedMemory {
     /// Downcast + delegate to `SqliteConversationMemory::mark_evicted`.
     /// No-op (returns Ok) if the inner backend is not SQLite
     /// (e.g. `InMemoryConversationMemory` in the one-shot fallback).
+    /// The `count` argument is the number of oldest non-evicted
+    /// messages to mark evicted (not a seq threshold — see
+    /// `SqliteConversationMemory::mark_evicted`).
     async fn mark_evicted_inner(
         &self,
         cid: &str,
-        cutoff_seq: i64,
+        count: i64,
     ) -> Result<(), String> {
         if let Some(sqlite) = &self.sqlite {
             let _ = sqlite
-                .mark_evicted(cid, cutoff_seq)
+                .mark_evicted(cid, count)
                 .map_err(|e| format!("mark_evicted: {e}"))?;
         }
         Ok(())
@@ -201,13 +204,12 @@ impl ConversationMemory for MbforgeManagedMemory {
             let split = msgs.len().saturating_sub(self.window_size);
             let evicted = msgs.drain(..split).collect::<Vec<_>>();
             let recent = msgs;
-            // The cutoff seq for persistence = the seq of the first
-            // *non*-evicted message. Since `load_active` orders by seq
-            // ASC, `evicted` are msgs[0..split] (oldest), and the first
-            // kept message has seq = (total_before - split). We pass
-            // that as the cutoff to `mark_evicted`.
-            let total_before = split + recent.len();
-            let cutoff_seq = (total_before - recent.len()) as i64;
+            // `mark_evicted` takes a count, not a seq threshold. We
+            // pass `split` — the N oldest non-evicted messages will be
+            // marked evicted. On the next load, those rows are filtered
+            // out by `load_active` and the compactor is asked to
+            // summarise only the NEW split.
+            let evict_count = split as i64;
 
             if let Some(d) = &self.demotion {
                 // Fire-and-forget per rig's contract: a slow hook
@@ -229,7 +231,7 @@ impl ConversationMemory for MbforgeManagedMemory {
                 match summary_result {
                     Ok(summary) => {
                         // Persist the eviction + splice the summary.
-                        if let Err(e) = self.mark_evicted_inner(conversation_id, cutoff_seq).await
+                        if let Err(e) = self.mark_evicted_inner(conversation_id, evict_count).await
                         {
                             log::warn!(
                                 "managed_memory: mark_evicted failed for cid={}: {e}",
@@ -240,7 +242,7 @@ impl ConversationMemory for MbforgeManagedMemory {
                             .replace_with_compaction_inner(
                                 conversation_id,
                                 &summary.text,
-                                cutoff_seq,
+                                evict_count,
                             )
                             .await
                         {
@@ -261,7 +263,7 @@ impl ConversationMemory for MbforgeManagedMemory {
                         // Still mark evicted so the next load is
                         // stable (no re-summarisation of the same
                         // rows).
-                        if let Err(e) = self.mark_evicted_inner(conversation_id, cutoff_seq).await
+                        if let Err(e) = self.mark_evicted_inner(conversation_id, evict_count).await
                         {
                             log::warn!(
                                 "managed_memory: mark_evicted failed for cid={}: {e}",
@@ -273,7 +275,7 @@ impl ConversationMemory for MbforgeManagedMemory {
                 }
             } else {
                 // No compactor: just persist the eviction, hard truncate.
-                if let Err(e) = self.mark_evicted_inner(conversation_id, cutoff_seq).await {
+                if let Err(e) = self.mark_evicted_inner(conversation_id, evict_count).await {
                     log::warn!(
                         "managed_memory: mark_evicted failed for cid={}: {e}",
                         conversation_id

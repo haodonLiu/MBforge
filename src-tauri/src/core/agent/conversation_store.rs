@@ -211,7 +211,7 @@ impl SqliteConversationMemory {
         let mut stmt = conn
             .prepare(
                 "SELECT seq, role, content, is_summary, created_at FROM conversation_messages \
-                 WHERE cid = ?1 \
+                 WHERE cid = ?1 AND evicted = 0 \
                  ORDER BY is_summary DESC, seq ASC",
             )
             .map_err(|e| format!("prepare list: {e}"))?;
@@ -233,34 +233,45 @@ impl SqliteConversationMemory {
         Ok(out)
     }
 
-    /// Mark rows with `seq < cutoff_seq` as evicted and return their
-    /// (role, content) pairs so the compactor/demotion can use them.
-    pub fn mark_evicted(&self, cid: &str, cutoff_seq: i64) -> Result<Vec<Message>, String> {
+    /// Mark the `count` oldest non-evicted messages for `cid` as
+    /// evicted and return their (role, content) pairs. We use
+    /// `LIMIT ?` rather than `seq < threshold` so successive
+    /// calls (when `count` is small) actually evict the next
+    /// oldest *non-evicted* rows instead of re-evicting rows that
+    /// were already evicted by an earlier call.
+    pub fn mark_evicted(&self, cid: &str, count: i64) -> Result<Vec<Message>, String> {
         let conn = self.conn.lock().map_err(|e| format!("lock: {e}"))?;
-        // Snapshot before mutating — we need the original messages.
+        // Snapshot before mutating — the demotion hook wants the
+        // evicted messages as `Vec<Message>`.
         let mut stmt = conn
             .prepare(
                 "SELECT role, content FROM conversation_messages \
-                 WHERE cid = ?1 AND seq < ?2 AND evicted = 0 \
-                 ORDER BY seq ASC",
+                 WHERE cid = ?1 AND evicted = 0 \
+                 ORDER BY seq ASC LIMIT ?2",
             )
             .map_err(|e| format!("prepare mark_evicted: {e}"))?;
         let rows: Vec<(String, String)> = stmt
-            .query_map(params![cid, cutoff_seq], |row| {
+            .query_map(params![cid, count], |row| {
                 Ok((row.get(0)?, row.get(1)?))
             })
             .map_err(|e| format!("query mark_evicted: {e}"))?
             .filter_map(|r| r.ok())
             .collect();
+        // Now actually evict the same N rows by seq. We do it in a
+        // second statement so the snapshot above is consistent.
         conn.execute(
             "UPDATE conversation_messages SET evicted = 1 \
-             WHERE cid = ?1 AND seq < ?2",
-            params![cid, cutoff_seq],
+             WHERE seq IN ( \
+                 SELECT seq FROM conversation_messages \
+                 WHERE cid = ?1 AND evicted = 0 \
+                 ORDER BY seq ASC LIMIT ?2 \
+             )",
+            params![cid, count],
         )
         .map_err(|e| format!("update mark_evicted: {e}"))?;
         Ok(rows
             .into_iter()
-            .map(|(_, content)| Message::user(content)) // role ignored for now
+            .map(|(_, content)| Message::user(content))
             .collect())
     }
 

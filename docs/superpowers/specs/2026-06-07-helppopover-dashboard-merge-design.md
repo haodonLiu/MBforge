@@ -42,7 +42,7 @@
 - `lazy(() => import('./components/ProjectView'))` 删除
 - `<AppRoutes>` 其它路由（`/search`、`/chat`、`/molecules`、`/environment`、`/notes`）保持不变
 
-`current` state 不变（仍用 `'dashboard'`）；`AppInner` 里 `setCurrentPage('project')` 调用保持 `'dashboard'`（因为打开项目后应该停在主页）。
+`current` state 不变（仍用 `'dashboard'`）。`AppInner` 里 `handleProjectOpened` 的 `setCurrentPage('project')` 应改为 `setCurrentPage('dashboard')`（因为打开项目后应该停在主页）。
 
 ### 3.2 文件结构
 
@@ -481,8 +481,8 @@ open toggle → place()  // 因为尺寸可能变了
 
 - `frontend/src/components/Sidebar.tsx` 顶部注释更新（如有）
 - `frontend/src/components/HelpPopover.tsx` 顶部注释更新（说明 4 边回弹）
-- 不需要更新 CLAUDE.md / CODEMAP.md（局部重构）
-- 不需要更新 CODEMAP.md §7.6 待审核事项（这是普通重构不是 bugfix）
+- 不需要更新 CLAUDE.md / CODEMAP.md 主文档（局部重构）
+- 按 CLAUDE.md 要求，本任务完成后在 CODEMAP.md §7.6 待审核事项记录本次重构（日期、文件、问题描述、状态 ⚠️ 待审核），由人工确认后标记 ✅
 
 ---
 

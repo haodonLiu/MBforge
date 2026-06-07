@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod classifier;
+pub mod llm;
 pub mod extractor;
 pub mod file_ops;
 pub mod gesim;
@@ -121,6 +122,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         settings::export_settings,
         settings::reset_settings,
         settings::config_dir_path,
+        // llm env probe
+        llm::get_llm_env_config,
+        llm::test_llm_connection,
         crate::core::resource_manager::resources_check,
         crate::core::resource_manager::resources_status,
         crate::core::resource_manager::resources_get_model_path,

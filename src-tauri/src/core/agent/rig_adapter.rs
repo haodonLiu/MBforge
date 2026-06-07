@@ -10,14 +10,18 @@
 //! 1. **OpenAI-compatible** — any service that speaks the OpenAI Chat
 //!    Completions API (real OpenAI, OpenRouter, DeepSeek, a self-hosted
 //!    llama.cpp server, etc.). We use the rig `openai::CompletionsClient`
-//!    with `base_url` from `AppConfig.llm.base_url`. The MBForge sidecar
+//!    with `base_url` from `MBFORGE_LLM_BASE_URL`. The MBForge sidecar
 //!    (FastAPI on `localhost:18792`) is **not** an OpenAI-compatible
-//!    endpoint — it exposes `/api/v1/llm/chat` only. Don't point this
-//!    provider at the sidecar.
+//!    endpoint and is no longer used for LLM calls.
 //! 2. **Anthropic** — direct access to the Anthropic Messages API. We use
 //!    `rig_core::providers::anthropic::Client` and the `anthropic_betas`
 //!    builder to enable beta features (extended thinking, prompt caching,
 //!    1M context, etc.).
+//!
+//! Both providers read the **full** LLM config from environment variables
+//! (`MBFORGE_LLM_PROVIDER` / `MBFORGE_LLM_BASE_URL` / `MBFORGE_LLM_API_KEY`
+//! / `MBFORGE_LLM_MODEL`). The Settings UI displays these values read-only
+//! and runs a connectivity test on app load; it cannot override them.
 //!
 //! # Stream / response types
 //!
@@ -102,67 +106,56 @@ pub struct MbforgeProviderConfig {
 
 impl MbforgeProviderConfig {
     /// Build a config from environment variables (`.env` injected at startup
-    /// by `main::load_dotenv()`) and `AppConfig` settings.
+    /// by `main::load_dotenv()`).
     ///
-    /// Resolution order, first non-empty wins:
-    /// 1. Process env: `MBFORGE_LLM_BASE_URL`, `MBFORGE_LLM_API_KEY`,
-    ///    `MBFORGE_LLM_MODEL`
-    ///    (the `MBFORGE_`-prefixed form is the project-canonical namespace,
-    ///    shared with `MBFORGE_SIDECAR_URL`, `MBFORGE_MODEL_CACHE_DIR`, etc.)
-    /// 2. `~/.config/MBForge/config.json` `llm.{base_url,api_key,model_name}`
+    /// Resolution — **env-only**, no fallback to `~/.config/MBForge/config.json`:
+    /// - Provider kind: `MBFORGE_LLM_PROVIDER` (`anthropic` → Anthropic,
+    ///   anything else → OpenAI-compatible).
+    /// - Base URL / API key / model: `MBFORGE_LLM_BASE_URL` /
+    ///   `MBFORGE_LLM_API_KEY` / `MBFORGE_LLM_MODEL`.
     ///
-    /// The env-var path is the canonical home for the actual secret values
-    /// (it lives in `.env`, which is gitignored). The config.json path is
-    /// a fallback for advanced users who prefer to keep deployment-specific
-    /// values in version-controlled config (e.g. shared dev environments
-    /// with a fixed internal proxy).
+    /// The Settings UI cannot override these — they are the single source of
+    /// truth, in line with the project convention (`MBFORGE_SIDECAR_URL`,
+    /// `MBFORGE_MODEL_CACHE_DIR`, etc.).
     pub fn from_app_config() -> Result<Self, String> {
-        let app = crate::core::config::AppConfig::load();
-        let kind = match app.llm.provider.as_str() {
-            "anthropic" => MbforgeProviderKind::Anthropic,
-            _ => MbforgeProviderKind::OpenAICompatible,
-        };
-
-        let env_base_url = std::env::var("MBFORGE_LLM_BASE_URL")
-            .ok()
-            .filter(|s| !s.trim().is_empty());
-        let env_api_key = std::env::var("MBFORGE_LLM_API_KEY")
-            .ok()
-            .filter(|s| !s.trim().is_empty());
-        let env_model = std::env::var("MBFORGE_LLM_MODEL")
-            .ok()
-            .filter(|s| !s.trim().is_empty());
-
-        let base_url = env_base_url.unwrap_or_else(|| app.llm.base_url.clone());
-        let api_key = env_api_key.unwrap_or_else(|| app.llm.api_key.clone());
-        let model = env_model.unwrap_or_else(|| app.llm.model_name.clone());
-
-        if base_url.trim().is_empty() {
+        let cfg = Self::peek_from_env();
+        if cfg.base_url.trim().is_empty() {
             return Err(format!(
                 "LLM base_url is not configured. Set `MBFORGE_LLM_BASE_URL` in the project-root .env \
-                 (recommended) or `llm.base_url` in {} to an OpenAI-compatible endpoint \
-                 (e.g. https://api.openai.com/v1, https://openrouter.ai/api/v1, \
-                 https://api.deepseek.com/v1, or a self-hosted llama.cpp server). \
-                 The MBForge sidecar on :18792 is *not* an OpenAI-compatible endpoint and \
-                 must not be used here.",
-                crate::core::config::settings::AppConfig::config_path().display(),
+                 to an OpenAI-compatible endpoint (e.g. https://api.openai.com/v1, \
+                 https://openrouter.ai/api/v1, https://api.deepseek.com/v1, or a self-hosted \
+                 llama.cpp server). The MBForge sidecar on :18792 is *not* an OpenAI-compatible \
+                 endpoint and must not be used here."
             ));
         }
-        if api_key.trim().is_empty() {
+        if cfg.api_key.trim().is_empty() {
             return Err(format!(
-                "LLM api_key is not configured. Set `MBFORGE_LLM_API_KEY` in the project-root .env \
-                 (recommended) or `llm.api_key` in {}.",
-                crate::core::config::settings::AppConfig::config_path().display(),
+                "LLM api_key is not configured. Set `MBFORGE_LLM_API_KEY` in the project-root .env."
             ));
         }
-        Ok(Self {
+        Ok(cfg)
+    }
+
+    /// Non-throwing variant: read the env values verbatim and return whatever
+    /// is set (or empty strings). Used by the Settings UI to display the
+    /// current state without surfacing a hard error when something is missing.
+    pub fn peek_from_env() -> Self {
+        let env_provider = std::env::var("MBFORGE_LLM_PROVIDER")
+            .ok()
+            .filter(|s| !s.trim().is_empty());
+        let kind = match env_provider.as_deref() {
+            Some("anthropic") => MbforgeProviderKind::Anthropic,
+            _ => MbforgeProviderKind::OpenAICompatible,
+        };
+        let env = |k: &str| std::env::var(k).ok().filter(|s| !s.trim().is_empty());
+        Self {
             kind,
-            base_url,
-            api_key,
-            model,
+            base_url: env("MBFORGE_LLM_BASE_URL").unwrap_or_default(),
+            api_key: env("MBFORGE_LLM_API_KEY").unwrap_or_default(),
+            model: env("MBFORGE_LLM_MODEL").unwrap_or_default(),
             timeout_secs: 120,
             anthropic_betas: Vec::new(),
-        })
+        }
     }
 
     /// Test-only config (no real network calls).

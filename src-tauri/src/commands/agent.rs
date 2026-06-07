@@ -22,7 +22,6 @@ use crate::core::agent::rig_memory::{
 use crate::core::agent::skills::SkillsManager;
 use crate::core::agent::trajectory::TrajectoryTracker;
 use crate::core::config::constants::PROJECT_META_DIR;
-use crate::core::config::settings::ModelConfig;
 
 macro_rules! log_err {
     ($msg:expr) => {{
@@ -109,14 +108,16 @@ impl AgentSession {
 
 pub struct AgentState {
     pub agents: Arc<RwLock<HashMap<String, AgentSession>>>,
-    pub default_config: Arc<RwLock<Option<(ModelConfig, String)>>>,
+    /// Sidecar URL only — LLM config is env-driven (`MBFORGE_LLM_*`) and
+    /// read fresh per session via `MbforgeProviderConfig::from_app_config()`.
+    pub default_sidecar: Arc<RwLock<Option<String>>>,
 }
 
 impl AgentState {
     pub fn new() -> Self {
         Self {
             agents: Arc::new(RwLock::new(HashMap::new())),
-            default_config: Arc::new(RwLock::new(None)),
+            default_sidecar: Arc::new(RwLock::new(None)),
         }
     }
 }
@@ -124,11 +125,10 @@ impl AgentState {
 #[tauri::command]
 pub async fn agent_init(
     state: tauri::State<'_, AgentState>,
-    config: ModelConfig,
     sidecar_url: String,
 ) -> Result<(), String> {
-    let mut guard = state.default_config.write().await;
-    *guard = Some((config, sidecar_url));
+    let mut guard = state.default_sidecar.write().await;
+    *guard = Some(sidecar_url);
     Ok(())
 }
 
@@ -138,14 +138,16 @@ pub async fn agent_create_session(
     session_id: String,
     project_root: Option<String>,
 ) -> Result<(), String> {
-    let config_guard = state.default_config.read().await;
-    let (config, sidecar_url) = config_guard
-        .as_ref()
-        .ok_or_else(|| log_err!("Agent not initialized, call agent_init first"))?;
-    let (config, sidecar_url) = (config.clone(), sidecar_url.clone());
+    let sidecar_url = {
+        let guard = state.default_sidecar.read().await;
+        guard
+            .as_ref()
+            .ok_or_else(|| log_err!("Agent not initialized, call agent_init first"))?
+            .clone()
+    };
 
     let root_path = project_root.as_ref().map(PathBuf::from);
-    let mut session = create_session_for_config(&config, &sidecar_url, root_path.as_deref())
+    let mut session = create_session_for_config(&sidecar_url, root_path.as_deref())
         .await
         .map_err(|e| {
             log::error!("agent_create_session: create_session_for_config failed: {}", e);
@@ -300,11 +302,13 @@ pub async fn agent_switch_project(
     project_root: String,
     project_name: String,
 ) -> Result<(), String> {
-    let config_guard = state.default_config.read().await;
-    let (config, sidecar_url) = config_guard
-        .as_ref()
-        .ok_or_else(|| log_err!("Agent not initialized, call agent_init first"))?;
-    let (config, sidecar_url) = (config.clone(), sidecar_url.clone());
+    let sidecar_url = {
+        let guard = state.default_sidecar.read().await;
+        guard
+            .as_ref()
+            .ok_or_else(|| log_err!("Agent not initialized, call agent_init first"))?
+            .clone()
+    };
 
     // 先保存旧 Agent 的上下文
     {
@@ -320,7 +324,7 @@ pub async fn agent_switch_project(
 
     let root_path = PathBuf::from(&project_root);
     let mut session =
-        create_session_for_config(&config, &sidecar_url, Some(&root_path))
+        create_session_for_config(&sidecar_url, Some(&root_path))
             .await
             .map_err(|e| {
                 log::error!(
@@ -421,38 +425,35 @@ pub async fn audit_log_get(
 // 会话构造助手 — 取代 `Agent::new(config, sidecar_url, project_root)`
 // ============================================================================
 
-/// 根据 `ModelConfig` + `sidecar_url` + 可选 `project_root` 构造一个新的
-/// rig 代理 + 配套的 `LayeredContext` / 长时记忆 / 审计 / 轨迹。
+/// Construct a new rig agent + `LayeredContext` / long-term memory /
+/// audit / trajectory, all driven by **env** (no per-session overrides).
 ///
-/// 选择哪种 provider 完全跟随 `ModelConfig::provider`：
-/// - `"anthropic"` → `MbforgeProviderKind::Anthropic`，直连 Anthropic Messages API
-/// - 其它（含 `"openai_compatible"`、空串）→ OpenAI 兼容分支（sidecar / OpenRouter / 真 OpenAI）
-///
-/// 构造顺序：
-/// 1. 把 `ModelConfig` 翻译成 `MbforgeProviderConfig`
-/// 2. 在 `project_root` 可用时准备 `LayeredContext`（system prompt 留空 —
-///    rig 代理持有自己的 preamble）+ `MemoryManager` / `SkillsManager` /
-///    `AuditLog` / `TrajectoryTracker`
-/// 3. **预先**把记忆 / 技能摘要烤进 `MbforgeAgentSpec::system_prompt` —
-///    这是 M5 阶段 rig `ContextBuilder` 还没暴露 `append_preamble` 时最稳妥的
-///    折中方案：会话内记忆快照静态化（与老 `Agent` 的"创建时注入"语义对齐）
-/// 4. 调对应 factory 构造 `MbforgeAgent`，hooks 在 `AgentSession` 里持有，
-///    留给 M4 / M6 之后接 `agent_builder.hook(...)` 时使用
+/// Provider kind, base URL, API key, model name all come from
+/// `MBFORGE_LLM_*` env vars via `MbforgeProviderConfig::from_app_config()`.
+/// Sampling params (max_tokens / temperature) also come from env
+/// (`MBFORGE_LLM_MAX_TOKENS` / `MBFORGE_LLM_TEMPERATURE`) — the Settings
+/// UI cannot override them.
 pub async fn create_session_for_config(
-    config: &ModelConfig,
     sidecar_url: &str,
     project_root: Option<&Path>,
 ) -> Result<AgentSession, String> {
-    let cfg = mbforge_provider_config_from_model(config);
+    let cfg = MbforgeProviderConfig::from_app_config()?;
 
-    // 1. 构造 spec（rig 适配器要求的 system prompt + max_turns）
+    // 1. Construct spec (rig adapter requires a system prompt + max_turns)
     let mut spec = MbforgeAgentSpec::general();
-    // 兼容 ModelConfig 的可选字段
-    if config.max_tokens > 0 {
-        spec.max_tokens = Some(config.max_tokens as u64);
+    if let Ok(v) = std::env::var("MBFORGE_LLM_MAX_TOKENS") {
+        if let Ok(n) = v.trim().parse::<u64>() {
+            if n > 0 {
+                spec.max_tokens = Some(n);
+            }
+        }
     }
-    if config.temperature > 0.0 {
-        spec.temperature = Some(config.temperature as f64);
+    if let Ok(v) = std::env::var("MBFORGE_LLM_TEMPERATURE") {
+        if let Ok(t) = v.trim().parse::<f64>() {
+            if t > 0.0 {
+                spec.temperature = Some(t);
+            }
+        }
     }
 
     // 2. 在有 project_root 的情况下拉起长时记忆 / 技能 / 审计 / 轨迹
@@ -566,31 +567,6 @@ pub async fn create_session_for_config(
     })
 }
 
-/// 把 `ModelConfig` 翻译成 `MbforgeProviderConfig`。
-///
-/// `config.base_url` 始终是 LLM 客户端要打的目标 — 对 OpenAI 兼容模式
-/// 是用户配置的 OpenAI-compatible endpoint（如 `https://api.openai.com/v1`、
-/// 自部署 llama.cpp 等），对 Anthropic 模式是 Anthropic API 或其 proxy。
-///
-/// `sidecar_url` **不能**作为 LLM base_url 兜底：sidecar (`http://127.0.0.1:18792`)
-/// 不是 OpenAI 兼容端点 — 它只暴露 `/api/v1/llm/chat`，不暴露
-/// `/chat/completions`，所以 rig-core OpenAI client POST 过去会拿到 404。
-/// sidecar 仍由 `AgentSession` 持有，专供长时记忆 / 技能摘要等
-/// `POST /api/v1/llm/chat` 调用使用（见 `core/agent/memory.rs` / `skills.rs`）。
-fn mbforge_provider_config_from_model(config: &ModelConfig) -> MbforgeProviderConfig {
-    let kind = match config.provider.as_str() {
-        "anthropic" => MbforgeProviderKind::Anthropic,
-        _ => MbforgeProviderKind::OpenAICompatible,
-    };
-    MbforgeProviderConfig {
-        kind,
-        base_url: config.base_url.clone(),
-        api_key: config.api_key.clone(),
-        model: config.model_name.clone(),
-        timeout_secs: 120,
-        anthropic_betas: Vec::new(),
-    }
-}
 /// 调对应的 rig factory 构造 `MbforgeAgent`。
 ///
 /// 优先用调用方传入的 `project_hook`（项目级 audit + trajectory 复合钩子），

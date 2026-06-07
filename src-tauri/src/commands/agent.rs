@@ -443,7 +443,7 @@ pub async fn create_session_for_config(
     sidecar_url: &str,
     project_root: Option<&Path>,
 ) -> Result<AgentSession, String> {
-    let cfg = mbforge_provider_config_from_model(config, sidecar_url);
+    let cfg = mbforge_provider_config_from_model(config);
 
     // 1. 构造 spec（rig 适配器要求的 system prompt + max_turns）
     let mut spec = MbforgeAgentSpec::general();
@@ -568,24 +568,23 @@ pub async fn create_session_for_config(
 
 /// 把 `ModelConfig` 翻译成 `MbforgeProviderConfig`。
 ///
-/// 优先使用 `agent_init` 时用户传的 `sidecar_url`（与老 `Agent::new(config, sidecar_url, _)` 的
-/// 行为一致 — 老 `Agent` 是直接吃这个 sidecar URL 的，不读 `AppConfig`）。
-/// Anthropic 分支则用 `config.base_url`（允许 proxy / 自部署）。
-fn mbforge_provider_config_from_model(
-    config: &ModelConfig,
-    sidecar_url: &str,
-) -> MbforgeProviderConfig {
+/// `config.base_url` 始终是 LLM 客户端要打的目标 — 对 OpenAI 兼容模式
+/// 是用户配置的 OpenAI-compatible endpoint（如 `https://api.openai.com/v1`、
+/// 自部署 llama.cpp 等），对 Anthropic 模式是 Anthropic API 或其 proxy。
+///
+/// `sidecar_url` **不能**作为 LLM base_url 兜底：sidecar (`http://127.0.0.1:18792`)
+/// 不是 OpenAI 兼容端点 — 它只暴露 `/api/v1/llm/chat`，不暴露
+/// `/chat/completions`，所以 rig-core OpenAI client POST 过去会拿到 404。
+/// sidecar 仍由 `AgentSession` 持有，专供长时记忆 / 技能摘要等
+/// `POST /api/v1/llm/chat` 调用使用（见 `core/agent/memory.rs` / `skills.rs`）。
+fn mbforge_provider_config_from_model(config: &ModelConfig) -> MbforgeProviderConfig {
     let kind = match config.provider.as_str() {
         "anthropic" => MbforgeProviderKind::Anthropic,
         _ => MbforgeProviderKind::OpenAICompatible,
     };
-    let base_url = match kind {
-        MbforgeProviderKind::OpenAICompatible => sidecar_url.to_string(),
-        MbforgeProviderKind::Anthropic => config.base_url.clone(),
-    };
     MbforgeProviderConfig {
         kind,
-        base_url,
+        base_url: config.base_url.clone(),
         api_key: config.api_key.clone(),
         model: config.model_name.clone(),
         timeout_secs: 120,

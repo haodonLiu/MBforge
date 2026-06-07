@@ -38,7 +38,6 @@ import {
 
 import GeneralSection from './settings/sections/GeneralSection'
 import AIModelsSection from './settings/sections/AIModelsSection'
-import VisionSection from './settings/sections/VisionSection'
 import ModelServiceSection from './settings/sections/ModelServiceSection'
 import ModelDownloadsSection from './settings/sections/ModelDownloadsSection'
 import AboutSection from './settings/sections/AboutSection'
@@ -48,7 +47,6 @@ const SECTION_ICONS: Record<SectionDef['icon'], ReactNode> = {
   settings: <SettingsIcon size={18} />,
   download: <DownloadIcon size={18} />,
   cpu: <CpuIcon size={18} />,
-  eye: <LayoutIcon size={18} />,
   flask: <FlaskIcon size={18} />,
   info: <InfoIcon size={18} />,
   layout: <LayoutIcon size={18} />,
@@ -156,8 +154,6 @@ export default function SettingsModal({ open, onClose }: Props) {
         return <GeneralSection settings={settings} setSettings={setSettings} />
       case 'ai_models':
         return <AIModelsSection settings={settings} setSettings={setSettings} />
-      case 'vision':
-        return <VisionSection settings={settings} setSettings={setSettings} />
       case 'model_service':
         return <ModelServiceSection settings={settings} setSettings={setSettings} />
       case 'model_downloads':

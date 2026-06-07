@@ -111,11 +111,10 @@ export const DEFAULT_SETTINGS: SettingsState = {
   model_cache_dir: '',
 }
 
-/** 栏目定义 — 重构后的 7 个顶级栏目。 */
+/** 栏目定义 — AI Models 合并了原 LLM/Embed/Rerank 与 VLM/OCR（视觉模型）。 */
 export type SectionId =
   | 'general'
   | 'ai_models'
-  | 'vision'
   | 'model_service'
   | 'model_downloads'
   | 'diagnostics'
@@ -124,13 +123,12 @@ export type SectionId =
 export interface SectionDef {
   id: SectionId
   labelKey: string
-  icon: 'settings' | 'download' | 'cpu' | 'eye' | 'flask' | 'info' | 'layout'
+  icon: 'settings' | 'download' | 'cpu' | 'flask' | 'info' | 'layout'
 }
 
 export const SECTIONS: SectionDef[] = [
   { id: 'general', labelKey: 'settings.general', icon: 'settings' },
   { id: 'ai_models', labelKey: 'settings.aiModels', icon: 'cpu' },
-  { id: 'vision', labelKey: 'settings.vision', icon: 'eye' },
   { id: 'model_service', labelKey: 'settings.modelService', icon: 'layout' },
   { id: 'model_downloads', labelKey: 'settings.modelDownloads', icon: 'download' },
   { id: 'diagnostics', labelKey: 'settings.diagnostics', icon: 'flask' },

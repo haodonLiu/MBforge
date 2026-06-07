@@ -6,7 +6,7 @@
 //!   2) 回复非空
 //!
 //! 前置条件（不满足会 skip 而不是 fail）：
-//!   - 项目根 .env 里有 `MBFORGE_LLM_*` 或 `LLM_*` 配置
+//!   - 项目根 .env 里有 `MBFORGE_LLM_*` 配置
 //!   - 网络通到对应 base_url
 //!
 //! 运行：`cargo test --test test_agent_chat -- --nocapture`

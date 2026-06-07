@@ -105,7 +105,10 @@ impl MbforgeProviderConfig {
     /// by `main::load_dotenv()`) and `AppConfig` settings.
     ///
     /// Resolution order, first non-empty wins:
-    /// 1. Process env: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
+    /// 1. Process env: `MBFORGE_LLM_BASE_URL`, `MBFORGE_LLM_API_KEY`,
+    ///    `MBFORGE_LLM_MODEL`
+    ///    (the `MBFORGE_`-prefixed form is the project-canonical namespace,
+    ///    shared with `MBFORGE_SIDECAR_URL`, `MBFORGE_MODEL_CACHE_DIR`, etc.)
     /// 2. `~/.config/MBForge/config.json` `llm.{base_url,api_key,model_name}`
     ///
     /// The env-var path is the canonical home for the actual secret values
@@ -120,13 +123,13 @@ impl MbforgeProviderConfig {
             _ => MbforgeProviderKind::OpenAICompatible,
         };
 
-        let env_base_url = std::env::var("LLM_BASE_URL")
+        let env_base_url = std::env::var("MBFORGE_LLM_BASE_URL")
             .ok()
             .filter(|s| !s.trim().is_empty());
-        let env_api_key = std::env::var("LLM_API_KEY")
+        let env_api_key = std::env::var("MBFORGE_LLM_API_KEY")
             .ok()
             .filter(|s| !s.trim().is_empty());
-        let env_model = std::env::var("LLM_MODEL")
+        let env_model = std::env::var("MBFORGE_LLM_MODEL")
             .ok()
             .filter(|s| !s.trim().is_empty());
 
@@ -136,7 +139,7 @@ impl MbforgeProviderConfig {
 
         if base_url.trim().is_empty() {
             return Err(format!(
-                "LLM base_url is not configured. Set `LLM_BASE_URL` in the project-root .env \
+                "LLM base_url is not configured. Set `MBFORGE_LLM_BASE_URL` in the project-root .env \
                  (recommended) or `llm.base_url` in {} to an OpenAI-compatible endpoint \
                  (e.g. https://api.openai.com/v1, https://openrouter.ai/api/v1, \
                  https://api.deepseek.com/v1, or a self-hosted llama.cpp server). \
@@ -147,7 +150,7 @@ impl MbforgeProviderConfig {
         }
         if api_key.trim().is_empty() {
             return Err(format!(
-                "LLM api_key is not configured. Set `LLM_API_KEY` in the project-root .env \
+                "LLM api_key is not configured. Set `MBFORGE_LLM_API_KEY` in the project-root .env \
                  (recommended) or `llm.api_key` in {}.",
                 crate::core::config::settings::AppConfig::config_path().display(),
             ));

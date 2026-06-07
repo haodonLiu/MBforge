@@ -9,6 +9,7 @@ use tauri::Emitter;
 use crate::core::constants::{
     sidecar_url, DEFAULT_SIDECAR_PORT, EVT_SIDECAR_LOG, EVT_SIDECAR_STATUS,
 };
+use crate::core::helpers::LockResultExt;
 
 /// 构造 sidecar 日志事件 payload
 fn log_event(stream: &str, line: &str) -> serde_json::Value {
@@ -84,7 +85,7 @@ impl SidecarInner {
 pub fn spawn_and_start_readers(inner: &Arc<SidecarInner>, app: &AppHandle) -> Result<(), String> {
     // Kill existing child before respawning.
     {
-        let mut guard = inner.child.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = inner.child.lock().into_inner();
         if let Some(ref mut c) = *guard {
             let _ = c.kill();
         }
@@ -133,23 +134,23 @@ pub fn spawn_and_start_readers(inner: &Arc<SidecarInner>, app: &AppHandle) -> Re
         Ok(c) => c,
         Err(e) => {
             let msg = format!("Failed to spawn sidecar: {}", e);
-            *inner.last_error.lock().unwrap_or_else(|e| e.into_inner()) = Some(msg.clone());
+            *inner.last_error.lock().into_inner() = Some(msg.clone());
             return Err(msg);
         }
     };
 
     {
-        let mut guard = inner.child.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = inner.child.lock().into_inner();
         *guard = Some(child);
     }
-    *inner.start_time.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+    *inner.start_time.lock().into_inner() = Some(Instant::now());
 
     // --- stdout reader ---
     let app_c = app.clone();
     let inner_c = inner.clone();
     std::thread::spawn(move || {
         let stdout = {
-            let mut guard = inner_c.child.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = inner_c.child.lock().into_inner();
             guard.as_mut().and_then(|c| c.stdout.take())
         };
         if let Some(stdout) = stdout {
@@ -165,7 +166,7 @@ pub fn spawn_and_start_readers(inner: &Arc<SidecarInner>, app: &AppHandle) -> Re
     let inner_c = inner.clone();
     std::thread::spawn(move || {
         let stderr = {
-            let mut guard = inner_c.child.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = inner_c.child.lock().into_inner();
             guard.as_mut().and_then(|c| c.stderr.take())
         };
         if let Some(stderr) = stderr {
@@ -194,7 +195,7 @@ fn emit_status(inner: &SidecarInner, app: &AppHandle) {
         "restartCount": restarts,
         "state": state,
         "uptimeSecs": uptime,
-        "lastError": *inner.last_error.lock().unwrap_or_else(|e| e.into_inner()),
+        "lastError": *inner.last_error.lock().into_inner(),
     });
     let _ = app.emit(EVT_SIDECAR_STATUS, payload);
 }
@@ -256,7 +257,7 @@ pub fn start_health_monitor(inner: Arc<SidecarInner>, app: AppHandle) {
                                     }),
                                 );
                                 if let Err(e) = spawn_and_start_readers(&inner, &app) {
-                                    *inner.last_error.lock().unwrap_or_else(|e| e.into_inner()) =
+                                    *inner.last_error.lock().into_inner() =
                                         Some(e.clone());
                                     let _ = app.emit(
                                         EVT_SIDECAR_LOG,

@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod classifier;
+pub mod detection_cache;
 pub mod llm;
 pub mod extractor;
 pub mod file_ops;
@@ -39,6 +40,10 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         pdf::get_document_ocr_layout,
         // text_ops
         text_ops::text_chunk,
+        // detection_cache
+        detection_cache::cached_extract_page,
+        detection_cache::get_detection_cache_stats,
+        detection_cache::clear_detection_cache,
         // classifier
         classifier::classify_page,
         classifier::classify_document,

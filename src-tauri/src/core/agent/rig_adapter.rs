@@ -36,6 +36,9 @@ use rig_core::client::CompletionClient;
 use rig_core::completion::{Chat, Prompt};
 use rig_core::message::Message;
 
+use crate::core::agent::managed_memory::MbforgeManagedMemory;
+use crate::core::agent::session_id::SessionId;
+
 // ============================================================================
 // Stream types
 // ============================================================================
@@ -102,6 +105,15 @@ pub struct MbforgeProviderConfig {
     /// Common values: "prompt-caching-2024-07-31", "extended-thinking-2025-01-01",
     /// "context-1m-2025-08-07" (for 1M context models).
     pub anthropic_betas: Vec<String>,
+}
+
+/// Read the first non-empty value among the given env-var names.
+/// Returns `None` if none of the names is set or all are blank.
+#[allow(dead_code)]
+fn first_nonempty(names: &[&str]) -> Option<String> {
+    names
+        .iter()
+        .find_map(|n| std::env::var(n).ok().filter(|s| !s.trim().is_empty()))
 }
 
 impl MbforgeProviderConfig {
@@ -337,11 +349,26 @@ where
 
 /// Type-erased rig agent. Wraps either an OpenAI-compatible or an Anthropic
 /// rig agent and exposes the same `prompt` / `stream` API surface.
+///
+/// Each arm holds the underlying rig agent *and* an
+/// `Arc<MbforgeManagedMemory>` (the rig `ConversationMemory` impl
+/// that owns the SQLite backend + compactor + demotion hook). The
+/// memory is wired into the rig builder at construction time via
+/// `.memory(...)`; the `prompt` and `stream` methods pass
+/// `&SessionId` to rig's per-request `PromptRequest::conversation(...)`
+/// so rig loads/appends the matching conversation thread.
 #[derive(Clone)]
 pub enum MbforgeAgent {
-    OpenAI(rig_core::agent::Agent<rig_core::providers::openai::CompletionModel, ConcreteHook>),
-    Anthropic(rig_core::agent::Agent<rig_core::providers::anthropic::completion::CompletionModel, ConcreteHook>),
+    OpenAI((
+        rig_core::agent::Agent<rig_core::providers::openai::CompletionModel, ConcreteHook>,
+        Arc<MbforgeManagedMemory>,
+    )),
+    Anthropic((
+        rig_core::agent::Agent<rig_core::providers::anthropic::completion::CompletionModel, ConcreteHook>,
+        Arc<MbforgeManagedMemory>,
+    )),
 }
+
 impl MbforgeAgent {
     /// Identify the underlying provider.
     pub fn provider_kind(&self) -> MbforgeProviderKind {
@@ -351,60 +378,100 @@ impl MbforgeAgent {
         }
     }
 
-    /// Single-shot prompt. Returns the final assistant text.
-    pub async fn prompt(&self, input: &str) -> Result<String, String> {
+    /// Borrow the memory backend (the rig `ConversationMemory` impl
+    /// that owns the SQLite store + compactor + demotion hook).
+    pub fn memory(&self) -> Arc<MbforgeManagedMemory> {
         match self {
-            Self::OpenAI(agent) => agent
+            Self::OpenAI((_, m)) | Self::Anthropic((_, m)) => Arc::clone(m),
+        }
+    }
+
+    /// Single-shot prompt bound to `cid`. Rig loads the conversation
+    /// history for `cid` from the configured memory backend before the
+    /// LLM call and appends `[user, assistant]` after a successful
+    /// turn. The final assistant text is returned.
+    pub async fn prompt(&self, cid: &SessionId, input: &str) -> Result<String, String> {
+        match self {
+            Self::OpenAI((agent, _)) => agent
                 .prompt(input)
+                .conversation(cid.as_str())
                 .await
                 .map(|r| r.to_string())
                 .map_err(|e| format!("{e}")),
-            Self::Anthropic(agent) => agent
+            Self::Anthropic((agent, _)) => agent
                 .prompt(input)
+                .conversation(cid.as_str())
                 .await
                 .map(|r| r.to_string())
                 .map_err(|e| format!("{e}")),
         }
     }
 
-    /// Open a streaming prompt. The stream normalizes rig's internal
-    /// `MultiTurnStreamItem` into the MBForge format via `map_rig_stream`.
-    ///
-    /// Each rig event becomes 0–1 `MbforgeStreamItem`s:
-    /// - `StreamedAssistantContent::Text(t)`       → `TextDelta(t.text)`
-    /// - `StreamedAssistantContent::ToolCall{..}`  → `ToolCall{ id, name, arguments }`
-    /// - `StreamedUserContent::ToolResult{..}`     → `ToolResult{ id, name=internal_call_id, result }`
-    /// - `FinalResponse`                            → `Final{ content, prompt_tokens, completion_tokens }`
-    /// - deltas, reasoning, `CompletionCall`        → dropped (the underlying
-    ///   hook still sees them; the frontend only needs terminal events)
-    pub fn stream(&self, input: &str) -> MbforgeStream {
+    /// Open a streaming prompt bound to `cid`. The stream normalizes
+    /// rig's internal `MultiTurnStreamItem` into the MBForge format
+    /// via `map_rig_stream`.
+    pub fn stream(&self, cid: &SessionId, input: &str) -> MbforgeStream {
         let input = input.to_owned();
+        let cid = cid.as_str().to_owned();
         let max_turns = self.default_max_turns();
         match self {
-            Self::OpenAI(agent) => {
+            Self::OpenAI((agent, _mem)) => {
                 let agent = agent.clone();
                 map_rig_stream(async move {
                     use rig_core::streaming::StreamingPrompt;
-                    agent.stream_prompt(input).multi_turn(max_turns).await
+                    agent
+                        .stream_prompt(input)
+                        .conversation(cid.as_str())
+                        .multi_turn(max_turns)
+                        .await
                 })
             }
-            Self::Anthropic(agent) => {
+            Self::Anthropic((agent, _mem)) => {
                 let agent = agent.clone();
                 map_rig_stream(async move {
                     use rig_core::streaming::StreamingPrompt;
-                    agent.stream_prompt(input).multi_turn(max_turns).await
+                    agent
+                        .stream_prompt(input)
+                        .conversation(cid.as_str())
+                        .multi_turn(max_turns)
+                        .await
                 })
             }
         }
+    }
+
+    /// Read the persisted history for `cid` as MBForge `Message`s.
+    /// Used by `agent_get_history` (replaces the dead
+    /// `LayeredContext::get_history_messages`).
+    pub async fn history(
+        &self,
+        cid: &SessionId,
+    ) -> Result<Vec<crate::core::agent::context::Message>, String> {
+        let memory = self.memory();
+        let items = memory
+            .list_for_session(cid.as_str())
+            .map_err(|e| format!("list_for_session: {e}"))?;
+        Ok(items
+            .into_iter()
+            .map(|item| {
+                let role = if item.is_summary { "system" } else { item.role.as_str() };
+                match role {
+                    "system" => crate::core::agent::context::Message::system(&item.content),
+                    "assistant" => crate::core::agent::context::Message::assistant(&item.content),
+                    _ => crate::core::agent::context::Message::user(&item.content),
+                }
+            })
+            .collect())
     }
 
     /// Pull the `default_max_turns` off whichever inner agent we hold. Used
     /// by `stream()` to bound the agent loop the same way the spec did.
     fn default_max_turns(&self) -> usize {
         match self {
-            Self::OpenAI(agent) => agent.default_max_turns.unwrap_or(5),
-            Self::Anthropic(agent) => agent.default_max_turns.unwrap_or(5),
+            Self::OpenAI((agent, _)) => agent.default_max_turns,
+            Self::Anthropic((agent, _)) => agent.default_max_turns,
         }
+        .unwrap_or(5)
     }
 }
 
@@ -425,6 +492,7 @@ impl MbforgeAgent {
         spec: &MbforgeAgentSpec,
         extra_tools: Vec<Box<dyn rig_core::tool::ToolDyn>>,
         hook: ConcreteHook,
+        memory: Arc<MbforgeManagedMemory>,
     ) -> Result<Self, String> {
         if cfg.kind != MbforgeProviderKind::OpenAICompatible {
             return Err(format!(
@@ -460,8 +528,12 @@ impl MbforgeAgent {
         // `.hook()` similarly consumes the builder to flip the `P` generic
         // parameter; the order (tools → hook → build) is irrelevant as long
         // as both run before `.build()`.
-        let builder = builder.tools(extra_tools).hook(hook);
-        Ok(Self::OpenAI(builder.build()))
+        let builder = builder
+            .tools(extra_tools)
+            .hook(hook)
+            .memory(Arc::clone(&memory))
+            .conversation_id("__default__");
+        Ok(Self::OpenAI((builder.build(), memory)))
     }
 
     /// Build a fresh Anthropic agent. Uses the rig Anthropic provider which
@@ -471,6 +543,7 @@ impl MbforgeAgent {
         spec: &MbforgeAgentSpec,
         extra_tools: Vec<Box<dyn rig_core::tool::ToolDyn>>,
         hook: ConcreteHook,
+        memory: Arc<MbforgeManagedMemory>,
     ) -> Result<Self, String> {
         if cfg.kind != MbforgeProviderKind::Anthropic {
             return Err(format!(
@@ -505,8 +578,12 @@ impl MbforgeAgent {
         // if/else arms homogeneous. An empty vec is a no-op at runtime.
         // `.hook()` flips the `P` generic; ordering with `.tools()` does not
         // matter as long as both fire before `.build()`.
-        let agent_builder = agent_builder.tools(extra_tools).hook(hook);
-        Ok(Self::Anthropic(agent_builder.build()))
+        let agent_builder = agent_builder
+            .tools(extra_tools)
+            .hook(hook)
+            .memory(Arc::clone(&memory))
+            .conversation_id("__default__");
+        Ok(Self::Anthropic((agent_builder.build(), memory)))
     }
 
     /// Convenience: pick the right factory based on `cfg.kind`. The
@@ -519,14 +596,15 @@ impl MbforgeAgent {
         cfg: &MbforgeProviderConfig,
         spec: &MbforgeAgentSpec,
         extra_tools: Vec<Box<dyn rig_core::tool::ToolDyn>>,
+        memory: Arc<MbforgeManagedMemory>,
     ) -> Result<Self, String> {
         let hook = build_default_concrete_hook()?;
         match cfg.kind {
             MbforgeProviderKind::OpenAICompatible => {
-                Self::from_openai_compatible(cfg, spec, extra_tools, hook)
+                Self::from_openai_compatible(cfg, spec, extra_tools, hook, memory)
             }
             MbforgeProviderKind::Anthropic => {
-                Self::from_anthropic(cfg, spec, extra_tools, hook)
+                Self::from_anthropic(cfg, spec, extra_tools, hook, memory)
             }
         }
     }
@@ -536,15 +614,18 @@ impl MbforgeAgent {
     /// is the MBForge project directory the tools' `executor_rig::*` files
     /// will read from. `hook` carries the audit + trajectory sinks; pass a
     /// hook built against the same `project_root` for the audit entries to
-    /// land in `<project_root>/.mbforge/audit.jsonl`.
+    /// land in `<project_root>/.mbforge/audit.jsonl`. `memory` is the
+    /// rig `ConversationMemory` backend; pass one built from
+    /// `SqliteConversationMemory::open(project_root)` for persistence.
     pub fn from_openai_compatible_with_all_tools(
         cfg: &MbforgeProviderConfig,
         spec: &MbforgeAgentSpec,
         project_root: &str,
         hook: ConcreteHook,
+        memory: Arc<MbforgeManagedMemory>,
     ) -> Result<Self, String> {
         let tools = assemble_rig_tool_vec(project_root);
-        Self::from_openai_compatible(cfg, spec, tools, hook)
+        Self::from_openai_compatible(cfg, spec, tools, hook, memory)
     }
 
     /// Anthropic counterpart of `from_openai_compatible_with_all_tools`.
@@ -554,9 +635,10 @@ impl MbforgeAgent {
         spec: &MbforgeAgentSpec,
         project_root: &str,
         hook: ConcreteHook,
+        memory: Arc<MbforgeManagedMemory>,
     ) -> Result<Self, String> {
         let tools = assemble_rig_tool_vec(project_root);
-        Self::from_anthropic(cfg, spec, tools, hook)
+        Self::from_anthropic(cfg, spec, tools, hook, memory)
     }
 }
 
@@ -826,7 +908,15 @@ mod tests {
         let cfg = MbforgeProviderConfig::for_tests_anthropic();
         let spec = MbforgeAgentSpec::general();
         let hook = build_default_concrete_hook().expect("default hook builds");
-        let res = MbforgeAgent::from_openai_compatible(&cfg, &spec, Vec::new(), hook);
+        // The factory's kind check fires before any memory access, so a
+        // bare in-memory backend is enough to drive this test.
+        use rig_core::memory::InMemoryConversationMemory;
+        let memory = std::sync::Arc::new(
+            crate::core::agent::managed_memory::MbforgeManagedMemory::new(
+                std::sync::Arc::new(InMemoryConversationMemory::new()),
+            ),
+        );
+        let res = MbforgeAgent::from_openai_compatible(&cfg, &spec, Vec::new(), hook, memory);
         match res {
             Err(msg) => assert!(
                 msg.contains("from_openai_compatible called with non-OpenAI"),

@@ -50,7 +50,7 @@ export default function Environment() {
         return r.json()
       })
       .then(setEnv)
-      .catch((e) => {
+      .catch(() => {
         showToast('Python sidecar 未启动，Environment 页面不可用', 'warning')
         setEnv(null)
       })

@@ -8,7 +8,11 @@ use tokio::sync::RwLock;
 
 use crate::core::constants::{EVT_AGENT_STREAM_CHUNK, EVT_AGENT_STREAM_DONE};
 
+use crate::core::agent::compactor::SidecarCompactor;
 use crate::core::agent::context::{LayeredContext, Message};
+use crate::core::agent::conversation_store::SqliteConversationMemory;
+use crate::core::agent::demotion::EpisodicDemotionHook;
+use crate::core::agent::managed_memory::MbforgeManagedMemory;
 use crate::core::agent::memory::MemoryManager;
 use crate::core::agent::observability::AuditLog;
 use crate::core::agent::rig_adapter::{
@@ -147,8 +151,12 @@ pub async fn agent_create_session(
     };
 
     let root_path = project_root.as_ref().map(PathBuf::from);
-    let mut session = create_session_for_config(&sidecar_url, root_path.as_deref())
-        .await
+    let mut session = create_session_for_config(
+        &sidecar_url,
+        root_path.as_deref(),
+        &session_id,
+    )
+    .await
         .map_err(|e| {
             log::error!("agent_create_session: create_session_for_config failed: {}", e);
             e
@@ -182,7 +190,8 @@ pub async fn agent_chat(
         (Arc::clone(&session.memory), session.agent.clone())
     };
 
-    let result = agent.prompt(&user_input).await.map_err(|e| {
+    let cid = crate::core::agent::session_id::SessionId::from(session_id.as_str());
+    let result = agent.prompt(&cid, &user_input).await.map_err(|e| {
         log::error!("agent_chat failed for session={}: {}", session_id, e);
         e
     })?;
@@ -210,18 +219,24 @@ pub async fn agent_chat_stream(
     session_id: String,
     user_input: String,
 ) -> Result<(), String> {
-    let stream = {
+    let (memory, stream) = {
         let agents = state.agents.read().await;
         let session = agents
             .get(&session_id)
             .ok_or_else(|| log_err!("agent_chat_stream: session not found: {}", session_id))?;
-        session.agent.stream(&user_input)
+        let cid = crate::core::agent::session_id::SessionId::from(session_id.as_str());
+        (
+            Arc::clone(&session.memory),
+            session.agent.stream(&cid, &user_input),
+        )
     };
 
     let handle = app.clone();
     let sid = session_id.clone();
+    let user_input_owned = user_input.clone();
     tokio::spawn(async move {
         let mut stream = stream;
+        let mut final_text: Option<String> = None;
         while let Some(item) = stream.next().await {
             match item {
                 Ok(MbforgeStreamItem::TextDelta(delta)) => {
@@ -261,6 +276,7 @@ pub async fn agent_chat_stream(
                     prompt_tokens,
                     completion_tokens,
                 }) => {
+                    final_text = Some(content.clone());
                     let payload = serde_json::json!({
                         "session_id": sid,
                         "content": content,
@@ -290,6 +306,21 @@ pub async fn agent_chat_stream(
                     break;
                 }
             }
+        }
+        // Fire-and-forget `observe_turn` after the stream completes
+        // (whether the final event was a `Final` or an `Err`). This
+        // mirrors the `agent_chat` path — fixes the bug where the
+        // streaming sibling silently skipped long-term memory
+        // extraction. If the stream errored before the LLM produced
+        // any text, `final_text` is None and `observe_turn` sees an
+        // empty assistant output, which the trait short-circuits on.
+        if let Some(text) = final_text {
+            let memory_for_observe = Arc::clone(&memory);
+            tokio::spawn(async move {
+                let _ = memory_for_observe
+                    .observe_turn(&user_input_owned, &text)
+                    .await;
+            });
         }
     });
     Ok(())
@@ -324,7 +355,7 @@ pub async fn agent_switch_project(
 
     let root_path = PathBuf::from(&project_root);
     let mut session =
-        create_session_for_config(&sidecar_url, Some(&root_path))
+        create_session_for_config(&sidecar_url, Some(&root_path), &session_id)
             .await
             .map_err(|e| {
                 log::error!(
@@ -393,7 +424,13 @@ pub async fn agent_get_history(
     let session = agents
         .get(&session_id)
         .ok_or("Session not found")?;
-    Ok(session.context.get_history_messages())
+    // The conversation history now lives in
+    // `SqliteConversationMemory` (keyed by `session_id`) rather than
+    // in `LayeredContext.history` (which is dead code). We still
+    // return the MBForge `Message` shape so the frontend doesn't
+    // need to change.
+    let cid = crate::core::agent::session_id::SessionId::from(session_id.as_str());
+    session.agent.history(&cid).await
 }
 
 /// 读取项目审计日志。
@@ -436,6 +473,7 @@ pub async fn audit_log_get(
 pub async fn create_session_for_config(
     sidecar_url: &str,
     project_root: Option<&Path>,
+    session_id: &str,
 ) -> Result<AgentSession, String> {
     let cfg = MbforgeProviderConfig::from_app_config()?;
 
@@ -459,43 +497,24 @@ pub async fn create_session_for_config(
     // 2. 在有 project_root 的情况下拉起长时记忆 / 技能 / 审计 / 轨迹
     let (memory, audit, trajectory, audit_hook, trajectory_hook) = if let Some(root) = project_root
     {
-        // 长时记忆 + 技能摘要 → 预烤进 spec preamble
-        let mut preamble = String::new();
-        let mem = MemoryManager::new(root);
-        let mem_text = mem.get_user_profile_text();
-        if !mem_text.is_empty() {
-            preamble.push_str("[用户记忆]\n");
-            preamble.push_str(&mem_text);
-            preamble.push('\n');
-        }
-        let agent_mem = mem.get_agent_memory_text();
-        if !agent_mem.is_empty() {
-            preamble.push_str("[Agent 经验]\n");
-            preamble.push_str(&agent_mem);
-            preamble.push('\n');
-        }
-
-        let skills = SkillsManager::new(root);
-        let skills_text = skills.get_all_summary();
-        if !skills_text.is_empty() {
-            preamble.push_str("[已掌握的技能]\n");
-            preamble.push_str(&skills_text);
-            preamble.push('\n');
-        }
-
-        // 给 spec 一个最小功能 preamble（rig 端要求非空）
-        if preamble.is_empty() {
-            preamble.push_str(
-                "你是 MBForge 分子科学 AI 助手，服务于药物化学与分子生物学研究。",
-            );
-        }
-        spec.system_prompt = preamble;
-
-        // 复合记忆实例（供 `tokio::spawn(observe_turn)` 复用）
+        // 复合记忆实例（供 `tokio::spawn(observe_turn)` 复用）。
+        // 长时记忆 + 技能摘要的 system-prompt 注入由
+        // `composite.inject_into_system_prompt()` 统一负责（取代
+        // 此处原先手写拼接 `[用户记忆]…[Agent 经验]…[已掌握的技能]…`
+        // 的逻辑——后者是 M5 临时方案，M6 后注入路径应走 trait）。
         let composite = Arc::new(CompositeMemory {
             memory: Some(MemoryManagerMemory::new(root)),
             skills: Some(SkillsManagerMemory::new(root)),
         });
+
+        // 通过 trait 抽取 L1 长程记忆 + 技能摘要 → 预烤进 spec preamble
+        let mem_injected = composite.inject_into_system_prompt().await;
+        // 给 spec 一个最小功能 preamble（rig 端要求非空）
+        spec.system_prompt = if mem_injected.trim().is_empty() {
+            "你是 MBForge 分子科学 AI 助手，服务于药物化学与分子生物学研究。".to_string()
+        } else {
+            mem_injected
+        };
 
         // 审计日志：失败时静默退化为 None（不阻断会话创建）
         let audit = match AuditLog::new(root) {
@@ -549,7 +568,42 @@ pub async fn create_session_for_config(
         }),
         _ => None,
     };
-    let agent = build_mbforge_agent(&cfg, &spec, project_hook)?;
+    // 3b. Build the rig `ConversationMemory` backend. With a real
+    //     `project_root` we use `SqliteConversationMemory` (persists
+    //     turns across restarts). Without one (e.g. tests, transient
+    //     one-shot calls) we fall back to rig's built-in
+    //     `InMemoryConversationMemory` wrapped in our managed layer
+    //     so the wrapper code path is exercised either way.
+    let managed_memory: Arc<MbforgeManagedMemory> = match project_root.as_ref() {
+        Some(root) => {
+            let sqlite = Arc::new(
+                SqliteConversationMemory::open(Path::new(root))
+                    .map_err(|e| format!("open conversations.db: {e}"))?,
+            );
+            let compactor = Arc::new(SidecarCompactor::new(sidecar_url.to_string()));
+            let demotion = Arc::new(EpisodicDemotionHook::new(
+                sqlite.conn_clone(),
+                session_id.to_string(),
+            ));
+            let trait_handle: Arc<dyn rig_core::memory::ConversationMemory> =
+                Arc::clone(&sqlite) as _;
+            Arc::new(
+                MbforgeManagedMemory::new_with_sqlite(trait_handle, Arc::clone(&sqlite))
+                    .with_compactor(compactor)
+                    .with_demotion(demotion),
+            )
+        }
+        None => {
+            // Fallback: rig's in-memory backend, wrapped so the
+            // wrapper code path is identical to the production one
+            // (no compactor/demotion wired — those need a project).
+            use rig_core::memory::InMemoryConversationMemory;
+            Arc::new(MbforgeManagedMemory::new(Arc::new(
+                InMemoryConversationMemory::new(),
+            )))
+        }
+    };
+    let agent = build_mbforge_agent(&cfg, &spec, project_hook, managed_memory)?;
     // 4. 构造一个最小可用的 `LayeredContext`（系统 prompt 留空 —
     //    真正的 preamble 在 rig 端；这里只保留 L1 project / L3 history）
     let context = LayeredContext::new("", 20, 32_000);
@@ -581,6 +635,7 @@ fn build_mbforge_agent(
     cfg: &MbforgeProviderConfig,
     spec: &MbforgeAgentSpec,
     project_hook: Option<ConcreteHook>,
+    memory: Arc<MbforgeManagedMemory>,
 ) -> Result<MbforgeAgent, String> {
     let hook = match project_hook {
         Some(h) => h,
@@ -588,10 +643,10 @@ fn build_mbforge_agent(
     };
     match cfg.kind {
         MbforgeProviderKind::OpenAICompatible => {
-            MbforgeAgent::from_openai_compatible(cfg, spec, vec![], hook)
+            MbforgeAgent::from_openai_compatible(cfg, spec, vec![], hook, memory)
         }
         MbforgeProviderKind::Anthropic => {
-            MbforgeAgent::from_anthropic(cfg, spec, vec![], hook)
+            MbforgeAgent::from_anthropic(cfg, spec, vec![], hook, memory)
         }
     }
 }

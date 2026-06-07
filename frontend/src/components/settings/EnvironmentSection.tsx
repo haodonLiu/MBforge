@@ -1,10 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { resourcesCheck, type EnvironmentReport } from '../../api/tauri-bridge'
+import {
+  resourcesCheck, type EnvironmentReport,
+  getDetectionCacheStats, clearDetectionCache,
+  type DetectionCacheStats,
+} from '../../api/tauri-bridge'
 import { isTauriAvailable } from '../../api/tauri/_utils'
+import { useAppContext } from '../../context/AppContext'
+import { showToast } from '../../hooks/useToast'
 import Spinner from '../ui/Spinner'
 import Caption from '../ui/Caption'
 import Badge from '../ui/Badge'
+import Button from '../ui/Button'
 
 interface ResourceItem {
   id: string
@@ -163,6 +170,100 @@ export default function EnvironmentSection() {
           </Caption>
         </div>
       )}
+
+      <DetectionCacheCard />
+    </div>
+  )
+}
+
+/** Per-PDF molecule detection cache stats + clear button. */
+function DetectionCacheCard() {
+  const { projectRoot } = useAppContext()
+  const [stats, setStats] = useState<DetectionCacheStats | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [clearing, setClearing] = useState(false)
+
+  const refresh = useCallback(async () => {
+    if (!projectRoot || !isTauriAvailable()) {
+      setStats(null)
+      return
+    }
+    setLoading(true)
+    try {
+      const s = await getDetectionCacheStats(projectRoot)
+      setStats(s)
+    } catch (e) {
+      console.warn('[DetectionCacheCard] stats failed:', e)
+      setStats(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [projectRoot])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const handleClear = async () => {
+    if (!projectRoot) return
+    setClearing(true)
+    try {
+      await clearDetectionCache(projectRoot)
+      showToast('检测缓存已清空', 'success')
+      await refresh()
+    } catch (e) {
+      showToast('清空失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      setClearing(false)
+    }
+  }
+
+  const formatBytes = (n: number) => {
+    if (n < 1024) return `${n} B`
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+    return `${(n / 1024 / 1024).toFixed(2)} MB`
+  }
+
+  return (
+    <div className="settings-group">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+        <h3 className="settings-group-title" style={{ margin: 0 }}>分子检测缓存</h3>
+        <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
+          {loading ? '刷新中…' : '刷新'}
+        </Button>
+      </div>
+      <Caption style={{ marginBottom: '8px' }}>
+        缓存每页 PDF 的分子检测结果，再次打开同一页时直接读盘，跳过模型推理。
+      </Caption>
+      <div className="env-overview-grid">
+        <Caption>磁盘占用</Caption>
+        <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>
+          {stats ? formatBytes(stats.disk_usage_bytes) : '—'}
+        </span>
+        <Caption>已缓存页数</Caption>
+        <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>
+          {stats ? stats.cached_page_count : '—'}
+        </span>
+        <Caption>已缓存文档数</Caption>
+        <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>
+          {stats ? stats.cached_doc_count : '—'}
+        </span>
+        <Caption>Schema 版本</Caption>
+        <span style={{ fontSize: '13px', fontFamily: 'monospace' }}>
+          {stats ? `v${stats.schema_version}` : '—'}
+        </span>
+      </div>
+      <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleClear}
+          loading={clearing}
+          disabled={!stats || stats.cached_page_count === 0}
+        >
+          清空所有检测缓存
+        </Button>
+      </div>
     </div>
   )
 }

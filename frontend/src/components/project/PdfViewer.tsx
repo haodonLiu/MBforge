@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { extractPage } from '../../api/moldet'
+import { cachedExtractPage } from '../../api/tauri-bridge'
 import { parsePdf, type ImageRef, getDocumentOcrLayout, type OcrBlock } from '../../api/tauri/pdf'
 import { showToast } from '../../hooks/useToast'
 import { extractRoiText } from '../../utils/roiText'
@@ -134,16 +135,45 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
     setSelectedDetection(null)
     try {
       const base64 = currentPageDataUrl.split(',')[1] || ''
-      const resp = await extractPage(
-        base64,
-        currentPage - 1,
-        pageInfo.originalWidth,
-        pageInfo.originalHeight,
-        pageInfo.width,
-        pageInfo.height,
-      )
+      // Cache-aware detection: hits disk (sub-millisecond) on subsequent
+      // views of the same page, calls the sidecar only on miss.
+      // Falls back to the legacy direct-sidecar path if the Tauri
+      // command is unavailable (e.g. dev with no Rust sidecar running).
+      const docSlug = (doc.path.split(/[\\/]/).pop() || '').replace(/\.pdf$/i, '')
+      let results: ExtractionResult[] = []
+      try {
+        const resp = await cachedExtractPage({
+          projectRoot,
+          docSlug,
+          page: currentPage,
+          imageBase64: base64,
+          pageWPts: pageInfo.originalWidth,
+          pageHPts: pageInfo.originalHeight,
+          imageW: pageInfo.width,
+          imageH: pageInfo.height,
+        })
+        if (resp.source === 'sidecar_error') {
+          throw new Error(resp.error || 'sidecar error')
+        }
+        results = resp.results as ExtractionResult[]
+        if (resp.source === 'cache') {
+          // optional: show subtle toast confirming cache hit
+          // showToast(`第 ${currentPage} 页检测结果（缓存）`, 'info')
+        }
+      } catch (e) {
+        console.warn('[PdfViewer] cached_extract_page failed, falling back to direct sidecar:', e)
+        const resp = await extractPage(
+          base64,
+          currentPage - 1,
+          pageInfo.originalWidth,
+          pageInfo.originalHeight,
+          pageInfo.width,
+          pageInfo.height,
+        )
+        results = resp.results
+      }
       const textItems = pageTextItems.get(currentPage) || []
-      const enriched = resp.results.map(r => {
+      const enriched = results.map(r => {
         if (r.bbox_pdf && textItems.length > 0 && !r.context_text) {
           const ctx = extractRoiText(r.bbox_pdf, textItems, pageInfo.originalHeight)
           return { ...r, context_text: ctx }
@@ -155,8 +185,8 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
         next.set(currentPage, enriched)
         return next
       })
-      if (resp.results.length > 0) {
-        showToast(`检测到 ${resp.results.length} 个分子`, 'success')
+      if (results.length > 0) {
+        showToast(`检测到 ${results.length} 个分子`, 'success')
       } else {
         showToast('未检测到分子', 'info')
       }

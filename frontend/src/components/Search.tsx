@@ -209,14 +209,27 @@ export default function Search() {
             flexDirection: 'column',
             gap: '12px',
           }}>
-            <AnimatePresence>
-              {results.map((r, index) => (
-                <motion.div
-                  key={r.id}
-                  initial={{ opacity: 0, y: 10, transition: { delay: index * 0.05 } }}
-                  animate={{ opacity: 1, y: 0, transition: { duration: 0.25, delay: index * 0.05 } }}
-                  exit={{ opacity: 0 }}
-                >
+            <motion.div
+              variants={{
+                hidden: {},
+                show: { transition: { staggerChildren: 0.05 } },
+              }}
+              initial="hidden"
+              animate="show"
+            >
+              <AnimatePresence>
+                {results.map((r) => (
+                  <motion.div
+                    key={r.id}
+                    variants={{
+                      hidden: { opacity: 0, y: 10 },
+                      show: { opacity: 1, y: 0, transition: { duration: 0.25 } },
+                      exit: { opacity: 0 },
+                    }}
+                    initial="hidden"
+                    animate="show"
+                    exit="exit"
+                  >
                   <Card hoverable>
                     <div style={{
                       display: 'flex',
@@ -263,6 +276,7 @@ export default function Search() {
                 </motion.div>
               ))}
             </AnimatePresence>
+            </motion.div>
             {isLoading && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <Skeleton variant="row" count={3} height={80} />

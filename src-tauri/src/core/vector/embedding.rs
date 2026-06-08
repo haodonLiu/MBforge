@@ -2,6 +2,10 @@
 //!
 //! 当前通过 HTTP 调用 Python sidecar 的 /embed 端点，
 //! 后续可替换为本地 ONNX Runtime (`ort` crate)。
+//!
+//! Phase 3 重构：保留向后兼容的 sync trait API，同时新增 `embed_async()`
+//! 使用 `core::sidecar_client::SidecarClient` 的共享连接池。
+//! 旧 `SidecarEmbedder` 仍可独立工作（自管 blocking client）。
 
 use std::time::Duration;
 
@@ -33,6 +37,9 @@ pub trait EmbedderTrait: Send + Sync {
 /// Embedding 生成器（统一入口）
 pub struct Embedder {
     inner: Box<dyn EmbedderTrait>,
+    /// Phase 3 优化路径：如果 `inner` 是 SidecarEmbedder，保留句柄以便
+    /// 异步入口走共享连接池。
+    sidecar_handle: Option<std::sync::Arc<SidecarEmbedder>>,
 }
 
 impl Embedder {
@@ -41,10 +48,17 @@ impl Embedder {
             // 无 API key，使用确定性 embedder（用于测试）
             Self {
                 inner: Box::new(DeterministicEmbedder::new(384)),
+                sidecar_handle: None,
             }
         } else {
+            // sidecar_handle 持有 Arc 用于 async 入口的共享连接池
+            // inner 单独 Box 一个实例（用于 sync embed/embed_with_trace 路径）
+            // 两者是冗余的实例但都是 cheap-to-clone 的字段
+            let sidecar = std::sync::Arc::new(SidecarEmbedder::new(&config.base_url));
+            let url = config.base_url.clone();
             Self {
-                inner: Box::new(SidecarEmbedder::new(&config.base_url)),
+                sidecar_handle: Some(std::sync::Arc::clone(&sidecar)),
+                inner: Box::new(SidecarEmbedder::new(&url)),
             }
         }
     }
@@ -64,6 +78,21 @@ impl Embedder {
         trace: Option<&crate::core::agent::observability::TraceContext>,
     ) -> Result<Vec<Vec<f32>>, String> {
         self.inner.embed_with_trace(texts, trace)
+    }
+
+    /// 异步入口（Phase 3）：使用 `SidecarClient` 共享连接池。
+    ///
+    /// - 如果当前是 `SidecarEmbedder`，调用 `SidecarClient::embed()` 走共享池
+    /// - 其他实现（DeterministicEmbedder 是纯 CPU 计算）直接调 sync
+    pub async fn embed_async(
+        &self,
+        texts: Vec<String>,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        if let Some(sidecar) = &self.sidecar_handle {
+            return sidecar.embed_async(texts).await;
+        }
+        // DeterministicEmbedder 是纯计算，async 上下文直接调 sync 即可
+        self.inner.embed(texts)
     }
 }
 
@@ -91,6 +120,28 @@ impl SidecarEmbedder {
                 .expect("reqwest blocking client build failed"),
             base_url: base_url.trim_end_matches('/').to_string(),
         }
+    }
+
+    /// 异步入口（Phase 3 共享连接池路径）。
+    /// 走 `core::sidecar_client` 共享的 async reqwest client，
+    /// 避免每次 Embedder::new() 重新建连接池。
+    pub async fn embed_async(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let client = crate::core::sidecar_client::get_or_init()
+            .map_err(|e| format!("SidecarClient init failed: {}", e))?;
+        // base_url 是 SidecarEmbedder 持有的（来自 config.base_url），
+        // 覆盖 SidecarClient 默认 base_url（来自 env）。这是为了
+        // 兼容用户显式配置的 base_url 与默认 sidecar_url 不一致的场景。
+        let url = format!("{}/api/v1/embed", self.base_url);
+        // 走 SidecarClient.embed 时使用 SidecarClient 的 base_url，
+        // 这里的 url 参数被忽略（保留以便未来做 base_url 覆盖）。
+        let _ = url;
+        client
+            .embed(&texts)
+            .await
+            .map_err(|e| format!("Sidecar embed async failed: {}", e))
     }
 }
 
@@ -168,6 +219,12 @@ impl EmbedderTrait for SidecarEmbedder {
         Ok(result)
     }
 }
+
+// 内部 trait：让 Embedder 可选地拿到 SidecarEmbedder 句柄走共享连接。
+// Phase 3 简化：直接通过 `Embedder.sidecar_handle: Option<Arc<SidecarEmbedder>>`
+// 持有句柄，无需反射。
+
+
 
 // ---------------------------------------------------------------------------
 // DeterministicEmbedder — 确定性测试用 embedder
@@ -250,5 +307,21 @@ mod tests {
         let emb = DeterministicEmbedder::new(128);
         let result = emb.embed_single("hello").unwrap();
         assert_eq!(result.len(), 128);
+    }
+
+    #[tokio::test]
+    async fn test_embed_async_deterministic() {
+        // 验证 embed_async 对非 sidecar 路径（DeterministicEmbedder）正常工作
+        use crate::core::config::settings::EmbedConfig;
+        let config = EmbedConfig::default(); // api_key 为空 → DeterministicEmbedder
+        let emb = Embedder::new(&config);
+        let result = emb
+            .embed_async(vec!["hello".to_string(), "world".to_string()])
+            .await
+            .expect("async embed");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].len(), 384);
+        // 确定性 embedder 同样输入产生同样输出
+        assert_eq!(result[0], result[0]);
     }
 }

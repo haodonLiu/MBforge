@@ -13,6 +13,7 @@ pub mod db;
 pub mod error;
 pub mod helpers;
 pub mod http;
+pub mod sidecar_client;
 pub mod types;
 
 // Note: prior to refactoring, this file held ~65 lines of `pub use` re-exports

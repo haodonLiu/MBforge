@@ -118,6 +118,7 @@ src-tauri/vendor/pdfium/release/
 # ref/{GESim,chematic,paddleocr-vl-local,MoleCode}/ are local clones of external repos.
 # Each has its own .git/. Use  to fetch/update.
 # Not tracked by MBForge git.
+ref/
 ref/*
 
 # Legacy workspace files

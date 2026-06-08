@@ -1,10 +1,11 @@
 """MBForge Model Server — FastAPI app with fixed local model backends.
 
-Python sidecar hosts only four fixed local models:
+Python sidecar hosts only five fixed local models:
     - Qwen3-Embedding   (backends.qwen3_embed)
     - Qwen3-Reranker    (backends.qwen3_rerank)
     - MolScribe         (backends.molscribe)
     - MolDet            (backends.moldet)
+    - MolDet Coref      (backends.moldet_coref)
 
 All API-based models (OpenAI, Anthropic, etc.) are called directly from Rust.
 """
@@ -26,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from .backends import moldet, molscribe, qwen3_embed, qwen3_rerank
+from .backends import moldet, moldet_coref, molscribe, qwen3_embed, qwen3_rerank
 from .core.resource_manager import ResourceManager
 from .utils.helpers import (
     ModelNotAvailableError,
@@ -41,7 +42,7 @@ logger = get_logger("mbforge.server")
 # ---------------------------------------------------------------------------
 # Backend registry — add a new backend here to register it for lifespan
 # ---------------------------------------------------------------------------
-_BACKENDS = [qwen3_embed, qwen3_rerank, molscribe, moldet]
+_BACKENDS = [qwen3_embed, qwen3_rerank, molscribe, moldet, moldet_coref]
 
 
 def _prewarm() -> None:
@@ -230,6 +231,52 @@ async def extract_page(request: Request) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# MolDetect Coref
+# ---------------------------------------------------------------------------
+@app.post("/api/v1/moldet/coref")
+async def detect_coref(request: Request) -> dict[str, Any]:
+    """检测分子和标识符的共指关系.
+
+    请求体：
+        - image_base64: base64 编码的图像
+        - mol_bboxes: MolDetv2 检测到的分子 bbox 列表（可选）
+          格式: [{"x1": 100, "y1": 200, "x2": 300, "y2": 400}, ...]
+
+    响应：
+        - corefs: 共指对列表 [{mol_idx, idt_bbox}, ...]
+          mol_idx: 对应输入 mol_bboxes 的索引
+          idt_bbox: 标识符的归一化坐标
+    """
+    try:
+        body = await request.json()
+        image_base64 = body.get("image_base64", "")
+        if not image_base64:
+            raise ValidationError("image_base64 is required")
+        mol_bboxes = body.get("mol_bboxes", [])
+
+        image = decode_base64_image(image_base64)
+        backend = moldet_coref.get_coref()
+        if backend is None or not backend.is_available():
+            raise ModelNotAvailableError("MolDetect coref backend not available")
+
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: backend.detect_coref_with_mapping(
+                image,
+                mol_bboxes=mol_bboxes,
+            ),
+        )
+        set_model_status("moldet_coref", "ready")
+        return result
+    except (ValidationError, ModelNotAvailableError):
+        raise
+    except Exception as e:
+        set_model_status("moldet_coref", "error")
+        raise ModelNotAvailableError(str(e))
+
+
+# ---------------------------------------------------------------------------
 # MolScribe
 # ---------------------------------------------------------------------------
 @app.post("/api/v1/molscribe")
@@ -269,6 +316,7 @@ _model_status = {
     "embedder": "loading",
     "reranker": "loading",
     "moldet": "loading",
+    "moldet_coref": "loading",
 }
 _resource_cache: dict[str, str] = {}
 _resource_cache_time: float = 0.0
@@ -336,6 +384,21 @@ async def health_check() -> dict[str, Any]:
             _model_status["moldet"] = "error"
             _mark_failure("moldet")
             logger.debug(f"MolDet health check failed: {e}")
+
+    # MolDet Coref
+    if not _should_skip_due_to_cooldown("moldet_coref"):
+        try:
+            backend = moldet_coref.get_coref()
+            if backend and backend.is_available():
+                _model_status["moldet_coref"] = "ready"
+                _clear_failure("moldet_coref")
+            else:
+                _model_status["moldet_coref"] = "error"
+                _mark_failure("moldet_coref")
+        except Exception as e:
+            _model_status["moldet_coref"] = "error"
+            _mark_failure("moldet_coref")
+            logger.debug(f"MolDet coref health check failed: {e}")
 
     statuses = list(_model_status.values())
     if all(s == "ready" for s in statuses):

@@ -3,6 +3,7 @@
 //! 统一调用 Python sidecar 的化学图像识别端点：
 //! - POST /api/v1/vlm/molscribe  → 识别 SMILES（两种响应格式）
 //! - POST /api/v1/moldet/detect-page → 检测分子 bbox
+//! - POST /api/v1/moldet/coref → 分子-标号共指消解
 //! - POST /api/v1/vlm/describe → 通用图片描述
 
 use base64::Engine;
@@ -63,6 +64,59 @@ pub struct DetectedMolecule {
     /// 单位与 `page_w_pts` / `page_h_pts` 一致（A4 页面 595×842pt）。
     #[serde(default)]
     pub bbox_pdf: [f64; 4],
+}
+
+// ─── MolDetect Coref 类型 ─────────────────────────────────────────
+
+/// MolDetect coref 检测到的边界框（归一化坐标）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CorefBbox {
+    /// 类别 ID：1=分子, 3=标识符
+    pub category_id: i32,
+    /// 归一化坐标 [x1, y1, x2, y2]（0-1 范围）
+    pub bbox: [f64; 4],
+    /// 分子的 SMILES（仅 category_id=1 时有效）
+    #[serde(default)]
+    pub smiles: Option<String>,
+    /// 分子的 MOL 文件（可选）
+    #[serde(default)]
+    pub molfile: Option<String>,
+    /// 标识符的文本（仅 category_id=3 时有效）
+    #[serde(default)]
+    pub text: Option<String>,
+    /// 检测置信度
+    #[serde(default)]
+    pub score: f64,
+}
+
+/// MolDetect coref 结果
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CorefResult {
+    /// 检测到的所有边界框（分子 + 标识符）
+    pub bboxes: Vec<CorefBbox>,
+    /// 共指对列表 [(mol_idx, idt_idx), ...]
+    pub corefs: Vec<(usize, usize)>,
+}
+
+/// 分子-标号关联结果（用于 pipeline 集成）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CorefMolecule {
+    /// 分子的 E-SMILES
+    pub esmiles: String,
+    /// 分子的置信度
+    pub confidence: f64,
+    /// 分子检测置信度
+    pub moldet_conf: f64,
+    /// 关联的标号文本（如 "化合物 26A"）
+    pub label: String,
+    /// 标识符的原始文本
+    pub idt_text: String,
+    /// 分子 bbox 在 PDF 坐标系中的位置
+    pub bbox_pdf: [f64; 4],
+    /// 页面索引
+    pub page: i32,
+    /// 裁剪图像路径
+    pub crop_path: String,
 }
 
 // ─── 共享工具 ────────────────────────────────────────────────────
@@ -257,6 +311,181 @@ pub async fn process_page_image(
 
     log::info!("[vlm_chem] Page {}: detected {} mols, recognized {} SMILES", page_idx, bboxes.len(), results.len());
     Ok(results)
+}
+
+// ─── MolDetect Coref 共指消解 ─────────────────────────────────────
+
+/// 调用 sidecar /api/v1/moldet/coref 检测分子和标识符的共指关系
+///
+/// # Arguments
+/// - `image_path`: 图像文件路径
+/// - `sidecar_url`: Python sidecar URL
+/// - `use_molscribe`: 是否使用 MolScribe 识别分子 SMILES（默认 true）
+/// - `use_ocr`: 是否使用 EasyOCR 识别标识符文本（默认 true）
+///
+/// # Returns
+/// - `CorefResult`: 包含检测到的 bboxes 和 corefs 关系
+pub async fn detect_coref(
+    image_path: &str,
+    sidecar_url: &str,
+    use_molscribe: bool,
+    use_ocr: bool,
+) -> Result<CorefResult, String> {
+    let image_b64 = read_image_base64(image_path)?;
+
+    let body = serde_json::json!({
+        "image_base64": image_b64,
+        "use_molscribe": use_molscribe,
+        "use_ocr": use_ocr,
+    });
+
+    let client = crate::core::http::client_120s();
+    let url = format!("{}/api/v1/moldet/coref", sidecar_url.trim_end_matches('/'));
+
+    let resp = client.post(&url).json(&body).send().await
+        .map_err(|e| format!("MolDetect coref request failed: {}", e))?;
+    let status = resp.status();
+    let text = resp.text().await
+        .map_err(|e| format!("MolDetect coref read error: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!(
+            "MolDetect coref HTTP {}: {}",
+            status,
+            &text[..text.floor_char_boundary(200)]
+        ));
+    }
+
+    let val: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("MolDetect coref JSON parse error: {}", e))?;
+
+    // 解析 bboxes
+    let bboxes = val["bboxes"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|b| {
+            let category_id = b["category_id"].as_i64()? as i32;
+            let bbox_arr = b["bbox"].as_array()?;
+            if bbox_arr.len() < 4 {
+                return None;
+            }
+            Some(CorefBbox {
+                category_id,
+                bbox: [
+                    bbox_arr[0].as_f64()?,
+                    bbox_arr[1].as_f64()?,
+                    bbox_arr[2].as_f64()?,
+                    bbox_arr[3].as_f64()?,
+                ],
+                smiles: b["smiles"].as_str().map(String::from),
+                molfile: b["molfile"].as_str().map(String::from),
+                text: b["text"].as_str().map(String::from),
+                score: b["score"].as_f64().unwrap_or(0.0),
+            })
+        })
+        .collect();
+
+    // 解析 corefs
+    let corefs = val["corefs"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|pair| {
+            let arr = pair.as_array()?;
+            if arr.len() < 2 {
+                return None;
+            }
+            Some((
+                arr[0].as_u64()? as usize,
+                arr[1].as_u64()? as usize,
+            ))
+        })
+        .collect();
+
+    Ok(CorefResult { bboxes, corefs })
+}
+
+/// 将 CorefResult 转换为 CorefMolecule 列表（对齐现有 ExtractionResult 结构）
+///
+/// # Arguments
+/// - `coref`: MolDetect coref 检测结果
+/// - `page_idx`: PDF 页码（从 0 开始）
+/// - `page_w_pts`: PDF 页面宽度（点单位）
+/// - `page_h_pts`: PDF 页面高度（点单位）
+/// - `image_w`: 图像宽度（像素）
+/// - `image_h`: 图像高度（像素）
+///
+/// # Returns
+/// - `Vec<CorefMolecule>`: 分子-标号关联结果列表
+pub fn coref_to_molecules(
+    coref: &CorefResult,
+    page_idx: i32,
+    page_w_pts: f64,
+    page_h_pts: f64,
+    image_w: u32,
+    image_h: u32,
+) -> Vec<CorefMolecule> {
+    let mut molecules = Vec::new();
+
+    // 构建分子索引到 coref 对的映射
+    let mut mol_to_idt: HashMap<usize, Vec<usize>> = HashMap::new();
+    for &(mol_idx, idt_idx) in &coref.corefs {
+        mol_to_idt.entry(mol_idx).or_default().push(idt_idx);
+    }
+
+    // 遍历所有 bboxes，找到分子
+    for (idx, bbox) in coref.bboxes.iter().enumerate() {
+        if bbox.category_id != 1 {
+            continue; // 跳过非分子
+        }
+
+        // 查找关联的标识符
+        let empty_vec = vec![];
+        let idt_indices = mol_to_idt.get(&idx).unwrap_or(&empty_vec);
+        let (label, idt_text) = if let Some(&idt_idx) = idt_indices.first() {
+            if let Some(idt_bbox) = coref.bboxes.get(idt_idx) {
+                let label = idt_bbox.text.clone().unwrap_or_default();
+                (label.clone(), label)
+            } else {
+                (String::new(), String::new())
+            }
+        } else {
+            (String::new(), String::new())
+        };
+
+        // 归一化坐标 → PDF 坐标
+        let bbox_pdf = if page_w_pts > 0.0 && page_h_pts > 0.0 && image_w > 0 && image_h > 0 {
+            let [x1_norm, y1_norm, x2_norm, y2_norm] = bbox.bbox;
+            let x1_px = x1_norm * image_w as f64;
+            let y1_px = y1_norm * image_h as f64;
+            let x2_px = x2_norm * image_w as f64;
+            let y2_px = y2_norm * image_h as f64;
+
+            let scale = image_w as f64 / page_w_pts;
+            [
+                x1_px / scale,
+                page_h_pts - (y2_px / scale), // 翻转 Y 轴
+                x2_px / scale,
+                page_h_pts - (y1_px / scale),
+            ]
+        } else {
+            [0.0, 0.0, 0.0, 0.0]
+        };
+
+        molecules.push(CorefMolecule {
+            esmiles: bbox.smiles.clone().unwrap_or_default(),
+            confidence: bbox.score,
+            moldet_conf: bbox.score,
+            label,
+            idt_text,
+            bbox_pdf,
+            page: page_idx,
+            crop_path: String::new(), // 由调用方填充
+        });
+    }
+
+    molecules
 }
 
 // ─── VLM 通用图片描述 ───────────────────────────────────────────

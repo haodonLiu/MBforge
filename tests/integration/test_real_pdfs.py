@@ -169,54 +169,13 @@ class TestMoleculeExtraction:
 # ---------------------------------------------------------------------------
 # 项目管理集成
 # ---------------------------------------------------------------------------
-
-class TestProjectWithRealPDFs:
-    """使用真实 PDF 测试项目管理."""
-
-    def test_project_open_or_create(self):
-        """打开或创建 X2 项目."""
-        from mbforge.core.project import Project
-
-        project = Project.open(X2_DIR)
-        if project is None:
-            # 如果 .mbforge 目录损坏，尝试创建
-            project = Project.create(X2_DIR)
-        assert project is not None, "无法打开或创建 X2 项目"
-
-    def test_project_scan_finds_pdfs(self):
-        """扫描 X2 目录应找到 PDF 文件."""
-        from mbforge.core.project import Project
-
-        project = Project.open(X2_DIR) or Project.create(X2_DIR)
-        assert project is not None
-
-        docs = project.list_documents()
-        pdf_docs = [d for d in docs if str(d.path).upper().endswith(".PDF")]
-        assert len(pdf_docs) >= 2, f"应找到至少 2 个 PDF，实际: {len(pdf_docs)}"
-
-    def test_project_doc_types(self):
-        """验证文档类型检测."""
-        from mbforge.core.project import Project
-
-        project = Project.open(X2_DIR) or Project.create(X2_DIR)
-        assert project is not None
-
-        docs = project.list_documents()
-        for doc in docs:
-            assert doc.doc_type in ("text", "molecule", "data"), f"未知文档类型: {doc.doc_type}"
-
-    def test_project_document_metadata(self):
-        """验证文档元数据完整性."""
-        from mbforge.core.project import Project
-
-        project = Project.open(X2_DIR) or Project.create(X2_DIR)
-        assert project is not None
-
-        docs = project.list_documents()
-        for doc in docs:
-            assert doc.doc_id, "doc_id 不能为空"
-            assert doc.path, "path 不能为空"
-            assert doc.title, "title 不能为空"
+# Python `Project` 类已迁移到 Rust（`core::project::Project`）。
+# 本文件原有的 `TestProjectWithRealPDFs` 4 个测试已删除：
+#   - test_project_open_or_create
+#   - test_project_scan_finds_pdfs
+#   - test_project_doc_types
+#   - test_project_document_metadata
+# 对应逻辑由 Rust 单元测试 + 集成测试覆盖（`src-tauri/src/core/project/`）。
             assert doc.hash, "hash 不能为空"
 
 

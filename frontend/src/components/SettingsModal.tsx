@@ -19,7 +19,7 @@ import {
   SettingsIcon, XIcon, DownloadIcon, CpuIcon,
   LayoutIcon, FlaskIcon, InfoIcon,
 } from './icons'
-import { getSettings, saveSettings, getConfigDir } from '../api/settings'
+import { getSettings, saveSettings, getConfigDir } from '../api/tauri/settings'
 import { useTheme } from '../hooks/useTheme'
 import { fadeIn, modalEntrance } from '../hooks/useAnimations'
 import AlertBanner from './ui/AlertBanner'

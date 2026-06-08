@@ -1,4 +1,9 @@
-"""配置加载与管理."""
+"""配置加载与管理 — sidecar 模型推理配置.
+
+本模块仅管理 sidecar 内部使用的配置（embed/rerank/vlm）。
+LLM/OCR/ModelServer 已迁移到 Rust 侧（见 `src-tauri/src/core/config/settings.rs`），
+使用 `MBFORGE_LLM_*` / `MBFORGE_OCR_*` 环境变量直驱动。
+"""
 
 from __future__ import annotations
 
@@ -9,26 +14,11 @@ from typing import Any
 from .constants import (
     GLOBAL_CONFIG_DIR,
     PROVIDER_API,
-    PROVIDER_OPENAI_COMPATIBLE,
     PROVIDER_QWEN3,
-    OCR_PROVIDER_NONE,
     DEFAULT_EMBED_MODEL,
     DEFAULT_RERANK_MODEL,
 )
 from .helpers import get_default_device, load_json, save_json
-
-
-@dataclass
-class ModelConfig:
-    """AI 模型配置."""
-
-    provider: str = PROVIDER_OPENAI_COMPATIBLE  # openai_compatible | local | ollama
-    base_url: str = "http://localhost:8000/v1"
-    api_key: str = ""
-    model_name: str = "default"
-    max_tokens: int = 4096
-    temperature: float = 0.7
-    top_p: float = 0.9
 
 
 @dataclass
@@ -65,38 +55,12 @@ class VLMConfig:
 
 
 @dataclass
-class OcrConfig:
-    """OCR 解析配置."""
-
-    provider: str = "none"  # none | glm_ocr_maas | glm_ocr_local | glm_ocr_ollama
-    base_url: str = ""  # 本地服务地址或 MaaS API 地址
-    api_key: str = ""  # MaaS API Key
-    model_name: str = ""  # 本地模型路径或 Ollama 模型名
-    use_hf_mirror: bool = True  # 是否使用国内镜像下载模型
-    use_pdf_inspector: bool = True  # 是否使用 pdf-inspector 解析 PDF
-
-
-@dataclass
-class ModelServerConfig:
-    """模型服务进程配置."""
-
-    host: str = "127.0.0.1"
-    port: int = 18792
-    auto_start: bool = True
-    startup_timeout: int = 120
-    health_check_interval: int = 5
-
-
-@dataclass
 class AppConfig:
-    """全局应用配置."""
+    """全局应用配置 (sidecar 侧裁剪版)."""
 
-    model_server: ModelServerConfig = field(default_factory=ModelServerConfig)
-    llm: ModelConfig = field(default_factory=ModelConfig)
     embed: EmbedConfig = field(default_factory=EmbedConfig)
     rerank: RerankConfig = field(default_factory=RerankConfig)
     vlm: VLMConfig = field(default_factory=VLMConfig)
-    ocr: OcrConfig = field(default_factory=OcrConfig)
     recent_projects: list[str] = field(default_factory=list)
     model_cache_dir: str = ""  # 空字符串表示使用默认值 (~/.cache/mbforge/models/)
     theme: str = "dark"
@@ -107,13 +71,14 @@ class AppConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> AppConfig:
+        # 兼容旧配置文件：忽略已迁移的 llm/ocr/model_server 字段
+        embed_data = {k: v for k, v in data.get("embed", {}).items() if k in EmbedConfig.__dataclass_fields__}
+        rerank_data = {k: v for k, v in data.get("rerank", {}).items() if k in RerankConfig.__dataclass_fields__}
+        vlm_data = {k: v for k, v in data.get("vlm", {}).items() if k in VLMConfig.__dataclass_fields__}
         return cls(
-            model_server=ModelServerConfig(**data.get("model_server", {})),
-            llm=ModelConfig(**data.get("llm", {})),
-            embed=EmbedConfig(**data.get("embed", {})),
-            rerank=RerankConfig(**data.get("rerank", {})),
-            vlm=VLMConfig(**data.get("vlm", {})),
-            ocr=OcrConfig(**data.get("ocr", {})),
+            embed=EmbedConfig(**embed_data),
+            rerank=RerankConfig(**rerank_data),
+            vlm=VLMConfig(**vlm_data),
             recent_projects=data.get("recent_projects", []),
             model_cache_dir=data.get("model_cache_dir", ""),
             theme=data.get("theme", "dark"),
@@ -126,24 +91,11 @@ _config_cache: AppConfig | None = None
 
 
 def _config_from_env() -> AppConfig:
-    """从环境变量构建配置（用于 .env 文件集成）."""
+    """从环境变量构建配置（用于 .env 文件集成）.
+
+    注意：LLM/OCR/ModelServer 配置不再加载——它们已迁移到 Rust 侧。
+    """
     return AppConfig(
-        model_server=ModelServerConfig(
-            host=os.environ.get("MBFORGE_MODEL_SERVER_HOST", "127.0.0.1"),
-            port=int(os.environ.get("MBFORGE_MODEL_SERVER_PORT", "18792")),
-            auto_start=os.environ.get("MBFORGE_MODEL_SERVER_AUTO_START", "true").lower() == "true",
-            startup_timeout=int(os.environ.get("MBFORGE_MODEL_SERVER_STARTUP_TIMEOUT", "120")),
-            health_check_interval=int(os.environ.get("MBFORGE_MODEL_SERVER_HEALTH_CHECK_INTERVAL", "5")),
-        ),
-        llm=ModelConfig(
-            provider=os.environ.get("MBFORGE_LLM_PROVIDER", PROVIDER_OPENAI_COMPATIBLE),
-            base_url=os.environ.get("MBFORGE_LLM_BASE_URL", "http://localhost:8000/v1"),
-            api_key=os.environ.get("MBFORGE_LLM_API_KEY", ""),
-            model_name=os.environ.get("MBFORGE_LLM_MODEL", "default"),
-            max_tokens=int(os.environ.get("MBFORGE_LLM_MAX_TOKENS", "4096")),
-            temperature=float(os.environ.get("MBFORGE_LLM_TEMPERATURE", "0.7")),
-            top_p=float(os.environ.get("MBFORGE_LLM_TOP_P", "0.9")),
-        ),
         embed=EmbedConfig(
             provider=os.environ.get("MBFORGE_EMBED_PROVIDER", PROVIDER_QWEN3),
             model_name=os.environ.get("MBFORGE_EMBED_MODEL", DEFAULT_EMBED_MODEL),
@@ -164,14 +116,6 @@ def _config_from_env() -> AppConfig:
             base_url=os.environ.get("MBFORGE_VLM_BASE_URL", ""),
             api_key=os.environ.get("MBFORGE_VLM_API_KEY", ""),
             model_name=os.environ.get("MBFORGE_VLM_MODEL", ""),
-        ),
-        ocr=OcrConfig(
-            provider=os.environ.get("MBFORGE_OCR_PROVIDER", OCR_PROVIDER_NONE),
-            base_url=os.environ.get("MBFORGE_OCR_BASE_URL", ""),
-            api_key=os.environ.get("MBFORGE_OCR_API_KEY", ""),
-            model_name=os.environ.get("MBFORGE_OCR_MODEL", ""),
-            use_hf_mirror=os.environ.get("MBFORGE_OCR_USE_HF_MIRROR", "true").lower()
-            == "true",
         ),
     )
 
@@ -195,8 +139,9 @@ def load_global_config() -> AppConfig:
             try:
                 _config_cache = AppConfig.from_dict(data)
                 return _config_cache
-            except Exception as e:
-                logger.warning(f"Config parse failed: {e}")
+            except Exception:
+                # 旧配置文件可能含 llm/ocr/model_server 字段，已被 from_dict 静默忽略
+                pass
 
     # 尝试从环境变量读取（用于 .env 文件集成）
     _config_cache = _config_from_env()

@@ -61,3 +61,14 @@ export async function modelsCacheDirInfo(): Promise<{
 }> {
   return invoke('models_cache_dir_info')
 }
+
+/** 刷新模型路径解析（Rust 重新扫描缓存目录并写入 resolved_paths.json） */
+export async function refreshResolvedPaths(): Promise<{
+  success: boolean
+  resources: Record<string, string>
+}> {
+  return invokeWithError(
+    () => invoke<{ success: boolean; resources: Record<string, string> }>('refresh_resolved_paths'),
+    ErrorCode.ApiError,
+  )
+}

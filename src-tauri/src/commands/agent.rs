@@ -580,7 +580,10 @@ pub async fn create_session_for_config(
                 SqliteConversationMemory::open(Path::new(root))
                     .map_err(|e| format!("open conversations.db: {e}"))?,
             );
-            let compactor = Arc::new(SidecarCompactor::new(sidecar_url.to_string()));
+            // 旧 `SidecarCompactor::new(sidecar_url)` 已迁移为 rig-direct；
+            // URL 参数被忽略。保留变量名以便与上下文一致。
+            let _ = sidecar_url;
+            let compactor = Arc::new(SidecarCompactor::new());
             let demotion = Arc::new(EpisodicDemotionHook::new(
                 sqlite.conn_clone(),
                 session_id.to_string(),

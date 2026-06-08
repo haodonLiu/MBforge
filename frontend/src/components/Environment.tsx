@@ -12,9 +12,9 @@ import {
 } from './environment/sections'
 import DetectionCacheCard from './settings/DetectionCacheCard'
 import type { ModelInfo, ModelPaths } from './environment/types'
-import { resourcesCatalog, resourcesStatus, modelsCacheDirInfo } from '../api/tauri/environment'
-import { downloadModelTauri, deleteModel } from '../api/tauri/download'
-import { saveSettings } from '../api/settings'
+import { resourcesCatalog, resourcesStatus, modelsCacheDirInfo, refreshResolvedPaths } from '../api/tauri/environment'
+import { downloadModel, deleteModel } from '../api/tauri/download'
+import { saveSettings } from '../api/tauri/settings'
 
 interface EnvironmentCheckResult {
   python_version: string
@@ -104,10 +104,10 @@ export default function Environment() {
     }
   }
 
-  const downloadModel = async (modelId: string) => {
+  const handleDownloadModel = async (modelId: string) => {
     try {
       let completed = false
-      const cancel = downloadModelTauri(modelId, (progress) => {
+      const cancel = downloadModel(modelId, (progress) => {
         if (progress.status === 'completed' || progress.status === 'failed') {
           completed = true
           fetchModels()
@@ -129,6 +129,18 @@ export default function Environment() {
       fetchModels()
     } catch (e) {
       showToast(`Delete failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
+    }
+  }
+
+  const handleRefreshModelEnv = async () => {
+    try {
+      await refreshResolvedPaths()
+      showToast('模型环境已更新', 'success')
+      await fetchEnv()
+      await fetchModels()
+      await fetchPaths()
+    } catch (e) {
+      showToast(`刷新模型环境失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
     }
   }
 
@@ -204,13 +216,9 @@ export default function Environment() {
         <Button
           variant="secondary"
           icon={<RefreshCwIcon size={14} />}
-          onClick={() => {
-            fetchEnv()
-            fetchModels()
-            fetchPaths()
-          }}
+          onClick={handleRefreshModelEnv}
         >
-          Refresh
+          刷新模型环境
         </Button>
       </div>
 
@@ -271,7 +279,7 @@ export default function Environment() {
           <ModelsSection
             models={models}
             downloadedCount={downloadedModels}
-            onDownload={downloadModel}
+            onDownload={handleDownloadModel}
             onDelete={handleDeleteModel}
           />
         </div>

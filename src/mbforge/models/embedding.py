@@ -66,13 +66,12 @@ def _model_name_to_resource_id(model_name: str) -> str | None:
 
 
 _RESOLVED_PATHS_CACHE: dict[str, str] | None = None
+_RESOLVED_PATHS_MTIME: float = 0.0
 
 
 def _read_resolved_paths() -> dict[str, str] | None:
-    """读取 Rust 写入的 resolved_paths.json（带内存缓存）."""
-    global _RESOLVED_PATHS_CACHE
-    if _RESOLVED_PATHS_CACHE is not None:
-        return _RESOLVED_PATHS_CACHE
+    """读取 Rust 写入的 resolved_paths.json（按 mtime 失效的轻量缓存）."""
+    global _RESOLVED_PATHS_CACHE, _RESOLVED_PATHS_MTIME
 
     from pathlib import Path
     import json
@@ -83,9 +82,13 @@ def _read_resolved_paths() -> dict[str, str] | None:
         return None
 
     try:
+        mtime = path.stat().st_mtime
+        if _RESOLVED_PATHS_CACHE is not None and mtime == _RESOLVED_PATHS_MTIME:
+            return _RESOLVED_PATHS_CACHE
         with open(path) as f:
             data = json.load(f)
         _RESOLVED_PATHS_CACHE = data
+        _RESOLVED_PATHS_MTIME = mtime
         logger.info(f"Loaded resolved paths from {path}: {list(data.keys())}")
         return data
     except Exception as e:

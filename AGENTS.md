@@ -13,9 +13,9 @@
 PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询
 ```
 
-- **前端**：React 19 + Vite 6 + TypeScript 5.7，运行于浏览器/Tauri WebView
+- **前端**：React 19 + Vite 6 + TypeScript 6.0，运行于浏览器/Tauri WebView
 - **桌面壳**：Tauri v2（Rust），负责系统调用、SQLite 持久化、PDF 原生解析、Agent ReAct 循环
-- **Python 侧载（Sidecar）**：FastAPI 模型服务器（port 18792），负责 LLM/Embedding/VLM 推理、MolScribe 分子图像识别
+- **Python 侧载（Sidecar）**：FastAPI 模型服务器（port 18792），负责Embedding、MolScribe 分子图像识别
 
 **双语言分工**：
 - **Rust**（`src-tauri/src/`）：Agent 循环、PDF 原生解析（lopdf）、统一 SQLite 数据库（molecules.db + vectors.db + semantic_cache.json）、Tauri IPC 命令层
@@ -27,7 +27,7 @@ PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询
 
 | 层级 | 技术 | 版本/说明 |
 |------|------|-----------|
-| 前端 | React, Vite, TypeScript | 19, 6, ~5.7 |
+| 前端 | React, Vite, TypeScript | 19, 8, 6 |
 | 桌面壳 | Tauri v2 | Rust 2021 edition |
 | Rust 核心 | lopdf, rusqlite, reqwest, tokio, serde, regex | 见 `src-tauri/Cargo.toml` |
 | Python 服务 | FastAPI, uvicorn | >=0.115, >=0.34 |
@@ -267,7 +267,7 @@ uv run ruff format src/ --check
 
 ## 代码风格规范
 
-> 高层原则见 [`docs/specs/code-style.md`](docs/specs/code-style.md)。本节为具体执行细节。
+> 高层原则见 ['AGENTS.md']。本节为具体执行细节。
 
 ### 通用原则
 

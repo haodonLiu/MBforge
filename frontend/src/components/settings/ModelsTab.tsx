@@ -2,8 +2,15 @@ import { useState, useCallback, useEffect } from 'react'
 import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import Button from '../ui/Button'
-import { listModels, downloadModel, listDownloaded, deleteModel, type DownloadModel, type DownloadedModel, type ProgressEvent } from '../../api/download'
-import { downloadModelTauri, type DownloadProgress } from '../../api/tauri/download'
+import {
+  listModels,
+  listDownloaded,
+  downloadModel,
+  deleteModel,
+  type DownloadModel,
+  type DownloadedModel,
+  type DownloadProgress,
+} from '../../api/tauri/download'
 
 // ============ Types ============
 interface DownloadState {
@@ -211,8 +218,7 @@ export default function ModelsTab() {
       [modelId]: { progress: 0, status: 'connecting' },
     }))
 
-    // 优先使用 Tauri 原生下载，失败时回退到 Python sidecar HTTP
-    const cleanup = downloadModelTauri(modelId, (event: DownloadProgress) => {
+    const cleanup = downloadModel(modelId, (event: DownloadProgress) => {
       setDownloadState(prev => {
         const current = prev[modelId] || { progress: 0, status: 'idle' }
         switch (event.status) {
@@ -238,42 +244,7 @@ export default function ModelsTab() {
             loadModels()
             return { ...prev, [modelId]: { progress: 100, status: 'completed' } }
           case 'failed':
-            // Tauri 下载失败，回退到 HTTP
-            console.warn('[Tauri download failed, falling back to HTTP]', event.error)
-            const httpCleanup = downloadModel(modelId, (httpEvent: ProgressEvent) => {
-              setDownloadState(prev => {
-                const current = prev[modelId] || { progress: 0, status: 'idle' }
-                switch (httpEvent.status) {
-                  case 'connecting':
-                    return { ...prev, [modelId]: { ...current, status: 'connecting', source: httpEvent.source } }
-                  case 'downloading': {
-                    const progress = httpEvent.progress ?? (httpEvent.file_progress != null && httpEvent.total_files
-                      ? Math.round(((httpEvent.file_index || 1) - 1) * 100 / httpEvent.total_files + (httpEvent.file_progress || 0) / httpEvent.total_files)
-                      : current.progress)
-                    return {
-                      ...prev,
-                      [modelId]: {
-                        ...current,
-                        status: 'downloading',
-                        progress,
-                        fileName: httpEvent.file,
-                        fileIndex: httpEvent.file_index,
-                        totalFiles: httpEvent.total_files,
-                      },
-                    }
-                  }
-                  case 'completed':
-                    loadModels()
-                    return { ...prev, [modelId]: { progress: 100, status: 'completed', source: httpEvent.source } }
-                  case 'failed':
-                    return { ...prev, [modelId]: { ...current, status: 'failed', error: httpEvent.error } }
-                  default:
-                    return prev
-                }
-              })
-            })
-            abortMapRef.current.set(modelId, httpCleanup)
-            return { ...prev, [modelId]: { ...current, status: 'connecting' } }
+            return { ...prev, [modelId]: { ...current, status: 'failed', error: event.error } }
           default:
             return prev
         }
@@ -291,12 +262,10 @@ export default function ModelsTab() {
   // Delete handler
   const handleDelete = async (modelId: string) => {
     try {
-      const resp = await deleteModel(modelId)
-      if (resp.success) {
-        setDeleteConfirm(null)
-        loadDownloaded()
-        loadModels()
-      }
+      await deleteModel(modelId)
+      setDeleteConfirm(null)
+      loadDownloaded()
+      loadModels()
     } catch (e) {
       console.error(e)
     }

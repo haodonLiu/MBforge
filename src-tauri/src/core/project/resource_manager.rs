@@ -134,6 +134,27 @@ pub fn models_delete(resource_id: String) -> Result<(), String> {
     Ok(())
 }
 
+/// 刷新模型路径解析结果（重新扫描并写入 resolved_paths.json）
+/// 前端 Environment 页面手动刷新按钮调用此命令。
+#[tauri::command]
+pub fn refresh_resolved_paths() -> Result<serde_json::Value, String> {
+    crate::core::models::status::write_resolved_paths();
+    let config_dir = crate::core::config::constants::global_config_dir();
+    let path = config_dir.join("resolved_paths.json");
+    let resources: std::collections::HashMap<String, String> = if path.exists() {
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
+    Ok(serde_json::json!({
+        "success": true,
+        "resources": resources,
+    }))
+}
+
 /// 获取模型缓存目录信息
 #[tauri::command]
 pub fn models_cache_dir_info() -> Result<serde_json::Value, String> {

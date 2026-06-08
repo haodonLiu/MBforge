@@ -50,43 +50,22 @@ pub fn get_model_path(resource_id: &str) -> Option<PathBuf> {
 
 // ─── 内部检查函数 ───────────────────────────────────────────────
 
+/// 按 ENV 优先级顺序搜索 snapshot 类型模型。
+/// 顺序: MBFORGE_MODEL_CACHE_DIR → HF_HOME → MODELSCOPE_CACHE → TORCH_HOME → 默认回退
 fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
-    let cache = crate::core::config::constants::model_cache_dir();
     let repo_name = info.ms_repo.split('/').last().unwrap_or(info.ms_repo);
+    let ms_org = info.ms_repo.split('/').next().unwrap_or("Qwen");
 
-    // 1. MBForge 缓存
+    // 1. MBForge 缓存（env > config > default）
+    let mbforge_cache = crate::core::config::constants::model_cache_dir();
     for name in &[repo_name, &repo_name.replace('.', "___")] {
-        let dir = cache.join(name);
+        let dir = mbforge_cache.join(name);
         if let Some(result) = check_dir_for_weights(info, &dir) {
             return result;
         }
     }
 
-    // 2. ModelScope 默认缓存
-    if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf()) {
-        let ms_org = info.ms_repo.split('/').next().unwrap_or("Qwen");
-        for subdir in &["models", "hub/models"] {
-            for name in &[repo_name, &repo_name.replace('.', "___")] {
-                let dir = home.join(".cache").join("modelscope").join(subdir).join(ms_org).join(name);
-                if let Some(result) = check_dir_for_weights(info, &dir) {
-                    return result;
-                }
-            }
-        }
-    }
-
-    // 3. 环境变量 MODELSCOPE_CACHE
-    if let Ok(ms_cache) = std::env::var("MODELSCOPE_CACHE") {
-        let ms_org = info.ms_repo.split('/').next().unwrap_or("Qwen");
-        for name in &[repo_name, &repo_name.replace('.', "___")] {
-            let dir = PathBuf::from(&ms_cache).join(ms_org).join(name);
-            if let Some(result) = check_dir_for_weights(info, &dir) {
-                return result;
-            }
-        }
-    }
-
-    // 4. HF_HOME
+    // 2. HF_HOME
     if let Ok(hf_home) = std::env::var("HF_HOME") {
         let hf_hub = PathBuf::from(&hf_home).join("hub");
         let encoded_name = format!("models--{}", info.ms_repo.replace('/', "--"));
@@ -105,6 +84,32 @@ fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
         let direct = PathBuf::from(&hf_home).join(repo_name);
         if let Some(result) = check_dir_for_weights(info, &direct) {
             return result;
+        }
+    }
+
+    // 3. MODELSCOPE_CACHE（env > default）
+    let ms_cache_candidates = vec![
+        std::env::var("MODELSCOPE_CACHE").ok().map(PathBuf::from),
+        directories::UserDirs::new().map(|u| u.home_dir().join(".cache").join("modelscope")),
+    ];
+    for ms_root in ms_cache_candidates.into_iter().flatten() {
+        for subdir in &["", "models", "hub/models"] {
+            for name in &[repo_name, &repo_name.replace('.', "___")] {
+                let dir = ms_root.join(subdir).join(ms_org).join(name);
+                if let Some(result) = check_dir_for_weights(info, &dir) {
+                    return result;
+                }
+            }
+        }
+    }
+
+    // 4. TORCH_HOME
+    if let Ok(torch_home) = std::env::var("TORCH_HOME") {
+        for name in &[repo_name, &repo_name.replace('.', "___")] {
+            let dir = PathBuf::from(&torch_home).join(name);
+            if let Some(result) = check_dir_for_weights(info, &dir) {
+                return result;
+            }
         }
     }
 
@@ -131,51 +136,86 @@ fn check_dir_for_weights(info: &ResourceInfo, dir: &std::path::Path) -> Option<R
     })
 }
 
+/// 按 ENV 优先级顺序搜索单文件类型模型。
+/// 顺序与 snapshot 一致: MBFORGE_MODEL_CACHE_DIR → HF_HOME → MODELSCOPE_CACHE → TORCH_HOME → 默认回退
 fn check_model_file(info: &ResourceInfo) -> ResourceStatusResult {
-    let cache = crate::core::config::constants::model_cache_dir();
     let local_name = if info.local_name.is_empty() {
         format!("{}.pt", info.id)
     } else {
         info.local_name.to_string()
     };
-
-    let path = cache.join(&local_name);
-    if path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
-        let size = path.metadata().map(|m| m.len()).unwrap_or(0);
-        return ResourceStatusResult {
-            id: info.id.to_string(),
-            name: info.name.to_string(),
-            resource_type: info.resource_type.clone(),
-            status: ResourceStatus::Ready,
-            local_path: path.to_string_lossy().to_string(),
-            size_mb: (size as f64) / 1024.0 / 1024.0,
-            version: String::new(),
-            error: String::new(),
-        };
-    }
-
     let repo_name = info.ms_repo.split('/').last().unwrap_or(info.ms_repo);
-    let subdir = cache.join(repo_name);
-    if subdir.exists() {
-        for entry in std::fs::read_dir(&subdir).into_iter().flatten().flatten() {
-            let p = entry.path();
-            if p.is_file() {
-                if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-                    if matches!(ext, "pt" | "pth" | "onnx") {
-                        let size = p.metadata().map(|m| m.len()).unwrap_or(0);
-                        return ResourceStatusResult {
-                            id: info.id.to_string(),
-                            name: info.name.to_string(),
-                            resource_type: info.resource_type.clone(),
-                            status: ResourceStatus::Ready,
-                            local_path: p.to_string_lossy().to_string(),
-                            size_mb: (size as f64) / 1024.0 / 1024.0,
-                            version: String::new(),
-                            error: String::new(),
-                        };
+
+    // 搜索一个 base 目录下的 local_name 及其子目录
+    let mut search_base = |base: &std::path::Path| -> Option<ResourceStatusResult> {
+        let path = base.join(&local_name);
+        if path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+            let size = path.metadata().map(|m| m.len()).unwrap_or(0);
+            return Some(ResourceStatusResult {
+                id: info.id.to_string(),
+                name: info.name.to_string(),
+                resource_type: info.resource_type.clone(),
+                status: ResourceStatus::Ready,
+                local_path: path.to_string_lossy().to_string(),
+                size_mb: (size as f64) / 1024.0 / 1024.0,
+                version: String::new(),
+                error: String::new(),
+            });
+        }
+        let subdir = base.join(&repo_name);
+        if subdir.exists() {
+            for entry in std::fs::read_dir(&subdir).into_iter().flatten().flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+                        if matches!(ext, "pt" | "pth" | "onnx") {
+                            let size = p.metadata().map(|m| m.len()).unwrap_or(0);
+                            return Some(ResourceStatusResult {
+                                id: info.id.to_string(),
+                                name: info.name.to_string(),
+                                resource_type: info.resource_type.clone(),
+                                status: ResourceStatus::Ready,
+                                local_path: p.to_string_lossy().to_string(),
+                                size_mb: (size as f64) / 1024.0 / 1024.0,
+                                version: String::new(),
+                                error: String::new(),
+                            });
+                        }
                     }
                 }
             }
+        }
+        None
+    };
+
+    // 1. MBForge 缓存
+    if let Some(result) = search_base(&crate::core::config::constants::model_cache_dir()) {
+        return result;
+    }
+
+    // 2. HF_HOME
+    if let Ok(hf_home) = std::env::var("HF_HOME") {
+        if let Some(result) = search_base(&PathBuf::from(&hf_home)) {
+            return result;
+        }
+    }
+
+    // 3. MODELSCOPE_CACHE
+    if let Ok(ms_cache) = std::env::var("MODELSCOPE_CACHE") {
+        if let Some(result) = search_base(&PathBuf::from(&ms_cache)) {
+            return result;
+        }
+    }
+    if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf()) {
+        if let Some(result) = search_base(&home.join(".cache").join("modelscope")) {
+            return result;
+        }
+    }
+
+    // 4. TORCH_HOME
+    if let Ok(torch_home) = std::env::var("TORCH_HOME") {
+        if let Some(result) = search_base(&PathBuf::from(&torch_home)) {
+            return result;
         }
     }
 

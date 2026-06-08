@@ -58,6 +58,11 @@ pub struct DetectedMolecule {
     pub moldet_conf: f64,
     pub page: i32,
     pub crop_path: String,
+    /// 检测框在 PDF 坐标系中的位置（左下原点，PDF 点单位）。
+    /// 用途：与 PDF 文本行做邻域匹配，找出"化合物 26A"这类标号。
+    /// 单位与 `page_w_pts` / `page_h_pts` 一致（A4 页面 595×842pt）。
+    #[serde(default)]
+    pub bbox_pdf: [f64; 4],
 }
 
 // ─── 共享工具 ────────────────────────────────────────────────────
@@ -181,11 +186,17 @@ pub async fn detect_page(image_path: &str, sidecar_url: &str) -> Result<Vec<Bbox
 }
 
 /// 对单页图片执行完整处理：检测 → 裁剪 → 识别 → 保存
+///
+/// `page_w_pts` / `page_h_pts` 是 PDF 页面的尺寸（点单位），用于把
+/// 检测框从图像坐标换算到 PDF 坐标，方便后续与 PDF 文本行做关联。
+/// 当不确定页面尺寸时传 `None`，bbox_pdf 会是 0 占位。
 pub async fn process_page_image(
     image_path: &str,
     page_idx: i32,
     sidecar_url: &str,
     output_dir: &Path,
+    page_w_pts: Option<f64>,
+    page_h_pts: Option<f64>,
 ) -> Result<Vec<DetectedMolecule>, String> {
     let bboxes = detect_page(image_path, sidecar_url).await?;
     if bboxes.is_empty() { return Ok(vec![]); }
@@ -215,12 +226,28 @@ pub async fn process_page_image(
         crop.save(&crop_path)
             .map_err(|e| format!("Failed to save crop {}: {}", crop_path.display(), e))?;
 
+        // 图像 → PDF 坐标转换
+        // image bbox 来自 detect_page，坐标原点在左上角 (像素)
+        // PDF bbox 原点在左下角 (点)，scale = image_w / page_w_pts
+        let bbox_pdf = match (page_w_pts, page_h_pts) {
+            (Some(pw), Some(ph)) if pw > 0.0 && ph > 0.0 && (img_w as f64) > 0.0 => {
+                let scale = (img_w as f64) / pw;
+                [
+                    bbox.x1 / scale,
+                    ph - (bbox.y2 / scale),
+                    bbox.x2 / scale,
+                    ph - (bbox.y1 / scale),
+                ]
+            }
+            _ => [0.0, 0.0, 0.0, 0.0],
+        };
         match molscribe(crop_path.to_str().unwrap_or(""), sidecar_url).await {
             Ok(ms) if ms.success && !ms.esmiles.is_empty() => {
                 results.push(DetectedMolecule {
                     esmiles: ms.esmiles, confidence: ms.confidence,
                     moldet_conf: bbox.conf, page: page_idx,
                     crop_path: crop_path.to_string_lossy().to_string(),
+                    bbox_pdf,
                 });
             }
             Ok(_) => log::debug!("[vlm_chem] MolScribe empty for page {} mol {}", page_idx, idx),

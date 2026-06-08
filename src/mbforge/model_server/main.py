@@ -193,7 +193,8 @@ app.include_router(embed.router, prefix="/api/v1", tags=["embed"])
 app.include_router(vlm.router, prefix="/api/v1/vlm", tags=["vlm"])
 app.include_router(moldet.router, prefix="/api/v1/moldet", tags=["moldet"])
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
-app.include_router(tools.router, prefix="/api/v1/tools", tags=["tools"])
+# tools.router 已删除：所有 Agent 工具已迁移到 Rust native
+# (src-tauri/src/core/agent/executor_rig.rs)
 app.include_router(
     environment.router, prefix="/api/v1/environment", tags=["environment"]
 )

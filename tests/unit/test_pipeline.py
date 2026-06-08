@@ -75,57 +75,26 @@ class TestHeadingExtraction:
         assert ExtractionResult is not None
 
 
-class TestMoleculeSchema:
-    """测试分子数据契约."""
-
-    def test_molecule_creation(self):
-        """验证 Molecule 数据类创建."""
-        from mbforge.molecules.schema import Molecule
-        mol = Molecule(
-            id="test_001",
-            esmiles="CCO",
-            name="ethanol",
-        )
-        assert mol.id == "test_001"
-        assert mol.esmiles == "CCO"
-        assert mol.name == "ethanol"
-
-    def test_molecule_to_dict(self):
-        """验证 Molecule 序列化."""
-        from mbforge.molecules.schema import Molecule
-        mol = Molecule(id="test_002", esmiles="CC(=O)O", name="acetic acid")
-        d = mol.to_dict()
-        assert d["esmiles"] == "CC(=O)O"
-        assert d["name"] == "acetic acid"
-        assert "properties" in d
-
-    def test_molecule_from_smiles(self):
-        """验证 Molecule 从 SMILES 创建."""
-        from mbforge.molecules.schema import Molecule
-        mol = Molecule.from_smiles("CCO", name="ethanol")
-        assert mol.esmiles == "CCO"
-        assert mol.name == "ethanol"
-
-
 class TestConfigIntegration:
-    """测试配置系统集成."""
+    """测试配置系统集成（sidecar 裁剪版）.
+
+    LLM/OCR/ModelServer 配置已迁移到 Rust 侧（`core::config::settings.rs`），
+    本测试仅覆盖 sidecar 需要的 embed/rerank/vlm 三个子配置。
+    """
 
     def test_load_global_config(self):
         """验证全局配置加载不崩溃."""
         from mbforge.utils.config import load_global_config
         config = load_global_config()
         assert config is not None
-        assert hasattr(config, 'llm')
         assert hasattr(config, 'embed')
         assert hasattr(config, 'rerank')
+        assert hasattr(config, 'vlm')
 
     def test_config_sections_have_required_fields(self):
         """验证配置节有必需字段."""
         from mbforge.utils.config import load_global_config
         config = load_global_config()
-        # LLM config
-        assert hasattr(config.llm, 'provider')
-        assert hasattr(config.llm, 'model_name')
         # Embed config
         assert hasattr(config.embed, 'provider')
         assert hasattr(config.embed, 'model_name')
@@ -133,37 +102,10 @@ class TestConfigIntegration:
         # Rerank config
         assert hasattr(config.rerank, 'provider')
         assert hasattr(config.rerank, 'model_name')
+        # VLM config
+        assert hasattr(config.vlm, 'provider')
 
 
-class TestProjectIntegration:
-    """测试项目管理集成."""
-
-    def test_project_create_and_list(self):
-        """验证项目创建和文档列表."""
-        from mbforge.core.project import Project
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project = Project.create(Path(tmpdir), name="IntegrationTest")
-            assert project is not None
-            docs = project.list_documents()
-            assert isinstance(docs, list)
-            assert len(docs) == 0  # 新项目无文档
-
-    def test_project_add_and_remove_file(self):
-        """验证文件添加和删除."""
-        from mbforge.core.project import Project
-        with tempfile.TemporaryDirectory() as tmpdir:
-            project = Project.create(Path(tmpdir), name="FileTest")
-            # 创建测试文件
-            test_file = project.root / "test_doc.md"
-            test_file.write_text("# Test Document\n\nSome content here.")
-            # 添加到项目
-            entry = project.add_file(test_file)
-            assert entry is not None
-            assert entry.title == "test_doc"
-            # 列出文档
-            docs = project.list_documents()
-            assert len(docs) == 1
-            # 删除
-            project.remove_document(entry.doc_id)
-            docs = project.list_documents()
-            assert len(docs) == 0
+# TestProjectIntegration 已迁移：Python `Project` 类已删除
+# (被 Rust `core::project::Project` 取代)。原 `TestProjectIntegration` 覆盖
+# 的逻辑由 Rust 侧单元测试 + 集成测试负责（`src-tauri/src/core/project/`）。

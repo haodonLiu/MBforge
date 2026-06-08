@@ -1,5 +1,5 @@
 use crate::core::helpers::{generate_uuid, sha256_text};
-use crate::core::molecule_store::MoleculeRecord;
+use crate::core::molecule::molecule_store::MoleculeRecord;
 use crate::parsers::doc_types::{ActivityEntry, CompoundEntry, PhysicochemicalProperty};
 
 /// CompoundEntry → MoleculeRecord 映射（三层分离）
@@ -129,7 +129,7 @@ pub fn embed_molecules_into_text(text: &str, records: &[MoleculeRecord]) -> Stri
             &rec.name
         };
 
-        match crate::core::molecode::esmiles_to_molecode(smiles_input, name) {
+        match crate::core::chem::molecode::esmiles_to_molecode(smiles_input, name) {
             Ok(mc) => {
                 result.push_str("\n\n<!-- MoleCode: ");
                 result.push_str(name);

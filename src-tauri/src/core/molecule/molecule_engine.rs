@@ -148,23 +148,23 @@ impl MoleculeEngine {
     // =====================================================================
 
     pub fn assign_cluster(&self, mol_id: &str, cluster_id: &str) -> Result<i64, String> {
-        crate::core::molecule_cluster::assign_to_cluster(mol_id, cluster_id, &self.relation_db)
+        crate::core::molecule::molecule_cluster::assign_to_cluster(mol_id, cluster_id, &self.relation_db)
     }
 
     pub fn remove_from_cluster(&self, mol_id: &str, cluster_id: &str) -> Result<bool, String> {
-        crate::core::molecule_cluster::remove_from_cluster(mol_id, cluster_id, &self.relation_db)
+        crate::core::molecule::molecule_cluster::remove_from_cluster(mol_id, cluster_id, &self.relation_db)
     }
 
     pub fn get_cluster_members(&self, cluster_id: &str) -> Result<ClusterInfo, String> {
-        crate::core::molecule_cluster::get_cluster_members(cluster_id, &self.relation_db)
+        crate::core::molecule::molecule_cluster::get_cluster_members(cluster_id, &self.relation_db)
     }
 
     pub fn get_molecule_clusters(&self, mol_id: &str) -> Result<Vec<String>, String> {
-        crate::core::molecule_cluster::get_molecule_clusters(mol_id, &self.relation_db)
+        crate::core::molecule::molecule_cluster::get_molecule_clusters(mol_id, &self.relation_db)
     }
 
     pub fn list_clusters(&self) -> Result<Vec<ClusterInfo>, String> {
-        crate::core::molecule_cluster::list_clusters(&self.relation_db)
+        crate::core::molecule::molecule_cluster::list_clusters(&self.relation_db)
     }
 
     // =====================================================================
@@ -177,7 +177,7 @@ impl MoleculeEngine {
         min_sim: f64,
     ) -> Result<Vec<AnalogWithActivity>, String> {
         let mconn = self.store.conn();
-        crate::core::sar_query::find_analogs_with_activity(
+        crate::core::chem::sar_query::find_analogs_with_activity(
             mol_id,
             min_sim,
             &self.relation_db,
@@ -187,7 +187,7 @@ impl MoleculeEngine {
 
     pub fn scaffold_profile(&self, scaffold: &str) -> Result<ScaffoldProfile, String> {
         let mconn = self.store.conn();
-        crate::core::sar_query::scaffold_activity_profile(scaffold, mconn)
+        crate::core::chem::sar_query::scaffold_activity_profile(scaffold, mconn)
     }
 
     pub fn find_activity_cliffs(
@@ -196,7 +196,7 @@ impl MoleculeEngine {
         min_ratio: f64,
     ) -> Result<Vec<ActivityCliff>, String> {
         let mconn = self.store.conn();
-        crate::core::sar_query::find_activity_cliffs(min_sim, min_ratio, mconn)
+        crate::core::chem::sar_query::find_activity_cliffs(min_sim, min_ratio, mconn)
     }
 
     // =====================================================================
@@ -205,7 +205,7 @@ impl MoleculeEngine {
 
     pub fn dedup_batch(&self, new_mols: &[(String, String)], threshold: f64) -> DedupResult {
         let sidecar_url = crate::core::constants::sidecar_url();
-        crate::core::molecule_dedup::run_dedup_batch(
+        crate::core::molecule::molecule_dedup::run_dedup_batch(
             new_mols,
             &self.relation_db,
             &sidecar_url,
@@ -219,7 +219,7 @@ impl MoleculeEngine {
         mol_b_id: &str,
         score: f64,
     ) -> Result<i64, String> {
-        crate::core::molecule_dedup::add_similarity_relation(
+        crate::core::molecule::molecule_dedup::add_similarity_relation(
             mol_a_id,
             mol_b_id,
             score,
@@ -346,7 +346,7 @@ impl MoleculeEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::molecule_db::RelationType;
+    use crate::core::molecule::molecule_db::RelationType;
     use std::path::PathBuf;
 
     fn temp_project() -> (tempfile::TempDir, PathBuf) {

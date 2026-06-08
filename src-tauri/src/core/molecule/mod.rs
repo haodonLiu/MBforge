@@ -2,7 +2,7 @@
 //!
 //! Re-exports the public API at the `molecule` namespace so callers can
 //! write `use crate::core::molecule::MoleculeEngine` instead of the longer
-//! `crate::core::molecule_engine::MoleculeEngine`.
+//! `crate::core::molecule::molecule_engine::MoleculeEngine`.
 
 pub mod molecule_cluster;
 pub mod molecule_db;

@@ -4,7 +4,7 @@
 //! `MoleculeEngineState` alongside relation / cluster / SAR commands.
 
 use crate::commands::mol_engine::{get_or_init_engine, MoleculeEngineState};
-use crate::core::molecule_store::MoleculeRecord;
+use crate::core::molecule::molecule_store::MoleculeRecord;
 
 #[tauri::command]
 pub async fn mol_store_init(
@@ -31,7 +31,7 @@ pub async fn mol_store_add(
 ) -> Result<(), String> {
     get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
-    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
 
     let mut record = MoleculeRecord::new(&mol_id, &esmiles);
     if let Some(n) = name {
@@ -63,7 +63,7 @@ pub async fn mol_store_list(
 ) -> Result<Vec<MoleculeRecord>, String> {
     get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
-    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
 
     engine.list_all(
         limit.unwrap_or(100),
@@ -81,7 +81,7 @@ pub async fn mol_store_get(
 ) -> Result<Option<MoleculeRecord>, String> {
     get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
-    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
     engine.get_molecule(&mol_id).map_err(|e| e.to_string())
 }
 
@@ -93,7 +93,7 @@ pub async fn mol_store_search(
 ) -> Result<Vec<MoleculeRecord>, String> {
     get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
-    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
     engine.search_text(&query).map_err(|e| e.to_string())
 }
 
@@ -105,7 +105,7 @@ pub async fn mol_store_delete(
 ) -> Result<bool, String> {
     get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
-    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
     engine.delete_molecule(&mol_id).map_err(|e| e.to_string())
 }
 
@@ -121,7 +121,7 @@ pub async fn mol_store_update(
 ) -> Result<bool, String> {
     get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
-    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
     engine.update_molecule(&record)
 }
 
@@ -137,7 +137,7 @@ pub async fn mol_store_update_batch(
 ) -> Result<serde_json::Value, String> {
     get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
-    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
     let (updated, failed) = engine.update_molecules_batch(&records)?;
     Ok(serde_json::json!({
         "updated": updated,
@@ -152,7 +152,7 @@ pub async fn mol_store_stats(
 ) -> Result<serde_json::Value, String> {
     get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
-    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
     engine.get_store_stats().map_err(|e| e.to_string())
 }
 
@@ -164,7 +164,7 @@ pub async fn mol_store_search_by_smiles(
 ) -> Result<Option<MoleculeRecord>, String> {
     get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
-    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
     engine.search_by_smiles(&smiles).map_err(|e| e.to_string())
 }
 
@@ -176,6 +176,6 @@ pub async fn mol_store_list_by_doc(
 ) -> Result<Vec<MoleculeRecord>, String> {
     get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
-    let engine = guard.as_ref().ok_or("MoleculeEngine not initialized")?;
+    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
     engine.search_by_source(&doc_id).map_err(|e| e.to_string())
 }

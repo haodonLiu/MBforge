@@ -128,7 +128,7 @@ fn main() {
 
             if !no_spawn && server_script.exists() {
                 // 写入模型路径供 Python sidecar 读取（单一真相源在 Rust 侧）
-                core::resource_manager::write_resolved_paths();
+                core::project::resource_manager::write_resolved_paths();
 
                 let sidecar = sidecar::SidecarInner::new(python, working_dir);
                 if let Err(e) = sidecar::spawn_and_start_readers(&sidecar, &app_handle) {

@@ -2,7 +2,7 @@
 //!
 //! Exposes the Rust-native GESim implementation to the frontend via Tauri IPC.
 
-use crate::core::gesim;
+use crate::core::chem::gesim;
 use chematic_smiles::parse;
 
 /// Tauri command: compute GESim similarity between two SMILES/E-SMILES strings.

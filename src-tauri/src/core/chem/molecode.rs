@@ -42,7 +42,7 @@ use chematic_core::{implicit_hcount, kekulize};
 use chematic_chem::cip::assign_cip;
 use chematic_smiles::parse;
 
-use crate::core::esmiles::{normalize_wildcards, parse_esmiles_tags, EsTag};
+use crate::core::chem::esmiles::{normalize_wildcards, parse_esmiles_tags, EsTag};
 
 // ─── Bond type mapping ────────────────────────────────────────────
 

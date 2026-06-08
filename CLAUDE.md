@@ -1,12 +1,65 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+
+Tradeoff: These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+1. Think Before Coding
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+Before implementing:
+
+State your assumptions explicitly. If uncertain, ask.
+If multiple interpretations exist, present them - don't pick silently.
+If a simpler approach exists, say so. Push back when warranted.
+If something is unclear, stop. Name what's confusing. Ask.
+2. Simplicity First
+Minimum code that solves the problem. Nothing speculative.
+
+No features beyond what was asked.
+No abstractions for single-use code.
+No "flexibility" or "configurability" that wasn't requested.
+No error handling for impossible scenarios.
+If you write 200 lines and it could be 50, rewrite it.
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+3. Surgical Changes
+Touch only what you must. Clean up only your own mess.
+
+When editing existing code:
+
+Don't "improve" adjacent code, comments, or formatting.
+Don't refactor things that aren't broken.
+Match existing style, even if you'd do it differently.
+If you notice unrelated dead code, mention it - don't delete it.
+When your changes create orphans:
+
+Remove imports/variables/functions that YOUR changes made unused.
+Don't remove pre-existing dead code unless asked.
+The test: Every changed line should trace directly to the user's request.
+
+4. Goal-Driven Execution
+Define success criteria. Loop until verified.
+
+Transform tasks into verifiable goals:
+
+"Add validation" → "Write tests for invalid inputs, then make them pass"
+"Fix the bug" → "Write a test that reproduces it, then make it pass"
+"Refactor X" → "Ensure tests pass before and after"
+For multi-step tasks, state a brief plan:
+
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
 ## What MBForge Is
 
 React+Vite+Tauri 桌面应用，用于分子科学/药物发现研究。双语言架构：
 - **Rust** (`src-tauri/src/`): Agent ReAct 循环、PDF 原生解析（lopdf）、分子 SQLite 数据库、Tauri 命令层、化学信息学（chematic crate）
-- **Python** (`src/mbforge/`): FastAPI 模型服务器（port 18792）、LLM/Embedding/VLM 推理、MolScribe
+- **Python** (`src/mbforge/`): FastAPI 模型服务器（port 18792）、Embedding、MolScribe
 
 核心流程：PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询。
 不允许任何基于假设或者推测的代码出现
@@ -186,22 +239,15 @@ invoke('extract_pdf_workflow_cmd', { path: '...', outputDir: '...' })
 
 停下来描述：(1) 错误现象 (2) 理解 (3) 解决方案，再行动。不要盲目穷举。
 
-### 每次任务后的文档更新
-
-完成任何代码修改后，必须在 **CODEMAP.md §7.6 待审核事项** 中记录修改内容（日期、文件、问题描述、状态 `⚠️ 待审核`），由人工确认后标记 ✅。
-
-
 ## Built-in Documentation
 
 | 文档 | 位置 |
 |------|------|
 | Agent 工作规范 + 架构 | `AGENTS.md` |
 | 编码指南 | `CLAUDE.md` |
-| 代码逻辑树 | `CODEMAP.md` |
 | 任务看板 | `TODO/INDEX.md` |
 | E-SMILES 规范 | `docs/esmiles-spec.md` |
 | MoleCode 规范 | `docs/molecode-spec.md` |
-| 管线重设计（设计稿） | `docs/pipeline-redesign.md` |
 | 技术栈详情 | `docs/TECH_STACK.md` |
 | 第三方引用 | `docs/REFERENCES.md` |
 | MoleCode 参考实现 | `ref/MoleCode/` |

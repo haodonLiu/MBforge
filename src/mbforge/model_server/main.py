@@ -51,13 +51,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from ..utils.exceptions import MBForgeError
-from .routers import embed
-from .routers import environment
-from .routers import health
-from .routers import moldet
-from .routers import tools
-from .routers import vlm
+from ..utils.helpers import MBForgeError
+from .routers import (
+    embed_router,
+    environment_router,
+    health_router,
+    moldet_router,
+    vlm_router,
+)
 
 logger = logging.getLogger("mbforge.startup")
 
@@ -69,7 +70,7 @@ def _prewarm_models():
     `MBFORGE_LLM_*` 端点（参见 `core/agent/rig_adapter`），不再经过此 sidecar。
     """
     try:
-        from .models.embedder import get_embedder
+        from mbforge.models.embedding import get_embedder
 
         get_embedder()
         logger.info("Embedder model prewarmed")
@@ -77,7 +78,7 @@ def _prewarm_models():
         logger.warning(f"Embedder prewarm failed: {e}")
 
     try:
-        from .models.reranker import get_reranker
+        from mbforge.models.rerank import get_reranker
 
         get_reranker()
         logger.info("Reranker model prewarmed")
@@ -126,7 +127,7 @@ async def lifespan(app: FastAPI):
 
         # 关闭 httpx / aiohttp 客户端
         try:
-            from .models.singleton import close_all_singletons
+            from mbforge.utils.singleton import close_all_singletons
 
             await close_all_singletons()
         except Exception as e:
@@ -189,12 +190,8 @@ async def generic_error_handler(request: Request, exc: Exception) -> JSONRespons
 
 
 # 注册路由（注意：LLM 路由已移除 — LLM 由 Rust core 直连 MBFORGE_LLM_* 端点）
-app.include_router(embed.router, prefix="/api/v1", tags=["embed"])
-app.include_router(vlm.router, prefix="/api/v1/vlm", tags=["vlm"])
-app.include_router(moldet.router, prefix="/api/v1/moldet", tags=["moldet"])
-app.include_router(health.router, prefix="/api/v1", tags=["health"])
-# tools.router 已删除：所有 Agent 工具已迁移到 Rust native
-# (src-tauri/src/core/agent/executor_rig.rs)
-app.include_router(
-    environment.router, prefix="/api/v1/environment", tags=["environment"]
-)
+app.include_router(embed_router, prefix="/api/v1", tags=["embed"])
+app.include_router(vlm_router, prefix="/api/v1/vlm", tags=["vlm"])
+app.include_router(moldet_router, prefix="/api/v1/moldet", tags=["moldet"])
+app.include_router(health_router, prefix="/api/v1", tags=["health"])
+app.include_router(environment_router, prefix="/api/v1/environment", tags=["environment"])

@@ -261,3 +261,12 @@ def create_embedder_from_config(config: EmbedConfig) -> BaseEmbedder:
     else:
         # fallback to Qwen3
         return Qwen3Embedder(model_name=cfg.model_name, device=cfg.device)
+
+
+# ---- Singleton accessors (moved from model_server/models/embedder.py) ----
+
+from ..utils.singleton import ModelSingleton
+
+_embedder_mgr = ModelSingleton(BaseEmbedder, lambda cfg: cfg.embed, create_embedder_from_config)
+get_embedder = _embedder_mgr.get
+reset_embedder = _embedder_mgr.reset

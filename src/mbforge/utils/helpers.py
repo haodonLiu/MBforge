@@ -150,3 +150,99 @@ def decode_base64_image(image_base64: str) -> "Image.Image":
 
     data = base64.b64decode(image_base64)
     return Image.open(BytesIO(data))
+
+
+# ---- Exceptions (moved from exceptions.py) ----
+
+
+class MBForgeError(Exception):
+    """Base exception with HTTP status code and error code."""
+
+    status_code: int = 500
+    error_code: str = "internal_error"
+
+    def __init__(self, message: str, *, detail: str | None = None) -> None:
+        self.message = message
+        self.detail = detail
+        super().__init__(message)
+
+
+class ProjectNotValidError(MBForgeError):
+    status_code = 400
+    error_code = "project_not_valid"
+
+
+class ModelNotAvailableError(MBForgeError):
+    status_code = 503
+    error_code = "model_not_available"
+
+
+class ConfigError(MBForgeError):
+    status_code = 400
+    error_code = "config_error"
+
+
+class ValidationError(MBForgeError):
+    status_code = 422
+    error_code = "validation_error"
+
+
+class FileAccessError(MBForgeError):
+    status_code = 400
+    error_code = "file_access_error"
+
+
+class PathTraversalError(MBForgeError):
+    status_code = 403
+    error_code = "path_traversal"
+
+
+class ResourceNotAvailableError(MBForgeError):
+    status_code = 503
+    error_code = "resource_not_available"
+
+
+class ToolExecutionError(MBForgeError):
+    status_code = 500
+    error_code = "tool_execution_error"
+
+
+# ---- GPU helpers (moved from gpu.py) ----
+
+import logging as _logging
+import os as _os
+
+_gpu_logger = _logging.getLogger(__name__)
+_gpu_cached: bool | None = None
+
+
+def is_gpu_available() -> bool:
+    """Check if NVIDIA GPU with CUDA is available."""
+    global _gpu_cached
+    if _gpu_cached is not None:
+        return _gpu_cached
+    if _os.environ.get("MBFORGE_FORCE_CPU", "").strip() == "1":
+        _gpu_cached = False
+        return False
+    try:
+        import torch  # noqa: F401
+        available = torch.cuda.is_available()
+    except ImportError:
+        available = False
+    _gpu_cached = available
+    return available
+
+
+def require_gpu() -> bool:
+    """Return True if GPU is required (not forced to CPU)."""
+    return is_gpu_available()
+
+
+def gpu_warning(feature: str) -> None:
+    """Log a one-time warning that feature is disabled due to no GPU."""
+    _gpu_logger.warning(
+        "No GPU available — %s requires CUDA. "
+        "Set MBFORGE_FORCE_CPU=1 to suppress this warning, "
+        "or install NVIDIA drivers and CUDA toolkit to enable.",
+        feature,
+    )

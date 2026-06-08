@@ -61,3 +61,12 @@ def create_vlm_from_config(config: VLMConfig) -> BaseVLM:
     """从配置创建 VLM 实例."""
     cfg = config
     return APIVLM(base_url=cfg.base_url, api_key=cfg.api_key, model_name=cfg.model_name)
+
+
+# ---- Singleton accessors (moved from model_server/models/vlm.py) ----
+
+from ..utils.singleton import ModelSingleton
+
+_vlm_mgr = ModelSingleton(BaseVLM, lambda cfg: cfg.vlm, create_vlm_from_config)
+get_vlm = _vlm_mgr.get
+reset_vlm = _vlm_mgr.reset

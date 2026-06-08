@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 def test_circuit_breaker_skips_after_failure():
     """model init 失败后，30s 内再次调用应被熔断（不调用 get_embedder）。"""
-    health = importlib.import_module("mbforge.model_server.routers.health")
+    health = importlib.import_module("mbforge.model_server.routers")
     importlib.reload(health)
 
     # 重置 cooldown 状态
@@ -49,7 +49,7 @@ def test_circuit_breaker_skips_after_failure():
 
 def test_circuit_breaker_clears_on_success():
     """model init 成功后，应清空失败时间戳。"""
-    health = importlib.import_module("mbforge.model_server.routers.health")
+    health = importlib.import_module("mbforge.model_server.routers")
     importlib.reload(health)
 
     # 模拟"上次失败"，但要等到 cooldown 过期后
@@ -80,7 +80,7 @@ def test_circuit_breaker_clears_on_success():
 
 def test_set_model_status_clears_failure():
     """外部设置 ready 状态应清空熔断器。"""
-    health = importlib.import_module("mbforge.model_server.routers.health")
+    health = importlib.import_module("mbforge.model_server.routers")
     health._last_failure["vlm"] = time.monotonic()
     health.set_model_status("vlm", "ready")
     assert "vlm" not in health._last_failure

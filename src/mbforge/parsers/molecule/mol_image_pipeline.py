@@ -24,7 +24,7 @@ from PIL import Image
 
 from .coords import image_to_pdf_bbox, scale_from_page_size
 from .extraction_result import ExtractionResult
-from mbforge.utils.gpu import is_gpu_available
+from mbforge.utils.helpers import is_gpu_available
 from mbforge.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -649,3 +649,30 @@ class MolImagePipeline:
         )
 
         return self.extract_region(crop, page_idx, bbox_pdf)
+
+
+# ---- Singleton accessors (moved from model_server/models/moldet.py) ----
+
+from typing import Any
+
+_moldet_instance: Any = None
+
+
+def get_moldet() -> MolImagePipeline | None:
+    """获取全局 MolImagePipeline 单例."""
+    global _moldet_instance
+    if _moldet_instance is None:
+        from mbforge.utils.gpu import gpu_warning, is_gpu_available
+        if not is_gpu_available():
+            gpu_warning("MolDet/MolScribe image pipeline")
+            return None
+        from mbforge.utils.config import load_global_config
+        device = load_global_config().embed.device
+        _moldet_instance = MolImagePipeline(device=device)
+    return _moldet_instance
+
+
+def reset_moldet() -> None:
+    """重置 MolImagePipeline 单例."""
+    global _moldet_instance
+    _moldet_instance = None

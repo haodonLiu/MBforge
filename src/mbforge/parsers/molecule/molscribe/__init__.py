@@ -21,7 +21,7 @@ from PIL import Image
 from .config import MolScribeConfig
 from .result import MolScribeResult
 from .engine import MolScribeEngine
-from mbforge.utils.gpu import is_gpu_available
+from mbforge.utils.helpers import is_gpu_available
 from mbforge.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -76,8 +76,35 @@ class MolScribe:
         return self.predict(image)
 
 
+# ---- Singleton accessors (moved from model_server/models/molscribe.py) ----
+
+from typing import Any
+
+_molscribe_instance: Any = None
+
+
+def get_molscribe() -> MolScribe:
+    """获取全局 MolScribe 单例（首次调用时加载模型）."""
+    global _molscribe_instance
+    if _molscribe_instance is None:
+        _molscribe_instance = MolScribe()
+        if _molscribe_instance.is_available:
+            logger.info("MolScribe model loaded (singleton)")
+        else:
+            logger.warning("MolScribe model not available: %s", _molscribe_instance.error)
+    return _molscribe_instance
+
+
+def reset_molscribe() -> None:
+    """重置 MolScribe 单例."""
+    global _molscribe_instance
+    _molscribe_instance = None
+
+
 __all__ = [
     "MolScribe",
     "MolScribeConfig",
     "MolScribeResult",
+    "get_molscribe",
+    "reset_molscribe",
 ]

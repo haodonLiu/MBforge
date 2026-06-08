@@ -69,7 +69,7 @@ class TestExceptionHierarchy:
 
     def test_all_exceptions_inherit_from_mbforge_error(self):
         """验证所有异常都继承 MBForgeError."""
-        from mbforge.utils.exceptions import (
+        from mbforge.utils.helpers import (
             MBForgeError, ProjectNotValidError, ModelNotAvailableError,
             ConfigError, ValidationError, FileAccessError, PathTraversalError,
             ResourceNotAvailableError, ToolExecutionError,
@@ -83,7 +83,7 @@ class TestExceptionHierarchy:
 
     def test_exception_status_codes(self):
         """验证异常有正确的 HTTP 状态码."""
-        from mbforge.utils.exceptions import (
+        from mbforge.utils.helpers import (
             ProjectNotValidError, ModelNotAvailableError, ValidationError,
             ResourceNotAvailableError,
         )
@@ -94,7 +94,7 @@ class TestExceptionHierarchy:
 
     def test_exception_error_codes(self):
         """验证异常有机器可读的错误码."""
-        from mbforge.utils.exceptions import (
+        from mbforge.utils.helpers import (
             ProjectNotValidError, ModelNotAvailableError, ValidationError,
             ResourceNotAvailableError,
         )
@@ -105,7 +105,7 @@ class TestExceptionHierarchy:
 
     def test_exception_carries_message(self):
         """验证异常携带消息."""
-        from mbforge.utils.exceptions import MBForgeError
+        from mbforge.utils.helpers import MBForgeError
         exc = MBForgeError("test message", detail="extra info")
         assert exc.message == "test message"
         assert exc.detail == "extra info"

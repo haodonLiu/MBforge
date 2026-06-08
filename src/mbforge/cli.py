@@ -35,10 +35,8 @@ def main() -> int:
     gui_parser = subparsers.add_parser("gui", help="启动后端并打开浏览器")
     gui_parser.add_argument("--project", "-p", type=str, help="直接打开指定项目路径")
 
-    # init 命令
-    init_parser = subparsers.add_parser("init", help="初始化新项目")
-    init_parser.add_argument("path", type=str, help="项目目录路径")
-    init_parser.add_argument("--name", "-n", type=str, help="项目名称")
+    # init 命令已迁移到 Tauri：使用 `cargo tauri dev` 内的 GUI，或
+    # 直接调用 `project_create` Tauri 命令。Python CLI 不再保留此入口。
 
     # download 命令 — 下载可选模型（重定向到 ResourceManager）
     dl_parser = subparsers.add_parser("download", help="下载可选模型（MolDetv2/MolScribe）")
@@ -46,13 +44,9 @@ def main() -> int:
                            choices=["all", "moldet", "molscribe"],
                            help="要下载的模型（默认 all）")
 
-    # extract 命令 — PDF 分子提取工作流
-    extract_parser = subparsers.add_parser("extract", help="PDF 分子提取：文本 + 分子图片 + SMILES")
-    extract_parser.add_argument("pdf", type=str, help="PDF 文件路径")
-    extract_parser.add_argument("--output", "-o", type=str, default="./extract_output",
-                                help="输出目录（默认 ./extract_output）")
-    extract_parser.add_argument("--no-sidecar", action="store_true",
-                                help="不依赖 sidecar，直接加载模型（额外 GPU 内存）")
+    # extract 命令已迁移到 Tauri（core::parsers::pipeline::extract_pdf_workflow）
+    # 通过 `cargo tauri dev` 内的 GUI 调用，或 `pdf::extract_pdf_workflow_cmd` Tauri 命令
+    # Python CLI 不再保留此入口，避免与 Rust 实现分叉。
 
     # env 命令 — 环境管理
     env_parser = subparsers.add_parser("env", help="环境管理（检查/搭建）")
@@ -74,12 +68,8 @@ def main() -> int:
         return _cmd_dev(args)
     elif args.command == "gui":
         return _cmd_gui(args)
-    elif args.command == "init":
-        return _cmd_init(args)
     elif args.command == "download":
         return _cmd_download(args)
-    elif args.command == "extract":
-        return _cmd_extract(args)
     elif args.command == "env":
         if args.env_command == "check":
             return _cmd_env_check(args)
@@ -214,18 +204,6 @@ def _cmd_gui(args) -> int:
     except KeyboardInterrupt:
         logger.error("\n\033[33m正在停止服务...\033[0m")
         server_proc.terminate()
-    return 0
-
-
-def _cmd_init(args) -> int:
-    setup_logging()
-    from .core.project import Project
-
-    root = Path(args.path).resolve()
-    name = args.name or root.name
-    project = Project.create(root, name=name)
-    logger.info(f"项目已创建: {project.root}")
-    logger.info(f"名称: {project.name}")
     return 0
 
 
@@ -472,50 +450,6 @@ def _cmd_env_setup(args) -> int:
             logger.error(f"    \033[31m✗ {r.name} 失败: {result.error}\033[0m")
 
     logger.info(f"\n  搭建完成: {success_count}/{len(missing)} 成功\n")
-    return 0
-
-
-# ---- PDF 分子提取工作流 ----
-
-def _cmd_extract(args) -> int:
-    """PDF 分子提取：文本 + 分子图片 + SMILES → 输出目录."""
-    setup_logging()
-
-    pdf_path = args.pdf
-    output_dir = args.output
-
-    if not Path(pdf_path).exists():
-        logger.error(f"\033[31m✗ PDF 不存在: {pdf_path}\033[0m")
-        return 1
-
-    logger.info("\n\033[36m=== PDF 分子提取工作流 ===\033[0m")
-    logger.info(f"  输入: {pdf_path}")
-    logger.info(f"  输出: {output_dir}\n")
-
-    try:
-        from .parsers.workflow import extract_pdf_workflow
-        result = extract_pdf_workflow(
-            pdf_path, output_dir,
-            use_sidecar=not getattr(args, "no_sidecar", False),
-        )
-    except FileNotFoundError as e:
-        logger.error(f"\033[31m✗ {e}\033[0m")
-        return 1
-    except RuntimeError as e:
-        logger.error(f"\033[31m✗ {e}\033[0m")
-        return 1
-    except Exception as e:
-        logger.error("Extract workflow failed: %s", e, exc_info=True)
-        logger.error(f"\033[31m✗ 提取失败: {e}\033[0m")
-        return 1
-
-    logger.info("\033[32m✓ 提取完成\033[0m")
-    logger.info(f"  文本:      {result.text_path}")
-    logger.info(f"  分子清单:  {result.manifest_path}")
-    logger.info(f"  页数:      {result.page_count}")
-    logger.info(f"  分子数:    {result.molecule_count}")
-    logger.info(f"  解析器:    {result.parser}")
-    logger.info(f"  输出目录:  {result.output_dir}")
     return 0
 
 

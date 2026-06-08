@@ -155,7 +155,7 @@ pub async fn extract_pdf_workflow_cmd(
     path: String,
     output_dir: String,
 ) -> Result<crate::parsers::pipeline::WorkflowResult, String> {
-    use crate::core::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
+    use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
     use crate::parsers::chem::chem_validate::separate_esmiles_layers;
     use crate::parsers::chem::vlm_chem::DetectedMolecule;
 

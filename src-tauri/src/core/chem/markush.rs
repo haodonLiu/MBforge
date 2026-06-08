@@ -588,7 +588,7 @@ pub fn parse_esmiles(input: &str) -> MarkushPattern {
         for cap in ATOM_TAG_RE.captures_iter(ext) {
             let idx: u32 = cap[1].parse().unwrap_or(0);
             let group = cap[2].to_string();
-            let normalized = crate::core::abbreviation_map::normalize_abbrev_name(&group);
+            let normalized = crate::core::chem::abbreviation_map::normalize_abbrev_name(&group);
             r_groups.push(RGroupAttachment {
                 atom_index: idx,
                 group_name: normalized,
@@ -598,7 +598,7 @@ pub fn parse_esmiles(input: &str) -> MarkushPattern {
         for cap in RING_TAG_RE.captures_iter(ext) {
             let idx: u32 = cap[1].parse().unwrap_or(0);
             let group = cap[2].to_string();
-            let normalized = crate::core::abbreviation_map::normalize_abbrev_name(&group);
+            let normalized = crate::core::chem::abbreviation_map::normalize_abbrev_name(&group);
             r_groups.push(RGroupAttachment {
                 atom_index: idx,
                 group_name: normalized,
@@ -845,8 +845,8 @@ pub fn check_overlap(markush: &MarkushPattern, query_smiles: &str) -> MarkushOve
                         let subst = q_atom.element.clone();
 
                         // 尝试缩写展开匹配
-                        let normalized_name = crate::core::abbreviation_map::normalize_abbrev_name(&rg.group_name);
-                        let in_scope = if let Some(single_atom) = crate::core::abbreviation_map::get_single_atom_label(&normalized_name) {
+                        let normalized_name = crate::core::chem::abbreviation_map::normalize_abbrev_name(&rg.group_name);
+                        let in_scope = if let Some(single_atom) = crate::core::chem::abbreviation_map::get_single_atom_label(&normalized_name) {
                             // 缩写有单原子等价，用等价标签匹配
                             check_rgroup_scope(&rg.definition, single_atom)
                         } else {

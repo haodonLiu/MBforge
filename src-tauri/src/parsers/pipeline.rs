@@ -5,7 +5,7 @@ use crate::core::constants::{EVT_DOC_PROGRESS, EVT_DOC_RESULT};
 
 use crate::commands::classifier::classify_document;
 use crate::commands::extractor::{extract_activities, extract_esmiles_candidates};
-use crate::core::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
+use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
 
 use super::doc_types::{
     DocProcessingContext, DocStructure, DocumentMetadata, DocumentReport, ImageRef, PdfParseResult,
@@ -447,7 +447,7 @@ pub async fn process_document(
         let mut cache_hit = false;
 
         if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
-            if let Ok(kb) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()) {
+            if let Ok(kb) = crate::core::document::get_or_init_kb(root.to_string_lossy().as_ref()) {
                 match kb.file_cache().get(file_path) {
                     Ok(Some(cached)) => {
                         log::info!("File cache HIT for: {}", path);
@@ -495,7 +495,7 @@ pub async fn process_document(
 
             // 写入文件缓存
             if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
-                if let Ok(kb) = crate::core::get_or_init_kb(root.to_string_lossy().as_ref()) {
+                if let Ok(kb) = crate::core::document::get_or_init_kb(root.to_string_lossy().as_ref()) {
                     let sections_json = serde_json::to_string(&ctx.sections).unwrap_or_default();
                     let meta_json = serde_json::to_string(&serde_json::json!({
                         "parser": ctx.parser_used,

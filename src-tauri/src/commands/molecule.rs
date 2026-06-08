@@ -1,6 +1,6 @@
 use crate::commands::mol_engine::{get_or_init_engine, MoleculeEngineState};
-use crate::core::molecule_db::{MoleculeRelation, RelationType};
-use crate::core::molecule_engine::{
+use crate::core::molecule::molecule_db::{MoleculeRelation, RelationType};
+use crate::core::molecule::molecule_engine::{
     ActivityCliff, AnalogWithActivity, ClusterInfo, DedupResult, ScaffoldProfile,
 };
 
@@ -37,6 +37,7 @@ pub async fn mol_add_relation(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
 
     let rel_type = RelationType::from_str(&relation_type)
@@ -64,6 +65,7 @@ pub async fn mol_delete_relation(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.delete_relation(id).map_err(|e| {
         log::error!("mol_delete_relation id={} failed: {}", id, e);
@@ -79,6 +81,7 @@ pub async fn mol_get_relation(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.get_relation(id).map_err(|e| {
         log::error!("mol_get_relation id={} failed: {}", id, e);
@@ -94,6 +97,7 @@ pub async fn mol_find_by_molecule(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.find_by_molecule(&mol_id).map_err(|e| {
         log::error!("mol_find_by_molecule mol_id={} failed: {}", mol_id, e);
@@ -110,6 +114,7 @@ pub async fn mol_find_similar(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.find_similar(&mol_id, min_score).map_err(|e| {
         log::error!("mol_find_similar mol_id={} failed: {}", mol_id, e);
@@ -125,6 +130,7 @@ pub async fn mol_find_same_as(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.find_same_as(&mol_id).map_err(|e| {
         log::error!("mol_find_same_as mol_id={} failed: {}", mol_id, e);
@@ -135,10 +141,11 @@ pub async fn mol_find_same_as(
 #[tauri::command]
 pub async fn mol_get_stats(
     state: tauri::State<'_, MoleculeEngineState>,
-) -> Result<crate::core::molecule_db::RelationStats, String> {
+) -> Result<crate::core::molecule::molecule_db::RelationStats, String> {
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.get_relation_stats().map_err(|e| {
         log::error!("mol_get_stats failed: {}", e);
@@ -155,6 +162,7 @@ pub async fn mol_assign_cluster(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.assign_cluster(&mol_id, &cluster_id).map_err(|e| {
         log::error!(
@@ -176,6 +184,7 @@ pub async fn mol_remove_from_cluster(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine
         .remove_from_cluster(&mol_id, &cluster_id)
@@ -198,6 +207,7 @@ pub async fn mol_get_cluster_members(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.get_cluster_members(&cluster_id).map_err(|e| {
         log::error!(
@@ -217,6 +227,7 @@ pub async fn mol_get_molecule_clusters(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.get_molecule_clusters(&mol_id).map_err(|e| {
         log::error!("mol_get_molecule_clusters mol_id={} failed: {}", mol_id, e);
@@ -231,6 +242,7 @@ pub async fn mol_list_clusters(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.list_clusters().map_err(|e| {
         log::error!("mol_list_clusters failed: {}", e);
@@ -247,6 +259,7 @@ pub async fn mol_find_analogs_with_activity(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.find_analogs(&mol_id, min_similarity).map_err(|e| {
         log::error!(
@@ -266,6 +279,7 @@ pub async fn mol_scaffold_profile(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine.scaffold_profile(&scaffold_esmiles).map_err(|e| {
         log::error!(
@@ -286,6 +300,7 @@ pub async fn mol_find_activity_cliffs(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine
         .find_activity_cliffs(min_similarity, min_activity_ratio)
@@ -309,6 +324,7 @@ pub async fn mol_dedup_batch(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     log::info!(
         "mol_dedup_batch: {} molecules, threshold={}",
@@ -333,6 +349,7 @@ pub async fn mol_search_substructure(
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
+        .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
 
     let db = engine.store();

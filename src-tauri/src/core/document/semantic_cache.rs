@@ -11,6 +11,7 @@ use std::sync::Mutex;
 
 use rusqlite::{params, Connection};
 
+use crate::core::db::SharedConn;
 use crate::core::error::AppResult;
 use crate::core::helpers::LockResultExt;
 
@@ -65,6 +66,8 @@ pub struct SemanticCache {
     config: SemanticCacheConfig,
     cache: Mutex<CacheInner>,
     db_path: PathBuf,
+    /// 共享连接（来自 DbManager）。为 None 时回退到 db_path 自管（向后兼容）。
+    shared_conn: Option<SharedConn>,
 }
 
 fn now_secs() -> f64 {
@@ -97,6 +100,51 @@ impl SemanticCache {
                 lru: VecDeque::new(),
             }),
             db_path: db_path.clone(),
+            shared_conn: None,
+        };
+
+        if cache.config.disk_persist {
+            if let Err(e) = cache.load_from_db() {
+                log::warn!("SemanticCache: failed to load from db: {}", e);
+            }
+        }
+
+        // 向后兼容：尝试从旧 JSON 文件加载
+        let legacy_path = project_root
+            .join(".mbforge")
+            .join("cache")
+            .join("semantic_cache.json");
+        if legacy_path.exists() {
+            if let Err(e) = cache.load_from_legacy_json(&legacy_path) {
+                log::warn!("SemanticCache: failed to load legacy json: {}", e);
+            }
+        }
+
+        cache
+    }
+
+    /// 接受 DbManager 共享连接的构造函数。
+    ///
+    /// 这是 Phase 2 重构后的新路径：使用共享的 `SharedConn` 而非
+    /// 每次操作都 `Connection::open`。适用于生产代码路径。
+    /// 旧 `new()` 仍保留以供测试和未迁移的调用方使用。
+    pub fn with_db_manager(
+        config: SemanticCacheConfig,
+        shared_conn: SharedConn,
+        project_root: &Path,
+    ) -> Self {
+        let db_path = project_root
+            .join(crate::core::constants::INDEX_DIR)
+            .join("knowledge_base.db");
+
+        let cache = Self {
+            config,
+            cache: Mutex::new(CacheInner {
+                entries: HashMap::new(),
+                lru: VecDeque::new(),
+            }),
+            db_path,
+            shared_conn: Some(shared_conn),
         };
 
         if cache.config.disk_persist {
@@ -123,6 +171,18 @@ impl SemanticCache {
     where
         F: FnOnce(&Connection) -> AppResult<T>,
     {
+        if let Some(shared) = &self.shared_conn {
+            // 优先使用 DbManager 提供的共享连接（无新连接，无锁外文件）
+            let guard = shared.lock().map_err(|e| crate::core::error::AppError {
+                code: crate::core::error::ErrorCode::Unknown,
+                message: format!("Shared connection mutex poisoned: {}", e),
+                path: None,
+                suggestion: None,
+            })?;
+            Self::setup_schema(&guard)?;
+            return f(&guard);
+        }
+        // 回退路径：自管连接（仅供遗留测试/调用方）
         let conn = Connection::open(&self.db_path)?;
         f(&conn)
     }
@@ -271,15 +331,12 @@ impl SemanticCache {
             inner.entries.remove(&key);
             retain_lru(&mut inner.lru, &key);
             // 从 SQLite 删除过期条目（异步，不阻塞读取）
-            let db_path = self.db_path.clone();
             let key_clone = key.clone();
-            std::thread::spawn(move || {
-                if let Ok(conn) = Connection::open(&db_path) {
-                    let _ = conn.execute(
-                        "DELETE FROM semantic_cache WHERE query_hash = ?1",
-                        params![key_clone],
-                    );
-                }
+            spawn_db_write(self, move |conn| {
+                let _ = conn.execute(
+                    "DELETE FROM semantic_cache WHERE query_hash = ?1",
+                    params![key_clone],
+                );
             });
             return None;
         }
@@ -291,16 +348,13 @@ impl SemanticCache {
             }
             move_to_back(&mut inner.lru, &key);
             // 异步更新 SQLite 的 hit_count
-            let db_path = self.db_path.clone();
             let key_clone = key.clone();
             let now = now_secs();
-            std::thread::spawn(move || {
-                if let Ok(conn) = Connection::open(&db_path) {
-                    let _ = conn.execute(
-                        "UPDATE semantic_cache SET hit_count = hit_count + 1, last_hit = ?1 WHERE query_hash = ?2",
-                        params![now, key_clone],
-                    );
-                }
+            spawn_db_write(self, move |conn| {
+                let _ = conn.execute(
+                    "UPDATE semantic_cache SET hit_count = hit_count + 1, last_hit = ?1 WHERE query_hash = ?2",
+                    params![now, key_clone],
+                );
             });
         }
         results
@@ -330,14 +384,11 @@ impl SemanticCache {
             if let Some(evicted) = inner.lru.pop_front() {
                 inner.entries.remove(&evicted);
                 // 异步从 SQLite 删除
-                let db_path = self.db_path.clone();
-                std::thread::spawn(move || {
-                    if let Ok(conn) = Connection::open(&db_path) {
-                        let _ = conn.execute(
-                            "DELETE FROM semantic_cache WHERE query_hash = ?1",
-                            params![evicted],
-                        );
-                    }
+                spawn_db_write(self, move |conn| {
+                    let _ = conn.execute(
+                        "DELETE FROM semantic_cache WHERE query_hash = ?1",
+                        params![evicted],
+                    );
                 });
             }
         }
@@ -358,18 +409,14 @@ impl SemanticCache {
             };
 
             if let Some(results_json) = results_json {
-                let db_path = self.db_path.clone();
                 let query_text = query.to_string();
-                std::thread::spawn(move || {
-                    if let Ok(conn) = Connection::open(&db_path) {
-                        let _ = Self::setup_schema(&conn);
-                        let _ = conn.execute(
-                            "INSERT OR REPLACE INTO semantic_cache
-                             (query_hash, query_text, results_json, created_at, hit_count, last_hit)
-                             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                            params![key, query_text, results_json, now, 1i64, now],
-                        );
-                    }
+                spawn_db_write(self, move |conn| {
+                    let _ = conn.execute(
+                        "INSERT OR REPLACE INTO semantic_cache
+                         (query_hash, query_text, results_json, created_at, hit_count, last_hit)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                        params![key, query_text, results_json, now, 1i64, now],
+                    );
                 });
             }
         }
@@ -381,11 +428,8 @@ impl SemanticCache {
         inner.lru.clear();
         drop(inner);
 
-        let db_path = self.db_path.clone();
-        std::thread::spawn(move || {
-            if let Ok(conn) = Connection::open(&db_path) {
-                let _ = conn.execute("DELETE FROM semantic_cache", []);
-            }
+        spawn_db_write(self, |conn| {
+            let _ = conn.execute("DELETE FROM semantic_cache", []);
         });
     }
 
@@ -416,6 +460,36 @@ fn move_to_back(lru: &mut VecDeque<String>, key: &str) {
 
 fn retain_lru(lru: &mut VecDeque<String>, key: &str) {
     lru.retain(|k| k != key);
+}
+
+/// 异步执行 SQLite 写操作。
+///
+/// Phase 2 改造：如果有共享连接（DbManager 路径），先尝试同步执行；
+/// 若失败则 fallback 到自管连接的 thread::spawn（向后兼容）。
+/// 没有共享连接时走原 thread::spawn 路径。
+fn spawn_db_write<F>(cache: &SemanticCache, f: F)
+where
+    F: FnOnce(&Connection) + Send + 'static,
+{
+    if let Some(shared) = cache.shared_conn.clone() {
+        // 共享连接路径：在线程内短暂获取锁后执行。
+        // 这样避免每次自开 connection，但保留异步语义（不阻塞主线程）。
+        std::thread::spawn(move || {
+            if let Ok(guard) = shared.lock() {
+                let _ = SemanticCache::setup_schema(&guard);
+                f(&guard);
+            }
+        });
+        return;
+    }
+    // 向后兼容：自管连接（旧路径，仅测试和未迁移调用方）。
+    let db_path = cache.db_path.clone();
+    std::thread::spawn(move || {
+        if let Ok(conn) = Connection::open(&db_path) {
+            let _ = SemanticCache::setup_schema(&conn);
+            f(&conn);
+        }
+    });
 }
 
 #[cfg(test)]

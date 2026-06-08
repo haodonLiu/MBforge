@@ -393,21 +393,21 @@ mod tests {
 pub fn esmiles_to_molecode(
     esmiles: &str,
     name: &str,
-) -> Result<crate::core::molecode::MoleCodeResult, String> {
-    crate::core::molecode::esmiles_to_molecode(esmiles, name)
+) -> Result<crate::core::chem::molecode::MoleCodeResult, String> {
+    crate::core::chem::molecode::esmiles_to_molecode(esmiles, name)
 }
 
 /// 纯 SMILES → MoleCode (Mermaid graph text)
 pub fn smiles_to_molecode(
     smiles: &str,
     name: &str,
-) -> Result<crate::core::molecode::MoleCodeResult, String> {
-    crate::core::molecode::smiles_to_molecode(smiles, name)
+) -> Result<crate::core::chem::molecode::MoleCodeResult, String> {
+    crate::core::chem::molecode::smiles_to_molecode(smiles, name)
 }
 
 /// SMILES → E-SMILES（添加 `<sep>` + 标签）
-pub fn smiles_to_esmiles(smiles: &str, tags: &[crate::core::esmiles::EsTag]) -> String {
-    crate::core::esmiles::smiles_to_esmiles(smiles, tags)
+pub fn smiles_to_esmiles(smiles: &str, tags: &[crate::core::chem::esmiles::EsTag]) -> String {
+    crate::core::chem::esmiles::smiles_to_esmiles(smiles, tags)
 }
 
 // ─── 化学描述符 ──────────────────────────────────────────────

@@ -444,8 +444,8 @@ pub async fn audit_log_get(
     project_root: String,
     trace_id: Option<String>,
     limit: Option<usize>,
-) -> Result<Vec<crate::core::observability::AuditEntry>, String> {
-    let log = crate::core::observability::AuditLog::new(Path::new(&project_root))?;
+) -> Result<Vec<crate::core::agent::observability::AuditEntry>, String> {
+    let log = crate::core::agent::observability::AuditLog::new(Path::new(&project_root))?;
     let limit = limit.unwrap_or(200);
     match trace_id {
         Some(tid) => log.read_by_trace(&tid, limit),

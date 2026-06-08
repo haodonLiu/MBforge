@@ -665,48 +665,52 @@ use crate::core::agent::observability::AuditLog;
 use crate::core::agent::rig_hooks::{AuditLogHook, TrajectoryHook};
 use crate::core::agent::trajectory::TrajectoryTracker;
 
+/// Phase 4 宏化：把所有 25 个 rig 工具的构造集中到一个宏里。
+///
+/// 调用：`assemble_rig_tool_vec!(project_root)` 生成 `Vec<Box<dyn ToolDyn>>`。
+/// 新增工具：直接修改宏体里的 `tools.push(...)` 列表。
+macro_rules! assemble_rig_tool_vec {
+    ($project_root:expr) => {{
+        let mut tools: Vec<Box<dyn rig_core::tool::ToolDyn>> = Vec::with_capacity(25);
+        // 16 executor tools (take project_root).
+        tools.push(Box::new(GrepSearchTool::new($project_root)));
+        tools.push(Box::new(ListFilesTool::new($project_root)));
+        tools.push(Box::new(ReadFileTool::new($project_root)));
+        tools.push(Box::new(GetProjectInfoTool::new($project_root)));
+        tools.push(Box::new(GlobSearchTool::new($project_root)));
+        tools.push(Box::new(SearchKbTool::new($project_root)));
+        tools.push(Box::new(GetDocumentStructureTool::new($project_root)));
+        tools.push(Box::new(GetDocumentPagesTool::new($project_root)));
+        tools.push(Box::new(CheckMarkushTool::new()));
+        tools.push(Box::new(MoleculeAnalysisTool::new($project_root)));
+        tools.push(Box::new(ReadDocumentAbstractTool::new($project_root)));
+        tools.push(Box::new(ReadDocumentOverviewTool::new($project_root)));
+        tools.push(Box::new(ListDocumentsTool::new($project_root)));
+        tools.push(Box::new(GetDocumentSummaryTool::new($project_root)));
+        tools.push(Box::new(ReadDocumentDetailTool::new($project_root)));
+        tools.push(Box::new(FindDocumentsTool::new($project_root)));
+        // 9 arxiv tools (unit structs).
+        tools.push(Box::new(ArxivMetadata));
+        tools.push(Box::new(ArxivBrief));
+        tools.push(Box::new(ArxivPreview));
+        tools.push(Box::new(ArxivRaw));
+        tools.push(Box::new(ArxivSection));
+        tools.push(Box::new(ArxivSearch));
+        tools.push(Box::new(ArxivTrending));
+        tools.push(Box::new(PmcMetadata));
+        tools.push(Box::new(PmcJson));
+        tools
+    }};
+}
+
 /// Assemble the 25 rig-native tools the MBForge agent stack expects:
 /// 16 from `executor_rig` (file system, KB, document, molecule) and 9
 /// from `arxiv_rig` (arxiv + PMC literature). They are boxed in declaration
 /// order so tool names sort the same way across runs.
 ///
-/// This bypasses `executor_rig::register_rig_executor_tools` /
-/// `arxiv_rig::register_rig_tools`, which mutate a `ToolSet` we cannot
-/// drain back out (`ToolSet::tools` is `pub(crate)` and `ToolSet` has no
-/// `IntoIterator` impl in rig 0.38.1). Constructing the tool instances
-/// directly here gives us a `Vec<Box<dyn ToolDyn>>` ready for the
-/// `AgentBuilder::tools(...)` call.
+/// Phase 4 改造：函数体仅一行宏调用；具体工具列表见 `assemble_rig_tool_vec!` 宏。
 pub fn assemble_rig_tool_vec(project_root: &str) -> Vec<Box<dyn rig_core::tool::ToolDyn>> {
-    let mut tools: Vec<Box<dyn rig_core::tool::ToolDyn>> = Vec::with_capacity(25);
-    // 16 executor tools.
-    tools.push(Box::new(GrepSearchTool::new(project_root)));
-    tools.push(Box::new(ListFilesTool::new(project_root)));
-    tools.push(Box::new(ReadFileTool::new(project_root)));
-    tools.push(Box::new(GetProjectInfoTool::new(project_root)));
-    tools.push(Box::new(GlobSearchTool::new(project_root)));
-    tools.push(Box::new(SearchKbTool::new(project_root)));
-    tools.push(Box::new(GetDocumentStructureTool::new(project_root)));
-    tools.push(Box::new(GetDocumentPagesTool::new(project_root)));
-    tools.push(Box::new(CheckMarkushTool::new()));
-    tools.push(Box::new(MoleculeAnalysisTool::new(project_root)));
-    tools.push(Box::new(ReadDocumentAbstractTool::new(project_root)));
-    tools.push(Box::new(ReadDocumentOverviewTool::new(project_root)));
-    tools.push(Box::new(ListDocumentsTool::new(project_root)));
-    tools.push(Box::new(GetDocumentSummaryTool::new(project_root)));
-    tools.push(Box::new(ReadDocumentDetailTool::new(project_root)));
-    tools.push(Box::new(FindDocumentsTool::new(project_root)));
-    // 9 arxiv tools (unit structs; the `#[rig_tool]` macro generates
-    // `pub struct FooTool;` from `pub async fn foo_tool(...)`).
-    tools.push(Box::new(ArxivMetadata));
-    tools.push(Box::new(ArxivBrief));
-    tools.push(Box::new(ArxivPreview));
-    tools.push(Box::new(ArxivRaw));
-    tools.push(Box::new(ArxivSection));
-    tools.push(Box::new(ArxivSearch));
-    tools.push(Box::new(ArxivTrending));
-    tools.push(Box::new(PmcMetadata));
-    tools.push(Box::new(PmcJson));
-    tools
+    assemble_rig_tool_vec!(project_root)
 }
 
 /// Build a `ConcreteHook` from a fresh `tempfile::tempdir()`. Used by

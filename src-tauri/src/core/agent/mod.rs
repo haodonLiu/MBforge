@@ -9,6 +9,7 @@ pub mod executor_rig;
 pub mod fs;
 pub mod kb;
 pub mod llm_client;
+pub mod llm_gateway;
 pub mod managed_memory;
 pub mod memory;
 pub mod molecule;

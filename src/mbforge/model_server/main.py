@@ -103,14 +103,51 @@ def _check_environment():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动时检查环境 + 后台预热模型."""
+    """应用生命周期：启动时检查环境 + 后台预热模型，关闭时清理."""
+    import time as _time
+
+    started_at = _time.time()
+    logger.info("Sidecar starting up...")
+
     # 1. 同步环境检查（快速，不下载）
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, _check_environment)
 
     # 2. 后台预热模型
     loop.run_in_executor(None, _prewarm_models)
-    yield
+
+    try:
+        yield
+    finally:
+        # Phase 3 优雅退出：记录运行时长 + 取消后台 executor
+        # 任务 + 关闭连接池。Tauri SIGTERM 后此 lifespan 进入 finally 分支。
+        uptime = _time.time() - started_at
+        logger.info(f"Sidecar shutting down (uptime {uptime:.1f}s)...")
+
+        # 关闭 httpx / aiohttp 客户端
+        try:
+            from .models.singleton import close_all_singletons
+
+            await close_all_singletons()
+        except Exception as e:
+            logger.warning(f"close_all_singletons failed: {e}")
+
+        # 取消未完成的 executor 任务
+        try:
+            pending = [
+                t for t in asyncio.all_tasks()
+                if t is not asyncio.current_task() and not t.done()
+            ]
+            if pending:
+                logger.info(f"Cancelling {len(pending)} pending tasks...")
+                for t in pending:
+                    t.cancel()
+                # 给任务 1 秒时间响应 cancel
+                await asyncio.wait(pending, timeout=1.0)
+        except Exception as e:
+            logger.warning(f"Task cancellation failed: {e}")
+
+        logger.info("Sidecar shutdown complete")
 
 
 app = FastAPI(title="MBForge Model Server", version="1.1.0", lifespan=lifespan)

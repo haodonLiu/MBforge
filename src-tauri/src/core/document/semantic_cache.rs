@@ -214,39 +214,40 @@ impl SemanticCache {
     }
 
     fn load_from_db(&self) -> AppResult<()> {
-        let conn = Connection::open(&self.db_path)?;
-        Self::setup_schema(&conn)?;
+        self.with_conn(|conn| {
+            Self::setup_schema(conn)?;
 
-        let mut stmt = conn.prepare(
-            "SELECT query_hash, query_text, results_json, created_at, hit_count, last_hit
-             FROM semantic_cache",
-        )?;
+            let mut stmt = conn.prepare(
+                "SELECT query_hash, query_text, results_json, created_at, hit_count, last_hit
+                 FROM semantic_cache",
+            )?;
 
-        let rows = stmt.query_map([], |row| {
-            let results_json: String = row.get(2)?;
-            let results: Vec<serde_json::Value> =
-                serde_json::from_str(&results_json).unwrap_or_default();
-            Ok(CacheEntry {
-                query_hash: row.get(0)?,
-                query_text: row.get(1)?,
-                results,
-                project_root: String::new(),
-                created_at: row.get(3)?,
-                hit_count: row.get::<_, i64>(4)? as u64,
-                last_hit: row.get(5)?,
-            })
-        })?;
+            let rows = stmt.query_map([], |row| {
+                let results_json: String = row.get(2)?;
+                let results: Vec<serde_json::Value> =
+                    serde_json::from_str(&results_json).unwrap_or_default();
+                Ok(CacheEntry {
+                    query_hash: row.get(0)?,
+                    query_text: row.get(1)?,
+                    results,
+                    project_root: String::new(),
+                    created_at: row.get(3)?,
+                    hit_count: row.get::<_, i64>(4)? as u64,
+                    last_hit: row.get(5)?,
+                })
+            })?;
 
-        let mut inner = self.cache.lock().into_inner();
-        for row in rows {
-            let entry = row?;
-            let key = entry.query_hash.clone();
-            inner.lru.push_back(key.clone());
-            inner.entries.insert(key, entry);
-        }
+            let mut inner = self.cache.lock().into_inner();
+            for row in rows {
+                let entry = row?;
+                let key = entry.query_hash.clone();
+                inner.lru.push_back(key.clone());
+                inner.entries.insert(key, entry);
+            }
 
-        log::debug!("SemanticCache: loaded {} entries from db", inner.entries.len());
-        Ok(())
+            log::debug!("SemanticCache: loaded {} entries from db", inner.entries.len());
+            Ok(())
+        })
     }
 
     fn load_from_legacy_json(&self, path: &Path) -> AppResult<()> {
@@ -284,34 +285,35 @@ impl SemanticCache {
     }
 
     fn flush_to_db(&self) -> AppResult<()> {
-        let conn = Connection::open(&self.db_path)?;
-        Self::setup_schema(&conn)?;
+        self.with_conn(|conn| {
+            Self::setup_schema(conn)?;
 
-        let inner = self.cache.lock().into_inner();
+            let inner = self.cache.lock().into_inner();
 
-        // 先清空再全量写入（简单策略，缓存大小 <1000，全量写入开销可忽略）
-        conn.execute("DELETE FROM semantic_cache", [])?;
+            // 先清空再全量写入（简单策略，缓存大小 <1000，全量写入开销可忽略）
+            conn.execute("DELETE FROM semantic_cache", [])?;
 
-        let tx = conn.unchecked_transaction()?;
-        for entry in inner.entries.values() {
-            let results_json = serde_json::to_string(&entry.results).unwrap_or_default();
-            tx.execute(
-                "INSERT INTO semantic_cache
-                 (query_hash, query_text, results_json, created_at, hit_count, last_hit)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![
-                    &entry.query_hash,
-                    &entry.query_text,
-                    &results_json,
-                    entry.created_at,
-                    entry.hit_count as i64,
-                    entry.last_hit,
-                ],
-            )?;
-        }
-        tx.commit()?;
+            let tx = conn.unchecked_transaction()?;
+            for entry in inner.entries.values() {
+                let results_json = serde_json::to_string(&entry.results).unwrap_or_default();
+                tx.execute(
+                    "INSERT INTO semantic_cache
+                     (query_hash, query_text, results_json, created_at, hit_count, last_hit)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        &entry.query_hash,
+                        &entry.query_text,
+                        &results_json,
+                        entry.created_at,
+                        entry.hit_count as i64,
+                        entry.last_hit,
+                    ],
+                )?;
+            }
+            tx.commit()?;
 
-        Ok(())
+            Ok(())
+        })
     }
 
     /// L1 exact hash match

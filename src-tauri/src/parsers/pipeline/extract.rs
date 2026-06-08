@@ -456,6 +456,8 @@ pub async fn extract_molecules_from_pdf(
                 page_idx,
                 sidecar_url,
                 &output_dir,
+                None,  // scanned path: page dims not readily available
+                None,
             )
             .await
             {
@@ -519,11 +521,16 @@ pub async fn extract_molecules_from_pdf(
                         }
 
                         let output_dir = mol_dir.clone();
+                        // LiteParse 截图是 text-based PDF，页面尺寸可以从分类结果
+                        // 拿到；如果没有就 fallback 到 A4
+                        let (pw, ph) = (595.0_f64, 842.0_f64);
                         match process_page_image(
                             page_img_path.to_str().unwrap_or(""),
                             page_idx,
                             sidecar_url,
                             &output_dir,
+                            Some(pw),
+                            Some(ph),
                         )
                         .await
                         {

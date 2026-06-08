@@ -183,24 +183,65 @@ pub async fn extract_pdf_workflow_cmd(
 
         if let Some(root) = project_root {
             if let Ok(db) = MoleculeDatabase::open(&root) {
+                // 文本行缓存：同一页只解析一次 PDF
+                let mut lines_cache: std::collections::HashMap<i32, Vec<crate::parsers::chem::label_assoc::TextLine>> =
+                    std::collections::HashMap::new();
+                let page_h_pts = get_page_height(&path).unwrap_or(842.0);
+
                 let mut saved = 0usize;
-                for mol in &result.molecules {
+                for (idx, mol) in result.molecules.iter().enumerate() {
                     let (clean_smiles, esmiles_opt, semantic_tags) =
                         separate_esmiles_layers(&mol.esmiles);
+
+                    // ---- label 关联（在 bbox 上方找 "化合物 26A" / "实施例 5" 等）----
+                    let page_num = (mol.page as i32).max(0);
+                    let lines = lines_cache.entry(page_num).or_insert_with(|| {
+                        match crate::parsers::chem::label_assoc::extract_page_text_lines(
+                            &path,
+                            page_num as u32,
+                            page_h_pts,
+                        ) {
+                            Ok(lines) => lines,
+                            Err(e) => {
+                                log::warn!("[extract_workflow] page {} text extraction failed: {}", page_num, e);
+                                Vec::new()
+                            }
+                        }
+                    });
+                    let label_match = if mol.bbox_pdf != [0.0, 0.0, 0.0, 0.0] {
+                        crate::parsers::chem::label_assoc::find_label_for_bbox(
+                            (mol.bbox_pdf[0], mol.bbox_pdf[1], mol.bbox_pdf[2], mol.bbox_pdf[3]),
+                            lines,
+                            page_h_pts,
+                            80.0,
+                        )
+                    } else {
+                        None
+                    };
+                    let resolved_name = match &label_match {
+                        Some(m) => m.label.clone(),
+                        None => format!("IMG-{}-P{:03}-{:03}", filename, mol.page, idx),
+                    };
+                    let mut properties = serde_json::json!({});
+                    if let Some(m) = &label_match {
+                        properties["context_text"] = serde_json::Value::String(m.context_text.clone());
+                    }
+                    properties["bbox_pdf"] = serde_json::json!(mol.bbox_pdf);
+
                     let mol_id = crate::core::helpers::generate_uuid();
                     let record = MoleculeRecord {
                         mol_id: mol_id.clone(),
                         smiles: clean_smiles,
                         esmiles: esmiles_opt,
                         semantic_tags,
-                        name: format!("IMG-{}-P{}", filename, mol.page),
+                        name: resolved_name,
                         source_doc: filename.clone(),
                         activity: None,
                         activity_type: String::new(),
                         units: "nM".to_string(),
                         source_type: "workflow_extract".to_string(),
                         status: "pending".to_string(),
-                        properties: serde_json::json!({}),
+                        properties,
                         labels: vec!["image_extracted".to_string()],
                         notes: format!(
                             "Workflow extract: MolDet (conf={:.2}) + MolScribe (conf={:.2})",
@@ -350,4 +391,37 @@ pub async fn get_document_ocr_layout(
             Err(e)
         }
     }
+}
+
+
+/// 从 PDF 第一页拿页面高度（点单位）。仅用于 label 关联时的坐标转换。
+/// 拿不到时返回 842.0（A4 高度）。
+fn get_page_height(pdf_path: &str) -> Option<f64> {
+    use std::collections::HashSet;
+    let mut first_page: HashSet<u32> = HashSet::new();
+    first_page.insert(1);
+    let items = pdf_inspector::extractor::extract_text_with_positions_pages(
+        pdf_path,
+        Some(&first_page),
+    )
+    .ok()?;
+    // 用首个 item 的 height 字段反推页面尺寸不行；
+    // 直接走 pdf_inspector 的 page_height API
+    let _ = items;
+    // 走 Document API 拿页面尺寸
+    let doc = lopdf::Document::load(pdf_path).ok()?;
+    let pages = doc.get_pages();
+    let first_id = *pages.values().next()?;
+    let page_dict = doc.get_dictionary(first_id).ok()?;
+    let media_box = page_dict.get(b"MediaBox").ok()?;
+    let arr = media_box.as_array().ok()?;
+    if arr.len() < 4 {
+        return None;
+    }
+    let h = match &arr[3] {
+        lopdf::Object::Real(r) => *r as f64,
+        lopdf::Object::Integer(i) => *i as f64,
+        _ => return None,
+    };
+    Some(h)
 }

@@ -346,6 +346,7 @@ mod tests {
             moldet_conf: 0.92,
             page: 3,
             crop_path: "/tmp/page_0003_mol_000.png".into(),
+            bbox_pdf: [100.0, 400.0, 200.0, 500.0],
         });
         assert_eq!(ctx.detected_molecules.len(), 1);
         assert_eq!(ctx.detected_molecules[0].page, 3);

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
-import { kbSearchStream } from '../api/tauri-bridge'
+import { kbSearchStream } from '../api/tauri'
 import { SearchIcon, FileTextIcon } from './icons'
 import { useAppContext } from '../context/AppContext'
 import { tapScale } from '../hooks/useAnimations'

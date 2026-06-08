@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { CheckIcon, AlertIcon, InfoIcon } from '../icons'
 import { invoke } from '@tauri-apps/api/core'
-import { validateSmiles, type ValidationIssue } from '../../api/client'
+import { validateSmiles, type ValidationIssue } from '../../api/tauri/molecule'
 
 const MermaidCode = lazy(() =>
   import('../ui/MermaidCode').then(m => ({ default: m.MermaidCode }))

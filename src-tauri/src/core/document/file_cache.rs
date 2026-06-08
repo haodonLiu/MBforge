@@ -4,11 +4,12 @@
 //! 命中缓存时直接返回已提取的文本和 sections，跳过昂贵的 PDF 解析。
 
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+use crate::core::db::SharedConn;
 use crate::core::error::AppResult;
 
 /// 缓存条目：完整的文件解析结果
@@ -26,7 +27,7 @@ pub struct CachedDoc {
 
 /// 文件内容缓存
 pub struct FileCache {
-    conn: Mutex<Connection>,
+    conn: SharedConn,
 }
 
 impl FileCache {
@@ -34,7 +35,18 @@ impl FileCache {
     pub fn new(conn: Connection) -> AppResult<Self> {
         Self::setup_schema(&conn)?;
         Ok(Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
+        })
+    }
+
+    /// 从共享连接创建（Phase 2: 与 KnowledgeBase/SqliteVectorStore 共享同一连接）
+    pub fn from_shared_conn(shared_conn: SharedConn) -> AppResult<Self> {
+        {
+            let guard = shared_conn.lock().map_err(|e| e.to_string())?;
+            Self::setup_schema(&guard)?;
+        }
+        Ok(Self {
+            conn: shared_conn,
         })
     }
 

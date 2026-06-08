@@ -6,7 +6,7 @@ import { useConfidenceThreshold } from '../../hooks/useConfidenceThreshold'
 import Button from '../ui/Button'
 import Badge from '../ui/Badge'
 import { CheckIcon, XIcon, AlertIcon, ChevronLeftIcon, ChevronRightIcon } from '../icons'
-import { validateSmiles, type ValidationIssue } from '../../api/client'
+import { validateSmiles, type ValidationIssue } from '../../api/tauri/molecule'
 // ============================================================================
 // 类型
 // ============================================================================

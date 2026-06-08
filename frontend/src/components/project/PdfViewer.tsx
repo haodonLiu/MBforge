@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { extractPage } from '../../api/moldet'
-import { cachedExtractPage } from '../../api/tauri-bridge'
+import { cachedExtractPage } from '../../api/tauri'
 import { parsePdf, type ImageRef, getDocumentOcrLayout, type OcrBlock } from '../../api/tauri/pdf'
 import { showToast } from '../../hooks/useToast'
 import { extractRoiText } from '../../utils/roiText'

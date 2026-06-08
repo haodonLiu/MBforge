@@ -256,6 +256,37 @@ export async function chemValidateSmiles(smiles: string): Promise<SmilesValidati
   return await invoke<SmilesValidation>('chem_validate_smiles', { smiles })
 }
 
+/** SMILES 校验 issue（用于 CorrectionPanel / MoleculeDisplay 的 issue 列表） */
+export interface ValidationIssue {
+  code: string
+  message: string
+  severity: 'error' | 'warning'
+}
+
+/** 校验 SMILES — 返回带 issue 列表的友好响应（用于 UI 展示） */
+export interface ValidateResponse {
+  valid: boolean
+  canonical_smiles: string | null
+  issues: ValidationIssue[]
+}
+
+/** 校验 SMILES — 纯 Rust，无后端依赖（返回带 issue 列表的友好格式） */
+export async function validateSmiles(smiles: string): Promise<ValidateResponse> {
+  const raw = await invoke<{ valid: boolean; canonical_smiles: string | null; error: string | null }>(
+    'chem_validate_smiles',
+    { smiles },
+  )
+  if (raw.valid) {
+    return { valid: true, canonical_smiles: raw.canonical_smiles, issues: [] }
+  }
+  const message = raw.error ?? 'SMILES 解析失败'
+  return {
+    valid: false,
+    canonical_smiles: raw.canonical_smiles,
+    issues: [{ code: 'SYNTAX', severity: 'error', message }],
+  }
+}
+
 /** 计算两个 SMILES 之间的 Tanimoto 相似度（ECFP4，0.0–1.0） */
 export async function chemTanimotoSimilarity(smilesA: string, smilesB: string): Promise<number> {
   return await invoke<number>('chem_tanimoto_similarity', { smilesA, smilesB })

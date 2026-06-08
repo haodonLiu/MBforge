@@ -19,7 +19,7 @@ import {
   agentDestroySession,
   listDocumentsTauri,
   moleculeStatsTauri,
-} from '../api/tauri-bridge'
+} from '../api/tauri'
 import { SendIcon, UserIcon, BotIcon, FolderIcon, FileTextIcon, FlaskIcon } from './icons'
 
 import { useAppContext } from '../context/AppContext'

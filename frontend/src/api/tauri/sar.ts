@@ -82,6 +82,28 @@ export async function sarBuildMatrix(
   )
 }
 
+/** R-group 矩阵响应（含错误包装） */
+export interface RGroupMatrixResponse {
+  success: boolean
+  core_smiles?: string
+  r_labels?: string[]
+  rows?: string[][]
+  compounds?: RGroupMatrix['compounds']
+  unmatched_count?: number
+  error?: string
+}
+
+/** 活性热力图响应（含错误包装） */
+export interface ActivityHeatmapResponse {
+  success: boolean
+  heatmaps: ActivityHeatmap[]
+  error?: string
+}
+
+/** 兼容旧名 — client.ts 迁移 */
+export type ActivityHeatmapEntry = ActivityHeatmap
+export type ActivityHeatmapCell = HeatmapCell
+
 /** 构建活性热力图 */
 export async function sarHeatmap(
   matrix: RGroupMatrix,

@@ -1,4 +1,4 @@
-import { fetchJson } from './client'
+import { fetchJson } from './http'
 import type { ExtractionResult } from '../types'
 
 const API_BASE = '/api/v1/moldet'

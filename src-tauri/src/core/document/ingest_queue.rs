@@ -101,6 +101,9 @@ impl IngestQueue {
         let db_path = project_root
             .join(crate::core::constants::INDEX_DIR)
             .join("knowledge_base.db");
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         let conn = Connection::open(&db_path)?;
         Self::setup_schema(&conn)?;
 

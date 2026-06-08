@@ -1,5 +1,5 @@
 import { Card, EmptyState } from '../../ui'
-import type { ActivityHeatmapEntry } from '../../../api/client'
+import type { ActivityHeatmapEntry } from '../../../api/tauri/sar'
 import { activityColor, shortSmiles } from './helpers'
 
 // ============================================================================

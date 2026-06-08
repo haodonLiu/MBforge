@@ -5,16 +5,17 @@
 //! 零额外依赖，与 molecules.db / file_cache 共享 SQLite 生态。
 
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::{params, Connection, ToSql};
 
+use crate::core::db::SharedConn;
 use crate::core::error::{AppError, AppResult, ErrorCode};
 use super::vector_store::SearchResult;
 
 /// SQLite 向量存储
 pub struct SqliteVectorStore {
-    conn: Mutex<Connection>,
+    conn: SharedConn,
     dim: usize,
 }
 
@@ -29,7 +30,7 @@ impl SqliteVectorStore {
         Self::setup_schema(&conn, dim)?;
 
         Ok(Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
             dim,
         })
     }
@@ -38,7 +39,19 @@ impl SqliteVectorStore {
     pub fn from_conn(conn: Connection, dim: usize) -> AppResult<Self> {
         Self::setup_schema(&conn, dim)?;
         Ok(Self {
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
+            dim,
+        })
+    }
+
+    /// 从共享连接创建（Phase 2: 与 KnowledgeBase/FileCache 共享同一连接）
+    pub fn from_shared_conn(shared_conn: SharedConn, dim: usize) -> AppResult<Self> {
+        {
+            let guard = shared_conn.lock().map_err(|e| e.to_string())?;
+            Self::setup_schema(&guard, dim)?;
+        }
+        Ok(Self {
+            conn: shared_conn,
             dim,
         })
     }

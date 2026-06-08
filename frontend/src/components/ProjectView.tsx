@@ -1,6 +1,6 @@
 import { EVT } from '../api/tauri-events'
 import { useState, useEffect } from 'react'
-import { listProjectDocuments, scanProjectFiles, indexProjectRust, type IndexResult, type ScanWarning } from '../api/tauri-bridge'
+import { listProjectDocuments, scanProjectFiles, indexProjectRust, type IndexResult, type ScanWarning } from '../api/tauri'
 import { listen } from '@tauri-apps/api/event'
 import type { DocumentEntry } from '../types'
 import { useAppContext } from '../context/AppContext'

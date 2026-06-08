@@ -125,35 +125,26 @@ MBForge 使用三层分子表示，逐层可逆：
 
 化学信息学使用 `chematic` crate（git: `kent-tokyo/chematic`），提供 SMILES 解析、ECFP4 指纹、Tanimoto 相似度、VF2 子结构匹配。
 
-### Adding a new Rust Agent tool (rig-core)
+### Adding a new Rust Agent tool
 
 ```rust
-// 1. 在 core/agent/executor_rig.rs 中声明 Tool + Args
-#[derive(Deserialize, JsonSchema)]
-pub struct MyToolArgs { pub arg: String }
-
-#[derive(Clone)]
-pub struct MyTool { pub project_root: String }
-
-impl Tool for MyTool {
-    const NAME: &'static str = "my_tool";
-    type Error = ToolError;
-    type Args = MyToolArgs;
-    type Output = String;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        let schema = serde_json::to_value(schemars::schema_for!(MyToolArgs)).unwrap();
-        ToolDefinition { name: Self::NAME.into(), description: "...".into(), parameters: schema }
-    }
-
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        // 调用 core/agent/{fs,kb,document,molecule}.rs 中的 native_* 自由函数
-        Ok(fs_src::native_my_tool(&self.project_root, &args.arg))
-    }
+// 1. 在 core/executor/ 的 `ToolExecutor::tools()` 注册 ToolInfo
+ToolInfo {
+    name: "my_tool",
+    description: "Description for LLM",
+    parameters: serde_json::json!({
+        "type": "object",
+        "properties": { "arg": { "type": "string" } },
+        "required": ["arg"],
+    }),
 }
 
-// 2. 在 core/agent/rig_adapter.rs::assemble_rig_tool_vec() 中注册
-tools.push(Box::new(MyTool::new(project_root)));
+// 2. 在 core/executor/mod.rs 的 `execute()` 匹配分支中添加逻辑
+"my_tool" => {
+    let arg = args.get("arg").and_then(|v| v.as_str()).unwrap_or("");
+    // 执行...
+    Ok(serde_json::json!({ "result": arg }))
+}
 ```
 
 ### Adding a new API endpoint to Model Server

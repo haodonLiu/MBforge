@@ -87,7 +87,7 @@ MBForge/
 │   │   ├── core/           # Agent + 数据层（5 子目录 + 顶层模块）
 │   │   │   ├── agent/      # Agent 子系统（agent/context/llm/tools/observability/specialist_agent）
 │   │   │   ├── chem/       # 化学信息学（chem/esmiles/molecode/markush/abbreviation_map/gesim）
-│   │   │   ├── agent/      # Agent 子系统（rig 工具 / arxiv / memory / trajectory）
+│   │   │   ├── executor/   # 工具执行器（fs/kb/document/molecule/literature + arxiv）
 │   │   │   ├── molecule/   # 分子模块（store/db/dedup/cluster/engine）
 │   │   │   ├── memory/     # 记忆与轨迹（memory/trajectory/skills）
 │   │   │   ├── document/   # 文档处理（kb/tree/summary/semantic_cache/stream_search）
@@ -346,7 +346,7 @@ uv run ruff format src/ --check
 |------|------|------|----------|
 | **UI 层** | `frontend/src/` | React 组件、页面路由、状态管理 | `App.tsx`, `api/tauri/`, `context/AppContext.tsx` |
 | **命令层** | `src-tauri/src/commands/` | Tauri IPC 命令注册，桥接前端与 Rust 核心 | `main.rs` 中的 `invoke_handler` |
-| **核心层** | `src-tauri/src/core/` | Rust Agent、数据持久化、向量存储、分子数据库、项目迁移 | `agent/`, `molecule/`, `document/`, `vector/`, `project/`, `chem/` |
+| **核心层** | `src-tauri/src/core/` | Rust Agent、数据持久化、向量存储、分子数据库、项目迁移 | `agent.rs`, `executor/`, `molecule/`, `memory/`, `document/`, `project_migrator.rs` |
 | **解析层** | `src-tauri/src/parsers/` | PDF 解析管线、图像提取、关联引擎 | `pipeline.rs`, `association.rs`, `images.rs` |
 | **模型服务** | `src/mbforge/model_server/` | FastAPI REST API、模型单例管理 | `main.py`, `routers/*.py` |
 
@@ -373,10 +373,9 @@ uv run ruff format src/ --check
    - 在 `src-tauri/src/commands/mod.rs` 的 `handler()` 函数中通过 `generate_handler!` 注册
    - 如需新状态类型，在命令模块中定义 `*State` 结构体，在 `main.rs` 中 `.manage()`
 
-2. **新增 Rust Agent 工具**（rig-core 模式）：
-   - 在 `src-tauri/src/core/agent/executor_rig.rs` 中声明 `struct <Name>Tool` + `#[derive(Deserialize, JsonSchema)]` Args
-   - 实现 `impl Tool for <Name>Tool`，`call()` 中调用 `core/agent/{fs,kb,document,molecule}.rs` 中的 `native_*` 自由函数
-   - 在 `rig_adapter.rs::assemble_rig_tool_vec()` 中添加 `tools.push(Box::new(<Name>Tool::new(...)))` 一行注册
+2. **新增 Rust Agent 工具**：
+   - 在 `src-tauri/src/core/executor/mod.rs` 的 `ToolExecutor::tools()` 中注册 `ToolInfo`（名称、描述、参数 JSON Schema）
+   - 在同一文件 `execute()` 方法的匹配分支中实现工具逻辑（或按类别拆分到 `executor/` 子模块中，由 `mod.rs` 统一调用）
    - 工具名使用 `snake_case`，描述必须清晰说明输入输出格式
 
 3. **新增 FastAPI 路由**：

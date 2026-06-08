@@ -22,8 +22,8 @@ from typing import Any, Literal
 import numpy as np
 from PIL import Image
 
-from .coords import image_to_pdf_bbox, scale_from_page_size
-from .extraction_result import ExtractionResult
+from mbforge.parsers.molecule.coords import image_to_pdf_bbox, scale_from_page_size
+from mbforge.parsers.molecule.extraction_result import ExtractionResult
 from mbforge.utils.helpers import is_gpu_available
 from mbforge.utils.logger import get_logger
 
@@ -56,7 +56,7 @@ def _has_molscribe() -> bool:
 
 def default_model_dir() -> Path:
     """返回模型缓存目录（使用统一常量）."""
-    from ...utils.constants import get_model_cache_dir
+    from mbforge.utils.constants import get_model_cache_dir
     cache_dir = Path(get_model_cache_dir())
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
@@ -662,7 +662,7 @@ def get_moldet() -> MolImagePipeline | None:
     """获取全局 MolImagePipeline 单例."""
     global _moldet_instance
     if _moldet_instance is None:
-        from mbforge.utils.gpu import gpu_warning, is_gpu_available
+        from mbforge.utils.helpers import gpu_warning, is_gpu_available
         if not is_gpu_available():
             gpu_warning("MolDet/MolScribe image pipeline")
             return None
@@ -676,3 +676,29 @@ def reset_moldet() -> None:
     """重置 MolImagePipeline 单例."""
     global _moldet_instance
     _moldet_instance = None
+
+
+# ---- Backend convention wrappers ----
+
+def load(device: str | None = None) -> None:
+    """Lazy-load MolDet pipeline (no-op if already loaded)."""
+    global _moldet_instance
+    if _moldet_instance is None:
+        from mbforge.utils.helpers import is_gpu_available
+        if not is_gpu_available():
+            return
+        from mbforge.utils.config import load_global_config
+        dev = device or load_global_config().embed.device
+        _moldet_instance = MolImagePipeline(device=dev)
+
+
+def unload() -> None:
+    """Release pipeline."""
+    reset_moldet()
+
+
+def health() -> dict[str, str]:
+    pipeline = get_moldet()
+    if pipeline is None:
+        return {"status": "error", "error": "no GPU or model unavailable"}
+    return {"status": "ready" if pipeline.is_available() else "loading"}

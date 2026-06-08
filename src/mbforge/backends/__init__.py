@@ -1,0 +1,64 @@
+"""Fixed model backends — shared utilities."""
+
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+
+logger = logging.getLogger("mbforge.backends")
+
+_RESOLVED_PATHS_CACHE: dict[str, str] | None = None
+_RESOLVED_PATHS_MTIME: float = 0.0
+
+
+def _read_resolved_paths() -> dict[str, str] | None:
+    """读取 Rust 写入的 resolved_paths.json（按 mtime 失效的轻量缓存）."""
+    global _RESOLVED_PATHS_CACHE, _RESOLVED_PATHS_MTIME
+    config_dir = Path.home() / ".config" / "MBForge"
+    path = config_dir / "resolved_paths.json"
+    if not path.exists():
+        return None
+    try:
+        mtime = path.stat().st_mtime
+        if _RESOLVED_PATHS_CACHE is not None and mtime == _RESOLVED_PATHS_MTIME:
+            return _RESOLVED_PATHS_CACHE
+        with open(path) as f:
+            data = json.load(f)
+        _RESOLVED_PATHS_CACHE = data
+        _RESOLVED_PATHS_MTIME = mtime
+        logger.info(f"Loaded resolved paths from {path}: {list(data.keys())}")
+        return data
+    except Exception as e:
+        logger.warning(f"Failed to read resolved_paths.json: {e}")
+        return None
+
+
+_MODEL_NAME_TO_RESOURCE_ID = {
+    "Qwen/Qwen3-Embedding": "embedding",
+    "Qwen/Qwen3-Reranker": "reranker",
+    "yujieq/MolDetect": "moldet",
+    "yujieq/MolScribe": "molscribe",
+}
+
+
+def resolve_model_path(model_name: str, cache_name: str | None = None) -> str:
+    """解析模型路径 — 优先读取 Rust 写入的 resolved_paths.json.
+
+    Rust resource_manager.rs 是路径解析的唯一真相源。
+    """
+    p = Path(model_name)
+    if p.is_absolute() or (p.exists() and p.is_dir()):
+        return str(model_name)
+    resolved = _read_resolved_paths()
+    if resolved:
+        rid = cache_name or model_name
+        for prefix, mapped in _MODEL_NAME_TO_RESOURCE_ID.items():
+            if prefix.lower() in rid.lower():
+                if mapped in resolved:
+                    path = resolved[mapped]
+                    if Path(path).exists():
+                        logger.info(f"Resolved {rid} → {path} (via Rust resource_manager)")
+                        return path
+    logger.info(f"No cached path for {model_name}, will try HuggingFace download")
+    return model_name

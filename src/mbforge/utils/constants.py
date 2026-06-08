@@ -40,15 +40,6 @@ DEFAULT_LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct-GGUF"
 DEFAULT_VLM_MODEL = "mimo-v2.5"
 DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
 
-PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
-PROVIDER_ANTHROPIC = "anthropic"
-PROVIDER_QWEN3 = "qwen3"
-PROVIDER_SENTENCE_TRANSFORMERS = "sentence_transformers"
-PROVIDER_OLLAMA = "ollama"
-PROVIDER_API = "api"
-PROVIDER_LOCAL = "local"
-OCR_PROVIDER_NONE = "none"
-
 LLM_MAX_TOKENS = 4096
 LLM_TEMPERATURE = 0.7
 LLM_TOP_P = 0.9

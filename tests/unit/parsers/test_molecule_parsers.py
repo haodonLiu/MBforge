@@ -15,7 +15,7 @@ from mbforge.parsers.molecule.coords import (
     scale_from_page_size,
 )
 from mbforge.parsers.molecule.extraction_result import ExtractionResult
-from mbforge.parsers.molecule.mol_image_pipeline import (
+from mbforge.backends.moldet import (
     MolDetv2DocDetector,
     MolImagePipeline,
     MolScribeRecognizer,
@@ -163,7 +163,7 @@ class TestExtractionResult:
 class TestMolDetv2DocDetector:
     def test_unavailable_without_model(self):
         with patch(
-            "mbforge.parsers.molecule.mol_image_pipeline._has_ultralytics",
+            "mbforge.backends.moldet._has_ultralytics",
             return_value=True,
         ), patch.object(MolDetv2DocDetector, "_load_model"):
             detector = MolDetv2DocDetector.__new__(MolDetv2DocDetector)
@@ -173,7 +173,7 @@ class TestMolDetv2DocDetector:
 
     def test_detect_raises_when_unavailable(self):
         with patch(
-            "mbforge.parsers.molecule.mol_image_pipeline._has_ultralytics",
+            "mbforge.backends.moldet._has_ultralytics",
             return_value=True,
         ), patch.object(MolDetv2DocDetector, "_load_model"):
             detector = MolDetv2DocDetector.__new__(MolDetv2DocDetector)
@@ -185,7 +185,7 @@ class TestMolDetv2DocDetector:
 
     def test_model_path_resolution_default(self):
         with patch(
-            "mbforge.parsers.molecule.mol_image_pipeline._has_ultralytics",
+            "mbforge.backends.moldet._has_ultralytics",
             return_value=True,
         ), patch.object(MolDetv2DocDetector, "_load_model"):
             detector = MolDetv2DocDetector.__new__(MolDetv2DocDetector)
@@ -202,7 +202,7 @@ class TestMolDetv2DocDetector:
 class TestMolScribeRecognizer:
     def test_unavailable_without_backend(self):
         with patch(
-            "mbforge.parsers.molecule.mol_image_pipeline._has_molscribe",
+            "mbforge.backends.moldet._has_molscribe",
             return_value=False,
         ):
             recognizer = MolScribeRecognizer(backend="molscribe")
@@ -210,7 +210,7 @@ class TestMolScribeRecognizer:
 
     def test_predict_raises_when_unavailable(self):
         with patch(
-            "mbforge.parsers.molecule.mol_image_pipeline._has_molscribe",
+            "mbforge.backends.moldet._has_molscribe",
             return_value=False,
         ):
             recognizer = MolScribeRecognizer(backend="molscribe")

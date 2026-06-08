@@ -44,7 +44,7 @@ def _has_ultralytics() -> bool:
 def _has_molscribe() -> bool:
     """运行时检查 molscribe 是否可用（本地 molscribe_inference 包）."""
     try:
-        from .molscribe import MolScribe  # noqa: F401
+        from ..parsers.molecule.molscribe_inference import MolScribe  # noqa: F401
         return True
     except ImportError:
         return False
@@ -60,11 +60,6 @@ def default_model_dir() -> Path:
     cache_dir = Path(get_model_cache_dir())
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
-
-
-# ---------------------------------------------------------------------------
-# MolDetv2 检测器
-# ---------------------------------------------------------------------------
 
 
 class MolDetv2DocDetector:
@@ -287,18 +282,26 @@ class MolScribeRecognizer:
         )
 
     def _load_molscribe(self) -> None:
-        """加载 MolScribe 推理后端（通过 molscribe 封装模块）."""
-        try:
-            from .molscribe import MolScribeConfig, MolScribe as _Facade
+        """加载 MolScribe 推理后端（复用 backends.molscribe 的 singleton）.
 
-            cfg = MolScribeConfig(
-                device=self.device,
-                log_smiles=True,
-            )
-            self._model = _Facade(cfg)
-            logger.info("MolScribe 加载成功")
+        直接持有 backends.molscribe 模块的引用，避免重复加载模型
+        （molscribe ~1.1GB VRAM）。该模块的 ``predict()`` 返回标准的
+        ``ExtractionResult``，scribe_conf 字段在 molscribe.py::predict() 中填充。
+        """
+        try:
+            from . import molscribe as molscribe_backend
+            from ..utils.helpers import is_gpu_available
+            # Resolve 'auto' to cuda/cpu; backends.molscribe doesn't accept 'auto'
+            dev = self.device
+            if dev in (None, '', 'auto'):
+                dev = 'cuda' if is_gpu_available() else 'cpu'
+            molscribe_backend.load(device=dev)
+            if molscribe_backend._MODEL is None:
+                raise RuntimeError('backends.molscribe singleton failed to load')
+            self._model = molscribe_backend
+            logger.info('MolScribe (singleton) loaded, device=%s', dev)
         except Exception as exc:
-            logger.warning("MolScribe 加载失败：%s", exc)
+            logger.warning('MolScribe load failed: %s', exc)
             self._model = None
 
     def _load_transformers(self) -> None:
@@ -370,10 +373,11 @@ class MolScribeRecognizer:
             raise RuntimeError(f"未知后端：{self._backend_name}")
 
     def _predict_molscribe(self, image: Image.Image) -> tuple[str, float]:
-        """使用 molscribe 后端预测."""
+        """使用 molscribe 后端预测（通过 backends.molscribe singleton）."""
         try:
+            # self._model is the backends.molscribe module
             result = self._model.predict(image)  # type: ignore[union-attr]
-            return result.esmiles, result.confidence
+            return result.esmiles, result.scribe_conf
         except Exception as exc:
             logger.warning("MolScribe 预测失败：%s", exc)
             return "", 0.0
@@ -547,6 +551,7 @@ class MolImagePipeline:
             results.append(
                 ExtractionResult(
                     esmiles=smiles,
+                    name=f"IMG-P{page_idx:03d}-{idx:03d}",
                     source="image",
                     moldet_conf=det_conf,
                     scribe_conf=scribe_conf,

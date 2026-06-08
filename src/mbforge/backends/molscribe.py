@@ -66,21 +66,29 @@ def health() -> dict[str, str]:
 def predict(image: Image.Image | np.ndarray) -> ExtractionResult:
     """Predict single image."""
     if not _AVAILABLE or _MODEL is None:
-        return ExtractionResult("", 0.0, success=False, error=_ERROR or "model not available")
+        return ExtractionResult(
+            esmiles="",
+            scribe_conf=0.0,
+            properties={"error": _ERROR or "model not available"},
+        )
     try:
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
         raw = _MODEL.predict_images([image])[0]
-        smiles = raw.get("smiles", "")
-        conf = raw.get("confidence", 0.5)
+        smiles = raw.get("smiles", "") or ""
+        conf = float(raw.get("confidence", 0.0))
         return ExtractionResult(
             esmiles=smiles,
-            confidence=float(conf),
-            molfile=raw.get("molfile", ""),
+            scribe_conf=conf,
+            properties={"molfile": raw.get("molfile", "")},
         )
     except Exception as exc:
         logger.warning("MolScribe predict failed: %s", exc)
-        return ExtractionResult("", 0.0, success=False, error=str(exc))
+        return ExtractionResult(
+            esmiles="",
+            scribe_conf=0.0,
+            properties={"error": str(exc)},
+        )
 
 
 def predict_batch(images: list) -> list[ExtractionResult]:

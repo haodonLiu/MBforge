@@ -6,7 +6,7 @@ Week 1 (P0) 引擎接口层：
 - MolScribeRecognizer: 图像 → SMILES
 - MolImagePipeline: 组合上述组件的主管线
 
-模型路径约定（可通过 ModelConfig 覆盖）：
+模型路径约定（可通过 EmbedConfig/RerankConfig 或资源管理器覆盖）：
 - ~/.cache/mbforge/models/moldetv2-doc.pt (或 .onnx)
 - ~/.cache/mbforge/models/moldetv2-general.pt
 - ~/.cache/mbforge/models/molscribe/...

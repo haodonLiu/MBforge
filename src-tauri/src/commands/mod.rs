@@ -138,6 +138,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::core::project::resource_manager::models_cancel_download,
         crate::core::project::resource_manager::models_delete,
         crate::core::project::resource_manager::models_cache_dir_info,
+        crate::core::project::resource_manager::refresh_resolved_paths,
         // SAR analysis
         crate::core::chem::sar::sar_find_scaffold,
         crate::core::chem::sar::sar_decompose,

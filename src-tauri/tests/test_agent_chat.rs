@@ -78,9 +78,9 @@ fn build_test_memory(project_root: &Path, session_id: &str) -> Arc<MbforgeManage
         SqliteConversationMemory::open(project_root)
             .expect("open conversations.db for test"),
     );
-    let compactor = Arc::new(SidecarCompactor::new(
-        mbforge::core::config::constants::sidecar_url(),
-    ));
+    // 测试场景：rig-direct 压塑器从 MBFORGE_LLM_* env 读取 LLM 端点。
+    // 旧版需要 sidecar URL；现已不需要。
+    let compactor = Arc::new(SidecarCompactor::new());
     let demotion = Arc::new(EpisodicDemotionHook::new(
         sqlite.conn_clone(),
         session_id.to_string(),

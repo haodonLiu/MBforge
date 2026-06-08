@@ -22,6 +22,48 @@ logger = logging.getLogger("mbforge.resource_manager")
 
 
 # ---------------------------------------------------------------------------
+# 读取 Rust 写入的 resolved_paths.json（单一真相源）
+# ---------------------------------------------------------------------------
+
+_RESOLVED_PATHS_CACHE: dict[str, str] | None = None
+_RESOLVED_PATHS_MTIME: float = 0.0
+
+
+def _read_resolved_paths() -> dict[str, str] | None:
+    """读取 Rust 写入的 resolved_paths.json（按 mtime 失效的轻量缓存）."""
+    global _RESOLVED_PATHS_CACHE, _RESOLVED_PATHS_MTIME
+
+    import json
+
+    config_dir = Path.home() / ".config" / "MBForge"
+    path = config_dir / "resolved_paths.json"
+    if not path.exists():
+        return None
+
+    try:
+        mtime = path.stat().st_mtime
+        if _RESOLVED_PATHS_CACHE is not None and mtime == _RESOLVED_PATHS_MTIME:
+            return _RESOLVED_PATHS_CACHE
+        with open(path) as f:
+            data = json.load(f)
+        _RESOLVED_PATHS_CACHE = data
+        _RESOLVED_PATHS_MTIME = mtime
+        logger.info(f"Loaded resolved paths from {path}: {list(data.keys())}")
+        return data
+    except Exception as e:
+        logger.warning(f"Failed to read resolved_paths.json: {e}")
+        return None
+
+
+def _invalidate_resolved_paths_cache() -> None:
+    """使 resolved_paths 缓存强制失效（Rust 刷新后调用）."""
+    global _RESOLVED_PATHS_CACHE, _RESOLVED_PATHS_MTIME
+    _RESOLVED_PATHS_CACHE = None
+    _RESOLVED_PATHS_MTIME = 0.0
+    logger.info("Invalidated resolved_paths cache")
+
+
+# ---------------------------------------------------------------------------
 # 数据类型
 # ---------------------------------------------------------------------------
 
@@ -227,65 +269,91 @@ def _get_model_cache_dir() -> Path:
     return Path(get_model_cache_dir())
 
 
+def _has_weights(path: Path) -> bool:
+    """检查目录中是否包含模型权重文件."""
+    if not path.exists():
+        return False
+    return (
+        any(path.rglob("*.bin"))
+        or any(path.rglob("*.safetensors"))
+        or any(path.rglob("*.pt"))
+        or any(path.rglob("*.pth"))
+    )
+
+
+def _dir_size(path: Path) -> float:
+    """计算目录中所有文件的总大小（MB）."""
+    return round(
+        sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / 1024 / 1024, 1
+    )
+
+
 def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
-    """检查 snapshot 类型模型是否已下载."""
-    cache_dir = _get_model_cache_dir()
+    """检查 snapshot 类型模型是否已下载.
+
+    按 ENV 优先级顺序搜索:
+    1. MBFORGE_MODEL_CACHE_DIR (通过 _get_model_cache_dir)
+    2. HF_HOME
+    3. MODELSCOPE_CACHE (env + 默认)
+    4. TORCH_HOME
+    """
     repo_name = info.ms_repo.split("/")[-1]
+    ms_repo_name_encoded = repo_name.replace(".", "___")
+    ms_org = info.ms_repo.split("/")[0]  # e.g. "Qwen"
 
     # 1. MBForge 缓存目录
+    cache_dir = _get_model_cache_dir()
     local_dir = cache_dir / repo_name
-    if local_dir.exists():
-        has_weights = (
-            any(local_dir.rglob("*.bin"))
-            or any(local_dir.rglob("*.safetensors"))
-            or any(local_dir.rglob("*.pt"))
-            or any(local_dir.rglob("*.pth"))
+    if _has_weights(local_dir):
+        return ResourceStatusResult(
+            id=info.id, name=info.name, type=info.type,
+            status=ResourceStatus.READY,
+            local_path=str(local_dir),
+            size_mb=_dir_size(local_dir),
         )
-        if has_weights:
-            size = sum(f.stat().st_size for f in local_dir.rglob("*") if f.is_file())
-            return ResourceStatusResult(
-                id=info.id, name=info.name, type=info.type,
-                status=ResourceStatus.READY,
-                local_path=str(local_dir),
-                size_mb=round(size / 1024 / 1024, 1),
-            )
 
     # 2. HuggingFace 缓存
     hf_home = os.environ.get("HF_HOME", "")
     if hf_home:
         hf_dir = Path(hf_home) / repo_name
-        if hf_dir.exists() and (any(hf_dir.rglob("*.bin")) or any(hf_dir.rglob("*.safetensors"))):
-            size = sum(f.stat().st_size for f in hf_dir.rglob("*") if f.is_file())
+        if _has_weights(hf_dir):
             return ResourceStatusResult(
                 id=info.id, name=info.name, type=info.type,
                 status=ResourceStatus.READY,
                 local_path=str(hf_dir),
-                size_mb=round(size / 1024 / 1024, 1),
+                size_mb=_dir_size(hf_dir),
             )
 
-    # 3. ModelScope 缓存（目录名中 . 被替换为 ___，且在 models/ 子目录下）
-    ms_repo_name_encoded = repo_name.replace(".", "___")
-    ms_org = info.ms_repo.split("/")[0]  # e.g. "Qwen"
+    # 3. ModelScope 缓存（env > 默认）
     ms_cache_candidates = []
-    # 用户配置的 MODELSCOPE_CACHE
     env_ms = os.environ.get("MODELSCOPE_CACHE", "")
     if env_ms:
         ms_cache_candidates.append(Path(env_ms))
-    # 默认 ModelScope 缓存路径
     ms_cache_candidates.append(Path.home() / ".cache" / "modelscope")
 
     for ms_root in ms_cache_candidates:
         for subdir in ["", "models", "hub/models"]:
             for name in [repo_name, ms_repo_name_encoded]:
                 ms_dir = ms_root / subdir / ms_org / name
-                if ms_dir.exists() and (any(ms_dir.rglob("*.bin")) or any(ms_dir.rglob("*.safetensors"))):
-                    size = sum(f.stat().st_size for f in ms_dir.rglob("*") if f.is_file())
+                if _has_weights(ms_dir):
                     return ResourceStatusResult(
                         id=info.id, name=info.name, type=info.type,
                         status=ResourceStatus.READY,
                         local_path=str(ms_dir),
-                        size_mb=round(size / 1024 / 1024, 1),
+                        size_mb=_dir_size(ms_dir),
                     )
+
+    # 4. TORCH_HOME
+    torch_home = os.environ.get("TORCH_HOME", "")
+    if torch_home:
+        torch_dir = Path(torch_home) / repo_name
+        if _has_weights(torch_dir):
+            return ResourceStatusResult(
+                id=info.id, name=info.name, type=info.type,
+                status=ResourceStatus.READY,
+                local_path=str(torch_dir),
+                size_mb=_dir_size(torch_dir),
+            )
 
     return ResourceStatusResult(
         id=info.id, name=info.name, type=info.type,
@@ -294,28 +362,67 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
 
 
 def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
-    """检查单文件类型模型是否已下载."""
-    cache_dir = _get_model_cache_dir()
+    """检查单文件类型模型是否已下载.
+
+    按 ENV 优先级顺序搜索:
+    1. MBFORGE_MODEL_CACHE_DIR
+    2. HF_HOME
+    3. MODELSCOPE_CACHE (env + 默认)
+    4. TORCH_HOME
+    """
     local_name = info.local_name or f"{info.id}.pt"
-    path = cache_dir / local_name
-    if path.exists() and path.stat().st_size > 0:
-        return ResourceStatusResult(
-            id=info.id, name=info.name, type=info.type,
-            status=ResourceStatus.READY,
-            local_path=str(path),
-            size_mb=round(path.stat().st_size / 1024 / 1024, 1),
-        )
-    # 也检查子目录
-    subdir = cache_dir / info.ms_repo.split("/")[-1]
-    if subdir.exists():
-        for f in subdir.iterdir():
-            if f.is_file() and f.suffix in (".pt", ".pth", ".onnx"):
-                return ResourceStatusResult(
-                    id=info.id, name=info.name, type=info.type,
-                    status=ResourceStatus.READY,
-                    local_path=str(f),
-                    size_mb=round(f.stat().st_size / 1024 / 1024, 1),
-                )
+    repo_name = info.ms_repo.split("/")[-1]
+
+    def _search_in(base: Path) -> ResourceStatusResult | None:
+        path = base / local_name
+        if path.exists() and path.stat().st_size > 0:
+            return ResourceStatusResult(
+                id=info.id, name=info.name, type=info.type,
+                status=ResourceStatus.READY,
+                local_path=str(path),
+                size_mb=round(path.stat().st_size / 1024 / 1024, 1),
+            )
+        subdir = base / repo_name
+        if subdir.exists():
+            for f in subdir.iterdir():
+                if f.is_file() and f.suffix in (".pt", ".pth", ".onnx"):
+                    return ResourceStatusResult(
+                        id=info.id, name=info.name, type=info.type,
+                        status=ResourceStatus.READY,
+                        local_path=str(f),
+                        size_mb=round(f.stat().st_size / 1024 / 1024, 1),
+                    )
+        return None
+
+    # 1. MBForge 缓存
+    result = _search_in(_get_model_cache_dir())
+    if result:
+        return result
+
+    # 2. HF_HOME
+    hf_home = os.environ.get("HF_HOME", "")
+    if hf_home:
+        result = _search_in(Path(hf_home))
+        if result:
+            return result
+
+    # 3. MODELSCOPE_CACHE
+    env_ms = os.environ.get("MODELSCOPE_CACHE", "")
+    if env_ms:
+        result = _search_in(Path(env_ms))
+        if result:
+            return result
+    result = _search_in(Path.home() / ".cache" / "modelscope")
+    if result:
+        return result
+
+    # 4. TORCH_HOME
+    torch_home = os.environ.get("TORCH_HOME", "")
+    if torch_home:
+        result = _search_in(Path(torch_home))
+        if result:
+            return result
+
     return ResourceStatusResult(
         id=info.id, name=info.name, type=info.type,
         status=ResourceStatus.NOT_FOUND,
@@ -511,7 +618,11 @@ def _install_python_package(info: ResourceInfo, callback: Callable[[dict], None]
 # ---------------------------------------------------------------------------
 
 def _check_resource(resource_id: str) -> ResourceStatusResult:
-    """检查单个资源的状态."""
+    """检查单个资源的状态.
+
+    优先读取 Rust 写入的 resolved_paths.json（单一真相源），
+    未命中时回退到本地文件系统扫描。
+    """
     info = RESOURCE_CATALOG.get(resource_id)
     if info is None:
         return ResourceStatusResult(
@@ -519,6 +630,32 @@ def _check_resource(resource_id: str) -> ResourceStatusResult:
             status=ResourceStatus.ERROR, error=f"未知资源: {resource_id}",
         )
 
+    # 1. 优先读取 Rust 解析结果（snapshot/file 模型均适用）
+    if info.type == ResourceType.MODEL:
+        resolved = _read_resolved_paths()
+        if resolved and resource_id in resolved:
+            path = Path(resolved[resource_id])
+            if path.exists():
+                # 计算大小
+                try:
+                    if path.is_file():
+                        size_mb = round(path.stat().st_size / 1024 / 1024, 1)
+                    else:
+                        size_mb = round(
+                            sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / 1024 / 1024, 1
+                        )
+                except Exception:
+                    size_mb = 0.0
+                return ResourceStatusResult(
+                    id=info.id, name=info.name, type=info.type,
+                    status=ResourceStatus.READY,
+                    local_path=str(path),
+                    size_mb=size_mb,
+                )
+            # 路径已失效（文件被删除），继续扫描
+            logger.warning(f"Resolved path for {resource_id} no longer exists: {path}")
+
+    # 2. 回退到本地扫描
     try:
         if info.type == ResourceType.MODEL:
             if info.download_type == "file":
@@ -626,7 +763,16 @@ class ResourceManager:
 
     @classmethod
     def get_model_path(cls, resource_id: str) -> Path | None:
-        """获取已下载模型的本地路径（供模型加载使用）."""
+        """获取已下载模型的本地路径（供模型加载使用）.
+
+        优先读取 Rust 写入的 resolved_paths.json，未命中时回退到扫描。
+        """
+        resolved = _read_resolved_paths()
+        if resolved and resource_id in resolved:
+            path = Path(resolved[resource_id])
+            if path.exists():
+                return path
+        # 回退
         status = cls.check(resource_id)
         if status.status == ResourceStatus.READY and status.local_path:
             return Path(status.local_path)
@@ -635,13 +781,21 @@ class ResourceManager:
     @classmethod
     def get_molscribe_path(cls) -> Path | None:
         """获取 MolScribe 模型路径（兼容旧接口）."""
+        resolved = _read_resolved_paths()
+        if resolved and "molscribe" in resolved:
+            path = Path(resolved["molscribe"])
+            if path.exists():
+                ckpt = path / "swin_base_char_aux_1m680k.pth"
+                if ckpt.exists():
+                    return ckpt
+                if any(path.glob("*.safetensors")):
+                    return path
+        # 回退
         path = cls.get_model_path("molscribe")
         if path and path.exists():
-            # 检查是否包含 checkpoint 文件
             ckpt = path / "swin_base_char_aux_1m680k.pth"
             if ckpt.exists():
                 return ckpt
-            # 检查是否包含 safetensors
             if any(path.glob("*.safetensors")):
                 return path
         return None

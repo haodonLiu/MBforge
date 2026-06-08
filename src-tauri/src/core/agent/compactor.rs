@@ -1,18 +1,16 @@
-//! `SidecarCompactor` — a `rig_core::memory::Compactor` impl that
-//! summarizes evicted conversation turns by POSTing them to the MBForge
-//! FastAPI sidecar's `/api/v1/llm/chat` endpoint.
+//! `RigDirectCompactor` — a `rig_core::memory::Compactor` impl that
+//! summarizes evicted conversation turns by calling the env-configured
+//! LLM directly (via `core::agent::llm_client::chat_simple_with_timeout`).
 //!
-//! # Why sidecar, not rig-direct
+//! # Why rig-direct, not sidecar
 //!
-//! The rig-direct LLM is the one configured for the *current* turn
-//! (the configured `cfg.base_url`). If we called it from the compactor
-//! too, we would double-bill the user for every overflow (one LLM call
-//! for the turn, one for the compaction summary). The sidecar has its
-//! own (typically cheaper / local) model in production and the
-//! precedent for this call shape is in
-//! `crate::core::agent::memory::MemoryManager::extract_from_conversation`
-//! (`core/agent/memory.rs:206`) — we reuse the same URL builder and
-//! the same `client_30s()` factory.
+//! The Python sidecar no longer hosts an LLM endpoint — it serves
+//! embed/rerank/VLM/MolDet/MolScribe only. Routing the compactor
+//! through the sidecar would require reviving `/api/v1/llm/chat`,
+//! duplicating the OpenAI/Anthropic HTTP code that already lives in
+//! `llm_client.rs`. The compactor is non-critical (a missing LLM just
+//! logs and skips), so the strict `MBFORGE_LLM_*` env requirement is
+//! acceptable — see `llm_client::chat_simple_with_timeout`'s docstring.
 //!
 //! # Recursive compaction
 //!
@@ -27,7 +25,7 @@ use rig_core::memory::{Compactor, MemoryError};
 use rig_core::message::Message;
 use rig_core::wasm_compat::WasmBoxedFuture;
 
-use crate::core::http::client_30s;
+use super::llm_client;
 
 /// A summarized slice of evicted conversation. `Into<rig::Message>` so
 /// the composing adapter (`MbforgeManagedMemory`) can splice it at the
@@ -47,22 +45,33 @@ impl From<SummaryArtifact> for Message {
     }
 }
 
-/// Compactor that delegates to the sidecar LLM. Cheap to clone
-/// (`reqwest::Client` is internally `Arc`; `String` is small).
-#[derive(Clone)]
-pub struct SidecarCompactor {
-    pub sidecar_url: String,
-}
+/// Compactor that delegates to the env-configured LLM (via
+/// `llm_client::chat_simple_with_timeout`). Cheap to clone — the
+/// underlying HTTP client is a process-wide singleton.
+#[derive(Clone, Default)]
+pub struct RigDirectCompactor;
 
-impl SidecarCompactor {
-    pub fn new(sidecar_url: impl Into<String>) -> Self {
-        Self {
-            sidecar_url: sidecar_url.into(),
-        }
+impl RigDirectCompactor {
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// 向后兼容旧调用方（`SidecarCompactor::new(url)`）。
+    /// 旧版需要 sidecar URL；rig-direct 实现从 `MBFORGE_LLM_*` 环境变量读取，
+    /// 因此传参被忽略。
+    #[deprecated(note = "sidecar URL 不再需要，使用 `new()` 即可")]
+    pub fn with_url(_sidecar_url: impl Into<String>) -> Self {
+        let _ = _sidecar_url.into();
+        Self
     }
 }
 
-impl Compactor for SidecarCompactor {
+/// 旧名兼容：保留 `SidecarCompactor` 类型别名，让现有调用方
+/// （如 `MbforgeManagedMemory::compactor_kind()`）无需修改。
+/// 内部已切换到 rig-direct 实现。
+pub type SidecarCompactor = RigDirectCompactor;
+
+impl Compactor for RigDirectCompactor {
     type Artifact = SummaryArtifact;
 
     fn compact<'a>(
@@ -109,47 +118,24 @@ impl Compactor for SidecarCompactor {
             }
             let conversation = body_lines.join("\n");
 
-            let prompt = format!(
+            let user_prompt = format!(
                 "请将以下对话压缩为一段不超过 200 字的中文摘要，保留关键事实（人名/数字/决定/待办）。\n\
                  如果对话为空，回复\"无内容\"。\n\n\
                  对话：\n{conversation}"
             );
 
-            let body = serde_json::json!({
-                "messages": [
-                    { "role": "system", "content": "你是一个对话压缩专家。" },
-                    { "role": "user",   "content": prompt }
-                ]
-            });
+            // 30 秒超时 — 压缩是后台任务，宁可跳过也不要阻塞 agent 主循环。
+            // 调用 `llm_client::chat_simple_with_timeout` 而非构造自己的 HTTP 请求，
+            // 与 memory/trajectory extraction 复用同一条 env-driven 代码路径。
+            let text = llm_client::chat_simple_with_timeout(
+                "你是一个对话压缩专家。",
+                &user_prompt,
+                30,
+            )
+            .await
+            .map_err(|e| MemoryError::backend(format!("compactor LLM call: {e}")))?;
 
-            let url = format!(
-                "{}/api/v1/llm/chat",
-                self.sidecar_url.trim_end_matches('/')
-            );
-            let client = client_30s();
-            let resp = client
-                .post(&url)
-                .header("Content-Type", "application/json")
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| MemoryError::backend(format!("sidecar POST: {e}")))?;
-            let status = resp.status();
-            if !status.is_success() {
-                return Err(MemoryError::backend(format!(
-                    "sidecar returned {status}"
-                )));
-            }
-            let v: serde_json::Value = resp
-                .json()
-                .await
-                .map_err(|e| MemoryError::backend(format!("sidecar JSON: {e}")))?;
-            let text = v["choices"][0]["message"]["content"]
-                .as_str()
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            Ok(SummaryArtifact { text })
+            Ok(SummaryArtifact { text: text.trim().to_string() })
         })
     }
 }
@@ -164,10 +150,13 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "needs a stub sidecar; covered by the integration test"]
-    fn test_compactor_calls_sidecar() {
-        // Intentionally empty: see comment above.
-        let _ = SidecarCompactor::new("http://127.0.0.1:0");
+    #[ignore = "needs MBFORGE_LLM_* env; covered by the integration test"]
+    fn test_compactor_construction() {
+        // The compactor no longer needs any URL — it pulls the LLM
+        // endpoint from MBFORGE_LLM_* at call time, so the construction
+        // path is a no-op. Kept as a smoke check that the type is
+        // constructible without panicking.
+        let _ = RigDirectCompactor::new();
     }
 
     #[test]

@@ -2,7 +2,8 @@ use crate::core::document::detection_cache::{
     Detection as CachedDetection, DetectionCache, PageDetection, DETECTION_CACHE_SCHEMA_VERSION,
 };
 use crate::parsers::doc_types::{ImageRef, OcrBlock};
-use crate::parsers::chem::vlm_chem::{process_page_image, DetectedMolecule};
+use crate::parsers::chem::vlm_chem::{process_page_image, detect_coref, coref_to_molecules, DetectedMolecule, CorefMolecule};
+use image::GenericImageView;
 use std::path::{Path, PathBuf};
 
 /// 分类并提取文件（自动检测 parser）
@@ -576,6 +577,248 @@ pub async fn extract_molecules_from_pdf(
     );
 
     Ok(all_results)
+}
+
+// ---------------------------------------------------------------------------
+// MolDetect Coref 提取（替代 label_assoc 的空间邻近性方法）
+// ---------------------------------------------------------------------------
+
+/// 使用 MolDetect coref 模式提取分子-标号关联
+///
+/// 与 `extract_molecules_from_pdf` 类似，但使用 ML 模型自动检测
+/// 分子和标识符的共指关系，替代基于规则的 label_assoc 方法。
+///
+/// # Arguments
+/// - `path`: PDF 文件路径
+/// - `classified`: 分类结果（包含页面信息和图像引用）
+/// - `sidecar_url`: Python sidecar URL
+/// - `project_root`: 项目根目录
+///
+/// # Returns
+/// - `Vec<CorefMolecule>`: 分子-标号关联结果列表
+pub async fn extract_molecules_with_coref(
+    path: &str,
+    classified: &ClassifyResult,
+    sidecar_url: &str,
+    project_root: &Path,
+) -> Result<Vec<CorefMolecule>, String> {
+    let is_scanned = classified.parser == "mineru" || classified.parser == "mineru+cache";
+
+    // 确定输出目录
+    let source_path = Path::new(path);
+    let doc_slug = source_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+    let mol_dir = project_root
+        .join(crate::core::constants::MOLECULES_DIR)
+        .join(doc_slug);
+
+    std::fs::create_dir_all(&mol_dir)
+        .map_err(|e| format!("Failed to create molecule dir: {}", e))?;
+
+    let mut all_molecules = Vec::new();
+
+    if is_scanned {
+        // Scanned: 使用 lopdf 提取的位图
+        log::info!(
+            "[extract_coref] Scanned PDF: processing {} embedded images from {}",
+            classified.images.len(),
+            path
+        );
+
+        for (idx, img_ref) in classified.images.iter().enumerate() {
+            let img_path = if let Some(ref rp) = img_ref.rel_path {
+                project_root.join(rp)
+            } else {
+                continue;
+            };
+
+            if !img_path.exists() {
+                log::warn!("[extract_coref] Image not found: {}", img_path.display());
+                continue;
+            }
+
+            let page_idx = img_ref.page as i32;
+
+            // 调用 coref 检测
+            match detect_coref(
+                img_path.to_str().unwrap_or(""),
+                sidecar_url,
+                true, // use_molscribe
+                true, // use_ocr
+            )
+            .await
+            {
+                Ok(coref_result) => {
+                    // 保存裁剪图像
+                    let crop_dir = mol_dir.join(format!("page_{:04}", page_idx));
+                    let _ = std::fs::create_dir_all(&crop_dir);
+
+                    // 转换为 CorefMolecule（坐标转换需要图像尺寸）
+                    // 对于 scanned PDF，图像尺寸从图像文件读取
+                    if let Ok(img) = image::open(&img_path) {
+                        let (img_w, img_h) = img.dimensions();
+                        let mut molecules = coref_to_molecules(
+                            &coref_result,
+                            page_idx,
+                            595.0, // 默认 A4 宽度
+                            842.0, // 默认 A4 高度
+                            img_w,
+                            img_h,
+                        );
+
+                        // 保存裁剪图像并填充 crop_path
+                        for (mol_idx, mol) in molecules.iter_mut().enumerate() {
+                            // 找到分子对应的 bbox
+                            if let Some(bbox) = coref_result.bboxes.iter().find(|b| b.category_id == 1) {
+                                let [x1, y1, x2, y2] = bbox.bbox;
+                                let x1_px = (x1 * img_w as f64) as u32;
+                                let y1_px = (y1 * img_h as f64) as u32;
+                                let x2_px = (x2 * img_w as f64) as u32;
+                                let y2_px = (y2 * img_h as f64) as u32;
+
+                                if x2_px > x1_px && y2_px > y1_px {
+                                    let crop = img.crop_imm(x1_px, y1_px, x2_px - x1_px, y2_px - y1_px);
+                                    let crop_filename = format!("mol_{:03}.png", mol_idx);
+                                    let crop_path = crop_dir.join(&crop_filename);
+                                    if let Err(e) = crop.save(&crop_path) {
+                                        log::warn!("[extract_coref] Failed to save crop: {}", e);
+                                    } else {
+                                        mol.crop_path = crop_path.to_string_lossy().to_string();
+                                    }
+                                }
+                            }
+                        }
+
+                        all_molecules.extend(molecules);
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[extract_coref] Failed to process image {} (page {}): {}",
+                        img_path.display(),
+                        page_idx,
+                        e
+                    );
+                }
+            }
+        }
+    } else {
+        // TextBased: LiteParse 截图每页
+        log::info!(
+            "[extract_coref] TextBased PDF: screenshot {} pages from {}",
+            classified.page_count,
+            path
+        );
+
+        // 生成页码列表（1-indexed for LiteParse）
+        let page_numbers: Vec<u32> = (1..=classified.page_count).map(|p| p as u32).collect();
+
+        // 分批截图（避免内存溢出，每批 10 页）
+        let batch_size = 10usize;
+        for batch_start in (0..page_numbers.len()).step_by(batch_size) {
+            let batch_end = (batch_start + batch_size).min(page_numbers.len());
+            let batch_pages: Vec<u32> = page_numbers[batch_start..batch_end].to_vec();
+
+            match crate::parsers::pdf::liteparse::screenshot_with_liteparse(path, Some(batch_pages))
+                .await
+            {
+                Ok(screenshots) => {
+                    for ss in screenshots {
+                        let page_idx = ss.page_num as i32; // page_num is 1-indexed
+                        let page_img_path = mol_dir.join(format!("page_{:04}_screenshot.png", page_idx));
+                        if let Err(e) = std::fs::write(&page_img_path, &ss.image_bytes) {
+                            log::warn!(
+                                "[extract_coref] Failed to save screenshot page {}: {}",
+                                page_idx,
+                                e
+                            );
+                            continue;
+                        }
+
+                        // 调用 coref 检测
+                        let (pw, ph) = (595.0_f64, 842.0_f64);
+                        match detect_coref(
+                            page_img_path.to_str().unwrap_or(""),
+                            sidecar_url,
+                            true, // use_molscribe
+                            true, // use_ocr
+                        )
+                        .await
+                        {
+                            Ok(coref_result) => {
+                                // 保存裁剪图像
+                                let crop_dir = mol_dir.join(format!("page_{:04}", page_idx));
+                                let _ = std::fs::create_dir_all(&crop_dir);
+
+                                // 读取图像获取尺寸
+                                if let Ok(img) = image::open(&page_img_path) {
+                                    let (img_w, img_h) = img.dimensions();
+                                    let mut molecules = coref_to_molecules(
+                                        &coref_result,
+                                        page_idx,
+                                        pw,
+                                        ph,
+                                        img_w,
+                                        img_h,
+                                    );
+
+                                    // 保存裁剪图像并填充 crop_path
+                                    for (mol_idx, mol) in molecules.iter_mut().enumerate() {
+                                        // 找到分子对应的 bbox
+                                        if let Some(bbox) = coref_result.bboxes.iter().find(|b| b.category_id == 1) {
+                                            let [x1, y1, x2, y2] = bbox.bbox;
+                                            let x1_px = (x1 * img_w as f64) as u32;
+                                            let y1_px = (y1 * img_h as f64) as u32;
+                                            let x2_px = (x2 * img_w as f64) as u32;
+                                            let y2_px = (y2 * img_h as f64) as u32;
+
+                                            if x2_px > x1_px && y2_px > y1_px {
+                                                let crop = img.crop_imm(x1_px, y1_px, x2_px - x1_px, y2_px - y1_px);
+                                                let crop_filename = format!("mol_{:03}.png", mol_idx);
+                                                let crop_path = crop_dir.join(&crop_filename);
+                                                if let Err(e) = crop.save(&crop_path) {
+                                                    log::warn!("[extract_coref] Failed to save crop: {}", e);
+                                                } else {
+                                                    mol.crop_path = crop_path.to_string_lossy().to_string();
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    all_molecules.extend(molecules);
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "[extract_coref] Failed to process screenshot page {}: {}",
+                                    page_idx,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[extract_coref] LiteParse screenshot failed for batch {}-{}: {}",
+                        batch_start + 1,
+                        batch_end,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    log::info!(
+        "[extract_coref] Total molecules with labels from {}: {}",
+        path,
+        all_molecules.len()
+    );
+
+    Ok(all_molecules)
 }
 
 // ---------------------------------------------------------------------------

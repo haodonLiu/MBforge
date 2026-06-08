@@ -4,7 +4,7 @@ import sys
 
 if __name__ == "__main__":
     import uvicorn
-    from .model_server.main import app
+    from .server import app
     from .utils.constants import DEFAULT_SIDECAR_PORT
 
     uvicorn.run(

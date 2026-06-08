@@ -6,7 +6,6 @@ from .config import (
     AppConfig,
     EmbedConfig,
     RerankConfig,
-    VLMConfig,
 )
 from .helpers import (
     generate_uuid,
@@ -29,5 +28,4 @@ __all__ = [
     "AppConfig",
     "EmbedConfig",
     "RerankConfig",
-    "VLMConfig",
 ]

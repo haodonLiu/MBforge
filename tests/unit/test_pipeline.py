@@ -89,21 +89,17 @@ class TestConfigIntegration:
         assert config is not None
         assert hasattr(config, 'embed')
         assert hasattr(config, 'rerank')
-        assert hasattr(config, 'vlm')
 
     def test_config_sections_have_required_fields(self):
         """验证配置节有必需字段."""
         from mbforge.utils.config import load_global_config
         config = load_global_config()
         # Embed config
-        assert hasattr(config.embed, 'provider')
         assert hasattr(config.embed, 'model_name')
         assert hasattr(config.embed, 'device')
         # Rerank config
-        assert hasattr(config.rerank, 'provider')
         assert hasattr(config.rerank, 'model_name')
-        # VLM config
-        assert hasattr(config.vlm, 'provider')
+        assert hasattr(config.rerank, 'device')
 
 
 # TestProjectIntegration 已迁移：Python `Project` 类已删除

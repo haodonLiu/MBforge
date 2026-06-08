@@ -41,7 +41,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setProjectRoot = useCallback((root: string) => {
     const cleaned = cleanWindowsPath(root)
-    localStorage.setItem(STORAGE_KEY, cleaned)
+    try {
+      localStorage.setItem(STORAGE_KEY, cleaned)
+    } catch (e) {
+      console.warn('[AppContext] localStorage quota exceeded:', e)
+    }
     setProjectRootState(cleaned)
   }, [])
 

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   getFileTree,
   uploadFiles,
-} from '../api/tauri-bridge'
+} from '../api/tauri'
 import { PlusIcon } from './icons'
 import { useAppContext } from '../context/AppContext'
 import { showToast } from '../hooks/useToast'

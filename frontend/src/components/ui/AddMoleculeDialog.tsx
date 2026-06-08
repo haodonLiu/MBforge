@@ -1,5 +1,5 @@
 import { useState, FormEvent, ChangeEvent, useEffect } from 'react'
-import { molStoreAdd, molStoreSearchBySmiles } from '../../api/tauri-bridge'
+import { molStoreAdd, molStoreSearchBySmiles } from '../../api/tauri'
 import { chemValidateSmiles } from '../../api/tauri/molecule'
 import Button from './Button'
 import Input from './Input'

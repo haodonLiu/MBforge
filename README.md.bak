@@ -149,15 +149,13 @@ MBForge/
 │   │   ├── llm.rs                #   LLM HTTP 客户端
 │   │   ├── http.rs               #   共享 HTTP 客户端工厂（按超时分类）
 │   │   ├── context.rs            #   分层会话上下文
-│   │   ├── agent/                #   Agent 子系统（rig 工具 + 底层实现）
-│   │   │   ├── executor_rig.rs   #     rig 工具注册入口（25 个工具）
-│   │   │   ├── rig_adapter.rs    #     Agent 构建器与 provider 适配
-│   │   │   ├── fs.rs             #     文件系统工具底层（native_*）
-│   │   │   ├── kb.rs             #     知识库搜索工具底层（native_*）
-│   │   │   ├── document.rs       #     文档摘要/结构工具底层（native_*）
-│   │   │   ├── molecule.rs       #     分子分析工具底层（native_*）
-│   │   │   ├── arxiv.rs          #     文献 API HTTP 客户端
-│   │   │   └── arxiv_rig.rs      #     文献检索 rig 工具（9 个）
+│   │   ├── executor/             #   ToolExecutor（25+ 工具，按类别拆分）
+│   │   │   ├── mod.rs            #     协调入口
+│   │   │   ├── fs.rs             #     文件系统工具
+│   │   │   ├── kb.rs             #     知识库搜索工具
+│   │   │   ├── document.rs       #     文档摘要/结构工具
+│   │   │   ├── molecule.rs       #     分子分析工具
+│   │   │   └── literature.rs     #     文献检索工具
 │   │   ├── molecule/             #   分子相关模块（已分组）
 │   │   │   ├── molecule_store.rs #     SQLite + FTS5 分子数据库
 │   │   │   ├── molecule_db.rs    #     分子关系数据库

@@ -9,7 +9,7 @@
 //! 存储文件：`.mbforge/knowledge_base.db`（单文件，替代旧的 vectors.db + cache.db）
 
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use dashmap::DashMap;
 
@@ -17,6 +17,7 @@ use rusqlite::Connection;
 use tauri::Emitter;
 
 use crate::core::config::constants::{EVT_KB_SEARCH_CHUNK, INDEX_DIR, PROJECT_META_DIR};
+use crate::core::db::SharedConn;
 use crate::core::error::{AppError, AppResult, ErrorCode};
 use crate::core::vector::embedding::Embedder;
 use crate::core::vector::sqlite_vector_store::{SqliteVectorStore, reciprocal_rank_fusion};
@@ -43,7 +44,7 @@ pub struct KbStats {
 /// 知识库：SQLite（向量 + FTS5）+ 文件缓存
 pub struct KnowledgeBase {
     vector_store: SqliteVectorStore,
-    fts_conn: Mutex<Connection>,
+    fts_conn: SharedConn,
     tree_index: Mutex<DocumentTreeIndex>,
     file_cache: FileCache,
     embedder: Option<Embedder>,
@@ -70,26 +71,27 @@ impl KnowledgeBase {
             Self::migrate_legacy(&db_path, &legacy_vec, &legacy_cache)?;
         }
 
-        // 主连接：向量存储
-        let vec_conn = Connection::open(&db_path)?;
-        let vector_store = SqliteVectorStore::from_conn(vec_conn, 384)?;
+        // Phase 2: 单连接共享（WAL 模式下并发读安全）
+        let conn = Connection::open(&db_path)?;
+        let shared_conn = Arc::new(Mutex::new(conn));
 
-        // 第二个连接：文件缓存（同一文件，WAL 模式下并发读安全）
-        let cache_conn = Connection::open(&db_path)?;
-        let file_cache = FileCache::new(cache_conn)?;
+        let vector_store = SqliteVectorStore::from_shared_conn(Arc::clone(&shared_conn), 384)?;
+        let file_cache = FileCache::from_shared_conn(Arc::clone(&shared_conn))?;
 
-        // 第三个连接：FTS5（独立连接避免写锁冲突）
-        let fts_conn = Connection::open(&db_path)?;
-        fts_conn.execute_batch(
-            "PRAGMA journal_mode=WAL;
-             PRAGMA busy_timeout=5000;
-             PRAGMA wal_autocheckpoint=1000;",
-        )?;
-        fts_conn.execute_batch(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
-                id, text
-            )",
-        )?;
+        // FTS5 schema
+        {
+            let guard = shared_conn.lock().map_err(|e| e.to_string())?;
+            guard.execute_batch(
+                "PRAGMA journal_mode=WAL;
+                 PRAGMA busy_timeout=5000;
+                 PRAGMA wal_autocheckpoint=1000;",
+            )?;
+            guard.execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
+                    id, text
+                )",
+            )?;
+        }
 
         let tree_index = DocumentTreeIndex::new(project_root);
 
@@ -104,7 +106,63 @@ impl KnowledgeBase {
 
         Ok(Self {
             vector_store,
-            fts_conn: Mutex::new(fts_conn),
+            fts_conn: shared_conn,
+            tree_index: Mutex::new(tree_index),
+            file_cache,
+            embedder,
+        })
+    }
+
+    /// Phase 2: 从 DbManager 共享连接初始化
+    pub fn with_shared_conn(
+        project_root: &Path,
+        embed_config: Option<&crate::core::config::settings::EmbedConfig>,
+        shared_conn: SharedConn,
+    ) -> AppResult<Self> {
+        let index_dir = project_root.join(INDEX_DIR);
+        std::fs::create_dir_all(&index_dir)?;
+
+        let db_path = index_dir.join("knowledge_base.db");
+        let legacy_meta = project_root.join(PROJECT_META_DIR);
+        let legacy_vec = legacy_meta.join("knowledge_base").join("vectors.db");
+        let legacy_cache = legacy_meta.join("knowledge_base").join("cache.db");
+
+        if !db_path.exists() && (legacy_vec.exists() || legacy_cache.exists()) {
+            log::info!("Migrating legacy KB databases to knowledge_base.db");
+            Self::migrate_legacy(&db_path, &legacy_vec, &legacy_cache)?;
+        }
+
+        let vector_store = SqliteVectorStore::from_shared_conn(Arc::clone(&shared_conn), 384)?;
+        let file_cache = FileCache::from_shared_conn(Arc::clone(&shared_conn))?;
+
+        // FTS5 schema
+        {
+            let guard = shared_conn.lock().map_err(|e| e.to_string())?;
+            guard.execute_batch(
+                "PRAGMA journal_mode=WAL;
+                 PRAGMA busy_timeout=5000;
+                 PRAGMA wal_autocheckpoint=1000;",
+            )?;
+            guard.execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
+                    id, text
+                )",
+            )?;
+        }
+
+        let tree_index = DocumentTreeIndex::new(project_root);
+
+        let embedder = embed_config.and_then(|config| {
+            if !config.api_key.is_empty() || config.provider == "qwen3" {
+                Some(Embedder::new(config))
+            } else {
+                None
+            }
+        });
+
+        Ok(Self {
+            vector_store,
+            fts_conn: shared_conn,
             tree_index: Mutex::new(tree_index),
             file_cache,
             embedder,
@@ -402,7 +460,15 @@ pub fn get_or_init_kb(
     }
 
     let config = crate::core::config::settings::AppConfig::load();
-    let kb = KnowledgeBase::new(std::path::Path::new(root), Some(&config.embed))?;
+    let project_path = std::path::Path::new(root);
+
+    // Phase 2: 优先使用 DbManager 共享连接
+    let kb = if let Ok(db) = crate::core::db::get_or_init_db(project_path) {
+        KnowledgeBase::with_shared_conn(project_path, Some(&config.embed), db.knowledge_base())?
+    } else {
+        log::warn!("DbManager unavailable for KB at {}, falling back to self-managed connection", root);
+        KnowledgeBase::new(project_path, Some(&config.embed))?
+    };
 
     cache.insert(root.to_string(), kb);
     Ok(cache.get(root).expect("just inserted"))
@@ -415,10 +481,20 @@ fn get_or_init_semantic_cache(
     if let Some(entry) = cache.get(root) {
         return entry;
     }
-    let sc = SemanticCache::new(
-        std::path::Path::new(root),
-        SemanticCacheConfig::default(),
-    );
+
+    // Phase 2: 优先使用 DbManager 共享连接，消除每操作自开连接
+    let project_path = std::path::Path::new(root);
+    let sc = if let Ok(db) = crate::core::db::get_or_init_db(project_path) {
+        SemanticCache::with_db_manager(
+            SemanticCacheConfig::default(),
+            db.knowledge_base(),
+            project_path,
+        )
+    } else {
+        log::warn!("DbManager unavailable for semantic cache at {}, falling back to self-managed connection", root);
+        SemanticCache::new(project_path, SemanticCacheConfig::default())
+    };
+
     cache.insert(root.to_string(), sc);
     cache.get(root).expect("just inserted")
 }

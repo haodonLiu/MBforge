@@ -2,7 +2,7 @@
  * Used by the main Environment page. */
 
 import { useCallback, useEffect, useState } from 'react'
-import { getDetectionCacheStats, clearDetectionCache } from '../../api/tauri-bridge'
+import { getDetectionCacheStats, clearDetectionCache } from '../../api/tauri'
 import { useAppContext } from '../../context/AppContext'
 import { showToast } from '../../hooks/useToast'
 import Button from '../ui/Button'

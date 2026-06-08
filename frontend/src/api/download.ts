@@ -1,4 +1,4 @@
-import { fetchJson, sseStream } from './client'
+import { fetchJson, sseStream } from './http'
 
 const API_BASE = '/api/v1/download'
 

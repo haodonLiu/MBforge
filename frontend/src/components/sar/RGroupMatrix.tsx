@@ -4,7 +4,7 @@ import type { SARCompound } from '../../types'
 import type {
   RGroupMatrix as RGroupMatrixData,
   ActivityHeatmapEntry,
-} from '../../api/client'
+} from '../../api/tauri/sar'
 import { sarBuildMatrix, sarHeatmap } from '../../api/tauri/sar'
 import CoreScaffoldCard from './rgroup/CoreScaffoldCard'
 import MatrixTable from './rgroup/MatrixTable'

@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import type { DocumentEntry } from '../../types'
-import type { ScanWarning } from '../../api/tauri-bridge'
+import type { ScanWarning } from '../../api/tauri'
 import PageContainer from '../ui/PageContainer'
 import PageTitle from '../ui/PageTitle'
 import SectionTitle from '../ui/SectionTitle'

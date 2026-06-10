@@ -8,6 +8,24 @@
 
 ## P2 — 中期计划
 
+## 技术债务
+
+> 与 `AGENTS.md` §技术债务 同步维护。修复后两边同时更新。
+
+| # | 债务 | 严重性 | 状态 | 修复方案 | 优先级 |
+|---|------|--------|------|---------|--------|
+| 1 | chem_validate.rs 与 core/chem.rs 重叠 | 中 | 🔴 待修复 | 合并到 chem.rs | P2 |
+| 2 | vector_store.rs 接口冗余 | 低 | 🔴 待修复 | 合并到 sqlite_vector_store.rs | P3 |
+| 3 | 多个 std::sync::Mutex 在 async 上下文 | 高 | 🟡 进行中 | 迁移到 tokio::sync::Mutex | P1 |
+| 4 | chematic git 依赖无 tag | 中 | 🔴 待修复 | 锁定到特定 commit | P2 |
+| 5 | Python sidecar 单进程无连接池 | 中 | 🔴 待修复 | 添加连接池 + 优雅降级 | P2 |
+| 6 | tracing 覆盖不全 | 中 | 🟡 部分完成 | 扩展 observability.rs 到所有跨边界调用 | P2 |
+| 7 | 无成本追踪 | 中 | 🔴 待修复 | 新增 BudgetEnforcer | P3 |
+| 8 | 27 分钟管线瓶颈 | 高 | 🟡 部分完成 | LLM 调用并行化 | P1 |
+| 9 | constants.rs 生成机制失效 | 中 | 🟡 部分完成 | 脚本已修复，Rust 侧改为参考文件 + 人工合并 | P2 |
+
+---
+
 ## P3 — 远期 / 想法
 
 ### 🔴 长期方案：MolDetect ONNX + 纯 Rust 推理

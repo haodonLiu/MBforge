@@ -51,17 +51,26 @@ MBForge/
 │   ├── src/
 │   │   ├── api/            # Tauri invoke 桥接 + HTTP fallback
 │   │   │   ├── tauri/      #   按域拆分的 Tauri invoke 子模块
-│   │   │   │   ├── _utils.ts   # 通用工具（listen/unlisten）
-│   │   │   │   ├── agent.ts    # Agent 会话
-│   │   │   │   ├── kb.ts       # 知识库
-│   │   │   │   ├── molecule.ts # 分子数据库
-│   │   │   │   ├── pdf.ts      # PDF 操作
-│   │   │   │   ├── project.ts  # 项目管理
-│   │   │   │   ├── text.ts     # 文本处理
-│   │   │   │   └── environment.ts # 环境信息
-│   │   │   └── tauri-bridge.ts # 9 行 barrel 导出
-│   │   ├── components/     # ~70 个 UI 组件
-│   │   │   ├── ui/         # ~40 个原子组件（Button, Modal, Card, ...）
+│   │   │   │   ├── _utils.ts       # 通用工具（listen/unlisten）
+│   │   │   │   ├── agent.ts        # Agent 会话
+│   │   │   │   ├── audit.ts        # 审计日志
+│   │   │   │   ├── detection_cache.ts # 检测缓存
+│   │   │   │   ├── download.ts     # 模型下载
+│   │   │   │   ├── environment.ts  # 环境信息
+│   │   │   │   ├── file.ts         # 文件操作
+│   │   │   │   ├── gesim.ts        # GESim 计算
+│   │   │   │   ├── kb.ts           # 知识库
+│   │   │   │   ├── molecule.ts     # 分子数据库
+│   │   │   │   ├── notes.ts        # 笔记管理
+│   │   │   │   ├── pdf.ts          # PDF 操作
+│   │   │   │   ├── project.ts      # 项目管理
+│   │   │   │   ├── sar.ts          # SAR 分析
+│   │   │   │   ├── settings.ts     # 设置管理
+│   │   │   │   └── text.ts         # 文本处理
+│   │   │   ├── tauri-events.ts
+│   │   │   └── index.ts            # barrel 导出
+│   │   ├── components/     # UI 组件
+│   │   │   ├── ui/         # 原子组件（Button, Modal, Card, ...）
 │   │   │   ├── settings/   # 设置/模型管理组件
 │   │   │   ├── animations/ # 动画包装组件
 │   │   │   └── project/    # 项目仪表盘子组件
@@ -80,68 +89,89 @@ MBForge/
 │
 ├── src-tauri/              # Rust Tauri 后端
 │   ├── src/
-│   │   ├── main.rs         # Tauri 入口：40+ 命令注册 + Python sidecar 管理
+│   │   ├── main.rs         # Tauri 入口：命令注册 + Python sidecar 管理
 │   │   ├── lib.rs          # 模块导出
-│   │   ├── commands/       # Tauri IPC 命令层（15 模块，80+ 命令）
-│   │   │   ├── mod.rs      #   命令聚合（handler() 函数）
-│   │   ├── core/           # Agent + 数据层（5 子目录 + 顶层模块）
-│   │   │   ├── agent/      # Agent 子系统（agent/context/llm/tools/observability/specialist_agent）
-│   │   │   ├── chem/       # 化学信息学（chem/esmiles/molecode/markush/abbreviation_map/gesim）
-│   │   │   ├── agent/      # Agent 子系统（rig 工具 / arxiv / memory / trajectory）
-│   │   │   ├── molecule/   # 分子模块（store/db/dedup/cluster/engine）
-│   │   │   ├── memory/     # 记忆与轨迹（memory/trajectory/skills）
-│   │   │   ├── document/   # 文档处理（kb/tree/summary/semantic_cache/stream_search）
-│   │   │   ├── db.rs               # 统一 SQLite 数据库连接管理（molecules.db + vectors.db）
-│   │   │   ├── markush.rs          # E-SMILES Markush 分析
-│   │   │   ├── esmiles.rs          # E-SMILES 标签生成/解析（SMILES ↔ E-SMILES）
-│   │   │   ├── molecode.rs         # MoleCode 生成（E-SMILES → Mermaid 图文本）
-│   │   │   ├── chem.rs             # 化学信息学（SMILES 验证、ECFP4、Tanimoto、子结构搜索）
-│   │   │   ├── resource_manager.rs # 统一资源管理
-│   │   │   └── semantic_cache.rs   # 三级语义缓存
-│   │   └── parsers/        # PDF 解析管线（20 模块）
-│   │       ├── doc_types.rs        # 管线共享数据结构（原 types.rs）
-│   │       ├── pipeline.rs         # 统一解析管线入口（Stage 0-7 + 2c/3.5）
-│   │       │   ├── extract.rs      #   分类与提取逻辑 + extract_pdf_workflow()
-│   │       │   ├── helpers.rs      #   record 映射与文本提取 + MoleCode 嵌入
-│   │       │   └── merge.rs        #   合并 + SAR + 专利增强
-│   │       ├── moldet_client.rs    # MolDet/MolScribe sidecar 客户端（检测+裁剪+识别）
-│   │       ├── association.rs      # 分子-文本关联引擎
-│   │       ├── chem_validate.rs    # 化学结构验证 + E-SMILES 三层分离
-│   │       ├── post_process.rs     # LLM 后处理: 批处理/JSON 修复/结构化解析
-│   │       ├── sections.rs         # 章节构建: heading 提取 + 语义分块
-│   │       ├── images.rs           # lopdf 图像提取
-│   │       ├── vlm_chem.rs         # VLM 化学识别 + SHA-256 缓存
-│   │       ├── claim_parser.rs     # 专利 Claims 解析
-│   │       ├── claim_policy.rs     # 专利范围匹配
-│   │       ├── molecule_extractor.rs # 专利命名化合物提取
-│   │       ├── liteparse.rs        # LiteParse 客户端（文本+截图）
-│   │       ├── mineru.rs           # MinerU API 客户端
-│   │       ├── llama_parse.rs      # LlamaParse API 客户端
-│   │       └── uniparser.rs        # UniParser API 客户端
+│   │   ├── commands/       # Tauri IPC 命令层（18 模块）
+│   │   │   ├── mod.rs            # 命令聚合（handler() 函数）
+│   │   │   ├── agent.rs          # Agent 会话
+│   │   │   ├── classifier.rs     # 页面/文档分类
+│   │   │   ├── detection_cache.rs# 检测缓存管理
+│   │   │   ├── extractor.rs      # 提取命令
+│   │   │   ├── file_ops.rs       # 文件操作
+│   │   │   ├── gesim.rs          # GESim 计算
+│   │   │   ├── llm.rs            # LLM 调用
+│   │   │   ├── mol_engine.rs     # 分子引擎状态
+│   │   │   ├── mol_store.rs      # 分子存储操作
+│   │   │   ├── molecode.rs       # MoleCode 生成
+│   │   │   ├── molecule.rs       # 分子数据库 CRUD
+│   │   │   ├── notes.rs          # 笔记管理
+│   │   │   ├── pdf.rs            # PDF 操作
+│   │   │   ├── project_ops.rs    # 项目操作
+│   │   │   ├── settings.rs       # 设置管理
+│   │   │   ├── sidecar.rs        # Sidecar 管理
+│   │   │   └── text_ops.rs       # 文本处理
+│   │   ├── core/           # Agent + 数据层（8 子目录 + 顶层模块）
+│   │   │   ├── agent/            # Agent 子系统（rig 工具 / ReAct / memory / trajectory）
+│   │   │   ├── chem/             # 化学信息学（SMILES/E-SMILES/MoleCode/Markush/GESim）
+│   │   │   ├── config/           # 配置与常量
+│   │   │   ├── document/         # 文档处理（KB/Tree/Summary/SemanticCache/StreamSearch）
+│   │   │   ├── models/           # 模型目录管理（下载/状态/解析）
+│   │   │   ├── molecule/         # 分子模块（Store/DB/Dedup/Cluster/Engine）
+│   │   │   ├── project/          # 项目与笔记
+│   │   │   ├── vector/           # 向量存储与 Embedding
+│   │   │   ├── db.rs             # 统一 SQLite 数据库连接管理
+│   │   │   ├── error.rs          # 错误类型
+│   │   │   ├── helpers.rs        # 通用辅助函数（路径安全等）
+│   │   │   ├── http.rs           # 共享 HTTP 客户端工厂
+│   │   │   ├── sidecar_client.rs # Sidecar HTTP 客户端
+│   │   │   └── types.rs          # 共享类型
+│   │   └── parsers/        # PDF 解析管线
+│   │       ├── doc_types.rs        # 管线共享数据结构
+│   │       ├── pipeline.rs         # 统一解析管线入口
+│   │       │   ├── extract.rs      # 分类与提取逻辑
+│   │       │   ├── helpers.rs      # record 映射与文本提取
+│   │       │   ├── markdown_augment.rs # Markdown 增强
+│   │       │   └── merge.rs        # 合并 + SAR + 专利增强
+│   │       ├── chem/               # 化学解析子模块
+│   │       │   ├── association.rs      # 分子-文本关联引擎
+│   │       │   ├── chem_validate.rs    # 化学结构验证
+│   │       │   ├── claim_parser.rs     # 专利 Claims 解析
+│   │       │   ├── claim_policy.rs     # 专利范围匹配
+│   │       │   ├── label_assoc.rs      # 标签关联
+│   │       │   ├── molecule_extractor.rs # 专利命名化合物提取
+│   │       │   └── vlm_chem.rs         # VLM 化学识别 + SHA-256 缓存
+│   │       ├── pdf/                # PDF 解析客户端
+│   │       │   ├── images.rs           # lopdf 图像提取
+│   │       │   ├── liteparse.rs        # LiteParse 客户端
+│   │       │   ├── llama_parse.rs      # LlamaParse API 客户端
+│   │       │   ├── mineru.rs           # MinerU API 客户端
+│   │       │   └── uniparser.rs        # UniParser API 客户端
+│   │       ├── structure/          # 文档结构处理
+│   │       │   ├── intent.rs           # 意图路由（LLM 分类）
+│   │       │   ├── post_process.rs     # LLM 后处理 / JSON 修复
+│   │       │   ├── report.rs           # Markdown 报告生成
+│   │       │   └── sections.rs         # 章节构建与语义分块
+│   │       └── keywords.rs         # 关键词与实体提取
 │   ├── Cargo.toml
 │   ├── tauri.conf.json
 │   └── .cargo/config.toml  # dev 环境屏蔽 warnings
 │
 ├── src/mbforge/            # Python 模型服务器 & 核心库
-│   ├── model_server/       # FastAPI 服务
-│   │   ├── main.py         # 入口 + 路由注册
-│   │   ├── dependencies.py # 依赖注入
-│   │   ├── models/         # LLM/Embed/Rerank/VLM/MolDet 单例管理
-│   │   └── routers/        # 13 个 API 路由模块
+│   ├── server.py           # FastAPI 入口（端点内联，lifespan 预热 5 个后端）
+│   ├── backends/           # 本地模型后端（5 个固定后端）
+│   │   ├── qwen3_embed.py        # Qwen3-Embedding
+│   │   ├── qwen3_rerank.py       # Qwen3-Reranker
+│   │   ├── molscribe.py          # MolScribe 分子图像识别
+│   │   ├── moldet.py             # MolDet 分子检测（YOLO）
+│   │   └── moldet_coref.py       # MolDet Coref 关联
 │   ├── core/               # Python 数据层
-│   │   ├── project.py      # Vault 项目管理
-│   │   ├── knowledge_base.py       # 向量知识库（Rust 侧 FTS5 为主，Python sidecar 辅助）
-│   │   ├── resource_manager.py     # 资源管理 + ModelScope 下载
-│   │   └── summarizer.py           # L0/L1/L2 分层摘要
-│   ├── models/             # AI 模型抽象层
-│   │   ├── base.py, llm.py, anthropic_llm.py, embedding.py, vlm.py, rerank.py, rerank_qwen3.py
+│   │   └── resource_manager.py   # 资源管理 + ModelScope 下载
 │   ├── parsers/            # Python 解析层（PDF 解析全在 Rust 侧）
 │   │   └── molecule/       # MolDet + MolScribe 图像分子提取管线
-│   │       ├── molscribe/           # MolScribe 门面类
-│   │       └── molscribe_inference/ # MolScribe 推理引擎
-│   ├── csar/               # SAR 分析工具箱（占位模块，仅 __init__.py）
-│   ├── molecules/          # 分子数据合约
-│   ├── utils/              # 配置、常量、异常、GPU 检测、日志
+│   │       ├── molscribe_inference/ # MolScribe 推理引擎（Swin + Transformer）
+│   │       ├── coords.py
+│   │       └── extraction_result.py
+│   ├── utils/              # 配置、常量、异常、日志
 │   └── cli.py              # CLI 入口（mbforge 命令）
 │
 ├── tests/                  # Python 测试
@@ -185,7 +215,7 @@ npm install
 
 ```bash
 # 终端 1：启动 Python 模型服务器
-uv run uvicorn mbforge.model_server.main:app --host 127.0.0.1 --port 18792
+uv run uvicorn mbforge.server:app --host 127.0.0.1 --port 18792
 
 # 终端 2：启动前端开发服务器（Vite port 5173，自动代理 /api 到 18792）
 cd frontend && npm run dev
@@ -197,8 +227,6 @@ cd src-tauri && cargo tauri dev
 ### 编译检查
 
 ```bash
-# Rust
-nvidia-smi ; if (-not $?) { Write-Host "No CUDA" }
 # Rust 编译检查
 cd src-tauri && cargo check
 
@@ -225,22 +253,20 @@ cd src-tauri && cargo tauri build
 
 ### Rust 测试
 
-Rust 侧测试数量较多（~323 个），**开发时优先运行目标模块测试**，全量测试仅用于 CI/发布前。
+Rust 侧测试数量较多，**开发时优先运行目标模块测试**，全量测试仅用于 CI/发布前。
 
 ```bash
 # 核心数据层
-cargo test --lib embedding::
-cargo test --lib vector_store::
-cargo test --lib knowledge_base::
-cargo test --lib document_tree::
+cargo test --lib vector::
+cargo test --lib document::
+cargo test --lib molecule::
 
 # 解析层
-cargo test --lib headings::
-cargo test --lib sections::
+cargo test --lib parsers::
 cargo test --lib pipeline::
 
 # Agent 层
-cargo test --lib executor::
+cargo test --lib agent::
 
 # 全量测试（仅 CI / 发布前）
 cd src-tauri && cargo test --lib
@@ -338,6 +364,13 @@ uv run ruff format src/ --check
 
 ---
 
+## 文档治理
+
+> 本文档与 `CLAUDE.md`、`README.md` 的分工及回刷机制见 `.claude/documentation-governance.md`。
+> 修改代码结构后**必须**按该规范回刷描述文件。
+
+---
+
 ## 模块边界与架构约定
 
 ### 五层架构
@@ -348,7 +381,7 @@ uv run ruff format src/ --check
 | **命令层** | `src-tauri/src/commands/` | Tauri IPC 命令注册，桥接前端与 Rust 核心 | `main.rs` 中的 `invoke_handler` |
 | **核心层** | `src-tauri/src/core/` | Rust Agent、数据持久化、向量存储、分子数据库、项目迁移 | `agent/`, `molecule/`, `document/`, `vector/`, `project/`, `chem/` |
 | **解析层** | `src-tauri/src/parsers/` | PDF 解析管线、图像提取、关联引擎 | `pipeline.rs`, `association.rs`, `images.rs` |
-| **模型服务** | `src/mbforge/model_server/` | FastAPI REST API、模型单例管理 | `main.py`, `routers/*.py` |
+| **模型服务** | `src/mbforge/server.py` | FastAPI REST API、5 个固定本地后端 | `server.py`, `backends/*.py` |
 
 ### 目录与文件组织
 
@@ -360,7 +393,7 @@ uv run ruff format src/ --check
 | 组件超过 300 行必须拆分 | 将子组件提取到同一目录的独立文件 |
 | UI 组件按功能分组 | `frontend/src/components/ui/` 放置通用原子组件（Button、Input、Avatar） |
 | Rust 模块按职责分组 | `commands/`（IPC）、`core/`（业务）、`parsers/`（解析），禁止跨层直接调用 |
-| Python 路由模块化 | 每个路由模块只处理一类资源（`llm.py`、`vlm.py`、`moldet.py`） |
+| Python 后端模块化 | 每个后端模块只处理一类本地模型（`qwen3_embed.py`、`moldet.py`、`molscribe.py`） |
 | 常量集中管理 | Rust 用 `core/constants.rs`；Python 用 `utils/constants.py`；禁止魔法字符串散落 |
 
 ### 新增代码的约定
@@ -379,11 +412,11 @@ uv run ruff format src/ --check
    - 在 `rig_adapter.rs::assemble_rig_tool_vec()` 中添加 `tools.push(Box::new(<Name>Tool::new(...)))` 一行注册
    - 工具名使用 `snake_case`，描述必须清晰说明输入输出格式
 
-3. **新增 FastAPI 路由**：
-   - 在 `src/mbforge/model_server/routers/` 创建 `APIRouter`
-   - 路由前缀统一使用 `/api/v1/{资源名}`
-   - 在 `src/mbforge/model_server/main.py` 通过 `app.include_router()` 注册
+3. **新增 FastAPI 端点**：
+   - 在 `src/mbforge/server.py` 中按后端类型添加路由函数
+   - 端点前缀使用 `/api/v1/{资源名}`
    - 路由函数必须有类型注解和 docstring
+   - 如需新后端，在 `src/mbforge/backends/` 创建模块并注册到 `_BACKENDS` 列表
 
 4. **新增 PDF 解析后端**：
    - 在 `src-tauri/src/parsers/` 创建客户端模块（如 `myparser.rs`）
@@ -404,7 +437,7 @@ uv run ruff format src/ --check
 
 - **Rust 新代码优先，Python 代码冻结**（除 bugfix 及工程化补全如 type hints/错误处理外不修改核心逻辑）
 - **新增功能必须在 Rust 侧实现**
-- **Python sidecar 仅保留**：模型推理（LLM/Embedding/VLM）、MolDet 分子检测、MolScribe 图像识别
+- **Python sidecar 仅保留**：Embedding（Qwen3）、Rerank（Qwen3）、MolDet 分子检测、MolScribe 图像识别
 - **前端调用逐步从 HTTP API 迁移到 Tauri `invoke()`**
 
 ---
@@ -610,6 +643,7 @@ export function myFn(arg: string): string {
 - [ ] 不提交 API 密钥或敏感配置
 - [ ] `.gitignore` 已覆盖新增产物
 - [ ] **CODEMAP.md §7.6 待审核事项**：本次修改涉及的文档/代码问题是否已记录，由人工确认
+- [ ] `constants.yaml` 如有修改，运行 `python scripts/generate_constants.py` 并验证两侧产物
 
 ---
 
@@ -790,16 +824,19 @@ PDF 输入
 
 ## 技术债务
 
-| # | 债务 | 严重性 | 修复方案 |
-|---|------|--------|---------|
-| 1 | chem_validate.rs 与 core/chem.rs 重叠 | 中 | 合并到 chem.rs |
-| 2 | vector_store.rs 退化为 15 行 | 低 | 清理 |
-| 3 | 多个 std::sync::Mutex 在 async 上下文 | 高 | 迁移到 tokio::sync::Mutex |
-| 4 | chematic git 依赖无 tag | 中 | 锁定到特定 commit |
-| 5 | Python sidecar 单进程无连接池 | 中 | 添加连接池 + 优雅降级 |
-| 6 | 无结构化 tracing | 高 | 新增 observability.rs |
-| 7 | 无成本追踪 | 中 | 新增 BudgetEnforcer |
-| 8 | 27 分钟管线瓶颈 | 高 | LLM 调用并行化（已部分完成） |
+> 与 `TODO/INDEX.md` §技术债务 同步维护。修复后两边同时更新。
+
+| # | 债务 | 严重性 | 状态 | 修复方案 |
+|---|------|--------|------|---------|
+| 1 | chem_validate.rs 与 core/chem.rs 重叠 | 中 | 🔴 待修复 | 合并到 chem.rs |
+| 2 | vector_store.rs 接口冗余 | 低 | 🔴 待修复 | 合并到 sqlite_vector_store.rs |
+| 3 | 多个 std::sync::Mutex 在 async 上下文 | 高 | 🟡 进行中 | 迁移到 tokio::sync::Mutex |
+| 4 | chematic git 依赖无 tag | 中 | 🔴 待修复 | 锁定到特定 commit |
+| 5 | Python sidecar 单进程无连接池 | 中 | 🔴 待修复 | 添加连接池 + 优雅降级 |
+| 6 | tracing 覆盖不全 | 中 | 🟡 部分完成 | 扩展 observability.rs 到所有跨边界调用 |
+| 7 | 无成本追踪 | 中 | 🔴 待修复 | 新增 BudgetEnforcer |
+| 8 | 27 分钟管线瓶颈 | 高 | 🟡 部分完成 | LLM 调用并行化 |
+| 9 | constants.rs 生成机制失效 | 中 | 🟡 部分完成 | 脚本已修复路径与死代码；Rust 侧改为参考文件 + 人工合并 |
 
 ---
 
@@ -817,11 +854,11 @@ PDF 输入
 
 ## 当前状态
 
-| 指标 | 数值 |
+| 指标 | 状态 |
 |------|------|
-| Rust 代码 | ~24,700 行（30 core + 20 parser + 12 command 模块） |
-| Python 代码 | ~13,100 行 |
-| 测试总数 | ~323 个（Rust 323 + Python 111） |
+| Rust 核心 | 128 个文件（commands + core + parsers） |
+| Python 服务 | 36 个文件（backends + parsers + utils） |
+| 前端 | 177 个文件（TS/TSX） |
 | 数据库 | SQLite (molecules.db + vectors.db) + semantic_cache.json |
 | 核心流程 | PDF → 解析 → LLM 提取 → 分子入库 → 知识库索引 |
 

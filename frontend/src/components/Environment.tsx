@@ -11,6 +11,7 @@ import {
   ModelsSection,
 } from './environment/sections'
 import DetectionCacheCard from './settings/DetectionCacheCard'
+import SidecarCard from './settings/SidecarCard'
 import type { ModelInfo, ModelPaths } from './environment/types'
 import { resourcesCatalog, resourcesStatus, modelsCacheDirInfo, refreshResolvedPaths } from '../api/tauri/environment'
 import { downloadModel, deleteModel } from '../api/tauri/download'
@@ -288,6 +289,11 @@ export default function Environment() {
             重复了 Environment 的资源检查，迁过来统一管理 */}
         <div style={{ marginBottom: '24px' }}>
           <DetectionCacheCard />
+        </div>
+
+        {/* Sidecar (Python FastAPI) 健康监控 + 手动重启 */}
+        <div style={{ marginBottom: '24px' }}>
+          <SidecarCard />
         </div>
       </ScrollColumn>
     </PageContainer>

@@ -176,7 +176,12 @@ class TestMoleculeExtraction:
 #   - test_project_doc_types
 #   - test_project_document_metadata
 # 对应逻辑由 Rust 单元测试 + 集成测试覆盖（`src-tauri/src/core/project/`）。
-            assert doc.hash, "hash 不能为空"
+#
+# 之前的 `test_embedding_model_resolves` / `test_reranker_model_resolves` 也已
+# 删除：它们从 `mbforge.models.embedding._resolve_model_path` 导入，而
+# `src/mbforge/models/` 已被 `src/mbforge/backends/` 取代（剩余仅
+# `__pycache__` 残留）。模型路径解析由 `mbforge.core.resource_manager` 覆盖，
+# 见 `TestConfigWithRealPaths::test_resource_manager_detects_models`。
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +209,26 @@ class TestConfigWithRealPaths:
         path = _resolve_model_path("Qwen/Qwen3-Reranker-0.6B", "Qwen/Qwen3-Reranker-0.6B")
         assert Path(path).exists(), f"Reranker 模型路径不存在: {path}"
 
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 配置系统与模型路径
+# ---------------------------------------------------------------------------
+
+class TestConfigWithRealPaths:
+    """验证配置系统与真实路径的集成."""
+
+    def test_model_cache_dir_exists(self):
+        """模型缓存目录应存在."""
+        from mbforge.utils.constants import get_model_cache_dir
+        cache_dir = Path(get_model_cache_dir())
+        assert cache_dir.exists(), f"模型缓存目录不存在: {cache_dir}"
+
     def test_resource_manager_detects_models(self):
+        """ResourceManager 应检测到已下载的模型."""
+        from mbforge.core.resource_manager import ResourceManager
+        for model_id in ["embedding", "reranker"]:
+            status = ResourceManager.check(model_id)
+            assert status.status.value == "ready", f"{model_id} 应该是 ready，实际: {status.status.value}"
         """ResourceManager 应检测到已下载的模型."""
         from mbforge.core.resource_manager import ResourceManager
         for model_id in ["embedding", "reranker"]:

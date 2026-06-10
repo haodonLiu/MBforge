@@ -43,10 +43,11 @@ pub const REPORTS_DIR: &str = "reports";
 pub const PAPERS_EXTS: &[&str] = &["pdf"];
 pub const NOTES_EXTS: &[&str] = &["md", "txt"];
 
+// NOTE: This file was originally auto-generated from constants.yaml.
+// It has since been manually extended with Rust-only constants and helpers.
+// LLM/VLM defaults removed: Rust side uses openai_compatible/anthropic APIs directly.
 pub const DEFAULT_EMBED_MODEL: &str = "Qwen/Qwen3-Embedding-0.6B";
 pub const DEFAULT_RERANK_MODEL: &str = "Qwen/Qwen3-Reranker-0.6B";
-pub const DEFAULT_LLM_MODEL: &str = "Qwen/Qwen2.5-7B-Instruct-GGUF";
-pub const DEFAULT_VLM_MODEL: &str = "mimo-v2.5";
 
 pub const DEFAULT_HF_ENDPOINT: &str = "https://hf-mirror.com";
 
@@ -61,7 +62,9 @@ pub const PROVIDER_OPENAI_COMPATIBLE: &str = "openai_compatible";
 pub const PROVIDER_ANTHROPIC: &str = "anthropic";
 pub const PROVIDER_QWEN3: &str = "qwen3";
 pub const PROVIDER_SENTENCE_TRANSFORMERS: &str = "sentence_transformers";
+pub const PROVIDER_OLLAMA: &str = "ollama";
 pub const PROVIDER_API: &str = "api";
+pub const PROVIDER_LOCAL: &str = "local";
 
 pub const MEMORY_DIR: &str = "memory";
 pub const TRAJECTORY_DIR: &str = "trajectory";

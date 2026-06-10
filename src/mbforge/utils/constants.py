@@ -36,9 +36,16 @@ KB_COLLECTION_DOCS = "documents"
 
 DEFAULT_EMBED_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 DEFAULT_RERANK_MODEL = "Qwen/Qwen3-Reranker-0.6B"
-DEFAULT_LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct-GGUF"
-DEFAULT_VLM_MODEL = "mimo-v2.5"
 DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
+
+PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
+PROVIDER_ANTHROPIC = "anthropic"
+PROVIDER_QWEN3 = "qwen3"
+PROVIDER_SENTENCE_TRANSFORMERS = "sentence_transformers"
+PROVIDER_OLLAMA = "ollama"
+PROVIDER_API = "api"
+PROVIDER_LOCAL = "local"
+OCR_PROVIDER_NONE = "none"
 
 LLM_MAX_TOKENS = 4096
 LLM_TEMPERATURE = 0.7
@@ -65,9 +72,6 @@ RERANK_DEFAULT_INSTRUCTION = "Given a web search query, retrieve relevant passag
 GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))
 GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
 
-# MODEL_CACHE_DIR is the relative path fragment used by get_model_cache_dir()
-MODEL_CACHE_DIR = ".cache/mbforge/models"
-
 
 def get_model_cache_dir() -> str:
     """获取模型缓存目录（优先配置文件，其次默认路径）."""
@@ -78,11 +82,11 @@ def get_model_cache_dir() -> str:
             return cfg.model_cache_dir
     except Exception:
         pass
-    cache_dir = MODEL_CACHE_DIR.replace("/", os.sep).replace("~", str(Path.home()))
-    # Remove leading "./" if present, but preserve ".cache" etc.
-    if cache_dir.startswith("./"):
-        cache_dir = cache_dir[2:]
-    return str(Path.home() / cache_dir)
+    return str(Path.home() / MODEL_CACHE_DIR.replace(".", "").replace("/", os.sep).replace("~", str(Path.home())))
+
+
+# MODEL_CACHE_DIR is the relative path fragment used by get_model_cache_dir()
+MODEL_CACHE_DIR = ".cache/mbforge/models"
 
 
 def ensure_hf_mirror() -> None:

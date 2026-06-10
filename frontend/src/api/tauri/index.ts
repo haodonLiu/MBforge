@@ -4,13 +4,11 @@
  * - _utils:    shared utilities (isTauriAvailable)
  * - text:      text ops, page/document classifier, extractor
  * - pdf:       PDF classify, extract, parse, process_document
- * - agent:     agent session + post-process
+ * - agent:     agent session
  * - kb:        knowledge base (index, search, structure, pages)
  * - molecule:  molecule store + analysis wrappers
  * - project:   project open, scan, file ops
  * - environment: resource manager / env check
- * - gesim:       graph-based molecular similarity (GESim)
- * - file:        file-level IPC (read PDF bytes for in-app render)
  * - download:    model download / delete / list
  * - settings:    app settings + build info
  * - notes:       notes CRUD + backlinks
@@ -30,8 +28,7 @@ export * from './kb'
 export * from './molecule'
 export * from './project'
 export * from './environment'
-export * from './gesim'
-export * from './file'
+export * from './sidecar'
 export * from './download'
 export * from './settings'
 export * from './notes'

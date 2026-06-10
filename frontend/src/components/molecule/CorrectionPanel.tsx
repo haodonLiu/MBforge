@@ -4,223 +4,33 @@ import MoleculeDisplay from './MoleculeDisplay'
 import ConfidenceThresholdSlider from './ConfidenceThresholdSlider'
 import { useConfidenceThreshold } from '../../hooks/useConfidenceThreshold'
 import Button from '../ui/Button'
-import Badge from '../ui/Badge'
 import { CheckIcon, XIcon, AlertIcon, ChevronLeftIcon, ChevronRightIcon } from '../icons'
-import { validateSmiles, type ValidationIssue } from '../../api/tauri/molecule'
-// ============================================================================
-// 类型
-// ============================================================================
+import { validateSmiles } from '../../api/tauri/molecule'
+import StatusBadge from './StatusBadge'
+import SmilesDiff from './SmilesDiff'
+import ValidationResult from './ValidationResult'
 
 export interface CorrectionItem {
-  /** 唯一 ID */
   id: string
-  /** 原始 OCR 识别的 SMILES */
   ocrSmiles: string
-  /** OCR 识别置信度（0-1）*/
   ocrConfidence: number
-  /** 用户修正后的 SMILES（可选）*/
   correctedSmiles?: string
-  /** 来自文献的图像（裁剪出来的）*/
   sourceImage?: string
-  /** 分子名称 */
   name?: string
-  /** 来源文献 */
   sourceDoc?: string
-  /** 上下文文本 */
   context?: string
-  /** 状态 */
   status?: 'pending' | 'confirmed' | 'rejected' | 'corrected'
 }
 
 export interface CorrectionPanelProps {
   items: CorrectionItem[]
-  /** 完成回调：返回每项的最终 SMILES */
   onComplete: (results: Array<{ id: string; finalSmiles: string; status: 'confirmed' | 'rejected' | 'corrected' }>) => void
-  /** 单项状态变化 */
   onItemChange?: (id: string, finalSmiles: string, status: CorrectionItem['status']) => void
-  /** 是否显示文献图像（默认 true）*/
   showSourceImage?: boolean
-  /** 一次显示几项（默认 1 = 逐个矫正）*/
-  batchSize?: number
-  /** 自定义类名 */
   className?: string
   style?: React.CSSProperties
 }
 
-// ============================================================================
-// 子组件
-// ============================================================================
-
-function StatusBadge({ status }: { status: CorrectionItem['status'] }) {
-  switch (status) {
-    case 'confirmed':
-      return <Badge variant="success" dot>已确认</Badge>
-    case 'corrected':
-      return <Badge variant="info" dot>已修正</Badge>
-    case 'rejected':
-      return <Badge variant="danger" dot>已拒绝</Badge>
-    default:
-      return <Badge variant="warning" dot>待处理</Badge>
-  }
-}
-
-function SmilesDiff({ before, after }: { before: string; after: string }) {
-  if (before === after) return null
-  // 简单的字符级 diff（找第一个不同的位置）
-  let i = 0
-  while (i < before.length && i < after.length && before[i] === after[i]) i++
-
-  return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 4,
-      padding: 8,
-      background: 'var(--bg-base)',
-      borderRadius: 6,
-      fontSize: 11,
-      fontFamily: 'monospace',
-    }}>
-      <div>
-        <span style={{ color: 'var(--text-muted)' }}>原：</span>
-        <span style={{ color: 'var(--text-primary)' }}>{before.slice(0, i)}</span>
-        <span style={{ color: 'var(--danger)', textDecoration: 'line-through' }}>{before.slice(i)}</span>
-      </div>
-      <div>
-        <span style={{ color: 'var(--text-muted)' }}>新：</span>
-        <span style={{ color: 'var(--text-primary)' }}>{after.slice(0, i)}</span>
-        <span style={{ color: 'var(--success)', fontWeight: 600 }}>{after.slice(i)}</span>
-      </div>
-    </div>
-  )
-}
-
-// ============================================================================
-// 结构校验结果展示
-// ============================================================================
-
-interface ValidationResultProps {
-  validation: {
-    smiles: string
-    issues: ValidationIssue[]
-    canonical: string | null
-    loading: boolean
-  } | null
-  onUseCanonical?: (canonical: string) => void
-}
-
-function ValidationResult({ validation, onUseCanonical }: ValidationResultProps) {
-  if (!validation) return null
-  const { issues, canonical, loading, smiles } = validation
-  const hasErrors = issues.some(i => i.severity === 'error')
-  const warnings = issues.filter(i => i.severity === 'warning')
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6,
-        padding: '8px 12px',
-        background: hasErrors
-          ? 'rgba(239, 68, 68, 0.08)'
-          : warnings.length > 0
-            ? 'rgba(245, 158, 11, 0.08)'
-            : 'rgba(34, 197, 94, 0.06)',
-        border: `1px solid ${
-          hasErrors
-            ? 'rgba(239, 68, 68, 0.3)'
-            : warnings.length > 0
-              ? 'rgba(245, 158, 11, 0.3)'
-              : 'rgba(34, 197, 94, 0.3)'
-        }`,
-        borderRadius: 8,
-        fontSize: 12,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {loading ? (
-          <>
-            <AlertIcon size={12} />
-            <span style={{ color: 'var(--text-muted)' }}>结构校验中…</span>
-          </>
-        ) : hasErrors ? (
-          <>
-            <XIcon size={12} />
-            <span style={{ color: 'var(--danger)', fontWeight: 600 }}>
-              结构错误：{issues.find(i => i.severity === 'error')?.message}
-            </span>
-          </>
-        ) : warnings.length > 0 ? (
-          <>
-            <AlertIcon size={12} />
-            <span style={{ color: 'var(--warning)', fontWeight: 600 }}>
-              警告：{warnings.length} 项
-            </span>
-          </>
-        ) : (
-          <>
-            <CheckIcon size={12} />
-            <span style={{ color: 'var(--success)', fontWeight: 600 }}>结构有效</span>
-          </>
-        )}
-      </div>
-
-      {issues.length > 0 && !loading && (
-        <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-secondary)' }}>
-          {issues.map((issue, i) => (
-            <li key={i} style={{ marginBottom: 2 }}>
-              <code style={{ fontSize: 11, color: 'var(--text-muted)' }}>{issue.code}</code>
-              {' — '}
-              {issue.message}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {canonical && canonical !== smiles && !hasErrors && onUseCanonical && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
-            paddingTop: 4,
-            borderTop: '1px dashed var(--border)',
-          }}
-        >
-          <code style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            canonical: {canonical}
-          </code>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onUseCanonical(canonical)}
-            title="使用规范化后的 SMILES 替换当前值"
-          >
-            采用
-          </Button>
-        </div>
-      )}
-    </div>
-  )
-}
-// 主组件
-// ============================================================================
-
-/**
- * CorrectionPanel 分子矫正流程。
- *
- * 工作流：
- *   1. 显示 OCR 识别结果 + 文献原图（并排）
- *   2. 用户选择：确认 / 修正 / 拒绝
- *   3. 修正模式下可手动编辑 SMILES
- *   4. 完成后回调，通知上游保存
- *
- * O-01：顶部 ConfidenceThresholdSlider 让用户调整"自动确认门槛"。
- *       `handleFinish` 对未手动处理的项根据 `ocrConfidence >= threshold` 决定确认或拒绝。
- * O-03：校验失败时（`validateSmiles` catch）暴露错误为 issue，让用户看到。
- */
 export default function CorrectionPanel({
   items,
   onComplete,
@@ -235,13 +45,11 @@ export default function CorrectionPanel({
     finalSmiles: string
   }>>({})
 
-  // O-01：自动确认门槛 — 来自 useConfidenceThreshold hook（持久化到 localStorage）
   const [autoConfirmThreshold] = useConfidenceThreshold()
 
-  // 校验状态：防抖触发的后端结构校验
   const [validation, setValidation] = useState<{
     smiles: string
-    issues: ValidationIssue[]
+    issues: import('../../api/tauri/molecule').ValidationIssue[]
     canonical: string | null
     loading: boolean
   } | null>(null)
@@ -255,12 +63,7 @@ export default function CorrectionPanel({
 
   if (!current) {
     return (
-      <div className={className} style={{
-        padding: 40,
-        textAlign: 'center',
-        color: 'var(--text-muted)',
-        ...style,
-      }}>
+      <div className={`${className ?? ''} mol-correction-empty`} style={style}>
         没有待矫正的分子
       </div>
     )
@@ -279,11 +82,9 @@ export default function CorrectionPanel({
   }
 
   const handleSmilesEdit = (newSmiles: string) => {
-    // 任何编辑都标记为 corrected
     updateDecision('corrected', newSmiles)
   }
 
-  // 防抖触发后端 SMILES 校验 — 用户停止输入 600ms 后调用
   useEffect(() => {
     if (!currentFinalSmiles || currentFinalSmiles === current?.ocrSmiles) {
       setValidation(null)
@@ -301,7 +102,6 @@ export default function CorrectionPanel({
           loading: false,
         })
       } catch (err) {
-        // O-03：失败时不再静默吞错 — 把错误暴露为 issue
         const message = err instanceof Error ? err.message : String(err)
         setValidation({
           smiles: currentFinalSmiles,
@@ -316,30 +116,17 @@ export default function CorrectionPanel({
     }
   }, [currentFinalSmiles, current?.ocrSmiles])
 
-  const handleConfirm = () => {
-    updateDecision('confirmed', currentFinalSmiles)
-  }
-
-  const handleReject = () => {
-    updateDecision('rejected', currentFinalSmiles)
-  }
-
-  const goPrev = () => {
-    if (!isFirst) setCurrentIndex(i => i - 1)
-  }
-
-  const goNext = () => {
-    if (!isLast) setCurrentIndex(i => i + 1)
-  }
+  const handleConfirm = () => updateDecision('confirmed', currentFinalSmiles)
+  const handleReject = () => updateDecision('rejected', currentFinalSmiles)
+  const goPrev = () => { if (!isFirst) setCurrentIndex(i => i - 1) }
+  const goNext = () => { if (!isLast) setCurrentIndex(i => i + 1) }
 
   const handleFinish = () => {
-    // 自动决定未处理项
     const results = items.map(item => {
       const d = decisions[item.id]
       if (d) {
         return { id: item.id, finalSmiles: d.finalSmiles, status: d.status }
       }
-      // 未手动处理：高置信度自动确认，低置信度标记为待复核（用 rejected 表达）
       return {
         id: item.id,
         finalSmiles: item.ocrSmiles,
@@ -354,44 +141,21 @@ export default function CorrectionPanel({
   const allDecided = decidedCount === total
 
   return (
-    <div
-      className={className}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 14,
-        padding: 20,
-        ...style,
-      }}
-    >
+    <div className={`${className ?? ''} mol-correction-panel`} style={style}>
       {/* 顶部进度条 */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+      <div className="mol-correction-progress-wrap">
+        <div className="mol-correction-progress-header">
+          <div className="mol-correction-progress-title">
             分子矫正（{currentIndex + 1} / {total}）
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              已处理 {decidedCount} / {total}
-            </span>
+          <div className="mol-correction-progress-meta">
+            <span className="mol-correction-progress-count">已处理 {decidedCount} / {total}</span>
             <StatusBadge status={currentStatus} />
           </div>
         </div>
-        <div style={{
-          height: 4,
-          background: 'var(--bg-elevated)',
-          borderRadius: 2,
-          overflow: 'hidden',
-        }}>
+        <div className="mol-correction-progress-bar">
           <motion.div
-            style={{
-              height: '100%',
-              background: 'var(--accent)',
-              borderRadius: 2,
-            }}
+            className="mol-correction-progress-fill"
             initial={{ width: 0 }}
             animate={{ width: `${progress}%` }}
             transition={{ duration: 0.3 }}
@@ -399,83 +163,28 @@ export default function CorrectionPanel({
         </div>
       </div>
 
-      {/* O-01：置信度阈值滑块（自动确认门槛）*/}
       <ConfidenceThresholdSlider />
 
       {/* 主体：并排对比 */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: showSourceImage ? '1fr 1fr 1fr' : '1fr 1fr',
-        gap: 16,
-      }}>
-        {/* 1. 文献原图 */}
+      <div className="mol-correction-grid" data-source-image={showSourceImage}>
         {showSourceImage && (
-          <div style={{
-            background: 'var(--bg-base)',
-            border: '1px solid var(--border)',
-            borderRadius: 10,
-            padding: 12,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}>
-            <div style={{
-              fontSize: 12,
-              fontWeight: 600,
-              color: 'var(--text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
-            }}>
-              文献原图
-            </div>
+          <div className="mol-correction-source">
+            <div className="mol-correction-source-label">文献原图</div>
             {current.sourceImage ? (
-              <div style={{
-                background: 'white',
-                borderRadius: 6,
-                padding: 8,
-                minHeight: 200,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-                <img
-                  src={current.sourceImage}
-                  alt="来源图像"
-                  style={{ maxWidth: '100%', maxHeight: 280, objectFit: 'contain' }}
-                />
+              <div className="mol-correction-source-img-wrap">
+                <img src={current.sourceImage} alt="来源图像" className="mol-correction-source-img" />
               </div>
             ) : (
-              <div style={{
-                background: 'white',
-                borderRadius: 6,
-                minHeight: 200,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--text-muted)',
-                fontSize: 12,
-              }}>
+              <div className="mol-correction-source-img-wrap mol-correction-source-img-wrap--empty">
                 （原图不可用）
               </div>
             )}
             {current.context && (
-              <div style={{
-                fontSize: 11,
-                color: 'var(--text-muted)',
-                lineHeight: 1.5,
-                padding: 8,
-                background: 'var(--bg-surface)',
-                borderRadius: 4,
-                maxHeight: 80,
-                overflow: 'auto',
-              }}>
-                {current.context}
-              </div>
+              <div className="mol-correction-source-context">{current.context}</div>
             )}
           </div>
         )}
 
-        {/* 2. OCR 识别结果 */}
         <MoleculeDisplay
           smiles={current.ocrSmiles}
           name="OCR 识别结果"
@@ -485,8 +194,7 @@ export default function CorrectionPanel({
           mode="view"
         />
 
-        {/* 3. 当前 / 修正结果 */}
-        <div style={{ position: 'relative' }}>
+        <div className="mol-correction-result-wrap">
           <MoleculeDisplay
             smiles={currentFinalSmiles}
             name={current.name ?? '最终结果'}
@@ -497,12 +205,11 @@ export default function CorrectionPanel({
             onChange={handleSmilesEdit}
           />
           {currentStatus === 'corrected' && current.ocrSmiles !== currentFinalSmiles && (
-            <div style={{ marginTop: 8 }}>
+            <div className="mol-correction-diff">
               <SmilesDiff before={current.ocrSmiles} after={currentFinalSmiles} />
             </div>
           )}
-          {/* O-03：RDKit 实时校验结果（结构错误/警告/canonical 提示）*/}
-          <div style={{ marginTop: 8 }}>
+          <div className="mol-correction-validation">
             <ValidationResult
               validation={validation}
               onUseCanonical={canonical => handleSmilesEdit(canonical)}
@@ -511,27 +218,15 @@ export default function CorrectionPanel({
         </div>
       </div>
 
-      {/* 低置信度提示 */}
       {!isOcrConfident && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '10px 14px',
-          background: 'rgba(245, 158, 11, 0.1)',
-          border: '1px solid rgba(245, 158, 11, 0.3)',
-          borderRadius: 8,
-          color: 'var(--warning)',
-          fontSize: 12,
-        }}>
+        <div className="mol-correction-warning">
           <AlertIcon size={14} />
           <span>OCR 置信度 {Math.round(current.ocrConfidence * 100)}% 低于阈值 {Math.round(autoConfirmThreshold * 100)}%，建议仔细核对分子结构。</span>
         </div>
       )}
 
-      {/* 操作按钮 */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: 8 }}>
+      <div className="mol-correction-actions">
+        <div className="mol-correction-nav">
           <Button variant="secondary" size="sm" onClick={goPrev} disabled={isFirst}>
             <ChevronLeftIcon size={14} /> 上一项
           </Button>
@@ -540,7 +235,7 @@ export default function CorrectionPanel({
           </Button>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="mol-correction-decisions">
           <Button variant="danger" size="sm" onClick={handleReject}>
             <XIcon size={14} /> 拒绝
           </Button>

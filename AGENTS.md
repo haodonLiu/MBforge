@@ -32,7 +32,6 @@ PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询
 | Rust 核心 | lopdf, rusqlite, reqwest, tokio, serde, regex | 见 `src-tauri/Cargo.toml` |
 | Python 服务 | FastAPI, uvicorn | >=0.115, >=0.34 |
 | 向量数据库 | SQLite FTS5 (Rust) + semantic_cache | — |
-| 化学信息学 | RDKit, OpenBabel | >=2024.3 |
 | 深度学习 | PyTorch (CUDA 12.8) | >=2.6 |
 | Embedding | sentence-transformers | >=2.5 |
 | PDF 解析 | PyMuPDF, pdfplumber, lopdf (Rust) | — |

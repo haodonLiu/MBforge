@@ -64,17 +64,6 @@ class TestCoordinateTransform:
         assert abs(scale - 2.0) < 0.01
 
 
-class TestHeadingExtraction:
-    """测试 heading 提取逻辑."""
-
-    def test_extract_markdown_headings(self):
-        """验证 Markdown heading 提取."""
-        from mbforge.parsers.molecule.extraction_result import ExtractionResult
-        # ExtractionResult 不直接做 heading 提取，
-        # 但验证相关类型可用
-        assert ExtractionResult is not None
-
-
 class TestConfigIntegration:
     """测试配置系统集成（sidecar 裁剪版）.
 

@@ -5,7 +5,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
-import type { PdfParseResult } from './pdf'
 
 // ---- agent (session-based, per-conversation isolation) ----
 
@@ -98,16 +97,6 @@ export type AgentStreamEvent = {
   finish_reason: string | null
 }
 
-export interface DocumentReport {
-  metadata: DocumentMetadata
-  compounds: CompoundEntry[]
-  activities: ActivityEntry[]
-  key_findings: FindingEntry[]
-  sar_analysis: string
-  uncertain_items: UncertainItem[]
-  report_markdown: string
-}
-
 export async function agentChatStream(
   sessionId: string,
   userInput: string,
@@ -172,76 +161,5 @@ export async function agentGetHistory(sessionId: string): Promise<ChatMessage[]>
   return invokeWithError(
     () => invoke<ChatMessage[]>('agent_get_history', { sessionId }),
     ErrorCode.TauriInvoke,
-  )
-}
-
-// ---- post_process ----
-
-export interface CompoundEntry {
-  name: string
-  smiles: string | null
-  category: string | null
-  description: string
-  source_ref: string
-  confidence: string
-  uncertainty_reason: string | null
-}
-
-export interface ActivityEntry {
-  compound: string
-  activity_type: string
-  value: number
-  units: string
-  target: string | null
-  source_quote: string
-  source_ref: string
-  confidence: string
-  uncertainty_reason: string | null
-}
-
-export interface FindingEntry {
-  finding: string
-  evidence: string
-  source_ref: string
-  confidence: string
-  uncertainty_reason: string | null
-}
-
-export interface UncertainItem {
-  item_type: string
-  content: string
-  reason: string
-  suggested_action: string
-}
-
-export interface DocumentMetadata {
-  title: string | null
-  authors: string[]
-  document_type: string
-  key_targets: string[]
-  source_file: string | null
-}
-
-export interface StructuredData {
-  metadata: DocumentMetadata
-  summary: string
-  compounds: CompoundEntry[]
-  activities: ActivityEntry[]
-  key_findings: FindingEntry[]
-  uncertain_items: UncertainItem[]
-}
-
-export interface PostProcessResult {
-  report: string
-  data: StructuredData
-  model: string
-  tokens_used: number | null
-  batch_count: number
-}
-
-export async function postProcessPdf(parseResult: PdfParseResult): Promise<PostProcessResult> {
-  return invokeWithError(
-    () => invoke<PostProcessResult>('post_process_pdf', { parseResult }),
-    ErrorCode.PdfParse,
   )
 }

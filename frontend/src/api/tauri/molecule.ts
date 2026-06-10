@@ -300,8 +300,103 @@ export async function chemTanimotoBatchFilter(
   threshold = 0.5,
 ): Promise<Array<[string, string, number]>> {
   return await invoke<Array<[string, string, number]>>('chem_tanimoto_batch_filter', {
-    query_smiles: querySmiles,
+    querySmiles,
     candidates,
     threshold,
   })
+}
+
+// ============================================================================
+// MoleCode 转换 / 化学描述符（纯 Rust chematic-chem）
+// ============================================================================
+
+/** 分子理化性质描述符（MW / LogP / TPSA / HBA / HBD / rotatable / formula） */
+export interface ChemDescriptors {
+  molecular_weight: number
+  logp: number
+  tpsa: number
+  hba: number
+  hbd: number
+  rotatable_bonds: number
+  formula: string
+}
+
+/** 计算 SMILES 的理化性质。Rust 端 `chem_descriptors_cmd` (chematic-chem)。 */
+export async function chemDescriptors(smiles: string): Promise<ChemDescriptors> {
+  return invokeWithError(
+    () => invoke<ChemDescriptors>('chem_descriptors_cmd', { smiles }),
+    ErrorCode.ApiError,
+  )
+}
+
+/** 把 E-SMILES / SMILES 转成 Mermaid MoleCode（含 Markush {R1} 节点）。 */
+export async function esmilesToMolecode(esmiles: string, name: string): Promise<string> {
+  return invokeWithError(
+    () => invoke<string>('esmiles_to_molecode_cmd', { esmiles, name }),
+    ErrorCode.ApiError,
+  )
+}
+
+// ============================================================================
+// SAR 分析：scaffold profile / activity cliffs
+// ============================================================================
+
+export interface ScaffoldActivityRecord {
+  mol_id: string
+  esmiles: string
+  name: string
+  activity: number | null
+  activity_type: string
+  units: string
+}
+
+export interface ActivitySummary {
+  count_with_activity: number
+  count_without_activity: number
+  min_activity: number | null
+  max_activity: number | null
+  mean_activity: number | null
+}
+
+export interface ScaffoldProfile {
+  scaffold_esmiles: string
+  molecule_count: number
+  activities: ScaffoldActivityRecord[]
+  activity_summary: ActivitySummary
+}
+
+/** 按给定骨架 (e-smiles 子串) 聚合库内分子及其活性分布。 */
+export async function molScaffoldProfile(scaffoldEsmiles: string): Promise<ScaffoldProfile> {
+  return invokeWithError(
+    () => invoke<ScaffoldProfile>('mol_scaffold_profile', { scaffoldEsmiles }),
+    ErrorCode.ApiError,
+  )
+}
+
+export interface ActivityCliff {
+  mol_a_id: string
+  mol_b_id: string
+  mol_a_esmiles: string
+  mol_b_esmiles: string
+  mol_a_name: string
+  mol_b_name: string
+  similarity_score: number
+  activity_a: number | null
+  activity_b: number | null
+  activity_ratio: number | null
+  activity_type: string
+}
+
+/** 找活性悬崖 (结构相似但活性差异显著的分子对)。 */
+export async function molFindActivityCliffs(
+  minSimilarity: number,
+  minActivityRatio: number,
+): Promise<ActivityCliff[]> {
+  return invokeWithError(
+    () => invoke<ActivityCliff[]>('mol_find_activity_cliffs', {
+      minSimilarity,
+      minActivityRatio,
+    }),
+    ErrorCode.ApiError,
+  )
 }

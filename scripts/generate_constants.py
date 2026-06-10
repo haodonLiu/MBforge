@@ -18,7 +18,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 YAML_PATH = ROOT / "constants.yaml"
-RUST_OUT = ROOT / "src-tauri" / "src" / "core" / "constants.rs"
+RUST_REF = ROOT / ".generated" / "rust_constants.rs"  # 参考文件，需人工合并到 constants.rs
 PYTHON_OUT = ROOT / "src" / "mbforge" / "utils" / "constants.py"
 
 
@@ -55,8 +55,6 @@ def generate_rust(data: dict) -> str:
     m = data["models"]
     lines.append(f'pub const DEFAULT_EMBED_MODEL: &str = "{m["default_embed"]}";')
     lines.append(f'pub const DEFAULT_RERANK_MODEL: &str = "{m["default_rerank"]}";')
-    lines.append(f'pub const DEFAULT_LLM_MODEL: &str = "{m["default_llm"]}";')
-    lines.append(f'pub const DEFAULT_VLM_MODEL: &str = "{m["default_vlm"]}";')
     lines.append("")
 
     # HF mirror
@@ -226,8 +224,6 @@ def generate_python(data: dict) -> str:
     m = data["models"]
     lines.append(f'DEFAULT_EMBED_MODEL = "{m["default_embed"]}"')
     lines.append(f'DEFAULT_RERANK_MODEL = "{m["default_rerank"]}"')
-    lines.append(f'DEFAULT_LLM_MODEL = "{m["default_llm"]}"')
-    lines.append(f'DEFAULT_VLM_MODEL = "{m["default_vlm"]}"')
     lines.append(f'DEFAULT_HF_ENDPOINT = "{m["default_hf_endpoint"]}"')
     lines.append("")
 
@@ -317,12 +313,16 @@ def generate_python(data: dict) -> str:
 def main():
     data = load_yaml()
 
-    # Generate Rust
+    # Generate Rust reference — constants.rs 已手动扩展，不再自动覆盖。
+    # 将参考输出到 .generated/rust_constants.rs，由开发者 diff 后手动合并。
+    RUST_REF.parent.mkdir(exist_ok=True)
     rust_code = generate_rust(data)
-    RUST_OUT.write_text(rust_code, encoding="utf-8")
-    print(f"Generated {RUST_OUT.relative_to(ROOT)}")
+    RUST_REF.write_text(rust_code, encoding="utf-8")
+    print(f"Generated Rust reference: {RUST_REF.relative_to(ROOT)}")
+    print("  [WARNING] constants.rs is now manually maintained.")
+    print("            Please diff and manually merge changes from the reference file.")
 
-    # Generate Python
+    # Generate Python — 完整覆盖（Python 侧无常量文件的手动扩展）
     python_code = generate_python(data)
     PYTHON_OUT.write_text(python_code, encoding="utf-8")
     print(f"Generated {PYTHON_OUT.relative_to(ROOT)}")

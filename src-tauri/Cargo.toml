@@ -15,7 +15,7 @@ tauri-plugin-fs = "2"
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-pdf-inspector = { git = "https://github.com/firecrawl/pdf-inspector" }
+pdf-inspector = "0.1"
 liteparse = { version = "2", default-features = false }
 regex = "1"
 sha2 = "0.10"
@@ -49,6 +49,14 @@ chematic-smiles = { git = "https://github.com/kent-tokyo/chematic", rev = "27026
 chematic-fp = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
 chematic-smarts = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
 chematic-chem = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
+
+# ONNX Runtime (CPU-only) for Qwen3-Embedding local inference.
+# Replaces the Python sidecar /embed endpoint.
+# GPU 留给 MolScribe/MolDet；0.6B encoder 在 CPU 上 ~50ms/seq 完全可接受。
+# ort 2.x 截至 2026-06 仍是 RC；锁定 rc.12。
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["std", "load-dynamic"] }
+tokenizers = { version = "0.21", default-features = false, features = ["onig", "http"] }
+ndarray = "0.16"
 
 # LLM agent framework — replaces hand-rolled ReAct loop, multi-provider LLM
 # client, tool dispatch, and streaming. Pinned to 0.38.x (latest as of 2026-06).

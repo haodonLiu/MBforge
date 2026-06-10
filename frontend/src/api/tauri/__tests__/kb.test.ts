@@ -102,7 +102,7 @@ describe('kb API', () => {
       const result = await kbGetStructure('/project', 'doc1')
 
       expect(invoke).toHaveBeenCalledWith('kb_get_structure', {
-        projectRoot: '/project',
+        root: '/project',
         docId: 'doc1',
       })
       expect(result).toEqual(tree)
@@ -125,7 +125,7 @@ describe('kb API', () => {
       const result = await kbGetPages('/project', 'doc1', '1-3')
 
       expect(invoke).toHaveBeenCalledWith('kb_get_pages', {
-        projectRoot: '/project',
+        root: '/project',
         docId: 'doc1',
         pages: '1-3',
       })

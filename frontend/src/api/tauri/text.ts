@@ -66,3 +66,22 @@ export async function extractSmilesCandidates(text: string): Promise<string[]> {
 export async function extractActivities(text: string): Promise<ActivityData[]> {
   return invoke<ActivityData[]>('extract_activities', { text })
 }
+
+export interface AssociatedMolecule {
+  esmiles: string
+  activity: ActivityData | null
+  position: number
+  confidence: string
+  source_doc: string
+}
+
+/** Extract e-smiles + nearby activity (200-char window) for association UI. */
+export async function extractAssociatedMolecules(
+  text: string,
+  sourceDoc: string,
+): Promise<AssociatedMolecule[]> {
+  return invoke<AssociatedMolecule[]>('extract_associated_molecules', {
+    text,
+    sourceDoc,
+  })
+}

@@ -32,9 +32,9 @@ export interface RGroupMatrixProps {
 /**
  * R-Group 矩阵视图.
  *
- * 数据流：
- * 1. POST /api/v1/sar/matrix  → 共同骨架 + 矩阵数据
- * 2. POST /api/v1/sar/heatmap → 聚合热力图
+ * 数据流（Tauri 原生命令，零 Python sidecar 依赖）：
+ * 1. `sar_build_matrix` (Tauri) → 共同骨架 + 矩阵数据
+ * 2. `sar_heatmap` (Tauri)     → 聚合热力图
  *
  * 子组件：
  * - <CoreScaffoldCard>  共同骨架展示

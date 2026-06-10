@@ -3,12 +3,6 @@
 // 结构：左侧 7 个顶级栏目导航 + 右侧当前栏目的内容。
 // 每个栏目的实现都在 `components/settings/sections/` 下独立文件，
 // 共享同一个 `SettingsState`（在 `types.ts` 里定义）。
-//
-// 关键不变量：
-// 1. 所有 section 都接收 `(settings, setSettings)`，共享一份状态。
-// 2. 保存时通过 `toBackendPayload` 把扁平 state 拍平为后端 JSON。
-// 3. 加载时通过 `flattenSettings` 把后端 JSON 拍平回 state。
-// 4. 脏状态用 `isSettingsEqual` 浅比较，不用 JSON.stringify。
 
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -41,7 +35,6 @@ import ModelServiceSection from './settings/sections/ModelServiceSection'
 import ModelDownloadsSection from './settings/sections/ModelDownloadsSection'
 import AboutSection from './settings/sections/AboutSection'
 
-// ============ Section Icon Map ============
 const SECTION_ICONS: Record<SectionDef['icon'], ReactNode> = {
   settings: <SettingsIcon size={18} />,
   download: <DownloadIcon size={18} />,
@@ -67,7 +60,6 @@ export default function SettingsModal({ open, onClose }: Props) {
   const { t } = useTranslation()
   const { setTheme } = useTheme()
 
-  // 脏状态 — 浅比较，避免 JSON.stringify 引入的误报
   const isDirty = !isSettingsEqual(settings, initialSettings)
 
   const confirmClose = useCallback(async () => {
@@ -108,7 +100,6 @@ export default function SettingsModal({ open, onClose }: Props) {
       if (resp.success) {
         setSaveSuccess(true)
         setInitialSettings(settings)
-        // 局部副作用：保存后立即应用主题/语言。
         setTheme(settings.theme === 'system' ? 'dark' : settings.theme)
         void i18n.changeLanguage(settings.language)
         setTimeout(() => setSaveSuccess(false), 3000)
@@ -139,14 +130,10 @@ export default function SettingsModal({ open, onClose }: Props) {
     }
   }
 
-  // 加载
   useEffect(() => {
-    if (open) {
-      void loadSettings()
-    }
+    if (open) void loadSettings()
   }, [open, loadSettings])
 
-  // 各 section 渲染
   const renderSection = () => {
     switch (activeSection) {
       case 'general':
@@ -158,12 +145,7 @@ export default function SettingsModal({ open, onClose }: Props) {
       case 'model_downloads':
         return <ModelDownloadsSection settings={settings} setSettings={setSettings} />
       case 'about':
-        return (
-          <AboutSection
-            onReset={handleReset}
-            onOpenConfig={handleOpenConfigDir}
-          />
-        )
+        return <AboutSection onReset={handleReset} onOpenConfig={handleOpenConfigDir} />
       default:
         return null
     }
@@ -179,14 +161,7 @@ export default function SettingsModal({ open, onClose }: Props) {
         initial="hidden"
         animate="visible"
         exit="hidden"
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 1000,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
+        className="settings-modal-overlay"
       >
         <motion.div
           onClick={confirmClose}
@@ -194,82 +169,29 @@ export default function SettingsModal({ open, onClose }: Props) {
           initial="hidden"
           animate="visible"
           exit="hidden"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.45)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-          }}
+          className="settings-modal-backdrop"
         />
         <motion.div
           variants={modalEntrance}
           initial="hidden"
           animate="visible"
           exit="exit"
-          style={{
-            position: 'relative',
-            width: '90%',
-            maxWidth: '860px',
-            height: '80%',
-            maxHeight: '640px',
-            background: 'var(--bg-surface)',
-            borderRadius: '16px',
-            border: '1px solid var(--border)',
-            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
+          className="settings-modal"
         >
-          {/* Header */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '16px 20px',
-            borderBottom: '1px solid var(--border)',
-          }}>
-            <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>{t('settings.title')}</h2>
+          <div className="settings-modal-header">
+            <h2 className="settings-modal-title">{t('settings.title')}</h2>
             <IconButton size={32} onClick={confirmClose} title={t('common.close')}>
               <XIcon size={18} />
             </IconButton>
           </div>
 
-          {/* Content */}
-          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-            {/* Left nav */}
-            <div style={{
-              width: '180px',
-              borderRight: '1px solid var(--border)',
-              padding: '12px 8px',
-              overflowY: 'auto',
-            }}>
+          <div className="settings-modal-body">
+            <div className="settings-modal-nav">
               {SECTIONS.map(section => (
                 <button
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    border: 'none',
-                    background: activeSection === section.id ? 'var(--accent-muted)' : 'transparent',
-                    color: activeSection === section.id ? 'var(--accent)' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    textAlign: 'left',
-                    transition: 'all 0.15s',
-                  }}
-                  onMouseEnter={e => {
-                    if (activeSection !== section.id) e.currentTarget.style.background = 'var(--bg-hover)'
-                  }}
-                  onMouseLeave={e => {
-                    if (activeSection !== section.id) e.currentTarget.style.background = 'transparent'
-                  }}
+                  className={`settings-nav-item ${activeSection === section.id ? 'settings-nav-item--active' : ''}`}
                 >
                   {SECTION_ICONS[section.icon]}
                   <span>{t(section.labelKey)}</span>
@@ -277,10 +199,9 @@ export default function SettingsModal({ open, onClose }: Props) {
               ))}
             </div>
 
-            {/* Right content */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0 }}>
+            <div className="settings-modal-content">
+              <div className="settings-modal-section-header">
+                <h3 className="settings-modal-section-title">
                   {sectionData ? t(sectionData.labelKey) : ''}
                 </h3>
               </div>
@@ -289,24 +210,15 @@ export default function SettingsModal({ open, onClose }: Props) {
                 {error && <AlertBanner variant="danger" message={error} onDismiss={() => setError('')} />}
                 {saveSuccess && <AlertBanner variant="success" message={t('settings.saved')} />}
                 <ErrorBoundary key={activeSection} onError={() => showToast(t('error.title'), 'error')}>
-                  <div>
-                    {renderSection()}
-                  </div>
+                  <div>{renderSection()}</div>
                 </ErrorBoundary>
               </ScrollColumn>
 
-              {/* Footer */}
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '12px 20px',
-                borderTop: '1px solid var(--border)',
-              }}>
-                <span style={{ fontSize: 11, color: isDirty ? 'var(--accent)' : 'var(--text-muted)' }}>
+              <div className="settings-modal-footer">
+                <span className={`settings-modal-dirty ${isDirty ? 'settings-modal-dirty--active' : ''}`}>
                   {isDirty ? '● ' + t('settings.unsavedChangesTitle') : ''}
                 </span>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div className="settings-modal-actions">
                   <Button variant="secondary" onClick={loadSettings} disabled={isLoading}>
                     {t('common.cancel')}
                   </Button>

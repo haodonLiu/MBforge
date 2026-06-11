@@ -7,7 +7,7 @@ Week 1 (P0) 引擎接口层：
 - MolImagePipeline: 组合上述组件的主管线
 
 模型路径约定（可通过 EmbedConfig/RerankConfig 或资源管理器覆盖）：
-- ~/.cache/mbforge/models/moldetv2-doc.pt (或 .onnx)
+- ~/.cache/mbforge/models/moldetv2-doc.pt
 - ~/.cache/mbforge/models/moldetv2-general.pt
 - ~/.cache/mbforge/models/molscribe/...
 """
@@ -82,7 +82,7 @@ class MolDetv2DocDetector:
         """初始化检测器.
 
         Args:
-            model_path: 模型文件路径（.pt 或 .onnx）。若为 None，
+            model_path: 模型文件路径（.pt）。若为 None，
                        则在默认目录下查找 moldetv2-doc.*
             device: 推理设备，None=自动，'cpu', 'cuda', 'cuda:0' 等
             conf_threshold: 置信度阈值
@@ -120,7 +120,7 @@ class MolDetv2DocDetector:
             for pat in patterns:
                 candidates = list(search_dir.glob(pat))
                 if candidates:
-                    for ext in (".pt", ".onnx", ".engine"):
+                    for ext in (".pt", ".engine"):
                         for c in candidates:
                             if c.suffix.lower() == ext:
                                 return c

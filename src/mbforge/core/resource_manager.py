@@ -385,7 +385,7 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
         subdir = base / repo_name
         if subdir.exists():
             for f in subdir.iterdir():
-                if f.is_file() and f.suffix in (".pt", ".pth", ".onnx"):
+                if f.is_file() and f.suffix in (".pt", ".pth"):
                     return ResourceStatusResult(
                         id=info.id, name=info.name, type=info.type,
                         status=ResourceStatus.READY,

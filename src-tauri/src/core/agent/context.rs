@@ -1,8 +1,22 @@
 use std::path::Path;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
 use crate::core::helpers::estimate_tokens;
+
+/// Token counting strategy passed in by the caller.
+///
+/// Default is `estimate_tokens` (heuristic CJK/ASCII weighting). When the
+/// ONNX embedder is available, callers should pass a closure wrapping
+/// `OnnxEmbedder::count_tokens` for accurate BPE counts that drive
+/// `trim_history` correctly.
+pub type TokenCounter = Arc<dyn Fn(&str) -> usize + Send + Sync>;
+
+/// Build a fallback `TokenCounter` that uses the heuristic estimator.
+fn fallback_token_counter() -> TokenCounter {
+    Arc::new(|s: &str| estimate_tokens(s))
+}
 
 /// A single message in the conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,10 +90,10 @@ impl ContextLayer {
         }
     }
 
-    fn token_count(&self) -> usize {
+    fn token_count(&self, counter: &TokenCounter) -> usize {
         self.messages
             .iter()
-            .map(|m| estimate_tokens(&m.content))
+            .map(|m| counter(&m.content))
             .sum()
     }
 
@@ -108,7 +122,6 @@ impl ContextLayer {
 /// - L1 project:  Project context
 /// - L2 tools:    Tool results (ephemeral)
 /// - L3 history:  Conversation history (trimmable)
-#[derive(Debug, Clone)]
 pub struct LayeredContext {
     system: ContextLayer,
     project: ContextLayer,
@@ -116,10 +129,29 @@ pub struct LayeredContext {
     history: ContextLayer,
     max_history_rounds: usize,
     max_total_tokens: usize,
+    /// Injected token counter. Default is `estimate_tokens` heuristic.
+    /// When ONNX embedder is loaded, callers pass `OnnxEmbedder::count_tokens`.
+    token_count_fn: TokenCounter,
 }
 
 impl LayeredContext {
     pub fn new(system_prompt: &str, max_history_rounds: usize, max_total_tokens: usize) -> Self {
+        Self::with_token_counter(
+            system_prompt,
+            max_history_rounds,
+            max_total_tokens,
+            fallback_token_counter(),
+        )
+    }
+
+    /// Constructor that takes an explicit token counter. Use this when
+    /// `OnnxEmbedder` is loaded for accurate BPE-based token counts.
+    pub fn with_token_counter(
+        system_prompt: &str,
+        max_history_rounds: usize,
+        max_total_tokens: usize,
+        token_count_fn: TokenCounter,
+    ) -> Self {
         let mut ctx = Self {
             system: ContextLayer::new(false),
             project: ContextLayer::new(false),
@@ -127,6 +159,7 @@ impl LayeredContext {
             history: ContextLayer::new(false),
             max_history_rounds,
             max_total_tokens,
+            token_count_fn,
         };
         if !system_prompt.is_empty() {
             ctx.set_system_prompt(system_prompt);
@@ -222,7 +255,8 @@ impl LayeredContext {
     }
 
     pub fn total_token_count(&self) -> usize {
-        self.system.token_count() + self.project.token_count() + self.history.token_count()
+        let c = &self.token_count_fn;
+        self.system.token_count(c) + self.project.token_count(c) + self.history.token_count(c)
     }
 
     /// Get history messages without mutating state (read-only).

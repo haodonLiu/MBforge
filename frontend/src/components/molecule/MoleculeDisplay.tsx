@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { CheckIcon, AlertIcon, InfoIcon } from '../icons'
-import { invoke } from '@tauri-apps/api/core'
-import { validateSmiles, type ValidationIssue } from '../../api/tauri/molecule'
+import { validateSmiles, esmilesToMolecode, type ValidationIssue } from '../../api/tauri/molecule'
 import { smilesToImgUrl, basicValidate, estimateFormula, estimateMW } from './moleculeUtils'
 import ConfidenceBadge from './ConfidenceBadge'
 
@@ -96,10 +95,7 @@ export default function MoleculeDisplay({
     setMoleCodeLoading(true)
     setMoleCodeError(null)
     try {
-      const mermaidText = await invoke<string>('esmiles_to_molecode_cmd', {
-        esmiles: smiles,
-        name: name || 'Molecule',
-      })
+      const mermaidText = await esmilesToMolecode(smiles, name || 'Molecule')
       setMoleCodeText(mermaidText)
     } catch (err) {
       setMoleCodeError(err instanceof Error ? err.message : String(err))

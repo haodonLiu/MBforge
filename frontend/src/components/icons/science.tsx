@@ -44,3 +44,38 @@ export const BarChartIcon: FC<IconProps> = ({ size = 16 }) =>
     </>,
     size,
   )
+
+export const ClusterIcon: FC<IconProps> = ({ size = 16 }) =>
+  baseSvg(
+    <>
+      <circle cx="8" cy="8" r="3" />
+      <circle cx="16" cy="8" r="3" />
+      <circle cx="8" cy="16" r="3" />
+      <circle cx="16" cy="16" r="3" />
+      <line x1="10.5" y1="8" x2="13.5" y2="8" />
+      <line x1="8" y1="10.5" x2="8" y2="13.5" />
+      <line x1="16" y1="10.5" x2="16" y2="13.5" />
+      <line x1="10.5" y1="16" x2="13.5" y2="16" />
+    </>,
+    size,
+  )
+
+export const NetworkIcon: FC<IconProps> = ({ size = 16 }) =>
+  baseSvg(
+    <>
+      <circle cx="5" cy="6" r="3" />
+      <circle cx="19" cy="6" r="3" />
+      <circle cx="12" cy="18" r="3" />
+      <line x1="7.5" y1="7.5" x2="10.5" y2="16" />
+      <line x1="16.5" y1="7.5" x2="13.5" y2="16" />
+    </>,
+    size,
+  )
+
+export const FilterIcon: FC<IconProps> = ({ size = 16 }) =>
+  baseSvg(
+    <>
+      <polygon points="3 5 12 14 12 20 15 20 15 14 21 5" />
+    </>,
+    size,
+  )

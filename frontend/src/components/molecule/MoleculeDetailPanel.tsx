@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { esmilesToMolecode, chemDescriptors } from '../../api/tauri/molecule'
 import type { ExtractionResult } from '../../types'
 import MoleculeEditorDialog from './MoleculeEditorDialog'
 
@@ -48,10 +48,7 @@ export default function MoleculeDetailPanel({
   useEffect(() => {
     if (!detection.esmiles) return
     setMoleCodeLoading(true)
-    invoke<string>('esmiles_to_molecode_cmd', {
-      esmiles: detection.esmiles,
-      name: detection.name || `Mol-${index + 1}`,
-    })
+    esmilesToMolecode(detection.esmiles, detection.name || `Mol-${index + 1}`)
       .then(setMoleCodeText)
       .catch(() => setMoleCodeText(null))
       .finally(() => setMoleCodeLoading(false))
@@ -61,7 +58,7 @@ export default function MoleculeDetailPanel({
   useEffect(() => {
     if (!detection.esmiles) return
     setDescLoading(true)
-    invoke<ChemDescriptors>('chem_descriptors_cmd', { smiles: detection.esmiles })
+    chemDescriptors(detection.esmiles)
       .then(setDescriptors)
       .catch(() => setDescriptors(null))
       .finally(() => setDescLoading(false))

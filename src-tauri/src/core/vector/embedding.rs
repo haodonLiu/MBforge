@@ -40,9 +40,9 @@ pub trait EmbedderTrait: Send + Sync {
 /// Embedding 生成器（统一入口）
 pub struct Embedder {
     inner: Box<dyn EmbedderTrait>,
-    /// Phase 3 优化路径：如果 `inner` 是 SidecarEmbedder，保留句柄以便
-    /// 异步入口走共享连接池。
-    sidecar_handle: Option<std::sync::Arc<SidecarEmbedder>>,
+    /// 标识当前是 sidecar 模式（vs ONNX / Deterministic）。
+    /// `embed_async` 据此决定走 `SidecarClient` 共享连接池。
+    is_sidecar: bool,
 }
 
 impl Embedder {
@@ -51,7 +51,7 @@ impl Embedder {
             // 无 API key，使用确定性 embedder（用于测试）
             return Self {
                 inner: Box::new(DeterministicEmbedder::new(384)),
-                sidecar_handle: None,
+                is_sidecar: false,
             };
         }
 
@@ -62,7 +62,7 @@ impl Embedder {
             log::info!("[embedder] using ONNX ({})", model_dir.display());
             return Self {
                 inner: Box::new(OnnxView(emb as *const OnnxEmbedder)),
-                sidecar_handle: None,
+                is_sidecar: false,
             };
         }
 
@@ -72,11 +72,12 @@ impl Embedder {
             model_dir.display(),
             config.base_url
         );
-        let sidecar = std::sync::Arc::new(SidecarEmbedder::new(&config.base_url));
-        let url = config.base_url.clone();
+        // 单实例：`inner` 用 `Box<SidecarEmbedder>`（同步路径用 blocking client），
+        // `is_sidecar=true` 标记让 `embed_async` 走 `SidecarClient` 共享池。
+        // 不再像之前那样构造 2 个 `SidecarEmbedder`（一个 Arc、一个 Box）。
         Self {
-            sidecar_handle: Some(std::sync::Arc::clone(&sidecar)),
-            inner: Box::new(SidecarEmbedder::new(&url)),
+            inner: Box::new(SidecarEmbedder::new(&config.base_url)),
+            is_sidecar: true,
         }
     }
 
@@ -97,16 +98,22 @@ impl Embedder {
         self.inner.embed_with_trace(texts, trace)
     }
 
-    /// 异步入口（Phase 3）：使用 `SidecarClient` 共享连接池。
+    /// 异步入口。
     ///
-    /// - 如果当前是 `SidecarEmbedder`，调用 `SidecarClient::embed()` 走共享池
+    /// - 如果当前是 sidecar 模式，调用 `SidecarClient::embed()` 走共享池
     /// - 其他实现（OnnxEmbedder / DeterministicEmbedder 是纯 CPU 计算）直接调 sync
     pub async fn embed_async(
         &self,
         texts: Vec<String>,
     ) -> Result<Vec<Vec<f32>>, String> {
-        if let Some(sidecar) = &self.sidecar_handle {
-            return sidecar.embed_async(texts).await;
+        if self.is_sidecar {
+            // 走 SidecarClient 共享连接池（避免每次 Embedder::new 重建池）。
+            let client = crate::core::sidecar_client::get_or_init()
+                .map_err(|e| format!("SidecarClient init failed: {}", e))?;
+            return client
+                .embed(&texts)
+                .await
+                .map_err(|e| format!("Sidecar embed async failed: {}", e));
         }
         // ONNX / DeterministicEmbedder 都是纯计算，async 上下文直接调 sync 即可
         self.inner.embed(texts)

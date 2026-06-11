@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { esmilesToMolecode } from '../../api/tauri/molecule'
 import { Editor } from 'ketcher-react'
 import { StandaloneStructServiceProvider } from 'ketcher-standalone'
 import 'ketcher-react/dist/index.css'
@@ -63,10 +63,7 @@ export default function MoleculeEditorDialog({
   useEffect(() => {
     if (!currentSmiles.trim()) return
     setMoleCodeLoading(true)
-    invoke<string>('esmiles_to_molecode_cmd', {
-      esmiles: currentSmiles,
-      name: name || 'Molecule',
-    })
+    esmilesToMolecode(currentSmiles, name || 'Molecule')
       .then(setMoleCodeText)
       .catch(() => setMoleCodeText(null))
       .finally(() => setMoleCodeLoading(false))

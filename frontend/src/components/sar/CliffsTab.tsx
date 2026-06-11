@@ -9,9 +9,10 @@ const DEFAULT_MIN_RATIO = 5
 
 interface CliffsTabProps {
   session: SARSession
+  projectRoot: string | null
 }
 
-export default function CliffsTab({ session }: CliffsTabProps) {
+export default function CliffsTab({ session, projectRoot }: CliffsTabProps) {
   const [minSim, setMinSim] = useState(DEFAULT_MIN_SIMILARITY)
   const [minRatio, setMinRatio] = useState(DEFAULT_MIN_RATIO)
   const [cliffs, setCliffs] = useState<ActivityCliff[] | null>(null)
@@ -41,11 +42,15 @@ export default function CliffsTab({ session }: CliffsTabProps) {
     setLoading(true)
     setError(null)
     try {
-      const cliffResults = await molFindActivityCliffs(minSim, minRatio)
+      if (!projectRoot) {
+        setError('项目未打开')
+        return
+      }
+      const cliffResults = await molFindActivityCliffs(projectRoot, minSim, minRatio)
       setCliffs(cliffResults)
       if (inferredScaffold) {
         try {
-          const p = await molScaffoldProfile(inferredScaffold)
+          const p = await molScaffoldProfile(projectRoot, inferredScaffold)
           setProfile(p)
         } catch {
           setProfile(null)
@@ -58,7 +63,7 @@ export default function CliffsTab({ session }: CliffsTabProps) {
     } finally {
       setLoading(false)
     }
-  }, [minSim, minRatio, inferredScaffold])
+  }, [minSim, minRatio, inferredScaffold, projectRoot])
 
   useEffect(() => {
     void run()

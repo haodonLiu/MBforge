@@ -22,7 +22,6 @@ pub mod text_ops;
 pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
         // file_ops
-        file_ops::open_file,
         file_ops::read_text_file,
         file_ops::upload_files,
         file_ops::delete_file,
@@ -34,7 +33,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // pdf
         pdf::classify_pdf,
         pdf::extract_text,
-        pdf::extract_pdf_workflow_cmd,
         pdf::get_document_ocr_layout,
         // text_ops
         text_ops::text_chunk,
@@ -69,7 +67,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::core::document::knowledge_base::kb_search_stream,
         crate::core::document::knowledge_base::kb_get_structure,
         crate::core::document::knowledge_base::kb_get_pages,
-        molecule::mol_init,
         molecule::mol_add_relation,
         molecule::mol_delete_relation,
         molecule::mol_get_relation,
@@ -114,6 +111,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // sidecar
         sidecar::sidecar_status,
         sidecar::sidecar_restart,
+        sidecar::environment_check,
         // settings
         settings::get_settings,
         settings::save_settings,

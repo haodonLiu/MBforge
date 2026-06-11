@@ -17,6 +17,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use crate::core::helpers::now_secs_f64;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -201,7 +203,7 @@ impl AuditLog {
         self.append(&AuditEntry {
             trace_id: trace_id.to_string(),
             span_id: span_id.map(|s| s.to_string()),
-            timestamp: now_secs(),
+            timestamp: now_secs_f64(),
             action: "llm_call".to_string(),
             details: serde_json::json!({
                 "model": model,
@@ -225,7 +227,7 @@ impl AuditLog {
         self.append(&AuditEntry {
             trace_id: trace_id.to_string(),
             span_id: span_id.map(|s| s.to_string()),
-            timestamp: now_secs(),
+            timestamp: now_secs_f64(),
             action: "tool_call".to_string(),
             details: serde_json::json!({
                 "tool": tool_name,
@@ -246,7 +248,7 @@ impl AuditLog {
         self.append(&AuditEntry {
             trace_id: trace_id.to_string(),
             span_id: None,
-            timestamp: now_secs(),
+            timestamp: now_secs_f64(),
             action: "molecule_add".to_string(),
             details: serde_json::json!({
                 "mol_id": mol_id,
@@ -283,17 +285,6 @@ impl AuditLog {
         entries.truncate(limit);
         Ok(entries)
     }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn now_secs() -> f64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0)
 }
 
 // ---------------------------------------------------------------------------

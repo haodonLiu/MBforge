@@ -11,6 +11,8 @@ use image::GenericImageView;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::core::helpers::now_secs_u64;
+
 // ─── 共享类型 ────────────────────────────────────────────────────
 
 /// VLM API 配置
@@ -554,8 +556,7 @@ impl ImageCaptionCache {
     }
 
     pub fn set(&mut self, sha256: &str, caption: &str) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+        let now = now_secs_u64();
         self.entries.insert(sha256.to_string(), CacheEntry { caption: caption.to_string(), timestamp: now });
         self.dirty = true;
     }

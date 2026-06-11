@@ -163,7 +163,7 @@ export default function SARAnalysis() {
           />
         )}
         {activeTab === 'cliffs' && activeSession && (
-          <CliffsTab session={activeSession} />
+          <CliffsTab session={activeSession} projectRoot={projectRoot} />
         )}
       </div>
     </PageContainer>

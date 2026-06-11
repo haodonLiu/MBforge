@@ -10,6 +10,8 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
+use crate::core::helpers::now_secs_f64;
+
 /// 缓存条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentCacheEntry {
@@ -101,7 +103,7 @@ impl ContentCache {
         tokens_used: usize,
     ) -> Result<(), String> {
         let key = Self::compute_key(stage, input_text);
-        let now = now_secs();
+        let now = now_secs_f64();
 
         // 截断输入用于调试（保留前 500 字符）
         let truncated_input: String = input_text.chars().take(500).collect();
@@ -200,13 +202,6 @@ pub struct ContentCacheStats {
     pub total_hits: usize,
     pub tokens_saved: usize,
     pub by_stage: Vec<(String, usize)>,
-}
-
-fn now_secs() -> f64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0)
 }
 
 #[cfg(test)]

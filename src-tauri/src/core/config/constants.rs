@@ -3,6 +3,12 @@
 // Run: python scripts/generate_constants.py
 // ============================================================
 
+// These constants are part of the cross-language public API (frontend +
+// Python sidecar). Many are not referenced from this crate's bin, but
+// are stable identifiers shared across components. Suppress dead_code
+// to keep the auto-generated file free of noise.
+#![allow(dead_code)]
+
 use std::path::PathBuf;
 
 // NOTE: Keep in sync with src/mbforge/utils/constants.py (Python sidecar).

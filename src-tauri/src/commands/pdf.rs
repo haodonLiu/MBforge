@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 // PDF inspection commands — Task 2: classify_pdf
 
 use serde::Serialize;
@@ -157,7 +158,6 @@ pub async fn extract_pdf_workflow_cmd(
 ) -> Result<crate::parsers::pipeline::WorkflowResult, String> {
     use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
     use crate::parsers::chem::chem_validate::separate_esmiles_layers;
-    use crate::parsers::chem::vlm_chem::DetectedMolecule;
 
     let sidecar_url = crate::core::constants::sidecar_url();
     let result = crate::parsers::pipeline::extract_pdf_workflow(&path, &output_dir, &sidecar_url).await?;
@@ -321,7 +321,7 @@ pub async fn get_document_ocr_layout(
     let file_hash = crate::core::helpers::sha256_file(source_path).unwrap_or_default();
 
     // 辅助：更新 OCR 状态
-    let mut update_status = |status: &str| {
+    let update_status = |status: &str| {
         if let (Some(root), Some(id)) = (&project_root, &doc_id) {
             if let Some(mut project) = crate::core::project::Project::open(root) {
                 project.set_document_ocr(id, status, &file_hash);
@@ -425,3 +425,94 @@ fn get_page_height(pdf_path: &str) -> Option<f64> {
     };
     Some(h)
 }
+
+/// 把识别出的图像插入到 markdown：内联引用 + 末尾"## Extracted Images"。
+/// pipeline 内部不再调用，留给前端需要"图 + 文字"合成展示时按需触发。
+#[tauri::command]
+pub fn augment_markdown_with_images(
+    markdown: String,
+    images: Vec<crate::parsers::doc_types::ImageRef>,
+    ocr_blocks: Option<Vec<crate::parsers::doc_types::OcrBlock>>,
+) -> String {
+    crate::parsers::pipeline::markdown_augment::augment_markdown_with_images(
+        &markdown,
+        &images,
+        ocr_blocks.as_deref(),
+    )
+}
+
+// ─── IngestQueue：PDF 异步处理队列 ────────────────────────────────
+
+use crate::core::document::ingest_queue::{IngestQueue, IngestStatus, IngestTask, QueueStats};
+
+fn open_ingest_queue(project_root: &str) -> Result<IngestQueue, String> {
+    IngestQueue::new(std::path::Path::new(project_root))
+        .map_err(|e: crate::core::error::AppError| e.to_string())
+}
+
+/// 入队一个 PDF 供异步处理。返回任务 ID。
+#[tauri::command]
+pub fn ingest_enqueue(project_root: String, file_path: String, doc_id: String) -> Result<String, String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.enqueue(file_path, doc_id).map_err(|e| e.to_string())
+}
+
+/// 列出队列中所有任务。
+#[tauri::command]
+pub fn ingest_list(project_root: String) -> Result<Vec<IngestTask>, String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.list_all().map_err(|e| e.to_string())
+}
+
+/// 队列统计：pending / running / done / failed 各多少。
+#[tauri::command]
+pub fn ingest_stats(project_root: String) -> Result<QueueStats, String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.stats().map_err(|e| e.to_string())
+}
+
+/// 取消单个任务。
+#[tauri::command]
+pub fn ingest_cancel(project_root: String, task_id: String) -> Result<(), String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.cancel(&task_id).map_err(|e| e.to_string())
+}
+
+/// 取消所有 pending 任务。返回被取消的数量。
+#[tauri::command]
+pub fn ingest_cancel_all_pending(project_root: String) -> Result<usize, String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.cancel_all_pending().map_err(|e| e.to_string())
+}
+
+/// 清理已完成/已取消/已失败的任务（保留 pending 与 running）。返回清理数量。
+#[tauri::command]
+pub fn ingest_cleanup(project_root: String) -> Result<usize, String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.cleanup().map_err(|e| e.to_string())
+}
+
+/// 把任务标记为完成（由后台 worker 在 PDF 处理成功后调用）。
+#[tauri::command]
+pub fn ingest_mark_done(project_root: String, task_id: String) -> Result<(), String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.mark_done(&task_id).map_err(|e| e.to_string())
+}
+
+/// 把任务标记为失败（带错误信息），由后台 worker 调用。
+#[tauri::command]
+pub fn ingest_mark_failed(project_root: String, task_id: String, error: String) -> Result<(), String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.mark_failed(&task_id, error).map_err(|e| e.to_string())
+}
+
+/// 拉取下一个 pending 任务（worker 启动时调用）。
+#[tauri::command]
+pub fn ingest_dequeue(project_root: String) -> Result<Option<IngestTask>, String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.dequeue().map_err(|e| e.to_string())
+}
+
+// re-export for handler!()
+#[allow(unused_imports)]
+use IngestStatus as _IngestStatusReexport;

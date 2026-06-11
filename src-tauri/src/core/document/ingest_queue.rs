@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 提取队列 — 持久化的文档处理队列，支持重试和取消
 //!
 //! 使用 SQLite 存储（共享 knowledge_base.db），替代旧的 JSON 文件。
@@ -6,8 +7,7 @@
 //! - 统计查询用 COUNT(*) GROUP BY（无需遍历全表）
 //! - 事务保证一致性
 
-use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::{params, Connection};

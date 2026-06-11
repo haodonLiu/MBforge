@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 统一数据库连接管理器（Phase 2 重构）
 //!
 //! 解决问题：先前多个模块各自 `Connection::open()`，导致：

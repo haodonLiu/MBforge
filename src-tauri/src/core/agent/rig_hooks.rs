@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Rig PromptHook adapters for the existing MBForge observability layer.
 //!
 //! Two newtypes wrap the (non-`Clone`) `AuditLog` and `TrajectoryTracker`
@@ -21,7 +22,7 @@ use rig_core::agent::{
 };
 use rig_core::completion::{CompletionModel, CompletionResponse};
 use rig_core::message::Message;
-use rig_core::wasm_compat::{WasmCompatSend, WasmCompatSync};
+use rig_core::wasm_compat::WasmCompatSend;
 use serde_json::Value;
 use std::future::Future;
 use std::sync::{Arc, Mutex};

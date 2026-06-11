@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! LLM 网关（Phase 4 重构）
 //!
 //! 解决问题：
@@ -16,7 +17,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use rig_core::client::CompletionClient;
 use rig_core::providers::openai::Client as OpenAiClient;
 
 use crate::core::config::settings::ModelConfig;

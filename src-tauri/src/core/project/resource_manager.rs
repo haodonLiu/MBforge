@@ -4,10 +4,8 @@
 //! 此文件仅保留 Tauri 命令注册和向后兼容的 re-export。
 
 pub use crate::core::models::catalog::*;
-pub use crate::core::models::resolve::{check_resource, get_model_path, dir_size};
-pub use crate::core::models::status::{check_all as check_all_resources, write_resolved_paths, catalog_json};
-pub use crate::core::models::download::{download_model, DownloadProgress, DownloadError};
-pub use crate::core::config::constants::model_cache_dir;
+pub use crate::core::models::status::write_resolved_paths;
+pub use crate::core::models::download::{download_model, DownloadProgress};
 
 // ---------------------------------------------------------------------------
 // Tauri Commands

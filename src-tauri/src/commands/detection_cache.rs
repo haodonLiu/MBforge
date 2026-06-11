@@ -371,6 +371,61 @@ pub fn clear_detection_cache(project_root: String) -> Result<(), String> {
         .map_err(|e: crate::core::error::AppError| e.to_string())
 }
 
+/// VLM 化学共指检测：调用 sidecar `/api/v1/moldet/coref` 识别页面图中的
+/// 分子 + 标识符 bbox 及二者配对关系。返回 raw `CorefResult` + 转换后的
+/// `Vec<CorefMolecule>`（含 PDF 归一化坐标与标号）。
+///
+/// - `image_path`: 绝对或 project_root-相对的图像文件路径
+/// - `sidecar_url`: sidecar base URL（默认 `crate::core::constants::sidecar_url()`）
+/// - `use_molscribe` / `use_ocr`: 是否启用对应子模型
+/// - `page_idx`: PDF 页码（0-based），写入 `CorefMolecule.page`
+/// - `page_w_pts` / `page_h_pts`: 页面尺寸（pts），用于坐标归一化
+/// - `image_w` / `image_h`: 图像像素尺寸
+#[tauri::command]
+pub async fn vlm_chem_coref(
+    project_root: String,
+    image_path: String,
+    sidecar_url: Option<String>,
+    use_molscribe: Option<bool>,
+    use_ocr: Option<bool>,
+    page_idx: i32,
+    page_w_pts: f64,
+    page_h_pts: f64,
+    image_w: u32,
+    image_h: u32,
+) -> Result<
+    crate::parsers::chem::vlm_chem::CorefOutput,
+    String,
+> {
+    use crate::parsers::chem::vlm_chem;
+
+    let resolved = if std::path::Path::new(&image_path).is_absolute() {
+        std::path::PathBuf::from(&image_path)
+    } else {
+        std::path::PathBuf::from(clean_path(&project_root)).join(&image_path)
+    };
+    let url = sidecar_url.unwrap_or_else(crate::core::constants::sidecar_url);
+
+    let coref = vlm_chem::detect_coref(
+        resolved.to_string_lossy().as_ref(),
+        &url,
+        use_molscribe.unwrap_or(true),
+        use_ocr.unwrap_or(true),
+    )
+    .await?;
+
+    let molecules = vlm_chem::coref_to_molecules(
+        &coref,
+        page_idx,
+        page_w_pts,
+        page_h_pts,
+        image_w,
+        image_h,
+    );
+
+    Ok(vlm_chem::CorefOutput { coref, molecules })
+}
+
 fn count_cached_docs(root: &std::path::Path) -> usize {
     let base = root.join("index").join("detections");
     let entries = match std::fs::read_dir(&base) {
@@ -381,4 +436,46 @@ fn count_cached_docs(root: &std::path::Path) -> usize {
         .flatten()
         .filter(|e| e.path().is_dir())
         .count()
+}
+
+/// 给定 PDF 页面上的分子 bbox，找出最接近的标签（化合物 / 章节类）。
+/// 内部用 `label_assoc::extract_page_text_lines` 抽取文字行，再调
+/// `label_assoc::find_label_for_bbox` 做垂直方向上最近匹配。
+///
+/// - `pdf_path`: 绝对或 project_root-相对的 PDF 路径
+/// - `page`: 0-based 页号
+/// - `page_h_pts`: 页面高度（pts）
+/// - `mol_bbox`: `[x1, y1, x2, y2]` PDF 坐标（bottom-left 原点）
+/// - `v_search_pts`: 垂直方向搜索半径，默认 80 pts（约 1 英寸）
+#[tauri::command]
+pub fn label_for_mol_bbox(
+    project_root: String,
+    pdf_path: String,
+    page: u32,
+    page_h_pts: f64,
+    mol_bbox: [f64; 4],
+    v_search_pts: Option<f64>,
+) -> Result<Option<crate::parsers::chem::label_assoc::LabelMatch>, String> {
+    use crate::parsers::chem::label_assoc;
+
+    let pdf_full = if std::path::Path::new(&pdf_path).is_absolute() {
+        std::path::PathBuf::from(&pdf_path)
+    } else {
+        std::path::PathBuf::from(clean_path(&project_root)).join(&pdf_path)
+    };
+
+    let text_lines = label_assoc::extract_page_text_lines(
+        pdf_full.to_string_lossy().as_ref(),
+        page,
+        page_h_pts,
+    )?;
+
+    let bbox_tuple = (mol_bbox[0], mol_bbox[1], mol_bbox[2], mol_bbox[3]);
+    let search = v_search_pts.unwrap_or(80.0);
+    Ok(label_assoc::find_label_for_bbox(
+        bbox_tuple,
+        &text_lines,
+        page_h_pts,
+        search,
+    ))
 }

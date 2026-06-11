@@ -1,8 +1,8 @@
-//! Embedding 生成器 — trait + ONNX / sidecar fallback 实现
+#![allow(dead_code)]
+//! Embedding 生成器 — trait + sidecar / deterministic 实现
 //!
-//! 优先 `OnnxEmbedder`（本地 Qwen3-Embedding-0.6B ONNX，无 Python 依赖）。
-//! ONNX 模型缺失时回退 `SidecarEmbedder`（HTTP → Python sidecar）。
-//! `api_key` 为空时使用 `DeterministicEmbedder`（测试用）。
+//! `api_key` 为空时使用 `DeterministicEmbedder`（测试用），否则走
+//! `SidecarEmbedder`（HTTP → Python sidecar `/api/v1/embed`）。
 //!
 //! Phase 3 重构：保留向后兼容的 sync trait API，同时新增 `embed_async()`
 //! 使用 `core::sidecar_client::SidecarClient` 的共享连接池。
@@ -12,8 +12,6 @@ use std::time::Duration;
 
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderName, HeaderValue};
-
-use super::embed_onnx::OnnxEmbedder;
 
 /// Embedder trait — 实现类必须实现 `embed` 和 `embed_single`
 pub trait EmbedderTrait: Send + Sync {
@@ -40,7 +38,7 @@ pub trait EmbedderTrait: Send + Sync {
 /// Embedding 生成器（统一入口）
 pub struct Embedder {
     inner: Box<dyn EmbedderTrait>,
-    /// 标识当前是 sidecar 模式（vs ONNX / Deterministic）。
+    /// 标识当前是 sidecar 模式（vs Deterministic）。
     /// `embed_async` 据此决定走 `SidecarClient` 共享连接池。
     is_sidecar: bool,
 }
@@ -55,26 +53,9 @@ impl Embedder {
             };
         }
 
-        // 优先 ONNX（本地 0.6B encoder，无 Python 依赖）。
-        // 失败（模型未下载 / ort 初始化错误）→ 回退 sidecar。
-        let model_dir = super::embed_onnx::default_model_dir();
-        if let Ok(emb) = OnnxEmbedder::load(&model_dir) {
-            log::info!("[embedder] using ONNX ({})", model_dir.display());
-            return Self {
-                inner: Box::new(OnnxView(emb as *const OnnxEmbedder)),
-                is_sidecar: false,
-            };
-        }
-
-        // 回退：sidecar (HTTP → Python)
-        log::warn!(
-            "[embedder] ONNX model not found at {}, falling back to sidecar at {}",
-            model_dir.display(),
-            config.base_url
-        );
-        // 单实例：`inner` 用 `Box<SidecarEmbedder>`（同步路径用 blocking client），
+        // sidecar (HTTP → Python)
+        // `inner` 用 `Box<SidecarEmbedder>`（同步路径用 blocking client），
         // `is_sidecar=true` 标记让 `embed_async` 走 `SidecarClient` 共享池。
-        // 不再像之前那样构造 2 个 `SidecarEmbedder`（一个 Arc、一个 Box）。
         Self {
             inner: Box::new(SidecarEmbedder::new(&config.base_url)),
             is_sidecar: true,
@@ -101,7 +82,7 @@ impl Embedder {
     /// 异步入口。
     ///
     /// - 如果当前是 sidecar 模式，调用 `SidecarClient::embed()` 走共享池
-    /// - 其他实现（OnnxEmbedder / DeterministicEmbedder 是纯 CPU 计算）直接调 sync
+    /// - `DeterministicEmbedder` 是纯 CPU 计算，直接调 sync
     pub async fn embed_async(
         &self,
         texts: Vec<String>,
@@ -115,26 +96,8 @@ impl Embedder {
                 .await
                 .map_err(|e| format!("Sidecar embed async failed: {}", e));
         }
-        // ONNX / DeterministicEmbedder 都是纯计算，async 上下文直接调 sync 即可
+        // DeterministicEmbedder 是纯计算，async 上下文直接调 sync 即可
         self.inner.embed(texts)
-    }
-}
-
-/// `OnnxEmbedder` 装在 `OnceLock` 里 (`&'static`)，但 `Box<dyn EmbedderTrait>`
-/// 要求 `Sized + Send + Sync + 'static` 的 owned 容器。
-/// `OnnxView` 把 `'static` 引用包成 `*const` 然后 deref —— 借用检查器看不到，
-/// 但 `OnnxEmbedder` 整个程序生命周期都驻留，安全。
-struct OnnxView(*const OnnxEmbedder);
-
-// SAFETY: `OnnxEmbedder` 内部全是 `Send + Sync` 字段，进程级单例，`*const`
-// 引用在 `Drop` 之前不会失效。
-unsafe impl Send for OnnxView {}
-unsafe impl Sync for OnnxView {}
-
-impl EmbedderTrait for OnnxView {
-    fn embed(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
-        // SAFETY: 见类型定义。
-        unsafe { (*self.0).embed(texts) }
     }
 }
 

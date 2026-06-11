@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::path::PathBuf;
 
 use tauri::AppHandle;
@@ -127,7 +128,7 @@ pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, S
 #[tauri::command]
 pub async fn read_text_file(project_root: String, path: String) -> Result<String, String> {
     let path_buf = PathBuf::from(&path);
-    if let Err(e) = assert_within_root(&project_root, &path_buf) {
+    if let Err(_e) = assert_within_root(&project_root, &path_buf) {
         return Err(AppError::new(ErrorCode::FilePermission, "路径越权访问")
             .with_path(path).to_string());
     }
@@ -144,7 +145,7 @@ pub async fn read_text_file(project_root: String, path: String) -> Result<String
 #[tauri::command]
 pub async fn open_file(project_root: String, path: String) -> Result<(), String> {
     let path_buf = PathBuf::from(&path);
-    if let Err(e) = assert_within_root(&project_root, &path_buf) {
+    if let Err(_e) = assert_within_root(&project_root, &path_buf) {
         return Err(AppError::new(ErrorCode::FilePermission, "路径越权访问")
             .with_path(path).to_string());
     }

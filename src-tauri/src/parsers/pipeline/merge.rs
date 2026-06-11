@@ -1,6 +1,6 @@
 use crate::parsers::doc_types::{
     CompoundEntry, DocStructure, DocumentMetadata, FindingEntry, PhysicochemicalProperty,
-    StructuredData, UncertainItem,
+    StructuredData,
 };
 use crate::parsers::chem::vlm_chem::ChemImageResult;
 

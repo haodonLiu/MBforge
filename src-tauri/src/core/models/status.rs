@@ -1,6 +1,6 @@
 //! 环境检测 — GPU、Python 版本
 use super::catalog::*;
-use super::resolve::{check_resource, dir_size};
+use super::resolve::check_resource;
 use crate::core::config::constants::global_config_dir;
 
 /// 全量环境检查

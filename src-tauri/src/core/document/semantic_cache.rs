@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 语义缓存 — L1 精确哈希查询缓存
 //!
 //! 使用内存 HashMap 提供 O(1) 命中，SQLite 持久化（共享 knowledge_base.db）。

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};

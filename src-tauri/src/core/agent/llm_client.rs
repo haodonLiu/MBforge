@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Env-driven LLM client for non-agent use cases (memory / skill extraction,
 //! ad-hoc completions).
 //!

@@ -151,7 +151,7 @@ impl DemotionHook for EpisodicDemotionHook {
             // Always bootstrap the schema, not just when we have rows
             // to insert — the empty-input path is also tested and
             // there's no reason to skip a no-op `CREATE IF NOT EXISTS`.
-            let mut conn = self.conn.lock().map_err(|e| MemoryError::backend(format!("lock: {e}")))?;
+            let conn = self.conn.lock().map_err(|e| MemoryError::backend(format!("lock: {e}")))?;
             bootstrap_episodes_schema(&conn).map_err(MemoryError::backend)?;
             if evicted.is_empty() {
                 return Ok(());

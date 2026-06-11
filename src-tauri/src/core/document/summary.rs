@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::core::config::constants::{INDEX_DIR, SUMMARY_DIR};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

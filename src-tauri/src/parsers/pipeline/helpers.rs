@@ -1,6 +1,7 @@
+#![allow(dead_code)]
 use crate::core::helpers::{generate_uuid, sha256_text};
 use crate::core::molecule::molecule_store::MoleculeRecord;
-use crate::parsers::doc_types::{ActivityEntry, CompoundEntry, PhysicochemicalProperty};
+use crate::parsers::doc_types::{ActivityEntry, CompoundEntry};
 
 /// CompoundEntry → MoleculeRecord 映射（三层分离）
 ///

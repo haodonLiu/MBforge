@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::path::Path;
 use std::sync::Arc;
 
@@ -7,10 +8,9 @@ use crate::core::helpers::estimate_tokens;
 
 /// Token counting strategy passed in by the caller.
 ///
-/// Default is `estimate_tokens` (heuristic CJK/ASCII weighting). When the
-/// ONNX embedder is available, callers should pass a closure wrapping
-/// `OnnxEmbedder::count_tokens` for accurate BPE counts that drive
-/// `trim_history` correctly.
+/// Default is `estimate_tokens` (heuristic CJK/ASCII weighting). Callers may
+/// pass a BPE-accurate closure when one is available; otherwise the heuristic
+/// drives `trim_history` decisions.
 pub type TokenCounter = Arc<dyn Fn(&str) -> usize + Send + Sync>;
 
 /// Build a fallback `TokenCounter` that uses the heuristic estimator.
@@ -130,7 +130,7 @@ pub struct LayeredContext {
     max_history_rounds: usize,
     max_total_tokens: usize,
     /// Injected token counter. Default is `estimate_tokens` heuristic.
-    /// When ONNX embedder is loaded, callers pass `OnnxEmbedder::count_tokens`.
+    /// Callers may override with a BPE-accurate counter via `with_token_counter`.
     token_count_fn: TokenCounter,
 }
 
@@ -144,8 +144,8 @@ impl LayeredContext {
         )
     }
 
-    /// Constructor that takes an explicit token counter. Use this when
-    /// `OnnxEmbedder` is loaded for accurate BPE-based token counts.
+    /// Constructor that takes an explicit token counter. Use this when a
+    /// BPE-accurate counter is available (otherwise the heuristic suffices).
     pub fn with_token_counter(
         system_prompt: &str,
         max_history_rounds: usize,

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;

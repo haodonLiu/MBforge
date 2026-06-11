@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! rig-core adapter — types that downstream code uses to talk to rig.
 //!
 //! This is the **only** module that imports `rig_core`. All agent construction
@@ -33,7 +34,7 @@ use std::sync::Arc;
 
 use futures::Stream;
 use rig_core::client::CompletionClient;
-use rig_core::completion::{Chat, Prompt};
+use rig_core::completion::Prompt;
 use rig_core::message::Message;
 
 use crate::core::agent::managed_memory::MbforgeManagedMemory;
@@ -758,7 +759,7 @@ where
     use futures::stream::StreamExt;
     // `stream::once` yields the inner stream once, then we `flat_map` to
     // unfold it into a stream of `MbforgeStreamItem`s.
-    let outer = futures::stream::once(fut).flat_map(|mut inner: StreamingResult<R>| {
+    let outer = futures::stream::once(fut).flat_map(|inner: StreamingResult<R>| {
         futures::stream::unfold(inner, move |mut inner| async move {
             match inner.next().await {
                 Some(Ok(item)) => Some((map_multi_turn_item(item), inner)),

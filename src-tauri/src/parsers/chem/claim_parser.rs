@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 专利权利要求（Claims）结构化解析器
 //!
 //! 将专利的 claims section 文本解析为结构化的权利要求依赖图，

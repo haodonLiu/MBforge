@@ -8,8 +8,13 @@ pub mod download;
 pub mod resolve;
 pub mod status;
 
-// 便捷 re-exports
+// 便捷 re-exports — public API surface; suppress unused warnings
+// (downstream consumers reach these via `crate::core::models::Foo`).
+#[allow(unused_imports)]
 pub use catalog::*;
+#[allow(unused_imports)]
 pub use download::{download_model, DownloadProgress, DownloadError};
+#[allow(unused_imports)]
 pub use resolve::{check_resource, get_model_path};
+#[allow(unused_imports)]
 pub use status::{check_all, write_resolved_paths, catalog_json};

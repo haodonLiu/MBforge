@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! `RigDirectCompactor` — a `rig_core::memory::Compactor` impl that
 //! summarizes evicted conversation turns by calling the env-configured
 //! LLM directly (via `core::agent::llm_client::chat_simple_with_timeout`).

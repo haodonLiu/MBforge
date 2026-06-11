@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 项目笔记管理 — 存储于 `.mbforge/notes.json`
 
 use serde::{Deserialize, Serialize};

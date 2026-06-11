@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Unified molecule analysis engine.
 //!
 //! Holds both `MoleculeDatabase` (store / FTS5) and `MoleculeRelationDb`
@@ -14,7 +15,7 @@ use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeRecord};
 // Re-export types that callers need.
 pub use crate::core::chem::markush::{MarkushOverlap, MarkushPattern};
 pub use crate::core::molecule::molecule_cluster::ClusterInfo;
-pub use crate::core::molecule::molecule_dedup::{DedupPair, DedupResult};
+pub use crate::core::molecule::molecule_dedup::DedupResult;
 pub use crate::core::chem::sar_query::{
     ActivityCliff, ActivitySummary, AnalogWithActivity, ScaffoldActivityRecord, ScaffoldProfile,
 };

@@ -27,7 +27,7 @@ pub struct TextLine {
 }
 
 /// label 匹配结果
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LabelMatch {
     /// 抽取出的标识符字符串（含前导词），如 "化合物 26A"、"第一步"
     pub label: String,
@@ -43,7 +43,6 @@ pub struct LabelMatch {
 ///
 /// 注意：regex crate 不支持 lookaround，所以下面 `_with_term` 变体里我们
 /// 匹配完再手工校验紧跟标识符的字符是不是终止符。
-type LabelPattern = (&'static str, &'static str, &'static str);
 //  (前导词,  pattern (含两个捕获组：标识符 + 后续字符),  类型标签)
 const LABEL_PATTERNS_ZH: &[(&str, &str)] = &[
     ("化合物", r"化合物\s*([A-Za-z]?\d+[A-Za-z]?(?:[-‐‑–—]\d+[A-Za-z]?)?)"),
@@ -176,7 +175,7 @@ pub fn find_label_for_bbox(
         if line_text.is_empty() {
             continue;
         }
-        let (_, ly0, _, ly1) = (line.bbox[0], line.bbox[1], line.bbox[2], line.bbox[3]);
+        let (_, _ly0, _, ly1) = (line.bbox[0], line.bbox[1], line.bbox[2], line.bbox[3]);
         // 行必须在 bbox 之上（ly1 ≤ ml_top）
         if ly1 > ml_top + 2.0 {
             continue;

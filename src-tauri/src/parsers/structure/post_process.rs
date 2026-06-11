@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use rig_core::client::CompletionClient;
 use rig_core::completion::{AssistantContent, CompletionModel};
 use rig_core::providers::anthropic::Client as AnthropicClient;
@@ -842,7 +843,7 @@ pub async fn post_process_section(
     page_count: usize,
 ) -> Result<PostProcessResult, String> {
     let config = MbforgeProviderConfig::from_app_config()?;
-    let model = config.model.clone();
+    let _model = config.model.clone();
     let batches = split_into_batches(content);
     let batch_count = batches.len();
     let pdf_type = parser;
@@ -1026,7 +1027,7 @@ fn post_process_section_sync(
     page_count: usize,
 ) -> Result<PostProcessResult, String> {
     let config = MbforgeProviderConfig::from_app_config()?;
-    let model = config.model.clone();
+    let _model = config.model.clone();
     let batches = split_into_batches(content);
     let batch_count = batches.len();
     let pdf_type = parser;

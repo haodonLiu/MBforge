@@ -120,7 +120,7 @@ fn check_dir_for_weights(info: &ResourceInfo, dir: &std::path::Path) -> Option<R
     if !dir.exists() {
         return None;
     }
-    if !has_file_with_ext(dir, &["bin", "safetensors", "pt", "pth", "onnx"]) {
+    if !has_file_with_ext(dir, &["bin", "safetensors", "pt", "pth"]) {
         return None;
     }
     let size = dir_size(dir);
@@ -147,7 +147,7 @@ fn check_model_file(info: &ResourceInfo) -> ResourceStatusResult {
     let repo_name = info.ms_repo.split('/').last().unwrap_or(info.ms_repo);
 
     // 搜索一个 base 目录下的 local_name 及其子目录
-    let mut search_base = |base: &std::path::Path| -> Option<ResourceStatusResult> {
+    let search_base = |base: &std::path::Path| -> Option<ResourceStatusResult> {
         let path = base.join(&local_name);
         if path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
             let size = path.metadata().map(|m| m.len()).unwrap_or(0);
@@ -168,7 +168,7 @@ fn check_model_file(info: &ResourceInfo) -> ResourceStatusResult {
                 let p = entry.path();
                 if p.is_file() {
                     if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-                        if matches!(ext, "pt" | "pth" | "onnx") {
+                        if matches!(ext, "pt" | "pth") {
                             let size = p.metadata().map(|m| m.len()).unwrap_or(0);
                             return Some(ResourceStatusResult {
                                 id: info.id.to_string(),

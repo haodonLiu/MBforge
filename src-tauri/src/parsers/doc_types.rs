@@ -70,6 +70,11 @@ pub struct DocProcessingContext {
     /// ([方案 3] 后续 PR 接 LiteratureAgent 时写入)
     #[serde(default)]
     pub lit_reviewed: bool,
+    /// Stage 0.7 文档结构树（heading 层级嵌套），由 `sections::build_tree` 生成。
+    /// 存到 ctx 上是为了让 `DocumentTreeIndex::index_document` 能直接消费，
+    /// 避免重复构建。`Some` 表示已生成（无论是否非空）。
+    #[serde(default)]
+    pub document_tree: Option<Vec<crate::core::types::TreeNode>>,
 }
 impl DocProcessingContext {
     pub fn new(path: &str, user_request: &str) -> Self {
@@ -87,6 +92,7 @@ impl DocProcessingContext {
             chem_images: std::collections::HashMap::new(),
             detected_molecules: Vec::new(),
             lit_reviewed: false,
+            document_tree: None,
         }
     }
 }

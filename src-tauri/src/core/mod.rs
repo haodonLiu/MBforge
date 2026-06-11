@@ -24,4 +24,3 @@ pub mod types;
 // need rather than blanket re-exports.
 
 pub use config::constants;
-pub use config::settings;

@@ -2,7 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
-use log::error;
 mod core;
 mod parsers;
 mod protocol;
@@ -135,6 +134,22 @@ fn main() {
                     log::error!("[tauri] Failed to start sidecar: {}", e);
                 } else {
                     app.manage(sidecar.clone());
+
+                    // 异步探活：把 SidecarClient 单例 + health() 接到启动序列，
+                    // 让前端的"环境检测"按钮可以走同一份共享 client。
+                    let health_client = core::sidecar_client::get_or_init();
+                    match health_client {
+                        Ok(client) => {
+                            let client = std::sync::Arc::clone(&client);
+                            tauri::async_runtime::spawn(async move {
+                                match client.health().await {
+                                    Ok(h) => log::info!("[sidecar] health: {:?}", h),
+                                    Err(e) => log::warn!("[sidecar] health probe failed: {}", e),
+                                }
+                            });
+                        }
+                        Err(e) => log::warn!("[sidecar] client init failed: {}", e),
+                    }
                     sidecar::start_health_monitor(sidecar, app_handle.clone());
                 }
             } else if !no_spawn {

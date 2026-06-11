@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};

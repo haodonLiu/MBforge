@@ -30,14 +30,19 @@ export default function MoleculeEditorDialog({
   onSave,
   onClose,
 }: MoleculeEditorDialogProps) {
-  const ketcherRef = useRef<any>(null)
+interface KetcherInstance {
+  setMolecule: (smiles: string) => Promise<void>
+  getSmiles: () => Promise<string>
+}
+
+  const ketcherRef = useRef<KetcherInstance | null>(null)
   const [saving, setSaving] = useState(false)
   const [currentSmiles, setCurrentSmiles] = useState(smiles)
   const [moleCodeText, setMoleCodeText] = useState<string | null>(null)
   const [moleCodeLoading, setMoleCodeLoading] = useState(false)
 
   // Ketcher 初始化后加载 SMILES
-  const handleInit = useCallback((ketcher: any) => {
+  const handleInit = useCallback((ketcher: KetcherInstance) => {
     ketcherRef.current = ketcher
     if (smiles) {
       ketcher.setMolecule(smiles).catch(() => {

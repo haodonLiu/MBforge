@@ -141,7 +141,11 @@ function toastColor(type: ToastType): string {
   }
 }
 
-function ToastIcon({ type }: { type: ToastType }) {
+interface ToastIconProps {
+  type: ToastType
+}
+
+function ToastIcon({ type }: ToastIconProps) {
   if (type === 'success') return <CheckIcon size={16} />
   if (type === 'error') return <AlertIcon size={16} />
   if (type === 'warning') return <AlertIcon size={16} />

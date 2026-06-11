@@ -27,6 +27,15 @@ interface EnvironmentCheckResult {
   capabilities: CapabilityStatus[]
 }
 
+interface CatalogItem {
+  id: string
+  name: string
+  type: string
+  description: string
+  size_mb: number
+  license: string
+}
+
 /**
  * Environment 页面 — 展示 Python/GPU 环境、库依赖状态、模型缓存路径与已下载模型.
  *
@@ -61,10 +70,10 @@ export default function Environment() {
   const fetchModels = async () => {
     try {
       const catalog = await resourcesCatalog()
-      const modelItems = catalog.filter((item: any) => item.type === 'model')
+      const modelItems = (catalog as unknown as CatalogItem[]).filter((item) => item.type === 'model')
 
       const models = await Promise.all(
-        modelItems.map(async (item: any) => {
+        modelItems.map(async (item) => {
           const status = await resourcesStatus(item.id)
           return {
             id: item.id,

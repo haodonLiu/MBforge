@@ -108,7 +108,12 @@ export default function DetectionCacheCard() {
   )
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+interface StatProps {
+  label: string
+  value: string
+}
+
+function Stat({ label, value }: StatProps) {
   return (
     <div
       style={{

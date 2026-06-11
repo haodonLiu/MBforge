@@ -2,14 +2,13 @@ import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { kbSearchStream } from '../api/tauri'
-import { SearchIcon, FileTextIcon } from './icons'
+import { SearchIcon } from './icons'
 import { useAppContext } from '../context/AppContext'
 import { tapScale } from '../hooks/useAnimations'
 import PageContainer from '../components/ui/PageContainer'
-import Card from '../components/ui/Card'
-import Badge from '../components/ui/Badge'
 import BodyText from '../components/ui/BodyText'
 import Skeleton from '../components/ui/Skeleton'
+import SearchResultItem from './search/SearchResultItem'
 
 interface ResultItem {
   id: string
@@ -230,49 +229,7 @@ export default function Search() {
                     animate="show"
                     exit="exit"
                   >
-                  <Card hoverable>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      marginBottom: '6px',
-                    }}>
-                      <FileTextIcon size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                      <span style={{
-                        fontSize: '12px',
-                        fontWeight: 500,
-                        color: 'var(--accent)',
-                        opacity: 0.85,
-                      }}>
-                        {r.source.split(/[/\\]/).pop()}
-                      </span>
-                    </div>
-                    <div style={{
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      color: 'var(--text-primary)',
-                      marginBottom: '6px',
-                    }}>
-                      {r.title}
-                    </div>
-                    <BodyText size="md" style={{ lineHeight: 1.65, color: 'var(--text-secondary)' }}>
-                      {r.snippet}
-                    </BodyText>
-                    {r.tags.length > 0 && (
-                      <div style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: '6px',
-                        marginTop: '10px',
-                      }}>
-                        {r.tags.map(tag => (
-                          <Badge key={tag} variant="info">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
+                    <SearchResultItem result={r} />
                 </motion.div>
               ))}
             </AnimatePresence>

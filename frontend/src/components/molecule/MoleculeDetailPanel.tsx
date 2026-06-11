@@ -272,7 +272,12 @@ export default function MoleculeDetailPanel({
   )
 }
 
-function DescItem({ label, value }: { label: string; value: string }) {
+interface DescItemProps {
+  label: string
+  value: string
+}
+
+function DescItem({ label, value }: DescItemProps) {
   return (
     <div
       style={{

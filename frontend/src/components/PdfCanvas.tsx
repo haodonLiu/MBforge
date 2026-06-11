@@ -2,8 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import * as pdfjsLib from 'pdfjs-dist'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function isTextItem(v: any): v is { str: string; transform: number[]; width: number; height: number } {
+function isTextItem(v: unknown): v is { str: string; transform: number[]; width: number; height: number } {
   return typeof v === 'object' && v !== null && 'str' in v && typeof v.str === 'string'
 }
 

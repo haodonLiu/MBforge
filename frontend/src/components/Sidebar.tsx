@@ -24,17 +24,19 @@ const NAV_ITEMS = [
   { id: 'environment', path: '/environment', icon: EnvironmentIcon, labelKey: 'nav.environment' },
 ]
 
+interface NavButtonProps {
+  active: boolean
+  onClick: () => void
+  label: string
+  icon: React.FC<{ size?: number }>
+}
+
 function NavButton({
   active,
   onClick,
   label,
   icon: Icon,
-}: {
-  active: boolean
-  onClick: () => void
-  label: string
-  icon: React.FC<{ size?: number }>
-}) {
+}: NavButtonProps) {
   return (
     <Tooltip text={label}>
       <div style={{ position: 'relative' }}>

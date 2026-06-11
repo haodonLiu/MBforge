@@ -177,7 +177,12 @@ export default function LlmStatusCard() {
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+interface FieldProps {
+  label: string
+  children: React.ReactNode
+}
+
+function Field({ label, children }: FieldProps) {
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 13 }}>
       <span style={{ minWidth: 90, color: '#888' }}>{label}</span>

@@ -23,7 +23,13 @@ interface Props {
   onFileClick?: (path: string) => void
 }
 
-function TreeNode({ node, depth, onFileClick }: { node: FileNode; depth: number; onFileClick?: (path: string) => void }) {
+interface TreeNodeProps {
+  node: FileNode
+  depth: number
+  onFileClick?: (path: string) => void
+}
+
+function TreeNode({ node, depth, onFileClick }: TreeNodeProps) {
   const [expanded, setExpanded] = useState(depth < 1)
 
   if (node.is_dir) {

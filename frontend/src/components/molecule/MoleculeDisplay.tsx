@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react'
+import { useRef, lazy, Suspense } from 'react'
 import { motion } from 'framer-motion'
 import { CheckIcon, AlertIcon, InfoIcon } from '../icons'
-import { validateSmiles, esmilesToMolecode, type ValidationIssue } from '../../api/tauri/molecule'
-import { smilesToImgUrl, basicValidate, estimateFormula, estimateMW } from './moleculeUtils'
+import { smilesToImgUrl, basicValidate } from './moleculeUtils'
 import ConfidenceBadge from './ConfidenceBadge'
+import { useMoleculeDisplay } from '../../hooks/useMoleculeDisplay'
 
 const MermaidCode = lazy(() =>
   import('../ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
@@ -38,121 +38,34 @@ export default function MoleculeDisplay({
   className,
   style,
 }: MoleculeDisplayProps) {
-  const [imgError, setImgError] = useState(false)
-  const [isEditing, setIsEditing] = useState(false)
-  const [draftSmiles, setDraftSmiles] = useState(smiles)
-  const [validating, _setValidating] = useState(false)
-  const [validationMsg, setValidationMsg] = useState<string | null>(null)
-  const [showMoleCode, setShowMoleCode] = useState(false)
-  const [moleCodeText, setMoleCodeText] = useState<string | null>(null)
-  const [moleCodeLoading, setMoleCodeLoading] = useState(false)
-  const [moleCodeError, setMoleCodeError] = useState<string | null>(null)
-  const [backendIssue, setBackendIssue] = useState<ValidationIssue | null>(null)
-  const [backendLoading, setBackendLoading] = useState(false)
-  const backendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    setDraftSmiles(smiles)
-    setImgError(false)
-  }, [smiles])
+  const {
+    imgError,
+    setImgError,
+    isEditing,
+    draftSmiles,
+    showMoleCode,
+    moleCodeText,
+    moleCodeLoading,
+    moleCodeError,
+    backendIssue,
+    backendLoading,
+    effectiveError,
+    formula,
+    mw,
+    toggleMoleCode,
+    handleStartEdit,
+    handleApplyEdit,
+    handleCancelEdit,
+    handleKeyDown,
+    setDraftSmiles,
+  } = useMoleculeDisplay(smiles, name, showMetadata, onChange, onValidate)
 
-  useEffect(() => {
-    if (backendTimerRef.current) clearTimeout(backendTimerRef.current)
-    setBackendLoading(true)
-    backendTimerRef.current = setTimeout(async () => {
-      try {
-        const resp = await validateSmiles(smiles)
-        const errorIssue = resp.issues.find(i => i.severity === 'error') ?? null
-        setBackendIssue(errorIssue)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        setBackendIssue({
-          code: 'NETWORK',
-          severity: 'error',
-          message: `结构校验失败：${message}`,
-        })
-      } finally {
-        setBackendLoading(false)
-      }
-    }, 400)
-    return () => {
-      if (backendTimerRef.current) clearTimeout(backendTimerRef.current)
-    }
-  }, [smiles])
-
-  useEffect(() => {
-    if (backendIssue) {
-      onValidate?.(false, backendIssue.message)
-    } else {
-      const result = basicValidate(smiles)
-      onValidate?.(result.valid, result.message)
-    }
-  }, [smiles, backendIssue, onValidate])
-
-  const fetchMoleCode = async () => {
-    if (moleCodeText) return
-    setMoleCodeLoading(true)
-    setMoleCodeError(null)
-    try {
-      const mermaidText = await esmilesToMolecode(smiles, name || 'Molecule')
-      setMoleCodeText(mermaidText)
-    } catch (err) {
-      setMoleCodeError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setMoleCodeLoading(false)
-    }
-  }
-
-  const toggleMoleCode = () => {
-    if (!showMoleCode) fetchMoleCode()
-    setShowMoleCode(!showMoleCode)
-  }
-
-  const handleStartEdit = () => {
-    setIsEditing(true)
+  const startEdit = () => {
+    handleStartEdit()
     setTimeout(() => inputRef.current?.focus(), 50)
   }
-
-  const handleApplyEdit = () => {
-    const trimmed = draftSmiles.trim()
-    const result = basicValidate(trimmed)
-    if (!result.valid) {
-      setValidationMsg(result.message ?? '格式错误')
-      return
-    }
-    if (backendLoading) {
-      setValidationMsg('正在校验…')
-      return
-    }
-    if (backendIssue && backendIssue.severity === 'error') {
-      setValidationMsg(backendIssue.message)
-      return
-    }
-    onChange?.(trimmed)
-    setIsEditing(false)
-    setValidationMsg(null)
-    setImgError(false)
-  }
-
-  const handleCancelEdit = () => {
-    setDraftSmiles(smiles)
-    setIsEditing(false)
-    setValidationMsg(null)
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') handleApplyEdit()
-    else if (e.key === 'Escape') handleCancelEdit()
-  }
-
-  const formula = showMetadata ? estimateFormula(smiles) : null
-  const mw = showMetadata ? estimateMW(smiles) : null
-  const validation = basicValidate(smiles)
-  const effectiveError: string | null =
-    validationMsg
-    ?? (validation.valid ? null : validation.message)
-    ?? (backendIssue?.severity === 'error' ? backendIssue.message : null)
 
   return (
     <div
@@ -185,10 +98,10 @@ export default function MoleculeDisplay({
               ref={inputRef}
               type="text"
               value={draftSmiles}
-              onChange={e => { setDraftSmiles(e.target.value); setValidationMsg(null) }}
+              onChange={e => setDraftSmiles(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="输入 SMILES..."
-              disabled={validating}
+              disabled={false}
               className={`mol-edit-input ${effectiveError ? 'mol-edit-input--error' : ''}`}
             />
             {effectiveError && (
@@ -198,10 +111,10 @@ export default function MoleculeDisplay({
               </div>
             )}
             <div className="mol-edit-actions">
-              <button onClick={handleApplyEdit} disabled={validating} className="mol-edit-btn mol-edit-btn--primary">
+              <button onClick={handleApplyEdit} className="mol-edit-btn mol-edit-btn--primary">
                 <CheckIcon size={12} /> 应用
               </button>
-              <button onClick={handleCancelEdit} disabled={validating} className="mol-edit-btn mol-edit-btn--secondary">
+              <button onClick={handleCancelEdit} className="mol-edit-btn mol-edit-btn--secondary">
                 取消
               </button>
             </div>
@@ -229,16 +142,16 @@ export default function MoleculeDisplay({
             </div>
             <div className="mol-display-placeholder-title">网络不可用</div>
             <div className="mol-display-placeholder-hint">
-              {validation.valid ? '无法加载分子结构图，请检查网络连接' : (validation.message ?? '无法渲染此 SMILES')}
+              {basicValidate(smiles).valid ? '无法加载分子结构图，请检查网络连接' : (basicValidate(smiles).message ?? '无法渲染此 SMILES')}
             </div>
             <button onClick={() => setImgError(false)} className="mol-display-placeholder-btn">
               重试
             </button>
           </div>
-        ) : !validation.valid ? (
+        ) : !basicValidate(smiles).valid ? (
           <div className="mol-display-placeholder">
             <InfoIcon size={32} />
-            <div className="mol-display-placeholder-title">{validation.message}</div>
+            <div className="mol-display-placeholder-title">{basicValidate(smiles).message}</div>
           </div>
         ) : backendIssue && backendIssue.severity === 'error' && !backendLoading ? (
           <div className="mol-display-placeholder mol-display-placeholder--error">
@@ -288,7 +201,7 @@ export default function MoleculeDisplay({
         </button>
 
         {mode === 'edit' && !isEditing && (
-          <button onClick={handleStartEdit} className="mol-toolbar-btn mol-toolbar-btn--edit">
+          <button onClick={startEdit} className="mol-toolbar-btn mol-toolbar-btn--edit">
             <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
               <path d="M12 20h9" />
               <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />

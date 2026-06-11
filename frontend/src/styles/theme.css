@@ -1,0 +1,66 @@
+:root {
+  --bg-base: #ffffff;
+  --bg-surface: #f8f8f8;
+  --bg-elevated: #f0f0f0;
+  --bg-hover: #e5e5e5;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-muted: rgba(99, 102, 241, 0.10);
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --text-muted: #999999;
+  --border: #e0e0e0;
+  --border-light: #d0d0d0;
+  --success: #16a34a;
+  --danger: #dc2626;
+  --warning: #f59e0b;
+  /* MoleculeOverlay 状态色 */
+  --status-text: #0369a1;
+  --status-text-bg: #e0f2fe;
+  --status-scanned: #b45309;
+  --status-scanned-bg: #fef3c7;
+  --status-mixed: #7c3aed;
+  --status-mixed-bg: #ede9fe;
+  /* AI 消息气泡 */
+  --ai-bg: #f0f0ff;
+  --ai-border: #c7d2fe;
+  --ai-shadow: rgba(99, 102, 241, 0.12);
+  /* User 消息 */
+  --user-bg: linear-gradient(135deg, #6366f1, #4f46e5);
+
+  --font-size-base: 14px;
+  --font-size-small: 12px;
+  --font-size-large: 16px;
+  --font-size-title: 20px;
+}
+
+[data-theme="dark"] {
+  --bg-base: #0f0f14;
+  --bg-surface: #1a1a1e;
+  --bg-elevated: #252529;
+  --bg-hover: #2a2a2e;
+  --accent: #818cf8;
+  --accent-hover: #a5b4fc;
+  --accent-muted: rgba(129, 140, 248, 0.12);
+  --text-primary: #e8e8e8;
+  --text-secondary: #a0a0a0;
+  --text-muted: #666666;
+  --border: #2a2a2e;
+  --border-light: #333333;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  /* MoleculeOverlay 状态色 */
+  --status-text: #38bdf8;
+  --status-text-bg: rgba(14, 165, 233, 0.12);
+  --status-scanned: #fbbf24;
+  --status-scanned-bg: rgba(251, 191, 36, 0.12);
+  --status-mixed: #a78bfa;
+  --status-mixed-bg: rgba(167, 139, 250, 0.12);
+  /* AI 消息气泡 */
+  --ai-bg: #1e1b4b;
+  --ai-border: #312e81;
+  --ai-shadow: rgba(99, 102, 241, 0.20);
+  /* User 消息 */
+  --user-bg: linear-gradient(135deg, #818cf8, #6366f1);
+}

@@ -1,85 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { motion } from 'framer-motion'
-import { PageContainer, PageTitle, Card, Button, Badge, SectionTitle, ResponsiveStatGrid, EmptyState } from './ui'
+import { PageContainer, PageTitle, Card, Button, SectionTitle, ResponsiveStatGrid, EmptyState } from './ui'
 import {
   FileTextIcon, FlaskIcon, ChatIcon, SparklesIcon,
   ExternalLinkIcon, RefreshCwIcon,
 } from './icons'
 import MoleculeDisplay from './molecule/MoleculeDisplay'
-import Sparkline from './dashboard/Sparkline'
+import DashboardStatCard from './dashboard/DashboardStatCard'
 import { showToast } from '../hooks/useToast'
-import { fadeUp } from '../hooks/useAnimations'
 import { useAppContext } from '../context/AppContext'
 import { listProjectDocuments } from '../api/tauri/project'
 import { moleculeStatsTauri, listMoleculesTauri } from '../api/tauri/molecule'
 import type { MoleculeRecord } from '../types'
-
-
-
-// ============================================================================
-// 顶部 StatCard
-// ============================================================================
-
-interface StatCardProps {
-  label: string
-  value: number | string
-  delta?: number
-  subValue?: string
-  icon: React.ReactNode
-  color: string
-  trend?: number[]
-  delay?: number
-}
-
-function StatCard({ label, value, delta, subValue, icon, color, trend, delay = 0 }: StatCardProps) {
-  return (
-    <motion.div
-      variants={fadeUp}
-      initial="hidden"
-      animate="visible"
-      transition={{ delay }}
-    >
-      <Card hoverable style={{ padding: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 8,
-            background: color + '20', color,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            {icon}
-          </div>
-          {delta !== undefined && (
-            <Badge variant={delta >= 0 ? 'success' : 'danger'}>
-              {delta >= 0 ? '+' : ''}{delta}%
-            </Badge>
-          )}
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-          {label}
-        </div>
-        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', marginTop: 4 }}>
-          {value.toLocaleString()}
-        </div>
-        {subValue && (
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{subValue}</div>
-        )}
-        {trend && trend.length > 0 && (
-          <div style={{ marginTop: 12, marginLeft: -4 }}>
-            <Sparkline
-              data={trend}
-              width="100%"
-              height={36}
-              color={color}
-              fillColor={color}
-              showDots={false}
-            />
-          </div>
-        )}
-      </Card>
-    </motion.div>
-  )
-}
 
 
 
@@ -195,14 +127,14 @@ export default function Dashboard() {
 
       {/* Stat Cards */}
       <ResponsiveStatGrid style={{ marginBottom: 24 }}>
-        <StatCard
+        <DashboardStatCard
           label="文献总数"
           value={stats.documents}
           subValue={`${stats.indexed} 已索引`}
           icon={<FileTextIcon size={18} />}
           color="var(--info)"
         />
-        <StatCard
+        <DashboardStatCard
           label="分子总数"
           value={stats.molecules}
           subValue={`${stats.confirmed} ${t('dashboard.confirmed')}`}
@@ -210,7 +142,7 @@ export default function Dashboard() {
           color="var(--accent)"
           delay={0.05}
         />
-        <StatCard
+        <DashboardStatCard
           label={t('dashboard.conversations')}
           value={stats.conversations}
           subValue={t('dashboard.weekActive')}
@@ -218,7 +150,7 @@ export default function Dashboard() {
           color="var(--success)"
           delay={0.1}
         />
-        <StatCard
+        <DashboardStatCard
           label="本周操作"
           value={stats.activeThisWeek}
           subValue="次"

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Sidecar HTTP 客户端抽象（Phase 3 重构）
 //!
 //! 解决问题：先前 `sidecar_url` 作为 `&str` 参数在 15+ 个函数间穿透，

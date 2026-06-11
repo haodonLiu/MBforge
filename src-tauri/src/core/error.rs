@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use serde::{Deserialize, Serialize};
 
 /// 机器可读的错误码，与前端 `ErrorCode` 枚举对齐。

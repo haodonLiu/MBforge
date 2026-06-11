@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 /// 化学结构验证模块（纯 Rust）
 ///
 /// 使用 `chematic` crate 对 SMILES/E-SMILES 进行结构校验：

@@ -207,8 +207,7 @@ fn is_essential_file(path: &str) -> bool {
     let lower = path.to_lowercase();
     // 权重文件
     if lower.ends_with(".safetensors") || lower.ends_with(".bin")
-        || lower.ends_with(".pt") || lower.ends_with(".pth")
-        || lower.ends_with(".onnx") {
+        || lower.ends_with(".pt") || lower.ends_with(".pth") {
         return true;
     }
     // 配置文件

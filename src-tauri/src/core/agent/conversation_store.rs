@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! `SqliteConversationMemory` — a `rig_core::memory::ConversationMemory`
 //! implementation that persists the active conversation window to a
 //! project-local SQLite file.
@@ -37,7 +38,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
 use rig_core::memory::{ConversationMemory, MemoryError};
 use rig_core::message::{AssistantContent, Message, UserContent};

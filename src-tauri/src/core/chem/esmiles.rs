@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! E-SMILES 标签生成：SMILES → E-SMILES
 //!
 //! 给纯 SMILES 字符串添加语义标签（`<a>`, `<r>`, `<c>`），生成符合

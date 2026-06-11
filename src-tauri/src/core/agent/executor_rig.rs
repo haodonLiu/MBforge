@@ -6,6 +6,11 @@
 //! (`arxiv_*` / `pmc_*`) live next door in `arxiv_rig.rs` and are assembled
 //! together with these 16 by `rig_adapter::assemble_rig_tool_vec`.
 //!
+//! rustc's dead_code analysis can't see through the macro expansion in
+//! `assemble_rig_tool_vec!`, so cross-module tool structs report "never
+//! constructed" even though they ARE registered at runtime. Suppress at the
+//! module level and document the call site.
+//!
 //! Categories covered here:
 //! - File system  (grep_search, list_files, read_file, get_project_info, glob_search)
 //! - Knowledge base  (search_knowledge_base, get_document_structure, get_document_pages)
@@ -25,6 +30,14 @@
 //! To add a new tool: declare the struct + Args + impl, then push one
 //! `Box::new(...)` line in `rig_adapter::assemble_rig_tool_vec`. No other
 //! wiring is needed — the agent picks it up automatically.
+
+// Tool structs / new() / Args are constructed by the
+// `assemble_rig_tool_vec!` macro in `rig_adapter.rs`; rustc's dead_code
+// analysis can't follow macro_rules! expansion across modules, so we
+// suppress the false-positive "never constructed" / "never used" warnings
+// at module level. The wiring is real — see rig_adapter::assemble_rig_tool_vec.
+#![allow(dead_code)]
+
 use rig_core::completion::ToolDefinition;
 use rig_core::schemars::JsonSchema;
 use rig_core::tool::{Tool, ToolError};

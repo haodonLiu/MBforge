@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! VLM 化学结构识别 + MolDet 分子检测客户端
 //!
 //! 统一调用 Python sidecar 的化学图像识别端点：
@@ -130,6 +131,14 @@ pub(crate) fn read_image_base64(path: &str) -> Result<String, String> {
 }
 
 // ─── MolScribe 化学结构识别 ──────────────────────────────────────
+
+/// 组合输出：把 sidecar 原始 coref 结果与 PDF 坐标归一化后的分子列表打包，
+/// 供 Tauri 命令 `vlm_chem_coref` 与 Agent 工具共用。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CorefOutput {
+    pub coref: CorefResult,
+    pub molecules: Vec<CorefMolecule>,
+}
 
 /// 用 MolScribe 识别化学结构图 → esmiles（简单格式，读 val["smiles"]）
 pub async fn image_to_esmiles(

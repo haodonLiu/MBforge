@@ -1,7 +1,5 @@
 //! Document access tools — abstracts, overviews, listing, finding, summary.
 
-use std::collections::HashMap;
-
 
 // ===== Native implementations =====
 // ===== Native implementations =====

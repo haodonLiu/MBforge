@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 知识库 — SQLite 统一存储（向量 + FTS5 + 文件缓存）
 //!
 //! 纯 SQLite 实现，零额外依赖：

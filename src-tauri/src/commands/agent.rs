@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -13,7 +14,6 @@ use crate::core::agent::context::{LayeredContext, Message};
 use crate::core::agent::conversation_store::SqliteConversationMemory;
 use crate::core::agent::demotion::EpisodicDemotionHook;
 use crate::core::agent::managed_memory::MbforgeManagedMemory;
-use crate::core::agent::memory::MemoryManager;
 use crate::core::agent::observability::AuditLog;
 use crate::core::agent::rig_adapter::{
     ConcreteHook, MbforgeAgent, MbforgeAgentSpec, MbforgeProviderConfig, MbforgeProviderKind,
@@ -23,7 +23,6 @@ use crate::core::agent::rig_hooks::{AuditLogHook, TrajectoryHook};
 use crate::core::agent::rig_memory::{
     CompositeMemory, MemoryManagerMemory, MbforgeConversationMemory, SkillsManagerMemory,
 };
-use crate::core::agent::skills::SkillsManager;
 use crate::core::agent::trajectory::TrajectoryTracker;
 use crate::core::config::constants::PROJECT_META_DIR;
 
@@ -441,12 +440,33 @@ pub async fn agent_get_history(
 /// - `limit`: 最多返回条数（默认 200）
 #[tauri::command]
 pub async fn audit_log_get(
+    state: tauri::State<'_, AgentState>,
     project_root: String,
+    session_id: Option<String>,
     trace_id: Option<String>,
     limit: Option<usize>,
 ) -> Result<Vec<crate::core::agent::observability::AuditEntry>, String> {
-    let log = crate::core::agent::observability::AuditLog::new(Path::new(&project_root))?;
+    use crate::core::agent::observability::AuditLog;
     let limit = limit.unwrap_or(200);
+
+    // 1. 优先用 session 内存里的 audit（未刷盘的最快读路径）
+    if let Some(sid) = session_id.as_ref() {
+        if let Some(audit) = session_audit(&state, sid).await {
+            let entries = match trace_id {
+                Some(tid) => audit.read_by_trace(&tid, limit)?,
+                None => {
+                    let mut all = audit.read_all()?;
+                    all.reverse();
+                    all.truncate(limit);
+                    all
+                }
+            };
+            return Ok(entries);
+        }
+    }
+
+    // 2. Fallback：从磁盘读（兼容无 session_id 或 session 没建 audit 的情况）
+    let log = AuditLog::new(Path::new(&project_root))?;
     match trace_id {
         Some(tid) => log.read_by_trace(&tid, limit),
         None => {
@@ -456,6 +476,15 @@ pub async fn audit_log_get(
             Ok(all)
         }
     }
+}
+
+/// Helper：从 `AgentState` 中按 `session_id` 取出 session 的 in-memory audit。
+async fn session_audit(
+    state: &tauri::State<'_, AgentState>,
+    session_id: &str,
+) -> Option<std::sync::Arc<crate::core::agent::observability::AuditLog>> {
+    let agents = state.agents.read().await;
+    agents.get(session_id).and_then(|s| s.audit.clone())
 }
 
 // ============================================================================

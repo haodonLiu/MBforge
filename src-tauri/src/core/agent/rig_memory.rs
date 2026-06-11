@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! `MbforgeConversationMemory` trait and three impls that bridge MBForge's
 //! existing long-term memory + procedural-skills stores into a shape that
 //! rig's agent loop can call after every turn.

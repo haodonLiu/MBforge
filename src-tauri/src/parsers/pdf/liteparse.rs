@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! LiteParse 解析器 — 基于 PDFium 的本地 PDF 解析
 //!
 //! 功能：

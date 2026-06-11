@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+#![allow(dead_code)]
+use std::path::Path;
 
 use crate::parsers::doc_types::{ImageRef, OcrBlock};
 
@@ -334,7 +334,7 @@ impl MineruClient {
     fn poll_precise(
         &self,
         task_id: &str,
-        options: &MineruOptions,
+        _options: &MineruOptions,
     ) -> Result<MineruResult, String> {
         let api_url = format!("{}/api/v4/extract/task/{}", self.host, task_id);
         let mut attempts = 0;
@@ -538,7 +538,7 @@ impl MineruClient {
     fn poll_batch(
         &self,
         batch_id: &str,
-        options: &MineruOptions,
+        _options: &MineruOptions,
     ) -> Result<MineruResult, String> {
         let api_url = format!("{}/api/v4/extract-results/batch/{}", self.host, batch_id);
         let mut attempts = 0;

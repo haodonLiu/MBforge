@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Per-PDF page-level molecule detection cache.
 //!
 //! Layout:

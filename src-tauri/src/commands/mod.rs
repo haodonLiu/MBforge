@@ -34,12 +34,25 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         pdf::classify_pdf,
         pdf::extract_text,
         pdf::get_document_ocr_layout,
+        pdf::augment_markdown_with_images,
+        // ingest queue
+        pdf::ingest_enqueue,
+        pdf::ingest_list,
+        pdf::ingest_stats,
+        pdf::ingest_cancel,
+        pdf::ingest_cancel_all_pending,
+        pdf::ingest_cleanup,
+        pdf::ingest_mark_done,
+        pdf::ingest_mark_failed,
+        pdf::ingest_dequeue,
         // text_ops
         text_ops::text_chunk,
         // detection_cache
         detection_cache::cached_extract_page,
         detection_cache::get_detection_cache_stats,
         detection_cache::clear_detection_cache,
+        detection_cache::vlm_chem_coref,
+        detection_cache::label_for_mol_bbox,
         // classifier
         classifier::classify_page,
         classifier::classify_document,
@@ -47,6 +60,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         extractor::extract_esmiles_candidates,
         extractor::extract_activities,
         extractor::extract_associated_molecules,
+        extractor::extract_with_associations,
         // agent
         agent::agent_init,
         agent::agent_create_session,
@@ -87,6 +101,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         molecule::chem_validate_smiles,
         molecule::chem_tanimoto_similarity,
         molecule::chem_tanimoto_batch_filter,
+        molecule::gesim_similarity,
         // molecode
         molecode::esmiles_to_molecode_cmd,
         molecode::chem_descriptors_cmd,

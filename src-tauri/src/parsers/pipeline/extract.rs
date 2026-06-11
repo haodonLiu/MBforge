@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::core::document::detection_cache::{
     Detection as CachedDetection, DetectionCache, PageDetection, DETECTION_CACHE_SCHEMA_VERSION,
 };
@@ -437,7 +438,7 @@ pub async fn extract_molecules_from_pdf(
             path
         );
 
-        for (idx, img_ref) in classified.images.iter().enumerate() {
+        for (_idx, img_ref) in classified.images.iter().enumerate() {
             let img_path = if let Some(ref rp) = img_ref.rel_path {
                 project_root.join(rp)
             } else {
@@ -627,7 +628,7 @@ pub async fn extract_molecules_with_coref(
             path
         );
 
-        for (idx, img_ref) in classified.images.iter().enumerate() {
+        for (_idx, img_ref) in classified.images.iter().enumerate() {
             let img_path = if let Some(ref rp) = img_ref.rel_path {
                 project_root.join(rp)
             } else {

@@ -406,6 +406,33 @@ pub async fn chem_tanimoto_similarity(
     crate::core::chem::chem::tanimoto_similarity(&smiles_a, &smiles_b)
 }
 
+/// GESim 相似度：基于图熵的分子相似度（Shiokawa et al. 2025）。
+/// 与 `chem_tanimoto_similarity` 互补：Tanimoto 用 ECFP4 指纹
+/// 算 Jaccard，GESim 用 von Neumann 图熵算 QJS。
+///
+/// - `smiles_a` / `smiles_b`: 双方 SMILES
+/// - `use_scaler`: 是否套 `logistic_scaler`（让相似度分布更平滑）
+#[tauri::command]
+pub async fn gesim_similarity(
+    smiles_a: String,
+    smiles_b: String,
+    use_scaler: Option<bool>,
+) -> Result<f64, String> {
+    use crate::core::chem::gesim;
+    use chematic_smiles::parse;
+
+    let mol_a = parse(&smiles_a).map_err(|e| format!("SMILES a parse error: {e}"))?;
+    let mol_b = parse(&smiles_b).map_err(|e| format!("SMILES b parse error: {e}"))?;
+
+    let raw = gesim::similarity_raw(&mol_a, &mol_b);
+    Ok(if use_scaler.unwrap_or(false) {
+        // Defaults: l=1.0, k=12.0, x0=0.5（标准 logistic 形状，居中 0.5）
+        gesim::logistic_scaler(raw, 1.0, 12.0, 0.5)
+    } else {
+        raw
+    })
+}
+
 /// 批量 Tanimoto 预过滤。
 ///
 /// # Arguments

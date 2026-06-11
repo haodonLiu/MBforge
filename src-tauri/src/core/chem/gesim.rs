@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! GESim: graph-based molecular similarity via von Neumann graph entropy
 //!
 //! Rust-native implementation using `chematic_core::Molecule` as the graph

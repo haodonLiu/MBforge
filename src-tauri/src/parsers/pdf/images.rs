@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use lopdf::{Document, Object, ObjectId};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};

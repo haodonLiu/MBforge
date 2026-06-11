@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 文件内容缓存 — 避免重复解析 PDF
 //!
 //! 在 knowledge_base.db 同库中新增 file_cache 表，使用 SHA-256 + mtime 两级检查。

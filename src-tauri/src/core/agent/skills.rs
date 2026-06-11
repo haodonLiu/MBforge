@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::path::{Path, PathBuf};
 
 use crate::core::config::constants::PROJECT_META_DIR;

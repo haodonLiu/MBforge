@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! MoleCode 生成：E-SMILES → MoleCode (Mermaid graph text)
 //!
 //! 将 SMILES/E-SMILES 分子表示转换为 MoleCode 格式——一种以 Mermaid 图语法
@@ -37,7 +38,6 @@ use std::collections::HashMap;
 
 use chematic_core::atom::CipCode;
 use chematic_core::bond::BondOrder;
-use chematic_core::molecule::{AtomIdx, BondIdx, Molecule};
 use chematic_core::{implicit_hcount, kekulize};
 use chematic_chem::cip::assign_cip;
 use chematic_smiles::parse;

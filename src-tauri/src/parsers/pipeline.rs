@@ -14,12 +14,11 @@ use super::doc_types::{
 
 mod extract;
 mod helpers;
-mod markdown_augment;
+pub mod markdown_augment;
 mod merge;
 
 use extract::extract_molecules_from_pdf;
 use helpers::{activity_entry_to_record, compound_entry_to_record, extract_section_text};
-use markdown_augment::augment_markdown_with_images;
 use merge::{enhance_patent_data, merge_partial_results, run_merge_and_sar};
 
 // Re-export for commands/pdf.rs and other modules
@@ -492,6 +491,31 @@ pub async fn process_document(
             ctx.headings = crate::parsers::structure::sections::extract_headings(&ctx.raw_text);
             ctx.sections =
                 crate::parsers::structure::sections::build_sections(&ctx.raw_text, &ctx.headings, None, 8000);
+            // Stage 0.55: 文档结构树（heading 嵌套） — 走公开 `build_tree`，
+            // 供 KB 索引 / Agent 工具 `get_document_structure` 直接消费。
+            ctx.document_tree = Some(
+                crate::parsers::structure::sections::build_tree(&ctx.sections),
+            );
+
+            // Stage 0.6: 关键词与实体提取（来自 src/mbforge/core/summarizer.py 的端口，
+            // 之前只在 Python 侧用，迁到 Rust 后未挂到 pipeline）。结果先以 stage log
+            // 形式落 processing_log，未来扩展可以挂到 ctx / DocumentReport。
+            let kw = super::keywords::extract_keywords_and_entities(&ctx.raw_text);
+            log::info!(
+                "[pipeline] keywords (top {}): {:?}; entity_tags ({}): {:?}",
+                kw.keywords.len(),
+                kw.keywords,
+                kw.entity_tags.len(),
+                kw.entity_tags,
+            );
+            processing_log.stages.push(StageLog {
+                stage: 6,
+                name: "关键词与实体提取".into(),
+                status: "ok".into(),
+                items_processed: kw.keywords.len() + kw.entity_tags.len(),
+                tokens_used: 0,
+                errors: vec![],
+            });
 
             // 写入文件缓存
             if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
@@ -588,68 +612,69 @@ pub async fn process_document(
         },
     );
 
-    // ===== Stage 2: 逐 section 处理 =====
+    // ===== Stage 2: 并行处理 sections =====
+    // 收集 target_sections 中需要处理的 (name, text) 对。
+    let section_inputs: Vec<(String, String)> = plan
+        .target_sections
+        .iter()
+        .filter(|name| {
+            doc_structure.estimated_sections.contains(*name)
+                || name.contains('*')
+                || *name == "table_1"
+                || *name == "biological_data"
+                || *name == "examples"
+        })
+        .map(|name| (name.clone(), extract_section_text(&ctx.raw_text, name)))
+        .collect();
+
+    // 并行调度：`post_process_sections_parallel` 内部用 `spawn_blocking` 跑
+    // blocking LLM 客户端，`Semaphore` 等价的 channel 限流到 DEFAULT_SECTION_CONCURRENCY。
+    let parallel_results = super::structure::post_process::post_process_sections_parallel(
+        section_inputs,
+        &ctx.parser_used,
+        ctx.page_count,
+        None,
+    )
+    .await;
+
     let mut section_results: Vec<StructuredData> = Vec::new();
-
-    for section_name in &plan.target_sections {
-        // 跳过不在 estimated_sections 中的 section（除非是 "table_*" 或特殊 section）
-        if !doc_structure.estimated_sections.contains(section_name)
-            && !section_name.contains('*')
-            && section_name != &"table_1"
-            && section_name != &"biological_data"
-            && section_name != &"examples"
-        {
-            continue;
-        }
-
-        let section_text = extract_section_text(&ctx.raw_text, section_name);
-
-        let result = match super::structure::post_process::post_process_section(
-            &section_text,
-            &ctx.parser_used,
-            ctx.page_count,
-        )
-        .await
-        {
-            Ok(r) => {
-                let _ = app.emit(
-                    EVT_DOC_PROGRESS,
-                    DocProgressEvent::Section {
-                        name: section_name.clone(),
-                        status: "ok".into(),
-                        compounds: r.data.compounds.len(),
-                        activities: r.data.activities.len(),
-                    },
-                );
-
-                Some(r.data)
+    for res in parallel_results {
+        if res.is_ok() {
+            let _ = app.emit(
+                EVT_DOC_PROGRESS,
+                DocProgressEvent::Section {
+                    name: res.name.clone(),
+                    status: "ok".into(),
+                    compounds: 0, // 并行路径下逐节数已聚合到最终 StructuredData
+                    activities: 0,
+                },
+            );
+            if let Some(data) = res.into_data() {
+                section_results.push(data);
             }
-            Err(e) => {
-                processing_log.warnings.push(format!(
-                    "Section '{}' processing failed: {}. Skipping.",
-                    section_name, e
-                ));
-                processing_log.uncertain_items.push(UncertainItem {
-                    item_type: "section_processing_error".into(),
-                    content: format!("{} section could not be processed", section_name),
-                    reason: e,
-                    suggested_action: "Review this section manually".into(),
-                });
+        } else {
+            let err_msg = match &res.status {
+                super::structure::post_process::SectionStatus::Err(e) => e.clone(),
+                _ => String::new(),
+            };
+            processing_log.warnings.push(format!(
+                "Section '{}' processing failed: {}. Skipping.",
+                res.name, err_msg
+            ));
+            processing_log.uncertain_items.push(UncertainItem {
+                item_type: "section_processing_error".into(),
+                content: format!("{} section could not be processed", res.name),
+                reason: err_msg,
+                suggested_action: "Review this section manually".into(),
+            });
 
-                let _ = app.emit(
-                    EVT_DOC_PROGRESS,
-                    DocProgressEvent::Error {
-                        stage: format!("section:{}", section_name),
-                        message: format!("Section processing failed, skipped"),
-                    },
-                );
-
-                None
-            }
-        };
-
-        if let Some(data) = result {
-            section_results.push(data);
+            let _ = app.emit(
+                EVT_DOC_PROGRESS,
+                DocProgressEvent::Error {
+                    stage: format!("section:{}", res.name),
+                    message: format!("Section processing failed, skipped"),
+                },
+            );
         }
     }
 
@@ -720,7 +745,7 @@ pub async fn process_document(
 
     // ===== Stage 2b: VLM 化学结构识别 =====
     let vlm_config = crate::parsers::chem::vlm_chem::VlmConfig::default();
-    let mut vlm_esmiles_found = 0usize;
+    let vlm_esmiles_found: usize;
     let mut vlm_results: Vec<(String, crate::parsers::chem::vlm_chem::ChemImageResult)> = Vec::new();
 
     // 解析图片的完整路径（优先使用持久化后的 rel_path）

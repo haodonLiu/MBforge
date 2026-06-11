@@ -275,3 +275,34 @@ pub fn extract_activities(text: String) -> Vec<ActivityData> {
         .map(ActivityData::from)
         .collect()
 }
+
+/// 一步式提取 + 关联：从文本中找出 esmiles 候选，构造 `ExtractionResult`，
+/// 然后跑 `association::associate_all` 填 compound name / cell line / target。
+/// 把分散的 regex + LLM-style 关联逻辑集中到一个 Tauri 命令里供前端调用，
+/// 避免在 JS 端再走一遍字符串解析。
+#[tauri::command]
+pub fn extract_with_associations(
+    text: String,
+    context_window: Option<usize>,
+) -> Vec<crate::core::types::ExtractionResult> {
+    use crate::core::types::ExtractionResult;
+    use crate::commands::extractor::extract_esmiles_with_positions;
+
+    let window = context_window.unwrap_or(200);
+    let esmiles_with_pos = extract_esmiles_with_positions(&text);
+
+    let mut results: Vec<ExtractionResult> = esmiles_with_pos
+        .into_iter()
+        .map(|s| {
+            let lo = s.position.saturating_sub(window);
+            let hi = (s.position + window).min(text.len());
+            let ctx = text.get(lo..hi).unwrap_or("").to_string();
+            let mut r = ExtractionResult::new(&ctx);
+            r.esmiles = s.esmiles.clone();
+            r
+        })
+        .collect();
+
+    association::associate_all(&mut results);
+    results
+}

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! SQLite 向量存储 — 替代 LanceDB
 //!
 //! 使用 SQLite BLOB 存储向量，Rust 侧暴力余弦搜索。

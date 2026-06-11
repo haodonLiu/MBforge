@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! `MbforgeManagedMemory` — a `rig_core::memory::ConversationMemory`
 //! wrapper that orchestrates the compactor + demotion hook on every
 //! `load(cid)` call.

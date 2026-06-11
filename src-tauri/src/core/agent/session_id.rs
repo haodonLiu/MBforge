@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! `SessionId` — newtype around the per-conversation thread id.
 //!
 //! The MBForge Tauri `session_id` (a string minted by the frontend via

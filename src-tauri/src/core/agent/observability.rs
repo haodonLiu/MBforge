@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! 可观测性层 — 结构化 tracing、token 追踪、审计日志
 //!
 //! 覆盖 Layer 5 (Observability) 基础设施。

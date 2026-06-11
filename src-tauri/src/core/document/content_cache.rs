@@ -1,10 +1,10 @@
+#![allow(dead_code)]
 //! 内容去重缓存 — 避免重复 LLM 调用
 //!
 //! 基于 SHA-256(input_text + prompt_hash) → LLM 结果 的映射。
 //! 与 file_cache 不同：file_cache 缓存的是 PDF 解析结果（Stage 0），
 //! content_cache 缓存的是 LLM 处理结果（Stage 1-3），是最贵的操作。
 
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 use rusqlite::{params, Connection};

@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-augment-markdown-with-images"
+description = "Allows the augment_markdown_with_images command"
+commands.allow = ["augment_markdown_with_images"]

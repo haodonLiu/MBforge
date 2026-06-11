@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-ingest-mark-failed"
+description = "Allows the ingest_mark_failed command"
+commands.allow = ["ingest_mark_failed"]

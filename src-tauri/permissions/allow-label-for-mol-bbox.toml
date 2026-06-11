@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-label-for-mol-bbox"
+description = "Allows the label_for_mol_bbox command"
+commands.allow = ["label_for_mol_bbox"]

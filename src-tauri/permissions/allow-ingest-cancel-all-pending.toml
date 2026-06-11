@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-ingest-cancel-all-pending"
+description = "Allows the ingest_cancel_all_pending command"
+commands.allow = ["ingest_cancel_all_pending"]

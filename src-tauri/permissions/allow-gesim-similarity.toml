@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-gesim-similarity"
+description = "Allows the gesim_similarity command"
+commands.allow = ["gesim_similarity"]

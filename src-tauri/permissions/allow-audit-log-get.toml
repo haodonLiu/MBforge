@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-audit-log-get"
+description = "Allows the audit_log_get command"
+commands.allow = ["audit_log_get"]

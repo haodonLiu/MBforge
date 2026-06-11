@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-ingest-cleanup"
+description = "Allows the ingest_cleanup command"
+commands.allow = ["ingest_cleanup"]

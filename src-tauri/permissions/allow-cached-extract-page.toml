@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-cached-extract-page"
+description = "Allows the cached_extract_page command"
+commands.allow = ["cached_extract_page"]

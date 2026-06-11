@@ -196,7 +196,7 @@ class TestMolDetv2DocDetector:
             detector.iou_threshold = 0.45
             path = detector._resolve_model_path(None)
             assert "moldetv2-doc" in str(path)
-            assert path.suffix in (".pt", ".onnx")
+            assert path.suffix in (".pt",)
 
 
 class TestMolScribeRecognizer:

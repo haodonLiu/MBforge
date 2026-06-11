@@ -476,7 +476,7 @@ class TransformerDecoder(TransformerDecoderBase):
             attns["align"] = attn_aligns[self.alignment_layer]  # `(B, Q, K)`
             # attns["align"] = torch.stack(attn_aligns, 0).mean(0)  # All avg
 
-        # TODO change the way attns is returned dict => list or tuple (onnx)
+        # TODO change the way attns is returned dict => list or tuple
         return output, attns, hiddens
 
     def _init_cache(self, memory_bank):

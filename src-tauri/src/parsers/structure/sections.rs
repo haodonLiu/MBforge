@@ -214,43 +214,19 @@ fn line_to_page(line_num: usize, _lines: &[&str]) -> Option<usize> {
 }
 
 fn split_long_section(text: &str, max_chars: usize) -> Vec<String> {
-    // 优先使用语义分块，回退时按字符硬切
+    // 优先使用语义分块，回退时使用 `text-splitter` 按字符切分。
     let semantic = split_semantic_chunks(text, max_chars);
     if semantic.len() > 1 {
         return semantic.into_iter().map(|(_, text)| text).collect();
     }
 
-    let paragraphs: Vec<&str> = text.split("\n\n").collect();
-    let mut parts = Vec::new();
-    let mut current = String::new();
-
-    for para in paragraphs {
-        if current.len() + para.len() + 2 > max_chars && !current.is_empty() {
-            parts.push(current);
-            current = para.to_string();
-        } else {
-            if !current.is_empty() {
-                current.push_str("\n\n");
-            }
-            current.push_str(para);
-        }
-    }
-    if !current.is_empty() {
-        parts.push(current);
-    }
-
-    // 如果单个段落仍超长，强制按字符切割
-    let mut result = Vec::new();
-    for part in parts {
-        if part.len() > max_chars {
-            for chunk in part.as_bytes().chunks(max_chars) {
-                result.push(String::from_utf8_lossy(chunk).to_string());
-            }
-        } else {
-            result.push(part);
-        }
-    }
-    result
+    // Fallback: `text-splitter` 的默认 `TextSplitter` 是 recursive char-based
+    // 切分（段落 → 句子 → 单词），自动处理单段超长场景。
+    use text_splitter::{Characters, TextSplitter};
+    TextSplitter::new(Characters)
+        .chunks(text, max_chars)
+        .map(|c: &str| c.to_string())
+        .collect()
 }
 
 /// 语义边界检测关键词（中英文）

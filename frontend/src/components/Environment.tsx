@@ -16,6 +16,7 @@ import type { ModelInfo, ModelPaths } from './environment/types'
 import { resourcesCatalog, resourcesStatus, modelsCacheDirInfo, refreshResolvedPaths } from '../api/tauri/environment'
 import { downloadModel, deleteModel } from '../api/tauri/download'
 import { saveSettings } from '../api/tauri/settings'
+import { environmentCheck } from '../api/tauri/sidecar'
 
 interface EnvironmentCheckResult {
   python_version: string
@@ -44,19 +45,17 @@ export default function Environment() {
   const [editingPath, setEditingPath] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
 
-  const fetchEnv = () => {
+  const fetchEnv = async () => {
     setLoading(true)
-    fetch('/api/v1/environment/check')
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
-      .then(setEnv)
-      .catch(() => {
-        showToast('Python sidecar 未启动，Environment 页面不可用', 'warning')
-        setEnv(null)
-      })
-      .finally(() => setLoading(false))
+    try {
+      const data = await environmentCheck()
+      setEnv(data as EnvironmentCheckResult)
+    } catch {
+      showToast('Python sidecar 未启动，Environment 页面不可用', 'warning')
+      setEnv(null)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const fetchModels = async () => {

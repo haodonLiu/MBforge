@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { listMoleculesTauri, searchMoleculesTauri } from '../api/tauri/molecule'
 import type { MoleculeRecord } from '../types'
-import { FlaskIcon, SearchIcon, TargetIcon } from './icons'
+import { FlaskIcon, SearchIcon, TargetIcon, BarChartIcon } from './icons'
 import { useAppContext } from '../context/AppContext'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import PageContainer from '../components/ui/PageContainer'
@@ -18,13 +18,14 @@ import EmptyState from '../components/ui/EmptyState'
 import Tabs, { TabPanel } from '../components/ui/Tabs'
 import { AddMoleculeDialog } from '../components/ui/AddMoleculeDialog'
 import SARAnalysis from './SARAnalysis'
+import MoleculeAnalytics from './molecule/MoleculeAnalytics'
 
 export default function MoleculeLibrary() {
   const { projectRoot } = useAppContext()
   const { t } = useTranslation()
   // 顶层 tab：'library' = 分子列表；'sar' = SAR 分析。
   // 原来是独立路由 /sar 的 SARAnalysis 页面，合并到这里作为子 tab。
-  type LibraryTab = 'library' | 'sar'
+  type LibraryTab = 'library' | 'sar' | 'analytics'
   const [activeTab, setActiveTab] = useState<LibraryTab>('library')
   const [search, setSearch] = useState('')
   const [molecules, setMolecules] = useState<MoleculeRecord[]>([])
@@ -102,6 +103,14 @@ export default function MoleculeLibrary() {
             label: (
               <>
                 <TargetIcon size={14} /> SAR 分析
+              </>
+            ),
+          },
+          {
+            key: 'analytics',
+            label: (
+              <>
+                <BarChartIcon size={14} /> 高级分析
               </>
             ),
           },
@@ -214,6 +223,12 @@ export default function MoleculeLibrary() {
           {/* 复用原 SARAnalysis 组件的所有内部 state（correction items、
               selected compound 等）。它自己 fetch + 自己管 state。 */}
           <SARAnalysis />
+        </TabPanel>
+      )}
+
+      {activeTab === 'analytics' && (
+        <TabPanel activeKey={activeTab} tabKey="analytics">
+          <MoleculeAnalytics />
         </TabPanel>
       )}
     </PageContainer>

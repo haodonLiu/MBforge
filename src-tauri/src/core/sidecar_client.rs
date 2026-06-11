@@ -85,7 +85,9 @@ impl SidecarClient {
         let req = EmbedRequest {
             texts: texts.to_vec(),
         };
-        let resp = http::client_30s()
+        // 120s timeout matches the previous `SidecarEmbedder` blocking path
+        // (kept for KB long-document scenarios).
+        let resp = http::client_120s()
             .post(&url)
             .json(&req)
             .send()

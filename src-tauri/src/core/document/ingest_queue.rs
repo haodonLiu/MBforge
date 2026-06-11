@@ -14,6 +14,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
 use crate::core::error::AppResult;
+use crate::core::helpers::now_secs_f64;
 
 /// 队列任务状态
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -70,7 +71,7 @@ pub struct IngestTask {
 
 impl IngestTask {
     pub fn new(file_path: String, doc_id: String) -> Self {
-        let now = now_secs();
+        let now = now_secs_f64();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             file_path,
@@ -257,7 +258,7 @@ impl IngestQueue {
         drop(stmt);
 
         if let Some(ref mut task) = task {
-            let now = now_secs();
+            let now = now_secs_f64();
             conn.execute(
                 "UPDATE ingest_queue
                  SET status = 'processing', updated_at = ?1
@@ -274,7 +275,7 @@ impl IngestQueue {
     /// 标记任务完成
     pub fn mark_done(&self, task_id: &str) -> AppResult<()> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let now = now_secs();
+        let now = now_secs_f64();
         conn.execute(
             "UPDATE ingest_queue
              SET status = 'done', error = NULL, updated_at = ?1
@@ -287,7 +288,7 @@ impl IngestQueue {
     /// 标记任务失败（自动判断是否可重试）
     pub fn mark_failed(&self, task_id: &str, error: String) -> AppResult<()> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let now = now_secs();
+        let now = now_secs_f64();
 
         // 先读取当前重试次数和上限
         let (retry_count, max_retries): (i64, i64) = conn.query_row(
@@ -329,7 +330,7 @@ impl IngestQueue {
     /// 取消一个任务
     pub fn cancel(&self, task_id: &str) -> AppResult<()> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let now = now_secs();
+        let now = now_secs_f64();
         conn.execute(
             "UPDATE ingest_queue
              SET status = 'cancelled', updated_at = ?1
@@ -342,7 +343,7 @@ impl IngestQueue {
     /// 取消所有待处理任务（项目切换时暂停）
     pub fn cancel_all_pending(&self) -> AppResult<usize> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let now = now_secs();
+        let now = now_secs_f64();
         let changed = conn.execute(
             "UPDATE ingest_queue
              SET status = 'cancelled', updated_at = ?1
@@ -447,13 +448,6 @@ pub struct QueueStats {
     pub done: usize,
     pub failed: usize,
     pub cancelled: usize,
-}
-
-fn now_secs() -> f64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0)
 }
 
 #[cfg(test)]

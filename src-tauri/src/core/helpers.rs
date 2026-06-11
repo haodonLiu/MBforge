@@ -13,6 +13,29 @@ pub fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
+/// Get current UNIX timestamp in seconds (f64 fractional).
+///
+/// Replaces inline `SystemTime::now() + duration_since(UNIX_EPOCH) + as_secs_f64()`
+/// patterns scattered across the codebase. Centralized here so the conversion
+/// policy (`as_secs_f64`) lives in one place.
+pub fn now_secs_f64() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
+/// Get current UNIX timestamp in whole seconds (u64).
+///
+/// Used by `vlm_chem.rs::ImageCaptionCache::set` and similar paths that need
+/// an integer second timestamp.
+pub fn now_secs_u64() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 /// Generate a UUID v4 string.
 pub fn generate_uuid() -> String {
     uuid::Uuid::new_v4().to_string()
@@ -334,5 +357,29 @@ mod tests {
     fn test_estimate_tokens() {
         let tokens = estimate_tokens("Hello 你好");
         assert!(tokens > 0);
+    }
+
+    #[test]
+    fn test_now_secs_f64_monotonic() {
+        let a = now_secs_f64();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let b = now_secs_f64();
+        assert!(b >= a);
+        // Sanity: must be a plausible UNIX timestamp (post-2020).
+        assert!(a > 1_577_836_800.0);
+    }
+
+    #[test]
+    fn test_now_secs_u64_is_integer() {
+        let v = now_secs_u64();
+        assert!(v > 1_577_836_800);
+    }
+
+    #[test]
+    fn test_now_rfc3339_format() {
+        let s = now_rfc3339();
+        // RFC 3339: e.g. "2026-06-10T12:34:56.789012345+00:00"
+        assert!(s.contains('T'));
+        assert!(s.ends_with("+00:00"));
     }
 }

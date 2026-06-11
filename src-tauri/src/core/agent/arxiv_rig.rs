@@ -16,7 +16,7 @@ use rig_core::tool::Tool;
 use rig_derive::rig_tool;
 // Helpers come from arxiv.rs.
 use crate::core::agent::arxiv as arxiv_src;
-use arxiv_src::{args_err, param_url, json, text, BASE_ARXIV, BASE_PMC, urlencoding};
+use arxiv_src::{args_err, param_url, json, text, BASE_ARXIV, BASE_PMC};
 
 #[rig_tool(
     name = "arxiv_metadata",
@@ -232,7 +232,7 @@ pub async fn arxiv_search(query: String, source: String, top_k: String, offset: 
 
     let qs: Vec<String> = pairs
         .iter()
-        .map(|(k, v)| format!("{}={}", urlencoding(k), urlencoding(v)))
+        .map(|(k, v)| format!("{}={}", arxiv_src::urlencoding(k), arxiv_src::urlencoding(v)))
         .collect();
     let url = format!("{}?{}", BASE_ARXIV, qs.join("&"));
 
@@ -260,8 +260,8 @@ pub async fn arxiv_trending(arxiv_id: String, token: String) -> Result<String, r
     let url = format!(
         "{}/trending_signal?arxiv_id={}&token={}",
         BASE_ARXIV,
-        urlencoding(&id),
-        urlencoding(&token),
+        arxiv_src::urlencoding(&id),
+        arxiv_src::urlencoding(&token),
     );
     match json(&url) {
         Ok(v) => Ok(v.to_string()),

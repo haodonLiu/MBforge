@@ -31,76 +31,80 @@ fn default_description(img: &ImageRef) -> String {
 /// Rewrite every `![alt](url)` whose `url` matches an extracted image's
 /// filename or full path so it points to the local `rel_path`. The alt
 /// text is replaced with a description when we have one.
+///
+/// Uses `pulldown-cmark` to tokenize the markdown. For each image event,
+/// look up the dest URL in `images` and rebuild the reference with the
+/// matched image's `rel_path` + description; otherwise pass the original
+/// slice through unchanged.
 fn rewrite_inline_references(markdown: &str, images: &[ImageRef]) -> String {
+    use pulldown_cmark::{Event, Parser, Tag};
+
+    let parser = Parser::new(markdown);
     let mut out = String::with_capacity(markdown.len());
-    let mut rest = markdown;
+    let mut last_end: usize = 0;
 
-    while let Some(start) = rest.find("![") {
-        out.push_str(&rest[..start]);
-        rest = &rest[start + 2..];
-
-        // Find the closing `]`
-        let Some(close_bracket) = rest.find(']') else {
-            out.push_str("![");
-            out.push_str(rest);
-            return out;
-        };
-        let alt = &rest[..close_bracket];
-        rest = &rest[close_bracket + 1..];
-
-        // Expect `(`
-        if !rest.starts_with('(') {
-            out.push_str("![");
-            out.push_str(alt);
-            out.push(']');
-            continue;
+    for (event, span) in parser.into_offset_iter() {
+        // Copy any text between the previous event's end and this event's start.
+        if span.start > last_end {
+            out.push_str(&markdown[last_end..span.start]);
         }
-        rest = &rest[1..];
-
-        // Find the matching `)` (allow nested parens in URL)
-        let mut depth = 1i32;
-        let mut end = rest.len();
-        for (i, ch) in rest.char_indices() {
-            match ch {
-                '(' => depth += 1,
-                ')' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = i;
-                        break;
-                    }
+        match event {
+            Event::Start(Tag::Image { dest_url, title, .. }) => {
+                if let Some(img) = match_image(&dest_url, images) {
+                    let new_url = img
+                        .rel_path
+                        .clone()
+                        .unwrap_or_else(|| img.filename.clone());
+                    let new_alt = img
+                        .description
+                        .clone()
+                        .unwrap_or_else(|| default_description(img));
+                    write_image_ref(&mut out, &new_alt, &new_url, Some(title.as_ref()));
+                } else {
+                    // Pass through original slice unchanged
+                    out.push_str(&markdown[span.start..span.end]);
                 }
-                _ => {}
+            }
+            _ => {
+                // Non-image event: pass through original slice unchanged.
+                // This preserves any source-level formatting differences
+                // (escapes, line breaks) that pulldown-cmark would normalize.
+                out.push_str(&markdown[span.start..span.end]);
             }
         }
-        let url = &rest[..end];
-        let after = if end < rest.len() { &rest[end + 1..] } else { "" };
-
-        // Match against extracted images by filename OR full path
-        let matched = images.iter().find(|img| {
-            img.filename == url
-                || img.rel_path.as_deref() == Some(url)
-                || img.rel_path.as_deref().map(|p| p.ends_with(url)).unwrap_or(false)
-        });
-
-        if let Some(img) = matched {
-            let new_url = img
-                .rel_path
-                .clone()
-                .unwrap_or_else(|| img.filename.clone());
-            let new_alt = img
-                .description
-                .clone()
-                .unwrap_or_else(|| default_description(img));
-            out.push_str(&format!("![{}]({})", new_alt, new_url));
-        } else {
-            // Leave the reference as-is
-            out.push_str(&format!("![{}]({})", alt, url));
-        }
-        rest = after;
+        last_end = span.end;
     }
-    out.push_str(rest);
+    // Trailing text after the last event.
+    if last_end < markdown.len() {
+        out.push_str(&markdown[last_end..]);
+    }
     out
+}
+
+/// Match `dest_url` against an extracted image (exact filename, exact rel_path,
+/// or rel_path ending with the url — preserving the original three-tier
+/// fallback from the hand-written scanner).
+fn match_image<'a>(url: &str, images: &'a [ImageRef]) -> Option<&'a ImageRef> {
+    images.iter().find(|img| {
+        img.filename == url
+            || img.rel_path.as_deref() == Some(url)
+            || img.rel_path.as_deref().is_some_and(|p| p.ends_with(url))
+    })
+}
+
+/// Serialize an image reference into `out`. Includes the optional title
+/// (`"![alt](url \"title\")"`) so we don't lose the parser's view of it.
+fn write_image_ref(out: &mut String, alt: &str, url: &str, title: Option<&str>) {
+    out.push_str("![");
+    out.push_str(alt);
+    out.push_str("](");
+    out.push_str(url);
+    if let Some(t) = title {
+        out.push_str(" \"");
+        out.push_str(t);
+        out.push('"');
+    }
+    out.push(')');
 }
 
 /// Build the "Extracted Images" appendix for images that are not

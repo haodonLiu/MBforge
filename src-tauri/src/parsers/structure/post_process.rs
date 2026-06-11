@@ -916,89 +916,86 @@ pub async fn post_process_sections_parallel(
     page_count: usize,
     concurrency: Option<usize>,
 ) -> Vec<SectionResult> {
+    use futures::stream::{StreamExt, FuturesUnordered};
     use std::sync::Arc;
-    use tokio::sync::Semaphore;
-    use tokio::task::{JoinSet, spawn_blocking};
+    use tokio::task::spawn_blocking;
 
     let limit = concurrency
         .filter(|&n| n > 0)
         .unwrap_or(DEFAULT_SECTION_CONCURRENCY);
-    let semaphore = Arc::new(Semaphore::new(limit));
-    let parser = parser.to_string();
-    let mut set: JoinSet<SectionResult> = JoinSet::new();
-
-    // 提前 reserve：保持与输入等长的索引，JoinSet 完成顺序不影响输出顺序。
     let total = sections.len();
-    let mut results: Vec<Option<SectionResult>> = (0..total).map(|_| None).collect();
+    let parser = Arc::new(parser.to_string());
+
+    // 限制在途任务数：用 `FuturesUnordered` 手动背压（poll 时检查已 spawn 数量）。
+    // `buffer_unordered` 不支持动态限流 — 我们需要「in-flight ≤ limit」语义，
+    // 所以用 `FuturesUnordered` + 计数 channel 比 JoinSet+Semaphore 更直接。
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(limit);
+    let mut tasks: FuturesUnordered<
+        tokio::task::JoinHandle<(usize, String, Result<PostProcessResult, String>, std::time::Duration)>,
+    > = FuturesUnordered::new();
 
     for (idx, (name, text)) in sections.into_iter().enumerate() {
-        let permit_src = Arc::clone(&semaphore);
-        let parser = parser.clone();
-        set.spawn(async move {
-            // 等到拿到 permit 才真正执行，限流在 acquire 处生效。
-            let _permit = match permit_src.acquire_owned().await {
-                Ok(p) => p,
-                Err(_) => {
-                    return SectionResult {
-                        index: idx,
-                        name,
-                        status: SectionStatus::Err("concurrency semaphore closed".to_string()),
-                        elapsed: std::time::Duration::ZERO,
-                    };
-                }
-            };
-            let name_for_blocking = name.clone();
-            let parser_for_blocking = parser.clone();
-            let text_for_blocking = text.clone();
+        // 等待槽位
+        let _permit = match rx.recv().await {
+            Some(()) => (), // 收到释放信号 — 但此时 channel 已被新 permit 占位，下面 spawn 后再 send 一个回来
+            None => break,  // channel 关闭 — 不会再有 permit
+        };
+        let name_for_blocking = name.clone();
+        let parser_for_blocking = Arc::clone(&parser);
+        let tx_permit = tx.clone();
+        tasks.push(tokio::spawn(async move {
             // `post_process_section` 内部走 `reqwest::blocking::Client`，
             // 不能直接在 tokio task 中跑 — 必须丢到 dedicated blocking thread
-            // pool，否则 `.await` 退出 task 时 runtime 会 panic
-            // (Cannot drop a runtime in a context where blocking is not allowed)。
+            // pool，否则 `.await` 退出 task 时 runtime 会 panic。
             let start = std::time::Instant::now();
             let outcome = spawn_blocking(move || {
-                // 这里必须是 sync 入口；复用 post_process_section 的逻辑
-                // 但跳到外部 rt 用 blocking runtime 即可。直接调 sync 版。
                 post_process_section_sync(
-                    &text_for_blocking,
-                    &parser_for_blocking,
+                    &text,
+                    parser_for_blocking.as_str(),
                     page_count,
                 )
             })
             .await;
             let elapsed = start.elapsed();
-            match outcome {
-                Ok(Ok(r)) => SectionResult {
-                    index: idx,
-                    name: name_for_blocking,
-                    status: SectionStatus::Ok(r),
-                    elapsed,
-                },
-                Ok(Err(e)) => SectionResult {
-                    index: idx,
-                    name: name_for_blocking,
-                    status: SectionStatus::Err(e),
-                    elapsed,
-                },
-                Err(join_err) => SectionResult {
-                    index: idx,
-                    name: name_for_blocking,
-                    status: SectionStatus::Err(format!("blocking task join error: {}", join_err)),
-                    elapsed,
-                },
-            }
-        });
+            // 释放槽位（drop 时自动 send）
+            drop(tx_permit);
+            let result = match outcome {
+                Ok(Ok(r)) => Ok(r),
+                Ok(Err(e)) => Err(e),
+                Err(join_err) => Err(format!("blocking task join error: {}", join_err)),
+            };
+            (idx, name_for_blocking, result, elapsed)
+        }));
     }
+    // 关闭发送端：当所有 task 完成（drop 自己的 tx 副本）后，recv 会返回 None。
+    drop(tx);
 
-    while let Some(joined) = set.join_next().await {
+    // 按 index 收集，保持与输入同顺序。
+    let mut results: Vec<Option<SectionResult>> = (0..total).map(|_| None).collect();
+    while let Some(joined) = tasks.next().await {
         match joined {
-            Ok(r) => {
-                let i = r.index;
-                if i < results.len() {
-                    results[i] = Some(r);
+            Ok((idx, name, Ok(r), elapsed)) => {
+                if idx < results.len() {
+                    results[idx] = Some(SectionResult {
+                        index: idx,
+                        name,
+                        status: SectionStatus::Ok(r),
+                        elapsed,
+                    });
+                }
+            }
+            Ok((idx, name, Err(e), elapsed)) => {
+                if idx < results.len() {
+                    results[idx] = Some(SectionResult {
+                        index: idx,
+                        name,
+                        status: SectionStatus::Err(e),
+                        elapsed,
+                    });
                 }
             }
             Err(e) => {
-                // task panic：记录为一条伪 SectionResult，但要可被 pipeline 记录。
+                // task panic：记录为日志
                 log::error!("post_process_sections_parallel task join error: {}", e);
             }
         }

@@ -98,25 +98,16 @@ impl SummaryManager {
     ///
     /// Silently skips files that fail to parse.
     pub fn list_all(&self) -> Vec<DocumentSummary> {
-        let mut results = Vec::new();
-        let entries = match std::fs::read_dir(&self.summary_dir) {
-            Ok(e) => e,
-            Err(_) => return results,
-        };
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(summary) = serde_json::from_str::<DocumentSummary>(&content) {
-                    results.push(summary);
-                }
-            }
-        }
-
-        results
+        // 单层：只取 `summary_dir` 的直接子项（.json 文件）。`min_depth(1)` 跳过目录自身。
+        walkdir::WalkDir::new(&self.summary_dir)
+            .min_depth(1)
+            .max_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("json"))
+            .filter_map(|e| std::fs::read_to_string(e.path()).ok())
+            .filter_map(|content| serde_json::from_str::<DocumentSummary>(&content).ok())
+            .collect()
     }
 
     /// Return the summary directory path (useful for debugging).

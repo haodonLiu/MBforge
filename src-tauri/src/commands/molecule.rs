@@ -18,14 +18,6 @@ macro_rules! log_err {
 }
 
 #[tauri::command]
-pub async fn mol_init(
-    state: tauri::State<'_, MoleculeEngineState>,
-    project_root: String,
-) -> Result<(), String> {
-    get_or_init_engine(&state, &project_root).await
-}
-
-#[tauri::command]
 pub async fn mol_add_relation(
     state: tauri::State<'_, MoleculeEngineState>,
     mol_a_id: String,
@@ -274,8 +266,10 @@ pub async fn mol_find_analogs_with_activity(
 #[tauri::command]
 pub async fn mol_scaffold_profile(
     state: tauri::State<'_, MoleculeEngineState>,
+    project_root: String,
     scaffold_esmiles: String,
 ) -> Result<ScaffoldProfile, String> {
+    get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()
@@ -294,9 +288,11 @@ pub async fn mol_scaffold_profile(
 #[tauri::command]
 pub async fn mol_find_activity_cliffs(
     state: tauri::State<'_, MoleculeEngineState>,
+    project_root: String,
     min_similarity: f64,
     min_activity_ratio: f64,
 ) -> Result<Vec<ActivityCliff>, String> {
+    get_or_init_engine(&state, &project_root).await?;
     let guard = state.inner.lock().await;
     let engine = guard
         .as_ref()

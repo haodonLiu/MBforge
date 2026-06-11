@@ -13,7 +13,7 @@ use rusqlite::{params, Connection};
 
 use crate::core::db::SharedConn;
 use crate::core::error::AppResult;
-use crate::core::helpers::LockResultExt;
+use crate::core::helpers::{LockResultExt, now_secs_f64};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheEntry {
@@ -28,13 +28,13 @@ pub struct CacheEntry {
 
 impl CacheEntry {
     pub fn is_expired(&self, ttl: f64) -> bool {
-        let now = now_secs();
+        let now = now_secs_f64();
         (now - self.created_at) > ttl
     }
 
     pub fn update_hit(&mut self) {
         self.hit_count += 1;
-        self.last_hit = now_secs();
+        self.last_hit = now_secs_f64();
     }
 }
 
@@ -68,13 +68,6 @@ pub struct SemanticCache {
     db_path: PathBuf,
     /// 共享连接（来自 DbManager）。为 None 时回退到 db_path 自管（向后兼容）。
     shared_conn: Option<SharedConn>,
-}
-
-fn now_secs() -> f64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs_f64()
 }
 
 fn hash_query(query: &str) -> String {
@@ -351,7 +344,7 @@ impl SemanticCache {
             move_to_back(&mut inner.lru, &key);
             // 异步更新 SQLite 的 hit_count
             let key_clone = key.clone();
-            let now = now_secs();
+            let now = now_secs_f64();
             spawn_db_write(self, move |conn| {
                 let _ = conn.execute(
                     "UPDATE semantic_cache SET hit_count = hit_count + 1, last_hit = ?1 WHERE query_hash = ?2",
@@ -368,7 +361,7 @@ impl SemanticCache {
             return;
         }
         let key = hash_query(query);
-        let now = now_secs();
+        let now = now_secs_f64();
 
         let entry = CacheEntry {
             query_hash: key.clone(),
@@ -551,7 +544,7 @@ mod tests {
             let key = hash_query("old");
             let mut inner = sc.cache.lock().unwrap();
             if let Some(entry) = inner.entries.get_mut(&key) {
-                entry.created_at = now_secs() - 7200.0; // 2 hours ago
+                entry.created_at = now_secs_f64() - 7200.0; // 2 hours ago
             }
         }
         // TTL 默认 1 小时，应过期

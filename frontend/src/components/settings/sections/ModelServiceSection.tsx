@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { invoke } from '@tauri-apps/api/core'
+import { sidecarStatus } from '../../../api/tauri/sidecar'
 import SettingSection, { SettingGroup } from '../../ui/SettingSection'
 import {
   TextField,
@@ -35,7 +35,7 @@ export default function ModelServiceSection({ settings, setSettings }: Props) {
   const testConnection = useCallback(async () => {
     setTesting(true)
     try {
-      const res = await invoke<SidecarStatus>('sidecar_status')
+      const res = await sidecarStatus()
       setStatus(res)
       if (res.healthy) {
         showToast(t('settings.serverOk', { secs: res.uptimeSecs }), 'success')

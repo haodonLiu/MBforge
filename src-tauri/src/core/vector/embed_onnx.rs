@@ -20,7 +20,7 @@
 //! `mrl_dim` dims and re-normalize.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use ndarray::{Array2, Array3, Axis};
 use ort::session::Session;
@@ -36,7 +36,7 @@ static MODEL_CACHE: OnceLock<OnnxEmbedder> = OnceLock::new();
 /// Embedded state: tokenizer + ort session + dimensions.
 pub struct OnnxEmbedder {
     pub tokenizer: Tokenizer,
-    pub session: Session,
+    pub session: Mutex<Session>,
     /// Inference dtype. Detected from ONNX inputs.
     hidden_size: usize,
     /// Pad token id (resolved from tokenizer config or fallback).
@@ -44,6 +44,49 @@ pub struct OnnxEmbedder {
 }
 
 impl OnnxEmbedder {
+    /// Count tokens for a single text using the model's tokenizer.
+    ///
+    /// Replaces `helpers::estimate_tokens` (CJK ~1.5/char, ASCII ~0.25/char)
+    /// with real BPE counts. Used by `LayeredContext::token_count` to drive
+    /// `trim_history` decisions — heuristic estimates mis-sized the
+    /// `AGENT_MAX_TOTAL_TOKENS` budget for mixed CJK/ASCII content.
+    pub fn count_tokens(&self, text: &str) -> Result<usize, String> {
+        let mut tokenizer = self.tokenizer.clone();
+        tokenizer
+            .with_truncation(Some(tokenizers::TruncationParams {
+                max_length: 512,
+                ..Default::default()
+            }))
+            .map_err(|e| format!("tokenizer truncation config: {e}"))?;
+        let encoding = tokenizer
+            .encode(text, false)
+            .map_err(|e| format!("tokenize: {e}"))?;
+        Ok(encoding.get_ids().len())
+    }
+
+    /// Wrap this embedder as a `TokenCounter` closure. If the tokenizer
+    /// call fails, fall back to `crate::core::helpers::estimate_tokens`.
+    pub fn as_token_counter(&self) -> crate::core::agent::context::TokenCounter {
+        use crate::core::agent::context::TokenCounter;
+        use crate::core::helpers::estimate_tokens;
+        // `*const OnnxEmbedder` is `!Send + !Sync` by default, so wrap it in
+        // a newtype that asserts those bounds. SAFETY: OnnxEmbedder is a
+        // process-singleton (`OnceLock`); the pointer is valid for the
+        // closure's lifetime.
+        struct SendPtr(*const OnnxEmbedder);
+        unsafe impl Send for SendPtr {}
+        unsafe impl Sync for SendPtr {}
+        let ptr = SendPtr(self as *const OnnxEmbedder);
+        // Deref to `&OnnxEmbedder` once — `&OnnxEmbedder` is `Send + Sync`
+        // because every field inside is. Move that into the closure.
+        let embedder: &'static OnnxEmbedder = unsafe { &*ptr.0 };
+        Arc::new(move |s: &str| {
+            embedder
+                .count_tokens(s)
+                .unwrap_or_else(|_| estimate_tokens(s))
+        })
+    }
+
     /// Load tokenizer + ONNX session from `model_dir`.
     /// Returns the cached singleton if `model_dir` matches the first load.
     pub fn load(model_dir: &Path) -> Result<&'static Self, String> {
@@ -67,7 +110,7 @@ impl OnnxEmbedder {
         // Resolve pad token from tokenizer config; fall back to 0.
         let pad_token_id = read_pad_token_id(model_dir).unwrap_or(0);
 
-        let session = Session::builder()
+        let mut session = Session::builder()
             .map_err(|e| format!("ort Session::builder: {e}"))?
             .with_intra_threads(num_cpus())
             .map_err(|e| format!("ort with_intra_threads: {e}"))?
@@ -75,11 +118,11 @@ impl OnnxEmbedder {
             .map_err(|e| format!("ort commit_from_file: {e}"))?;
 
         // Probe hidden size by running a single-token forward pass.
-        let hidden_size = probe_hidden_size(&session, &tokenizer, pad_token_id)?;
+        let hidden_size = probe_hidden_size(&mut session, &tokenizer, pad_token_id)?;
 
         let emb = OnnxEmbedder {
             tokenizer,
-            session,
+            session: Mutex::new(session),
             hidden_size,
             pad_token_id,
         };
@@ -108,8 +151,8 @@ impl OnnxEmbedder {
         let mask_tensor = Tensor::from_array(mask)
             .map_err(|e| format!("mask tensor: {e}"))?;
 
-        let outputs = self
-            .session
+        let mut session = self.session.lock().map_err(|e| format!("session lock: {e}"))?;
+        let outputs = session
             .run(ort::inputs![ids_tensor, mask_tensor])
             .map_err(|e| format!("ort run: {e}"))?;
 
@@ -142,13 +185,17 @@ impl OnnxEmbedder {
         let mut out = Vec::with_capacity(batch);
         for i in 0..batch {
             let last_idx = (attention_mask[i].iter().sum::<i64>() - 1).max(0) as usize;
-            let row = hidden.slice(Axis(1), last_idx..last_idx + 1).slice(Axis(0), i..i + 1);
+            let slice_col = ndarray::Slice::from(last_idx..last_idx + 1);
+            let slice_row = ndarray::Slice::from(i..i + 1);
+            let row = hidden.slice_axis(Axis(1), slice_col);
+            let row = row.slice_axis(Axis(0), slice_row);
             let row = row.remove_axis(Axis(1)).remove_axis(Axis(0));
             // MRL slice.
             let truncated = if target_dim < hidden_size {
-                row.slice(Axis(0), 0..target_dim).to_owned()
+                let slice_trunc = ndarray::Slice::from(0..target_dim);
+                row.slice_axis(Axis(0), slice_trunc).to_owned()
             } else {
-                row
+                row.to_owned()
             };
             // L2 normalize.
             let norm = truncated.dot(&truncated).sqrt().max(f32::EPSILON);
@@ -174,6 +221,7 @@ impl EmbedderTrait for OnnxEmbedder {
                 pad_id: self.pad_token_id as u32,
                 pad_token: "<|endoftext|>".to_string(),
                 pad_type_id: 0,
+                pad_to_multiple_of: None,
             }))
             .with_truncation(Some(tokenizers::TruncationParams {
                 max_length: 512,
@@ -205,7 +253,7 @@ impl EmbedderTrait for OnnxEmbedder {
 
 /// Probe hidden size by running a 2-token forward pass and reading the
 /// output shape. Avoids hardcoding the model dim.
-fn probe_hidden_size(session: &Session, tokenizer: &Tokenizer, pad_token_id: i64) -> Result<usize, String> {
+fn probe_hidden_size(session: &mut Session, tokenizer: &Tokenizer, pad_token_id: i64) -> Result<usize, String> {
     let mut probe_tok = tokenizer.clone();
     probe_tok
         .with_padding(Some(tokenizers::PaddingParams {
@@ -214,6 +262,7 @@ fn probe_hidden_size(session: &Session, tokenizer: &Tokenizer, pad_token_id: i64
             pad_id: pad_token_id as u32,
             pad_token: "<|endoftext|>".to_string(),
             pad_type_id: 0,
+            pad_to_multiple_of: None,
         }));
     let enc = probe_tok
         .encode_batch(vec!["ok".to_string()], true)

@@ -366,9 +366,12 @@ export interface ScaffoldProfile {
 }
 
 /** 按给定骨架 (e-smiles 子串) 聚合库内分子及其活性分布。 */
-export async function molScaffoldProfile(scaffoldEsmiles: string): Promise<ScaffoldProfile> {
+export async function molScaffoldProfile(
+  projectRoot: string,
+  scaffoldEsmiles: string,
+): Promise<ScaffoldProfile> {
   return invokeWithError(
-    () => invoke<ScaffoldProfile>('mol_scaffold_profile', { scaffoldEsmiles }),
+    () => invoke<ScaffoldProfile>('mol_scaffold_profile', { projectRoot, scaffoldEsmiles }),
     ErrorCode.ApiError,
   )
 }
@@ -389,13 +392,215 @@ export interface ActivityCliff {
 
 /** 找活性悬崖 (结构相似但活性差异显著的分子对)。 */
 export async function molFindActivityCliffs(
+  projectRoot: string,
   minSimilarity: number,
   minActivityRatio: number,
 ): Promise<ActivityCliff[]> {
   return invokeWithError(
     () => invoke<ActivityCliff[]>('mol_find_activity_cliffs', {
+      projectRoot,
       minSimilarity,
       minActivityRatio,
+    }),
+    ErrorCode.ApiError,
+  )
+}
+
+// ============================================================================
+// 分子关系 / 聚类 / 高级分析（对应 Rust commands/molecule.rs）
+// ============================================================================
+
+export interface MoleculeRelation {
+  id?: number
+  mol_a_id: string
+  mol_b_id: string
+  relation_type: 'similar' | 'same_as' | 'scaffold' | 'cluster'
+  score: number | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+  [key: string]: unknown
+}
+
+export interface RelationStats {
+  total: number
+  similar: number
+  same_as: number
+  scaffold: number
+  cluster: number
+}
+
+export interface ClusterInfo {
+  cluster_id: string
+  member_count: number
+  members: string[]
+  metadata: Record<string, unknown>
+  [key: string]: unknown
+}
+
+export interface DedupPair {
+  mol_a_id: string
+  mol_b_id: string
+  confidence: number
+  reason: string
+  [key: string]: unknown
+}
+
+export interface DedupResult {
+  duplicates: DedupPair[]
+  new_mols: string[]
+  relations_added: number
+}
+
+export interface AnalogWithActivity {
+  mol_id: string
+  esmiles: string
+  name: string
+  similarity_score: number
+  activity: number | null
+  activity_type: string
+  units: string
+  [key: string]: unknown
+}
+
+export interface SubstructureMatch {
+  mol_id: string
+  esmiles: string
+  [key: string]: unknown
+}
+
+// ---- 关系管理 ----
+
+export async function molAddRelation(
+  molAId: string,
+  molBId: string,
+  relationType: string,
+  score?: number,
+  metadata?: Record<string, unknown>,
+): Promise<number> {
+  return invokeWithError(
+    () => invoke<number>('mol_add_relation', {
+      molAId,
+      molBId,
+      relationType,
+      score: score ?? null,
+      metadata: metadata ?? null,
+    }),
+    ErrorCode.ApiError,
+  )
+}
+
+export async function molDeleteRelation(id: number): Promise<boolean> {
+  return invokeWithError(
+    () => invoke<boolean>('mol_delete_relation', { id }),
+    ErrorCode.ApiError,
+  )
+}
+
+export async function molGetRelation(id: number): Promise<MoleculeRelation | null> {
+  return invokeWithError(
+    () => invoke<MoleculeRelation | null>('mol_get_relation', { id }),
+    ErrorCode.ApiError,
+  )
+}
+
+export async function molFindByMolecule(molId: string): Promise<MoleculeRelation[]> {
+  return invokeWithError(
+    () => invoke<MoleculeRelation[]>('mol_find_by_molecule', { molId }),
+    ErrorCode.ApiError,
+  )
+}
+
+export async function molFindSimilar(
+  molId: string,
+  minScore: number,
+): Promise<Array<{ relation: MoleculeRelation; score: number }>> {
+  return invokeWithError(
+    () => invoke<Array<[MoleculeRelation, number]>>('mol_find_similar', { molId, minScore }),
+    ErrorCode.ApiError,
+  ).then(rows => rows.map(([relation, score]) => ({ relation, score })))
+}
+
+export async function molFindSameAs(molId: string): Promise<MoleculeRelation[]> {
+  return invokeWithError(
+    () => invoke<MoleculeRelation[]>('mol_find_same_as', { molId }),
+    ErrorCode.ApiError,
+  )
+}
+
+export async function molGetStats(): Promise<RelationStats> {
+  return invokeWithError(
+    () => invoke<RelationStats>('mol_get_stats'),
+    ErrorCode.ApiError,
+  )
+}
+
+// ---- 聚类管理 ----
+
+export async function molAssignCluster(molId: string, clusterId: string): Promise<number> {
+  return invokeWithError(
+    () => invoke<number>('mol_assign_cluster', { molId, clusterId }),
+    ErrorCode.ApiError,
+  )
+}
+
+export async function molRemoveFromCluster(molId: string, clusterId: string): Promise<boolean> {
+  return invokeWithError(
+    () => invoke<boolean>('mol_remove_from_cluster', { molId, clusterId }),
+    ErrorCode.ApiError,
+  )
+}
+
+export async function molGetClusterMembers(clusterId: string): Promise<ClusterInfo> {
+  return invokeWithError(
+    () => invoke<ClusterInfo>('mol_get_cluster_members', { clusterId }),
+    ErrorCode.ApiError,
+  )
+}
+
+export async function molGetMoleculeClusters(molId: string): Promise<string[]> {
+  return invokeWithError(
+    () => invoke<string[]>('mol_get_molecule_clusters', { molId }),
+    ErrorCode.ApiError,
+  )
+}
+
+export async function molListClusters(): Promise<ClusterInfo[]> {
+  return invokeWithError(
+    () => invoke<ClusterInfo[]>('mol_list_clusters'),
+    ErrorCode.ApiError,
+  )
+}
+
+// ---- 高级分析 ----
+
+export async function molFindAnalogsWithActivity(
+  molId: string,
+  minSimilarity: number,
+): Promise<AnalogWithActivity[]> {
+  return invokeWithError(
+    () => invoke<AnalogWithActivity[]>('mol_find_analogs_with_activity', { molId, minSimilarity }),
+    ErrorCode.ApiError,
+  )
+}
+
+export async function molDedupBatch(
+  newMols: Array<[string, string]>,
+  sameAsThreshold = 0.95,
+): Promise<DedupResult> {
+  return invokeWithError(
+    () => invoke<DedupResult>('mol_dedup_batch', { newMols, sameAsThreshold }),
+    ErrorCode.ApiError,
+  )
+}
+
+export async function molSearchSubstructure(
+  querySmiles: string,
+  tanimotoThreshold?: number,
+): Promise<SubstructureMatch[]> {
+  return invokeWithError(
+    () => invoke<SubstructureMatch[]>('mol_search_substructure', {
+      querySmiles,
+      tanimotoThreshold: tanimotoThreshold ?? null,
     }),
     ErrorCode.ApiError,
   )

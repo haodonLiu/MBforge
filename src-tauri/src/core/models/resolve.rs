@@ -310,18 +310,15 @@ fn has_file_with_ext(dir: &std::path::Path, exts: &[&str]) -> bool {
 
 fn walk_dir_for_ext(dir: &std::path::Path, exts: &[&str], depth: u32) -> bool {
     if depth == 0 { return false; }
-    let entries = match std::fs::read_dir(dir) { Ok(e) => e, Err(_) => return false };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() {
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if exts.contains(&ext) { return true; }
-            }
-        } else if path.is_dir() && walk_dir_for_ext(&path, exts, depth - 1) {
-            return true;
-        }
-    }
-    false
+    walkdir::WalkDir::new(dir)
+        .max_depth(depth as usize)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .any(|e| {
+            e.file_type().is_file()
+                && e.path().extension().and_then(|x| x.to_str()).is_some_and(|x| exts.contains(&x))
+        })
 }
 
 pub fn dir_size(dir: &std::path::Path) -> u64 {

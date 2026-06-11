@@ -27,3 +27,11 @@ export async function sidecarRestart(): Promise<void> {
     ErrorCode.ApiError,
   )
 }
+
+/** 探测 Python sidecar 环境信息（Python 版本、GPU、CUDA、库依赖）。 */
+export async function environmentCheck(): Promise<unknown> {
+  return invokeWithError(
+    () => invoke<unknown>('environment_check'),
+    ErrorCode.ApiError,
+  )
+}

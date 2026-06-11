@@ -193,39 +193,23 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn walk_size(dir: &Path) -> u64 {
-    let mut total = 0u64;
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return 0,
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if p.is_dir() {
-            total += walk_size(&p);
-        } else if p.is_file() {
-            total += entry.metadata().map(|m| m.len()).unwrap_or(0);
-        }
-    }
-    total
+    walkdir::WalkDir::new(dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| e.metadata().ok().map(|m| m.len()))
+        .sum()
 }
 
 fn count_pages(dir: &Path) -> usize {
-    let mut count = 0usize;
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return 0,
-    };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if p.is_dir() {
-            count += count_pages(&p);
-        } else if p.is_file()
-            && p.extension().and_then(|e| e.to_str()) == Some("json")
-        {
-            count += 1;
-        }
-    }
-    count
+    walkdir::WalkDir::new(dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("json"))
+        .count()
 }
 
 #[cfg(test)]

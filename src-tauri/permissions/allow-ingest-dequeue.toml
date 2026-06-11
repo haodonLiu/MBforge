@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-ingest-dequeue"
+description = "Allows the ingest_dequeue command"
+commands.allow = ["ingest_dequeue"]

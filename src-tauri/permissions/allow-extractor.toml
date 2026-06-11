@@ -5,4 +5,5 @@ commands.allow = [
   "extract_esmiles_candidates",
   "extract_activities",
   "extract_associated_molecules",
+  "extract_with_associations",
 ]

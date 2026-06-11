@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-ingest-stats"
+description = "Allows the ingest_stats command"
+commands.allow = ["ingest_stats"]

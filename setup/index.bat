@@ -192,7 +192,7 @@ if exist "vendor\pdfium\release\pdfium.dll" (
 ) else (
     echo [WARN] LiteParse (PDFium) - not installed (offline scan PDF fallback)
     echo   Download PDFium to vendor\pdfium\release\ when needed
-    echo   https://github.com/bblanchon/pdfium-binaries/releases
+    echo   https://github.com/run-llama/pdfium-binaries/releases/latest
 )
 
 %PYTHON% -c "import torch; assert torch.cuda.is_available()" 2>nul

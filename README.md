@@ -66,17 +66,6 @@ Python 负责本地模型推理（Embedding、Rerank、MolDet、MolScribe）、F
 
 ## 快速开始
 
-### 一键启动（推荐）
-
-```bash
-# Windows: 双击 start-dev.bat 或运行 PowerShell 脚本
-start-dev.bat        # 批处理脚本
-start-dev.ps1        # PowerShell 脚本（支持彩色输出和状态监控）
-
-# Linux/macOS
-./start-dev.sh
-```
-
 ### 手动启动
 
 ```bash
@@ -90,7 +79,7 @@ uv run uvicorn mbforge.server:app --host 127.0.0.1 --port 18792
 cd frontend && npm run dev
 ```
 
-> **注意**: 启动脚本会自动检测并等待服务就绪，然后打开浏览器访问 http://localhost:5173
+访问 http://localhost:5173
 
 ### 生产构建
 
@@ -118,20 +107,18 @@ MBForge/
 │   ├── parsers/                  #   Python 侧解析（MolScribe 推理引擎）
 │   │   └── molecule/
 │   │       └── molscribe_inference/  #   Swin Transformer + Transformer Decoder
-│   ├── utils/                    #   配置、常量、异常、日志
-│   └── cli.py                    #   CLI 入口（mbforge 命令）
+│   └── utils/                    #   配置、常量、辅助、日志
 │
 ├── src-tauri/src/                # Rust 代码（Tauri + Agent + Parser）
 │   ├── main.rs                   #   Tauri 入口，命令注册（commands::handler()）
 │   ├── lib.rs                    #   模块导出
-│   ├── commands/                 #   Tauri 命令层（18 模块）
+│   ├── commands/                 #   Tauri 命令层（17 模块）
 │   │   ├── mod.rs                #   命令聚合（handler()）
 │   │   ├── agent.rs              #   Agent 会话
 │   │   ├── classifier.rs         #   页面/文档分类
 │   │   ├── detection_cache.rs    #   检测缓存管理
 │   │   ├── extractor.rs          #   SMILES/活性/关联提取
 │   │   ├── file_ops.rs           #   文件操作
-│   │   ├── gesim.rs              #   GESim 计算
 │   │   ├── llm.rs                #   LLM 调用
 │   │   ├── mol_engine.rs         #   分子引擎状态
 │   │   ├── mol_store.rs          #   分子存储
@@ -191,25 +178,22 @@ MBForge/
 │   │   ├── App.tsx               #   路由入口
 │   │   ├── api/                  #   HTTP + Tauri 桥接
 │   │   │   ├── tauri-events.ts
-│   │   │   ├── tauri/            #   Tauri invoke 子模块（按域拆分）
-│   │   │   │   ├── _utils.ts     #     通用工具
-│   │   │   │   ├── agent.ts      #     Agent 会话
-│   │   │   │   ├── audit.ts      #     审计日志
-│   │   │   │   ├── detection_cache.ts # 检测缓存
-│   │   │   │   ├── download.ts   #     模型下载
-│   │   │   │   ├── environment.ts #    环境信息
-│   │   │   │   ├── file.ts       #     文件操作
-│   │   │   │   ├── gesim.ts      #     GESim 计算
-│   │   │   │   ├── kb.ts         #     知识库
-│   │   │   │   ├── molecule.ts   #     分子数据库
-│   │   │   │   ├── notes.ts      #     笔记管理
-│   │   │   │   ├── pdf.ts        #     PDF 操作
-│   │   │   │   ├── project.ts    #     项目管理
-│   │   │   │   ├── sar.ts        #     SAR 分析
-│   │   │   │   ├── settings.ts   #     设置管理
-│   │   │   │   └── text.ts       #     文本处理
-│   │   │   ├── settings.ts
-│   │   │   └── download.ts
+│   │   │   └── tauri/            #   Tauri invoke 子模块（按域拆分）
+│   │   │       ├── _utils.ts     #     通用工具
+│   │   │       ├── agent.ts      #     Agent 会话
+│   │   │       ├── audit.ts      #     审计日志
+│   │   │       ├── detection_cache.ts # 检测缓存
+│   │   │       ├── download.ts   #     模型下载
+│   │   │       ├── environment.ts #    环境信息
+│   │   │       ├── kb.ts         #     知识库
+│   │   │       ├── molecule.ts   #     分子数据库
+│   │   │       ├── notes.ts      #     笔记管理
+│   │   │       ├── pdf.ts        #     PDF 操作
+│   │   │       ├── project.ts    #     项目管理
+│   │   │       ├── sar.ts        #     SAR 分析
+│   │   │       ├── settings.ts   #     设置管理
+│   │   │       ├── sidecar.ts    #     Sidecar 管理
+│   │   │       └── text.ts       #     文本处理
 │   │   ├── components/           #   组件（页面级 + 原子 + 子模块）
 │   │   │   ├── Chat.tsx          #   对话界面
 │   │   │   ├── MoleculeLibrary.tsx
@@ -285,7 +269,6 @@ uv run ruff check src/ && uv run ruff format src/ --check
 | Agent 规范 + 架构 | [AGENTS.md](AGENTS.md) | AI 编码助手操作手册 |
 | 编码指南 | [CLAUDE.md](CLAUDE.md) | Claude 上下文 + 架构速查 |
 | **文档治理规范** | [`.claude/documentation-governance.md`](.claude/documentation-governance.md) | 描述文件分工与回刷机制 |
-| 代码逻辑树 | [CODEMAP.md](CODEMAP.md) | 最详细模块清单 |
 | E-SMILES 规范 | [docs/esmiles-spec.md](docs/esmiles-spec.md) | 分子表示规范 |
 | MoleCode 规范 | [docs/molecode-spec.md](docs/molecode-spec.md) | 图语法规范 |
 | 技术栈 | [docs/TECH_STACK.md](docs/TECH_STACK.md) | 依赖选型详情 |

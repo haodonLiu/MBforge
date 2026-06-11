@@ -39,7 +39,7 @@ run_verify() {
     else
         warn "LiteParse (PDFium) — 未安装（离线扫描 PDF 解析回退）"
         echo -e "  ${DIM}需要时手动下载 PDFium 到 vendor/pdfium/release/${NC}"
-        echo -e "  ${DIM}https://github.com/bblanchon/pdfium-binaries/releases${NC}"
+        echo -e "  ${DIM}https://github.com/run-llama/pdfium-binaries/releases/latest${NC}"
     fi
 
     # MolDet GPU

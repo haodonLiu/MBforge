@@ -111,6 +111,8 @@ package-lock.json
 src-tauri/target/
 src-tauri/gen/
 src-tauri/vendor/pdfium/release/
+# PDFium 安装包缓存（setup.ps1 默认下载到此）
+pdfium-win-x64.tgz
 
 # ============================================================================
 # Vendored reference repos (ref/)

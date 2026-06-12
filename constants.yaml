@@ -13,7 +13,7 @@ app:
   author: "MBForge"
 
 project:
-  format_version: 1
+  format_version: 2
   meta_dir: ".mbforge"
 
 directories:

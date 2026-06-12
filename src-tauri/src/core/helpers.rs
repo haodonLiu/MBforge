@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use regex::Regex;
 use sha2::{Digest, Sha256};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -127,6 +128,27 @@ pub fn save_json<T: serde::Serialize>(
     ensure_dir(path.parent().unwrap_or(Path::new(".")))?;
     let json = serde_json::to_string_pretty(data)?;
     std::fs::write(path, json)?;
+    Ok(())
+}
+
+/// Atomically write `contents` to `path` using a temp file + fsync + rename.
+///
+/// Guarantees that either the old file remains, or the new file is fully
+/// persisted. The temp file is created in the same directory as `path` so
+/// `rename` is atomic on the same filesystem.
+pub fn atomic_write<P: AsRef<Path>>(path: P, contents: &[u8]) -> std::io::Result<()> {
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("tmp");
+    {
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(contents)?;
+        file.flush()?;
+        file.sync_all()?;
+    }
+    std::fs::rename(&tmp, path)?;
     Ok(())
 }
 

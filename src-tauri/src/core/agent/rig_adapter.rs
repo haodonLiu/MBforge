@@ -78,6 +78,10 @@ pub enum MbforgeProviderKind {
     OpenAICompatible,
     /// Anthropic Messages API (Claude)
     Anthropic,
+    /// DeepSeek (OpenAI-compatible at api.deepseek.com/v1)
+    DeepSeek,
+    /// Ollama 本地推理 (OpenAI-compatible at localhost:11434/v1)
+    Ollama,
 }
 
 impl MbforgeProviderKind {
@@ -85,6 +89,8 @@ impl MbforgeProviderKind {
         match self {
             Self::OpenAICompatible => "openai_compatible",
             Self::Anthropic => "anthropic",
+            Self::DeepSeek => "deepseek",
+            Self::Ollama => "ollama",
         }
     }
 }
@@ -141,6 +147,8 @@ impl MbforgeProviderConfig {
             .filter(|s| !s.trim().is_empty());
         let kind = match env_provider.as_deref() {
             Some("anthropic") => MbforgeProviderKind::Anthropic,
+            Some("deepseek") => MbforgeProviderKind::DeepSeek,
+            Some("ollama") => MbforgeProviderKind::Ollama,
             _ => MbforgeProviderKind::OpenAICompatible,
         };
         let env = |k: &str| std::env::var(k).ok().filter(|s| !s.trim().is_empty());
@@ -700,6 +708,8 @@ macro_rules! assemble_rig_tool_vec {
         tools.push(Box::new(ArxivTrending));
         tools.push(Box::new(PmcMetadata));
         tools.push(Box::new(PmcJson));
+        // ThinkTool：Anthropic 推荐的"思考工具"，让 agent 在复杂步骤前显式写下推理
+        tools.push(Box::new(rig_core::tools::ThinkTool));
         tools
     }};
 }

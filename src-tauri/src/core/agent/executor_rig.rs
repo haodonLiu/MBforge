@@ -322,7 +322,7 @@ impl Tool for SearchKbTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let top_k = args.top_k.unwrap_or(5) as usize;
-        match kb_src::native_search_knowledge_base(&self.project_root, &args.query, top_k) {
+        match kb_src::native_search_knowledge_base(&self.project_root, &args.query, top_k).await {
             Ok(results) => Ok(serde_json::to_string(&results)
                 .unwrap_or_else(|e| format!("Serialize error: {}", e))),
             Err(e) => Ok(format!("Search error: {}", e)),
@@ -515,7 +515,8 @@ impl Tool for MoleculeAnalysisTool {
             &self.project_root,
             &args.action,
             args.params,
-        ))
+        )
+        .await)
     }
 }
 

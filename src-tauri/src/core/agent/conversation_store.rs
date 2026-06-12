@@ -36,9 +36,10 @@
 //! columns) — flagged as a v2 follow-up.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use rusqlite::{params, Connection};
+use tokio::sync::Mutex;
 
 use rig_core::memory::{ConversationMemory, MemoryError};
 use rig_core::message::{AssistantContent, Message, UserContent};
@@ -121,8 +122,8 @@ impl SqliteConversationMemory {
     /// puts them before any real message — no need for a secondary
     /// `is_summary` sort key. Real messages get non-negative seqs
     /// from `COALESCE(MAX(seq), -1) + 1` in `append()`.
-    pub fn load_active(&self, cid: &str) -> Result<Vec<Message>, String> {
-        let conn = self.conn.lock().map_err(|e| format!("lock: {e}"))?;
+    pub async fn load_active(&self, cid: &str) -> Result<Vec<Message>, String> {
+        let conn = self.conn.lock().await;
         let mut stmt = conn
             .prepare(
                 "SELECT seq, role, content, is_summary FROM conversation_messages \
@@ -167,11 +168,11 @@ impl SqliteConversationMemory {
 
     /// Append `msgs` to the tail of `cid`'s log. Seq is assigned by
     /// `COALESCE((SELECT MAX(seq)+1 FROM ...), 0)`.
-    pub fn append(&self, cid: &str, msgs: &[Message]) -> Result<(), String> {
+    pub async fn append(&self, cid: &str, msgs: &[Message]) -> Result<(), String> {
         if msgs.is_empty() {
             return Ok(());
         }
-        let conn = self.conn.lock().map_err(|e| format!("lock: {e}"))?;
+        let conn = self.conn.lock().await;
         let tx = conn.unchecked_transaction().map_err(|e| format!("tx: {e}"))?;
         let now = crate::core::helpers::now_rfc3339();
         for m in msgs {
@@ -195,8 +196,8 @@ impl SqliteConversationMemory {
     }
 
     /// Wipe all rows for `cid`. Used by `agent_clear`.
-    pub fn clear(&self, cid: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| format!("lock: {e}"))?;
+    pub async fn clear(&self, cid: &str) -> Result<(), String> {
+        let conn = self.conn.lock().await;
         conn.execute(
             "DELETE FROM conversation_messages WHERE cid = ?1",
             params![cid],
@@ -207,8 +208,8 @@ impl SqliteConversationMemory {
 
     /// Frontend-facing history endpoint (replaces
     /// `LayeredContext::get_history_messages`).
-    pub fn list_for_session(&self, cid: &str) -> Result<Vec<HistoryItem>, String> {
-        let conn = self.conn.lock().map_err(|e| format!("lock: {e}"))?;
+    pub async fn list_for_session(&self, cid: &str) -> Result<Vec<HistoryItem>, String> {
+        let conn = self.conn.lock().await;
         let mut stmt = conn
             .prepare(
                 "SELECT seq, role, content, is_summary, created_at FROM conversation_messages \
@@ -240,8 +241,8 @@ impl SqliteConversationMemory {
     /// calls (when `count` is small) actually evict the next
     /// oldest *non-evicted* rows instead of re-evicting rows that
     /// were already evicted by an earlier call.
-    pub fn mark_evicted(&self, cid: &str, count: i64) -> Result<Vec<Message>, String> {
-        let conn = self.conn.lock().map_err(|e| format!("lock: {e}"))?;
+    pub async fn mark_evicted(&self, cid: &str, count: i64) -> Result<Vec<Message>, String> {
+        let conn = self.conn.lock().await;
         // Snapshot before mutating — the demotion hook wants the
         // evicted messages as `Vec<Message>`.
         let mut stmt = conn
@@ -285,13 +286,13 @@ impl SqliteConversationMemory {
     /// at the front. If a previous summary already exists, it is
     /// deleted first — the active summary is always the most recent
     /// one.
-    pub fn replace_with_compaction(
+    pub async fn replace_with_compaction(
         &self,
         cid: &str,
         summary: &str,
         evict_before: i64,
     ) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| format!("lock: {e}"))?;
+        let conn = self.conn.lock().await;
         let now = crate::core::helpers::now_rfc3339();
         // Evict old rows first (no-op if the compactor already marked
         // them via mark_evicted).
@@ -320,8 +321,8 @@ impl SqliteConversationMemory {
 
     /// Internal: for tests / debug.
     #[allow(dead_code)]
-    pub fn raw_count(&self, cid: &str) -> Result<i64, String> {
-        let conn = self.conn.lock().map_err(|e| format!("lock: {e}"))?;
+    pub async fn raw_count(&self, cid: &str) -> Result<i64, String> {
+        let conn = self.conn.lock().await;
         conn.query_row(
             "SELECT COUNT(*) FROM conversation_messages WHERE cid = ?1",
             params![cid],
@@ -331,8 +332,8 @@ impl SqliteConversationMemory {
     }
 
     #[allow(dead_code)]
-    pub fn table_exists(&self) -> Result<bool, String> {
-        let conn = self.conn.lock().map_err(|e| format!("lock: {e}"))?;
+    pub async fn table_exists(&self) -> Result<bool, String> {
+        let conn = self.conn.lock().await;
         conn.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='conversation_messages'",
             [],
@@ -382,6 +383,7 @@ impl ConversationMemory for SqliteConversationMemory {
     ) -> WasmBoxedFuture<'a, Result<Vec<Message>, MemoryError>> {
         Box::pin(async move {
             self.load_active(conversation_id)
+                .await
                 .map_err(MemoryError::backend)
         })
     }
@@ -393,6 +395,7 @@ impl ConversationMemory for SqliteConversationMemory {
     ) -> WasmBoxedFuture<'a, Result<(), MemoryError>> {
         Box::pin(async move {
             self.append(conversation_id, &messages)
+                .await
                 .map_err(MemoryError::backend)
         })
     }
@@ -402,7 +405,9 @@ impl ConversationMemory for SqliteConversationMemory {
         conversation_id: &'a str,
     ) -> WasmBoxedFuture<'a, Result<(), MemoryError>> {
         Box::pin(async move {
-            self.clear(conversation_id).map_err(MemoryError::backend)
+            self.clear(conversation_id)
+                .await
+                .map_err(MemoryError::backend)
         })
     }
 }
@@ -418,8 +423,8 @@ mod tests {
         (dir, m)
     }
 
-    #[test]
-    fn test_round_trip() {
+    #[tokio::test]
+    async fn test_round_trip() {
         let (_dir, m) = open_test();
         let cid = "thread-1";
         m.append(
@@ -430,28 +435,30 @@ mod tests {
                 Message::user("how are you?"),
             ],
         )
+        .await
         .unwrap();
-        let loaded = m.load_active(cid).unwrap();
+        let loaded = m.load_active(cid).await.unwrap();
         assert_eq!(loaded.len(), 3);
         // Round-trip loses structural rig types but text is preserved.
         let texts: Vec<String> = loaded.iter().map(text_of).collect();
         assert_eq!(texts, vec!["hi", "hello", "how are you?"]);
     }
 
-    #[test]
-    fn test_clear() {
+    #[tokio::test]
+    async fn test_clear() {
         let (_dir, m) = open_test();
         let cid = "thread-1";
         m.append(cid, &[Message::user("x"), Message::assistant("y")])
+            .await
             .unwrap();
-        assert_eq!(m.raw_count(cid).unwrap(), 2);
-        m.clear(cid).unwrap();
-        assert_eq!(m.raw_count(cid).unwrap(), 0);
-        assert!(m.load_active(cid).unwrap().is_empty());
+        assert_eq!(m.raw_count(cid).await.unwrap(), 2);
+        m.clear(cid).await.unwrap();
+        assert_eq!(m.raw_count(cid).await.unwrap(), 0);
+        assert!(m.load_active(cid).await.unwrap().is_empty());
     }
 
-    #[test]
-    fn test_compaction_replaces_evicted() {
+    #[tokio::test]
+    async fn test_compaction_replaces_evicted() {
         let (_dir, m) = open_test();
         let cid = "thread-1";
         // Append 6 messages, then mark the first 2 as evicted and
@@ -465,12 +472,14 @@ mod tests {
                 }
             })
             .collect();
-        m.append(cid, &msgs).unwrap();
+        m.append(cid, &msgs).await.unwrap();
         // Evict everything with seq < 2 (i.e. seq 0, 1).
-        let _ = m.mark_evicted(cid, 2).unwrap();
-        m.replace_with_compaction(cid, "earlier: u0 -> a1", 2).unwrap();
+        let _ = m.mark_evicted(cid, 2).await.unwrap();
+        m.replace_with_compaction(cid, "earlier: u0 -> a1", 2)
+            .await
+            .unwrap();
 
-        let loaded = m.load_active(cid).unwrap();
+        let loaded = m.load_active(cid).await.unwrap();
         // First loaded message should be the summary (is_summary=1),
         // then the 4 remaining (seq 2..5).
         assert_eq!(loaded.len(), 5, "summary + 4 active = 5");
@@ -480,17 +489,17 @@ mod tests {
         assert!(first_text.contains("earlier: u0 -> a1"));
     }
 
-    #[test]
-    fn test_isolation_between_conversations() {
+    #[tokio::test]
+    async fn test_isolation_between_conversations() {
         let (_dir, m) = open_test();
-        m.append("a", &[Message::user("hi a")]).unwrap();
-        m.append("b", &[Message::user("hi b")]).unwrap();
-        assert_eq!(m.load_active("a").unwrap().len(), 1);
-        assert_eq!(m.load_active("b").unwrap().len(), 1);
+        m.append("a", &[Message::user("hi a")]).await.unwrap();
+        m.append("b", &[Message::user("hi b")]).await.unwrap();
+        assert_eq!(m.load_active("a").await.unwrap().len(), 1);
+        assert_eq!(m.load_active("b").await.unwrap().len(), 1);
     }
 
-    #[test]
-    fn test_list_for_session() {
+    #[tokio::test]
+    async fn test_list_for_session() {
         let (_dir, m) = open_test();
         m.append(
             "thread-1",
@@ -500,28 +509,29 @@ mod tests {
                 Message::user("u2"),
             ],
         )
+        .await
         .unwrap();
-        let list = m.list_for_session("thread-1").unwrap();
+        let list = m.list_for_session("thread-1").await.unwrap();
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].role, "user");
         assert_eq!(list[0].content, "u0");
         assert!(!list[0].is_summary);
     }
 
-    #[test]
-    fn test_open_idempotent() {
+    #[tokio::test]
+    async fn test_open_idempotent() {
         let dir = tempdir().unwrap();
         let _ = SqliteConversationMemory::open(dir.path()).unwrap();
         // Second open on the same path: must succeed and share schema.
         let m = SqliteConversationMemory::open(dir.path()).unwrap();
-        assert!(m.table_exists().unwrap());
+        assert!(m.table_exists().await.unwrap());
         assert_eq!(m.db_path(), dir.path().join(".mbforge/conversations.db"));
     }
 
-    #[test]
-    fn test_empty_append_is_noop() {
+    #[tokio::test]
+    async fn test_empty_append_is_noop() {
         let (_dir, m) = open_test();
-        m.append("c", &[]).unwrap();
-        assert_eq!(m.raw_count("c").unwrap(), 0);
+        m.append("c", &[]).await.unwrap();
+        assert_eq!(m.raw_count("c").await.unwrap(), 0);
     }
 }

@@ -13,12 +13,12 @@
 // `executor.execute` 必须包成 async（见 [Track C-C11] 修复）。
 // 这里先转成 sync-with-handle 的形式，配合 executor 层的 spawn_blocking。
 
-pub fn native_search_knowledge_base(
+pub async fn native_search_knowledge_base(
     root: &str,
     query: &str,
     top_k: usize,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let (results, _) = crate::core::document::knowledge_base::search_with_cache(root, query, top_k).map_err(|e| e.to_string())?;
+    let (results, _) = crate::core::document::knowledge_base::search_with_cache(root, query, top_k).await.map_err(|e| e.to_string())?;
     Ok(results)
 }
 

@@ -78,6 +78,175 @@ pub fn classify_pdf(path: String) -> Result<PdfClassification, String> {
 }
 
 // =========================================================================
+// DocumentProject inspector + OCR confirmation
+// =========================================================================
+
+/// 快速检查 PDF 类型并写入 DocumentProject 状态。
+///
+/// 返回与 `classify_pdf` 相同的结构，但会：
+/// 1. 从 `doc_id` 解析出 `projects/<doc_id>/source.pdf` 路径；
+/// 2. 调用 `pdf_inspector::detect_pdf` 判定类型；
+/// 3. 将结果写入 `projects/<doc_id>/cache/inspector.json`；
+/// 4. 更新 DocumentProject / Project index 的 `inspector_status` 与 `ocr_status`。
+#[tauri::command]
+pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassification, String> {
+    use crate::core::helpers::{clean_path, save_json};
+    use crate::core::project::document_project::DocumentProject;
+    use crate::core::project::project::Project;
+
+    let root = std::path::PathBuf::from(clean_path(&project_root));
+
+    let project = Project::open(&root)
+        .ok_or_else(|| format!("Cannot open project at {}", project_root))?;
+    let source_path = project
+        .get_document_source_path(&doc_id)
+        .ok_or_else(|| format!("Document {} source path not found", doc_id))?;
+
+    let result = pdf_inspector::detect_pdf(source_path.to_string_lossy().as_ref()).map_err(|e| {
+        log::error!("inspect_pdf failed for {}: {}", source_path.display(), e);
+        // Best-effort: mark inspector status as error
+        if let Some(mut dp) = DocumentProject::load(&root, &doc_id) {
+            dp.set_inspector_status("error");
+        }
+        if let Some(mut proj) = Project::open(&root) {
+            proj.set_document_status(&doc_id, "inspector_status", "error");
+        }
+        format!("pdf-inspector detect failed: {}", e)
+    })?;
+
+    let pdf_type_str = match result.pdf_type {
+        pdf_inspector::PdfType::TextBased => "TextBased",
+        pdf_inspector::PdfType::Scanned => "Scanned",
+        pdf_inspector::PdfType::Mixed => "Mixed",
+        pdf_inspector::PdfType::ImageBased => "ImageBased",
+    };
+
+    // Persist inspector result to the DocumentProject cache.
+    let inspector_json = serde_json::json!({
+        "pdf_type": pdf_type_str,
+        "confidence": result.confidence,
+        "page_count": result.page_count,
+        "pages_needing_ocr": result.pages_needing_ocr,
+        "has_complex_layout": result.layout.is_complex,
+        "has_encoding_issues": result.has_encoding_issues,
+        "title": result.title,
+        "inspected_at": chrono::Utc::now().to_rfc3339(),
+    });
+    if let Some(mut dp) = DocumentProject::load(&root, &doc_id) {
+        let paths = dp.paths();
+        let _ = std::fs::create_dir_all(&paths.cache_dir);
+        let inspector_path = paths.cache_dir.join("inspector.json");
+        let _ = save_json(&inspector_path, &inspector_json);
+
+        // Update DocumentProject statuses.
+        dp.set_inspector_status(pdf_type_str.to_lowercase().as_str());
+        match result.pdf_type {
+            pdf_inspector::PdfType::TextBased => {
+                dp.set_text_status("pending");
+                dp.set_ocr_status("not_needed");
+            }
+            _ => {
+                dp.set_text_status("pending");
+                dp.set_ocr_status("pending_confirmation");
+            }
+        }
+    }
+
+    // Also mirror to the lightweight Project index.
+    if let Some(mut proj) = Project::open(&root) {
+        proj.set_document_status(&doc_id, "inspector_status", &pdf_type_str.to_lowercase());
+        let ocr_status = match result.pdf_type {
+            pdf_inspector::PdfType::TextBased => "not_needed",
+            _ => "pending_confirmation",
+        };
+        proj.set_document_status(&doc_id, "ocr_status", ocr_status);
+    }
+
+    log::info!(
+        "inspect_pdf: doc_id={} type={} pages={} ocr={:?}",
+        doc_id,
+        pdf_type_str,
+        result.page_count,
+        result.pages_needing_ocr
+    );
+
+    Ok(PdfClassification {
+        pdf_type: pdf_type_str.to_string(),
+        confidence: result.confidence as f64,
+        page_count: result.page_count as usize,
+        pages_needing_ocr: result.pages_needing_ocr.iter().map(|&p| p as usize).collect(),
+        text_density_avg: 0.0,
+        has_complex_layout: result.layout.is_complex,
+        has_encoding_issues: result.has_encoding_issues,
+        title: result.title,
+    })
+}
+
+/// 用户确认/跳过扫描件 OCR。
+///
+/// - `confirm = true`：将 OCR 状态设为 `pending`，并把任务加入 ingest queue。
+/// - `confirm = false`：将 OCR 状态设为 `skipped`，后续只处理可提取文本。
+#[tauri::command]
+pub fn confirm_ocr(
+    project_root: String,
+    doc_id: String,
+    confirm: bool,
+) -> Result<serde_json::Value, String> {
+    use crate::core::helpers::clean_path;
+    use crate::core::project::document_project::DocumentProject;
+    use crate::core::project::project::Project;
+
+    let root = std::path::PathBuf::from(clean_path(&project_root));
+
+    let project = Project::open(&root)
+        .ok_or_else(|| format!("Cannot open project at {}", project_root))?;
+    let source_path = project
+        .get_document_source_path(&doc_id)
+        .ok_or_else(|| format!("Document {} source path not found", doc_id))?;
+
+    let status = if confirm { "pending" } else { "skipped" };
+
+    // Update DocumentProject
+    if let Some(mut dp) = DocumentProject::load(&root, &doc_id) {
+        dp.set_ocr_status(status);
+    }
+
+    // Update Project index
+    if let Some(mut proj) = Project::open(&root) {
+        proj.set_document_status(&doc_id, "ocr_status", status);
+    }
+
+    // Enqueue OCR task if confirmed (worker will consume it in Phase 3).
+    let task_id = if confirm {
+        let q = crate::core::document::ingest_queue::IngestQueue::new(&root)
+            .map_err(|e| format!("Failed to open ingest queue: {}", e))?;
+        q.enqueue_with_stage(
+            source_path.to_string_lossy().to_string(),
+            doc_id.clone(),
+            "ocr",
+        )
+        .map_err(|e| format!("Failed to enqueue OCR task: {}", e))?
+    } else {
+        String::new()
+    };
+
+    log::info!(
+        "confirm_ocr: doc_id={} confirm={} status={} task_id={}",
+        doc_id,
+        confirm,
+        status,
+        if task_id.is_empty() { "none" } else { &task_id }
+    );
+
+    Ok(serde_json::json!({
+        "success": true,
+        "doc_id": doc_id,
+        "ocr_status": status,
+        "task_id": task_id,
+    }))
+}
+
+// =========================================================================
 // Task 3: extract_text
 // =========================================================================
 
@@ -329,8 +498,59 @@ pub async fn get_document_ocr_layout(
         }
     };
 
-    // 1. 尝试从缓存读取
+    // 1. 尝试从缓存读取。
+    //    新布局优先读取 projects/<doc_id>/cache/ocr/ocr.json，再回退到旧版
+    //    .mbforge/ocr-cache/<hash>.json。
     if let Some(ref root) = project_root {
+        // 1a. DocumentProject 新路径
+        if let Some(ref id) = doc_id {
+            let new_cache = root
+                .join(crate::core::config::constants::PROJECTS_DIR)
+                .join(id)
+                .join("cache")
+                .join("ocr")
+                .join("ocr.json");
+            if new_cache.exists() {
+                if let Ok(content) = std::fs::read_to_string(&new_cache) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                        let text = val["text"].as_str().unwrap_or("").to_string();
+                        let page_count = val["page_count"]
+                            .as_u64()
+                            .map(|n| n as usize)
+                            .unwrap_or_else(|| text.lines().count().max(1));
+                        let blocks: Vec<OcrBlock> = val["ocr_blocks"]
+                            .as_array()
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        let parser = val["parser"]
+                            .as_str()
+                            .unwrap_or("unknown")
+                            .to_string();
+                        if !blocks.is_empty() {
+                            log::info!(
+                                "OCR layout cache HIT (new) for {}: {} blocks",
+                                path,
+                                blocks.len()
+                            );
+                            update_status("completed");
+                            return Ok(OcrLayoutResult {
+                                path: path.clone(),
+                                parser,
+                                page_count,
+                                blocks,
+                                from_cache: true,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 1b. 旧版按 hash 的缓存
         let cache_dir = root
             .join(crate::core::constants::PROJECT_META_DIR)
             .join("ocr-cache");
@@ -372,7 +592,7 @@ pub async fn get_document_ocr_layout(
     log::info!("OCR layout cache MISS for {}, running extraction...", path);
     update_status("processing");
 
-    let result = crate::parsers::pipeline::classify_and_extract(&path).await;
+    let result = crate::parsers::pipeline::classify_and_extract(&path, true).await;
 
     match result {
         Ok(classified) => {
@@ -476,6 +696,13 @@ pub fn ingest_stats(project_root: String) -> Result<QueueStats, String> {
 pub fn ingest_cancel(project_root: String, task_id: String) -> Result<(), String> {
     let q = open_ingest_queue(&project_root)?;
     q.cancel(&task_id).map_err(|e| e.to_string())
+}
+
+/// 重试一个失败任务。
+#[tauri::command]
+pub fn ingest_retry(project_root: String, task_id: String) -> Result<bool, String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.retry(&task_id).map_err(|e| e.to_string())
 }
 
 /// 取消所有 pending 任务。返回被取消的数量。

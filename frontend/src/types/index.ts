@@ -14,11 +14,21 @@ export interface Project {
 export interface DocumentEntry {
   doc_id: string
   path: string
+  source_path?: string | null
   doc_type: string
   title: string
   indexed: boolean
+  folder?: string
+  added_at?: string
+  hash?: string
+  mtime?: number
+  inspector_status?: string
+  text_status?: string
   ocr_status?: string
   ocr_hash?: string
+  moldet_status?: string
+  moldet_pages?: number[]
+  index_status?: string
 }
 
 export interface SearchResult {
@@ -73,6 +83,7 @@ export interface ChatMessage {
 /** MolDet 检测结果（与后端 ExtractionResult 对齐） */
 export interface ExtractionResult {
   esmiles: string
+  smiles?: string
   name: string
   source: 'image' | 'text' | 'manual'
   moldet_conf: number
@@ -82,7 +93,8 @@ export interface ExtractionResult {
   page_idx: number | null
   context_text: string
   mol_img_path: string | null
-  status: 'pending' | 'confirmed' | 'rejected'
+  status: 'pending' | 'confirmed' | 'rejected' | 'done'
+  is_quick_scan?: boolean
   properties: Record<string, unknown>
 }
 

@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import { useState } from 'react'
 import type { DocumentEntry } from '../../types'
 import type { ScanWarning } from '../../api/tauri'
 import PageContainer from '../ui/PageContainer'
@@ -10,11 +11,12 @@ import Caption from '../ui/Caption'
 import Card from '../ui/Card'
 import IconContainer from '../ui/IconContainer'
 import AlertBanner from '../ui/AlertBanner'
-import { FolderIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon } from '../icons'
+import { FolderIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon, SearchIcon, QueueIcon } from '../icons'
 import ScanWarningsPanel from './ScanWarningsPanel'
 import ProjectStats from './ProjectStats'
 import FolderLayoutCard from './FolderLayoutCard'
 import DocumentList from './DocumentList'
+import ProcessingQueue from './ProcessingQueue'
 
 interface IndexProgress {
   file: string
@@ -29,14 +31,19 @@ interface Props {
   isIndexing: boolean
   indexProgress: IndexProgress | null
   indexResult: { indexed: number; sections: number } | null
+  isMoldetScanning: boolean
+  moldetProgress: { current: number; total: number } | null
+  moldetResult: { scanned: number; withMolecules: number } | null
   error: string
   scanWarnings: ScanWarning[]
   onScan: () => void
   onIndex: () => void
+  onMoldetScan: () => void
   onOpenFile: (doc: DocumentEntry) => void
   onDismissError: () => void
   onDismissWarnings: () => void
   onSettingsOpen: () => void
+  onRefreshDocs?: () => void
 }
 
 export default function ProjectDashboard({
@@ -46,16 +53,22 @@ export default function ProjectDashboard({
   isIndexing,
   indexProgress,
   indexResult,
+  isMoldetScanning,
+  moldetProgress,
+  moldetResult,
   error,
   scanWarnings,
   onScan,
   onIndex,
+  onMoldetScan,
   onOpenFile,
   onDismissError,
   onDismissWarnings,
   onSettingsOpen,
+  onRefreshDocs,
 }: Props) {
   const projectName = projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目'
+  const [showQueue, setShowQueue] = useState(false)
 
   return (
     <PageContainer>
@@ -79,7 +92,7 @@ export default function ProjectDashboard({
             size="md"
             icon={<ExternalLinkIcon size={14} />}
             onClick={onScan}
-            disabled={!projectRoot || isLoading || isIndexing}
+            disabled={!projectRoot || isLoading || isIndexing || isMoldetScanning}
             loading={isLoading}
           >
             {isLoading ? '扫描中...' : '扫描文件'}
@@ -89,10 +102,20 @@ export default function ProjectDashboard({
             size="md"
             icon={<FlaskIcon size={14} />}
             onClick={onIndex}
-            disabled={!projectRoot || isLoading || isIndexing}
+            disabled={!projectRoot || isLoading || isIndexing || isMoldetScanning}
             loading={isIndexing}
           >
             {isIndexing ? '索引中...' : '索引文件'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            icon={<SearchIcon size={14} />}
+            onClick={onMoldetScan}
+            disabled={!projectRoot || isLoading || isIndexing || isMoldetScanning}
+            loading={isMoldetScanning}
+          >
+            {isMoldetScanning ? '扫描分子中...' : '快速分子扫描'}
           </Button>
           <Button
             variant="secondary"
@@ -102,12 +125,50 @@ export default function ProjectDashboard({
           >
             项目设置
           </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            icon={<QueueIcon size={14} />}
+            onClick={() => setShowQueue((s) => !s)}
+          >
+            {showQueue ? '隐藏队列' : '处理队列'}
+          </Button>
         </div>
       </div>
+
+      {showQueue && (
+        <ProcessingQueue projectRoot={projectRoot} />
+      )}
 
       <ProjectStats docs={docs} indexResult={indexResult} />
 
       <FolderLayoutCard projectRoot={projectRoot} />
+
+      {isMoldetScanning && moldetProgress && (
+        <Card padding="14px 18px" className="project-index-progress">
+          <div className="project-index-progress-header">
+            <BodyText size="sm" className="project-index-progress-title">
+              正在快速分子扫描 {moldetProgress.current}/{moldetProgress.total}
+            </BodyText>
+          </div>
+          <div className="download-progress-bar">
+            <motion.div
+              className="download-progress-fill shimmer"
+              style={{ width: `${moldetProgress.total > 0 ? Math.round(moldetProgress.current * 100 / moldetProgress.total) : 0}%` }}
+              animate={{ backgroundPosition: ['0% 0%', '100% 0%'] }}
+              transition={{ repeat: Infinity, duration: 1.2, ease: 'linear' }}
+            />
+          </div>
+        </Card>
+      )}
+
+      {moldetResult && (
+        <Card padding="12px 16px" className="project-index-success">
+          <BodyText size="sm">
+            快速分子扫描完成：已扫描 {moldetResult.scanned} 个 PDF，{moldetResult.withMolecules} 个文档含分子
+          </BodyText>
+        </Card>
+      )}
 
       {isIndexing && indexProgress && (
         <Card padding="14px 18px" className="project-index-progress">
@@ -145,6 +206,7 @@ export default function ProjectDashboard({
         isLoading={isLoading}
         projectRoot={projectRoot}
         onOpenFile={onOpenFile}
+        onRefreshDocs={onRefreshDocs}
       />
     </PageContainer>
   )

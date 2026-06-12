@@ -62,6 +62,7 @@ export default function PdfContinuousViewer({
     setPages([])
     setVisiblePages(new Set())
     renderedPages.current.clear()
+    canvasRefs.current.clear()
 
     getCachedDoc(url)
       .then(async (doc) => {
@@ -86,43 +87,48 @@ export default function PdfContinuousViewer({
         if (!cancelled) setLoading(false)
       })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      renderedPages.current.clear()
+      canvasRefs.current.clear()
+    }
   }, [url, scale])
+
+  const renderPageToCanvas = useCallback(async (pageNum: number, canvas: HTMLCanvasElement) => {
+    const doc = pdfDocRef.current
+    if (!doc || renderedPages.current.has(pageNum)) return
+    renderedPages.current.add(pageNum)
+    try {
+      const page = await doc.getPage(pageNum)
+      const dpr = window.devicePixelRatio || 1
+      const viewport = page.getViewport({ scale: scale * dpr })
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+      canvas.style.width = `${viewport.width / dpr}px`
+      canvas.style.height = `${viewport.height / dpr}px`
+      ctx.clearRect(0, 0, viewport.width, viewport.height)
+      ctx.scale(dpr, dpr)
+      await page.render({
+        canvasContext: ctx,
+        viewport: page.getViewport({ scale }),
+      }).promise
+    } catch (e) {
+      console.error(`Render page ${pageNum} failed:`, e)
+      renderedPages.current.delete(pageNum)
+    }
+  }, [scale])
 
   // Render visible pages
   useEffect(() => {
-    const doc = pdfDocRef.current
-    if (!doc) return
-
-    visiblePages.forEach(async (pageNum) => {
-      if (renderedPages.current.has(pageNum)) return
-      renderedPages.current.add(pageNum)
-
+    visiblePages.forEach((pageNum) => {
       const canvas = canvasRefs.current.get(pageNum)
       if (!canvas) return
-
-      try {
-        const page = await doc.getPage(pageNum)
-        const dpr = window.devicePixelRatio || 1
-        const viewport = page.getViewport({ scale: scale * dpr })
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return
-
-        canvas.width = viewport.width
-        canvas.height = viewport.height
-        canvas.style.width = `${viewport.width / dpr}px`
-        canvas.style.height = `${viewport.height / dpr}px`
-        ctx.clearRect(0, 0, viewport.width, viewport.height)
-        ctx.scale(dpr, dpr)
-        await page.render({
-          canvasContext: ctx,
-          viewport: page.getViewport({ scale }),
-        }).promise
-      } catch (e) {
-        console.error(`Render page ${pageNum} failed:`, e)
-      }
+      renderPageToCanvas(pageNum, canvas)
     })
-  }, [visiblePages, scale])
+  }, [visiblePages, renderPageToCanvas])
 
   // IntersectionObserver to track visible pages
   useEffect(() => {
@@ -158,11 +164,16 @@ export default function PdfContinuousViewer({
   const setCanvasRef = useCallback((pageNum: number, el: HTMLCanvasElement | null) => {
     if (el) {
       canvasRefs.current.set(pageNum, el)
+      // 重新挂载的 canvas 必须重新渲染，避免残留默认尺寸
+      renderedPages.current.delete(pageNum)
+      if (visiblePages.has(pageNum)) {
+        renderPageToCanvas(pageNum, el)
+      }
     } else {
       canvasRefs.current.delete(pageNum)
       renderedPages.current.delete(pageNum)
     }
-  }, [])
+  }, [visiblePages, renderPageToCanvas])
 
   if (loading) {
     return (

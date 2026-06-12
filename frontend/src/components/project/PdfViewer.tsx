@@ -53,6 +53,7 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
         pdfOcrSummary={v.pdfOcrSummary}
         isDetectMode={v.isDetectMode}
         isDetecting={v.isDetecting}
+        canDetect={v.canDetect}
         onDetect={v.handleDetectPage}
         currentDetectionsCount={v.currentDetections.length}
       />
@@ -88,6 +89,7 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
                   onPageRendered={v.handlePageRendered}
                   onImageReady={v.handleImageReady}
                   onTextContent={v.handleTextContent}
+                  onTextLayerClick={() => v.setShowTextPanel(true)}
                   onPageCount={v.handlePageCount}
                   style={{
                     background: '#fff',
@@ -104,6 +106,8 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
                   scale={v.pageInfo.scale}
                   selectedIndex={v.selectedDetection ?? undefined}
                   onSelect={v.setSelectedDetection}
+                  onRecognize={v.handleRecognizePage}
+                  isRecognizing={v.isDetecting}
                 />
               )}
               {v.isOcrMode && v.pageInfo && v.ocrBlocks.length > 0 && (

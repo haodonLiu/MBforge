@@ -14,6 +14,8 @@ export const EVT = {
   AgentStreamDone: 'agent-stream-done',
   KbSearchChunk: 'kb-search-chunk',
   ModelDownloadProgress: 'model-download-progress',
+  IngestProgress: 'ingest-progress',
+  IngestQueueUpdate: 'ingest-queue-update',
 } as const
 
 export type TauriEventName = (typeof EVT)[keyof typeof EVT]

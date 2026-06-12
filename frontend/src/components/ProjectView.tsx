@@ -1,6 +1,7 @@
 import { EVT } from '../api/tauri-events'
 import { useState, useEffect } from 'react'
 import { listProjectDocuments, scanProjectFiles, indexProjectRust, type IndexResult, type ScanWarning } from '../api/tauri'
+import { batchQuickMoldetScan } from '../api/tauri/detection_cache'
 import { listen } from '@tauri-apps/api/event'
 import type { DocumentEntry } from '../types'
 import { useAppContext } from '../context/AppContext'
@@ -24,6 +25,9 @@ export default function ProjectView({ onSettingsOpen }: { onSettingsOpen: () => 
   const [selectedPdf, setSelectedPdf] = useState<DocumentEntry | null>(null)
   const [selectedMarkdown, setSelectedMarkdown] = useState<DocumentEntry | null>(null)
   const [pdfInitialMode, setPdfInitialMode] = useState<'read' | 'detect' | 'ocr'>('read')
+  const [isMoldetScanning, setIsMoldetScanning] = useState(false)
+  const [moldetProgress, setMoldetProgress] = useState<{ current: number; total: number } | null>(null)
+  const [moldetResult, setMoldetResult] = useState<{ scanned: number; withMolecules: number } | null>(null)
 
   const loadDocs = async () => {
     if (!projectRoot) return
@@ -190,6 +194,43 @@ export default function ProjectView({ onSettingsOpen }: { onSettingsOpen: () => 
     loadDocs()
   }
 
+  const handleMoldetScan = async () => {
+    if (!projectRoot) {
+      setError('项目根路径未设置，请先打开一个项目')
+      return
+    }
+    const pdfDocs = docs.filter(d => d.doc_type === 'pdf')
+    if (pdfDocs.length === 0) {
+      showToast('项目中没有 PDF 文件', 'info')
+      return
+    }
+    setIsMoldetScanning(true)
+    setMoldetResult(null)
+    setMoldetProgress({ current: 0, total: pdfDocs.length })
+    setError('')
+    try {
+      const resp = await batchQuickMoldetScan(projectRoot, pdfDocs.map(d => d.doc_id))
+      const withMolecules = resp.results.filter(r => r.pages_with_molecules.length > 0).length
+      setMoldetResult({ scanned: resp.processed, withMolecules })
+      if (resp.errors.length > 0) {
+        console.warn('MoldDet scan errors:', resp.errors)
+      }
+      loadDocs()
+      showToast(
+        `快速扫描完成：${resp.processed} 个 PDF，${withMolecules} 个含分子`,
+        resp.errors.length > 0 ? 'warning' : 'success',
+      )
+    } catch (e) {
+      const msg = String(e)
+      console.error('[ProjectView] MoldDet scan error:', msg)
+      setError(`分子扫描失败: ${msg}`)
+      showToast('分子扫描失败', 'error')
+    } finally {
+      setIsMoldetScanning(false)
+      setMoldetProgress(null)
+    }
+  }
+
   if (selectedPdf) {
     return <PdfViewer doc={selectedPdf} projectRoot={projectRoot} onClose={handleCloseFile} initialMode={pdfInitialMode} />
   }
@@ -212,14 +253,19 @@ export default function ProjectView({ onSettingsOpen }: { onSettingsOpen: () => 
       isIndexing={isIndexing}
       indexProgress={indexProgress}
       indexResult={indexResult}
+      isMoldetScanning={isMoldetScanning}
+      moldetProgress={moldetProgress}
+      moldetResult={moldetResult}
       error={error}
       scanWarnings={scanWarnings}
       onScan={handleScan}
       onIndex={handleIndex}
+      onMoldetScan={handleMoldetScan}
       onOpenFile={handleOpenFile}
       onDismissError={() => setError('')}
       onDismissWarnings={() => setScanWarnings([])}
       onSettingsOpen={onSettingsOpen}
+      onRefreshDocs={loadDocs}
     />
   )
 }

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { cachedExtractPage } from '../../../api/tauri/detection_cache'
+import { cachedExtractPage, getCachedPageDetections } from '../../../api/tauri/detection_cache'
 import { parsePdf, getDocumentOcrLayout } from '../../../api/tauri/pdf'
 import { showToast } from '../../../hooks/useToast'
 import { extractRoiText } from '../../../utils/roiText'
@@ -49,6 +49,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
   const currentTextItems = pageTextItems.get(currentPage) || []
   const currentTextTotal = currentTextItems.reduce((s, i) => s + i.str.length, 0)
   const hasTextLayer = currentTextTotal > 10
+  const canDetect = !!currentPageDataUrl && !!pageInfo && !pageDetections.has(currentPage)
 
   useEffect(() => {
     if (isDetectMode || isOcrMode) setScrollMode('single')
@@ -61,13 +62,14 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     const root = projectRoot
     if (!root) { setPdfLoading(false); return }
     const normalizePath = (p: string) => p.replace(/^\\\\\?\\/, '').replace(/^\?\//, '').replace(/\\/g, '/')
-    const absPath = doc.path.includes(':') || doc.path.startsWith('/')
-      ? normalizePath(doc.path)
-      : `${normalizePath(root).replace(/\/$/, '')}/${doc.path.replace(/\\/g, '/')}`
+    const pdfPath = doc.source_path || doc.path
+    const absPath = pdfPath.includes(':') || pdfPath.startsWith('/')
+      ? normalizePath(pdfPath)
+      : `${normalizePath(root).replace(/\/$/, '')}/${pdfPath.replace(/\\/g, '/')}`
     const url = convertFileSrc(absPath, 'mbforge')
     if (!cancelled) { setPdfUrl(url); setPdfLoading(false) }
     return () => { cancelled = true }
-  }, [doc.path, projectRoot])
+  }, [doc.path, doc.source_path, projectRoot])
 
   useEffect(() => {
     if (initialMode === 'ocr' && !autoLoadOcrDone.current) {
@@ -85,28 +87,52 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     }
   }, [doc.path, doc.doc_id, initialMode])
 
+  const enrichResults = useCallback((results: ExtractionResult[], pageNum: number) => {
+    const textItems = pageTextItems.get(pageNum) || []
+    const info = pageInfoRef.current
+    if (!info) return results
+    return results.map(r => {
+      if (r.bbox_pdf && textItems.length > 0 && !r.context_text) {
+        return { ...r, context_text: extractRoiText(r.bbox_pdf, textItems, info.originalHeight) }
+      }
+      return r
+    })
+  }, [pageTextItems])
+
+  const loadCachedDetections = useCallback(async (pageNum: number): Promise<boolean> => {
+    if (!projectRoot) return false
+    try {
+      const resp = await getCachedPageDetections({ projectRoot, docId: doc.doc_id, page: pageNum })
+      if (resp.count > 0 && resp.results.length > 0) {
+        const results = resp.results as ExtractionResult[]
+        const enriched = enrichResults(results, pageNum)
+        setPageDetections(prev => { const next = new Map(prev); next.set(pageNum, enriched); return next })
+        return true
+      }
+    } catch (e) {
+      console.warn('Failed to load cached detections:', e)
+    }
+    return false
+  }, [projectRoot, doc.doc_id, enrichResults])
+
   const handleDetectPage = useCallback(async () => {
-    if (!currentPageDataUrl || !pageInfo) return
+    if (!currentPageDataUrl || !pageInfo) { showToast('页面尚未渲染完成，请稍候', 'info'); return }
     if (pageDetections.has(currentPage)) { showToast(`第 ${currentPage} 页已检测`, 'info'); return }
+    // First try cache-only lookup (quick scan may have populated bboxes).
+    const cached = await loadCachedDetections(currentPage)
+    if (cached) return
     setIsDetecting(true)
     setSelectedDetection(null)
     try {
       const base64 = currentPageDataUrl.split(',')[1] || ''
-      const docSlug = (doc.path.split(/[\\/]/).pop() || '').replace(/\.pdf$/i, '')
       const resp = await cachedExtractPage({
-        projectRoot, docSlug, page: currentPage, imageBase64: base64,
+        projectRoot, docId: doc.doc_id, page: currentPage, imageBase64: base64,
         pageWPts: pageInfo.originalWidth, pageHPts: pageInfo.originalHeight,
-        imageW: pageInfo.width, imageH: pageInfo.height,
+        imageW: Math.round(pageInfo.width), imageH: Math.round(pageInfo.height),
       })
       if (resp.source === 'sidecar_error') throw new Error(resp.error || 'sidecar error')
       const results = resp.results as ExtractionResult[]
-      const textItems = pageTextItems.get(currentPage) || []
-      const enriched = results.map(r => {
-        if (r.bbox_pdf && textItems.length > 0 && !r.context_text) {
-          return { ...r, context_text: extractRoiText(r.bbox_pdf, textItems, pageInfo.originalHeight) }
-        }
-        return r
-      })
+      const enriched = enrichResults(results, currentPage)
       setPageDetections(prev => { const next = new Map(prev); next.set(currentPage, enriched); return next })
       showToast(results.length > 0 ? `检测到 ${results.length} 个分子` : '未检测到分子',
         results.length > 0 ? 'success' : 'info')
@@ -114,11 +140,41 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
       console.error('Detection failed:', e)
       showToast('检测失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally { setIsDetecting(false) }
-  }, [currentPageDataUrl, pageInfo, currentPage, pageDetections, projectRoot, doc.path, pageTextItems])
+  }, [currentPageDataUrl, pageInfo, currentPage, pageDetections, projectRoot, doc.doc_id, enrichResults])
+
+  const handleRecognizePage = useCallback(async () => {
+    if (!currentPageDataUrl || !pageInfo) { showToast('页面尚未渲染完成，请稍候', 'info'); return }
+    setIsDetecting(true)
+    setSelectedDetection(null)
+    try {
+      const base64 = currentPageDataUrl.split(',')[1] || ''
+      const resp = await cachedExtractPage({
+        projectRoot, docId: doc.doc_id, page: currentPage, imageBase64: base64,
+        pageWPts: pageInfo.originalWidth, pageHPts: pageInfo.originalHeight,
+        imageW: Math.round(pageInfo.width), imageH: Math.round(pageInfo.height),
+      })
+      if (resp.source === 'sidecar_error') throw new Error(resp.error || 'sidecar error')
+      const results = resp.results as ExtractionResult[]
+      const enriched = enrichResults(results, currentPage)
+      setPageDetections(prev => { const next = new Map(prev); next.set(currentPage, enriched); return next })
+      showToast(results.length > 0 ? `识别到 ${results.length} 个分子` : '未识别到分子',
+        results.length > 0 ? 'success' : 'info')
+    } catch (e) {
+      console.error('Recognition failed:', e)
+      showToast('识别失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally { setIsDetecting(false) }
+  }, [currentPageDataUrl, pageInfo, currentPage, projectRoot, doc.doc_id, enrichResults])
 
   const handlePageRendered = useCallback((info: { pageNumber: number; width: number; height: number; originalWidth: number; originalHeight: number; scale: number }) => {
     setPageInfo(info); pageInfoRef.current = info
   }, [])
+
+  // 进入分子检测模式后，当前页渲染完成自动触发检测
+  useEffect(() => {
+    if (!isDetectMode || !currentPageDataUrl || !pageInfo) return
+    if (pageDetections.has(currentPage) || isDetecting) return
+    handleDetectPage()
+  }, [isDetectMode, currentPage, currentPageDataUrl, pageInfo, pageDetections, isDetecting, handleDetectPage])
 
   const handleImageReady = useCallback((_num: number, dataUrl: string) => setCurrentPageDataUrl(dataUrl), [])
   const handlePageCount = useCallback((count: number) => setPdfPageCount(count), [])
@@ -237,9 +293,9 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     showOcrPanel, setShowOcrPanel, selectedOcrIndex, setSelectedOcrIndex,
     hoveredOcrIndex, setHoveredOcrIndex, isLoadingOcr,
     pdfUrl, pdfLoading, pdfScrollRef,
-    currentDetections, currentTextItems, currentTextTotal, hasTextLayer,
+    currentDetections, currentTextItems, currentTextTotal, hasTextLayer, canDetect,
     imageBlobUrls,
-    handleDetectPage, handlePageRendered, handleImageReady, handlePageCount,
+    handleDetectPage, handleRecognizePage, handlePageRendered, handleImageReady, handlePageCount,
     handleSaveMolecule, handleTextContent,
     handleZoomIn, handleZoomOut, handleZoomReset,
     handleLoadImages, handleLoadOcr, handleJumpToPage,

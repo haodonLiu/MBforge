@@ -13,7 +13,7 @@ import { invoke } from '@tauri-apps/api/core'
 export interface CachedExtractPageResponse {
   results: unknown[]
   count: number
-  source: 'cache' | 'sidecar' | 'sidecar_error'
+  source: 'cache' | 'sidecar' | 'sidecar_error' | 'cache_miss'
   cache_path?: string | null
   error?: string | null
 }
@@ -25,10 +25,14 @@ export interface DetectionCacheStats {
   schema_version: number
 }
 
-/** Cache-aware single-page molecule detection. */
+/** Cache-aware single-page molecule detection.
+ *
+ * `docId` is the document UUID (`DocumentEntry.doc_id`). The backend resolves
+ * the actual PDF source path from the project index.
+ */
 export async function cachedExtractPage(params: {
   projectRoot: string
-  docSlug: string
+  docId: string
   page: number
   imageBase64: string
   pageWPts: number
@@ -38,13 +42,31 @@ export async function cachedExtractPage(params: {
 }): Promise<CachedExtractPageResponse> {
   return invoke<CachedExtractPageResponse>('cached_extract_page', {
     projectRoot: params.projectRoot,
-    docSlug: params.docSlug,
+    docId: params.docId,
     page: params.page,
     imageBase64: params.imageBase64,
     pageWPts: params.pageWPts,
     pageHPts: params.pageHPts,
     imageW: params.imageW,
     imageH: params.imageH,
+  })
+}
+
+/** Read cached detections for a page without calling the sidecar.
+ *  Used by the PDF viewer to render bbox overlays instantly when a quick scan
+ *  has already populated the cache.
+ *
+ * `docId` is the document UUID (`DocumentEntry.doc_id`).
+ */
+export async function getCachedPageDetections(params: {
+  projectRoot: string
+  docId: string
+  page: number
+}): Promise<CachedExtractPageResponse> {
+  return invoke<CachedExtractPageResponse>('get_cached_page_detections', {
+    projectRoot: params.projectRoot,
+    docId: params.docId,
+    page: params.page,
   })
 }
 
@@ -56,4 +78,42 @@ export async function getDetectionCacheStats(
 
 export async function clearDetectionCache(projectRoot: string): Promise<void> {
   return invoke<void>('clear_detection_cache', { projectRoot })
+}
+
+// ---------------------------------------------------------------------------
+// 批量快速 MoldDet 扫描
+// ---------------------------------------------------------------------------
+
+export interface QuickMoldetPageResult {
+  page: number
+  has_molecule: boolean
+  bbox_count: number
+}
+
+export interface QuickMoldetDocResult {
+  path: string
+  doc_slug: string
+  doc_id: string
+  page_count: number
+  pages: QuickMoldetPageResult[]
+  pages_with_molecules: number[]
+  moldet_status: string
+  error?: string | null
+}
+
+export interface BatchQuickMoldetResponse {
+  results: QuickMoldetDocResult[]
+  processed: number
+  total: number
+  errors: string[]
+}
+
+/** 批量快速 MoldDet 扫描：只检测 bbox，不识别 SMILES。 */
+export async function batchQuickMoldetScan(
+  projectRoot: string,
+  docIds?: string[],
+): Promise<BatchQuickMoldetResponse> {
+  return invoke<BatchQuickMoldetResponse>('batch_quick_moldet_scan', {
+    request: { project_root: projectRoot, doc_ids: docIds ?? [] },
+  })
 }

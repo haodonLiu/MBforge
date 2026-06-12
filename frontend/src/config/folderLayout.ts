@@ -5,6 +5,7 @@
  * Single source of truth for the UI; Rust enforces on the filesystem side.
  */
 
+export const PROJECTS_DIR = 'projects' as const
 export const PAPERS_DIR = 'papers' as const
 export const NOTES_DIR = 'notes' as const
 export const MOLECULES_DIR = 'molecules' as const
@@ -15,6 +16,7 @@ export const PAPERS_EXTS = ['pdf'] as const
 export const NOTES_EXTS = ['md', 'txt'] as const
 
 export const CANONICAL_USER_DIRS = [
+  PROJECTS_DIR,
   PAPERS_DIR,
   NOTES_DIR,
   MOLECULES_DIR,
@@ -31,10 +33,16 @@ export interface FolderSpec {
 
 export const FOLDER_SPECS: readonly FolderSpec[] = [
   {
+    name: PROJECTS_DIR,
+    role: 'input',
+    accepts: '(DocumentProject)',
+    description: '每篇导入 PDF 的独立文档项目',
+  },
+  {
     name: PAPERS_DIR,
     role: 'input',
     accepts: '.pdf',
-    description: '用户拖入的 PDF 论文',
+    description: '用户拖入的 PDF 论文（旧版，自动迁移）',
   },
   {
     name: NOTES_DIR,

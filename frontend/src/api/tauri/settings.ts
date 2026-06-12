@@ -69,6 +69,19 @@ export interface AppSettings {
   model_server?: ModelServerConfig
   model_cache_dir?: string
   recent_projects?: string[]
+  pdf_parse?: PdfParseConfig
+  moldet?: MoldetConfig
+}
+
+export interface PdfParseConfig {
+  ocr_language?: string
+  chunk_size?: number
+  chunk_overlap?: number
+}
+
+export interface MoldetConfig {
+  auto_moldet_on_import?: boolean
+  moldet_batch_size?: number
 }
 
 export interface SettingsResponse {

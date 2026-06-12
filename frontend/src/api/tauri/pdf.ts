@@ -34,6 +34,31 @@ export async function classifyPdf(path: string): Promise<PdfClassification> {
   )
 }
 
+export async function inspectPdf(
+  projectRoot: string,
+  docId: string,
+): Promise<PdfClassification> {
+  return invokeWithError(
+    () => invoke<PdfClassification>('inspect_pdf', { projectRoot, docId }),
+    ErrorCode.PdfParse,
+  )
+}
+
+export async function confirmOcr(
+  projectRoot: string,
+  docId: string,
+  confirm: boolean,
+): Promise<{ success: boolean; doc_id: string; ocr_status: string; task_id: string }> {
+  return invokeWithError(
+    () => invoke<{ success: boolean; doc_id: string; ocr_status: string; task_id: string }>('confirm_ocr', {
+      projectRoot,
+      docId,
+      confirm,
+    }),
+    ErrorCode.PdfParse,
+  )
+}
+
 export async function extractText(path: string): Promise<PdfExtraction> {
   return invokeWithError(
     () => invoke<PdfExtraction>('extract_text', { path }),

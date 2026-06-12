@@ -61,6 +61,20 @@ export interface SettingsState {
 
   // —— Models ——
   model_cache_dir: string
+
+  // —— PDF 解析 ——
+  pdf_ocr_language: string
+  pdf_chunk_size: number
+  pdf_chunk_overlap: number
+
+  // —— MoldDet ——
+  auto_moldet_on_import: boolean
+  moldet_batch_size: number
+
+  // —— 缓存大小（只读，由后端报告）——
+  cache_size_semantic_mb: number
+  cache_size_detection_mb: number
+  cache_size_molecules_mb: number
 }
 
 export const DEFAULT_SETTINGS: SettingsState = {
@@ -109,6 +123,17 @@ export const DEFAULT_SETTINGS: SettingsState = {
   server_health_check_interval: 5,
 
   model_cache_dir: '',
+
+  pdf_ocr_language: 'eng',
+  pdf_chunk_size: 512,
+  pdf_chunk_overlap: 50,
+
+  auto_moldet_on_import: true,
+  moldet_batch_size: 10,
+
+  cache_size_semantic_mb: 0,
+  cache_size_detection_mb: 0,
+  cache_size_molecules_mb: 0,
 }
 
 /** 栏目定义 — AI Models 合并了原 LLM/Embed/Rerank 与 VLM/OCR（视觉模型）。 */
@@ -117,12 +142,15 @@ export type SectionId =
   | 'ai_models'
   | 'model_service'
   | 'model_downloads'
+  | 'pdf_parse'
+  | 'storage'
+  | 'recent_projects'
   | 'about'
 
 export interface SectionDef {
   id: SectionId
   labelKey: string
-  icon: 'settings' | 'download' | 'cpu' | 'flask' | 'info' | 'layout'
+  icon: 'settings' | 'download' | 'cpu' | 'flask' | 'info' | 'layout' | 'folder' | 'refresh'
 }
 
 export const SECTIONS: SectionDef[] = [
@@ -130,6 +158,9 @@ export const SECTIONS: SectionDef[] = [
   { id: 'ai_models', labelKey: 'settings.aiModels', icon: 'cpu' },
   { id: 'model_service', labelKey: 'settings.modelService', icon: 'layout' },
   { id: 'model_downloads', labelKey: 'settings.modelDownloads', icon: 'download' },
+  { id: 'pdf_parse', labelKey: 'settings.pdfParse', icon: 'cpu' },
+  { id: 'storage', labelKey: 'settings.cache', icon: 'refresh' },
+  { id: 'recent_projects', labelKey: 'settings.recentProjects', icon: 'folder' },
   { id: 'about', labelKey: 'settings.about', icon: 'info' },
 ]
 
@@ -193,6 +224,17 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
     server_health_check_interval: ms.health_check_interval || DEFAULT_SETTINGS.server_health_check_interval,
 
     model_cache_dir: s.model_cache_dir || DEFAULT_SETTINGS.model_cache_dir,
+
+    pdf_ocr_language: s.pdf_parse?.ocr_language || DEFAULT_SETTINGS.pdf_ocr_language,
+    pdf_chunk_size: s.pdf_parse?.chunk_size || DEFAULT_SETTINGS.pdf_chunk_size,
+    pdf_chunk_overlap: s.pdf_parse?.chunk_overlap || DEFAULT_SETTINGS.pdf_chunk_overlap,
+
+    auto_moldet_on_import: s.moldet?.auto_moldet_on_import !== false,
+    moldet_batch_size: s.moldet?.moldet_batch_size || DEFAULT_SETTINGS.moldet_batch_size,
+
+    cache_size_semantic_mb: 0,  // 启动时由后端 refresh 填充
+    cache_size_detection_mb: 0,
+    cache_size_molecules_mb: 0,
   }
 }
 
@@ -253,6 +295,15 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
       health_check_interval: s.server_health_check_interval,
     },
     model_cache_dir: s.model_cache_dir,
+    pdf_parse: {
+      ocr_language: s.pdf_ocr_language,
+      chunk_size: s.pdf_chunk_size,
+      chunk_overlap: s.pdf_chunk_overlap,
+    },
+    moldet: {
+      auto_moldet_on_import: s.auto_moldet_on_import,
+      moldet_batch_size: s.moldet_batch_size,
+    },
   }
 }
 

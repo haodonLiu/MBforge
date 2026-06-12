@@ -139,9 +139,28 @@ impl DetectionCache {
             .join(format!("page_{:04}.json", page))
     }
 
+    fn schema_version_path(&self) -> PathBuf {
+        self.base_dir().join(".schema_version")
+    }
+
+    /// Read the schema version written at the cache root.
+    fn read_schema_version(&self) -> Option<u32> {
+        let text = std::fs::read_to_string(self.schema_version_path()).ok()?;
+        text.trim().parse().ok()
+    }
+
+    /// Write the current schema version to the cache root.
+    fn write_schema_version(&self) -> AppResult<()> {
+        let version = DETECTION_CACHE_SCHEMA_VERSION.to_string();
+        crate::core::helpers::atomic_write(self.schema_version_path(), version.as_bytes())?;
+        Ok(())
+    }
+
     /// Look up the cached detections for a page.
     ///
     /// Returns `None` when:
+    /// - the cache root schema version is missing or does not match the current
+    ///   schema version
     /// - the file does not exist
     /// - the file is not valid JSON
     /// - the entry's `pdf_hash` does not match `expected_pdf_hash`
@@ -152,6 +171,14 @@ impl DetectionCache {
         page: usize,
         expected_pdf_hash: &str,
     ) -> Option<PageDetection> {
+        if self.read_schema_version() != Some(DETECTION_CACHE_SCHEMA_VERSION) {
+            log::debug!(
+                "DetectionCache: schema version mismatch for {}, treating as miss",
+                doc_id
+            );
+            return None;
+        }
+
         let path = self.page_path(doc_id, page);
         let text = std::fs::read_to_string(&path).ok()?;
         let entry: PageDetection = match serde_json::from_str(&text) {
@@ -212,6 +239,7 @@ impl DetectionCache {
 
         let json = serde_json::to_string_pretty(entry)?;
         crate::core::helpers::atomic_write(&path, json.as_bytes())?;
+        self.write_schema_version()?;
         Ok(())
     }
 
@@ -400,5 +428,30 @@ mod tests {
         let loaded = cache.get("doc-1", 3, "abc123").expect("must hit");
         assert_eq!(loaded.doc_id, "doc-1");
         assert_eq!(loaded.detections.len(), 1);
+    }
+
+    #[test]
+    fn schema_version_file_is_written() {
+        let tmp = TempDir::new().unwrap();
+        let cache = DetectionCache::new(tmp.path());
+        cache.put(&sample_entry("doc-v", 1, "h")).unwrap();
+
+        let version_path = tmp.path().join(INDEX_DIR).join("detections").join(".schema_version");
+        assert!(version_path.exists());
+        let text = std::fs::read_to_string(&version_path).unwrap();
+        assert_eq!(text.trim(), DETECTION_CACHE_SCHEMA_VERSION.to_string());
+    }
+
+    #[test]
+    fn schema_version_mismatch_returns_none() {
+        let tmp = TempDir::new().unwrap();
+        let cache = DetectionCache::new(tmp.path());
+        cache.put(&sample_entry("doc-v", 1, "h")).unwrap();
+
+        // Simulate an old cache by bumping the root schema version backwards.
+        let version_path = tmp.path().join(INDEX_DIR).join("detections").join(".schema_version");
+        std::fs::write(&version_path, "0").unwrap();
+
+        assert!(cache.get("doc-v", 1, "h").is_none());
     }
 }

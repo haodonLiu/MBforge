@@ -674,7 +674,7 @@ fn build_mbforge_agent(
         None => crate::core::agent::rig_adapter::build_default_concrete_hook()?,
     };
     match cfg.kind {
-        MbforgeProviderKind::OpenAICompatible => {
+        MbforgeProviderKind::OpenAICompatible | MbforgeProviderKind::DeepSeek | MbforgeProviderKind::Ollama => {
             MbforgeAgent::from_openai_compatible(cfg, spec, vec![], hook, memory)
         }
         MbforgeProviderKind::Anthropic => {

@@ -6,17 +6,25 @@ import json
 import logging
 from pathlib import Path
 
+from platformdirs import user_config_dir
+
 logger = logging.getLogger("mbforge.backends")
 
 _RESOLVED_PATHS_CACHE: dict[str, str] | None = None
 _RESOLVED_PATHS_MTIME: float = 0.0
 
+# Rust 端 ProjectDirs::from("", "", "MBForge") 的配置目录；用 platformdirs 镜像
+# 跨平台路径（appauthor=False + roaming=True 才能匹配 Rust 的空 author/qualifier）：
+#   Windows: %APPDATA%\MBForge\config
+#   Linux:   ~/.config/MBForge
+#   macOS:   ~/Library/Application Support/MBForge
+_CONFIG_DIR = Path(user_config_dir(appname="MBForge", appauthor=False, roaming=True)) / "config"
+
 
 def _read_resolved_paths() -> dict[str, str] | None:
     """读取 Rust 写入的 resolved_paths.json（按 mtime 失效的轻量缓存）."""
     global _RESOLVED_PATHS_CACHE, _RESOLVED_PATHS_MTIME
-    config_dir = Path.home() / ".config" / "MBForge"
-    path = config_dir / "resolved_paths.json"
+    path = _CONFIG_DIR / "resolved_paths.json"
     if not path.exists():
         return None
     try:

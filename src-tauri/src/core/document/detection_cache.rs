@@ -211,9 +211,7 @@ impl DetectionCache {
         }
 
         let json = serde_json::to_string_pretty(entry)?;
-        let tmp = path.with_extension("json.tmp");
-        std::fs::write(&tmp, json)?;
-        std::fs::rename(&tmp, &path)?;
+        crate::core::helpers::atomic_write(&path, json.as_bytes())?;
         Ok(())
     }
 

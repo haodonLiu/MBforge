@@ -2,6 +2,7 @@
 
 use log::{debug, error, info, warn};
 use std::path::PathBuf;
+use tauri::Manager;
 
 use crate::core::error::{AppError, ErrorCode};
 use crate::core::helpers::clean_path;
@@ -11,7 +12,11 @@ use crate::core::helpers::clean_path;
 /// 如果目录不存在则创建，如果目录存在但不是项目则初始化。
 /// 返回项目信息。
 #[tauri::command]
-pub fn open_project(root: String, name: Option<String>) -> Result<serde_json::Value, String> {
+pub fn open_project(
+    app: tauri::AppHandle,
+    root: String,
+    name: Option<String>,
+) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     info!("project_ops: open_project START");
     debug!("Root: {}", root);
@@ -40,6 +45,7 @@ pub fn open_project(root: String, name: Option<String>) -> Result<serde_json::Va
     if let Some(project) = crate::core::project::Project::open(&path) {
         debug!("Found existing project, returning...");
         debug!("Project name: {:?}", project.root.file_name());
+        start_or_restart_ingest_worker(&app, &path);
         let result = project_json(&project);
         debug!(
             "Result: {}",
@@ -55,6 +61,7 @@ pub fn open_project(root: String, name: Option<String>) -> Result<serde_json::Va
         Some(project) => {
             debug!("Project created successfully");
             debug!("Project name: {:?}", project.root.file_name());
+            start_or_restart_ingest_worker(&app, &path);
             let result = project_json(&project);
             debug!(
                 "Result: {}",
@@ -86,7 +93,7 @@ pub fn scan_project_files(root: String) -> Result<serde_json::Value, String> {
 
     debug!("Project found, scanning files...");
     let (new_docs, warnings) = project.scan_files();
-    debug!("Found {} documents, {} warnings", new_docs.len(), warnings.len());
+    debug!("Scan complete: {} new docs, {} warnings", new_docs.len(), warnings.len());
 
     // All known documents (existing + newly scanned) so the UI sees the
     // full picture, not just deltas.
@@ -107,83 +114,63 @@ fn warnings_json(warnings: &[crate::core::project::ScanWarning]) -> Vec<serde_js
         .map(|w| {
             serde_json::json!({
                 "path": w.path,
-                "reason": w.reason,
-                "folder": w.folder,
+                "message": w.reason,
             })
         })
         .collect()
 }
 
-/// 列出项目文档
-#[tauri::command]
-pub fn list_project_documents(
-    root: String,
-    doc_type: Option<String>,
-) -> Result<serde_json::Value, String> {
-    let root = clean_path(&root);
-    info!("project_ops: list_project_documents START");
-    debug!("Root: {}", root);
-    debug!("Doc type filter: {:?}", doc_type);
-
-    let path = PathBuf::from(&root);
-    let project = crate::core::project::Project::open(&path).ok_or_else(|| {
-        debug!("Project not found");
-        AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string()
-    })?;
-
-    let docs = project.list_documents().to_vec();
-    let filtered: Vec<_> = match doc_type.as_deref() {
-        Some(dt) if !dt.is_empty() => docs.into_iter().filter(|d| d.doc_type == dt).collect(),
-        _ => docs,
-    };
-
-    debug!("Found {} documents", filtered.len());
-    let result = serde_json::json!({
-        "success": true,
-        "documents": docs_json(&filtered),
-    });
-    info!("project_ops: list_project_documents END");
-    Ok(result)
+fn docs_json(docs: &[crate::core::project::project::DocumentEntry]) -> Vec<serde_json::Value> {
+    docs.iter().map(doc_json).collect()
 }
 
-fn project_json(project: &crate::core::project::Project) -> serde_json::Value {
-    // Strip Windows long path prefix (\\?\) from root path
-    let root_str = project.root.to_string_lossy();
-    let root_clean = if root_str.starts_with("\\\\?\\") {
-        root_str[4..].to_string()
-    } else {
-        root_str.to_string()
-    };
-
+fn doc_json(doc: &crate::core::project::project::DocumentEntry) -> serde_json::Value {
     serde_json::json!({
-        "success": true,
-        "project": {
-            "name": project.root.file_name().and_then(|n| n.to_str()).unwrap_or("Untitled"),
-            "root": root_clean,
-            "document_count": 0, // Will be fetched separately if needed
-        },
+        "doc_id": doc.doc_id,
+        "path": doc.path,
+        "source_path": doc.source_path,
+        "doc_type": doc.doc_type,
+        "title": doc.title,
+        "indexed": doc.indexed,
+        "folder": doc.folder,
+        "added_at": doc.added_at,
+        "hash": doc.hash,
+        "mtime": doc.mtime,
+        "inspector_status": doc.inspector_status,
+        "text_status": doc.text_status,
+        "ocr_status": doc.ocr_status,
+        "ocr_hash": doc.ocr_hash,
+        "moldet_status": doc.moldet_status,
+        "moldet_pages": doc.moldet_pages,
+        "index_status": doc.index_status,
     })
 }
 
-fn docs_json(docs: &[crate::core::project::DocumentEntry]) -> Vec<serde_json::Value> {
-    docs.iter()
-        .map(|d| {
-            serde_json::json!({
-                "doc_id": d.doc_id,
-                "path": d.path,
-                "doc_type": d.doc_type,
-                "title": d.title,
-                "indexed": d.indexed,
-                "ocr_status": d.ocr_status,
-                "ocr_hash": d.ocr_hash,
-            })
-        })
-        .collect()
+fn project_json(project: &crate::core::project::Project) -> serde_json::Value {
+    serde_json::json!({
+        "success": true,
+        "root": project.root.to_string_lossy().to_string(),
+        "name": project.root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+        "documents": docs_json(&project.list_documents().to_vec()),
+    })
 }
 
-// ---- File tree ----
+/// 列出项目中的所有文档。
+#[tauri::command]
+pub fn list_project_documents(root: String) -> Result<serde_json::Value, String> {
+    let root = clean_path(&root);
+    let path = PathBuf::from(&root);
+    let project = crate::core::project::Project::open(&path)
+        .ok_or_else(|| AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string())?;
 
-#[derive(Debug, Clone, serde::Serialize)]
+    let docs = project.list_documents().to_vec();
+    Ok(serde_json::json!({
+        "success": true,
+        "documents": docs_json(&docs),
+    }))
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct FileNode {
     name: String,
     path: String,
@@ -194,20 +181,19 @@ struct FileNode {
 fn build_file_tree(root: &std::path::Path) -> Vec<FileNode> {
     let mut result = Vec::new();
     let entries = match std::fs::read_dir(root) {
-        Ok(e) => e,
-        Err(_) => return result,
+        Ok(entries) => entries,
+        Err(e) => {
+            warn!("Failed to read directory {}: {}", root.display(), e);
+            return result;
+        }
     };
 
     let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-    entries.sort_by_key(|e| {
-        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        let name = e.file_name().to_string_lossy().to_lowercase();
-        (!is_dir, name)
-    });
+    entries.sort_by_key(|e| e.file_name());
 
     for entry in entries {
         let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') || name == crate::core::constants::PROJECT_META_DIR {
+        if name.starts_with('.') || name == ".mbforge" {
             continue;
         }
 
@@ -239,7 +225,7 @@ fn build_file_tree(root: &std::path::Path) -> Vec<FileNode> {
 #[tauri::command]
 pub fn get_file_tree(root: String) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
-    let path = std::path::PathBuf::from(&root);
+    let path = PathBuf::from(&root);
 
     let project = crate::core::project::Project::open(&path)
         .ok_or_else(|| AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string())?;
@@ -249,4 +235,21 @@ pub fn get_file_tree(root: String) -> Result<serde_json::Value, String> {
         "success": true,
         "tree": tree,
     }))
+}
+
+/// 启动或重启当前项目的 ingest worker。
+fn start_or_restart_ingest_worker(app: &tauri::AppHandle, project_root: &std::path::Path) {
+    use crate::core::document::ingest_worker::{IngestWorker, IngestWorkerState};
+
+    if let Some(state) = app.try_state::<IngestWorkerState>() {
+        let mut guard = state.worker.lock().unwrap();
+        if let Some(worker) = guard.take() {
+            worker.stop();
+        }
+        let worker = IngestWorker::start(project_root.to_path_buf(), app.clone());
+        *guard = Some(worker);
+        log::info!("[project_ops] ingest worker started for {}", project_root.display());
+    } else {
+        log::warn!("[project_ops] IngestWorkerState not managed, cannot start worker");
+    }
 }

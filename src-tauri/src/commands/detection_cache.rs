@@ -20,7 +20,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::sync::LazyLock;
 use serde::{Deserialize, Serialize};
 
-use crate::core::config::constants::{sidecar_url, PAPERS_DIR};
+use crate::core::config::constants::sidecar_url;
+use crate::core::project::project::Project;
 use crate::core::document::detection_cache::{
     Detection as CachedDetection, DetectionCache, PageDetection, DETECTION_CACHE_SCHEMA_VERSION,
 };
@@ -104,13 +105,13 @@ pub struct CachedExtractPageResponse {
 /// instantly; on miss, proxies to the Python sidecar and persists the
 /// result.
 ///
-/// `project_root` + `doc_slug` together identify the PDF (we look it up
-/// at `<project_root>/papers/<doc_slug>.pdf`). The image args are passed
-/// through to the sidecar unchanged.
+/// `project_root` + `doc_id` together identify the PDF. The source path is
+/// resolved from the project index (DocumentProject `source.pdf`). The image
+/// args are passed through to the sidecar unchanged.
 #[tauri::command]
 pub async fn cached_extract_page(
     project_root: String,
-    doc_slug: String,
+    doc_id: String,
     page: usize,
     image_base64: String,
     page_w_pts: f64,
@@ -121,14 +122,37 @@ pub async fn cached_extract_page(
     let project_root = clean_path(&project_root);
     let project_path = std::path::PathBuf::from(&project_root);
 
-    // Resolve PDF path: convention is papers/<doc_slug>.pdf. If that
-    // doesn't exist, we still try (and the cache will just be empty);
-    // the sidecar call uses the cropped image directly, not the PDF.
-    let pdf_abs = project_path.join(PAPERS_DIR).join(format!("{}.pdf", doc_slug));
+    // Resolve PDF path from the project index. Falls back to the legacy
+    // `papers/<doc_slug>.pdf` convention if the document is not yet in a
+    // DocumentProject.
+    let (pdf_abs, doc_slug, is_legacy) = match Project::open(&project_path)
+        .and_then(|p| p.get_document_source_path(&doc_id))
+    {
+        Some(path) => {
+            let slug = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&doc_id)
+                .to_string();
+            let legacy = path.starts_with(project_path.join(crate::core::config::constants::PAPERS_DIR));
+            (path, slug, legacy)
+        }
+        None => {
+            // Fallback: assume legacy papers/<doc_id>.pdf for backwards compat.
+            let path = project_path
+                .join(crate::core::config::constants::PAPERS_DIR)
+                .join(format!("{}.pdf", doc_id));
+            (path, doc_id.clone(), true)
+        }
+    };
 
     // Try cache.
     if let Some(hash) = pdf_hash_cached(&pdf_abs) {
-        let cache = DetectionCache::new(&project_path);
+        let cache = if is_legacy {
+            DetectionCache::new(&project_path)
+        } else {
+            DetectionCache::for_document_project(&project_path, &doc_id)
+        };
         if let Some(entry) = cache.get(&doc_slug, page, &hash) {
             let results: Vec<serde_json::Value> = entry
                 .detections
@@ -141,16 +165,22 @@ pub async fn cached_extract_page(
                 page,
                 results.len()
             );
+            let cache_path = if is_legacy {
+                project_path.join("index").join("detections")
+            } else {
+                project_path
+                    .join(crate::core::config::constants::PROJECTS_DIR)
+                    .join(&doc_id)
+                    .join("cache")
+                    .join("detections")
+            };
             return Ok(CachedExtractPageResponse {
                 count: results.len(),
                 results,
                 source: "cache".to_string(),
                 cache_path: Some(format!(
                     "{}/{}/page_{:04}.json",
-                    project_path
-                        .join("index")
-                        .join("detections")
-                        .display(),
+                    cache_path.display(),
                     doc_slug,
                     page
                 )),
@@ -180,7 +210,16 @@ pub async fn cached_extract_page(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Sidecar request failed: {}", e))?;
+        .map_err(|e| {
+            if e.is_connect() || e.is_timeout() {
+                format!(
+                    "无法连接到 Python sidecar ({})。请确认模型服务器已启动：uv run uvicorn mbforge.server:app --host 127.0.0.1 --port 18792",
+                    url
+                )
+            } else {
+                format!("Sidecar request failed: {}", e)
+            }
+        })?;
 
     if !resp.status().is_success() {
         let status = resp.status();
@@ -231,7 +270,11 @@ pub async fn cached_extract_page(
                 schema_version: DETECTION_CACHE_SCHEMA_VERSION,
                 detections: cached,
             };
-            let cache = DetectionCache::new(&project_path);
+            let cache = if is_legacy {
+                DetectionCache::new(&project_path)
+            } else {
+                DetectionCache::for_document_project(&project_path, &doc_id)
+            };
             if let Err(e) = cache.put(&entry) {
                 log::warn!("[cached_extract_page] cache write failed: {}", e);
             }
@@ -240,7 +283,7 @@ pub async fn cached_extract_page(
 
     log::debug!(
         "[cached_extract_page] MISS {}/page {} → sidecar ({} results)",
-        doc_slug,
+        doc_id,
         page,
         parsed.count
     );
@@ -248,6 +291,89 @@ pub async fn cached_extract_page(
         results: parsed.results,
         count: parsed.count,
         source: "sidecar".to_string(),
+        cache_path: None,
+        error: None,
+    })
+}
+
+/// 仅读取 detection cache，不触发 sidecar。用于 PDF 预览进入检测模式时
+/// 优先展示已缓存的 bbox，避免自动调用慢速 MolScribe。
+#[tauri::command]
+pub async fn get_cached_page_detections(
+    project_root: String,
+    doc_id: String,
+    page: usize,
+) -> Result<CachedExtractPageResponse, String> {
+    let project_root = clean_path(&project_root);
+    let project_path = std::path::PathBuf::from(&project_root);
+
+    // Resolve PDF path from the project index.
+    let (pdf_abs, doc_slug, is_legacy) = match Project::open(&project_path)
+        .and_then(|p| p.get_document_source_path(&doc_id))
+    {
+        Some(path) => {
+            let slug = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&doc_id)
+                .to_string();
+            let legacy = path.starts_with(project_path.join(crate::core::config::constants::PAPERS_DIR));
+            (path, slug, legacy)
+        }
+        None => {
+            let path = project_path
+                .join(crate::core::config::constants::PAPERS_DIR)
+                .join(format!("{}.pdf", doc_id));
+            (path, doc_id.clone(), true)
+        }
+    };
+
+    if let Some(hash) = pdf_hash_cached(&pdf_abs) {
+        let cache = if is_legacy {
+            DetectionCache::new(&project_path)
+        } else {
+            DetectionCache::for_document_project(&project_path, &doc_id)
+        };
+        if let Some(entry) = cache.get(&doc_slug, page, &hash) {
+            let results: Vec<serde_json::Value> = entry
+                .detections
+                .iter()
+                .map(|d| detection_to_sidecar_shape(d, page))
+                .collect();
+            log::debug!(
+                "[get_cached_page_detections] HIT {}/page {} ({} results)",
+                doc_id,
+                page,
+                results.len()
+            );
+            let cache_path = if is_legacy {
+                project_path.join("index").join("detections")
+            } else {
+                project_path
+                    .join(crate::core::config::constants::PROJECTS_DIR)
+                    .join(&doc_id)
+                    .join("cache")
+                    .join("detections")
+            };
+            return Ok(CachedExtractPageResponse {
+                count: results.len(),
+                results,
+                source: "cache".to_string(),
+                cache_path: Some(format!(
+                    "{}/{}/page_{:04}.json",
+                    cache_path.display(),
+                    doc_slug,
+                    page
+                )),
+                error: None,
+            });
+        }
+    }
+
+    Ok(CachedExtractPageResponse {
+        results: vec![],
+        count: 0,
+        source: "cache_miss".to_string(),
         cache_path: None,
         error: None,
     })
@@ -261,16 +387,20 @@ pub async fn cached_extract_page(
 /// have returned. We only populate the fields the frontend uses for
 /// bbox overlay + name; missing fields default to empty.
 fn detection_to_sidecar_shape(d: &CachedDetection, page: usize) -> serde_json::Value {
+    let composite_conf = if d.conf_molscribe > 0.0 {
+        (d.conf_moldet + d.conf_molscribe) / 2.0
+    } else {
+        d.conf_moldet
+    };
+    let has_structure = d.has_structure();
     serde_json::json!({
-        "esmiles": d.esmiles,
+        "esmiles": d.esmiles.as_deref().unwrap_or(""),
+        "smiles": d.smiles.as_deref().unwrap_or(""),
         "name": "",
         "source": "image",
         "moldet_conf": d.conf_moldet,
         "scribe_conf": d.conf_molscribe,
-        "composite_conf": (d.conf_moldet + d.conf_molscribe) / 2.0,
-        // vlm_chem doesn't currently populate bbox_pdf; we store zeros in
-        // the cache. The frontend treats null bbox as "no overlay" so
-        // this is safe.
+        "composite_conf": composite_conf,
         "bbox_pdf": if d.bbox_pdf[2] > d.bbox_pdf[0] && d.bbox_pdf[3] > d.bbox_pdf[1] {
             Some(d.bbox_pdf.to_vec())
         } else {
@@ -278,8 +408,9 @@ fn detection_to_sidecar_shape(d: &CachedDetection, page: usize) -> serde_json::V
         },
         "page_idx": page as i32,
         "context_text": "",
-        "mol_img_path": d.crop_relpath,
-        "status": "pending",
+        "mol_img_path": d.crop_relpath.as_deref().unwrap_or(""),
+        "status": if has_structure { "done" } else { "pending" },
+        "is_quick_scan": d.is_quick_scan,
         "properties": {},
     })
 }
@@ -307,13 +438,13 @@ fn sidecar_to_cached(v: &serde_json::Value) -> Option<CachedDetection> {
         smiles: v
             .get("smiles")
             .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string(),
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
         esmiles: v
             .get("esmiles")
             .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string(),
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
         conf_moldet: v.get("moldet_conf").and_then(|n| n.as_f64()).unwrap_or(0.0),
         conf_molscribe: v
             .get("scribe_conf")
@@ -330,8 +461,9 @@ fn sidecar_to_cached(v: &serde_json::Value) -> Option<CachedDetection> {
         crop_relpath: v
             .get("mol_img_path")
             .and_then(|s| s.as_str())
-            .unwrap_or("")
-            .to_string(),
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
+        is_quick_scan: false,
     })
 }
 
@@ -478,4 +610,98 @@ pub fn label_for_mol_bbox(
         page_h_pts,
         search,
     ))
+}
+
+// ---------------------------------------------------------------------------
+// 批量快速 MoldDet 扫描
+// ---------------------------------------------------------------------------
+
+/// 批量快速 MoldDet 扫描请求。
+#[derive(Debug, Deserialize)]
+pub struct BatchQuickMoldetRequest {
+    pub project_root: String,
+    pub doc_ids: Vec<String>,
+}
+
+/// 批量快速 MoldDet 扫描结果。
+#[derive(Debug, Serialize)]
+pub struct BatchQuickMoldetResponse {
+    pub results: Vec<crate::parsers::pipeline::QuickMoldetDocResult>,
+    pub processed: usize,
+    pub total: usize,
+    pub errors: Vec<String>,
+}
+
+/// 对项目中的多个 PDF 进行快速 MoldDet 扫描。
+///
+/// 只检测分子 bbox，不识别 SMILES；扫描完成后更新项目 index 中每个文档的
+/// `moldet_status` 和 `moldet_pages` 字段，方便前端文档列表展示“哪些页面
+/// 可能存在分子”。
+#[tauri::command]
+pub async fn batch_quick_moldet_scan(
+    request: BatchQuickMoldetRequest,
+) -> Result<BatchQuickMoldetResponse, String> {
+    use crate::core::project::project::Project;
+    use crate::parsers::pipeline::quick_moldet_scan_pdf;
+
+    let project_root = clean_path(&request.project_root);
+    let root_path = std::path::PathBuf::from(&project_root);
+    let sidecar = sidecar_url();
+    let config = crate::core::config::settings::AppConfig::load();
+    let batch_size = config.moldet.moldet_batch_size.max(1);
+
+    let project = Project::open(&root_path).ok_or_else(|| {
+        format!("Cannot open project at {}", project_root)
+    })?;
+
+    let mut pdf_entries: Vec<(String, String)> = Vec::new(); // (doc_id, abs_path)
+    {
+        let docs = project.list_documents();
+        for doc in docs {
+            if doc.doc_type != "pdf" {
+                continue;
+            }
+            if !request.doc_ids.is_empty() && !request.doc_ids.contains(&doc.doc_id) {
+                continue;
+            }
+            let abs_path = root_path.join(&doc.path);
+            if abs_path.exists() {
+                pdf_entries.push((doc.doc_id.clone(), abs_path.to_string_lossy().to_string()));
+            }
+        }
+    }
+
+    let total = pdf_entries.len();
+    let mut results: Vec<crate::parsers::pipeline::QuickMoldetDocResult> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+
+    for (doc_id, abs_path) in pdf_entries {
+        match quick_moldet_scan_pdf(&abs_path, &root_path, &sidecar, &doc_id, batch_size).await {
+            Ok(mut result) => {
+                let pages = result.pages_with_molecules.clone();
+                let status = if pages.is_empty() { "no_molecule" } else { "has_molecule" };
+                let mut proj = Project::open(&root_path).ok_or_else(|| {
+                    format!("Cannot open project at {}", project_root)
+                })?;
+                proj.set_document_moldet(&doc_id, status, &pages);
+                result.moldet_status = status.to_string();
+                results.push(result);
+            }
+            Err(e) => {
+                log::error!("[batch_quick_moldet_scan] failed for {}: {}", abs_path, e);
+                errors.push(format!("{}: {}", abs_path, e));
+                // 仍然记录失败状态
+                if let Some(mut proj) = Project::open(&root_path) {
+                    proj.set_document_moldet(&doc_id, "error", &[]);
+                }
+            }
+        }
+    }
+
+    Ok(BatchQuickMoldetResponse {
+        processed: results.len(),
+        total,
+        results,
+        errors,
+    })
 }

@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 pub const APP_NAME: &str = "MBForge";
 pub const APP_VERSION: &str = "0.2.0";
-pub const PROJECT_FORMAT_VERSION: u32 = 1;
+pub const PROJECT_FORMAT_VERSION: u32 = 2;
 pub const PROJECT_META_DIR: &str = ".mbforge";
 
 // ============================================================
@@ -24,18 +24,27 @@ pub const PROJECT_META_DIR: &str = ".mbforge";
 // ============================================================
 //
 // Every MBForge project MUST have these 6 directories at its root:
-//   papers/    — INPUT:  user drops .pdf files here
+//   projects/  — INPUT:  one isolated DocumentProject per imported PDF
 //   notes/     — INPUT:  user-written .md/.txt notes
 //   molecules/ — OUTPUT: pipeline extracts .sdf/.mol/.pdb/.smi here
 //   index/     — OUTPUT: vector DB, FTS, semantic cache
 //   reports/   — OUTPUT: generated reports and figures
 //   .mbforge/  — META:   app-managed (version.json, index.json, etc.)
 //
-// The scanner only walks papers/ and notes/. Anything placed in
-// the project root directly, or in a non-canonical subfolder, is
-// ignored and reported as a warning. The pipeline is the only
-// writer to molecules/, index/, and reports/.
+// Each DocumentProject under projects/ has the canonical layout:
+//   source.pdf           — the imported PDF (immutable source)
+//   cache/               — per-document cache (detections, OCR, pages)
+//   molecules/           — document-local molecule outputs
+//   reports/             — document-local reports and figures
+//   .mbforge/index.json  — document-level metadata
+//
+// The global .mbforge/index.json only stores a lightweight index of
+// document-projects. The scanner walks projects/*/.mbforge/index.json
+// to discover DocumentProjects. Legacy projects using papers/ are
+// automatically migrated on open.
 // ============================================================
+pub const PROJECTS_DIR: &str = "projects";
+pub const PROJECT_SOURCE_FILE: &str = "source.pdf";
 pub const PAPERS_DIR: &str = "papers";
 pub const NOTES_DIR: &str = "notes";
 pub const MOLECULES_DIR: &str = "molecules";
@@ -102,6 +111,8 @@ pub const EVT_AGENT_STREAM_CHUNK: &str = "agent-stream-chunk";
 pub const EVT_AGENT_STREAM_DONE: &str = "agent-stream-done";
 pub const EVT_KB_SEARCH_CHUNK: &str = "kb-search-chunk";
 pub const EVT_MODEL_DOWNLOAD_PROGRESS: &str = "model-download-progress";
+pub const EVT_INGEST_PROGRESS: &str = "ingest-progress";
+pub const EVT_INGEST_QUEUE_UPDATE: &str = "ingest-queue-update";
 
 // Agent config
 pub const AGENT_MAX_ITERATIONS: usize = 5;

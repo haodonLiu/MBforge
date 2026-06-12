@@ -19,6 +19,7 @@
   "nav.molecules": "Molecules",
   "nav.sar": "SAR Analysis",
   "nav.environment": "Environment",
+  "nav.queue": "Queue",
   "nav.fileTree": "File Tree",
   "nav.switchProject": "Switch Project",
   "nav.confirmSwitchProject": "Are you sure you want to switch projects? Unsaved changes will be lost.",

@@ -17,6 +17,8 @@ export interface IngestTask {
   retry_count: number
   max_retries: number
   error: string | null
+  file_size_bytes: number | null
+  started_at: number | null
   created_at: number
   updated_at: number
 }
@@ -43,6 +45,12 @@ export interface IngestQueueUpdateEvent {
   doc_id: string
   stage: string
   stats: QueueStats
+}
+
+export interface IngestWorkerHeartbeatEvent {
+  project_root: string
+  ts: number
+  alive: boolean
 }
 
 export async function ingestList(projectRoot: string): Promise<IngestTask[]> {

@@ -38,7 +38,9 @@ export default function Welcome({ onProjectOpened }: Props) {
   const [recentProjects, setRecentProjects] = useState(() => loadRecent())
 
   const handleProjectSuccess = (root: string, name: string) => {
-    localStorage.setItem('mbforge_project_root', root)
+    // localStorage persistence is handled by App.tsx via a useEffect on
+    // projectRoot, so we do not write it here. We only manage the
+    // recent-projects list (separate localStorage key).
     persistRecent(root, name)
     onProjectOpened?.(root)
   }
@@ -47,7 +49,7 @@ export default function Welcome({ onProjectOpened }: Props) {
     setLoading(true)
     try {
       const resp = await openProject(path)
-      if (resp.success && resp.project) {
+      if (resp.success) {
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
         showToast(resp.error || t('welcome.openProject') + ' ' + t('common.noResults'), 'error')
@@ -65,7 +67,7 @@ export default function Welcome({ onProjectOpened }: Props) {
     setLoading(true)
     try {
       const resp = await openProject(fullPath, projectName.trim())
-      if (resp.success && resp.project) {
+      if (resp.success) {
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
         showToast(resp.error || t('common.save') + ' ' + t('common.noResults'), 'error')
@@ -82,7 +84,7 @@ export default function Welcome({ onProjectOpened }: Props) {
     setLoading(true)
     try {
       const resp = await openProject(selectedDir.trim())
-      if (resp.success && resp.project) {
+      if (resp.success) {
         handleProjectSuccess(resp.project.root, resp.project.name)
       } else {
         showToast(resp.error || t('welcome.openProject') + ' ' + t('common.noResults'), 'error')

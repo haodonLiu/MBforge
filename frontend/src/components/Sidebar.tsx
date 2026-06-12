@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { FlaskIcon, SearchIcon, ChatIcon, EnvironmentIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon, BarChartIcon, NoteIcon } from './icons'
+import { FlaskIcon, SearchIcon, ChatIcon, EnvironmentIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon, BarChartIcon, NoteIcon, QueueIcon } from './icons'
 import IconButton from '../components/ui/IconButton'
 import Tooltip from '../components/ui/Tooltip'
 
@@ -17,6 +17,7 @@ interface Props {
 const NAV_ITEMS = [
   { id: 'dashboard', path: '/dashboard', icon: BarChartIcon, labelKey: 'nav.dashboard' },
   { id: 'project', path: '/project', icon: LayoutIcon, labelKey: 'nav.project' },
+  { id: 'queue', path: '/queue', icon: QueueIcon, labelKey: 'nav.queue' },
   { id: 'notes', path: '/notes', icon: NoteIcon, labelKey: 'nav.notes' },
   { id: 'search', path: '/search', icon: SearchIcon, labelKey: 'nav.search' },
   { id: 'chat', path: '/chat', icon: ChatIcon, labelKey: 'nav.chat' },

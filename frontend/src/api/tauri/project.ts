@@ -10,11 +10,16 @@ export interface ProjectInfo {
   document_count: number
 }
 
-export interface ProjectResponse {
-  success: boolean
-  project?: ProjectInfo
-  error?: string
-}
+/**
+ * Discriminated union — Rust uses ``Result<_, String>`` for failures, so the
+ * ``success: false`` branch is never produced by the current backend. Keeping
+ * it in the type means future Rust changes that return ``success: false``
+ * will force a TS compile error in consumers, surfacing contract drift at
+ * build time rather than as a "no results" toast at runtime.
+ */
+export type ProjectResponse =
+  | { success: true; project: ProjectInfo }
+  | { success: false; error: string }
 
 /** 打开或创建项目（Rust native，不依赖 Python sidecar） */
 export async function openProject(

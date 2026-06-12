@@ -227,6 +227,25 @@ impl Default for MoldetConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestConfig {
+    /// 导入 PDF 后是否自动加入处理队列。默认关闭，用户可手动触发。
+    #[serde(default = "default_auto_enqueue_on_import")]
+    pub auto_enqueue_on_import: bool,
+}
+
+impl Default for IngestConfig {
+    fn default() -> Self {
+        Self {
+            auto_enqueue_on_import: default_auto_enqueue_on_import(),
+        }
+    }
+}
+
+fn default_auto_enqueue_on_import() -> bool {
+    false
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub model_server: ModelServerConfig,
@@ -244,6 +263,8 @@ pub struct AppConfig {
     pub pdf_parse: PdfParseConfig,
     #[serde(default)]
     pub moldet: MoldetConfig,
+    #[serde(default)]
+    pub ingest: IngestConfig,
     pub theme: String,
     pub language: String,
 }
@@ -261,6 +282,7 @@ impl Default for AppConfig {
             model_cache_dir: String::new(),
             pdf_parse: PdfParseConfig::default(),
             moldet: MoldetConfig::default(),
+            ingest: IngestConfig::default(),
             theme: "dark".into(),
             language: "zh".into(),
         }

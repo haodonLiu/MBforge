@@ -71,6 +71,7 @@ export interface AppSettings {
   recent_projects?: string[]
   pdf_parse?: PdfParseConfig
   moldet?: MoldetConfig
+  ingest?: IngestConfig
 }
 
 export interface PdfParseConfig {
@@ -82,6 +83,10 @@ export interface PdfParseConfig {
 export interface MoldetConfig {
   auto_moldet_on_import?: boolean
   moldet_batch_size?: number
+}
+
+export interface IngestConfig {
+  auto_enqueue_on_import?: boolean
 }
 
 export interface SettingsResponse {

@@ -47,6 +47,7 @@ export async function openProject(
 export interface DocumentEntry {
   doc_id: string
   path: string
+  source_path?: string
   doc_type: string
   title: string
   indexed: boolean

@@ -79,3 +79,15 @@ export async function ingestCleanup(projectRoot: string): Promise<number> {
     ErrorCode.TauriInvoke,
   )
 }
+
+/** 手动将 PDF 加入处理队列。返回任务 ID。 */
+export async function ingestEnqueue(
+  projectRoot: string,
+  filePath: string,
+  docId: string,
+): Promise<string> {
+  return invokeWithError(
+    () => invoke<string>('ingest_enqueue', { projectRoot, filePath, docId }),
+    ErrorCode.TauriInvoke,
+  )
+}

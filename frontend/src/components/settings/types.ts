@@ -71,6 +71,9 @@ export interface SettingsState {
   auto_moldet_on_import: boolean
   moldet_batch_size: number
 
+  // —— Ingest ——
+  auto_enqueue_on_import: boolean
+
   // —— 缓存大小（只读，由后端报告）——
   cache_size_semantic_mb: number
   cache_size_detection_mb: number
@@ -130,6 +133,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
 
   auto_moldet_on_import: true,
   moldet_batch_size: 10,
+
+  auto_enqueue_on_import: false,
 
   cache_size_semantic_mb: 0,
   cache_size_detection_mb: 0,
@@ -232,6 +237,8 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
     auto_moldet_on_import: s.moldet?.auto_moldet_on_import !== false,
     moldet_batch_size: s.moldet?.moldet_batch_size || DEFAULT_SETTINGS.moldet_batch_size,
 
+    auto_enqueue_on_import: s.ingest?.auto_enqueue_on_import === true,
+
     cache_size_semantic_mb: 0,  // 启动时由后端 refresh 填充
     cache_size_detection_mb: 0,
     cache_size_molecules_mb: 0,
@@ -303,6 +310,9 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
     moldet: {
       auto_moldet_on_import: s.auto_moldet_on_import,
       moldet_batch_size: s.moldet_batch_size,
+    },
+    ingest: {
+      auto_enqueue_on_import: s.auto_enqueue_on_import,
     },
   }
 }

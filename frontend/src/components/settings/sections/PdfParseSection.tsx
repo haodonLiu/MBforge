@@ -71,6 +71,14 @@ export default function PdfParseSection({ settings, setSettings }: Props) {
           step={1}
         />
       </SettingGroup>
+      <SettingGroup title={t('settings.ingest')}>
+        <ToggleField
+          label={t('settings.autoEnqueueOnImport')}
+          description={t('settings.autoEnqueueOnImportDesc')}
+          value={settings.auto_enqueue_on_import}
+          onChange={v => setSettings(s => ({ ...s, auto_enqueue_on_import: v }))}
+        />
+      </SettingGroup>
     </SettingSection>
   )
 }

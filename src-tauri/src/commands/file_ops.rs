@@ -103,17 +103,20 @@ pub async fn upload_files(
             }
         } else if let Some(entry) = project.add_file(&src) {
             log::info!("Added PDF to project: {} -> {}", name, entry.doc_id);
-            // 自动加入 ingest queue，从 inspector 阶段开始处理。
-            if let Ok(q) = crate::core::document::ingest_queue::IngestQueue::new(&project.root) {
-                let source_path = project.root
-                    .join(crate::core::constants::PROJECTS_DIR)
-                    .join(&entry.doc_id)
-                    .join(crate::core::constants::PROJECT_SOURCE_FILE);
-                let _ = q.enqueue_with_stage(
-                    source_path.to_string_lossy().to_string(),
-                    entry.doc_id.clone(),
-                    "inspector",
-                );
+            // 按设置决定是否自动入队处理。默认关闭，用户可手动触发。
+            let config = crate::core::config::settings::AppConfig::load();
+            if config.ingest.auto_enqueue_on_import {
+                if let Ok(q) = crate::core::document::ingest_queue::IngestQueue::new(&project.root) {
+                    let source_path = project.root
+                        .join(crate::core::constants::PROJECTS_DIR)
+                        .join(&entry.doc_id)
+                        .join(crate::core::constants::PROJECT_SOURCE_FILE);
+                    let _ = q.enqueue_with_stage(
+                        source_path.to_string_lossy().to_string(),
+                        entry.doc_id.clone(),
+                        "inspector",
+                    );
+                }
             }
             entries.push(entry);
         }

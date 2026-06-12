@@ -161,12 +161,58 @@ enum StageResult {
     Done,
 }
 
+/// 每阶段开始前的预检：文件、项目目录、磁盘空间、index 可写、sidecar 健康。
+async fn preflight_check(stage: &str, file_path: &Path, project_root: &Path) -> Result<(), String> {
+    if !file_path.exists() {
+        return Err(format!("source file not found: {}", file_path.display()));
+    }
+    if !project_root.exists() || !project_root.is_dir() {
+        return Err(format!("project root not found: {}", project_root.display()));
+    }
+
+    const MIN_SPACE_MB: u64 = 100;
+    let min_bytes = MIN_SPACE_MB * 1024 * 1024;
+    match crate::core::helpers::available_space_bytes(project_root) {
+        Ok(space) if space < min_bytes => {
+            return Err(format!(
+                "磁盘空间不足: 仅剩 {} MB (需要至少 {} MB)",
+                space / 1024 / 1024,
+                MIN_SPACE_MB
+            ));
+        }
+        Err(e) => log::warn!("IngestWorker: unable to check disk space: {}", e),
+        _ => {}
+    }
+
+    let index_dir = project_root.join(crate::core::constants::INDEX_DIR);
+    if let Err(e) = std::fs::create_dir_all(&index_dir) {
+        return Err(format!("无法创建 index 目录: {}", e));
+    }
+    let probe = index_dir.join(".write_probe");
+    if let Err(e) = std::fs::write(&probe, b"1") {
+        return Err(format!("index 目录不可写: {}", e));
+    }
+    let _ = std::fs::remove_file(&probe);
+
+    if stage == "moldet" || stage == "index" {
+        let client = crate::core::sidecar_client::get_or_init()
+            .map_err(|e| format!("Sidecar client init failed: {}", e))?;
+        if let Err(e) = client.health().await {
+            return Err(format!("Sidecar 未就绪: {}", e));
+        }
+    }
+
+    Ok(())
+}
+
 async fn process_inspector(
     project_root: &Path,
     queue: &IngestQueue,
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
+    preflight_check("inspector", Path::new(&task.file_path), project_root).await?;
+
     let result = pdf_inspector::detect_pdf(&task.file_path).map_err(|e| {
         format!("inspector detect failed: {}", e)
     })?;
@@ -254,6 +300,8 @@ async fn process_text_extract(
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
+    preflight_check("text_extract", Path::new(&task.file_path), project_root).await?;
+
     queue.update_progress(
         &task.id,
         &task.stage,
@@ -328,6 +376,8 @@ async fn process_ocr(
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
+    preflight_check("ocr", Path::new(&task.file_path), project_root).await?;
+
     queue.update_progress(
         &task.id,
         &task.stage,
@@ -409,6 +459,8 @@ async fn process_moldet(
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
+    preflight_check("moldet", Path::new(&task.file_path), project_root).await?;
+
     queue.update_progress(
         &task.id,
         &task.stage,
@@ -477,6 +529,8 @@ async fn process_index(
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
+    preflight_check("index", Path::new(&task.file_path), project_root).await?;
+
     queue.update_progress(
         &task.id,
         &task.stage,
@@ -754,5 +808,33 @@ fn emit_queue_update(app_handle: &AppHandle, queue: &IngestQueue, doc_id: &str, 
     });
     if let Err(e) = app_handle.emit(EVT_INGEST_QUEUE_UPDATE, &payload) {
         log::warn!("IngestWorker: emit queue update failed: {}", e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[tokio::test]
+    async fn test_preflight_check_ok() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let pdf = tmp.path().join("source.pdf");
+        let mut f = std::fs::File::create(&pdf).unwrap();
+        f.write_all(b"%PDF-1.4").unwrap();
+        drop(f);
+
+        let result = preflight_check("inspector", &pdf, tmp.path()).await;
+        assert!(result.is_ok(), "preflight should pass for valid paths: {:?}", result);
+    }
+
+    #[tokio::test]
+    async fn test_preflight_check_missing_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let missing = tmp.path().join("missing.pdf");
+
+        let result = preflight_check("inspector", &missing, tmp.path()).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("source file not found"));
     }
 }

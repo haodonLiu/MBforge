@@ -152,6 +152,12 @@ pub fn atomic_write<P: AsRef<Path>>(path: P, contents: &[u8]) -> std::io::Result
     Ok(())
 }
 
+/// 获取指定路径所在文件系统的可用空间（字节）。
+pub fn available_space_bytes(path: &Path) -> Result<u64, Box<dyn std::error::Error>> {
+    let stat = fs2::statvfs(path)?;
+    Ok(stat.available_space())
+}
+
 /// Load JSON file, returning default on error.
 pub fn load_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
     let data = std::fs::read_to_string(path).ok()?;

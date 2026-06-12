@@ -1,7 +1,0 @@
-[[permission]]
-identifier = "allow-classifier"
-description = "Allows page/document classification"
-commands.allow = [
-  "classify_page",
-  "classify_document",
-]

@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-agent-get-history"
-description = "Allows the agent_get_history command"
-commands.allow = ["agent_get_history"]

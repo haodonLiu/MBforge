@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-ingest-cancel"
-description = "Allows the ingest_cancel command"
-commands.allow = ["ingest_cancel"]

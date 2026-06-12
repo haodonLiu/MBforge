@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-clear-detection-cache"
-description = "Allows the clear_detection_cache command"
-commands.allow = ["clear_detection_cache"]

@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-open-project"
-description = "Allows opening or creating a project"
-commands.allow = ["open_project"]

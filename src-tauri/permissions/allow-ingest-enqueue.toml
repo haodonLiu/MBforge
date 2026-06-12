@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-ingest-enqueue"
-description = "Allows the ingest_enqueue command"
-commands.allow = ["ingest_enqueue"]

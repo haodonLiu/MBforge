@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-ingest-list"
-description = "Allows the ingest_list command"
-commands.allow = ["ingest_list"]

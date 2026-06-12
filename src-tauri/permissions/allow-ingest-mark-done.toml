@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-ingest-mark-done"
-description = "Allows the ingest_mark_done command"
-commands.allow = ["ingest_mark_done"]

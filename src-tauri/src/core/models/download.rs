@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 use tokio::sync::mpsc;
+use futures::StreamExt;
 use super::catalog::*;
 
 /// 下载进度事件
@@ -184,11 +185,42 @@ async fn download_single_file(
         return Err(DownloadError::Api("需要登录才能下载".into()));
     }
 
-    let bytes = resp.bytes().await
-        .map_err(|e| DownloadError::Network(e.to_string()))?;
+    let total_size = resp.content_length().unwrap_or(0);
+    let mut stream = resp.bytes_stream();
 
     let local_path = cache_dir.join(&info.local_name);
-    std::fs::write(&local_path, &bytes).map_err(|e| DownloadError::Io(e.to_string()))?;
+    if let Some(parent) = local_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| DownloadError::Io(e.to_string()))?;
+    }
+    let mut file = std::fs::File::create(&local_path)
+        .map_err(|e| DownloadError::Io(e.to_string()))?;
+
+    let mut downloaded: u64 = 0;
+    let mut last_report: f64 = 0.0;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| DownloadError::Network(e.to_string()))?;
+        std::io::Write::write_all(&mut file, &chunk)
+            .map_err(|e| DownloadError::Io(e.to_string()))?;
+        downloaded += chunk.len() as u64;
+        let frac = if total_size > 0 {
+            downloaded as f64 / total_size as f64
+        } else {
+            0.0
+        };
+        // 节流：每 1% 报告一次
+        if frac - last_report > 0.01 || frac >= 1.0 {
+            last_report = frac;
+            let _ = progress_tx.send(DownloadProgress {
+                status: "downloading".into(),
+                file: info.ms_file.to_string(),
+                file_progress: frac,
+                file_index: 0,
+                total_files: 1,
+                error: String::new(),
+            }).await;
+        }
+    }
+    std::io::Write::flush(&mut file).ok();
 
     let _ = progress_tx.send(DownloadProgress {
         status: "completed".into(),

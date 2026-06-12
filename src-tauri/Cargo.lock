@@ -2968,8 +2968,6 @@ dependencies = [
 [[package]]
 name = "liteparse-pdfium-sys"
 version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e352f8e602c596ffc75b242bfea187a9b5645c6bdaa345e5a0fe3e4f0b26310"
 dependencies = [
  "flate2",
  "libloading 0.8.9",

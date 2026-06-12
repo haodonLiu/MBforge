@@ -60,8 +60,11 @@ pub async fn extract_pdf_workflow(
 }
 
 /// 分类并提取文件（自动检测 parser）。
-pub async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> {
-    crate::parsers::pipeline::classify_and_extract(path).await
+///
+/// `allow_ocr` 控制是否允许对扫描件调用 MinerU/LiteParse OCR。
+/// Inspector 阶段和快速 MoldDet 扫描应传 `false`，避免在用户确认前跑 OCR。
+pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<ClassifyResult, String> {
+    crate::parsers::pipeline::classify_and_extract(path, allow_ocr).await
 }
 
 /// 查找项目根目录（通过向上搜索 .mbforge 目录）。

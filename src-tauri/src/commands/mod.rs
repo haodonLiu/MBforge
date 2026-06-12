@@ -12,6 +12,7 @@ pub mod notes;
 pub mod pdf;
 pub mod project_ops;
 pub mod settings;
+pub mod settings_extra;
 pub mod sidecar;
 pub mod text_ops;
 
@@ -32,6 +33,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         project_ops::get_file_tree,
         // pdf
         pdf::classify_pdf,
+        pdf::inspect_pdf,
+        pdf::confirm_ocr,
         pdf::extract_text,
         pdf::get_document_ocr_layout,
         pdf::augment_markdown_with_images,
@@ -40,6 +43,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         pdf::ingest_list,
         pdf::ingest_stats,
         pdf::ingest_cancel,
+        pdf::ingest_retry,
         pdf::ingest_cancel_all_pending,
         pdf::ingest_cleanup,
         pdf::ingest_mark_done,
@@ -49,10 +53,12 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         text_ops::text_chunk,
         // detection_cache
         detection_cache::cached_extract_page,
+        detection_cache::get_cached_page_detections,
         detection_cache::get_detection_cache_stats,
         detection_cache::clear_detection_cache,
         detection_cache::vlm_chem_coref,
         detection_cache::label_for_mol_bbox,
+        detection_cache::batch_quick_moldet_scan,
         // classifier
         classifier::classify_page,
         classifier::classify_document,
@@ -146,6 +152,14 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::core::project::resource_manager::models_delete,
         crate::core::project::resource_manager::models_cache_dir_info,
         crate::core::project::resource_manager::refresh_resolved_paths,
+        // extended settings (cache + recent projects)
+        settings_extra::cache_size,
+        settings_extra::cache_clear,
+        settings_extra::consolidate_models,
+        settings_extra::projects_list_recent,
+        settings_extra::projects_add_recent,
+        settings_extra::projects_remove_recent,
+        settings_extra::projects_clear_recent,
         // SAR analysis
         crate::core::chem::sar::sar_find_scaffold,
         crate::core::chem::sar::sar_decompose,

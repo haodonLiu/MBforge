@@ -178,6 +178,55 @@ impl Default for ModelServerConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PdfParseConfig {
+    /// Tesseract 语言代码：eng / chi_sim / chi_tra / jpn / kor / fra / deu / ...
+    #[serde(default = "default_ocr_language")]
+    pub ocr_language: String,
+    /// 文本切块字符数（默认 512）
+    #[serde(default = "default_chunk_size")]
+    pub chunk_size: usize,
+    /// 相邻块重叠字符数（默认 50）
+    #[serde(default = "default_chunk_overlap")]
+    pub chunk_overlap: usize,
+}
+
+impl Default for PdfParseConfig {
+    fn default() -> Self {
+        Self {
+            ocr_language: default_ocr_language(),
+            chunk_size: default_chunk_size(),
+            chunk_overlap: default_chunk_overlap(),
+        }
+    }
+}
+
+fn default_ocr_language() -> String { "eng".into() }
+fn default_chunk_size() -> usize { 512 }
+fn default_chunk_overlap() -> usize { 50 }
+fn default_auto_moldet_on_import() -> bool { true }
+fn default_moldet_batch_size() -> usize { 10 }
+
+/// 分子检测（MolDet）配置。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoldetConfig {
+    /// 导入 PDF 后是否自动运行快速 MoldDet 扫描。
+    #[serde(default = "default_auto_moldet_on_import")]
+    pub auto_moldet_on_import: bool,
+    /// MoldDet 每批处理的页面数。
+    #[serde(default = "default_moldet_batch_size")]
+    pub moldet_batch_size: usize,
+}
+
+impl Default for MoldetConfig {
+    fn default() -> Self {
+        Self {
+            auto_moldet_on_import: default_auto_moldet_on_import(),
+            moldet_batch_size: default_moldet_batch_size(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub model_server: ModelServerConfig,
@@ -191,6 +240,10 @@ pub struct AppConfig {
     /// 模型下载目录，空字符串表示使用默认值
     #[serde(default)]
     pub model_cache_dir: String,
+    #[serde(default)]
+    pub pdf_parse: PdfParseConfig,
+    #[serde(default)]
+    pub moldet: MoldetConfig,
     pub theme: String,
     pub language: String,
 }
@@ -206,6 +259,8 @@ impl Default for AppConfig {
             vlm: VlmConfig::default(),
             recent_projects: Vec::new(),
             model_cache_dir: String::new(),
+            pdf_parse: PdfParseConfig::default(),
+            moldet: MoldetConfig::default(),
             theme: "dark".into(),
             language: "zh".into(),
         }

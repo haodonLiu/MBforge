@@ -62,6 +62,11 @@ pub struct IngestTask {
     pub file_path: String,
     pub doc_id: String,
     pub status: IngestStatus,
+    pub stage: String,
+    pub progress_pct: f64,
+    pub pages_total: i32,
+    pub pages_done: i32,
+    pub details: String,
     pub retry_count: u32,
     pub max_retries: u32,
     pub error: Option<String>,
@@ -71,12 +76,22 @@ pub struct IngestTask {
 
 impl IngestTask {
     pub fn new(file_path: String, doc_id: String) -> Self {
+        Self::with_stage(file_path, doc_id, "inspector")
+    }
+
+    /// 创建指定阶段的任务。
+    pub fn with_stage(file_path: String, doc_id: String, stage: &str) -> Self {
         let now = now_secs_f64();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             file_path,
             doc_id,
             status: IngestStatus::Pending,
+            stage: stage.to_string(),
+            progress_pct: 0.0,
+            pages_total: 0,
+            pages_done: 0,
+            details: String::new(),
             retry_count: 0,
             max_retries: 3,
             error: None,
@@ -134,6 +149,11 @@ impl IngestQueue {
                 file_path   TEXT NOT NULL,
                 doc_id      TEXT NOT NULL,
                 status      TEXT NOT NULL,
+                stage       TEXT NOT NULL DEFAULT 'inspector',
+                progress_pct REAL NOT NULL DEFAULT 0,
+                pages_total INTEGER NOT NULL DEFAULT 0,
+                pages_done  INTEGER NOT NULL DEFAULT 0,
+                details     TEXT NOT NULL DEFAULT '',
                 retry_count INTEGER NOT NULL DEFAULT 0,
                 max_retries INTEGER NOT NULL DEFAULT 3,
                 error       TEXT,
@@ -142,6 +162,14 @@ impl IngestQueue {
             )",
             [],
         )?;
+
+        // 向后兼容：新增列（旧表已存在时跳过）。
+        // SQLite 不支持 ALTER TABLE ... ADD COLUMN IF NOT EXISTS，需手动检查。
+        Self::add_column_if_missing(conn, "ingest_queue", "stage", "TEXT NOT NULL DEFAULT 'inspector'")?;
+        Self::add_column_if_missing(conn, "ingest_queue", "progress_pct", "REAL NOT NULL DEFAULT 0")?;
+        Self::add_column_if_missing(conn, "ingest_queue", "pages_total", "INTEGER NOT NULL DEFAULT 0")?;
+        Self::add_column_if_missing(conn, "ingest_queue", "pages_done", "INTEGER NOT NULL DEFAULT 0")?;
+        Self::add_column_if_missing(conn, "ingest_queue", "details", "TEXT NOT NULL DEFAULT ''")?;
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_ingest_status ON ingest_queue(status)",
@@ -152,6 +180,24 @@ impl IngestQueue {
             [],
         )?;
 
+        Ok(())
+    }
+
+    fn add_column_if_missing(
+        conn: &Connection,
+        table: &str,
+        column: &str,
+        def: &str,
+    ) -> AppResult<()> {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
+            params![table, column],
+            |row| row.get(0),
+        )?;
+        if count == 0 {
+            let sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, def);
+            conn.execute(&sql, [])?;
+        }
         Ok(())
     }
 
@@ -168,13 +214,18 @@ impl IngestQueue {
                 for task in queue_data.tasks {
                     tx.execute(
                         "INSERT OR IGNORE INTO ingest_queue
-                         (id, file_path, doc_id, status, retry_count, max_retries, error, created_at, updated_at)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                         (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, created_at, updated_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                         params![
                             task.id,
                             task.file_path,
                             task.doc_id,
                             task.status.as_str(),
+                            task.stage,
+                            task.progress_pct,
+                            task.pages_total,
+                            task.pages_done,
+                            task.details,
                             task.retry_count as i64,
                             task.max_retries as i64,
                             task.error,
@@ -197,11 +248,16 @@ impl IngestQueue {
             doc_id: row.get(2)?,
             status: IngestStatus::from_str(&row.get::<_, String>(3)?)
                 .unwrap_or(IngestStatus::Pending),
-            retry_count: row.get::<_, i64>(4)? as u32,
-            max_retries: row.get::<_, i64>(5)? as u32,
-            error: row.get(6)?,
-            created_at: row.get(7)?,
-            updated_at: row.get(8)?,
+            stage: row.get(4)?,
+            progress_pct: row.get(5)?,
+            pages_total: row.get(6)?,
+            pages_done: row.get(7)?,
+            details: row.get(8)?,
+            retry_count: row.get::<_, i64>(9)? as u32,
+            max_retries: row.get::<_, i64>(10)? as u32,
+            error: row.get(11)?,
+            created_at: row.get(12)?,
+            updated_at: row.get(13)?,
         })
     }
 
@@ -214,13 +270,18 @@ impl IngestQueue {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "INSERT INTO ingest_queue
-             (id, file_path, doc_id, status, retry_count, max_retries, error, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+             (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 &task.id,
                 &task.file_path,
                 &task.doc_id,
                 task.status.as_str(),
+                &task.stage,
+                task.progress_pct,
+                task.pages_total,
+                task.pages_done,
+                &task.details,
                 task.retry_count as i64,
                 task.max_retries as i64,
                 task.error.as_ref(),
@@ -233,13 +294,46 @@ impl IngestQueue {
         Ok(id)
     }
 
+    /// 入队一个指定阶段的文件
+    pub fn enqueue_with_stage(&self, file_path: String, doc_id: String, stage: &str) -> AppResult<String> {
+        let task = IngestTask::with_stage(file_path, doc_id, stage);
+        let id = task.id.clone();
+        let now = task.created_at;
+
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO ingest_queue
+             (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![
+                &task.id,
+                &task.file_path,
+                &task.doc_id,
+                task.status.as_str(),
+                &task.stage,
+                task.progress_pct,
+                task.pages_total,
+                task.pages_done,
+                &task.details,
+                task.retry_count as i64,
+                task.max_retries as i64,
+                task.error.as_ref(),
+                now,
+                now,
+            ],
+        )?;
+
+        log::info!("IngestQueue: enqueued {} stage={}", id, stage);
+        Ok(id)
+    }
+
     /// 取出下一个待处理任务
     pub fn dequeue(&self) -> AppResult<Option<IngestTask>> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
         // 找第一个 Pending 或可重试的 Failed 任务
         let mut stmt = conn.prepare(
-            "SELECT id, file_path, doc_id, status, retry_count, max_retries, error, created_at, updated_at
+            "SELECT id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, created_at, updated_at
              FROM ingest_queue
              WHERE status = 'pending'
                 OR (status = 'failed' AND retry_count < max_retries)
@@ -414,7 +508,7 @@ impl IngestQueue {
     pub fn list_all(&self) -> AppResult<Vec<IngestTask>> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn.prepare(
-            "SELECT id, file_path, doc_id, status, retry_count, max_retries, error, created_at, updated_at
+            "SELECT id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, created_at, updated_at
              FROM ingest_queue
              ORDER BY created_at ASC",
         )?;
@@ -437,6 +531,66 @@ impl IngestQueue {
             |r| r.get(0),
         )?;
         Ok(count > 0)
+    }
+
+    /// 更新任务进度与阶段（worker 使用）
+    pub fn update_progress(
+        &self,
+        task_id: &str,
+        stage: &str,
+        progress_pct: f64,
+        pages_done: i32,
+        pages_total: i32,
+        details: &str,
+    ) -> AppResult<()> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = now_secs_f64();
+        conn.execute(
+            "UPDATE ingest_queue
+             SET stage = ?1, progress_pct = ?2, pages_done = ?3, pages_total = ?4, details = ?5, updated_at = ?6
+             WHERE id = ?7",
+            params![stage, progress_pct, pages_done, pages_total, details, now, task_id],
+        )?;
+        Ok(())
+    }
+
+    /// 仅更新任务阶段（worker 阶段切换使用）
+    pub fn set_stage(&self, task_id: &str, stage: &str) -> AppResult<()> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = now_secs_f64();
+        conn.execute(
+            "UPDATE ingest_queue
+             SET stage = ?1, updated_at = ?2
+             WHERE id = ?3",
+            params![stage, now, task_id],
+        )?;
+        Ok(())
+    }
+
+    /// 把任务状态重置为 pending（worker 阶段切换使用）。
+    pub fn set_pending(&self, task_id: &str) -> AppResult<()> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = now_secs_f64();
+        conn.execute(
+            "UPDATE ingest_queue
+             SET status = 'pending', updated_at = ?1
+             WHERE id = ?2",
+            params![now, task_id],
+        )?;
+        Ok(())
+    }
+
+    /// 重试一个失败任务（仅当 retry_count < max_retries 时生效）。
+    pub fn retry(&self, task_id: &str) -> AppResult<bool> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let now = now_secs_f64();
+        let changed = conn.execute(
+            "UPDATE ingest_queue
+             SET status = 'pending', error = NULL, updated_at = ?1
+             WHERE id = ?2 AND status = 'failed' AND retry_count < max_retries",
+            params![now, task_id],
+        )?;
+        Ok(changed > 0)
     }
 }
 
@@ -472,9 +626,36 @@ mod tests {
         let task = queue.dequeue().unwrap().unwrap();
         assert_eq!(task.id, id);
         assert_eq!(task.status, IngestStatus::Processing);
+        assert_eq!(task.stage, "inspector");
 
         queue.mark_done(&id).unwrap();
         assert_eq!(queue.stats().unwrap().done, 1);
+    }
+
+    #[test]
+    fn test_queue_with_stage() {
+        let (_dir, queue) = setup_queue();
+        let id = queue
+            .enqueue_with_stage("test.pdf".into(), "doc1".into(), "ocr")
+            .unwrap();
+        let task = queue.dequeue().unwrap().unwrap();
+        assert_eq!(task.id, id);
+        assert_eq!(task.stage, "ocr");
+    }
+
+    #[test]
+    fn test_queue_update_progress() {
+        let (_dir, queue) = setup_queue();
+        let id = queue.enqueue("test.pdf".into(), "doc1".into()).unwrap();
+        queue
+            .update_progress(&id, "text_extract", 0.5, 3, 6, "extracting")
+            .unwrap();
+        let task = queue.list_all().unwrap().pop().unwrap();
+        assert_eq!(task.stage, "text_extract");
+        assert_eq!(task.progress_pct, 0.5);
+        assert_eq!(task.pages_done, 3);
+        assert_eq!(task.pages_total, 6);
+        assert_eq!(task.details, "extracting");
     }
 
     #[test]
@@ -554,6 +735,11 @@ mod tests {
                     "file_path": "old.pdf",
                     "doc_id": "doc-old",
                     "status": "pending",
+                    "stage": "inspector",
+                    "progress_pct": 0.0,
+                    "pages_total": 0,
+                    "pages_done": 0,
+                    "details": "",
                     "retry_count": 0,
                     "max_retries": 3,
                     "error": null,

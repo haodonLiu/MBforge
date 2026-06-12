@@ -19,9 +19,10 @@
 //! (which also mint one UUID per session). A real `session_id ↔
 //! trace_id` mapping table is a v2 follow-up.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use rusqlite::{params, Connection};
+use tokio::sync::Mutex;
 
 use rig_core::memory::{DemotionHook, MemoryError};
 use rig_core::message::Message;
@@ -151,7 +152,7 @@ impl DemotionHook for EpisodicDemotionHook {
             // Always bootstrap the schema, not just when we have rows
             // to insert — the empty-input path is also tested and
             // there's no reason to skip a no-op `CREATE IF NOT EXISTS`.
-            let conn = self.conn.lock().map_err(|e| MemoryError::backend(format!("lock: {e}")))?;
+            let conn = self.conn.lock().await;
             bootstrap_episodes_schema(&conn).map_err(MemoryError::backend)?;
             if evicted.is_empty() {
                 return Ok(());
@@ -252,8 +253,8 @@ mod tests {
         assert_eq!(tags.first().map(|s| s.as_str()), Some("alpha"));
     }
 
-    #[test]
-    fn test_on_demote_writes_episode_rows() {
+    #[tokio::test]
+    async fn test_on_demote_writes_episode_rows() {
         let (_dir, conn) = open_test_conn();
         let hook = EpisodicDemotionHook::new(conn.clone(), "trace-abc");
         let evicted = vec![
@@ -262,12 +263,9 @@ mod tests {
             Message::user("那要带什么吗"),
             Message::assistant("带车钥匙"),
         ];
-        // Run the future synchronously via a small tokio block_on.
-        let fut = hook.on_demote("session-1", evicted);
-        let result = futures::executor::block_on(fut);
-        result.unwrap();
+        hook.on_demote("session-1", evicted).await.unwrap();
 
-        let guard = conn.lock().unwrap();
+        let guard = conn.lock().await;
         let count: i64 = guard
             .query_row("SELECT COUNT(*) FROM episodes", [], |row| row.get(0))
             .unwrap();
@@ -285,13 +283,12 @@ mod tests {
         assert_eq!(trace_id, "trace-abc");
     }
 
-    #[test]
-    fn test_on_demote_empty_is_noop() {
+    #[tokio::test]
+    async fn test_on_demote_empty_is_noop() {
         let (_dir, conn) = open_test_conn();
         let hook = EpisodicDemotionHook::new(conn.clone(), "trace");
-        let fut = hook.on_demote("s", vec![]);
-        futures::executor::block_on(fut).unwrap();
-        let guard = conn.lock().unwrap();
+        hook.on_demote("s", vec![]).await.unwrap();
+        let guard = conn.lock().await;
         let count: i64 = guard
             .query_row("SELECT COUNT(*) FROM episodes", [], |row| row.get(0))
             .unwrap();

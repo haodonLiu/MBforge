@@ -137,9 +137,9 @@ impl MbforgeManagedMemory {
     /// returns an empty list otherwise (the InMemoryConversationMemory
     /// fallback path used by the one-shot literature review in
     /// `pipeline.rs` / `lit_review.rs` doesn't persist history).
-    pub fn list_for_session(&self, cid: &str) -> Result<Vec<HistoryItem>, String> {
+    pub async fn list_for_session(&self, cid: &str) -> Result<Vec<HistoryItem>, String> {
         if let Some(sqlite) = &self.sqlite {
-            sqlite.list_for_session(cid)
+            sqlite.list_for_session(cid).await
         } else {
             Ok(Vec::new())
         }
@@ -159,6 +159,7 @@ impl MbforgeManagedMemory {
         if let Some(sqlite) = &self.sqlite {
             let _ = sqlite
                 .mark_evicted(cid, count)
+                .await
                 .map_err(|e| format!("mark_evicted: {e}"))?;
         }
         Ok(())
@@ -174,6 +175,7 @@ impl MbforgeManagedMemory {
         if let Some(sqlite) = &self.sqlite {
             sqlite
                 .replace_with_compaction(cid, summary_text, evict_before)
+                .await
                 .map_err(|e| format!("replace_with_compaction: {e}"))?;
         }
         Ok(())

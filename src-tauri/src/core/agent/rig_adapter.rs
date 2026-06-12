@@ -472,6 +472,7 @@ impl MbforgeAgent {
         let memory = self.memory();
         let items = memory
             .list_for_session(cid.as_str())
+            .await
             .map_err(|e| format!("list_for_session: {e}"))?;
         Ok(items
             .into_iter()

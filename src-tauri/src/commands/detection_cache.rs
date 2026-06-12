@@ -14,10 +14,10 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use std::sync::LazyLock;
+use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::core::config::constants::sidecar_url;
@@ -47,7 +47,7 @@ struct HashEntry {
 static PDF_HASH_CACHE: LazyLock<Mutex<HashMap<PathBuf, HashEntry>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn pdf_hash_cached(pdf_abs: &std::path::Path) -> Option<String> {
+async fn pdf_hash_cached(pdf_abs: &std::path::Path) -> Option<String> {
     let mtime = std::fs::metadata(pdf_abs)
         .and_then(|m| m.modified())
         .ok()
@@ -57,8 +57,7 @@ fn pdf_hash_cached(pdf_abs: &std::path::Path) -> Option<String> {
 
     // Fast path: re-hash only if mtime changed (or no entry).
     {
-        let cache: std::sync::MutexGuard<HashMap<PathBuf, HashEntry>> =
-        PDF_HASH_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        let cache = PDF_HASH_CACHE.lock().await;
         if let Some(entry) = cache.get(pdf_abs) {
             if entry.mtime_secs == mtime {
                 return Some(entry.hash.clone());
@@ -69,8 +68,7 @@ fn pdf_hash_cached(pdf_abs: &std::path::Path) -> Option<String> {
     // Slow path: actually hash the file.
     let hash = sha256_file(pdf_abs).ok()?;
 
-    let mut cache: std::sync::MutexGuard<HashMap<PathBuf, HashEntry>> =
-        PDF_HASH_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let mut cache = PDF_HASH_CACHE.lock().await;
     cache.insert(
         pdf_abs.to_path_buf(),
         HashEntry {
@@ -147,7 +145,7 @@ pub async fn cached_extract_page(
     };
 
     // Try cache.
-    if let Some(hash) = pdf_hash_cached(&pdf_abs) {
+    if let Some(hash) = pdf_hash_cached(&pdf_abs).await {
         let cache = if is_legacy {
             DetectionCache::new(&project_path)
         } else {
@@ -244,7 +242,7 @@ pub async fn cached_extract_page(
         .map_err(|e| format!("Sidecar JSON parse failed: {}", e))?;
 
     // Persist to cache (best-effort).
-    if let Some(hash) = pdf_hash_cached(&pdf_abs) {
+    if let Some(hash) = pdf_hash_cached(&pdf_abs).await {
         let cached: Vec<CachedDetection> = parsed
             .results
             .iter()
@@ -328,7 +326,7 @@ pub async fn get_cached_page_detections(
         }
     };
 
-    if let Some(hash) = pdf_hash_cached(&pdf_abs) {
+    if let Some(hash) = pdf_hash_cached(&pdf_abs).await {
         let cache = if is_legacy {
             DetectionCache::new(&project_path)
         } else {

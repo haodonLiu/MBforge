@@ -7,6 +7,7 @@
 //! opening independent DB connections.
 
 use std::path::Path;
+use std::sync::Mutex;
 
 use crate::core::chem::markush;
 use crate::core::molecule::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationStats};
@@ -25,7 +26,7 @@ pub use crate::core::chem::sar_query::{
 // ---------------------------------------------------------------------------
 
 pub struct MoleculeEngine {
-    store: MoleculeDatabase,
+    store: Mutex<MoleculeDatabase>,
     relation_db: MoleculeRelationDb,
 }
 
@@ -35,10 +36,13 @@ impl MoleculeEngine {
     /// Both connections point to `{project_root}/.mbforge/molecules.db`.
     /// WAL mode is enabled by the underlying modules, so concurrent reads
     /// across the two connections are safe.
-    pub fn new(project_root: &Path) -> Result<Self, String> {
-        let store = MoleculeDatabase::open(project_root)
-            .map_err(|e| format!("Failed to open molecule store: {}", e))?;
+    pub async fn new(project_root: &Path) -> Result<Self, String> {
+        let store = Mutex::new(
+            MoleculeDatabase::open(project_root)
+                .map_err(|e| format!("Failed to open molecule store: {}", e))?,
+        );
         let relation_db = MoleculeRelationDb::new(project_root)
+            .await
             .map_err(|e| format!("Failed to open relation DB: {}", e))?;
         Ok(Self { store, relation_db })
     }
@@ -48,32 +52,50 @@ impl MoleculeEngine {
     // =====================================================================
 
     pub fn add_molecule(&self, record: &MoleculeRecord) -> Result<(), String> {
-        self.store.add_molecule(record)
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .add_molecule(record)
     }
 
     pub fn add_molecules_batch(&self, records: &[MoleculeRecord]) -> Result<usize, String> {
-        self.store.add_molecules_batch(records)
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .add_molecules_batch(records)
     }
 
-    /// 获取底层 MoleculeDatabase 引用
-    pub fn store(&self) -> &MoleculeDatabase {
-        &self.store
+    /// 获取底层 MoleculeDatabase 锁 guard
+    pub fn store(&self) -> std::sync::MutexGuard<'_, MoleculeDatabase> {
+        self.store.lock().expect("store mutex poisoned")
     }
 
     pub fn get_molecule(&self, mol_id: &str) -> Result<Option<MoleculeRecord>, String> {
-        self.store.get_molecule(mol_id)
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .get_molecule(mol_id)
     }
 
     pub fn search_by_smiles(&self, smiles: &str) -> Result<Option<MoleculeRecord>, String> {
-        self.store.search_by_smiles(smiles)
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .search_by_smiles(smiles)
     }
 
     pub fn search_by_source(&self, doc_id: &str) -> Result<Vec<MoleculeRecord>, String> {
-        self.store.search_by_source(doc_id)
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .search_by_source(doc_id)
     }
 
     pub fn search_text(&self, query: &str) -> Result<Vec<MoleculeRecord>, String> {
-        self.store.search_text(query)
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .search_text(query)
     }
 
     pub fn list_all(
@@ -83,112 +105,168 @@ impl MoleculeEngine {
         source_type: Option<&str>,
         status: Option<&str>,
     ) -> Result<Vec<MoleculeRecord>, String> {
-        self.store.list_all(limit, offset, source_type, status)
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .list_all(limit, offset, source_type, status)
     }
 
     pub fn delete_molecule(&self, mol_id: &str) -> Result<bool, String> {
-        self.store.delete_molecule(mol_id)
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .delete_molecule(mol_id)
     }
 
     pub fn get_store_stats(&self) -> Result<serde_json::Value, String> {
-        self.store.get_stats()
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .get_stats()
     }
 
     pub fn update_status(&self, mol_id: &str, status: &str) -> Result<bool, String> {
-        self.store.update_status(mol_id, status)
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .update_status(mol_id, status)
     }
 
     pub fn update_molecule(&self, record: &MoleculeRecord) -> Result<bool, String> {
-        self.store.update_molecule(record)
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .update_molecule(record)
     }
 
     pub fn update_molecules_batch(
         &self,
         records: &[MoleculeRecord],
     ) -> Result<(usize, Vec<String>), String> {
-        self.store.update_molecules_batch(records)
+        self.store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?
+            .update_molecules_batch(records)
     }
     // =====================================================================
     // Relation operations (delegated to molecule_db.rs)
     // =====================================================================
 
-    pub fn add_relation(&self, rel: &MoleculeRelation) -> Result<i64, String> {
-        self.relation_db.add_relation(rel)
+    pub async fn add_relation(&self, rel: &MoleculeRelation) -> Result<i64, String> {
+        self.relation_db.add_relation(rel).await
     }
 
-    pub fn delete_relation(&self, id: i64) -> Result<bool, String> {
-        self.relation_db.delete_relation(id)
+    pub async fn delete_relation(&self, id: i64) -> Result<bool, String> {
+        self.relation_db.delete_relation(id).await
     }
 
-    pub fn get_relation(&self, id: i64) -> Result<Option<MoleculeRelation>, String> {
-        self.relation_db.get_relation(id)
+    pub async fn get_relation(&self, id: i64) -> Result<Option<MoleculeRelation>, String> {
+        self.relation_db.get_relation(id).await
     }
 
-    pub fn find_by_molecule(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
-        self.relation_db.find_by_molecule(mol_id)
+    pub async fn find_by_molecule(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
+        self.relation_db.find_by_molecule(mol_id).await
     }
 
-    pub fn find_similar(
+    pub async fn find_similar(
         &self,
         mol_id: &str,
         min_score: f64,
     ) -> Result<Vec<(MoleculeRelation, f64)>, String> {
-        self.relation_db.find_similar(mol_id, min_score)
+        self.relation_db.find_similar(mol_id, min_score).await
     }
 
-    pub fn find_same_as(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
-        self.relation_db.find_same_as(mol_id)
+    pub async fn find_same_as(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
+        self.relation_db.find_same_as(mol_id).await
     }
 
-    pub fn get_relation_stats(&self) -> Result<RelationStats, String> {
-        self.relation_db.get_stats()
+    pub async fn get_relation_stats(&self) -> Result<RelationStats, String> {
+        self.relation_db.get_stats().await
     }
 
     // =====================================================================
     // Cluster operations (delegated to molecule_cluster.rs)
     // =====================================================================
 
-    pub fn assign_cluster(&self, mol_id: &str, cluster_id: &str) -> Result<i64, String> {
-        crate::core::molecule::molecule_cluster::assign_to_cluster(mol_id, cluster_id, &self.relation_db)
+    pub async fn assign_cluster(&self, mol_id: &str, cluster_id: &str) -> Result<i64, String> {
+        crate::core::molecule::molecule_cluster::assign_to_cluster(mol_id, cluster_id, &self.relation_db).await
     }
 
-    pub fn remove_from_cluster(&self, mol_id: &str, cluster_id: &str) -> Result<bool, String> {
-        crate::core::molecule::molecule_cluster::remove_from_cluster(mol_id, cluster_id, &self.relation_db)
+    pub async fn remove_from_cluster(&self, mol_id: &str, cluster_id: &str) -> Result<bool, String> {
+        crate::core::molecule::molecule_cluster::remove_from_cluster(mol_id, cluster_id, &self.relation_db).await
     }
 
-    pub fn get_cluster_members(&self, cluster_id: &str) -> Result<ClusterInfo, String> {
-        crate::core::molecule::molecule_cluster::get_cluster_members(cluster_id, &self.relation_db)
+    pub async fn get_cluster_members(&self, cluster_id: &str) -> Result<ClusterInfo, String> {
+        crate::core::molecule::molecule_cluster::get_cluster_members(cluster_id, &self.relation_db).await
     }
 
-    pub fn get_molecule_clusters(&self, mol_id: &str) -> Result<Vec<String>, String> {
-        crate::core::molecule::molecule_cluster::get_molecule_clusters(mol_id, &self.relation_db)
+    pub async fn get_molecule_clusters(&self, mol_id: &str) -> Result<Vec<String>, String> {
+        crate::core::molecule::molecule_cluster::get_molecule_clusters(mol_id, &self.relation_db).await
     }
 
-    pub fn list_clusters(&self) -> Result<Vec<ClusterInfo>, String> {
-        crate::core::molecule::molecule_cluster::list_clusters(&self.relation_db)
+    pub async fn list_clusters(&self) -> Result<Vec<ClusterInfo>, String> {
+        crate::core::molecule::molecule_cluster::list_clusters(&self.relation_db).await
     }
 
     // =====================================================================
     // SAR operations (delegated to sar_query.rs)
     // =====================================================================
 
-    pub fn find_analogs(
+    pub async fn find_analogs(
         &self,
         mol_id: &str,
         min_sim: f64,
     ) -> Result<Vec<AnalogWithActivity>, String> {
-        let mconn = self.store.conn();
-        crate::core::chem::sar_query::find_analogs_with_activity(
-            mol_id,
-            min_sim,
-            &self.relation_db,
-            mconn,
-        )
+        // 先异步查询相似关系，避免在 await 期间持有 store 的同步锁。
+        let analogs = self
+            .relation_db
+            .find_similar(mol_id, min_sim)
+            .await
+            .map_err(|e| format!("find_similar failed: {}", e))?;
+
+        let store = self
+            .store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?;
+        let mconn = store.conn();
+
+        let mut results = Vec::new();
+        for (rel, score) in analogs {
+            let neighbor_id = if rel.mol_a_id == mol_id {
+                rel.mol_b_id.clone()
+            } else {
+                rel.mol_a_id.clone()
+            };
+
+            if let Some(record) = crate::core::chem::sar_query::get_molecule_activity(
+                &neighbor_id, mconn,
+            ) {
+                results.push(AnalogWithActivity {
+                    mol_id: neighbor_id,
+                    esmiles: record.esmiles,
+                    name: record.name,
+                    similarity_score: score,
+                    activity: record.activity,
+                    activity_type: record.activity_type,
+                    units: record.units,
+                });
+            }
+        }
+
+        results.sort_by(|a, b| {
+            b.similarity_score
+                .partial_cmp(&a.similarity_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        Ok(results)
     }
 
     pub fn scaffold_profile(&self, scaffold: &str) -> Result<ScaffoldProfile, String> {
-        let mconn = self.store.conn();
-        crate::core::chem::sar_query::scaffold_activity_profile(scaffold, mconn)
+        let store = self
+            .store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?;
+        crate::core::chem::sar_query::scaffold_activity_profile(scaffold, store.conn())
     }
 
     pub fn find_activity_cliffs(
@@ -196,15 +274,18 @@ impl MoleculeEngine {
         min_sim: f64,
         min_ratio: f64,
     ) -> Result<Vec<ActivityCliff>, String> {
-        let mconn = self.store.conn();
-        crate::core::chem::sar_query::find_activity_cliffs(min_sim, min_ratio, mconn)
+        let store = self
+            .store
+            .lock()
+            .map_err(|e| format!("Store lock poisoned: {}", e))?;
+        crate::core::chem::sar_query::find_activity_cliffs(min_sim, min_ratio, store.conn())
     }
 
     // =====================================================================
     // Dedup operations (delegated to molecule_dedup.rs)
     // =====================================================================
 
-    pub fn dedup_batch(&self, new_mols: &[(String, String)], threshold: f64) -> DedupResult {
+    pub async fn dedup_batch(&self, new_mols: &[(String, String)], threshold: f64) -> DedupResult {
         let sidecar_url = crate::core::constants::sidecar_url();
         crate::core::molecule::molecule_dedup::run_dedup_batch(
             new_mols,
@@ -212,9 +293,10 @@ impl MoleculeEngine {
             &sidecar_url,
             threshold,
         )
+        .await
     }
 
-    pub fn add_similarity_relation(
+    pub async fn add_similarity_relation(
         &self,
         mol_a_id: &str,
         mol_b_id: &str,
@@ -226,6 +308,7 @@ impl MoleculeEngine {
             score,
             &self.relation_db,
         )
+        .await
     }
 
     // =====================================================================
@@ -258,7 +341,7 @@ impl MoleculeEngine {
     /// - `"check_markush"` → params: `{ esmiles: string, query_smiles: string, rgroup_text?: string }`
     /// - `"list_clusters"` → params: `{}`
     /// - `"dedup_batch"`   → params: `{ mols: [[id, smiles], ...], threshold?: number }`
-    pub fn analyze(
+    pub async fn analyze(
         &self,
         action: &str,
         params: serde_json::Value,
@@ -297,7 +380,7 @@ impl MoleculeEngine {
                 Ok(stats)
             }
             "get_relation_stats" => {
-                let stats = self.get_relation_stats()?;
+                let stats = self.get_relation_stats().await?;
                 Ok(serde_json::to_value(&stats).map_err(|e| e.to_string())?)
             }
             "scaffold_profile" => {
@@ -308,7 +391,7 @@ impl MoleculeEngine {
             "find_analogs" => {
                 let mol_id = params["mol_id"].as_str().unwrap_or("");
                 let min_sim = params["min_similarity"].as_f64().unwrap_or(0.7);
-                let analogs = self.find_analogs(mol_id, min_sim)?;
+                let analogs = self.find_analogs(mol_id, min_sim).await?;
                 Ok(serde_json::to_value(&analogs).map_err(|e| e.to_string())?)
             }
             "find_activity_cliffs" => {
@@ -325,14 +408,14 @@ impl MoleculeEngine {
                 Ok(serde_json::to_value(&result).map_err(|e| e.to_string())?)
             }
             "list_clusters" => {
-                let clusters = self.list_clusters()?;
+                let clusters = self.list_clusters().await?;
                 Ok(serde_json::to_value(&clusters).map_err(|e| e.to_string())?)
             }
             "dedup_batch" => {
                 let mols: Vec<(String, String)> = serde_json::from_value(params["mols"].clone())
                     .map_err(|e| format!("Invalid mols param: {}", e))?;
                 let threshold = params["threshold"].as_f64().unwrap_or(1.0);
-                let result = self.dedup_batch(&mols, threshold);
+                let result = self.dedup_batch(&mols, threshold).await;
                 Ok(serde_json::to_value(&result).map_err(|e| e.to_string())?)
             }
             _ => Err(format!("Unknown molecule action: {}", action)),
@@ -357,47 +440,49 @@ mod tests {
         (tmp, root)
     }
 
-    #[test]
-    fn test_engine_opens_both_schemas() {
+    #[tokio::test]
+    async fn test_engine_opens_both_schemas() {
         let (_tmp, root) = temp_project();
-        let engine = MoleculeEngine::new(&root).unwrap();
+        let engine = MoleculeEngine::new(&root).await.unwrap();
 
         // Store schema should exist
         let stats = engine.get_store_stats().unwrap();
         assert_eq!(stats["total"], 0);
 
         // Relation schema should exist
-        let rel_stats = engine.get_relation_stats().unwrap();
+        let rel_stats = engine.get_relation_stats().await.unwrap();
         assert_eq!(rel_stats.total, 0);
     }
 
-    #[test]
-    fn test_analyze_list_empty() {
+    #[tokio::test]
+    async fn test_analyze_list_empty() {
         let (_tmp, root) = temp_project();
-        let engine = MoleculeEngine::new(&root).unwrap();
+        let engine = MoleculeEngine::new(&root).await.unwrap();
 
         let result = engine
             .analyze("list", serde_json::json!({"limit": 10}))
+            .await
             .unwrap();
         let mols: Vec<MoleculeRecord> = serde_json::from_value(result).unwrap();
         assert!(mols.is_empty());
     }
 
-    #[test]
-    fn test_analyze_unknown_action() {
+    #[tokio::test]
+    async fn test_analyze_unknown_action() {
         let (_tmp, root) = temp_project();
-        let engine = MoleculeEngine::new(&root).unwrap();
+        let engine = MoleculeEngine::new(&root).await.unwrap();
 
         let err = engine
             .analyze("unknown_action", serde_json::json!({}))
+            .await
             .unwrap_err();
         assert!(err.contains("Unknown molecule action"));
     }
 
-    #[test]
-    fn test_roundtrip_store_and_relation() {
+    #[tokio::test]
+    async fn test_roundtrip_store_and_relation() {
         let (_tmp, root) = temp_project();
-        let engine = MoleculeEngine::new(&root).unwrap();
+        let engine = MoleculeEngine::new(&root).await.unwrap();
 
         // Add a molecule via store
         let mut rec = MoleculeRecord::new("m1", "CCO");
@@ -414,7 +499,7 @@ mod tests {
             metadata: None,
             created_at: crate::core::helpers::now_rfc3339(),
         };
-        let rid = engine.add_relation(&rel).unwrap();
+        let rid = engine.add_relation(&rel).await.unwrap();
         assert!(rid > 0);
 
         // Verify store can read it back
@@ -422,7 +507,7 @@ mod tests {
         assert_eq!(loaded.name, "Ethanol");
 
         // Verify relation DB can read it back
-        let found = engine.find_by_molecule("m1").unwrap();
+        let found = engine.find_by_molecule("m1").await.unwrap();
         assert_eq!(found.len(), 1);
     }
 }

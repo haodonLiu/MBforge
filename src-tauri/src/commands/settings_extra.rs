@@ -55,7 +55,7 @@ fn size_mb(p: &Path) -> f64 {
 
 /// 清除指定类型的项目缓存
 #[tauri::command]
-pub fn cache_clear(project_root: String, cache: String) -> ClearResult {
+pub async fn cache_clear(project_root: String, cache: String) -> ClearResult {
     let root = PathBuf::from(&project_root);
     let target = match cache.as_str() {
         "semantic" => project_path(&root, "semantic_cache"),
@@ -72,7 +72,7 @@ pub fn cache_clear(project_root: String, cache: String) -> ClearResult {
     };
     let before = size_mb(&target);
     let result = match cache.as_str() {
-        "semantic" => clear_semantic(&root),
+        "semantic" => clear_semantic(&root).await,
         "detection" => clear_detection(&root),
         "molecules" => clear_molecules(&root),
         _ => unreachable!(),
@@ -84,9 +84,9 @@ pub fn cache_clear(project_root: String, cache: String) -> ClearResult {
     }
 }
 
-fn clear_semantic(root: &Path) -> Result<(), String> {
+async fn clear_semantic(root: &Path) -> Result<(), String> {
     let cache = SemanticCache::new(root, Default::default());
-    cache.clear();
+    cache.clear().await;
     Ok(())
 }
 

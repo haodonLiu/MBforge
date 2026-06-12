@@ -43,7 +43,7 @@ pub async fn mol_add_relation(
         metadata,
         created_at: crate::core::helpers::now_rfc3339(),
     };
-    engine.add_relation(&rel).map_err(|e| {
+    engine.add_relation(&rel).await.map_err(|e| {
         log::error!("mol_add_relation failed: {}", e);
         e.to_string()
     })
@@ -59,7 +59,7 @@ pub async fn mol_delete_relation(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.delete_relation(id).map_err(|e| {
+    engine.delete_relation(id).await.map_err(|e| {
         log::error!("mol_delete_relation id={} failed: {}", id, e);
         e.to_string()
     })
@@ -75,7 +75,7 @@ pub async fn mol_get_relation(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.get_relation(id).map_err(|e| {
+    engine.get_relation(id).await.map_err(|e| {
         log::error!("mol_get_relation id={} failed: {}", id, e);
         e.to_string()
     })
@@ -91,7 +91,7 @@ pub async fn mol_find_by_molecule(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.find_by_molecule(&mol_id).map_err(|e| {
+    engine.find_by_molecule(&mol_id).await.map_err(|e| {
         log::error!("mol_find_by_molecule mol_id={} failed: {}", mol_id, e);
         e.to_string()
     })
@@ -108,7 +108,7 @@ pub async fn mol_find_similar(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.find_similar(&mol_id, min_score).map_err(|e| {
+    engine.find_similar(&mol_id, min_score).await.map_err(|e| {
         log::error!("mol_find_similar mol_id={} failed: {}", mol_id, e);
         e.to_string()
     })
@@ -124,7 +124,7 @@ pub async fn mol_find_same_as(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.find_same_as(&mol_id).map_err(|e| {
+    engine.find_same_as(&mol_id).await.map_err(|e| {
         log::error!("mol_find_same_as mol_id={} failed: {}", mol_id, e);
         e.to_string()
     })
@@ -139,7 +139,7 @@ pub async fn mol_get_stats(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.get_relation_stats().map_err(|e| {
+    engine.get_relation_stats().await.map_err(|e| {
         log::error!("mol_get_stats failed: {}", e);
         e.to_string()
     })
@@ -156,7 +156,7 @@ pub async fn mol_assign_cluster(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.assign_cluster(&mol_id, &cluster_id).map_err(|e| {
+    engine.assign_cluster(&mol_id, &cluster_id).await.map_err(|e| {
         log::error!(
             "mol_assign_cluster mol_id={} cluster_id={} failed: {}",
             mol_id,
@@ -180,6 +180,7 @@ pub async fn mol_remove_from_cluster(
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine
         .remove_from_cluster(&mol_id, &cluster_id)
+        .await
         .map_err(|e| {
             log::error!(
                 "mol_remove_from_cluster mol_id={} cluster_id={} failed: {}",
@@ -201,7 +202,7 @@ pub async fn mol_get_cluster_members(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.get_cluster_members(&cluster_id).map_err(|e| {
+    engine.get_cluster_members(&cluster_id).await.map_err(|e| {
         log::error!(
             "mol_get_cluster_members cluster_id={} failed: {}",
             cluster_id,
@@ -221,7 +222,7 @@ pub async fn mol_get_molecule_clusters(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.get_molecule_clusters(&mol_id).map_err(|e| {
+    engine.get_molecule_clusters(&mol_id).await.map_err(|e| {
         log::error!("mol_get_molecule_clusters mol_id={} failed: {}", mol_id, e);
         e.to_string()
     })
@@ -236,7 +237,7 @@ pub async fn mol_list_clusters(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.list_clusters().map_err(|e| {
+    engine.list_clusters().await.map_err(|e| {
         log::error!("mol_list_clusters failed: {}", e);
         e.to_string()
     })
@@ -253,7 +254,7 @@ pub async fn mol_find_analogs_with_activity(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.find_analogs(&mol_id, min_similarity).map_err(|e| {
+    engine.find_analogs(&mol_id, min_similarity).await.map_err(|e| {
         log::error!(
             "mol_find_analogs_with_activity mol_id={} failed: {}",
             mol_id,
@@ -327,7 +328,7 @@ pub async fn mol_dedup_batch(
         new_mols.len(),
         same_as_threshold
     );
-    Ok(engine.dedup_batch(&new_mols, same_as_threshold))
+    Ok(engine.dedup_batch(&new_mols, same_as_threshold).await)
 }
 
 /// 子结构搜索：Tanimoto 预过滤 + VF2 精确验证（纯 Rust）

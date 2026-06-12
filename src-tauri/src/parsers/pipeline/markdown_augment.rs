@@ -59,7 +59,8 @@ fn rewrite_inline_references(markdown: &str, images: &[ImageRef]) -> String {
                         .description
                         .clone()
                         .unwrap_or_else(|| default_description(img));
-                    write_image_ref(&mut out, &new_alt, &new_url, Some(title.as_ref()));
+                    let title_opt = if title.is_empty() { None } else { Some(title.as_ref()) };
+                    write_image_ref(&mut out, &new_alt, &new_url, title_opt);
                 } else {
                     // Pass through original slice unchanged
                     out.push_str(&markdown[span.start..span.end]);
@@ -175,12 +176,13 @@ pub fn populate_descriptions_from_detection_cache(
             .and_then(|n| n.to_str())
             .unwrap_or(img_rel);
         let match_ = page_det.detections.iter().find(|d| {
+            let crop = d.crop_relpath.as_deref().unwrap_or("");
             // exact match
-            d.crop_relpath == img_rel
+            crop == img_rel
                 // cropped path is inside the extracted image
-                || d.crop_relpath.ends_with(img_basename)
+                || crop.ends_with(img_basename)
                 // or the extracted image ends with the cropped path
-                || img_rel.ends_with(&d.crop_relpath)
+                || img_rel.ends_with(crop)
         });
         if let Some(d) = match_ {
             if let Some(cap) = d.vlm_caption.as_ref() {

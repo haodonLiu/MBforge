@@ -556,7 +556,7 @@ mod tests {
     fn test_lru_eviction() {
         let mut config = SemanticCacheConfig::default();
         config.max_size = 2;
-        let (_dir, sc) = setup_cache();
+        let (_dir, _sc) = setup_cache();
         // 重新创建以应用 max_size=2
         let dir = tempfile::tempdir().unwrap();
         let sc = SemanticCache::new(dir.path(), config);

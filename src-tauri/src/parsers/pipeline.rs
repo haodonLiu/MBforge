@@ -17,12 +17,15 @@ mod helpers;
 pub mod markdown_augment;
 mod merge;
 
-use extract::extract_molecules_from_pdf;
 use helpers::{activity_entry_to_record, compound_entry_to_record, extract_section_text};
 use merge::{enhance_patent_data, merge_partial_results, run_merge_and_sar};
 
 // Re-export for commands/pdf.rs and other modules
-pub use extract::{WorkflowResult, extract_pdf_workflow, find_project_root, classify_and_extract};
+pub use extract::{
+    ClassifyResult, WorkflowResult, extract_pdf_workflow, find_project_root,
+    classify_and_extract, QuickMoldetDocResult, quick_moldet_scan_pdf,
+    extract_molecules_from_pdf,
+};
 
 // ============================================================================
 // PipelineOutput — 三个入口的统一返回类型
@@ -147,7 +150,16 @@ pub async fn parse_pdf(
     _overlap: Option<usize>,
     parser: Option<String>,
 ) -> Result<PdfParseResult, String> {
-    let chunk_size = chunk_size.unwrap_or(512);
+    // 文件存在性早检 — 否则下游 pdf_inspector 会抛出不友好的 IO error
+    if !std::path::Path::new(&path).exists() {
+        return Err(format!("PDF 文件不存在: {}", path));
+    }
+    // 优先用调用方传入的 chunk_size；其次从用户配置读取；最后回退到 512
+    let chunk_size = chunk_size.unwrap_or_else(|| {
+        crate::core::config::settings::AppConfig::load()
+            .pdf_parse
+            .chunk_size
+    });
     let parser_choice = parser.unwrap_or_else(|| "pdf_inspector".to_string());
 
     // Stage 1: Text extraction
@@ -481,7 +493,7 @@ pub async fn process_document(
         }
 
         if !cache_hit {
-            let classified = classify_and_extract(&path).await?;
+            let classified = classify_and_extract(&path, true).await?;
             ctx.raw_text = classified.text;
             ctx.page_count = classified.page_count;
             ctx.parser_used = classified.parser;
@@ -1250,7 +1262,7 @@ pub async fn index_project_rust(
                 },
             );
             async move {
-                let classified = classify_and_extract(&path_str).await?;
+                let classified = classify_and_extract(&path_str, true).await?;
                 let detected = extract_molecules_from_pdf(
                     &path_str, &classified, &sidecar, &root,
                 ).await.unwrap_or_else(|e| {
@@ -1628,7 +1640,6 @@ mod tests {
     #[test]
     #[ignore]
     fn test_extract_images_from_both_patents() {
-        use std::path::Path;
         let us_pdf = r"C:\Users\10954\Desktop\X2\US20260027089A1.PDF";
         let cn_pdf = r"C:\Users\10954\Desktop\X2\CN120118069A.PDF";
 

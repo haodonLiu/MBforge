@@ -1,9 +1,11 @@
 #![allow(dead_code)]
+use crate::core::config::constants::{MOLECULES_DIR, PROJECT_SOURCE_FILE, PROJECTS_DIR, REPORTS_DIR};
 use crate::core::document::detection_cache::{
     Detection as CachedDetection, DetectionCache, PageDetection, DETECTION_CACHE_SCHEMA_VERSION,
 };
 use crate::parsers::doc_types::{ImageRef, OcrBlock};
-use crate::parsers::chem::vlm_chem::{process_page_image, detect_coref, coref_to_molecules, DetectedMolecule, CorefMolecule};
+use crate::parsers::chem::vlm_chem::{process_page_image, detect_coref, coref_to_molecules, DetectedMolecule, CorefMolecule, detect_batch as detect_batch_images, molscribe};
+use crate::parsers::pdf::images::{image_to_pdf_bbox, pdf_to_image_bbox, pdf_page_size_pts, scale_from_page_size};
 use image::GenericImageView;
 use std::path::{Path, PathBuf};
 
@@ -31,7 +33,7 @@ fn persist_extracted_images(
         .to_string();
 
     let media_dir = project_root.as_ref().map(|root| {
-        root.join(crate::core::constants::REPORTS_DIR)
+        root.join(REPORTS_DIR)
             .join("figures")
             .join(&doc_slug)
     });
@@ -159,7 +161,7 @@ fn persist_mineru_images(
         .unwrap_or("unknown");
 
     let media_dir = project_root
-        .join(crate::core::constants::REPORTS_DIR)
+        .join(REPORTS_DIR)
         .join("figures")
         .join(doc_slug)
         .join("mineru");
@@ -209,7 +211,7 @@ fn persist_mineru_images(
 // classify_and_extract
 // ---------------------------------------------------------------------------
 
-pub async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> {
+pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<ClassifyResult, String> {
     let source_path = Path::new(path);
     let project_root = find_project_root(source_path, None);
 
@@ -228,7 +230,7 @@ pub async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> 
     // 判断是否为扫描件（文本极少但有页面）
     let is_scanned = md.len() < 100 && page_count > 0;
 
-    if is_scanned {
+    if is_scanned && allow_ocr {
         // 优先尝试 MinerU（云端 OCR）
         if std::env::var("MINERU_API_KEY").is_ok() {
             // 检查缓存
@@ -313,6 +315,80 @@ pub async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> 
 }
 
 // ---------------------------------------------------------------------------
+// DocumentProject-aware path helpers
+// ---------------------------------------------------------------------------
+
+/// If `source_path` is a DocumentProject source file
+/// (`projects/<doc_id>/source.pdf`), return the `<doc_id>`.
+fn document_project_id_from_source_path(
+    project_root: &Path,
+    source_path: &Path,
+) -> Option<String> {
+    let projects_dir = project_root.join(PROJECTS_DIR);
+    if !source_path.starts_with(&projects_dir) {
+        return None;
+    }
+    if source_path.file_name()?.to_str()? != PROJECT_SOURCE_FILE {
+        return None;
+    }
+    source_path
+        .parent()?
+        .file_name()?
+        .to_str()
+        .map(|s| s.to_string())
+}
+
+/// Return the molecule output directory for a PDF.
+///
+/// - DocumentProject: `projects/<doc_id>/molecules/`
+/// - Legacy: `molecules/<doc_slug>/`
+fn molecule_output_dir(project_root: &Path, source_path: &Path, doc_slug: &str) -> PathBuf {
+    if let Some(doc_id) = document_project_id_from_source_path(project_root, source_path) {
+        project_root
+            .join(PROJECTS_DIR)
+            .join(doc_id)
+            .join(MOLECULES_DIR)
+    } else {
+        project_root.join(MOLECULES_DIR).join(doc_slug)
+    }
+}
+
+/// Return the temporary working directory for a PDF (screenshots, etc.).
+///
+/// - DocumentProject: `projects/<doc_id>/cache/tmp/`
+/// - Legacy: `molecules/<doc_slug>/`
+fn tmp_output_dir(project_root: &Path, source_path: &Path, doc_slug: &str) -> PathBuf {
+    if let Some(doc_id) = document_project_id_from_source_path(project_root, source_path) {
+        project_root
+            .join(PROJECTS_DIR)
+            .join(doc_id)
+            .join("cache")
+            .join("tmp")
+    } else {
+        project_root.join(MOLECULES_DIR).join(doc_slug)
+    }
+}
+
+/// Return the detection cache + cache key for a PDF.
+///
+/// - DocumentProject: `projects/<doc_id>/cache/detections/`, key = doc_id
+/// - Legacy: `index/detections/<doc_slug>/`, key = doc_slug
+fn detection_cache_for_pdf(
+    project_root: &Path,
+    source_path: &Path,
+    fallback_slug: &str,
+) -> (DetectionCache, String) {
+    if let Some(doc_id) = document_project_id_from_source_path(project_root, source_path) {
+        (
+            DetectionCache::for_document_project(project_root, &doc_id),
+            doc_id,
+        )
+    } else {
+        (DetectionCache::new(project_root), fallback_slug.to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 分子图像提取
 // ---------------------------------------------------------------------------
 
@@ -324,13 +400,14 @@ pub async fn classify_and_extract(path: &str) -> Result<ClassifyResult, String> 
 /// sessions and survives doc_id UUID regeneration.
 fn write_detection_cache(
     project_root: &Path,
+    source_path: &Path,
     doc_slug: &str,
     page: usize,
     pdf_hash: &str,
     pdf_mtime: f64,
     detections: &[DetectedMolecule],
 ) {
-    let cache = DetectionCache::new(project_root);
+    let (cache, cache_key) = detection_cache_for_pdf(project_root, source_path, doc_slug);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
@@ -353,19 +430,20 @@ fn write_detection_cache(
                 bbox_pdf: [0.0, 0.0, 0.0, 0.0],
                 // vlm_chem returns esmiles only; SMILES inference happens
                 // downstream in chem_validate. Leave empty here.
-                smiles: String::new(),
-                esmiles: d.esmiles.clone(),
+                smiles: None,
+                esmiles: Some(d.esmiles.clone()).filter(|s| !s.is_empty()),
                 conf_moldet: d.moldet_conf,
                 conf_molscribe: d.confidence,
                 vlm_caption: None,
                 vlm_esmiles: None,
-                crop_relpath: crop_rel,
+                crop_relpath: Some(crop_rel).filter(|s| !s.is_empty()),
+                is_quick_scan: false,
             }
         })
         .collect();
 
     let entry = PageDetection {
-        doc_id: doc_slug.to_string(),
+        doc_id: cache_key.clone(),
         page,
         pdf_hash: pdf_hash.to_string(),
         mtime: pdf_mtime,
@@ -377,11 +455,470 @@ fn write_detection_cache(
     if let Err(e) = cache.put(&entry) {
         log::warn!(
             "[detection_cache] Failed to write cache for {} page {}: {}",
-            doc_slug,
+            cache_key,
             page,
             e
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// 复用 quick-scan bbox 进行完整识别（Phase 5）
+// ---------------------------------------------------------------------------
+
+/// Convert a recognized molecule into a cache Detection entry.
+fn detected_molecule_to_cached_detection(
+    mol: &DetectedMolecule,
+    project_root: &Path,
+    is_quick_scan: bool,
+) -> CachedDetection {
+    let crop_abs = Path::new(&mol.crop_path);
+    let crop_rel = crop_abs
+        .strip_prefix(project_root)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| mol.crop_path.clone());
+    CachedDetection {
+        bbox_pdf: mol.bbox_pdf,
+        smiles: None,
+        esmiles: Some(mol.esmiles.clone()).filter(|s| !s.is_empty()),
+        conf_moldet: mol.moldet_conf,
+        conf_molscribe: mol.confidence,
+        vlm_caption: None,
+        vlm_esmiles: None,
+        crop_relpath: Some(crop_rel).filter(|s| !s.is_empty()),
+        is_quick_scan,
+    }
+}
+
+fn now_secs_f64() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
+fn bbox_close(a: &[f64; 4], b: &[f64; 4]) -> bool {
+    a.iter().zip(b.iter()).all(|(x, y)| (x - y).abs() < 1.0)
+}
+
+/// Merge newly-recognized full detections into an existing quick-scan page
+/// entry and persist it. Any quick-scan bboxes that were successfully
+/// recognized are replaced by full entries; unrecognized quick-scan bboxes
+/// are preserved so the user can still click them on-demand.
+fn merge_and_write_full_detections(
+    cache: &DetectionCache,
+    cache_key: &str,
+    page: usize,
+    pdf_hash: &str,
+    pdf_mtime: f64,
+    existing: PageDetection,
+    recognized: &[DetectedMolecule],
+    project_root: &Path,
+) {
+    if recognized.is_empty() {
+        return;
+    }
+
+    let mut detections: Vec<CachedDetection> = recognized
+        .iter()
+        .map(|m| detected_molecule_to_cached_detection(m, project_root, false))
+        .collect();
+
+    for d in existing.detections {
+        if !d.is_quick_scan {
+            continue;
+        }
+        if recognized.iter().any(|m| bbox_close(&m.bbox_pdf, &d.bbox_pdf)) {
+            continue;
+        }
+        detections.push(d);
+    }
+
+    let entry = PageDetection {
+        doc_id: cache_key.to_string(),
+        page,
+        pdf_hash: pdf_hash.to_string(),
+        mtime: pdf_mtime,
+        detected_at: now_secs_f64(),
+        schema_version: DETECTION_CACHE_SCHEMA_VERSION,
+        detections,
+    };
+
+    if let Err(e) = cache.put(&entry) {
+        log::warn!(
+            "[detection_cache] Failed to write merged cache for {} page {}: {}",
+            cache_key,
+            page,
+            e
+        );
+    }
+}
+
+/// Run MolScribe on crops derived from cached quick-scan bboxes.
+///
+/// `page_size` is the PDF page size in points; when available the cached
+/// PDF bbox is converted back to image pixels. If unavailable, the cached
+/// bbox is assumed to already be in image coordinates (fallback path for
+/// scanned PDFs where page size could not be determined).
+async fn recognize_cached_page(
+    image_path: &Path,
+    page_idx: i32,
+    page_size: Option<(f64, f64)>,
+    sidecar_url: &str,
+    output_dir: &Path,
+    cached: &[CachedDetection],
+) -> Result<Vec<DetectedMolecule>, String> {
+    let img = image::open(image_path)
+        .map_err(|e| format!("Failed to open image {}: {}", image_path.display(), e))?;
+    let (img_w, img_h) = img.dimensions();
+    std::fs::create_dir_all(output_dir)
+        .map_err(|e| format!("Failed to create output dir: {}", e))?;
+
+    let mut results = Vec::new();
+    for (idx, d) in cached.iter().filter(|d| d.is_quick_scan).enumerate() {
+        let (x1, y1, x2, y2) = match page_size {
+            Some((pw, ph)) if pw > 0.0 && ph > 0.0 => {
+                let scale = scale_from_page_size(pw, ph, img_w, img_h);
+                pdf_to_image_bbox((d.bbox_pdf[0], d.bbox_pdf[1], d.bbox_pdf[2], d.bbox_pdf[3]), ph, scale)
+            }
+            _ => (d.bbox_pdf[0], d.bbox_pdf[1], d.bbox_pdf[2], d.bbox_pdf[3]),
+        };
+
+        let x1 = x1.max(0.0) as u32;
+        let y1 = y1.max(0.0) as u32;
+        let x2 = x2.min(img_w as f64) as u32;
+        let y2 = y2.min(img_h as f64) as u32;
+        if x2 <= x1 || y2 <= y1 {
+            log::warn!(
+                "[recognize_cached_page] Invalid bbox for page {} mol {}: {:?}",
+                page_idx,
+                idx,
+                d.bbox_pdf
+            );
+            continue;
+        }
+
+        let crop = img.crop_imm(x1, y1, x2 - x1, y2 - y1);
+        let crop_filename = format!("page_{:04}_mol_{:03}.png", page_idx, idx);
+        let crop_path = output_dir.join(&crop_filename);
+        if let Err(e) = crop.save(&crop_path) {
+            log::warn!(
+                "[recognize_cached_page] Failed to save crop {}: {}",
+                crop_path.display(),
+                e
+            );
+            continue;
+        }
+
+        match molscribe(crop_path.to_str().unwrap_or(""), sidecar_url).await {
+            Ok(ms) if ms.success && !ms.esmiles.is_empty() => {
+                results.push(DetectedMolecule {
+                    esmiles: ms.esmiles,
+                    confidence: ms.confidence,
+                    moldet_conf: d.conf_moldet,
+                    page: page_idx,
+                    crop_path: crop_path.to_string_lossy().to_string(),
+                    bbox_pdf: d.bbox_pdf,
+                });
+            }
+            Ok(_) => log::debug!(
+                "[recognize_cached_page] MolScribe empty for page {} mol {}",
+                page_idx,
+                idx
+            ),
+            Err(e) => log::warn!(
+                "[recognize_cached_page] MolScribe failed for page {} mol {}: {}",
+                page_idx,
+                idx,
+                e
+            ),
+        }
+    }
+
+    log::info!(
+        "[recognize_cached_page] Page {}: {} cached bboxes, {} recognized",
+        page_idx,
+        cached.iter().filter(|d| d.is_quick_scan).count(),
+        results.len()
+    );
+    Ok(results)
+}
+
+// ---------------------------------------------------------------------------
+// 快速 MoldDet 扫描（只检测分子 bbox，不识别 SMILES）
+// ---------------------------------------------------------------------------
+
+/// 单页快速扫描结果
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct QuickMoldetPageResult {
+    pub page: usize,
+    pub has_molecule: bool,
+    pub bbox_count: usize,
+}
+
+/// 单文档快速扫描结果
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct QuickMoldetDocResult {
+    pub path: String,
+    pub doc_slug: String,
+    pub doc_id: String,
+    pub page_count: usize,
+    pub pages: Vec<QuickMoldetPageResult>,
+    pub pages_with_molecules: Vec<usize>,
+    #[serde(default)]
+    pub moldet_status: String,
+    pub error: Option<String>,
+}
+
+/// 对单个 PDF 进行快速 MoldDet 扫描。
+///
+/// 与 `extract_molecules_from_pdf` 不同，此函数只调用 MolDet 检测 bbox，
+/// 不调用 MolScribe 识别 SMILES，因此速度更快，适合“先标记可能存在分子的页面”。
+///
+/// 扫描结果会写入 `index/detections/<doc_slug>/page_<N>.json` 缓存，
+/// 包含真实的 `bbox_pdf` 与 `conf_moldet`，但 `smiles`/`esmiles` 为空。
+/// 完整识别可后续通过 `cached_extract_page` 或用户点击 bbox 触发。
+pub async fn quick_moldet_scan_pdf(
+    path: &str,
+    project_root: &Path,
+    sidecar_url: &str,
+    doc_id: &str,
+    batch_size: usize,
+) -> Result<QuickMoldetDocResult, String> {
+    let source_path = Path::new(path);
+    let doc_slug = source_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let classified = classify_and_extract(path, false).await?;
+    let page_count = classified.page_count.max(1);
+
+    let mol_dir = tmp_output_dir(project_root, source_path, &doc_slug);
+    std::fs::create_dir_all(&mol_dir)
+        .map_err(|e| format!("Failed to create molecule dir: {}", e))?;
+
+    let pdf_hash = crate::core::helpers::sha256_file(source_path).unwrap_or_default();
+    let pdf_mtime = std::fs::metadata(source_path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+
+    let is_scanned = classified.parser == "mineru" || classified.parser == "mineru+cache";
+
+    // 每个待检测的页面项：page_idx, 图片路径, 图片像素宽高。
+    struct PageImage {
+        page_idx: usize,
+        path: PathBuf,
+        width: u32,
+        height: u32,
+    }
+    let mut page_images: Vec<PageImage> = Vec::new();
+
+    if is_scanned {
+        log::info!(
+            "[quick_moldet_scan] Scanned PDF: processing {} embedded images from {}",
+            classified.images.len(),
+            path
+        );
+
+        for img_ref in classified.images.iter() {
+            let img_path = if let Some(ref rp) = img_ref.rel_path {
+                project_root.join(rp)
+            } else {
+                continue;
+            };
+            if !img_path.exists() {
+                log::warn!("[quick_moldet_scan] Image not found: {}", img_path.display());
+                continue;
+            }
+
+            let dims = image::open(&img_path)
+                .map(|img| img.dimensions())
+                .unwrap_or((0, 0));
+            page_images.push(PageImage {
+                page_idx: img_ref.page as usize,
+                path: img_path,
+                width: dims.0,
+                height: dims.1,
+            });
+        }
+    } else {
+        log::info!(
+            "[quick_moldet_scan] TextBased PDF: screenshot {} pages from {}",
+            page_count,
+            path
+        );
+
+        let page_numbers: Vec<u32> = (1..=page_count).map(|p| p as u32).collect();
+        for batch_start in (0..page_numbers.len()).step_by(batch_size) {
+            let batch_end = (batch_start + batch_size).min(page_numbers.len());
+            let batch_pages: Vec<u32> = page_numbers[batch_start..batch_end].to_vec();
+
+            match crate::parsers::pdf::liteparse::screenshot_with_liteparse(path, Some(batch_pages))
+                .await
+            {
+                Ok(screenshots) => {
+                    for ss in screenshots {
+                        let page_idx = ss.page_num as usize;
+                        let page_img_path = mol_dir.join(format!("page_{:04}_screenshot.png", page_idx));
+                        if let Err(e) = std::fs::write(&page_img_path, &ss.image_bytes) {
+                            log::warn!(
+                                "[quick_moldet_scan] Failed to save screenshot page {}: {}",
+                                page_idx,
+                                e
+                            );
+                            continue;
+                        }
+                        page_images.push(PageImage {
+                            page_idx,
+                            path: page_img_path,
+                            width: ss.width,
+                            height: ss.height,
+                        });
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[quick_moldet_scan] LiteParse screenshot failed for batch {}-{}: {}",
+                        batch_start + 1,
+                        batch_end,
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    let mut pages: Vec<QuickMoldetPageResult> = Vec::new();
+    let mut pages_with_molecules: Vec<usize> = Vec::new();
+
+    // 按 batch 进行 MoldDet 批量检测。
+    let batch_size = batch_size.max(1);
+    for batch_start in (0..page_images.len()).step_by(batch_size) {
+        let batch_end = (batch_start + batch_size).min(page_images.len());
+        let batch = &page_images[batch_start..batch_end];
+        let paths: Vec<&str> = batch
+            .iter()
+            .map(|p| p.path.to_str().unwrap_or(""))
+            .collect();
+
+        match detect_batch_images(&paths, sidecar_url).await {
+            Ok(batch_bboxes) => {
+                for (img, bboxes) in batch.iter().zip(batch_bboxes.into_iter()) {
+                    let has_molecule = !bboxes.is_empty();
+                    if has_molecule {
+                        pages_with_molecules.push(img.page_idx);
+                    }
+                    pages.push(QuickMoldetPageResult {
+                        page: img.page_idx,
+                        has_molecule,
+                        bbox_count: bboxes.len(),
+                    });
+
+                    // 转换图像坐标 → PDF 坐标，并写入缓存。
+                    if !pdf_hash.is_empty() && has_molecule {
+                        let page_size = pdf_page_size_pts(source_path, img.page_idx - 1);
+                        let detections: Vec<CachedDetection> = if let Some((pw, ph)) = page_size {
+                            let scale = scale_from_page_size(pw, ph, img.width, img.height);
+                            bboxes
+                                .into_iter()
+                                .map(|b| {
+                                    let (x1, y1, x2, y2) = image_to_pdf_bbox(
+                                        (b.x1, b.y1, b.x2, b.y2),
+                                        ph,
+                                        scale,
+                                    );
+                                    CachedDetection {
+                                        bbox_pdf: [x1, y1, x2, y2],
+                                        smiles: None,
+                                        esmiles: None,
+                                        conf_moldet: b.conf,
+                                        conf_molscribe: 0.0,
+                                        vlm_caption: None,
+                                        vlm_esmiles: None,
+                                        crop_relpath: None,
+                                        is_quick_scan: true,
+                                    }
+                                })
+                                .collect()
+                        } else {
+                            bboxes
+                                .into_iter()
+                                .map(|b| CachedDetection {
+                                    bbox_pdf: [b.x1, b.y1, b.x2, b.y2],
+                                    smiles: None,
+                                    esmiles: None,
+                                    conf_moldet: b.conf,
+                                    conf_molscribe: 0.0,
+                                    vlm_caption: None,
+                                    vlm_esmiles: None,
+                                    crop_relpath: None,
+                                    is_quick_scan: true,
+                                })
+                                .collect()
+                        };
+
+                        let (cache, cache_key) =
+                            detection_cache_for_pdf(project_root, source_path, &doc_slug);
+                        let entry = PageDetection {
+                            doc_id: cache_key.clone(),
+                            page: img.page_idx,
+                            pdf_hash: pdf_hash.clone(),
+                            mtime: pdf_mtime,
+                            detected_at: std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs_f64())
+                                .unwrap_or(0.0),
+                            schema_version: DETECTION_CACHE_SCHEMA_VERSION,
+                            detections,
+                        };
+                        if let Err(e) = cache.put(&entry) {
+                            log::warn!(
+                                "[quick_moldet_scan] cache write failed for {} page {}: {}",
+                                cache_key,
+                                img.page_idx,
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "[quick_moldet_scan] detect_batch failed for batch {}-{}: {}",
+                    batch_start + 1,
+                    batch_end,
+                    e
+                );
+            }
+        }
+    }
+
+    pages.sort_by(|a, b| a.page.cmp(&b.page));
+    pages_with_molecules.sort();
+    pages_with_molecules.dedup();
+
+    log::info!(
+        "[quick_moldet_scan] {}: scanned {} pages, {} with molecules",
+        path,
+        pages.len(),
+        pages_with_molecules.len()
+    );
+
+    Ok(QuickMoldetDocResult {
+        path: path.to_string(),
+        doc_slug,
+        doc_id: doc_id.to_string(),
+        page_count,
+        pages,
+        pages_with_molecules,
+        moldet_status: String::new(),
+        error: None,
+    })
 }
 
 /// 从 PDF 中提取分子图像（MolDet + MolScribe）
@@ -409,9 +946,7 @@ pub async fn extract_molecules_from_pdf(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
-    let mol_dir = project_root
-        .join(crate::core::constants::MOLECULES_DIR)
-        .join(doc_slug);
+    let mol_dir = molecule_output_dir(project_root, source_path, doc_slug);
 
     std::fs::create_dir_all(&mol_dir)
         .map_err(|e| format!("Failed to create molecule dir: {}", e))?;
@@ -429,6 +964,10 @@ pub async fn extract_molecules_from_pdf(
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0);
+
+    // Detection cache for this document. For DocumentProject the key is the
+    // doc_id; for legacy projects it is the PDF file stem.
+    let (cache, cache_key) = detection_cache_for_pdf(project_root, source_path, doc_slug);
 
     if is_scanned {
         // Scanned: 使用 lopdf 提取的位图
@@ -452,6 +991,53 @@ pub async fn extract_molecules_from_pdf(
 
             let page_idx = img_ref.page as i32;
             let output_dir = mol_dir.clone();
+            let page_size = pdf_page_size_pts(source_path, (page_idx - 1).max(0) as usize);
+
+            // Phase 5: 优先复用 quick-scan 缓存的 bbox，只跑 MolScribe。
+            let mut used_cache = false;
+            if !pdf_hash.is_empty() {
+                if let Some(page_det) = cache.get(&cache_key, page_idx as usize, &pdf_hash) {
+                    if page_det.detections.iter().any(|d| d.is_quick_scan) {
+                        let cached = page_det.detections.clone();
+                        match recognize_cached_page(
+                            &img_path,
+                            page_idx,
+                            page_size,
+                            sidecar_url,
+                            &output_dir,
+                            &cached,
+                        )
+                        .await
+                        {
+                            Ok(results) => {
+                                merge_and_write_full_detections(
+                                    &cache,
+                                    &cache_key,
+                                    page_idx as usize,
+                                    &pdf_hash,
+                                    pdf_mtime,
+                                    page_det,
+                                    &results,
+                                    project_root,
+                                );
+                                all_results.extend(results);
+                                used_cache = true;
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "[extract_molecules] Cached recognition failed for page {}: {}",
+                                    page_idx,
+                                    e
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            if used_cache {
+                continue;
+            }
 
             match process_page_image(
                 img_path.to_str().unwrap_or(""),
@@ -470,6 +1056,7 @@ pub async fn extract_molecules_from_pdf(
                     if !results.is_empty() && !pdf_hash.is_empty() {
                         write_detection_cache(
                             project_root,
+                            source_path,
                             doc_slug,
                             page_idx as usize,
                             &pdf_hash,
@@ -523,9 +1110,56 @@ pub async fn extract_molecules_from_pdf(
                         }
 
                         let output_dir = mol_dir.clone();
-                        // LiteParse 截图是 text-based PDF，页面尺寸可以从分类结果
-                        // 拿到；如果没有就 fallback 到 A4
-                        let (pw, ph) = (595.0_f64, 842.0_f64);
+                        // LiteParse 截图是 text-based PDF，页面尺寸优先从 PDF 读取。
+                        let page_size = pdf_page_size_pts(source_path, (page_idx - 1).max(0) as usize);
+                        let (pw, ph) = page_size.unwrap_or((595.0_f64, 842.0_f64));
+
+                        // Phase 5: 优先复用 quick-scan 缓存的 bbox。
+                        let mut used_cache = false;
+                        if !pdf_hash.is_empty() {
+                            if let Some(page_det) = cache.get(&cache_key, page_idx as usize, &pdf_hash) {
+                                if page_det.detections.iter().any(|d| d.is_quick_scan) {
+                                    let cached = page_det.detections.clone();
+                                    match recognize_cached_page(
+                                        &page_img_path,
+                                        page_idx,
+                                        Some((pw, ph)),
+                                        sidecar_url,
+                                        &output_dir,
+                                        &cached,
+                                    )
+                                    .await
+                                    {
+                                        Ok(results) => {
+                                            merge_and_write_full_detections(
+                                                &cache,
+                                                &cache_key,
+                                                page_idx as usize,
+                                                &pdf_hash,
+                                                pdf_mtime,
+                                                page_det,
+                                                &results,
+                                                project_root,
+                                            );
+                                            all_results.extend(results);
+                                            used_cache = true;
+                                        }
+                                        Err(e) => {
+                                            log::warn!(
+                                                "[extract_molecules] Cached recognition failed for page {}: {}",
+                                                page_idx,
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if used_cache {
+                            continue;
+                        }
+
                         match process_page_image(
                             page_img_path.to_str().unwrap_or(""),
                             page_idx,
@@ -540,6 +1174,7 @@ pub async fn extract_molecules_from_pdf(
                                 if !results.is_empty() && !pdf_hash.is_empty() {
                                     write_detection_cache(
                                         project_root,
+                                        source_path,
                                         doc_slug,
                                         page_idx as usize,
                                         &pdf_hash,
@@ -611,9 +1246,7 @@ pub async fn extract_molecules_with_coref(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
-    let mol_dir = project_root
-        .join(crate::core::constants::MOLECULES_DIR)
-        .join(doc_slug);
+    let mol_dir = molecule_output_dir(project_root, source_path, doc_slug);
 
     std::fs::create_dir_all(&mol_dir)
         .map_err(|e| format!("Failed to create molecule dir: {}", e))?;
@@ -940,7 +1573,7 @@ pub async fn extract_pdf_workflow(
     );
 
     // Stage 1: 文本提取 + 分类
-    let mut classified = classify_and_extract(pdf_path).await?;
+    let mut classified = classify_and_extract(pdf_path, true).await?;
 
     // First pass at text.md: enrich inline `![]()` references and add
     // the "## Extracted Images" appendix. Descriptions are still the

@@ -49,9 +49,14 @@ pub async fn parse_with_liteparse(
 ) -> Result<LiteParseResult, String> {
     use liteparse::{LiteParse, LiteParseConfig, OutputFormat};
 
+    // 从用户配置读取 OCR 语言；回退到 "eng"
+    let ocr_language = crate::core::config::settings::AppConfig::load()
+        .pdf_parse
+        .ocr_language;
+
     let config = LiteParseConfig {
         ocr_enabled,
-        ocr_language: "eng".to_string(),
+        ocr_language: ocr_language.clone(),
         output_format: OutputFormat::Json,
         target_pages,
         dpi: 300.0,

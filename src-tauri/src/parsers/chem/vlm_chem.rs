@@ -3,7 +3,8 @@
 //!
 //! 统一调用 Python sidecar 的化学图像识别端点：
 //! - POST /api/v1/vlm/molscribe  → 识别 SMILES（两种响应格式）
-//! - POST /api/v1/moldet/detect-page → 检测分子 bbox
+//! - POST /api/v1/moldet/detect-page → 检测分子 bbox（单页）
+//! - POST /api/v1/moldet/detect-batch → 批量检测分子 bbox（多页）
 //! - POST /api/v1/moldet/coref → 分子-标号共指消解
 //! - POST /api/v1/vlm/describe → 通用图片描述
 
@@ -247,6 +248,48 @@ pub async fn detect_page(image_path: &str, sidecar_url: &str) -> Result<Vec<Bbox
         x2: b["x2"].as_f64().unwrap_or(0.0),
         y2: b["y2"].as_f64().unwrap_or(0.0),
         conf: b["conf"].as_f64().unwrap_or(0.0),
+    }).collect())
+}
+
+/// 批量调用 sidecar /api/v1/moldet/detect-batch 检测多页分子区域。
+/// 返回顺序与 `image_paths` 一致，每个元素对应该页的所有 bbox。
+pub async fn detect_batch(image_paths: &[&str], sidecar_url: &str) -> Result<Vec<Vec<Bbox>>, String> {
+    if image_paths.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut image_b64_list = Vec::with_capacity(image_paths.len());
+    for path in image_paths {
+        image_b64_list.push(read_image_base64(path)?);
+    }
+
+    let body = serde_json::json!({ "image_base64_list": image_b64_list });
+    let client = crate::core::http::client_120s();
+    let url = format!("{}/api/v1/moldet/detect-batch", sidecar_url.trim_end_matches('/'));
+
+    let resp = client.post(&url).json(&body).send().await
+        .map_err(|e| format!("MolDet detect-batch request failed: {}", e))?;
+    let status = resp.status();
+    let text = resp.text().await
+        .map_err(|e| format!("MolDet detect-batch read error: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("MolDet detect-batch HTTP {}: {}", status, &text[..text.floor_char_boundary(200)]));
+    }
+
+    let val: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("MolDet detect-batch JSON parse error: {}", e))?;
+
+    let results = val["results"].as_array().unwrap_or(&vec![]).clone();
+    Ok(results.iter().map(|page| {
+        let boxes = page["boxes"].as_array().unwrap_or(&vec![]).clone();
+        boxes.iter().map(|b| Bbox {
+            x1: b["x1"].as_f64().unwrap_or(0.0),
+            y1: b["y1"].as_f64().unwrap_or(0.0),
+            x2: b["x2"].as_f64().unwrap_or(0.0),
+            y2: b["y2"].as_f64().unwrap_or(0.0),
+            conf: b["conf"].as_f64().unwrap_or(0.0),
+        }).collect()
     }).collect())
 }
 

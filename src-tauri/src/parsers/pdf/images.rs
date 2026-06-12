@@ -46,6 +46,46 @@ pub fn pdf_to_image_bbox(
     (x1, y1, x2, y2)
 }
 
+/// 读取 PDF 指定页面的尺寸（点单位）。
+/// 优先使用 CropBox，其次 MediaBox；返回 (width, height)。
+/// page_idx 为 0-based 页码。
+pub fn pdf_page_size_pts(path: &Path, page_idx: usize) -> Option<(f64, f64)> {
+    use lopdf::Document;
+
+    fn object_to_f64(obj: &lopdf::Object) -> Option<f64> {
+        match obj {
+            lopdf::Object::Integer(n) => Some(*n as f64),
+            lopdf::Object::Real(f) => Some(*f as f64),
+            _ => None,
+        }
+    }
+
+    let doc = Document::load(path).ok()?;
+    let pages = doc.get_pages();
+    let page_id = *pages.get(&((page_idx + 1) as u32))?;
+    let page_obj = doc.get_object(page_id).ok()?;
+    let dict = page_obj.as_dict().ok()?;
+
+    let rect = dict
+        .get(b"CropBox")
+        .or_else(|_| dict.get(b"MediaBox"))
+        .ok()?;
+    let arr = rect.as_array().ok()?;
+    if arr.len() < 4 {
+        return None;
+    }
+    let x0 = object_to_f64(&arr[0]).unwrap_or(0.0);
+    let y0 = object_to_f64(&arr[1]).unwrap_or(0.0);
+    let x1 = object_to_f64(&arr[2]).unwrap_or(0.0);
+    let y1 = object_to_f64(&arr[3]).unwrap_or(0.0);
+    let w = x1 - x0;
+    let h = y1 - y0;
+    if w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    Some((w, h))
+}
+
 /// An image extracted from a PDF page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractedImage {

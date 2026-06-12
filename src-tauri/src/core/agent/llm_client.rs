@@ -73,7 +73,7 @@ async fn chat_with_timeout(
     };
 
     let (url, request) = match cfg.kind {
-        MbforgeProviderKind::OpenAICompatible => {
+        MbforgeProviderKind::OpenAICompatible | MbforgeProviderKind::DeepSeek | MbforgeProviderKind::Ollama => {
             let url = format!(
                 "{}/chat/completions",
                 cfg.base_url.trim_end_matches('/')

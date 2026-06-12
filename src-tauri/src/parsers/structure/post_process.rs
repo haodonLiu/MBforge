@@ -390,7 +390,7 @@ async fn dispatch_chat(
     user: &str,
 ) -> Result<(String, Option<u32>), String> {
     match cfg.kind {
-        MbforgeProviderKind::OpenAICompatible => {
+        MbforgeProviderKind::OpenAICompatible | MbforgeProviderKind::DeepSeek | MbforgeProviderKind::Ollama => {
             let mut b = OpenAiClient::builder().api_key(&cfg.api_key);
             if !cfg.base_url.is_empty() {
                 b = b.base_url(&cfg.base_url);

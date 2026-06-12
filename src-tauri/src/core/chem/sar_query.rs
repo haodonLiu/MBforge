@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::core::molecule::molecule_db::MoleculeRelationDb;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalogWithActivity {
     pub mol_id: String,
@@ -53,48 +51,6 @@ pub struct ActivityCliff {
     pub activity_b: Option<f64>,
     pub activity_ratio: Option<f64>,
     pub activity_type: String,
-}
-
-pub fn find_analogs_with_activity(
-    mol_id: &str,
-    min_similarity: f64,
-    db: &MoleculeRelationDb,
-    molecules_conn: &rusqlite::Connection,
-) -> Result<Vec<AnalogWithActivity>, String> {
-    let analogs = db
-        .find_similar(mol_id, min_similarity)
-        .map_err(|e| format!("find_similar failed: {}", e))?;
-
-    let mut results = Vec::new();
-    for (rel, score) in analogs {
-        let neighbor_id = if rel.mol_a_id == mol_id {
-            rel.mol_b_id.clone()
-        } else {
-            rel.mol_a_id.clone()
-        };
-
-        if let Some(record) = get_molecule_activity(&neighbor_id, molecules_conn) {
-            results.push(AnalogWithActivity {
-                mol_id: neighbor_id,
-                esmiles: record.esmiles,
-                name: record.name,
-                similarity_score: score,
-                activity: record.activity,
-                activity_type: record.activity_type,
-                units: record.units,
-            });
-        }
-    }
-
-    // Sort descending by similarity_score, NaN-safe.
-    // `partial_cmp` returns `None` when either side is NaN — fall back to
-    // `Equal` so NaN entries are kept but never cause a panic.
-    results.sort_by(|a, b| {
-        b.similarity_score
-            .partial_cmp(&a.similarity_score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    Ok(results)
 }
 
 pub fn scaffold_activity_profile(
@@ -233,7 +189,7 @@ pub fn find_activity_cliffs(
     Ok(cliffs)
 }
 
-fn get_molecule_activity(
+pub(crate) fn get_molecule_activity(
     mol_id: &str,
     conn: &rusqlite::Connection,
 ) -> Option<ScaffoldActivityRecord> {

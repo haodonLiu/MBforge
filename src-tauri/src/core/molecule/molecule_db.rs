@@ -1,13 +1,12 @@
 #![allow(dead_code)]
+use std::path::PathBuf;
+
 use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::path::PathBuf;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 use crate::core::constants::INDEX_DIR;
-use crate::core::helpers::LockResultExt;
-
 pub const MOL_RELATIONS_TABLE: &str = "molecule_relations";
 pub const MOL_DETECTIONS_TABLE: &str = "molecule_detections";
 pub const MOL_DB_FILENAME: &str = "molecules.db";
@@ -84,7 +83,7 @@ pub struct MoleculeDetectionRow {
 }
 
 impl MoleculeRelationDb {
-    pub fn new(project_root: &std::path::Path) -> Result<Self, String> {
+    pub async fn new(project_root: &std::path::Path) -> Result<Self, String> {
         let db_dir = project_root.join(INDEX_DIR);
         std::fs::create_dir_all(&db_dir)
             .map_err(|e| format!("Failed to create index dir: {}", e))?;
@@ -97,12 +96,12 @@ impl MoleculeRelationDb {
             db_path,
             conn: Mutex::new(conn),
         };
-        db.init_schema()?;
+        db.init_schema().await?;
         Ok(db)
     }
 
-    fn init_schema(&self) -> Result<(), String> {
-        let conn = self.conn.lock().into_inner();
+    async fn init_schema(&self) -> Result<(), String> {
+        let conn = self.conn.lock().await;
         conn.execute_batch("PRAGMA foreign_keys = ON;")
             .map_err(|e| format!("Failed to enable foreign_keys: {}", e))?;
 
@@ -166,8 +165,8 @@ impl MoleculeRelationDb {
         Ok(())
     }
 
-    pub fn add_relation(&self, rel: &MoleculeRelation) -> Result<i64, String> {
-        let conn = self.conn.lock().into_inner();
+    pub async fn add_relation(&self, rel: &MoleculeRelation) -> Result<i64, String> {
+        let conn = self.conn.lock().await;
         let metadata_json = rel
             .metadata
             .as_ref()
@@ -194,16 +193,16 @@ impl MoleculeRelationDb {
         Ok(conn.last_insert_rowid())
     }
 
-    pub fn delete_relation(&self, id: i64) -> Result<bool, String> {
-        let conn = self.conn.lock().into_inner();
+    pub async fn delete_relation(&self, id: i64) -> Result<bool, String> {
+        let conn = self.conn.lock().await;
         let affected = conn
             .execute("DELETE FROM molecule_relations WHERE id = ?", params![id])
             .map_err(|e| format!("Failed to delete relation {}: {}", id, e))?;
         Ok(affected > 0)
     }
 
-    pub fn get_relation(&self, id: i64) -> Result<Option<MoleculeRelation>, String> {
-        let conn = self.conn.lock().into_inner();
+    pub async fn get_relation(&self, id: i64) -> Result<Option<MoleculeRelation>, String> {
+        let conn = self.conn.lock().await;
         let mut stmt = conn
             .prepare("SELECT * FROM molecule_relations WHERE id = ?")
             .map_err(|e| format!("Prepare failed: {}", e))?;
@@ -221,8 +220,8 @@ impl MoleculeRelationDb {
         }
     }
 
-    pub fn find_by_molecule(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
-        let conn = self.conn.lock().into_inner();
+    pub async fn find_by_molecule(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
+        let conn = self.conn.lock().await;
         let mut stmt = conn
             .prepare(
                 "SELECT * FROM molecule_relations
@@ -244,12 +243,12 @@ impl MoleculeRelationDb {
         Ok(results)
     }
 
-    pub fn find_similar(
+    pub async fn find_similar(
         &self,
         mol_id: &str,
         min_score: f64,
     ) -> Result<Vec<(MoleculeRelation, f64)>, String> {
-        let conn = self.conn.lock().into_inner();
+        let conn = self.conn.lock().await;
         let mut stmt = conn
             .prepare(
                 "SELECT * FROM molecule_relations
@@ -276,8 +275,8 @@ impl MoleculeRelationDb {
         Ok(results)
     }
 
-    pub fn find_same_as(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
-        let conn = self.conn.lock().into_inner();
+    pub async fn find_same_as(&self, mol_id: &str) -> Result<Vec<MoleculeRelation>, String> {
+        let conn = self.conn.lock().await;
         let mut stmt = conn
             .prepare(
                 "SELECT * FROM molecule_relations
@@ -300,16 +299,16 @@ impl MoleculeRelationDb {
         Ok(results)
     }
 
-    pub fn relations_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().into_inner()
+    pub async fn relations_conn(&self) -> tokio::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().await
     }
 
     pub fn molecules_conn(&self) -> Result<Connection, String> {
         Connection::open(&self.db_path).map_err(|e| format!("Failed to open molecules db: {}", e))
     }
 
-    pub fn get_stats(&self) -> Result<RelationStats, String> {
-        let conn = self.conn.lock().into_inner();
+    pub async fn get_stats(&self) -> Result<RelationStats, String> {
+        let conn = self.conn.lock().await;
         let total: i64 = conn
             .query_row("SELECT COUNT(*) FROM molecule_relations", [], |r| r.get(0))
             .unwrap_or(0);
@@ -369,8 +368,8 @@ impl MoleculeRelationDb {
 
     /// Insert or update a detection record. `INSERT OR REPLACE` is safe
     /// because `UNIQUE(mol_id, doc_id, page)` guarantees idempotency.
-    pub fn upsert_detection(&self, row: &MoleculeDetectionRow) -> Result<(), String> {
-        let conn = self.conn.lock().into_inner();
+    pub async fn upsert_detection(&self, row: &MoleculeDetectionRow) -> Result<(), String> {
+        let conn = self.conn.lock().await;
         let sql = format!(
             r#"INSERT OR REPLACE INTO {}
                (mol_id, doc_id, page, bbox_x0, bbox_y0, bbox_x1, bbox_y1,
@@ -402,12 +401,12 @@ impl MoleculeRelationDb {
 
     /// All detections for a single PDF page (used by PdfViewer when
     /// rendering bbox overlays).
-    pub fn detections_for_page(
+    pub async fn detections_for_page(
         &self,
         doc_id: &str,
         page: usize,
     ) -> Result<Vec<MoleculeDetectionRow>, String> {
-        let conn = self.conn.lock().into_inner();
+        let conn = self.conn.lock().await;
         let mut stmt = conn
             .prepare(&format!(
                 "SELECT mol_id, doc_id, page, bbox_x0, bbox_y0, bbox_x1, bbox_y1,
@@ -437,8 +436,8 @@ impl MoleculeRelationDb {
     }
 
     /// All pages in a document that have at least one detection.
-    pub fn detected_pages_for_doc(&self, doc_id: &str) -> Result<Vec<usize>, String> {
-        let conn = self.conn.lock().into_inner();
+    pub async fn detected_pages_for_doc(&self, doc_id: &str) -> Result<Vec<usize>, String> {
+        let conn = self.conn.lock().await;
         let mut stmt = conn
             .prepare(&format!(
                 "SELECT DISTINCT page FROM {} WHERE doc_id = ?1 ORDER BY page",
@@ -454,11 +453,11 @@ impl MoleculeRelationDb {
     }
 
     /// All documents/places a given molecule was detected in.
-    pub fn detection_locations_for_mol(
+    pub async fn detection_locations_for_mol(
         &self,
         mol_id: &str,
     ) -> Result<Vec<(String, usize)>, String> {
-        let conn = self.conn.lock().into_inner();
+        let conn = self.conn.lock().await;
         let mut stmt = conn
             .prepare(&format!(
                 "SELECT doc_id, page FROM {} WHERE mol_id = ?1 ORDER BY detected_at DESC",
@@ -476,8 +475,8 @@ impl MoleculeRelationDb {
 
     /// Delete all detections for one document (called when a doc is removed
     /// from the project, or when the PDF hash changes).
-    pub fn delete_detections_for_doc(&self, doc_id: &str) -> Result<usize, String> {
-        let conn = self.conn.lock().into_inner();
+    pub async fn delete_detections_for_doc(&self, doc_id: &str) -> Result<usize, String> {
+        let conn = self.conn.lock().await;
         let n = conn
             .execute(
                 &format!(

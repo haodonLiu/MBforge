@@ -1,6 +1,7 @@
 #![allow(dead_code)]
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+
+use serde::{Deserialize, Serialize};
 
 use super::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationType};
 
@@ -27,7 +28,7 @@ pub fn canonicalize_esmiles(esmiles: &str) -> String {
     trimmed
 }
 
-pub fn run_dedup_batch(
+pub async fn run_dedup_batch(
     new_mols: &[(String, String)],
     db: &MoleculeRelationDb,
     _sidecar_url: &str,
@@ -92,7 +93,7 @@ pub fn run_dedup_batch(
                 })),
                 created_at: super::super::helpers::now_rfc3339(),
             };
-            if db.add_relation(&rel).is_ok() {
+            if db.add_relation(&rel).await.is_ok() {
                 relations_added += 1;
             }
         }
@@ -109,7 +110,10 @@ pub fn run_dedup_batch(
 // This causes dedup to treat all molecules as new (no duplicate detection).
 // Consider logging a warning or returning an explicit error.
 fn load_existing_molecules(db: &MoleculeRelationDb) -> Vec<(String, String)> {
-    let conn = db.relations_conn();
+    let conn = match db.molecules_conn() {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
     let mut stmt = match conn.prepare("SELECT mol_id, esmiles FROM molecules") {
         Ok(s) => s,
         Err(_) => return Vec::new(),
@@ -132,7 +136,7 @@ fn load_existing_molecules(db: &MoleculeRelationDb) -> Vec<(String, String)> {
     result
 }
 
-pub fn add_similarity_relation(
+pub async fn add_similarity_relation(
     mol_a_id: &str,
     mol_b_id: &str,
     score: f64,
@@ -147,5 +151,5 @@ pub fn add_similarity_relation(
         metadata: None,
         created_at: super::super::helpers::now_rfc3339(),
     };
-    db.add_relation(&rel)
+    db.add_relation(&rel).await
 }

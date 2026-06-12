@@ -45,6 +45,11 @@ pub fn open_project(
     if let Some(project) = crate::core::project::Project::open(&path) {
         debug!("Found existing project, returning...");
         debug!("Project name: {:?}", project.root.file_name());
+        // NOTE: start the ingest worker here (before returning the response)
+        // because the worker uses the project path for its own state. The
+        // frontend should call `open_project` BEFORE it sets
+        // `AppContext.projectRoot`; this preserves the invariant that
+        // the worker is up whenever a project is logically "open".
         start_or_restart_ingest_worker(&app, &path);
         let result = project_json(&project);
         debug!(
@@ -147,11 +152,19 @@ fn doc_json(doc: &crate::core::project::project::DocumentEntry) -> serde_json::V
 }
 
 fn project_json(project: &crate::core::project::Project) -> serde_json::Value {
+    // Response shape must match the TS `ProjectResponse` contract in
+    // `frontend/src/api/tauri/project.ts`:
+    //   { success: boolean, project: { name, root, document_count }, error?: string }
+    // The full document list comes via `scan_project_files` / `list_project_documents`,
+    // not via `open_project`, so we only return the count here.
+    let documents = project.list_documents().to_vec();
     serde_json::json!({
         "success": true,
-        "root": project.root.to_string_lossy().to_string(),
-        "name": project.root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-        "documents": docs_json(&project.list_documents().to_vec()),
+        "project": {
+            "name": project.root.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+            "root": project.root.to_string_lossy().to_string(),
+            "document_count": documents.len(),
+        },
     })
 }
 

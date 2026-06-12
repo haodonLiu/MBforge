@@ -10,7 +10,7 @@ pub struct ClusterInfo {
     pub metadata: serde_json::Value,
 }
 
-pub fn assign_to_cluster(
+pub async fn assign_to_cluster(
     mol_id: &str,
     cluster_id: &str,
     db: &MoleculeRelationDb,
@@ -26,15 +26,15 @@ pub fn assign_to_cluster(
         })),
         created_at: super::super::helpers::now_rfc3339(),
     };
-    db.add_relation(&rel)
+    db.add_relation(&rel).await
 }
 
-pub fn remove_from_cluster(
+pub async fn remove_from_cluster(
     mol_id: &str,
     cluster_id: &str,
     db: &MoleculeRelationDb,
 ) -> Result<bool, String> {
-    let conn = db.relations_conn();
+    let conn = db.relations_conn().await;
     let affected = conn
         .execute(
             "DELETE FROM molecule_relations
@@ -47,11 +47,11 @@ pub fn remove_from_cluster(
     Ok(affected > 0)
 }
 
-pub fn get_cluster_members(
+pub async fn get_cluster_members(
     cluster_id: &str,
     db: &MoleculeRelationDb,
 ) -> Result<ClusterInfo, String> {
-    let conn = db.relations_conn();
+    let conn = db.relations_conn().await;
     let mut stmt = conn
         .prepare(
             "SELECT mol_a_id, metadata FROM molecule_relations
@@ -92,8 +92,8 @@ pub fn get_cluster_members(
     })
 }
 
-pub fn get_molecule_clusters(mol_id: &str, db: &MoleculeRelationDb) -> Result<Vec<String>, String> {
-    let conn = db.relations_conn();
+pub async fn get_molecule_clusters(mol_id: &str, db: &MoleculeRelationDb) -> Result<Vec<String>, String> {
+    let conn = db.relations_conn().await;
     let mut stmt = conn
         .prepare(
             "SELECT mol_b_id FROM molecule_relations
@@ -116,31 +116,35 @@ pub fn get_molecule_clusters(mol_id: &str, db: &MoleculeRelationDb) -> Result<Ve
     Ok(clusters)
 }
 
-pub fn list_clusters(db: &MoleculeRelationDb) -> Result<Vec<ClusterInfo>, String> {
-    let conn = db.relations_conn();
-    let mut stmt = conn
-        .prepare(
-            "SELECT DISTINCT mol_b_id FROM molecule_relations
-             WHERE relation_type = 'cluster'",
-        )
-        .map_err(|e| format!("Prepare failed: {}", e))?;
-    let mut rows = stmt.query([]).map_err(|e| format!("Query failed: {}", e))?;
+pub async fn list_clusters(db: &MoleculeRelationDb) -> Result<Vec<ClusterInfo>, String> {
+    // 使用独立同步连接收集 cluster id；通过块作用域确保 statement/connection
+    // 在后续 await 之前被释放，避免非 Send 的 rusqlite 对象跨越 await 点。
+    let cluster_ids: Vec<String> = {
+        let conn = db
+            .molecules_conn()
+            .map_err(|e| format!("Failed to open molecules conn: {}", e))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT mol_b_id FROM molecule_relations
+                 WHERE relation_type = 'cluster'",
+            )
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+        let mut rows = stmt.query([]).map_err(|e| format!("Query failed: {}", e))?;
 
-    let mut cluster_ids: Vec<String> = Vec::new();
-    while let Some(row) = rows
-        .next()
-        .map_err(|e| format!("Row fetch failed: {}", e))?
-    {
-        let cid: String = row.get(0).unwrap_or_default();
-        cluster_ids.push(cid);
-    }
-    drop(rows);
-    drop(stmt);
-    drop(conn);
+        let mut ids: Vec<String> = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("Row fetch failed: {}", e))?
+        {
+            let cid: String = row.get(0).unwrap_or_default();
+            ids.push(cid);
+        }
+        ids
+    };
 
     let mut infos: Vec<ClusterInfo> = Vec::new();
     for cid in cluster_ids {
-        if let Ok(info) = get_cluster_members(&cid, db) {
+        if let Ok(info) = get_cluster_members(&cid, db).await {
             infos.push(info);
         }
     }

@@ -49,8 +49,9 @@ pub async fn get_or_init_engine(
     }
 
     let root = PathBuf::from(project_root);
-    let engine =
-        MoleculeEngine::new(&root).map_err(|e| format!("MoleculeEngine init failed: {}", e))?;
+    let engine = MoleculeEngine::new(&root)
+        .await
+        .map_err(|e| format!("MoleculeEngine init failed: {}", e))?;
     *guard = Some((project_root.to_string(), engine));
     log::info!(
         "MoleculeEngine initialized for project_root={}",

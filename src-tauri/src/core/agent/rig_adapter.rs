@@ -217,6 +217,10 @@ pub struct MbforgeAgentSpec {
     pub max_turns: usize,
     pub max_tokens: Option<u64>,
     pub temperature: Option<f64>,
+    pub top_p: Option<f64>,
+    /// 透传 JSON 格式的额外参数，会作为请求体的额外字段。
+    /// 例：serde_json::json!({"top_k": 50, "frequency_penalty": 0.1\})
+    pub additional_params: Option<serde_json::Value>,
 }
 
 impl MbforgeAgentSpec {
@@ -227,11 +231,15 @@ impl MbforgeAgentSpec {
             max_turns: 5,
             max_tokens: None,
             temperature: None,
+            top_p: None,
+            additional_params: None,
         }
     }
     pub fn literature() -> Self {
         Self {
             name: "literature_agent".into(),
+            top_p: None,
+            additional_params: None,
             // Migrated from `specialist_agent::LITERATURE_AGENT_SYSTEM_PROMPT` in M5.
             // M6 will delete the legacy constant.
             system_prompt: String::from(
@@ -536,6 +544,16 @@ impl MbforgeAgent {
         if let Some(n) = spec.max_tokens {
             builder = builder.max_tokens(n);
         }
+        // top_p / additional_params：rig 没暴露 .top_p() 旋钮，走 additional_params 透传
+        let mut extra_params = spec.additional_params.clone().unwrap_or_else(|| serde_json::json!({}));
+        if let serde_json::Value::Object(ref mut m) = extra_params {
+            if let Some(tp) = spec.top_p { m.insert("top_p".into(), serde_json::json!(tp)); }
+        }
+        if let serde_json::Value::Object(_) = extra_params {
+            if !extra_params.as_object().unwrap().is_empty() {
+                builder = builder.additional_params(extra_params);
+            }
+        }
         // `.tools()` consumes the builder and changes the `ToolState` type
         // parameter, so we must call it unconditionally to keep the
         // if/else arms homogeneous. An empty vec is a no-op at runtime.
@@ -587,6 +605,16 @@ impl MbforgeAgent {
         if let Some(n) = spec.max_tokens {
             agent_builder = agent_builder.max_tokens(n);
         }
+        // top_p / additional_params：rig 没暴露 .top_p() 旋钮，走 additional_params 透传
+        let mut extra_params = spec.additional_params.clone().unwrap_or_else(|| serde_json::json!({}));
+        if let serde_json::Value::Object(ref mut m) = extra_params {
+            if let Some(tp) = spec.top_p { m.insert("top_p".into(), serde_json::json!(tp)); }
+        }
+        if let serde_json::Value::Object(_) = extra_params {
+            if !extra_params.as_object().unwrap().is_empty() {
+                agent_builder = agent_builder.additional_params(extra_params);
+            }
+        }
         // `.tools()` consumes the builder and changes the `ToolState` type
         // parameter, so we must call it unconditionally to keep the
         // if/else arms homogeneous. An empty vec is a no-op at runtime.
@@ -614,7 +642,9 @@ impl MbforgeAgent {
     ) -> Result<Self, String> {
         let hook = build_default_concrete_hook()?;
         match cfg.kind {
-            MbforgeProviderKind::OpenAICompatible => {
+            MbforgeProviderKind::OpenAICompatible
+            | MbforgeProviderKind::DeepSeek
+            | MbforgeProviderKind::Ollama => {
                 Self::from_openai_compatible(cfg, spec, extra_tools, hook, memory)
             }
             MbforgeProviderKind::Anthropic => {

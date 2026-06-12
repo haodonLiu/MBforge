@@ -1,4 +1,4 @@
-import { Suspense, useState, lazy, useEffect } from 'react'
+import { Suspense, useState, lazy, useEffect, useRef } from 'react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { useTranslation, I18nextProvider } from 'react-i18next'
@@ -18,6 +18,7 @@ import { showToast } from './hooks/useToast'
 import { useIsMobile, useIsTablet } from './styles/responsive'
 import { registerGlobalErrorHandlers } from './api/tauri/_utils'
 import { useSidecarEvents } from './hooks/useSidecarEvents'
+import { openProject } from './api/tauri/project'
 
 // Route-level code splitting — each page becomes its own chunk.
 // Heavy bundles (Chat, MoleculeLibrary, ProjectView, SARAnalysis) only
@@ -29,6 +30,7 @@ const MoleculeLibrary = lazy(() => import('./components/MoleculeLibrary'))
 const Environment = lazy(() => import('./components/Environment'))
 const Dashboard = lazy(() => import('./components/Dashboard'))
 const Notes = lazy(() => import('./components/Notes'))
+const ProcessingQueue = lazy(() => import('./components/project/ProcessingQueue'))
 
 /** Lightweight fallback shown while a route chunk is being fetched. */
 function RouteFallback() {
@@ -76,6 +78,49 @@ function AppInner() {
     const cleanup = registerGlobalErrorHandlers()
     return cleanup
   }, [])
+
+  // Restore the last-opened project on app start, so the user does not have
+  // to re-pick the folder every time. The path is re-validated by calling
+  // ``open_project``; if the folder was deleted or is no longer a valid
+  // project, the localStorage entry is cleared and Welcome re-appears.
+  useEffect(() => {
+    (async () => {
+      const saved = localStorage.getItem('mbforge_project_root')
+      if (!saved) return
+      try {
+        const resp = await openProject(saved)
+        if (resp.success) {
+          setProjectRoot(resp.project.root)
+          setCurrentPage('project')
+        } else {
+          localStorage.removeItem('mbforge_project_root')
+        }
+      } catch {
+        localStorage.removeItem('mbforge_project_root')
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Keep localStorage in sync with projectRoot so the "switch project" flow
+  // (Sidebar.onSwitchProject -> setProjectRoot('')) actually clears the
+  // saved path — otherwise the next app restart would auto-restore the
+  // old project, contradicting the user's intent. The useRef skip-on-first-run
+  // avoids racing with the restore useEffect above (both fire on mount;
+  // without the skip, the sync would clear localStorage before the restore
+  // could read it).
+  const hasMountedRef = useRef(false)
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true
+      return
+    }
+    if (projectRoot) {
+      localStorage.setItem('mbforge_project_root', projectRoot)
+    } else {
+      localStorage.removeItem('mbforge_project_root')
+    }
+  }, [projectRoot])
 
   const handleProjectOpened = (root: string) => {
     setProjectRoot(root)
@@ -182,7 +227,7 @@ function AppInner() {
       }}>
         <ErrorBoundary>
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            <AppRoutes onSettingsOpen={() => setSettingsOpen(true)} />
+            <AppRoutes onSettingsOpen={() => setSettingsOpen(true)} projectRoot={projectRoot} />
           </div>
         </ErrorBoundary>
       </main>
@@ -194,7 +239,7 @@ function AppInner() {
   )
 }
 
-function AppRoutes({ onSettingsOpen }: { onSettingsOpen: () => void }) {
+function AppRoutes({ onSettingsOpen, projectRoot }: { onSettingsOpen: () => void; projectRoot: string }) {
   const location = useLocation()
   return (
     <AnimatePresence>
@@ -244,6 +289,14 @@ function AppRoutes({ onSettingsOpen }: { onSettingsOpen: () => void }) {
           element={
             <Suspense fallback={<RouteFallback />}>
               <AnimatedPage><ProjectView onSettingsOpen={onSettingsOpen} /></AnimatedPage>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/queue"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><ProcessingQueue projectRoot={projectRoot} /></AnimatedPage>
             </Suspense>
           }
         />

@@ -1,22 +1,19 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { listen } from '@tauri-apps/api/event'
-import Card from '../ui/Card'
-import BodyText from '../ui/BodyText'
 import Button from '../ui/Button'
-import Badge from '../ui/Badge'
 import ProgressBar from '../ui/ProgressBar'
-import EmptyState from '../ui/EmptyState'
 import { EVT } from '../../api/tauri-events'
 import {
-  ingestList,
-  ingestStats,
   ingestCancel,
-  ingestRetry,
   ingestCleanup,
+  ingestList,
+  ingestRetry,
+  ingestStats,
   type IngestTask,
-  type QueueStats,
   type IngestQueueUpdateEvent,
+  type IngestWorkerHeartbeatEvent,
+  type QueueStats,
 } from '../../api/tauri/ingest_queue'
 import { showToast } from '../../hooks/useToast'
 
@@ -24,7 +21,11 @@ interface Props {
   projectRoot: string
 }
 
-const statusLabel: Record<string, string> = {
+type StatusKey = IngestTask['status']
+type FilterKey = 'all' | StatusKey
+
+// Status display labels and accent colors.
+const STATUS_LABEL: Record<StatusKey, string> = {
   pending: '待处理',
   processing: '处理中',
   done: '完成',
@@ -32,15 +33,17 @@ const statusLabel: Record<string, string> = {
   cancelled: '已取消',
 }
 
-const statusVariant: Record<string, 'neutral' | 'warning' | 'success' | 'danger'> = {
-  pending: 'neutral',
-  processing: 'warning',
-  done: 'success',
-  failed: 'danger',
-  cancelled: 'neutral',
+// Sort priority: actionable first (processing > pending > failed),
+// then non-actionable (cancelled > done).
+const STATUS_RANK: Record<StatusKey, number> = {
+  processing: 0,
+  pending: 1,
+  failed: 2,
+  cancelled: 3,
+  done: 4,
 }
 
-const stageLabel: Record<string, string> = {
+const STAGE_LABEL: Record<string, string> = {
   inspector: '文档检测',
   text_extract: '文本提取',
   ocr: 'OCR 识别',
@@ -48,15 +51,94 @@ const stageLabel: Record<string, string> = {
   index: '索引构建',
 }
 
+const STAGE_ICON: Record<string, string> = {
+  inspector: '🔍',
+  text_extract: '📄',
+  ocr: '👁',
+  moldet: '🧬',
+  index: '🗂️',
+}
+
+// Filter chip definitions — order matters (left-to-right scan).
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: 'all', label: '全部' },
+  { key: 'pending', label: '待处理' },
+  { key: 'processing', label: '处理中' },
+  { key: 'failed', label: '失败' },
+  { key: 'cancelled', label: '已取消' },
+  { key: 'done', label: '已完成' },
+]
+
+/** Format a millisecond delta as a compact Chinese duration (e.g. "2 分 15 秒"). */
+function formatElapsed(ms: number): string {
+  if (ms < 0 || !Number.isFinite(ms)) return '—'
+  const totalSec = Math.floor(ms / 1000)
+  if (totalSec < 60) return `${totalSec} 秒`
+  const min = Math.floor(totalSec / 60)
+  const sec = totalSec % 60
+  if (min < 60) return `${min} 分 ${sec} 秒`
+  const hr = Math.floor(min / 60)
+  const m = min % 60
+  return `${hr} 时 ${m} 分`
+}
+
+/** Format bytes as human-readable size (e.g. "1.2 MB"). */
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || bytes < 0) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+}
+
+/** Estimate remaining milliseconds based on current progress and elapsed time. */
+function estimateRemainingMs(elapsedMs: number, progressPct: number): number | null {
+  if (progressPct <= 0 || progressPct >= 1 || elapsedMs <= 0) return null
+  const rate = progressPct / elapsedMs // progress per ms
+  const remainingProgress = 1 - progressPct
+  return remainingProgress / rate
+}
+
+/** True if a task has been in 'processing' state for too long (potential hang). */
+function isStale(task: IngestTask, now: number): boolean {
+  if (task.status !== 'processing') return false
+  return now - task.updated_at * 1000 > 5 * 60 * 1000
+}
+
+/** Return the basename of a file path. */
+function basename(p: string): string {
+  if (!p) return ''
+  const parts = p.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] ?? p
+}
+
 export default function ProcessingQueue({ projectRoot }: Props) {
   const [tasks, setTasks] = useState<IngestTask[]>([])
   const [stats, setStats] = useState<QueueStats | null>(null)
   const [actionId, setActionId] = useState<string | null>(null)
+  const [filter, setFilter] = useState<FilterKey>('all')
+  const [hideDone, setHideDone] = useState(true)
+  const [workerStatus, setWorkerStatus] = useState<'online' | 'offline' | 'unknown'>('unknown')
+  const [lastHeartbeatTs, setLastHeartbeatTs] = useState<number | null>(null)
+
+  // Live "now" timestamp for elapsed-time displays. Only ticks every second
+  // while there is at least one processing task — saves re-renders when the
+  // queue is idle.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const hasProcessing = tasks.some((t) => t.status === 'processing')
+    if (!hasProcessing) return
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [tasks])
 
   const load = useCallback(async () => {
     if (!projectRoot) return
     try {
-      const [list, s] = await Promise.all([ingestList(projectRoot), ingestStats(projectRoot)])
+      const [list, s] = await Promise.all([
+        ingestList(projectRoot),
+        ingestStats(projectRoot),
+      ])
       setTasks(list)
       setStats(s)
     } catch (e) {
@@ -66,57 +148,94 @@ export default function ProcessingQueue({ projectRoot }: Props) {
 
   useEffect(() => {
     load()
-
     let unlisten: (() => void) | null = null
     const setup = async () => {
-      unlisten = await listen<IngestQueueUpdateEvent>(EVT.IngestQueueUpdate, () => {
-        load()
-      })
+      unlisten = await listen<IngestQueueUpdateEvent>(
+        EVT.IngestQueueUpdate,
+        () => {
+          void load()
+        },
+      )
     }
     setup().catch((e) => {
       console.error('[ProcessingQueue] listen failed:', e)
     })
-
     return () => {
       unlisten?.()
     }
   }, [load])
 
-  const handleCancel = async (task: IngestTask) => {
-    if (!projectRoot) return
-    setActionId(task.id)
-    try {
-      await ingestCancel(projectRoot, task.id)
-      showToast('已取消任务', 'success')
-      await load()
-    } catch (e) {
-      console.error('[ProcessingQueue] cancel failed:', e)
-      showToast('取消失败: ' + String(e), 'error')
-    } finally {
-      setActionId(null)
+  // Worker heartbeat: update online status when a beat arrives.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null
+    const setup = async () => {
+      unlisten = await listen<IngestWorkerHeartbeatEvent>(
+        EVT.IngestWorkerHeartbeat,
+        (event) => {
+          setLastHeartbeatTs(event.payload.ts)
+          setWorkerStatus('online')
+        },
+      )
     }
-  }
+    setup().catch((e) => {
+      console.error('[ProcessingQueue] heartbeat listen failed:', e)
+    })
+    return () => {
+      unlisten?.()
+    }
+  }, [])
 
-  const handleRetry = async (task: IngestTask) => {
-    if (!projectRoot) return
-    setActionId(task.id)
-    try {
-      const ok = await ingestRetry(projectRoot, task.id)
-      if (ok) {
-        showToast('已重置任务，将重新处理', 'success')
-      } else {
-        showToast('任务重试次数已达上限', 'warning')
+  // Mark worker offline if no heartbeat is received for a while.
+  useEffect(() => {
+    if (lastHeartbeatTs == null) return
+    const id = window.setInterval(() => {
+      const elapsedMs = Date.now() - lastHeartbeatTs * 1000
+      if (elapsedMs > 15_000) setWorkerStatus('offline')
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [lastHeartbeatTs])
+
+  const handleCancel = useCallback(
+    async (task: IngestTask) => {
+      if (!projectRoot) return
+      setActionId(task.id)
+      try {
+        await ingestCancel(projectRoot, task.id)
+        showToast('已取消任务', 'success')
+        await load()
+      } catch (e) {
+        console.error('[ProcessingQueue] cancel failed:', e)
+        showToast('取消失败: ' + String(e), 'error')
+      } finally {
+        setActionId(null)
       }
-      await load()
-    } catch (e) {
-      console.error('[ProcessingQueue] retry failed:', e)
-      showToast('重试失败: ' + String(e), 'error')
-    } finally {
-      setActionId(null)
-    }
-  }
+    },
+    [projectRoot, load],
+  )
 
-  const handleCleanup = async () => {
+  const handleRetry = useCallback(
+    async (task: IngestTask) => {
+      if (!projectRoot) return
+      setActionId(task.id)
+      try {
+        const ok = await ingestRetry(projectRoot, task.id)
+        if (ok) {
+          showToast('已重置任务，将重新处理', 'success')
+        } else {
+          showToast('任务重试次数已达上限', 'warning')
+        }
+        await load()
+      } catch (e) {
+        console.error('[ProcessingQueue] retry failed:', e)
+        showToast('重试失败: ' + String(e), 'error')
+      } finally {
+        setActionId(null)
+      }
+    },
+    [projectRoot, load],
+  )
+
+  const handleCleanup = useCallback(async () => {
     if (!projectRoot) return
     try {
       const removed = await ingestCleanup(projectRoot)
@@ -126,97 +245,320 @@ export default function ProcessingQueue({ projectRoot }: Props) {
       console.error('[ProcessingQueue] cleanup failed:', e)
       showToast('清理失败: ' + String(e), 'error')
     }
-  }
+  }, [projectRoot, load])
+
+  // Filter + sort — memoized so the list doesn't re-sort on every keystroke
+  // elsewhere. Sort priority: processing → pending → failed → cancelled → done.
+  const visibleTasks = useMemo(() => {
+    let xs = tasks
+    if (filter !== 'all') xs = xs.filter((t) => t.status === filter)
+    if (hideDone && filter === 'all') xs = xs.filter((t) => t.status !== 'done')
+    return [...xs].sort((a, b) => {
+      const r = STATUS_RANK[a.status] - STATUS_RANK[b.status]
+      if (r !== 0) return r
+      return b.created_at - a.created_at
+    })
+  }, [tasks, filter, hideDone])
+
+  // Per-filter counts for chip badges.
+  const counts = useMemo(() => {
+    const c: Record<FilterKey, number> = {
+      all: tasks.length,
+      pending: 0,
+      processing: 0,
+      done: 0,
+      failed: 0,
+      cancelled: 0,
+    }
+    for (const t of tasks) c[t.status]++
+    return c
+  }, [tasks])
 
   return (
     <div className="processing-queue">
+      {/* ----- Sticky header ----- */}
       <div className="processing-queue-header">
-        <BodyText size="lg" style={{ fontWeight: 600 }}>处理队列</BodyText>
+        <span className="processing-queue-title">处理队列</span>
+        <span
+          className={`processing-queue-worker-status is-${workerStatus}`}
+          title={
+            workerStatus === 'online'
+              ? 'Worker 心跳正常'
+              : workerStatus === 'offline'
+                ? 'Worker 心跳超时，可能已停止'
+                : '等待 worker 心跳'
+          }
+        >
+          {workerStatus === 'online'
+            ? '● worker 在线'
+            : workerStatus === 'offline'
+              ? '● worker 离线'
+              : '○ worker 未连接'}
+        </span>
+
         {stats && (
-          <div className="processing-queue-stats">
-            <Badge variant="neutral">总计 {stats.total}</Badge>
-            <Badge variant="warning">待处理 {stats.pending}</Badge>
-            <Badge variant="warning">处理中 {stats.processing}</Badge>
-            <Badge variant="success">完成 {stats.done}</Badge>
-            {stats.failed > 0 && <Badge variant="danger">失败 {stats.failed}</Badge>}
-            {stats.cancelled > 0 && <Badge variant="neutral">已取消 {stats.cancelled}</Badge>}
+          <div className="processing-queue-stats" aria-label="队列统计">
+            <span className="processing-queue-stat">
+              <span>总计</span>
+              <span className="num">{stats.total}</span>
+            </span>
+            {stats.processing > 0 && (
+              <span className="processing-queue-stat is-processing">
+                <span>处理中</span>
+                <span className="num">{stats.processing}</span>
+              </span>
+            )}
+            {stats.pending > 0 && (
+              <span className="processing-queue-stat is-pending">
+                <span>待处理</span>
+                <span className="num">{stats.pending}</span>
+              </span>
+            )}
+            {stats.failed > 0 && (
+              <span className="processing-queue-stat is-failed">
+                <span>失败</span>
+                <span className="num">{stats.failed}</span>
+              </span>
+            )}
+            {stats.done > 0 && (
+              <span className="processing-queue-stat is-done">
+                <span>完成</span>
+                <span className="num">{stats.done}</span>
+              </span>
+            )}
+            {stats.cancelled > 0 && (
+              <span className="processing-queue-stat is-cancelled">
+                <span>已取消</span>
+                <span className="num">{stats.cancelled}</span>
+              </span>
+            )}
           </div>
         )}
-        <Button variant="secondary" size="sm" onClick={handleCleanup}>
-          清理已完成
-        </Button>
+
+        <div className="processing-queue-header-actions">
+          <label
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: '0.8rem',
+              color: 'var(--text-soft)',
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={hideDone}
+              onChange={(e) => setHideDone(e.target.checked)}
+              style={{ accentColor: 'var(--accent)' }}
+            />
+            隐藏已完成
+          </label>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleCleanup}
+            disabled={!stats || stats.done === 0}
+          >
+            清理已完成
+          </Button>
+        </div>
       </div>
 
-      {tasks.length === 0 ? (
-        <EmptyState message="暂无处理任务" />
+      {/* ----- Filter chips ----- */}
+      <div className="processing-queue-filters" role="tablist" aria-label="状态筛选">
+        {FILTERS.map((f) => {
+          const isActive = filter === f.key
+          const count = counts[f.key]
+          return (
+            <button
+              key={f.key}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              className={`processing-queue-chip${isActive ? ' is-active' : ''}`}
+              onClick={() => setFilter(f.key)}
+            >
+              <span>{f.label}</span>
+              <span className="num">{count}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* ----- Task list ----- */}
+      {visibleTasks.length === 0 ? (
+        <div className="processing-queue-empty">
+          <div>
+            <div className="processing-queue-empty-title">
+              {tasks.length === 0 ? '队列空闲' : '当前筛选下无任务'}
+            </div>
+            <div className="processing-queue-empty-hint">
+              {tasks.length === 0
+                ? '导入文档或启用「自动入队」开关后，处理任务会出现在这里。'
+                : '切换上方筛选，或关闭「隐藏已完成」查看历史任务。'}
+            </div>
+          </div>
+        </div>
       ) : (
-        <div className="processing-queue-list">
-          {tasks.map((task, index) => {
-            const canCancel = task.status === 'pending' || task.status === 'processing'
+        <motion.div
+          className="processing-queue-list"
+          initial="hidden"
+          animate="visible"
+          variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.02 } } }}
+        >
+          {visibleTasks.map((task) => {
+            const canCancel =
+              task.status === 'pending' || task.status === 'processing'
             const canRetry = task.status === 'failed'
-            const label = stageLabel[task.stage] || task.stage
+            const canDelete = task.status === 'cancelled' || task.status === 'done'
+            const label = STAGE_LABEL[task.stage] || task.stage
+            const stageIcon = STAGE_ICON[task.stage] || '•'
+            const fileName = basename(task.file_path)
+            const createdAtMs = task.created_at * 1000
+            const startedAtMs = task.started_at ? task.started_at * 1000 : null
+            const startTimeMs = startedAtMs ?? createdAtMs
+            const elapsedMs = now - startTimeMs
+            const showElapsed = task.status !== 'done' && task.status !== 'cancelled'
+            const stale = isStale(task, now)
+            const showPages =
+              task.pages_total > 0 &&
+              (task.status === 'processing' || task.status === 'failed')
+            const etaMs =
+              task.status === 'processing'
+                ? estimateRemainingMs(now - (startedAtMs ?? createdAtMs), task.progress_pct)
+                : null
 
             return (
               <motion.div
                 key={task.id}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.03, duration: 0.3 }}
+                variants={{
+                  hidden: { opacity: 0, y: 4 },
+                  visible: { opacity: 1, y: 0 },
+                }}
+                transition={{ duration: 0.2 }}
+                className={`processing-queue-item is-${task.status}`}
               >
-                <Card padding="12px 16px" className="processing-queue-item">
-                  <div className="processing-queue-item-row">
-                    <div className="processing-queue-item-info">
-                      <BodyText size="sm" style={{ fontWeight: 500 }} className="processing-queue-doc-id">
-                        {task.doc_id}
-                      </BodyText>
-                      <div className="processing-queue-item-meta">
-                        <Badge variant={statusVariant[task.status] ?? 'neutral'}>
-                          {statusLabel[task.status] || task.status}
-                        </Badge>
-                        <BodyText size="sm" muted>{label}</BodyText>
-                      </div>
-                    </div>
-                    <div className="processing-queue-item-actions">
-                      {canCancel && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          loading={actionId === task.id}
-                          onClick={() => handleCancel(task)}
-                        >
-                          取消
-                        </Button>
+                {/* Top row: filename + doc_id on left, status + actions on right */}
+                <div className="processing-queue-item-top">
+                  <div className="processing-queue-item-info">
+                    <div
+                      className="processing-queue-item-title"
+                      title={task.file_path || task.doc_id}
+                    >
+                      {fileName || task.doc_id}
+                      <span className="doc-id">{task.doc_id}</span>
+                      {task.file_size_bytes != null && (
+                        <span className="processing-queue-item-size">
+                          {formatBytes(task.file_size_bytes)}
+                        </span>
                       )}
-                      {canRetry && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          loading={actionId === task.id}
-                          onClick={() => handleRetry(task)}
+                    </div>
+                    <div className="processing-queue-item-meta">
+                      <span
+                        className={`processing-queue-status-badge is-${task.status}`}
+                      >
+                        {STATUS_LABEL[task.status]}
+                      </span>
+                      <span className="processing-queue-item-stage">
+                        <span className="processing-queue-stage-icon">{stageIcon}</span>
+                        {label}
+                      </span>
+                      {showPages && (
+                        <span className="processing-queue-item-pages">
+                          {task.pages_done}/{task.pages_total} 页
+                        </span>
+                      )}
+                      {showElapsed && (
+                        <span
+                          className={
+                            'processing-queue-item-elapsed' +
+                            (stale ? ' is-slow' : '')
+                          }
+                          title={
+                            stale
+                              ? '该任务在「处理中」停留过久，可能卡住'
+                              : startedAtMs
+                                ? '自任务开始处理起经过时间'
+                                : '自任务创建起经过时间'
+                          }
                         >
-                          重试
-                        </Button>
+                          ⏱ {formatElapsed(elapsedMs)}
+                        </span>
+                      )}
+                      {etaMs != null && (
+                        <span
+                          className="processing-queue-item-eta"
+                          title="基于当前速度和进度估算的剩余时间"
+                        >
+                          预计还需 {formatElapsed(etaMs)}
+                        </span>
+                      )}
+                      {task.retry_count > 0 && (
+                        <span className="processing-queue-retry-info">
+                          重试 {task.retry_count}/{task.max_retries}
+                        </span>
                       )}
                     </div>
                   </div>
 
-                  <ProgressBar
-                    value={task.progress_pct}
-                    label={task.details || label}
-                    showPercent={task.status === 'processing'}
-                    style={{ marginTop: '10px' }}
-                  />
+                  <div className="processing-queue-item-actions">
+                    {canCancel && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={actionId === task.id}
+                        onClick={() => handleCancel(task)}
+                      >
+                        取消
+                      </Button>
+                    )}
+                    {canRetry && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={actionId === task.id}
+                        onClick={() => handleRetry(task)}
+                      >
+                        重试
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={actionId === task.id}
+                        onClick={() => handleCancel(task)}
+                      >
+                        删除
+                      </Button>
+                    )}
+                  </div>
+                </div>
 
-                  {task.error && (
-                    <BodyText size="sm" className="processing-queue-error">
-                      {task.error}
-                    </BodyText>
-                  )}
-                </Card>
+                {/* Progress (only when actively progressing) */}
+                {(task.status === 'pending' || task.status === 'processing') && (
+                  <div className="processing-queue-progress">
+                    <ProgressBar
+                      value={task.progress_pct}
+                      showPercent={task.status === 'processing'}
+                    />
+                    {task.details && (
+                      <span className="processing-queue-progress-detail">
+                        {task.details}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Error block (failed only) */}
+                {task.status === 'failed' && task.error && (
+                  <div className="processing-queue-error">⚠ {task.error}</div>
+                )}
               </motion.div>
             )
           })}
-        </div>
+        </motion.div>
       )}
     </div>
   )

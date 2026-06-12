@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { useState } from 'react'
+import {  } from 'react'
 import type { DocumentEntry } from '../../types'
 import type { ScanWarning } from '../../api/tauri'
 import PageContainer from '../ui/PageContainer'
@@ -11,12 +11,11 @@ import Caption from '../ui/Caption'
 import Card from '../ui/Card'
 import IconContainer from '../ui/IconContainer'
 import AlertBanner from '../ui/AlertBanner'
-import { FolderIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon, SearchIcon, QueueIcon } from '../icons'
+import { FolderIcon, FlaskIcon, ExternalLinkIcon, SettingsIcon, SearchIcon } from '../icons'
 import ScanWarningsPanel from './ScanWarningsPanel'
 import ProjectStats from './ProjectStats'
 import FolderLayoutCard from './FolderLayoutCard'
 import DocumentList from './DocumentList'
-import ProcessingQueue from './ProcessingQueue'
 
 interface IndexProgress {
   file: string
@@ -68,7 +67,6 @@ export default function ProjectDashboard({
   onRefreshDocs,
 }: Props) {
   const projectName = projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目'
-  const [showQueue, setShowQueue] = useState(false)
 
   return (
     <PageContainer>
@@ -125,20 +123,8 @@ export default function ProjectDashboard({
           >
             项目设置
           </Button>
-          <Button
-            variant="secondary"
-            size="md"
-            icon={<QueueIcon size={14} />}
-            onClick={() => setShowQueue((s) => !s)}
-          >
-            {showQueue ? '隐藏队列' : '处理队列'}
-          </Button>
         </div>
       </div>
-
-      {showQueue && (
-        <ProcessingQueue projectRoot={projectRoot} />
-      )}
 
       <ProjectStats docs={docs} indexResult={indexResult} />
 

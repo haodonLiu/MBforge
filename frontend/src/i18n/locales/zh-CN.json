@@ -19,6 +19,7 @@
   "nav.molecules": "分子库",
   "nav.sar": "SAR 分析",
   "nav.environment": "环境",
+  "nav.queue": "处理队列",
   "nav.fileTree": "文件树",
   "nav.switchProject": "切换项目",
   "nav.confirmSwitchProject": "确定要切换项目吗？未保存的更改将丢失。",

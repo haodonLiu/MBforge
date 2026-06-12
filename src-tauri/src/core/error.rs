@@ -23,6 +23,7 @@ pub enum ErrorCode {
     FilePermission,
     ProjectCreate,
     ProjectMigrate,
+    QueueFull,
     AgentError,
     KbSearch,
 }
@@ -49,6 +50,7 @@ impl std::fmt::Display for ErrorCode {
             ErrorCode::FilePermission => write!(f, "FILE_PERMISSION"),
             ErrorCode::ProjectCreate => write!(f, "PROJECT_CREATE"),
             ErrorCode::ProjectMigrate => write!(f, "PROJECT_MIGRATE"),
+            ErrorCode::QueueFull => write!(f, "QUEUE_FULL"),
             ErrorCode::AgentError => write!(f, "AGENT_ERROR"),
             ErrorCode::KbSearch => write!(f, "KB_SEARCH"),
         }

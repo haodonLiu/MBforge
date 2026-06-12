@@ -13,8 +13,11 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-use crate::core::error::AppResult;
+use crate::core::error::{AppError, AppResult, ErrorCode};
 use crate::core::helpers::now_secs_f64;
+
+/// 队列中 pending + processing 任务的最大数量。
+const MAX_ACTIVE_QUEUE_SIZE: usize = 100;
 
 /// 队列任务状态
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -157,6 +160,7 @@ impl IngestQueue {
                 retry_count INTEGER NOT NULL DEFAULT 0,
                 max_retries INTEGER NOT NULL DEFAULT 3,
                 error       TEXT,
+                file_hash   TEXT,
                 created_at  REAL NOT NULL,
                 updated_at  REAL NOT NULL
             )",
@@ -170,6 +174,7 @@ impl IngestQueue {
         Self::add_column_if_missing(conn, "ingest_queue", "pages_total", "INTEGER NOT NULL DEFAULT 0")?;
         Self::add_column_if_missing(conn, "ingest_queue", "pages_done", "INTEGER NOT NULL DEFAULT 0")?;
         Self::add_column_if_missing(conn, "ingest_queue", "details", "TEXT NOT NULL DEFAULT ''")?;
+        Self::add_column_if_missing(conn, "ingest_queue", "file_hash", "TEXT")?;
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_ingest_status ON ingest_queue(status)",
@@ -214,8 +219,8 @@ impl IngestQueue {
                 for task in queue_data.tasks {
                     tx.execute(
                         "INSERT OR IGNORE INTO ingest_queue
-                         (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, created_at, updated_at)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                         (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, file_hash, created_at, updated_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
                         params![
                             task.id,
                             task.file_path,
@@ -229,6 +234,7 @@ impl IngestQueue {
                             task.retry_count as i64,
                             task.max_retries as i64,
                             task.error,
+                            "",
                             task.created_at,
                             task.updated_at,
                         ],
@@ -263,48 +269,54 @@ impl IngestQueue {
 
     /// 入队一个文件
     pub fn enqueue(&self, file_path: String, doc_id: String) -> AppResult<String> {
-        let task = IngestTask::new(file_path, doc_id);
-        let id = task.id.clone();
-        let now = task.created_at;
-
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        conn.execute(
-            "INSERT INTO ingest_queue
-             (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            params![
-                &task.id,
-                &task.file_path,
-                &task.doc_id,
-                task.status.as_str(),
-                &task.stage,
-                task.progress_pct,
-                task.pages_total,
-                task.pages_done,
-                &task.details,
-                task.retry_count as i64,
-                task.max_retries as i64,
-                task.error.as_ref(),
-                now,
-                now,
-            ],
-        )?;
-
-        log::info!("IngestQueue: enqueued {}", id);
-        Ok(id)
+        self.enqueue_with_stage(file_path, doc_id, "inspector")
     }
 
-    /// 入队一个指定阶段的文件
+    /// 入队一个指定阶段的文件。
+    ///
+    /// 幂等：同文件 hash 且未失败/未取消的任务已存在时，直接返回已有任务 id。
+    /// 背压：pending + processing 任务数达到 `MAX_ACTIVE_QUEUE_SIZE` 时拒绝入队。
     pub fn enqueue_with_stage(&self, file_path: String, doc_id: String, stage: &str) -> AppResult<String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let file_hash = crate::core::helpers::sha256_file(Path::new(&file_path)).unwrap_or_default();
+
+        // 容量控制：pending + processing 不超过上限
+        let active_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM ingest_queue WHERE status IN ('pending', 'processing')",
+            [],
+            |row| row.get(0),
+        )?;
+        if active_count as usize >= MAX_ACTIVE_QUEUE_SIZE {
+            return Err(AppError::new(
+                ErrorCode::QueueFull,
+                format!("Ingest queue is full ({} active tasks)", MAX_ACTIVE_QUEUE_SIZE),
+            )
+            .with_suggestion("等待当前任务完成后再导入，或清理队列"));
+        }
+
+        // 幂等：同 hash 且未失败/未取消的任务直接返回已有 id
+        if !file_hash.is_empty() {
+            let existing = conn.query_row(
+                "SELECT id, status FROM ingest_queue WHERE file_hash = ?1 ORDER BY created_at DESC LIMIT 1",
+                params![file_hash],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            );
+            if let Ok((id, status)) = existing {
+                if status != "failed" && status != "cancelled" {
+                    log::info!("IngestQueue: skip duplicate hash, existing task {}", id);
+                    return Ok(id);
+                }
+            }
+        }
+
         let task = IngestTask::with_stage(file_path, doc_id, stage);
         let id = task.id.clone();
         let now = task.created_at;
 
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
             "INSERT INTO ingest_queue
-             (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+             (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, file_hash, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 &task.id,
                 &task.file_path,
@@ -318,6 +330,7 @@ impl IngestQueue {
                 task.retry_count as i64,
                 task.max_retries as i64,
                 task.error.as_ref(),
+                file_hash,
                 now,
                 now,
             ],
@@ -719,6 +732,48 @@ mod tests {
         let removed = queue.cleanup().unwrap();
         assert_eq!(removed, 1);
         assert_eq!(queue.stats().unwrap().total, 1);
+    }
+
+    #[test]
+    fn test_queue_capacity_backpressure() {
+        let (dir, queue) = setup_queue();
+        for i in 0..MAX_ACTIVE_QUEUE_SIZE {
+            let path = dir.path().join(format!("doc{}.pdf", i));
+            std::fs::write(&path, format!("%PDF {}", i)).unwrap();
+            queue.enqueue(path.to_string_lossy().to_string(), format!("doc{}", i))
+                .unwrap();
+        }
+        assert_eq!(queue.stats().unwrap().pending, MAX_ACTIVE_QUEUE_SIZE);
+
+        let overflow = dir.path().join("overflow.pdf");
+        std::fs::write(&overflow, b"%PDF overflow").unwrap();
+        let err = queue
+            .enqueue(overflow.to_string_lossy().to_string(), "overflow".into())
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::QueueFull);
+    }
+
+    #[test]
+    fn test_queue_idempotent_by_hash() {
+        let (dir, queue) = setup_queue();
+        let path = dir.path().join("same.pdf");
+        std::fs::write(&path, b"%PDF same").unwrap();
+        let path_str = path.to_string_lossy().to_string();
+
+        let id1 = queue.enqueue(path_str.clone(), "doc1".into()).unwrap();
+        let id2 = queue.enqueue(path_str.clone(), "doc2".into()).unwrap();
+        assert_eq!(id1, id2);
+        assert_eq!(queue.stats().unwrap().pending, 1);
+
+        // 失败的任务允许重新入队（先把它标记为永久失败）
+        queue.mark_failed(&id1, "timeout".into()).unwrap();
+        queue.mark_failed(&id1, "timeout".into()).unwrap();
+        queue.mark_failed(&id1, "timeout".into()).unwrap();
+        assert_eq!(queue.stats().unwrap().failed, 1);
+        let id3 = queue.enqueue(path_str, "doc3".into()).unwrap();
+        assert_ne!(id1, id3);
+        assert_eq!(queue.stats().unwrap().pending, 1);
+        assert_eq!(queue.stats().unwrap().failed, 1);
     }
 
     #[test]

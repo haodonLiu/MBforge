@@ -48,6 +48,7 @@ interface Props {
   onPageRendered?: (info: PageInfo) => void
   onImageReady?: (pageNumber: number, dataUrl: string) => void
   onTextContent?: (pageNumber: number, items: { str: string; x: number; y: number; width: number; height: number }[]) => void
+  onTextLayerClick?: (pageNumber: number) => void
   onPageCount?: (count: number) => void
   className?: string
   style?: React.CSSProperties
@@ -62,6 +63,7 @@ export default function PdfCanvas({
   onPageRendered,
   onImageReady,
   onTextContent,
+  onTextLayerClick,
   onPageCount,
   className,
   style,
@@ -69,25 +71,23 @@ export default function PdfCanvas({
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const textLayerRef = useRef<HTMLDivElement>(null)
-  const textLayerInstanceRef = useRef<unknown>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const totalPagesRef = useRef(0)
   const [totalPages, setTotalPages] = useState(0)
   const pdfDocRef = useRef<PDFDocumentProxy | null>(null)
+  const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null)
 
   const onPageRenderedRef = useRef(onPageRendered)
   const onImageReadyRef = useRef(onImageReady)
   const onTextContentRef = useRef(onTextContent)
   const onPageCountRef = useRef(onPageCount)
   const generateImageRef = useRef(generateImage)
-  const showTextLayerRef = useRef(showTextLayer)
   onPageRenderedRef.current = onPageRendered
   onImageReadyRef.current = onImageReady
   onTextContentRef.current = onTextContent
   onPageCountRef.current = onPageCount
   generateImageRef.current = generateImage
-  showTextLayerRef.current = showTextLayer
 
   useEffect(() => {
     let cancelled = false
@@ -116,27 +116,12 @@ export default function PdfCanvas({
     const container = textLayerRef.current
     if (!container) return
 
-    const dpr = window.devicePixelRatio || 1
     const logicalViewport = page.getViewport({ scale })
     const textContent = await page.getTextContent()
 
-    if (logicalViewport.rawDims && showTextLayerRef.current) {
-      try {
-        const TextLayerClass = (pdfjsLib as unknown as { TextLayer: new (opts: unknown) => { render: () => Promise<void> } }).TextLayer
-        const instance = new TextLayerClass({
-          textContentSource: textContent,
-          container,
-          viewport: logicalViewport,
-        })
-        textLayerInstanceRef.current = instance
-        await instance.render()
-      } catch (e) {
-        console.warn('TextLayer render failed, using fallback:', e)
-        renderTextLayerFallback(container, textContent, logicalViewport, dpr)
-      }
-    } else {
-      renderTextLayerFallback(container, textContent, logicalViewport, dpr)
-    }
+    container.innerHTML = ''
+    container.style.width = `${logicalViewport.width}px`
+    container.style.height = `${logicalViewport.height}px`
 
     if (onTextContentRef.current) {
       const items = (textContent.items as unknown[])
@@ -152,44 +137,17 @@ export default function PdfCanvas({
     }
   }, [pageNumber, scale])
 
-  function renderTextLayerFallback(
-    container: HTMLElement,
-    textContent: { items: unknown[] },
-    viewport: { width: number; height: number },
-    _dpr: number,
-  ) {
-    container.innerHTML = ''
-    container.style.width = `${viewport.width}px`
-    container.style.height = `${viewport.height}px`
-
-    for (const raw of textContent.items) {
-      if (!isTextItem(raw)) continue
-      const tx = raw.transform[4]
-      const ty = viewport.height - raw.transform[5] - raw.height
-      const span = document.createElement('span')
-      span.textContent = raw.str
-      span.className = 'pdf-text-layer-span'
-      span.style.cssText = `
-        position: absolute;
-        left: ${tx}px;
-        top: ${ty}px;
-        font-size: ${raw.height}px;
-        font-family: sans-serif;
-        line-height: 1;
-        white-space: pre;
-        color: transparent;
-        pointer-events: auto;
-        transform-origin: 0 0;
-      `
-      container.appendChild(span)
-    }
-  }
-
   const renderPage = useCallback(async () => {
     const doc = pdfDocRef.current
     const canvas = canvasRef.current
     const textLayerEl = textLayerRef.current
     if (!doc || !canvas) return
+
+    // 取消上一次未完成的渲染 — pdf.js 不允许同一 canvas 并发 render()
+    if (renderTaskRef.current) {
+      try { renderTaskRef.current.cancel() } catch { /* ignore */ }
+      renderTaskRef.current = null
+    }
 
     try {
       const page = await doc.getPage(pageNumber)
@@ -204,10 +162,20 @@ export default function PdfCanvas({
       canvas.style.height = `${viewport.height / dpr}px`
       ctx.clearRect(0, 0, viewport.width, viewport.height)
       ctx.scale(dpr, dpr)
-      await page.render({
+      const task = page.render({
         canvasContext: ctx,
         viewport: page.getViewport({ scale }),
-      }).promise
+      })
+      renderTaskRef.current = task
+      try {
+        await task.promise
+      } catch (e) {
+        // 取消会抛 RenderCancelledException — 静默吞掉
+        if ((e as Error)?.message?.includes('cancelled')) return
+        throw e
+      } finally {
+        if (renderTaskRef.current === task) renderTaskRef.current = null
+      }
 
       const originalViewport = page.getViewport({ scale: 1 })
       onPageRenderedRef.current?.({
@@ -225,7 +193,6 @@ export default function PdfCanvas({
       }
 
       if (textLayerEl) {
-        textLayerEl.innerHTML = ''
         renderTextLayerImpl(page)
       }
     } catch (e) {
@@ -269,15 +236,19 @@ export default function PdfCanvas({
       />
       <div
         ref={textLayerRef}
+        onClick={() => onTextLayerClick?.(pageNumber)}
         style={{
           position: 'absolute',
           top: 0,
           left: '50%',
           transform: 'translateX(-50%)',
-          pointerEvents: 'none',
+          cursor: showTextLayer ? 'text' : 'default',
+          pointerEvents: showTextLayer ? 'auto' : 'none',
           display: loading || error || !showTextLayer ? 'none' : 'block',
           zIndex: 1,
+          background: 'transparent',
         }}
+        title="点击打开当前页识别文本"
       />
       {totalPages > 0 && (
         <div style={{

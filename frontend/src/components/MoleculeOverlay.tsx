@@ -14,8 +14,12 @@ interface Props {
   scale: number
   /** 选中的检测索引 */
   selectedIndex?: number
-  /** 选中检测回调 */
+  /** 选中检测回调（用于已识别条目） */
   onSelect?: (index: number) => void
+  /** 触发完整识别（用于 quick-scan bbox-only 条目） */
+  onRecognize?: () => void
+  /** 是否正在识别中 */
+  isRecognizing?: boolean
 }
 
 /** 将 PDF 坐标（左下角原点）转换为 CSS 像素坐标（左上角原点） */
@@ -51,6 +55,8 @@ export default function MoleculeOverlay({
   scale,
   selectedIndex,
   onSelect,
+  onRecognize,
+  isRecognizing,
 }: Props) {
   // 将 PDF bbox 转换为 CSS 像素坐标
   const boxes: DetectionBox[] = useMemo(() => {
@@ -82,6 +88,7 @@ export default function MoleculeOverlay({
         width: renderWidth,
         height: renderHeight,
         pointerEvents: 'none',
+        zIndex: 2,
       }}
     >
       {boxes.map((box, i) => {
@@ -91,6 +98,7 @@ export default function MoleculeOverlay({
         const boxW = box.x2 - box.x1
         const boxH = box.y2 - box.y1
         const smi = box.result?.esmiles || ''
+        const isQuickScan = (box.result as unknown as { is_quick_scan?: boolean })?.is_quick_scan
         const confPct = Math.round(box.conf * 100)
         const ctx = box.result?.context_text || ''
 
@@ -103,14 +111,21 @@ export default function MoleculeOverlay({
               top: box.y1,
               width: boxW,
               height: boxH,
-              border: `2px solid ${color}`,
+              border: `2px ${isQuickScan ? 'dashed' : 'solid'} ${color}`,
               borderRadius: '3px',
               background: isSelected ? 'rgba(59,130,246,0.1)' : 'transparent',
-              cursor: 'pointer',
-              pointerEvents: 'auto',
+              cursor: isRecognizing ? 'wait' : 'pointer',
+              pointerEvents: isRecognizing ? 'none' : 'auto',
+              opacity: isQuickScan ? 0.85 : 1,
               transition: 'all 0.15s',
             }}
-            onClick={() => onSelect?.(i)}
+            onClick={() => {
+              if (isQuickScan) {
+                onRecognize?.()
+              } else {
+                onSelect?.(i)
+              }
+            }}
             onMouseEnter={() => setHoveredIdx(i)}
             onMouseLeave={() => setHoveredIdx(null)}
           >
@@ -137,7 +152,18 @@ export default function MoleculeOverlay({
               }}>
                 {confPct}%
               </span>
-              {smi && (
+              {isQuickScan ? (
+                <span style={{
+                  background: 'var(--bg-surface)',
+                  color: 'var(--text-secondary)',
+                  padding: '1px 5px',
+                  borderRadius: '3px',
+                  border: '1px solid var(--border)',
+                  fontSize: '9px',
+                }}>
+                  未识别
+                </span>
+              ) : smi ? (
                 <span style={{
                   background: 'var(--bg-surface)',
                   color: 'var(--text-secondary)',
@@ -150,7 +176,7 @@ export default function MoleculeOverlay({
                 }}>
                   {smi.length > 30 ? smi.slice(0, 30) + '...' : smi}
                 </span>
-              )}
+              ) : null}
             </div>
             {/* Hover tooltip: 上下文文本 */}
             {isHovered && ctx && (

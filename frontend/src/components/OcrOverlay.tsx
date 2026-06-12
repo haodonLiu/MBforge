@@ -98,6 +98,7 @@ export default function OcrOverlay({
         width: renderWidth,
         height: renderHeight,
         pointerEvents: 'none',
+        zIndex: 2,
       }}
     >
       {boxes.map((box) => {

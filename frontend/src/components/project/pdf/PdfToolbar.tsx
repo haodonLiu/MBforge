@@ -1,4 +1,4 @@
-import { SearchIcon } from '../../icons'
+import { SearchIcon, CheckIcon, FileTextIcon, LayoutIcon } from '../../icons'
 import Toolbar from '../../ui/Toolbar'
 import IconButton from '../../ui/IconButton'
 import Caption from '../../ui/Caption'
@@ -37,6 +37,7 @@ interface Props {
   pdfOcrSummary: { totalChars: number; textDensity: string } | null
   isDetectMode: boolean
   isDetecting: boolean
+  canDetect: boolean
   onDetect: () => void
   currentDetectionsCount: number
 }
@@ -52,7 +53,7 @@ export default function PdfToolbar(props: Props) {
     showTextPanel, onToggleTextPanel,
     showImagePanel, extractedImagesCount, isLoadingImages, onLoadImages,
     pdfOcrSummary,
-    isDetectMode, isDetecting, onDetect, currentDetectionsCount,
+    isDetectMode, isDetecting, canDetect, onDetect, currentDetectionsCount,
   } = props
 
   return (
@@ -95,8 +96,12 @@ export default function PdfToolbar(props: Props) {
       {/* 滚动模式切换 */}
       {!isDetectMode && pdfViewMode !== 'ocr' && (
         <div className="pdf-segmented">
-          <button className={scrollMode === 'continuous' ? 'active' : ''} onClick={() => onScrollModeChange('continuous')} title="连续滚动">📜</button>
-          <button className={scrollMode === 'single' ? 'active' : ''} onClick={() => onScrollModeChange('single')} title="单页">📄</button>
+          <button className={scrollMode === 'continuous' ? 'active' : ''} onClick={() => onScrollModeChange('continuous')} title="连续滚动">
+            <LayoutIcon size={11} /> 连续
+          </button>
+          <button className={scrollMode === 'single' ? 'active' : ''} onClick={() => onScrollModeChange('single')} title="单页">
+            <FileTextIcon size={11} /> 单页
+          </button>
         </div>
       )}
 
@@ -121,7 +126,8 @@ export default function PdfToolbar(props: Props) {
       {/* 文本层开关 */}
       <button className={`pdf-tool-btn ${showTextLayer ? 'active' : ''}`} onClick={onToggleTextLayer} disabled={!hasTextLayer}
         title={hasTextLayer ? (showTextLayer ? '隐藏文本层' : '显示文本层') : '此页无文本内容'}>
-        T{hasTextLayer ? ' ✓' : ''}
+        {showTextLayer && hasTextLayer ? <CheckIcon size={11} /> : null}
+        <span>T</span>
       </button>
       {hasTextLayer && (
         <button className={`pdf-tool-btn ${showTextPanel ? 'active' : ''}`} onClick={onToggleTextPanel} title={showTextPanel ? '关闭文本侧栏' : '打开文本侧栏'}>
@@ -132,7 +138,7 @@ export default function PdfToolbar(props: Props) {
       {/* 图片提取 */}
       <button className={`pdf-tool-btn ${showImagePanel ? 'active' : ''}`} onClick={onLoadImages} disabled={isLoadingImages}
         title={isLoadingImages ? '提取中...' : (showImagePanel ? '关闭图片面板' : '提取图片')}>
-        🖼️{extractedImagesCount > 0 ? ` ${extractedImagesCount}` : ''}
+        图片{extractedImagesCount > 0 ? ` ${extractedImagesCount}` : ''}
       </button>
 
       {/* OCR 状态标识 */}
@@ -148,8 +154,13 @@ export default function PdfToolbar(props: Props) {
       {/* 检测模式：检测按钮 */}
       {isDetectMode && (
         <>
-          <button className="btn btn-primary pdf-detect-btn" onClick={onDetect} disabled={isDetecting}>
-            {isDetecting ? '检测中...' : '检测'}
+          <button
+            className="btn btn-primary pdf-detect-btn"
+            onClick={onDetect}
+            disabled={isDetecting || !canDetect}
+            title={canDetect ? '检测当前页分子' : (currentDetectionsCount > 0 ? '当前页已检测' : '页面渲染中，请稍候')}
+          >
+            {isDetecting ? '检测中...' : (currentDetectionsCount > 0 ? '已检测' : '检测')}
           </button>
           {currentDetectionsCount > 0 && (
             <span className="pdf-detect-count">{currentDetectionsCount}个</span>

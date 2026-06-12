@@ -8,9 +8,10 @@ export interface CardProps {
   onClick?: (e: MouseEvent<HTMLDivElement>) => void
   style?: React.CSSProperties
   className?: string
+  title?: string
 }
 
-export default function Card({ children, padding = '20px', hoverable = false, onClick, style, className }: CardProps) {
+export default function Card({ children, padding = '20px', hoverable = false, onClick, style, className, title }: CardProps) {
   const baseStyle: React.CSSProperties = {
     padding,
     background: 'var(--bg-surface)',
@@ -27,6 +28,7 @@ export default function Card({ children, padding = '20px', hoverable = false, on
         className={className}
         onClick={onClick}
         style={baseStyle}
+        title={title}
         whileHover={{ scale: 1.01, boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}
         transition={{ duration: 0.15 }}
       >
@@ -36,7 +38,7 @@ export default function Card({ children, padding = '20px', hoverable = false, on
   }
 
   return (
-    <div className={className} style={baseStyle}>
+    <div className={className} style={baseStyle} title={title}>
       {children}
     </div>
   )

@@ -6,12 +6,13 @@
 
 import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
 import { ask } from '@tauri-apps/plugin-dialog'
 import i18n from '../i18n'
 import {
   SettingsIcon, XIcon, DownloadIcon, CpuIcon,
-  LayoutIcon, FlaskIcon, InfoIcon,
+  LayoutIcon, FlaskIcon, InfoIcon, FolderOpenIcon, RefreshCwIcon,
 } from './icons'
 import { getSettings, saveSettings, getConfigDir } from '../api/tauri/settings'
 import { useTheme } from '../hooks/useTheme'
@@ -33,6 +34,9 @@ import GeneralSection from './settings/sections/GeneralSection'
 import AIModelsSection from './settings/sections/AIModelsSection'
 import ModelServiceSection from './settings/sections/ModelServiceSection'
 import ModelDownloadsSection from './settings/sections/ModelDownloadsSection'
+import PdfParseSection from './settings/sections/PdfParseSection'
+import StorageSection from './settings/sections/StorageSection'
+import RecentProjectsSection from './settings/sections/RecentProjectsSection'
 import AboutSection from './settings/sections/AboutSection'
 
 const SECTION_ICONS: Record<SectionDef['icon'], ReactNode> = {
@@ -42,6 +46,8 @@ const SECTION_ICONS: Record<SectionDef['icon'], ReactNode> = {
   flask: <FlaskIcon size={18} />,
   info: <InfoIcon size={18} />,
   layout: <LayoutIcon size={18} />,
+  folder: <FolderOpenIcon size={18} />,
+  refresh: <RefreshCwIcon size={18} />,
 }
 
 interface Props {
@@ -53,6 +59,7 @@ export default function SettingsModal({ open, onClose }: Props) {
   const [activeSection, setActiveSection] = useState<SectionId>('general')
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS)
   const [initialSettings, setInitialSettings] = useState<SettingsState>(DEFAULT_SETTINGS)
+  const [activeProject, setActiveProject] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -83,6 +90,11 @@ export default function SettingsModal({ open, onClose }: Props) {
         setSettings(loaded)
         setInitialSettings(loaded)
       }
+      // 取最近项目列表的首项作为"当前项目"代理（用于缓存管理）
+      try {
+        const recent = await invoke<{ projects: string[] }>('projects_list_recent')
+        setActiveProject(recent.projects[0] ?? '')
+      } catch { /* 静默 */ }
     } catch (e) {
       showToast('加载设置失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally {
@@ -144,6 +156,12 @@ export default function SettingsModal({ open, onClose }: Props) {
         return <ModelServiceSection settings={settings} setSettings={setSettings} />
       case 'model_downloads':
         return <ModelDownloadsSection settings={settings} setSettings={setSettings} />
+      case 'pdf_parse':
+        return <PdfParseSection settings={settings} setSettings={setSettings} />
+      case 'storage':
+        return <StorageSection projectRoot={activeProject} />
+      case 'recent_projects':
+        return <RecentProjectsSection />
       case 'about':
         return <AboutSection onReset={handleReset} onOpenConfig={handleOpenConfigDir} />
       default:

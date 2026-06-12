@@ -1,17 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import Button from '../ui/Button'
 import {
   listModels,
-  listDownloaded,
   downloadModel,
   deleteModel,
   type DownloadModel,
-  type DownloadedModel,
   type DownloadProgress,
 } from '../../api/tauri/download'
+import { invoke } from '@tauri-apps/api/core'
 import ModelCard from './ModelCard'
-import DownloadedModelItem from './DownloadedModelItem'
 
 export interface DownloadState {
   [modelId: string]: {
@@ -25,14 +22,18 @@ export interface DownloadState {
   }
 }
 
-export default function ModelsTab() {
+interface ModelsTabProps {
+  modelCacheDir: string
+  onCacheDirChange: (v: string) => void
+}
+
+export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTabProps) {
   const { t } = useTranslation()
   const [models, setModels] = useState<DownloadModel[]>([])
-  const [downloadedModels, setDownloadedModels] = useState<DownloadedModel[]>([])
-  const [modelDir, setModelDir] = useState('')
   const [downloadState, setDownloadState] = useState<DownloadState>({})
-  const [modelTab, setModelTab] = useState<'catalog' | 'downloaded'>('catalog')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [customOpen, setCustomOpen] = useState(false)
+  const [cacheDir, setCacheDir] = useState('')
   const abortMapRef = useRef<Map<string, () => void>>(new Map())
 
   const loadModels = useCallback(async () => {
@@ -42,20 +43,17 @@ export default function ModelsTab() {
     } catch { /* 后端未启动时静默失败 */ }
   }, [])
 
-  const loadDownloaded = useCallback(async () => {
+  const loadCacheDir = useCallback(async () => {
     try {
-      const resp = await listDownloaded()
-      if (resp.success) {
-        setDownloadedModels(resp.models)
-        setModelDir(resp.model_dir)
-      }
-    } catch { /* 后端未启动时静默失败 */ }
+      const info = await invoke<{ mbforge: { path: string } }>('models_cache_dir_info')
+      setCacheDir(info.mbforge?.path ?? '')
+    } catch { /* ignore */ }
   }, [])
 
   useEffect(() => {
     loadModels()
-    loadDownloaded()
-  }, [loadModels, loadDownloaded])
+    loadCacheDir()
+  }, [loadModels, loadCacheDir])
 
   const handleDownload = (modelId: string) => {
     if (downloadState[modelId]?.status === 'downloading' || downloadState[modelId]?.status === 'connecting') return
@@ -110,100 +108,93 @@ export default function ModelsTab() {
     try {
       await deleteModel(modelId)
       setDeleteConfirm(null)
-      loadDownloaded()
       loadModels()
     } catch (e) {
       console.error(e)
     }
   }
 
-  const byType = (type_: string) => models.filter(m => m.type === type_)
-  const typeLabels: Record<string, string> = {
-    embedding: t('models.embedding'),
-    reranker: t('models.reranker'),
-    detection: t('models.detection'),
-  }
+  // 按 type 分组（保持顺序：embedding → reranker → detection）
+  const typeOrder: Array<{ key: string; labelKey: string }> = [
+    { key: 'embedding', labelKey: 'models.embedding' },
+    { key: 'reranker', labelKey: 'models.reranker' },
+    { key: 'detection', labelKey: 'models.detection' },
+  ]
+
+  const readyCount = models.filter(m => m.downloaded).length
+  const totalCount = models.length
 
   return (
     <div className="settings-section">
       <div className="settings-group">
-        <div className="settings-tabs-row">
-          <Button
-            size="sm"
-            className={modelTab === 'catalog' ? 'settings-tab-btn--active' : ''}
-            onClick={() => setModelTab('catalog')}
-          >
-            {t('models.tabCatalog')}
-          </Button>
-          <Button
-            size="sm"
-            className={modelTab === 'downloaded' ? 'settings-tab-btn--active' : ''}
-            onClick={() => { setModelTab('downloaded'); loadDownloaded() }}
-          >
-            {t('models.tabDownloaded', { count: downloadedModels.length })}
-          </Button>
+        {/* 摘要头部 */}
+        <div className="models-header">
+          <div className="models-header-summary">
+            <span className="models-header-count">
+              {t('models.readyCount', { ready: readyCount, total: totalCount })}
+            </span>
+            {cacheDir && (
+              <code className="models-header-dir" title={cacheDir}>
+                {cacheDir}
+              </code>
+            )}
+            <input
+              className="models-header-dir-input"
+              type="text"
+              value={modelCacheDir}
+              onChange={e => onCacheDirChange(e.target.value)}
+              placeholder={t('settings.modelCacheDirPlaceholder')}
+              spellCheck={false}
+            />
+          </div>
+          <button className="models-header-refresh" onClick={loadModels} title={t('models.refresh')}>
+            ↻ {t('models.refresh')}
+          </button>
         </div>
 
-        <div className="settings-model-dir">
-          <span className="settings-model-dir-label">{t('models.modelDir')}</span>
-          <code className="settings-model-dir-path">
-            {modelDir || '~/.cache/mbforge/models/'}
-          </code>
-        </div>
-
-        {modelTab === 'catalog' ? (
-          models.length === 0 ? (
-            <div className="settings-empty-state">
-              {t('models.serverNotStarted')}
-            </div>
-          ) : (
-            Object.entries(typeLabels).map(([type, label]) => {
-              const group = byType(type)
-              if (group.length === 0) return null
-              return (
-                <div key={type} className="settings-model-group">
-                  <div className="settings-model-group-label">{label}</div>
-                  <div className="settings-model-list">
-                    {group.map(model => (
-                      <ModelCard
-                        key={model.id}
-                        model={model}
-                        state={downloadState[model.id]}
-                        onDownload={() => handleDownload(model.id)}
-                        onCancel={() => handleCancel(model.id)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )
-            })
-          )
+        {models.length === 0 ? (
+          <div className="settings-empty-state">
+            {t('models.serverNotStarted')}
+          </div>
         ) : (
-          downloadedModels.length === 0 ? (
-            <div className="settings-empty-state">
-              {t('models.noDownloaded')}
-            </div>
-          ) : (
-            <div className="settings-model-list">
-              {downloadedModels.map(model => (
-                <DownloadedModelItem
-                  key={model.id}
-                  model={model}
-                  deleteConfirm={deleteConfirm}
-                  onDeleteClick={() => setDeleteConfirm(model.id)}
-                  onConfirmDelete={() => handleDelete(model.id)}
-                  onCancelDelete={() => setDeleteConfirm(null)}
-                />
-              ))}
-            </div>
-          )
+          typeOrder.map(({ key, labelKey }) => {
+            const group = models.filter(m => m.type === key)
+            if (group.length === 0) return null
+            const groupReady = group.filter(m => m.downloaded).length
+            return (
+              <div key={key} className="settings-model-group">
+                <div className="settings-model-group-label">
+                  <span>{t(labelKey)}</span>
+                  <span className="settings-model-group-count">{groupReady} / {group.length}</span>
+                </div>
+                <div className="settings-model-list">
+                  {group.map(model => (
+                    <ModelCard
+                      key={model.id}
+                      model={model}
+                      state={downloadState[model.id]}
+                      deleteConfirm={deleteConfirm}
+                      onDownload={() => handleDownload(model.id)}
+                      onCancel={() => handleCancel(model.id)}
+                      onDelete={() => setDeleteConfirm(model.id)}
+                      onConfirmDelete={() => handleDelete(model.id)}
+                      onCancelDelete={() => setDeleteConfirm(null)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )
+          })
         )}
 
-        <div className="settings-custom-hint">
-          <div className="settings-custom-hint-title">{t('models.customTitle')}</div>
-          <div>{t('models.customDesc')}</div>
-          <div className="settings-custom-hint-code">{t('models.customHint')}</div>
-        </div>
+        {/* 自定义模型提示（可折叠） */}
+        <details className="settings-custom-hint" open={customOpen} onToggle={e => setCustomOpen((e.target as HTMLDetailsElement).open)}>
+          <summary className="settings-custom-hint-title">{t('models.customTitle')}</summary>
+          <div className="settings-custom-hint-body">
+            <div>{t('models.customDesc')}</div>
+            <div className="settings-custom-hint-code">{t('models.customHint')}</div>
+          </div>
+        </details>
       </div>
     </div>
   )

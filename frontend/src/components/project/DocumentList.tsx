@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import Card from '../ui/Card'
 import BodyText from '../ui/BodyText'
@@ -8,6 +9,7 @@ import Skeleton from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import { FileTextIcon } from '../icons'
 import { inspectPdf, confirmOcr } from '../../api/tauri/pdf'
+import { ingestEnqueue } from '../../api/tauri/ingest_queue'
 import { showToast } from '../../hooks/useToast'
 import type { DocumentEntry } from '../../types'
 
@@ -20,9 +22,11 @@ interface DocumentListProps {
 }
 
 export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile, onRefreshDocs }: DocumentListProps) {
+  const { t } = useTranslation()
   const inspectedRef = useRef<Set<string>>(new Set())
   const [inspectingIds, setInspectingIds] = useState<Set<string>>(new Set())
   const [confirmingIds, setConfirmingIds] = useState<Set<string>>(new Set())
+  const [enqueueingIds, setEnqueueingIds] = useState<Set<string>>(new Set())
 
   // 对未检测的 PDF 自动运行 Inspector（仅一次）
   useEffect(() => {
@@ -63,6 +67,26 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
       showToast('OCR 确认失败: ' + String(e), 'error')
     } finally {
       setConfirmingIds(prev => {
+        const next = new Set(prev)
+        next.delete(doc.doc_id)
+        return next
+      })
+    }
+  }
+
+  const handleEnqueue = async (doc: DocumentEntry) => {
+    if (!projectRoot) return
+    const filePath = doc.source_path || `${projectRoot}/projects/${doc.doc_id}/source.pdf`
+    setEnqueueingIds(prev => new Set(prev).add(doc.doc_id))
+    try {
+      await ingestEnqueue(projectRoot, filePath, doc.doc_id)
+      showToast(t('project.processNow') + ': ' + (doc.title || doc.doc_id), 'success')
+      onRefreshDocs?.()
+    } catch (e) {
+      console.error('[DocumentList] enqueue failed:', e)
+      showToast('加入队列失败: ' + String(e), 'error')
+    } finally {
+      setEnqueueingIds(prev => {
         const next = new Set(prev)
         next.delete(doc.doc_id)
         return next
@@ -173,6 +197,12 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
             : undefined
 
         const needsOcrConfirm = doc.doc_type === 'pdf' && ocrStatus === 'pending_confirmation'
+        const isEnqueueing = enqueueingIds.has(doc.doc_id)
+        const canEnqueue =
+          doc.doc_type === 'pdf' &&
+          !needsOcrConfirm &&
+          indexStatus !== 'done' &&
+          indexStatus !== 'processing'
 
         return (
           <motion.div
@@ -214,6 +244,23 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
                     onClick={() => handleConfirmOcr(doc, false)}
                   >
                     跳过
+                  </Button>
+                </div>
+              )}
+              {canEnqueue && (
+                <div
+                  style={{ display: 'inline-flex', gap: '8px', marginLeft: 'auto' }}
+                  onClick={(e) => e.stopPropagation()}
+                  title={t('project.processNowDesc')}
+                >
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    loading={isEnqueueing}
+                    disabled={isEnqueueing}
+                    onClick={() => handleEnqueue(doc)}
+                  >
+                    {t('project.processNow')}
                   </Button>
                 </div>
               )}

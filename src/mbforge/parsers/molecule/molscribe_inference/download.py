@@ -6,7 +6,7 @@
 import os
 from pathlib import Path
 
-MODEL_ID = "yujieq/MolScribe"
+MODEL_ID = "polyai/MolScribe"
 CHECKPOINT_NAME = "swin_base_char_aux_1m680k.pth"
 
 

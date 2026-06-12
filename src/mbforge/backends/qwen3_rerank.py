@@ -51,7 +51,13 @@ def load(device: str | None = None, max_length: int = 8192) -> None:
     _TOKENIZER = AutoTokenizer.from_pretrained(
         model_path, padding_side="left", trust_remote_code=True
     )
-    _MODEL = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True)
+    _MODEL = AutoModelForCausalLM.from_pretrained(
+        model_path,
+        trust_remote_code=True,
+        # Qwen3-Reranker 官方设计 tie_word_embeddings=true，checkpoint 里没有
+        # 独立的 lm_head；transformers 会从 embed_tokens 复制并打印误导性 MISSING 报告
+        ignore_mismatched_sizes=True,
+    )
     _MODEL.eval()
     if _DEVICE != "cpu":
         _MODEL = _MODEL.to(_DEVICE)

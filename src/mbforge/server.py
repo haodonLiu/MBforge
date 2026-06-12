@@ -198,6 +198,52 @@ async def detect_page(request: Request) -> dict[str, Any]:
         raise ModelNotAvailableError(str(e))
 
 
+@app.post("/api/v1/moldet/detect-batch")
+async def detect_batch(request: Request) -> dict[str, Any]:
+    """批量检测多页图像中的分子 bbox.
+
+    请求体：
+        - image_base64_list: base64 编码的图像列表
+
+    返回：
+        - results: 每页的检测结果列表，每项包含 page_index、boxes、count
+        - total: 输入图像总数
+    """
+    try:
+        body = await request.json()
+        image_base64_list = body.get("image_base64_list", [])
+        if not isinstance(image_base64_list, list) or not image_base64_list:
+            raise ValidationError("image_base64_list must be a non-empty list")
+        images = [decode_base64_image(b64) for b64 in image_base64_list]
+        pipeline = moldet.get_moldet()
+        if pipeline is None or not pipeline.is_available():
+            raise ModelNotAvailableError("MolDet pipeline not available")
+        loop = asyncio.get_running_loop()
+        batch_boxes = await loop.run_in_executor(
+            None, lambda: pipeline.doc_detector.detect_batch(images)
+        )
+        set_model_status("moldet", "ready")
+        return {
+            "results": [
+                {
+                    "page_index": i,
+                    "boxes": [
+                        {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "conf": conf}
+                        for x1, y1, x2, y2, conf in boxes
+                    ],
+                    "count": len(boxes),
+                }
+                for i, boxes in enumerate(batch_boxes)
+            ],
+            "total": len(batch_boxes),
+        }
+    except (ValidationError, ModelNotAvailableError):
+        raise
+    except Exception as e:
+        set_model_status("moldet", "error")
+        raise ModelNotAvailableError(str(e))
+
+
 @app.post("/api/v1/moldet/extract-page")
 async def extract_page(request: Request) -> dict[str, Any]:
     try:

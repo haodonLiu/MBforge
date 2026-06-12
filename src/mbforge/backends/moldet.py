@@ -196,6 +196,48 @@ class MolDetv2DocDetector:
                 boxes.append((x1, y1, x2, y2, conf))
         return boxes
 
+    def detect_batch(
+        self, images: list[Image.Image | np.ndarray]
+    ) -> list[list[tuple[float, float, float, float, float]]]:
+        """对多个整页图像进行批量分子结构检测.
+
+        Args:
+            images: PIL Image 或 numpy array 列表，每个元素为 (H, W, C)
+
+        Returns:
+            每页 bbox 列表的列表，每个 bbox 为 (x1, y1, x2, y2, conf)，
+            坐标系为**图像坐标系**（左上原点，像素单位）
+        """
+        if not self.is_available():
+            raise RuntimeError(
+                f"MolDetv2-Doc 模型未加载：{self.model_path} 不存在。"
+            )
+        if not images:
+            return []
+
+        results = self.model.predict(  # type: ignore[union-attr]
+            images,
+            conf=self.conf_threshold,
+            iou=self.iou_threshold,
+            verbose=False,
+            device=self.device if self.device != "auto" else None,
+        )
+        if not results:
+            return [[] for _ in images]
+
+        batch_boxes: list[list[tuple[float, float, float, float, float]]] = []
+        for r in results:
+            if r.boxes is None:
+                batch_boxes.append([])
+                continue
+            boxes = []
+            for box in r.boxes:
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().tolist()
+                conf = float(box.conf[0].cpu().item())
+                boxes.append((x1, y1, x2, y2, conf))
+            batch_boxes.append(boxes)
+        return batch_boxes
+
 
 class MolDetv2GeneralDetector(MolDetv2DocDetector):
     """MolDetv2-General：裁剪区域复检/精修.

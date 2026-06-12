@@ -56,8 +56,6 @@ MBForge/
 │   │   │   │   ├── detection_cache.ts # 检测缓存
 │   │   │   │   ├── download.ts     # 模型下载
 │   │   │   │   ├── environment.ts  # 环境信息
-│   │   │   │   ├── file.ts         # 文件操作
-│   │   │   │   ├── gesim.ts        # GESim 计算
 │   │   │   │   ├── kb.ts           # 知识库
 │   │   │   │   ├── molecule.ts     # 分子数据库
 │   │   │   │   ├── notes.ts        # 笔记管理
@@ -65,16 +63,26 @@ MBForge/
 │   │   │   │   ├── project.ts      # 项目管理
 │   │   │   │   ├── sar.ts          # SAR 分析
 │   │   │   │   ├── settings.ts     # 设置管理
-│   │   │   │   └── text.ts         # 文本处理
-│   │   │   ├── tauri-events.ts
-│   │   │   └── index.ts            # barrel 导出
-│   │   ├── components/     # UI 组件
+│   │   │   │   ├── sidecar.ts      # Sidecar 管理
+│   │   │   │   ├── text.ts         # 文本处理
+│   │   │   │   └── index.ts        # barrel 导出
+│   │   │   ├── tauri-events.ts            # Tauri IPC 事件名常量
+│   │   ├── components/     # UI 组件（页面级 + 原子 + 子模块）
 │   │   │   ├── ui/         # 原子组件（Button, Modal, Card, ...）
 │   │   │   ├── settings/   # 设置/模型管理组件
 │   │   │   ├── animations/ # 动画包装组件
-│   │   │   └── project/    # 项目仪表盘子组件
-│   │   │       ├── PdfViewer.tsx       # PDF 阅读器 + 分子检测
-│   │   │       └── ProjectDashboard.tsx # 文档列表/统计/索引
+│   │   │   ├── chat/       # 对话子组件
+│   │   │   ├── dashboard/  # 仪表盘子组件
+│   │   │   ├── environment/# 环境信息子组件
+│   │   │   ├── icons/      # 图标组件
+│   │   │   ├── molecule/   # 分子相关组件
+│   │   │   ├── notes/      # 笔记编辑器组件
+│   │   │   ├── project/    # 项目仪表盘子组件
+│   │   │   │   ├── PdfViewer.tsx       # PDF 阅读器 + 分子检测
+│   │   │   │   └── ProjectDashboard.tsx # 文档列表/统计/索引
+│   │   │   ├── sar/        # SAR 分析组件
+│   │   │   ├── search/     # 搜索子组件
+│   │   │   └── welcome/    # 欢迎页子组件
 │   │   ├── hooks/          # React Hooks（useTheme, useToast, ...）
 │   │   ├── context/        # React Context（AppContext 全局 projectRoot 状态）
 │   │   ├── types/          # TypeScript 类型定义
@@ -187,9 +195,15 @@ MBForge/
 │   ├── TECH_STACK.md
 │   ├── REFERENCES.md
 │   ├── pipeline-redesign.md
-│   └── esmiles-spec.md / molecode-spec.md
+│   ├── refactor-plan.md
+│   ├── rig_api_surface.md
+│   ├── esmiles-spec.md
+│   ├── molecode-spec.md
+│   ├── specs/                # 架构 / 规范集（architecture-conventions 等）
+│   ├── superpowers/         # 近期设计稿与实现计划
+│   ├── pdf-pipeline-test/   # 解析管线测试输出样本
+│   └── archive/             # 已过时的迁移计划文档
 │
-├── CODEMAP.md              # 代码逻辑树（最详细模块清单）
 ├── pyproject.toml          # Python 项目配置（uv + setuptools）
 ├── uv.lock                 # Python 依赖锁定
 ├── package.json            # 根级 npm 配置（空对象，前端配置在 frontend/）
@@ -641,7 +655,6 @@ export function myFn(arg: string): string {
 - [ ] `uv run ruff check src/` 零 critical errors（迁移期旧代码除外）
 - [ ] 不提交 API 密钥或敏感配置
 - [ ] `.gitignore` 已覆盖新增产物
-- [ ] **CODEMAP.md §7.6 待审核事项**：本次修改涉及的文档/代码问题是否已记录，由人工确认
 - [ ] `constants.yaml` 如有修改，运行 `python scripts/generate_constants.py` 并验证两侧产物
 
 ---
@@ -868,7 +881,6 @@ PDF 输入
 | 文档 | 位置 | 内容 |
 |------|------|------|
 | AI 编码指南 | `CLAUDE.md` | 项目概要 + 构建/测试命令 + 文档总索引 |
-| 代码逻辑树 | `CODEMAP.md` | 每个模块的功能、依赖、实现状态 |
 | 任务看板 | `TODO/INDEX.md` | 当前任务状态与依赖关系 |
 | 管线重设计（设计稿） | `docs/pipeline-redesign.md` | 解析管线增量重设计 |
 | 技术栈详情 | `docs/TECH_STACK.md` | 所有依赖的技术选型、版本、使用场景 |

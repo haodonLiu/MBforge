@@ -8,13 +8,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 use rusqlite::{params, Connection};
 
 use crate::core::db::SharedConn;
 use crate::core::error::AppResult;
-use crate::core::helpers::{LockResultExt, now_secs_f64};
+use crate::core::helpers::now_secs_f64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheEntry {
@@ -231,7 +231,7 @@ impl SemanticCache {
                 })
             })?;
 
-            let mut inner = self.cache.lock().into_inner();
+            let mut inner = self.cache.try_lock().expect("SemanticCache load lock");
             for row in rows {
                 let entry = row?;
                 let key = entry.query_hash.clone();
@@ -251,7 +251,7 @@ impl SemanticCache {
                 Err(_) => return Ok(()),
             };
 
-        let mut inner = self.cache.lock().into_inner();
+        let mut inner = self.cache.try_lock().expect("SemanticCache legacy load lock");
         let mut migrated = 0usize;
 
         for (key, item) in data {
@@ -279,10 +279,13 @@ impl SemanticCache {
     }
 
     fn flush_to_db(&self) -> AppResult<()> {
+        let inner = self.cache.try_lock().expect("SemanticCache flush lock");
+        self.flush_inner_to_db(&inner)
+    }
+
+    fn flush_inner_to_db(&self, inner: &CacheInner) -> AppResult<()> {
         self.with_conn(|conn| {
             Self::setup_schema(conn)?;
-
-            let inner = self.cache.lock().into_inner();
 
             // 先清空再全量写入（简单策略，缓存大小 <1000，全量写入开销可忽略）
             conn.execute("DELETE FROM semantic_cache", [])?;
@@ -311,12 +314,12 @@ impl SemanticCache {
     }
 
     /// L1 exact hash match
-    pub fn get_l1(&self, query: &str) -> Option<Vec<serde_json::Value>> {
+    pub async fn get_l1(&self, query: &str) -> Option<Vec<serde_json::Value>> {
         if !self.config.enabled {
             return None;
         }
         let key = hash_query(query);
-        let mut inner = self.cache.lock().into_inner();
+        let mut inner = self.cache.lock().await;
 
         let expired = inner
             .entries
@@ -357,7 +360,7 @@ impl SemanticCache {
     }
 
     /// Store results in cache
-    pub fn store(&self, query: &str, results: Vec<serde_json::Value>) {
+    pub async fn store(&self, query: &str, results: Vec<serde_json::Value>) {
         if !self.config.enabled || results.is_empty() {
             return;
         }
@@ -374,7 +377,9 @@ impl SemanticCache {
             last_hit: now,
         };
 
-        let mut inner = self.cache.lock().into_inner();
+        let results_json = serde_json::to_string(&entry.results).unwrap_or_default();
+
+        let mut inner = self.cache.lock().await;
 
         if inner.entries.len() >= self.config.max_size && !inner.entries.contains_key(&key) {
             if let Some(evicted) = inner.lru.pop_front() {
@@ -395,31 +400,20 @@ impl SemanticCache {
 
         // 同步写入 SQLite（确保持久化）
         if self.config.disk_persist {
-            let results_json = match self.cache.lock() {
-                Ok(inner) => inner.entries.get(&key).map(|e| {
-                    serde_json::to_string(&e.results).unwrap_or_default()
-                }),
-                Err(e) => e.into_inner().entries.get(&key).map(|e| {
-                    serde_json::to_string(&e.results).unwrap_or_default()
-                }),
-            };
-
-            if let Some(results_json) = results_json {
-                let query_text = query.to_string();
-                spawn_db_write(self, move |conn| {
-                    let _ = conn.execute(
-                        "INSERT OR REPLACE INTO semantic_cache
-                         (query_hash, query_text, results_json, created_at, hit_count, last_hit)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                        params![key, query_text, results_json, now, 1i64, now],
-                    );
-                });
-            }
+            let query_text = query.to_string();
+            spawn_db_write(self, move |conn| {
+                let _ = conn.execute(
+                    "INSERT OR REPLACE INTO semantic_cache
+                     (query_hash, query_text, results_json, created_at, hit_count, last_hit)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![key, query_text, results_json, now, 1i64, now],
+                );
+            });
         }
     }
 
-    pub fn clear(&self) {
-        let mut inner = self.cache.lock().into_inner();
+    pub async fn clear(&self) {
+        let mut inner = self.cache.lock().await;
         inner.entries.clear();
         inner.lru.clear();
         drop(inner);
@@ -430,12 +424,13 @@ impl SemanticCache {
     }
 
     /// 强制同步内存缓存到 SQLite（测试用）
-    pub fn sync(&self) -> AppResult<()> {
-        self.flush_to_db()
+    pub async fn sync(&self) -> AppResult<()> {
+        let inner = self.cache.lock().await;
+        self.flush_inner_to_db(&inner)
     }
 
-    pub fn stats(&self) -> serde_json::Value {
-        let inner = self.cache.lock().into_inner();
+    pub async fn stats(&self) -> serde_json::Value {
+        let inner = self.cache.lock().await;
         let total_hits: u64 = inner.entries.values().map(|e| e.hit_count).sum();
         serde_json::json!({
             "entries": inner.entries.len(),
@@ -498,62 +493,62 @@ mod tests {
         (dir, sc)
     }
 
-    #[test]
-    fn test_l1_cache_hit() {
+    #[tokio::test]
+    async fn test_l1_cache_hit() {
         let (_dir, sc) = setup_cache();
 
-        assert!(sc.get_l1("test").is_none());
+        assert!(sc.get_l1("test").await.is_none());
 
-        sc.store("test", vec![serde_json::json!({"text": "result"})]);
-        let results = sc.get_l1("test").unwrap();
+        sc.store("test", vec![serde_json::json!({"text": "result"})]).await;
+        let results = sc.get_l1("test").await.unwrap();
         assert_eq!(results.len(), 1);
     }
 
-    #[test]
-    fn test_l1_cache_miss_different_query() {
+    #[tokio::test]
+    async fn test_l1_cache_miss_different_query() {
         let (_dir, sc) = setup_cache();
 
-        sc.store("query1", vec![serde_json::json!({"text": "result1"})]);
-        assert!(sc.get_l1("query2").is_none());
+        sc.store("query1", vec![serde_json::json!({"text": "result1"})]).await;
+        assert!(sc.get_l1("query2").await.is_none());
     }
 
-    #[test]
-    fn test_persistence() {
+    #[tokio::test]
+    async fn test_persistence() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
 
         // 第一轮：写入缓存并强制同步
         let sc = SemanticCache::new(root, SemanticCacheConfig::default());
-        sc.store("hello", vec![serde_json::json!({"text": "world"})]);
-        sc.sync().unwrap();
+        sc.store("hello", vec![serde_json::json!({"text": "world"})]).await;
+        sc.sync().await.unwrap();
         drop(sc);
 
         // 第二轮：重新加载（dir 必须保持存活）
         let sc2 = SemanticCache::new(root, SemanticCacheConfig::default());
-        let results = sc2.get_l1("hello");
+        let results = sc2.get_l1("hello").await;
         assert!(results.is_some());
         assert_eq!(results.unwrap()[0]["text"], "world");
     }
 
-    #[test]
-    fn test_ttl_expiration() {
+    #[tokio::test]
+    async fn test_ttl_expiration() {
         let (_dir, sc) = setup_cache();
 
-        sc.store("old", vec![serde_json::json!({"text": "data"})]);
+        sc.store("old", vec![serde_json::json!({"text": "data"})]).await;
         // 模拟过期：手动修改 created_at（key 是 hash_query 结果）
         {
             let key = hash_query("old");
-            let mut inner = sc.cache.lock().unwrap();
+            let mut inner = sc.cache.lock().await;
             if let Some(entry) = inner.entries.get_mut(&key) {
                 entry.created_at = now_secs_f64() - 7200.0; // 2 hours ago
             }
         }
         // TTL 默认 1 小时，应过期
-        assert!(sc.get_l1("old").is_none());
+        assert!(sc.get_l1("old").await.is_none());
     }
 
-    #[test]
-    fn test_lru_eviction() {
+    #[tokio::test]
+    async fn test_lru_eviction() {
         let mut config = SemanticCacheConfig::default();
         config.max_size = 2;
         let (_dir, _sc) = setup_cache();
@@ -561,12 +556,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let sc = SemanticCache::new(dir.path(), config);
 
-        sc.store("a", vec![serde_json::json!({"k": "a"})]);
-        sc.store("b", vec![serde_json::json!({"k": "b"})]);
-        sc.store("c", vec![serde_json::json!({"k": "c"})]); // 应驱逐 a
+        sc.store("a", vec![serde_json::json!({"k": "a"})]).await;
+        sc.store("b", vec![serde_json::json!({"k": "b"})]).await;
+        sc.store("c", vec![serde_json::json!({"k": "c"})]).await; // 应驱逐 a
 
-        assert!(sc.get_l1("a").is_none());
-        assert!(sc.get_l1("b").is_some());
-        assert!(sc.get_l1("c").is_some());
+        assert!(sc.get_l1("a").await.is_none());
+        assert!(sc.get_l1("b").await.is_some());
+        assert!(sc.get_l1("c").await.is_some());
     }
 }

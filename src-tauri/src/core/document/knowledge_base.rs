@@ -501,7 +501,7 @@ fn get_or_init_semantic_cache(
 }
 
 /// 搜索核心逻辑
-pub fn search_with_cache(
+pub async fn search_with_cache(
     root: &str,
     query: &str,
     top_k: usize,
@@ -509,7 +509,7 @@ pub fn search_with_cache(
     // 1. L1 缓存命中？
     {
         let sc = get_or_init_semantic_cache(root);
-        if let Some(cached) = sc.value().get_l1(query) {
+        if let Some(cached) = sc.value().get_l1(query).await {
             let stream = StreamingSearch::new(StreamingSearchConfig::default())
                 .execute(cached.clone(), top_k);
             return Ok((cached, stream));
@@ -535,7 +535,7 @@ pub fn search_with_cache(
     // 3. 写入缓存
     {
         let sc = get_or_init_semantic_cache(root);
-        sc.value().store(query, json_results.clone());
+        sc.value().store(query, json_results.clone()).await;
     }
 
     // 4. 流式分批
@@ -550,13 +550,13 @@ pub fn search_with_cache(
 // ============================================================================
 
 #[tauri::command]
-pub fn kb_search(
+pub async fn kb_search(
     root: String,
     query: String,
     top_k: Option<usize>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let top_k = top_k.unwrap_or(5);
-    let (results, _) = search_with_cache(&root, &query, top_k).map_err(|e| e.to_string())?;
+    let (results, _) = search_with_cache(&root, &query, top_k).await.map_err(|e| e.to_string())?;
     Ok(results)
 }
 
@@ -568,7 +568,7 @@ pub async fn kb_search_stream(
     top_k: Option<usize>,
 ) -> Result<(), String> {
     let top_k = top_k.unwrap_or(5);
-    let (_results, chunks) = search_with_cache(&root, &query, top_k).map_err(|e| e.to_string())?;
+    let (_results, chunks) = search_with_cache(&root, &query, top_k).await.map_err(|e| e.to_string())?;
 
     for chunk in chunks {
         let _ = app.emit(

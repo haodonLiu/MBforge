@@ -5,9 +5,8 @@
 //! 与 file_cache 不同：file_cache 缓存的是 PDF 解析结果（Stage 0），
 //! content_cache 缓存的是 LLM 处理结果（Stage 1-3），是最贵的操作。
 
-use std::sync::Mutex;
-
 use rusqlite::{params, Connection};
+use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::core::helpers::now_secs_f64;
@@ -69,9 +68,9 @@ impl ContentCache {
     }
 
     /// 查询缓存
-    pub fn get(&self, stage: &str, input_text: &str) -> Option<String> {
+    pub async fn get(&self, stage: &str, input_text: &str) -> Option<String> {
         let key = Self::compute_key(stage, input_text);
-        let conn = self.conn.lock().ok()?;
+        let conn = self.conn.lock().await;
 
         let result = conn.query_row(
             "SELECT result_json FROM content_cache WHERE content_hash = ?1",
@@ -95,7 +94,7 @@ impl ContentCache {
     }
 
     /// 写入缓存
-    pub fn put(
+    pub async fn put(
         &self,
         stage: &str,
         input_text: &str,
@@ -108,7 +107,7 @@ impl ContentCache {
         // 截断输入用于调试（保留前 500 字符）
         let truncated_input: String = input_text.chars().take(500).collect();
 
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self.conn.lock().await;
 
         // LRU 驱逐：超过上限时删除最旧的
         let count: i64 = conn
@@ -139,8 +138,8 @@ impl ContentCache {
     }
 
     /// 按 stage 清除缓存
-    pub fn clear_stage(&self, stage: &str) -> Result<usize, String> {
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub async fn clear_stage(&self, stage: &str) -> Result<usize, String> {
+        let conn = self.conn.lock().await;
         let affected = conn
             .execute("DELETE FROM content_cache WHERE stage = ?1", params![stage])
             .map_err(|e| format!("Clear failed: {}", e))?;
@@ -148,16 +147,16 @@ impl ContentCache {
     }
 
     /// 清空所有
-    pub fn clear(&self) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub async fn clear(&self) -> Result<(), String> {
+        let conn = self.conn.lock().await;
         conn.execute("DELETE FROM content_cache", [])
             .map_err(|e| format!("Clear failed: {}", e))?;
         Ok(())
     }
 
     /// 统计
-    pub fn stats(&self) -> Result<ContentCacheStats, String> {
-        let conn = self.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub async fn stats(&self) -> Result<ContentCacheStats, String> {
+        let conn = self.conn.lock().await;
 
         let total: i64 = conn
             .query_row("SELECT COUNT(*) FROM content_cache", [], |r| r.get(0))
@@ -208,37 +207,38 @@ pub struct ContentCacheStats {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_content_cache_roundtrip() {
+    #[tokio::test]
+    async fn test_content_cache_roundtrip() {
         let conn = Connection::open_in_memory().unwrap();
         let cache = ContentCache::new(conn).unwrap();
 
         // MISS
-        assert!(cache.get("meta_analysis", "test input").is_none());
+        assert!(cache.get("meta_analysis", "test input").await.is_none());
 
         // STORE
         cache
             .put("meta_analysis", "test input", r#"{"result":"ok"}"#, 100)
+            .await
             .unwrap();
 
         // HIT
-        let result = cache.get("meta_analysis", "test input").unwrap();
+        let result = cache.get("meta_analysis", "test input").await.unwrap();
         assert_eq!(result, r#"{"result":"ok"}"#);
 
         // 不同 stage 不命中
-        assert!(cache.get("merge_sar", "test input").is_none());
+        assert!(cache.get("merge_sar", "test input").await.is_none());
     }
 
-    #[test]
-    fn test_content_cache_stats() {
+    #[tokio::test]
+    async fn test_content_cache_stats() {
         let conn = Connection::open_in_memory().unwrap();
         let cache = ContentCache::new(conn).unwrap();
 
-        cache.put("meta_analysis", "a", "{}", 50).unwrap();
-        cache.put("post_process", "b", "{}", 100).unwrap();
-        cache.put("meta_analysis", "c", "{}", 80).unwrap();
+        cache.put("meta_analysis", "a", "{}", 50).await.unwrap();
+        cache.put("post_process", "b", "{}", 100).await.unwrap();
+        cache.put("meta_analysis", "c", "{}", 80).await.unwrap();
 
-        let stats = cache.stats().unwrap();
+        let stats = cache.stats().await.unwrap();
         assert_eq!(stats.total_entries, 3);
         assert!(stats.by_stage.iter().any(|(s, c)| s == "meta_analysis" && *c == 2));
     }

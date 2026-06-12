@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
@@ -16,7 +16,7 @@ pub struct IngestWorkerState {
     pub worker: Mutex<Option<IngestWorker>>,
 }
 
-use crate::core::constants::{EVT_INGEST_PROGRESS, EVT_INGEST_QUEUE_UPDATE};
+use crate::core::constants::{EVT_INGEST_PROGRESS, EVT_INGEST_QUEUE_UPDATE, EVT_INGEST_WORKER_HEARTBEAT};
 use crate::core::document::ingest_queue::{IngestQueue, IngestTask};
 use crate::core::document::knowledge_base::get_or_init_kb;
 use crate::core::helpers::generate_uuid;
@@ -30,10 +30,13 @@ use crate::parsers::pipeline::{
 };
 use crate::parsers::structure::sections::{build_sections, extract_headings};
 
+const WORKER_HEARTBEAT_INTERVAL_SECS: u64 = 5;
+
 /// 后台 ingest worker。
 pub struct IngestWorker {
     project_root: PathBuf,
     running: Arc<AtomicBool>,
+    last_heartbeat: Arc<AtomicU64>,
 }
 
 impl IngestWorker {
@@ -41,13 +44,15 @@ impl IngestWorker {
     pub fn start(project_root: PathBuf, app_handle: AppHandle) -> Self {
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = Arc::clone(&running);
+        let last_heartbeat = Arc::new(AtomicU64::new(crate::core::helpers::now_secs_u64()));
+        let last_heartbeat_clone = Arc::clone(&last_heartbeat);
         let root = project_root.clone();
 
         tauri::async_runtime::spawn(async move {
-            worker_loop(root, app_handle, running_clone).await;
+            worker_loop(root, app_handle, running_clone, last_heartbeat_clone).await;
         });
 
-        Self { project_root, running }
+        Self { project_root, running, last_heartbeat }
     }
 
     /// 停止 worker（温和停止，当前任务处理完后退出）。
@@ -55,9 +60,19 @@ impl IngestWorker {
         self.running.store(false, Ordering::Relaxed);
         log::info!("IngestWorker: stop requested for {}", self.project_root.display());
     }
+
+    /// 最近一次心跳时间戳（Unix 秒）。
+    pub fn last_heartbeat(&self) -> u64 {
+        self.last_heartbeat.load(Ordering::Relaxed)
+    }
 }
 
-async fn worker_loop(project_root: PathBuf, app_handle: AppHandle, running: Arc<AtomicBool>) {
+async fn worker_loop(
+    project_root: PathBuf,
+    app_handle: AppHandle,
+    running: Arc<AtomicBool>,
+    last_heartbeat: Arc<AtomicU64>,
+) {
     let queue = match IngestQueue::new(&project_root) {
         Ok(q) => q,
         Err(e) => {
@@ -68,8 +83,11 @@ async fn worker_loop(project_root: PathBuf, app_handle: AppHandle, running: Arc<
 
     log::info!("IngestWorker: started for {}", project_root.display());
 
+    // 后台心跳：即使长时间任务也能保证前端可观测 worker 存活。
+    spawn_heartbeat(project_root.clone(), app_handle.clone(), Arc::clone(&running), last_heartbeat);
+
     while running.load(Ordering::Relaxed) {
-        let task = match queue.dequeue() {
+        let task = match queue.dequeue().await {
             Ok(t) => t,
             Err(e) => {
                 log::error!("IngestWorker: dequeue failed: {}", e);
@@ -119,18 +137,18 @@ async fn worker_loop(project_root: PathBuf, app_handle: AppHandle, running: Arc<
                     0,
                     0,
                     "",
-                ) {
+                ).await {
                     log::error!("IngestWorker: failed to advance stage: {}", e);
                 }
                 // 把状态改回 pending 以便 dequeue 能再次取到同一任务。
-                let _ = reset_pending(&queue, &task.id);
-                emit_queue_update(&app_handle, &queue, &task.doc_id, &next_stage);
+                let _ = reset_pending(&queue, &task.id).await;
+                emit_queue_update(&app_handle, &queue, &task.doc_id, &next_stage).await;
             }
             Ok(StageResult::Done) => {
-                if let Err(e) = queue.mark_done(&task.id) {
+                if let Err(e) = queue.mark_done(&task.id).await {
                     log::error!("IngestWorker: mark_done failed: {}", e);
                 }
-                emit_queue_update(&app_handle, &queue, &task.doc_id, "done");
+                emit_queue_update(&app_handle, &queue, &task.doc_id, "done").await;
             }
             Err(e) => {
                 log::error!(
@@ -139,11 +157,11 @@ async fn worker_loop(project_root: PathBuf, app_handle: AppHandle, running: Arc<
                     task.stage,
                     e
                 );
-                if let Err(inner) = queue.mark_failed(&task.id, e.clone()) {
+                if let Err(inner) = queue.mark_failed(&task.id, e.clone()).await {
                     log::error!("IngestWorker: mark_failed failed: {}", inner);
                 }
                 set_doc_status_error(&project_root, &task, &e);
-                emit_queue_update(&app_handle, &queue, &task.doc_id, "failed");
+                emit_queue_update(&app_handle, &queue, &task.doc_id, "failed").await;
             }
         }
 
@@ -159,6 +177,32 @@ enum StageResult {
     Continue(String),
     /// 任务全部完成。
     Done,
+}
+
+/// 启动独立心跳任务，周期性 emit `EVT_INGEST_WORKER_HEARTBEAT`。
+fn spawn_heartbeat(
+    project_root: PathBuf,
+    app_handle: AppHandle,
+    running: Arc<AtomicBool>,
+    last_heartbeat: Arc<AtomicU64>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(WORKER_HEARTBEAT_INTERVAL_SECS));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        while running.load(Ordering::Relaxed) {
+            interval.tick().await;
+            let now = crate::core::helpers::now_secs_u64();
+            last_heartbeat.store(now, Ordering::Relaxed);
+            let payload = serde_json::json!({
+                "project_root": project_root.to_string_lossy(),
+                "ts": now,
+                "alive": true,
+            });
+            if let Err(e) = app_handle.emit(EVT_INGEST_WORKER_HEARTBEAT, &payload) {
+                log::warn!("IngestWorker: emit heartbeat failed: {}", e);
+            }
+        }
+    });
 }
 
 /// 每阶段开始前的预检：文件、项目目录、磁盘空间、index 可写、sidecar 健康。
@@ -272,6 +316,7 @@ async fn process_inspector(
         result.page_count as i32,
         &format!("detected {}", pdf_type_str),
     )
+    .await
     .map_err(|e| format!("update progress failed: {}", e))?;
 
     emit_progress(
@@ -309,7 +354,7 @@ async fn process_text_extract(
         0,
         0,
         "extracting text",
-    )
+    ).await
     .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "extracting text");
 
@@ -343,7 +388,7 @@ async fn process_text_extract(
         classified.page_count as i32,
         classified.page_count as i32,
         "text extracted",
-    )
+    ).await
     .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(
         app_handle,
@@ -385,7 +430,7 @@ async fn process_ocr(
         0,
         0,
         "running OCR",
-    )
+    ).await
     .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "running OCR");
 
@@ -426,7 +471,7 @@ async fn process_ocr(
         classified.page_count as i32,
         classified.page_count as i32,
         "OCR done",
-    )
+    ).await
     .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(
         app_handle,
@@ -468,7 +513,7 @@ async fn process_moldet(
         0,
         0,
         "scanning molecules",
-    )
+    ).await
     .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "scanning molecules");
 
@@ -502,6 +547,7 @@ async fn process_moldet(
         result.page_count as i32,
         &format!("moldet {}", status),
     )
+    .await
     .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(
         app_handle,
@@ -538,7 +584,7 @@ async fn process_index(
         0,
         0,
         "extracting for index",
-    )
+    ).await
     .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "extracting for index");
 
@@ -587,7 +633,7 @@ async fn process_index(
         0,
         0,
         "indexing text",
-    )
+    ).await
     .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 40.0, 0, 0, "indexing text");
 
@@ -628,7 +674,7 @@ async fn process_index(
         0,
         0,
         "extracting molecules",
-    )
+    ).await
     .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 70.0, 0, 0, "extracting molecules");
 
@@ -716,7 +762,7 @@ async fn process_index(
         0,
         0,
         "indexed",
-    )
+    ).await
     .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 100.0, 0, 0, "indexed");
 
@@ -731,10 +777,8 @@ async fn process_index(
 }
 
 /// 把任务状态重置为 pending（用于阶段切换后继续处理）。
-fn reset_pending(queue: &IngestQueue, task_id: &str) -> Result<(), String> {
-    queue
-        .set_pending(task_id)
-        .map_err(|e| format!("reset pending failed: {}", e))
+async fn reset_pending(queue: &IngestQueue, task_id: &str) -> Result<(), String> {
+    queue.set_pending(task_id).await.map_err(|e| format!("reset pending failed: {}", e))
 }
 
 /// 阶段失败时，把对应 DocumentProject 状态标记为 error。
@@ -793,8 +837,8 @@ fn emit_progress(
     }
 }
 
-fn emit_queue_update(app_handle: &AppHandle, queue: &IngestQueue, doc_id: &str, stage: &str) {
-    let stats = match queue.stats() {
+async fn emit_queue_update(app_handle: &AppHandle, queue: &IngestQueue, doc_id: &str, stage: &str) {
+    let stats = match queue.stats().await {
         Ok(s) => s,
         Err(e) => {
             log::warn!("IngestWorker: stats failed: {}", e);

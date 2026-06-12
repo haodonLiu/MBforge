@@ -113,6 +113,7 @@ pub const EVT_KB_SEARCH_CHUNK: &str = "kb-search-chunk";
 pub const EVT_MODEL_DOWNLOAD_PROGRESS: &str = "model-download-progress";
 pub const EVT_INGEST_PROGRESS: &str = "ingest-progress";
 pub const EVT_INGEST_QUEUE_UPDATE: &str = "ingest-queue-update";
+pub const EVT_INGEST_WORKER_HEARTBEAT: &str = "ingest-worker-heartbeat";
 
 // Agent config
 pub const AGENT_MAX_ITERATIONS: usize = 5;

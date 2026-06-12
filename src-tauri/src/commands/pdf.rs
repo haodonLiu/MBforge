@@ -187,7 +187,7 @@ pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassifica
 /// - `confirm = true`：将 OCR 状态设为 `pending`，并把任务加入 ingest queue。
 /// - `confirm = false`：将 OCR 状态设为 `skipped`，后续只处理可提取文本。
 #[tauri::command]
-pub fn confirm_ocr(
+pub async fn confirm_ocr(
     project_root: String,
     doc_id: String,
     confirm: bool,
@@ -225,6 +225,7 @@ pub fn confirm_ocr(
             doc_id.clone(),
             "ocr",
         )
+        .await
         .map_err(|e| format!("Failed to enqueue OCR task: {}", e))?
     } else {
         String::new()
@@ -672,72 +673,72 @@ fn open_ingest_queue(project_root: &str) -> Result<IngestQueue, String> {
 
 /// 入队一个 PDF 供异步处理。返回任务 ID。
 #[tauri::command]
-pub fn ingest_enqueue(project_root: String, file_path: String, doc_id: String) -> Result<String, String> {
+pub async fn ingest_enqueue(project_root: String, file_path: String, doc_id: String) -> Result<String, String> {
     let q = open_ingest_queue(&project_root)?;
-    q.enqueue(file_path, doc_id).map_err(|e| e.to_string())
+    q.enqueue(file_path, doc_id).await.map_err(|e| e.to_string())
 }
 
 /// 列出队列中所有任务。
 #[tauri::command]
-pub fn ingest_list(project_root: String) -> Result<Vec<IngestTask>, String> {
+pub async fn ingest_list(project_root: String) -> Result<Vec<IngestTask>, String> {
     let q = open_ingest_queue(&project_root)?;
-    q.list_all().map_err(|e| e.to_string())
+    q.list_all().await.map_err(|e| e.to_string())
 }
 
 /// 队列统计：pending / running / done / failed 各多少。
 #[tauri::command]
-pub fn ingest_stats(project_root: String) -> Result<QueueStats, String> {
+pub async fn ingest_stats(project_root: String) -> Result<QueueStats, String> {
     let q = open_ingest_queue(&project_root)?;
-    q.stats().map_err(|e| e.to_string())
+    q.stats().await.map_err(|e| e.to_string())
 }
 
 /// 取消单个任务。
 #[tauri::command]
-pub fn ingest_cancel(project_root: String, task_id: String) -> Result<(), String> {
+pub async fn ingest_cancel(project_root: String, task_id: String) -> Result<(), String> {
     let q = open_ingest_queue(&project_root)?;
-    q.cancel(&task_id).map_err(|e| e.to_string())
+    q.cancel(&task_id).await.map_err(|e| e.to_string())
 }
 
 /// 重试一个失败任务。
 #[tauri::command]
-pub fn ingest_retry(project_root: String, task_id: String) -> Result<bool, String> {
+pub async fn ingest_retry(project_root: String, task_id: String) -> Result<bool, String> {
     let q = open_ingest_queue(&project_root)?;
-    q.retry(&task_id).map_err(|e| e.to_string())
+    q.retry(&task_id).await.map_err(|e| e.to_string())
 }
 
 /// 取消所有 pending 任务。返回被取消的数量。
 #[tauri::command]
-pub fn ingest_cancel_all_pending(project_root: String) -> Result<usize, String> {
+pub async fn ingest_cancel_all_pending(project_root: String) -> Result<usize, String> {
     let q = open_ingest_queue(&project_root)?;
-    q.cancel_all_pending().map_err(|e| e.to_string())
+    q.cancel_all_pending().await.map_err(|e| e.to_string())
 }
 
 /// 清理已完成/已取消/已失败的任务（保留 pending 与 running）。返回清理数量。
 #[tauri::command]
-pub fn ingest_cleanup(project_root: String) -> Result<usize, String> {
+pub async fn ingest_cleanup(project_root: String) -> Result<usize, String> {
     let q = open_ingest_queue(&project_root)?;
-    q.cleanup().map_err(|e| e.to_string())
+    q.cleanup().await.map_err(|e| e.to_string())
 }
 
 /// 把任务标记为完成（由后台 worker 在 PDF 处理成功后调用）。
 #[tauri::command]
-pub fn ingest_mark_done(project_root: String, task_id: String) -> Result<(), String> {
+pub async fn ingest_mark_done(project_root: String, task_id: String) -> Result<(), String> {
     let q = open_ingest_queue(&project_root)?;
-    q.mark_done(&task_id).map_err(|e| e.to_string())
+    q.mark_done(&task_id).await.map_err(|e| e.to_string())
 }
 
 /// 把任务标记为失败（带错误信息），由后台 worker 调用。
 #[tauri::command]
-pub fn ingest_mark_failed(project_root: String, task_id: String, error: String) -> Result<(), String> {
+pub async fn ingest_mark_failed(project_root: String, task_id: String, error: String) -> Result<(), String> {
     let q = open_ingest_queue(&project_root)?;
-    q.mark_failed(&task_id, error).map_err(|e| e.to_string())
+    q.mark_failed(&task_id, error).await.map_err(|e| e.to_string())
 }
 
 /// 拉取下一个 pending 任务（worker 启动时调用）。
 #[tauri::command]
-pub fn ingest_dequeue(project_root: String) -> Result<Option<IngestTask>, String> {
+pub async fn ingest_dequeue(project_root: String) -> Result<Option<IngestTask>, String> {
     let q = open_ingest_queue(&project_root)?;
-    q.dequeue().map_err(|e| e.to_string())
+    q.dequeue().await.map_err(|e| e.to_string())
 }
 
 // re-export for handler!()

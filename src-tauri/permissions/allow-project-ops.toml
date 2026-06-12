@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-project-ops"
-description = "Allows project operations (open, scan, list)"
-commands.allow = ["open_project", "scan_project_files", "list_project_documents", "get_file_tree"]

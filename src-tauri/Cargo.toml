@@ -8,6 +8,11 @@ edition = "2021"
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# 本地补丁：把 liteparse-pdfium-sys 重定向到 vendor/ 目录，
+# 避免 build.rs 回退到 GitHub 自动下载（受 TLS / 网络限制）。
+[patch.crates-io]
+liteparse-pdfium-sys = { path = "vendor/liteparse-pdfium-sys" }
+
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"

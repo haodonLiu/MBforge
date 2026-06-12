@@ -94,7 +94,7 @@ pub fn spawn_and_start_readers(inner: &Arc<SidecarInner>, app: &AppHandle) -> Re
     let mut cmd = Command::new(&inner.python);
     cmd.arg("-m")
         .arg("uvicorn")
-        .arg("mbforge.model_server.main:app")
+        .arg("mbforge.server:app")
         .arg("--host")
         .arg("127.0.0.1")
         .arg("--port")

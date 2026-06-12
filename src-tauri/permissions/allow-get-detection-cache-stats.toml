@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-get-detection-cache-stats"
-description = "Allows the get_detection_cache_stats command"
-commands.allow = ["get_detection_cache_stats"]

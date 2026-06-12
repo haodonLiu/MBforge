@@ -22,7 +22,9 @@ fn resolve_path(project_root: &str) -> Result<PathBuf, AppError> {
 
 /// 使用系统文件选择器导入文件到项目目录。
 ///
-/// 弹出对话框让用户选择文件，然后将文件复制到项目根目录并更新索引。
+/// 弹出对话框让用户选择文件，然后添加到项目索引。PDF 文件会自动创建为
+/// 独立的 DocumentProject（`projects/<doc_id>/source.pdf`）。非 PDF 文件仍
+/// 复制到项目根目录并按路径索引。
 #[tauri::command]
 pub async fn upload_files(
     app: AppHandle,
@@ -68,26 +70,51 @@ pub async fn upload_files(
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown");
-        let dest = project.root.join(name);
 
-        // 路径遍历安全检查
-        if let Err(e) = assert_within_root(&project.root.to_string_lossy(), &dest) {
-            log::error!(
-                "Path traversal blocked: {:?} escapes {:?}: {}",
-                dest,
-                project.root,
-                e
-            );
-            continue;
-        }
+        // PDFs become isolated DocumentProjects; other files are copied to root.
+        let ext = src
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
 
-        tokio::fs::copy(&src, &dest).await.map_err(|e| {
-            AppError::new(ErrorCode::FileWrite, format!("复制文件失败: {e}"))
-                .with_path(dest.to_string_lossy()).to_string()
-        })?;
+        if ext != "pdf" {
+            let dest = project.root.join(name);
 
-        if let Some(entry) = project.add_file(&dest) {
-            log::info!("Added file to project: {} -> {}", name, entry.doc_id);
+            // 路径遍历安全检查
+            if let Err(e) = assert_within_root(&project.root.to_string_lossy(), &dest) {
+                log::error!(
+                    "Path traversal blocked: {:?} escapes {:?}: {}",
+                    dest,
+                    project.root,
+                    e
+                );
+                continue;
+            }
+
+            tokio::fs::copy(&src, &dest).await.map_err(|e| {
+                AppError::new(ErrorCode::FileWrite, format!("复制文件失败: {e}"))
+                    .with_path(dest.to_string_lossy()).to_string()
+            })?;
+
+            if let Some(entry) = project.add_file(&dest) {
+                log::info!("Added file to project: {} -> {}", name, entry.doc_id);
+                entries.push(entry);
+            }
+        } else if let Some(entry) = project.add_file(&src) {
+            log::info!("Added PDF to project: {} -> {}", name, entry.doc_id);
+            // 自动加入 ingest queue，从 inspector 阶段开始处理。
+            if let Ok(q) = crate::core::document::ingest_queue::IngestQueue::new(&project.root) {
+                let source_path = project.root
+                    .join(crate::core::constants::PROJECTS_DIR)
+                    .join(&entry.doc_id)
+                    .join(crate::core::constants::PROJECT_SOURCE_FILE);
+                let _ = q.enqueue_with_stage(
+                    source_path.to_string_lossy().to_string(),
+                    entry.doc_id.clone(),
+                    "inspector",
+                );
+            }
             entries.push(entry);
         }
     }
@@ -96,6 +123,9 @@ pub async fn upload_files(
 }
 
 /// 删除项目中的文件（物理删除 + 索引移除）。
+///
+/// 对于 PDF DocumentProject，会删除整个 `projects/<doc_id>/` 目录；
+/// 对于非 PDF 根目录文件，仅删除物理文件。
 #[tauri::command]
 pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, String> {
     let root_path = wrap(resolve_path(&project_root))?;
@@ -108,16 +138,20 @@ pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, S
         .get_document(&doc_id)
         .ok_or_else(|| AppError::new(ErrorCode::FileNotFound, format!("文档未找到: {doc_id}")).to_string())?;
 
-    let full_path = project.root.join(&entry.path);
-    if full_path.exists() {
-        if let Err(e) = tokio::fs::remove_file(&full_path).await {
-            log::error!("Failed to delete file {:?}: {}", full_path, e);
-            return Err(AppError::new(ErrorCode::FileWrite, format!("删除文件失败: {e}"))
-                .with_path(full_path.to_string_lossy()).to_string());
+    // For non-PDF legacy files, delete the physical file. PDFs are removed
+    // via the DocumentProject directory in remove_document().
+    if entry.doc_type != "pdf" {
+        let full_path = project.root.join(&entry.path);
+        if full_path.exists() {
+            if let Err(e) = tokio::fs::remove_file(&full_path).await {
+                log::error!("Failed to delete file {:?}: {}", full_path, e);
+                return Err(AppError::new(ErrorCode::FileWrite, format!("删除文件失败: {e}"))
+                    .with_path(full_path.to_string_lossy()).to_string());
+            }
+            log::info!("Deleted file: {:?}", full_path);
+        } else {
+            log::warn!("File already removed from disk: {:?}", full_path);
         }
-        log::info!("Deleted file: {:?}", full_path);
-    } else {
-        log::warn!("File already removed from disk: {:?}", full_path);
     }
 
     project.remove_document(&doc_id);

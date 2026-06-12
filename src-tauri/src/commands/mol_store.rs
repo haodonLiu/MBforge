@@ -1,9 +1,12 @@
-//! Tauri commands for molecule store operations via MoleculeEngine.
+﻿//! Tauri commands for molecule store operations via MoleculeEngine.
 //!
 //! Previously held a separate `MolStoreState`; now unified under
 //! `MoleculeEngineState` alongside relation / cluster / SAR commands.
+//!
+//! All engine access goes through `with_engine` (see `mol_engine.rs`) to
+//! eliminate the lock + map_or boilerplate that every command used to repeat.
 
-use crate::commands::mol_engine::{get_or_init_engine, MoleculeEngineState};
+use crate::commands::mol_engine::{get_or_init_engine, with_engine, MoleculeEngineState};
 use crate::core::molecule::molecule_store::MoleculeRecord;
 
 #[tauri::command]
@@ -29,27 +32,25 @@ pub async fn mol_store_add(
     units: Option<String>,
     source_type: Option<String>,
 ) -> Result<(), String> {
-    get_or_init_engine(&state, &project_root).await?;
-    let guard = state.inner.lock().await;
-    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
-
-    let mut record = MoleculeRecord::new(&mol_id, &esmiles);
-    if let Some(n) = name {
-        record.name = n;
-    }
-    if let Some(sd) = source_doc {
-        record.source_doc = sd;
-    }
-    record.activity = activity;
-    if let Some(at) = activity_type {
-        record.activity_type = at;
-    }
-    if let Some(u) = units {
-        record.units = u;
-    }
-    record.source_type = source_type.unwrap_or_else(|| "manual".to_string());
-
-    engine.add_molecule(&record).map_err(|e| e.to_string())
+    with_engine(&state, &project_root, |engine| {
+        let mut record = MoleculeRecord::new(&mol_id, &esmiles);
+        if let Some(n) = name {
+            record.name = n;
+        }
+        if let Some(sd) = source_doc {
+            record.source_doc = sd;
+        }
+        record.activity = activity;
+        if let Some(at) = activity_type {
+            record.activity_type = at;
+        }
+        if let Some(u) = units {
+            record.units = u;
+        }
+        record.source_type = source_type.unwrap_or_else(|| "manual".to_string());
+        engine.add_molecule(&record)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -61,16 +62,15 @@ pub async fn mol_store_list(
     source_type: Option<String>,
     status: Option<String>,
 ) -> Result<Vec<MoleculeRecord>, String> {
-    get_or_init_engine(&state, &project_root).await?;
-    let guard = state.inner.lock().await;
-    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
-
-    engine.list_all(
-        limit.unwrap_or(100),
-        offset.unwrap_or(0),
-        source_type.as_deref(),
-        status.as_deref(),
-    ).map_err(|e| e.to_string())
+    with_engine(&state, &project_root, |engine| {
+        engine.list_all(
+            limit.unwrap_or(100),
+            offset.unwrap_or(0),
+            source_type.as_deref(),
+            status.as_deref(),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
@@ -79,10 +79,7 @@ pub async fn mol_store_get(
     project_root: String,
     mol_id: String,
 ) -> Result<Option<MoleculeRecord>, String> {
-    get_or_init_engine(&state, &project_root).await?;
-    let guard = state.inner.lock().await;
-    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
-    engine.get_molecule(&mol_id).map_err(|e| e.to_string())
+    with_engine(&state, &project_root, |engine| engine.get_molecule(&mol_id)).await
 }
 
 #[tauri::command]
@@ -91,10 +88,7 @@ pub async fn mol_store_search(
     project_root: String,
     query: String,
 ) -> Result<Vec<MoleculeRecord>, String> {
-    get_or_init_engine(&state, &project_root).await?;
-    let guard = state.inner.lock().await;
-    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
-    engine.search_text(&query).map_err(|e| e.to_string())
+    with_engine(&state, &project_root, |engine| engine.search_text(&query)).await
 }
 
 #[tauri::command]
@@ -103,46 +97,40 @@ pub async fn mol_store_delete(
     project_root: String,
     mol_id: String,
 ) -> Result<bool, String> {
-    get_or_init_engine(&state, &project_root).await?;
-    let guard = state.inner.lock().await;
-    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
-    engine.delete_molecule(&mol_id).map_err(|e| e.to_string())
+    with_engine(&state, &project_root, |engine| engine.delete_molecule(&mol_id)).await
 }
 
-/// 更新分子的全部可编辑字段.
+/// 鏇存柊鍒嗗瓙鐨勫叏閮ㄥ彲缂栬緫瀛楁.
 ///
-/// 用于 OCR 矫正流程：用户修正 SMILES 后批量写回数据库.
-/// 返回 true 表示 mol_id 存在并已更新;false 表示 mol_id 不存在.
+/// 鐢ㄤ簬 OCR 鐭娴佺▼锛氱敤鎴蜂慨姝?SMILES 鍚庢壒閲忓啓鍥炴暟鎹簱.
+/// 杩斿洖 true 琛ㄧず mol_id 瀛樺湪骞跺凡鏇存柊;false 琛ㄧず mol_id 涓嶅瓨鍦?
 #[tauri::command]
 pub async fn mol_store_update(
     state: tauri::State<'_, MoleculeEngineState>,
     project_root: String,
     record: MoleculeRecord,
 ) -> Result<bool, String> {
-    get_or_init_engine(&state, &project_root).await?;
-    let guard = state.inner.lock().await;
-    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
-    engine.update_molecule(&record)
+    with_engine(&state, &project_root, |engine| engine.update_molecule(&record)).await
 }
 
-/// 批量更新多个分子.
+/// 鎵归噺鏇存柊澶氫釜鍒嗗瓙.
 ///
-/// 一次事务,部分失败不阻塞其他成功项.
-/// 返回 (updated_count, failed_mol_ids).
+/// 涓€娆′簨鍔?閮ㄥ垎澶辫触涓嶉樆濉炲叾浠栨垚鍔熼」.
+/// 杩斿洖 (updated_count, failed_mol_ids).
 #[tauri::command]
 pub async fn mol_store_update_batch(
     state: tauri::State<'_, MoleculeEngineState>,
     project_root: String,
     records: Vec<MoleculeRecord>,
 ) -> Result<serde_json::Value, String> {
-    get_or_init_engine(&state, &project_root).await?;
-    let guard = state.inner.lock().await;
-    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
-    let (updated, failed) = engine.update_molecules_batch(&records)?;
-    Ok(serde_json::json!({
-        "updated": updated,
-        "failed": failed,
-    }))
+    with_engine(&state, &project_root, |engine| {
+        let (updated, failed) = engine.update_molecules_batch(&records)?;
+        Ok(serde_json::json!({
+            "updated": updated,
+            "failed": failed,
+        }))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -150,10 +138,7 @@ pub async fn mol_store_stats(
     state: tauri::State<'_, MoleculeEngineState>,
     project_root: String,
 ) -> Result<serde_json::Value, String> {
-    get_or_init_engine(&state, &project_root).await?;
-    let guard = state.inner.lock().await;
-    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
-    engine.get_store_stats().map_err(|e| e.to_string())
+    with_engine(&state, &project_root, |engine| engine.get_store_stats()).await
 }
 
 #[tauri::command]
@@ -162,10 +147,7 @@ pub async fn mol_store_search_by_smiles(
     project_root: String,
     smiles: String,
 ) -> Result<Option<MoleculeRecord>, String> {
-    get_or_init_engine(&state, &project_root).await?;
-    let guard = state.inner.lock().await;
-    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
-    engine.search_by_smiles(&smiles).map_err(|e| e.to_string())
+    with_engine(&state, &project_root, |engine| engine.search_by_smiles(&smiles)).await
 }
 
 #[tauri::command]
@@ -174,8 +156,5 @@ pub async fn mol_store_list_by_doc(
     project_root: String,
     doc_id: String,
 ) -> Result<Vec<MoleculeRecord>, String> {
-    get_or_init_engine(&state, &project_root).await?;
-    let guard = state.inner.lock().await;
-    let engine = guard.as_ref().map(|(_, e)| e).ok_or("MoleculeEngine not initialized")?;
-    engine.search_by_source(&doc_id).map_err(|e| e.to_string())
+    with_engine(&state, &project_root, |engine| engine.search_by_source(&doc_id)).await
 }

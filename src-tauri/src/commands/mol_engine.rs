@@ -58,3 +58,26 @@ pub async fn get_or_init_engine(
     );
     Ok(())
 }
+
+/// Run an async closure with the project's `MoleculeEngine`.
+///
+/// Initializes the engine for `project_root` (switching projects if needed),
+/// locks the state, then invokes `f` with a shared reference to the engine.
+/// Centralizes the boilerplate previously duplicated in every `mol_store_*`
+/// and (most) `molecule_*` Tauri commands.
+pub async fn with_engine<F, T>(
+    state: &MoleculeEngineState,
+    project_root: &str,
+    f: F,
+) -> Result<T, String>
+where
+    F: FnOnce(&MoleculeEngine) -> Result<T, String>,
+{
+    get_or_init_engine(state, project_root).await?;
+    let guard = state.inner.lock().await;
+    let engine = guard
+        .as_ref()
+        .map(|(_, e)| e)
+        .ok_or_else(|| "MoleculeEngine not initialized".to_string())?;
+    f(engine)
+}

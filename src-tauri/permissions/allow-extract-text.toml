@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-extract-text"
-description = "Allows the extract_text command"
-commands.allow = ["extract_text"]

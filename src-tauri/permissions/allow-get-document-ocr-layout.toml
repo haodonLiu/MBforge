@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-get-document-ocr-layout"
-description = "Allows the get_document_ocr_layout command"
-commands.allow = ["get_document_ocr_layout"]

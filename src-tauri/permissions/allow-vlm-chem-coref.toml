@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "allow-vlm-chem-coref"
-description = "Allows the vlm_chem_coref command"
-commands.allow = ["vlm_chem_coref"]

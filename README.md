@@ -33,7 +33,7 @@
 │  └────┬─────┘ └────┬─────┘ └────────┬──────────┘ │
 │       │            │                │             │
 │  ┌────┴────────────┴────────────────┴──────────┐  │
-│  │           tauri-bridge.ts                    │  │
+│  │           api/tauri/index.ts                 │  │
 │  │  (window.__TAURI__.invoke → Rust commands)   │  │
 │  └────────────────────┬─────────────────────────┘  │
 └───────────────────────┼───────────────────────────┘
@@ -112,7 +112,7 @@ MBForge/
 ├── src-tauri/src/                # Rust 代码（Tauri + Agent + Parser）
 │   ├── main.rs                   #   Tauri 入口，命令注册（commands::handler()）
 │   ├── lib.rs                    #   模块导出
-│   ├── commands/                 #   Tauri 命令层（17 模块）
+│   ├── commands/                 #   Tauri 命令层（18 模块）
 │   │   ├── mod.rs                #   命令聚合（handler()）
 │   │   ├── agent.rs              #   Agent 会话
 │   │   ├── classifier.rs         #   页面/文档分类
@@ -128,6 +128,7 @@ MBForge/
 │   │   ├── pdf.rs                #   PDF 操作
 │   │   ├── project_ops.rs        #   项目操作
 │   │   ├── settings.rs           #   设置管理
+│   │   ├── settings_extra.rs     #   扩展设置命令（独立模块，待合并评估）
 │   │   ├── sidecar.rs            #   Sidecar 管理
 │   │   └── text_ops.rs           #   文本处理
 │   ├── core/                     #   Rust Agent + 数据层（按域分组）
@@ -193,20 +194,26 @@ MBForge/
 │   │   │       ├── sar.ts        #     SAR 分析
 │   │   │       ├── settings.ts   #     设置管理
 │   │   │       ├── sidecar.ts    #     Sidecar 管理
-│   │   │       └── text.ts       #     文本处理
+│   │   │       ├── text.ts       #     文本处理
+│   │   │       └── index.ts      #     barrel 导出
 │   │   ├── components/           #   组件（页面级 + 原子 + 子模块）
 │   │   │   ├── Chat.tsx          #   对话界面
 │   │   │   ├── MoleculeLibrary.tsx
 │   │   │   ├── ProjectView.tsx   #   项目仪表盘
+│   │   │   ├── chat/             #   对话子组件
+│   │   │   ├── dashboard/        #   仪表盘子组件
+│   │   │   ├── environment/      #   环境信息子组件
+│   │   │   ├── icons/            #   图标组件
+│   │   │   ├── molecule/         #   分子相关组件
+│   │   │   ├── notes/            #   笔记编辑器组件
 │   │   │   ├── project/          #   项目子组件
 │   │   │   │   ├── PdfViewer.tsx
 │   │   │   │   └── ProjectDashboard.tsx
-│   │   │   ├── molecule/         #   分子相关组件
-│   │   │   ├── notes/            #   笔记编辑器组件
 │   │   │   ├── sar/              #   SAR 分析组件
+│   │   │   ├── search/           #   搜索子组件
 │   │   │   ├── settings/         #   设置组件
 │   │   │   ├── ui/               #   原子组件
-│   │   │   └── ...
+│   │   │   └── welcome/          #   欢迎页子组件
 │   │   ├── context/              #   React Context
 │   │   ├── hooks/                #   React Hooks
 │   │   └── types/                #   TypeScript 类型

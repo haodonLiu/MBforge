@@ -1,3 +1,4 @@
+// DEPRECATED: Environment 页面内容已迁移到 settings/SystemTab，保留文件仅作兼容参考。
 import { useState, useEffect } from 'react'
 import { showToast } from '../hooks/useToast'
 import { RefreshCwIcon } from './icons'

@@ -12,7 +12,7 @@ import PdfViewer from './project/PdfViewer'
 import ProjectDashboard from './project/ProjectDashboard'
 import MarkdownViewer from './MarkdownViewer'
 
-export default function ProjectView({ onSettingsOpen }: { onSettingsOpen: () => void }) {
+export default function ProjectView() {
   const { projectRoot, activeFile, setActiveFile } = useAppContext()
   const [docs, setDocs] = useState<DocumentEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -265,7 +265,6 @@ export default function ProjectView({ onSettingsOpen }: { onSettingsOpen: () => 
       onOpenFile={handleOpenFile}
       onDismissError={() => setError('')}
       onDismissWarnings={() => setScanWarnings([])}
-      onSettingsOpen={onSettingsOpen}
       onRefreshDocs={loadDocs}
     />
   )

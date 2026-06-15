@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import {  } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { DocumentEntry } from '../../types'
 import type { ScanWarning } from '../../api/tauri'
 import PageContainer from '../ui/PageContainer'
@@ -41,7 +41,6 @@ interface Props {
   onOpenFile: (doc: DocumentEntry) => void
   onDismissError: () => void
   onDismissWarnings: () => void
-  onSettingsOpen: () => void
   onRefreshDocs?: () => void
 }
 
@@ -63,9 +62,9 @@ export default function ProjectDashboard({
   onOpenFile,
   onDismissError,
   onDismissWarnings,
-  onSettingsOpen,
   onRefreshDocs,
 }: Props) {
+  const navigate = useNavigate()
   const projectName = projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目'
 
   return (
@@ -119,7 +118,7 @@ export default function ProjectDashboard({
             variant="secondary"
             size="md"
             icon={<SettingsIcon size={14} />}
-            onClick={onSettingsOpen}
+            onClick={() => void navigate('/settings')}
           >
             项目设置
           </Button>

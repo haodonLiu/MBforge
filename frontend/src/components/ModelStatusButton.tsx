@@ -1,4 +1,4 @@
-/** Sidebar 模型状态按钮 — 状态点 + 点击跳转到 Environment 页。 */
+/** Sidebar 模型状态按钮 — 状态点 + 点击跳转到 Settings 页。 */
 import { useNavigate } from 'react-router-dom'
 import { Tooltip } from './ui'
 import IconButton from './ui/IconButton'
@@ -41,7 +41,7 @@ export default function ModelStatusButton({ projectRoot }: Props) {
   return (
     <Tooltip text={detail}>
       <div style={{ position: 'relative' }}>
-        <IconButton onClick={() => void navigate('/environment')}>
+        <IconButton onClick={() => void navigate('/settings')}>
           <FlaskIcon size={20} />
         </IconButton>
         <span

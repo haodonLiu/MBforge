@@ -10,7 +10,6 @@ import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 // Welcome is above-the-fold and stays static for fast first paint.
 import Welcome from './components/Welcome'
-import SettingsModal from './components/SettingsModal'
 import ProjectScope from './components/ProjectScope'
 import SidebarQueuePanel from './components/queue/SidebarQueuePanel'
 import { AppProvider, useAppContext } from './context/AppContext'
@@ -40,7 +39,7 @@ function getQueuePanelColumn(showProjectScope: boolean, showQueuePanel: boolean)
 import Workspace from './components/workspace/Workspace'
 const Discover = lazy(() => import('./components/discover/Discover'))
 const MoleculeLibrary = lazy(() => import('./components/MoleculeLibrary'))
-const Environment = lazy(() => import('./components/Environment'))
+
 const Notes = lazy(() => import('./components/Notes'))
 const Analysis = lazy(() => import('./components/analysis/Analysis'))
 const ProcessingQueue = lazy(() => import('./components/project/ProcessingQueue'))
@@ -81,7 +80,6 @@ function AppInner() {
   const navigate = useNavigate()
   const { projectRoot, setProjectRoot, setActiveFile } = useAppContext()
   const [currentPage, setCurrentPage] = useState('workspace')
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [projectScopeOpen, setProjectScopeOpen] = useState(true)
   const [queuePanelOpen, setQueuePanelOpen] = useState(false)
   const isMobile = useIsMobile()
@@ -163,9 +161,6 @@ function AppInner() {
         }}>
           <Welcome onProjectOpened={handleProjectOpened} />
         </main>
-        <ErrorBoundary>
-          <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-        </ErrorBoundary>
         <ToastContainer />
       </div>
     )
@@ -262,20 +257,17 @@ function AppInner() {
       }}>
         <ErrorBoundary>
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            <AppRoutes projectRoot={projectRoot} onSettingsOpen={() => setSettingsOpen(true)} />
+            <AppRoutes projectRoot={projectRoot} />
           </div>
         </ErrorBoundary>
       </main>
-      <ErrorBoundary>
-        <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      </ErrorBoundary>
       <GlobalDownloadBarHost />
       <ToastContainer />
     </div>
   )
 }
 
-function AppRoutes({ projectRoot, onSettingsOpen }: { projectRoot: string; onSettingsOpen: () => void }) {
+function AppRoutes({ projectRoot }: { projectRoot: string }) {
   const location = useLocation()
   return (
     <AnimatePresence>
@@ -285,7 +277,7 @@ function AppRoutes({ projectRoot, onSettingsOpen }: { projectRoot: string; onSet
           path="/workspace"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><Workspace onSettingsOpen={onSettingsOpen} /></AnimatedPage>
+              <AnimatedPage><Workspace /></AnimatedPage>
             </Suspense>
           }
         />
@@ -310,14 +302,6 @@ function AppRoutes({ projectRoot, onSettingsOpen }: { projectRoot: string; onSet
           element={
             <Suspense fallback={<RouteFallback />}>
               <AnimatedPage><Analysis /></AnimatedPage>
-            </Suspense>
-          }
-        />
-        <Route
-          path="/environment"
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><Environment /></AnimatedPage>
             </Suspense>
           }
         />

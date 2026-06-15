@@ -209,7 +209,7 @@ export default function SettingsModal({ open, onClose }: Props) {
                 <button
                   key={section.id}
                   onClick={() => setActiveSection(section.id)}
-                  className={`settings-nav-item ${activeSection === section.id ? 'settings-nav-item--active' : ''}`}
+                  className={`settings-modal-nav-item ${activeSection === section.id ? 'settings-modal-nav-item--active' : ''}`}
                 >
                   {SECTION_ICONS[section.icon]}
                   <span>{t(section.labelKey)}</span>

@@ -1,8 +1,3 @@
-@import url('./processing-queue.css');
-@import url('./pdf-pipeline-flow.css');
-@import url('./project-scope.css');
-@import url('./sidebar-queue.css');
-
 .flex { display: flex; }
 .flex-col { display: flex; flex-direction: column; }
 .items-center { align-items: center; }
@@ -457,7 +452,7 @@
 .pdf-detect-count {
   font-size: 10px;
   color: var(--success);
-  background: rgba(22,163,74,0.1);
+  background: rgba(from var(--success) r g b / 0.1);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -1657,7 +1652,7 @@
   box-sizing: border-box;
 }
 .welcome-recent-item--deleting {
-  border-color: #e74c3c;
+  border-color: var(--danger);
   opacity: 0.5;
 }
 .welcome-recent-delete-btn {
@@ -1665,7 +1660,7 @@
   border: none;
   cursor: pointer;
   padding: 2px 8px 2px 0;
-  color: #e74c3c;
+  color: var(--danger);
   flex-shrink: 0;
 }
 .welcome-recent-item-btn {
@@ -1771,8 +1766,8 @@
 .project-warnings-card {
   margin-bottom: 20px;
   border-radius: 10px;
-  background: rgba(234,179,8,0.08);
-  border-color: rgba(234,179,8,0.35);
+  background: rgba(from var(--warning) r g b / 0.08);
+  border-color: rgba(from var(--warning) r g b / 0.35);
 }
 .project-warnings-inner {
   display: flex;
@@ -1780,7 +1775,7 @@
   gap: 12px;
 }
 .project-warnings-icon {
-  color: #ca8a04;
+  color: var(--warning);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -1895,9 +1890,9 @@
 .project-index-success {
   margin-bottom: 16px;
   border-radius: 8px;
-  background: rgba(22,163,74,0.1);
-  border-color: rgba(22,163,74,0.3);
-  color: #16a34a;
+  background: rgba(from var(--success) r g b / 0.1);
+  border-color: rgba(from var(--success) r g b / 0.3);
+  color: var(--success);
 }
 
 /* DocumentList */

@@ -4,6 +4,11 @@ import { invoke } from '@tauri-apps/api/core'
 import { invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
 import type { MoleculeRecord } from '../../types'
+import {
+  molAdminStoreStats,
+  molAdminList,
+  molAdminSearchText,
+} from './molecule_admin'
 
 export interface MoleculeRecord_ {
   mol_id: string
@@ -28,8 +33,8 @@ export interface MolStoreStats {
 }
 
 export async function molStoreInit(projectRoot: string): Promise<void> {
-  return invokeWithError(
-    () => invoke<void>('mol_store_init', { projectRoot }),
+  await invokeWithError(
+    () => invoke('mol_store_init', { projectRoot }),
     ErrorCode.MoleculeSearch,
   )
 }
@@ -45,8 +50,8 @@ export async function molStoreAdd(
   units?: string,
   sourceType?: string,
 ): Promise<void> {
-  return invokeWithError(
-    () => invoke<void>('mol_store_add', {
+  await invokeWithError(
+    () => invoke('mol_store_add', {
       projectRoot,
       molId,
       esmiles,
@@ -61,6 +66,7 @@ export async function molStoreAdd(
   )
 }
 
+/** @deprecated Use molAdminList from ./molecule_admin instead */
 export async function molStoreList(
   projectRoot: string,
   limit?: number,
@@ -80,6 +86,7 @@ export async function molStoreList(
   )
 }
 
+/** @deprecated Use molAdminGet from ./molecule_admin instead */
 export async function molStoreGet(
   projectRoot: string,
   molId: string,
@@ -90,6 +97,7 @@ export async function molStoreGet(
   )
 }
 
+/** @deprecated Use molAdminSearchText from ./molecule_admin instead */
 export async function molStoreSearch(
   projectRoot: string,
   query: string,
@@ -100,6 +108,7 @@ export async function molStoreSearch(
   )
 }
 
+/** @deprecated Use molAdminDelete from ./molecule_admin instead */
 export async function molStoreDelete(
   projectRoot: string,
   molId: string,
@@ -110,6 +119,7 @@ export async function molStoreDelete(
   )
 }
 
+/** @deprecated Use molAdminStoreStats from ./molecule_admin instead */
 export async function molStoreStats(
   projectRoot: string,
 ): Promise<MolStoreStats> {
@@ -119,6 +129,7 @@ export async function molStoreStats(
   )
 }
 
+/** @deprecated Use molAdminSearchBySmiles from ./molecule_admin instead */
 export async function molStoreSearchBySmiles(
   projectRoot: string,
   esmiles: string,
@@ -139,7 +150,7 @@ export async function molStoreListByDoc(
   )
 }
 
-/** 更新单条分子记录（OCR 矫正后写回数据库用） */
+/** @deprecated Use molAdminUpdate from ./molecule_admin instead */
 export async function molStoreUpdate(
   projectRoot: string,
   record: MoleculeRecord_,
@@ -176,7 +187,7 @@ export async function moleculeStatsTauri(
   projectRoot: string,
 ): Promise<{ success: boolean; stats: MoleculeStats; error?: string }> {
   try {
-    const stats = await molStoreStats(projectRoot)
+    const stats = await molAdminStoreStats(projectRoot)
     return { success: true, stats: stats as unknown as MoleculeStats }
   } catch (e) {
     return { success: false, stats: { total: 0 }, error: String(e) }
@@ -190,7 +201,7 @@ export async function listMoleculesTauri(
   offset = 0,
 ): Promise<{ success: boolean; molecules: MoleculeRecord[]; error?: string }> {
   try {
-    const records = await molStoreList(projectRoot, limit, offset)
+    const records = await molAdminList(projectRoot, limit, offset)
     const molecules = records.map((r) => ({
       mol_id: r.mol_id,
       esmiles: r.esmiles,
@@ -218,7 +229,7 @@ export async function searchMoleculesTauri(
   q: string,
 ): Promise<{ success: boolean; molecules: MoleculeRecord[]; error?: string }> {
   try {
-    const records = await molStoreSearch(projectRoot, q)
+    const records = await molAdminSearchText(projectRoot, q)
     const molecules = records.map((r) => ({
       mol_id: r.mol_id,
       esmiles: r.esmiles,

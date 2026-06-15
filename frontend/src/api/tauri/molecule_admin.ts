@@ -124,9 +124,9 @@ export async function molAdminAdd(
   projectRoot: string,
   record: MoleculeRecord,
 ): Promise<void> {
-  return invokeWithError(
-    () => invoke<void>('mol_admin_add', { projectRoot, record }),
-    ErrorCode.MoleculeSearch,
+  await invokeWithError(
+    () => invoke('mol_admin_add', { projectRoot, record }),
+    ErrorCode.ApiError,
   )
 }
 
@@ -137,7 +137,7 @@ export async function molAdminUpdate(
 ): Promise<boolean> {
   return invokeWithError(
     () => invoke<boolean>('mol_admin_update', { projectRoot, record }),
-    ErrorCode.MoleculeSearch,
+    ErrorCode.ApiError,
   )
 }
 
@@ -154,7 +154,7 @@ export async function molAdminUpdateStatus(
         molId,
         status,
       }),
-    ErrorCode.MoleculeSearch,
+    ErrorCode.ApiError,
   )
 }
 
@@ -166,7 +166,7 @@ export async function molAdminDelete(
   return invokeWithError(
     () =>
       invoke<boolean>('mol_admin_delete', { projectRoot, molId }),
-    ErrorCode.MoleculeSearch,
+    ErrorCode.ApiError,
   )
 }
 
@@ -185,6 +185,6 @@ export async function molAdminAddSimilarity(
         molBId,
         score,
       }),
-    ErrorCode.MoleculeSearch,
+    ErrorCode.ApiError,
   )
 }

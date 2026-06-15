@@ -45,6 +45,15 @@
   "nav.confirmSwitchProject": "确定要切换项目吗？未保存的更改将丢失。",
   "nav.settings": "设置",
   "nav.projectScope": "项目文献",
+  "header.projectFolderRules": "项目目录规范",
+
+  "queue.stage.inspector": "检测",
+  "queue.stage.textExtract": "文本",
+  "queue.stage.ocr": "OCR",
+  "queue.stage.moldet": "分子",
+  "queue.stage.index": "索引",
+  "queue.workerOnline": "Worker 在线",
+  "queue.workerOffline": "Worker 离线",
 
   "projectScope.empty": "暂无已解析的 PDF",
   "projectScope.import": "导入 PDF",

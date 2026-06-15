@@ -1,20 +1,17 @@
 import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { HelpIcon } from './icons'
 import IconButton from './ui/IconButton'
 import HelpPopover from './HelpPopover'
 
 interface HeaderProps {
-  showProjectScope: boolean
-  showQueuePanel: boolean
+  gridColumn: string
 }
 
-export default function Header({ showProjectScope, showQueuePanel }: HeaderProps) {
+export default function Header({ gridColumn }: HeaderProps) {
+  const { t } = useTranslation()
   const [helpOpen, setHelpOpen] = useState(false)
   const helpBtnRef = useRef<HTMLButtonElement | null>(null)
-
-  const gridColumn = showProjectScope && showQueuePanel ? '4'
-    : showProjectScope || showQueuePanel ? '3'
-    : '2'
 
   return (
     <header style={{
@@ -42,7 +39,7 @@ export default function Header({ showProjectScope, showQueuePanel }: HeaderProps
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         <span ref={helpBtnRef} style={{ display: 'inline-flex' }}>
           <IconButton
-            title="项目目录规范"
+            title={t('header.projectFolderRules')}
             onClick={() => setHelpOpen((v) => !v)}
             active={helpOpen}
           >

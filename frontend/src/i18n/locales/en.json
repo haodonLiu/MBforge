@@ -10,15 +10,11 @@
   "common.search": "Search",
   "common.noResults": "No results",
   "common.project": "Project",
-
-  "nav.dashboard": "Dashboard",
-  "nav.project": "Project",
   "nav.workspace": "Workspace",
   "nav.discover": "Discover",
   "discover.search": "Search",
   "discover.chat": "Chat",
   "nav.analysis": "Analysis",
-
   "analysis.sar": "SAR",
   "analysis.cluster": "Cluster",
   "analysis.similarity": "Similarity",
@@ -34,19 +30,13 @@
   "sar.tabs.cliffs": "Activity Cliffs",
   "sar.jumpedTo": "Jumped to {{name}}",
   "nav.notes": "Notes",
-  "nav.search": "Search",
-  "nav.chat": "Chat",
   "nav.molecules": "Molecules",
-  "nav.sar": "SAR Analysis",
-  "nav.environment": "Environment",
   "nav.queue": "Queue",
-  "nav.fileTree": "File Tree",
   "nav.switchProject": "Switch Project",
   "nav.confirmSwitchProject": "Are you sure you want to switch projects? Unsaved changes will be lost.",
   "nav.settings": "Settings",
   "nav.projectScope": "Project Scope",
   "header.projectFolderRules": "Project Folder Rules",
-
   "queue.stage.inspector": "Inspect",
   "queue.stage.textExtract": "Text",
   "queue.stage.ocr": "OCR",
@@ -54,17 +44,14 @@
   "queue.stage.index": "Index",
   "queue.workerOnline": "Worker online",
   "queue.workerOffline": "Worker offline",
-
   "projectScope.empty": "No parsed PDFs yet",
   "projectScope.import": "Import PDF",
   "projectScope.importing": "Importing…",
   "projectScope.importFailed": "Import failed",
   "projectScope.loadFailed": "Failed to load project scope",
-
   "sidebarQueue.title": "Queue",
   "sidebarQueue.viewAll": "View all",
   "sidebarQueue.empty": "No active tasks",
-
   "welcome.title": "MBForge",
   "welcome.subtitle": "Molecular Knowledge Base & AI Workbench",
   "welcome.createProject": "Create Project",
@@ -75,7 +62,6 @@
   "welcome.projectNamePlaceholder": "Enter project name…",
   "welcome.selectFolder": "Select Folder",
   "welcome.create": "Create",
-
   "settings.title": "Settings",
   "settings.tabs.general": "General",
   "settings.tabs.llm": "LLM",
@@ -92,7 +78,6 @@
   "settings.tabRerank": "Reranker",
   "settings.tabVlm": "VLM",
   "settings.tabOcr": "OCR",
-  "settings.tabRerank": "Reranker",
   "settings.llmSampling": "LLM Sampling",
   "settings.embedRuntime": "Embedding Runtime",
   "settings.rerankRuntime": "Reranker Runtime",
@@ -197,7 +182,6 @@
   "settings.apiKeyHide": "Hide",
   "settings.apiKey": "API Key",
   "settings.model": "Model",
-  "settings.modelDesc": "Free text — type any model name, or pick from the suggestions",
   "settings.modelDesc": "Select or type model name",
   "settings.maxTokens": "Max Tokens",
   "settings.maxTokensDesc": "Maximum response tokens",
@@ -242,7 +226,6 @@
   "settings.serverAddress": "Server Address",
   "settings.aboutMbforge": "About MBForge",
   "settings.version": "Version",
-
   "systemTab.loadEnvFailed": "Python sidecar is not started; System tab is unavailable",
   "systemTab.loadModelsFailed": "Failed to load model list",
   "systemTab.loadPathsFailed": "Failed to load model paths",
@@ -266,11 +249,9 @@
   "systemTab.molecularDynamics": "Molecular Dynamics",
   "systemTab.docking": "Docking",
   "systemTab.admet": "ADMET",
-
   "models.loadFailed": "Failed to load model list",
   "models.cacheDirFailed": "Failed to load cache directory",
   "models.deleteError": "Delete failed: {{error}}",
-
   "chat.placeholder": "Ask a question... (Enter to send, Shift+Enter for newline)",
   "chat.placeholderNoProject": "Please open a project first",
   "chat.searchMolecule": "Search Molecule",
@@ -279,7 +260,6 @@
   "chat.searchMolPrefix": "Search molecule: ",
   "chat.analyzeSarPrefix": "Please analyze SAR relationships: ",
   "chat.dockPrefix": "Run molecular docking: ",
-
   "mol.title": "Molecules",
   "mol.add": "+ Add Molecule",
   "mol.search": "Search molecules...",
@@ -288,7 +268,6 @@
   "mol.unknownSource": "Unknown source",
   "mol.activity": "Activity",
   "mol.loadFailed": "Failed to load",
-
   "notes.title": "Notes",
   "notes.create": "New Note",
   "notes.delete": "Delete Note",
@@ -314,15 +293,12 @@
   "notes.deleted": "Note deleted",
   "notes.created": "New note created",
   "notes.searchPlaceholder": "Search notes...",
-
   "time.justNow": "just now",
   "time.minutesAgo": "{{count}}m ago",
   "time.hoursAgo": "{{count}}h ago",
   "time.daysAgo": "{{count}}d ago",
-
   "search.placeholder": "Search molecules, documents, concepts...",
   "search.placeholderNoProject": "Please open or create a project first",
-
   "discover.search.placeholder": "Search molecules, documents, concepts...",
   "discover.search.placeholderNoProject": "Please open or create a project first",
   "discover.search.hints": ["Aspirin", "Molecular docking", "SAR analysis", "IC50"],
@@ -334,7 +310,6 @@
   "discover.search.fallbackTitle": "Document snippet",
   "discover.search.unknownSource": "Unknown source",
   "discover.search.searchFailed": "Search failed",
-
   "discover.chat.greeting": "Hello! I am the MBForge AI assistant. Feel free to ask me anything about molecules or literature.",
   "discover.chat.noProject": "No project selected",
   "discover.chat.documentsCount": "{{count}} documents",
@@ -342,11 +317,9 @@
   "discover.chat.agentInitFailed": "Agent initialization failed: {{error}}",
   "discover.chat.error": "Error: {{error}}",
   "discover.chat.networkError": "Network error: {{error}}",
-
   "dashboard.conversations": "Conversations",
   "dashboard.weekActive": "Active this week",
   "dashboard.confirmed": "Confirmed",
-
   "workspace.overview": "Overview",
   "workspace.documents": "Documents",
   "workspace.title": "Workspace",
@@ -354,7 +327,6 @@
   "workspace.indexedDocuments": "Indexed",
   "workspace.loadStatsFailed": "Failed to load workspace statistics",
   "workspace.noProjectSelected": "Please select or create a project first",
-
   "folder.select": "Select Folder",
   "folder.browse": "Browse",
   "folder.errorNotAvailable": "Tauri environment not available. Please open in desktop app.",
@@ -362,7 +334,6 @@
   "folder.errorPlugin": "Dialog plugin not available",
   "folder.errorIpc": "Tauri IPC communication error",
   "folder.errorSelect": "Selection failed: {{msg}}",
-
   "models.embedding": "Embedding Model",
   "models.reranker": "Reranker Model",
   "models.detection": "Molecule Detection Model",
@@ -392,7 +363,6 @@
   "models.enterModelName": "Enter model name",
   "models.complete": "Done",
   "models.official": "Official",
-
   "env.ready": "✓ Ready",
   "env.notDownloaded": "Not downloaded",
   "env.checking": "Checking...",
@@ -410,7 +380,6 @@
   "env.filterAll": "All",
   "env.filterReady": "Ready",
   "env.filterNotReady": "Not ready",
-
   "error.title": "Something went wrong",
   "error.description": "The application encountered an unexpected problem. Try refreshing the page.",
   "error.refresh": "Refresh Page",

@@ -20,7 +20,7 @@ function detectLanguage(): string {
     // localStorage not available
   }
   try {
-    const browserLang = navigator.language?.slice(0, 2)
+    const browserLang = navigator.language.slice(0, 2)
     if (browserLang === 'en') return 'en'
   } catch {
     // navigator not available

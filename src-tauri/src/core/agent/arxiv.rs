@@ -110,7 +110,10 @@ mod tests {
         // `%6F` (a single 'o'). The correct encoding is the full 3-byte sequence.
         assert_eq!(urlencoding("药"), "%E8%8D%AF");
         // 4-char CJK string → 12 bytes total
-        assert_eq!(urlencoding("药物化学"), "%E8%8D%AF%E7%89%A9%E5%8C%96%E5%AD%A6");
+        assert_eq!(
+            urlencoding("药物化学"),
+            "%E8%8D%AF%E7%89%A9%E5%8C%96%E5%AD%A6"
+        );
     }
 
     #[test]
@@ -122,7 +125,10 @@ mod tests {
     #[test]
     fn urlencoding_handles_mixed_cjk_and_ascii() {
         // Mixed query like an Agent prompt — must not corrupt the ASCII parts.
-        assert_eq!(urlencoding("query 药物 hello"), "query+%E8%8D%AF%E7%89%A9+hello");
+        assert_eq!(
+            urlencoding("query 药物 hello"),
+            "query+%E8%8D%AF%E7%89%A9+hello"
+        );
     }
 
     #[test]

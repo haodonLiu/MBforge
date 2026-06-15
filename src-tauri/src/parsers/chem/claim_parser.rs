@@ -14,8 +14,9 @@ use std::sync::LazyLock;
 // ---------------------------------------------------------------------------
 
 /// Claim 编号行 — 支持 "1. ", "1) ", "Claim 1. ", "Claim 1: " 等格式
-static CLAIM_NUMBER_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?:Claim\s*)?(\d+)[\.:\)\-]\s*(.+)$").expect("valid claim number regex"));
+static CLAIM_NUMBER_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:Claim\s*)?(\d+)[\.:\)\-]\s*(.+)$").expect("valid claim number regex")
+});
 
 /// 备用编号格式（仅数字+点号，更宽松）
 static CLAIM_NUMBER_LOOSE_RE: LazyLock<Regex> =
@@ -28,8 +29,9 @@ static DEPENDENCY_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// 范围引用 — "claims 1 to 5", "claims 1-5"
-static DEPENDENCY_RANGE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)claims?\s+(\d+)\s*(?:to|-)\s*(\d+)").expect("valid dependency range regex"));
+static DEPENDENCY_RANGE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)claims?\s+(\d+)\s*(?:to|-)\s*(\d+)").expect("valid dependency range regex")
+});
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -256,8 +258,14 @@ fn extract_parent_claims(text: &str) -> Vec<u32> {
 
     // 先尝试范围匹配
     for caps in DEPENDENCY_RANGE_RE.captures_iter(text) {
-        let start = caps.get(1).and_then(|m| m.as_str().parse::<u32>().ok()).unwrap_or(0);
-        let end = caps.get(2).and_then(|m| m.as_str().parse::<u32>().ok()).unwrap_or(0);
+        let start = caps
+            .get(1)
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+            .unwrap_or(0);
+        let end = caps
+            .get(2)
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+            .unwrap_or(0);
         for n in start..=end {
             seen.entry(n).or_insert(true);
         }
@@ -344,7 +352,8 @@ fn split_limitations(text: &str) -> Vec<String> {
 /// 提取 claim 文本中提到的化合物名称。
 fn extract_compound_mentions(text: &str) -> Vec<String> {
     let mut mentions = Vec::new();
-    let re = Regex::new(r"(?i)(Compound|Example|Intermediate)\s+(\d+[a-zA-Z]?)").expect("valid compound mention regex");
+    let re = Regex::new(r"(?i)(Compound|Example|Intermediate)\s+(\d+[a-zA-Z]?)")
+        .expect("valid compound mention regex");
     for caps in re.captures_iter(text) {
         let full = caps
             .get(0)

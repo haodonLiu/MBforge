@@ -1,4 +1,4 @@
-﻿# 处理队列 UX 优化 + 当前 PDF 流程图
+# 处理队列 UX 优化 + 当前 PDF 流程图
 
 > 立项：2026-06-12
 > 范围：Phase 1 (A+B) + Phase 2 (C+G)
@@ -41,17 +41,17 @@
 
 ## 任务拆分
 
-- [ ] **A1** 新建 `PdfPipelineFlow` + 样式
-- [ ] **A2** `ProcessingQueue` 每张卡嵌入 compact 版
-- [ ] **A3** `PdfViewer` 订阅 ingest 事件，顶部加 full banner
-- [ ] **B1** `IngestTask` + SQLite 加 `priority` 列
-- [ ] **B2** 新增 `ingest_set_priority` 命令 + 前端"置顶"按钮
-- [ ] **B3** stage icon 从 emoji 改 SVG
-- [ ] **C1** `IngestQueue` 聚合 `avg_stage_durations_ms`
-- [ ] **C2** 前端 header 加吞吐 chip
-- [ ] **G1** 跨页完成 toast
-- [ ] 编译验证：`cargo check --lib` + `npx tsc --noEmit`
-- [ ] 手动验证：50 页 PDF 走完 5 阶段，截图确认 viewer banner + 队列卡同步
+- [x] **A1** 新建 `PdfPipelineFlow` + 样式
+- [x] **A2** `ProcessingQueue` 每张卡嵌入 compact 版
+- [x] **A3** `PdfViewer` 订阅 ingest 事件，顶部加 full banner
+- [x] **B1** `IngestTask` + SQLite 加 `priority` 列
+- [x] **B2** 新增 `ingest_set_priority` 命令 + 前端"置顶"按钮
+- [x] **B3** stage icon 从 emoji 改 SVG
+- [x] **C1** `IngestQueue` 聚合 `avg_stage_durations_ms`
+- [x] **C2** 前端 header 加吞吐 chip
+- [x] **G1** 跨页完成 toast
+- [x] 编译验证：`cargo check --lib` + `npx tsc --noEmit`
+- [x] 手动验证：50 页 PDF 走完 5 阶段，截图确认 viewer banner + 队列卡同步
 
 ## 不做（本轮）
 

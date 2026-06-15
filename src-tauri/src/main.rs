@@ -11,9 +11,9 @@ use commands::agent::AgentState;
 use commands::mol_engine::MoleculeEngineState;
 use core::document::ingest_worker::{IngestWorker, IngestWorkerState};
 
+use crate::core::helpers::LockResultExt;
 use std::process::Command;
 use tauri::Manager;
-use crate::core::helpers::LockResultExt;
 
 fn load_dotenv() {
     // Walk up from CWD looking for the first `.env` we can read.
@@ -23,7 +23,9 @@ fn load_dotenv() {
     // Canonicalize first — `Path::new(".").parent()` returns `Some("")` (not
     // a real parent), so a naive `dir = d.parent()` loop never walks up. We
     // need an absolute path before `.parent()` actually moves us toward `/`.
-    let start = std::env::current_dir().ok().and_then(|p| p.canonicalize().ok());
+    let start = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.canonicalize().ok());
     let mut dir: Option<std::path::PathBuf> = start;
     let mut found: Option<std::path::PathBuf> = None;
     for _ in 0..8 {
@@ -78,29 +80,39 @@ fn main() {
             let resource_dir = app_handle.path().resource_dir().unwrap_or_default();
 
             // 开发模式路径探测：CARGO_MANIFEST_DIR 指向 src-tauri/，项目根目录是其父目录
-            let dev_paths = std::env::var("CARGO_MANIFEST_DIR").ok().and_then(|manifest| {
-                let manifest_path = std::path::PathBuf::from(manifest);
-                let project_root = manifest_path.parent()?.to_path_buf();
-                let script = project_root.join("src").join("mbforge").join("server.py");
-                if script.exists() {
-                    Some((script, project_root.clone()))
-                } else {
-                    None
-                }
-            });
+            let dev_paths = std::env::var("CARGO_MANIFEST_DIR")
+                .ok()
+                .and_then(|manifest| {
+                    let manifest_path = std::path::PathBuf::from(manifest);
+                    let project_root = manifest_path.parent()?.to_path_buf();
+                    let script = project_root.join("src").join("mbforge").join("server.py");
+                    if script.exists() {
+                        Some((script, project_root.clone()))
+                    } else {
+                        None
+                    }
+                });
 
             // Try to find Python backend.
             // In dev mode, prefer the project's virtual environment so that
             // uv-managed dependencies (ultralytics, transformers, etc.) are available.
             #[cfg(target_os = "windows")]
-            let venv_python = |root: &std::path::Path| root.join(".venv").join("Scripts").join("python.exe");
+            let venv_python =
+                |root: &std::path::Path| root.join(".venv").join("Scripts").join("python.exe");
             #[cfg(not(target_os = "windows"))]
-            let venv_python = |root: &std::path::Path| root.join(".venv").join("bin").join("python");
+            let venv_python =
+                |root: &std::path::Path| root.join(".venv").join("bin").join("python");
 
             let mut py_paths: Vec<std::path::PathBuf> = Vec::new();
             if let Some((_, ref project_root)) = dev_paths {
                 if let Ok(uv_venv) = std::env::var("UV_VIRTUAL_ENV") {
-                    py_paths.push(std::path::PathBuf::from(uv_venv).join(if cfg!(target_os = "windows") { "Scripts/python.exe" } else { "bin/python" }));
+                    py_paths.push(std::path::PathBuf::from(uv_venv).join(
+                        if cfg!(target_os = "windows") {
+                            "Scripts/python.exe"
+                        } else {
+                            "bin/python"
+                        },
+                    ));
                 }
                 py_paths.push(venv_python(project_root));
             }
@@ -127,10 +139,7 @@ fn main() {
             let no_spawn = std::env::var("MBFORGE_NO_SPAWN").unwrap_or_default().trim() == "1";
 
             // 生产模式路径（打包后资源目录内）
-            let prod_script = resource_dir
-                .join("src")
-                .join("mbforge")
-                .join("server.py");
+            let prod_script = resource_dir.join("src").join("mbforge").join("server.py");
 
             let (server_script, working_dir) = if prod_script.exists() {
                 (prod_script, resource_dir)
@@ -169,7 +178,10 @@ fn main() {
                 }
             } else if !no_spawn {
                 #[cfg(debug_assertions)]
-                log::warn!("[tauri] Dev mode: Python server script not found at {}", server_script.display());
+                log::warn!(
+                    "[tauri] Dev mode: Python server script not found at {}",
+                    server_script.display()
+                );
             }
 
             // 启动 ingest worker（如环境变量指定了项目根目录）。
@@ -181,7 +193,10 @@ fn main() {
                         *state.worker.lock().unwrap() = Some(worker);
                     }
                 } else {
-                    log::warn!("[tauri] MBFORGE_PROJECT_ROOT points to non-directory: {}", project_root);
+                    log::warn!(
+                        "[tauri] MBFORGE_PROJECT_ROOT points to non-directory: {}",
+                        project_root
+                    );
                 }
             }
 

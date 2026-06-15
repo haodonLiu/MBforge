@@ -8,7 +8,10 @@ fn main() {
     if let Ok(manifest) = env::var("CARGO_MANIFEST_DIR") {
         let pdfium_dir = PathBuf::from(manifest).parent().unwrap().join("pdfium");
         if pdfium_dir.exists() {
-            println!("cargo:rustc-env=PDFIUM_LIB_DIR={}", pdfium_dir.join("lib").display());
+            println!(
+                "cargo:rustc-env=PDFIUM_LIB_DIR={}",
+                pdfium_dir.join("lib").display()
+            );
         }
     }
 

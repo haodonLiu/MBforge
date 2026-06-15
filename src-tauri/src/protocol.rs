@@ -50,7 +50,11 @@ fn parse_range(range_str: &str, file_size: u64) -> Option<(u64, u64)> {
     let end: u64 = if parts[1].is_empty() {
         file_size
     } else {
-        parts[1].parse::<u64>().ok()?.saturating_add(1).min(file_size)
+        parts[1]
+            .parse::<u64>()
+            .ok()?
+            .saturating_add(1)
+            .min(file_size)
     };
     if start >= end || end > file_size {
         return None;
@@ -121,7 +125,8 @@ pub fn handle_mbforge_request(
     }
 
     // Percent-decode the URI path (same as Tauri asset protocol)
-    let path = String::from_utf8_lossy(&percent_decode(request.uri().path().as_bytes())).to_string();
+    let path =
+        String::from_utf8_lossy(&percent_decode(request.uri().path().as_bytes())).to_string();
 
     // Remove leading slash
     let path_str = path.trim_start_matches('/');
@@ -154,10 +159,7 @@ pub fn handle_mbforge_request(
         return;
     }
 
-    let range = request
-        .headers()
-        .get("range")
-        .and_then(|v| v.to_str().ok());
+    let range = request.headers().get("range").and_then(|v| v.to_str().ok());
 
     let response = match build_file_response(&path_buf, range) {
         Ok(resp) => resp,

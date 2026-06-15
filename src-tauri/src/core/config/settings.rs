@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use super::constants::{
-    global_config_dir, embed_base_url, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL,
+    embed_base_url, global_config_dir, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL,
 };
 use crate::core::document::semantic_cache::SemanticCacheConfig;
 use crate::core::document::stream_search::StreamingSearchConfig;
@@ -200,11 +200,21 @@ impl Default for PdfParseConfig {
     }
 }
 
-fn default_ocr_language() -> String { "eng".into() }
-fn default_chunk_size() -> usize { 512 }
-fn default_chunk_overlap() -> usize { 50 }
-fn default_auto_moldet_on_import() -> bool { true }
-fn default_moldet_batch_size() -> usize { 10 }
+fn default_ocr_language() -> String {
+    "eng".into()
+}
+fn default_chunk_size() -> usize {
+    512
+}
+fn default_chunk_overlap() -> usize {
+    50
+}
+fn default_auto_moldet_on_import() -> bool {
+    true
+}
+fn default_moldet_batch_size() -> usize {
+    10
+}
 
 /// 分子检测（MolDet）配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]

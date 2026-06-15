@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 // PDF inspection commands — Task 2: classify_pdf
 
-use serde::Serialize;
 use crate::parsers::doc_types::OcrBlock;
+use serde::Serialize;
 
 /// Classification result returned to the frontend via Tauri IPC.
 ///
@@ -96,23 +96,24 @@ pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassifica
 
     let root = std::path::PathBuf::from(clean_path(&project_root));
 
-    let project = Project::open(&root)
-        .ok_or_else(|| format!("Cannot open project at {}", project_root))?;
+    let project =
+        Project::open(&root).ok_or_else(|| format!("Cannot open project at {}", project_root))?;
     let source_path = project
         .get_document_source_path(&doc_id)
         .ok_or_else(|| format!("Document {} source path not found", doc_id))?;
 
-    let result = pdf_inspector::detect_pdf(source_path.to_string_lossy().as_ref()).map_err(|e| {
-        log::error!("inspect_pdf failed for {}: {}", source_path.display(), e);
-        // Best-effort: mark inspector status as error
-        if let Some(mut dp) = DocumentProject::load(&root, &doc_id) {
-            dp.set_inspector_status("error");
-        }
-        if let Some(mut proj) = Project::open(&root) {
-            proj.set_document_status(&doc_id, "inspector_status", "error");
-        }
-        format!("pdf-inspector detect failed: {}", e)
-    })?;
+    let result =
+        pdf_inspector::detect_pdf(source_path.to_string_lossy().as_ref()).map_err(|e| {
+            log::error!("inspect_pdf failed for {}: {}", source_path.display(), e);
+            // Best-effort: mark inspector status as error
+            if let Some(mut dp) = DocumentProject::load(&root, &doc_id) {
+                dp.set_inspector_status("error");
+            }
+            if let Some(mut proj) = Project::open(&root) {
+                proj.set_document_status(&doc_id, "inspector_status", "error");
+            }
+            format!("pdf-inspector detect failed: {}", e)
+        })?;
 
     let pdf_type_str = match result.pdf_type {
         pdf_inspector::PdfType::TextBased => "TextBased",
@@ -174,7 +175,11 @@ pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassifica
         pdf_type: pdf_type_str.to_string(),
         confidence: result.confidence as f64,
         page_count: result.page_count as usize,
-        pages_needing_ocr: result.pages_needing_ocr.iter().map(|&p| p as usize).collect(),
+        pages_needing_ocr: result
+            .pages_needing_ocr
+            .iter()
+            .map(|&p| p as usize)
+            .collect(),
         text_density_avg: 0.0,
         has_complex_layout: result.layout.is_complex,
         has_encoding_issues: result.has_encoding_issues,
@@ -198,8 +203,8 @@ pub async fn confirm_ocr(
 
     let root = std::path::PathBuf::from(clean_path(&project_root));
 
-    let project = Project::open(&root)
-        .ok_or_else(|| format!("Cannot open project at {}", project_root))?;
+    let project =
+        Project::open(&root).ok_or_else(|| format!("Cannot open project at {}", project_root))?;
     let source_path = project
         .get_document_source_path(&doc_id)
         .ok_or_else(|| format!("Document {} source path not found", doc_id))?;
@@ -330,7 +335,8 @@ pub async fn extract_pdf_workflow_cmd(
     use crate::parsers::chem::chem_validate::separate_esmiles_layers;
 
     let sidecar_url = crate::core::constants::sidecar_url();
-    let result = crate::parsers::pipeline::extract_pdf_workflow(&path, &output_dir, &sidecar_url).await?;
+    let result =
+        crate::parsers::pipeline::extract_pdf_workflow(&path, &output_dir, &sidecar_url).await?;
 
     // 将检测到的分子写入 SQLite（molecules + molecule_images）
     let filename = std::path::Path::new(&path)
@@ -345,17 +351,16 @@ pub async fn extract_pdf_workflow_cmd(
             None,
         )
         .or_else(|| {
-            crate::parsers::pipeline::find_project_root(
-                std::path::Path::new(&output_dir),
-                None,
-            )
+            crate::parsers::pipeline::find_project_root(std::path::Path::new(&output_dir), None)
         });
 
         if let Some(root) = project_root {
             if let Ok(db) = MoleculeDatabase::open(&root) {
                 // 文本行缓存：同一页只解析一次 PDF
-                let mut lines_cache: std::collections::HashMap<i32, Vec<crate::parsers::chem::label_assoc::TextLine>> =
-                    std::collections::HashMap::new();
+                let mut lines_cache: std::collections::HashMap<
+                    i32,
+                    Vec<crate::parsers::chem::label_assoc::TextLine>,
+                > = std::collections::HashMap::new();
                 let page_h_pts = get_page_height(&path).unwrap_or(842.0);
 
                 let mut saved = 0usize;
@@ -373,14 +378,23 @@ pub async fn extract_pdf_workflow_cmd(
                         ) {
                             Ok(lines) => lines,
                             Err(e) => {
-                                log::warn!("[extract_workflow] page {} text extraction failed: {}", page_num, e);
+                                log::warn!(
+                                    "[extract_workflow] page {} text extraction failed: {}",
+                                    page_num,
+                                    e
+                                );
                                 Vec::new()
                             }
                         }
                     });
                     let label_match = if mol.bbox_pdf != [0.0, 0.0, 0.0, 0.0] {
                         crate::parsers::chem::label_assoc::find_label_for_bbox(
-                            (mol.bbox_pdf[0], mol.bbox_pdf[1], mol.bbox_pdf[2], mol.bbox_pdf[3]),
+                            (
+                                mol.bbox_pdf[0],
+                                mol.bbox_pdf[1],
+                                mol.bbox_pdf[2],
+                                mol.bbox_pdf[3],
+                            ),
                             lines,
                             page_h_pts,
                             80.0,
@@ -394,7 +408,8 @@ pub async fn extract_pdf_workflow_cmd(
                     };
                     let mut properties = serde_json::json!({});
                     if let Some(m) = &label_match {
-                        properties["context_text"] = serde_json::Value::String(m.context_text.clone());
+                        properties["context_text"] =
+                            serde_json::Value::String(m.context_text.clone());
                     }
                     properties["bbox_pdf"] = serde_json::json!(mol.bbox_pdf);
 
@@ -423,7 +438,11 @@ pub async fn extract_pdf_workflow_cmd(
                         vlm_confidence: mol.confidence,
                     };
                     if let Err(e) = db.add_molecule(&record) {
-                        log::warn!("[extract_workflow] Failed to add molecule {}: {}", mol_id, e);
+                        log::warn!(
+                            "[extract_workflow] Failed to add molecule {}: {}",
+                            mol_id,
+                            e
+                        );
                     } else {
                         let img = MoleculeImage {
                             image_id: crate::core::helpers::generate_uuid(),
@@ -442,7 +461,11 @@ pub async fn extract_pdf_workflow_cmd(
                         }
                     }
                 }
-                log::info!("[extract_workflow] Persisted {}/{} molecules to DB", saved, result.molecules.len());
+                log::info!(
+                    "[extract_workflow] Persisted {}/{} molecules to DB",
+                    saved,
+                    result.molecules.len()
+                );
             }
         }
     }
@@ -527,10 +550,7 @@ pub async fn get_document_ocr_layout(
                                     .collect()
                             })
                             .unwrap_or_default();
-                        let parser = val["parser"]
-                            .as_str()
-                            .unwrap_or("unknown")
-                            .to_string();
+                        let parser = val["parser"].as_str().unwrap_or("unknown").to_string();
                         if !blocks.is_empty() {
                             log::info!(
                                 "OCR layout cache HIT (new) for {}: {} blocks",
@@ -569,10 +589,7 @@ pub async fn get_document_ocr_layout(
                                 .collect()
                         })
                         .unwrap_or_default();
-                    let parser = val["parser"]
-                        .as_str()
-                        .unwrap_or("unknown")
-                        .to_string();
+                    let parser = val["parser"].as_str().unwrap_or("unknown").to_string();
                     if !blocks.is_empty() {
                         log::info!("OCR layout cache HIT for {}: {} blocks", path, blocks.len());
                         update_status("completed");
@@ -598,7 +615,11 @@ pub async fn get_document_ocr_layout(
     match result {
         Ok(classified) => {
             let has_blocks = !classified.ocr_blocks.is_empty();
-            update_status(if has_blocks { "completed" } else { "not_processed" });
+            update_status(if has_blocks {
+                "completed"
+            } else {
+                "not_processed"
+            });
             Ok(OcrLayoutResult {
                 path: path.clone(),
                 parser: classified.parser,
@@ -614,18 +635,15 @@ pub async fn get_document_ocr_layout(
     }
 }
 
-
 /// 从 PDF 第一页拿页面高度（点单位）。仅用于 label 关联时的坐标转换。
 /// 拿不到时返回 842.0（A4 高度）。
 fn get_page_height(pdf_path: &str) -> Option<f64> {
     use std::collections::HashSet;
     let mut first_page: HashSet<u32> = HashSet::new();
     first_page.insert(1);
-    let items = pdf_inspector::extractor::extract_text_with_positions_pages(
-        pdf_path,
-        Some(&first_page),
-    )
-    .ok()?;
+    let items =
+        pdf_inspector::extractor::extract_text_with_positions_pages(pdf_path, Some(&first_page))
+            .ok()?;
     // 用首个 item 的 height 字段反推页面尺寸不行；
     // 直接走 pdf_inspector 的 page_height API
     let _ = items;
@@ -673,9 +691,15 @@ fn open_ingest_queue(project_root: &str) -> Result<IngestQueue, String> {
 
 /// 入队一个 PDF 供异步处理。返回任务 ID。
 #[tauri::command]
-pub async fn ingest_enqueue(project_root: String, file_path: String, doc_id: String) -> Result<String, String> {
+pub async fn ingest_enqueue(
+    project_root: String,
+    file_path: String,
+    doc_id: String,
+) -> Result<String, String> {
     let q = open_ingest_queue(&project_root)?;
-    q.enqueue(file_path, doc_id).await.map_err(|e| e.to_string())
+    q.enqueue(file_path, doc_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// 列出队列中所有任务。
@@ -720,6 +744,26 @@ pub async fn ingest_cleanup(project_root: String) -> Result<usize, String> {
     q.cleanup().await.map_err(|e| e.to_string())
 }
 
+/// 修改任务优先级。
+#[tauri::command]
+pub async fn ingest_set_priority(
+    project_root: String,
+    task_id: String,
+    priority: i32,
+) -> Result<(), String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.set_priority(&task_id, priority)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 删除已结束的任务记录（done / cancelled / failed）。
+#[tauri::command]
+pub async fn ingest_delete_task(project_root: String, task_id: String) -> Result<bool, String> {
+    let q = open_ingest_queue(&project_root)?;
+    q.delete_task(&task_id).await.map_err(|e| e.to_string())
+}
+
 /// 把任务标记为完成（由后台 worker 在 PDF 处理成功后调用）。
 #[tauri::command]
 pub async fn ingest_mark_done(project_root: String, task_id: String) -> Result<(), String> {
@@ -729,9 +773,15 @@ pub async fn ingest_mark_done(project_root: String, task_id: String) -> Result<(
 
 /// 把任务标记为失败（带错误信息），由后台 worker 调用。
 #[tauri::command]
-pub async fn ingest_mark_failed(project_root: String, task_id: String, error: String) -> Result<(), String> {
+pub async fn ingest_mark_failed(
+    project_root: String,
+    task_id: String,
+    error: String,
+) -> Result<(), String> {
     let q = open_ingest_queue(&project_root)?;
-    q.mark_failed(&task_id, error).await.map_err(|e| e.to_string())
+    q.mark_failed(&task_id, error)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// 拉取下一个 pending 任务（worker 启动时调用）。

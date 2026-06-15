@@ -4,8 +4,8 @@
 //! 此文件仅保留 Tauri 命令注册和向后兼容的 re-export。
 
 pub use crate::core::models::catalog::*;
-pub use crate::core::models::status::write_resolved_paths;
 pub use crate::core::models::download::{download_model, DownloadProgress};
+pub use crate::core::models::status::write_resolved_paths;
 
 // ---------------------------------------------------------------------------
 // Tauri Commands
@@ -23,7 +23,8 @@ pub fn resources_status(resource_id: String) -> crate::core::models::catalog::Re
 
 #[tauri::command]
 pub fn resources_get_model_path(resource_id: String) -> Option<String> {
-    crate::core::models::resolve::get_model_path(&resource_id).map(|p| p.to_string_lossy().to_string())
+    crate::core::models::resolve::get_model_path(&resource_id)
+        .map(|p| p.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -35,10 +36,7 @@ pub fn resources_catalog() -> Vec<serde_json::Value> {
 ///
 /// 前端监听 `model-download-progress` 事件获取实时进度。
 #[tauri::command]
-pub async fn models_download(
-    resource_id: String,
-    app: tauri::AppHandle,
-) -> Result<String, String> {
+pub async fn models_download(resource_id: String, app: tauri::AppHandle) -> Result<String, String> {
     use tauri::Emitter;
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<DownloadProgress>(32);
@@ -50,25 +48,31 @@ pub async fn models_download(
         let result = download_model(&rid, tx).await;
         match result {
             Ok(path) => {
-                let _ = app_clone.emit("model-download-progress", DownloadProgress {
-                    status: "completed".into(),
-                    file: String::new(),
-                    file_progress: 1.0,
-                    file_index: 0,
-                    total_files: 0,
-                    error: String::new(),
-                });
+                let _ = app_clone.emit(
+                    "model-download-progress",
+                    DownloadProgress {
+                        status: "completed".into(),
+                        file: String::new(),
+                        file_progress: 1.0,
+                        file_index: 0,
+                        total_files: 0,
+                        error: String::new(),
+                    },
+                );
                 Ok(path.to_string_lossy().to_string())
             }
             Err(e) => {
-                let _ = app_clone.emit("model-download-progress", DownloadProgress {
-                    status: "failed".into(),
-                    file: String::new(),
-                    file_progress: 0.0,
-                    file_index: 0,
-                    total_files: 0,
-                    error: e.to_string(),
-                });
+                let _ = app_clone.emit(
+                    "model-download-progress",
+                    DownloadProgress {
+                        status: "failed".into(),
+                        file: String::new(),
+                        file_progress: 0.0,
+                        file_index: 0,
+                        total_files: 0,
+                        error: e.to_string(),
+                    },
+                );
                 Err(e.to_string())
             }
         }
@@ -83,7 +87,9 @@ pub async fn models_download(
     });
 
     // 等待下载完成
-    let result = download_task.await.unwrap_or_else(|e| Err(format!("Task failed: {}", e)));
+    let result = download_task
+        .await
+        .unwrap_or_else(|e| Err(format!("Task failed: {}", e)));
     let _ = forward_task.await;
     result
 }
@@ -164,11 +170,13 @@ pub fn models_cache_dir_info() -> Result<serde_json::Value, String> {
         0.0
     };
 
-    let huggingface = std::env::var("HF_HOME").map(std::path::PathBuf::from).unwrap_or_else(|_| {
-        directories::UserDirs::new()
-            .map(|u| u.home_dir().join(".cache").join("huggingface"))
-            .unwrap_or_default()
-    });
+    let huggingface = std::env::var("HF_HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            directories::UserDirs::new()
+                .map(|u| u.home_dir().join(".cache").join("huggingface"))
+                .unwrap_or_default()
+        });
     let hf_exists = huggingface.exists();
     let hf_size = if hf_exists {
         crate::core::models::resolve::dir_size(&huggingface) as f64 / 1024.0 / 1024.0
@@ -176,11 +184,13 @@ pub fn models_cache_dir_info() -> Result<serde_json::Value, String> {
         0.0
     };
 
-    let modelscope = std::env::var("MODELSCOPE_CACHE").map(std::path::PathBuf::from).unwrap_or_else(|_| {
-        directories::UserDirs::new()
-            .map(|u| u.home_dir().join(".cache").join("modelscope"))
-            .unwrap_or_default()
-    });
+    let modelscope = std::env::var("MODELSCOPE_CACHE")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            directories::UserDirs::new()
+                .map(|u| u.home_dir().join(".cache").join("modelscope"))
+                .unwrap_or_default()
+        });
     let ms_exists = modelscope.exists();
     let ms_size = if ms_exists {
         crate::core::models::resolve::dir_size(&modelscope) as f64 / 1024.0 / 1024.0

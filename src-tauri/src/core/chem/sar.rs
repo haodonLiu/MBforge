@@ -77,10 +77,8 @@ pub fn find_common_scaffold(
     timeout_ms: Option<u64>,
     min_atoms: usize,
 ) -> Option<ScaffoldResult> {
-    let mols: Vec<chematic_core::Molecule> = smiles_list
-        .iter()
-        .filter_map(|s| parse_mol(s))
-        .collect();
+    let mols: Vec<chematic_core::Molecule> =
+        smiles_list.iter().filter_map(|s| parse_mol(s)).collect();
 
     if mols.len() < 2 {
         return None;
@@ -188,8 +186,7 @@ pub fn decompose_compound(
 
     // 获取第一个匹配：HashMap<usize (query atom), AtomIdx (mol atom)>
     let match_map = &matches[0];
-    let core_atom_set: std::collections::HashSet<u32> =
-        match_map.values().map(|ai| ai.0).collect();
+    let core_atom_set: std::collections::HashSet<u32> = match_map.values().map(|ai| ai.0).collect();
 
     // 遍历骨架原子，识别每个位置上的外接基团
     let mut position_substituents: std::collections::HashMap<usize, Vec<u32>> =
@@ -398,7 +395,8 @@ pub fn build_activity_heatmap(
     let mut heatmaps = Vec::new();
 
     for (col_idx, r_label) in matrix.r_labels.iter().enumerate() {
-        let mut bucket: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+        let mut bucket: std::collections::HashMap<String, Vec<f64>> =
+            std::collections::HashMap::new();
 
         for (row_idx, row) in matrix.rows.iter().enumerate() {
             if col_idx >= row.len() {
@@ -432,9 +430,13 @@ pub fn build_activity_heatmap(
 
         cells.sort_by(|a, b| {
             if lower_is_better {
-                a.avg_activity.partial_cmp(&b.avg_activity).unwrap_or(std::cmp::Ordering::Equal)
+                a.avg_activity
+                    .partial_cmp(&b.avg_activity)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             } else {
-                b.avg_activity.partial_cmp(&a.avg_activity).unwrap_or(std::cmp::Ordering::Equal)
+                b.avg_activity
+                    .partial_cmp(&a.avg_activity)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             }
         });
 
@@ -449,10 +451,7 @@ pub fn build_activity_heatmap(
 
 /// Tauri 命令：构建热力图
 #[tauri::command]
-pub fn sar_heatmap(
-    matrix: RGroupMatrix,
-    lower_is_better: bool,
-) -> Vec<ActivityHeatmap> {
+pub fn sar_heatmap(matrix: RGroupMatrix, lower_is_better: bool) -> Vec<ActivityHeatmap> {
     build_activity_heatmap(&matrix, lower_is_better)
 }
 
@@ -471,23 +470,25 @@ mod tests {
         let result = find_common_scaffold(&smiles, Some(5000), 3);
         assert!(result.is_some(), "Should find a common scaffold");
         let scaffold = result.unwrap();
-        assert!(scaffold.atom_count >= 3, "Scaffold should have at least 3 atoms");
+        assert!(
+            scaffold.atom_count >= 3,
+            "Scaffold should have at least 3 atoms"
+        );
     }
 
     #[test]
     fn test_strip_esmiles_tags() {
-        assert_eq!(strip_esmiles_tags("c1ccc(<c>1:R1</c>)cc1"), "c1ccc(1:R1)cc1");
+        assert_eq!(
+            strip_esmiles_tags("c1ccc(<c>1:R1</c>)cc1"),
+            "c1ccc(1:R1)cc1"
+        );
         assert_eq!(strip_esmiles_tags("CCO"), "CCO");
     }
 
     #[test]
     fn test_decompose_compound() {
-        let result = decompose_compound(
-            "c1ccc(CC(=O)O)cc1",
-            "c1ccccc1",
-            "mol1",
-            "Phenylacetic acid",
-        );
+        let result =
+            decompose_compound("c1ccc(CC(=O)O)cc1", "c1ccccc1", "mol1", "Phenylacetic acid");
         assert!(result.core_matches, "Should match the benzene core");
     }
 }

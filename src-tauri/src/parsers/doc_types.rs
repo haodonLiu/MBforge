@@ -3,9 +3,9 @@ use std::path::PathBuf;
 
 use crate::commands::classifier::DocumentClassification;
 use crate::commands::extractor::ActivityData;
-use crate::parsers::chem::vlm_chem::DetectedMolecule;
 use crate::core::types::{Heading, SectionChunk};
 use crate::parsers::chem::vlm_chem::ChemImageResult;
+use crate::parsers::chem::vlm_chem::DetectedMolecule;
 
 // ---------------------------------------------------------------------------
 // Core pipeline types
@@ -339,7 +339,13 @@ mod tests {
             },
         );
         assert_eq!(ctx.chem_images.len(), 1);
-        assert_eq!(ctx.chem_images.get("page_0003_mol_000.png").unwrap().esmiles, "CCO");
+        assert_eq!(
+            ctx.chem_images
+                .get("page_0003_mol_000.png")
+                .unwrap()
+                .esmiles,
+            "CCO"
+        );
     }
 
     /// [方案 2] detected_molecules 是 Vec，可以 append 多次 Stage 2b 的结果。

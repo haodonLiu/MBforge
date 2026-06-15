@@ -20,8 +20,8 @@ pub struct CachedDoc {
     pub file_path: String,
     pub mtime: f64,
     pub text: String,
-    pub sections_json: String,  // Vec<SectionChunk> 的 JSON
-    pub metadata_json: String,  // parser, page_count, images 等
+    pub sections_json: String, // Vec<SectionChunk> 的 JSON
+    pub metadata_json: String, // parser, page_count, images 等
     pub created_at: f64,
     pub hit_count: i64,
 }
@@ -46,9 +46,7 @@ impl FileCache {
             let guard = shared_conn.lock().map_err(|e| e.to_string())?;
             Self::setup_schema(&guard)?;
         }
-        Ok(Self {
-            conn: shared_conn,
-        })
+        Ok(Self { conn: shared_conn })
     }
 
     /// 初始化表结构（pub 供 KnowledgeBase 迁移时调用）
@@ -218,12 +216,12 @@ impl FileCache {
     /// 缓存统计
     pub fn stats(&self) -> AppResult<CacheStats> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM file_cache", [], |r| r.get(0))?;
-        let total_hits: i64 = conn
-            .query_row("SELECT COALESCE(SUM(hit_count), 0) FROM file_cache", [], |r| {
-                r.get(0)
-            })?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM file_cache", [], |r| r.get(0))?;
+        let total_hits: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(hit_count), 0) FROM file_cache",
+            [],
+            |r| r.get(0),
+        )?;
         Ok(CacheStats {
             entry_count: count as usize,
             total_hits: total_hits as usize,
@@ -255,9 +253,7 @@ mod tests {
         assert!(cache.get(&file_path).unwrap().is_none());
 
         // 写入缓存
-        cache
-            .put(&file_path, "extracted text", "[]", "{}")
-            .unwrap();
+        cache.put(&file_path, "extracted text", "[]", "{}").unwrap();
 
         // 第二次查询：HIT
         let cached = cache.get(&file_path).unwrap().unwrap();

@@ -28,7 +28,7 @@ use rig_core::tool::Tool;
 use rig_derive::rig_tool;
 // Helpers come from arxiv.rs.
 use crate::core::agent::arxiv as arxiv_src;
-use arxiv_src::{args_err, param_url, json, text, BASE_ARXIV, BASE_PMC};
+use arxiv_src::{args_err, json, param_url, text, BASE_ARXIV, BASE_PMC};
 
 #[rig_tool(
     name = "arxiv_metadata",
@@ -38,8 +38,10 @@ use arxiv_src::{args_err, param_url, json, text, BASE_ARXIV, BASE_PMC};
         token = "Optional API token (free papers 2409.05591, 2504.21776 don't need it)",
     )
 )]
-pub async fn arxiv_metadata(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
-
+pub async fn arxiv_metadata(
+    arxiv_id: String,
+    token: String,
+) -> Result<String, rig_core::tool::ToolError> {
     let id = arxiv_id.clone();
     if id.is_empty() {
         return Ok(args_err("arxiv_id is required"));
@@ -52,7 +54,6 @@ pub async fn arxiv_metadata(arxiv_id: String, token: String) -> Result<String, r
         Ok(v) => Ok(v.to_string()),
         Err(e) => Ok(args_err(&e)),
     }
-
 }
 
 #[rig_tool(
@@ -63,8 +64,10 @@ pub async fn arxiv_metadata(arxiv_id: String, token: String) -> Result<String, r
         token = "Optional API token",
     )
 )]
-pub async fn arxiv_brief(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
-
+pub async fn arxiv_brief(
+    arxiv_id: String,
+    token: String,
+) -> Result<String, rig_core::tool::ToolError> {
     let id = arxiv_id.clone();
     if id.is_empty() {
         return Ok(args_err("arxiv_id is required"));
@@ -77,7 +80,6 @@ pub async fn arxiv_brief(arxiv_id: String, token: String) -> Result<String, rig_
         Ok(v) => Ok(v.to_string()),
         Err(e) => Ok(args_err(&e)),
     }
-
 }
 
 #[rig_tool(
@@ -89,8 +91,11 @@ pub async fn arxiv_brief(arxiv_id: String, token: String) -> Result<String, rig_
         token = "Optional API token",
     )
 )]
-pub async fn arxiv_preview(arxiv_id: String, characters: String, token: String) -> Result<String, rig_core::tool::ToolError> {
-
+pub async fn arxiv_preview(
+    arxiv_id: String,
+    characters: String,
+    token: String,
+) -> Result<String, rig_core::tool::ToolError> {
     let id = arxiv_id.clone();
     if id.is_empty() {
         return Ok(args_err("arxiv_id is required"));
@@ -109,19 +114,17 @@ pub async fn arxiv_preview(arxiv_id: String, characters: String, token: String) 
         Ok(v) => Ok(v.to_string()),
         Err(e) => Ok(args_err(&e)),
     }
-
 }
 
 #[rig_tool(
     name = "arxiv_raw",
     description = "获取 arXiv 论文的完整内容（Markdown 格式）。适合深入阅读全文。",
-    params(
-        arxiv_id = "arXiv paper ID",
-        token = "Optional API token",
-    )
+    params(arxiv_id = "arXiv paper ID", token = "Optional API token",)
 )]
-pub async fn arxiv_raw(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
-
+pub async fn arxiv_raw(
+    arxiv_id: String,
+    token: String,
+) -> Result<String, rig_core::tool::ToolError> {
     let id = arxiv_id.clone();
     if id.is_empty() {
         return Ok(args_err("arxiv_id is required"));
@@ -134,7 +137,6 @@ pub async fn arxiv_raw(arxiv_id: String, token: String) -> Result<String, rig_co
         Ok(v) => Ok(serde_json::json!({"content": v}).to_string()),
         Err(e) => Ok(args_err(&e)),
     }
-
 }
 
 #[rig_tool(
@@ -146,8 +148,11 @@ pub async fn arxiv_raw(arxiv_id: String, token: String) -> Result<String, rig_co
         token = "Optional API token",
     )
 )]
-pub async fn arxiv_section(arxiv_id: String, section: String, token: String) -> Result<String, rig_core::tool::ToolError> {
-
+pub async fn arxiv_section(
+    arxiv_id: String,
+    section: String,
+    token: String,
+) -> Result<String, rig_core::tool::ToolError> {
     let id = arxiv_id.clone();
     if id.is_empty() || section.is_empty() {
         return Ok(args_err("arxiv_id and section are required"));
@@ -165,7 +170,6 @@ pub async fn arxiv_section(arxiv_id: String, section: String, token: String) -> 
         Ok(v) => Ok(serde_json::json!({"section": section, "content": v}).to_string()),
         Err(e) => Ok(args_err(&e)),
     }
-
 }
 
 #[rig_tool(
@@ -188,8 +192,22 @@ pub async fn arxiv_section(arxiv_id: String, section: String, token: String) -> 
         token = "Optional API token",
     )
 )]
-pub async fn arxiv_search(query: String, source: String, top_k: String, offset: String, authors: String, orgs: String, categories: String, date_search_type: String, date_str: String, min_citation: String, use_fine_rerank: String, return_contents: String, return_roc: String, token: String) -> Result<String, rig_core::tool::ToolError> {
-
+pub async fn arxiv_search(
+    query: String,
+    source: String,
+    top_k: String,
+    offset: String,
+    authors: String,
+    orgs: String,
+    categories: String,
+    date_search_type: String,
+    date_str: String,
+    min_citation: String,
+    use_fine_rerank: String,
+    return_contents: String,
+    return_roc: String,
+    token: String,
+) -> Result<String, rig_core::tool::ToolError> {
     if query.is_empty() {
         return Ok(args_err("query is required"));
     } // arxiv / biorxiv / medrxiv
@@ -244,7 +262,13 @@ pub async fn arxiv_search(query: String, source: String, top_k: String, offset: 
 
     let qs: Vec<String> = pairs
         .iter()
-        .map(|(k, v)| format!("{}={}", arxiv_src::urlencoding(k), arxiv_src::urlencoding(v)))
+        .map(|(k, v)| {
+            format!(
+                "{}={}",
+                arxiv_src::urlencoding(k),
+                arxiv_src::urlencoding(v)
+            )
+        })
         .collect();
     let url = format!("{}?{}", BASE_ARXIV, qs.join("&"));
 
@@ -252,19 +276,17 @@ pub async fn arxiv_search(query: String, source: String, top_k: String, offset: 
         Ok(v) => Ok(v.to_string()),
         Err(e) => Ok(args_err(&e)),
     }
-
 }
 
 #[rig_tool(
     name = "arxiv_trending",
     description = "获取论文在社交媒体（Twitter/X）上的传播数据，包括推文数、点赞数、浏览数。需要 API token。",
-    params(
-        arxiv_id = "arXiv paper ID",
-        token = "API token（必需）",
-    )
+    params(arxiv_id = "arXiv paper ID", token = "API token（必需）",)
 )]
-pub async fn arxiv_trending(arxiv_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
-
+pub async fn arxiv_trending(
+    arxiv_id: String,
+    token: String,
+) -> Result<String, rig_core::tool::ToolError> {
     let id = arxiv_id.clone();
     if id.is_empty() {
         return Ok(args_err("arxiv_id is required"));
@@ -279,7 +301,6 @@ pub async fn arxiv_trending(arxiv_id: String, token: String) -> Result<String, r
         Ok(v) => Ok(v.to_string()),
         Err(e) => Ok(args_err(&e)),
     }
-
 }
 
 #[rig_tool(
@@ -290,8 +311,10 @@ pub async fn arxiv_trending(arxiv_id: String, token: String) -> Result<String, r
         token = "Optional API token (free papers PMC544940, PMC514704 don't need it)",
     )
 )]
-pub async fn pmc_metadata(pmc_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
-
+pub async fn pmc_metadata(
+    pmc_id: String,
+    token: String,
+) -> Result<String, rig_core::tool::ToolError> {
     let id = pmc_id.clone();
     if id.is_empty() {
         return Ok(args_err("pmc_id is required"));
@@ -304,19 +327,14 @@ pub async fn pmc_metadata(pmc_id: String, token: String) -> Result<String, rig_c
         Ok(v) => Ok(v.to_string()),
         Err(e) => Ok(args_err(&e)),
     }
-
 }
 
 #[rig_tool(
     name = "pmc_json",
     description = "获取 PubMed Central (PMC) 论文的完整 JSON（含全文内容和元数据）。",
-    params(
-        pmc_id = "PMC paper ID, e.g. PMC514704",
-        token = "Optional API token",
-    )
+    params(pmc_id = "PMC paper ID, e.g. PMC514704", token = "Optional API token",)
 )]
 pub async fn pmc_json(pmc_id: String, token: String) -> Result<String, rig_core::tool::ToolError> {
-
     let id = pmc_id.clone();
     if id.is_empty() {
         return Ok(args_err("pmc_id is required"));
@@ -329,6 +347,4 @@ pub async fn pmc_json(pmc_id: String, token: String) -> Result<String, rig_core:
         Ok(v) => Ok(v.to_string()),
         Err(e) => Ok(args_err(&e)),
     }
-
 }
-

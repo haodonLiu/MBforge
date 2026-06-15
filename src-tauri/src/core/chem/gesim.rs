@@ -19,8 +19,8 @@
 //!     → similarity = 1 - QJS  (optionally logistic-scaled)
 //! ```
 
-use chematic_core::molecule::{AtomIdx, Molecule};
 use chematic_core::implicit_hcount;
+use chematic_core::molecule::{AtomIdx, Molecule};
 
 // =============================================================================
 //  Constants (matching original)
@@ -67,10 +67,7 @@ pub fn similarity(mol1: &Molecule, mol2: &Molecule) -> f64 {
 /// - `mapping1[i] = None` means atom i in mol1 has no match in mol2
 ///
 /// Reference: `graph_entropy.hpp::align_match()` in the original GESim.
-pub fn match_mapping(
-    mol1: &Molecule,
-    mol2: &Molecule,
-) -> (Vec<Option<usize>>, Vec<Option<usize>>) {
+pub fn match_mapping(mol1: &Molecule, mol2: &Molecule) -> (Vec<Option<usize>>, Vec<Option<usize>>) {
     let n1 = mol1.atom_count();
     let n2 = mol2.atom_count();
 
@@ -422,7 +419,11 @@ mod tests {
         // vol = 12, p = 0.25, SI = -4 * 0.25 * ln(0.25) = ln(4) ≈ 1.386
         let deg = vec![3.0, 3.0, 3.0, 3.0];
         let si = comp_si_from_degrees(&deg);
-        assert!((si - 1.386294).abs() < 1e-4, "SI of K4 should be ~1.386, got {}", si);
+        assert!(
+            (si - 1.386294).abs() < 1e-4,
+            "SI of K4 should be ~1.386, got {}",
+            si
+        );
     }
 
     #[test]

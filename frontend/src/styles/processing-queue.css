@@ -1,4 +1,4 @@
-﻿/* ProcessingQueue — 处理队列独立页面
+/* ProcessingQueue — 处理队列独立页面
  * sticky header (filter chips + stats) + 按状态优先级排序的卡片列表
  */
 
@@ -62,6 +62,7 @@
 .processing-queue-stat.is-pending { color: var(--warn); border-color: var(--warn); }
 .processing-queue-stat.is-done { color: var(--text-mute); }
 .processing-queue-stat.is-cancelled { color: var(--text-mute); opacity: 0.7; }
+.processing-queue-stat.is-throughput { color: var(--ok); border-color: var(--ok); }
 
 /* Filter chips — segmented control */
 .processing-queue-filters {

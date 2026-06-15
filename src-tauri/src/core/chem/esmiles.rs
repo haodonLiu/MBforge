@@ -72,17 +72,26 @@ pub enum EsTag {
 impl EsTag {
     /// 创建原子标签
     pub fn atom(index: usize, group: impl Into<String>) -> Self {
-        EsTag::Atom { index, group: group.into() }
+        EsTag::Atom {
+            index,
+            group: group.into(),
+        }
     }
 
     /// 创建环标签
     pub fn ring(index: usize, group: impl Into<String>) -> Self {
-        EsTag::Ring { index, group: group.into() }
+        EsTag::Ring {
+            index,
+            group: group.into(),
+        }
     }
 
     /// 创建抽象环标签
     pub fn circle(index: usize, name: impl Into<String>) -> Self {
-        EsTag::Circle { index, name: name.into() }
+        EsTag::Circle {
+            index,
+            name: name.into(),
+        }
     }
 
     /// 序列化为 E-SMILES 标签字符串
@@ -258,8 +267,14 @@ fn parse_tag_content(tag_type: u8, content: &str) -> Option<EsTag> {
     let value = content[colon + 1..].to_string();
 
     match tag_type {
-        b'a' => Some(EsTag::Atom { index, group: value }),
-        b'r' => Some(EsTag::Ring { index, group: value }),
+        b'a' => Some(EsTag::Atom {
+            index,
+            group: value,
+        }),
+        b'r' => Some(EsTag::Ring {
+            index,
+            group: value,
+        }),
         b'c' => Some(EsTag::Circle { index, name: value }),
         _ => None,
     }
@@ -283,10 +298,7 @@ mod tests {
 
     #[test]
     fn test_smiles_to_esmiles_multiple_tags() {
-        let result = smiles_to_esmiles(
-            "CC(=O)O",
-            &[EsTag::atom(0, "R1"), EsTag::ring(0, "R2")],
-        );
+        let result = smiles_to_esmiles("CC(=O)O", &[EsTag::atom(0, "R1"), EsTag::ring(0, "R2")]);
         assert_eq!(result, "CC(=O)O<sep><a>0:R1</a><r>0:R2</r>");
     }
 
@@ -298,21 +310,20 @@ mod tests {
 
     #[test]
     fn test_smiles_with_rgroups_to_esmiles() {
-        let result = smiles_with_rgroups_to_esmiles(
-            "*c1ccccc1",
-            &["R[1]".into()],
-        );
+        let result = smiles_with_rgroups_to_esmiles("*c1ccccc1", &["R[1]".into()]);
         assert_eq!(result, "*c1ccccc1<sep><a>0:R[1]</a>");
     }
 
     #[test]
     fn test_smiles_with_rgroups_two_wildcards() {
-        let result = smiles_with_rgroups_to_esmiles(
-            "*c1ccc(*)cc1",
-            &["R[1]".into(), "R[2]".into()],
-        );
+        let result =
+            smiles_with_rgroups_to_esmiles("*c1ccc(*)cc1", &["R[1]".into(), "R[2]".into()]);
         // 验证两个 R-group 标签都存在，不硬编码 index（依赖 chematic 解析顺序）
-        assert!(result.contains("<a>0:R[1]</a>"), "missing R[1] tag in: {}", result);
+        assert!(
+            result.contains("<a>0:R[1]</a>"),
+            "missing R[1] tag in: {}",
+            result
+        );
         assert!(result.contains("R[2]"), "missing R[2] tag in: {}", result);
         assert!(result.starts_with("*c1ccc(*)cc1<sep>"));
     }
@@ -347,9 +358,7 @@ mod tests {
 
     #[test]
     fn test_parse_esmiles_tags_multiple() {
-        let (smiles, tags) = parse_esmiles_tags(
-            "CC(=O)O<sep><a>0:R1</a><r>0:R2</r><c>0:B</c>",
-        );
+        let (smiles, tags) = parse_esmiles_tags("CC(=O)O<sep><a>0:R1</a><r>0:R2</r><c>0:B</c>");
         assert_eq!(smiles, "CC(=O)O");
         assert_eq!(tags.len(), 3);
         assert_eq!(tags[0], EsTag::atom(0, "R1"));

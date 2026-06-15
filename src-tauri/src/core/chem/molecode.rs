@@ -36,10 +36,10 @@
 
 use std::collections::HashMap;
 
+use chematic_chem::cip::assign_cip;
 use chematic_core::atom::CipCode;
 use chematic_core::bond::BondOrder;
 use chematic_core::{implicit_hcount, kekulize};
-use chematic_chem::cip::assign_cip;
 use chematic_smiles::parse;
 
 use crate::core::chem::esmiles::{normalize_wildcards, parse_esmiles_tags, EsTag};
@@ -371,11 +371,9 @@ mod tests {
 
     #[test]
     fn test_esmiles_multiple_abbrevs() {
-        let result = esmiles_to_molecode(
-            "*c1ccc(*)cc1<sep><a>0:R[1]</a><a>5:R[2]</a>",
-            "Benzene_R",
-        )
-        .unwrap();
+        let result =
+            esmiles_to_molecode("*c1ccc(*)cc1<sep><a>0:R[1]</a><a>5:R[2]</a>", "Benzene_R")
+                .unwrap();
         assert!(result.mermaid.contains("{R[1]}"));
         assert!(result.mermaid.contains("{R[2]}"));
     }

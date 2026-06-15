@@ -8,6 +8,8 @@ import datetime
 import json
 from json import encoder
 
+from mbforge.utils.logger import get_logger
+logger = get_logger(__name__)
 
 FORMAT_INFO = {
     "inchi": {
@@ -128,9 +130,9 @@ def timeSince(since, percent):
 def print_rank_0(message):
     if torch.distributed.is_initialized():
         if torch.distributed.get_rank() == 0:
-            print(message, flush=True)
+            logger.info(message)
     else:
-        print(message, flush=True)
+        logger.info(message)
 
 
 def to_device(data, device):

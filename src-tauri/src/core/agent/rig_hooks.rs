@@ -94,29 +94,27 @@ impl AuditLogHook {
         // raw `Value::String` so a malformed payload is still captured.
         let args_value: Value =
             serde_json::from_str(args).unwrap_or(Value::String(args.to_string()));
-        let _ = self.audit.append_tool_call(
-            &self.trace_id,
-            None,
-            tool_name,
-            &args_value,
-            0,
-        );
+        let _ = self
+            .audit
+            .append_tool_call(&self.trace_id, None, tool_name, &args_value, 0);
         // Stash the tool result string on a sibling entry so an offline
         // auditor can see the body without re-running the tool. Kept as a
         // second append rather than threading the result through
         // `append_tool_call` to avoid changing that signature.
-        let _ = self.audit.append(&crate::core::agent::observability::AuditEntry {
-            trace_id: self.trace_id.clone(),
-            span_id: None,
-            timestamp: 0.0,
-            action: "tool_result".to_string(),
-            details: serde_json::json!({
-                "tool": tool_name,
-                "result": result,
-            }),
-            tokens_used: 0,
-            duration_ms: 0,
-        });
+        let _ = self
+            .audit
+            .append(&crate::core::agent::observability::AuditEntry {
+                trace_id: self.trace_id.clone(),
+                span_id: None,
+                timestamp: 0.0,
+                action: "tool_result".to_string(),
+                details: serde_json::json!({
+                    "tool": tool_name,
+                    "result": result,
+                }),
+                tokens_used: 0,
+                duration_ms: 0,
+            });
     }
 }
 

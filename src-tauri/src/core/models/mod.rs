@@ -13,8 +13,8 @@ pub mod status;
 #[allow(unused_imports)]
 pub use catalog::*;
 #[allow(unused_imports)]
-pub use download::{download_model, DownloadProgress, DownloadError};
+pub use download::{download_model, DownloadError, DownloadProgress};
 #[allow(unused_imports)]
 pub use resolve::{check_resource, get_model_path};
 #[allow(unused_imports)]
-pub use status::{check_all, write_resolved_paths, catalog_json};
+pub use status::{catalog_json, check_all, write_resolved_paths};

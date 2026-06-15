@@ -11,6 +11,9 @@ rdkit.RDLogger.DisableLog('rdApp.*')
 
 import re as _re
 
+from mbforge.utils.logger import get_logger
+logger = get_logger(__name__)
+
 def atomwise_tokenizer(smiles):
     """Minimal SMILES tokenizer (replaces SmilesPE for inference)."""
     pattern = r'(\[[^\]]+\]|Br|Cl|Si|Se|Li|Na|Ca|Fe|Zn|Cu|Mn|Co|Ni|Pt|Pd|Sn|Pb|Bi|Te|As|Sb|[\#=\+\\/@%\-\(\)\[\]\\\.0-9]|[A-Z][a-z]?)'
@@ -37,8 +40,6 @@ def _convert_smiles_to_inchi(smiles):
         mol = Chem.MolFromSmiles(smiles)
         inchi = Chem.MolToInchi(mol)
     except Exception:
-        # TODO-AUDIT: bare except — swallows SystemExit/KeyboardInterrupt; RDKit-only so
-        # Exception is technically safe here but considered bad practice.
         inchi = None
     return inchi
 
@@ -66,7 +67,6 @@ def _get_num_atoms(smiles):
     try:
         return Chem.MolFromSmiles(smiles).GetNumAtoms()
     except Exception:
-        # TODO-AUDIT: bare except — silently returns 0 for malformed SMILES.
         return 0
 
 
@@ -524,7 +524,7 @@ def _convert_graph_to_smiles(coords, symbols, edges, image=None, debug=False):
             try:  # try to get SMILES of atom
                 atom = Chem.AtomFromSmiles(symbols[i])
                 atom.SetChiralTag(Chem.rdchem.ChiralType.CHI_UNSPECIFIED)
-            except:  # otherwise, abbreviation or condensed formula
+            except Exception:  # abbreviation or condensed formula
                 atom = Chem.Atom("*")
                 Chem.SetAtomAlias(atom, symbol)
 
@@ -568,7 +568,7 @@ def _convert_graph_to_smiles(coords, symbols, edges, image=None, debug=False):
         success = True
     except Exception as e:
         if debug:
-            print(traceback.format_exc())
+            logger.debug(traceback.format_exc())
         pred_molblock = ''
         success = False
 
@@ -605,7 +605,7 @@ def _keep_main_molecule(smiles, debug=False):
             smiles = Chem.MolToSmiles(main_mol)
     except Exception as e:
         if debug:
-            print(traceback.format_exc())
+            logger.debug(traceback.format_exc())
     return smiles
 
 

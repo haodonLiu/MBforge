@@ -18,7 +18,9 @@ pub async fn native_search_knowledge_base(
     query: &str,
     top_k: usize,
 ) -> Result<Vec<serde_json::Value>, String> {
-    let (results, _) = crate::core::document::knowledge_base::search_with_cache(root, query, top_k).await.map_err(|e| e.to_string())?;
+    let (results, _) = crate::core::document::knowledge_base::search_with_cache(root, query, top_k)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(results)
 }
 
@@ -26,7 +28,8 @@ pub fn native_get_document_structure(
     root: &str,
     doc_id: &str,
 ) -> Result<Option<Vec<crate::parsers::structure::sections::TreeNode>>, String> {
-    let kb = crate::core::document::knowledge_base::get_or_init_kb(root).map_err(|e| e.to_string())?;
+    let kb =
+        crate::core::document::knowledge_base::get_or_init_kb(root).map_err(|e| e.to_string())?;
     Ok(kb.get_structure(doc_id))
 }
 
@@ -35,6 +38,7 @@ pub fn native_get_document_pages(
     doc_id: &str,
     pages: &str,
 ) -> Result<Vec<crate::core::document::knowledge_base::PageContent>, String> {
-    let kb = crate::core::document::knowledge_base::get_or_init_kb(root).map_err(|e| e.to_string())?;
+    let kb =
+        crate::core::document::knowledge_base::get_or_init_kb(root).map_err(|e| e.to_string())?;
     Ok(kb.get_pages(doc_id, pages))
 }

@@ -29,9 +29,8 @@ use crate::core::constants::sidecar_url;
 pub trait MbforgeConversationMemory: Send + Sync {
     /// Long-term memory text to prepend to the system prompt. May be empty
     /// if no memory has been recorded yet.
-    fn inject_into_system_prompt<'a>(
-        &'a self,
-    ) -> Pin<Box<dyn Future<Output = String> + Send + 'a>>;
+    fn inject_into_system_prompt<'a>(&'a self)
+        -> Pin<Box<dyn Future<Output = String> + Send + 'a>>;
 
     /// Observe a completed turn for background extraction. The
     /// implementation decides what (if anything) to persist; the rig loop
@@ -109,10 +108,7 @@ impl MbforgeConversationMemory for MemoryManagerMemory {
             // 2-turn conversation: [user "", assistant <output>]. If the
             // assistant output is empty there is nothing to extract and
             // the call short-circuits inside `extract_from_conversation`.
-            let messages = vec![
-                Message::user(""),
-                Message::assistant(assistant_output),
-            ];
+            let messages = vec![Message::user(""), Message::assistant(assistant_output)];
             let url = sidecar_url();
             // Hold the lock across the await — the underlying
             // `extract_from_conversation` mutates the cache.
@@ -127,11 +123,7 @@ impl MbforgeConversationMemory for MemoryManagerMemory {
         // async extraction is mid-flight we just report 0 for this call.
         // `tokio::sync::TryLockError` has no `into_inner` (no poison), so
         // we map both busy and poisoned cases to 0.
-        let count = self
-            .manager
-            .try_lock()
-            .map(|g| g.count())
-            .unwrap_or(0);
+        let count = self.manager.try_lock().map(|g| g.count()).unwrap_or(0);
         format!("memory items: {}", count)
     }
 }

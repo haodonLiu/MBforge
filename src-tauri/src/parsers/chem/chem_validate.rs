@@ -100,11 +100,7 @@ pub fn separate_esmiles_layers(raw: &str) -> (String, Option<String>, Option<ser
         .filter_map(|m| {
             let tag_str = m.as_str();
             // 解析 <c>1:R1</c> → ("c", "R1") 或更精确地提取编号和值
-            let inner = tag_str
-                .split('>')
-                .nth(1)?
-                .split('<')
-                .next()?;
+            let inner = tag_str.split('>').nth(1)?.split('<').next()?;
             let parts: Vec<&str> = inner.splitn(2, ':').collect();
             if parts.len() == 2 {
                 Some((format!("tag_{}", parts[0]), parts[1].to_string()))

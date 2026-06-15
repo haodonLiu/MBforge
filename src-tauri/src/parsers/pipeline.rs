@@ -22,9 +22,8 @@ use merge::{enhance_patent_data, merge_partial_results, run_merge_and_sar};
 
 // Re-export for commands/pdf.rs and other modules
 pub use extract::{
-    ClassifyResult, WorkflowResult, extract_pdf_workflow, find_project_root,
-    classify_and_extract, QuickMoldetDocResult, quick_moldet_scan_pdf,
-    extract_molecules_from_pdf,
+    classify_and_extract, extract_molecules_from_pdf, extract_pdf_workflow, find_project_root,
+    quick_moldet_scan_pdf, ClassifyResult, QuickMoldetDocResult, WorkflowResult,
 };
 
 // ============================================================================
@@ -85,10 +84,7 @@ impl PipelineOutput {
     }
 
     /// Helper: 包装 InMemory 输出
-    pub fn from_in_memory(
-        report: DocumentReport,
-        event_id: String,
-    ) -> Self {
+    pub fn from_in_memory(report: DocumentReport, event_id: String) -> Self {
         let lit_reviewed = report.lit_reviewed;
         Self::InMemory {
             report,
@@ -112,7 +108,6 @@ impl PipelineOutput {
         }
     }
 }
-
 
 impl From<DocProcessingContext> for PdfParseResult {
     fn from(ctx: DocProcessingContext) -> Self {
@@ -187,8 +182,9 @@ pub async fn parse_pdf(
             (result.markdown, 0)
         }
         "llama_parse" => {
-            let pdf_bytes =
-                tokio::fs::read(&path).await.map_err(|e| format!("Failed to read PDF: {}", e))?;
+            let pdf_bytes = tokio::fs::read(&path)
+                .await
+                .map_err(|e| format!("Failed to read PDF: {}", e))?;
             let result = super::pdf::llama_parse::parse_with_llamaparse_sync(
                 &crate::core::constants::sidecar_url(),
                 pdf_bytes,
@@ -237,7 +233,8 @@ pub async fn parse_pdf(
 
     // Stage 3: Section-based chunking (PageIndex)
     let headings = super::structure::sections::extract_headings(&content);
-    let sections = super::structure::sections::build_sections(&content, &headings, None, chunk_size);
+    let sections =
+        super::structure::sections::build_sections(&content, &headings, None, chunk_size);
     let chunks: Vec<String> = sections.iter().map(|s| s.text.clone()).collect();
 
     // Stage 4: Molecule extraction (text regex)
@@ -358,9 +355,9 @@ async fn review_with_lit_agent(
         Ok(cfg) => {
             use rig_core::memory::InMemoryConversationMemory;
             let memory = std::sync::Arc::new(
-                crate::core::agent::managed_memory::MbforgeManagedMemory::new(
-                    std::sync::Arc::new(InMemoryConversationMemory::new()),
-                ),
+                crate::core::agent::managed_memory::MbforgeManagedMemory::new(std::sync::Arc::new(
+                    InMemoryConversationMemory::new(),
+                )),
             );
             match MbforgeAgent::from_config(
                 &cfg,
@@ -464,22 +461,28 @@ pub async fn process_document(
                         log::info!("File cache HIT for: {}", path);
                         // 从缓存恢复上下文
                         ctx.raw_text = cached.text;
-                        ctx.parser_used = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
-                            .ok()
-                            .and_then(|m| m.get("parser").and_then(|p| p.as_str()).map(String::from))
-                            .unwrap_or_else(|| "cached".into());
-                        ctx.page_count = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
-                            .ok()
-                            .and_then(|m| m.get("page_count").and_then(|p| p.as_u64()))
-                            .unwrap_or(0) as usize;
-                        ctx.images = serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
-                            .ok()
-                            .and_then(|m| m.get("images").cloned())
-                            .and_then(|v| serde_json::from_value(v).ok())
-                            .unwrap_or_default();
-                        ctx.headings = crate::parsers::structure::sections::extract_headings(&ctx.raw_text);
-                        ctx.sections = serde_json::from_str(&cached.sections_json)
-                            .unwrap_or_default();
+                        ctx.parser_used =
+                            serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
+                                .ok()
+                                .and_then(|m| {
+                                    m.get("parser").and_then(|p| p.as_str()).map(String::from)
+                                })
+                                .unwrap_or_else(|| "cached".into());
+                        ctx.page_count =
+                            serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
+                                .ok()
+                                .and_then(|m| m.get("page_count").and_then(|p| p.as_u64()))
+                                .unwrap_or(0) as usize;
+                        ctx.images =
+                            serde_json::from_str::<serde_json::Value>(&cached.metadata_json)
+                                .ok()
+                                .and_then(|m| m.get("images").cloned())
+                                .and_then(|v| serde_json::from_value(v).ok())
+                                .unwrap_or_default();
+                        ctx.headings =
+                            crate::parsers::structure::sections::extract_headings(&ctx.raw_text);
+                        ctx.sections =
+                            serde_json::from_str(&cached.sections_json).unwrap_or_default();
                         cache_hit = true;
                     }
                     Ok(None) => {
@@ -501,13 +504,17 @@ pub async fn process_document(
 
             // Stage 0.5: Build sections
             ctx.headings = crate::parsers::structure::sections::extract_headings(&ctx.raw_text);
-            ctx.sections =
-                crate::parsers::structure::sections::build_sections(&ctx.raw_text, &ctx.headings, None, 8000);
+            ctx.sections = crate::parsers::structure::sections::build_sections(
+                &ctx.raw_text,
+                &ctx.headings,
+                None,
+                8000,
+            );
             // Stage 0.55: 文档结构树（heading 嵌套） — 走公开 `build_tree`，
             // 供 KB 索引 / Agent 工具 `get_document_structure` 直接消费。
-            ctx.document_tree = Some(
-                crate::parsers::structure::sections::build_tree(&ctx.sections),
-            );
+            ctx.document_tree = Some(crate::parsers::structure::sections::build_tree(
+                &ctx.sections,
+            ));
 
             // Stage 0.6: 关键词与实体提取（来自 src/mbforge/core/summarizer.py 的端口，
             // 之前只在 Python 侧用，迁到 Rust 后未挂到 pipeline）。结果先以 stage log
@@ -531,7 +538,9 @@ pub async fn process_document(
 
             // 写入文件缓存
             if let Some(root) = find_project_root(file_path, project_root.as_deref()) {
-                if let Ok(kb) = crate::core::document::get_or_init_kb(root.to_string_lossy().as_ref()) {
+                if let Ok(kb) =
+                    crate::core::document::get_or_init_kb(root.to_string_lossy().as_ref())
+                {
                     let sections_json = serde_json::to_string(&ctx.sections).unwrap_or_default();
                     let meta_json = serde_json::to_string(&serde_json::json!({
                         "parser": ctx.parser_used,
@@ -539,7 +548,10 @@ pub async fn process_document(
                         "images": ctx.images,
                     }))
                     .unwrap_or_default();
-                    if let Err(e) = kb.file_cache().put(file_path, &ctx.raw_text, &sections_json, &meta_json) {
+                    if let Err(e) =
+                        kb.file_cache()
+                            .put(file_path, &ctx.raw_text, &sections_json, &meta_json)
+                    {
                         log::warn!("File cache write failed: {}", e);
                     }
                 }
@@ -700,7 +712,8 @@ pub async fn process_document(
     });
 
     // ===== Stage 2a: 专利命名化合物提取（仅专利文档）=====
-    let mut molecule_traces: Vec<crate::parsers::chem::molecule_extractor::MoleculeTrace> = Vec::new();
+    let mut molecule_traces: Vec<crate::parsers::chem::molecule_extractor::MoleculeTrace> =
+        Vec::new();
     let mut claim_graph: Option<crate::parsers::chem::claim_parser::ClaimDependencyGraph> = None;
 
     if doc_structure.doc_type == "patent" {
@@ -758,7 +771,8 @@ pub async fn process_document(
     // ===== Stage 2b: VLM 化学结构识别 =====
     let vlm_config = crate::parsers::chem::vlm_chem::VlmConfig::default();
     let vlm_esmiles_found: usize;
-    let mut vlm_results: Vec<(String, crate::parsers::chem::vlm_chem::ChemImageResult)> = Vec::new();
+    let mut vlm_results: Vec<(String, crate::parsers::chem::vlm_chem::ChemImageResult)> =
+        Vec::new();
 
     // 解析图片的完整路径（优先使用持久化后的 rel_path）
     let project_root = extract::find_project_root(&ctx.source_path, project_root.as_deref());
@@ -788,16 +802,14 @@ pub async fn process_document(
             images: ctx.images.clone(),
             ocr_blocks: vec![],
         };
-        match extract_molecules_from_pdf(
-            &path,
-            &classified_for_mol,
-            &vlm_config.sidecar_url,
-            root,
-        )
-        .await
+        match extract_molecules_from_pdf(&path, &classified_for_mol, &vlm_config.sidecar_url, root)
+            .await
         {
             Ok(detected) if !detected.is_empty() => {
-                let mut file_results: Vec<(String, crate::parsers::chem::vlm_chem::ChemImageResult)> = Vec::new();
+                let mut file_results: Vec<(
+                    String,
+                    crate::parsers::chem::vlm_chem::ChemImageResult,
+                )> = Vec::new();
                 for mol in detected.iter() {
                     file_results.push((
                         std::path::Path::new(&mol.crop_path)
@@ -856,7 +868,7 @@ pub async fn process_document(
     // ===== Stage 2c: VLM 图片描述（非化学结构图） =====
     if !ctx.images.is_empty() {
         if let Some(ref root) = project_root {
-             let mut cache = crate::parsers::chem::vlm_chem::ImageCaptionCache::new(root);
+            let mut cache = crate::parsers::chem::vlm_chem::ImageCaptionCache::new(root);
             let prompt = "请详细描述这张科学文献图片的内容。如果是图表，请说明其中的关键数据和趋势；如果是分子结构图，请描述其骨架特征和官能团；如果是实验流程图，请概述主要步骤。用中文回答，不超过100字。";
 
             for img in ctx.images.iter_mut() {
@@ -882,7 +894,11 @@ pub async fn process_document(
                         img.description = Some(caption);
                     }
                     Err(e) => {
-                        log::warn!("[process_document] Image caption failed for {}: {}", img.filename, e);
+                        log::warn!(
+                            "[process_document] Image caption failed for {}: {}",
+                            img.filename,
+                            e
+                        );
                     }
                 }
             }
@@ -955,15 +971,16 @@ pub async fn process_document(
             .collect();
 
         if !esmiles_to_validate.is_empty() {
-            let validate_results = crate::parsers::chem::chem_validate::validate_smiles_batch(
-                &esmiles_to_validate,
-            );
+            let validate_results =
+                crate::parsers::chem::chem_validate::validate_smiles_batch(&esmiles_to_validate);
 
             let mut validated_count = 0usize;
             let mut invalid_count = 0usize;
 
             for compound in final_data.compounds.iter_mut() {
-                let Some(ref esmiles) = compound.esmiles else { continue };
+                let Some(ref esmiles) = compound.esmiles else {
+                    continue;
+                };
                 let Some((_, result)) = validate_results.iter().find(|(s, _)| s == esmiles) else {
                     continue;
                 };
@@ -988,10 +1005,8 @@ pub async fn process_document(
                         .iter()
                         .map(|i| format!("[{}] {}", i.code, i.message))
                         .collect();
-                    compound.uncertainty_reason = Some(format!(
-                        "化学结构验证失败: {}",
-                        issue_msgs.join("; ")
-                    ));
+                    compound.uncertainty_reason =
+                        Some(format!("化学结构验证失败: {}", issue_msgs.join("; ")));
                 }
             }
 
@@ -1030,7 +1045,8 @@ pub async fn process_document(
     }
 
     // ===== Stage 4: 报告生成 =====
-    let report_md = crate::parsers::structure::report::generate_full_report(&final_data, Some(&sar_analysis));
+    let report_md =
+        crate::parsers::structure::report::generate_full_report(&final_data, Some(&sar_analysis));
 
     let mut report = DocumentReport {
         metadata: final_data.metadata.clone(),
@@ -1058,7 +1074,9 @@ pub async fn process_document(
     // 阻塞模式 + 30s timeout；失败降级 — 不阻断 Stage 4.5 持久化
     review_with_lit_agent(
         &mut report,
-        project_root.as_deref().and_then(|s| std::path::Path::new(s).parent()),
+        project_root
+            .as_deref()
+            .and_then(|s| std::path::Path::new(s).parent()),
     )
     .await;
 
@@ -1067,7 +1085,10 @@ pub async fn process_document(
         let source_doc = final_data.metadata.source_file.as_deref().unwrap_or(&path);
         let source_type = &doc_structure.doc_type;
 
-        if let Some(root) = find_project_root(&ctx.source_path, project_root.as_ref().and_then(|s| s.to_str())) {
+        if let Some(root) = find_project_root(
+            &ctx.source_path,
+            project_root.as_ref().and_then(|s| s.to_str()),
+        ) {
             let mut records: Vec<MoleculeRecord> = Vec::new();
             let mut skipped = 0usize;
 
@@ -1143,7 +1164,11 @@ pub async fn process_document(
     // 最终结果发射
     let _ = app.emit(EVT_DOC_RESULT, &report);
 
-    log::info!("[process_document] completed: path={}, compounds={}", path, report.compounds.len());
+    log::info!(
+        "[process_document] completed: path={}, compounds={}",
+        path,
+        report.compounds.len()
+    );
 
     // 注：[方案 1] 包装 PipelineOutput::InMemory 在 Rust 内部调用者
     // （tests, future REST API）有用；但 Tauri command 保持 () 返回以兼容
@@ -1175,8 +1200,11 @@ pub async fn index_project_rust(
 ) -> Result<IndexResult, String> {
     let project_root = std::path::PathBuf::from(&root);
     let config = crate::core::config::AppConfig::load();
-    let kb = crate::core::document::knowledge_base::KnowledgeBase::new(&project_root, Some(&config.embed))
-        .map_err(|e| format!("KB init failed: {}", e))?;
+    let kb = crate::core::document::knowledge_base::KnowledgeBase::new(
+        &project_root,
+        Some(&config.embed),
+    )
+    .map_err(|e| format!("KB init failed: {}", e))?;
 
     // 扫描 PDF 文件
     let mut pdf_files: Vec<std::path::PathBuf> = Vec::new();
@@ -1201,7 +1229,10 @@ pub async fn index_project_rust(
 
     // Phase 1: 并行提取（I/O 密集：MinerU OCR、LiteParse 截图、MolDet 检测）
     // 缓存命中的直接处理，未命中的并行 extract
-    let mut cache_hits: Vec<(std::path::PathBuf, Vec<crate::parsers::structure::sections::SectionChunk>)> = Vec::new();
+    let mut cache_hits: Vec<(
+        std::path::PathBuf,
+        Vec<crate::parsers::structure::sections::SectionChunk>,
+    )> = Vec::new();
     let mut to_extract: Vec<(usize, std::path::PathBuf)> = Vec::new();
 
     for (i, pdf_path) in pdf_files.iter().enumerate() {
@@ -1213,8 +1244,10 @@ pub async fn index_project_rust(
         let cached_sections = match kb.file_cache().get(pdf_path) {
             Ok(Some(cached)) => {
                 log::info!("Batch index: cache HIT for {}", filename);
-                serde_json::from_str::<Vec<crate::parsers::structure::sections::SectionChunk>>(&cached.sections_json)
-                    .ok()
+                serde_json::from_str::<Vec<crate::parsers::structure::sections::SectionChunk>>(
+                    &cached.sections_json,
+                )
+                .ok()
             }
             _ => None,
         };
@@ -1236,7 +1269,10 @@ pub async fn index_project_rust(
                 cache_skipped += 1;
             }
             Err(e) => {
-                let filename = pdf_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                let filename = pdf_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
                 errors.push(format!("{}: {}", filename, e));
             }
         }
@@ -1263,12 +1299,16 @@ pub async fn index_project_rust(
             );
             async move {
                 let classified = classify_and_extract(&path_str, true).await?;
-                let detected = extract_molecules_from_pdf(
-                    &path_str, &classified, &sidecar, &root,
-                ).await.unwrap_or_else(|e| {
-                    log::warn!("[index_project] Molecule extraction failed for {}: {}", filename, e);
-                    vec![]
-                });
+                let detected = extract_molecules_from_pdf(&path_str, &classified, &sidecar, &root)
+                    .await
+                    .unwrap_or_else(|e| {
+                        log::warn!(
+                            "[index_project] Molecule extraction failed for {}: {}",
+                            filename,
+                            e
+                        );
+                        vec![]
+                    });
                 Ok::<_, String>((pdf_path, classified, detected, filename))
             }
         })
@@ -1281,9 +1321,13 @@ pub async fn index_project_rust(
         match result {
             Ok((pdf_path, classified, detected, filename)) => {
                 let doc_id = uuid::Uuid::new_v4().to_string();
-                let headings = crate::parsers::structure::sections::extract_headings(&classified.text);
+                let headings =
+                    crate::parsers::structure::sections::extract_headings(&classified.text);
                 let sections = crate::parsers::structure::sections::build_sections(
-                    &classified.text, &headings, None, 8000,
+                    &classified.text,
+                    &headings,
+                    None,
+                    8000,
                 );
                 total_sections += sections.len();
 
@@ -1293,14 +1337,22 @@ pub async fn index_project_rust(
                     "parser": classified.parser,
                     "page_count": classified.page_count,
                     "images": classified.images,
-                })).unwrap_or_default();
-                if let Err(e) = kb.file_cache().put(&pdf_path, &classified.text, &sections_json, &meta_json) {
+                }))
+                .unwrap_or_default();
+                if let Err(e) =
+                    kb.file_cache()
+                        .put(&pdf_path, &classified.text, &sections_json, &meta_json)
+                {
                     log::warn!("File cache write failed for {}: {}", filename, e);
                 }
 
                 match kb.index_document(&doc_id, &sections, &[]) {
-                    Ok(_) => { indexed += 1; }
-                    Err(e) => { errors.push(format!("{}: {}", filename, e)); }
+                    Ok(_) => {
+                        indexed += 1;
+                    }
+                    Err(e) => {
+                        errors.push(format!("{}: {}", filename, e));
+                    }
                 }
 
                 // 持久化分子图像提取结果
@@ -1309,7 +1361,9 @@ pub async fn index_project_rust(
                         let mut saved = 0usize;
                         for mol in &detected {
                             let (clean_smiles, esmiles_opt, semantic_tags) =
-                                crate::parsers::chem::chem_validate::separate_esmiles_layers(&mol.esmiles);
+                                crate::parsers::chem::chem_validate::separate_esmiles_layers(
+                                    &mol.esmiles,
+                                );
                             let mol_id = crate::core::helpers::generate_uuid();
                             let record = MoleculeRecord {
                                 mol_id: mol_id.clone(),
@@ -1335,7 +1389,11 @@ pub async fn index_project_rust(
                                 vlm_confidence: mol.confidence,
                             };
                             if let Err(e) = db.add_molecule(&record) {
-                                log::warn!("[index_project] Failed to add molecule {}: {}", mol_id, e);
+                                log::warn!(
+                                    "[index_project] Failed to add molecule {}: {}",
+                                    mol_id,
+                                    e
+                                );
                             } else {
                                 let img = MoleculeImage {
                                     image_id: crate::core::helpers::generate_uuid(),
@@ -1348,13 +1406,21 @@ pub async fn index_project_rust(
                                     created_at: None,
                                 };
                                 if let Err(e) = db.add_molecule_image(&img) {
-                                    log::warn!("[index_project] Failed to add molecule image: {}", e);
+                                    log::warn!(
+                                        "[index_project] Failed to add molecule image: {}",
+                                        e
+                                    );
                                 } else {
                                     saved += 1;
                                 }
                             }
                         }
-                        log::info!("[index_project] Saved {}/{} image-extracted molecules from {}", saved, detected.len(), filename);
+                        log::info!(
+                            "[index_project] Saved {}/{} image-extracted molecules from {}",
+                            saved,
+                            detected.len(),
+                            filename
+                        );
                     }
                 }
             }
@@ -1366,12 +1432,8 @@ pub async fn index_project_rust(
 
     // 注：[方案 1] 在 Rust 内部调用者用 PipelineOutput::from_indexed，
     // 但 Tauri command 保持 IndexResult 返回以兼容前端 kb.ts。
-    let _pipeline = PipelineOutput::from_indexed(
-        indexed,
-        total_sections,
-        cache_skipped,
-        errors.clone(),
-    );
+    let _pipeline =
+        PipelineOutput::from_indexed(indexed, total_sections, cache_skipped, errors.clone());
     Ok(IndexResult {
         indexed,
         sections: total_sections,
@@ -1645,8 +1707,9 @@ mod tests {
 
         for (name, path) in [("US", us_pdf), ("CN", cn_pdf)] {
             let tmp = tempfile::tempdir().unwrap();
-            let extracted = crate::parsers::pdf::images::extract_images_from_pdf(path, tmp.path(), 50, 5)
-                .unwrap_or_default();
+            let extracted =
+                crate::parsers::pdf::images::extract_images_from_pdf(path, tmp.path(), 50, 5)
+                    .unwrap_or_default();
             println!(
                 "[DIAG] {} patent: extracted {} images (max 50, max 5MB each)",
                 name,
@@ -1693,7 +1756,11 @@ mod tests {
                 let md = pdf_result.markdown.unwrap_or_default();
                 let page_count = pdf_result.page_count as usize;
 
-                println!("[DIAG] pdf_inspector: text_len={}, page_count={}", md.len(), page_count);
+                println!(
+                    "[DIAG] pdf_inspector: text_len={}, page_count={}",
+                    md.len(),
+                    page_count
+                );
 
                 if md.len() < 100 && page_count > 0 && std::env::var("MINERU_API_KEY").is_ok() {
                     println!("[DIAG] 降级到 MinerU...");
@@ -1702,7 +1769,9 @@ mod tests {
                     let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
                     let client = crate::parsers::pdf::mineru::MineruClient::new(&host, &api_key);
                     let options = crate::parsers::pdf::mineru::scanned_pdf_options(&path);
-                    let result = client.parse_file_with_options(&path, &options).expect("MinerU 解析失败");
+                    let result = client
+                        .parse_file_with_options(&path, &options)
+                        .expect("MinerU 解析失败");
                     return ClassifyResult {
                         text: result.markdown,
                         page_count: 0,
@@ -1724,7 +1793,11 @@ mod tests {
             .unwrap()
         });
 
-        assert!(!classified.text.is_empty(), "提取文本为空，parser={}", classified.parser);
+        assert!(
+            !classified.text.is_empty(),
+            "提取文本为空，parser={}",
+            classified.parser
+        );
         println!(
             "Stage 0 完成: parser={}, pages={}, text_len={}, images={}",
             classified.parser,
@@ -1741,7 +1814,11 @@ mod tests {
             8000,
         );
         assert!(!sections.is_empty(), "分块结果为空");
-        println!("Stage 0.5 完成: headings={}, sections={}", headings.len(), sections.len());
+        println!(
+            "Stage 0.5 完成: headings={}, sections={}",
+            headings.len(),
+            sections.len()
+        );
 
         let embed_config = crate::core::config::EmbedConfig {
             provider: "qwen3".into(),
@@ -1761,21 +1838,33 @@ mod tests {
         assert!(kb.has_vector_search(), "Embedder 未初始化");
 
         let doc_id = uuid::Uuid::new_v4().to_string();
-        let indexed = kb.index_document(&doc_id, &sections, &[])
+        let indexed = kb
+            .index_document(&doc_id, &sections, &[])
             .expect("index_document 失败");
         assert!(indexed > 0, "未索引任何 section");
         println!("Stage 1 完成: indexed={} sections into vectors.db", indexed);
 
         assert!(mbforge_dir.exists(), ".mbforge 目录未创建");
         assert!(
-            mbforge_dir.join("knowledge_base").join("vectors.db").exists(),
+            mbforge_dir
+                .join("knowledge_base")
+                .join("vectors.db")
+                .exists(),
             "vectors.db 未创建"
         );
 
         let search_results = kb.search("compound", 5).expect("搜索失败");
-        println!("向量搜索测试: query='compound', results={}", search_results.len());
+        println!(
+            "向量搜索测试: query='compound', results={}",
+            search_results.len()
+        );
         for (i, r) in search_results.iter().take(3).enumerate() {
-            println!("  Result[{}]: score={:.4}, text_len={}", i, r.score, r.text.len());
+            println!(
+                "  Result[{}]: score={:.4}, text_len={}",
+                i,
+                r.score,
+                r.text.len()
+            );
         }
     }
 
@@ -1816,7 +1905,8 @@ mod tests {
 
                 println!(
                     "[DIAG] pdf_inspector: text_len={}, page_count={}",
-                    md.len(), page_count
+                    md.len(),
+                    page_count
                 );
 
                 // 若文本不足，降级到 MinerU
@@ -1827,7 +1917,9 @@ mod tests {
                     let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
                     let client = crate::parsers::pdf::mineru::MineruClient::new(&host, &api_key);
                     let options = crate::parsers::pdf::mineru::scanned_pdf_options(&path);
-                    let result = client.parse_file_with_options(&path, &options).expect("MinerU 解析失败");
+                    let result = client
+                        .parse_file_with_options(&path, &options)
+                        .expect("MinerU 解析失败");
                     return ClassifyResult {
                         text: result.markdown,
                         page_count: 0,
@@ -1906,7 +1998,8 @@ mod tests {
         assert!(kb.has_vector_search(), "Embedder 未初始化");
 
         let doc_id = uuid::Uuid::new_v4().to_string();
-        let indexed = kb.index_document(&doc_id, &sections, &[])
+        let indexed = kb
+            .index_document(&doc_id, &sections, &[])
             .expect("index_document 失败");
         assert!(indexed > 0, "未索引任何 section");
         log::info!("Stage 1 完成: indexed={} sections into vectors.db", indexed);
@@ -1914,7 +2007,10 @@ mod tests {
         // ===== 验证产物 =====
         assert!(mbforge_dir.exists(), ".mbforge 目录未创建");
         assert!(
-            mbforge_dir.join("knowledge_base").join("vectors.db").exists(),
+            mbforge_dir
+                .join("knowledge_base")
+                .join("vectors.db")
+                .exists(),
             "vectors.db 未创建"
         );
         assert!(
@@ -1924,9 +2020,17 @@ mod tests {
 
         // 验证向量搜索可用
         let search_results = kb.search("compound", 5).expect("搜索失败");
-        log::info!("向量搜索测试: query='compound', results={}", search_results.len());
+        log::info!(
+            "向量搜索测试: query='compound', results={}",
+            search_results.len()
+        );
         for (i, r) in search_results.iter().take(3).enumerate() {
-            log::info!("  Result[{}]: score={:.4}, text_len={}", i, r.score, r.text.len());
+            log::info!(
+                "  Result[{}]: score={:.4}, text_len={}",
+                i,
+                r.score,
+                r.text.len()
+            );
         }
     }
 }
@@ -1974,7 +2078,6 @@ mod lit_agent_tests {
     }
 }
 
-
 #[cfg(test)]
 mod pipeline_output_tests {
     use super::*;
@@ -1990,7 +2093,11 @@ mod pipeline_output_tests {
 
         let output = PipelineOutput::from_filesystem(text_path.clone(), manifest_path, 3);
         match output {
-            PipelineOutput::Filesystem { text_chars, molecule_count, .. } => {
+            PipelineOutput::Filesystem {
+                text_chars,
+                molecule_count,
+                ..
+            } => {
                 assert!(text_chars > 0);
                 assert_eq!(molecule_count, 3);
             }
@@ -2020,7 +2127,11 @@ mod pipeline_output_tests {
         };
         let output = PipelineOutput::from_in_memory(report, "evt-123".to_string());
         match output {
-            PipelineOutput::InMemory { lit_reviewed, event_id, .. } => {
+            PipelineOutput::InMemory {
+                lit_reviewed,
+                event_id,
+                ..
+            } => {
                 assert!(lit_reviewed);
                 assert_eq!(event_id, "evt-123");
             }
@@ -2033,7 +2144,12 @@ mod pipeline_output_tests {
     fn test_pipeline_output_from_indexed() {
         let output = PipelineOutput::from_indexed(5, 42, 3, vec!["err1".into()]);
         match output {
-            PipelineOutput::Indexed { indexed, sections, cache_skipped, errors } => {
+            PipelineOutput::Indexed {
+                indexed,
+                sections,
+                cache_skipped,
+                errors,
+            } => {
                 assert_eq!(indexed, 5);
                 assert_eq!(sections, 42);
                 assert_eq!(cache_skipped, 3);
@@ -2049,6 +2165,10 @@ mod pipeline_output_tests {
     fn test_pipeline_output_serde_tag() {
         let output = PipelineOutput::from_indexed(1, 2, 0, vec![]);
         let json = serde_json::to_string(&output).unwrap();
-        assert!(json.contains("\"kind\":\"indexed\""), "missing tag: {}", json);
+        assert!(
+            json.contains("\"kind\":\"indexed\""),
+            "missing tag: {}",
+            json
+        );
     }
 }

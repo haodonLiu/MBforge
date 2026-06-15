@@ -190,7 +190,13 @@ impl MemoryManager {
             .rev()
             .take(10)
             .rev()
-            .map(|m| format!("{}: {}", m.role, crate::core::helpers::safe_truncate(&m.content, 500)))
+            .map(|m| {
+                format!(
+                    "{}: {}",
+                    m.role,
+                    crate::core::helpers::safe_truncate(&m.content, 500)
+                )
+            })
             .collect();
         let conversation = recent.join("\n");
 

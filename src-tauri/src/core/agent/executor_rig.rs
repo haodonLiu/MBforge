@@ -38,14 +38,14 @@
 // at module level. The wiring is real — see rig_adapter::assemble_rig_tool_vec.
 #![allow(dead_code)]
 
-use rig_core::completion::ToolDefinition;
-use rig_core::schemars::JsonSchema;
-use rig_core::tool::{Tool, ToolError};
-use serde::Deserialize;
 use super::document as document_src;
 use super::fs as fs_src;
 use super::kb as kb_src;
 use super::molecule as molecule_src;
+use rig_core::completion::ToolDefinition;
+use rig_core::schemars::JsonSchema;
+use rig_core::tool::{Tool, ToolError};
+use serde::Deserialize;
 // ============================================================================
 // File-system tools (grep / list / read / project info / glob)
 // ============================================================================
@@ -70,7 +70,9 @@ pub struct GrepSearchTool {
 
 impl GrepSearchTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -119,7 +121,9 @@ pub struct ListFilesTool {
 
 impl ListFilesTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -166,7 +170,9 @@ pub struct ReadFileTool {
 
 impl ReadFileTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -207,7 +213,9 @@ pub struct GetProjectInfoTool {
 
 impl GetProjectInfoTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -249,7 +257,9 @@ pub struct GlobSearchTool {
 
 impl GlobSearchTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -300,7 +310,9 @@ pub struct SearchKbTool {
 
 impl SearchKbTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -343,7 +355,9 @@ pub struct GetDocumentStructureTool {
 
 impl GetDocumentStructureTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -354,8 +368,9 @@ impl Tool for GetDocumentStructureTool {
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
-        let schema = serde_json::to_value(rig_core::schemars::schema_for!(GetDocumentStructureArgs))
-            .expect("schema serialization");
+        let schema =
+            serde_json::to_value(rig_core::schemars::schema_for!(GetDocumentStructureArgs))
+                .expect("schema serialization");
         ToolDefinition {
             name: Self::NAME.to_string(),
             description: "获取文档的章节结构树（heading 层级）".to_string(),
@@ -365,8 +380,10 @@ impl Tool for GetDocumentStructureTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         match kb_src::native_get_document_structure(&self.project_root, &args.doc_id) {
-            Ok(tree) => Ok(serde_json::to_string(&tree)
-                .unwrap_or_else(|e| format!("Serialize error: {}", e))),
+            Ok(tree) => {
+                Ok(serde_json::to_string(&tree)
+                    .unwrap_or_else(|e| format!("Serialize error: {}", e)))
+            }
             Err(e) => Ok(format!("Structure error: {}", e)),
         }
     }
@@ -388,7 +405,9 @@ pub struct GetDocumentPagesTool {
 
 impl GetDocumentPagesTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -410,8 +429,9 @@ impl Tool for GetDocumentPagesTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         match kb_src::native_get_document_pages(&self.project_root, &args.doc_id, &args.pages) {
-            Ok(p) => Ok(serde_json::to_string(&p)
-                .unwrap_or_else(|e| format!("Serialize error: {}", e))),
+            Ok(p) => {
+                Ok(serde_json::to_string(&p).unwrap_or_else(|e| format!("Serialize error: {}", e)))
+            }
             Err(e) => Ok(format!("Pages error: {}", e)),
         }
     }
@@ -437,7 +457,9 @@ pub struct CheckMarkushArgs {
 pub struct CheckMarkushTool;
 
 impl CheckMarkushTool {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 impl Tool for CheckMarkushTool {
@@ -451,25 +473,34 @@ impl Tool for CheckMarkushTool {
             .expect("schema serialization");
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "检查一个分子（SMILES）是否落在一个 Markush 专利通式（E-SMILES）的范围内".to_string(),
+            description: "检查一个分子（SMILES）是否落在一个 Markush 专利通式（E-SMILES）的范围内"
+                .to_string(),
             parameters: schema,
         }
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         if args.esmiles.is_empty() || args.query_smiles.is_empty() {
-            return Ok(serde_json::json!({"error": "esmiles and query_smiles are required"}).to_string());
+            return Ok(
+                serde_json::json!({"error": "esmiles and query_smiles are required"}).to_string(),
+            );
         }
         let result = crate::core::chem::markush::analyze_markush_coverage(
-            &args.esmiles, &args.query_smiles, args.rgroup_text.as_deref()
+            &args.esmiles,
+            &args.query_smiles,
+            args.rgroup_text.as_deref(),
         );
-        Ok(serde_json::to_string(&result)
-            .unwrap_or_else(|e| format!("Serialization error: {}", e)))
+        Ok(
+            serde_json::to_string(&result)
+                .unwrap_or_else(|e| format!("Serialization error: {}", e)),
+        )
     }
 }
 
 impl Default for CheckMarkushTool {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// `molecule_analysis` — unified molecule DB entry: list, search, SAR, Markush, cluster, dedup.
@@ -490,7 +521,9 @@ pub struct MoleculeAnalysisTool {
 
 impl MoleculeAnalysisTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -505,18 +538,17 @@ impl Tool for MoleculeAnalysisTool {
             .expect("schema serialization");
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "分子数据库统一分析入口：列表、搜索、SAR、Markush、聚类、去重等".to_string(),
+            description: "分子数据库统一分析入口：列表、搜索、SAR、Markush、聚类、去重等"
+                .to_string(),
             parameters: schema,
         }
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(molecule_src::native_molecule_analysis(
-            &self.project_root,
-            &args.action,
-            args.params,
+        Ok(
+            molecule_src::native_molecule_analysis(&self.project_root, &args.action, args.params)
+                .await,
         )
-        .await)
     }
 }
 
@@ -537,7 +569,9 @@ pub struct ReadDocumentAbstractTool {
 
 impl ReadDocumentAbstractTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -548,8 +582,9 @@ impl Tool for ReadDocumentAbstractTool {
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
-        let schema = serde_json::to_value(rig_core::schemars::schema_for!(ReadDocumentAbstractArgs))
-            .expect("schema serialization");
+        let schema =
+            serde_json::to_value(rig_core::schemars::schema_for!(ReadDocumentAbstractArgs))
+                .expect("schema serialization");
         ToolDefinition {
             name: Self::NAME.to_string(),
             description: "读取文档的一句话摘要（L0）".to_string(),
@@ -558,7 +593,10 @@ impl Tool for ReadDocumentAbstractTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(document_src::native_read_document_abstract(&self.project_root, &args.doc_id))
+        Ok(document_src::native_read_document_abstract(
+            &self.project_root,
+            &args.doc_id,
+        ))
     }
 }
 
@@ -575,7 +613,9 @@ pub struct ReadDocumentOverviewTool {
 
 impl ReadDocumentOverviewTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -586,8 +626,9 @@ impl Tool for ReadDocumentOverviewTool {
     type Output = String;
 
     async fn definition(&self, _prompt: String) -> ToolDefinition {
-        let schema = serde_json::to_value(rig_core::schemars::schema_for!(ReadDocumentOverviewArgs))
-            .expect("schema serialization");
+        let schema =
+            serde_json::to_value(rig_core::schemars::schema_for!(ReadDocumentOverviewArgs))
+                .expect("schema serialization");
         ToolDefinition {
             name: Self::NAME.to_string(),
             description: "读取文档的结构化概览（L1）".to_string(),
@@ -596,7 +637,10 @@ impl Tool for ReadDocumentOverviewTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(document_src::native_read_document_overview(&self.project_root, &args.doc_id))
+        Ok(document_src::native_read_document_overview(
+            &self.project_root,
+            &args.doc_id,
+        ))
     }
 }
 
@@ -615,7 +659,9 @@ pub struct ListDocumentsTool {
 
 impl ListDocumentsTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -636,7 +682,10 @@ impl Tool for ListDocumentsTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(document_src::native_list_documents(&self.project_root, &args.doc_type))
+        Ok(document_src::native_list_documents(
+            &self.project_root,
+            &args.doc_type,
+        ))
     }
 }
 
@@ -653,7 +702,9 @@ pub struct GetDocumentSummaryTool {
 
 impl GetDocumentSummaryTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -674,7 +725,10 @@ impl Tool for GetDocumentSummaryTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(document_src::native_get_document_summary(&self.project_root, &args.doc_id))
+        Ok(document_src::native_get_document_summary(
+            &self.project_root,
+            &args.doc_id,
+        ))
     }
 }
 
@@ -694,7 +748,9 @@ pub struct ReadDocumentDetailTool {
 
 impl ReadDocumentDetailTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -716,7 +772,11 @@ impl Tool for ReadDocumentDetailTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let max_chars = args.max_chars.unwrap_or(8000) as usize;
-        Ok(document_src::native_read_document_detail(&self.project_root, &args.doc_id, max_chars))
+        Ok(document_src::native_read_document_detail(
+            &self.project_root,
+            &args.doc_id,
+            max_chars,
+        ))
     }
 }
 
@@ -739,7 +799,9 @@ pub struct FindDocumentsTool {
 
 impl FindDocumentsTool {
     pub fn new(project_root: impl Into<String>) -> Self {
-        Self { project_root: project_root.into() }
+        Self {
+            project_root: project_root.into(),
+        }
     }
 }
 
@@ -761,6 +823,11 @@ impl Tool for FindDocumentsTool {
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let top_k = args.top_k.unwrap_or(10) as usize;
-        Ok(document_src::native_find_documents(&self.project_root, &args.keyword, &args.doc_type, top_k))
+        Ok(document_src::native_find_documents(
+            &self.project_root,
+            &args.keyword,
+            &args.doc_type,
+            top_k,
+        ))
     }
 }

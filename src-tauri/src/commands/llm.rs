@@ -10,9 +10,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-use crate::core::agent::rig_adapter::{
-    MbforgeProviderConfig, MbforgeProviderKind,
-};
+use crate::core::agent::rig_adapter::{MbforgeProviderConfig, MbforgeProviderKind};
 
 /// Status string returned to the frontend (mirrors an enum on the TS side).
 ///
@@ -113,11 +111,10 @@ pub async fn test_llm_connection() -> Result<LlmEnvStatus, String> {
 
     let start = Instant::now();
     let (url, request) = match cfg.kind {
-        MbforgeProviderKind::OpenAICompatible | MbforgeProviderKind::DeepSeek | MbforgeProviderKind::Ollama => {
-            let url = format!(
-                "{}/chat/completions",
-                cfg.base_url.trim_end_matches('/')
-            );
+        MbforgeProviderKind::OpenAICompatible
+        | MbforgeProviderKind::DeepSeek
+        | MbforgeProviderKind::Ollama => {
+            let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
             let body = serde_json::json!({
                 "model": cfg.model,
                 "messages": [{"role": "user", "content": "."}],
@@ -177,8 +174,6 @@ pub async fn test_llm_connection() -> Result<LlmEnvStatus, String> {
         401 | 403 => LlmLinkStatus::AuthError,
         _ => LlmLinkStatus::HttpError,
     };
-    status.error = Some(format!(
-        "HTTP {http_status} from {url}: {body_excerpt}"
-    ));
+    status.error = Some(format!("HTTP {http_status} from {url}: {body_excerpt}"));
     Ok(status)
 }

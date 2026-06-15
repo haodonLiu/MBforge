@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { openProject } from '../api/tauri'
+import { openProject, enqueueUnresolvedDocuments } from '../api/tauri'
 import { FolderIcon, MoleculeLogo, TrashIcon, XIcon } from './icons'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import { showToast } from '../hooks/useToast'
@@ -42,6 +42,7 @@ export default function Welcome({ onProjectOpened }: Props) {
     // projectRoot, so we do not write it here. We only manage the
     // recent-projects list (separate localStorage key).
     persistRecent(root, name)
+    void enqueueUnresolvedDocuments(root).catch(() => {})
     onProjectOpened?.(root)
   }
 

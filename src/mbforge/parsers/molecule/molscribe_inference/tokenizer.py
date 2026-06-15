@@ -2,11 +2,11 @@ import os
 import json
 import random
 import numpy as np
+
+from mbforge.utils.logger import get_logger
+logger = get_logger(__name__)
+
 # Training-only: atomwise_tokenizer is not needed for inference
-# TODO-AUDIT: atomwise_tokenizer is called by chemistry._replace_functional_group,
-# which is called by _postprocess_smiles. However, postprocess_smiles is never imported
-# by any module in the codebase (dead code). If postprocess_smiles is ever wired in,
-# this will raise NotImplementedError at runtime.
 def atomwise_tokenizer(text):
     raise NotImplementedError("atomwise_tokenizer is training-only and not available in inference mode")
 
@@ -274,7 +274,7 @@ class NodeTokenizer(Tokenizer):
                 labels.append(self.stoi[token])
             else:
                 if self.debug:
-                    print(f'{token} not in vocab')
+                    logger.debug(f'{token} not in vocab')
                 labels.append(UNK_ID)
             if self.is_atom_token(token):
                 atom_idx += 1
@@ -434,7 +434,7 @@ class CharTokenizer(NodeTokenizer):
                     labels.append(self.stoi[c])
                 else:
                     if self.debug:
-                        print(f'{c} not in vocab')
+                        logger.debug(f'{c} not in vocab')
                     labels.append(UNK_ID)
             if self.is_atom_token(token):
                 atom_idx += 1

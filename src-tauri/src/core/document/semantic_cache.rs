@@ -239,19 +239,24 @@ impl SemanticCache {
                 inner.entries.insert(key, entry);
             }
 
-            log::debug!("SemanticCache: loaded {} entries from db", inner.entries.len());
+            log::debug!(
+                "SemanticCache: loaded {} entries from db",
+                inner.entries.len()
+            );
             Ok(())
         })
     }
 
     fn load_from_legacy_json(&self, path: &Path) -> AppResult<()> {
-        let data: HashMap<String, serde_json::Value> =
-            match std::fs::read_to_string(path) {
-                Ok(c) => serde_json::from_str(&c).unwrap_or_default(),
-                Err(_) => return Ok(()),
-            };
+        let data: HashMap<String, serde_json::Value> = match std::fs::read_to_string(path) {
+            Ok(c) => serde_json::from_str(&c).unwrap_or_default(),
+            Err(_) => return Ok(()),
+        };
 
-        let mut inner = self.cache.try_lock().expect("SemanticCache legacy load lock");
+        let mut inner = self
+            .cache
+            .try_lock()
+            .expect("SemanticCache legacy load lock");
         let mut migrated = 0usize;
 
         for (key, item) in data {
@@ -265,7 +270,10 @@ impl SemanticCache {
         }
 
         if migrated > 0 {
-            log::info!("SemanticCache: migrated {} entries from legacy JSON", migrated);
+            log::info!(
+                "SemanticCache: migrated {} entries from legacy JSON",
+                migrated
+            );
             // 同步写入 SQLite
             drop(inner);
             let _ = self.flush_to_db();
@@ -499,7 +507,8 @@ mod tests {
 
         assert!(sc.get_l1("test").await.is_none());
 
-        sc.store("test", vec![serde_json::json!({"text": "result"})]).await;
+        sc.store("test", vec![serde_json::json!({"text": "result"})])
+            .await;
         let results = sc.get_l1("test").await.unwrap();
         assert_eq!(results.len(), 1);
     }
@@ -508,7 +517,8 @@ mod tests {
     async fn test_l1_cache_miss_different_query() {
         let (_dir, sc) = setup_cache();
 
-        sc.store("query1", vec![serde_json::json!({"text": "result1"})]).await;
+        sc.store("query1", vec![serde_json::json!({"text": "result1"})])
+            .await;
         assert!(sc.get_l1("query2").await.is_none());
     }
 
@@ -519,7 +529,8 @@ mod tests {
 
         // 第一轮：写入缓存并强制同步
         let sc = SemanticCache::new(root, SemanticCacheConfig::default());
-        sc.store("hello", vec![serde_json::json!({"text": "world"})]).await;
+        sc.store("hello", vec![serde_json::json!({"text": "world"})])
+            .await;
         sc.sync().await.unwrap();
         drop(sc);
 
@@ -534,7 +545,8 @@ mod tests {
     async fn test_ttl_expiration() {
         let (_dir, sc) = setup_cache();
 
-        sc.store("old", vec![serde_json::json!({"text": "data"})]).await;
+        sc.store("old", vec![serde_json::json!({"text": "data"})])
+            .await;
         // 模拟过期：手动修改 created_at（key 是 hash_query 结果）
         {
             let key = hash_query("old");

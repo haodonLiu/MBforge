@@ -71,8 +71,7 @@ impl SqliteConversationMemory {
     /// run schema bootstrap. Idempotent.
     pub fn open(project_root: &Path) -> Result<Self, String> {
         let mbforge_dir = project_root.join(".mbforge");
-        std::fs::create_dir_all(&mbforge_dir)
-            .map_err(|e| format!("create .mbforge dir: {e}"))?;
+        std::fs::create_dir_all(&mbforge_dir).map_err(|e| format!("create .mbforge dir: {e}"))?;
         let db_path = mbforge_dir.join("conversations.db");
         let conn = Connection::open(&db_path)
             .map_err(|e| format!("open conversations.db at {}: {e}", db_path.display()))?;
@@ -173,7 +172,9 @@ impl SqliteConversationMemory {
             return Ok(());
         }
         let conn = self.conn.lock().await;
-        let tx = conn.unchecked_transaction().map_err(|e| format!("tx: {e}"))?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| format!("tx: {e}"))?;
         let now = crate::core::helpers::now_rfc3339();
         for m in msgs {
             let role = match m {
@@ -253,9 +254,7 @@ impl SqliteConversationMemory {
             )
             .map_err(|e| format!("prepare mark_evicted: {e}"))?;
         let rows: Vec<(String, String)> = stmt
-            .query_map(params![cid, count], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })
+            .query_map(params![cid, count], |row| Ok((row.get(0)?, row.get(1)?)))
             .map_err(|e| format!("query mark_evicted: {e}"))?
             .filter_map(|r| r.ok())
             .collect();

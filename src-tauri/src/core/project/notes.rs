@@ -62,21 +62,24 @@ fn load_index(root: &Path) -> AppResult<NotesIndex> {
     if !path.exists() {
         return Ok(NotesIndex::default());
     }
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| AppError::new(ErrorCode::FileRead, format!("读取笔记失败: {e}"))
-            .with_path(notes_path_str(root)))?;
-    serde_json::from_str(&content)
-        .map_err(|e| AppError::new(ErrorCode::Unknown, format!("解析笔记失败: {e}"))
-            .with_path(notes_path_str(root)))
+    let content = std::fs::read_to_string(&path).map_err(|e| {
+        AppError::new(ErrorCode::FileRead, format!("读取笔记失败: {e}"))
+            .with_path(notes_path_str(root))
+    })?;
+    serde_json::from_str(&content).map_err(|e| {
+        AppError::new(ErrorCode::Unknown, format!("解析笔记失败: {e}"))
+            .with_path(notes_path_str(root))
+    })
 }
 
 fn save_index(root: &Path, index: &NotesIndex) -> AppResult<()> {
     let path = notes_path(root);
     let content = serde_json::to_string_pretty(index)
         .map_err(|e| AppError::new(ErrorCode::NoteSave, format!("序列化笔记失败: {e}")))?;
-    std::fs::write(&path, content)
-        .map_err(|e| AppError::new(ErrorCode::NoteSave, format!("保存笔记失败: {e}"))
-            .with_path(notes_path_str(root)))
+    std::fs::write(&path, content).map_err(|e| {
+        AppError::new(ErrorCode::NoteSave, format!("保存笔记失败: {e}"))
+            .with_path(notes_path_str(root))
+    })
 }
 
 pub fn list_notes(root: &Path) -> AppResult<Vec<Note>> {
@@ -102,9 +105,13 @@ pub fn save_note(root: &Path, note: Note) -> AppResult<Note> {
         }
     }
     save_index(root, &index)?;
-    index.notes.into_iter().find(|n| n.id == id)
-        .ok_or_else(|| AppError::new(ErrorCode::NoteNotFound, format!("Note {id} saved but not found in index"))
-            .with_path(notes_path_str(root)))
+    index.notes.into_iter().find(|n| n.id == id).ok_or_else(|| {
+        AppError::new(
+            ErrorCode::NoteNotFound,
+            format!("Note {id} saved but not found in index"),
+        )
+        .with_path(notes_path_str(root))
+    })
 }
 
 pub fn delete_note(root: &Path, id: &str) -> AppResult<bool> {

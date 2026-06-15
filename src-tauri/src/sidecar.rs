@@ -46,7 +46,10 @@ pub fn install_signal_handler() {
             Err(p) => p.into_inner(),
         };
         if let Some(child) = guard.as_mut() {
-            log::warn!("[sidecar] Caught signal, killing child (pid={:?})", child.id());
+            log::warn!(
+                "[sidecar] Caught signal, killing child (pid={:?})",
+                child.id()
+            );
             let _ = child.kill();
             let _ = child.wait();
         }
@@ -257,8 +260,7 @@ pub fn start_health_monitor(inner: Arc<SidecarInner>, app: AppHandle) {
                                     }),
                                 );
                                 if let Err(e) = spawn_and_start_readers(&inner, &app) {
-                                    *inner.last_error.lock().into_inner() =
-                                        Some(e.clone());
+                                    *inner.last_error.lock().into_inner() = Some(e.clone());
                                     let _ = app.emit(
                                         EVT_SIDECAR_LOG,
                                         serde_json::json!({

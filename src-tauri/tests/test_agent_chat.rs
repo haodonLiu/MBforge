@@ -45,8 +45,7 @@ fn load_dotenv_if_present() {
 
 fn build_test_hook() -> Result<ConcreteHook, String> {
     let dir = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
-    let audit = AuditLog::new(dir.path())
-        .map_err(|e| format!("AuditLog::new: {e}"))?;
+    let audit = AuditLog::new(dir.path()).map_err(|e| format!("AuditLog::new: {e}"))?;
     let trajectory = TrajectoryTracker::new(dir.path());
     Ok(ConcreteHook {
         audit: AuditLogHook::new(Arc::new(audit)),
@@ -75,8 +74,7 @@ fn build_test_project_root() -> PathBuf {
 /// env var the production path uses.
 fn build_test_memory(project_root: &Path, session_id: &str) -> Arc<MbforgeManagedMemory> {
     let sqlite = Arc::new(
-        SqliteConversationMemory::open(project_root)
-            .expect("open conversations.db for test"),
+        SqliteConversationMemory::open(project_root).expect("open conversations.db for test"),
     );
     // 测试场景：rig-direct 压塑器从 MBFORGE_LLM_* env 读取 LLM 端点。
     // 旧版需要 sidecar URL；现已不需要。
@@ -130,7 +128,8 @@ async fn agent_chat_prompt_smoke() {
     )
     .expect("agent construction");
 
-    let prompt = "请用 list_files 工具列出当前项目根目录下的前 5 个文件，然后简要说明你看到了什么。";
+    let prompt =
+        "请用 list_files 工具列出当前项目根目录下的前 5 个文件，然后简要说明你看到了什么。";
     eprintln!("[info] sending prompt: {prompt}");
 
     let cid = SessionId::from(session_id.as_str());
@@ -184,7 +183,11 @@ async fn agent_chat_context_continuity() {
     // makes multi-turn context work. If each turn used a different
     // cid, rig would load an empty history each time and the
     // assertion below would fail.
-    let session_id = format!("continuity-{}-{}", std::process::id(), project_root.display());
+    let session_id = format!(
+        "continuity-{}-{}",
+        std::process::id(),
+        project_root.display()
+    );
     let cid = SessionId::from(session_id.clone());
     let memory = build_test_memory(&project_root, &session_id);
 
@@ -372,10 +375,11 @@ async fn agent_chat_eviction_pressure() {
     let final_prompt = "回到我之前说的'番茄土豆炖牛腩'：\
         我现在应该先做哪一步？";
     eprintln!("[turn 51] final prompt: {final_prompt}");
-    let final_reply = tokio::time::timeout(Duration::from_secs(60), agent.prompt(&cid, final_prompt))
-        .await
-        .expect("turn51 timeout")
-        .expect("turn51 prompt failed");
+    let final_reply =
+        tokio::time::timeout(Duration::from_secs(60), agent.prompt(&cid, final_prompt))
+            .await
+            .expect("turn51 timeout")
+            .expect("turn51 prompt failed");
     eprintln!("[turn 51] reply:\n{final_reply}");
 
     // The LLM must reference the dish OR a key ingredient/technique.
@@ -411,7 +415,9 @@ async fn agent_chat_eviction_pressure() {
     let real_count = list.iter().filter(|i| !i.is_summary).count();
     eprintln!(
         "[verdict] composition: {} real + {} summary = {}",
-        real_count, summary_count, list.len()
+        real_count,
+        summary_count,
+        list.len()
     );
     // After turn 51's `agent.prompt`:
     //   - load fired (eviction happened, active = window_size=40)
@@ -433,10 +439,7 @@ async fn agent_chat_eviction_pressure() {
         "eviction is not keeping up: 50+ non-evicted rows means the \
          compactor + demotion + mark_evicted chain is broken"
     );
-    assert!(
-        !list.is_empty(),
-        "expected non-empty history, got 0"
-    );
+    assert!(!list.is_empty(), "expected non-empty history, got 0");
     // The summary assertion is intentionally relaxed: the
     // `SidecarCompactor` POSTs to `localhost:18792`, which is
     // not running in the test env, so the compactor errors and

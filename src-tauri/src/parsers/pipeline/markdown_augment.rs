@@ -49,17 +49,20 @@ fn rewrite_inline_references(markdown: &str, images: &[ImageRef]) -> String {
             out.push_str(&markdown[last_end..span.start]);
         }
         match event {
-            Event::Start(Tag::Image { dest_url, title, .. }) => {
+            Event::Start(Tag::Image {
+                dest_url, title, ..
+            }) => {
                 if let Some(img) = match_image(&dest_url, images) {
-                    let new_url = img
-                        .rel_path
-                        .clone()
-                        .unwrap_or_else(|| img.filename.clone());
+                    let new_url = img.rel_path.clone().unwrap_or_else(|| img.filename.clone());
                     let new_alt = img
                         .description
                         .clone()
                         .unwrap_or_else(|| default_description(img));
-                    let title_opt = if title.is_empty() { None } else { Some(title.as_ref()) };
+                    let title_opt = if title.is_empty() {
+                        None
+                    } else {
+                        Some(title.as_ref())
+                    };
                     write_image_ref(&mut out, &new_alt, &new_url, title_opt);
                 } else {
                     // Pass through original slice unchanged
@@ -256,9 +259,9 @@ pub fn augment_markdown_with_images(
 }
 
 fn has_text_blocks(blocks: &[OcrBlock]) -> bool {
-    blocks
-        .iter()
-        .any(|b| b.block_type == "text" && b.content.as_deref().map(|s| !s.is_empty()).unwrap_or(false))
+    blocks.iter().any(|b| {
+        b.block_type == "text" && b.content.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
+    })
 }
 
 /// Insert `<!-- page N -->` markers into the markdown by aligning each
@@ -290,8 +293,7 @@ fn insert_images_by_page<'a>(
         let mut out = markdown.to_string();
         for img in images {
             let url = img.rel_path.as_deref().unwrap_or(&img.filename);
-            if !out.contains(&format!("]({}", url))
-                && !out.contains(&format!("]({}", img.filename))
+            if !out.contains(&format!("]({}", url)) && !out.contains(&format!("]({}", img.filename))
             {
                 out.push_str(&build_appendix(&[img]));
             }
@@ -372,8 +374,8 @@ fn insert_images_by_page<'a>(
         sections.iter().map(|(p, _)| *p).collect();
     for img in images {
         let url = img.rel_path.as_deref().unwrap_or(&img.filename);
-        let referenced = out.contains(&format!("]({}", url))
-            || out.contains(&format!("]({}", img.filename));
+        let referenced =
+            out.contains(&format!("]({}", url)) || out.contains(&format!("]({}", img.filename));
         if !referenced {
             unreferenced.push(img);
         }

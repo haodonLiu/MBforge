@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use tauri::State;
 
-use crate::sidecar::SidecarInner;
-use crate::core::helpers::LockResultExt;
 use crate::core::config::constants::sidecar_url;
+use crate::core::helpers::LockResultExt;
+use crate::sidecar::SidecarInner;
 
 #[tauri::command]
 pub fn sidecar_status(state: State<Arc<SidecarInner>>) -> serde_json::Value {

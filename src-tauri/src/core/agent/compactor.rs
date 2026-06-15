@@ -128,15 +128,14 @@ impl Compactor for RigDirectCompactor {
             // 30 秒超时 — 压缩是后台任务，宁可跳过也不要阻塞 agent 主循环。
             // 调用 `llm_client::chat_simple_with_timeout` 而非构造自己的 HTTP 请求，
             // 与 memory/trajectory extraction 复用同一条 env-driven 代码路径。
-            let text = llm_client::chat_simple_with_timeout(
-                "你是一个对话压缩专家。",
-                &user_prompt,
-                30,
-            )
-            .await
-            .map_err(|e| MemoryError::backend(format!("compactor LLM call: {e}")))?;
+            let text =
+                llm_client::chat_simple_with_timeout("你是一个对话压缩专家。", &user_prompt, 30)
+                    .await
+                    .map_err(|e| MemoryError::backend(format!("compactor LLM call: {e}")))?;
 
-            Ok(SummaryArtifact { text: text.trim().to_string() })
+            Ok(SummaryArtifact {
+                text: text.trim().to_string(),
+            })
         })
     }
 }

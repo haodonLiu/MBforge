@@ -109,7 +109,8 @@ fn open_wal_connection(path: &Path) -> AppResult<SharedConn> {
 /// 用 `Mutex<HashMap>`（而非 `DashMap`）因为：
 /// - 写不频繁（只在新建项目时插入）
 /// - 简单即可，避免引入额外依赖
-static DB_CACHE: OnceLock<Mutex<std::collections::HashMap<PathBuf, Arc<DbManager>>>> = OnceLock::new();
+static DB_CACHE: OnceLock<Mutex<std::collections::HashMap<PathBuf, Arc<DbManager>>>> =
+    OnceLock::new();
 
 /// 获取或创建项目的 DbManager（缓存的）。
 pub fn get_or_init_db(project_root: &Path) -> AppResult<Arc<DbManager>> {
@@ -127,7 +128,10 @@ pub fn get_or_init_db(project_root: &Path) -> AppResult<Arc<DbManager>> {
 #[cfg(test)]
 pub fn clear_db_cache_for_test() {
     if let Some(cache) = DB_CACHE.get() {
-        cache.lock().expect("DbManager cache mutex poisoned").clear();
+        cache
+            .lock()
+            .expect("DbManager cache mutex poisoned")
+            .clear();
     }
 }
 
@@ -151,7 +155,10 @@ mod tests {
         let dir = TempDir::new().expect("tempdir");
         let a = get_or_init_db(dir.path()).expect("init");
         let b = get_or_init_db(dir.path()).expect("cached");
-        assert!(Arc::ptr_eq(&a, &b), "same root should return same DbManager");
+        assert!(
+            Arc::ptr_eq(&a, &b),
+            "same root should return same DbManager"
+        );
     }
 
     #[test]

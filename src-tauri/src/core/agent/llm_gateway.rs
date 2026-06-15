@@ -74,10 +74,7 @@ impl LlmGateway {
     /// 同一 key 命中缓存时返回 `Arc` 共享实例；缓存未命中时构造并缓存。
     /// 注：当前仅 OpenAI-compatible provider 走 cache 路径；
     /// Anthropic 暂未实现（rig-core 0.38 API 差异），保留 fallback 路径。
-    pub fn get_client(
-        &self,
-        cfg: &ModelConfig,
-    ) -> Result<(Arc<OpenAiClient>, String), String> {
+    pub fn get_client(&self, cfg: &ModelConfig) -> Result<(Arc<OpenAiClient>, String), String> {
         let key = ProviderKey::from_config(cfg);
 
         // 先查缓存
@@ -147,7 +144,14 @@ impl Default for LlmGateway {
 fn is_openai_compatible(provider: &str) -> bool {
     matches!(
         provider.to_lowercase().as_str(),
-        "openai" | "openai_compatible" | "qwen" | "deepseek" | "vllm" | "ollama" | "lmstudio" | "custom"
+        "openai"
+            | "openai_compatible"
+            | "qwen"
+            | "deepseek"
+            | "vllm"
+            | "ollama"
+            | "lmstudio"
+            | "custom"
     )
 }
 
@@ -157,9 +161,7 @@ static GATEWAY: OnceLock<Arc<LlmGateway>> = OnceLock::new();
 
 /// 获取全局 LlmGateway 单例。
 pub fn global() -> Arc<LlmGateway> {
-    GATEWAY
-        .get_or_init(|| Arc::new(LlmGateway::new()))
-        .clone()
+    GATEWAY.get_or_init(|| Arc::new(LlmGateway::new())).clone()
 }
 
 #[cfg(test)]

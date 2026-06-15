@@ -60,8 +60,14 @@ export interface DocumentEntry {
   folder?: string
   added_at: string
   hash: string
+  mtime?: number
+  inspector_status?: string
+  text_status?: string
   ocr_status?: string
   ocr_hash?: string
+  moldet_status?: string
+  moldet_pages?: number[]
+  index_status?: string
 }
 
 /** 扫描时发现的位置不合规文件 */
@@ -137,6 +143,15 @@ export async function readTextFile(projectRoot: string, path: string): Promise<s
     () => invoke<string>('read_text_file', { projectRoot, path }),
     ErrorCode.ProjectOpen,
   )
+}
+
+/** 将项目中所有未解析的 PDF 自动加入处理队列，返回实际入队数量。 */
+export async function enqueueUnresolvedDocuments(root: string): Promise<number> {
+  const resp = await invokeWithError(
+    () => invoke<{ success: boolean; enqueued: number; skipped: number }>('enqueue_unresolved_documents', { root }),
+    ErrorCode.ProjectOpen,
+  )
+  return resp.enqueued
 }
 
 /** 列出项目文档（与 client.ts listDocuments 兼容的包装） */

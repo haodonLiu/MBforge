@@ -92,7 +92,10 @@ pub async fn get_cluster_members(
     })
 }
 
-pub async fn get_molecule_clusters(mol_id: &str, db: &MoleculeRelationDb) -> Result<Vec<String>, String> {
+pub async fn get_molecule_clusters(
+    mol_id: &str,
+    db: &MoleculeRelationDb,
+) -> Result<Vec<String>, String> {
     let conn = db.relations_conn().await;
     let mut stmt = conn
         .prepare(

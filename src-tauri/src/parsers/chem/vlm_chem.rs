@@ -150,20 +150,33 @@ pub async fn image_to_esmiles(
 
     let body = serde_json::json!({ "image_base64": image_b64 });
     let client = crate::core::http::client_120s();
-    let url = format!("{}/api/v1/vlm/molscribe", config.sidecar_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/api/v1/vlm/molscribe",
+        config.sidecar_url.trim_end_matches('/')
+    );
 
-    let resp = client.post(&url).json(&body).send().await
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
         .map_err(|e| format!("MolScribe request failed: {}", e))?;
     let status = resp.status();
-    let text = resp.text().await
+    let text = resp
+        .text()
+        .await
         .map_err(|e| format!("MolScribe read error: {}", e))?;
 
     if !status.is_success() {
-        return Err(format!("MolScribe HTTP {}: {}", status, &text[..text.floor_char_boundary(200)]));
+        return Err(format!(
+            "MolScribe HTTP {}: {}",
+            status,
+            &text[..text.floor_char_boundary(200)]
+        ));
     }
 
-    let val: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("MolScribe JSON parse error: {}", e))?;
+    let val: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("MolScribe JSON parse error: {}", e))?;
 
     Ok(ChemImageResult {
         esmiles: val["smiles"].as_str().unwrap_or("").to_string(),
@@ -191,31 +204,48 @@ pub async fn molscribe(image_path: &str, sidecar_url: &str) -> Result<MolScribeR
     let image_b64 = read_image_base64(image_path)?;
 
     let ext = Path::new(image_path)
-        .extension().and_then(|e| e.to_str()).unwrap_or("png").to_string();
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png")
+        .to_string();
 
     let body = serde_json::json!({ "image_base64": image_b64, "ext": ext });
     let client = crate::core::http::client_120s();
     let url = format!("{}/api/v1/vlm/molscribe", sidecar_url.trim_end_matches('/'));
 
-    let resp = client.post(&url).json(&body).send().await
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
         .map_err(|e| format!("MolScribe request failed: {}", e))?;
     let status = resp.status();
-    let text = resp.text().await
+    let text = resp
+        .text()
+        .await
         .map_err(|e| format!("MolScribe read error: {}", e))?;
 
     if !status.is_success() {
-        return Err(format!("MolScribe HTTP {}: {}", status, &text[..text.floor_char_boundary(200)]));
+        return Err(format!(
+            "MolScribe HTTP {}: {}",
+            status,
+            &text[..text.floor_char_boundary(200)]
+        ));
     }
 
-    let val: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("MolScribe JSON parse error: {}", e))?;
+    let val: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("MolScribe JSON parse error: {}", e))?;
 
     let esmiles = val["esmiles"].as_str().unwrap_or("").to_string();
     let confidence = val["confidence"].as_f64().unwrap_or(0.0);
     let success = val["success"].as_bool().unwrap_or(false);
     let has_esmiles = !esmiles.is_empty();
 
-    Ok(MolScribeResult { esmiles, confidence, success: success && has_esmiles })
+    Ok(MolScribeResult {
+        esmiles,
+        confidence,
+        success: success && has_esmiles,
+    })
 }
 
 // ─── MolDet 分子检测 ────────────────────────────────────────────
@@ -226,34 +256,53 @@ pub async fn detect_page(image_path: &str, sidecar_url: &str) -> Result<Vec<Bbox
 
     let body = serde_json::json!({ "image_base64": image_b64 });
     let client = crate::core::http::client_120s();
-    let url = format!("{}/api/v1/moldet/detect-page", sidecar_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/api/v1/moldet/detect-page",
+        sidecar_url.trim_end_matches('/')
+    );
 
-    let resp = client.post(&url).json(&body).send().await
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
         .map_err(|e| format!("MolDet detect-page request failed: {}", e))?;
     let status = resp.status();
-    let text = resp.text().await
+    let text = resp
+        .text()
+        .await
         .map_err(|e| format!("MolDet detect-page read error: {}", e))?;
 
     if !status.is_success() {
-        return Err(format!("MolDet detect-page HTTP {}: {}", status, &text[..text.floor_char_boundary(200)]));
+        return Err(format!(
+            "MolDet detect-page HTTP {}: {}",
+            status,
+            &text[..text.floor_char_boundary(200)]
+        ));
     }
 
     let val: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("MolDet detect-page JSON parse error: {}", e))?;
 
     let boxes = val["boxes"].as_array().unwrap_or(&vec![]).clone();
-    Ok(boxes.iter().map(|b| Bbox {
-        x1: b["x1"].as_f64().unwrap_or(0.0),
-        y1: b["y1"].as_f64().unwrap_or(0.0),
-        x2: b["x2"].as_f64().unwrap_or(0.0),
-        y2: b["y2"].as_f64().unwrap_or(0.0),
-        conf: b["conf"].as_f64().unwrap_or(0.0),
-    }).collect())
+    Ok(boxes
+        .iter()
+        .map(|b| Bbox {
+            x1: b["x1"].as_f64().unwrap_or(0.0),
+            y1: b["y1"].as_f64().unwrap_or(0.0),
+            x2: b["x2"].as_f64().unwrap_or(0.0),
+            y2: b["y2"].as_f64().unwrap_or(0.0),
+            conf: b["conf"].as_f64().unwrap_or(0.0),
+        })
+        .collect())
 }
 
 /// 批量调用 sidecar /api/v1/moldet/detect-batch 检测多页分子区域。
 /// 返回顺序与 `image_paths` 一致，每个元素对应该页的所有 bbox。
-pub async fn detect_batch(image_paths: &[&str], sidecar_url: &str) -> Result<Vec<Vec<Bbox>>, String> {
+pub async fn detect_batch(
+    image_paths: &[&str],
+    sidecar_url: &str,
+) -> Result<Vec<Vec<Bbox>>, String> {
     if image_paths.is_empty() {
         return Ok(Vec::new());
     }
@@ -265,32 +314,51 @@ pub async fn detect_batch(image_paths: &[&str], sidecar_url: &str) -> Result<Vec
 
     let body = serde_json::json!({ "image_base64_list": image_b64_list });
     let client = crate::core::http::client_120s();
-    let url = format!("{}/api/v1/moldet/detect-batch", sidecar_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/api/v1/moldet/detect-batch",
+        sidecar_url.trim_end_matches('/')
+    );
 
-    let resp = client.post(&url).json(&body).send().await
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
         .map_err(|e| format!("MolDet detect-batch request failed: {}", e))?;
     let status = resp.status();
-    let text = resp.text().await
+    let text = resp
+        .text()
+        .await
         .map_err(|e| format!("MolDet detect-batch read error: {}", e))?;
 
     if !status.is_success() {
-        return Err(format!("MolDet detect-batch HTTP {}: {}", status, &text[..text.floor_char_boundary(200)]));
+        return Err(format!(
+            "MolDet detect-batch HTTP {}: {}",
+            status,
+            &text[..text.floor_char_boundary(200)]
+        ));
     }
 
     let val: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("MolDet detect-batch JSON parse error: {}", e))?;
 
     let results = val["results"].as_array().unwrap_or(&vec![]).clone();
-    Ok(results.iter().map(|page| {
-        let boxes = page["boxes"].as_array().unwrap_or(&vec![]).clone();
-        boxes.iter().map(|b| Bbox {
-            x1: b["x1"].as_f64().unwrap_or(0.0),
-            y1: b["y1"].as_f64().unwrap_or(0.0),
-            x2: b["x2"].as_f64().unwrap_or(0.0),
-            y2: b["y2"].as_f64().unwrap_or(0.0),
-            conf: b["conf"].as_f64().unwrap_or(0.0),
-        }).collect()
-    }).collect())
+    Ok(results
+        .iter()
+        .map(|page| {
+            let boxes = page["boxes"].as_array().unwrap_or(&vec![]).clone();
+            boxes
+                .iter()
+                .map(|b| Bbox {
+                    x1: b["x1"].as_f64().unwrap_or(0.0),
+                    y1: b["y1"].as_f64().unwrap_or(0.0),
+                    x2: b["x2"].as_f64().unwrap_or(0.0),
+                    y2: b["y2"].as_f64().unwrap_or(0.0),
+                    conf: b["conf"].as_f64().unwrap_or(0.0),
+                })
+                .collect()
+        })
+        .collect())
 }
 
 /// 对单页图片执行完整处理：检测 → 裁剪 → 识别 → 保存
@@ -307,7 +375,9 @@ pub async fn process_page_image(
     page_h_pts: Option<f64>,
 ) -> Result<Vec<DetectedMolecule>, String> {
     let bboxes = detect_page(image_path, sidecar_url).await?;
-    if bboxes.is_empty() { return Ok(vec![]); }
+    if bboxes.is_empty() {
+        return Ok(vec![]);
+    }
 
     std::fs::create_dir_all(output_dir)
         .map_err(|e| format!("Failed to create output dir: {}", e))?;
@@ -324,7 +394,12 @@ pub async fn process_page_image(
         let y2 = bbox.y2.min(img_h as f64) as u32;
 
         if x2 <= x1 || y2 <= y1 {
-            log::warn!("[vlm_chem] Invalid bbox for page {} mol {}: {:?}", page_idx, idx, bbox);
+            log::warn!(
+                "[vlm_chem] Invalid bbox for page {} mol {}: {:?}",
+                page_idx,
+                idx,
+                bbox
+            );
             continue;
         }
 
@@ -352,18 +427,34 @@ pub async fn process_page_image(
         match molscribe(crop_path.to_str().unwrap_or(""), sidecar_url).await {
             Ok(ms) if ms.success && !ms.esmiles.is_empty() => {
                 results.push(DetectedMolecule {
-                    esmiles: ms.esmiles, confidence: ms.confidence,
-                    moldet_conf: bbox.conf, page: page_idx,
+                    esmiles: ms.esmiles,
+                    confidence: ms.confidence,
+                    moldet_conf: bbox.conf,
+                    page: page_idx,
                     crop_path: crop_path.to_string_lossy().to_string(),
                     bbox_pdf,
                 });
             }
-            Ok(_) => log::debug!("[vlm_chem] MolScribe empty for page {} mol {}", page_idx, idx),
-            Err(e) => log::warn!("[vlm_chem] MolScribe failed for page {} mol {}: {}", page_idx, idx, e),
+            Ok(_) => log::debug!(
+                "[vlm_chem] MolScribe empty for page {} mol {}",
+                page_idx,
+                idx
+            ),
+            Err(e) => log::warn!(
+                "[vlm_chem] MolScribe failed for page {} mol {}: {}",
+                page_idx,
+                idx,
+                e
+            ),
         }
     }
 
-    log::info!("[vlm_chem] Page {}: detected {} mols, recognized {} SMILES", page_idx, bboxes.len(), results.len());
+    log::info!(
+        "[vlm_chem] Page {}: detected {} mols, recognized {} SMILES",
+        page_idx,
+        bboxes.len(),
+        results.len()
+    );
     Ok(results)
 }
 
@@ -396,10 +487,16 @@ pub async fn detect_coref(
     let client = crate::core::http::client_120s();
     let url = format!("{}/api/v1/moldet/coref", sidecar_url.trim_end_matches('/'));
 
-    let resp = client.post(&url).json(&body).send().await
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
         .map_err(|e| format!("MolDetect coref request failed: {}", e))?;
     let status = resp.status();
-    let text = resp.text().await
+    let text = resp
+        .text()
+        .await
         .map_err(|e| format!("MolDetect coref read error: {}", e))?;
 
     if !status.is_success() {
@@ -450,10 +547,7 @@ pub async fn detect_coref(
             if arr.len() < 2 {
                 return None;
             }
-            Some((
-                arr[0].as_u64()? as usize,
-                arr[1].as_u64()? as usize,
-            ))
+            Some((arr[0].as_u64()? as usize, arr[1].as_u64()? as usize))
         })
         .collect();
 
@@ -545,11 +639,18 @@ pub fn coref_to_molecules(
 // ─── VLM 通用图片描述 ───────────────────────────────────────────
 
 /// 通用 VLM 图片描述 — 调 Python sidecar `/api/v1/vlm/describe`
-pub async fn describe_image(image_path: &str, prompt: &str, sidecar_url: &str) -> Result<String, String> {
+pub async fn describe_image(
+    image_path: &str,
+    prompt: &str,
+    sidecar_url: &str,
+) -> Result<String, String> {
     let image_b64 = read_image_base64(image_path)?;
 
     let ext = Path::new(image_path)
-        .extension().and_then(|e| e.to_str()).unwrap_or("png").to_string();
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png")
+        .to_string();
 
     let body = serde_json::json!({
         "image_base64": image_b64,
@@ -560,18 +661,28 @@ pub async fn describe_image(image_path: &str, prompt: &str, sidecar_url: &str) -
     let client = crate::core::http::client_300s();
     let url = format!("{}/api/v1/vlm/describe", sidecar_url.trim_end_matches('/'));
 
-    let resp = client.post(&url).json(&body).send().await
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
         .map_err(|e| format!("VLM describe request failed: {}", e))?;
     let status = resp.status();
-    let text = resp.text().await
+    let text = resp
+        .text()
+        .await
         .map_err(|e| format!("VLM describe read error: {}", e))?;
 
     if !status.is_success() {
-        return Err(format!("VLM describe HTTP {}: {}", status, &text[..text.floor_char_boundary(200)]));
+        return Err(format!(
+            "VLM describe HTTP {}: {}",
+            status,
+            &text[..text.floor_char_boundary(200)]
+        ));
     }
 
-    let val: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("VLM JSON parse error: {}", e))?;
+    let val: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("VLM JSON parse error: {}", e))?;
 
     Ok(val["description"].as_str().unwrap_or("").to_string())
 }
@@ -596,11 +707,18 @@ impl ImageCaptionCache {
             .join(crate::core::config::constants::INDEX_DIR)
             .join("image-caption-cache.json");
         let entries = if path.exists() {
-            std::fs::read_to_string(&path).ok()
+            std::fs::read_to_string(&path)
+                .ok()
                 .and_then(|s| serde_json::from_str::<HashMap<String, CacheEntry>>(&s).ok())
                 .unwrap_or_default()
-        } else { HashMap::new() };
-        Self { path, entries, dirty: false }
+        } else {
+            HashMap::new()
+        };
+        Self {
+            path,
+            entries,
+            dirty: false,
+        }
     }
 
     pub fn get(&self, sha256: &str) -> Option<String> {
@@ -609,14 +727,23 @@ impl ImageCaptionCache {
 
     pub fn set(&mut self, sha256: &str, caption: &str) {
         let now = now_secs_u64();
-        self.entries.insert(sha256.to_string(), CacheEntry { caption: caption.to_string(), timestamp: now });
+        self.entries.insert(
+            sha256.to_string(),
+            CacheEntry {
+                caption: caption.to_string(),
+                timestamp: now,
+            },
+        );
         self.dirty = true;
     }
 
     pub fn save(&mut self) -> Result<(), String> {
-        if !self.dirty { return Ok(()); }
+        if !self.dirty {
+            return Ok(());
+        }
         if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create cache dir: {}", e))?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create cache dir: {}", e))?;
         }
         let json = serde_json::to_string_pretty(&self.entries)
             .map_err(|e| format!("Failed to serialize cache: {}", e))?;
@@ -638,7 +765,10 @@ impl ImageCaptionCache {
 
 /// 带缓存的 VLM 图片描述
 pub async fn describe_image_cached(
-    image_path: &str, prompt: &str, sidecar_url: &str, cache: &mut ImageCaptionCache,
+    image_path: &str,
+    prompt: &str,
+    sidecar_url: &str,
+    cache: &mut ImageCaptionCache,
 ) -> Result<String, String> {
     let hash = ImageCaptionCache::sha256_file(Path::new(image_path))?;
     if let Some(cached) = cache.get(&hash) {
@@ -657,8 +787,11 @@ pub fn is_likely_chemical_structure(filename: &str, region: Option<&str>) -> boo
         return matches!(r, "figure" | "structure" | "table");
     }
     let lower = filename.to_lowercase();
-    lower.contains("struct") || lower.contains("mol") || lower.contains("chem")
-        || lower.contains("table") || lower.contains("fig")
+    lower.contains("struct")
+        || lower.contains("mol")
+        || lower.contains("chem")
+        || lower.contains("table")
+        || lower.contains("fig")
 }
 
 // ---------------------------------------------------------------------------
@@ -676,19 +809,29 @@ mod tests {
 
     #[test]
     fn test_chem_image_result() {
-        let r = ChemImageResult { esmiles: "CCO".into(), confidence: 0.95 };
+        let r = ChemImageResult {
+            esmiles: "CCO".into(),
+            confidence: 0.95,
+        };
         assert_eq!(r.esmiles, "CCO");
     }
 
     #[test]
     fn test_molscribe_result() {
-        let r = MolScribeResult { esmiles: "CCO".into(), confidence: 0.95, success: true };
+        let r = MolScribeResult {
+            esmiles: "CCO".into(),
+            confidence: 0.95,
+            success: true,
+        };
         assert!(r.success);
     }
 
     #[test]
     fn test_is_likely_chemical_structure() {
-        assert!(is_likely_chemical_structure("page_05_img_02.png", Some("structure")));
+        assert!(is_likely_chemical_structure(
+            "page_05_img_02.png",
+            Some("structure")
+        ));
         assert!(is_likely_chemical_structure("fig_table_1.png", None));
         assert!(!is_likely_chemical_structure("page_01_bg.png", None));
     }

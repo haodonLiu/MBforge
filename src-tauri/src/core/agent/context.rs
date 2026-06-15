@@ -91,10 +91,7 @@ impl ContextLayer {
     }
 
     fn token_count(&self, counter: &TokenCounter) -> usize {
-        self.messages
-            .iter()
-            .map(|m| counter(&m.content))
-            .sum()
+        self.messages.iter().map(|m| counter(&m.content)).sum()
     }
 
     fn clear(&mut self) {
@@ -107,8 +104,10 @@ impl ContextLayer {
             .iter()
             .map(|m| m.content.as_str())
             .collect::<Vec<_>>()
-            .join("
-")
+            .join(
+                "
+",
+            )
     }
 
     fn is_ephemeral(&self) -> bool {
@@ -222,7 +221,6 @@ impl LayeredContext {
     pub fn add_assistant_message(&mut self, content: &str) {
         self.history.messages.push(Message::assistant(content));
     }
-
 
     /// Clear history and all ephemeral layers.
     pub fn clear_history(&mut self) {

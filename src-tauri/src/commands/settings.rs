@@ -18,12 +18,15 @@ pub fn get_settings() -> Result<serde_json::Value, String> {
 #[tauri::command]
 pub fn save_settings(settings: serde_json::Value) -> Result<(), String> {
     let mut config = AppConfig::load();
-    let mut current = serde_json::to_value(&config).map_err(|e| format!("Serialize error: {}", e))?;
+    let mut current =
+        serde_json::to_value(&config).map_err(|e| format!("Serialize error: {}", e))?;
 
     merge_json(&mut current, &settings);
 
     config = serde_json::from_value(current).map_err(|e| format!("Deserialize error: {}", e))?;
-    config.save().map_err(|e| format!("Save config failed: {}", e))
+    config
+        .save()
+        .map_err(|e| format!("Save config failed: {}", e))
 }
 
 /// 递归合并 JSON：将 other 中的非 null 值覆盖到 base
@@ -81,17 +84,18 @@ pub fn export_settings(target_path: String) -> Result<(), String> {
     if target.as_os_str().is_empty() {
         return Err("Empty target path".into());
     }
-    let json = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("Serialize failed: {}", e))?;
-    std::fs::write(&target, json)
-        .map_err(|e| format!("Write {} failed: {}", target.display(), e))
+    let json =
+        serde_json::to_string_pretty(&config).map_err(|e| format!("Serialize failed: {}", e))?;
+    std::fs::write(&target, json).map_err(|e| format!("Write {} failed: {}", target.display(), e))
 }
 
 /// 重置为默认值
 #[tauri::command]
 pub fn reset_settings() -> Result<(), String> {
     let config = AppConfig::default();
-    config.save().map_err(|e| format!("Save default config failed: {}", e))
+    config
+        .save()
+        .map_err(|e| format!("Save default config failed: {}", e))
 }
 
 /// 打开配置文件所在目录（前端拿到 path 后调 OS 资源管理器）

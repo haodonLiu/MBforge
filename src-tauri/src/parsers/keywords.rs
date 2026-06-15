@@ -14,9 +14,11 @@ pub struct KeywordExtraction {
 }
 
 /// Regex for extracting 3-10 character English words.
-static WORD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[a-zA-Z]{3,10}").expect("valid word regex"));
-static COMPOUND_NAME_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)Compound\s+\d+[a-zA-Z]?").expect("valid compound name regex"));
+static WORD_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[a-zA-Z]{3,10}").expect("valid word regex"));
+static COMPOUND_NAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)Compound\s+\d+[a-zA-Z]?").expect("valid compound name regex")
+});
 static ENTITY_CANDIDATE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b[A-Z][A-Za-z0-9]{2,9}\b").expect("valid entity regex"));
 

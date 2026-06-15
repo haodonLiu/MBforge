@@ -24,6 +24,17 @@
   "nav.switchProject": "切换项目",
   "nav.confirmSwitchProject": "确定要切换项目吗？未保存的更改将丢失。",
   "nav.settings": "设置",
+  "nav.projectScope": "项目文献",
+
+  "projectScope.empty": "暂无已解析的 PDF",
+  "projectScope.import": "导入 PDF",
+  "projectScope.importing": "导入中…",
+  "projectScope.importFailed": "导入失败",
+  "projectScope.loadFailed": "加载项目文献失败",
+
+  "sidebarQueue.title": "处理队列",
+  "sidebarQueue.viewAll": "查看全部",
+  "sidebarQueue.empty": "暂无处理中任务",
 
   "welcome.title": "MBForge",
   "welcome.subtitle": "分子科学知识库与 AI 工作台",

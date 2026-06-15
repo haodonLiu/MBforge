@@ -1,4 +1,4 @@
-﻿//! Tauri commands for molecule store operations via MoleculeEngine.
+//! Tauri commands for molecule store operations via MoleculeEngine.
 //!
 //! Previously held a separate `MolStoreState`; now unified under
 //! `MoleculeEngineState` alongside relation / cluster / SAR commands.
@@ -97,7 +97,10 @@ pub async fn mol_store_delete(
     project_root: String,
     mol_id: String,
 ) -> Result<bool, String> {
-    with_engine(&state, &project_root, |engine| engine.delete_molecule(&mol_id)).await
+    with_engine(&state, &project_root, |engine| {
+        engine.delete_molecule(&mol_id)
+    })
+    .await
 }
 
 /// 鏇存柊鍒嗗瓙鐨勫叏閮ㄥ彲缂栬緫瀛楁.
@@ -110,7 +113,10 @@ pub async fn mol_store_update(
     project_root: String,
     record: MoleculeRecord,
 ) -> Result<bool, String> {
-    with_engine(&state, &project_root, |engine| engine.update_molecule(&record)).await
+    with_engine(&state, &project_root, |engine| {
+        engine.update_molecule(&record)
+    })
+    .await
 }
 
 /// 鎵归噺鏇存柊澶氫釜鍒嗗瓙.
@@ -147,7 +153,10 @@ pub async fn mol_store_search_by_smiles(
     project_root: String,
     smiles: String,
 ) -> Result<Option<MoleculeRecord>, String> {
-    with_engine(&state, &project_root, |engine| engine.search_by_smiles(&smiles)).await
+    with_engine(&state, &project_root, |engine| {
+        engine.search_by_smiles(&smiles)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -156,5 +165,8 @@ pub async fn mol_store_list_by_doc(
     project_root: String,
     doc_id: String,
 ) -> Result<Vec<MoleculeRecord>, String> {
-    with_engine(&state, &project_root, |engine| engine.search_by_source(&doc_id)).await
+    with_engine(&state, &project_root, |engine| {
+        engine.search_by_source(&doc_id)
+    })
+    .await
 }

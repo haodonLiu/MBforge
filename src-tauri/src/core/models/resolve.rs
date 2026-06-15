@@ -1,6 +1,6 @@
 //! 路径解析 �?检查资源是否已下载/安装
-use std::path::PathBuf;
 use super::catalog::*;
+use std::path::PathBuf;
 
 /// 检查单个资源状�?
 pub fn check_resource(resource_id: &str) -> ResourceStatusResult {
@@ -117,7 +117,10 @@ fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
     not_found(info)
 }
 
-fn check_dir_for_weights(info: &ResourceInfo, dir: &std::path::Path) -> Option<ResourceStatusResult> {
+fn check_dir_for_weights(
+    info: &ResourceInfo,
+    dir: &std::path::Path,
+) -> Option<ResourceStatusResult> {
     if !dir.exists() {
         return None;
     }
@@ -157,7 +160,12 @@ fn check_model_file(info: &ResourceInfo) -> ResourceStatusResult {
     // 关键字过滤：递归 / 子目录扫描出来的文件必须包含模型 id 或 repo 末段，
     // 否则会把别的模型权重误归到本模型（例如 molscribe 查询抓到 moldet 的 .pt）
     let id_key = info.id.to_lowercase();
-    let repo_key = info.ms_repo.split('/').last().unwrap_or(info.ms_repo).to_lowercase();
+    let repo_key = info
+        .ms_repo
+        .split('/')
+        .last()
+        .unwrap_or(info.ms_repo)
+        .to_lowercase();
 
     let search_base = |base: &std::path::Path| -> Option<ResourceStatusResult> {
         // 1. base/<local_name>（精确文件）
@@ -168,17 +176,35 @@ fn check_model_file(info: &ResourceInfo) -> ResourceStatusResult {
         }
         // 2. base/<local_stem>/<local_name>（子目录匹配�?
         let stem_subdir = base.join(local_stem);
-        if let Some(p) = find_weights_in_dir(&stem_subdir).filter(|p| path_matches(p, &id_key, &repo_key)) {
-            return Some(mk_ready(info, &p, p.metadata().map(|m| m.len()).unwrap_or(0)));
+        if let Some(p) =
+            find_weights_in_dir(&stem_subdir).filter(|p| path_matches(p, &id_key, &repo_key))
+        {
+            return Some(mk_ready(
+                info,
+                &p,
+                p.metadata().map(|m| m.len()).unwrap_or(0),
+            ));
         }
         // 3. base/<repo_name>/<any .pt|.pth>（按 repo 划分的子目录�?
         let subdir = base.join(&repo_name);
-        if let Some(p) = find_weights_in_dir(&subdir).filter(|p| path_matches(p, &id_key, &repo_key)) {
-            return Some(mk_ready(info, &p, p.metadata().map(|m| m.len()).unwrap_or(0)));
+        if let Some(p) =
+            find_weights_in_dir(&subdir).filter(|p| path_matches(p, &id_key, &repo_key))
+        {
+            return Some(mk_ready(
+                info,
+                &p,
+                p.metadata().map(|m| m.len()).unwrap_or(0),
+            ));
         }
         // 4. 递归扫描 base �?2 层内�?.pt|.pth|.bin|.safetensors（兜底，匹配用户自定义子目录布局�?
-        if let Some(p) = find_weights_recursive(base, 2).filter(|p| path_matches(p, &id_key, &repo_key)) {
-            return Some(mk_ready(info, &p, p.metadata().map(|m| m.len()).unwrap_or(0)));
+        if let Some(p) =
+            find_weights_recursive(base, 2).filter(|p| path_matches(p, &id_key, &repo_key))
+        {
+            return Some(mk_ready(
+                info,
+                &p,
+                p.metadata().map(|m| m.len()).unwrap_or(0),
+            ));
         }
         None
     };
@@ -218,8 +244,15 @@ fn check_model_file(info: &ResourceInfo) -> ResourceStatusResult {
 }
 
 fn check_python_package(info: &ResourceInfo) -> ResourceStatusResult {
-    let import_name = if info.import_name.is_empty() { info.pip_name } else { info.import_name };
-    let cmd_code = format!("import {}; print(getattr({}, '__version__', ''))", import_name, import_name);
+    let import_name = if info.import_name.is_empty() {
+        info.pip_name
+    } else {
+        info.import_name
+    };
+    let cmd_code = format!(
+        "import {}; print(getattr({}, '__version__', ''))",
+        import_name, import_name
+    );
 
     let output = ["python", "python3"].iter().find_map(|py| {
         std::process::Command::new(py)
@@ -250,7 +283,10 @@ fn check_python_package(info: &ResourceInfo) -> ResourceStatusResult {
 }
 
 fn has_files(p: &std::path::Path) -> bool {
-    p.exists() && std::fs::read_dir(p).map(|mut d| d.next().is_some()).unwrap_or(false)
+    p.exists()
+        && std::fs::read_dir(p)
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false)
 }
 
 /// 构造一�?Ready 状态结�?
@@ -298,9 +334,12 @@ fn find_weights_recursive(base: &std::path::Path, max_depth: usize) -> Option<Pa
 fn is_weights_file(p: &std::path::Path) -> bool {
     // 跳过 ModelScope / HF 的部分下载占位目录（"." 开头的隐藏 / "._____temp" 之类）
     if p.components().any(|c| {
-        c.as_os_str()
-            .to_str()
-            .is_some_and(|s| s.starts_with("._____") || s == ".locks" || s == ".no_exist" || s == ".cache_huggingface")
+        c.as_os_str().to_str().is_some_and(|s| {
+            s.starts_with("._____")
+                || s == ".locks"
+                || s == ".no_exist"
+                || s == ".cache_huggingface"
+        })
     }) {
         return false;
     }
@@ -317,7 +356,10 @@ fn path_matches(p: &std::path::Path, id_key: &str, repo_key: &str) -> bool {
 
 fn check_pdfium(info: &ResourceInfo) -> ResourceStatusResult {
     // 优先�?HOME/.cache/mbforge/pdfium/lib（setup.ps1 默认安装位置，跨平台�?
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from).or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from)) {
+    if let Some(home) = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+    {
         let cache_lib = home.join(".cache/mbforge/pdfium/lib");
         if has_files(&cache_lib) {
             return ResourceStatusResult {
@@ -383,12 +425,16 @@ fn not_found(info: &ResourceInfo) -> ResourceStatusResult {
 }
 
 fn has_file_with_ext(dir: &std::path::Path, exts: &[&str]) -> bool {
-    if !dir.is_dir() { return false; }
+    if !dir.is_dir() {
+        return false;
+    }
     walk_dir_for_ext(dir, exts, 3)
 }
 
 fn walk_dir_for_ext(dir: &std::path::Path, exts: &[&str], depth: u32) -> bool {
-    if depth == 0 { return false; }
+    if depth == 0 {
+        return false;
+    }
     walkdir::WalkDir::new(dir)
         .max_depth(depth as usize)
         .follow_links(false)
@@ -396,13 +442,20 @@ fn walk_dir_for_ext(dir: &std::path::Path, exts: &[&str], depth: u32) -> bool {
         .filter_map(|e| e.ok())
         .any(|e| {
             e.file_type().is_file()
-                && e.path().extension().and_then(|x| x.to_str()).is_some_and(|x| exts.contains(&x))
+                && e.path()
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    .is_some_and(|x| exts.contains(&x))
         })
 }
 
 pub fn dir_size(dir: &std::path::Path) -> u64 {
     let mut total = 0u64;
-    for entry in walkdir::WalkDir::new(dir).follow_links(false).into_iter().flatten() {
+    for entry in walkdir::WalkDir::new(dir)
+        .follow_links(false)
+        .into_iter()
+        .flatten()
+    {
         if entry.file_type().is_file() {
             total += entry.metadata().map(|m| m.len()).unwrap_or(0);
         }
@@ -421,7 +474,11 @@ mod tests {
         let info = RESOURCE_CATALOG.iter().find(|r| r.id == "moldet").unwrap();
         let status = check_model_file(info);
         if model_cache_dir().join("moldetv2-doc").exists() {
-            assert_eq!(status.status, ResourceStatus::Ready, "moldet should be Ready");
+            assert_eq!(
+                status.status,
+                ResourceStatus::Ready,
+                "moldet should be Ready"
+            );
             assert!(!status.local_path.is_empty());
             eprintln!("moldet local_path = {}", status.local_path);
         }
@@ -430,24 +487,54 @@ mod tests {
     #[test]
     fn finds_qwen_embedding_in_modelscope_hub() {
         // 用户实际布局：~/.cache/modelscope/hub/Qwen/Qwen3-Embedding-0___6B/
-        let info = RESOURCE_CATALOG.iter().find(|r| r.id == "embedding").unwrap();
+        let info = RESOURCE_CATALOG
+            .iter()
+            .find(|r| r.id == "embedding")
+            .unwrap();
         let status = check_model_snapshot(info);
-        let home = directories::UserDirs::new().unwrap().home_dir().to_path_buf();
-        let ms_hub = home.join(".cache").join("modelscope").join("hub").join("Qwen").join("Qwen3-Embedding-0___6B");
+        let home = directories::UserDirs::new()
+            .unwrap()
+            .home_dir()
+            .to_path_buf();
+        let ms_hub = home
+            .join(".cache")
+            .join("modelscope")
+            .join("hub")
+            .join("Qwen")
+            .join("Qwen3-Embedding-0___6B");
         if ms_hub.exists() {
-            assert_eq!(status.status, ResourceStatus::Ready, "embedding should be Ready");
+            assert_eq!(
+                status.status,
+                ResourceStatus::Ready,
+                "embedding should be Ready"
+            );
             eprintln!("embedding local_path = {}", status.local_path);
         }
     }
 
     #[test]
     fn finds_qwen_reranker_in_modelscope_hub() {
-        let info = RESOURCE_CATALOG.iter().find(|r| r.id == "reranker").unwrap();
+        let info = RESOURCE_CATALOG
+            .iter()
+            .find(|r| r.id == "reranker")
+            .unwrap();
         let status = check_model_snapshot(info);
-        let home = directories::UserDirs::new().unwrap().home_dir().to_path_buf();
-        let ms_hub = home.join(".cache").join("modelscope").join("hub").join("Qwen").join("Qwen3-Reranker-0___6B");
+        let home = directories::UserDirs::new()
+            .unwrap()
+            .home_dir()
+            .to_path_buf();
+        let ms_hub = home
+            .join(".cache")
+            .join("modelscope")
+            .join("hub")
+            .join("Qwen")
+            .join("Qwen3-Reranker-0___6B");
         if ms_hub.exists() {
-            assert_eq!(status.status, ResourceStatus::Ready, "reranker should be Ready");
+            assert_eq!(
+                status.status,
+                ResourceStatus::Ready,
+                "reranker should be Ready"
+            );
             eprintln!("reranker local_path = {}", status.local_path);
         }
     }

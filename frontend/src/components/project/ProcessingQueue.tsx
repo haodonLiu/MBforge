@@ -3,12 +3,16 @@ import { motion } from 'framer-motion'
 import { listen } from '@tauri-apps/api/event'
 import Button from '../ui/Button'
 import ProgressBar from '../ui/ProgressBar'
+import { XIcon } from '../icons/actions'
+import PdfPipelineFlow from './pdf/PdfPipelineFlow'
 import { EVT } from '../../api/tauri-events'
 import {
   ingestCancel,
   ingestCleanup,
+  ingestDeleteTask,
   ingestList,
   ingestRetry,
+  ingestSetPriority,
   ingestStats,
   type IngestTask,
   type IngestQueueUpdateEvent,
@@ -41,22 +45,6 @@ const STATUS_RANK: Record<StatusKey, number> = {
   failed: 2,
   cancelled: 3,
   done: 4,
-}
-
-const STAGE_LABEL: Record<string, string> = {
-  inspector: '文档检测',
-  text_extract: '文本提取',
-  ocr: 'OCR 识别',
-  moldet: '分子扫描',
-  index: '索引构建',
-}
-
-const STAGE_ICON: Record<string, string> = {
-  inspector: '🔍',
-  text_extract: '📄',
-  ocr: '👁',
-  moldet: '🧬',
-  index: '🗂️',
 }
 
 // Filter chip definitions — order matters (left-to-right scan).
@@ -147,7 +135,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
   }, [projectRoot])
 
   useEffect(() => {
-    load()
+    void load()
     let unlisten: (() => void) | null = null
     const setup = async () => {
       unlisten = await listen<IngestQueueUpdateEvent>(
@@ -157,7 +145,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         },
       )
     }
-    setup().catch((e) => {
+    void setup().catch((e: unknown) => {
       console.error('[ProcessingQueue] listen failed:', e)
     })
     return () => {
@@ -177,7 +165,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         },
       )
     }
-    setup().catch((e) => {
+    void setup().catch((e: unknown) => {
       console.error('[ProcessingQueue] heartbeat listen failed:', e)
     })
     return () => {
@@ -246,6 +234,47 @@ export default function ProcessingQueue({ projectRoot }: Props) {
       showToast('清理失败: ' + String(e), 'error')
     }
   }, [projectRoot, load])
+
+  const handleSetPriority = useCallback(
+    async (task: IngestTask) => {
+      if (!projectRoot) return
+      setActionId(task.id)
+      try {
+        const nextPriority = task.priority > 0 ? 0 : 1
+        await ingestSetPriority(projectRoot, task.id, nextPriority)
+        showToast(nextPriority > 0 ? '已置顶任务' : '已取消置顶', 'success')
+        await load()
+      } catch (e) {
+        console.error('[ProcessingQueue] set priority failed:', e)
+        showToast('置顶失败: ' + String(e), 'error')
+      } finally {
+        setActionId(null)
+      }
+    },
+    [projectRoot, load],
+  )
+
+  const handleDelete = useCallback(
+    async (task: IngestTask) => {
+      if (!projectRoot) return
+      setActionId(task.id)
+      try {
+        const ok = await ingestDeleteTask(projectRoot, task.id)
+        if (ok) {
+          showToast('已删除任务', 'success')
+        } else {
+          showToast('只能删除已结束的任务', 'warning')
+        }
+        await load()
+      } catch (e) {
+        console.error('[ProcessingQueue] delete failed:', e)
+        showToast('删除失败: ' + String(e), 'error')
+      } finally {
+        setActionId(null)
+      }
+    },
+    [projectRoot, load],
+  )
 
   // Filter + sort — memoized so the list doesn't re-sort on every keystroke
   // elsewhere. Sort priority: processing → pending → failed → cancelled → done.
@@ -332,6 +361,18 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                 <span className="num">{stats.cancelled}</span>
               </span>
             )}
+            {(() => {
+              const avgTotalMs = stats.avg_stage_durations_ms.reduce((a, b) => a + b, 0)
+              return avgTotalMs > 0 ? (
+                <span
+                  className="processing-queue-stat is-throughput"
+                  title="近 5 个完成任务的各阶段平均耗时之和"
+                >
+                  <span>近 5 篇</span>
+                  <span className="num">平均 {formatElapsed(avgTotalMs)}/篇</span>
+                </span>
+              ) : null
+            })()}
           </div>
         )}
 
@@ -412,8 +453,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
               task.status === 'pending' || task.status === 'processing'
             const canRetry = task.status === 'failed'
             const canDelete = task.status === 'cancelled' || task.status === 'done'
-            const label = STAGE_LABEL[task.stage] || task.stage
-            const stageIcon = STAGE_ICON[task.stage] || '•'
+            const canSetPriority = task.status === 'pending'
             const fileName = basename(task.file_path)
             const createdAtMs = task.created_at * 1000
             const startedAtMs = task.started_at ? task.started_at * 1000 : null
@@ -460,10 +500,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                       >
                         {STATUS_LABEL[task.status]}
                       </span>
-                      <span className="processing-queue-item-stage">
-                        <span className="processing-queue-stage-icon">{stageIcon}</span>
-                        {label}
-                      </span>
+                      <PdfPipelineFlow variant="compact" task={task} />
                       {showPages && (
                         <span className="processing-queue-item-pages">
                           {task.pages_done}/{task.pages_total} 页
@@ -523,12 +560,23 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                         重试
                       </Button>
                     )}
+                    {canSetPriority && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        loading={actionId === task.id}
+                        onClick={() => handleSetPriority(task)}
+                        title={task.priority > 0 ? '取消置顶' : '置顶任务'}
+                      >
+                        {task.priority > 0 ? '取消置顶' : '置顶'}
+                      </Button>
+                    )}
                     {canDelete && (
                       <Button
                         variant="ghost"
                         size="sm"
                         loading={actionId === task.id}
-                        onClick={() => handleCancel(task)}
+                        onClick={() => handleDelete(task)}
                       >
                         删除
                       </Button>
@@ -553,7 +601,10 @@ export default function ProcessingQueue({ projectRoot }: Props) {
 
                 {/* Error block (failed only) */}
                 {task.status === 'failed' && task.error && (
-                  <div className="processing-queue-error">⚠ {task.error}</div>
+                  <div className="processing-queue-error">
+                    <XIcon size={12} />
+                    {task.error}
+                  </div>
                 )}
               </motion.div>
             )

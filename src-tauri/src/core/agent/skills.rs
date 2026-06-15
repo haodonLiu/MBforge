@@ -105,7 +105,10 @@ impl SkillsManager {
         for s in &skills {
             // 截断到 200 字节，使用 safe_truncate 避免在 CJK / emoji 字符中间切
             let preview = if s.content.len() > 200 {
-                format!("{}...", crate::core::helpers::safe_truncate(&s.content, 200))
+                format!(
+                    "{}...",
+                    crate::core::helpers::safe_truncate(&s.content, 200)
+                )
             } else {
                 s.content.clone()
             };

@@ -4,7 +4,9 @@ use std::path::PathBuf;
 
 use crate::core::error::{AppError, ErrorCode};
 use crate::core::helpers::clean_path;
-use crate::core::project::notes::{delete_note, find_backlinks, get_note, list_notes, save_note, Note};
+use crate::core::project::notes::{
+    delete_note, find_backlinks, get_note, list_notes, save_note, Note,
+};
 
 fn wrap<T>(result: Result<T, AppError>) -> Result<T, String> {
     result.map_err(|e| e.to_string())

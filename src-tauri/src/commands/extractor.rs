@@ -285,8 +285,8 @@ pub fn extract_with_associations(
     text: String,
     context_window: Option<usize>,
 ) -> Vec<crate::core::types::ExtractionResult> {
-    use crate::core::types::ExtractionResult;
     use crate::commands::extractor::extract_esmiles_with_positions;
+    use crate::core::types::ExtractionResult;
 
     let window = context_window.unwrap_or(200);
     let esmiles_with_pos = extract_esmiles_with_positions(&text);

@@ -17,7 +17,8 @@ use super::molecule_extractor::MoleculeTrace;
 /// 1. 优先搜索 E-SMILES 分隔符 `<sep>`
 /// 2. 备选：搜索符合 SMILES 字符集特征的连续子串
 static SMILES_CANDIDATE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"[A-Z][a-z]?(?:[()=\[\]0-9@#%+\-*/:;<>?!|&^~$`"']*[A-Z][a-z]?)+"#).expect("valid SMILES candidate regex")
+    Regex::new(r#"[A-Z][a-z]?(?:[()=\[\]0-9@#%+\-*/:;<>?!|&^~$`"']*[A-Z][a-z]?)+"#)
+        .expect("valid SMILES candidate regex")
 });
 
 fn extract_candidate_esmiles(text: &str) -> Option<String> {
@@ -284,8 +285,11 @@ fn check_markush_mention(
     };
 
     // 3. 调用真正的 Markush 子结构匹配
-    let overlap =
-        crate::core::chem::markush::analyze_markush_coverage(&candidate, esmiles, Some(&claim.raw_text));
+    let overlap = crate::core::chem::markush::analyze_markush_coverage(
+        &candidate,
+        esmiles,
+        Some(&claim.raw_text),
+    );
 
     let (score, details) = match overlap.match_level {
         crate::core::chem::markush::MatchLevel::FullOverlap => (
@@ -480,9 +484,9 @@ fn build_assessment_summary(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::parsers::chem::claim_parser::{ClaimType, PatentClaim};
     use crate::parsers::chem::molecule_extractor::{NameType, NamedMolecule};
-    use super::*;
 
     fn make_molecule(name: &str, seq: u32, context: &str) -> MoleculeTrace {
         MoleculeTrace {

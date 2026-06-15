@@ -21,7 +21,7 @@ use crate::core::agent::rig_adapter::{
 };
 use crate::core::agent::rig_hooks::{AuditLogHook, TrajectoryHook};
 use crate::core::agent::rig_memory::{
-    CompositeMemory, MemoryManagerMemory, MbforgeConversationMemory, SkillsManagerMemory,
+    CompositeMemory, MbforgeConversationMemory, MemoryManagerMemory, SkillsManagerMemory,
 };
 use crate::core::agent::trajectory::TrajectoryTracker;
 use crate::core::config::constants::PROJECT_META_DIR;
@@ -65,9 +65,11 @@ pub struct AgentSession {
 
 impl AgentSession {
     fn context_path(&self) -> Option<PathBuf> {
-        self.project_root
-            .as_ref()
-            .map(|root| root.join(PROJECT_META_DIR).join("memory").join("agent_context.json"))
+        self.project_root.as_ref().map(|root| {
+            root.join(PROJECT_META_DIR)
+                .join("memory")
+                .join("agent_context.json")
+        })
     }
 
     fn save_context(&self) {
@@ -150,14 +152,13 @@ pub async fn agent_create_session(
     };
 
     let root_path = project_root.as_ref().map(PathBuf::from);
-    let mut session = create_session_for_config(
-        &sidecar_url,
-        root_path.as_deref(),
-        &session_id,
-    )
-    .await
+    let mut session = create_session_for_config(&sidecar_url, root_path.as_deref(), &session_id)
+        .await
         .map_err(|e| {
-            log::error!("agent_create_session: create_session_for_config failed: {}", e);
+            log::error!(
+                "agent_create_session: create_session_for_config failed: {}",
+                e
+            );
             e
         })?;
 
@@ -252,7 +253,11 @@ pub async fn agent_chat_stream(
                         );
                     }
                 }
-                Ok(MbforgeStreamItem::ToolCall { id, name, arguments }) => {
+                Ok(MbforgeStreamItem::ToolCall {
+                    id,
+                    name,
+                    arguments,
+                }) => {
                     log::debug!(
                         "agent_chat_stream session={} tool_call id={} name={} args={}",
                         sid,
@@ -353,16 +358,15 @@ pub async fn agent_switch_project(
     }
 
     let root_path = PathBuf::from(&project_root);
-    let mut session =
-        create_session_for_config(&sidecar_url, Some(&root_path), &session_id)
-            .await
-            .map_err(|e| {
-                log::error!(
-                    "agent_switch_project: create_session_for_config failed: {}",
-                    e
-                );
+    let mut session = create_session_for_config(&sidecar_url, Some(&root_path), &session_id)
+        .await
+        .map_err(|e| {
+            log::error!(
+                "agent_switch_project: create_session_for_config failed: {}",
                 e
-            })?;
+            );
+            e
+        })?;
     session
         .context
         .set_project_context(&format!("项目: {}\n路径: {}", project_name, project_root));
@@ -420,9 +424,7 @@ pub async fn agent_get_history(
     session_id: String,
 ) -> Result<Vec<Message>, String> {
     let agents = state.agents.read().await;
-    let session = agents
-        .get(&session_id)
-        .ok_or("Session not found")?;
+    let session = agents.get(&session_id).ok_or("Session not found")?;
     // The conversation history now lives in
     // `SqliteConversationMemory` (keyed by `session_id`) rather than
     // in `LayeredContext.history` (which is dead code). We still
@@ -557,22 +559,14 @@ pub async fn create_session_for_config(
                 None
             }
         };
-        let audit_hook = audit
-            .as_ref()
-            .map(|arc| AuditLogHook::new(Arc::clone(arc)));
+        let audit_hook = audit.as_ref().map(|arc| AuditLogHook::new(Arc::clone(arc)));
 
         // 轨迹追踪：构造即可（内部会自己 create_dir_all）。先
         // 持 `Arc<Mutex<…>>` 再 `from_arc` 复用同一份存储给 hook 与 session。
         let traj = Arc::new(Mutex::new(TrajectoryTracker::new(root)));
         let trajectory_hook = Some(TrajectoryHook::from_arc(Arc::clone(&traj)));
 
-        (
-            composite,
-            audit,
-            Some(traj),
-            audit_hook,
-            trajectory_hook,
-        )
+        (composite, audit, Some(traj), audit_hook, trajectory_hook)
     } else {
         // 无 project_root：rig 仍可用，但记忆 / 审计 / 轨迹全部走 None
         if spec.system_prompt.is_empty() {
@@ -674,7 +668,9 @@ fn build_mbforge_agent(
         None => crate::core::agent::rig_adapter::build_default_concrete_hook()?,
     };
     match cfg.kind {
-        MbforgeProviderKind::OpenAICompatible | MbforgeProviderKind::DeepSeek | MbforgeProviderKind::Ollama => {
+        MbforgeProviderKind::OpenAICompatible
+        | MbforgeProviderKind::DeepSeek
+        | MbforgeProviderKind::Ollama => {
             MbforgeAgent::from_openai_compatible(cfg, spec, vec![], hook, memory)
         }
         MbforgeProviderKind::Anthropic => {

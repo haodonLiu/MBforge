@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ask } from '@tauri-apps/plugin-dialog'
 import { RefreshCwIcon } from '@/components/icons'
 import { Button, SectionTitle } from '@/components/ui'
 import ResponsiveStatGrid from '@/components/ui/ResponsiveStatGrid'
@@ -52,20 +53,20 @@ export default function SystemTab({ settings, setSettings }: Props) {
   const [editingPath, setEditingPath] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
 
-  const fetchEnv = async () => {
+  const fetchEnv = useCallback(async () => {
     setLoading(true)
     try {
       const data = await environmentCheck()
       setEnv(data as EnvironmentCheckResult)
     } catch {
-      showToast('Python sidecar 未启动，System 页面不可用', 'warning')
+      showToast(t('systemTab.loadEnvFailed'), 'warning')
       setEnv(null)
     } finally {
       setLoading(false)
     }
-  }
+  }, [t])
 
-  const fetchModels = async () => {
+  const fetchModels = useCallback(async () => {
     try {
       const catalog = await resourcesCatalog()
       const modelItems = (catalog as unknown as CatalogItem[]).filter((item) => item.type === 'model')
@@ -96,20 +97,20 @@ export default function SystemTab({ settings, setSettings }: Props) {
 
       setModels(models)
     } catch {
-      showToast('获取模型列表失败', 'warning')
+      showToast(t('systemTab.loadModelsFailed'), 'warning')
       setModels([])
     }
-  }
+  }, [t])
 
-  const fetchPaths = async () => {
+  const fetchPaths = useCallback(async () => {
     try {
       const info = await modelsCacheDirInfo()
       setPaths(info)
     } catch {
-      showToast('获取模型路径失败', 'warning')
+      showToast(t('systemTab.loadPathsFailed'), 'warning')
       setPaths(null)
     }
-  }
+  }, [t])
 
   const handleDownloadModel = (modelId: string) => {
     try {
@@ -125,29 +126,30 @@ export default function SystemTab({ settings, setSettings }: Props) {
         if (!completed) void fetchModels()
       }, 30000)
     } catch (e) {
-      showToast(`Download failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(t('systemTab.downloadFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
     }
   }
 
   const handleDeleteModel = async (modelId: string) => {
-    if (!confirm('Are you sure you want to delete this model?')) return
+    const ok = await ask(t('systemTab.confirmDelete'), { kind: 'warning' })
+    if (!ok) return
     try {
       await deleteModel(modelId)
       void fetchModels()
     } catch (e) {
-      showToast(`Delete failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(t('systemTab.deleteFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
     }
   }
 
   const handleRefreshModelEnv = async () => {
     try {
       await refreshResolvedPaths()
-      showToast('模型环境已更新', 'success')
+      showToast(t('systemTab.refreshSuccess'), 'success')
       await fetchEnv()
       await fetchModels()
       await fetchPaths()
     } catch (e) {
-      showToast(`刷新模型环境失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(t('systemTab.refreshFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
     }
   }
 
@@ -158,12 +160,12 @@ export default function SystemTab({ settings, setSettings }: Props) {
       if (result.success) {
         setEditingPath(null)
         void fetchPaths()
-        showToast('Path updated! Please restart the app for changes to take effect.', 'info')
+        showToast(t('systemTab.pathUpdated'), 'info')
       } else {
-        showToast(`Failed to update path: ${result.error}`, 'error')
+        showToast(t('systemTab.pathUpdateFailed', { error: result.error || '' }), 'error')
       }
     } catch (e) {
-      showToast(`Save path failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(t('systemTab.savePathFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
     }
   }
 
@@ -171,11 +173,11 @@ export default function SystemTab({ settings, setSettings }: Props) {
     void fetchEnv()
     void fetchModels()
     void fetchPaths()
-  }, [])
+  }, [fetchEnv, fetchModels, fetchPaths])
 
   if (loading && !env) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+      <div className="system-loading">
         {t('common.loading')}
       </div>
     )
@@ -183,8 +185,8 @@ export default function SystemTab({ settings, setSettings }: Props) {
 
   if (!env) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--danger)' }}>
-        Failed to get environment info
+      <div className="system-error">
+        {t('systemTab.loadingFailed')}
       </div>
     )
   }
@@ -201,43 +203,36 @@ export default function SystemTab({ settings, setSettings }: Props) {
   const totalEstimatedMB = models.reduce((sum, m) => sum + m.size_mb, 0)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+    <div className="system-tab">
       <ModelServiceSection settings={settings} setSettings={setSettings} />
 
       <div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '16px',
-          }}
-        >
+        <div className="system-section-header">
           <SectionTitle>{t('settings.environment')}</SectionTitle>
           <Button
             variant="secondary"
             icon={<RefreshCwIcon size={14} />}
             onClick={handleRefreshModelEnv}
           >
-            刷新模型环境
+            {t('systemTab.refreshModels')}
           </Button>
         </div>
 
         <div>
           <ResponsiveStatGrid style={{ marginBottom: '24px' }}>
-            <StatCard label="Python" value={env.python_version} />
+            <StatCard label={t('systemTab.python')} value={env.python_version} />
             <StatCard
-              label="GPU"
-              value={env.gpu_name?.split(' ').slice(0, 2).join(' ') || 'None'}
+              label={t('systemTab.gpu')}
+              value={env.gpu_name?.split(' ').slice(0, 2).join(' ') || t('systemTab.none')}
               subValue={env.cuda_version ? `CUDA ${env.cuda_version}` : undefined}
               variant={env.gpu_available ? 'success' : 'default'}
             />
             <StatCard
-              label="GPU Memory"
-              value={env.gpu_memory_mb ? `${Math.round(env.gpu_memory_mb / 1024)}GB` : 'N/A'}
+              label={t('systemTab.gpuMemory')}
+              value={env.gpu_memory_mb ? `${Math.round(env.gpu_memory_mb / 1024)}GB` : t('systemTab.na')}
             />
             <StatCard
-              label="Models"
+              label={t('systemTab.models')}
               value={`${downloadedModels}/${models.length}`}
               subValue={
                 downloadedModels > 0
@@ -248,14 +243,14 @@ export default function SystemTab({ settings, setSettings }: Props) {
             />
           </ResponsiveStatGrid>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-            <LibrarySection title="Core Libraries" libs={coreLibs} />
-            {mdLibs.length > 0 && <LibrarySection title="Molecular Dynamics" libs={mdLibs} />}
-            {dockingLibs.length > 0 && <LibrarySection title="Docking" libs={dockingLibs} />}
-            {admetLibs.length > 0 && <LibrarySection title="ADMET" libs={admetLibs} />}
+          <div className="system-library-list">
+            <LibrarySection title={t('systemTab.coreLibraries')} libs={coreLibs} />
+            {mdLibs.length > 0 && <LibrarySection title={t('systemTab.molecularDynamics')} libs={mdLibs} />}
+            {dockingLibs.length > 0 && <LibrarySection title={t('systemTab.docking')} libs={dockingLibs} />}
+            {admetLibs.length > 0 && <LibrarySection title={t('systemTab.admet')} libs={admetLibs} />}
           </div>
 
-          <div style={{ marginBottom: '24px' }}>
+          <div className="system-block">
             <PathSection
               paths={paths}
               editingPath={editingPath}
@@ -270,7 +265,7 @@ export default function SystemTab({ settings, setSettings }: Props) {
             />
           </div>
 
-          <div style={{ marginBottom: '24px' }}>
+          <div className="system-block">
             <ModelsSection
               models={models}
               downloadedCount={downloadedModels}
@@ -279,11 +274,11 @@ export default function SystemTab({ settings, setSettings }: Props) {
             />
           </div>
 
-          <div style={{ marginBottom: '24px' }}>
+          <div className="system-block">
             <DetectionCacheCard />
           </div>
 
-          <div style={{ marginBottom: '24px' }}>
+          <div className="system-block">
             <SidecarCard />
           </div>
         </div>

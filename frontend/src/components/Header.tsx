@@ -3,13 +3,22 @@ import { HelpIcon } from './icons'
 import IconButton from './ui/IconButton'
 import HelpPopover from './HelpPopover'
 
-export default function Header() {
+interface HeaderProps {
+  showProjectScope: boolean
+  showQueuePanel: boolean
+}
+
+export default function Header({ showProjectScope, showQueuePanel }: HeaderProps) {
   const [helpOpen, setHelpOpen] = useState(false)
   const helpBtnRef = useRef<HTMLButtonElement | null>(null)
 
+  const gridColumn = showProjectScope && showQueuePanel ? '4'
+    : showProjectScope || showQueuePanel ? '3'
+    : '2'
+
   return (
     <header style={{
-      gridColumn: '2',
+      gridColumn,
       gridRow: '1',
       display: 'flex',
       alignItems: 'center',

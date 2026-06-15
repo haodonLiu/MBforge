@@ -237,7 +237,7 @@ function AppInner() {
           }}
         />
       )}
-      <Header />
+      <Header showProjectScope={showProjectScope} showQueuePanel={showQueuePanel} />
       <main style={{
         gridColumn: (() => {
           if (showProjectScope && showQueuePanel) return '4'

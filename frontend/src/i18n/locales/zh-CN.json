@@ -10,15 +10,11 @@
   "common.search": "搜索",
   "common.noResults": "无结果",
   "common.project": "项目",
-
-  "nav.dashboard": "数据看板",
-  "nav.project": "项目看板",
   "nav.workspace": "工作区",
   "nav.discover": "发现",
   "discover.search": "搜索",
   "discover.chat": "对话",
   "nav.analysis": "分析",
-
   "analysis.sar": "SAR",
   "analysis.cluster": "聚类",
   "analysis.similarity": "相似性",
@@ -34,19 +30,13 @@
   "sar.tabs.cliffs": "活性悬崖",
   "sar.jumpedTo": "已跳转到 {{name}}",
   "nav.notes": "笔记",
-  "nav.search": "搜索",
-  "nav.chat": "对话",
   "nav.molecules": "分子库",
-  "nav.sar": "SAR 分析",
-  "nav.environment": "环境",
   "nav.queue": "处理队列",
-  "nav.fileTree": "文件树",
   "nav.switchProject": "切换项目",
   "nav.confirmSwitchProject": "确定要切换项目吗？未保存的更改将丢失。",
   "nav.settings": "设置",
   "nav.projectScope": "项目文献",
   "header.projectFolderRules": "项目目录规范",
-
   "queue.stage.inspector": "检测",
   "queue.stage.textExtract": "文本",
   "queue.stage.ocr": "OCR",
@@ -54,17 +44,14 @@
   "queue.stage.index": "索引",
   "queue.workerOnline": "Worker 在线",
   "queue.workerOffline": "Worker 离线",
-
   "projectScope.empty": "暂无已解析的 PDF",
   "projectScope.import": "导入 PDF",
   "projectScope.importing": "导入中…",
   "projectScope.importFailed": "导入失败",
   "projectScope.loadFailed": "加载项目文献失败",
-
   "sidebarQueue.title": "处理队列",
   "sidebarQueue.viewAll": "查看全部",
   "sidebarQueue.empty": "暂无处理中任务",
-
   "welcome.title": "MBForge",
   "welcome.subtitle": "分子科学知识库与 AI 工作台",
   "welcome.createProject": "创建项目",
@@ -75,7 +62,6 @@
   "welcome.projectNamePlaceholder": "输入项目名称…",
   "welcome.selectFolder": "选择文件夹",
   "welcome.create": "创建",
-
   "settings.title": "设置",
   "settings.tabs.general": "通用",
   "settings.tabs.llm": "LLM",
@@ -92,7 +78,6 @@
   "settings.tabRerank": "Reranker",
   "settings.tabVlm": "VLM",
   "settings.tabOcr": "OCR",
-  "settings.tabRerank": "Reranker",
   "settings.llmSampling": "LLM 采样",
   "settings.embedRuntime": "Embedding 运行",
   "settings.rerankRuntime": "Reranker 运行",
@@ -197,7 +182,6 @@
   "settings.apiKeyHide": "隐藏",
   "settings.apiKey": "API Key",
   "settings.model": "Model",
-  "settings.modelDesc": "自由输入——可键入任意模型名，或从建议列表中选择",
   "settings.modelDesc": "选择或输入模型名称",
   "settings.maxTokens": "Max Tokens",
   "settings.maxTokensDesc": "回复最大 token 数",
@@ -242,7 +226,6 @@
   "settings.serverAddress": "服务地址",
   "settings.aboutMbforge": "关于 MBForge",
   "settings.version": "版本",
-
   "systemTab.loadEnvFailed": "Python sidecar 未启动，System 页面不可用",
   "systemTab.loadModelsFailed": "获取模型列表失败",
   "systemTab.loadPathsFailed": "获取模型路径失败",
@@ -266,11 +249,9 @@
   "systemTab.molecularDynamics": "分子动力学",
   "systemTab.docking": "分子对接",
   "systemTab.admet": "ADMET",
-
   "models.loadFailed": "加载模型列表失败",
   "models.cacheDirFailed": "加载缓存目录失败",
   "models.deleteError": "删除失败：{{error}}",
-
   "chat.placeholder": "输入问题... (Enter 发送, Shift+Enter 换行)",
   "chat.placeholderNoProject": "请先打开一个项目",
   "chat.searchMolecule": "搜索分子",
@@ -279,7 +260,6 @@
   "chat.searchMolPrefix": "搜索分子：",
   "chat.analyzeSarPrefix": "请分析这些分子的SAR关系：",
   "chat.dockPrefix": "执行分子对接：",
-
   "mol.title": "分子库",
   "mol.add": "+ 添加分子",
   "mol.search": "搜索分子...",
@@ -288,7 +268,6 @@
   "mol.unknownSource": "未知来源",
   "mol.activity": "活性",
   "mol.loadFailed": "加载失败",
-
   "notes.title": "笔记",
   "notes.create": "新建笔记",
   "notes.delete": "删除笔记",
@@ -314,15 +293,12 @@
   "notes.deleted": "笔记已删除",
   "notes.created": "已创建新笔记",
   "notes.searchPlaceholder": "搜索笔记内容...",
-
   "time.justNow": "刚刚",
   "time.minutesAgo": "{{count}}分钟前",
   "time.hoursAgo": "{{count}}小时前",
   "time.daysAgo": "{{count}}天前",
-
   "search.placeholder": "搜索分子、文献、概念...",
   "search.placeholderNoProject": "请先打开或创建一个项目",
-
   "discover.search.placeholder": "搜索分子、文献、概念...",
   "discover.search.placeholderNoProject": "请先打开或创建一个项目",
   "discover.search.hints": ["阿司匹林", "分子对接", "SAR分析", "IC50"],
@@ -334,7 +310,6 @@
   "discover.search.fallbackTitle": "文档片段",
   "discover.search.unknownSource": "未知来源",
   "discover.search.searchFailed": "搜索失败",
-
   "discover.chat.greeting": "你好！我是 MBForge AI 助手。有什么关于分子或文献的问题可以问我。",
   "discover.chat.noProject": "未选择项目",
   "discover.chat.documentsCount": "{{count}} 篇文献",
@@ -342,11 +317,9 @@
   "discover.chat.agentInitFailed": "Agent 初始化失败：{{error}}",
   "discover.chat.error": "错误：{{error}}",
   "discover.chat.networkError": "网络错误：{{error}}",
-
   "dashboard.conversations": "对话数",
   "dashboard.weekActive": "本周活跃",
   "dashboard.confirmed": "已确认",
-
   "workspace.overview": "概览",
   "workspace.documents": "文档",
   "workspace.title": "工作区",
@@ -354,7 +327,6 @@
   "workspace.indexedDocuments": "已索引",
   "workspace.loadStatsFailed": "加载工作区统计数据失败",
   "workspace.noProjectSelected": "请先选择或创建一个项目",
-
   "folder.select": "选择文件夹",
   "folder.browse": "浏览文件夹",
   "folder.errorNotAvailable": "Tauri 环境不可用，请在桌面应用中打开",
@@ -362,7 +334,6 @@
   "folder.errorPlugin": "对话框插件不可用",
   "folder.errorIpc": "Tauri IPC 通信错误",
   "folder.errorSelect": "选择失败: {{msg}}",
-
   "models.embedding": "Embedding 模型",
   "models.reranker": "Reranker 模型",
   "models.detection": "分子检测模型",
@@ -392,7 +363,6 @@
   "models.enterModelName": "输入模型名称",
   "models.complete": "完成",
   "models.official": "官方",
-
   "env.ready": "✓ 就绪",
   "env.notDownloaded": "未下载",
   "env.checking": "检查中...",
@@ -410,7 +380,6 @@
   "env.filterAll": "全部",
   "env.filterReady": "已就绪",
   "env.filterNotReady": "未就绪",
-
   "error.title": "出现错误",
   "error.description": "应用遇到了意外问题。您可以尝试刷新页面恢复。",
   "error.refresh": "刷新页面",

@@ -1,8 +1,7 @@
 /** SAR 分析 — Tauri 原生（替代 Python sidecar HTTP） */
 
 import { invoke } from '@tauri-apps/api/core'
-import { invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { invokeWithError, ErrorCode } from './_utils'
 
 export interface ScaffoldResult {
   scaffold_smarts: string

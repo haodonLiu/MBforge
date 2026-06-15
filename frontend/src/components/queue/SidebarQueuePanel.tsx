@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { listen } from '@tauri-apps/api/event'
-import { EVT } from '../../api/tauri-events'
-import { ingestList, type IngestTask, type IngestWorkerHeartbeatEvent } from '../../api/tauri/ingest_queue'
+import { EVT } from '@/api/tauri-events'
+import { ingestList, type IngestTask, type IngestWorkerHeartbeatEvent } from '@/api/tauri/ingest_queue'
 import ProgressBar from '../ui/ProgressBar'
 import Button from '../ui/Button'
 import ScrollColumn from '../ui/ScrollColumn'
@@ -10,6 +10,7 @@ import EmptyState from '../ui/EmptyState'
 
 interface Props {
   projectRoot: string
+  gridColumn: string
   onViewAll: () => void
 }
 
@@ -17,15 +18,15 @@ function basename(p: string): string {
   return p.split(/[\\/]/).pop() || p
 }
 
-const STAGE_LABEL: Record<string, string> = {
-  inspector: '检测',
-  text_extract: '文本',
-  ocr: 'OCR',
-  moldet: '分子',
-  index: '索引',
+const STAGE_KEYS: Record<string, string> = {
+  inspector: 'queue.stage.inspector',
+  text_extract: 'queue.stage.textExtract',
+  ocr: 'queue.stage.ocr',
+  moldet: 'queue.stage.moldet',
+  index: 'queue.stage.index',
 }
 
-export default function SidebarQueuePanel({ projectRoot, onViewAll }: Props) {
+export default function SidebarQueuePanel({ projectRoot, gridColumn, onViewAll }: Props) {
   const { t } = useTranslation()
   const [tasks, setTasks] = useState<IngestTask[]>([])
   const [workerOnline, setWorkerOnline] = useState(false)
@@ -74,7 +75,7 @@ export default function SidebarQueuePanel({ projectRoot, onViewAll }: Props) {
     <div
       className="sidebar-queue-panel"
       style={{
-        gridColumn: '3',
+        gridColumn,
         gridRow: '1 / 4',
         background: 'var(--bg-surface)',
         borderRight: '1px solid var(--border)',
@@ -88,7 +89,7 @@ export default function SidebarQueuePanel({ projectRoot, onViewAll }: Props) {
         <span>{t('sidebarQueue.title') || '处理队列'}</span>
         <span
           className={`sidebar-queue-worker-status ${workerOnline ? 'is-online' : 'is-offline'}`}
-          title={workerOnline ? 'Worker 在线' : 'Worker 离线'}
+          title={workerOnline ? t('queue.workerOnline') : t('queue.workerOffline')}
         />
       </div>
 
@@ -110,7 +111,7 @@ export default function SidebarQueuePanel({ projectRoot, onViewAll }: Props) {
                   </span>
                 </div>
                 <div className="sidebar-queue-item-row">
-                  <span className="sidebar-queue-stage">{STAGE_LABEL[task.stage] || task.stage}</span>
+                  <span className="sidebar-queue-stage">{STAGE_KEYS[task.stage] ? t(STAGE_KEYS[task.stage]) : task.stage}</span>
                   <span className="sidebar-queue-progress-text">{Math.round(task.progress_pct)}%</span>
                 </div>
                 <ProgressBar value={task.progress_pct} height={4} showPercent={false} />

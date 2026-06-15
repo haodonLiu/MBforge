@@ -23,6 +23,17 @@ import { useIngestNotifications } from './hooks/useIngestNotifications'
 import GlobalDownloadBarHost from './components/GlobalDownloadBarHost'
 import { openProject, enqueueUnresolvedDocuments } from './api/tauri/project'
 
+function getContentColumn(showProjectScope: boolean, showQueuePanel: boolean): '2' | '3' | '4' {
+  if (showProjectScope && showQueuePanel) return '4'
+  if (showProjectScope || showQueuePanel) return '3'
+  return '2'
+}
+
+function getQueuePanelColumn(showProjectScope: boolean, showQueuePanel: boolean): '2' | '3' {
+  if (showProjectScope && showQueuePanel) return '3'
+  return '2'
+}
+
 // Route-level code splitting — each page becomes its own chunk.
 // Heavy bundles (Chat, MoleculeLibrary) only load when the user navigates
 // to them, slashing initial TTI.
@@ -165,6 +176,8 @@ function AppInner() {
   const showProjectScope = effectiveProjectScopeOpen && !isTablet
   const effectiveQueuePanelOpen = queuePanelOpen && !isMobile && !isTablet
   const showQueuePanel = effectiveQueuePanelOpen
+  const contentColumn = getContentColumn(showProjectScope, showQueuePanel)
+  const queuePanelColumn = getQueuePanelColumn(showProjectScope, showQueuePanel)
 
   // Project open - show full app with file tree
   return (
@@ -231,19 +244,16 @@ function AppInner() {
       {showQueuePanel && (
         <SidebarQueuePanel
           projectRoot={projectRoot}
+          gridColumn={queuePanelColumn}
           onViewAll={() => {
             setCurrentPage('queue')
             void navigate('/queue')
           }}
         />
       )}
-      <Header showProjectScope={showProjectScope} showQueuePanel={showQueuePanel} />
+      <Header gridColumn={contentColumn} />
       <main style={{
-        gridColumn: (() => {
-          if (showProjectScope && showQueuePanel) return '4'
-          if (showProjectScope || showQueuePanel) return '3'
-          return '2'
-        })(),
+        gridColumn: contentColumn,
         gridRow: '2 / 3',
         display: 'flex',
         flexDirection: 'column',

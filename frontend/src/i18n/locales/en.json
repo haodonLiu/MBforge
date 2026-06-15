@@ -45,6 +45,15 @@
   "nav.confirmSwitchProject": "Are you sure you want to switch projects? Unsaved changes will be lost.",
   "nav.settings": "Settings",
   "nav.projectScope": "Project Scope",
+  "header.projectFolderRules": "Project Folder Rules",
+
+  "queue.stage.inspector": "Inspect",
+  "queue.stage.textExtract": "Text",
+  "queue.stage.ocr": "OCR",
+  "queue.stage.moldet": "Molecule",
+  "queue.stage.index": "Index",
+  "queue.workerOnline": "Worker online",
+  "queue.workerOffline": "Worker offline",
 
   "projectScope.empty": "No parsed PDFs yet",
   "projectScope.import": "Import PDF",

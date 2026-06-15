@@ -18,7 +18,7 @@ import {
   molAdminUpdateStatus,
   molAdminDelete,
   molAdminAddSimilarity,
-} from '../moleculeAdmin'
+} from '../molecule_admin'
 
 const mockInvoke = vi.mocked(invoke)
 
@@ -62,6 +62,12 @@ describe('moleculeAdmin API', () => {
       const result = await molAdminGet('/project', 'missing')
 
       expect(result).toBeNull()
+    })
+
+    it('propagates invoke errors', async () => {
+      mockInvoke.mockRejectedValue(new Error('db locked'))
+
+      await expect(molAdminGet('/project', 'mol-1')).rejects.toThrow('db locked')
     })
   })
 

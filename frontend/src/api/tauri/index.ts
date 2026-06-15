@@ -7,6 +7,7 @@
  * - agent:     agent session
  * - kb:        knowledge base (index, search, structure, pages)
  * - molecule:  molecule store + analysis wrappers
+ * - molecule_admin: MoleculeEngine CRUD wrappers
  * - project:   project open, scan, file ops
  * - environment: resource manager / env check
  * - download:    model download / delete / list
@@ -27,7 +28,7 @@ export * from './pdf'
 export * from './agent'
 export * from './kb'
 export * from './molecule'
-export * from './moleculeAdmin'
+export * from './molecule_admin'
 export * from './project'
 export * from './environment'
 export * from './sidecar'

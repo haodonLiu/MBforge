@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { FlaskIcon, SearchIcon, ChatIcon, EnvironmentIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon, BarChartIcon, NoteIcon, QueueIcon } from './icons'
+import { FlaskIcon, SearchIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon, BarChartIcon, NoteIcon, QueueIcon } from './icons'
 import IconButton from '../components/ui/IconButton'
 import Tooltip from '../components/ui/Tooltip'
 import ModelStatusButton from './ModelStatusButton'
@@ -22,15 +22,20 @@ interface Props {
   onToggleQueuePanel: () => void
 }
 
-const NAV_ITEMS = [
-  { id: 'dashboard', path: '/dashboard', icon: BarChartIcon, labelKey: 'nav.dashboard' },
-  { id: 'project', path: '/project', icon: LayoutIcon, labelKey: 'nav.project' },
+const PRIMARY_ITEMS = [
+  { id: 'workspace', path: '/workspace', icon: LayoutIcon, labelKey: 'nav.workspace' },
+  { id: 'discover', path: '/search', icon: SearchIcon, labelKey: 'nav.discover' },
+  { id: 'molecules', path: '/molecules', icon: FlaskIcon, labelKey: 'nav.molecules' },
+  { id: 'analysis', path: '/analysis', icon: BarChartIcon, labelKey: 'nav.analysis' },
+]
+
+const SECONDARY_ITEMS = [
   { id: 'queue', path: '/queue', icon: QueueIcon, labelKey: 'nav.queue' },
   { id: 'notes', path: '/notes', icon: NoteIcon, labelKey: 'nav.notes' },
-  { id: 'search', path: '/search', icon: SearchIcon, labelKey: 'nav.search' },
-  { id: 'chat', path: '/chat', icon: ChatIcon, labelKey: 'nav.chat' },
-  { id: 'molecules', path: '/molecules', icon: FlaskIcon, labelKey: 'nav.molecules' },
-  { id: 'environment', path: '/environment', icon: EnvironmentIcon, labelKey: 'nav.environment' },
+]
+
+const UTILITY_ITEMS = [
+  { id: 'settings', path: '/settings', icon: SettingsIcon, labelKey: 'nav.settings' },
 ]
 
 interface NavButtonProps {
@@ -109,7 +114,7 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchP
     }
   }, [projectRoot])
 
-  const handleClick = (item: typeof NAV_ITEMS[0]) => {
+  const handleClick = (item: typeof PRIMARY_ITEMS[0]) => {
     onNavigate(item.id)
     void navigate(item.path)
   }
@@ -132,7 +137,7 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchP
           </IconButton>
         </Tooltip>
 
-        {NAV_ITEMS.map((item) => (
+        {PRIMARY_ITEMS.map((item) => (
           <NavButton
             key={item.id}
             active={current === item.id}
@@ -177,6 +182,34 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchP
             )}
           </div>
         </Tooltip>
+
+        <div style={{ margin: '8px 6px', borderTop: '1px solid var(--border)' }} />
+
+        {SECONDARY_ITEMS.map((item) => (
+          <NavButton
+            key={item.id}
+            active={current === item.id}
+            onClick={() => handleClick(item)}
+            label={t(item.labelKey)}
+            icon={item.icon}
+          />
+        ))}
+
+        {UTILITY_ITEMS.map((item) => (
+          <NavButton
+            key={item.id}
+            active={current === item.id}
+            onClick={() => {
+              if (item.id === 'settings') {
+                onSettingsOpen()
+              } else {
+                handleClick(item)
+              }
+            }}
+            label={t(item.labelKey)}
+            icon={item.icon}
+          />
+        ))}
       </div>
 
       <div style={{
@@ -191,11 +224,6 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchP
         <Tooltip text={t('nav.switchProject')}>
           <IconButton onClick={onSwitchProject}>
             <PlusIcon size={20} />
-          </IconButton>
-        </Tooltip>
-        <Tooltip text={t('nav.settings')}>
-          <IconButton onClick={onSettingsOpen}>
-            <SettingsIcon size={20} />
           </IconButton>
         </Tooltip>
       </div>

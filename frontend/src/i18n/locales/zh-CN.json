@@ -13,6 +13,9 @@
 
   "nav.dashboard": "数据看板",
   "nav.project": "项目看板",
+  "nav.workspace": "工作区",
+  "nav.discover": "发现",
+  "nav.analysis": "分析",
   "nav.notes": "笔记",
   "nav.search": "搜索",
   "nav.chat": "对话",
@@ -262,6 +265,14 @@
   "dashboard.conversations": "对话数",
   "dashboard.weekActive": "本周活跃",
   "dashboard.confirmed": "已确认",
+
+  "workspace.overview": "概览",
+  "workspace.documents": "文档",
+  "workspace.title": "工作区",
+  "workspace.totalDocuments": "文献总数",
+  "workspace.indexedDocuments": "已索引",
+  "workspace.loadStatsFailed": "加载工作区统计数据失败",
+  "workspace.noProjectSelected": "请先选择或创建一个项目",
 
   "folder.select": "选择文件夹",
   "folder.browse": "浏览文件夹",

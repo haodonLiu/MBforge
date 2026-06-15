@@ -665,6 +665,87 @@
   background: var(--bg-surface);
 }
 
+/* ===== Settings Page (page refactor) ===== */
+.settings-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.settings-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-unsaved-indicator {
+  font-size: 12px;
+  margin-right: 8px;
+}
+
+.settings-unsaved-indicator--visible {
+  color: var(--warning);
+}
+
+.settings-unsaved-indicator--hidden {
+  color: transparent;
+}
+
+.settings-alert {
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-tab-content {
+  padding: 4px 0 24px;
+}
+
+/* ===== System Tab ===== */
+.system-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.system-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.system-library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.system-block {
+  margin-bottom: 24px;
+}
+
+.system-loading {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.system-error {
+  padding: 40px;
+  text-align: center;
+  color: var(--danger);
+}
+
 /* About Section */
 .about-section {
   display: flex;

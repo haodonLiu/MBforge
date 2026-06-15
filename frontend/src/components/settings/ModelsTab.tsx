@@ -9,6 +9,7 @@ import {
   type DownloadProgress,
 } from '@/api/tauri/download'
 import ModelCard from '@/components/settings/ModelCard'
+import { showToast } from '@/hooks/useToast'
 
 export interface DownloadState {
   [modelId: string]: {
@@ -39,16 +40,24 @@ export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTab
   const loadModels = useCallback(async () => {
     try {
       const resp = await listModels()
-      if (resp.success) setModels(resp.models)
-    } catch { /* 后端未启动时静默失败 */ }
-  }, [])
+      if (resp.success) {
+        setModels(resp.models)
+      } else {
+        showToast(resp.error || t('models.loadFailed'), 'error')
+      }
+    } catch (e) {
+      showToast(t('models.loadFailed') + ': ' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
+  }, [t])
 
   const loadCacheDir = useCallback(async () => {
     try {
       const info = await invoke<{ mbforge: { path: string } }>('models_cache_dir_info')
       setCacheDir(info.mbforge.path)
-    } catch { /* ignore */ }
-  }, [])
+    } catch (e) {
+      showToast(t('models.cacheDirFailed') + ': ' + (e instanceof Error ? e.message : String(e)), 'error')
+    }
+  }, [t])
 
   useEffect(() => {
     void loadModels()
@@ -120,9 +129,9 @@ export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTab
       setDeleteConfirm(null)
       void loadModels()
     } catch (e) {
-      console.error(e)
+      showToast(t('models.deleteError', { error: e instanceof Error ? e.message : String(e) }), 'error')
     }
-  }, [loadModels])
+  }, [loadModels, t])
 
   // 按 type 分组（保持顺序：embedding → reranker → detection）
   const typeOrder: Array<{ key: string; labelKey: string }> = [

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import Tabs from '@/components/ui/Tabs'
 import ScrollColumn from '@/components/ui/ScrollColumn'
@@ -30,17 +30,21 @@ export default function SettingsTabs({
   const { t } = useTranslation()
   const [activeTab, setActiveTab] = useState<TabKey>('general')
 
-  const tabs = [
+  const tabs = useMemo(() => [
     { key: 'general', label: t('settings.tabs.general') },
     { key: 'llm', label: t('settings.tabs.llm') },
     { key: 'models', label: t('settings.tabs.models') },
     { key: 'system', label: t('settings.tabs.system') },
     { key: 'cache', label: t('settings.tabs.cache') },
     { key: 'about', label: t('settings.tabs.about') },
-  ]
+  ], [t])
+
+  const handleCacheDirChange = useCallback((v: string) => {
+    setSettings((s) => ({ ...s, model_cache_dir: v }))
+  }, [setSettings])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div className="settings-tabs">
       <Tabs
         items={tabs}
         activeKey={activeTab}
@@ -49,7 +53,7 @@ export default function SettingsTabs({
         size="sm"
       />
       <ScrollColumn>
-        <div style={{ padding: '4px 0 24px' }}>
+        <div className="settings-tab-content">
           {activeTab === 'general' && (
             <GeneralTab settings={settings} setSettings={setSettings} />
           )}
@@ -59,7 +63,7 @@ export default function SettingsTabs({
           {activeTab === 'models' && (
             <ModelsTab
               modelCacheDir={settings.model_cache_dir}
-              onCacheDirChange={(v) => setSettings((s) => ({ ...s, model_cache_dir: v }))}
+              onCacheDirChange={handleCacheDirChange}
             />
           )}
           {activeTab === 'system' && (

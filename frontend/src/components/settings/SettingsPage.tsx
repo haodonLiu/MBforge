@@ -53,7 +53,7 @@ export default function SettingsPage() {
     }
   }, [t])
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     setIsLoading(true)
     setError('')
     setSaveSuccess(false)
@@ -78,21 +78,21 @@ export default function SettingsPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [settings, t, setTheme])
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setSettings(DEFAULT_SETTINGS)
     showToast(t('settings.resetHint'), 'info')
-  }
+  }, [t])
 
-  const handleOpenConfigDir = async () => {
+  const handleOpenConfigDir = useCallback(async () => {
     try {
       const path = await getConfigDir()
       showToast(path, 'info')
     } catch (e) {
       showToast(String(e), 'error')
     }
-  }
+  }, [])
 
   useEffect(() => {
     void loadSettings()
@@ -100,23 +100,11 @@ export default function SettingsPage() {
 
   return (
     <PageContainer>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '16px',
-          flexShrink: 0,
-        }}
-      >
+      <div className="settings-page-header">
         <PageTitle>{t('settings.title')}</PageTitle>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="settings-page-actions">
           <span
-            style={{
-              fontSize: '12px',
-              color: isDirty ? 'var(--warning)' : 'transparent',
-              marginRight: '8px',
-            }}
+            className={`settings-unsaved-indicator ${isDirty ? 'settings-unsaved-indicator--visible' : 'settings-unsaved-indicator--hidden'}`}
           >
             {isDirty ? '● ' + t('settings.unsavedChangesTitle') : ''}
           </span>
@@ -139,14 +127,14 @@ export default function SettingsPage() {
           variant="danger"
           message={error}
           onDismiss={() => setError('')}
-          style={{ marginBottom: '12px', flexShrink: 0 }}
+          className="settings-alert"
         />
       )}
       {saveSuccess && (
         <AlertBanner
           variant="success"
           message={t('settings.saved')}
-          style={{ marginBottom: '12px', flexShrink: 0 }}
+          className="settings-alert"
         />
       )}
 

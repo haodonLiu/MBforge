@@ -1,7 +1,7 @@
 /** Shared utilities for Tauri IPC bridges. */
 
-import { AppError, ErrorCode, getErrorMessage } from '../../utils/errors'
-import { showToast } from '../../hooks/useToast'
+import { AppError, ErrorCode, getErrorMessage } from '@/utils/errors'
+import { showToast } from '@/hooks/useToast'
 
 /** True when running inside a Tauri webview (desktop app). */
 export function isTauriAvailable(): boolean {
@@ -15,11 +15,13 @@ export function isTauriAvailable(): boolean {
   }
 }
 
+const NETWORK_KEYWORDS = ['network', 'fetch', 'connection', 'timeout', 'refused'] as const
+
 function classifyError(err: unknown): { code: ErrorCode; message: string } {
   const raw = err instanceof Error ? err.message : String(err)
   const lower = raw.toLowerCase()
 
-  if (lower.includes('network') || lower.includes('fetch') || lower.includes('connection') || lower.includes('timeout') || lower.includes('refused')) {
+  if (NETWORK_KEYWORDS.some(keyword => lower.includes(keyword))) {
     return { code: ErrorCode.Network, message: getErrorMessage(ErrorCode.Network) }
   }
   if (lower.includes('permission') || lower.includes('access denied') || lower.includes('not allowed')) {

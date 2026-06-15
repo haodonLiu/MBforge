@@ -16,6 +16,14 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'similarity', labelKey: 'analysis.similarity' },
 ]
 
+function PlaceholderPanel({ title }: { title: string }) {
+  return (
+    <div className="analysis-placeholder">
+      <PageTitle>{title}</PageTitle>
+    </div>
+  )
+}
+
 export default function Analysis() {
   const { t } = useTranslation()
   const [activePanel, setActivePanel] = useState<AnalysisPanel>('sar')
@@ -23,74 +31,31 @@ export default function Analysis() {
   return (
     <PageContainer className="analysis-page" noPadding>
       <aside className="analysis-sidebar">
-        <div
-          style={{
-            padding: '16px 14px',
-            borderBottom: '1px solid var(--border)',
-            fontSize: '12px',
-            fontWeight: 600,
-            color: 'var(--text-muted)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-          }}
-        >
+        <div className="analysis-sidebar-header">
           {t('nav.analysis')}
         </div>
         <nav style={{ padding: '8px' }}>
-          {NAV_ITEMS.map(item => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setActivePanel(item.key)}
-              className={activePanel === item.key ? 'active' : ''}
-              style={{
-                display: 'block',
-                width: '100%',
-                padding: '10px 12px',
-                marginBottom: '4px',
-                textAlign: 'left',
-                fontSize: '14px',
-                color: activePanel === item.key ? 'var(--accent)' : 'var(--text-primary)',
-                background: activePanel === item.key ? 'var(--accent-subtle)' : 'transparent',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-              }}
-            >
-              {t(item.labelKey)}
-            </button>
-          ))}
+          {NAV_ITEMS.map(item => {
+            const isActive = activePanel === item.key
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setActivePanel(item.key)}
+                className={isActive ? 'analysis-nav-button analysis-nav-button-active' : 'analysis-nav-button'}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                {t(item.labelKey)}
+              </button>
+            )
+          })}
         </nav>
       </aside>
 
       <main className="analysis-content">
         {activePanel === 'sar' && <SarPanel />}
-        {activePanel === 'cluster' && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              color: 'var(--text-muted)',
-            }}
-          >
-            <PageTitle>{t('analysis.cluster')}</PageTitle>
-          </div>
-        )}
-        {activePanel === 'similarity' && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              color: 'var(--text-muted)',
-            }}
-          >
-            <PageTitle>{t('analysis.similarity')}</PageTitle>
-          </div>
-        )}
+        {activePanel === 'cluster' && <PlaceholderPanel title={t('analysis.cluster')} />}
+        {activePanel === 'similarity' && <PlaceholderPanel title={t('analysis.similarity')} />}
       </main>
     </PageContainer>
   )

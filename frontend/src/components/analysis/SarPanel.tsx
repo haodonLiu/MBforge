@@ -1,12 +1,12 @@
 import { useEffect, useState, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { PageContainer, PageTitle, Tabs, EmptyState } from '@/components/ui'
 import { FlaskIcon, BarChartIcon, SparklesIcon, TargetIcon } from '@/components/icons'
 import { showToast } from '@/hooks/useToast'
 import { useAppContext } from '@/context/AppContext'
 import { listMoleculesTauri } from '@/api/tauri/molecule'
 import { molAdminList } from '@/api/tauri/molecule_admin'
-import type { MoleculeRecord } from '@/types'
-import type { SARSession } from '@/types'
+import type { MoleculeRecord, SARSession } from '@/types'
 import { moleculesToSession } from '@/components/sar/utils'
 import SessionOverview from '@/components/sar/SessionOverview'
 import OverviewTab from '@/components/sar/OverviewTab'
@@ -15,12 +15,24 @@ import RGroupTab from '@/components/sar/RGroupTab'
 import CliffsTab from '@/components/sar/CliffsTab'
 
 export default function SarPanel() {
+  const { t } = useTranslation()
   const { projectRoot } = useAppContext()
   const [sessions, setSessions] = useState<SARSession[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'overview' | 'correction' | 'rgroup' | 'cliffs'>('overview')
   const [selectedCompoundId, setSelectedCompoundId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [correctionItems, setCorrectionItems] = useState<Array<{
+    id: string
+    ocrSmiles: string
+    ocrConfidence: number
+    name?: string
+    sourceDoc?: string
+    context?: string
+    status?: 'pending' | 'confirmed' | 'rejected' | 'corrected'
+    correctedSmiles?: string
+    sourceRecord?: MoleculeRecord
+  }>>([])
 
   useEffect(() => {
     if (!projectRoot) {
@@ -35,21 +47,9 @@ export default function SarPanel() {
         setSessions([session])
         setActiveSessionId(session.id)
       })
-      .catch((e: unknown) => showToast(`加载失败: ${e instanceof Error ? e.message : String(e)}`, 'error'))
+      .catch((e: unknown) => showToast(t('sar.loadFailed', { error: e instanceof Error ? e.message : String(e) }), 'error'))
       .finally(() => setLoading(false))
-  }, [projectRoot])
-
-  const [correctionItems, setCorrectionItems] = useState<Array<{
-    id: string
-    ocrSmiles: string
-    ocrConfidence: number
-    name?: string
-    sourceDoc?: string
-    context?: string
-    status?: 'pending' | 'confirmed' | 'rejected' | 'corrected'
-    correctedSmiles?: string
-    sourceRecord?: MoleculeRecord
-  }>>([])
+  }, [projectRoot, t])
 
   useEffect(() => {
     if (activeTab !== 'correction' || !projectRoot) return
@@ -68,8 +68,8 @@ export default function SarPanel() {
           })),
         )
       })
-      .catch((e: unknown) => showToast(`加载待矫正分子失败: ${e instanceof Error ? e.message : String(e)}`, 'error'))
-  }, [activeTab, projectRoot])
+      .catch((e: unknown) => showToast(t('sar.correctionLoadFailed', { error: e instanceof Error ? e.message : String(e) }), 'error'))
+  }, [activeTab, projectRoot, t])
 
   const activeSession = useMemo(
     () => sessions.find(s => s.id === activeSessionId) ?? null,
@@ -79,8 +79,8 @@ export default function SarPanel() {
   if (loading) {
     return (
       <PageContainer>
-        <PageTitle>SAR Analysis</PageTitle>
-        <EmptyState message="正在加载 SAR 数据..." />
+        <PageTitle>{t('sar.title')}</PageTitle>
+        <EmptyState message={t('sar.loading')} />
       </PageContainer>
     )
   }
@@ -88,8 +88,8 @@ export default function SarPanel() {
   if (sessions.length === 0) {
     return (
       <PageContainer>
-        <PageTitle>SAR Analysis</PageTitle>
-        <EmptyState message="还没有 SAR 会话" />
+        <PageTitle>{t('sar.title')}</PageTitle>
+        <EmptyState message={t('sar.empty')} />
       </PageContainer>
     )
   }
@@ -98,9 +98,9 @@ export default function SarPanel() {
     <PageContainer>
       <div className="sar-header">
         <div>
-          <PageTitle>SAR Analysis</PageTitle>
+          <PageTitle>{t('sar.title')}</PageTitle>
           <div className="sar-header-subtitle">
-            构效关系分析 · 共 {activeSession?.compounds.length ?? 0} 个化合物
+            {t('sar.subtitle', { count: activeSession?.compounds.length ?? 0 })}
           </div>
         </div>
         {sessions.length > 1 && (
@@ -124,10 +124,10 @@ export default function SarPanel() {
 
       <Tabs
         items={[
-          { key: 'overview',   label: <><FlaskIcon size={14} /> 化合物列表</>, badge: activeSession?.compounds.length },
-          { key: 'correction', label: <><SparklesIcon size={14} /> OCR 矫正</>, badge: correctionItems.length },
-          { key: 'rgroup',     label: <><TargetIcon size={14} /> R-Group 分析</> },
-          { key: 'cliffs',     label: <><BarChartIcon size={14} /> 活性悬崖</> },
+          { key: 'overview',   label: <><FlaskIcon size={14} /> {t('sar.tabs.overview')}</>, badge: activeSession?.compounds.length },
+          { key: 'correction', label: <><SparklesIcon size={14} /> {t('sar.tabs.correction')}</>, badge: correctionItems.length },
+          { key: 'rgroup',     label: <><TargetIcon size={14} /> {t('sar.tabs.rgroup')}</> },
+          { key: 'cliffs',     label: <><BarChartIcon size={14} /> {t('sar.tabs.cliffs')}</> },
         ]}
         activeKey={activeTab}
         onChange={k => setActiveTab(k as typeof activeTab)}
@@ -148,7 +148,8 @@ export default function SarPanel() {
             onItemsChange={setCorrectionItems}
             onComplete={(saved, failed) => {
               if (failed === 0 && saved > 0) {
-                setCorrectionItems(prev => prev.filter(i => !i.sourceRecord || prev.find(p => p.id === i.id && p.status === 'pending')))
+                // After a successful save, drop items that are no longer pending.
+                setCorrectionItems(prev => prev.filter(i => i.status === 'pending'))
               }
             }}
           />
@@ -159,7 +160,7 @@ export default function SarPanel() {
             onSelectCompound={c => {
               setSelectedCompoundId(c.id)
               setActiveTab('overview')
-              showToast(`已跳转到 ${c.name}`, 'info')
+              showToast(t('sar.jumpedTo', { name: c.name }), 'info')
             }}
           />
         )}

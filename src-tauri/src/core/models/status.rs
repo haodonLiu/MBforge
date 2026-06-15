@@ -13,7 +13,10 @@ pub fn check_all() -> EnvironmentReport {
         resources.push(check_resource(info.id));
     }
 
-    let ready = resources.iter().filter(|r| r.status == ResourceStatus::Ready).count();
+    let ready = resources
+        .iter()
+        .filter(|r| r.status == ResourceStatus::Ready)
+        .count();
     let total = resources.len();
 
     EnvironmentReport {
@@ -38,47 +41,60 @@ pub fn write_resolved_paths() {
     for info in RESOURCE_CATALOG {
         if info.resource_type == ResourceType::Model {
             if let Some(p) = super::resolve::get_model_path(info.id) {
-                map.insert(info.id.to_string(), serde_json::Value::String(p.to_string_lossy().to_string()));
+                map.insert(
+                    info.id.to_string(),
+                    serde_json::Value::String(p.to_string_lossy().to_string()),
+                );
             }
         }
     }
 
     let json = serde_json::Value::Object(map);
     if let Ok(mut f) = std::fs::File::create(&path) {
-        let _ = f.write_all(serde_json::to_string_pretty(&json).unwrap_or_default().as_bytes());
+        let _ = f.write_all(
+            serde_json::to_string_pretty(&json)
+                .unwrap_or_default()
+                .as_bytes(),
+        );
         log::info!("Wrote resolved model paths to {}", path.display());
     }
 }
 
 /// 获取资源目录（纯元数据）
 pub fn catalog_json() -> Vec<serde_json::Value> {
-    RESOURCE_CATALOG.iter().map(|info| {
-        serde_json::json!({
-            "id": info.id,
-            "name": info.name,
-            "type": info.resource_type,
-            "description": info.description,
-            "size_mb": info.size_mb,
-            "license": info.license,
-            "ms_repo": info.ms_repo,
-            "pip_name": info.pip_name,
+    RESOURCE_CATALOG
+        .iter()
+        .map(|info| {
+            serde_json::json!({
+                "id": info.id,
+                "name": info.name,
+                "type": info.resource_type,
+                "description": info.description,
+                "size_mb": info.size_mb,
+                "license": info.license,
+                "ms_repo": info.ms_repo,
+                "pip_name": info.pip_name,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 fn get_python_version() -> String {
     let cmd = "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')";
-    ["python", "python3"].iter().find_map(|py| {
-        std::process::Command::new(py)
-            .args(["-c", cmd])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-    }).unwrap_or_else(|| "unknown".to_string())
+    ["python", "python3"]
+        .iter()
+        .find_map(|py| {
+            std::process::Command::new(py)
+                .args(["-c", cmd])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn detect_gpu() -> (bool, String, String) {

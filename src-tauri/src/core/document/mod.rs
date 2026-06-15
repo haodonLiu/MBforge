@@ -26,7 +26,7 @@ pub use document_tree::{DocumentTreeIndex, PageContent};
 #[allow(unused_imports)]
 pub use file_cache::{CacheStats, FileCache};
 #[allow(unused_imports)]
-pub use ingest_queue::{IngestQueue, IngestTask, IngestStatus, QueueStats};
+pub use ingest_queue::{IngestQueue, IngestStatus, IngestTask, QueueStats};
 #[allow(unused_imports)]
 pub use ingest_worker::IngestWorker;
 #[allow(unused_imports)]

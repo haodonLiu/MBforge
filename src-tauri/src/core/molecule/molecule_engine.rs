@@ -15,11 +15,11 @@ use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeRecord};
 
 // Re-export types that callers need.
 pub use crate::core::chem::markush::{MarkushOverlap, MarkushPattern};
-pub use crate::core::molecule::molecule_cluster::ClusterInfo;
-pub use crate::core::molecule::molecule_dedup::DedupResult;
 pub use crate::core::chem::sar_query::{
     ActivityCliff, ActivitySummary, AnalogWithActivity, ScaffoldActivityRecord, ScaffoldProfile,
 };
+pub use crate::core::molecule::molecule_cluster::ClusterInfo;
+pub use crate::core::molecule::molecule_dedup::DedupResult;
 
 // ---------------------------------------------------------------------------
 // MoleculeEngine
@@ -189,19 +189,35 @@ impl MoleculeEngine {
     // =====================================================================
 
     pub async fn assign_cluster(&self, mol_id: &str, cluster_id: &str) -> Result<i64, String> {
-        crate::core::molecule::molecule_cluster::assign_to_cluster(mol_id, cluster_id, &self.relation_db).await
+        crate::core::molecule::molecule_cluster::assign_to_cluster(
+            mol_id,
+            cluster_id,
+            &self.relation_db,
+        )
+        .await
     }
 
-    pub async fn remove_from_cluster(&self, mol_id: &str, cluster_id: &str) -> Result<bool, String> {
-        crate::core::molecule::molecule_cluster::remove_from_cluster(mol_id, cluster_id, &self.relation_db).await
+    pub async fn remove_from_cluster(
+        &self,
+        mol_id: &str,
+        cluster_id: &str,
+    ) -> Result<bool, String> {
+        crate::core::molecule::molecule_cluster::remove_from_cluster(
+            mol_id,
+            cluster_id,
+            &self.relation_db,
+        )
+        .await
     }
 
     pub async fn get_cluster_members(&self, cluster_id: &str) -> Result<ClusterInfo, String> {
-        crate::core::molecule::molecule_cluster::get_cluster_members(cluster_id, &self.relation_db).await
+        crate::core::molecule::molecule_cluster::get_cluster_members(cluster_id, &self.relation_db)
+            .await
     }
 
     pub async fn get_molecule_clusters(&self, mol_id: &str) -> Result<Vec<String>, String> {
-        crate::core::molecule::molecule_cluster::get_molecule_clusters(mol_id, &self.relation_db).await
+        crate::core::molecule::molecule_cluster::get_molecule_clusters(mol_id, &self.relation_db)
+            .await
     }
 
     pub async fn list_clusters(&self) -> Result<Vec<ClusterInfo>, String> {
@@ -238,9 +254,9 @@ impl MoleculeEngine {
                 rel.mol_a_id.clone()
             };
 
-            if let Some(record) = crate::core::chem::sar_query::get_molecule_activity(
-                &neighbor_id, mconn,
-            ) {
+            if let Some(record) =
+                crate::core::chem::sar_query::get_molecule_activity(&neighbor_id, mconn)
+            {
                 results.push(AnalogWithActivity {
                     mol_id: neighbor_id,
                     esmiles: record.esmiles,

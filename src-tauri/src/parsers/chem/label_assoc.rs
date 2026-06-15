@@ -45,8 +45,14 @@ pub struct LabelMatch {
 /// 匹配完再手工校验紧跟标识符的字符是不是终止符。
 //  (前导词,  pattern (含两个捕获组：标识符 + 后续字符),  类型标签)
 const LABEL_PATTERNS_ZH: &[(&str, &str)] = &[
-    ("化合物", r"化合物\s*([A-Za-z]?\d+[A-Za-z]?(?:[-‐‑–—]\d+[A-Za-z]?)?)"),
-    ("中间体", r"中间体\s*([A-Za-z]?\d+[A-Za-z]?(?:[-‐‑–—]\d+[A-Za-z]?)?)"),
+    (
+        "化合物",
+        r"化合物\s*([A-Za-z]?\d+[A-Za-z]?(?:[-‐‑–—]\d+[A-Za-z]?)?)",
+    ),
+    (
+        "中间体",
+        r"中间体\s*([A-Za-z]?\d+[A-Za-z]?(?:[-‐‑–—]\d+[A-Za-z]?)?)",
+    ),
     ("产物", r"产物\s*([A-Za-z]?\d+[A-Za-z]?)"),
     ("起始物料", r"起始\s*物料\s*([A-Za-z]?\d+[A-Za-z]?)"),
     ("原料", r"原料\s*([A-Za-z]?\d+[A-Za-z]?)"),
@@ -201,7 +207,11 @@ pub fn find_label_for_bbox(
         for (_name, re) in c.section.iter() {
             if let Some(caps) = re.captures(line_text) {
                 if let Some(m) = caps.get(0) {
-                    let candidate = (gap, m.as_str().trim().to_string(), truncate(&line.text, 200));
+                    let candidate = (
+                        gap,
+                        m.as_str().trim().to_string(),
+                        truncate(&line.text, 200),
+                    );
                     match &best_section {
                         None => best_section = Some(candidate),
                         Some((g, _, _)) if gap < *g => best_section = Some(candidate),
@@ -256,9 +266,9 @@ pub fn extract_page_text_lines(
     page_num: u32,
     page_h_pts: f64,
 ) -> Result<Vec<TextLine>, String> {
-    use std::collections::HashSet;
     use pdf_inspector::extractor::extract_text_with_positions_pages;
     use pdf_inspector::extractor::group_into_lines;
+    use std::collections::HashSet;
 
     let page_filter: HashSet<u32> = [page_num].into_iter().collect();
     let items = extract_text_with_positions_pages(pdf_path, Some(&page_filter))
@@ -319,7 +329,10 @@ mod tests {
 
     /// 文本行（顶左原点）：y0 是顶，y1 是底
     fn line(y0: f64, text: &str) -> TextLine {
-        TextLine { bbox: [50.0, y0, 500.0, y0 + 12.0], text: text.to_string() }
+        TextLine {
+            bbox: [50.0, y0, 500.0, y0 + 12.0],
+            text: text.to_string(),
+        }
     }
 
     /// 默认 molecule bbox (PDF bottom-left)，约 200x100pt，下半页
@@ -338,8 +351,8 @@ mod tests {
             return;
         }
         // Page 60 (1-indexed = 61) 有 10 个分子，所有都应被识别为 "化合物26A"
-        let lines = extract_page_text_lines(&pdf, 61, 842.0)
-            .expect("text extraction should succeed");
+        let lines =
+            extract_page_text_lines(&pdf, 61, 842.0).expect("text extraction should succeed");
         assert!(!lines.is_empty(), "page 61 should have text lines");
 
         // 找一个典型的 bbox（页 61, 任意位置，y 范围 200-400）
@@ -383,7 +396,10 @@ mod tests {
                 let mol_bbox = (100.0, y_mid - 50.0, 300.0, y_mid + 50.0);
                 if let Some(m) = find_label_for_bbox(mol_bbox, &lines, 842.0, 200.0) {
                     let label = &m.label;
-                    if label.contains("化合物") || label.contains("实施例") || label.starts_with("第") {
+                    if label.contains("化合物")
+                        || label.contains("实施例")
+                        || label.starts_with("第")
+                    {
                         matched += 1;
                     }
                 }
@@ -391,12 +407,17 @@ mod tests {
             eprintln!("page {page_num}: {} lines extracted", lines.len());
         }
         eprintln!("Rust hit rate on sample: {matched}/{total}");
-        assert!(matched > 0, "should match at least one label across sample pages");
+        assert!(
+            matched > 0,
+            "should match at least one label across sample pages"
+        );
     }
 
     #[test]
     fn test_is_terminator_set() {
-        for c in [' ', '\t', '\n', '的', '，', '。', '；', '、', '(', ')', '（', '）'] {
+        for c in [
+            ' ', '\t', '\n', '的', '，', '。', '；', '、', '(', ')', '（', '）',
+        ] {
             assert!(is_terminator(Some(c)), "{c:?} should be terminator");
         }
         for c in ['-', 'A', '1', '氯', '甲'] {
@@ -408,9 +429,7 @@ mod tests {
     #[test]
     fn test_compound_zh_above() {
         // 文本行紧贴在 bbox 上方
-        let lines = vec![
-            line(310.0, "实施例5：1-甲基-N-... (化合物26A)的制备"),
-        ];
+        let lines = vec![line(310.0, "实施例5：1-甲基-N-... (化合物26A)的制备")];
         let m = find_label_for_bbox(default_mol(), &lines, 842.0, 80.0);
         let m = m.expect("should match");
         assert_eq!(m.label, "化合物26A");
@@ -419,17 +438,31 @@ mod tests {
     #[test]
     fn test_chemical_name_no_false_positive() {
         // "化合物6-氯-2-甲基-..." 中 "6" 是化学编号，不是标识符
-        let lines = vec![line(310.0, "得到化合物6-氯-2-甲基-4-(三氟甲基)哒嗪-3(2H)-酮(300mg)")];
+        let lines = vec![line(
+            310.0,
+            "得到化合物6-氯-2-甲基-4-(三氟甲基)哒嗪-3(2H)-酮(300mg)",
+        )];
         let m = find_label_for_bbox(default_mol(), &lines, 842.0, 80.0);
-        assert!(m.is_none(), "should reject chemical-name false positive: {:?}", m);
+        assert!(
+            m.is_none(),
+            "should reject chemical-name false positive: {:?}",
+            m
+        );
     }
 
     #[test]
     fn test_step_label() {
-        let lines = vec![line(310.0, "第一步：6-氯-2-甲基-4-(三氟甲基)哒嗪-3(2H)-酮的合成")];
+        let lines = vec![line(
+            310.0,
+            "第一步：6-氯-2-甲基-4-(三氟甲基)哒嗪-3(2H)-酮的合成",
+        )];
         let m = find_label_for_bbox(default_mol(), &lines, 842.0, 80.0);
         let m = m.expect("should match step label");
-        assert!(m.label.starts_with("第") && m.label.ends_with("步"), "got {:?}", m.label);
+        assert!(
+            m.label.starts_with("第") && m.label.ends_with("步"),
+            "got {:?}",
+            m.label
+        );
     }
 
     #[test]
@@ -463,8 +496,8 @@ mod tests {
     fn test_picks_closest_among_multiple() {
         // 两条候选都"在上方"且都在 v_search 范围内 -> 选最近的
         let lines = vec![
-            line(200.0, "化合物99A的合成"),     // 远
-            line(330.0, "化合物26A的合成"),    // 近
+            line(200.0, "化合物99A的合成"), // 远
+            line(330.0, "化合物26A的合成"), // 近
         ];
         let m = find_label_for_bbox(default_mol(), &lines, 842.0, 200.0);
         let m = m.expect("should match");
@@ -483,12 +516,18 @@ mod tests {
     #[test]
     fn test_compound_with_hyphen_suffix() {
         // "化合物28A-4" 形式
-        let lines = vec![line(310.0, "第二步：3-氯-1-(2,2,2-三氟乙基)-1H-吡唑-4-甲酸(化合物28A-4)的合成")];
+        let lines = vec![line(
+            310.0,
+            "第二步：3-氯-1-(2,2,2-三氟乙基)-1H-吡唑-4-甲酸(化合物28A-4)的合成",
+        )];
         let m = find_label_for_bbox(default_mol(), &lines, 842.0, 80.0);
         // 化合物类应该匹配 "化合物28A-4"（连字符接 -4 也是合法标识符）
         // 但因为终止符校验：紧跟 -4 的是 ")"，是终止符，所以 OK
         let m = m.expect("should match 化合物28A-4");
-        assert!(m.label.contains("28A-4") || m.label.contains("第二步"),
-            "expected compound 28A-4 or step 2, got {:?}", m.label);
+        assert!(
+            m.label.contains("28A-4") || m.label.contains("第二步"),
+            "expected compound 28A-4 or step 2, got {:?}",
+            m.label
+        );
     }
 }

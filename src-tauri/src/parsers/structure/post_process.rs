@@ -115,7 +115,11 @@ fn sanitize_text(text: &str) -> String {
     }
 
     // 4. 规范化连续空白为单空格（保留换行结构）
-    s = s.split('\n').map(|line| line.split_whitespace().collect::<Vec<_>>().join(" ")).collect::<Vec<_>>().join("\n");
+    s = s
+        .split('\n')
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>()
+        .join("\n");
 
     s.trim().to_string()
 }
@@ -374,10 +378,7 @@ pub fn call_llm_api(system: &str, user: &str) -> Result<(String, Option<u32>), S
 }
 
 /// Async 入口：Tauri 命令 / pipeline 异步上下文直接调。
-pub async fn call_llm_api_async(
-    system: &str,
-    user: &str,
-) -> Result<(String, Option<u32>), String> {
+pub async fn call_llm_api_async(system: &str, user: &str) -> Result<(String, Option<u32>), String> {
     let cfg = MbforgeProviderConfig::from_app_config()?;
     dispatch_chat(&cfg, system, user).await
 }
@@ -390,7 +391,9 @@ async fn dispatch_chat(
     user: &str,
 ) -> Result<(String, Option<u32>), String> {
     match cfg.kind {
-        MbforgeProviderKind::OpenAICompatible | MbforgeProviderKind::DeepSeek | MbforgeProviderKind::Ollama => {
+        MbforgeProviderKind::OpenAICompatible
+        | MbforgeProviderKind::DeepSeek
+        | MbforgeProviderKind::Ollama => {
             let mut b = OpenAiClient::builder().api_key(&cfg.api_key);
             if !cfg.base_url.is_empty() {
                 b = b.base_url(&cfg.base_url);
@@ -671,9 +674,9 @@ pub fn parse_structured_data(val: &serde_json::Value) -> Result<StructuredData, 
                     let raw_value = v["value"]
                         .as_f64()
                         .or_else(|| {
-                            v["value"]
-                                .as_str()
-                                .and_then(crate::parsers::chem::chem_validate::sanitize_activity_value)
+                            v["value"].as_str().and_then(
+                                crate::parsers::chem::chem_validate::sanitize_activity_value,
+                            )
                         })
                         .unwrap_or(0.0);
                     ActivityEntry {
@@ -815,7 +818,9 @@ pub fn post_process(raw: &PdfParseResult) -> Result<PostProcessResult, String> {
             Ok(result)
         } else {
             // 单批：无需 LLM 合并，直接构造 PostProcessResult
-            let batch_result = batch_results.into_iter().next()
+            let batch_result = batch_results
+                .into_iter()
+                .next()
                 .ok_or_else(|| "No batch results in single-batch path".to_string())?;
             let report = super::report::generate_report(&batch_result.data);
             let mut data = batch_result.data;
@@ -917,7 +922,7 @@ pub async fn post_process_sections_parallel(
     page_count: usize,
     concurrency: Option<usize>,
 ) -> Vec<SectionResult> {
-    use futures::stream::{StreamExt, FuturesUnordered};
+    use futures::stream::{FuturesUnordered, StreamExt};
     use std::sync::Arc;
     use tokio::task::spawn_blocking;
 
@@ -932,7 +937,12 @@ pub async fn post_process_sections_parallel(
     // 所以用 `FuturesUnordered` + 计数 channel 比 JoinSet+Semaphore 更直接。
     let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(limit);
     let mut tasks: FuturesUnordered<
-        tokio::task::JoinHandle<(usize, String, Result<PostProcessResult, String>, std::time::Duration)>,
+        tokio::task::JoinHandle<(
+            usize,
+            String,
+            Result<PostProcessResult, String>,
+            std::time::Duration,
+        )>,
     > = FuturesUnordered::new();
 
     for (idx, (name, text)) in sections.into_iter().enumerate() {
@@ -950,11 +960,7 @@ pub async fn post_process_sections_parallel(
             // pool，否则 `.await` 退出 task 时 runtime 会 panic。
             let start = std::time::Instant::now();
             let outcome = spawn_blocking(move || {
-                post_process_section_sync(
-                    &text,
-                    parser_for_blocking.as_str(),
-                    page_count,
-                )
+                post_process_section_sync(&text, parser_for_blocking.as_str(), page_count)
             })
             .await;
             let elapsed = start.elapsed();
@@ -1181,7 +1187,6 @@ mod tests {
         assert_eq!(batches[0], content);
     }
 
-
     #[test]
     fn test_section_result_status_helpers() {
         use std::time::Duration;
@@ -1349,7 +1354,10 @@ mod tests {
     #[test]
     fn test_build_batch_prompt_includes_dagdelen_fields() {
         let prompt = build_batch_prompt("Sample text content.", 0, 1, &[], "", "patent", 10);
-        assert!(prompt.contains("\"acronym\""), "schema must include `acronym`");
+        assert!(
+            prompt.contains("\"acronym\""),
+            "schema must include `acronym`"
+        );
         assert!(
             prompt.contains("\"structure_or_phase\""),
             "schema must include `structure_or_phase`"

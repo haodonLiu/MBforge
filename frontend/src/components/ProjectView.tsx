@@ -1,6 +1,6 @@
 import { EVT } from '../api/tauri-events'
 import { useState, useEffect } from 'react'
-import { listProjectDocuments, scanProjectFiles, indexProjectRust, type IndexResult, type ScanWarning } from '../api/tauri'
+import { listProjectDocuments, scanProjectFiles, enqueueUnresolvedDocuments, indexProjectRust, type IndexResult, type ScanWarning } from '../api/tauri'
 import { batchQuickMoldetScan } from '../api/tauri/detection_cache'
 import { listen } from '@tauri-apps/api/event'
 import type { DocumentEntry } from '../types'
@@ -81,6 +81,7 @@ export default function ProjectView({ onSettingsOpen }: { onSettingsOpen: () => 
       const resp = await scanProjectFiles(projectRoot)
       setDocs(resp.documents)
       setScanWarnings(resp.warnings ?? [])
+      void enqueueUnresolvedDocuments(projectRoot).catch(() => {})
       if (resp.documents.length === 0 && (resp.warnings ?? []).length === 0) {
         setError(
           `在 ${PAPERS_DIR}/ 和 ${NOTES_DIR}/ 目录下没有找到文件。请把 PDF 放进 ${PAPERS_DIR}/、把 MD 笔记放进 ${NOTES_DIR}/，然后再扫描。`,

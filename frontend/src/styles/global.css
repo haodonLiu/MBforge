@@ -1,4 +1,7 @@
-﻿@import url('./processing-queue.css');
+@import url('./processing-queue.css');
+@import url('./pdf-pipeline-flow.css');
+@import url('./project-scope.css');
+@import url('./sidebar-queue.css');
 @import url('./theme.css');
 @import url('./base.css');
 

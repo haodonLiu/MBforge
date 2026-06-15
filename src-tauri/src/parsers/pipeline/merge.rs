@@ -1,8 +1,8 @@
+use crate::parsers::chem::vlm_chem::ChemImageResult;
 use crate::parsers::doc_types::{
     CompoundEntry, DocStructure, DocumentMetadata, FindingEntry, PhysicochemicalProperty,
     StructuredData,
 };
-use crate::parsers::chem::vlm_chem::ChemImageResult;
 
 /// Stage 3: 多 section 结果合并 + 构效关系 (SAR) 分析
 ///

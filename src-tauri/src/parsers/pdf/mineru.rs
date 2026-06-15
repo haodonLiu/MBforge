@@ -200,7 +200,7 @@ impl MineruClient {
                     };
                     return Ok(MineruResult {
                         markdown,
-                        images: vec![], // Agent API 不返回图片
+                        images: vec![],     // Agent API 不返回图片
                         ocr_blocks: vec![], // Agent API 不返回 layout
                         source: "mineru_agent".into(),
                         task_id: task_id.to_string(),
@@ -300,11 +300,7 @@ impl MineruClient {
         body
     }
 
-    fn submit_url_precise(
-        &self,
-        url: &str,
-        options: &MineruOptions,
-    ) -> Result<String, String> {
+    fn submit_url_precise(&self, url: &str, options: &MineruOptions) -> Result<String, String> {
         let api_url = format!("{}/api/v4/extract/task", self.host);
         let mut body = self.build_request_body(options);
         body["url"] = serde_json::json!(url);
@@ -386,11 +382,7 @@ impl MineruClient {
     }
 
     /// 下载 zip 包并提取 markdown + images。
-    fn download_and_extract(
-        &self,
-        zip_url: &str,
-        task_id: &str,
-    ) -> Result<MineruResult, String> {
+    fn download_and_extract(&self, zip_url: &str, task_id: &str) -> Result<MineruResult, String> {
         // Download zip to temp file
         let resp = self
             .client
@@ -535,11 +527,7 @@ impl MineruClient {
         self.poll_batch(&batch_id, options)
     }
 
-    fn poll_batch(
-        &self,
-        batch_id: &str,
-        _options: &MineruOptions,
-    ) -> Result<MineruResult, String> {
+    fn poll_batch(&self, batch_id: &str, _options: &MineruOptions) -> Result<MineruResult, String> {
         let api_url = format!("{}/api/v4/extract-results/batch/{}", self.host, batch_id);
         let mut attempts = 0;
 
@@ -709,33 +697,24 @@ fn parse_layout_json(layout: &serde_json::Value) -> Vec<OcrBlock> {
                 .unwrap_or("unknown")
                 .to_string();
 
-            let index = block
-                .get("index")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0) as usize;
+            let index = block.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
-            let angle = block
-                .get("angle")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
+            let angle = block.get("angle").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
 
             // 提取文本内容：拼接所有 lines → spans → content
-            let content = block
-                .get("lines")
-                .and_then(|v| v.as_array())
-                .map(|lines| {
-                    let mut parts = Vec::new();
-                    for line in lines {
-                        if let Some(spans) = line.get("spans").and_then(|v| v.as_array()) {
-                            for span in spans {
-                                if let Some(text) = span.get("content").and_then(|v| v.as_str()) {
-                                    parts.push(text.to_string());
-                                }
+            let content = block.get("lines").and_then(|v| v.as_array()).map(|lines| {
+                let mut parts = Vec::new();
+                for line in lines {
+                    if let Some(spans) = line.get("spans").and_then(|v| v.as_array()) {
+                        for span in spans {
+                            if let Some(text) = span.get("content").and_then(|v| v.as_str()) {
+                                parts.push(text.to_string());
                             }
                         }
                     }
-                    parts.join(" ")
-                });
+                }
+                parts.join(" ")
+            });
 
             if let Some(bbox) = bbox {
                 blocks.push(OcrBlock {

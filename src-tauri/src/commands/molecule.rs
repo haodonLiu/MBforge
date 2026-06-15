@@ -156,15 +156,18 @@ pub async fn mol_assign_cluster(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.assign_cluster(&mol_id, &cluster_id).await.map_err(|e| {
-        log::error!(
-            "mol_assign_cluster mol_id={} cluster_id={} failed: {}",
-            mol_id,
-            cluster_id,
-            e
-        );
-        e.to_string()
-    })
+    engine
+        .assign_cluster(&mol_id, &cluster_id)
+        .await
+        .map_err(|e| {
+            log::error!(
+                "mol_assign_cluster mol_id={} cluster_id={} failed: {}",
+                mol_id,
+                cluster_id,
+                e
+            );
+            e.to_string()
+        })
 }
 
 #[tauri::command]
@@ -254,14 +257,17 @@ pub async fn mol_find_analogs_with_activity(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.find_analogs(&mol_id, min_similarity).await.map_err(|e| {
-        log::error!(
-            "mol_find_analogs_with_activity mol_id={} failed: {}",
-            mol_id,
-            e
-        );
-        e.to_string()
-    })
+    engine
+        .find_analogs(&mol_id, min_similarity)
+        .await
+        .map_err(|e| {
+            log::error!(
+                "mol_find_analogs_with_activity mol_id={} failed: {}",
+                mol_id,
+                e
+            );
+            e.to_string()
+        })
 }
 
 #[tauri::command]
@@ -353,18 +359,24 @@ pub async fn mol_search_substructure(
     let threshold = tanimoto_threshold.unwrap_or(0.3);
 
     // 1. 加载所有分子
-    let all_mols = db.get_all_smiles().map_err(|e| format!("get_all_smiles: {}", e))?;
+    let all_mols = db
+        .get_all_smiles()
+        .map_err(|e| format!("get_all_smiles: {}", e))?;
     if all_mols.is_empty() {
         return Ok(vec![]);
     }
 
     // 2. 纯 Rust Tanimoto 预过滤 + VF2 子结构搜索
-    let candidates: Vec<(String, String)> = all_mols.iter().map(|(id, s)| (id.clone(), s.clone())).collect();
+    let candidates: Vec<(String, String)> = all_mols
+        .iter()
+        .map(|(id, s)| (id.clone(), s.clone()))
+        .collect();
     let matches = crate::core::chem::chem::substructure_search_with_filter(
         &query_smiles,
         &candidates,
         threshold,
-    ).map_err(|e| format!("Substructure search failed: {}", e))?;
+    )
+    .map_err(|e| format!("Substructure search failed: {}", e))?;
 
     // 构建返回结果
     let results: Vec<serde_json::Value> = matches
@@ -400,10 +412,7 @@ pub async fn chem_validate_smiles(smiles: String) -> crate::core::chem::chem::Sm
 
 /// 计算两个 SMILES 之间的 Tanimoto 相似度（ECFP4）。
 #[tauri::command]
-pub async fn chem_tanimoto_similarity(
-    smiles_a: String,
-    smiles_b: String,
-) -> Result<f64, String> {
+pub async fn chem_tanimoto_similarity(smiles_a: String, smiles_b: String) -> Result<f64, String> {
     crate::core::chem::chem::tanimoto_similarity(&smiles_a, &smiles_b)
 }
 
@@ -449,5 +458,9 @@ pub async fn chem_tanimoto_batch_filter(
     candidates: Vec<(String, String)>,
     threshold: Option<f64>,
 ) -> Result<Vec<(String, String, f64)>, String> {
-    crate::core::chem::chem::tanimoto_batch_filter(&query_smiles, &candidates, threshold.unwrap_or(0.5))
+    crate::core::chem::chem::tanimoto_batch_filter(
+        &query_smiles,
+        &candidates,
+        threshold.unwrap_or(0.5),
+    )
 }

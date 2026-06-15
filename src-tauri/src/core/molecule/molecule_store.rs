@@ -493,7 +493,10 @@ impl MoleculeDatabase {
 
         // Step 3: Ensure no NULL smiles (fallback: copy esmiles raw)
         self.conn
-            .execute("UPDATE molecules SET smiles = esmiles WHERE smiles IS NULL OR smiles = ''", [])
+            .execute(
+                "UPDATE molecules SET smiles = esmiles WHERE smiles IS NULL OR smiles = ''",
+                [],
+            )
             .map_err(|e| format!("Failed to backfill smiles: {}", e))?;
 
         // Step 4: Make esmiles nullable (keep original for reference)
@@ -604,7 +607,8 @@ impl MoleculeDatabase {
 
             let properties_str =
                 serde_json::to_string(&rec.properties).unwrap_or_else(|_| "{}".to_string());
-            let labels_str = serde_json::to_string(&rec.labels).unwrap_or_else(|_| "[]".to_string());
+            let labels_str =
+                serde_json::to_string(&rec.labels).unwrap_or_else(|_| "[]".to_string());
             let semantic_tags_str = rec
                 .semantic_tags
                 .as_ref()
@@ -654,7 +658,8 @@ impl MoleculeDatabase {
 
             // 写入关联图片
             for img_path in &rec.related_image_paths {
-                let img_id = crate::core::helpers::sha256_text(&format!("{}|{}", rec.mol_id, img_path));
+                let img_id =
+                    crate::core::helpers::sha256_text(&format!("{}|{}", rec.mol_id, img_path));
                 let _ = tx.execute(
                     "INSERT OR REPLACE INTO molecule_images
                      (image_id, mol_id, image_path, vlm_esmiles, vlm_confidence)
@@ -888,8 +893,16 @@ impl MoleculeDatabase {
                     image_id: row.get(0).unwrap_or_default(),
                     mol_id: row.get(1).unwrap_or_default(),
                     image_path: row.get(2).unwrap_or_default(),
-                    page: row.get::<_, Option<i64>>(3).ok().flatten().map(|p| p as usize),
-                    vlm_esmiles: row.get::<_, Option<String>>(4).ok().flatten().filter(|s| !s.is_empty()),
+                    page: row
+                        .get::<_, Option<i64>>(3)
+                        .ok()
+                        .flatten()
+                        .map(|p| p as usize),
+                    vlm_esmiles: row
+                        .get::<_, Option<String>>(4)
+                        .ok()
+                        .flatten()
+                        .filter(|s| !s.is_empty()),
                     vlm_confidence: row.get(5).unwrap_or(0.0),
                     is_structure_diagram: row.get::<_, i32>(6).unwrap_or(1) != 0,
                     created_at: row.get(7).ok(),
@@ -918,13 +931,24 @@ impl MoleculeDatabase {
             .query(params![image_path])
             .map_err(|e| format!("Query failed: {}", e))?;
 
-        match rows.next().map_err(|e| format!("Row fetch failed: {}", e))? {
+        match rows
+            .next()
+            .map_err(|e| format!("Row fetch failed: {}", e))?
+        {
             Some(row) => Ok(Some(MoleculeImage {
                 image_id: row.get(0).unwrap_or_default(),
                 mol_id: row.get(1).unwrap_or_default(),
                 image_path: row.get(2).unwrap_or_default(),
-                page: row.get::<_, Option<i64>>(3).ok().flatten().map(|p| p as usize),
-                vlm_esmiles: row.get::<_, Option<String>>(4).ok().flatten().filter(|s| !s.is_empty()),
+                page: row
+                    .get::<_, Option<i64>>(3)
+                    .ok()
+                    .flatten()
+                    .map(|p| p as usize),
+                vlm_esmiles: row
+                    .get::<_, Option<String>>(4)
+                    .ok()
+                    .flatten()
+                    .filter(|s| !s.is_empty()),
                 vlm_confidence: row.get(5).unwrap_or(0.0),
                 is_structure_diagram: row.get::<_, i32>(6).unwrap_or(1) != 0,
                 created_at: row.get(7).ok(),
@@ -1061,7 +1085,8 @@ impl MoleculeDatabase {
         let mut updated = 0;
         let mut failed: Vec<String> = Vec::new();
         for rec in records {
-            let labels_str = serde_json::to_string(&rec.labels).unwrap_or_else(|_| "[]".to_string());
+            let labels_str =
+                serde_json::to_string(&rec.labels).unwrap_or_else(|_| "[]".to_string());
             let semantic_tags_str = rec
                 .semantic_tags
                 .as_ref()
@@ -1136,7 +1161,9 @@ impl MoleculeDatabase {
     pub fn get_all_fingerprints(&self) -> Result<Vec<(String, String, Vec<u8>)>, String> {
         let mut stmt = self
             .conn
-            .prepare("SELECT mol_id, smiles, fingerprint FROM molecules WHERE fingerprint IS NOT NULL")
+            .prepare(
+                "SELECT mol_id, smiles, fingerprint FROM molecules WHERE fingerprint IS NOT NULL",
+            )
             .map_err(|e| format!("Prepare failed: {}", e))?;
 
         let rows = stmt
@@ -1433,11 +1460,17 @@ mod tests {
         assert_eq!(images.len(), 2, "应写入 2 条图片记录");
         assert_eq!(images[0].image_path, ".mbforge/media/doc1/fig1.png");
         assert_eq!(images[1].image_path, ".mbforge/media/doc1/fig2.png");
-        assert_eq!(images[0].vlm_esmiles, Some("CCO<sep><a>0:OH</a>".to_string()));
+        assert_eq!(
+            images[0].vlm_esmiles,
+            Some("CCO<sep><a>0:OH</a>".to_string())
+        );
         assert!((images[0].vlm_confidence - 0.95).abs() < 1e-9);
 
         // 验证按路径查询
-        let img = db.get_image_by_path(".mbforge/media/doc1/fig1.png").unwrap().unwrap();
+        let img = db
+            .get_image_by_path(".mbforge/media/doc1/fig1.png")
+            .unwrap()
+            .unwrap();
         assert_eq!(img.mol_id, "mol-img-1");
 
         // 验证删除分子时级联删除图片

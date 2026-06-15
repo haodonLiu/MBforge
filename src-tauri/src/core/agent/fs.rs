@@ -2,14 +2,19 @@
 //!
 //! All tools delegate to a `&str` project root captured at registration time.
 
-use std::collections::HashMap;
+use crate::core::helpers;
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::sinks::UTF8;
 use grep_searcher::SearcherBuilder;
 use ignore::WalkBuilder;
-use crate::core::helpers;
+use std::collections::HashMap;
 
-pub fn native_grep_search(root: &str, pattern: &str, search_path: &str, max_results: usize) -> String {
+pub fn native_grep_search(
+    root: &str,
+    pattern: &str,
+    search_path: &str,
+    max_results: usize,
+) -> String {
     let matcher = match RegexMatcherBuilder::new().build(pattern) {
         Ok(m) => m,
         Err(e) => return format!("Invalid regex: {}", e),

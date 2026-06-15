@@ -49,7 +49,9 @@ fn project_path(root: &Path, name: &str) -> PathBuf {
 }
 
 fn size_mb(p: &Path) -> f64 {
-    if !p.exists() { return 0.0; }
+    if !p.exists() {
+        return 0.0;
+    }
     dir_size(p) as f64 / 1024.0 / 1024.0
 }
 
@@ -79,8 +81,18 @@ pub async fn cache_clear(project_root: String, cache: String) -> ClearResult {
     };
     let after = size_mb(&target);
     match result {
-        Ok(()) => ClearResult { cache, freed_mb: before - after, success: true, error: String::new() },
-        Err(e) => ClearResult { cache, freed_mb: 0.0, success: false, error: e },
+        Ok(()) => ClearResult {
+            cache,
+            freed_mb: before - after,
+            success: true,
+            error: String::new(),
+        },
+        Err(e) => ClearResult {
+            cache,
+            freed_mb: 0.0,
+            success: false,
+            error: e,
+        },
     }
 }
 
@@ -123,7 +135,7 @@ pub struct ConsolidateResult {
 #[tauri::command]
 pub fn consolidate_models() -> Vec<ConsolidateResult> {
     use crate::core::config::constants::model_cache_dir;
-    use crate::core::models::catalog::{RESOURCE_CATALOG, ResourceType};
+    use crate::core::models::catalog::{ResourceType, RESOURCE_CATALOG};
 
     let dest_root = model_cache_dir();
     let mut results = Vec::new();
@@ -133,13 +145,17 @@ pub fn consolidate_models() -> Vec<ConsolidateResult> {
             continue;
         }
         if info.download_type != "snapshot" {
-            continue;  // file 类型已经在 mbforge cache，不需迁移
+            continue; // file 类型已经在 mbforge cache，不需迁移
         }
         let repo_name = info.ms_repo.split('/').last().unwrap_or(info.ms_repo);
 
         // 1. 已经在目标位置？跳过
         let dest = dest_root.join(repo_name);
-        if dest.exists() && std::fs::read_dir(&dest).map(|mut d| d.next().is_some()).unwrap_or(false) {
+        if dest.exists()
+            && std::fs::read_dir(&dest)
+                .map(|mut d| d.next().is_some())
+                .unwrap_or(false)
+        {
             results.push(ConsolidateResult {
                 model_id: info.id.into(),
                 from: String::new(),
@@ -188,11 +204,15 @@ pub fn consolidate_models() -> Vec<ConsolidateResult> {
             for entry in entries.flatten() {
                 let from = entry.path();
                 let to = dest.join(entry.file_name());
-                if to.exists() { continue; }
+                if to.exists() {
+                    continue;
+                }
                 let r = if from.is_dir() {
                     copy_dir_recursive(&from, &to)
                 } else {
-                    std::fs::copy(&from, &to).map(|_| ()).map_err(|e| e.to_string())
+                    std::fs::copy(&from, &to)
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
                 };
                 match r {
                     Ok(()) => count += 1,
@@ -238,7 +258,9 @@ pub struct RecentProjectsResult {
 #[tauri::command]
 pub fn projects_list_recent() -> RecentProjectsResult {
     let cfg = AppConfig::load();
-    RecentProjectsResult { projects: cfg.recent_projects }
+    RecentProjectsResult {
+        projects: cfg.recent_projects,
+    }
 }
 
 /// 把路径加入最近项目（去重 + 截断到 8 条 + 前置）
@@ -249,7 +271,9 @@ pub fn projects_add_recent(path: String) -> RecentProjectsResult {
     cfg.recent_projects.insert(0, path);
     cfg.recent_projects.truncate(8);
     let _ = cfg.save();
-    RecentProjectsResult { projects: cfg.recent_projects }
+    RecentProjectsResult {
+        projects: cfg.recent_projects,
+    }
 }
 
 #[tauri::command]
@@ -257,7 +281,9 @@ pub fn projects_remove_recent(path: String) -> RecentProjectsResult {
     let mut cfg = AppConfig::load();
     cfg.recent_projects.retain(|p| p != &path);
     let _ = cfg.save();
-    RecentProjectsResult { projects: cfg.recent_projects }
+    RecentProjectsResult {
+        projects: cfg.recent_projects,
+    }
 }
 
 #[tauri::command]

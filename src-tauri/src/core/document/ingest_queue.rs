@@ -77,6 +77,8 @@ pub struct IngestTask {
     pub started_at: Option<f64>,
     pub created_at: f64,
     pub updated_at: f64,
+    #[serde(default)]
+    pub priority: i32,
 }
 
 impl IngestTask {
@@ -104,6 +106,7 @@ impl IngestTask {
             started_at: None,
             created_at: now,
             updated_at: now,
+            priority: 0,
         }
     }
 
@@ -168,21 +171,48 @@ impl IngestQueue {
                 file_size_bytes INTEGER,
                 started_at  REAL,
                 created_at  REAL NOT NULL,
-                updated_at  REAL NOT NULL
+                updated_at  REAL NOT NULL,
+                priority    INTEGER NOT NULL DEFAULT 0
             )",
             [],
         )?;
 
         // 向后兼容：新增列（旧表已存在时跳过）。
         // SQLite 不支持 ALTER TABLE ... ADD COLUMN IF NOT EXISTS，需手动检查。
-        Self::add_column_if_missing(conn, "ingest_queue", "stage", "TEXT NOT NULL DEFAULT 'inspector'")?;
-        Self::add_column_if_missing(conn, "ingest_queue", "progress_pct", "REAL NOT NULL DEFAULT 0")?;
-        Self::add_column_if_missing(conn, "ingest_queue", "pages_total", "INTEGER NOT NULL DEFAULT 0")?;
-        Self::add_column_if_missing(conn, "ingest_queue", "pages_done", "INTEGER NOT NULL DEFAULT 0")?;
+        Self::add_column_if_missing(
+            conn,
+            "ingest_queue",
+            "stage",
+            "TEXT NOT NULL DEFAULT 'inspector'",
+        )?;
+        Self::add_column_if_missing(
+            conn,
+            "ingest_queue",
+            "progress_pct",
+            "REAL NOT NULL DEFAULT 0",
+        )?;
+        Self::add_column_if_missing(
+            conn,
+            "ingest_queue",
+            "pages_total",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        Self::add_column_if_missing(
+            conn,
+            "ingest_queue",
+            "pages_done",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
         Self::add_column_if_missing(conn, "ingest_queue", "details", "TEXT NOT NULL DEFAULT ''")?;
         Self::add_column_if_missing(conn, "ingest_queue", "file_hash", "TEXT")?;
         Self::add_column_if_missing(conn, "ingest_queue", "file_size_bytes", "INTEGER")?;
         Self::add_column_if_missing(conn, "ingest_queue", "started_at", "REAL")?;
+        Self::add_column_if_missing(
+            conn,
+            "ingest_queue",
+            "priority",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_ingest_status ON ingest_queue(status)",
@@ -190,6 +220,29 @@ impl IngestQueue {
         )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_ingest_doc_id ON ingest_queue(doc_id)",
+            [],
+        )?;
+
+        // 阶段耗时分析表（只读分析，不阻塞主流程）
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ingest_stage_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                doc_id TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                started_at REAL NOT NULL,
+                completed_at REAL,
+                duration_secs REAL,
+                success INTEGER DEFAULT 1
+            )",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_stage_history_task ON ingest_stage_history(task_id)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_stage_history_stage ON ingest_stage_history(stage)",
             [],
         )?;
 
@@ -227,8 +280,8 @@ impl IngestQueue {
                 for task in queue_data.tasks {
                     tx.execute(
                         "INSERT OR IGNORE INTO ingest_queue
-                         (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, file_hash, file_size_bytes, started_at, created_at, updated_at)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                         (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, file_hash, file_size_bytes, started_at, created_at, updated_at, priority)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                         params![
                             task.id,
                             task.file_path,
@@ -247,6 +300,7 @@ impl IngestQueue {
                             task.started_at,
                             task.created_at,
                             task.updated_at,
+                            task.priority,
                         ],
                     )?;
                 }
@@ -276,21 +330,29 @@ impl IngestQueue {
             started_at: row.get(13)?,
             created_at: row.get(14)?,
             updated_at: row.get(15)?,
+            priority: row.get::<_, i32>(16)?,
         })
     }
 
     /// 入队一个文件
     pub async fn enqueue(&self, file_path: String, doc_id: String) -> AppResult<String> {
-        self.enqueue_with_stage(file_path, doc_id, "inspector").await
+        self.enqueue_with_stage(file_path, doc_id, "inspector")
+            .await
     }
 
     /// 入队一个指定阶段的文件。
     ///
     /// 幂等：同文件 hash 且未失败/未取消的任务已存在时，直接返回已有任务 id。
     /// 背压：pending + processing 任务数达到 `MAX_ACTIVE_QUEUE_SIZE` 时拒绝入队。
-    pub async fn enqueue_with_stage(&self, file_path: String, doc_id: String, stage: &str) -> AppResult<String> {
+    pub async fn enqueue_with_stage(
+        &self,
+        file_path: String,
+        doc_id: String,
+        stage: &str,
+    ) -> AppResult<String> {
         let conn = self.conn.lock().await;
-        let file_hash = crate::core::helpers::sha256_file(Path::new(&file_path)).unwrap_or_default();
+        let file_hash =
+            crate::core::helpers::sha256_file(Path::new(&file_path)).unwrap_or_default();
 
         // 容量控制：pending + processing 不超过上限
         let active_count: i64 = conn.query_row(
@@ -301,7 +363,10 @@ impl IngestQueue {
         if active_count as usize >= MAX_ACTIVE_QUEUE_SIZE {
             return Err(AppError::new(
                 ErrorCode::QueueFull,
-                format!("Ingest queue is full ({} active tasks)", MAX_ACTIVE_QUEUE_SIZE),
+                format!(
+                    "Ingest queue is full ({} active tasks)",
+                    MAX_ACTIVE_QUEUE_SIZE
+                ),
             )
             .with_suggestion("等待当前任务完成后再导入，或清理队列"));
         }
@@ -328,8 +393,8 @@ impl IngestQueue {
 
         conn.execute(
             "INSERT INTO ingest_queue
-             (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, file_hash, file_size_bytes, started_at, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+             (id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, file_hash, file_size_bytes, started_at, created_at, updated_at, priority)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             params![
                 &task.id,
                 &task.file_path,
@@ -348,6 +413,7 @@ impl IngestQueue {
                 task.started_at,
                 now,
                 now,
+                task.priority,
             ],
         )?;
 
@@ -361,11 +427,11 @@ impl IngestQueue {
 
         // 找第一个 Pending 或可重试的 Failed 任务
         let mut stmt = conn.prepare(
-            "SELECT id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, file_size_bytes, started_at, created_at, updated_at
+            "SELECT id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, file_size_bytes, started_at, created_at, updated_at, priority
              FROM ingest_queue
              WHERE status = 'pending'
                 OR (status = 'failed' AND retry_count < max_retries)
-             ORDER BY created_at ASC
+             ORDER BY priority DESC, created_at ASC
              LIMIT 1",
         )?;
 
@@ -489,39 +555,41 @@ impl IngestQueue {
 
     /// 队列统计
     pub async fn stats(&self) -> AppResult<QueueStats> {
-        let conn = self.conn.lock().await;
+        let (total, pending, processing, done, failed, cancelled) = {
+            let conn = self.conn.lock().await;
 
-        let total: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM ingest_queue",
-            [],
-            |r| r.get(0),
-        )?;
+            let total: i64 =
+                conn.query_row("SELECT COUNT(*) FROM ingest_queue", [], |r| r.get(0))?;
 
-        let mut stmt = conn.prepare(
-            "SELECT status, COUNT(*) FROM ingest_queue GROUP BY status",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-        })?;
+            let mut stmt =
+                conn.prepare("SELECT status, COUNT(*) FROM ingest_queue GROUP BY status")?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })?;
 
-        let mut pending = 0usize;
-        let mut processing = 0usize;
-        let mut done = 0usize;
-        let mut failed = 0usize;
-        let mut cancelled = 0usize;
+            let mut pending = 0usize;
+            let mut processing = 0usize;
+            let mut done = 0usize;
+            let mut failed = 0usize;
+            let mut cancelled = 0usize;
 
-        for row in rows {
-            let (status, count) = row?;
-            let count = count as usize;
-            match status.as_str() {
-                "pending" => pending = count,
-                "processing" => processing = count,
-                "done" => done = count,
-                "failed" => failed = count,
-                "cancelled" => cancelled = count,
-                _ => {}
+            for row in rows {
+                let (status, count) = row?;
+                let count = count as usize;
+                match status.as_str() {
+                    "pending" => pending = count,
+                    "processing" => processing = count,
+                    "done" => done = count,
+                    "failed" => failed = count,
+                    "cancelled" => cancelled = count,
+                    _ => {}
+                }
             }
-        }
+
+            (total, pending, processing, done, failed, cancelled)
+        };
+
+        let avg_stage_durations_ms = self.avg_stage_durations_ms(5).await.unwrap_or([0; 5]);
 
         Ok(QueueStats {
             total: total as usize,
@@ -530,6 +598,7 @@ impl IngestQueue {
             done,
             failed,
             cancelled,
+            avg_stage_durations_ms,
         })
     }
 
@@ -537,7 +606,7 @@ impl IngestQueue {
     pub async fn list_all(&self) -> AppResult<Vec<IngestTask>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, file_size_bytes, started_at, created_at, updated_at
+            "SELECT id, file_path, doc_id, status, stage, progress_pct, pages_total, pages_done, details, retry_count, max_retries, error, file_size_bytes, started_at, created_at, updated_at, priority
              FROM ingest_queue
              ORDER BY created_at ASC",
         )?;
@@ -621,6 +690,92 @@ impl IngestQueue {
         )?;
         Ok(changed > 0)
     }
+
+    /// 修改任务优先级（越高越优先）。
+    pub async fn set_priority(&self, task_id: &str, priority: i32) -> AppResult<()> {
+        let conn = self.conn.lock().await;
+        let now = now_secs_f64();
+        conn.execute(
+            "UPDATE ingest_queue SET priority = ?1, updated_at = ?2 WHERE id = ?3",
+            params![priority, now, task_id],
+        )?;
+        Ok(())
+    }
+
+    /// 删除指定任务（仅允许删除 done / cancelled / failed 任务）。
+    pub async fn delete_task(&self, task_id: &str) -> AppResult<bool> {
+        let conn = self.conn.lock().await;
+        let changed = conn.execute(
+            "DELETE FROM ingest_queue WHERE id = ?1 AND status IN ('done', 'cancelled', 'failed')",
+            params![task_id],
+        )?;
+        Ok(changed > 0)
+    }
+
+    /// 记录阶段开始，返回历史行 id。
+    pub async fn record_stage_start(
+        &self,
+        task_id: &str,
+        doc_id: &str,
+        stage: &str,
+    ) -> AppResult<i64> {
+        let conn = self.conn.lock().await;
+        let now = now_secs_f64();
+        conn.execute(
+            "INSERT INTO ingest_stage_history (task_id, doc_id, stage, started_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![task_id, doc_id, stage, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// 回填阶段结束与耗时。
+    pub async fn record_stage_end(
+        &self,
+        row_id: i64,
+        duration_secs: f64,
+        success: bool,
+    ) -> AppResult<()> {
+        let conn = self.conn.lock().await;
+        let now = now_secs_f64();
+        conn.execute(
+            "UPDATE ingest_stage_history
+             SET completed_at = ?1, duration_secs = ?2, success = ?3
+             WHERE id = ?4",
+            params![now, duration_secs, if success { 1 } else { 0 }, row_id],
+        )?;
+        Ok(())
+    }
+
+    /// 最近 N 个 done 任务的每阶段平均耗时（毫秒）。
+    pub async fn avg_stage_durations_ms(&self, n: usize) -> AppResult<[u64; 5]> {
+        let conn = self.conn.lock().await;
+        const STAGES: [&str; 5] = ["inspector", "text_extract", "ocr", "moldet", "index"];
+        let mut result = [0u64; 5];
+
+        let mut stmt = conn.prepare(
+            "SELECT h.stage, AVG(h.duration_secs)
+             FROM ingest_stage_history h
+             JOIN (
+                 SELECT id FROM ingest_queue
+                 WHERE status = 'done'
+                 ORDER BY updated_at DESC
+                 LIMIT ?1
+             ) t ON h.task_id = t.id
+             WHERE h.success = 1 AND h.duration_secs IS NOT NULL
+             GROUP BY h.stage",
+        )?;
+        let rows = stmt.query_map(params![n as i64], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
+        })?;
+        for row in rows {
+            let (stage, avg_secs) = row?;
+            if let Some(pos) = STAGES.iter().position(|&s| s == stage) {
+                result[pos] = (avg_secs * 1000.0).round() as u64;
+            }
+        }
+        Ok(result)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -631,6 +786,7 @@ pub struct QueueStats {
     pub done: usize,
     pub failed: usize,
     pub cancelled: usize,
+    pub avg_stage_durations_ms: [u64; 5],
 }
 
 #[cfg(test)]
@@ -649,7 +805,10 @@ mod tests {
     async fn test_queue_enqueue_dequeue() {
         let (_dir, queue) = setup_queue();
 
-        let id = queue.enqueue("test.pdf".into(), "doc1".into()).await.unwrap();
+        let id = queue
+            .enqueue("test.pdf".into(), "doc1".into())
+            .await
+            .unwrap();
         assert_eq!(queue.stats().await.unwrap().pending, 1);
 
         let task = queue.dequeue().await.unwrap().unwrap();
@@ -694,7 +853,10 @@ mod tests {
     #[tokio::test]
     async fn test_queue_update_progress() {
         let (_dir, queue) = setup_queue();
-        let id = queue.enqueue("test.pdf".into(), "doc1".into()).await.unwrap();
+        let id = queue
+            .enqueue("test.pdf".into(), "doc1".into())
+            .await
+            .unwrap();
         queue
             .update_progress(&id, "text_extract", 0.5, 3, 6, "extracting")
             .await
@@ -710,7 +872,10 @@ mod tests {
     #[tokio::test]
     async fn test_queue_retry() {
         let (_dir, queue) = setup_queue();
-        let id = queue.enqueue("test.pdf".into(), "doc1".into()).await.unwrap();
+        let id = queue
+            .enqueue("test.pdf".into(), "doc1".into())
+            .await
+            .unwrap();
 
         // 第一次失败 → 重试
         queue.mark_failed(&id, "LLM timeout".into()).await.unwrap();
@@ -718,12 +883,18 @@ mod tests {
 
         // 第二次失败 → 重试
         let task = queue.dequeue().await.unwrap().unwrap();
-        queue.mark_failed(&task.id, "LLM timeout".into()).await.unwrap();
+        queue
+            .mark_failed(&task.id, "LLM timeout".into())
+            .await
+            .unwrap();
         assert_eq!(queue.stats().await.unwrap().pending, 1);
 
         // 第三次失败 → 永久失败
         let task = queue.dequeue().await.unwrap().unwrap();
-        queue.mark_failed(&task.id, "LLM timeout".into()).await.unwrap();
+        queue
+            .mark_failed(&task.id, "LLM timeout".into())
+            .await
+            .unwrap();
         assert_eq!(queue.stats().await.unwrap().failed, 1);
         assert_eq!(queue.stats().await.unwrap().pending, 0);
     }
@@ -733,7 +904,10 @@ mod tests {
         let (_dir, queue) = setup_queue();
         assert!(!queue.contains_file("test.pdf").await.unwrap());
 
-        queue.enqueue("test.pdf".into(), "doc1".into()).await.unwrap();
+        queue
+            .enqueue("test.pdf".into(), "doc1".into())
+            .await
+            .unwrap();
         assert!(queue.contains_file("test.pdf").await.unwrap());
     }
 
@@ -760,10 +934,16 @@ mod tests {
     #[tokio::test]
     async fn test_queue_cleanup() {
         let (_dir, queue) = setup_queue();
-        let id = queue.enqueue("test.pdf".into(), "doc1".into()).await.unwrap();
+        let id = queue
+            .enqueue("test.pdf".into(), "doc1".into())
+            .await
+            .unwrap();
         queue.mark_done(&id).await.unwrap();
 
-        queue.enqueue("test2.pdf".into(), "doc2".into()).await.unwrap();
+        queue
+            .enqueue("test2.pdf".into(), "doc2".into())
+            .await
+            .unwrap();
 
         let removed = queue.cleanup().await.unwrap();
         assert_eq!(removed, 1);
@@ -776,7 +956,9 @@ mod tests {
         for i in 0..MAX_ACTIVE_QUEUE_SIZE {
             let path = dir.path().join(format!("doc{}.pdf", i));
             std::fs::write(&path, format!("%PDF {}", i)).unwrap();
-            queue.enqueue(path.to_string_lossy().to_string(), format!("doc{}", i)).await
+            queue
+                .enqueue(path.to_string_lossy().to_string(), format!("doc{}", i))
+                .await
                 .unwrap();
         }
         assert_eq!(queue.stats().await.unwrap().pending, MAX_ACTIVE_QUEUE_SIZE);
@@ -797,8 +979,14 @@ mod tests {
         std::fs::write(&path, b"%PDF same").unwrap();
         let path_str = path.to_string_lossy().to_string();
 
-        let id1 = queue.enqueue(path_str.clone(), "doc1".into()).await.unwrap();
-        let id2 = queue.enqueue(path_str.clone(), "doc2".into()).await.unwrap();
+        let id1 = queue
+            .enqueue(path_str.clone(), "doc1".into())
+            .await
+            .unwrap();
+        let id2 = queue
+            .enqueue(path_str.clone(), "doc2".into())
+            .await
+            .unwrap();
         assert_eq!(id1, id2);
         assert_eq!(queue.stats().await.unwrap().pending, 1);
 
@@ -843,7 +1031,8 @@ mod tests {
         std::fs::write(
             root.join(".mbforge").join("ingest-queue.json"),
             serde_json::to_string_pretty(&legacy).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         // 新队列应自动迁移
         let queue = IngestQueue::new(root).unwrap();
@@ -854,5 +1043,68 @@ mod tests {
         // 旧文件应被重命名
         assert!(!root.join(".mbforge").join("ingest-queue.json").exists());
         assert!(root.join(".mbforge").join("ingest-queue.json.bak").exists());
+    }
+
+    #[tokio::test]
+    async fn test_priority_dequeue_order() {
+        let (_dir, queue) = setup_queue();
+        let low = queue
+            .enqueue("low.pdf".into(), "doc-low".into())
+            .await
+            .unwrap();
+        let high = queue
+            .enqueue("high.pdf".into(), "doc-high".into())
+            .await
+            .unwrap();
+        queue.set_priority(&low, 0).await.unwrap();
+        queue.set_priority(&high, 5).await.unwrap();
+
+        let first = queue.dequeue().await.unwrap().unwrap();
+        assert_eq!(first.id, high);
+
+        queue.mark_done(&first.id).await.unwrap();
+        let second = queue.dequeue().await.unwrap().unwrap();
+        assert_eq!(second.id, low);
+    }
+
+    #[tokio::test]
+    async fn test_avg_stage_durations_ms() {
+        let (_dir, queue) = setup_queue();
+        let id = queue
+            .enqueue("test.pdf".into(), "doc1".into())
+            .await
+            .unwrap();
+        let task = queue.dequeue().await.unwrap().unwrap();
+
+        let row_id = queue
+            .record_stage_start(&task.id, &task.doc_id, "inspector")
+            .await
+            .unwrap();
+        queue.record_stage_end(row_id, 1.5, true).await.unwrap();
+
+        queue.mark_done(&id).await.unwrap();
+        let avg = queue.avg_stage_durations_ms(5).await.unwrap();
+        assert_eq!(avg[0], 1500);
+        assert_eq!(avg.iter().skip(1).sum::<u64>(), 0);
+
+        let stats = queue.stats().await.unwrap();
+        assert_eq!(stats.avg_stage_durations_ms[0], 1500);
+    }
+
+    #[tokio::test]
+    async fn test_delete_task() {
+        let (_dir, queue) = setup_queue();
+        let id = queue
+            .enqueue("test.pdf".into(), "doc1".into())
+            .await
+            .unwrap();
+
+        // pending 任务不允许删除
+        assert!(!queue.delete_task(&id).await.unwrap());
+        assert!(queue.list_all().await.unwrap().iter().any(|t| t.id == id));
+
+        queue.mark_done(&id).await.unwrap();
+        assert!(queue.delete_task(&id).await.unwrap());
+        assert!(!queue.list_all().await.unwrap().iter().any(|t| t.id == id));
     }
 }

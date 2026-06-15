@@ -74,9 +74,9 @@ pub fn compound_entry_to_record(
 
     Some(MoleculeRecord {
         mol_id,
-        smiles: clean_smiles,      // Layer 1: 纯净 SMILES
-        esmiles,                    // Layer 2: 原始 E-SMILES（仅含标签时）
-        semantic_tags,              // Layer 2: 语义标签 JSON
+        smiles: clean_smiles, // Layer 1: 纯净 SMILES
+        esmiles,              // Layer 2: 原始 E-SMILES（仅含标签时）
+        semantic_tags,        // Layer 2: 语义标签 JSON
         name: compound.name.clone(),
         source_doc: source_doc.to_string(),
         activity: None,
@@ -141,7 +141,8 @@ pub fn embed_molecules_into_text(text: &str, records: &[MoleculeRecord]) -> Stri
             Err(e) => {
                 log::debug!(
                     "[embed_molecules] MoleCode generation failed for {}: {}",
-                    name, e
+                    name,
+                    e
                 );
             }
         }

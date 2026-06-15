@@ -37,8 +37,9 @@ static ACTIVITY_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     ]
 });
 
-static CELL_LINE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(\b[A-Z][a-zA-Z0-9\-]+\s+(cell|cells|line)\b)").expect("valid cell line regex"));
+static CELL_LINE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(\b[A-Z][a-zA-Z0-9\-]+\s+(cell|cells|line)\b)").expect("valid cell line regex")
+});
 
 static TARGET_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(\b[A-Z][a-z]+\s+(receptor|kinase|protease|enzyme|channel|transporter)\b)")

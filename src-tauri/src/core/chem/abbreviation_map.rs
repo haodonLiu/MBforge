@@ -80,231 +80,520 @@ fn build_subgraph_map() -> HashMap<&'static str, SubgraphDef> {
     let mut m = HashMap::new();
 
     // Boc: t-Butyloxycarbonyl
-    m.insert("Boc", SubgraphDef {
-        atoms: &[("C1", "C"), ("O1", "O"), ("O2", "O"), ("C2", "C"), ("C3", "CH3"), ("C4", "CH3"), ("C5", "CH3")],
-        bonds: &[("C1", "O1", "==="), ("C1", "O2", "---"), ("O2", "C2", "---"), ("C2", "C3", "---"), ("C2", "C4", "---"), ("C2", "C5", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "Boc",
+        SubgraphDef {
+            atoms: &[
+                ("C1", "C"),
+                ("O1", "O"),
+                ("O2", "O"),
+                ("C2", "C"),
+                ("C3", "CH3"),
+                ("C4", "CH3"),
+                ("C5", "CH3"),
+            ],
+            bonds: &[
+                ("C1", "O1", "==="),
+                ("C1", "O2", "---"),
+                ("O2", "C2", "---"),
+                ("C2", "C3", "---"),
+                ("C2", "C4", "---"),
+                ("C2", "C5", "---"),
+            ],
+            attach: "C1",
+        },
+    );
     m.insert("BOC", m.get("Boc").unwrap().clone());
     m.insert("boc", m.get("Boc").unwrap().clone());
 
     // Cbz: Benzyloxycarbonyl
-    m.insert("Cbz", SubgraphDef {
-        atoms: &[("C1", "C"), ("O1", "O"), ("O2", "O"), ("C2", "CH2"), ("C3", "C"), ("C4", "CH"), ("C5", "CH"), ("C6", "CH"), ("C7", "CH"), ("C8", "CH")],
-        bonds: &[("C1", "O1", "==="), ("C1", "O2", "---"), ("O2", "C2", "---"), ("C2", "C3", "---"), ("C3", "C4", "==="), ("C4", "C5", "---"), ("C5", "C6", "==="), ("C6", "C7", "---"), ("C7", "C8", "==="), ("C8", "C3", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "Cbz",
+        SubgraphDef {
+            atoms: &[
+                ("C1", "C"),
+                ("O1", "O"),
+                ("O2", "O"),
+                ("C2", "CH2"),
+                ("C3", "C"),
+                ("C4", "CH"),
+                ("C5", "CH"),
+                ("C6", "CH"),
+                ("C7", "CH"),
+                ("C8", "CH"),
+            ],
+            bonds: &[
+                ("C1", "O1", "==="),
+                ("C1", "O2", "---"),
+                ("O2", "C2", "---"),
+                ("C2", "C3", "---"),
+                ("C3", "C4", "==="),
+                ("C4", "C5", "---"),
+                ("C5", "C6", "==="),
+                ("C6", "C7", "---"),
+                ("C7", "C8", "==="),
+                ("C8", "C3", "---"),
+            ],
+            attach: "C1",
+        },
+    );
 
     // Ac: Acetyl
-    m.insert("Ac", SubgraphDef {
-        atoms: &[("C1", "C"), ("O1", "O"), ("C2", "CH3")],
-        bonds: &[("C1", "O1", "==="), ("C1", "C2", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "Ac",
+        SubgraphDef {
+            atoms: &[("C1", "C"), ("O1", "O"), ("C2", "CH3")],
+            bonds: &[("C1", "O1", "==="), ("C1", "C2", "---")],
+            attach: "C1",
+        },
+    );
 
     // Ts: Tosyl
-    m.insert("Ts", SubgraphDef {
-        atoms: &[("S1", "S"), ("O1", "O"), ("O2", "O"), ("C1", "C"), ("C2", "CH"), ("C3", "CH"), ("C4", "C"), ("C5", "CH"), ("C6", "CH"), ("C7", "CH3")],
-        bonds: &[("S1", "O1", "==="), ("S1", "O2", "==="), ("S1", "C1", "---"), ("C1", "C2", "==="), ("C2", "C3", "---"), ("C3", "C4", "==="), ("C4", "C5", "---"), ("C5", "C6", "==="), ("C6", "C1", "---"), ("C4", "C7", "---")],
-        attach: "S1",
-    });
+    m.insert(
+        "Ts",
+        SubgraphDef {
+            atoms: &[
+                ("S1", "S"),
+                ("O1", "O"),
+                ("O2", "O"),
+                ("C1", "C"),
+                ("C2", "CH"),
+                ("C3", "CH"),
+                ("C4", "C"),
+                ("C5", "CH"),
+                ("C6", "CH"),
+                ("C7", "CH3"),
+            ],
+            bonds: &[
+                ("S1", "O1", "==="),
+                ("S1", "O2", "==="),
+                ("S1", "C1", "---"),
+                ("C1", "C2", "==="),
+                ("C2", "C3", "---"),
+                ("C3", "C4", "==="),
+                ("C4", "C5", "---"),
+                ("C5", "C6", "==="),
+                ("C6", "C1", "---"),
+                ("C4", "C7", "---"),
+            ],
+            attach: "S1",
+        },
+    );
     m.insert("Tos", m.get("Ts").unwrap().clone());
 
     // Ph: Phenyl
-    m.insert("Ph", SubgraphDef {
-        atoms: &[("C1", "C"), ("C2", "CH"), ("C3", "CH"), ("C4", "CH"), ("C5", "CH"), ("C6", "CH")],
-        bonds: &[("C1", "C2", "==="), ("C2", "C3", "---"), ("C3", "C4", "==="), ("C4", "C5", "---"), ("C5", "C6", "==="), ("C6", "C1", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "Ph",
+        SubgraphDef {
+            atoms: &[
+                ("C1", "C"),
+                ("C2", "CH"),
+                ("C3", "CH"),
+                ("C4", "CH"),
+                ("C5", "CH"),
+                ("C6", "CH"),
+            ],
+            bonds: &[
+                ("C1", "C2", "==="),
+                ("C2", "C3", "---"),
+                ("C3", "C4", "==="),
+                ("C4", "C5", "---"),
+                ("C5", "C6", "==="),
+                ("C6", "C1", "---"),
+            ],
+            attach: "C1",
+        },
+    );
 
     // Bn: Benzyl
-    m.insert("Bn", SubgraphDef {
-        atoms: &[("C0", "CH2"), ("C1", "C"), ("C2", "CH"), ("C3", "CH"), ("C4", "CH"), ("C5", "CH"), ("C6", "CH")],
-        bonds: &[("C0", "C1", "---"), ("C1", "C2", "==="), ("C2", "C3", "---"), ("C3", "C4", "==="), ("C4", "C5", "---"), ("C5", "C6", "==="), ("C6", "C1", "---")],
-        attach: "C0",
-    });
+    m.insert(
+        "Bn",
+        SubgraphDef {
+            atoms: &[
+                ("C0", "CH2"),
+                ("C1", "C"),
+                ("C2", "CH"),
+                ("C3", "CH"),
+                ("C4", "CH"),
+                ("C5", "CH"),
+                ("C6", "CH"),
+            ],
+            bonds: &[
+                ("C0", "C1", "---"),
+                ("C1", "C2", "==="),
+                ("C2", "C3", "---"),
+                ("C3", "C4", "==="),
+                ("C4", "C5", "---"),
+                ("C5", "C6", "==="),
+                ("C6", "C1", "---"),
+            ],
+            attach: "C0",
+        },
+    );
 
     // CF3
-    m.insert("CF3", SubgraphDef {
-        atoms: &[("C1", "C"), ("F1", "F"), ("F2", "F"), ("F3", "F")],
-        bonds: &[("C1", "F1", "---"), ("C1", "F2", "---"), ("C1", "F3", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "CF3",
+        SubgraphDef {
+            atoms: &[("C1", "C"), ("F1", "F"), ("F2", "F"), ("F3", "F")],
+            bonds: &[
+                ("C1", "F1", "---"),
+                ("C1", "F2", "---"),
+                ("C1", "F3", "---"),
+            ],
+            attach: "C1",
+        },
+    );
 
     // CHF2
-    m.insert("CHF2", SubgraphDef {
-        atoms: &[("C1", "CH"), ("F1", "F"), ("F2", "F")],
-        bonds: &[("C1", "F1", "---"), ("C1", "F2", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "CHF2",
+        SubgraphDef {
+            atoms: &[("C1", "CH"), ("F1", "F"), ("F2", "F")],
+            bonds: &[("C1", "F1", "---"), ("C1", "F2", "---")],
+            attach: "C1",
+        },
+    );
 
     // OCF3
-    m.insert("OCF3", SubgraphDef {
-        atoms: &[("O1", "O"), ("C1", "C"), ("F1", "F"), ("F2", "F"), ("F3", "F")],
-        bonds: &[("O1", "C1", "---"), ("C1", "F1", "---"), ("C1", "F2", "---"), ("C1", "F3", "---")],
-        attach: "O1",
-    });
+    m.insert(
+        "OCF3",
+        SubgraphDef {
+            atoms: &[
+                ("O1", "O"),
+                ("C1", "C"),
+                ("F1", "F"),
+                ("F2", "F"),
+                ("F3", "F"),
+            ],
+            bonds: &[
+                ("O1", "C1", "---"),
+                ("C1", "F1", "---"),
+                ("C1", "F2", "---"),
+                ("C1", "F3", "---"),
+            ],
+            attach: "O1",
+        },
+    );
 
     // OMe / OCH3 / MeO
-    m.insert("OMe", SubgraphDef {
-        atoms: &[("O1", "O"), ("C1", "CH3")],
-        bonds: &[("O1", "C1", "---")],
-        attach: "O1",
-    });
+    m.insert(
+        "OMe",
+        SubgraphDef {
+            atoms: &[("O1", "O"), ("C1", "CH3")],
+            bonds: &[("O1", "C1", "---")],
+            attach: "O1",
+        },
+    );
     m.insert("OCH3", m.get("OMe").unwrap().clone());
     m.insert("MeO", m.get("OMe").unwrap().clone());
 
     // OEt
-    m.insert("OEt", SubgraphDef {
-        atoms: &[("O1", "O"), ("C1", "CH2"), ("C2", "CH3")],
-        bonds: &[("O1", "C1", "---"), ("C1", "C2", "---")],
-        attach: "O1",
-    });
+    m.insert(
+        "OEt",
+        SubgraphDef {
+            atoms: &[("O1", "O"), ("C1", "CH2"), ("C2", "CH3")],
+            bonds: &[("O1", "C1", "---"), ("C1", "C2", "---")],
+            attach: "O1",
+        },
+    );
 
     // OAc
-    m.insert("OAc", SubgraphDef {
-        atoms: &[("O1", "O"), ("C1", "C"), ("O2", "O"), ("C2", "CH3")],
-        bonds: &[("O1", "C1", "---"), ("C1", "O2", "==="), ("C1", "C2", "---")],
-        attach: "O1",
-    });
+    m.insert(
+        "OAc",
+        SubgraphDef {
+            atoms: &[("O1", "O"), ("C1", "C"), ("O2", "O"), ("C2", "CH3")],
+            bonds: &[
+                ("O1", "C1", "---"),
+                ("C1", "O2", "==="),
+                ("C1", "C2", "---"),
+            ],
+            attach: "O1",
+        },
+    );
 
     // OBn
-    m.insert("OBn", SubgraphDef {
-        atoms: &[("O1", "O"), ("C0", "CH2"), ("C1", "C"), ("C2", "CH"), ("C3", "CH"), ("C4", "CH"), ("C5", "CH"), ("C6", "CH")],
-        bonds: &[("O1", "C0", "---"), ("C0", "C1", "---"), ("C1", "C2", "==="), ("C2", "C3", "---"), ("C3", "C4", "==="), ("C4", "C5", "---"), ("C5", "C6", "==="), ("C6", "C1", "---")],
-        attach: "O1",
-    });
+    m.insert(
+        "OBn",
+        SubgraphDef {
+            atoms: &[
+                ("O1", "O"),
+                ("C0", "CH2"),
+                ("C1", "C"),
+                ("C2", "CH"),
+                ("C3", "CH"),
+                ("C4", "CH"),
+                ("C5", "CH"),
+                ("C6", "CH"),
+            ],
+            bonds: &[
+                ("O1", "C0", "---"),
+                ("C0", "C1", "---"),
+                ("C1", "C2", "==="),
+                ("C2", "C3", "---"),
+                ("C3", "C4", "==="),
+                ("C4", "C5", "---"),
+                ("C5", "C6", "==="),
+                ("C6", "C1", "---"),
+            ],
+            attach: "O1",
+        },
+    );
 
     // NO2
-    m.insert("NO2", SubgraphDef {
-        atoms: &[("N1", "N(+)"), ("O1", "O"), ("O2", "O(-)")],
-        bonds: &[("N1", "O1", "==="), ("N1", "O2", "---")],
-        attach: "N1",
-    });
+    m.insert(
+        "NO2",
+        SubgraphDef {
+            atoms: &[("N1", "N(+)"), ("O1", "O"), ("O2", "O(-)")],
+            bonds: &[("N1", "O1", "==="), ("N1", "O2", "---")],
+            attach: "N1",
+        },
+    );
 
     // COOH / CO2H
-    m.insert("COOH", SubgraphDef {
-        atoms: &[("C1", "C"), ("O1", "O"), ("O2", "OH")],
-        bonds: &[("C1", "O1", "==="), ("C1", "O2", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "COOH",
+        SubgraphDef {
+            atoms: &[("C1", "C"), ("O1", "O"), ("O2", "OH")],
+            bonds: &[("C1", "O1", "==="), ("C1", "O2", "---")],
+            attach: "C1",
+        },
+    );
     m.insert("CO2H", m.get("COOH").unwrap().clone());
 
     // COOMe / CO2Me
-    m.insert("COOMe", SubgraphDef {
-        atoms: &[("C1", "C"), ("O1", "O"), ("O2", "O"), ("C2", "CH3")],
-        bonds: &[("C1", "O1", "==="), ("C1", "O2", "---"), ("O2", "C2", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "COOMe",
+        SubgraphDef {
+            atoms: &[("C1", "C"), ("O1", "O"), ("O2", "O"), ("C2", "CH3")],
+            bonds: &[
+                ("C1", "O1", "==="),
+                ("C1", "O2", "---"),
+                ("O2", "C2", "---"),
+            ],
+            attach: "C1",
+        },
+    );
     m.insert("CO2Me", m.get("COOMe").unwrap().clone());
     m.insert("COOCH3", m.get("COOMe").unwrap().clone());
 
     // COOEt / CO2Et
-    m.insert("COOEt", SubgraphDef {
-        atoms: &[("C1", "C"), ("O1", "O"), ("O2", "O"), ("C2", "CH2"), ("C3", "CH3")],
-        bonds: &[("C1", "O1", "==="), ("C1", "O2", "---"), ("O2", "C2", "---"), ("C2", "C3", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "COOEt",
+        SubgraphDef {
+            atoms: &[
+                ("C1", "C"),
+                ("O1", "O"),
+                ("O2", "O"),
+                ("C2", "CH2"),
+                ("C3", "CH3"),
+            ],
+            bonds: &[
+                ("C1", "O1", "==="),
+                ("C1", "O2", "---"),
+                ("O2", "C2", "---"),
+                ("C2", "C3", "---"),
+            ],
+            attach: "C1",
+        },
+    );
     m.insert("CO2Et", m.get("COOEt").unwrap().clone());
 
     // NHBoc
-    m.insert("NHBoc", SubgraphDef {
-        atoms: &[("N1", "NH"), ("C1", "C"), ("O1", "O"), ("O2", "O"), ("C2", "C"), ("C3", "CH3"), ("C4", "CH3"), ("C5", "CH3")],
-        bonds: &[("N1", "C1", "---"), ("C1", "O1", "==="), ("C1", "O2", "---"), ("O2", "C2", "---"), ("C2", "C3", "---"), ("C2", "C4", "---"), ("C2", "C5", "---")],
-        attach: "N1",
-    });
+    m.insert(
+        "NHBoc",
+        SubgraphDef {
+            atoms: &[
+                ("N1", "NH"),
+                ("C1", "C"),
+                ("O1", "O"),
+                ("O2", "O"),
+                ("C2", "C"),
+                ("C3", "CH3"),
+                ("C4", "CH3"),
+                ("C5", "CH3"),
+            ],
+            bonds: &[
+                ("N1", "C1", "---"),
+                ("C1", "O1", "==="),
+                ("C1", "O2", "---"),
+                ("O2", "C2", "---"),
+                ("C2", "C3", "---"),
+                ("C2", "C4", "---"),
+                ("C2", "C5", "---"),
+            ],
+            attach: "N1",
+        },
+    );
 
     // NHAc / AcHN
-    m.insert("NHAc", SubgraphDef {
-        atoms: &[("N1", "NH"), ("C1", "C"), ("O1", "O"), ("C2", "CH3")],
-        bonds: &[("N1", "C1", "---"), ("C1", "O1", "==="), ("C1", "C2", "---")],
-        attach: "N1",
-    });
+    m.insert(
+        "NHAc",
+        SubgraphDef {
+            atoms: &[("N1", "NH"), ("C1", "C"), ("O1", "O"), ("C2", "CH3")],
+            bonds: &[
+                ("N1", "C1", "---"),
+                ("C1", "O1", "==="),
+                ("C1", "C2", "---"),
+            ],
+            attach: "N1",
+        },
+    );
     m.insert("AcHN", m.get("NHAc").unwrap().clone());
 
     // NHMe
-    m.insert("NHMe", SubgraphDef {
-        atoms: &[("N1", "NH"), ("C1", "CH3")],
-        bonds: &[("N1", "C1", "---")],
-        attach: "N1",
-    });
+    m.insert(
+        "NHMe",
+        SubgraphDef {
+            atoms: &[("N1", "NH"), ("C1", "CH3")],
+            bonds: &[("N1", "C1", "---")],
+            attach: "N1",
+        },
+    );
 
     // NMe2
-    m.insert("NMe2", SubgraphDef {
-        atoms: &[("N1", "N"), ("C1", "CH3"), ("C2", "CH3")],
-        bonds: &[("N1", "C1", "---"), ("N1", "C2", "---")],
-        attach: "N1",
-    });
+    m.insert(
+        "NMe2",
+        SubgraphDef {
+            atoms: &[("N1", "N"), ("C1", "CH3"), ("C2", "CH3")],
+            bonds: &[("N1", "C1", "---"), ("N1", "C2", "---")],
+            attach: "N1",
+        },
+    );
 
     // NHOH
-    m.insert("NHOH", SubgraphDef {
-        atoms: &[("N1", "NH"), ("O1", "OH")],
-        bonds: &[("N1", "O1", "---")],
-        attach: "N1",
-    });
+    m.insert(
+        "NHOH",
+        SubgraphDef {
+            atoms: &[("N1", "NH"), ("O1", "OH")],
+            bonds: &[("N1", "O1", "---")],
+            attach: "N1",
+        },
+    );
 
     // SMe
-    m.insert("SMe", SubgraphDef {
-        atoms: &[("S1", "S"), ("C1", "CH3")],
-        bonds: &[("S1", "C1", "---")],
-        attach: "S1",
-    });
+    m.insert(
+        "SMe",
+        SubgraphDef {
+            atoms: &[("S1", "S"), ("C1", "CH3")],
+            bonds: &[("S1", "C1", "---")],
+            attach: "S1",
+        },
+    );
 
     // SO2Me
-    m.insert("SO2Me", SubgraphDef {
-        atoms: &[("S1", "S"), ("O1", "O"), ("O2", "O"), ("C1", "CH3")],
-        bonds: &[("S1", "O1", "==="), ("S1", "O2", "==="), ("S1", "C1", "---")],
-        attach: "S1",
-    });
+    m.insert(
+        "SO2Me",
+        SubgraphDef {
+            atoms: &[("S1", "S"), ("O1", "O"), ("O2", "O"), ("C1", "CH3")],
+            bonds: &[
+                ("S1", "O1", "==="),
+                ("S1", "O2", "==="),
+                ("S1", "C1", "---"),
+            ],
+            attach: "S1",
+        },
+    );
 
     // SO3H
-    m.insert("SO3H", SubgraphDef {
-        atoms: &[("S1", "S"), ("O1", "O"), ("O2", "O"), ("O3", "OH")],
-        bonds: &[("S1", "O1", "==="), ("S1", "O2", "==="), ("S1", "O3", "---")],
-        attach: "S1",
-    });
+    m.insert(
+        "SO3H",
+        SubgraphDef {
+            atoms: &[("S1", "S"), ("O1", "O"), ("O2", "O"), ("O3", "OH")],
+            bonds: &[
+                ("S1", "O1", "==="),
+                ("S1", "O2", "==="),
+                ("S1", "O3", "---"),
+            ],
+            attach: "S1",
+        },
+    );
 
     // TMS
-    m.insert("TMS", SubgraphDef {
-        atoms: &[("Si1", "Si"), ("C1", "CH3"), ("C2", "CH3"), ("C3", "CH3")],
-        bonds: &[("Si1", "C1", "---"), ("Si1", "C2", "---"), ("Si1", "C3", "---")],
-        attach: "Si1",
-    });
+    m.insert(
+        "TMS",
+        SubgraphDef {
+            atoms: &[("Si1", "Si"), ("C1", "CH3"), ("C2", "CH3"), ("C3", "CH3")],
+            bonds: &[
+                ("Si1", "C1", "---"),
+                ("Si1", "C2", "---"),
+                ("Si1", "C3", "---"),
+            ],
+            attach: "Si1",
+        },
+    );
 
     // tBu
-    m.insert("tBu", SubgraphDef {
-        atoms: &[("C1", "C"), ("C2", "CH3"), ("C3", "CH3"), ("C4", "CH3")],
-        bonds: &[("C1", "C2", "---"), ("C1", "C3", "---"), ("C1", "C4", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "tBu",
+        SubgraphDef {
+            atoms: &[("C1", "C"), ("C2", "CH3"), ("C3", "CH3"), ("C4", "CH3")],
+            bonds: &[
+                ("C1", "C2", "---"),
+                ("C1", "C3", "---"),
+                ("C1", "C4", "---"),
+            ],
+            attach: "C1",
+        },
+    );
 
     // iPr
-    m.insert("iPr", SubgraphDef {
-        atoms: &[("C1", "CH"), ("C2", "CH3"), ("C3", "CH3")],
-        bonds: &[("C1", "C2", "---"), ("C1", "C3", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "iPr",
+        SubgraphDef {
+            atoms: &[("C1", "CH"), ("C2", "CH3"), ("C3", "CH3")],
+            bonds: &[("C1", "C2", "---"), ("C1", "C3", "---")],
+            attach: "C1",
+        },
+    );
 
     // Bz: Benzoyl
-    m.insert("Bz", SubgraphDef {
-        atoms: &[("C1", "C"), ("O1", "O"), ("C2", "C"), ("C3", "CH"), ("C4", "CH"), ("C5", "CH"), ("C6", "CH"), ("C7", "CH")],
-        bonds: &[("C1", "O1", "==="), ("C1", "C2", "---"), ("C2", "C3", "==="), ("C3", "C4", "---"), ("C4", "C5", "==="), ("C5", "C6", "---"), ("C6", "C7", "==="), ("C7", "C2", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "Bz",
+        SubgraphDef {
+            atoms: &[
+                ("C1", "C"),
+                ("O1", "O"),
+                ("C2", "C"),
+                ("C3", "CH"),
+                ("C4", "CH"),
+                ("C5", "CH"),
+                ("C6", "CH"),
+                ("C7", "CH"),
+            ],
+            bonds: &[
+                ("C1", "O1", "==="),
+                ("C1", "C2", "---"),
+                ("C2", "C3", "==="),
+                ("C3", "C4", "---"),
+                ("C4", "C5", "==="),
+                ("C5", "C6", "---"),
+                ("C6", "C7", "==="),
+                ("C7", "C2", "---"),
+            ],
+            attach: "C1",
+        },
+    );
 
     // CONH2
-    m.insert("CONH2", SubgraphDef {
-        atoms: &[("C1", "C"), ("O1", "O"), ("N1", "NH2")],
-        bonds: &[("C1", "O1", "==="), ("C1", "N1", "---")],
-        attach: "C1",
-    });
+    m.insert(
+        "CONH2",
+        SubgraphDef {
+            atoms: &[("C1", "C"), ("O1", "O"), ("N1", "NH2")],
+            bonds: &[("C1", "O1", "==="), ("C1", "N1", "---")],
+            attach: "C1",
+        },
+    );
 
     // SO2
-    m.insert("SO2", SubgraphDef {
-        atoms: &[("S1", "S"), ("O1", "O"), ("O2", "O")],
-        bonds: &[("S1", "O1", "==="), ("S1", "O2", "===")],
-        attach: "S1",
-    });
+    m.insert(
+        "SO2",
+        SubgraphDef {
+            atoms: &[("S1", "S"), ("O1", "O"), ("O2", "O")],
+            bonds: &[("S1", "O1", "==="), ("S1", "O2", "===")],
+            attach: "S1",
+        },
+    );
 
     m
 }
@@ -315,25 +604,97 @@ fn build_subgraph_map() -> HashMap<&'static str, SubgraphDef> {
 
 fn build_non_expandable() -> Vec<&'static str> {
     vec![
-        "R", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9",
-        "R10", "R11", "R12", "R13", "R14", "R15", "R16", "R17",
-        "R1a", "R1b", "R2a", "R2b", "R3a", "R4a", "R5a",
-        "R'", "Ra", "Rb", "Rf", "Rg",
-        "X", "X1", "Y", "Y1", "Z", "Z1", "Z2", "W",
-        "A", "A1", "A2", "B", "B1", "D", "E", "Q", "Q1", "Q2",
-        "Ar", "Ar1", "Ar2",
-        "PG", "FG",
-        "Alkyl", "Cyc", "Chx",
+        "R",
+        "R1",
+        "R2",
+        "R3",
+        "R4",
+        "R5",
+        "R6",
+        "R7",
+        "R8",
+        "R9",
+        "R10",
+        "R11",
+        "R12",
+        "R13",
+        "R14",
+        "R15",
+        "R16",
+        "R17",
+        "R1a",
+        "R1b",
+        "R2a",
+        "R2b",
+        "R3a",
+        "R4a",
+        "R5a",
+        "R'",
+        "Ra",
+        "Rb",
+        "Rf",
+        "Rg",
+        "X",
+        "X1",
+        "Y",
+        "Y1",
+        "Z",
+        "Z1",
+        "Z2",
+        "W",
+        "A",
+        "A1",
+        "A2",
+        "B",
+        "B1",
+        "D",
+        "E",
+        "Q",
+        "Q1",
+        "Q2",
+        "Ar",
+        "Ar1",
+        "Ar2",
+        "PG",
+        "FG",
+        "Alkyl",
+        "Cyc",
+        "Chx",
         "dum",
-        "(CH2)n", "(CH2)x", "(CH2)m-1",
-        "CH[2]n", "CH[2]?n", "CH2n", "CH2?n", "CH2?x", "CH2",
-        "(R1)n", "(R5)t", "()n", "R1?n",
-        "X(CH2)n", "[OCH2CH2]2", "OCH2CH22",
-        "HX", "NR", "ORd", "Rd",
-        "G2", "G3", "G4",
+        "(CH2)n",
+        "(CH2)x",
+        "(CH2)m-1",
+        "CH[2]n",
+        "CH[2]?n",
+        "CH2n",
+        "CH2?n",
+        "CH2?x",
+        "CH2",
+        "(R1)n",
+        "(R5)t",
+        "()n",
+        "R1?n",
+        "X(CH2)n",
+        "[OCH2CH2]2",
+        "OCH2CH22",
+        "HX",
+        "NR",
+        "ORd",
+        "Rd",
+        "G2",
+        "G3",
+        "G4",
         "x",
-        "O(N)", "X/B(OH)2",
-        "PG1", "PG1N", "PG2", "NPG2", "RN1", "R27", "Y8", "X1Z",
+        "O(N)",
+        "X/B(OH)2",
+        "PG1",
+        "PG1N",
+        "PG2",
+        "NPG2",
+        "RN1",
+        "R27",
+        "Y8",
+        "X1Z",
     ]
 }
 
@@ -371,11 +732,22 @@ pub fn normalize_abbrev_name(name: &str) -> String {
     // 5. 大小写归一化
     let lower = s.to_lowercase();
     let case_map: &[(&str, &str)] = &[
-        ("boc", "Boc"), ("cbz", "Cbz"), ("fmoc", "Fmoc"),
-        ("tbdms", "TBDMS"), ("tms", "TMS"), ("ac", "Ac"),
-        ("ts", "Ts"), ("tf", "Tf"), ("me", "Me"), ("et", "Et"),
-        ("ph", "Ph"), ("bn", "Bn"), ("ome", "OMe"), ("oet", "OEt"),
-        ("oac", "OAc"), ("obn", "OBn"),
+        ("boc", "Boc"),
+        ("cbz", "Cbz"),
+        ("fmoc", "Fmoc"),
+        ("tbdms", "TBDMS"),
+        ("tms", "TMS"),
+        ("ac", "Ac"),
+        ("ts", "Ts"),
+        ("tf", "Tf"),
+        ("me", "Me"),
+        ("et", "Et"),
+        ("ph", "Ph"),
+        ("bn", "Bn"),
+        ("ome", "OMe"),
+        ("oet", "OEt"),
+        ("oac", "OAc"),
+        ("obn", "OBn"),
     ];
     for &(from, to) in case_map {
         if lower == from {
@@ -385,11 +757,18 @@ pub fn normalize_abbrev_name(name: &str) -> String {
 
     // 6. 同义词归一化
     let synonym_map: &[(&str, &str)] = &[
-        ("CO2R", "COOR"), ("COOMe", "CO2Me"), ("COOEt", "CO2Et"),
-        ("COOCH3", "CO2Me"), ("CO2H", "COOH"),
-        ("MeO", "OMe"), ("OCH3", "OMe"), ("EtO", "OEt"),
-        ("AcHN", "NHAc"), ("MeO2C", "CO2Me"),
-        ("O2N", "NO2"), ("Tos", "Ts"),
+        ("CO2R", "COOR"),
+        ("COOMe", "CO2Me"),
+        ("COOEt", "CO2Et"),
+        ("COOCH3", "CO2Me"),
+        ("CO2H", "COOH"),
+        ("MeO", "OMe"),
+        ("OCH3", "OMe"),
+        ("EtO", "OEt"),
+        ("AcHN", "NHAc"),
+        ("MeO2C", "CO2Me"),
+        ("O2N", "NO2"),
+        ("Tos", "Ts"),
         ("BOC", "Boc"),
     ];
     for &(from, to) in synonym_map {
@@ -399,7 +778,9 @@ pub fn normalize_abbrev_name(name: &str) -> String {
     }
 
     // 7. 去尾部标点
-    s = s.trim_end_matches(|c| c == ',' || c == '.' || c == ' ').to_string();
+    s = s
+        .trim_end_matches(|c| c == ',' || c == '.' || c == ' ')
+        .to_string();
 
     s
 }

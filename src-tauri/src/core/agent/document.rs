@@ -1,6 +1,5 @@
 //! Document access tools — abstracts, overviews, listing, finding, summary.
 
-
 // ===== Native implementations =====
 // ===== Native implementations =====
 
@@ -119,11 +118,7 @@ pub fn native_read_document_detail(root: &str, doc_id: &str, max_chars: usize) -
             .join("\n\n");
         if full_text.len() > max_chars {
             let cut = crate::core::helpers::safe_truncate(&full_text, max_chars);
-            format!(
-                "[{}] 完整内容:\n{}...\n[已截断]",
-                doc_id,
-                cut
-            )
+            format!("[{}] 完整内容:\n{}...\n[已截断]", doc_id, cut)
         } else {
             format!("[{}] 完整内容:\n{}", doc_id, full_text)
         }
@@ -135,8 +130,10 @@ pub fn native_find_documents(root: &str, keyword: &str, _doc_type: &str, top_k: 
 
     // 1. 用 KnowledgeBase 语义搜索获取候选文档
     let config = crate::core::config::settings::AppConfig::load();
-    let candidates = match crate::core::document::knowledge_base::KnowledgeBase::new(&project_root, Some(&config.embed))
-    {
+    let candidates = match crate::core::document::knowledge_base::KnowledgeBase::new(
+        &project_root,
+        Some(&config.embed),
+    ) {
         Ok(kb) => kb.search_sync(keyword, top_k * 3),
         Err(_) => vec![],
     };

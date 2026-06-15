@@ -10,9 +10,9 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::{params, Connection, ToSql};
 
+use super::vector_store::SearchResult;
 use crate::core::db::SharedConn;
 use crate::core::error::{AppError, AppResult, ErrorCode};
-use super::vector_store::SearchResult;
 
 /// SQLite 向量存储
 pub struct SqliteVectorStore {
@@ -80,11 +80,14 @@ impl SqliteVectorStore {
         )?;
 
         // 向后兼容：旧表没有 dim 列时添加
-        let has_dim: bool = conn.query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('vectors') WHERE name = 'dim'",
-            [],
-            |r| r.get(0),
-        ).unwrap_or(0) > 0;
+        let has_dim: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('vectors') WHERE name = 'dim'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+            > 0;
         if !has_dim {
             conn.execute(
                 "ALTER TABLE vectors ADD COLUMN dim INTEGER NOT NULL DEFAULT 0",
@@ -140,7 +143,14 @@ impl SqliteVectorStore {
             tx.execute(
                 "INSERT OR REPLACE INTO vectors (chunk_id, doc_id, text, metadata, embedding, dim)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![chunk_ids[i], doc_id, texts[i], metadatas[i], fp_bytes, dim_i],
+                params![
+                    chunk_ids[i],
+                    doc_id,
+                    texts[i],
+                    metadatas[i],
+                    fp_bytes,
+                    dim_i
+                ],
             )?;
         }
 
@@ -258,7 +268,11 @@ fn cosine_similarity_f32(a: &[f32], b: &[f32]) -> f32 {
         norm_b += y * y;
     }
     let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom == 0.0 { 0.0 } else { dot / denom }
+    if denom == 0.0 {
+        0.0
+    } else {
+        dot / denom
+    }
 }
 
 /// Reciprocal Rank Fusion — 融合 FTS5 和向量搜索结果
@@ -295,7 +309,11 @@ pub fn reciprocal_rank_fusion(
         })
         .collect();
 
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(top_k);
     results
 }
@@ -313,12 +331,11 @@ mod tests {
         let ids = vec!["c1".to_string(), "c2".to_string()];
         let texts = vec!["hello".to_string(), "world".to_string()];
         let metas = vec!["{}".to_string(), "{}".to_string()];
-        let vecs = vec![
-            vec![1.0, 0.0, 0.0, 0.0],
-            vec![0.0, 1.0, 0.0, 0.0],
-        ];
+        let vecs = vec![vec![1.0, 0.0, 0.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]];
 
-        store.upsert_vectors(&ids, "doc1", &texts, &metas, &vecs).unwrap();
+        store
+            .upsert_vectors(&ids, "doc1", &texts, &metas, &vecs)
+            .unwrap();
         assert_eq!(store.count().unwrap(), 2);
 
         // 搜索与 [1,0,0,0] 最相似的
@@ -352,13 +369,15 @@ mod tests {
         let db_path = dir.path().join("test.db");
         let store = SqliteVectorStore::open(&db_path, 4).unwrap();
 
-        store.upsert_vectors(
-            &["c1".into()],
-            "doc1",
-            &["text".into()],
-            &["{}".into()],
-            &[vec![1.0, 0.0, 0.0, 0.0]],
-        ).unwrap();
+        store
+            .upsert_vectors(
+                &["c1".into()],
+                "doc1",
+                &["text".into()],
+                &["{}".into()],
+                &[vec![1.0, 0.0, 0.0, 0.0]],
+            )
+            .unwrap();
 
         store.delete_doc("doc1").unwrap();
         assert_eq!(store.count().unwrap(), 0);
@@ -377,12 +396,32 @@ mod tests {
     #[test]
     fn test_rrf_fusion() {
         let fts = vec![
-            SearchResult { id: "a".into(), text: "A".into(), metadata: serde_json::json!({}), score: 0.9 },
-            SearchResult { id: "b".into(), text: "B".into(), metadata: serde_json::json!({}), score: 0.7 },
+            SearchResult {
+                id: "a".into(),
+                text: "A".into(),
+                metadata: serde_json::json!({}),
+                score: 0.9,
+            },
+            SearchResult {
+                id: "b".into(),
+                text: "B".into(),
+                metadata: serde_json::json!({}),
+                score: 0.7,
+            },
         ];
         let vec = vec![
-            SearchResult { id: "b".into(), text: "B".into(), metadata: serde_json::json!({}), score: 0.95 },
-            SearchResult { id: "c".into(), text: "C".into(), metadata: serde_json::json!({}), score: 0.8 },
+            SearchResult {
+                id: "b".into(),
+                text: "B".into(),
+                metadata: serde_json::json!({}),
+                score: 0.95,
+            },
+            SearchResult {
+                id: "c".into(),
+                text: "C".into(),
+                metadata: serde_json::json!({}),
+                score: 0.8,
+            },
         ];
 
         let fused = reciprocal_rank_fusion(fts, vec, 10);

@@ -106,13 +106,13 @@ pub async fn run_dedup_batch(
     }
 }
 
-// TODO-AUDIT: silently returns empty Vec if molecules table doesn't exist.
-// This causes dedup to treat all molecules as new (no duplicate detection).
-// Consider logging a warning or returning an explicit error.
 fn load_existing_molecules(db: &MoleculeRelationDb) -> Vec<(String, String)> {
     let conn = match db.molecules_conn() {
         Ok(c) => c,
-        Err(_) => return Vec::new(),
+        Err(_) => {
+            log::warn!("molecule_dedup: molecules table not found, treating all molecules as new");
+            return Vec::new();
+        }
     };
     let mut stmt = match conn.prepare("SELECT mol_id, esmiles FROM molecules") {
         Ok(s) => s,

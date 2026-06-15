@@ -93,10 +93,7 @@ impl MbforgeManagedMemory {
         }
     }
 
-    pub fn with_compactor(
-        mut self,
-        c: Arc<dyn Compactor<Artifact = SummaryArtifact>>,
-    ) -> Self {
+    pub fn with_compactor(mut self, c: Arc<dyn Compactor<Artifact = SummaryArtifact>>) -> Self {
         self.compactor = Some(c);
         self
     }
@@ -151,11 +148,7 @@ impl MbforgeManagedMemory {
     /// The `count` argument is the number of oldest non-evicted
     /// messages to mark evicted (not a seq threshold — see
     /// `SqliteConversationMemory::mark_evicted`).
-    async fn mark_evicted_inner(
-        &self,
-        cid: &str,
-        count: i64,
-    ) -> Result<(), String> {
+    async fn mark_evicted_inner(&self, cid: &str, count: i64) -> Result<(), String> {
         if let Some(sqlite) = &self.sqlite {
             let _ = sqlite
                 .mark_evicted(cid, count)
@@ -189,7 +182,8 @@ impl ConversationMemory for MbforgeManagedMemory {
     ) -> WasmBoxedFuture<'a, Result<Vec<Message>, MemoryError>> {
         Box::pin(async move {
             let mut msgs = self.inner.load(conversation_id).await?;
-            if msgs.len() <= self.window_size || self.compactor.is_none() && self.demotion.is_none() {
+            if msgs.len() <= self.window_size || self.compactor.is_none() && self.demotion.is_none()
+            {
                 return Ok(msgs);
             }
             // Over the window. Split: oldest N are evicted, the rest
@@ -341,9 +335,7 @@ pub(crate) mod test_support {
             &'a self,
             _cid: &'a str,
         ) -> WasmBoxedFuture<'a, Result<Vec<Message>, MemoryError>> {
-            Box::pin(async move {
-                Ok(self.messages.lock().unwrap().clone())
-            })
+            Box::pin(async move { Ok(self.messages.lock().unwrap().clone()) })
         }
         fn append<'a>(
             &'a self,
@@ -353,10 +345,7 @@ pub(crate) mod test_support {
             self.append_count.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Ok(()) })
         }
-        fn clear<'a>(
-            &'a self,
-            _cid: &'a str,
-        ) -> WasmBoxedFuture<'a, Result<(), MemoryError>> {
+        fn clear<'a>(&'a self, _cid: &'a str) -> WasmBoxedFuture<'a, Result<(), MemoryError>> {
             self.clear_count.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Ok(()) })
         }
@@ -437,7 +426,13 @@ mod tests {
     fn test_load_over_window_with_compactor_splices_summary() {
         // 6 messages, window 4 → 2 evicted, 4 recent + 1 summary.
         let msgs: Vec<Message> = (0..6)
-            .map(|i| if i % 2 == 0 { user(&format!("u{i}")) } else { asst(&format!("a{i}")) })
+            .map(|i| {
+                if i % 2 == 0 {
+                    user(&format!("u{i}"))
+                } else {
+                    asst(&format!("a{i}"))
+                }
+            })
             .collect();
         let inner = Arc::new(MockMemory::new(msgs));
         let compactor = Arc::new(MockCompactor {
@@ -497,8 +492,9 @@ mod tests {
     #[test]
     fn test_with_compactor_kind() {
         let inner = Arc::new(MockMemory::new(vec![]));
-        let mgr = MbforgeManagedMemory::new(inner)
-            .with_compactor(Arc::new(MockCompactor { summary_text: "s".into() }));
+        let mgr = MbforgeManagedMemory::new(inner).with_compactor(Arc::new(MockCompactor {
+            summary_text: "s".into(),
+        }));
         assert_eq!(mgr.compactor_kind(), Some("sidecar"));
     }
 }

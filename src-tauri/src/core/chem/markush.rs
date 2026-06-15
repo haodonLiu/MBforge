@@ -568,12 +568,16 @@ static RGROUP_TEXT_RE: LazyLock<Regex> = LazyLock::new(|| {
         r"(?i)(?:R\[?(\d+)\]?\s*(?:is|represents|selected from|chosen from|independently|can be|are|may be)\s*:\s*)(.+?)(?:[.;]|and\s|or\s|where\s|provided\s|$)"
     ).expect("valid Rgroup text regex")
 });
-static RGROUP_PAREN_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(?:R\[?(\d+)\]?\s*=\s*)([A-Za-z0-9\-, \{\}/]+)").expect("valid Rgroup paren regex"));
-static ALKYL_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkyl").expect("valid alkyl regex"));
-static ALKOXY_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkoxy").expect("valid alkoxy regex"));
+static RGROUP_PAREN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(?:R\[?(\d+)\]?\s*=\s*)([A-Za-z0-9\-, \{\}/]+)")
+        .expect("valid Rgroup paren regex")
+});
+static ALKYL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkyl").expect("valid alkyl regex")
+});
+static ALKOXY_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkoxy").expect("valid alkoxy regex")
+});
 
 /// Parse an E-SMILES string into a MarkushPattern.
 pub fn parse_esmiles(input: &str) -> MarkushPattern {
@@ -846,8 +850,14 @@ pub fn check_overlap(markush: &MarkushPattern, query_smiles: &str) -> MarkushOve
                         let subst = q_atom.element.clone();
 
                         // 尝试缩写展开匹配
-                        let normalized_name = crate::core::chem::abbreviation_map::normalize_abbrev_name(&rg.group_name);
-                        let in_scope = if let Some(single_atom) = crate::core::chem::abbreviation_map::get_single_atom_label(&normalized_name) {
+                        let normalized_name =
+                            crate::core::chem::abbreviation_map::normalize_abbrev_name(
+                                &rg.group_name,
+                            );
+                        let in_scope = if let Some(single_atom) =
+                            crate::core::chem::abbreviation_map::get_single_atom_label(
+                                &normalized_name,
+                            ) {
                             // 缩写有单原子等价，用等价标签匹配
                             check_rgroup_scope(&rg.definition, single_atom)
                         } else {

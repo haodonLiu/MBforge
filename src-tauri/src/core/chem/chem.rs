@@ -21,8 +21,8 @@
 //! - `substructure_search_with_filter()` — 三级漏斗（Tanimoto → VF2）
 
 use chematic_fp::BitVec2048;
-use chematic_smiles::{canonical_smiles, parse};
 use chematic_smarts::{find_matches, parse_smarts};
+use chematic_smiles::{canonical_smiles, parse};
 
 use crate::core::molecule::molecule_store::MoleculeRecord;
 
@@ -181,8 +181,7 @@ pub fn substructure_search_with_filter(
     candidates: &[(String, String)],
     tanimoto_threshold: f64,
 ) -> Result<Vec<(String, String, f64)>, String> {
-    let query_mol =
-        parse(query_smarts).map_err(|e| format!("query SMILES parse failed: {}", e))?;
+    let query_mol = parse(query_smarts).map_err(|e| format!("query SMILES parse failed: {}", e))?;
     let query_smiles = canonical_smiles(&query_mol);
 
     let filtered = tanimoto_batch_filter(&query_smiles, candidates, tanimoto_threshold)?;
@@ -252,7 +251,11 @@ mod tests {
     #[test]
     fn test_validate_smiles_valid() {
         let result = validate_smiles("CCO"); // ethanol
-        assert!(result.valid, "expected valid, got error: {:?}", result.error);
+        assert!(
+            result.valid,
+            "expected valid, got error: {:?}",
+            result.error
+        );
         assert!(result.canonical_smiles.is_some());
     }
 

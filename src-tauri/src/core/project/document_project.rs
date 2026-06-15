@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use crate::core::config::constants::{
-    INDEX_FILE, MOLECULES_DIR, PROJECT_META_DIR, PROJECT_SOURCE_FILE, PROJECTS_DIR, REPORTS_DIR,
+    INDEX_FILE, MOLECULES_DIR, PROJECTS_DIR, PROJECT_META_DIR, PROJECT_SOURCE_FILE, REPORTS_DIR,
 };
 use crate::core::helpers::{generate_uuid, now_rfc3339, save_json, sha256_file};
 
@@ -101,7 +101,10 @@ impl DocumentProject {
     /// metadata file, and returns the loaded `DocumentProject`.
     pub fn create(project_root: &Path, source_file: &Path) -> Result<Self, String> {
         if !source_file.exists() {
-            return Err(format!("Source file does not exist: {}", source_file.display()));
+            return Err(format!(
+                "Source file does not exist: {}",
+                source_file.display()
+            ));
         }
 
         let doc_id = generate_uuid();

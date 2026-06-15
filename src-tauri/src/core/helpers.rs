@@ -7,8 +7,9 @@ use std::sync::LazyLock;
 
 /// SMILES candidate pattern (simplified — no RDKit validation in Rust).
 /// Shared between classifier.rs and extractor.rs to avoid duplication.
-pub static SMILES_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[A-Za-z0-9@.+\-=#$()\[\]\\/%~]{4,}").expect("valid SMILES regex"));
+pub static SMILES_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[A-Za-z0-9@.+\-=#$()\[\]\\/%~]{4,}").expect("valid SMILES regex")
+});
 
 /// Get current UTC time as RFC 3339 string.
 pub fn now_rfc3339() -> String {

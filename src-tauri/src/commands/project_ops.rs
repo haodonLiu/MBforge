@@ -33,7 +33,10 @@ pub fn open_project(
             Ok(_) => debug!("Directory created successfully"),
             Err(e) => {
                 error!("Failed to create directory: {}", e);
-                return Err(AppError::new(ErrorCode::ProjectCreate, format!("创建目录失败: {e}")).to_string());
+                return Err(
+                    AppError::new(ErrorCode::ProjectCreate, format!("创建目录失败: {e}"))
+                        .to_string(),
+                );
             }
         }
     } else {
@@ -98,7 +101,11 @@ pub fn scan_project_files(root: String) -> Result<serde_json::Value, String> {
 
     debug!("Project found, scanning files...");
     let (new_docs, warnings) = project.scan_files();
-    debug!("Scan complete: {} new docs, {} warnings", new_docs.len(), warnings.len());
+    debug!(
+        "Scan complete: {} new docs, {} warnings",
+        new_docs.len(),
+        warnings.len()
+    );
 
     // All known documents (existing + newly scanned) so the UI sees the
     // full picture, not just deltas.
@@ -173,13 +180,75 @@ fn project_json(project: &crate::core::project::Project) -> serde_json::Value {
 pub fn list_project_documents(root: String) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     let path = PathBuf::from(&root);
-    let project = crate::core::project::Project::open(&path)
-        .ok_or_else(|| AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string())?;
+    let project = crate::core::project::Project::open(&path).ok_or_else(|| {
+        AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string()
+    })?;
 
     let docs = project.list_documents().to_vec();
     Ok(serde_json::json!({
         "success": true,
         "documents": docs_json(&docs),
+    }))
+}
+
+/// 自动将所有未解析的 PDF 文档加入 ingest queue。
+#[tauri::command]
+pub async fn enqueue_unresolved_documents(root: String) -> Result<serde_json::Value, String> {
+    let root = clean_path(&root);
+    let path = PathBuf::from(&root);
+    let project = crate::core::project::Project::open(&path).ok_or_else(|| {
+        AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string()
+    })?;
+
+    let queue = crate::core::document::ingest_queue::IngestQueue::new(&path)
+        .map_err(|e| format!("打开处理队列失败: {e}"))?;
+
+    let mut enqueued = 0usize;
+    let mut skipped = 0usize;
+
+    for doc in project.list_documents() {
+        if doc.doc_type != "pdf" || doc.folder != "projects" {
+            skipped += 1;
+            continue;
+        }
+        if doc.index_status == "done" {
+            skipped += 1;
+            continue;
+        }
+        let Some(source_path) = project.get_document_source_path(&doc.doc_id) else {
+            warn!("未找到文档 source_path: {}", doc.doc_id);
+            skipped += 1;
+            continue;
+        };
+        let source_str = source_path.to_string_lossy().to_string();
+
+        match queue.contains_file(&source_str).await {
+            Ok(true) => {
+                skipped += 1;
+                continue;
+            }
+            Ok(false) => {}
+            Err(e) => {
+                warn!("contains_file 检查失败 {}: {}", source_str, e);
+            }
+        }
+
+        match queue
+            .enqueue_with_stage(source_str, doc.doc_id.clone(), "inspector")
+            .await
+        {
+            Ok(_) => enqueued += 1,
+            Err(e) => {
+                warn!("入队失败 {}: {}", doc.doc_id, e);
+                skipped += 1;
+            }
+        }
+    }
+
+    Ok(serde_json::json!({
+        "success": true,
+        "enqueued": enqueued,
+        "skipped": skipped,
     }))
 }
 
@@ -240,8 +309,9 @@ pub fn get_file_tree(root: String) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     let path = PathBuf::from(&root);
 
-    let project = crate::core::project::Project::open(&path)
-        .ok_or_else(|| AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string())?;
+    let project = crate::core::project::Project::open(&path).ok_or_else(|| {
+        AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string()
+    })?;
 
     let tree = build_file_tree(&project.root);
     Ok(serde_json::json!({
@@ -261,7 +331,10 @@ fn start_or_restart_ingest_worker(app: &tauri::AppHandle, project_root: &std::pa
         }
         let worker = IngestWorker::start(project_root.to_path_buf(), app.clone());
         *guard = Some(worker);
-        log::info!("[project_ops] ingest worker started for {}", project_root.display());
+        log::info!(
+            "[project_ops] ingest worker started for {}",
+            project_root.display()
+        );
     } else {
         log::warn!("[project_ops] IngestWorkerState not managed, cannot start worker");
     }

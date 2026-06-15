@@ -1,11 +1,18 @@
 #![allow(dead_code)]
-use crate::core::config::constants::{MOLECULES_DIR, PROJECT_SOURCE_FILE, PROJECTS_DIR, REPORTS_DIR};
+use crate::core::config::constants::{
+    MOLECULES_DIR, PROJECTS_DIR, PROJECT_SOURCE_FILE, REPORTS_DIR,
+};
 use crate::core::document::detection_cache::{
     Detection as CachedDetection, DetectionCache, PageDetection, DETECTION_CACHE_SCHEMA_VERSION,
 };
+use crate::parsers::chem::vlm_chem::{
+    coref_to_molecules, detect_batch as detect_batch_images, detect_coref, molscribe,
+    process_page_image, CorefMolecule, DetectedMolecule,
+};
 use crate::parsers::doc_types::{ImageRef, OcrBlock};
-use crate::parsers::chem::vlm_chem::{process_page_image, detect_coref, coref_to_molecules, DetectedMolecule, CorefMolecule, detect_batch as detect_batch_images, molscribe};
-use crate::parsers::pdf::images::{image_to_pdf_bbox, pdf_to_image_bbox, pdf_page_size_pts, scale_from_page_size};
+use crate::parsers::pdf::images::{
+    image_to_pdf_bbox, pdf_page_size_pts, pdf_to_image_bbox, scale_from_page_size,
+};
 use image::GenericImageView;
 use std::path::{Path, PathBuf};
 
@@ -32,11 +39,9 @@ fn persist_extracted_images(
         .unwrap_or("unknown")
         .to_string();
 
-    let media_dir = project_root.as_ref().map(|root| {
-        root.join(REPORTS_DIR)
-            .join("figures")
-            .join(&doc_slug)
-    });
+    let media_dir = project_root
+        .as_ref()
+        .map(|root| root.join(REPORTS_DIR).join("figures").join(&doc_slug));
 
     extracted
         .iter()
@@ -100,7 +105,10 @@ fn ocr_cache_key(path: &str) -> Option<String> {
 }
 
 /// 从缓存读取 OCR 结果（含图片引用 + OCR 块）
-fn get_cached_ocr(path: &str, project_root: &Path) -> Option<(String, Vec<ImageRef>, Vec<OcrBlock>)> {
+fn get_cached_ocr(
+    path: &str,
+    project_root: &Path,
+) -> Option<(String, Vec<ImageRef>, Vec<OcrBlock>)> {
     let hash = ocr_cache_key(path)?;
     let cache_file = ocr_cache_dir(project_root).join(format!("{}.json", hash));
     let content = std::fs::read_to_string(&cache_file).ok()?;
@@ -126,7 +134,13 @@ fn get_cached_ocr(path: &str, project_root: &Path) -> Option<(String, Vec<ImageR
 }
 
 /// 将 OCR 结果写入缓存（含图片引用 + OCR 块）
-fn save_ocr_cache(path: &str, project_root: &Path, text: &str, images: &[ImageRef], ocr_blocks: &[OcrBlock]) {
+fn save_ocr_cache(
+    path: &str,
+    project_root: &Path,
+    text: &str,
+    images: &[ImageRef],
+    ocr_blocks: &[OcrBlock],
+) {
     if let Some(hash) = ocr_cache_key(path) {
         let dir = ocr_cache_dir(project_root);
         if std::fs::create_dir_all(&dir).is_ok() {
@@ -167,7 +181,10 @@ fn persist_mineru_images(
         .join("mineru");
 
     if std::fs::create_dir_all(&media_dir).is_err() {
-        log::warn!("Failed to create mineru-images dir: {}", media_dir.display());
+        log::warn!(
+            "Failed to create mineru-images dir: {}",
+            media_dir.display()
+        );
         return mineru_images.to_vec();
     }
 
@@ -223,8 +240,9 @@ pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<Classif
 
     // 提取嵌入图片并持久化到项目目录
     let tmp_dir = tempfile::tempdir().map_err(|e| format!("Temp dir error: {}", e))?;
-    let extracted = crate::parsers::pdf::images::extract_images_from_pdf(path, tmp_dir.path(), 50, 5)
-        .unwrap_or_default();
+    let extracted =
+        crate::parsers::pdf::images::extract_images_from_pdf(path, tmp_dir.path(), 50, 5)
+            .unwrap_or_default();
     let images = persist_extracted_images(path, &extracted);
 
     // 判断是否为扫描件（文本极少但有页面）
@@ -235,7 +253,9 @@ pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<Classif
         if std::env::var("MINERU_API_KEY").is_ok() {
             // 检查缓存
             if let Some(ref root) = project_root {
-                if let Some((cached_text, cached_images, cached_blocks)) = get_cached_ocr(path, root) {
+                if let Some((cached_text, cached_images, cached_blocks)) =
+                    get_cached_ocr(path, root)
+                {
                     log::info!("OCR cache HIT for {}", path);
                     let mut all_images = images;
                     all_images.extend(cached_images);
@@ -258,7 +278,9 @@ pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<Classif
             let options = crate::parsers::pdf::mineru::scanned_pdf_options(path);
             log::info!(
                 "[MinerU] Parsing scanned PDF with options: is_ocr={}, language={}, model={}",
-                options.is_ocr, options.language, options.model_version
+                options.is_ocr,
+                options.language,
+                options.model_version
             );
 
             match client.parse_file_with_options(path, &options) {
@@ -272,7 +294,13 @@ pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<Classif
 
                     // 保存缓存
                     if let Some(ref root) = project_root {
-                        save_ocr_cache(path, root, &result.markdown, &mineru_images, &result.ocr_blocks);
+                        save_ocr_cache(
+                            path,
+                            root,
+                            &result.markdown,
+                            &mineru_images,
+                            &result.ocr_blocks,
+                        );
                     }
 
                     let mut all_images = images;
@@ -291,7 +319,8 @@ pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<Classif
             }
         }
         // 回退到 LiteParse（本地 OCR）
-        if let Ok(result) = crate::parsers::pdf::liteparse::parse_with_liteparse(path, true, None).await
+        if let Ok(result) =
+            crate::parsers::pdf::liteparse::parse_with_liteparse(path, true, None).await
         {
             if !result.text.trim().is_empty() {
                 return Ok(ClassifyResult {
@@ -320,10 +349,7 @@ pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<Classif
 
 /// If `source_path` is a DocumentProject source file
 /// (`projects/<doc_id>/source.pdf`), return the `<doc_id>`.
-fn document_project_id_from_source_path(
-    project_root: &Path,
-    source_path: &Path,
-) -> Option<String> {
+fn document_project_id_from_source_path(project_root: &Path, source_path: &Path) -> Option<String> {
     let projects_dir = project_root.join(PROJECTS_DIR);
     if !source_path.starts_with(&projects_dir) {
         return None;
@@ -528,7 +554,10 @@ fn merge_and_write_full_detections(
         if !d.is_quick_scan {
             continue;
         }
-        if recognized.iter().any(|m| bbox_close(&m.bbox_pdf, &d.bbox_pdf)) {
+        if recognized
+            .iter()
+            .any(|m| bbox_close(&m.bbox_pdf, &d.bbox_pdf))
+        {
             continue;
         }
         detections.push(d);
@@ -579,7 +608,11 @@ async fn recognize_cached_page(
         let (x1, y1, x2, y2) = match page_size {
             Some((pw, ph)) if pw > 0.0 && ph > 0.0 => {
                 let scale = scale_from_page_size(pw, ph, img_w, img_h);
-                pdf_to_image_bbox((d.bbox_pdf[0], d.bbox_pdf[1], d.bbox_pdf[2], d.bbox_pdf[3]), ph, scale)
+                pdf_to_image_bbox(
+                    (d.bbox_pdf[0], d.bbox_pdf[1], d.bbox_pdf[2], d.bbox_pdf[3]),
+                    ph,
+                    scale,
+                )
             }
             _ => (d.bbox_pdf[0], d.bbox_pdf[1], d.bbox_pdf[2], d.bbox_pdf[3]),
         };
@@ -732,7 +765,10 @@ pub async fn quick_moldet_scan_pdf(
                 continue;
             };
             if !img_path.exists() {
-                log::warn!("[quick_moldet_scan] Image not found: {}", img_path.display());
+                log::warn!(
+                    "[quick_moldet_scan] Image not found: {}",
+                    img_path.display()
+                );
                 continue;
             }
 
@@ -764,7 +800,8 @@ pub async fn quick_moldet_scan_pdf(
                 Ok(screenshots) => {
                     for ss in screenshots {
                         let page_idx = ss.page_num as usize;
-                        let page_img_path = mol_dir.join(format!("page_{:04}_screenshot.png", page_idx));
+                        let page_img_path =
+                            mol_dir.join(format!("page_{:04}_screenshot.png", page_idx));
                         if let Err(e) = std::fs::write(&page_img_path, &ss.image_bytes) {
                             log::warn!(
                                 "[quick_moldet_scan] Failed to save screenshot page {}: {}",
@@ -827,11 +864,8 @@ pub async fn quick_moldet_scan_pdf(
                             bboxes
                                 .into_iter()
                                 .map(|b| {
-                                    let (x1, y1, x2, y2) = image_to_pdf_bbox(
-                                        (b.x1, b.y1, b.x2, b.y2),
-                                        ph,
-                                        scale,
-                                    );
+                                    let (x1, y1, x2, y2) =
+                                        image_to_pdf_bbox((b.x1, b.y1, b.x2, b.y2), ph, scale);
                                     CachedDetection {
                                         bbox_pdf: [x1, y1, x2, y2],
                                         smiles: None,
@@ -985,7 +1019,10 @@ pub async fn extract_molecules_from_pdf(
             };
 
             if !img_path.exists() {
-                log::warn!("[extract_molecules] Image not found: {}", img_path.display());
+                log::warn!(
+                    "[extract_molecules] Image not found: {}",
+                    img_path.display()
+                );
                 continue;
             }
 
@@ -1044,7 +1081,7 @@ pub async fn extract_molecules_from_pdf(
                 page_idx,
                 sidecar_url,
                 &output_dir,
-                None,  // scanned path: page dims not readily available
+                None, // scanned path: page dims not readily available
                 None,
             )
             .await
@@ -1099,7 +1136,8 @@ pub async fn extract_molecules_from_pdf(
                 Ok(screenshots) => {
                     for ss in screenshots {
                         let page_idx = ss.page_num as i32; // page_num is 1-indexed
-                        let page_img_path = mol_dir.join(format!("page_{:04}_screenshot.png", page_idx));
+                        let page_img_path =
+                            mol_dir.join(format!("page_{:04}_screenshot.png", page_idx));
                         if let Err(e) = std::fs::write(&page_img_path, &ss.image_bytes) {
                             log::warn!(
                                 "[extract_molecules] Failed to save screenshot page {}: {}",
@@ -1111,13 +1149,16 @@ pub async fn extract_molecules_from_pdf(
 
                         let output_dir = mol_dir.clone();
                         // LiteParse 截图是 text-based PDF，页面尺寸优先从 PDF 读取。
-                        let page_size = pdf_page_size_pts(source_path, (page_idx - 1).max(0) as usize);
+                        let page_size =
+                            pdf_page_size_pts(source_path, (page_idx - 1).max(0) as usize);
                         let (pw, ph) = page_size.unwrap_or((595.0_f64, 842.0_f64));
 
                         // Phase 5: 优先复用 quick-scan 缓存的 bbox。
                         let mut used_cache = false;
                         if !pdf_hash.is_empty() {
-                            if let Some(page_det) = cache.get(&cache_key, page_idx as usize, &pdf_hash) {
+                            if let Some(page_det) =
+                                cache.get(&cache_key, page_idx as usize, &pdf_hash)
+                            {
                                 if page_det.detections.iter().any(|d| d.is_quick_scan) {
                                     let cached = page_det.detections.clone();
                                     match recognize_cached_page(
@@ -1305,7 +1346,9 @@ pub async fn extract_molecules_with_coref(
                         // 保存裁剪图像并填充 crop_path
                         for (mol_idx, mol) in molecules.iter_mut().enumerate() {
                             // 找到分子对应的 bbox
-                            if let Some(bbox) = coref_result.bboxes.iter().find(|b| b.category_id == 1) {
+                            if let Some(bbox) =
+                                coref_result.bboxes.iter().find(|b| b.category_id == 1)
+                            {
                                 let [x1, y1, x2, y2] = bbox.bbox;
                                 let x1_px = (x1 * img_w as f64) as u32;
                                 let y1_px = (y1 * img_h as f64) as u32;
@@ -1313,7 +1356,8 @@ pub async fn extract_molecules_with_coref(
                                 let y2_px = (y2 * img_h as f64) as u32;
 
                                 if x2_px > x1_px && y2_px > y1_px {
-                                    let crop = img.crop_imm(x1_px, y1_px, x2_px - x1_px, y2_px - y1_px);
+                                    let crop =
+                                        img.crop_imm(x1_px, y1_px, x2_px - x1_px, y2_px - y1_px);
                                     let crop_filename = format!("mol_{:03}.png", mol_idx);
                                     let crop_path = crop_dir.join(&crop_filename);
                                     if let Err(e) = crop.save(&crop_path) {
@@ -1361,7 +1405,8 @@ pub async fn extract_molecules_with_coref(
                 Ok(screenshots) => {
                     for ss in screenshots {
                         let page_idx = ss.page_num as i32; // page_num is 1-indexed
-                        let page_img_path = mol_dir.join(format!("page_{:04}_screenshot.png", page_idx));
+                        let page_img_path =
+                            mol_dir.join(format!("page_{:04}_screenshot.png", page_idx));
                         if let Err(e) = std::fs::write(&page_img_path, &ss.image_bytes) {
                             log::warn!(
                                 "[extract_coref] Failed to save screenshot page {}: {}",
@@ -1401,7 +1446,9 @@ pub async fn extract_molecules_with_coref(
                                     // 保存裁剪图像并填充 crop_path
                                     for (mol_idx, mol) in molecules.iter_mut().enumerate() {
                                         // 找到分子对应的 bbox
-                                        if let Some(bbox) = coref_result.bboxes.iter().find(|b| b.category_id == 1) {
+                                        if let Some(bbox) =
+                                            coref_result.bboxes.iter().find(|b| b.category_id == 1)
+                                        {
                                             let [x1, y1, x2, y2] = bbox.bbox;
                                             let x1_px = (x1 * img_w as f64) as u32;
                                             let y1_px = (y1 * img_h as f64) as u32;
@@ -1409,13 +1456,23 @@ pub async fn extract_molecules_with_coref(
                                             let y2_px = (y2 * img_h as f64) as u32;
 
                                             if x2_px > x1_px && y2_px > y1_px {
-                                                let crop = img.crop_imm(x1_px, y1_px, x2_px - x1_px, y2_px - y1_px);
-                                                let crop_filename = format!("mol_{:03}.png", mol_idx);
+                                                let crop = img.crop_imm(
+                                                    x1_px,
+                                                    y1_px,
+                                                    x2_px - x1_px,
+                                                    y2_px - y1_px,
+                                                );
+                                                let crop_filename =
+                                                    format!("mol_{:03}.png", mol_idx);
                                                 let crop_path = crop_dir.join(&crop_filename);
                                                 if let Err(e) = crop.save(&crop_path) {
-                                                    log::warn!("[extract_coref] Failed to save crop: {}", e);
+                                                    log::warn!(
+                                                        "[extract_coref] Failed to save crop: {}",
+                                                        e
+                                                    );
                                                 } else {
-                                                    mol.crop_path = crop_path.to_string_lossy().to_string();
+                                                    mol.crop_path =
+                                                        crop_path.to_string_lossy().to_string();
                                                 }
                                             }
                                         }
@@ -1563,8 +1620,7 @@ pub async fn extract_pdf_workflow(
     // 创建输出目录结构
     let base_dir = std::path::Path::new(output_dir).join(&pdf_name);
     let mol_dir = base_dir.join("molecules");
-    std::fs::create_dir_all(&mol_dir)
-        .map_err(|e| format!("Failed to create output dir: {}", e))?;
+    std::fs::create_dir_all(&mol_dir).map_err(|e| format!("Failed to create output dir: {}", e))?;
 
     log::info!(
         "[workflow] Starting extraction: {} → {}",
@@ -1580,12 +1636,11 @@ pub async fn extract_pdf_workflow(
     // generic "Image extracted from page N" — VLM captions are
     // unavailable until Stage 2 (extract_molecules_from_pdf) populates
     // the detection cache.
-    let augmented_text =
-        crate::parsers::pipeline::markdown_augment::augment_markdown_with_images(
-            &classified.text,
-            &classified.images,
-            Some(&classified.ocr_blocks),
-        );
+    let augmented_text = crate::parsers::pipeline::markdown_augment::augment_markdown_with_images(
+        &classified.text,
+        &classified.images,
+        Some(&classified.ocr_blocks),
+    );
 
     // 写入 text.md (first pass — without VLM captions)
     let text_path = base_dir.join("text.md");
@@ -1612,10 +1667,7 @@ pub async fn extract_pdf_workflow(
         vec![]
     });
 
-    log::info!(
-        "[workflow] Detected {} molecules",
-        detected.len()
-    );
+    log::info!("[workflow] Detected {} molecules", detected.len());
 
     // Second pass at text.md: pull VLM captions out of the detection
     // cache the Stage 2 just wrote, then re-augment. The detection
@@ -1625,10 +1677,9 @@ pub async fn extract_pdf_workflow(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
-    let pdf_hash = crate::core::helpers::sha256_file(Path::new(pdf_path))
-        .unwrap_or_default();
-    let n_captioned = crate::parsers::pipeline::markdown_augment::
-        populate_descriptions_from_detection_cache(
+    let pdf_hash = crate::core::helpers::sha256_file(Path::new(pdf_path)).unwrap_or_default();
+    let n_captioned =
+        crate::parsers::pipeline::markdown_augment::populate_descriptions_from_detection_cache(
             &mut classified.images,
             &base_dir,
             doc_slug,
@@ -1662,10 +1713,8 @@ pub async fn extract_pdf_workflow(
             // back to bare SMILES. Failures are non-fatal — the entry is
             // still emitted with `molcode: None` so the rest of the
             // pipeline is unaffected.
-            let molcode = esmiles_to_molecode_opt(
-                esmiles_opt.as_deref().unwrap_or(&smiles),
-                &mol_name,
-            );
+            let molcode =
+                esmiles_to_molecode_opt(esmiles_opt.as_deref().unwrap_or(&smiles), &mol_name);
             MoleculeEntry {
                 index: i,
                 smiles,

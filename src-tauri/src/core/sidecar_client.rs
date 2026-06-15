@@ -151,10 +151,7 @@ pub fn get_or_init() -> AppResult<Arc<SidecarClient>> {
     let client = Arc::new(SidecarClient::from_env());
     // OnceLock::set 在竞争时可能失败，回落：先 set 再 get
     let _ = SIDECAR_CLIENT.set(Arc::clone(&client));
-    Ok(SIDECAR_CLIENT
-        .get()
-        .map(Arc::clone)
-        .unwrap_or(client))
+    Ok(SIDECAR_CLIENT.get().map(Arc::clone).unwrap_or(client))
 }
 
 /// 测试辅助：重置全局单例。仅供测试使用。

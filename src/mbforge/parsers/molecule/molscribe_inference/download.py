@@ -6,6 +6,9 @@
 import os
 from pathlib import Path
 
+from mbforge.utils.logger import get_logger
+logger = get_logger(__name__)
+
 MODEL_ID = "polyai/MolScribe"
 CHECKPOINT_NAME = "swin_base_char_aux_1m680k.pth"
 
@@ -66,7 +69,7 @@ def ensure_molscribe_model(model_dir: Path | None = None) -> str:
         pass
 
     # 回退：直接 ModelScope 下载（指定 local_dir 确保文件落在预期位置）
-    print(f"正在从 ModelScope 下载 MolScribe 到 {d} ...")
+    logger.info("正在从 ModelScope 下载 MolScribe 到 %s ...", d)
     d.mkdir(parents=True, exist_ok=True)
     try:
         from modelscope import snapshot_download

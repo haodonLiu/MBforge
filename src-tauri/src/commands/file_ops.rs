@@ -32,9 +32,15 @@ pub async fn upload_files(
 ) -> Result<Vec<DocumentEntry>, String> {
     let root_path = wrap(resolve_path(&project_root))?;
 
-    let mut project = crate::core::project::project::Project::open(&root_path)
-        .ok_or_else(|| AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {}", root_path.display()))
-            .with_path(root_path.to_string_lossy()).to_string())?;
+    let mut project =
+        crate::core::project::project::Project::open(&root_path).ok_or_else(|| {
+            AppError::new(
+                ErrorCode::ProjectOpen,
+                format!("项目不存在: {}", root_path.display()),
+            )
+            .with_path(root_path.to_string_lossy())
+            .to_string()
+        })?;
 
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
@@ -94,7 +100,8 @@ pub async fn upload_files(
 
             tokio::fs::copy(&src, &dest).await.map_err(|e| {
                 AppError::new(ErrorCode::FileWrite, format!("复制文件失败: {e}"))
-                    .with_path(dest.to_string_lossy()).to_string()
+                    .with_path(dest.to_string_lossy())
+                    .to_string()
             })?;
 
             if let Some(entry) = project.add_file(&dest) {
@@ -106,16 +113,20 @@ pub async fn upload_files(
             // 按设置决定是否自动入队处理。默认关闭，用户可手动触发。
             let config = crate::core::config::settings::AppConfig::load();
             if config.ingest.auto_enqueue_on_import {
-                if let Ok(q) = crate::core::document::ingest_queue::IngestQueue::new(&project.root) {
-                    let source_path = project.root
+                if let Ok(q) = crate::core::document::ingest_queue::IngestQueue::new(&project.root)
+                {
+                    let source_path = project
+                        .root
                         .join(crate::core::constants::PROJECTS_DIR)
                         .join(&entry.doc_id)
                         .join(crate::core::constants::PROJECT_SOURCE_FILE);
-                    let _ = q.enqueue_with_stage(
-                        source_path.to_string_lossy().to_string(),
-                        entry.doc_id.clone(),
-                        "inspector",
-                    ).await;
+                    let _ = q
+                        .enqueue_with_stage(
+                            source_path.to_string_lossy().to_string(),
+                            entry.doc_id.clone(),
+                            "inspector",
+                        )
+                        .await;
                 }
             }
             entries.push(entry);
@@ -133,13 +144,18 @@ pub async fn upload_files(
 pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, String> {
     let root_path = wrap(resolve_path(&project_root))?;
 
-    let mut project = crate::core::project::Project::open(&root_path)
-        .ok_or_else(|| AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {}", root_path.display()))
-            .with_path(root_path.to_string_lossy()).to_string())?;
+    let mut project = crate::core::project::Project::open(&root_path).ok_or_else(|| {
+        AppError::new(
+            ErrorCode::ProjectOpen,
+            format!("项目不存在: {}", root_path.display()),
+        )
+        .with_path(root_path.to_string_lossy())
+        .to_string()
+    })?;
 
-    let entry = project
-        .get_document(&doc_id)
-        .ok_or_else(|| AppError::new(ErrorCode::FileNotFound, format!("文档未找到: {doc_id}")).to_string())?;
+    let entry = project.get_document(&doc_id).ok_or_else(|| {
+        AppError::new(ErrorCode::FileNotFound, format!("文档未找到: {doc_id}")).to_string()
+    })?;
 
     // For non-PDF legacy files, delete the physical file. PDFs are removed
     // via the DocumentProject directory in remove_document().
@@ -148,8 +164,11 @@ pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, S
         if full_path.exists() {
             if let Err(e) = tokio::fs::remove_file(&full_path).await {
                 log::error!("Failed to delete file {:?}: {}", full_path, e);
-                return Err(AppError::new(ErrorCode::FileWrite, format!("删除文件失败: {e}"))
-                    .with_path(full_path.to_string_lossy()).to_string());
+                return Err(
+                    AppError::new(ErrorCode::FileWrite, format!("删除文件失败: {e}"))
+                        .with_path(full_path.to_string_lossy())
+                        .to_string(),
+                );
             }
             log::info!("Deleted file: {:?}", full_path);
         } else {
@@ -167,15 +186,22 @@ pub async fn read_text_file(project_root: String, path: String) -> Result<String
     let path_buf = PathBuf::from(&path);
     if let Err(_e) = assert_within_root(&project_root, &path_buf) {
         return Err(AppError::new(ErrorCode::FilePermission, "路径越权访问")
-            .with_path(path).to_string());
+            .with_path(path)
+            .to_string());
     }
     if !path_buf.exists() {
-        return Err(AppError::new(ErrorCode::FileNotFound, format!("文件不存在: {}", path_buf.display()))
-            .with_path(path).to_string());
+        return Err(AppError::new(
+            ErrorCode::FileNotFound,
+            format!("文件不存在: {}", path_buf.display()),
+        )
+        .with_path(path)
+        .to_string());
     }
-    tokio::fs::read_to_string(&path_buf).await
-        .map_err(|e| AppError::new(ErrorCode::FileRead, format!("读取文件失败: {e}"))
-            .with_path(path).to_string())
+    tokio::fs::read_to_string(&path_buf).await.map_err(|e| {
+        AppError::new(ErrorCode::FileRead, format!("读取文件失败: {e}"))
+            .with_path(path)
+            .to_string()
+    })
 }
 
 /// 使用系统默认程序打开文件。
@@ -184,13 +210,18 @@ pub async fn open_file(project_root: String, path: String) -> Result<(), String>
     let path_buf = PathBuf::from(&path);
     if let Err(_e) = assert_within_root(&project_root, &path_buf) {
         return Err(AppError::new(ErrorCode::FilePermission, "路径越权访问")
-            .with_path(path).to_string());
+            .with_path(path)
+            .to_string());
     }
 
     if !path_buf.exists() {
         log::error!("open_file: file not found: {}", path);
-        return Err(AppError::new(ErrorCode::FileNotFound, format!("文件不存在: {}", path_buf.display()))
-            .with_path(path).to_string());
+        return Err(AppError::new(
+            ErrorCode::FileNotFound,
+            format!("文件不存在: {}", path_buf.display()),
+        )
+        .with_path(path)
+        .to_string());
     }
 
     log::info!("open_file: {}", path);

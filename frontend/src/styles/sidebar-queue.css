@@ -1,0 +1,112 @@
+.sidebar-queue-panel {
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-queue-worker-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.sidebar-queue-worker-status.is-online {
+  background: var(--ok, #4caf50);
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.25);
+}
+
+.sidebar-queue-worker-status.is-offline {
+  background: var(--bad, #f44336);
+}
+
+.sidebar-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-queue-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-queue-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sidebar-queue-file {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.sidebar-queue-status {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
+.sidebar-queue-status.is-pending {
+  background: rgba(var(--warning-rgb, 255, 152, 0), 0.12);
+  color: var(--warning, #ff9800);
+}
+
+.sidebar-queue-status.is-processing {
+  background: rgba(var(--accent-rgb, 33, 150, 243), 0.12);
+  color: var(--accent);
+}
+
+.sidebar-queue-status.is-failed {
+  background: rgba(var(--bad-rgb, 244, 67, 54), 0.12);
+  color: var(--bad);
+}
+
+.sidebar-queue-stage {
+  font-size: 0.72rem;
+  color: var(--text-soft);
+}
+
+.sidebar-queue-progress-text {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+
+.sidebar-queue-footer {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+}

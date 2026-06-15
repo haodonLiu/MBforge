@@ -21,14 +21,14 @@ use crate::core::config::constants::{EVT_KB_SEARCH_CHUNK, INDEX_DIR, PROJECT_MET
 use crate::core::db::SharedConn;
 use crate::core::error::{AppError, AppResult, ErrorCode};
 use crate::core::vector::embedding::Embedder;
-use crate::core::vector::sqlite_vector_store::{SqliteVectorStore, reciprocal_rank_fusion};
+use crate::core::vector::sqlite_vector_store::{reciprocal_rank_fusion, SqliteVectorStore};
 
-use crate::core::vector::vector_store::SearchResult;
 use super::document_tree::DocumentTreeIndex;
 use super::file_cache::FileCache;
 use super::semantic_cache::{SemanticCache, SemanticCacheConfig};
 use super::stream_search::{StreamingResult, StreamingSearch, StreamingSearchConfig};
 use crate::core::types::{SectionChunk, TreeNode};
+use crate::core::vector::vector_store::SearchResult;
 
 pub use super::document_tree::PageContent;
 
@@ -171,11 +171,7 @@ impl KnowledgeBase {
     }
 
     /// 从旧的 vectors.db + cache.db 迁移到统一的 knowledge_base.db
-    fn migrate_legacy(
-        new_path: &Path,
-        legacy_vec: &Path,
-        legacy_cache: &Path,
-    ) -> AppResult<()> {
+    fn migrate_legacy(new_path: &Path, legacy_vec: &Path, legacy_cache: &Path) -> AppResult<()> {
         let conn = Connection::open(new_path)?;
 
         // 初始化新库 schema
@@ -201,7 +197,7 @@ impl KnowledgeBase {
             // 重建 FTS5
             conn.execute_batch(
                 "INSERT INTO sections_fts (id, text)
-                 SELECT chunk_id, text FROM vectors"
+                 SELECT chunk_id, text FROM vectors",
             )?;
 
             conn.execute_batch("DETACH DATABASE old_vec")?;
@@ -467,7 +463,10 @@ pub fn get_or_init_kb(
     let kb = if let Ok(db) = crate::core::db::get_or_init_db(project_path) {
         KnowledgeBase::with_shared_conn(project_path, Some(&config.embed), db.knowledge_base())?
     } else {
-        log::warn!("DbManager unavailable for KB at {}, falling back to self-managed connection", root);
+        log::warn!(
+            "DbManager unavailable for KB at {}, falling back to self-managed connection",
+            root
+        );
         KnowledgeBase::new(project_path, Some(&config.embed))?
     };
 
@@ -556,7 +555,9 @@ pub async fn kb_search(
     top_k: Option<usize>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let top_k = top_k.unwrap_or(5);
-    let (results, _) = search_with_cache(&root, &query, top_k).await.map_err(|e| e.to_string())?;
+    let (results, _) = search_with_cache(&root, &query, top_k)
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(results)
 }
 
@@ -568,7 +569,9 @@ pub async fn kb_search_stream(
     top_k: Option<usize>,
 ) -> Result<(), String> {
     let top_k = top_k.unwrap_or(5);
-    let (_results, chunks) = search_with_cache(&root, &query, top_k).await.map_err(|e| e.to_string())?;
+    let (_results, chunks) = search_with_cache(&root, &query, top_k)
+        .await
+        .map_err(|e| e.to_string())?;
 
     for chunk in chunks {
         let _ = app.emit(

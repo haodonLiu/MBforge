@@ -18,7 +18,8 @@ use crate::parsers::doc_types::ImageRef;
 // ---------------------------------------------------------------------------
 
 static NAMED_MOLECULE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(Compound|Example|Intermediate|Reference)\s+(\d+[a-zA-Z]?)").expect("valid named molecule regex")
+    Regex::new(r"(?i)(Compound|Example|Intermediate|Reference)\s+(\d+[a-zA-Z]?)")
+        .expect("valid named molecule regex")
 });
 
 static ACTIVITY_RE: LazyLock<Vec<Regex>> = LazyLock::new(|| {
@@ -57,8 +58,9 @@ static PHYSICOCHEMICAL_RE: LazyLock<Vec<(String, Regex)>> = LazyLock::new(|| {
     ]
 });
 
-static PAGE_HINT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\[?page\s*(\d+)\]?|\[?p\.?\s*(\d+)\]?").expect("valid page hint regex"));
+static PAGE_HINT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\[?page\s*(\d+)\]?|\[?p\.?\s*(\d+)\]?").expect("valid page hint regex")
+});
 
 // ---------------------------------------------------------------------------
 // Data types

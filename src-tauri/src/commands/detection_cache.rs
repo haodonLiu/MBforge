@@ -16,17 +16,17 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
 
 use crate::core::config::constants::sidecar_url;
-use crate::core::project::project::Project;
 use crate::core::document::detection_cache::{
     Detection as CachedDetection, DetectionCache, PageDetection, DETECTION_CACHE_SCHEMA_VERSION,
 };
 use crate::core::helpers::clean_path;
 use crate::core::helpers::sha256_file;
+use crate::core::project::project::Project;
 
 // ---------------------------------------------------------------------------
 // In-memory PDF hash LRU — avoid re-hashing unchanged files
@@ -123,26 +123,26 @@ pub async fn cached_extract_page(
     // Resolve PDF path from the project index. Falls back to the legacy
     // `papers/<doc_slug>.pdf` convention if the document is not yet in a
     // DocumentProject.
-    let (pdf_abs, doc_slug, is_legacy) = match Project::open(&project_path)
-        .and_then(|p| p.get_document_source_path(&doc_id))
-    {
-        Some(path) => {
-            let slug = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or(&doc_id)
-                .to_string();
-            let legacy = path.starts_with(project_path.join(crate::core::config::constants::PAPERS_DIR));
-            (path, slug, legacy)
-        }
-        None => {
-            // Fallback: assume legacy papers/<doc_id>.pdf for backwards compat.
-            let path = project_path
-                .join(crate::core::config::constants::PAPERS_DIR)
-                .join(format!("{}.pdf", doc_id));
-            (path, doc_id.clone(), true)
-        }
-    };
+    let (pdf_abs, doc_slug, is_legacy) =
+        match Project::open(&project_path).and_then(|p| p.get_document_source_path(&doc_id)) {
+            Some(path) => {
+                let slug = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&doc_id)
+                    .to_string();
+                let legacy =
+                    path.starts_with(project_path.join(crate::core::config::constants::PAPERS_DIR));
+                (path, slug, legacy)
+            }
+            None => {
+                // Fallback: assume legacy papers/<doc_id>.pdf for backwards compat.
+                let path = project_path
+                    .join(crate::core::config::constants::PAPERS_DIR)
+                    .join(format!("{}.pdf", doc_id));
+                (path, doc_id.clone(), true)
+            }
+        };
 
     // Try cache.
     if let Some(hash) = pdf_hash_cached(&pdf_abs).await {
@@ -306,25 +306,25 @@ pub async fn get_cached_page_detections(
     let project_path = std::path::PathBuf::from(&project_root);
 
     // Resolve PDF path from the project index.
-    let (pdf_abs, doc_slug, is_legacy) = match Project::open(&project_path)
-        .and_then(|p| p.get_document_source_path(&doc_id))
-    {
-        Some(path) => {
-            let slug = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or(&doc_id)
-                .to_string();
-            let legacy = path.starts_with(project_path.join(crate::core::config::constants::PAPERS_DIR));
-            (path, slug, legacy)
-        }
-        None => {
-            let path = project_path
-                .join(crate::core::config::constants::PAPERS_DIR)
-                .join(format!("{}.pdf", doc_id));
-            (path, doc_id.clone(), true)
-        }
-    };
+    let (pdf_abs, doc_slug, is_legacy) =
+        match Project::open(&project_path).and_then(|p| p.get_document_source_path(&doc_id)) {
+            Some(path) => {
+                let slug = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&doc_id)
+                    .to_string();
+                let legacy =
+                    path.starts_with(project_path.join(crate::core::config::constants::PAPERS_DIR));
+                (path, slug, legacy)
+            }
+            None => {
+                let path = project_path
+                    .join(crate::core::config::constants::PAPERS_DIR)
+                    .join(format!("{}.pdf", doc_id));
+                (path, doc_id.clone(), true)
+            }
+        };
 
     if let Some(hash) = pdf_hash_cached(&pdf_abs).await {
         let cache = if is_legacy {
@@ -444,10 +444,7 @@ fn sidecar_to_cached(v: &serde_json::Value) -> Option<CachedDetection> {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string()),
         conf_moldet: v.get("moldet_conf").and_then(|n| n.as_f64()).unwrap_or(0.0),
-        conf_molscribe: v
-            .get("scribe_conf")
-            .and_then(|n| n.as_f64())
-            .unwrap_or(0.0),
+        conf_molscribe: v.get("scribe_conf").and_then(|n| n.as_f64()).unwrap_or(0.0),
         vlm_caption: v
             .get("vlm_caption")
             .and_then(|s| s.as_str())
@@ -523,10 +520,7 @@ pub async fn vlm_chem_coref(
     page_h_pts: f64,
     image_w: u32,
     image_h: u32,
-) -> Result<
-    crate::parsers::chem::vlm_chem::CorefOutput,
-    String,
-> {
+) -> Result<crate::parsers::chem::vlm_chem::CorefOutput, String> {
     use crate::parsers::chem::vlm_chem;
 
     let resolved = if std::path::Path::new(&image_path).is_absolute() {
@@ -544,14 +538,8 @@ pub async fn vlm_chem_coref(
     )
     .await?;
 
-    let molecules = vlm_chem::coref_to_molecules(
-        &coref,
-        page_idx,
-        page_w_pts,
-        page_h_pts,
-        image_w,
-        image_h,
-    );
+    let molecules =
+        vlm_chem::coref_to_molecules(&coref, page_idx, page_w_pts, page_h_pts, image_w, image_h);
 
     Ok(vlm_chem::CorefOutput { coref, molecules })
 }
@@ -562,10 +550,7 @@ fn count_cached_docs(root: &std::path::Path) -> usize {
         Ok(e) => e,
         Err(_) => return 0,
     };
-    entries
-        .flatten()
-        .filter(|e| e.path().is_dir())
-        .count()
+    entries.flatten().filter(|e| e.path().is_dir()).count()
 }
 
 /// 给定 PDF 页面上的分子 bbox，找出最接近的标签（化合物 / 章节类）。
@@ -648,9 +633,8 @@ pub async fn batch_quick_moldet_scan(
     let config = crate::core::config::settings::AppConfig::load();
     let batch_size = config.moldet.moldet_batch_size.max(1);
 
-    let project = Project::open(&root_path).ok_or_else(|| {
-        format!("Cannot open project at {}", project_root)
-    })?;
+    let project = Project::open(&root_path)
+        .ok_or_else(|| format!("Cannot open project at {}", project_root))?;
 
     let mut pdf_entries: Vec<(String, String)> = Vec::new(); // (doc_id, abs_path)
     {
@@ -677,10 +661,13 @@ pub async fn batch_quick_moldet_scan(
         match quick_moldet_scan_pdf(&abs_path, &root_path, &sidecar, &doc_id, batch_size).await {
             Ok(mut result) => {
                 let pages = result.pages_with_molecules.clone();
-                let status = if pages.is_empty() { "no_molecule" } else { "has_molecule" };
-                let mut proj = Project::open(&root_path).ok_or_else(|| {
-                    format!("Cannot open project at {}", project_root)
-                })?;
+                let status = if pages.is_empty() {
+                    "no_molecule"
+                } else {
+                    "has_molecule"
+                };
+                let mut proj = Project::open(&root_path)
+                    .ok_or_else(|| format!("Cannot open project at {}", project_root))?;
                 proj.set_document_moldet(&doc_id, status, &pages);
                 result.moldet_status = status.to_string();
                 results.push(result);

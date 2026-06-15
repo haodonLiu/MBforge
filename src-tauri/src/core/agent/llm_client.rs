@@ -73,11 +73,10 @@ async fn chat_with_timeout(
     };
 
     let (url, request) = match cfg.kind {
-        MbforgeProviderKind::OpenAICompatible | MbforgeProviderKind::DeepSeek | MbforgeProviderKind::Ollama => {
-            let url = format!(
-                "{}/chat/completions",
-                cfg.base_url.trim_end_matches('/')
-            );
+        MbforgeProviderKind::OpenAICompatible
+        | MbforgeProviderKind::DeepSeek
+        | MbforgeProviderKind::Ollama => {
+            let url = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
             let body = serde_json::json!({
                 "model": cfg.model,
                 "messages": [
@@ -145,9 +144,15 @@ async fn chat_with_timeout(
 // Allow `ChatMessage` to be constructed from a `&str` for convenience.
 impl ChatMessage {
     pub fn user(content: impl Into<String>) -> Self {
-        Self { role: "user".into(), content: content.into() }
+        Self {
+            role: "user".into(),
+            content: content.into(),
+        }
     }
     pub fn system(content: impl Into<String>) -> Self {
-        Self { role: "system".into(), content: content.into() }
+        Self {
+            role: "system".into(),
+            content: content.into(),
+        }
     }
 }

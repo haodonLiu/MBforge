@@ -107,8 +107,14 @@ impl TraceContext {
     /// - `model`: LLM 模型名称（仅作为审计字段记录，不做费用估算）
     /// - `prompt_tokens`: 提示 token 数
     /// - `completion_tokens`: 响应 token 数
-    pub fn record_llm_response(&mut self, _model: &str, prompt_tokens: u64, completion_tokens: u64) {
-        self.tokens.record_llm_call(prompt_tokens, completion_tokens);
+    pub fn record_llm_response(
+        &mut self,
+        _model: &str,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+    ) {
+        self.tokens
+            .record_llm_call(prompt_tokens, completion_tokens);
     }
 
     /// 把当前 trace 信息转成 HTTP Header 列表。
@@ -417,10 +423,12 @@ mod tests {
     fn test_audit_log_read_by_trace() {
         let tmp = tempfile::tempdir().unwrap();
         let log = AuditLog::new(tmp.path()).unwrap();
-        log.append_llm_call("trace-A", None, "m", 10, 10, 100).unwrap();
+        log.append_llm_call("trace-A", None, "m", 10, 10, 100)
+            .unwrap();
         log.append_tool_call("trace-B", None, "t", &serde_json::json!({}), 50)
             .unwrap();
-        log.append_llm_call("trace-A", None, "m", 20, 20, 200).unwrap();
+        log.append_llm_call("trace-A", None, "m", 20, 20, 200)
+            .unwrap();
 
         let only_a = log.read_by_trace("trace-A", 10).unwrap();
         assert_eq!(only_a.len(), 2);

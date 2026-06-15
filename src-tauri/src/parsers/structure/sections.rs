@@ -4,19 +4,22 @@
 /// 输出: Vec<SectionChunk>（唯一数据单元）
 ///
 /// SectionChunk 是向量索引、结构树、页码缓存的同源数据。
-pub use crate::core::types::{SectionChunk, TreeNode, Heading};
+pub use crate::core::types::{Heading, SectionChunk, TreeNode};
 
-use std::sync::LazyLock;
 use regex::Regex;
+use std::sync::LazyLock;
 
 // ─── Heading 提取（原 headings.rs）────────────────────────────────
 
 // 策略 A: Markdown # heading (最高优先级)
-static MD_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.+)$").expect("valid md heading regex"));
+static MD_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.+)$").expect("valid md heading regex"));
 static UPPER_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\s*([A-Z][A-Z\s]{2,})\s*$").expect("valid upper heading regex"));
-static COLON_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([A-Z][\w\s]+):\s*$").expect("valid colon heading regex"));
-static NUM_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+)\.\s+([A-Z].+)$").expect("valid num heading regex"));
+static COLON_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([A-Z][\w\s]+):\s*$").expect("valid colon heading regex"));
+static NUM_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(\d+)\.\s+([A-Z].+)$").expect("valid num heading regex"));
 
 /// 从文本中提取所有 heading
 ///
@@ -36,7 +39,11 @@ pub fn extract_headings(text: &str) -> Vec<Heading> {
         if let Some(caps) = MD_RE.captures(trimmed) {
             let level = caps[1].len();
             let title = caps[2].trim().to_string();
-            headings.push(Heading { level, title, line_num: i });
+            headings.push(Heading {
+                level,
+                title,
+                line_num: i,
+            });
             continue;
         }
 
@@ -46,7 +53,11 @@ pub fn extract_headings(text: &str) -> Vec<Heading> {
             let prev_empty = i == 0 || lines[i - 1].trim().is_empty();
             let next_empty = i + 1 >= lines.len() || lines[i + 1].trim().is_empty();
             if prev_empty && next_empty && title.len() >= 3 {
-                headings.push(Heading { level: 1, title, line_num: i });
+                headings.push(Heading {
+                    level: 1,
+                    title,
+                    line_num: i,
+                });
                 continue;
             }
         }
@@ -55,7 +66,11 @@ pub fn extract_headings(text: &str) -> Vec<Heading> {
         if let Some(caps) = COLON_RE.captures(trimmed) {
             let title = caps[1].trim().to_string();
             if title.len() >= 5 && title.len() <= 60 {
-                headings.push(Heading { level: 2, title, line_num: i });
+                headings.push(Heading {
+                    level: 2,
+                    title,
+                    line_num: i,
+                });
                 continue;
             }
         }
@@ -63,7 +78,11 @@ pub fn extract_headings(text: &str) -> Vec<Heading> {
         // 策略 D: 数字编号
         if let Some(caps) = NUM_RE.captures(trimmed) {
             let title = format!("{}. {}", &caps[1], caps[2].trim());
-            headings.push(Heading { level: 2, title, line_num: i });
+            headings.push(Heading {
+                level: 2,
+                title,
+                line_num: i,
+            });
         }
     }
 
@@ -231,12 +250,43 @@ fn split_long_section(text: &str, max_chars: usize) -> Vec<String> {
 
 /// 语义边界检测关键词（中英文）
 const SEMANTIC_BOUNDARY_PATTERNS: &[&str] = &[
-    "figure", "fig.", "table", "example", "ex.", "step", "method",
-    "results", "discussion", "conclusion", "introduction", "abstract",
-    "experimental", "synthesis", "procedure", "materials", "apparatus",
-    "background", "objective", "aim", "purpose",
-    "图", "表", "示例", "步骤", "方法", "结果", "讨论", "结论",
-    "引言", "摘要", "实验", "合成", "程序", "材料", "背景", "目的",
+    "figure",
+    "fig.",
+    "table",
+    "example",
+    "ex.",
+    "step",
+    "method",
+    "results",
+    "discussion",
+    "conclusion",
+    "introduction",
+    "abstract",
+    "experimental",
+    "synthesis",
+    "procedure",
+    "materials",
+    "apparatus",
+    "background",
+    "objective",
+    "aim",
+    "purpose",
+    "图",
+    "表",
+    "示例",
+    "步骤",
+    "方法",
+    "结果",
+    "讨论",
+    "结论",
+    "引言",
+    "摘要",
+    "实验",
+    "合成",
+    "程序",
+    "材料",
+    "背景",
+    "目的",
 ];
 
 /// 检测段落是否是语义边界
@@ -260,7 +310,9 @@ fn is_semantic_boundary(para: &str) -> Option<String> {
 
     // 2. 纯数字编号行（如 "1. Introduction", "(a) Method"）也视为弱边界
     if Regex::new(r"^\s*\d+[\.\)]\s+\w").ok()?.is_match(trimmed)
-        || Regex::new(r"^\s*[(\[]\d+[)\]]\s+\w").ok()?.is_match(trimmed)
+        || Regex::new(r"^\s*[(\[]\d+[)\]]\s+\w")
+            .ok()?
+            .is_match(trimmed)
     {
         return Some(trimmed.chars().take(60).collect());
     }
@@ -298,7 +350,8 @@ fn split_semantic_chunks(text: &str, max_chars: usize) -> Vec<(String, String)> 
 
         // 遇到语义边界且当前 chunk 已足够大 → 切分
         let should_split = boundary_title.is_some()
-            && (current_text.len() >= min_chunk_size || current_text.len() + para.len() > max_chars);
+            && (current_text.len() >= min_chunk_size
+                || current_text.len() + para.len() > max_chars);
 
         // 或者即将超出 max_chars → 强制切分
         let would_overflow = current_text.len() + para.len() + 2 > max_chars;
@@ -328,7 +381,12 @@ fn split_semantic_chunks(text: &str, max_chars: usize) -> Vec<(String, String)> 
                 text.as_bytes()
                     .chunks(max_chars)
                     .enumerate()
-                    .map(|(i, b)| (format!("Part {}", i + 1), String::from_utf8_lossy(b).to_string()))
+                    .map(|(i, b)| {
+                        (
+                            format!("Part {}", i + 1),
+                            String::from_utf8_lossy(b).to_string(),
+                        )
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -515,7 +573,9 @@ mod tests {
             sections.len()
         );
         let titles: Vec<&str> = sections.iter().map(|s| s.title.as_str()).collect();
-        assert!(titles.iter().any(|t| t.contains("Figure") || t.contains("Table") || t.contains("Conclusion")));
+        assert!(titles
+            .iter()
+            .any(|t| t.contains("Figure") || t.contains("Table") || t.contains("Conclusion")));
     }
 
     #[test]

@@ -62,8 +62,15 @@ pub struct Detection {
 impl Detection {
     /// Returns true if this detection contains a recognized structure (SMILES).
     pub fn has_structure(&self) -> bool {
-        self.smiles.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
-            || self.esmiles.as_deref().map(|s| !s.is_empty()).unwrap_or(false)
+        self.smiles
+            .as_deref()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false)
+            || self
+                .esmiles
+                .as_deref()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false)
     }
 }
 
@@ -165,12 +172,7 @@ impl DetectionCache {
     /// - the file is not valid JSON
     /// - the entry's `pdf_hash` does not match `expected_pdf_hash`
     ///   (i.e. the PDF has changed since the cache was written)
-    pub fn get(
-        &self,
-        doc_id: &str,
-        page: usize,
-        expected_pdf_hash: &str,
-    ) -> Option<PageDetection> {
+    pub fn get(&self, doc_id: &str, page: usize, expected_pdf_hash: &str) -> Option<PageDetection> {
         if self.read_schema_version() != Some(DETECTION_CACHE_SCHEMA_VERSION) {
             log::debug!(
                 "DetectionCache: schema version mismatch for {}, treating as miss",
@@ -348,7 +350,10 @@ mod tests {
         assert_eq!(loaded.page, 3);
         assert_eq!(loaded.detections.len(), 1);
         assert_eq!(loaded.detections[0].smiles.as_deref(), Some("CCO"));
-        assert_eq!(loaded.detections[0].vlm_caption.as_deref(), Some("Ethanol molecule diagram"));
+        assert_eq!(
+            loaded.detections[0].vlm_caption.as_deref(),
+            Some("Ethanol molecule diagram")
+        );
     }
 
     #[test]
@@ -392,7 +397,12 @@ mod tests {
     fn corrupted_json_returns_none() {
         let tmp = TempDir::new().unwrap();
         let cache = DetectionCache::new(tmp.path());
-        let path = tmp.path().join(INDEX_DIR).join("detections").join("doc-x").join("page_0001.json");
+        let path = tmp
+            .path()
+            .join(INDEX_DIR)
+            .join("detections")
+            .join("doc-x")
+            .join("page_0001.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, "{ this is not valid json").unwrap();
         assert!(cache.get("doc-x", 1, "any").is_none());
@@ -423,7 +433,10 @@ mod tests {
             .join("detections")
             .join("doc-1")
             .join("page_0003.json");
-        assert!(expected_path.exists(), "cache should be written under projects/<doc_id>/cache/detections");
+        assert!(
+            expected_path.exists(),
+            "cache should be written under projects/<doc_id>/cache/detections"
+        );
 
         let loaded = cache.get("doc-1", 3, "abc123").expect("must hit");
         assert_eq!(loaded.doc_id, "doc-1");
@@ -436,7 +449,11 @@ mod tests {
         let cache = DetectionCache::new(tmp.path());
         cache.put(&sample_entry("doc-v", 1, "h")).unwrap();
 
-        let version_path = tmp.path().join(INDEX_DIR).join("detections").join(".schema_version");
+        let version_path = tmp
+            .path()
+            .join(INDEX_DIR)
+            .join("detections")
+            .join(".schema_version");
         assert!(version_path.exists());
         let text = std::fs::read_to_string(&version_path).unwrap();
         assert_eq!(text.trim(), DETECTION_CACHE_SCHEMA_VERSION.to_string());
@@ -449,7 +466,11 @@ mod tests {
         cache.put(&sample_entry("doc-v", 1, "h")).unwrap();
 
         // Simulate an old cache by bumping the root schema version backwards.
-        let version_path = tmp.path().join(INDEX_DIR).join("detections").join(".schema_version");
+        let version_path = tmp
+            .path()
+            .join(INDEX_DIR)
+            .join("detections")
+            .join(".schema_version");
         std::fs::write(&version_path, "0").unwrap();
 
         assert!(cache.get("doc-v", 1, "h").is_none());

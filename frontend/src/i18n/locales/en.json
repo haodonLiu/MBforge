@@ -24,6 +24,17 @@
   "nav.switchProject": "Switch Project",
   "nav.confirmSwitchProject": "Are you sure you want to switch projects? Unsaved changes will be lost.",
   "nav.settings": "Settings",
+  "nav.projectScope": "Project Scope",
+
+  "projectScope.empty": "No parsed PDFs yet",
+  "projectScope.import": "Import PDF",
+  "projectScope.importing": "Importing…",
+  "projectScope.importFailed": "Import failed",
+  "projectScope.loadFailed": "Failed to load project scope",
+
+  "sidebarQueue.title": "Queue",
+  "sidebarQueue.viewAll": "View all",
+  "sidebarQueue.empty": "No active tasks",
 
   "welcome.title": "MBForge",
   "welcome.subtitle": "Molecular Knowledge Base & AI Workbench",

@@ -33,7 +33,7 @@ pub trait EmbedderTrait: Send + Sync {
     ) -> Result<Vec<Vec<f32>>, String> {
         self.embed(texts)
     }
- }
+}
 
 /// Embedding 生成器（统一入口）
 pub struct Embedder {
@@ -83,10 +83,7 @@ impl Embedder {
     ///
     /// - 如果当前是 sidecar 模式，调用 `SidecarClient::embed()` 走共享池
     /// - `DeterministicEmbedder` 是纯 CPU 计算，直接调 sync
-    pub async fn embed_async(
-        &self,
-        texts: Vec<String>,
-    ) -> Result<Vec<Vec<f32>>, String> {
+    pub async fn embed_async(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
         if self.is_sidecar {
             // 走 SidecarClient 共享连接池（避免每次 Embedder::new 重建池）。
             let client = crate::core::sidecar_client::get_or_init()
@@ -228,8 +225,6 @@ impl EmbedderTrait for SidecarEmbedder {
 // 内部 trait：让 Embedder 可选地拿到 SidecarEmbedder 句柄走共享连接。
 // Phase 3 简化：直接通过 `Embedder.sidecar_handle: Option<Arc<SidecarEmbedder>>`
 // 持有句柄，无需反射。
-
-
 
 // ---------------------------------------------------------------------------
 // DeterministicEmbedder — 确定性测试用 embedder

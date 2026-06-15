@@ -346,7 +346,7 @@ uv run ruff format src/ --check
 | 异步 | I/O 阻塞操作（模型推理、文件读写）必须用 `await loop.run_in_executor(None, ...)` 包装，不得阻塞事件循环 |
 | 导入排序 | 1) `from __future__` 2) 标准库 3) 第三方库 4) 本地绝对导入 `from mbforge.xxx` 5) 相对导入 `from ...xxx` |
 | 格式化 | 使用 `ruff format src/`（行宽默认 88）；`ruff check src/` 检查 lint |
-| 冻结期 | **迁移期不强制修改旧代码**，新增/修改的代码必须遵守本规范 |
+| 旧代码 | 迁移已完成，所有代码（含 Python 侧）均须遵守本规范 |
 
 ### TypeScript / 前端（`frontend/src/`）
 
@@ -444,14 +444,18 @@ uv run ruff format src/ --check
 
 ---
 
-## 迁移期规则（重要）
+## 迁移完成声明
 
-本项目处于 **Python → Rust 迁移期**，必须遵守：
+**Python → Rust 迁移已完成。** 所有核心逻辑已迁移至 Rust 侧，Python sidecar 仅保留以下职责：
 
-- **Rust 新代码优先，Python 代码冻结**（除 bugfix 及工程化补全如 type hints/错误处理外不修改核心逻辑）
-- **新增功能必须在 Rust 侧实现**
-- **Python sidecar 仅保留**：Embedding（Qwen3）、Rerank（Qwen3）、MolDet 分子检测、MolScribe 图像识别
-- **前端调用逐步从 HTTP API 迁移到 Tauri `invoke()`**
+- **Embedding**（Qwen3）— 文本向量化
+- **Rerank**（Qwen3）— 检索结果重排序
+- **MolDet**（YOLO）— PDF 图像中的分子检测
+- **MolScribe**（Swin Transformer）— 分子图像 → SMILES 识别
+
+前端调用已全面迁移至 Tauri `invoke()`，HTTP API 仅用于 dev 模式下的 sidecar 健康检查。
+
+所有代码（包括 Python 侧）均须遵守本规范，不再有"旧代码豁免"。
 
 ---
 
@@ -652,7 +656,7 @@ export function myFn(arg: string): string {
 
 - [ ] `cd frontend && npx tsc --noEmit` 零 errors
 - [ ] `cd src-tauri && cargo check` 零 errors
-- [ ] `uv run ruff check src/` 零 critical errors（迁移期旧代码除外）
+- [ ] `uv run ruff check src/` 零 critical errors
 - [ ] 不提交 API 密钥或敏感配置
 - [ ] `.gitignore` 已覆盖新增产物
 - [ ] `constants.yaml` 如有修改，运行 `python scripts/generate_constants.py` 并验证两侧产物

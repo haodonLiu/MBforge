@@ -9,7 +9,7 @@ import Skeleton from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import { FileTextIcon } from '../icons'
 import { inspectPdf, confirmOcr } from '../../api/tauri/pdf'
-import { ingestEnqueue } from '../../api/tauri/ingest_queue'
+import { ingestEnqueue, trackSelfTriggeredDoc } from '../../api/tauri/ingest_queue'
 import { showToast } from '../../hooks/useToast'
 import type { DocumentEntry } from '../../types'
 
@@ -41,7 +41,7 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
           .then(() => {
             onRefreshDocs?.()
           })
-          .catch((e) => {
+          .catch((e: unknown) => {
             console.warn('[DocumentList] inspect failed:', e)
           })
           .finally(() => {
@@ -80,6 +80,7 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
     setEnqueueingIds(prev => new Set(prev).add(doc.doc_id))
     try {
       await ingestEnqueue(projectRoot, filePath, doc.doc_id)
+      trackSelfTriggeredDoc(doc.doc_id)
       showToast(t('project.processNow') + ': ' + (doc.title || doc.doc_id), 'success')
       onRefreshDocs?.()
     } catch (e) {

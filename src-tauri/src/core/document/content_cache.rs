@@ -6,21 +6,21 @@
 //! content_cache 缓存的是 LLM 处理结果（Stage 1-3），是最贵的操作。
 
 use rusqlite::{params, Connection};
-use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 use crate::core::helpers::now_secs_f64;
 
 /// 缓存条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentCacheEntry {
-    pub content_hash: String,    // SHA-256(input_text + prompt_hash)
-    pub stage: String,           // "meta_analysis" | "post_process" | "merge_sar"
-    pub input_text: String,      // 原始输入（截断用于调试）
-    pub result_json: String,     // LLM 输出 JSON
+    pub content_hash: String, // SHA-256(input_text + prompt_hash)
+    pub stage: String,        // "meta_analysis" | "post_process" | "merge_sar"
+    pub input_text: String,   // 原始输入（截断用于调试）
+    pub result_json: String,  // LLM 输出 JSON
     pub created_at: f64,
     pub hit_count: i64,
-    pub tokens_used: usize,      // 记录 token 消耗
+    pub tokens_used: usize, // 记录 token 消耗
 }
 
 /// 内容去重缓存
@@ -240,6 +240,9 @@ mod tests {
 
         let stats = cache.stats().await.unwrap();
         assert_eq!(stats.total_entries, 3);
-        assert!(stats.by_stage.iter().any(|(s, c)| s == "meta_analysis" && *c == 2));
+        assert!(stats
+            .by_stage
+            .iter()
+            .any(|(s, c)| s == "meta_analysis" && *c == 2));
     }
 }

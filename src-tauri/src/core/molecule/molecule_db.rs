@@ -365,7 +365,6 @@ impl MoleculeRelationDb {
         })
     }
 
-
     /// Insert or update a detection record. `INSERT OR REPLACE` is safe
     /// because `UNIQUE(mol_id, doc_id, page)` guarantees idempotency.
     pub async fn upsert_detection(&self, row: &MoleculeDetectionRow) -> Result<(), String> {
@@ -479,10 +478,7 @@ impl MoleculeRelationDb {
         let conn = self.conn.lock().await;
         let n = conn
             .execute(
-                &format!(
-                    "DELETE FROM {} WHERE doc_id = ?1",
-                    MOL_DETECTIONS_TABLE
-                ),
+                &format!("DELETE FROM {} WHERE doc_id = ?1", MOL_DETECTIONS_TABLE),
                 params![doc_id],
             )
             .map_err(|e| format!("Failed to delete detections: {}", e))?;

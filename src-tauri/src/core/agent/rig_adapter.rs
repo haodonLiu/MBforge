@@ -313,7 +313,7 @@ where
         _prompt: &Message,
         response: &rig_core::completion::CompletionResponse<M::Response>,
     ) -> impl std::future::Future<Output = rig_core::agent::HookAction>
-    + rig_core::wasm_compat::WasmCompatSend {
+           + rig_core::wasm_compat::WasmCompatSend {
         let audit_log = self.audit.audit.clone();
         let trace_id = self.audit.trace_id.clone();
         let usage = response.usage;
@@ -342,7 +342,7 @@ where
         args: &str,
         result: &str,
     ) -> impl std::future::Future<Output = rig_core::agent::HookAction>
-    + rig_core::wasm_compat::WasmCompatSend {
+           + rig_core::wasm_compat::WasmCompatSend {
         let audit_log = self.audit.audit.clone();
         let trace_id_audit = self.audit.trace_id.clone();
         let trajectory_tracker = self.trajectory.tracker.clone();
@@ -351,15 +351,9 @@ where
         let result = result.to_owned();
         async move {
             // Audit sink: same shape as `AuditLogHook::record_tool_call`.
-            let args_value: serde_json::Value = serde_json::from_str(&args)
-                .unwrap_or(serde_json::Value::String(args.clone()));
-            let _ = audit_log.append_tool_call(
-                &trace_id_audit,
-                None,
-                &tool_name,
-                &args_value,
-                0,
-            );
+            let args_value: serde_json::Value =
+                serde_json::from_str(&args).unwrap_or(serde_json::Value::String(args.clone()));
+            let _ = audit_log.append_tool_call(&trace_id_audit, None, &tool_name, &args_value, 0);
             // Trajectory sink: same shape as `TrajectoryHook::record`.
             if let Ok(mut guard) = trajectory_tracker.lock() {
                 guard.record_tool(&tool_name, &args_value, &result);
@@ -381,14 +375,21 @@ where
 /// so rig loads/appends the matching conversation thread.
 #[derive(Clone)]
 pub enum MbforgeAgent {
-    OpenAI((
-        rig_core::agent::Agent<rig_core::providers::openai::CompletionModel, ConcreteHook>,
-        Arc<MbforgeManagedMemory>,
-    )),
-    Anthropic((
-        rig_core::agent::Agent<rig_core::providers::anthropic::completion::CompletionModel, ConcreteHook>,
-        Arc<MbforgeManagedMemory>,
-    )),
+    OpenAI(
+        (
+            rig_core::agent::Agent<rig_core::providers::openai::CompletionModel, ConcreteHook>,
+            Arc<MbforgeManagedMemory>,
+        ),
+    ),
+    Anthropic(
+        (
+            rig_core::agent::Agent<
+                rig_core::providers::anthropic::completion::CompletionModel,
+                ConcreteHook,
+            >,
+            Arc<MbforgeManagedMemory>,
+        ),
+    ),
 }
 
 impl MbforgeAgent {
@@ -477,7 +478,11 @@ impl MbforgeAgent {
         Ok(items
             .into_iter()
             .map(|item| {
-                let role = if item.is_summary { "system" } else { item.role.as_str() };
+                let role = if item.is_summary {
+                    "system"
+                } else {
+                    item.role.as_str()
+                };
                 match role {
                     "system" => crate::core::agent::context::Message::system(&item.content),
                     "assistant" => crate::core::agent::context::Message::assistant(&item.content),
@@ -527,8 +532,8 @@ impl MbforgeAgent {
         // a custom base_url. We always go through `CompletionsClient` so the
         // return type is a single `Client<OpenAICompletionsExt>`, which makes
         // the `Self::OpenAI` arm of the enum carry a homogeneous model type.
-        let mut cb = rig_core::providers::openai::CompletionsClient::builder()
-            .api_key(&cfg.api_key);
+        let mut cb =
+            rig_core::providers::openai::CompletionsClient::builder().api_key(&cfg.api_key);
         if !cfg.base_url.is_empty() {
             cb = cb.base_url(&cfg.base_url);
         }
@@ -546,9 +551,14 @@ impl MbforgeAgent {
             builder = builder.max_tokens(n);
         }
         // top_p / additional_params：rig 没暴露 .top_p() 旋钮，走 additional_params 透传
-        let mut extra_params = spec.additional_params.clone().unwrap_or_else(|| serde_json::json!({}));
+        let mut extra_params = spec
+            .additional_params
+            .clone()
+            .unwrap_or_else(|| serde_json::json!({}));
         if let serde_json::Value::Object(ref mut m) = extra_params {
-            if let Some(tp) = spec.top_p { m.insert("top_p".into(), serde_json::json!(tp)); }
+            if let Some(tp) = spec.top_p {
+                m.insert("top_p".into(), serde_json::json!(tp));
+            }
         }
         if let serde_json::Value::Object(_) = extra_params {
             if !extra_params.as_object().unwrap().is_empty() {
@@ -584,8 +594,7 @@ impl MbforgeAgent {
                 cfg.kind
             ));
         }
-        let mut builder = rig_core::providers::anthropic::Client::builder()
-            .api_key(&cfg.api_key);
+        let mut builder = rig_core::providers::anthropic::Client::builder().api_key(&cfg.api_key);
         if !cfg.base_url.is_empty() {
             builder = builder.base_url(&cfg.base_url);
         }
@@ -607,9 +616,14 @@ impl MbforgeAgent {
             agent_builder = agent_builder.max_tokens(n);
         }
         // top_p / additional_params：rig 没暴露 .top_p() 旋钮，走 additional_params 透传
-        let mut extra_params = spec.additional_params.clone().unwrap_or_else(|| serde_json::json!({}));
+        let mut extra_params = spec
+            .additional_params
+            .clone()
+            .unwrap_or_else(|| serde_json::json!({}));
         if let serde_json::Value::Object(ref mut m) = extra_params {
-            if let Some(tp) = spec.top_p { m.insert("top_p".into(), serde_json::json!(tp)); }
+            if let Some(tp) = spec.top_p {
+                m.insert("top_p".into(), serde_json::json!(tp));
+            }
         }
         if let serde_json::Value::Object(_) = extra_params {
             if !extra_params.as_object().unwrap().is_empty() {
@@ -774,7 +788,6 @@ pub(crate) fn build_default_concrete_hook() -> Result<ConcreteHook, String> {
     })
 }
 
-
 // ============================================================================
 // Stream mapping (rig MultiTurnStreamItem -> MbforgeStreamItem)
 // ============================================================================
@@ -822,13 +835,11 @@ fn map_multi_turn_item<R>(item: MultiTurnStreamItem<R>) -> Result<MbforgeStreamI
     match item {
         MultiTurnStreamItem::StreamAssistantItem(content) => Ok(match content {
             StreamedAssistantContent::Text(text) => MbforgeStreamItem::TextDelta(text.text),
-            StreamedAssistantContent::ToolCall { tool_call, .. } => {
-                MbforgeStreamItem::ToolCall {
-                    id: tool_call.id,
-                    name: tool_call.function.name,
-                    arguments: tool_call.function.arguments,
-                }
-            }
+            StreamedAssistantContent::ToolCall { tool_call, .. } => MbforgeStreamItem::ToolCall {
+                id: tool_call.id,
+                name: tool_call.function.name,
+                arguments: tool_call.function.arguments,
+            },
             // Deltas, reasoning, and the embedded `Final(R)` are dropped from
             // the frontend stream; the hook still sees them and the terminal
             // `FinalResponse` carries the aggregated text + usage.
@@ -898,7 +909,9 @@ mod tests {
         let cfg = MbforgeProviderConfig::for_tests_anthropic();
         assert_eq!(cfg.kind, MbforgeProviderKind::Anthropic);
         assert_eq!(cfg.model, "claude-sonnet-4-5");
-        assert!(cfg.anthropic_betas.contains(&"extended-thinking-2025-01-01".to_string()));
+        assert!(cfg
+            .anthropic_betas
+            .contains(&"extended-thinking-2025-01-01".to_string()));
     }
 
     #[test]
@@ -917,7 +930,10 @@ mod tests {
 
     #[test]
     fn test_mbforge_provider_kind_as_str() {
-        assert_eq!(MbforgeProviderKind::OpenAICompatible.as_str(), "openai_compatible");
+        assert_eq!(
+            MbforgeProviderKind::OpenAICompatible.as_str(),
+            "openai_compatible"
+        );
         assert_eq!(MbforgeProviderKind::Anthropic.as_str(), "anthropic");
     }
 
@@ -936,12 +952,9 @@ mod tests {
         // The struct composes the two inner hooks (cheap `Clone` via `Arc`).
         let _clone = hook.clone();
         // Default `on_completion_call` (we didn't override it) returns `cont`.
-        let action = <ConcreteHook as PromptHook<M>>::on_completion_call(
-            &hook,
-            &Message::user("test"),
-            &[],
-        )
-        .await;
+        let action =
+            <ConcreteHook as PromptHook<M>>::on_completion_call(&hook, &Message::user("test"), &[])
+                .await;
         assert!(
             matches!(action, rig_core::agent::HookAction::Continue),
             "default on_completion_call should be HookAction::Continue"
@@ -963,9 +976,9 @@ mod tests {
         // bare in-memory backend is enough to drive this test.
         use rig_core::memory::InMemoryConversationMemory;
         let memory = std::sync::Arc::new(
-            crate::core::agent::managed_memory::MbforgeManagedMemory::new(
-                std::sync::Arc::new(InMemoryConversationMemory::new()),
-            ),
+            crate::core::agent::managed_memory::MbforgeManagedMemory::new(std::sync::Arc::new(
+                InMemoryConversationMemory::new(),
+            )),
         );
         let res = MbforgeAgent::from_openai_compatible(&cfg, &spec, Vec::new(), hook, memory);
         match res {

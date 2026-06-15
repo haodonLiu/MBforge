@@ -1,5 +1,5 @@
-use crate::parsers::doc_types::{DocProcessingContext, DocStructure, ExtractionPlan};
 use super::post_process::extract_json;
+use crate::parsers::doc_types::{DocProcessingContext, DocStructure, ExtractionPlan};
 
 /// === A1: 意图路由模块 ===
 

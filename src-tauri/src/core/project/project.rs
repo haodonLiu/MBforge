@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::core::config::constants::{
-    INDEX_DIR, INDEX_FILE, MOLECULES_DIR, NOTES_DIR, NOTES_EXTS, PAPERS_DIR,
-    PROJECT_FORMAT_VERSION, PROJECT_META_DIR, PROJECTS_DIR, REPORTS_DIR,
+    INDEX_DIR, INDEX_FILE, MOLECULES_DIR, NOTES_DIR, NOTES_EXTS, PAPERS_DIR, PROJECTS_DIR,
+    PROJECT_FORMAT_VERSION, PROJECT_META_DIR, REPORTS_DIR,
 };
 use crate::core::document::detection_cache::DetectionCache;
 use crate::core::document::knowledge_base::get_or_init_kb;
@@ -178,7 +178,8 @@ impl Project {
             index_path.exists()
         );
 
-        let index: ProjectIndex = match crate::core::helpers::load_json::<ProjectIndex>(&index_path) {
+        let index: ProjectIndex = match crate::core::helpers::load_json::<ProjectIndex>(&index_path)
+        {
             Some(idx) => {
                 log::trace!(
                     "[Rust Project::open] Loaded existing index with {} documents",
@@ -393,10 +394,7 @@ impl Project {
                 Ok(s) => s,
                 Err(_) => continue,
             };
-            let meta_path = entry
-                .path()
-                .join(PROJECT_META_DIR)
-                .join(INDEX_FILE);
+            let meta_path = entry.path().join(PROJECT_META_DIR).join(INDEX_FILE);
             if !meta_path.exists() {
                 continue;
             }
@@ -629,7 +627,8 @@ impl Project {
             // Create an isolated DocumentProject.
             let dp = DocumentProject::create(&self.root, &full).ok()?;
             let entry = DocumentEntry::from_document_project(&self.root, &dp);
-            self.path_map.insert(dp.paths().source_path, entry.doc_id.clone());
+            self.path_map
+                .insert(dp.paths().source_path, entry.doc_id.clone());
             self.index.push(entry.clone());
             self.save_index();
             return Some(entry);
@@ -689,7 +688,12 @@ impl Project {
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_string();
-        Self::gc_document_data(&self.root, doc_id, &source_filename, entry.source_path.as_deref());
+        Self::gc_document_data(
+            &self.root,
+            doc_id,
+            &source_filename,
+            entry.source_path.as_deref(),
+        );
 
         if let Some(sp) = &entry.source_path {
             let dir = self.root.join(sp).parent().map(|p| p.to_path_buf());
@@ -787,10 +791,7 @@ impl Project {
             if !path.is_file() {
                 continue;
             }
-            let name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if name.starts_with('.') {
                 continue;
             }
@@ -813,7 +814,8 @@ impl Project {
             match DocumentProject::create(&self.root, path) {
                 Ok(dp) => {
                     let entry = DocumentEntry::from_document_project(&self.root, &dp);
-                    self.path_map.insert(dp.paths().source_path, entry.doc_id.clone());
+                    self.path_map
+                        .insert(dp.paths().source_path, entry.doc_id.clone());
                     self.index.push(entry);
                     warnings.push(ScanWarning {
                         path: path
@@ -890,8 +892,11 @@ mod tests {
         let version_path = root.join(PROJECT_META_DIR).join("version.json");
         crate::core::helpers::save_json(&version_path, &serde_json::json!({ "version": 1 }))
             .unwrap();
-        crate::core::helpers::save_json(&root.join(PROJECT_META_DIR).join(INDEX_FILE), &serde_json::json!({ "documents": [] }))
-            .unwrap();
+        crate::core::helpers::save_json(
+            &root.join(PROJECT_META_DIR).join(INDEX_FILE),
+            &serde_json::json!({ "documents": [] }),
+        )
+        .unwrap();
 
         let _pdf = make_pdf(&root.join(PAPERS_DIR), "legacy.pdf", b"%PDF-1.4 legacy");
 
@@ -903,7 +908,10 @@ mod tests {
 
         // Calling migrate again should be idempotent.
         let warnings = project.migrate_legacy_papers();
-        assert!(warnings.is_empty(), "re-migration should produce no warnings");
+        assert!(
+            warnings.is_empty(),
+            "re-migration should produce no warnings"
+        );
         assert_eq!(project.list_documents().len(), 1);
         assert_eq!(docs[0].title, "legacy");
         assert_eq!(docs[0].doc_type, "pdf");

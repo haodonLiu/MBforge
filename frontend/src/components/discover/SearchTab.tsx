@@ -223,7 +223,7 @@ export default function SearchTab({ query, onQueryChange }: SearchTabProps) {
                     variants={staggerItem}
                     initial="hidden"
                     animate="show"
-                    exit={{ opacity: 0 }}
+                    exit="hidden"
                   >
                     <SearchResultItem result={r} />
                   </motion.div>

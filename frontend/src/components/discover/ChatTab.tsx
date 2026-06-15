@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import 'katex/dist/katex.min.css'
 import { showToast } from '@/hooks/useToast'
@@ -12,6 +13,7 @@ import {
   listDocumentsTauri,
   moleculeStatsTauri,
 } from '@/api/tauri'
+import { getSettings } from '@/api/tauri/settings'
 
 import { useAppContext } from '@/context/AppContext'
 import ChatContextChip from '@/components/ChatContextChip'
@@ -22,19 +24,24 @@ import ChatInput from '@/components/chat/ChatInput'
 import { FolderIcon, FileTextIcon, FlaskIcon } from '@/components/icons'
 
 interface ChatTabProps {
-  initialQuery?: string
+  query: string
+  onQueryChange: (query: string) => void
 }
 
-export default function ChatTab({ initialQuery = '' }: ChatTabProps) {
+const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:18792'
+
+export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
+  const { t } = useTranslation()
   const { projectRoot } = useAppContext()
   const sessionIdRef = useRef<string>('')
   const [messages, setMessages] = useState<LocalMessage[]>([
-    { role: 'assistant', content: '你好！我是 MBForge AI 助手。有什么关于分子或文献的问题可以问我。' },
+    { role: 'assistant', content: t('discover.chat.greeting') },
   ])
-  const [input, setInput] = useState(initialQuery)
+  const [input, setInput] = useState(query)
   const [isLoading, setIsLoading] = useState(false)
   const [docCount, setDocCount] = useState(0)
   const [molCount, setMolCount] = useState(0)
+  const isSubmittingRef = useRef(false)
 
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const virtualizer = useVirtualizer({
@@ -46,6 +53,14 @@ export default function ChatTab({ initialQuery = '' }: ChatTabProps) {
   })
 
   useEffect(() => {
+    if (isSubmittingRef.current) {
+      isSubmittingRef.current = false
+      return
+    }
+    setInput(query)
+  }, [query])
+
+  useEffect(() => {
     const el = messagesContainerRef.current
     if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
       virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' })
@@ -54,11 +69,16 @@ export default function ChatTab({ initialQuery = '' }: ChatTabProps) {
 
   useEffect(() => {
     const initAgent = async () => {
+      const settingsResp = await getSettings()
+      const host = settingsResp.success ? settingsResp.settings?.model_server?.host : undefined
+      const port = settingsResp.success ? settingsResp.settings?.model_server?.port : undefined
+      const url = host && port ? `http://${host}:${port}` : DEFAULT_SIDECAR_URL
+
       const sid = crypto.randomUUID()
       sessionIdRef.current = sid
 
       try {
-        await agentInit('http://127.0.0.1:18792')
+        await agentInit(url)
         await agentCreateSession(sid, projectRoot)
 
         const history = await agentGetHistory(sid)
@@ -69,7 +89,7 @@ export default function ChatTab({ initialQuery = '' }: ChatTabProps) {
           })))
         }
       } catch (e) {
-        showToast(`Agent 初始化失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
+        showToast(t('discover.chat.agentInitFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
         console.error('Agent init failed:', e)
       }
     }
@@ -81,7 +101,7 @@ export default function ChatTab({ initialQuery = '' }: ChatTabProps) {
         agentDestroySession(sessionIdRef.current).catch(() => {})
       }
     }
-  }, [projectRoot])
+  }, [projectRoot, t])
 
   useEffect(() => {
     if (!projectRoot) return
@@ -97,8 +117,9 @@ export default function ChatTab({ initialQuery = '' }: ChatTabProps) {
     if (!input.trim() || isLoading || !projectRoot) return
 
     const userMsg = input.trim()
+    isSubmittingRef.current = true
     setInput('')
-    setIsLoading(true)
+    onQueryChange(userMsg)
 
     const allMessages = [...messages, { role: 'user' as const, content: userMsg }]
     setMessages(allMessages)
@@ -128,7 +149,7 @@ export default function ChatTab({ initialQuery = '' }: ChatTabProps) {
             settled = true
             setMessages(prev =>
               prev.map(m => m.id === assistantMsgId
-                ? { ...m, content: `错误: ${error}` }
+                ? { ...m, content: t('discover.chat.error', { error }) }
                 : m
               )
             )
@@ -138,21 +159,21 @@ export default function ChatTab({ initialQuery = '' }: ChatTabProps) {
     } catch (e) {
       setMessages(prev =>
         prev.map(m => m.id === assistantMsgId
-          ? { ...m, content: `网络错误: ${e instanceof Error ? e.message : String(e)}` }
+          ? { ...m, content: t('discover.chat.networkError', { error: e instanceof Error ? e.message : String(e) }) }
           : m
         )
       )
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, messages, projectRoot])
+  }, [input, isLoading, messages, onQueryChange, projectRoot, t])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-      <div style={{ display: 'flex', gap: '16px', flexShrink: 0 }}>
-        <ChatContextChip icon={<FolderIcon size={14} />} label={projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目'} />
-        <ChatContextChip icon={<FileTextIcon size={14} />} label={`${docCount} 篇文献`} />
-        <ChatContextChip icon={<FlaskIcon size={14} />} label={`${molCount} 个分子`} />
+    <div className="discover-chat-panel">
+      <div className="discover-chat-context">
+        <ChatContextChip icon={<FolderIcon size={14} />} label={projectRoot ? projectRoot.split('/').pop() || projectRoot : t('discover.chat.noProject')} />
+        <ChatContextChip icon={<FileTextIcon size={14} />} label={t('discover.chat.documentsCount', { count: docCount })} />
+        <ChatContextChip icon={<FlaskIcon size={14} />} label={t('discover.chat.moleculesCount', { count: molCount })} />
       </div>
 
       <div ref={messagesContainerRef} className="chat-messages">

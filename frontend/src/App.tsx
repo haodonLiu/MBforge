@@ -32,7 +32,7 @@ const Chat = lazy(() => import('./components/Chat'))
 const MoleculeLibrary = lazy(() => import('./components/MoleculeLibrary'))
 const Environment = lazy(() => import('./components/Environment'))
 const Notes = lazy(() => import('./components/Notes'))
-const SARAnalysis = lazy(() => import('./components/SARAnalysis'))
+const Analysis = lazy(() => import('./components/analysis/Analysis'))
 const ProcessingQueue = lazy(() => import('./components/project/ProcessingQueue'))
 
 /** Lightweight fallback shown while a route chunk is being fetched. */
@@ -308,7 +308,7 @@ function AppRoutes({ projectRoot, onSettingsOpen }: { projectRoot: string; onSet
           path="/analysis"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><SARAnalysis /></AnimatedPage>
+              <AnimatedPage><Analysis /></AnimatedPage>
             </Suspense>
           }
         />

@@ -4,6 +4,7 @@
 //! 预处理逻辑统一为可组合的流水线，减少重复代码并提高可维护性。
 
 use regex::Regex;
+use std::sync::LazyLock;
 
 // ============================================================================
 // SMILES 文本级清洗
@@ -21,7 +22,9 @@ impl std::fmt::Display for PreprocessError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PreprocessError::Empty => write!(f, "SMILES is empty"),
-            PreprocessError::TooLong { len, max } => write!(f, "SMILES too long: {} > {}", len, max),
+            PreprocessError::TooLong { len, max } => {
+                write!(f, "SMILES too long: {} > {}", len, max)
+            }
             PreprocessError::ContainsSpaces => write!(f, "SMILES contains spaces"),
         }
     }
@@ -78,10 +81,9 @@ pub fn normalize_wildcards(smiles: &str) -> String {
 // 缩写 / R-group 名称归一化
 // ============================================================================
 
-lazy_static::lazy_static! {
-    static ref BRACKET_DIGITS_RE: Regex = Regex::new(r"\[(\d+)\]").unwrap();
-    static ref CHAIN_RE: Regex = Regex::new(r"CH\[2\](?:\?[nx])?|CH2(?:\?[nx])?").unwrap();
-}
+static BRACKET_DIGITS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[(\d+)\]").unwrap());
+static CHAIN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"CH\[2\](?:\?[nx])?|CH2(?:\?[nx])?").unwrap());
 
 /// 缩写名称归一化。
 ///
@@ -98,13 +100,25 @@ pub fn normalize_abbrev_name(name: &str) -> String {
 
     // 3. Unicode 上下标转 ASCII
     s = s
-        .replace('⁰', "0").replace('¹', "1").replace('²', "2")
-        .replace('³', "3").replace('⁴', "4").replace('⁵', "5")
-        .replace('⁶', "6").replace('⁷', "7").replace('⁸', "8")
+        .replace('⁰', "0")
+        .replace('¹', "1")
+        .replace('²', "2")
+        .replace('³', "3")
+        .replace('⁴', "4")
+        .replace('⁵', "5")
+        .replace('⁶', "6")
+        .replace('⁷', "7")
+        .replace('⁸', "8")
         .replace('⁹', "9")
-        .replace('₀', "0").replace('₁', "1").replace('₂', "2")
-        .replace('₃', "3").replace('₄', "4").replace('₅', "5")
-        .replace('₆', "6").replace('₇', "7").replace('₈', "8")
+        .replace('₀', "0")
+        .replace('₁', "1")
+        .replace('₂', "2")
+        .replace('₃', "3")
+        .replace('₄', "4")
+        .replace('₅', "5")
+        .replace('₆', "6")
+        .replace('₇', "7")
+        .replace('₈', "8")
         .replace('₉', "9");
 
     // 4. 变量链归一化
@@ -113,11 +127,22 @@ pub fn normalize_abbrev_name(name: &str) -> String {
     // 5. 大小写归一化（精确匹配）
     let lower = s.to_lowercase();
     let case_map: &[(&str, &str)] = &[
-        ("boc", "Boc"), ("cbz", "Cbz"), ("fmoc", "Fmoc"),
-        ("tbdms", "TBDMS"), ("tms", "TMS"), ("ac", "Ac"),
-        ("ts", "Ts"), ("tf", "Tf"), ("me", "Me"), ("et", "Et"),
-        ("ph", "Ph"), ("bn", "Bn"), ("ome", "OMe"), ("oet", "OEt"),
-        ("oac", "OAc"), ("obn", "OBn"),
+        ("boc", "Boc"),
+        ("cbz", "Cbz"),
+        ("fmoc", "Fmoc"),
+        ("tbdms", "TBDMS"),
+        ("tms", "TMS"),
+        ("ac", "Ac"),
+        ("ts", "Ts"),
+        ("tf", "Tf"),
+        ("me", "Me"),
+        ("et", "Et"),
+        ("ph", "Ph"),
+        ("bn", "Bn"),
+        ("ome", "OMe"),
+        ("oet", "OEt"),
+        ("oac", "OAc"),
+        ("obn", "OBn"),
     ];
     for &(from, to) in case_map {
         if lower == from {
@@ -127,11 +152,18 @@ pub fn normalize_abbrev_name(name: &str) -> String {
 
     // 6. 同义词归一化（精确匹配）
     let synonym_map: &[(&str, &str)] = &[
-        ("CO2R", "COOR"), ("COOMe", "CO2Me"), ("COOEt", "CO2Et"),
-        ("COOCH3", "CO2Me"), ("CO2H", "COOH"),
-        ("MeO", "OMe"), ("OCH3", "OMe"), ("EtO", "OEt"),
-        ("AcHN", "NHAc"), ("MeO2C", "CO2Me"),
-        ("O2N", "NO2"), ("Tos", "Ts"),
+        ("CO2R", "COOR"),
+        ("COOMe", "CO2Me"),
+        ("COOEt", "CO2Et"),
+        ("COOCH3", "CO2Me"),
+        ("CO2H", "COOH"),
+        ("MeO", "OMe"),
+        ("OCH3", "OMe"),
+        ("EtO", "OEt"),
+        ("AcHN", "NHAc"),
+        ("MeO2C", "CO2Me"),
+        ("O2N", "NO2"),
+        ("Tos", "Ts"),
         ("BOC", "Boc"),
     ];
     for &(from, to) in synonym_map {
@@ -141,7 +173,9 @@ pub fn normalize_abbrev_name(name: &str) -> String {
     }
 
     // 7. 去尾部标点
-    s = s.trim_end_matches(|c| c == ',' || c == '.' || c == ' ').to_string();
+    s = s
+        .trim_end_matches(|c| c == ',' || c == '.' || c == ' ')
+        .to_string();
 
     s
 }
@@ -228,7 +262,10 @@ pub fn preprocess(
 pub fn preprocess_smiles(smiles: &str) -> Result<String, PreprocessError> {
     preprocess(
         smiles,
-        &[PreprocessStep::ValidateText, PreprocessStep::NormalizeWildcards],
+        &[
+            PreprocessStep::ValidateText,
+            PreprocessStep::NormalizeWildcards,
+        ],
         10000,
     )
 }
@@ -237,7 +274,10 @@ pub fn preprocess_smiles(smiles: &str) -> Result<String, PreprocessError> {
 pub fn preprocess_rgroup_name(name: &str) -> Result<String, PreprocessError> {
     preprocess(
         name,
-        &[PreprocessStep::ValidateText, PreprocessStep::NormalizeAbbrev],
+        &[
+            PreprocessStep::ValidateText,
+            PreprocessStep::NormalizeAbbrev,
+        ],
         1000,
     )
 }

@@ -1,13 +1,15 @@
 pub mod agent;
+pub mod chem_ops;
 pub mod classifier;
 pub mod detection_cache;
-pub mod llm;
 pub mod extractor;
 pub mod file_ops;
+pub mod llm;
 pub mod mol_engine;
 pub mod mol_store;
-pub mod molecule;
 pub mod molecode;
+pub mod molecule;
+pub mod molecule_admin;
 pub mod notes;
 pub mod pdf;
 pub mod project_ops;
@@ -44,6 +46,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         pdf::ingest_stats,
         pdf::ingest_cancel,
         pdf::ingest_retry,
+        pdf::ingest_set_priority,
         pdf::ingest_cancel_all_pending,
         pdf::ingest_cleanup,
         pdf::ingest_mark_done,
@@ -111,6 +114,34 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // molecode
         molecode::esmiles_to_molecode_cmd,
         molecode::chem_descriptors_cmd,
+        // chem_ops (pure chem computation, no state)
+        chem_ops::chem_canonicalize,
+        chem_ops::chem_substructure_search,
+        chem_ops::chem_smiles_to_molecode,
+        chem_ops::chem_smiles_to_esmiles,
+        chem_ops::chem_parse_esmiles_tags,
+        chem_ops::chem_sanitize_esmiles,
+        chem_ops::chem_separate_esmiles_layers,
+        chem_ops::chem_validate_smiles_batch,
+        chem_ops::chem_preprocess_smiles,
+        chem_ops::chem_preprocess_rgroup_name,
+        chem_ops::chem_markush_parse,
+        chem_ops::chem_markush_check,
+        chem_ops::chem_core_smiles,
+        chem_ops::chem_gesim_atom_mapping,
+        // molecule_admin (engine CRUD)
+        molecule_admin::mol_admin_get,
+        molecule_admin::mol_admin_search_by_smiles,
+        molecule_admin::mol_admin_search_text,
+        molecule_admin::mol_admin_list,
+        molecule_admin::mol_admin_store_stats,
+        molecule_admin::mol_admin_check_markush,
+        molecule_admin::mol_admin_parse_esmiles,
+        molecule_admin::mol_admin_add,
+        molecule_admin::mol_admin_update,
+        molecule_admin::mol_admin_update_status,
+        molecule_admin::mol_admin_delete,
+        molecule_admin::mol_admin_add_similarity,
         // mol_store
         mol_store::mol_store_init,
         mol_store::mol_store_add,

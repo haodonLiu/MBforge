@@ -33,11 +33,15 @@ export interface CompoundInput {
   units?: string
 }
 
+export interface CompoundMatch extends CompoundInput {
+  matches: boolean
+}
+
 export interface RGroupMatrix {
   core_smiles: string
   r_labels: string[]
   rows: string[][]
-  compounds: Array<Record<string, unknown> & { id: string; name: string; smiles: string; matches: boolean }>
+  compounds: CompoundMatch[]
   unmatched_count: number
 }
 
@@ -79,24 +83,6 @@ export async function sarBuildMatrix(
     () => invoke<RGroupMatrix>('sar_build_matrix', { compounds, coreSmiles: coreSmiles ?? null }),
     ErrorCode.ApiError,
   )
-}
-
-/** R-group 矩阵响应（含错误包装） */
-export interface RGroupMatrixResponse {
-  success: boolean
-  core_smiles?: string
-  r_labels?: string[]
-  rows?: string[][]
-  compounds?: RGroupMatrix['compounds']
-  unmatched_count?: number
-  error?: string
-}
-
-/** 活性热力图响应（含错误包装） */
-export interface ActivityHeatmapResponse {
-  success: boolean
-  heatmaps: ActivityHeatmap[]
-  error?: string
 }
 
 /** 兼容旧名 — client.ts 迁移 */

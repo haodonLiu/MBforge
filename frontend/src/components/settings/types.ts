@@ -184,8 +184,8 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
   const ocr = s.ocr ?? {}
   const ms = s.model_server ?? {}
   return {
-    theme: (s.theme as SettingsState['theme']) || DEFAULT_SETTINGS.theme,
-    language: (s.language as SettingsState['language']) || DEFAULT_SETTINGS.language,
+    theme: (s.theme as SettingsState['theme'] | undefined) || DEFAULT_SETTINGS.theme,
+    language: (s.language as SettingsState['language'] | undefined) || DEFAULT_SETTINGS.language,
     auto_open_project: s.auto_open_project === true,
 
     llm_provider: llm.provider || DEFAULT_SETTINGS.llm_provider,
@@ -201,13 +201,13 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
     embed_model: embed.model_name || DEFAULT_SETTINGS.embed_model,
     embed_base_url: embed.base_url || DEFAULT_SETTINGS.embed_base_url,
     embed_api_key: embed.api_key || DEFAULT_SETTINGS.embed_api_key,
-    embed_device: (embed.device as SettingsState['embed_device']) || DEFAULT_SETTINGS.embed_device,
+    embed_device: embed.device || DEFAULT_SETTINGS.embed_device,
     embed_mrl_dim: embed.mrl_dim || DEFAULT_SETTINGS.embed_mrl_dim,
     embed_instruction: embed.instruction || DEFAULT_SETTINGS.embed_instruction,
 
     rerank_provider: rerank.provider || DEFAULT_SETTINGS.rerank_provider,
     rerank_model: rerank.model_name || DEFAULT_SETTINGS.rerank_model,
-    rerank_device: (rerank.device as SettingsState['rerank_device']) || DEFAULT_SETTINGS.rerank_device,
+    rerank_device: rerank.device || DEFAULT_SETTINGS.rerank_device,
     rerank_max_length: rerank.max_length || DEFAULT_SETTINGS.rerank_max_length,
 
     vlm_provider: vlm.provider || DEFAULT_SETTINGS.vlm_provider,

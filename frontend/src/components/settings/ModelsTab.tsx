@@ -1,14 +1,14 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { invoke } from '@tauri-apps/api/core'
 import {
   listModels,
   downloadModel,
   deleteModel,
   type DownloadModel,
   type DownloadProgress,
-} from '../../api/tauri/download'
-import { invoke } from '@tauri-apps/api/core'
-import ModelCard from './ModelCard'
+} from '@/api/tauri/download'
+import ModelCard from '@/components/settings/ModelCard'
 
 export interface DownloadState {
   [modelId: string]: {
@@ -19,7 +19,7 @@ export interface DownloadState {
     fileName?: string
     fileIndex?: number
     totalFiles?: number
-  }
+  } | undefined
 }
 
 interface ModelsTabProps {
@@ -34,7 +34,7 @@ export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTab
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [customOpen, setCustomOpen] = useState(false)
   const [cacheDir, setCacheDir] = useState('')
-  const abortMapRef = useRef<Map<string, () => void>>(new Map())
+  const [abortMap, setAbortMap] = useState<Map<string, () => void>>(new Map())
 
   const loadModels = useCallback(async () => {
     try {
@@ -46,26 +46,28 @@ export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTab
   const loadCacheDir = useCallback(async () => {
     try {
       const info = await invoke<{ mbforge: { path: string } }>('models_cache_dir_info')
-      setCacheDir(info.mbforge?.path ?? '')
+      setCacheDir(info.mbforge.path)
     } catch { /* ignore */ }
   }, [])
 
   useEffect(() => {
-    loadModels()
-    loadCacheDir()
+    void loadModels()
+    void loadCacheDir()
   }, [loadModels, loadCacheDir])
 
-  const handleDownload = (modelId: string) => {
-    if (downloadState[modelId]?.status === 'downloading' || downloadState[modelId]?.status === 'connecting') return
-
-    setDownloadState(prev => ({
-      ...prev,
-      [modelId]: { progress: 0, status: 'connecting' },
-    }))
+  const handleDownload = useCallback((modelId: string) => {
+    setDownloadState(prev => {
+      const current = prev[modelId]
+      if (current?.status === 'downloading' || current?.status === 'connecting') return prev
+      return {
+        ...prev,
+        [modelId]: { progress: 0, status: 'connecting' },
+      }
+    })
 
     const cleanup = downloadModel(modelId, (event: DownloadProgress) => {
       setDownloadState(prev => {
-        const current = prev[modelId] || { progress: 0, status: 'idle' }
+        const current = prev[modelId] ?? { progress: 0, status: 'idle' }
         switch (event.status) {
           case 'connecting':
             return { ...prev, [modelId]: { ...current, status: 'connecting' } }
@@ -86,7 +88,7 @@ export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTab
             }
           }
           case 'completed':
-            loadModels()
+            void loadModels()
             return { ...prev, [modelId]: { progress: 100, status: 'completed' } }
           case 'failed':
             return { ...prev, [modelId]: { ...current, status: 'failed', error: event.error } }
@@ -95,24 +97,32 @@ export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTab
         }
       })
     })
-    abortMapRef.current.set(modelId, cleanup)
-  }
+    setAbortMap(prev => {
+      const next = new Map(prev)
+      next.set(modelId, cleanup)
+      return next
+    })
+  }, [loadModels])
 
-  const handleCancel = (modelId: string) => {
-    abortMapRef.current.get(modelId)?.()
-    abortMapRef.current.delete(modelId)
+  const handleCancel = useCallback((modelId: string) => {
+    abortMap.get(modelId)?.()
+    setAbortMap(prev => {
+      const next = new Map(prev)
+      next.delete(modelId)
+      return next
+    })
     setDownloadState(prev => ({ ...prev, [modelId]: { progress: 0, status: 'idle' } }))
-  }
+  }, [abortMap])
 
-  const handleDelete = async (modelId: string) => {
+  const handleDelete = useCallback(async (modelId: string) => {
     try {
       await deleteModel(modelId)
       setDeleteConfirm(null)
-      loadModels()
+      void loadModels()
     } catch (e) {
       console.error(e)
     }
-  }
+  }, [loadModels])
 
   // 按 type 分组（保持顺序：embedding → reranker → detection）
   const typeOrder: Array<{ key: string; labelKey: string }> = [

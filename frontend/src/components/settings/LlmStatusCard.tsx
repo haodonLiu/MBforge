@@ -67,8 +67,8 @@ export default function LlmStatusCard() {
     )
   }
 
-  const label = STATUS_LABEL[status.status] ?? STATUS_LABEL.not_configured
-  const providerLabel = PROVIDER_META[status.provider]?.label ?? status.provider
+  const label = STATUS_LABEL[status.status]
+  const providerLabel = (PROVIDER_META[status.provider] ?? { label: status.provider }).label
 
   return (
     <div

@@ -66,6 +66,13 @@
   "welcome.create": "Create",
 
   "settings.title": "Settings",
+  "settings.tabs.general": "General",
+  "settings.tabs.llm": "LLM",
+  "settings.tabs.models": "Models",
+  "settings.tabs.system": "System",
+  "settings.tabs.cache": "Cache",
+  "settings.tabs.about": "About",
+  "settings.loadFailed": "Failed to load settings",
   "settings.aiModels": "AI Models",
   "settings.modelDownloads": "Model Downloads",
   "settings.diagnostics": "Diagnostics",

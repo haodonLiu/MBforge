@@ -66,6 +66,13 @@
   "welcome.create": "创建",
 
   "settings.title": "设置",
+  "settings.tabs.general": "通用",
+  "settings.tabs.llm": "LLM",
+  "settings.tabs.models": "模型",
+  "settings.tabs.system": "系统",
+  "settings.tabs.cache": "缓存",
+  "settings.tabs.about": "关于",
+  "settings.loadFailed": "加载设置失败",
   "settings.aiModels": "AI 模型",
   "settings.modelDownloads": "模型下载",
   "settings.diagnostics": "诊断",

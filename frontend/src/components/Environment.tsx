@@ -107,24 +107,24 @@ export default function Environment() {
     try {
       const info = await modelsCacheDirInfo()
       setPaths(info)
-    } catch (e) {
+    } catch {
       showToast('获取模型路径失败', 'warning')
       setPaths(null)
     }
   }
 
-  const handleDownloadModel = async (modelId: string) => {
+  const handleDownloadModel = (modelId: string) => {
     try {
       let completed = false
       const cancel = downloadModel(modelId, (progress) => {
         if (progress.status === 'completed' || progress.status === 'failed') {
           completed = true
-          fetchModels()
+          void fetchModels()
         }
       })
       setTimeout(() => {
         cancel()
-        if (!completed) fetchModels()
+        if (!completed) void fetchModels()
       }, 30000)
     } catch (e) {
       showToast(`Download failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
@@ -135,7 +135,7 @@ export default function Environment() {
     if (!confirm('Are you sure you want to delete this model?')) return
     try {
       await deleteModel(modelId)
-      fetchModels()
+      void fetchModels()
     } catch (e) {
       showToast(`Delete failed: ${e instanceof Error ? e.message : String(e)}`, 'error')
     }
@@ -159,7 +159,7 @@ export default function Environment() {
       const result = await saveSettings({ model_cache_dir: editValue.trim() })
       if (result.success) {
         setEditingPath(null)
-        fetchPaths()
+        void fetchPaths()
         showToast('Path updated! Please restart the app for changes to take effect.', 'info')
       } else {
         showToast(`Failed to update path: ${result.error}`, 'error')
@@ -170,9 +170,9 @@ export default function Environment() {
   }
 
   useEffect(() => {
-    fetchEnv()
-    fetchModels()
-    fetchPaths()
+    void fetchEnv()
+    void fetchModels()
+    void fetchPaths()
   }, [])
 
   if (loading && !env) {

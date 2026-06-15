@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import type { DownloadState } from './ModelsTab'
 
 interface ProgressBarProps {
-  state: DownloadState[string]
+  state: DownloadState[string] | undefined
 }
 
 export default function ProgressBar({ state }: ProgressBarProps) {

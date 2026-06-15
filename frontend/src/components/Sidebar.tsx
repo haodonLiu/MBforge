@@ -3,18 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { FlaskIcon, SearchIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon, BarChartIcon, NoteIcon, QueueIcon } from './icons'
-import IconButton from '../components/ui/IconButton'
-import Tooltip from '../components/ui/Tooltip'
+import IconButton from '@/components/ui/IconButton'
+import Tooltip from '@/components/ui/Tooltip'
 import ModelStatusButton from './ModelStatusButton'
-import { useAppContext } from '../context/AppContext'
-import { ingestStats } from '../api/tauri/ingest_queue'
-import { EVT } from '../api/tauri-events'
+import { useAppContext } from '@/context/AppContext'
+import { ingestStats } from '@/api/tauri/ingest_queue'
+import { EVT } from '@/api/tauri-events'
 import { listen } from '@tauri-apps/api/event'
 
 interface Props {
   current: string
   onNavigate: (page: string) => void
-  onSettingsOpen: () => void
   onSwitchProject: () => void
   projectScopeOpen: boolean
   onToggleProjectScope: () => void
@@ -78,7 +77,7 @@ function NavButton({
   )
 }
 
-export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchProject, projectScopeOpen, onToggleProjectScope, queuePanelOpen, onToggleQueuePanel }: Props) {
+export default function Sidebar({ current, onNavigate, onSwitchProject, projectScopeOpen, onToggleProjectScope, queuePanelOpen, onToggleQueuePanel }: Props) {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { projectRoot } = useAppContext()
@@ -199,13 +198,7 @@ export default function Sidebar({ current, onNavigate, onSettingsOpen, onSwitchP
           <NavButton
             key={item.id}
             active={current === item.id}
-            onClick={() => {
-              if (item.id === 'settings') {
-                onSettingsOpen()
-              } else {
-                handleClick(item)
-              }
-            }}
+            onClick={() => handleClick(item)}
             label={t(item.labelKey)}
             icon={item.icon}
           />

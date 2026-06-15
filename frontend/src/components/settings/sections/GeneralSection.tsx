@@ -19,7 +19,7 @@ export default function GeneralSection({ settings, setSettings }: Props) {
           label={t('settings.theme')}
           description={t('settings.themeDesc')}
           value={settings.theme}
-          onChange={v => setSettings(s => ({ ...s, theme: v as SettingsState['theme'] }))}
+          onChange={v => setSettings(s => ({ ...s, theme: v }))}
           options={[
             { value: 'dark', label: t('settings.dark') },
             { value: 'light', label: t('settings.light') },
@@ -30,7 +30,7 @@ export default function GeneralSection({ settings, setSettings }: Props) {
           label={t('settings.language')}
           description={t('settings.languageDesc')}
           value={settings.language}
-          onChange={v => setSettings(s => ({ ...s, language: v as SettingsState['language'] }))}
+          onChange={v => setSettings(s => ({ ...s, language: v }))}
           options={[
             { value: 'zh', label: '中文' },
             { value: 'en', label: 'English' },

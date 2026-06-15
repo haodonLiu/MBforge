@@ -1,0 +1,144 @@
+/* ===== Discover Page ===== */
+
+.discover-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.discover-tab-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.discover-tab-panel-hidden {
+  display: none;
+}
+
+/* Search tab */
+.discover-search-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--bg-surface);
+  border: 2px solid var(--border);
+  border-radius: 14px;
+}
+
+.discover-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 16px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.discover-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.discover-search-input:disabled {
+  opacity: 0.6;
+}
+
+.discover-search-hints {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.discover-search-hint {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: none;
+  outline: none;
+  font-family: inherit;
+}
+
+.discover-search-hint:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.discover-search-hint:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.discover-search-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.discover-search-sort {
+  display: inline-flex;
+  gap: 4px;
+  padding: 2px;
+  background: var(--bg-surface);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.discover-search-sort-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 400;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.discover-search-sort-btn[data-active='true'] {
+  color: var(--accent);
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
+
+.discover-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.discover-search-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Chat tab */
+.discover-chat-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.discover-chat-context {
+  display: flex;
+  gap: 16px;
+  flex-shrink: 0;
+}

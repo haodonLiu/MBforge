@@ -3,6 +3,8 @@
 import { AppError, ErrorCode, getErrorMessage } from '@/utils/errors'
 import { showToast } from '@/hooks/useToast'
 
+export { AppError, ErrorCode, getErrorMessage }
+
 /** True when running inside a Tauri webview (desktop app). */
 export function isTauriAvailable(): boolean {
   try {

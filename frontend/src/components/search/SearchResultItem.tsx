@@ -2,12 +2,17 @@ import { FileTextIcon } from '../icons'
 import Card from '../ui/Card'
 import BodyText from '../ui/BodyText'
 import Badge from '../ui/Badge'
+import { showToast } from '../../hooks/useToast'
 
 export interface SearchResultItemData {
   id: string
   title: string
   snippet: string
   source: string
+  sourcePath: string
+  page: number | null
+  pageEnd: number | null
+  score: number
   tags: string[]
 }
 
@@ -15,27 +20,105 @@ export interface SearchResultItemProps {
   result: SearchResultItemData
 }
 
+type ScoreBand = 'high' | 'mid' | 'low'
+
+function scoreBand(score: number): ScoreBand {
+  if (score >= 0.7) return 'high'
+  if (score >= 0.4) return 'mid'
+  return 'low'
+}
+
+const BAND_VARIANT: Record<ScoreBand, 'success' | 'warning' | 'neutral'> = {
+  high: 'success',
+  mid: 'warning',
+  low: 'neutral',
+}
+
+const BAND_LABEL: Record<ScoreBand, string> = {
+  high: '高度相关',
+  mid: '相关',
+  low: '参考',
+}
+
+function pageLabel(page: number | null, pageEnd: number | null): string | null {
+  if (page == null) return null
+  if (pageEnd != null && pageEnd !== page) return `第 ${page}-${pageEnd} 页`
+  return `第 ${page} 页`
+}
+
 /**
  * 搜索结果单项组件。
  */
 export default function SearchResultItem({ result }: SearchResultItemProps) {
+  const band = scoreBand(result.score)
+  const variant = BAND_VARIANT[band]
+  const scoreLabel = `${(result.score * 100).toFixed(0)}%`
+  const pageText = pageLabel(result.page, result.pageEnd)
+
+  const handleSourceClick = () => {
+    // TODO 下一迭代：AppContext.openDocument(docId, page)
+    showToast('PDF 跳转将在下个迭代实现', 'info')
+  }
+
   return (
     <Card hoverable>
       <div style={{
         display: 'flex',
         alignItems: 'center',
+        justifyContent: 'space-between',
         gap: '8px',
         marginBottom: '6px',
       }}>
-        <FileTextIcon size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-        <span style={{
-          fontSize: '12px',
-          fontWeight: 500,
-          color: 'var(--accent)',
-          opacity: 0.85,
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          minWidth: 0,
         }}>
-          {result.source.split(/[/\\]/).pop()}
-        </span>
+          <FileTextIcon size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <button
+            type="button"
+            onClick={handleSourceClick}
+            title={result.sourcePath || result.source}
+            style={{
+              fontSize: '12px',
+              fontWeight: 500,
+              color: 'var(--accent)',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              textAlign: 'left',
+              textOverflow: 'ellipsis',
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+              maxWidth: '320px',
+              textDecoration: 'underline',
+              textDecorationStyle: 'dotted',
+              textUnderlineOffset: '3px',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.textDecorationStyle = 'solid'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.textDecorationStyle = 'dotted'
+            }}
+          >
+            {result.source.split(/[/\\]/).pop()}
+          </button>
+          {pageText && (
+            <Badge variant="info" dot>
+              {pageText}
+            </Badge>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          <span title={BAND_LABEL[band]}>
+            <Badge variant={variant} dot>
+              {scoreLabel}
+            </Badge>
+          </span>
+        </div>
       </div>
       <div style={{
         fontSize: '14px',

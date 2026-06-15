@@ -15,21 +15,46 @@ interface ResultItem {
   title: string
   snippet: string
   source: string
+  sourcePath: string
+  page: number | null
+  pageEnd: number | null
+  score: number
   tags: string[]
-  date: string
 }
+
+type SortKey = 'relevance' | 'page'
 
 const HINTS = ['阿司匹林', '分子对接', 'SAR分析', 'IC50']
 
-function mapResult(r: { text?: string; metadata?: Record<string, unknown> }, i: number): ResultItem {
+function mapResult(
+  r: { text?: string; metadata?: Record<string, unknown>; score?: number },
+  i: number,
+): ResultItem {
+  const md = r.metadata ?? {}
+  const pageStart = typeof md.page_start === 'number' ? md.page_start : null
+  const pageEnd = typeof md.page_end === 'number' ? md.page_end : null
+  const path = typeof md.path === 'string' ? md.path : ''
   return {
     id: String(i),
-    title: String(r.metadata?.doc_id || r.metadata?.title || '文档片段'),
+    title: String(md.doc_id || md.title || '文档片段'),
     snippet: r.text || '',
-    source: String(r.metadata?.source || r.metadata?.path || '未知来源'),
+    source: String(md.source || path || '未知来源'),
+    sourcePath: path,
+    page: pageStart,
+    pageEnd,
+    score: typeof r.score === 'number' ? r.score : 0,
     tags: [],
-    date: '',
   }
+}
+
+function sortResults(items: ResultItem[], key: SortKey): ResultItem[] {
+  if (key === 'relevance') return items
+  return [...items].sort((a, b) => {
+    const ap = a.page ?? Number.MAX_SAFE_INTEGER
+    const bp = b.page ?? Number.MAX_SAFE_INTEGER
+    if (ap !== bp) return ap - bp
+    return b.score - a.score
+  })
 }
 
 export default function Search() {
@@ -41,6 +66,7 @@ export default function Search() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isFocused, setIsFocused] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey>('relevance')
   const unlistenRef = useRef<(() => void) | null>(null)
 
   // 组件卸载时清理事件监听
@@ -197,10 +223,42 @@ export default function Search() {
             justifyContent: 'space-between',
             alignItems: 'center',
             marginBottom: '16px',
+            gap: '12px',
+            flexWrap: 'wrap',
           }}>
             <BodyText size="sm" muted>
               {isLoading ? '搜索中...' : error ? `搜索出错: ${error}` : `找到 ${results.length} 条结果`}
             </BodyText>
+            <div style={{
+              display: 'inline-flex',
+              gap: '4px',
+              padding: '2px',
+              background: 'var(--bg-surface)',
+              borderRadius: '8px',
+              border: '1px solid var(--border)',
+            }}>
+              {(['relevance', 'page'] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setSortKey(k)}
+                  style={{
+                    padding: '4px 12px',
+                    fontSize: '12px',
+                    color: sortKey === k ? 'var(--accent)' : 'var(--text-muted)',
+                    background: sortKey === k ? 'var(--bg-elevated)' : 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontWeight: sortKey === k ? 600 : 400,
+                    transition: 'all 0.15s',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {k === 'relevance' ? '按相关度' : '按页码'}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div style={{
@@ -217,7 +275,7 @@ export default function Search() {
               animate="show"
             >
               <AnimatePresence>
-                {results.map((r) => (
+                {sortResults(results, sortKey).map((r) => (
                   <motion.div
                     key={r.id}
                     variants={{

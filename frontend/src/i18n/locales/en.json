@@ -13,6 +13,9 @@
 
   "nav.dashboard": "Dashboard",
   "nav.project": "Project",
+  "nav.workspace": "Workspace",
+  "nav.discover": "Discover",
+  "nav.analysis": "Analysis",
   "nav.notes": "Notes",
   "nav.search": "Search",
   "nav.chat": "Chat",
@@ -262,6 +265,14 @@
   "dashboard.conversations": "Conversations",
   "dashboard.weekActive": "Active this week",
   "dashboard.confirmed": "Confirmed",
+
+  "workspace.overview": "Overview",
+  "workspace.documents": "Documents",
+  "workspace.title": "Workspace",
+  "workspace.totalDocuments": "Total Documents",
+  "workspace.indexedDocuments": "Indexed",
+  "workspace.loadStatsFailed": "Failed to load workspace statistics",
+  "workspace.noProjectSelected": "Please select or create a project first",
 
   "folder.select": "Select Folder",
   "folder.browse": "Browse",

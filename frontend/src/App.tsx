@@ -1,5 +1,5 @@
 import { Suspense, useState, lazy, useEffect, useRef } from 'react'
-import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
+import { Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { useTranslation, I18nextProvider } from 'react-i18next'
 import i18n from './i18n'
@@ -24,15 +24,15 @@ import GlobalDownloadBarHost from './components/GlobalDownloadBarHost'
 import { openProject, enqueueUnresolvedDocuments } from './api/tauri/project'
 
 // Route-level code splitting — each page becomes its own chunk.
-// Heavy bundles (Chat, MoleculeLibrary, ProjectView, SARAnalysis) only
-// load when the user navigates to them, slashing initial TTI.
-const ProjectView = lazy(() => import('./components/ProjectView'))
+// Heavy bundles (Chat, MoleculeLibrary) only load when the user navigates
+// to them, slashing initial TTI.
+import Workspace from './components/workspace/Workspace'
 const Search = lazy(() => import('./components/Search'))
 const Chat = lazy(() => import('./components/Chat'))
 const MoleculeLibrary = lazy(() => import('./components/MoleculeLibrary'))
 const Environment = lazy(() => import('./components/Environment'))
-const Dashboard = lazy(() => import('./components/Dashboard'))
 const Notes = lazy(() => import('./components/Notes'))
+const SARAnalysis = lazy(() => import('./components/SARAnalysis'))
 const ProcessingQueue = lazy(() => import('./components/project/ProcessingQueue'))
 
 /** Lightweight fallback shown while a route chunk is being fetched. */
@@ -69,7 +69,7 @@ export default function App() {
 function AppInner() {
   const navigate = useNavigate()
   const { projectRoot, setProjectRoot, setActiveFile } = useAppContext()
-  const [currentPage, setCurrentPage] = useState('project')
+  const [currentPage, setCurrentPage] = useState('workspace')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [projectScopeOpen, setProjectScopeOpen] = useState(true)
   const [queuePanelOpen, setQueuePanelOpen] = useState(false)
@@ -97,7 +97,7 @@ function AppInner() {
         const resp = await openProject(saved)
         if (resp.success) {
           setProjectRoot(resp.project.root)
-          setCurrentPage('project')
+          setCurrentPage('workspace')
           void enqueueUnresolvedDocuments(resp.project.root).catch(() => {})
         } else {
           localStorage.removeItem('mbforge_project_root')
@@ -131,7 +131,7 @@ function AppInner() {
 
   const handleProjectOpened = (root: string) => {
     setProjectRoot(root)
-    setCurrentPage('project')
+    setCurrentPage('workspace')
   }
 
   // No project open - show Welcome only
@@ -253,7 +253,7 @@ function AppInner() {
       }}>
         <ErrorBoundary>
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            <AppRoutes onSettingsOpen={() => setSettingsOpen(true)} projectRoot={projectRoot} />
+            <AppRoutes projectRoot={projectRoot} onSettingsOpen={() => setSettingsOpen(true)} />
           </div>
         </ErrorBoundary>
       </main>
@@ -266,16 +266,17 @@ function AppInner() {
   )
 }
 
-function AppRoutes({ onSettingsOpen, projectRoot }: { onSettingsOpen: () => void; projectRoot: string }) {
+function AppRoutes({ projectRoot, onSettingsOpen }: { projectRoot: string; onSettingsOpen: () => void }) {
   const location = useLocation()
   return (
     <AnimatePresence>
       <Routes location={location} key={location.pathname}>
+        <Route path="/" element={<Navigate to="/workspace" replace />} />
         <Route
-          path="/"
+          path="/workspace"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><ProjectView onSettingsOpen={onSettingsOpen} /></AnimatedPage>
+              <AnimatedPage><Workspace onSettingsOpen={onSettingsOpen} /></AnimatedPage>
             </Suspense>
           }
         />
@@ -304,6 +305,14 @@ function AppRoutes({ onSettingsOpen, projectRoot }: { onSettingsOpen: () => void
           }
         />
         <Route
+          path="/analysis"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><SARAnalysis /></AnimatedPage>
+            </Suspense>
+          }
+        />
+        <Route
           path="/environment"
           element={
             <Suspense fallback={<RouteFallback />}>
@@ -312,26 +321,10 @@ function AppRoutes({ onSettingsOpen, projectRoot }: { onSettingsOpen: () => void
           }
         />
         <Route
-          path="/project"
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><ProjectView onSettingsOpen={onSettingsOpen} /></AnimatedPage>
-            </Suspense>
-          }
-        />
-        <Route
           path="/queue"
           element={
             <Suspense fallback={<RouteFallback />}>
               <AnimatedPage><ProcessingQueue projectRoot={projectRoot} /></AnimatedPage>
-            </Suspense>
-          }
-        />
-        <Route
-          path="/dashboard"
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><Dashboard /></AnimatedPage>
             </Suspense>
           }
         />

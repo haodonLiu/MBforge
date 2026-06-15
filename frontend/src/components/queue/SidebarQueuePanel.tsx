@@ -86,7 +86,7 @@ export default function SidebarQueuePanel({ projectRoot, gridColumn, onViewAll }
       }}
     >
       <div className="sidebar-queue-header">
-        <span>{t('sidebarQueue.title') || '处理队列'}</span>
+        <span>{t('sidebarQueue.title')}</span>
         <span
           className={`sidebar-queue-worker-status ${workerOnline ? 'is-online' : 'is-offline'}`}
           title={workerOnline ? t('queue.workerOnline') : t('queue.workerOffline')}
@@ -95,9 +95,9 @@ export default function SidebarQueuePanel({ projectRoot, gridColumn, onViewAll }
 
       <ScrollColumn>
         {isLoading && tasks.length === 0 ? (
-          <EmptyState message={t('common.loading') || '加载中…'} />
+          <EmptyState message={t('common.loading')} />
         ) : tasks.length === 0 ? (
-          <EmptyState message={t('sidebarQueue.empty') || '暂无处理中任务'} />
+          <EmptyState message={t('sidebarQueue.empty')} />
         ) : (
           <ul className="sidebar-queue-list">
             {tasks.map((task) => (
@@ -123,7 +123,7 @@ export default function SidebarQueuePanel({ projectRoot, gridColumn, onViewAll }
 
       <div className="sidebar-queue-footer">
         <Button variant="secondary" size="sm" onClick={onViewAll} style={{ width: '100%' }}>
-          {t('sidebarQueue.viewAll') || '查看全部'}
+          {t('sidebarQueue.viewAll')}
         </Button>
       </div>
     </div>

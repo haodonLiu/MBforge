@@ -23,7 +23,7 @@ interface Props {
 
 const PRIMARY_ITEMS = [
   { id: 'workspace', path: '/workspace', icon: LayoutIcon, labelKey: 'nav.workspace' },
-  { id: 'discover', path: '/search', icon: SearchIcon, labelKey: 'nav.discover' },
+  { id: 'discover', path: '/discover', icon: SearchIcon, labelKey: 'nav.discover' },
   { id: 'molecules', path: '/molecules', icon: FlaskIcon, labelKey: 'nav.molecules' },
   { id: 'analysis', path: '/analysis', icon: BarChartIcon, labelKey: 'nav.analysis' },
 ]

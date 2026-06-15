@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
-import { kbSearchStream } from '../api/tauri'
-import { SearchIcon } from './icons'
-import { useAppContext } from '../context/AppContext'
-import { tapScale } from '../hooks/useAnimations'
-import PageContainer from '../components/ui/PageContainer'
-import BodyText from '../components/ui/BodyText'
-import Skeleton from '../components/ui/Skeleton'
-import SearchResultItem from './search/SearchResultItem'
+import { kbSearchStream } from '@/api/tauri'
+import { SearchIcon } from '@/components/icons'
+import { useAppContext } from '@/context/AppContext'
+import { tapScale } from '@/hooks/useAnimations'
+import BodyText from '@/components/ui/BodyText'
+import Skeleton from '@/components/ui/Skeleton'
+import SearchResultItem from '@/components/search/SearchResultItem'
 
 interface ResultItem {
   id: string
@@ -24,6 +23,11 @@ interface ResultItem {
 
 type SortKey = 'relevance' | 'page'
 
+interface SearchTabProps {
+  initialQuery?: string
+  onQueryChange?: (query: string) => void
+}
+
 const HINTS = ['阿司匹林', '分子对接', 'SAR分析', 'IC50']
 
 function mapResult(
@@ -34,11 +38,17 @@ function mapResult(
   const pageStart = typeof md.page_start === 'number' ? md.page_start : null
   const pageEnd = typeof md.page_end === 'number' ? md.page_end : null
   const path = typeof md.path === 'string' ? md.path : ''
+  const title = typeof md.doc_id === 'string'
+    ? md.doc_id
+    : typeof md.title === 'string'
+      ? md.title
+      : '文档片段'
+  const source = typeof md.source === 'string' ? md.source : path || '未知来源'
   return {
     id: String(i),
-    title: String(md.doc_id || md.title || '文档片段'),
+    title,
     snippet: r.text || '',
-    source: String(md.source || path || '未知来源'),
+    source,
     sourcePath: path,
     page: pageStart,
     pageEnd,
@@ -57,10 +67,10 @@ function sortResults(items: ResultItem[], key: SortKey): ResultItem[] {
   })
 }
 
-export default function Search() {
+export default function SearchTab({ initialQuery = '', onQueryChange }: SearchTabProps) {
   const { t } = useTranslation()
   const { projectRoot } = useAppContext()
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(initialQuery)
   const [results, setResults] = useState<ResultItem[]>([])
   const [hasSearched, setHasSearched] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -69,10 +79,13 @@ export default function Search() {
   const [sortKey, setSortKey] = useState<SortKey>('relevance')
   const unlistenRef = useRef<(() => void) | null>(null)
 
-  // 组件卸载时清理事件监听
   useEffect(() => {
     return () => { unlistenRef.current?.() }
   }, [])
+
+  useEffect(() => {
+    onQueryChange?.(query)
+  }, [query, onQueryChange])
 
   const doSearch = async (term: string) => {
     if (!projectRoot) {
@@ -80,7 +93,6 @@ export default function Search() {
       setHasSearched(true)
       return
     }
-    // 清理上一次搜索
     unlistenRef.current?.()
     setIsLoading(true)
     setHasSearched(true)
@@ -96,16 +108,13 @@ export default function Search() {
         10,
         (chunk) => {
           if (chunk.type === 'first') {
-            // 首批结果 — 立即显示
             setResults(chunk.results.map((r, i) => mapResult(r, resultIndex + i)))
             resultIndex += chunk.results.length
             setIsLoading(false)
           } else if (chunk.type === 'incremental') {
-            // 增量结果 — 追加
             setResults(prev => [...prev, ...chunk.results.map((r, i) => mapResult(r, resultIndex + i))])
             resultIndex += chunk.results.length
-          } else if (chunk.type === 'complete') {
-            // 完成
+          } else {
             if (chunk.error) {
               setError(chunk.error)
             }
@@ -123,17 +132,17 @@ export default function Search() {
 
   const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && query.trim()) {
-      doSearch(query.trim())
+      void doSearch(query.trim())
     }
   }
 
   const quickSearch = (term: string) => {
     setQuery(term)
-    doSearch(term)
+    void doSearch(term)
   }
 
   return (
-    <PageContainer>
+    <>
       <div style={{ marginBottom: '32px' }}>
         <motion.div
           animate={{
@@ -288,9 +297,9 @@ export default function Search() {
                     exit="exit"
                   >
                     <SearchResultItem result={r} />
-                </motion.div>
-              ))}
-            </AnimatePresence>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </motion.div>
             {isLoading && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -300,8 +309,6 @@ export default function Search() {
           </div>
         </>
       )}
-    </PageContainer>
+    </>
   )
 }
-
-

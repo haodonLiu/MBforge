@@ -27,8 +27,7 @@ import { openProject, enqueueUnresolvedDocuments } from './api/tauri/project'
 // Heavy bundles (Chat, MoleculeLibrary) only load when the user navigates
 // to them, slashing initial TTI.
 import Workspace from './components/workspace/Workspace'
-const Search = lazy(() => import('./components/Search'))
-const Chat = lazy(() => import('./components/Chat'))
+const Discover = lazy(() => import('./components/discover/Discover'))
 const MoleculeLibrary = lazy(() => import('./components/MoleculeLibrary'))
 const Environment = lazy(() => import('./components/Environment'))
 const Notes = lazy(() => import('./components/Notes'))
@@ -281,18 +280,10 @@ function AppRoutes({ projectRoot, onSettingsOpen }: { projectRoot: string; onSet
           }
         />
         <Route
-          path="/search"
+          path="/discover"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><Search /></AnimatedPage>
-            </Suspense>
-          }
-        />
-        <Route
-          path="/chat"
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><Chat /></AnimatedPage>
+              <AnimatedPage><Discover /></AnimatedPage>
             </Suspense>
           }
         />

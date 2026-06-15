@@ -16,6 +16,10 @@
   "nav.workspace": "Workspace",
   "nav.discover": "Discover",
   "nav.analysis": "Analysis",
+
+  "analysis.sar": "SAR",
+  "analysis.cluster": "Cluster",
+  "analysis.similarity": "Similarity",
   "nav.notes": "Notes",
   "nav.search": "Search",
   "nav.chat": "Chat",

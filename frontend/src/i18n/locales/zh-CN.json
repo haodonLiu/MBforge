@@ -16,6 +16,10 @@
   "nav.workspace": "工作区",
   "nav.discover": "发现",
   "nav.analysis": "分析",
+
+  "analysis.sar": "SAR",
+  "analysis.cluster": "聚类",
+  "analysis.similarity": "相似性",
   "nav.notes": "笔记",
   "nav.search": "搜索",
   "nav.chat": "对话",

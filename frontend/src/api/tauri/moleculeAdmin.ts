@@ -2,8 +2,8 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
-import type { MoleculeRecord } from '../../types'
+import { ErrorCode } from '@/utils/errors'
+import type { MoleculeRecord } from '@/types'
 import type { MarkushOverlap, MarkushPattern } from './chem'
 
 // ============================================================================

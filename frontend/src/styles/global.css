@@ -3290,3 +3290,65 @@
   justify-content: flex-end;
   margin-top: 4px;
 }
+
+/* ===== Analysis Page ===== */
+.analysis-page {
+  flex-direction: row !important;
+}
+
+.analysis-sidebar {
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.analysis-sidebar-header {
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.analysis-nav-button {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 4px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.analysis-nav-button:hover {
+  background: var(--bg-hover);
+}
+
+.analysis-nav-button-active {
+  color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.analysis-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.analysis-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+}

@@ -41,14 +41,18 @@ describe('invokeWithError', () => {
   })
 
   it.each([
-    { label: 'string', value: 'plain string error' },
-    { label: 'null', value: null },
-    { label: 'object', value: { reason: 'structured failure' } },
-    { label: 'undefined', value: undefined },
-  ])('wraps $label rejection value as AppError', async ({ value }) => {
-    await expect(invokeWithError(() => Promise.reject(value), ErrorCode.ApiError))
+    { label: 'string', value: 'plain string error', expected: 'plain string error' },
+    { label: 'null', value: null, expected: 'null' },
+    { label: 'object', value: { reason: 'structured failure' }, expected: '[object Object]' },
+    { label: 'undefined', value: undefined, expected: 'undefined' },
+  ])('wraps $label rejection value as AppError', async ({ value, expected }) => {
+    await expect(invokeWithError(() => {
+      // Intentionally exercising the non-Error rejection handling path.
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw value
+    }, ErrorCode.ApiError))
       .rejects
-      .toMatchObject({ errorCode: ErrorCode.ApiError, message: String(value) })
+      .toMatchObject({ errorCode: ErrorCode.ApiError, message: expected })
   })
 })
 

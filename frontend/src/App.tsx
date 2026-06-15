@@ -34,6 +34,7 @@ const Environment = lazy(() => import('./components/Environment'))
 const Notes = lazy(() => import('./components/Notes'))
 const Analysis = lazy(() => import('./components/analysis/Analysis'))
 const ProcessingQueue = lazy(() => import('./components/project/ProcessingQueue'))
+const SettingsPage = lazy(() => import('./components/settings/SettingsPage'))
 
 /** Lightweight fallback shown while a route chunk is being fetched. */
 function RouteFallback() {
@@ -182,7 +183,6 @@ function AppInner() {
       <Sidebar
         current={currentPage}
         onNavigate={setCurrentPage}
-        onSettingsOpen={() => setSettingsOpen(true)}
         onSwitchProject={async () => {
           const ok = await ask(t('nav.confirmSwitchProject'), {
             title: t('nav.switchProject') || t('nav.confirmSwitchProject'),
@@ -317,6 +317,14 @@ function AppRoutes({ projectRoot, onSettingsOpen }: { projectRoot: string; onSet
           element={
             <Suspense fallback={<RouteFallback />}>
               <AnimatedPage><Environment /></AnimatedPage>
+            </Suspense>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <Suspense fallback={<RouteFallback />}>
+              <AnimatedPage><SettingsPage /></AnimatedPage>
             </Suspense>
           }
         />

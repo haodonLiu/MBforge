@@ -57,7 +57,7 @@ export default function StorageSection({ projectRoot }: Props) {
     }
   }, [projectRoot])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => { void refresh() }, [refresh])
 
   const clear = async (kind: 'semantic' | 'detection' | 'molecules') => {
     setClearing(kind)
@@ -65,7 +65,7 @@ export default function StorageSection({ projectRoot }: Props) {
       const res = await invoke<ClearResult>('cache_clear', { projectRoot, cache: kind })
       if (res.success) {
         showToast(`已释放 ${fmtSize(res.freed_mb)}`, 'success')
-        refresh()
+        void refresh()
       } else {
         showToast(res.error || '清除失败', 'error')
       }
@@ -134,7 +134,7 @@ export default function StorageSection({ projectRoot }: Props) {
                   size="sm"
                   variant="secondary"
                   disabled={row.mb === 0 || clearing !== null}
-                  onClick={() => clear(row.key)}
+                  onClick={() => void clear(row.key)}
                 >
                   {clearing === row.key ? t('settings.cacheClearing') : t('settings.cacheClear')}
                 </Button>

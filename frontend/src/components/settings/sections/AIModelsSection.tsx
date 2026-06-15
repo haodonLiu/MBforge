@@ -38,7 +38,7 @@ interface Props {
 const providerOptions = (map: Record<string, unknown>) =>
   Object.keys(map).map(k => ({
     value: k,
-    label: PROVIDER_META[k]?.label ?? k,
+    label: (PROVIDER_META[k] ?? { label: k }).label,
   }))
 
 export default function AIModelsSection({ settings, setSettings }: Props) {
@@ -84,8 +84,8 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
               apiKey={settings.embed_api_key}
               onApiKeyChange={v => setSettings(s => ({ ...s, embed_api_key: v }))}
               providerOptions={providerOptions(EMBED_MODELS)}
-              needsKey={PROVIDER_META[settings.embed_provider]?.needsKey ?? false}
-              baseUrlPlaceholder={PROVIDER_META[settings.embed_provider]?.defaultUrl}
+              needsKey={PROVIDER_META[settings.embed_provider].needsKey}
+              baseUrlPlaceholder={PROVIDER_META[settings.embed_provider].defaultUrl}
               showBaseUrl={settings.embed_provider === 'openai'}
             />
             <CustomField label={t('settings.model')}>
@@ -212,8 +212,8 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
               apiKey={settings.vlm_api_key}
               onApiKeyChange={v => setSettings(s => ({ ...s, vlm_api_key: v }))}
               providerOptions={providerOptions(VLM_MODELS)}
-              needsKey={PROVIDER_META[settings.vlm_provider]?.needsKey ?? true}
-              baseUrlPlaceholder={PROVIDER_META[settings.vlm_provider]?.defaultUrl}
+              needsKey={PROVIDER_META[settings.vlm_provider].needsKey}
+              baseUrlPlaceholder={PROVIDER_META[settings.vlm_provider].defaultUrl}
             />
             <CustomField label={t('settings.model')}>
               <ModelSelector
@@ -241,8 +241,8 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
               apiKey={settings.ocr_api_key}
               onApiKeyChange={v => setSettings(s => ({ ...s, ocr_api_key: v }))}
               providerOptions={providerOptions(OCR_MODELS)}
-              needsKey={PROVIDER_META[settings.ocr_provider]?.needsKey ?? false}
-              baseUrlPlaceholder={PROVIDER_META[settings.ocr_provider]?.defaultUrl}
+              needsKey={PROVIDER_META[settings.ocr_provider].needsKey}
+              baseUrlPlaceholder={PROVIDER_META[settings.ocr_provider].defaultUrl}
             />
             <CustomField label={t('settings.model')}>
               <ModelSelector

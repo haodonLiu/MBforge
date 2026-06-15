@@ -25,7 +25,7 @@ export default function RecentProjectsSection() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
   const onOpen = async (path: string) => {
     try {

@@ -13,7 +13,7 @@ import { TrashIcon } from '../icons'
 interface ModelSelectorProps {
   provider: string
   modelValue: string
-  models: Record<string, { value: string; label: string }[]>
+  models: Record<string, { value: string; label: string }[] | undefined>
   onChange: (v: string) => void
   placeholder?: string
 }
@@ -21,7 +21,7 @@ interface ModelSelectorProps {
 export function ModelSelector({ provider, modelValue, models, onChange, placeholder }: ModelSelectorProps) {
   const { t } = useTranslation()
   const listId = useId()
-  const options = models[provider] || []
+  const options = models[provider] ?? []
 
   return (
     <>

@@ -1,5 +1,5 @@
 import { Suspense, useState, lazy, useEffect, useRef } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { useTranslation, I18nextProvider } from 'react-i18next'
 import i18n from './i18n'
@@ -11,14 +11,17 @@ import Header from './components/Header'
 // Welcome is above-the-fold and stays static for fast first paint.
 import Welcome from './components/Welcome'
 import SettingsModal from './components/SettingsModal'
-import FileTree from './components/FileTree'
+import ProjectScope from './components/ProjectScope'
+import SidebarQueuePanel from './components/queue/SidebarQueuePanel'
 import { AppProvider, useAppContext } from './context/AppContext'
 import { ask } from '@tauri-apps/plugin-dialog'
 import { showToast } from './hooks/useToast'
 import { useIsMobile, useIsTablet } from './styles/responsive'
 import { registerGlobalErrorHandlers } from './api/tauri/_utils'
 import { useSidecarEvents } from './hooks/useSidecarEvents'
-import { openProject } from './api/tauri/project'
+import { useIngestNotifications } from './hooks/useIngestNotifications'
+import GlobalDownloadBarHost from './components/GlobalDownloadBarHost'
+import { openProject, enqueueUnresolvedDocuments } from './api/tauri/project'
 
 // Route-level code splitting — each page becomes its own chunk.
 // Heavy bundles (Chat, MoleculeLibrary, ProjectView, SARAnalysis) only
@@ -64,15 +67,18 @@ export default function App() {
 }
 
 function AppInner() {
+  const navigate = useNavigate()
   const { projectRoot, setProjectRoot, setActiveFile } = useAppContext()
   const [currentPage, setCurrentPage] = useState('project')
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [fileTreeOpen, setFileTreeOpen] = useState(true)
+  const [projectScopeOpen, setProjectScopeOpen] = useState(true)
+  const [queuePanelOpen, setQueuePanelOpen] = useState(false)
   const isMobile = useIsMobile()
   const isTablet = useIsTablet()
   const { t } = useTranslation()
 
   useSidecarEvents()
+  useIngestNotifications(projectRoot)
 
   useEffect(() => {
     const cleanup = registerGlobalErrorHandlers()
@@ -84,7 +90,7 @@ function AppInner() {
   // ``open_project``; if the folder was deleted or is no longer a valid
   // project, the localStorage entry is cleared and Welcome re-appears.
   useEffect(() => {
-    (async () => {
+    void (async () => {
       const saved = localStorage.getItem('mbforge_project_root')
       if (!saved) return
       try {
@@ -92,6 +98,7 @@ function AppInner() {
         if (resp.success) {
           setProjectRoot(resp.project.root)
           setCurrentPage('project')
+          void enqueueUnresolvedDocuments(resp.project.root).catch(() => {})
         } else {
           localStorage.removeItem('mbforge_project_root')
         }
@@ -154,16 +161,21 @@ function AppInner() {
   }
 
   // 移动端：文件树默认关闭，Sidebar 简化
-  const effectiveFileTreeOpen = fileTreeOpen && !isMobile
-  const showFileTree = effectiveFileTreeOpen && !isTablet
+  const effectiveProjectScopeOpen = projectScopeOpen && !isMobile
+  const showProjectScope = effectiveProjectScopeOpen && !isTablet
+  const effectiveQueuePanelOpen = queuePanelOpen && !isMobile && !isTablet
+  const showQueuePanel = effectiveQueuePanelOpen
 
   // Project open - show full app with file tree
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: effectiveFileTreeOpen
-        ? (showFileTree ? '56px 220px 1fr' : '56px 1fr')
-        : '56px 1fr',
+      gridTemplateColumns: (() => {
+        if (showProjectScope && showQueuePanel) return '56px 220px 240px 1fr'
+        if (showProjectScope) return '56px 220px 1fr'
+        if (showQueuePanel) return '56px 240px 1fr'
+        return '56px 1fr'
+      })(),
       gridTemplateRows: 'auto 1fr auto',
       height: '100vh',
     }}>
@@ -178,10 +190,12 @@ function AppInner() {
           })
           if (ok) setProjectRoot('')
         }}
-        fileTreeOpen={fileTreeOpen}
-        onToggleFileTree={() => setFileTreeOpen(!fileTreeOpen)}
+        projectScopeOpen={projectScopeOpen}
+        onToggleProjectScope={() => setProjectScopeOpen(!projectScopeOpen)}
+        queuePanelOpen={queuePanelOpen}
+        onToggleQueuePanel={() => setQueuePanelOpen(!queuePanelOpen)}
       />
-      {showFileTree && (
+      {showProjectScope && (
         <div style={{
           gridColumn: '2',
           gridRow: '1 / 4',
@@ -200,11 +214,10 @@ function AppInner() {
             textTransform: 'uppercase',
             letterSpacing: '0.5px',
           }}>
-            {t('nav.fileTree')}
+            {t('nav.projectScope')}
           </div>
-          <FileTree onFileClick={(path) => {
+          <ProjectScope onFileClick={(path) => {
             // 走 setActiveFile → ProjectView.useEffect → 应用内 PdfViewer/MarkdownViewer
-            // 不要用 invoke('open_file', ...)，那个会调系统默认程序打开（PDF 弹外部阅读器）
             const lower = path.toLowerCase()
             if (lower.endsWith('.pdf')) {
               setActiveFile({ path, type: 'pdf', mode: 'read' })
@@ -216,9 +229,22 @@ function AppInner() {
           }} />
         </div>
       )}
+      {showQueuePanel && (
+        <SidebarQueuePanel
+          projectRoot={projectRoot}
+          onViewAll={() => {
+            setCurrentPage('queue')
+            void navigate('/queue')
+          }}
+        />
+      )}
       <Header />
       <main style={{
-        gridColumn: effectiveFileTreeOpen ? (showFileTree ? '3' : '2') : '2',
+        gridColumn: (() => {
+          if (showProjectScope && showQueuePanel) return '4'
+          if (showProjectScope || showQueuePanel) return '3'
+          return '2'
+        })(),
         gridRow: '2 / 3',
         display: 'flex',
         flexDirection: 'column',
@@ -234,6 +260,7 @@ function AppInner() {
       <ErrorBoundary>
         <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       </ErrorBoundary>
+      <GlobalDownloadBarHost />
       <ToastContainer />
     </div>
   )

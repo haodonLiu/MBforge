@@ -39,6 +39,7 @@ export async function molStoreInit(projectRoot: string): Promise<void> {
   )
 }
 
+/** @deprecated Use molAdminAdd from ./molecule_admin instead */
 export async function molStoreAdd(
   projectRoot: string,
   molId: string,
@@ -62,7 +63,7 @@ export async function molStoreAdd(
       units: units ?? null,
       sourceType: sourceType ?? null,
     }),
-    ErrorCode.MoleculeSearch,
+    ErrorCode.ApiError,
   )
 }
 

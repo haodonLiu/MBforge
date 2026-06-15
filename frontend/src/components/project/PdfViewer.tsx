@@ -6,7 +6,9 @@ import ScrollColumn from '../ui/ScrollColumn'
 import Spinner from '../ui/Spinner'
 import type { DocumentEntry } from '../../types'
 import { usePdfViewer } from './pdf/usePdfViewer'
+import { useIngestPipeline } from './pdf/useIngestPipeline'
 import PdfToolbar from './pdf/PdfToolbar'
+import PdfPipelineFlow from './pdf/PdfPipelineFlow'
 import { TextPanel, ImagePanel, OcrPanel, DetectDetailPanel } from './pdf/PdfViewerPanels'
 
 interface Props {
@@ -18,9 +20,19 @@ interface Props {
 
 export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Props) {
   const v = usePdfViewer(doc, projectRoot, initialMode)
+  const pipeline = useIngestPipeline(doc.doc_id, projectRoot)
 
   return (
     <div className="pdf-viewer">
+      {pipeline.task && pipeline.task.status !== 'done' && pipeline.task.status !== 'cancelled' && (
+        <PdfPipelineFlow
+          variant="full"
+          task={pipeline.task}
+          progressPct={pipeline.progressPct}
+          details={pipeline.details}
+          embedState={pipeline.embedState}
+        />
+      )}
       <PdfToolbar
         doc={doc}
         onClose={onClose}

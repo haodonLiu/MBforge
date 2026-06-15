@@ -1,9 +1,15 @@
-import { useState, FormEvent, ChangeEvent, useEffect } from 'react'
-import { molStoreAdd, molStoreSearchBySmiles } from '../../api/tauri'
+import { useState, ChangeEvent, useEffect } from 'react'
+import type { SyntheticEvent } from 'react'
+import { molAdminAdd, molAdminSearchBySmiles } from '../../api/tauri/molecule_admin'
 import { chemValidateSmiles } from '../../api/tauri/molecule'
+import type { MoleculeRecord } from '../../types'
 import Button from './Button'
 import Input from './Input'
 import Modal from './Modal'
+
+function generateMolId(): string {
+  return `mol_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
 
 interface AddMoleculeDialogProps {
   open: boolean
@@ -62,7 +68,7 @@ export function AddMoleculeDialog({ open, onClose, projectRoot, onAdded }: AddMo
 
     if (trimmed.length > 5) {
       try {
-        const existing = await molStoreSearchBySmiles(projectRoot, trimmed)
+        const existing = await molAdminSearchBySmiles(projectRoot, trimmed)
         if (existing) {
           setDuplicateWarning(`Molecule already exists as "${existing.name}" (${existing.mol_id})`)
         }
@@ -72,7 +78,7 @@ export function AddMoleculeDialog({ open, onClose, projectRoot, onAdded }: AddMo
     }
   }
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault()
     if (!esmiles.trim()) {
       setError('SMILES is required')
@@ -95,18 +101,23 @@ export function AddMoleculeDialog({ open, onClose, projectRoot, onAdded }: AddMo
     setError(null)
 
     try {
-      const molId = `mol_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-      await molStoreAdd(
-        projectRoot,
-        molId,
-        esmiles.trim(),
-        name.trim() || undefined,
-        undefined, // source_doc
-        activity ? parseFloat(activity) : undefined,
-        activityType || undefined,
-        units || undefined,
-        sourceType,
-      )
+      const molId = generateMolId()
+      const record: MoleculeRecord = {
+        mol_id: molId,
+        esmiles: esmiles.trim(),
+        name: name.trim(),
+        source_doc: '',
+        source_type: sourceType,
+        activity: activity ? parseFloat(activity) : null,
+        activity_type: activityType,
+        units: units,
+        status: 'pending',
+        properties: {},
+        tags: [],
+        notes: '',
+        created_at: new Date().toISOString(),
+      }
+      await molAdminAdd(projectRoot, record)
       onAdded?.()
       handleClose()
     } catch (err) {

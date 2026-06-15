@@ -37,6 +37,7 @@ describe('sar API', () => {
       const result = await sarFindScaffold(smilesList)
 
       expect(result).toEqual(stub)
+      expect(invoke).toHaveBeenCalledTimes(1)
       expect(invoke).toHaveBeenCalledWith('sar_find_scaffold', { smilesList })
     })
 
@@ -46,7 +47,15 @@ describe('sar API', () => {
       const result = await sarFindScaffold(['C', 'N'])
 
       expect(result).toBeNull()
+      expect(invoke).toHaveBeenCalledTimes(1)
       expect(invoke).toHaveBeenCalledWith('sar_find_scaffold', { smilesList: ['C', 'N'] })
+    })
+
+    it('propagates invoke rejection', async () => {
+      mockInvoke.mockRejectedValue(new Error('scaffold failed'))
+
+      await expect(sarFindScaffold(['C'])).rejects.toThrow('scaffold failed')
+      expect(invoke).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -66,10 +75,18 @@ describe('sar API', () => {
       const result = await sarDecompose('c1ccc(CC(=O)O)cc1', 'c1ccccc1')
 
       expect(result).toEqual(stub)
+      expect(invoke).toHaveBeenCalledTimes(1)
       expect(invoke).toHaveBeenCalledWith('sar_decompose', {
         smiles: 'c1ccc(CC(=O)O)cc1',
         coreSmiles: 'c1ccccc1',
       })
+    })
+
+    it('propagates invoke rejection', async () => {
+      mockInvoke.mockRejectedValue(new Error('decompose failed'))
+
+      await expect(sarDecompose('C', 'C')).rejects.toThrow('decompose failed')
+      expect(invoke).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -95,6 +112,7 @@ describe('sar API', () => {
       const result = await sarBuildMatrix(compounds, 'c1ccccc1')
 
       expect(result).toEqual(stub)
+      expect(invoke).toHaveBeenCalledTimes(1)
       expect(invoke).toHaveBeenCalledWith('sar_build_matrix', {
         compounds,
         coreSmiles: 'c1ccccc1',
@@ -117,10 +135,18 @@ describe('sar API', () => {
       const result = await sarBuildMatrix(compounds)
 
       expect(result).toEqual(stub)
+      expect(invoke).toHaveBeenCalledTimes(1)
       expect(invoke).toHaveBeenCalledWith('sar_build_matrix', {
         compounds,
         coreSmiles: null,
       })
+    })
+
+    it('propagates invoke rejection', async () => {
+      mockInvoke.mockRejectedValue(new Error('matrix failed'))
+
+      await expect(sarBuildMatrix(compounds)).rejects.toThrow('matrix failed')
+      expect(invoke).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -151,6 +177,7 @@ describe('sar API', () => {
       const result = await sarHeatmap(matrix)
 
       expect(result).toEqual(stub)
+      expect(invoke).toHaveBeenCalledTimes(1)
       expect(invoke).toHaveBeenCalledWith('sar_heatmap', {
         matrix,
         lowerIsBetter: true,
@@ -162,10 +189,18 @@ describe('sar API', () => {
 
       await sarHeatmap(matrix, false)
 
+      expect(invoke).toHaveBeenCalledTimes(1)
       expect(invoke).toHaveBeenCalledWith('sar_heatmap', {
         matrix,
         lowerIsBetter: false,
       })
+    })
+
+    it('propagates invoke rejection', async () => {
+      mockInvoke.mockRejectedValue(new Error('heatmap failed'))
+
+      await expect(sarHeatmap(matrix)).rejects.toThrow('heatmap failed')
+      expect(invoke).toHaveBeenCalledTimes(1)
     })
   })
 })

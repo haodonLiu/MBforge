@@ -17,9 +17,13 @@ export function isTauriAvailable(): boolean {
   }
 }
 
-const NETWORK_KEYWORDS = ['network', 'fetch', 'connection', 'timeout', 'refused'] as const
+const NETWORK_KEYWORDS = ['network', 'connection', 'timeout', 'refused'] as const
 
 function classifyError(err: unknown): { code: ErrorCode; message: string } {
+  if (err instanceof AppError) {
+    return { code: err.errorCode, message: err.message }
+  }
+
   const raw = err instanceof Error ? err.message : String(err)
   const lower = raw.toLowerCase()
 
@@ -60,6 +64,10 @@ export async function invokeWithError<T>(
  * Returns a cleanup function.
  */
 export function registerGlobalErrorHandlers(): () => void {
+  if (typeof window === 'undefined') {
+    return () => {}
+  }
+
   const onError = (event: ErrorEvent) => {
     const classified = classifyError(event.error ?? event.message)
     console.error('[global] Uncaught error:', event.error ?? event.message)

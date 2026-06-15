@@ -3,7 +3,8 @@ import { PageContainer, PageTitle, Tabs, EmptyState } from './ui'
 import { FlaskIcon, BarChartIcon, SparklesIcon, TargetIcon } from './icons'
 import { showToast } from '../hooks/useToast'
 import { useAppContext } from '../context/AppContext'
-import { listMoleculesTauri, molStoreList } from '../api/tauri/molecule'
+import { listMoleculesTauri } from '../api/tauri/molecule'
+import { molAdminList } from '../api/tauri/molecule_admin'
 import type { MoleculeRecord } from '../types'
 import type { SARSession } from '../types'
 import { moleculesToSession } from './sar/utils'
@@ -34,7 +35,7 @@ export default function SARAnalysis() {
         setSessions([session])
         setActiveSessionId(session.id)
       })
-      .catch(e => showToast(`加载失败: ${e.message}`, 'error'))
+      .catch((e: unknown) => showToast(`加载失败: ${e instanceof Error ? e.message : String(e)}`, 'error'))
       .finally(() => setLoading(false))
   }, [projectRoot])
 
@@ -52,7 +53,7 @@ export default function SARAnalysis() {
 
   useEffect(() => {
     if (activeTab !== 'correction' || !projectRoot) return
-    molStoreList(projectRoot, 200, 0, undefined, 'pending')
+    molAdminList(projectRoot, 200, 0, undefined, 'pending')
       .then(records => {
         setCorrectionItems(
           records.map(r => ({
@@ -67,7 +68,7 @@ export default function SARAnalysis() {
           })),
         )
       })
-      .catch(e => showToast(`加载待矫正分子失败: ${e instanceof Error ? e.message : String(e)}`, 'error'))
+      .catch((e: unknown) => showToast(`加载待矫正分子失败: ${e instanceof Error ? e.message : String(e)}`, 'error'))
   }, [activeTab, projectRoot])
 
   const activeSession = useMemo(

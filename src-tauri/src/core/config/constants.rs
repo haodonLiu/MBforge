@@ -114,6 +114,8 @@ pub const EVT_MODEL_DOWNLOAD_PROGRESS: &str = "model-download-progress";
 pub const EVT_INGEST_PROGRESS: &str = "ingest-progress";
 pub const EVT_INGEST_QUEUE_UPDATE: &str = "ingest-queue-update";
 pub const EVT_INGEST_WORKER_HEARTBEAT: &str = "ingest-worker-heartbeat";
+/// Track C: 嵌入阶段子进度（独立于整体 ingest-progress）
+pub const EVT_INGEST_EMBED: &str = "ingest-embed";
 
 // Agent config
 pub const AGENT_MAX_ITERATIONS: usize = 5;

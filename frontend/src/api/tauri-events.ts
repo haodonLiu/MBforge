@@ -17,6 +17,7 @@ export const EVT = {
   IngestProgress: 'ingest-progress',
   IngestQueueUpdate: 'ingest-queue-update',
   IngestWorkerHeartbeat: 'ingest-worker-heartbeat',
+  IngestEmbed: 'ingest-embed',
 } as const
 
 export type TauriEventName = (typeof EVT)[keyof typeof EVT]

@@ -21,6 +21,7 @@ export interface IngestTask {
   started_at: number | null
   created_at: number
   updated_at: number
+  priority: number
 }
 
 export interface QueueStats {
@@ -30,6 +31,7 @@ export interface QueueStats {
   done: number
   failed: number
   cancelled: number
+  avg_stage_durations_ms: number[]
 }
 
 export interface IngestProgressEvent {
@@ -53,6 +55,15 @@ export interface IngestWorkerHeartbeatEvent {
   alive: boolean
 }
 
+/** Track C: 嵌入阶段子进度事件 */
+export interface IngestEmbedEvent {
+  doc_id: string
+  action: 'start' | 'done' | 'failed' | 'skipped'
+  model: string
+  progress: number
+  error?: string
+}
+
 export async function ingestList(projectRoot: string): Promise<IngestTask[]> {
   return invokeWithError(
     () => invoke<IngestTask[]>('ingest_list', { projectRoot }),
@@ -69,7 +80,9 @@ export async function ingestStats(projectRoot: string): Promise<QueueStats> {
 
 export async function ingestCancel(projectRoot: string, taskId: string): Promise<void> {
   return invokeWithError(
-    () => invoke<void>('ingest_cancel', { projectRoot, taskId }),
+    async () => {
+      await invoke('ingest_cancel', { projectRoot, taskId })
+    },
     ErrorCode.TauriInvoke,
   )
 }
@@ -96,6 +109,52 @@ export async function ingestEnqueue(
 ): Promise<string> {
   return invokeWithError(
     () => invoke<string>('ingest_enqueue', { projectRoot, filePath, docId }),
+    ErrorCode.TauriInvoke,
+  )
+}
+
+/** 当前会话内用户主动触发的 doc_id 集合，用于跨页 toast 去噪。 */
+const selfTriggeredDocs = new Set<string>()
+
+export function trackSelfTriggeredDoc(docId: string): void {
+  selfTriggeredDocs.add(docId)
+  // 避免集合无限增长：超过 100 时清理最旧的 50 个。
+  if (selfTriggeredDocs.size > 100) {
+    const iter = selfTriggeredDocs.values()
+    for (let i = 0; i < 50; i++) {
+      const value = iter.next().value
+      if (value !== undefined) selfTriggeredDocs.delete(value)
+    }
+  }
+}
+
+export function isSelfTriggeredDoc(docId: string): boolean {
+  return selfTriggeredDocs.has(docId)
+}
+
+export function removeSelfTriggeredDoc(docId: string): void {
+  selfTriggeredDocs.delete(docId)
+}
+
+export async function ingestSetPriority(
+  projectRoot: string,
+  taskId: string,
+  priority: number,
+): Promise<void> {
+  return invokeWithError(
+    async () => {
+      await invoke('ingest_set_priority', { projectRoot, taskId, priority })
+    },
+    ErrorCode.TauriInvoke,
+  )
+}
+
+export async function ingestDeleteTask(
+  projectRoot: string,
+  taskId: string,
+): Promise<boolean> {
+  return invokeWithError(
+    () => invoke<boolean>('ingest_delete_task', { projectRoot, taskId }),
     ErrorCode.TauriInvoke,
   )
 }

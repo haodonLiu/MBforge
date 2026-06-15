@@ -79,3 +79,26 @@ export const FilterIcon: FC<IconProps> = ({ size = 16 }) =>
     </>,
     size,
   )
+
+/** Track C: 嵌入图标 — 节点+连线，象征向量嵌入 */
+export const EmbedIcon: FC<IconProps> = ({ size = 16 }) =>
+  baseSvg(
+    <>
+      <circle cx="5" cy="6" r="1.5" />
+      <circle cx="5" cy="12" r="1.5" />
+      <circle cx="5" cy="18" r="1.5" />
+      <circle cx="13" cy="6" r="1.5" />
+      <circle cx="13" cy="12" r="1.5" />
+      <circle cx="13" cy="18" r="1.5" />
+      <line x1="6" y1="6" x2="12" y2="6" />
+      <line x1="6" y1="6" x2="12" y2="12" />
+      <line x1="6" y1="6" x2="12" y2="18" />
+      <line x1="6" y1="12" x2="12" y2="6" />
+      <line x1="6" y1="12" x2="12" y2="12" />
+      <line x1="6" y1="12" x2="12" y2="18" />
+      <line x1="6" y1="18" x2="12" y2="6" />
+      <line x1="6" y1="18" x2="12" y2="12" />
+      <line x1="6" y1="18" x2="12" y2="18" />
+    </>,
+    size,
+  )

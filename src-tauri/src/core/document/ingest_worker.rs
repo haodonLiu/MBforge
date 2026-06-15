@@ -4,8 +4,8 @@
 //! 阶段包括：inspector → text_extract/ocr → moldet → index。
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
@@ -16,7 +16,10 @@ pub struct IngestWorkerState {
     pub worker: Mutex<Option<IngestWorker>>,
 }
 
-use crate::core::constants::{EVT_INGEST_PROGRESS, EVT_INGEST_QUEUE_UPDATE, EVT_INGEST_WORKER_HEARTBEAT};
+use crate::core::constants::{
+    EVT_INGEST_PROGRESS, EVT_INGEST_QUEUE_UPDATE, EVT_INGEST_WORKER_HEARTBEAT,
+    EVT_INGEST_EMBED,
+};
 use crate::core::document::ingest_queue::{IngestQueue, IngestTask};
 use crate::core::document::knowledge_base::get_or_init_kb;
 use crate::core::helpers::generate_uuid;
@@ -52,13 +55,20 @@ impl IngestWorker {
             worker_loop(root, app_handle, running_clone, last_heartbeat_clone).await;
         });
 
-        Self { project_root, running, last_heartbeat }
+        Self {
+            project_root,
+            running,
+            last_heartbeat,
+        }
     }
 
     /// 停止 worker（温和停止，当前任务处理完后退出）。
     pub fn stop(&self) {
         self.running.store(false, Ordering::Relaxed);
-        log::info!("IngestWorker: stop requested for {}", self.project_root.display());
+        log::info!(
+            "IngestWorker: stop requested for {}",
+            self.project_root.display()
+        );
     }
 
     /// 最近一次心跳时间戳（Unix 秒）。
@@ -84,7 +94,12 @@ async fn worker_loop(
     log::info!("IngestWorker: started for {}", project_root.display());
 
     // 后台心跳：即使长时间任务也能保证前端可观测 worker 存活。
-    spawn_heartbeat(project_root.clone(), app_handle.clone(), Arc::clone(&running), last_heartbeat);
+    spawn_heartbeat(
+        project_root.clone(),
+        app_handle.clone(),
+        Arc::clone(&running),
+        last_heartbeat,
+    );
 
     while running.load(Ordering::Relaxed) {
         let task = match queue.dequeue().await {
@@ -108,6 +123,12 @@ async fn worker_loop(
             task.stage
         );
 
+        let stage_started_at = crate::core::helpers::now_secs_f64();
+        let stage_hist_id = queue
+            .record_stage_start(&task.id, &task.doc_id, &task.stage)
+            .await
+            .ok();
+
         emit_progress(
             &app_handle,
             &task,
@@ -127,17 +148,17 @@ async fn worker_loop(
             other => Err(format!("Unknown stage: {}", other)),
         };
 
+        let stage_duration_secs = crate::core::helpers::now_secs_f64() - stage_started_at;
         match result {
             Ok(StageResult::Continue(next_stage)) => {
+                if let Some(id) = stage_hist_id {
+                    let _ = queue.record_stage_end(id, stage_duration_secs, true).await;
+                }
                 // 阶段完成，切到下一阶段并重新置为 pending，让下一轮继续处理。
-                if let Err(e) = queue.update_progress(
-                    &task.id,
-                    &next_stage,
-                    0.0,
-                    0,
-                    0,
-                    "",
-                ).await {
+                if let Err(e) = queue
+                    .update_progress(&task.id, &next_stage, 0.0, 0, 0, "")
+                    .await
+                {
                     log::error!("IngestWorker: failed to advance stage: {}", e);
                 }
                 // 把状态改回 pending 以便 dequeue 能再次取到同一任务。
@@ -145,12 +166,18 @@ async fn worker_loop(
                 emit_queue_update(&app_handle, &queue, &task.doc_id, &next_stage).await;
             }
             Ok(StageResult::Done) => {
+                if let Some(id) = stage_hist_id {
+                    let _ = queue.record_stage_end(id, stage_duration_secs, true).await;
+                }
                 if let Err(e) = queue.mark_done(&task.id).await {
                     log::error!("IngestWorker: mark_done failed: {}", e);
                 }
                 emit_queue_update(&app_handle, &queue, &task.doc_id, "done").await;
             }
             Err(e) => {
+                if let Some(id) = stage_hist_id {
+                    let _ = queue.record_stage_end(id, stage_duration_secs, false).await;
+                }
                 log::error!(
                     "IngestWorker: task {} stage {} failed: {}",
                     task.id,
@@ -187,7 +214,8 @@ fn spawn_heartbeat(
     last_heartbeat: Arc<AtomicU64>,
 ) {
     tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(WORKER_HEARTBEAT_INTERVAL_SECS));
+        let mut interval =
+            tokio::time::interval(Duration::from_secs(WORKER_HEARTBEAT_INTERVAL_SECS));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         while running.load(Ordering::Relaxed) {
             interval.tick().await;
@@ -211,7 +239,10 @@ async fn preflight_check(stage: &str, file_path: &Path, project_root: &Path) -> 
         return Err(format!("source file not found: {}", file_path.display()));
     }
     if !project_root.exists() || !project_root.is_dir() {
-        return Err(format!("project root not found: {}", project_root.display()));
+        return Err(format!(
+            "project root not found: {}",
+            project_root.display()
+        ));
     }
 
     const MIN_SPACE_MB: u64 = 100;
@@ -257,9 +288,8 @@ async fn process_inspector(
 ) -> Result<StageResult, String> {
     preflight_check("inspector", Path::new(&task.file_path), project_root).await?;
 
-    let result = pdf_inspector::detect_pdf(&task.file_path).map_err(|e| {
-        format!("inspector detect failed: {}", e)
-    })?;
+    let result = pdf_inspector::detect_pdf(&task.file_path)
+        .map_err(|e| format!("inspector detect failed: {}", e))?;
 
     let pdf_type_str = match result.pdf_type {
         pdf_inspector::PdfType::TextBased => "TextBased",
@@ -295,7 +325,11 @@ async fn process_inspector(
 
     // 同步更新项目 index。
     if let Some(mut proj) = Project::open(project_root) {
-        proj.set_document_status(&task.doc_id, "inspector_status", &pdf_type_str.to_lowercase());
+        proj.set_document_status(
+            &task.doc_id,
+            "inspector_status",
+            &pdf_type_str.to_lowercase(),
+        );
         let ocr_status = match result.pdf_type {
             pdf_inspector::PdfType::TextBased => "not_needed",
             _ => "pending_confirmation",
@@ -308,16 +342,17 @@ async fn process_inspector(
         _ => "ocr",
     };
 
-    queue.update_progress(
-        &task.id,
-        &task.stage,
-        100.0,
-        result.page_count as i32,
-        result.page_count as i32,
-        &format!("detected {}", pdf_type_str),
-    )
-    .await
-    .map_err(|e| format!("update progress failed: {}", e))?;
+    queue
+        .update_progress(
+            &task.id,
+            &task.stage,
+            100.0,
+            result.page_count as i32,
+            result.page_count as i32,
+            &format!("detected {}", pdf_type_str),
+        )
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
 
     emit_progress(
         app_handle,
@@ -347,20 +382,15 @@ async fn process_text_extract(
 ) -> Result<StageResult, String> {
     preflight_check("text_extract", Path::new(&task.file_path), project_root).await?;
 
-    queue.update_progress(
-        &task.id,
-        &task.stage,
-        10.0,
-        0,
-        0,
-        "extracting text",
-    ).await
-    .map_err(|e| format!("update progress failed: {}", e))?;
+    queue
+        .update_progress(&task.id, &task.stage, 10.0, 0, 0, "extracting text")
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "extracting text");
 
-    let classified = classify_and_extract(&task.file_path, false).await.map_err(|e| {
-        format!("text extraction failed: {}", e)
-    })?;
+    let classified = classify_and_extract(&task.file_path, false)
+        .await
+        .map_err(|e| format!("text extraction failed: {}", e))?;
 
     // 保存文本到 cache/pages/text.md。
     if let Some(dp) = DocumentProject::load(project_root, &task.doc_id) {
@@ -381,15 +411,17 @@ async fn process_text_extract(
     }
 
     let progress_pct = 100.0;
-    queue.update_progress(
-        &task.id,
-        &task.stage,
-        progress_pct,
-        classified.page_count as i32,
-        classified.page_count as i32,
-        "text extracted",
-    ).await
-    .map_err(|e| format!("update progress failed: {}", e))?;
+    queue
+        .update_progress(
+            &task.id,
+            &task.stage,
+            progress_pct,
+            classified.page_count as i32,
+            classified.page_count as i32,
+            "text extracted",
+        )
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(
         app_handle,
         task,
@@ -423,20 +455,15 @@ async fn process_ocr(
 ) -> Result<StageResult, String> {
     preflight_check("ocr", Path::new(&task.file_path), project_root).await?;
 
-    queue.update_progress(
-        &task.id,
-        &task.stage,
-        10.0,
-        0,
-        0,
-        "running OCR",
-    ).await
-    .map_err(|e| format!("update progress failed: {}", e))?;
+    queue
+        .update_progress(&task.id, &task.stage, 10.0, 0, 0, "running OCR")
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "running OCR");
 
-    let classified = classify_and_extract(&task.file_path, true).await.map_err(|e| {
-        format!("OCR extraction failed: {}", e)
-    })?;
+    let classified = classify_and_extract(&task.file_path, true)
+        .await
+        .map_err(|e| format!("OCR extraction failed: {}", e))?;
 
     // 保存 OCR 结果到 cache/ocr/ocr.json。
     if let Some(dp) = DocumentProject::load(project_root, &task.doc_id) {
@@ -464,15 +491,17 @@ async fn process_ocr(
     }
 
     let progress_pct = 100.0;
-    queue.update_progress(
-        &task.id,
-        &task.stage,
-        progress_pct,
-        classified.page_count as i32,
-        classified.page_count as i32,
-        "OCR done",
-    ).await
-    .map_err(|e| format!("update progress failed: {}", e))?;
+    queue
+        .update_progress(
+            &task.id,
+            &task.stage,
+            progress_pct,
+            classified.page_count as i32,
+            classified.page_count as i32,
+            "OCR done",
+        )
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(
         app_handle,
         task,
@@ -506,23 +535,32 @@ async fn process_moldet(
 ) -> Result<StageResult, String> {
     preflight_check("moldet", Path::new(&task.file_path), project_root).await?;
 
-    queue.update_progress(
-        &task.id,
+    queue
+        .update_progress(&task.id, &task.stage, 10.0, 0, 0, "scanning molecules")
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
+    emit_progress(
+        app_handle,
+        task,
         &task.stage,
         10.0,
         0,
         0,
         "scanning molecules",
-    ).await
-    .map_err(|e| format!("update progress failed: {}", e))?;
-    emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "scanning molecules");
+    );
 
     let sidecar_url = crate::core::constants::sidecar_url();
     let config = crate::core::config::settings::AppConfig::load();
     let batch_size = config.moldet.moldet_batch_size.max(1);
-    let result = quick_moldet_scan_pdf(&task.file_path, project_root, &sidecar_url, &task.doc_id, batch_size)
-        .await
-        .map_err(|e| format!("MoldDet scan failed: {}", e))?;
+    let result = quick_moldet_scan_pdf(
+        &task.file_path,
+        project_root,
+        &sidecar_url,
+        &task.doc_id,
+        batch_size,
+    )
+    .await
+    .map_err(|e| format!("MoldDet scan failed: {}", e))?;
 
     let status = if result.pages_with_molecules.is_empty() {
         "no_molecule"
@@ -539,16 +577,17 @@ async fn process_moldet(
     }
 
     let progress_pct = 100.0;
-    queue.update_progress(
-        &task.id,
-        &task.stage,
-        progress_pct,
-        result.page_count as i32,
-        result.page_count as i32,
-        &format!("moldet {}", status),
-    )
-    .await
-    .map_err(|e| format!("update progress failed: {}", e))?;
+    queue
+        .update_progress(
+            &task.id,
+            &task.stage,
+            progress_pct,
+            result.page_count as i32,
+            result.page_count as i32,
+            &format!("moldet {}", status),
+        )
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(
         app_handle,
         task,
@@ -577,16 +616,19 @@ async fn process_index(
 ) -> Result<StageResult, String> {
     preflight_check("index", Path::new(&task.file_path), project_root).await?;
 
-    queue.update_progress(
-        &task.id,
+    queue
+        .update_progress(&task.id, &task.stage, 10.0, 0, 0, "extracting for index")
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
+    emit_progress(
+        app_handle,
+        task,
         &task.stage,
         10.0,
         0,
         0,
         "extracting for index",
-    ).await
-    .map_err(|e| format!("update progress failed: {}", e))?;
-    emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "extracting for index");
+    );
 
     // 优先复用 OCR/text_extract 阶段已保存的 ocr.json；若不存在则现场提取。
     // 这样扫描件在 index 阶段不需要再次调用 OCR 服务。
@@ -600,41 +642,45 @@ async fn process_index(
         images: Vec<ImageRef>,
     }
 
-    let classified: ClassifyResult = if let Some(dp) = DocumentProject::load(project_root, &task.doc_id) {
-        let ocr_path = dp.paths().ocr_cache_dir.join("ocr.json");
-        if ocr_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(&ocr_path) {
-                if let Ok(cache) = serde_json::from_str::<OcrCache>(&content) {
-                    log::info!("IngestWorker: reusing OCR cache for {}", task.doc_id);
-                    ClassifyResult {
-                        text: cache.text,
-                        page_count: cache.page_count,
-                        parser: cache.parser,
-                        images: cache.images,
-                        ocr_blocks: cache.ocr_blocks,
+    let classified: ClassifyResult =
+        if let Some(dp) = DocumentProject::load(project_root, &task.doc_id) {
+            let ocr_path = dp.paths().ocr_cache_dir.join("ocr.json");
+            if ocr_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&ocr_path) {
+                    if let Ok(cache) = serde_json::from_str::<OcrCache>(&content) {
+                        log::info!("IngestWorker: reusing OCR cache for {}", task.doc_id);
+                        ClassifyResult {
+                            text: cache.text,
+                            page_count: cache.page_count,
+                            parser: cache.parser,
+                            images: cache.images,
+                            ocr_blocks: cache.ocr_blocks,
+                        }
+                    } else {
+                        classify_and_extract(&task.file_path, false)
+                            .await
+                            .map_err(|e| format!("Index extraction failed: {}", e))?
                     }
                 } else {
-                    classify_and_extract(&task.file_path, false).await.map_err(|e| format!("Index extraction failed: {}", e))?
+                    classify_and_extract(&task.file_path, false)
+                        .await
+                        .map_err(|e| format!("Index extraction failed: {}", e))?
                 }
             } else {
-                classify_and_extract(&task.file_path, false).await.map_err(|e| format!("Index extraction failed: {}", e))?
+                classify_and_extract(&task.file_path, false)
+                    .await
+                    .map_err(|e| format!("Index extraction failed: {}", e))?
             }
         } else {
-            classify_and_extract(&task.file_path, false).await.map_err(|e| format!("Index extraction failed: {}", e))?
-        }
-    } else {
-        classify_and_extract(&task.file_path, false).await.map_err(|e| format!("Index extraction failed: {}", e))?
-    };
+            classify_and_extract(&task.file_path, false)
+                .await
+                .map_err(|e| format!("Index extraction failed: {}", e))?
+        };
 
-    queue.update_progress(
-        &task.id,
-        &task.stage,
-        40.0,
-        0,
-        0,
-        "indexing text",
-    ).await
-    .map_err(|e| format!("update progress failed: {}", e))?;
+    queue
+        .update_progress(&task.id, &task.stage, 40.0, 0, 0, "indexing text")
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 40.0, 0, 0, "indexing text");
 
     let headings = extract_headings(&classified.text);
@@ -660,41 +706,84 @@ async fn process_index(
         }
 
         // 向量/FTS 索引
+        // Track C: emit embed sub-progress — 入口提示 + 完成提示
+        let _ = app_handle.emit(
+            EVT_INGEST_EMBED,
+            serde_json::json!({
+                "doc_id": task.doc_id,
+                "action": "start",
+                "model": if kb.has_vector_search() { "embed" } else { "deterministic" },
+                "progress": 0.0,
+            }),
+        );
         if let Err(e) = kb.index_document(&task.doc_id, &sections, &[]) {
+            let _ = app_handle.emit(
+                EVT_INGEST_EMBED,
+                serde_json::json!({
+                    "doc_id": task.doc_id,
+                    "action": "failed",
+                    "model": "embed",
+                    "progress": 0.0,
+                    "error": e.to_string(),
+                }),
+            );
             return Err(format!("KB index failed: {}", e));
         }
+        let _ = app_handle.emit(
+            EVT_INGEST_EMBED,
+            serde_json::json!({
+                "doc_id": task.doc_id,
+                "action": "done",
+                "model": if kb.has_vector_search() { "embed" } else { "deterministic" },
+                "progress": 1.0,
+            }),
+        );
     } else {
         log::warn!("IngestWorker: KB not available for {}", task.doc_id);
+        let _ = app_handle.emit(
+            EVT_INGEST_EMBED,
+            serde_json::json!({
+                "doc_id": task.doc_id,
+                "action": "skipped",
+                "model": "none",
+                "progress": 0.0,
+            }),
+        );
     }
 
-    queue.update_progress(
-        &task.id,
+    queue
+        .update_progress(&task.id, &task.stage, 70.0, 0, 0, "extracting molecules")
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
+    emit_progress(
+        app_handle,
+        task,
         &task.stage,
         70.0,
         0,
         0,
         "extracting molecules",
-    ).await
-    .map_err(|e| format!("update progress failed: {}", e))?;
-    emit_progress(app_handle, task, &task.stage, 70.0, 0, 0, "extracting molecules");
+    );
 
     let sidecar_url = crate::core::constants::sidecar_url();
-    let detected = extract_molecules_from_pdf(&task.file_path, &classified, &sidecar_url, project_root)
-        .await
-        .unwrap_or_else(|e| {
-            log::warn!(
-                "IngestWorker: molecule extraction failed for {}: {}",
-                task.doc_id,
-                e
-            );
-            vec![]
-        });
+    let detected =
+        extract_molecules_from_pdf(&task.file_path, &classified, &sidecar_url, project_root)
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!(
+                    "IngestWorker: molecule extraction failed for {}: {}",
+                    task.doc_id,
+                    e
+                );
+                vec![]
+            });
 
     if !detected.is_empty() {
         if let Ok(db) = MoleculeDatabase::open(project_root) {
             let mut saved = 0usize;
             for mol in &detected {
-                let (clean_smiles, esmiles_opt, semantic_tags) = separate_esmiles_layers(&mol.esmiles);
+                let (clean_smiles, esmiles_opt, semantic_tags) =
+                    separate_esmiles_layers(&mol.esmiles);
                 let mol_id = generate_uuid();
                 let record = MoleculeRecord {
                     mol_id: mol_id.clone(),
@@ -755,15 +844,10 @@ async fn process_index(
         proj.set_document_status(&task.doc_id, "index_status", "done");
     }
 
-    queue.update_progress(
-        &task.id,
-        &task.stage,
-        100.0,
-        0,
-        0,
-        "indexed",
-    ).await
-    .map_err(|e| format!("update progress failed: {}", e))?;
+    queue
+        .update_progress(&task.id, &task.stage, 100.0, 0, 0, "indexed")
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 100.0, 0, 0, "indexed");
 
     log::info!(
@@ -778,7 +862,10 @@ async fn process_index(
 
 /// 把任务状态重置为 pending（用于阶段切换后继续处理）。
 async fn reset_pending(queue: &IngestQueue, task_id: &str) -> Result<(), String> {
-    queue.set_pending(task_id).await.map_err(|e| format!("reset pending failed: {}", e))
+    queue
+        .set_pending(task_id)
+        .await
+        .map_err(|e| format!("reset pending failed: {}", e))
 }
 
 /// 阶段失败时，把对应 DocumentProject 状态标记为 error。
@@ -869,7 +956,11 @@ mod tests {
         drop(f);
 
         let result = preflight_check("inspector", &pdf, tmp.path()).await;
-        assert!(result.is_ok(), "preflight should pass for valid paths: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "preflight should pass for valid paths: {:?}",
+            result
+        );
     }
 
     #[tokio::test]

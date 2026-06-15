@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import 'katex/dist/katex.min.css'
-import { showToast } from '../hooks/useToast'
+import { showToast } from '@/hooks/useToast'
 
 import {
   agentInit,
@@ -11,24 +11,27 @@ import {
   agentDestroySession,
   listDocumentsTauri,
   moleculeStatsTauri,
-} from '../api/tauri'
+} from '@/api/tauri'
 
-import { useAppContext } from '../context/AppContext'
-import { PageContainer } from '../components/ui/'
-import ChatContextChip from './ChatContextChip'
-import ChatMessage, { type LocalMessage } from './chat/ChatMessage'
-import ChatTypingIndicator from './chat/ChatTypingIndicator'
-import ChatInput from './chat/ChatInput'
+import { useAppContext } from '@/context/AppContext'
+import ChatContextChip from '@/components/ChatContextChip'
+import ChatMessage, { type LocalMessage } from '@/components/chat/ChatMessage'
+import ChatTypingIndicator from '@/components/chat/ChatTypingIndicator'
+import ChatInput from '@/components/chat/ChatInput'
 
-import { FolderIcon, FileTextIcon, FlaskIcon } from './icons'
+import { FolderIcon, FileTextIcon, FlaskIcon } from '@/components/icons'
 
-export default function Chat() {
+interface ChatTabProps {
+  initialQuery?: string
+}
+
+export default function ChatTab({ initialQuery = '' }: ChatTabProps) {
   const { projectRoot } = useAppContext()
   const sessionIdRef = useRef<string>('')
   const [messages, setMessages] = useState<LocalMessage[]>([
     { role: 'assistant', content: '你好！我是 MBForge AI 助手。有什么关于分子或文献的问题可以问我。' },
   ])
-  const [input, setInput] = useState('')
+  const [input, setInput] = useState(initialQuery)
   const [isLoading, setIsLoading] = useState(false)
   const [docCount, setDocCount] = useState(0)
   const [molCount, setMolCount] = useState(0)
@@ -42,17 +45,13 @@ export default function Chat() {
     overscan: 5,
   })
 
-  const isNearBottom = () => {
+  useEffect(() => {
     const el = messagesContainerRef.current
-    if (!el) return true
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 100
-  }
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+      virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' })
+    }
+  }, [messages, virtualizer])
 
-  const scrollToBottom = () => {
-    virtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' })
-  }
-
-  // Initialize Tauri agent on mount + load history
   useEffect(() => {
     const initAgent = async () => {
       const sid = crypto.randomUUID()
@@ -60,7 +59,7 @@ export default function Chat() {
 
       try {
         await agentInit('http://127.0.0.1:18792')
-        await agentCreateSession(sid, projectRoot ?? undefined)
+        await agentCreateSession(sid, projectRoot)
 
         const history = await agentGetHistory(sid)
         if (history.length > 0) {
@@ -75,7 +74,7 @@ export default function Chat() {
       }
     }
 
-    initAgent()
+    void initAgent()
 
     return () => {
       if (sessionIdRef.current) {
@@ -83,10 +82,6 @@ export default function Chat() {
       }
     }
   }, [projectRoot])
-
-  useEffect(() => {
-    if (isNearBottom()) scrollToBottom()
-  }, [messages])
 
   useEffect(() => {
     if (!projectRoot) return
@@ -115,57 +110,51 @@ export default function Chat() {
     let settled = false
 
     try {
-      if (sessionIdRef.current) {
-        await agentChatStream(
-          sessionIdRef.current,
-          userMsg,
-          (delta) => {
-            fullContent += delta
+      await agentChatStream(
+        sessionIdRef.current,
+        userMsg,
+        (delta) => {
+          fullContent += delta
+          setMessages(prev =>
+            prev.map(m => m.id === assistantMsgId
+              ? { ...m, content: fullContent }
+              : m
+            )
+          )
+        },
+        () => { if (!settled) settled = true },
+        (error) => {
+          if (!settled) {
+            settled = true
             setMessages(prev =>
               prev.map(m => m.id === assistantMsgId
-                ? { ...m, content: fullContent }
+                ? { ...m, content: `错误: ${error}` }
                 : m
               )
             )
-          },
-          () => { if (!settled) settled = true },
-          (error) => {
-            if (!settled) {
-              settled = true
-              setMessages(prev =>
-                prev.map(m => m.id === assistantMsgId
-                  ? { ...m, content: `错误: ${error}` }
-                  : m
-                )
-              )
-            }
-          },
-        )
-      }
+          }
+        },
+      )
     } catch (e) {
-      if (!settled) {
-        setMessages(prev =>
-          prev.map(m => m.id === assistantMsgId
-            ? { ...m, content: `网络错误: ${e instanceof Error ? e.message : String(e)}` }
-            : m
-          )
+      setMessages(prev =>
+        prev.map(m => m.id === assistantMsgId
+          ? { ...m, content: `网络错误: ${e instanceof Error ? e.message : String(e)}` }
+          : m
         )
-      }
+      )
     } finally {
       setIsLoading(false)
     }
   }, [input, isLoading, messages, projectRoot])
 
   return (
-    <PageContainer>
-      {/* 上下文信息 — 顶部 */}
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
       <div style={{ display: 'flex', gap: '16px', flexShrink: 0 }}>
         <ChatContextChip icon={<FolderIcon size={14} />} label={projectRoot ? projectRoot.split('/').pop() || projectRoot : '未选择项目'} />
         <ChatContextChip icon={<FileTextIcon size={14} />} label={`${docCount} 篇文献`} />
         <ChatContextChip icon={<FlaskIcon size={14} />} label={`${molCount} 个分子`} />
       </div>
 
-      {/* 消息区域 */}
       <div ref={messagesContainerRef} className="chat-messages">
         <div className="chat-virtual-list" style={{ height: `${virtualizer.getTotalSize()}px` }}>
           {virtualizer.getVirtualItems().map((virtualItem) => {
@@ -186,7 +175,6 @@ export default function Chat() {
         {isLoading && <ChatTypingIndicator />}
       </div>
 
-      {/* 快捷操作 + 输入框 — 底部 */}
       <ChatInput
         input={input}
         onInputChange={setInput}
@@ -194,6 +182,6 @@ export default function Chat() {
         isLoading={isLoading}
         projectRoot={projectRoot}
       />
-    </PageContainer>
+    </div>
   )
 }

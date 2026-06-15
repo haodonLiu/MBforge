@@ -11,12 +11,17 @@ export default function Discover() {
   return (
     <PageContainer>
       <DiscoverTabs active={activeTab} onChange={setActiveTab} />
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        {activeTab === 'search' ? (
-          <SearchTab initialQuery={sharedQuery} onQueryChange={setSharedQuery} />
-        ) : (
-          <ChatTab initialQuery={sharedQuery} />
-        )}
+      <div className="discover-content">
+        <div
+          className={`discover-tab-panel${activeTab !== 'search' ? ' discover-tab-panel-hidden' : ''}`}
+        >
+          <SearchTab query={sharedQuery} onQueryChange={setSharedQuery} />
+        </div>
+        <div
+          className={`discover-tab-panel${activeTab !== 'chat' ? ' discover-tab-panel-hidden' : ''}`}
+        >
+          <ChatTab query={sharedQuery} onQueryChange={setSharedQuery} />
+        </div>
       </div>
     </PageContainer>
   )

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { kbSearchStream } from '@/api/tauri'
 import { SearchIcon } from '@/components/icons'
 import { useAppContext } from '@/context/AppContext'
-import { tapScale } from '@/hooks/useAnimations'
+import { tapScale, makeStaggerContainer, staggerItem } from '@/hooks/useAnimations'
 import BodyText from '@/components/ui/BodyText'
 import Skeleton from '@/components/ui/Skeleton'
 import SearchResultItem from '@/components/search/SearchResultItem'
@@ -24,53 +24,15 @@ interface ResultItem {
 type SortKey = 'relevance' | 'page'
 
 interface SearchTabProps {
-  initialQuery?: string
-  onQueryChange?: (query: string) => void
+  query: string
+  onQueryChange: (query: string) => void
 }
 
-const HINTS = ['阿司匹林', '分子对接', 'SAR分析', 'IC50']
+const stagger = makeStaggerContainer(0.05)
 
-function mapResult(
-  r: { text?: string; metadata?: Record<string, unknown>; score?: number },
-  i: number,
-): ResultItem {
-  const md = r.metadata ?? {}
-  const pageStart = typeof md.page_start === 'number' ? md.page_start : null
-  const pageEnd = typeof md.page_end === 'number' ? md.page_end : null
-  const path = typeof md.path === 'string' ? md.path : ''
-  const title = typeof md.doc_id === 'string'
-    ? md.doc_id
-    : typeof md.title === 'string'
-      ? md.title
-      : '文档片段'
-  const source = typeof md.source === 'string' ? md.source : path || '未知来源'
-  return {
-    id: String(i),
-    title,
-    snippet: r.text || '',
-    source,
-    sourcePath: path,
-    page: pageStart,
-    pageEnd,
-    score: typeof r.score === 'number' ? r.score : 0,
-    tags: [],
-  }
-}
-
-function sortResults(items: ResultItem[], key: SortKey): ResultItem[] {
-  if (key === 'relevance') return items
-  return [...items].sort((a, b) => {
-    const ap = a.page ?? Number.MAX_SAFE_INTEGER
-    const bp = b.page ?? Number.MAX_SAFE_INTEGER
-    if (ap !== bp) return ap - bp
-    return b.score - a.score
-  })
-}
-
-export default function SearchTab({ initialQuery = '', onQueryChange }: SearchTabProps) {
+export default function SearchTab({ query, onQueryChange }: SearchTabProps) {
   const { t } = useTranslation()
   const { projectRoot } = useAppContext()
-  const [query, setQuery] = useState(initialQuery)
   const [results, setResults] = useState<ResultItem[]>([])
   const [hasSearched, setHasSearched] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -79,13 +41,48 @@ export default function SearchTab({ initialQuery = '', onQueryChange }: SearchTa
   const [sortKey, setSortKey] = useState<SortKey>('relevance')
   const unlistenRef = useRef<(() => void) | null>(null)
 
+  const hints = t('discover.search.hints', { returnObjects: true }) as string[]
+
   useEffect(() => {
     return () => { unlistenRef.current?.() }
   }, [])
 
-  useEffect(() => {
-    onQueryChange?.(query)
-  }, [query, onQueryChange])
+  const mapResult = (
+    r: { text?: string; metadata?: Record<string, unknown>; score?: number },
+    i: number,
+  ): ResultItem => {
+    const md = r.metadata ?? {}
+    const pageStart = typeof md.page_start === 'number' ? md.page_start : null
+    const pageEnd = typeof md.page_end === 'number' ? md.page_end : null
+    const path = typeof md.path === 'string' ? md.path : ''
+    const title = typeof md.doc_id === 'string'
+      ? md.doc_id
+      : typeof md.title === 'string'
+        ? md.title
+        : t('discover.search.fallbackTitle')
+    const source = typeof md.source === 'string' ? md.source : path || t('discover.search.unknownSource')
+    return {
+      id: String(i),
+      title,
+      snippet: r.text || '',
+      source,
+      sourcePath: path,
+      page: pageStart,
+      pageEnd,
+      score: typeof r.score === 'number' ? r.score : 0,
+      tags: [],
+    }
+  }
+
+  const sortResults = (items: ResultItem[], key: SortKey): ResultItem[] => {
+    if (key === 'relevance') return items
+    return [...items].sort((a, b) => {
+      const ap = a.page ?? Number.MAX_SAFE_INTEGER
+      const bp = b.page ?? Number.MAX_SAFE_INTEGER
+      if (ap !== bp) return ap - bp
+      return b.score - a.score
+    })
+  }
 
   const doSearch = async (term: string) => {
     if (!projectRoot) {
@@ -125,7 +122,7 @@ export default function SearchTab({ initialQuery = '', onQueryChange }: SearchTa
       unlistenRef.current = unlisten
     } catch (e) {
       setResults([])
-      setError(e instanceof Error ? e.message : '搜索失败')
+      setError(e instanceof Error ? e.message : t('discover.search.searchFailed'))
       setIsLoading(false)
     }
   }
@@ -137,29 +134,25 @@ export default function SearchTab({ initialQuery = '', onQueryChange }: SearchTa
   }
 
   const quickSearch = (term: string) => {
-    setQuery(term)
+    onQueryChange(term)
     void doSearch(term)
+  }
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onQueryChange(e.target.value)
   }
 
   return (
     <>
       <div style={{ marginBottom: '32px' }}>
         <motion.div
+          className="discover-search-box"
           animate={{
             borderColor: isFocused ? 'var(--accent)' : 'var(--border)',
             boxShadow: isFocused ? '0 0 0 4px var(--accent-muted)' : 'none',
             scale: isFocused ? 1.01 : 1,
           }}
           transition={{ duration: 0.2 }}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            padding: '16px 20px',
-            background: 'var(--bg-surface)',
-            border: '2px solid var(--border)',
-            borderRadius: '14px',
-          }}
         >
           <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
             <SearchIcon size={22} />
@@ -167,57 +160,24 @@ export default function SearchTab({ initialQuery = '', onQueryChange }: SearchTa
           <input
             type="text"
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={handleChange}
             onKeyDown={handleSearch}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder={projectRoot ? t('search.placeholder') : t('search.placeholderNoProject')}
+            placeholder={projectRoot ? t('discover.search.placeholder') : t('discover.search.placeholderNoProject')}
             disabled={!projectRoot}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              fontSize: '16px',
-              color: 'var(--text-primary)',
-              fontFamily: 'inherit',
-            }}
+            className="discover-search-input"
           />
         </motion.div>
-        <div style={{
-          display: 'flex',
-          gap: '8px',
-          marginTop: '12px',
-        }}>
-          {HINTS.map(hint => (
+        <div className="discover-search-hints">
+          {hints.map(hint => (
             <motion.button
               key={hint}
               type="button"
               onClick={() => quickSearch(hint)}
               whileTap={tapScale}
-              style={{
-                padding: '6px 12px',
-                fontSize: '12px',
-                color: 'var(--text-muted)',
-                background: 'var(--bg-surface)',
-                borderRadius: '6px',
-                cursor: projectRoot ? 'pointer' : 'not-allowed',
-                transition: 'all 0.15s',
-                opacity: projectRoot ? 1 : 0.5,
-                border: 'none',
-                outline: 'none',
-                fontFamily: 'inherit',
-              }}
-              onMouseEnter={e => {
-                if (!projectRoot) return
-                e.currentTarget.style.background = 'var(--bg-hover)'
-                e.currentTarget.style.color = 'var(--text-secondary)'
-              }}
-              onMouseLeave={e => {
-                if (!projectRoot) return
-                e.currentTarget.style.background = 'var(--bg-surface)'
-                e.currentTarget.style.color = 'var(--text-muted)'
-              }}
+              disabled={!projectRoot}
+              className="discover-search-hint"
             >
               {hint}
             </motion.button>
@@ -227,59 +187,32 @@ export default function SearchTab({ initialQuery = '', onQueryChange }: SearchTa
 
       {hasSearched && (
         <>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '16px',
-            gap: '12px',
-            flexWrap: 'wrap',
-          }}>
+          <div className="discover-search-toolbar">
             <BodyText size="sm" muted>
-              {isLoading ? '搜索中...' : error ? `搜索出错: ${error}` : `找到 ${results.length} 条结果`}
+              {isLoading
+                ? t('discover.search.searching')
+                : error
+                  ? t('discover.search.error', { error })
+                  : t('discover.search.resultsCount', { count: results.length })}
             </BodyText>
-            <div style={{
-              display: 'inline-flex',
-              gap: '4px',
-              padding: '2px',
-              background: 'var(--bg-surface)',
-              borderRadius: '8px',
-              border: '1px solid var(--border)',
-            }}>
+            <div className="discover-search-sort">
               {(['relevance', 'page'] as const).map((k) => (
                 <button
                   key={k}
                   type="button"
                   onClick={() => setSortKey(k)}
-                  style={{
-                    padding: '4px 12px',
-                    fontSize: '12px',
-                    color: sortKey === k ? 'var(--accent)' : 'var(--text-muted)',
-                    background: sortKey === k ? 'var(--bg-elevated)' : 'transparent',
-                    border: 'none',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontWeight: sortKey === k ? 600 : 400,
-                    transition: 'all 0.15s',
-                    fontFamily: 'inherit',
-                  }}
+                  data-active={sortKey === k}
+                  className="discover-search-sort-btn"
                 >
-                  {k === 'relevance' ? '按相关度' : '按页码'}
+                  {k === 'relevance' ? t('discover.search.sortRelevance') : t('discover.search.sortPage')}
                 </button>
               ))}
             </div>
           </div>
 
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-          }}>
+          <div className="discover-search-results">
             <motion.div
-              variants={{
-                hidden: {},
-                show: { transition: { staggerChildren: 0.05 } },
-              }}
+              variants={stagger}
               initial="hidden"
               animate="show"
             >
@@ -287,14 +220,10 @@ export default function SearchTab({ initialQuery = '', onQueryChange }: SearchTa
                 {sortResults(results, sortKey).map((r) => (
                   <motion.div
                     key={r.id}
-                    variants={{
-                      hidden: { opacity: 0, y: 10 },
-                      show: { opacity: 1, y: 0, transition: { duration: 0.25 } },
-                      exit: { opacity: 0 },
-                    }}
+                    variants={staggerItem}
                     initial="hidden"
                     animate="show"
-                    exit="exit"
+                    exit={{ opacity: 0 }}
                   >
                     <SearchResultItem result={r} />
                   </motion.div>
@@ -302,7 +231,7 @@ export default function SearchTab({ initialQuery = '', onQueryChange }: SearchTa
               </AnimatePresence>
             </motion.div>
             {isLoading && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="discover-search-skeleton">
                 <Skeleton variant="row" count={3} height={80} />
               </div>
             )}

@@ -56,7 +56,6 @@ def ensure_molscribe_model(model_dir: Path | None = None) -> str:
         ckpt = d / CHECKPOINT_NAME
         if ckpt.exists():
             return str(ckpt)
-        # 返回目录路径（transformers 格式）
         return str(d)
 
     # 通过 ResourceManager 下载
@@ -65,23 +64,7 @@ def ensure_molscribe_model(model_dir: Path | None = None) -> str:
         result = ResourceManager.ensure("molscribe")
         if result.status.value == "ready" and result.local_path:
             return result.local_path
-    except ImportError:
-        pass
-
-    # 回退：直接 ModelScope 下载（指定 local_dir 确保文件落在预期位置）
-    logger.info("正在从 ModelScope 下载 MolScribe 到 %s ...", d)
-    d.mkdir(parents=True, exist_ok=True)
-    try:
-        from modelscope import snapshot_download
-        snapshot_download(MODEL_ID, local_dir=str(d), local_dir_use_symlinks=False)
-    except ImportError:
-        raise RuntimeError("需要: pip install modelscope")
     except Exception as e:
-        raise RuntimeError(f"下载失败: {e}")
+        logger.warning("ResourceManager ensure failed: %s", e)
 
-    if not is_model_available(d):
-        raise RuntimeError(f"下载完成但找不到 {CHECKPOINT_NAME}，请检查 {d}")
-    ckpt = d / CHECKPOINT_NAME
-    if ckpt.exists():
-        return str(ckpt)
-    return str(d)
+    raise RuntimeError(f"MolScribe 模型不可用，请运行环境检查")

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { FileTextIcon } from '../icons'
 import Card from '../ui/Card'
 import BodyText from '../ui/BodyText'
@@ -35,29 +36,30 @@ const BAND_VARIANT: Record<ScoreBand, 'success' | 'warning' | 'neutral'> = {
 }
 
 const BAND_LABEL: Record<ScoreBand, string> = {
-  high: '高度相关',
-  mid: '相关',
-  low: '参考',
+  high: 'search.highlyRelevant',
+  mid: 'search.relevant',
+  low: 'search.reference',
 }
 
-function pageLabel(page: number | null, pageEnd: number | null): string | null {
+function pageLabel(page: number | null, pageEnd: number | null, t: (key: string, opts?: Record<string, unknown>) => string): string | null {
   if (page == null) return null
-  if (pageEnd != null && pageEnd !== page) return `第 ${page}-${pageEnd} 页`
-  return `第 ${page} 页`
+  if (pageEnd != null && pageEnd !== page) return t('search.pageRange', { start: page, end: pageEnd })
+  return t('search.singlePage', { page })
 }
 
 /**
  * 搜索结果单项组件。
  */
 export default function SearchResultItem({ result }: SearchResultItemProps) {
+  const { t } = useTranslation()
   const band = scoreBand(result.score)
   const variant = BAND_VARIANT[band]
   const scoreLabel = `${(result.score * 100).toFixed(0)}%`
-  const pageText = pageLabel(result.page, result.pageEnd)
+  const pageText = pageLabel(result.page, result.pageEnd, t)
 
   const handleSourceClick = () => {
     // TODO 下一迭代：AppContext.openDocument(docId, page)
-    showToast('PDF 跳转将在下个迭代实现', 'info')
+    showToast(t('search.pdfJumpComingSoon'), 'info')
   }
 
   return (
@@ -113,7 +115,7 @@ export default function SearchResultItem({ result }: SearchResultItemProps) {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-          <span title={BAND_LABEL[band]}>
+          <span title={t(BAND_LABEL[band])}>
             <Badge variant={variant} dot>
               {scoreLabel}
             </Badge>

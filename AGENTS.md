@@ -149,9 +149,9 @@ MBForge/
 │   │       │   └── vlm_chem.rs         # VLM 化学识别 + SHA-256 缓存
 │   │       ├── pdf/                # PDF 解析客户端
 │   │       │   ├── images.rs           # lopdf 图像提取
-│   │       │   ├── liteparse.rs        # LiteParse 客户端
 │   │       │   ├── llama_parse.rs      # LlamaParse API 客户端
 │   │       │   ├── mineru.rs           # MinerU API 客户端
+│   │       │   ├── sidecar_render.rs   # Python sidecar PDF 页面渲染
 │   │       │   └── uniparser.rs        # UniParser API 客户端
 │   │       ├── structure/          # 文档结构处理
 │   │       │   ├── intent.rs           # 意图路由（LLM 分类）
@@ -893,4 +893,6 @@ PDF 输入
 | E-SMILES 规范 | `docs/esmiles-spec.md` | E-SMILES 格式语法 + MBForge 集成 |
 | MoleCode 规范 | `docs/molecode-spec.md` | MoleCode 图语法 + 缩写展开规则 |
 | 归档文档 | `docs/archive/` | 已过时的迁移计划文档 |
-| LiteParse API | `src-tauri/docs/liteparse/` | LiteParse API 参考存档 |
+| PyMuPDF 渲染 | `src/mbforge/server.py` | Python sidecar PDF 页面渲染 |
+
+下载模型的默认路径是~/.cache/,在处理模型下载任务的时候应当正确读取该路径下的文件，并确定每个模型的命名习惯以确保编码正确

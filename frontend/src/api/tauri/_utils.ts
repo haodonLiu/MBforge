@@ -1,5 +1,6 @@
 /** Shared utilities for Tauri IPC bridges. */
 
+import { invoke } from '@tauri-apps/api/core'
 import { AppError, ErrorCode, getErrorMessage } from '@/utils/errors'
 import { showToast } from '@/hooks/useToast'
 
@@ -86,5 +87,32 @@ export function registerGlobalErrorHandlers(): () => void {
   return () => {
     window.removeEventListener('error', onError)
     window.removeEventListener('unhandledrejection', onRejection)
+  }
+}
+
+/**
+ * Open an external http(s) URL in the system default browser.
+ *
+ * `window.open` is unreliable inside a Tauri webview (blocked or
+ * replaces the existing window). Delegate to the `open_external_url`
+ * Rust command which calls the OS launcher (`cmd /C start`,
+ * `open`, or `xdg-open`).
+ *
+ * Falls back to `window.open` in non-Tauri (browser dev) mode so
+ * devs can still click the link while iterating.
+ */
+export async function openExternalUrl(url: string): Promise<void> {
+  if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+    showToast(`无效的链接: ${url}`, 'error')
+    return
+  }
+  if (!isTauriAvailable()) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+    return
+  }
+  try {
+    await invoke<void>('open_external_url', { url })
+  } catch (e) {
+    showToast(`打开链接失败: ${String(e)}`, 'error')
   }
 }

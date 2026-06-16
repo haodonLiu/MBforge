@@ -267,3 +267,43 @@ pub async fn open_file(project_root: String, path: String) -> Result<(), String>
 
     Ok(())
 }
+
+/// Open an external URL in the system default browser.
+///
+/// Frontend cannot use `window.open` reliably inside a Tauri webview
+/// (the new tab is either blocked or replaced by the existing window
+/// depending on version). This command delegates to the OS launcher
+/// (`cmd /C start` on Windows, `open` on macOS, `xdg-open` on Linux)
+/// so the user's default browser picks up the URL.
+#[tauri::command]
+pub async fn open_external_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(format!(
+            "open_external_url: refusing non-http(s) URL: {url}"
+        ));
+    }
+    log::info!("open_external_url: {url}");
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .spawn()
+            .map_err(|e| format!("open_external_url failed: {e}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("open_external_url failed: {e}"))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("open_external_url failed: {e}"))?;
+    }
+    Ok(())
+}

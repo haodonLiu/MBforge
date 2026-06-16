@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import Card from '../ui/Card'
 import Button from '../ui/Button'
 import BodyText from '../ui/BodyText'
@@ -12,6 +13,7 @@ interface ScanWarningsPanelProps {
 }
 
 export default function ScanWarningsPanel({ warnings, onDismiss }: ScanWarningsPanelProps) {
+  const { t } = useTranslation()
   if (warnings.length === 0) return null
   return (
     <Card padding="14px 18px" className="project-warnings-card">
@@ -21,7 +23,7 @@ export default function ScanWarningsPanel({ warnings, onDismiss }: ScanWarningsP
         </div>
         <div className="project-warnings-content">
           <BodyText size="sm" className="project-warnings-title">
-            扫描时跳过 {warnings.length} 个文件（位置或类型不合规）
+            {t('scan.skippedFiles', { count: warnings.length })}
           </BodyText>
           <div className="project-warnings-list">
             {warnings.slice(0, 50).map((w, i) => (
@@ -32,16 +34,16 @@ export default function ScanWarningsPanel({ warnings, onDismiss }: ScanWarningsP
             ))}
             {warnings.length > 50 && (
               <Caption className="project-warnings-more">
-                ……及其他 {warnings.length - 50} 个
+                {t('scan.andMore', { count: warnings.length - 50 })}
               </Caption>
             )}
           </div>
           <Caption className="project-warnings-hint">
-            请把 PDF 移到 <code>{PAPERS_DIR}/</code>，把 MD/TXT 移到 <code>{NOTES_DIR}/</code>，然后重新扫描
+            {t('scan.moveHint', { papers: PAPERS_DIR, notes: NOTES_DIR })}
           </Caption>
         </div>
         <Button variant="ghost" size="sm" onClick={onDismiss}>
-          知道了
+          {t('scan.dismiss')}
         </Button>
       </div>
     </Card>

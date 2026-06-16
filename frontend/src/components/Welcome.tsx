@@ -56,7 +56,7 @@ export default function Welcome({ onProjectOpened }: Props) {
         showToast(resp.error || t('welcome.openProject') + ' ' + t('common.noResults'), 'error')
       }
     } catch (e) {
-      showToast(`打开失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(t('welcome.openFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
     } finally {
       setLoading(false)
     }
@@ -74,7 +74,7 @@ export default function Welcome({ onProjectOpened }: Props) {
         showToast(resp.error || t('common.save') + ' ' + t('common.noResults'), 'error')
       }
     } catch (e) {
-      showToast(`创建失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(t('welcome.createFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
     } finally {
       setLoading(false)
     }
@@ -91,7 +91,7 @@ export default function Welcome({ onProjectOpened }: Props) {
         showToast(resp.error || t('welcome.openProject') + ' ' + t('common.noResults'), 'error')
       }
     } catch (e) {
-      showToast(`打开失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
+      showToast(t('welcome.openFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
     } finally {
       setLoading(false)
     }

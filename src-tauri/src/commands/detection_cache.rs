@@ -106,6 +106,9 @@ pub struct CachedExtractPageResponse {
 /// `project_root` + `doc_id` together identify the PDF. The source path is
 /// resolved from the project index (DocumentProject `source.pdf`). The image
 /// args are passed through to the sidecar unchanged.
+///
+/// `force` skips the cache read and always runs the sidecar, then overwrites
+/// the cached entry. Used by the "重新检测" button in the PDF viewer.
 #[tauri::command]
 pub async fn cached_extract_page(
     project_root: String,
@@ -116,6 +119,7 @@ pub async fn cached_extract_page(
     page_h_pts: f64,
     image_w: u32,
     image_h: u32,
+    force: Option<bool>,
 ) -> Result<CachedExtractPageResponse, String> {
     let project_root = clean_path(&project_root);
     let project_path = std::path::PathBuf::from(&project_root);
@@ -144,46 +148,60 @@ pub async fn cached_extract_page(
             }
         };
 
-    // Try cache.
-    if let Some(hash) = pdf_hash_cached(&pdf_abs).await {
-        let cache = if is_legacy {
-            DetectionCache::new(&project_path)
-        } else {
-            DetectionCache::for_document_project(&project_path, &doc_id)
-        };
-        if let Some(entry) = cache.get(&doc_slug, page, &hash) {
-            let results: Vec<serde_json::Value> = entry
-                .detections
-                .iter()
-                .map(|d| detection_to_sidecar_shape(d, page))
-                .collect();
-            log::debug!(
-                "[cached_extract_page] HIT {}/page {} ({} results)",
-                doc_slug,
-                page,
-                results.len()
-            );
-            let cache_path = if is_legacy {
-                project_path.join("index").join("detections")
+    // Cache key:
+    // - Legacy projects (papers/<slug>.pdf): use the PDF file stem.
+    // - DocumentProject (projects/<doc_id>/source.pdf): use the doc_id UUID,
+    //   matching how quick_moldet_scan_pdf / extract_molecules_from_pdf write
+    //   the cache.
+    let cache_key = if is_legacy {
+        doc_slug.clone()
+    } else {
+        doc_id.clone()
+    };
+
+    // Try cache unless force refresh is requested.
+    let force = force.unwrap_or(false);
+    if !force {
+        if let Some(hash) = pdf_hash_cached(&pdf_abs).await {
+            let cache = if is_legacy {
+                DetectionCache::new(&project_path)
             } else {
-                project_path
-                    .join(crate::core::config::constants::PROJECTS_DIR)
-                    .join(&doc_id)
-                    .join("cache")
-                    .join("detections")
+                DetectionCache::for_document_project(&project_path, &doc_id)
             };
-            return Ok(CachedExtractPageResponse {
-                count: results.len(),
-                results,
-                source: "cache".to_string(),
-                cache_path: Some(format!(
-                    "{}/{}/page_{:04}.json",
-                    cache_path.display(),
-                    doc_slug,
-                    page
-                )),
-                error: None,
-            });
+            if let Some(entry) = cache.get(&cache_key, page, &hash) {
+                let results: Vec<serde_json::Value> = entry
+                    .detections
+                    .iter()
+                    .map(|d| detection_to_sidecar_shape(d, page))
+                    .collect();
+                log::debug!(
+                    "[cached_extract_page] HIT {}/page {} ({} results)",
+                    cache_key,
+                    page,
+                    results.len()
+                );
+                let cache_path = if is_legacy {
+                    project_path.join("index").join("detections")
+                } else {
+                    project_path
+                        .join(crate::core::config::constants::PROJECTS_DIR)
+                        .join(&doc_id)
+                        .join("cache")
+                        .join("detections")
+                };
+                return Ok(CachedExtractPageResponse {
+                    count: results.len(),
+                    results,
+                    source: "cache".to_string(),
+                    cache_path: Some(format!(
+                        "{}/{}/page_{:04}.json",
+                        cache_path.display(),
+                        cache_key,
+                        page
+                    )),
+                    error: None,
+                });
+            }
         }
     }
 
@@ -260,7 +278,7 @@ pub async fn cached_extract_page(
                 .map(|d| d.as_secs_f64())
                 .unwrap_or(0.0);
             let entry = PageDetection {
-                doc_id: doc_slug.clone(),
+                doc_id: cache_key.clone(),
                 page,
                 pdf_hash: hash,
                 mtime,
@@ -280,8 +298,9 @@ pub async fn cached_extract_page(
     }
 
     log::debug!(
-        "[cached_extract_page] MISS {}/page {} → sidecar ({} results)",
-        doc_id,
+        "[cached_extract_page] {} {}/page {} → sidecar ({} results)",
+        if force { "FORCE" } else { "MISS" },
+        cache_key,
         page,
         parsed.count
     );
@@ -326,13 +345,20 @@ pub async fn get_cached_page_detections(
             }
         };
 
+    // Cache key must match cached_extract_page and the pipeline writers.
+    let cache_key = if is_legacy {
+        doc_slug.clone()
+    } else {
+        doc_id.clone()
+    };
+
     if let Some(hash) = pdf_hash_cached(&pdf_abs).await {
         let cache = if is_legacy {
             DetectionCache::new(&project_path)
         } else {
             DetectionCache::for_document_project(&project_path, &doc_id)
         };
-        if let Some(entry) = cache.get(&doc_slug, page, &hash) {
+        if let Some(entry) = cache.get(&cache_key, page, &hash) {
             let results: Vec<serde_json::Value> = entry
                 .detections
                 .iter()
@@ -340,7 +366,7 @@ pub async fn get_cached_page_detections(
                 .collect();
             log::debug!(
                 "[get_cached_page_detections] HIT {}/page {} ({} results)",
-                doc_id,
+                cache_key,
                 page,
                 results.len()
             );
@@ -360,7 +386,7 @@ pub async fn get_cached_page_detections(
                 cache_path: Some(format!(
                     "{}/{}/page_{:04}.json",
                     cache_path.display(),
-                    doc_slug,
+                    cache_key,
                     page
                 )),
                 error: None,
@@ -496,6 +522,64 @@ pub fn clear_detection_cache(project_root: String) -> Result<(), String> {
     DetectionCache::new(&root)
         .clear_all()
         .map_err(|e: crate::core::error::AppError| e.to_string())
+}
+
+/// 删除单个文档的分子识别缓存。
+///
+/// 同时清理 DocumentProject 缓存目录（`projects/<doc_id>/cache/detections`）
+/// 和旧版全局缓存目录（`index/detections/<doc_slug>`），避免遗留。
+#[tauri::command]
+pub fn clear_detection_cache_doc(
+    project_root: String,
+    doc_id: String,
+) -> Result<(), String> {
+    let project_root = clean_path(&project_root);
+    let project_path = std::path::PathBuf::from(&project_root);
+
+    let (pdf_abs, doc_slug, is_legacy) =
+        match Project::open(&project_path).and_then(|p| p.get_document_source_path(&doc_id)) {
+            Some(path) => {
+                let slug = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(&doc_id)
+                    .to_string();
+                let legacy =
+                    path.starts_with(project_path.join(crate::core::config::constants::PAPERS_DIR));
+                (path, slug, legacy)
+            }
+            None => {
+                let path = project_path
+                    .join(crate::core::config::constants::PAPERS_DIR)
+                    .join(format!("{}.pdf", doc_id));
+                (path, doc_id.clone(), true)
+            }
+        };
+
+    // DocumentProject cache.
+    if !is_legacy {
+        let dp_cache = DetectionCache::for_document_project(&project_path, &doc_id);
+        let cache_key = doc_id.clone();
+        if let Err(e) = dp_cache.clear_doc(&cache_key) {
+            log::warn!("[clear_detection_cache_doc] DP cache clear failed: {}", e);
+        }
+    }
+
+    // Legacy cache.
+    let legacy_cache = DetectionCache::new(&project_path);
+    if let Err(e) = legacy_cache.clear_doc(&doc_slug) {
+        log::warn!(
+            "[clear_detection_cache_doc] legacy cache clear failed: {}",
+            e
+        );
+    }
+
+    log::info!(
+        "[clear_detection_cache_doc] cleared cache for {} ({})",
+        doc_id,
+        pdf_abs.display()
+    );
+    Ok(())
 }
 
 /// VLM 化学共指检测：调用 sidecar `/api/v1/moldet/coref` 识别页面图中的

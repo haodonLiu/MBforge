@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function MarkdownViewer({ projectRoot, filePath, onClose }: Props) {
+  const { t } = useTranslation()
   const [content, setContent] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -79,9 +81,9 @@ export default function MarkdownViewer({ projectRoot, filePath, onClose }: Props
               alignItems: 'center',
               gap: '4px',
             }}
-            title="预览"
+            title={t('md.preview')}
           >
-            <NoteIcon size={11} /> 预览
+            <NoteIcon size={11} /> {t('md.preview')}
           </button>
           <button
             onClick={() => setViewMode('source')}
@@ -98,9 +100,9 @@ export default function MarkdownViewer({ projectRoot, filePath, onClose }: Props
               alignItems: 'center',
               gap: '4px',
             }}
-            title="源码"
+            title={t('md.source')}
           >
-            <HashIcon size={11} /> 源码
+            <HashIcon size={11} /> {t('md.source')}
           </button>
         </div>
       </Toolbar>
@@ -119,7 +121,7 @@ export default function MarkdownViewer({ projectRoot, filePath, onClose }: Props
             textAlign: 'center', padding: '40px',
             color: 'var(--text-muted)', fontSize: '13px',
           }}>
-            加载中...
+            {t('common.loading')}
           </div>
         ) : error ? (
           <div style={{

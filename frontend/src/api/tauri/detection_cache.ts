@@ -39,6 +39,7 @@ export async function cachedExtractPage(params: {
   pageHPts: number
   imageW: number
   imageH: number
+  force?: boolean
 }): Promise<CachedExtractPageResponse> {
   return invoke<CachedExtractPageResponse>('cached_extract_page', {
     projectRoot: params.projectRoot,
@@ -49,6 +50,7 @@ export async function cachedExtractPage(params: {
     pageHPts: params.pageHPts,
     imageW: params.imageW,
     imageH: params.imageH,
+    force: params.force ?? false,
   })
 }
 
@@ -78,6 +80,13 @@ export async function getDetectionCacheStats(
 
 export async function clearDetectionCache(projectRoot: string): Promise<void> {
   return invoke<void>('clear_detection_cache', { projectRoot })
+}
+
+export async function clearDetectionCacheForDoc(
+  projectRoot: string,
+  docId: string,
+): Promise<void> {
+  return invoke<void>('clear_detection_cache_doc', { projectRoot, docId })
 }
 
 // ---------------------------------------------------------------------------

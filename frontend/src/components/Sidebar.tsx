@@ -4,8 +4,6 @@ import { useTranslation } from 'react-i18next'
 import { FlaskIcon, SearchIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon, NoteIcon, QueueIcon } from './icons'
 import IconButton from '@/components/ui/IconButton'
 import Tooltip from '@/components/ui/Tooltip'
-import ModelStatusButton from './ModelStatusButton'
-import { useAppContext } from '@/context/AppContext'
 
 interface Props {
   current: string
@@ -24,10 +22,6 @@ const PRIMARY_ITEMS = [
 const SECONDARY_ITEMS = [
   { id: 'queue', path: '/queue', icon: QueueIcon, labelKey: 'nav.queue' },
   { id: 'notes', path: '/notes', icon: NoteIcon, labelKey: 'nav.notes' },
-]
-
-const UTILITY_ITEMS = [
-  { id: 'settings', path: '/settings', icon: SettingsIcon, labelKey: 'nav.settings' },
 ]
 
 interface NavButtonProps {
@@ -73,7 +67,6 @@ function NavButton({
 export default function Sidebar({ current, onNavigate, onSwitchProject, projectScopeOpen, onToggleProjectScope }: Props) {
   const navigate = useNavigate()
   const { t } = useTranslation()
-  const { projectRoot } = useAppContext()
 
   const handleClick = (item: typeof PRIMARY_ITEMS[0]) => {
     onNavigate(item.id)
@@ -119,16 +112,6 @@ export default function Sidebar({ current, onNavigate, onSwitchProject, projectS
             icon={item.icon}
           />
         ))}
-
-        {UTILITY_ITEMS.map((item) => (
-          <NavButton
-            key={item.id}
-            active={current === item.id}
-            onClick={() => handleClick(item)}
-            label={t(item.labelKey)}
-            icon={item.icon}
-          />
-        ))}
       </div>
 
       <div style={{
@@ -139,7 +122,11 @@ export default function Sidebar({ current, onNavigate, onSwitchProject, projectS
         flexDirection: 'column',
         gap: '2px',
       }}>
-        <ModelStatusButton projectRoot={projectRoot} />
+        <Tooltip text={t('nav.settings')}>
+          <IconButton onClick={() => { onNavigate('settings'); void navigate('/settings') }}>
+            <SettingsIcon size={20} />
+          </IconButton>
+        </Tooltip>
         <Tooltip text={t('nav.switchProject')}>
           <IconButton onClick={onSwitchProject}>
             <PlusIcon size={20} />

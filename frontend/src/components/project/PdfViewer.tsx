@@ -66,7 +66,8 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
         isDetectMode={v.isDetectMode}
         isDetecting={v.isDetecting}
         canDetect={v.canDetect}
-        onDetect={v.handleDetectPage}
+        onDetect={() => v.handleDetectPage(true)}
+        onClearDetectionCache={v.handleClearDetectionCache}
         currentDetectionsCount={v.currentDetections.length}
       />
 

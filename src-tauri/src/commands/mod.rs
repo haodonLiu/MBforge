@@ -28,6 +28,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         file_ops::read_text_file,
         file_ops::upload_files,
         file_ops::delete_file,
+        file_ops::open_file,
+        file_ops::open_external_url,
         // project_ops
         project_ops::open_project,
         project_ops::scan_project_files,
@@ -61,6 +63,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         detection_cache::get_cached_page_detections,
         detection_cache::get_detection_cache_stats,
         detection_cache::clear_detection_cache,
+        detection_cache::clear_detection_cache_doc,
         detection_cache::vlm_chem_coref,
         detection_cache::label_for_mol_bbox,
         detection_cache::batch_quick_moldet_scan,

@@ -83,47 +83,30 @@ class CorefResult:
 
 # ---- 模型路径管理 ----
 
-def _default_model_dir() -> Path:
-    """返回模型缓存目录."""
-    # 优先使用环境变量
-    env_path = os.getenv("MBFORGE_MOLDETECT_COREF_MODEL")
-    if env_path:
-        return Path(env_path)
-
-    # 尝试 modelscope 缓存目录
-    cache_home = os.getenv("MODELSCOPE_CACHE", Path.home() / ".cache" / "modelscope")
-    model_dir = Path(cache_home) / "hub" / "models" / "studio-test" / "MolDetectCkpt"
-    if model_dir.exists():
-        return model_dir
-
-    # 尝试默认目录
-    default_dir = Path.home() / ".cache" / "mbforge" / "models" / "moldetect-coref"
-    return default_dir
-
-
 def _resolve_model_path(model_path: Path | None = None) -> Path | None:
-    """解析模型文件路径."""
+    """解析模型文件路径 — 统一走 ResourceManager."""
     if model_path is not None:
         if model_path.exists():
             return model_path
         logger.warning("指定的模型路径不存在：%s", model_path)
         return None
 
-    base_dir = _default_model_dir()
-    if not base_dir.exists():
-        logger.warning("模型目录不存在：%s", base_dir)
-        return None
+    try:
+        from mbforge.core.resource_manager import ResourceManager
+        resolved = ResourceManager.resolve_model_for_backend("moldet_coref")
+        if resolved is not None:
+            return resolved
+    except ImportError:
+        pass
 
-    # 搜索模型文件（支持多种扩展名）
-    for ext in (".ckpt", ".pt", ".pth", ".bin"):
-        candidates = list(base_dir.glob(f"*{ext}"))
-        if candidates:
-            # 优先选择包含 "coref" 的文件
-            coref_files = [c for c in candidates if "coref" in c.name.lower()]
-            if coref_files:
-                return coref_files[0]
-            return candidates[0]
+    # 兜底：环境变量
+    env_path = os.getenv("MBFORGE_MOLDETECT_COREF_MODEL")
+    if env_path:
+        p = Path(env_path)
+        if p.exists():
+            return p
 
+    logger.warning("MolDetect coref 模型未找到")
     return None
 
 

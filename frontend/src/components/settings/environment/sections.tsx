@@ -1,8 +1,7 @@
 import { PageContainer, Skeleton, Card, SectionTitle } from '@/components/ui'
 import ResponsiveStatGrid from '@/components/ui/ResponsiveStatGrid'
 import PathCard from './PathCard'
-import ModelCard from './ModelCard'
-import type { ModelInfo, ModelPaths } from './types'
+import type { ModelPaths } from './types'
 
 // ============================================================================
 // 加载占位（首屏骨架）
@@ -130,51 +129,6 @@ export function PathSection({
 }
 
 // ============================================================================
-// AI 模型列表区块
+// AI 模型下载区块已迁移至 Settings → Models tab (`ModelsTab.tsx`)。
+// 环境栏目 (SystemTab) 仅展示汇总统计，不再重复展示下载 UI。
 // ============================================================================
-
-export interface ModelsSectionProps {
-  models: ModelInfo[]
-  downloadedCount: number
-  onDownload: (id: string) => void
-  onDelete: (id: string) => void
-}
-
-export function ModelsSection({
-  models,
-  downloadedCount,
-  onDownload,
-  onDelete,
-}: ModelsSectionProps) {
-  return (
-    <Card padding="16px 20px">
-      <SectionTitle style={{ marginBottom: '16px' }}>
-        AI Models ({downloadedCount}/{models.length} downloaded)
-      </SectionTitle>
-
-      {models.length === 0 ? (
-        <div
-          style={{
-            padding: '24px',
-            textAlign: 'center',
-            color: 'var(--text-muted)',
-            fontSize: '13px',
-          }}
-        >
-          Loading models...
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {models.map(model => (
-            <ModelCard
-              key={model.id}
-              model={model}
-              onDownload={onDownload}
-              onDelete={onDelete}
-            />
-          ))}
-        </div>
-      )}
-    </Card>
-  )
-}

@@ -5,6 +5,7 @@
  * folder layout (formerly displayed on the home page). */
 
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { FOLDER_SPECS, PAPERS_DIR, NOTES_DIR } from '../config/folderLayout'
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export default function HelpPopover({ anchorRef, onClose }: Props) {
+  const { t } = useTranslation()
   const panelRef = useRef<HTMLDivElement | null>(null)
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null)
 
@@ -61,7 +63,7 @@ export default function HelpPopover({ anchorRef, onClose }: Props) {
     <div
       ref={panelRef}
       role="dialog"
-      aria-label="项目目录规范"
+      aria-label={t('help.folderRules')}
       style={{
         position: 'fixed',
         top: pos.top,
@@ -79,7 +81,7 @@ export default function HelpPopover({ anchorRef, onClose }: Props) {
         color: 'var(--text-primary)',
       }}
     >
-      <div style={{ fontWeight: 600, marginBottom: '10px' }}>项目目录规范</div>
+      <div style={{ fontWeight: 600, marginBottom: '10px' }}>{t('help.folderRules')}</div>
       <div
         style={{
           display: 'grid',
@@ -137,10 +139,9 @@ export default function HelpPopover({ anchorRef, onClose }: Props) {
           color: 'var(--text-muted)',
         }}
       >
-        创建项目后，app 会自动建好这 6 个目录。
+        {t('help.folderCreationHint')}
         <br />
-        把 PDF 放进 <code style={{ color: 'var(--text-primary)' }}>{PAPERS_DIR}/</code>，笔记放进{' '}
-        <code style={{ color: 'var(--text-primary)' }}>{NOTES_DIR}/</code>，其余由 pipeline 写入。
+        {t('help.folderInstruction', { papers: PAPERS_DIR, notes: NOTES_DIR })}
       </div>
     </div>
   )

@@ -39,6 +39,7 @@ interface Props {
   isDetecting: boolean
   canDetect: boolean
   onDetect: () => void
+  onClearDetectionCache: () => void
   currentDetectionsCount: number
 }
 
@@ -53,7 +54,7 @@ export default function PdfToolbar(props: Props) {
     showTextPanel, onToggleTextPanel,
     showImagePanel, extractedImagesCount, isLoadingImages, onLoadImages,
     pdfOcrSummary,
-    isDetectMode, isDetecting, canDetect, onDetect, currentDetectionsCount,
+    isDetectMode, isDetecting, canDetect, onDetect, onClearDetectionCache, currentDetectionsCount,
   } = props
 
   return (
@@ -158,13 +159,21 @@ export default function PdfToolbar(props: Props) {
             className="btn btn-primary pdf-detect-btn"
             onClick={onDetect}
             disabled={isDetecting || !canDetect}
-            title={canDetect ? '检测当前页分子' : (currentDetectionsCount > 0 ? '当前页已检测' : '页面渲染中，请稍候')}
+            title={canDetect ? (currentDetectionsCount > 0 ? '重新检测当前页分子' : '检测当前页分子') : '页面渲染中，请稍候'}
           >
-            {isDetecting ? '检测中...' : (currentDetectionsCount > 0 ? '已检测' : '检测')}
+            {isDetecting ? '检测中...' : (currentDetectionsCount > 0 ? '重新检测' : '检测')}
           </button>
           {currentDetectionsCount > 0 && (
             <span className="pdf-detect-count">{currentDetectionsCount}个</span>
           )}
+          <button
+            className="btn btn-secondary pdf-detect-btn"
+            onClick={onClearDetectionCache}
+            disabled={isDetecting}
+            title="清除该文档全部分子识别缓存"
+          >
+            清除缓存
+          </button>
         </>
       )}
     </Toolbar>

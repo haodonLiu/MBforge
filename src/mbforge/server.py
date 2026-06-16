@@ -13,6 +13,7 @@ All API-based models (OpenAI, Anthropic, etc.) are called directly from Rust.
 from __future__ import annotations
 
 import asyncio
+import base64
 import importlib
 import logging
 import os
@@ -20,7 +21,10 @@ import subprocess
 import sys
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Optional
+
+import fitz
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -118,6 +122,74 @@ async def _generic_error_handler(request: Request, exc: Exception) -> JSONRespon
         status_code=500,
         content={"success": False, "error": str(exc), "error_code": "internal_error"},
     )
+
+
+# ---------------------------------------------------------------------------
+# PDF rendering (PyMuPDF page images for MoldDet)
+# ---------------------------------------------------------------------------
+
+def _render_pages_sync(pdf_path: str, page_numbers: list[int], dpi: float) -> list[dict[str, Any]]:
+    """Render selected pages of a PDF to base64-encoded PNG images using PyMuPDF."""
+    doc = fitz.open(pdf_path)
+    try:
+        screenshots: list[dict[str, Any]] = []
+        for page_num in page_numbers:
+            page_index = int(page_num) - 1  # 1-based to 0-based
+            if page_index < 0 or page_index >= doc.page_count:
+                logger.warning(f"Invalid page number {page_num} for {pdf_path}")
+                continue
+            page = doc.load_page(page_index)
+            zoom = dpi / 72.0
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+            img_bytes = pix.tobytes("png")
+            encoded = base64.b64encode(img_bytes).decode("utf-8")
+            screenshots.append({
+                "page_num": int(page_num),
+                "width": pix.width,
+                "height": pix.height,
+                "image_base64": encoded,
+            })
+        return screenshots
+    finally:
+        doc.close()
+
+
+@app.post("/api/v1/pdf/render-pages")
+async def render_pages(request: Request) -> dict[str, Any]:
+    """Render selected PDF pages to PNG images.
+
+    Request body:
+        - pdf_path: absolute path to the PDF file
+        - page_numbers: list of 1-based page numbers to render
+        - dpi: rendering DPI (default 300)
+
+    Returns:
+        - screenshots: list of {page_num, width, height, image_base64}
+        - count: number of screenshots returned
+    """
+    pdf_path = ""
+    try:
+        body = await request.json()
+        pdf_path = body.get("pdf_path", "")
+        page_numbers = body.get("page_numbers", [])
+        dpi = body.get("dpi", 300.0)
+        if not pdf_path:
+            raise ValidationError("pdf_path is required")
+        if not isinstance(page_numbers, list) or not page_numbers:
+            raise ValidationError("page_numbers must be a non-empty list")
+        if not Path(pdf_path).exists():
+            raise ValidationError(f"PDF not found: {pdf_path}")
+        loop = asyncio.get_running_loop()
+        screenshots = await loop.run_in_executor(
+            None, lambda: _render_pages_sync(pdf_path, page_numbers, dpi)
+        )
+        return {"screenshots": screenshots, "count": len(screenshots)}
+    except (ValidationError, ModelNotAvailableError):
+        raise
+    except Exception as e:
+        logger.error(f"PDF render failed for {pdf_path}: {e}", exc_info=True)
+        raise ModelNotAvailableError(str(e))
 
 
 # ---------------------------------------------------------------------------

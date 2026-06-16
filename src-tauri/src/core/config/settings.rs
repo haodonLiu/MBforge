@@ -98,6 +98,21 @@ pub struct OcrConfig {
     pub model_name: String,
     pub use_hf_mirror: bool,
     pub use_pdf_inspector: bool,
+    /// Per-backend API keys. Populated from the OCR config modal so
+    /// users can configure each cloud backend without setting env vars.
+    /// On app load, `AppConfig::load` calls `apply_to_env` which mirrors
+    /// these into the corresponding `*_API_KEY` env vars (only if those
+    /// env vars are not already set, so .env / CI configs win).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mineru_api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uniparser_api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paddleocr_api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paddleocr_host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paddleocr_model: Option<String>,
 }
 
 impl Default for OcrConfig {
@@ -107,9 +122,55 @@ impl Default for OcrConfig {
             base_url: String::new(),
             api_key: String::new(),
             model_name: String::new(),
-            use_hf_mirror: true,
-            use_pdf_inspector: true,
+            use_hf_mirror: false,
+            use_pdf_inspector: false,
+            mineru_api_key: None,
+            uniparser_api_key: None,
+            paddleocr_api_key: None,
+            paddleocr_host: None,
+            paddleocr_model: None,
         }
+    }
+}
+
+impl OcrConfig {
+    /// Mirror per-backend keys/hosts into process env vars, but only when
+    /// the env var is currently unset (so explicit .env or shell exports
+    /// win over saved settings).
+    pub fn apply_to_env(&self) {
+        if let Some(k) = self.mineru_api_key.as_deref() {
+            if !k.trim().is_empty() {
+                set_if_unset("MINERU_API_KEY", k);
+            }
+        }
+        if let Some(k) = self.uniparser_api_key.as_deref() {
+            if !k.trim().is_empty() {
+                set_if_unset("UNIPARSER_API_KEY", k);
+            }
+        }
+        if let Some(k) = self.paddleocr_api_key.as_deref() {
+            if !k.trim().is_empty() {
+                set_if_unset("PADDLEOCR_API_KEY", k);
+            }
+        }
+        if let Some(h) = self.paddleocr_host.as_deref() {
+            if !h.trim().is_empty() {
+                set_if_unset("PADDLEOCR_HOST", h);
+            }
+        }
+        if let Some(m) = self.paddleocr_model.as_deref() {
+            if !m.trim().is_empty() {
+                set_if_unset("PADDLEOCR_MODEL", m);
+            }
+        }
+    }
+}
+
+fn set_if_unset(key: &str, value: &str) {
+    if std::env::var_os(key).is_none() {
+        // SAFETY: caller is single-threaded at startup (AppConfig::load
+        // runs before any worker / Tauri command handler is spawned).
+        unsafe { std::env::set_var(key, value) };
     }
 }
 
@@ -124,7 +185,7 @@ pub struct VlmConfig {
 impl Default for VlmConfig {
     fn default() -> Self {
         Self {
-            provider: "api".into(),
+            provider: "none".into(),
             base_url: String::new(),
             api_key: String::new(),
             model_name: String::new(),
@@ -179,9 +240,6 @@ impl Default for ModelServerConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PdfParseConfig {
-    /// Tesseract 语言代码：eng / chi_sim / chi_tra / jpn / kor / fra / deu / ...
-    #[serde(default = "default_ocr_language")]
-    pub ocr_language: String,
     /// 文本切块字符数（默认 512）
     #[serde(default = "default_chunk_size")]
     pub chunk_size: usize,
@@ -193,16 +251,12 @@ pub struct PdfParseConfig {
 impl Default for PdfParseConfig {
     fn default() -> Self {
         Self {
-            ocr_language: default_ocr_language(),
             chunk_size: default_chunk_size(),
             chunk_overlap: default_chunk_overlap(),
         }
     }
 }
 
-fn default_ocr_language() -> String {
-    "eng".into()
-}
 fn default_chunk_size() -> usize {
     512
 }
@@ -306,7 +360,12 @@ impl AppConfig {
 
     pub fn load() -> Self {
         let path = Self::config_path();
-        crate::core::helpers::load_json(&path).unwrap_or_default()
+        let config: Self = crate::core::helpers::load_json(&path).unwrap_or_default();
+        // Mirror OCR per-backend keys into process env vars so the
+        // existing `is_available()` checks (MinerU / Uniparser / PaddleOCR)
+        // pick them up without code changes. Env wins over saved settings.
+        config.ocr.apply_to_env();
+        config
     }
 
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {

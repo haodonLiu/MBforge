@@ -39,58 +39,50 @@ pub fn resources_catalog() -> Vec<serde_json::Value> {
 pub async fn models_download(resource_id: String, app: tauri::AppHandle) -> Result<String, String> {
     use tauri::Emitter;
 
+    log::info!("[models_download {}] command invoked", resource_id);
+
     let (tx, mut rx) = tokio::sync::mpsc::channel::<DownloadProgress>(32);
 
     // 后台任务：下载 + 转发进度到 Tauri 事件
-    let app_clone = app.clone();
     let rid = resource_id.clone();
     let download_task = tokio::spawn(async move {
+        log::info!("[models_download {}] spawn download_model", rid);
         let result = download_model(&rid, tx).await;
-        match result {
+        match &result {
             Ok(path) => {
-                let _ = app_clone.emit(
-                    "model-download-progress",
-                    DownloadProgress {
-                        status: "completed".into(),
-                        file: String::new(),
-                        file_progress: 1.0,
-                        file_index: 0,
-                        total_files: 0,
-                        error: String::new(),
-                    },
-                );
-                Ok(path.to_string_lossy().to_string())
+                log::info!("[models_download {}] download_model succeeded: {}", rid, path.display());
             }
             Err(e) => {
-                let _ = app_clone.emit(
-                    "model-download-progress",
-                    DownloadProgress {
-                        status: "failed".into(),
-                        file: String::new(),
-                        file_progress: 0.0,
-                        file_index: 0,
-                        total_files: 0,
-                        error: e.to_string(),
-                    },
-                );
-                Err(e.to_string())
+                log::error!("[models_download {}] download_model failed: {}", rid, e);
             }
         }
+        result.map(|p| p.to_string_lossy().to_string())
     });
 
     // 转发进度事件
     let app_events = app.clone();
+    let rid_forward = resource_id.clone();
     let forward_task = tokio::spawn(async move {
+        log::info!("[models_download {}] start forwarding progress events", rid_forward);
         while let Some(progress) = rx.recv().await {
-            let _ = app_events.emit("model-download-progress", progress);
+            log::debug!("[models_download {}] forward progress: {:?}", rid_forward, progress);
+            if let Err(e) = app_events.emit("model-download-progress", progress) {
+                log::warn!("[models_download {}] emit progress failed: {}", rid_forward, e);
+            }
         }
+        log::info!("[models_download {}] progress channel closed", rid_forward);
     });
 
     // 等待下载完成
     let result = download_task
         .await
-        .unwrap_or_else(|e| Err(format!("Task failed: {}", e)));
+        .unwrap_or_else(|e| {
+            log::error!("[models_download {}] download_task panicked: {}", resource_id, e);
+            Err(format!("Task failed: {}", e))
+        });
+    log::info!("[models_download {}] download_task finished: {:?}", resource_id, result);
     let _ = forward_task.await;
+    log::info!("[models_download {}] command returning: {:?}", resource_id, result);
     result
 }
 

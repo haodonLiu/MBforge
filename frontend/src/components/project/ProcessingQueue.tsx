@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { listen } from '@tauri-apps/api/event'
 import Button from '../ui/Button'
 import ProgressBar from '../ui/ProgressBar'
@@ -32,13 +33,7 @@ type StatusKey = IngestTask['status']
 type FilterKey = 'all' | StatusKey
 
 // Status display labels and accent colors.
-const STATUS_LABEL: Record<StatusKey, string> = {
-  pending: '待处理',
-  processing: '处理中',
-  done: '完成',
-  failed: '失败',
-  cancelled: '已取消',
-}
+// Note: STATUS_LABEL and FILTERS are now derived from t() inside the component.
 
 // Sort priority: actionable first (processing > pending > failed),
 // then non-actionable (cancelled > done).
@@ -50,27 +45,18 @@ const STATUS_RANK: Record<StatusKey, number> = {
   done: 4,
 }
 
-// Filter chip definitions — order matters (left-to-right scan).
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'pending', label: '待处理' },
-  { key: 'processing', label: '处理中' },
-  { key: 'failed', label: '失败' },
-  { key: 'cancelled', label: '已取消' },
-  { key: 'done', label: '已完成' },
-]
-
-/** Format a millisecond delta as a compact Chinese duration (e.g. "2 分 15 秒"). */
+// Sort priority: actionable first (processing > pending > failed),
+// then non-actionable (cancelled > done).
 function formatElapsed(ms: number): string {
   if (ms < 0 || !Number.isFinite(ms)) return '—'
   const totalSec = Math.floor(ms / 1000)
-  if (totalSec < 60) return `${totalSec} 秒`
+  if (totalSec < 60) return `${totalSec}s`
   const min = Math.floor(totalSec / 60)
   const sec = totalSec % 60
-  if (min < 60) return `${min} 分 ${sec} 秒`
+  if (min < 60) return `${min}m ${sec}s`
   const hr = Math.floor(min / 60)
   const m = min % 60
-  return `${hr} 时 ${m} 分`
+  return `${hr}h ${m}m`
 }
 
 /** Format bytes as human-readable size (e.g. "1.2 MB"). */
@@ -104,7 +90,25 @@ function basename(p: string): string {
 }
 
 export default function ProcessingQueue({ projectRoot }: Props) {
+  const { t } = useTranslation()
   const [tasks, setTasks] = useState<IngestTask[]>([])
+
+  const STATUS_LABEL: Record<StatusKey, string> = useMemo(() => ({
+    pending: t('queue.pending'),
+    processing: t('queue.processing'),
+    done: t('queue.done'),
+    failed: t('queue.failed'),
+    cancelled: t('queue.cancelled'),
+  }), [t])
+
+  const FILTERS: { key: FilterKey; label: string }[] = useMemo(() => [
+    { key: 'all', label: t('queue.all') },
+    { key: 'pending', label: t('queue.pending') },
+    { key: 'processing', label: t('queue.processing') },
+    { key: 'failed', label: t('queue.failed') },
+    { key: 'cancelled', label: t('queue.cancelled') },
+    { key: 'done', label: t('queue.done') },
+  ], [t])
   const [stats, setStats] = useState<QueueStats | null>(null)
   const [actionId, setActionId] = useState<string | null>(null)
   const [filter, setFilter] = useState<FilterKey>('all')
@@ -218,11 +222,11 @@ export default function ProcessingQueue({ projectRoot }: Props) {
       setActionId(task.id)
       try {
         await ingestCancel(projectRoot, task.id)
-        showToast('已取消任务', 'success')
+        showToast(t('queue.taskCancelled'), 'success')
         await load()
       } catch (e) {
         console.error('[ProcessingQueue] cancel failed:', e)
-        showToast('取消失败: ' + String(e), 'error')
+        showToast(t('queue.cancelFailed', { error: String(e) }), 'error')
       } finally {
         setActionId(null)
       }
@@ -237,14 +241,14 @@ export default function ProcessingQueue({ projectRoot }: Props) {
       try {
         const ok = await ingestRetry(projectRoot, task.id)
         if (ok) {
-          showToast('已重置任务，将重新处理', 'success')
+          showToast(t('queue.taskRetried'), 'success')
         } else {
-          showToast('任务重试次数已达上限', 'warning')
+          showToast(t('queue.retryLimitReached'), 'warning')
         }
         await load()
       } catch (e) {
         console.error('[ProcessingQueue] retry failed:', e)
-        showToast('重试失败: ' + String(e), 'error')
+        showToast(t('queue.retryFailed', { error: String(e) }), 'error')
       } finally {
         setActionId(null)
       }
@@ -256,11 +260,11 @@ export default function ProcessingQueue({ projectRoot }: Props) {
     if (!projectRoot) return
     try {
       const removed = await ingestCleanup(projectRoot)
-      showToast(`已清理 ${removed} 个完成任务`, 'success')
+      showToast(t('queue.cleanedUp', { count: removed }), 'success')
       await load()
     } catch (e) {
       console.error('[ProcessingQueue] cleanup failed:', e)
-      showToast('清理失败: ' + String(e), 'error')
+      showToast(t('queue.cleanupFailed', { error: String(e) }), 'error')
     }
   }, [projectRoot, load])
 
@@ -271,11 +275,11 @@ export default function ProcessingQueue({ projectRoot }: Props) {
       try {
         const nextPriority = task.priority > 0 ? 0 : 1
         await ingestSetPriority(projectRoot, task.id, nextPriority)
-        showToast(nextPriority > 0 ? '已置顶任务' : '已取消置顶', 'success')
+        showToast(nextPriority > 0 ? t('queue.taskPinned') : t('queue.taskUnpinned'), 'success')
         await load()
       } catch (e) {
         console.error('[ProcessingQueue] set priority failed:', e)
-        showToast('置顶失败: ' + String(e), 'error')
+        showToast(t('queue.pinFailed', { error: String(e) }), 'error')
       } finally {
         setActionId(null)
       }
@@ -290,14 +294,14 @@ export default function ProcessingQueue({ projectRoot }: Props) {
       try {
         const ok = await ingestDeleteTask(projectRoot, task.id)
         if (ok) {
-          showToast('已删除任务', 'success')
+          showToast(t('queue.taskDeleted'), 'success')
         } else {
-          showToast('只能删除已结束的任务', 'warning')
+          showToast(t('queue.canOnlyDeleteFinished'), 'warning')
         }
         await load()
       } catch (e) {
         console.error('[ProcessingQueue] delete failed:', e)
-        showToast('删除失败: ' + String(e), 'error')
+        showToast(t('queue.deleteFailed', { error: String(e) }), 'error')
       } finally {
         setActionId(null)
       }
@@ -345,57 +349,57 @@ export default function ProcessingQueue({ projectRoot }: Props) {
     <div className="processing-queue">
       {/* ----- Sticky header ----- */}
       <div className="processing-queue-header">
-        <span className="processing-queue-title">处理队列</span>
+        <span className="processing-queue-title">{t('queue.title')}</span>
         <span
           className={`processing-queue-worker-status is-${workerStatus}`}
           title={
             workerStatus === 'online'
-              ? 'Worker 心跳正常'
+              ? t('queue.workerOnlineTitle')
               : workerStatus === 'offline'
-                ? 'Worker 心跳超时，可能已停止'
-                : '等待 worker 心跳'
+                ? t('queue.workerOfflineTitle')
+                : t('queue.workerUnknownTitle')
           }
         >
           {workerStatus === 'online'
-            ? '● worker 在线'
+            ? t('queue.workerOnline')
             : workerStatus === 'offline'
-              ? '● worker 离线'
-              : '○ worker 未连接'}
+              ? t('queue.workerOffline')
+              : t('queue.workerUnknown')}
         </span>
 
         {stats && (
-          <div className="processing-queue-stats" aria-label="队列统计">
+          <div className="processing-queue-stats" aria-label={t('queue.total')}>
             <span className="processing-queue-stat">
-              <span>总计</span>
+              <span>{t('queue.total')}</span>
               <span className="num">{stats.total}</span>
             </span>
             {stats.processing > 0 && (
               <span className="processing-queue-stat is-processing">
-                <span>处理中</span>
+                <span>{t('queue.processing')}</span>
                 <span className="num">{stats.processing}</span>
               </span>
             )}
             {stats.pending > 0 && (
               <span className="processing-queue-stat is-pending">
-                <span>待处理</span>
+                <span>{t('queue.pending')}</span>
                 <span className="num">{stats.pending}</span>
               </span>
             )}
             {stats.failed > 0 && (
               <span className="processing-queue-stat is-failed">
-                <span>失败</span>
+                <span>{t('queue.failed')}</span>
                 <span className="num">{stats.failed}</span>
               </span>
             )}
             {stats.done > 0 && (
               <span className="processing-queue-stat is-done">
-                <span>完成</span>
+                <span>{t('queue.done')}</span>
                 <span className="num">{stats.done}</span>
               </span>
             )}
             {stats.cancelled > 0 && (
               <span className="processing-queue-stat is-cancelled">
-                <span>已取消</span>
+                <span>{t('queue.cancelled')}</span>
                 <span className="num">{stats.cancelled}</span>
               </span>
             )}
@@ -404,10 +408,10 @@ export default function ProcessingQueue({ projectRoot }: Props) {
               return avgTotalMs > 0 ? (
                 <span
                   className="processing-queue-stat is-throughput"
-                  title="近 5 个完成任务的各阶段平均耗时之和"
+                  title={t('queue.recent5')}
                 >
-                  <span>近 5 篇</span>
-                  <span className="num">平均 {formatElapsed(avgTotalMs)}/篇</span>
+                  <span>{t('queue.recent5')}</span>
+                  <span className="num">{t('queue.avgPer', { time: formatElapsed(avgTotalMs) })}</span>
                 </span>
               ) : null
             })()}
@@ -431,7 +435,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
               onChange={(e) => setHideDone(e.target.checked)}
               style={{ accentColor: 'var(--accent)' }}
             />
-            隐藏已完成
+            {t('queue.hideDone')}
           </label>
           <Button
             variant="secondary"
@@ -439,7 +443,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
             onClick={handleCleanup}
             disabled={!stats || stats.done === 0}
           >
-            清理已完成
+            {t('queue.cleanupDone')}
           </Button>
         </div>
       </div>
@@ -470,12 +474,12 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         <div className="processing-queue-empty">
           <div>
             <div className="processing-queue-empty-title">
-              {tasks.length === 0 ? '队列空闲' : '当前筛选下无任务'}
+              {tasks.length === 0 ? t('queue.empty') : t('queue.noTasksInFilter')}
             </div>
             <div className="processing-queue-empty-hint">
               {tasks.length === 0
-                ? '导入文档或启用「自动入队」开关后，处理任务会出现在这里。'
-                : '切换上方筛选，或关闭「隐藏已完成」查看历史任务。'}
+                ? t('queue.emptyHint')
+                : t('queue.filterHint')}
             </div>
           </div>
         </div>
@@ -541,7 +545,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                       <PdfPipelineFlow variant="compact" task={task} />
                       {showPages && (
                         <span className="processing-queue-item-pages">
-                          {task.pages_done}/{task.pages_total} 页
+                          {task.pages_done}/{task.pages_total}
                         </span>
                       )}
                       {showElapsed && (
@@ -552,10 +556,10 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                           }
                           title={
                             stale
-                              ? '该任务在「处理中」停留过久，可能卡住'
+                              ? t('queue.staleHint')
                               : startedAtMs
-                                ? '自任务开始处理起经过时间'
-                                : '自任务创建起经过时间'
+                                ? t('queue.elapsedSinceStart')
+                                : t('queue.elapsedSinceCreate')
                           }
                         >
                           ⏱ {formatElapsed(elapsedMs)}
@@ -564,14 +568,14 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                       {etaMs != null && (
                         <span
                           className="processing-queue-item-eta"
-                          title="基于当前速度和进度估算的剩余时间"
+                          title={t('queue.etaTitle')}
                         >
-                          预计还需 {formatElapsed(etaMs)}
+                          {t('queue.estimated', { time: formatElapsed(etaMs) })}
                         </span>
                       )}
                       {task.retry_count > 0 && (
                         <span className="processing-queue-retry-info">
-                          重试 {task.retry_count}/{task.max_retries}
+                          {t('queue.retryCount', { count: task.retry_count, max: task.max_retries })}
                         </span>
                       )}
                     </div>
@@ -582,8 +586,8 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                       variant="ghost"
                       size="sm"
                       onClick={() => toggleLogs(task.doc_id)}
-                      aria-label={expandedLogDocs.has(task.doc_id) ? '隐藏日志' : '显示日志'}
-                      title={expandedLogDocs.has(task.doc_id) ? '隐藏日志' : '显示日志'}
+                      aria-label={expandedLogDocs.has(task.doc_id) ? t('queue.hideLogs') : t('queue.showLogs')}
+                      title={expandedLogDocs.has(task.doc_id) ? t('queue.hideLogs') : t('queue.showLogs')}
                     >
                       {expandedLogDocs.has(task.doc_id) ? <ChevronUpIcon size={16} /> : <ChevronDownIcon size={16} />}
                     </Button>
@@ -594,7 +598,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                         loading={actionId === task.id}
                         onClick={() => handleCancel(task)}
                       >
-                        取消
+                        {t('queue.cancelTask')}
                       </Button>
                     )}
                     {canRetry && (
@@ -604,7 +608,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                         loading={actionId === task.id}
                         onClick={() => handleRetry(task)}
                       >
-                        重试
+                        {t('queue.retryTask')}
                       </Button>
                     )}
                     {canSetPriority && (
@@ -613,9 +617,9 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                         size="sm"
                         loading={actionId === task.id}
                         onClick={() => handleSetPriority(task)}
-                        title={task.priority > 0 ? '取消置顶' : '置顶任务'}
+                        title={task.priority > 0 ? t('queue.unpinTask') : t('queue.pinTask')}
                       >
-                        {task.priority > 0 ? '取消置顶' : '置顶'}
+                        {task.priority > 0 ? t('queue.unpinTask') : t('queue.pinTask')}
                       </Button>
                     )}
                     {canDelete && (
@@ -625,7 +629,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                         loading={actionId === task.id}
                         onClick={() => handleDelete(task)}
                       >
-                        删除
+                        {t('queue.deleteTask')}
                       </Button>
                     )}
                   </div>

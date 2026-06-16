@@ -28,13 +28,7 @@ pub fn check_resource(resource_id: &str) -> ResourceStatusResult {
             }
         }
         ResourceType::PythonPackage => check_python_package(info),
-        ResourceType::Binary => {
-            if resource_id == "pdfium" {
-                check_pdfium(info)
-            } else {
-                not_found(info)
-            }
-        }
+        ResourceType::Binary => not_found(info),
     }
 }
 
@@ -352,61 +346,6 @@ fn is_weights_file(p: &std::path::Path) -> bool {
 fn path_matches(p: &std::path::Path, id_key: &str, repo_key: &str) -> bool {
     let s = p.to_string_lossy().to_lowercase();
     s.contains(id_key) || s.contains(repo_key)
-}
-
-fn check_pdfium(info: &ResourceInfo) -> ResourceStatusResult {
-    // 优先�?HOME/.cache/mbforge/pdfium/lib（setup.ps1 默认安装位置，跨平台�?
-    if let Some(home) = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
-    {
-        let cache_lib = home.join(".cache/mbforge/pdfium/lib");
-        if has_files(&cache_lib) {
-            return ResourceStatusResult {
-                id: info.id.to_string(),
-                name: info.name.to_string(),
-                resource_type: info.resource_type.clone(),
-                status: ResourceStatus::Ready,
-                local_path: cache_lib.to_string_lossy().to_string(),
-                size_mb: 0.0,
-                version: String::new(),
-                error: String::new(),
-            };
-        }
-    }
-    if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
-        let manifest_path = PathBuf::from(manifest);
-        // 次选：src-tauri/vendor/pdfium/release/lib（向后兼容旧�?setup.ps1�?
-        let pdfium_lib = manifest_path.join("vendor/pdfium/release/lib");
-        if has_files(&pdfium_lib) {
-            return ResourceStatusResult {
-                id: info.id.to_string(),
-                name: info.name.to_string(),
-                resource_type: info.resource_type.clone(),
-                status: ResourceStatus::Ready,
-                local_path: pdfium_lib.to_string_lossy().to_string(),
-                size_mb: 0.0,
-                version: String::new(),
-                error: String::new(),
-            };
-        }
-    }
-    if let Ok(env_path) = std::env::var("PDFIUM_LIB_PATH") {
-        let p = PathBuf::from(&env_path);
-        if p.exists() {
-            return ResourceStatusResult {
-                id: info.id.to_string(),
-                name: info.name.to_string(),
-                resource_type: info.resource_type.clone(),
-                status: ResourceStatus::Ready,
-                local_path: env_path,
-                size_mb: 0.0,
-                version: String::new(),
-                error: String::new(),
-            };
-        }
-    }
-    not_found(info)
 }
 
 // ─── 工具函数 ───────────────────────────────────────────────────

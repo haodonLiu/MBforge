@@ -8,9 +8,17 @@ import ModelsTab from '@/components/settings/ModelsTab'
 import SystemTab from '@/components/settings/SystemTab'
 import CacheTab from '@/components/settings/CacheTab'
 import AboutTab from '@/components/settings/AboutTab'
+import PdfProcessingTab from '@/components/settings/PdfProcessingTab'
 import type { SettingsState } from '@/components/settings/types'
 
-type TabKey = 'general' | 'llm' | 'models' | 'system' | 'cache' | 'about'
+type TabKey =
+  | 'general'
+  | 'ai_models'
+  | 'pdf_processing'
+  | 'models'
+  | 'system'
+  | 'cache'
+  | 'about'
 
 interface Props {
   settings: SettingsState
@@ -32,7 +40,8 @@ export default function SettingsTabs({
 
   const tabs = useMemo(() => [
     { key: 'general', label: t('settings.tabs.general') },
-    { key: 'llm', label: t('settings.tabs.llm') },
+    { key: 'ai_models', label: t('settings.tabs.aiModels') },
+    { key: 'pdf_processing', label: t('settings.tabs.pdfProcessing') },
     { key: 'models', label: t('settings.tabs.models') },
     { key: 'system', label: t('settings.tabs.system') },
     { key: 'cache', label: t('settings.tabs.cache') },
@@ -57,8 +66,11 @@ export default function SettingsTabs({
           {activeTab === 'general' && (
             <GeneralTab settings={settings} setSettings={setSettings} />
           )}
-          {activeTab === 'llm' && (
+          {activeTab === 'ai_models' && (
             <LlmTab settings={settings} setSettings={setSettings} />
+          )}
+          {activeTab === 'pdf_processing' && (
+            <PdfProcessingTab settings={settings} setSettings={setSettings} />
           )}
           {activeTab === 'models' && (
             <ModelsTab

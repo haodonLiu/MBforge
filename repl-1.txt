@@ -1,0 +1,8 @@
+﻿        emit_log(
+            &app_handle,
+            &task.doc_id,
+            &task.stage,
+            "info",
+            format!("进入 {} 阶段 (task id={})", task.stage, task.id),
+        );
+        let result = match task.stage.as_str() {

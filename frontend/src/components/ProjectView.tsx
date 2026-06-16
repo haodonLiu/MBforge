@@ -1,7 +1,9 @@
 import { EVT } from '../api/tauri-events'
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { listProjectDocuments, scanProjectFiles, enqueueUnresolvedDocuments, indexProjectRust, type IndexResult, type ScanWarning } from '../api/tauri'
 import { batchQuickMoldetScan } from '../api/tauri/detection_cache'
+import { molAdminStoreStats } from '../api/tauri/molecule_admin'
 import { listen } from '@tauri-apps/api/event'
 import type { DocumentEntry } from '../types'
 import { useAppContext } from '../context/AppContext'
@@ -13,6 +15,7 @@ import ProjectDashboard from './project/ProjectDashboard'
 import MarkdownViewer from './MarkdownViewer'
 
 export default function ProjectView() {
+  const { t } = useTranslation()
   const { projectRoot, activeFile, setActiveFile } = useAppContext()
   const [docs, setDocs] = useState<DocumentEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -21,6 +24,7 @@ export default function ProjectView() {
   const [indexResult, setIndexResult] = useState<{ indexed: number; sections: number } | null>(null)
   const [error, setError] = useState('')
   const [scanWarnings, setScanWarnings] = useState<ScanWarning[]>([])
+  const [moleculeStats, setMoleculeStats] = useState<{ total: number; confirmed: number } | null>(null)
 
   const [selectedPdf, setSelectedPdf] = useState<DocumentEntry | null>(null)
   const [selectedMarkdown, setSelectedMarkdown] = useState<DocumentEntry | null>(null)
@@ -34,9 +38,17 @@ export default function ProjectView() {
     setIsLoading(true)
     setError('')
     try {
-      const resp = await listProjectDocuments(projectRoot)
-      if (resp.documents) {
-        setDocs(resp.documents)
+      const [docResp, molResp] = await Promise.all([
+        listProjectDocuments(projectRoot),
+        molAdminStoreStats(projectRoot).catch(() => null),
+      ])
+      if (docResp.documents) {
+        setDocs(docResp.documents)
+      }
+      if (molResp) {
+        const total = (molResp.total as number) || 0
+        const pending = (molResp.pending as number) || 0
+        setMoleculeStats({ total, confirmed: total - pending })
       }
     } catch (e) {
       console.error(e)
@@ -61,7 +73,7 @@ export default function ProjectView() {
     }
     setup().catch((e) => {
       console.error(e)
-      showToast('监听文档解析事件失败，文档列表可能不会自动刷新', 'warning')
+      showToast(t('project.listenFailed'), 'warning')
     })
 
     return () => {
@@ -71,7 +83,7 @@ export default function ProjectView() {
 
   const handleScan = async () => {
     if (!projectRoot) {
-      setError('项目根路径未设置，请先打开一个项目')
+      setError(t('project.noProjectRoot'))
       return
     }
     setIsLoading(true)
@@ -84,13 +96,13 @@ export default function ProjectView() {
       void enqueueUnresolvedDocuments(projectRoot).catch(() => {})
       if (resp.documents.length === 0 && (resp.warnings ?? []).length === 0) {
         setError(
-          `在 ${PAPERS_DIR}/ 和 ${NOTES_DIR}/ 目录下没有找到文件。请把 PDF 放进 ${PAPERS_DIR}/、把 MD 笔记放进 ${NOTES_DIR}/，然后再扫描。`,
+          t('project.noFilesFound', { papers: PAPERS_DIR, notes: NOTES_DIR }),
         )
       }
     } catch (e) {
       const msg = String(e)
       console.error('[ProjectView] Scan error:', msg)
-      setError(msg.includes('not allowed') ? '扫描文件权限不足，请检查应用配置' : `扫描失败: ${msg}`)
+      setError(msg.includes('not allowed') ? t('project.scanPermissionDenied') : t('project.scanFailed', { error: msg }))
     } finally {
       setIsLoading(false)
     }
@@ -126,7 +138,7 @@ export default function ProjectView() {
       const result: IndexResult = await Promise.race([
         indexProjectRust(projectRoot),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('索引超时，请检查后端状态或稍后重试')), INDEX_TIMEOUT_MS)
+          setTimeout(() => reject(new Error(t('project.indexTimeout'))), INDEX_TIMEOUT_MS)
         ),
       ])
       setIndexResult({ indexed: result.indexed, sections: result.sections })
@@ -137,9 +149,9 @@ export default function ProjectView() {
     } catch (e) {
       const msg = String(e)
       if (msg.includes('ipc.localhost') || msg.includes('Failed to fetch') || msg.includes('ERR_CONNECTION_REFUSED')) {
-        setError('索引引擎通信失败，请重启应用后重试')
+        setError(t('project.indexEngineFailed'))
       } else if (msg.includes('索引超时')) {
-        setError('索引操作超时（超过5分钟），请检查后端状态或稍后重试')
+        setError(t('project.indexOperationTimeout'))
       } else {
         setError(msg)
       }
@@ -197,12 +209,12 @@ export default function ProjectView() {
 
   const handleMoldetScan = async () => {
     if (!projectRoot) {
-      setError('项目根路径未设置，请先打开一个项目')
+      setError(t('project.noProjectRoot'))
       return
     }
     const pdfDocs = docs.filter(d => d.doc_type === 'pdf')
     if (pdfDocs.length === 0) {
-      showToast('项目中没有 PDF 文件', 'info')
+      showToast(t('project.noPdfFiles'), 'info')
       return
     }
     setIsMoldetScanning(true)
@@ -218,14 +230,14 @@ export default function ProjectView() {
       }
       loadDocs()
       showToast(
-        `快速扫描完成：${resp.processed} 个 PDF，${withMolecules} 个含分子`,
+        t('project.quickScanComplete', { processed: resp.processed, withMolecules }),
         resp.errors.length > 0 ? 'warning' : 'success',
       )
     } catch (e) {
       const msg = String(e)
       console.error('[ProjectView] MoldDet scan error:', msg)
-      setError(`分子扫描失败: ${msg}`)
-      showToast('分子扫描失败', 'error')
+      setError(t('project.molScanFailedDetail', { error: msg }))
+      showToast(t('project.molScanFailed'), 'error')
     } finally {
       setIsMoldetScanning(false)
       setMoldetProgress(null)
@@ -259,6 +271,7 @@ export default function ProjectView() {
       moldetResult={moldetResult}
       error={error}
       scanWarnings={scanWarnings}
+      moleculeStats={moleculeStats}
       onScan={handleScan}
       onIndex={handleIndex}
       onMoldetScan={handleMoldetScan}

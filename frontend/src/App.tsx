@@ -1,17 +1,16 @@
 import { Suspense, useState, lazy, useEffect, useRef } from 'react'
-import { Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom'
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { useTranslation, I18nextProvider } from 'react-i18next'
 import i18n from './i18n'
 import AnimatedPage from './components/animations/AnimatedPage'
-import { ToastContainer } from './components/ui'
+import { ToastContainer, ToastProvider } from './components/ui'
 import ErrorBoundary from './components/ErrorBoundary'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 // Welcome is above-the-fold and stays static for fast first paint.
 import Welcome from './components/Welcome'
 import ProjectScope from './components/ProjectScope'
-import SidebarQueuePanel from './components/queue/SidebarQueuePanel'
 import { AppProvider, useAppContext } from './context/AppContext'
 import { ask } from '@tauri-apps/plugin-dialog'
 import { showToast } from './hooks/useToast'
@@ -22,15 +21,8 @@ import { useIngestNotifications } from './hooks/useIngestNotifications'
 import GlobalDownloadBarHost from './components/GlobalDownloadBarHost'
 import { openProject, enqueueUnresolvedDocuments } from './api/tauri/project'
 
-function getContentColumn(showProjectScope: boolean, showQueuePanel: boolean): '2' | '3' | '4' {
-  if (showProjectScope && showQueuePanel) return '4'
-  if (showProjectScope || showQueuePanel) return '3'
-  return '2'
-}
-
-function getQueuePanelColumn(showProjectScope: boolean, showQueuePanel: boolean): '2' | '3' {
-  if (showProjectScope && showQueuePanel) return '3'
-  return '2'
+function getContentColumn(showProjectScope: boolean): '2' | '3' {
+  return showProjectScope ? '3' : '2'
 }
 
 // Route-level code splitting — each page becomes its own chunk.
@@ -41,7 +33,6 @@ const Discover = lazy(() => import('./components/discover/Discover'))
 const MoleculeLibrary = lazy(() => import('./components/MoleculeLibrary'))
 
 const Notes = lazy(() => import('./components/Notes'))
-const Analysis = lazy(() => import('./components/analysis/Analysis'))
 const ProcessingQueue = lazy(() => import('./components/project/ProcessingQueue'))
 const SettingsPage = lazy(() => import('./components/settings/SettingsPage'))
 
@@ -70,18 +61,18 @@ export default function App() {
   return (
     <I18nextProvider i18n={i18n}>
       <AppProvider>
-        <AppInner />
+        <ToastProvider>
+          <AppInner />
+        </ToastProvider>
       </AppProvider>
     </I18nextProvider>
   )
 }
 
 function AppInner() {
-  const navigate = useNavigate()
   const { projectRoot, setProjectRoot, setActiveFile } = useAppContext()
   const [currentPage, setCurrentPage] = useState('workspace')
   const [projectScopeOpen, setProjectScopeOpen] = useState(true)
-  const [queuePanelOpen, setQueuePanelOpen] = useState(false)
   const isMobile = useIsMobile()
   const isTablet = useIsTablet()
   const { t } = useTranslation()
@@ -169,19 +160,14 @@ function AppInner() {
   // 移动端：文件树默认关闭，Sidebar 简化
   const effectiveProjectScopeOpen = projectScopeOpen && !isMobile
   const showProjectScope = effectiveProjectScopeOpen && !isTablet
-  const effectiveQueuePanelOpen = queuePanelOpen && !isMobile && !isTablet
-  const showQueuePanel = effectiveQueuePanelOpen
-  const contentColumn = getContentColumn(showProjectScope, showQueuePanel)
-  const queuePanelColumn = getQueuePanelColumn(showProjectScope, showQueuePanel)
+  const contentColumn = getContentColumn(showProjectScope)
 
   // Project open - show full app with file tree
   return (
     <div style={{
       display: 'grid',
       gridTemplateColumns: (() => {
-        if (showProjectScope && showQueuePanel) return '56px 220px 240px 1fr'
         if (showProjectScope) return '56px 220px 1fr'
-        if (showQueuePanel) return '56px 240px 1fr'
         return '56px 1fr'
       })(),
       gridTemplateRows: 'auto 1fr auto',
@@ -199,8 +185,6 @@ function AppInner() {
         }}
         projectScopeOpen={projectScopeOpen}
         onToggleProjectScope={() => setProjectScopeOpen(!projectScopeOpen)}
-        queuePanelOpen={queuePanelOpen}
-        onToggleQueuePanel={() => setQueuePanelOpen(!queuePanelOpen)}
       />
       {showProjectScope && (
         <div style={{
@@ -235,16 +219,6 @@ function AppInner() {
             }
           }} />
         </div>
-      )}
-      {showQueuePanel && (
-        <SidebarQueuePanel
-          projectRoot={projectRoot}
-          gridColumn={queuePanelColumn}
-          onViewAll={() => {
-            setCurrentPage('queue')
-            void navigate('/queue')
-          }}
-        />
       )}
       <Header gridColumn={contentColumn} />
       <main style={{
@@ -297,14 +271,7 @@ function AppRoutes({ projectRoot }: { projectRoot: string }) {
             </Suspense>
           }
         />
-        <Route
-          path="/analysis"
-          element={
-            <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><Analysis /></AnimatedPage>
-            </Suspense>
-          }
-        />
+        <Route path="/analysis" element={<Navigate to="/molecules" replace />} />
         <Route
           path="/settings"
           element={

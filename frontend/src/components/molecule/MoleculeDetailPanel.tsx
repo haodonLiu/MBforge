@@ -116,9 +116,13 @@ export default function MoleculeDetailPanel(props: MoleculeDetailPanelProps) {
     if (!edited) return
     setSaving(true)
     try {
-      await molAdminUpdate(projectRoot, edited)
-      toast.success('分子记录已更新')
-      ;(props as MoleculeProps).onSaved?.()
+      const success = await molAdminUpdate(projectRoot, edited)
+      if (success) {
+        toast.success('分子记录已更新')
+        ;(props as MoleculeProps).onSaved?.()
+      } else {
+        toast.error('保存失败')
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '保存失败')
     } finally {

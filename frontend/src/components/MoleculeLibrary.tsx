@@ -24,15 +24,18 @@ export default function MoleculeLibrary() {
     totalCount,
     loading,
     error,
+    info,
     query,
     filters,
     sort,
+    pagination,
     viewMode,
     selectedIds,
     isCorrectionMode,
     setQuery,
     setFilters,
     setSort,
+    setPagination,
     setViewMode,
     toggleSelection,
     selectRange,
@@ -52,6 +55,11 @@ export default function MoleculeLibrary() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [lastClickedId, setLastClickedId] = useState<string | null>(null)
   const [showAddDialog, setShowAddDialog] = useState(false)
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(totalCount / pagination.pageSize)),
+    [totalCount, pagination.pageSize],
+  )
 
   const sourceTypeOptions = useMemo(
     () => Array.from(new Set(molecules.map((m) => m.source_type).filter(Boolean))),
@@ -137,6 +145,21 @@ export default function MoleculeLibrary() {
               minHeight: 0,
             }}
           >
+            {info && (
+              <div
+                style={{
+                  padding: '12px 16px',
+                  marginBottom: '12px',
+                  color: 'var(--warning)',
+                  background: 'rgba(from var(--warning) r g b / 0.1)',
+                  border: '1px solid rgba(from var(--warning) r g b / 0.3)',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                }}
+              >
+                {info ? t(info, { limit: 10000 }) : null}
+              </div>
+            )}
             {error ? (
               <div
                 style={{
@@ -170,6 +193,72 @@ export default function MoleculeLibrary() {
                 onCardClick={handleRowClick}
               />
             )}
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              padding: '10px 16px',
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: '10px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPagination((p) => ({ ...p, page: p.page - 1 }))}
+                disabled={loading || pagination.page <= 1}
+              >
+                {t('mol.previous')}
+              </Button>
+              <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+                {t('mol.pageInfo', { current: pagination.page, total: totalPages })}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPagination((p) => ({ ...p, page: p.page + 1 }))}
+                disabled={loading || pagination.page >= totalPages}
+              >
+                {t('mol.next')}
+              </Button>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '13px',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              <label htmlFor="page-size">{t('mol.pageSize')}</label>
+              <select
+                id="page-size"
+                value={pagination.pageSize}
+                onChange={(e) =>
+                  setPagination({ ...pagination, pageSize: Number(e.target.value) })
+                }
+                disabled={loading}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                  background: 'var(--bg-base)',
+                  color: 'var(--text-primary)',
+                  fontSize: 13,
+                }}
+              >
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
+            </div>
           </div>
 
           <div

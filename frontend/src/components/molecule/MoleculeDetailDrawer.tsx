@@ -1,6 +1,8 @@
 import Button from '../ui/Button'
 import CorrectionPanel, { type CorrectionItem } from './CorrectionPanel'
 import MoleculeDetailPanel from './MoleculeDetailPanel'
+import { molAdminUpdate } from '@/api/tauri/molecule_admin'
+import { showToast } from '@/hooks/useToast'
 import type { MoleculeRecord } from '../../types'
 
 interface MoleculeDetailDrawerProps {
@@ -52,9 +54,42 @@ export default function MoleculeDetailDrawer({
 
   const title = isCorrectionMode ? 'OCR 矫正' : (molecule.name || molecule.mol_id)
 
-  const handleCorrectionComplete = () => {
-    onSaved?.()
-    onClose()
+  const handleCorrectionComplete = async (
+    results: Array<{ id: string; finalSmiles: string; status: 'confirmed' | 'rejected' | 'corrected' }>,
+  ) => {
+    if (!projectRoot) {
+      showToast('未指定项目根目录，无法保存', 'error')
+      return
+    }
+    const updates = results
+      .filter((r) => r.id === molecule.mol_id)
+      .map((r) => ({
+        ...molecule,
+        esmiles: r.finalSmiles,
+        status: r.status,
+      }))
+    if (updates.length === 0) {
+      onSaved?.()
+      onClose()
+      return
+    }
+    try {
+      const settled = await Promise.allSettled(
+        updates.map((record) => molAdminUpdate(projectRoot, record)),
+      )
+      const failures = settled.filter(
+        (s) => s.status === 'rejected' || (s.status === 'fulfilled' && !s.value),
+      )
+      if (failures.length > 0) {
+        showToast(`保存失败：${failures.length} 条记录未更新`, 'error')
+      } else {
+        showToast('矫正结果已保存', 'success')
+      }
+      onSaved?.()
+      onClose()
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '保存矫正结果失败', 'error')
+    }
   }
 
   return (

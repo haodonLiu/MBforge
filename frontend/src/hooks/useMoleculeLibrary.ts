@@ -30,6 +30,7 @@ export interface UseMoleculeLibraryResult {
   totalCount: number
   loading: boolean
   error: string | null
+  info: string | null
   query: string
   filters: MoleculeFilters
   sort: MoleculeSort
@@ -57,6 +58,7 @@ export function useMoleculeLibrary(projectRoot: string | null): UseMoleculeLibra
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
   const [query, setQueryState] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState(query)
   const [filters, setFiltersState] = useState<MoleculeFilters>({
@@ -131,6 +133,12 @@ export function useMoleculeLibrary(projectRoot: string | null): UseMoleculeLibra
         )
       }
 
+      if (!debouncedQuery.trim() && records.length >= 10000) {
+        setInfo('mol.largeLibraryWarning')
+      } else {
+        setInfo(null)
+      }
+
       let filtered = [...records]
       if (filters.status !== 'all') {
         filtered = filtered.filter((m) => m.status === filters.status)
@@ -171,6 +179,7 @@ export function useMoleculeLibrary(projectRoot: string | null): UseMoleculeLibra
       setTotalCount(filtered.length)
     } catch (e) {
       setError(e instanceof Error ? e.message : '加载分子失败')
+      setInfo(null)
       setMolecules([])
       setTotalCount(0)
     } finally {
@@ -218,6 +227,7 @@ export function useMoleculeLibrary(projectRoot: string | null): UseMoleculeLibra
     totalCount,
     loading,
     error,
+    info,
     query,
     filters,
     sort,

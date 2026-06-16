@@ -22,8 +22,9 @@ use merge::{enhance_patent_data, merge_partial_results, run_merge_and_sar};
 
 // Re-export for commands/pdf.rs and other modules
 pub use extract::{
-    classify_and_extract, extract_molecules_from_pdf, extract_pdf_workflow, find_project_root,
-    quick_moldet_scan_pdf, ClassifyResult, QuickMoldetDocResult, WorkflowResult,
+    classify_and_extract, classify_and_extract_with_progress, extract_molecules_from_pdf,
+    extract_pdf_workflow, find_project_root, quick_moldet_scan_pdf, ClassifyResult,
+    ExtractProgressReporter, QuickMoldetDocResult, WorkflowResult,
 };
 
 // ============================================================================

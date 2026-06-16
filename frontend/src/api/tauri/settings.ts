@@ -47,6 +47,11 @@ export interface OcrConfig {
   model_name?: string
   use_hf_mirror?: boolean
   use_pdf_inspector?: boolean
+  mineru_api_key?: string | null
+  uniparser_api_key?: string | null
+  paddleocr_api_key?: string | null
+  paddleocr_host?: string | null
+  paddleocr_model?: string | null
 }
 
 export interface ModelServerConfig {
@@ -75,7 +80,6 @@ export interface AppSettings {
 }
 
 export interface PdfParseConfig {
-  ocr_language?: string
   chunk_size?: number
   chunk_overlap?: number
 }

@@ -187,14 +187,6 @@ if errorlevel 1 (echo [WARN] mbforge) else (echo [OK] mbforge)
 echo.
 echo --- Optional Feature Status ---
 
-if exist "vendor\pdfium\release\pdfium.dll" (
-    echo [OK] LiteParse (PDFium) - ready
-) else (
-    echo [WARN] LiteParse (PDFium) - not installed (offline scan PDF fallback)
-    echo   Download PDFium to vendor\pdfium\release\ when needed
-    echo   https://github.com/run-llama/pdfium-binaries/releases/latest
-)
-
 %PYTHON% -c "import torch; assert torch.cuda.is_available()" 2>nul
 if not errorlevel 1 (
     echo [OK] MolDet (GPU) - ready

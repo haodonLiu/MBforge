@@ -99,6 +99,7 @@ class ResourceInfo:
     ms_file: str = ""          # 单文件下载时的远程文件名
     local_name: str = ""       # 本地文件名
     source_url: str = ""       # 项目主页
+    allow_patterns: list[str] = field(default_factory=list)  # snapshot 下载时仅匹配的文件模式
     # Python 包专用
     pip_name: str = ""         # pip 包名
     import_name: str = ""      # import 名（与 pip 名不同时）
@@ -156,6 +157,7 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         download_type="snapshot",
         local_name="Qwen3-Embedding-0.6B",
         source_url="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
+        allow_patterns=["*.safetensors", "*.json", "*.txt", "tokenizer*"],
     ),
     "reranker": ResourceInfo(
         id="reranker",
@@ -170,21 +172,19 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         download_type="snapshot",
         local_name="Qwen3-Reranker-0.6B",
         source_url="https://huggingface.co/Qwen/Qwen3-Reranker-0.6B",
+        allow_patterns=["*.safetensors", "*.json", "*.txt", "tokenizer*"],
     ),
     "moldet": ResourceInfo(
         id="moldet",
         name="MolDetv2",
         type=ResourceType.MODEL,
-        description="MolDetv2 分子结构检测 (YOLO)",
-        size_mb=25,
+        description="MolDetv2 分子结构检测 (YOLO, doc + general)",
+        size_mb=11,
         license="Apache-2.0",
-        license_url="https://huggingface.co/yujieq/MolDetect/blob/main/LICENSE",
-        ms_repo="yujieq/MolDetect",
-        hf_repo="yujieq/MolDetect",
-        download_type="file",
-        ms_file="best.pt",
-        local_name="moldetv2-doc.pt",
-        source_url="https://huggingface.co/yujieq/MolDetect",
+        ms_repo="UniParser/MolDetv2",
+        download_type="snapshot",
+        local_name="MolDetv2",
+        allow_patterns=["*.pt", "*.onnx", "*.json"],
     ),
     "molscribe": ResourceInfo(
         id="molscribe",
@@ -199,6 +199,19 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         download_type="snapshot",
         local_name="MolScribe",
         source_url="https://github.com/thomas0809/MolScribe",
+        allow_patterns=["*.pth", "*.safetensors", "*.json", "*.txt", "tokenizer*", "vocab*"],
+    ),
+    "moldet_coref": ResourceInfo(
+        id="moldet_coref",
+        name="MolDetect Coref",
+        type=ResourceType.MODEL,
+        description="MolDetect 分子-标号共指消解模型",
+        size_mb=200,
+        license="Apache-2.0",
+        ms_repo="studio-test/MolDetectCkpt",
+        download_type="snapshot",
+        local_name="MolDetectCkpt",
+        allow_patterns=["*.ckpt", "*.pt", "*.pth", "*.json", "*.txt"],
     ),
     # ──── Python 包（清华源）────
     "rdkit": ResourceInfo(
@@ -248,13 +261,6 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         pip_name="ultralytics",
         import_name="ultralytics",
         mirror=TSINGHUA_PIP,
-    ),
-    # ──── 二进制工具 ────
-    "pdfium": ResourceInfo(
-        id="pdfium",
-        name="PDFium",
-        type=ResourceType.BINARY,
-        description="PDF 渲染引擎 (Rust 侧编译依赖)",
     ),
 }
 
@@ -332,7 +338,7 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
     ms_cache_candidates.append(Path.home() / ".cache" / "modelscope")
 
     for ms_root in ms_cache_candidates:
-        for subdir in ["", "models", "hub/models"]:
+        for subdir in ["", "models", "hub", "hub/models"]:
             for name in [repo_name, ms_repo_name_encoded]:
                 ms_dir = ms_root / subdir / ms_org / name
                 if _has_weights(ms_dir):
@@ -362,36 +368,67 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
 
 
 def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
-    """检查单文件类型模型是否已下载.
+    """检查单文件/snapshot 类型模型是否已下载.
 
-    按 ENV 优先级顺序搜索:
-    1. MBFORGE_MODEL_CACHE_DIR
-    2. HF_HOME
-    3. MODELSCOPE_CACHE (env + 默认)
-    4. TORCH_HOME
+    搜索顺序: MBForge cache → HF_HOME → MODELSCOPE_CACHE → TORCH_HOME
+    每个目录下同时搜索直接文件、子目录和 ModelScope 新旧 SDK 布局。
     """
-    local_name = info.local_name or f"{info.id}.pt"
     repo_name = info.ms_repo.split("/")[-1]
+    ms_org = info.ms_repo.split("/")[0]
 
     def _search_in(base: Path) -> ResourceStatusResult | None:
+        if not base.exists():
+            return None
+        # 1. base/<local_name>（精确文件）
+        local_name = info.local_name or f"{info.id}.pt"
         path = base / local_name
-        if path.exists() and path.stat().st_size > 0:
+        if path.is_file() and path.stat().st_size > 0:
             return ResourceStatusResult(
                 id=info.id, name=info.name, type=info.type,
                 status=ResourceStatus.READY,
                 local_path=str(path),
                 size_mb=round(path.stat().st_size / 1024 / 1024, 1),
             )
-        subdir = base / repo_name
-        if subdir.exists():
-            for f in subdir.iterdir():
-                if f.is_file() and f.suffix in (".pt", ".pth"):
-                    return ResourceStatusResult(
-                        id=info.id, name=info.name, type=info.type,
-                        status=ResourceStatus.READY,
-                        local_path=str(f),
-                        size_mb=round(f.stat().st_size / 1024 / 1024, 1),
-                    )
+        # 2. base/<repo_name>/（MBForge 子目录布局：moldetv2-doc/）
+        for subdir_name in [repo_name, local_name, info.id]:
+            subdir = base / subdir_name
+            if subdir.is_dir():
+                for f in subdir.iterdir():
+                    if f.is_file() and f.suffix in (".pt", ".pth", ".bin", ".safetensors"):
+                        return ResourceStatusResult(
+                            id=info.id, name=info.name, type=info.type,
+                            status=ResourceStatus.READY,
+                            local_path=str(f),
+                            size_mb=round(f.stat().st_size / 1024 / 1024, 1),
+                        )
+        # 3. base/ 下直接找权重文件（兜底，限定 1 层）
+        for f in base.iterdir():
+            if f.is_file() and f.suffix in (".pt", ".pth", ".bin", ".safetensors"):
+                return ResourceStatusResult(
+                    id=info.id, name=info.name, type=info.type,
+                    status=ResourceStatus.READY,
+                    local_path=str(f),
+                    size_mb=round(f.stat().st_size / 1024 / 1024, 1),
+                )
+        return None
+
+    def _search_modelscope(ms_root: Path) -> ResourceStatusResult | None:
+        """搜索 ModelScope 缓存（新旧 SDK 布局）."""
+        if not ms_root.exists():
+            return None
+        # 新 SDK: hub/models/{org}/{repo}/
+        for subdir in ["models", "hub/models"]:
+            d = ms_root / subdir / ms_org / repo_name
+            result = _search_in(d)
+            if result:
+                return result
+        # 旧 SDK: hub/{org}/{repo}/ （dots→___）
+        encoded = repo_name.replace(".", "___")
+        for name in [repo_name, encoded]:
+            d = ms_root / "hub" / ms_org / name
+            result = _search_in(d)
+            if result:
+                return result
         return None
 
     # 1. MBForge 缓存
@@ -409,10 +446,10 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
     # 3. MODELSCOPE_CACHE
     env_ms = os.environ.get("MODELSCOPE_CACHE", "")
     if env_ms:
-        result = _search_in(Path(env_ms))
+        result = _search_modelscope(Path(env_ms))
         if result:
             return result
-    result = _search_in(Path.home() / ".cache" / "modelscope")
+    result = _search_modelscope(Path.home() / ".cache" / "modelscope")
     if result:
         return result
 
@@ -421,6 +458,7 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
     if torch_home:
         result = _search_in(Path(torch_home))
         if result:
+            return result
             return result
 
     return ResourceStatusResult(
@@ -445,34 +483,6 @@ def _check_python_package(info: ResourceInfo) -> ResourceStatusResult:
             id=info.id, name=info.name, type=info.type,
             status=ResourceStatus.NOT_FOUND,
         )
-
-
-def _check_pdfium() -> ResourceStatusResult:
-    """检查 PDFium 是否已设置."""
-    # 检查 Rust vendor 目录
-    # __file__ = src/mbforge/core/resource_manager.py → 项目根目录需要 4 层 parent
-    project_root = Path(__file__).resolve().parent.parent.parent.parent
-    pdfium_lib = project_root / "src-tauri" / "vendor" / "pdfium" / "release" / "lib"
-    if pdfium_lib.exists():
-        libs = list(pdfium_lib.glob("*"))
-        if libs:
-            return ResourceStatusResult(
-                id="pdfium", name="PDFium", type=ResourceType.BINARY,
-                status=ResourceStatus.READY,
-                local_path=str(pdfium_lib),
-            )
-    # 检查环境变量
-    env_path = os.environ.get("PDFIUM_LIB_PATH", "")
-    if env_path and Path(env_path).exists():
-        return ResourceStatusResult(
-            id="pdfium", name="PDFium", type=ResourceType.BINARY,
-            status=ResourceStatus.READY,
-            local_path=env_path,
-        )
-    return ResourceStatusResult(
-        id="pdfium", name="PDFium", type=ResourceType.BINARY,
-        status=ResourceStatus.NOT_FOUND,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -501,10 +511,10 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
             from modelscope import snapshot_download as ms_snapshot
             _emit({"status": "downloading", "progress": 0})
             try:
-                ms_snapshot(info.ms_repo, local_dir=str(dest), local_dir_use_symlinks=False)
+                ms_snapshot(info.ms_repo, local_dir=str(dest), local_dir_use_symlinks=False, allow_patterns=info.allow_patterns or None)
             except TypeError:
                 # 新版 modelscope 不支持 local_dir_use_symlinks
-                ms_snapshot(info.ms_repo, local_dir=str(dest))
+                ms_snapshot(info.ms_repo, local_dir=str(dest), allow_patterns=info.allow_patterns or None)
             _emit({"status": "completed", "source": "modelscope"})
             return True
         except ImportError:
@@ -514,6 +524,7 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
 
         # 直接 HTTP 下载
         import requests as _requests
+        import fnmatch as _fnmatch
         _emit({"status": "downloading", "progress": 0})
         try:
             r = _requests.get(f"{ms_base}/{info.ms_repo}/repo/tree?Revision=master", timeout=30)
@@ -521,6 +532,9 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
             files = [f["Path"] for f in tree if f.get("Type") == "blob"]
         except Exception:
             files = []
+
+        if info.allow_patterns:
+            files = [f for f in files if any(_fnmatch.fnmatch(f, p) for p in info.allow_patterns)]
 
         if not files:
             _emit({"status": "failed", "error": "无法获取 ModelScope 文件列表"})
@@ -665,8 +679,6 @@ def _check_resource(resource_id: str) -> ResourceStatusResult:
         elif info.type == ResourceType.PYTHON_PACKAGE:
             return _check_python_package(info)
         elif info.type == ResourceType.BINARY:
-            if resource_id == "pdfium":
-                return _check_pdfium()
             return ResourceStatusResult(
                 id=resource_id, name=info.name, type=info.type,
                 status=ResourceStatus.NOT_FOUND,
@@ -798,4 +810,33 @@ class ResourceManager:
                 return ckpt
             if any(path.glob("*.safetensors")):
                 return path
+        return None
+
+    @classmethod
+    def resolve_model_for_backend(cls, resource_id: str) -> Path | None:
+        """后端统一入口：解析模型路径，找不到返回 None.
+
+        所有 Python 后端（moldet、moldet_coref、molscribe）应使用此方法
+        而非自行实现路径搜索逻辑。
+        返回值：
+        - snapshot 类型：返回包含权重文件的目录
+        - file 类型：返回具体权重文件路径
+        """
+        # 1. Rust resolved_paths（最快）
+        resolved = _read_resolved_paths()
+        if resolved and resource_id in resolved:
+            path = Path(resolved[resource_id])
+            if path.exists():
+                return path
+        # 2. Python 侧扫描
+        info = RESOURCE_CATALOG.get(resource_id)
+        status = cls.check(resource_id)
+        if status.status == ResourceStatus.READY and status.local_path:
+            p = Path(status.local_path)
+            if info and info.download_type == "snapshot":
+                # snapshot 类型：返回目录（让调用方自己找具体文件）
+                if p.is_file():
+                    return p.parent
+                return p
+            return p
         return None

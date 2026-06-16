@@ -17,7 +17,7 @@ pub enum ResourceStatus {
     Error,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ResourceInfo {
     pub id: &'static str,
     pub name: &'static str,
@@ -32,6 +32,7 @@ pub struct ResourceInfo {
     pub local_name: &'static str,    // 本地文件名/目录名
     pub pip_name: &'static str,      // Python 包名（非空表示需要 pip 安装）
     pub import_name: &'static str,   // Python import 名
+    pub allow_patterns: &'static [&'static str], // snapshot 下载时仅匹配的文件模式
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +89,7 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "Qwen3-Embedding-0.6B",
         pip_name: "",
         import_name: "",
+        allow_patterns: &["*.safetensors", "*.json", "*.txt", "tokenizer*"],
     },
     ResourceInfo {
         id: "reranker",
@@ -102,20 +104,22 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "Qwen3-Reranker-0.6B",
         pip_name: "",
         import_name: "",
+        allow_patterns: &["*.safetensors", "*.json", "*.txt", "tokenizer*"],
     },
     ResourceInfo {
         id: "moldet",
         name: "MolDetv2",
         resource_type: ResourceType::Model,
-        description: "MolDetv2 分子结构检测 (YOLO)",
-        size_mb: 25,
+        description: "MolDetv2 分子结构检测 (YOLO, doc + general)",
+        size_mb: 11,
         license: "Apache-2.0",
-        ms_repo: "yujieq/MolDetect",
-        download_type: "file",
-        ms_file: "best.pt",
-        local_name: "moldetv2-doc.pt",
+        ms_repo: "UniParser/MolDetv2",
+        download_type: "snapshot",
+        ms_file: "",
+        local_name: "MolDetv2",
         pip_name: "",
         import_name: "",
+        allow_patterns: &["*.pt", "*.onnx", "*.json"],
     },
     ResourceInfo {
         id: "molscribe",
@@ -125,11 +129,27 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         size_mb: 1134,
         license: "MIT",
         ms_repo: "polyai/MolScribe",
-        download_type: "file",
-        ms_file: "swin_base_char_aux_1m680k.pth",
-        local_name: "MolScribe/swin_base_char_aux_1m680k.pth",
+        download_type: "snapshot",
+        ms_file: "",
+        local_name: "MolScribe",
         pip_name: "",
         import_name: "",
+        allow_patterns: &["*.pth", "*.safetensors", "*.json", "*.txt", "tokenizer*", "vocab*"],
+    },
+    ResourceInfo {
+        id: "moldet_coref",
+        name: "MolDetect Coref",
+        resource_type: ResourceType::Model,
+        description: "MolDetect 分子-标号共指消解模型",
+        size_mb: 200,
+        license: "Apache-2.0",
+        ms_repo: "polyai/MolDetect",
+        download_type: "snapshot",
+        ms_file: "",
+        local_name: "MolDetect",
+        pip_name: "",
+        import_name: "",
+        allow_patterns: &["*.ckpt", "*.pt", "*.pth", "*.json", "*.txt"],
     },
     // ──── Python 包 ────
     ResourceInfo {
@@ -145,6 +165,7 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "",
         pip_name: "torch",
         import_name: "torch",
+        allow_patterns: &[],
     },
     ResourceInfo {
         id: "sentence_transformers",
@@ -159,6 +180,7 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "",
         pip_name: "sentence-transformers",
         import_name: "sentence_transformers",
+        allow_patterns: &[],
     },
     ResourceInfo {
         id: "transformers",
@@ -173,6 +195,7 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "",
         pip_name: "transformers",
         import_name: "transformers",
+        allow_patterns: &[],
     },
     ResourceInfo {
         id: "ultralytics",
@@ -187,20 +210,6 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "",
         pip_name: "ultralytics",
         import_name: "ultralytics",
-    },
-    // ──── 二进制 ────
-    ResourceInfo {
-        id: "pdfium",
-        name: "PDFium",
-        resource_type: ResourceType::Binary,
-        description: "PDF 渲染引擎 (Rust 侧编译依赖)",
-        size_mb: 0,
-        license: "Apache-2.0",
-        ms_repo: "",
-        download_type: "",
-        ms_file: "",
-        local_name: "",
-        pip_name: "",
-        import_name: "",
+        allow_patterns: &[],
     },
 ];

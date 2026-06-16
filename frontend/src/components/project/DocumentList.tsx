@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
-import Card from '../ui/Card'
+
 import BodyText from '../ui/BodyText'
 import Badge from '../ui/Badge'
 import Button from '../ui/Button'
@@ -27,6 +27,7 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
   const [inspectingIds, setInspectingIds] = useState<Set<string>>(new Set())
   const [confirmingIds, setConfirmingIds] = useState<Set<string>>(new Set())
   const [enqueueingIds, setEnqueueingIds] = useState<Set<string>>(new Set())
+  const [justEnqueuedIds, setJustEnqueuedIds] = useState<Set<string>>(new Set())
 
   // 对未检测的 PDF 自动运行 Inspector（仅一次）
   useEffect(() => {
@@ -60,11 +61,14 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
     setConfirmingIds(prev => new Set(prev).add(doc.doc_id))
     try {
       await confirmOcr(projectRoot, doc.doc_id, confirm)
-      showToast(confirm ? '已确认 OCR，将加入处理队列' : '已跳过 OCR', 'success')
+      if (confirm) {
+        setJustEnqueuedIds(prev => new Set(prev).add(doc.doc_id))
+      }
+      showToast(confirm ? t('doc.ocrConfirmed') : t('doc.ocrSkipped'), 'success')
       onRefreshDocs?.()
     } catch (e) {
       console.error('[DocumentList] confirm OCR failed:', e)
-      showToast('OCR 确认失败: ' + String(e), 'error')
+      showToast(t('doc.ocrConfirmFailed', { error: String(e) }), 'error')
     } finally {
       setConfirmingIds(prev => {
         const next = new Set(prev)
@@ -81,11 +85,12 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
     try {
       await ingestEnqueue(projectRoot, filePath, doc.doc_id)
       trackSelfTriggeredDoc(doc.doc_id)
+      setJustEnqueuedIds(prev => new Set(prev).add(doc.doc_id))
       showToast(t('project.processNow') + ': ' + (doc.title || doc.doc_id), 'success')
       onRefreshDocs?.()
     } catch (e) {
       console.error('[DocumentList] enqueue failed:', e)
-      showToast('加入队列失败: ' + String(e), 'error')
+      showToast(t('doc.enqueueFailed', { error: String(e) }), 'error')
     } finally {
       setEnqueueingIds(prev => {
         const next = new Set(prev)
@@ -106,137 +111,158 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
   if (docs.length === 0) {
     return (
       <EmptyState
-        message={projectRoot ? '暂无文件，点击"扫描文件"索引项目内容' : '请先打开或创建一个项目'}
+        message={projectRoot ? t('doc.emptyWithProject') : t('project.noProject')}
       />
     )
   }
 
   return (
-    <div className="project-doc-list">
+    <div className="project-docs-list">
       {docs.map((doc, index) => {
-        const delayedFadeUp = {
-          hidden: { opacity: 0, y: 6 },
-          visible: {
-            opacity: 1,
-            y: 0,
-            transition: { delay: index * 0.03, duration: 0.3 }
-          },
-        }
-
         const isInspecting = inspectingIds.has(doc.doc_id)
         const isConfirming = confirmingIds.has(doc.doc_id)
+        const justEnqueued = justEnqueuedIds.has(doc.doc_id)
 
         const inspectorStatus = doc.inspector_status || 'pending'
         const inspectorBadge =
           doc.doc_type !== 'pdf'
             ? null
             : inspectorStatus === 'text_based'
-              ? <Badge variant="success">文本型</Badge>
+              ? <Badge variant="success">{t('doc.typeText')}</Badge>
               : inspectorStatus === 'scanned'
-                ? <Badge variant="warning">扫描件</Badge>
+                ? <Badge variant="warning">{t('doc.typeScanned')}</Badge>
                 : inspectorStatus === 'mixed'
-                  ? <Badge variant="warning">混合</Badge>
+                  ? <Badge variant="warning">{t('doc.typeMixed')}</Badge>
                   : inspectorStatus === 'image_based'
-                    ? <Badge variant="neutral">图像型</Badge>
+                    ? <Badge variant="neutral">{t('doc.typeImage')}</Badge>
                     : inspectorStatus === 'error'
-                      ? <Badge variant="danger">检测失败</Badge>
-                      : <Badge variant="neutral">待检测</Badge>
+                      ? <Badge variant="danger">{t('doc.detectFailed')}</Badge>
+                      : <Badge variant="neutral">{t('doc.pendingDetect')}</Badge>
 
         const textStatus = doc.text_status || 'pending'
         const textBadge =
           doc.doc_type !== 'pdf'
             ? null
             : textStatus === 'done'
-              ? <Badge variant="success">已提取</Badge>
+              ? <Badge variant="success">{t('doc.textExtracted')}</Badge>
               : textStatus === 'error'
-                ? <Badge variant="danger">提取失败</Badge>
-                : <Badge variant="neutral">未提取</Badge>
+                ? <Badge variant="danger">{t('doc.extractFailed')}</Badge>
+                : null
 
         const ocrStatus = doc.ocr_status || 'not_processed'
         const ocrBadge =
           doc.doc_type !== 'pdf'
             ? null
             : ocrStatus === 'done' || ocrStatus === 'completed'
-              ? <Badge variant="success">已 OCR</Badge>
+              ? <Badge variant="success">{t('doc.ocrDone')}</Badge>
               : ocrStatus === 'processing'
-                ? <Badge variant="warning">OCR 中</Badge>
+                ? <Badge variant="warning">{t('doc.ocrProcessing')}</Badge>
               : ocrStatus === 'pending'
-                ? <Badge variant="warning">等待 OCR</Badge>
+                ? <Badge variant="warning">{t('doc.pendingOcr')}</Badge>
               : ocrStatus === 'pending_confirmation'
-                ? <Badge variant="warning">待确认 OCR</Badge>
+                ? <Badge variant="warning">{t('doc.pendingOcrConfirm')}</Badge>
               : ocrStatus === 'skipped'
-                ? <Badge variant="neutral">已跳过 OCR</Badge>
+                ? null
               : ocrStatus === 'error'
-                ? <Badge variant="danger">OCR 失败</Badge>
-                : <Badge variant="neutral">未 OCR</Badge>
+                ? <Badge variant="danger">{t('doc.ocrFailed')}</Badge>
+                : null
 
         const moldetStatus = doc.moldet_status || 'not_processed'
         const moldetBadge =
           doc.doc_type !== 'pdf'
             ? null
             : moldetStatus === 'has_molecule'
-              ? <Badge variant="success">含分子</Badge>
+              ? <Badge variant="success">{t('doc.hasMolecule')}</Badge>
               : moldetStatus === 'no_molecule'
-                ? <Badge variant="neutral">无分子</Badge>
+                ? null
                 : moldetStatus === 'error'
-                  ? <Badge variant="danger">扫描失败</Badge>
-                  : <Badge variant="neutral">未扫描</Badge>
+                  ? <Badge variant="danger">检测失败</Badge>
+                  : null
 
         const indexStatus = doc.index_status || 'pending'
         const indexBadge =
           doc.doc_type !== 'pdf'
             ? null
             : indexStatus === 'done'
-              ? <Badge variant="success">已索引</Badge>
+              ? <Badge variant="success">{t('doc.indexedInKb')}</Badge>
               : indexStatus === 'error'
-                ? <Badge variant="danger">索引失败</Badge>
-                : <Badge variant="neutral">未索引</Badge>
+                ? <Badge variant="danger">{t('doc.indexFailed')}</Badge>
+                : null
 
         const moldetHint =
           doc.doc_type === 'pdf' && doc.moldet_pages && doc.moldet_pages.length > 0
-            ? `分子页: ${doc.moldet_pages.join(', ')}`
+            ? `${t('doc.moleculePages', { pages: doc.moldet_pages.join(', ') })}`
             : undefined
 
         const needsOcrConfirm = doc.doc_type === 'pdf' && ocrStatus === 'pending_confirmation'
         const isEnqueueing = enqueueingIds.has(doc.doc_id)
+
+        // 判断文件是否正在处理中（任何阶段）
+        const isActivelyProcessing =
+          doc.doc_type === 'pdf' && (
+            justEnqueued ||
+            isInspecting ||
+            isConfirming ||
+            isEnqueueing ||
+            ocrStatus === 'processing' ||
+            ocrStatus === 'pending' ||
+            textStatus === 'processing' ||
+            textStatus === 'pending' ||
+            indexStatus === 'processing' ||
+            indexStatus === 'pending'
+          )
+
+        // 仅不在处理队列中的文件（已完成/已失败/未处理且未被加入队列）才显示处理按钮
         const canEnqueue =
           doc.doc_type === 'pdf' &&
           !needsOcrConfirm &&
-          indexStatus !== 'done' &&
-          indexStatus !== 'processing'
+          !isActivelyProcessing &&
+          indexStatus !== 'done'
+
+        // 任意阶段检测失败 → 显示重试按钮（重新入队）
+        const hasFailedStage =
+          doc.doc_type === 'pdf' &&
+          (inspectorStatus === 'error' ||
+            textStatus === 'error' ||
+            ocrStatus === 'error' ||
+            moldetStatus === 'error' ||
+            indexStatus === 'error')
+        const canRetry = hasFailedStage && !isActivelyProcessing
 
         return (
           <motion.div
             key={doc.doc_id}
-            variants={delayedFadeUp}
-            initial="hidden"
-            animate="visible"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.02, duration: 0.2 }}
           >
-            <Card
-              onClick={() => onOpenFile(doc)}
+            <div
               className="project-doc-item"
+              onClick={() => onOpenFile(doc)}
               title={moldetHint}
             >
-              <FileTextIcon size={16} />
-              <BodyText size="md" className="project-doc-title">{doc.title || doc.path}</BodyText>
-              <Badge variant="neutral">{doc.doc_type}</Badge>
-              {isInspecting ? <Badge variant="warning">检测中...</Badge> : inspectorBadge}
-              {textBadge}
-              {ocrBadge}
-              {moldetBadge}
-              {indexBadge}
+              <FileTextIcon size={14} className="project-doc-icon" />
+              <BodyText size="sm" className="project-doc-title">{doc.title || doc.path}</BodyText>
+              <div className="project-doc-badges">
+                <Badge variant="neutral">{doc.doc_type}</Badge>
+                {isInspecting ? <Badge variant="warning">{t('common.detecting')}</Badge> : inspectorBadge}
+                {textBadge}
+                {ocrBadge}
+                {moldetBadge}
+                {indexBadge}
+                {isActivelyProcessing && !ocrBadge && !textBadge && !indexBadge && (
+                  <Badge variant="warning">{t('common.processing')}</Badge>
+                )}
+              </div>
               {needsOcrConfirm && (
-                <div
-                  style={{ display: 'inline-flex', gap: '8px', marginLeft: 'auto' }}
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <div className="project-doc-actions" onClick={(e) => e.stopPropagation()}>
                   <Button
                     variant="primary"
                     size="sm"
                     loading={isConfirming}
                     onClick={() => handleConfirmOcr(doc, true)}
                   >
-                    确认 OCR
+                    {t('common.confirm')}
                   </Button>
                   <Button
                     variant="ghost"
@@ -244,16 +270,12 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
                     disabled={isConfirming}
                     onClick={() => handleConfirmOcr(doc, false)}
                   >
-                    跳过
+                    {t('common.skip')}
                   </Button>
                 </div>
               )}
               {canEnqueue && (
-                <div
-                  style={{ display: 'inline-flex', gap: '8px', marginLeft: 'auto' }}
-                  onClick={(e) => e.stopPropagation()}
-                  title={t('project.processNowDesc')}
-                >
+                <div className="project-doc-actions" onClick={(e) => e.stopPropagation()}>
                   <Button
                     variant="primary"
                     size="sm"
@@ -261,11 +283,24 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
                     disabled={isEnqueueing}
                     onClick={() => handleEnqueue(doc)}
                   >
-                    {t('project.processNow')}
+                    {t('common.process')}
                   </Button>
                 </div>
               )}
-            </Card>
+              {canRetry && (
+                <div className="project-doc-actions" onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={isEnqueueing}
+                    disabled={isEnqueueing}
+                    onClick={() => handleEnqueue(doc)}
+                  >
+                    {t('common.retry')}
+                  </Button>
+                </div>
+              )}
+            </div>
           </motion.div>
         )
       })}

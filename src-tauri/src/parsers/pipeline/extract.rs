@@ -169,10 +169,15 @@ fn save_ocr_cache(
 // ---------------------------------------------------------------------------
 
 /// 将 MinerU zip 中提取的图片复制到项目 media 目录，并更新 rel_path。
-fn persist_mineru_images(
+/// Copy images from a backend temp dir into
+/// `<project_root>/reports/figures/<doc_slug>/<backend_subdir>/` and
+/// return their `ImageRef` with `rel_path` updated. Used by MinerU and
+/// PaddleOCR branches.
+fn persist_backend_images(
     path: &str,
     project_root: &Path,
-    mineru_images: &[ImageRef],
+    images: &[ImageRef],
+    backend_subdir: &str,
 ) -> Vec<ImageRef> {
     let source_path = Path::new(path);
     let doc_slug = source_path
@@ -184,36 +189,36 @@ fn persist_mineru_images(
         .join(REPORTS_DIR)
         .join("figures")
         .join(doc_slug)
-        .join("mineru");
+        .join(backend_subdir);
 
     if std::fs::create_dir_all(&media_dir).is_err() {
         log::warn!(
-            "Failed to create mineru-images dir: {}",
+            "Failed to create {}-images dir: {}",
+            backend_subdir,
             media_dir.display()
         );
-        return mineru_images.to_vec();
+        return images.to_vec();
     }
 
-    mineru_images
+    images
         .iter()
         .map(|img| {
             let rel = img.rel_path.as_ref().unwrap_or(&img.filename);
             let src = Path::new(rel);
             if !src.exists() {
-                // 如果临时文件已被清理，保留原样
                 return img.clone();
             }
             let dest = media_dir.join(&img.filename);
             if let Err(e) = std::fs::copy(src, &dest) {
                 log::warn!(
-                    "Failed to copy MinerU image {} → {}: {}",
+                    "Failed to copy {} image {} → {}: {}",
+                    backend_subdir,
                     src.display(),
                     dest.display(),
                     e
                 );
                 return img.clone();
             }
-            // 计算相对项目根目录的路径
             if let Ok(rp) = dest.strip_prefix(project_root) {
                 ImageRef {
                     filename: img.filename.clone(),
@@ -228,6 +233,15 @@ fn persist_mineru_images(
             }
         })
         .collect()
+}
+
+/// Back-compat shim — MinerU branch keeps the original name.
+fn persist_mineru_images(
+    path: &str,
+    project_root: &Path,
+    images: &[ImageRef],
+) -> Vec<ImageRef> {
+    persist_backend_images(path, project_root, images, "mineru")
 }
 
 // ---------------------------------------------------------------------------
@@ -246,21 +260,38 @@ pub async fn classify_and_extract_with_progress(
     let source_path = Path::new(path);
     let project_root = find_project_root(source_path, None);
 
-    // 先尝试 pdf-inspector
-    let pdf_result =
-        pdf_inspector::process_pdf(path).map_err(|e| format!("pdf-inspector failed: {}", e))?;
-    let md = pdf_result.markdown.unwrap_or_default();
+    // 先尝试 pdf-inspector (sync, offload to blocking pool to avoid
+    // panicking on single-thread runtimes that forbid sync I/O inside async).
+    let path_owned = path.to_owned();
+    let pdf_result = tokio::task::spawn_blocking(move || pdf_inspector::process_pdf(&path_owned))
+        .await
+        .map_err(|e| format!("pdf-inspector join error: {e}"))?
+        .map_err(|e| format!("pdf-inspector failed: {}", e))?;
+    let md = pdf_result.markdown.clone().unwrap_or_default();
     let page_count = pdf_result.page_count as usize;
+    let pages_needing_ocr: Vec<usize> = pdf_result
+        .pages_needing_ocr
+        .iter()
+        .map(|&p| p as usize)
+        .collect();
 
-    // 提取嵌入图片并持久化到项目目录
-    let tmp_dir = tempfile::tempdir().map_err(|e| format!("Temp dir error: {}", e))?;
-    let extracted =
-        crate::parsers::pdf::images::extract_images_from_pdf(path, tmp_dir.path(), 50, 5)
-            .unwrap_or_default();
+    // 提取嵌入图片并持久化到项目目录 (sync + I/O → spawn_blocking)
+    let path_owned2 = path.to_owned();
+    let extracted = tokio::task::spawn_blocking(move || -> Vec<crate::parsers::pdf::images::ExtractedImage> {
+        let tmp = match tempfile::tempdir() {
+            Ok(t) => t,
+            Err(_) => return vec![],
+        };
+        crate::parsers::pdf::images::extract_images_from_pdf(&path_owned2, tmp.path(), 50, 5)
+            .unwrap_or_default()
+    })
+    .await
+    .map_err(|e| format!("image extraction join error: {e}"))?;
     let images = persist_extracted_images(path, &extracted);
 
-    // 判断是否为扫描件（文本极少但有页面）
-    let is_scanned = md.len() < 100 && page_count > 0;
+    // 判断是否为扫描件（文本极少但有页面，或 pdf-inspector 标记需 OCR）
+    let is_scanned =
+        (md.len() < 100 && page_count > 0) || !pages_needing_ocr.is_empty();
 
     if is_scanned && allow_ocr {
         if let Some(p) = progress.as_ref() {
@@ -295,9 +326,27 @@ pub async fn classify_and_extract_with_progress(
             }
             match crate::parsers::ocr::mineru::run(path).await {
                 Ok(out) => {
-                    // 保存缓存
+                    // MinerU returns images saved in its temp dir; copy to
+                    // project reports/figures/<doc>/mineru/ and merge into
+                    // the locally-extracted image list.
+                    let mineru_images = if let Some(ref root) = project_root {
+                        persist_mineru_images(path, root, &out.images)
+                    } else {
+                        out.images
+                    };
+                    let mut all_images = images;
+                    all_images.extend(mineru_images);
+
+                    // MinerU 后端返回的是 serde_json::Value，需要转换成 OcrBlock。
+                    let ocr_blocks: Vec<OcrBlock> = out
+                        .ocr_blocks
+                        .into_iter()
+                        .filter_map(|v| serde_json::from_value(v).ok())
+                        .collect();
+
+                    // 保存缓存 (含 mineru images + blocks)
                     if let Some(ref root) = project_root {
-                        save_ocr_cache(path, root, &out.text, &[], &[]);
+                        save_ocr_cache(path, root, &out.text, &all_images, &ocr_blocks);
                     }
                     if let Some(p) = progress.as_ref() {
                         p.report("MinerU OCR 成功");
@@ -306,8 +355,8 @@ pub async fn classify_and_extract_with_progress(
                         text: out.text,
                         page_count: out.page_count.max(page_count),
                         parser: "mineru".into(),
-                        images,
-                        ocr_blocks: vec![],
+                        images: all_images,
+                        ocr_blocks,
                     });
                 }
                 Err(e) => {
@@ -363,7 +412,7 @@ pub async fn classify_and_extract_with_progress(
             }
         }
 
-        // ---- Backend 3: PaddleOCR online (placeholder) ----
+        // ---- Backend 3: PaddleOCR online ----
         if crate::parsers::ocr::paddle::online_is_available() {
             log::info!("[PaddleOCR/online] Parsing scanned PDF {}", path);
             if let Some(p) = progress.as_ref() {
@@ -371,6 +420,13 @@ pub async fn classify_and_extract_with_progress(
             }
             match crate::parsers::ocr::paddle::run_online(path).await {
                 Ok(out) => {
+                    let paddle_images = if let Some(ref root) = project_root {
+                        persist_backend_images(path, root, &out.images, "paddle")
+                    } else {
+                        out.images
+                    };
+                    let mut all_images = images;
+                    all_images.extend(paddle_images);
                     if let Some(p) = progress.as_ref() {
                         p.report("PaddleOCR online 成功");
                     }
@@ -378,7 +434,7 @@ pub async fn classify_and_extract_with_progress(
                         text: out.text,
                         page_count: out.page_count.max(page_count),
                         parser: "paddleocr-online".into(),
-                        images,
+                        images: all_images,
                         ocr_blocks: vec![],
                     });
                 }
@@ -424,60 +480,11 @@ pub async fn classify_and_extract_with_progress(
             }
         }
 
-        // 回退到 LiteParse（本地 OCR）
-        // LiteParse (via tesseract-rs) downloads `<lang>.traineddata` from
-        // GitHub on first use with NO client-side timeout
-        // (liteparse-2.0.7/src/ocr/tesseract.rs::ensure_traineddata uses
-        // `reqwest::get(&url).await?` against
-        // https://github.com/tesseract-ocr/tessdata_best/raw/main/...).
-        // In networks where GitHub is slow or blocked, that download
-        // hangs indefinitely and the worker is stuck forever in the
-        // `ocr` stage. Bound the call so we fall back to the
-        // pdf-inspector's text result instead of pinning the queue.
+        // 所有云端 OCR 均不可用，回退到 pdf-inspector。
         if let Some(p) = progress.as_ref() {
-            p.report("尝试 LiteParse 本地 OCR backend（最多 90 秒）...");
+            p.report("无可用 OCR 后端，将回退到 pdf-inspector 原始文本");
         }
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(90),
-            crate::parsers::pdf::liteparse::parse_with_liteparse(path, true, None),
-        )
-        .await
-        {
-            Ok(Ok(result)) if !result.text.trim().is_empty() => {
-                if let Some(p) = progress.as_ref() {
-                    p.report("LiteParse OCR 成功");
-                }
-                return Ok(ClassifyResult {
-                    text: result.text,
-                    page_count: result.pages.len(),
-                    parser: "liteparse".into(),
-                    images,
-                    ocr_blocks: vec![],
-                });
-            }
-            Ok(Ok(_)) => {
-                if let Some(p) = progress.as_ref() {
-                    p.report("LiteParse OCR 返回空结果，将回退到 pdf-inspector");
-                }
-            }
-            Ok(Err(e)) => {
-                log::warn!("LiteParse failed for {}: {} (falling back to pdf_inspector)", path, e);
-                if let Some(p) = progress.as_ref() {
-                    p.report(&format!("LiteParse OCR 失败: {}，将回退到 pdf-inspector", e));
-                }
-            }
-            Err(_) => {
-                log::warn!(
-                    "LiteParse timed out after 90s for {} (likely tessdata download blocked) (falling back to pdf_inspector)",
-                    path
-                );
-                if let Some(p) = progress.as_ref() {
-                    p.report("LiteParse OCR 超时（可能是 tessdata 下载被墙），将回退到 pdf-inspector");
-                }
-            }
-        }
-        }
-
+    }
 
     if is_scanned {
         if let Some(p) = progress.as_ref() {
@@ -949,8 +956,12 @@ pub async fn quick_moldet_scan_pdf(
             let batch_end = (batch_start + batch_size).min(page_numbers.len());
             let batch_pages: Vec<u32> = page_numbers[batch_start..batch_end].to_vec();
 
-            match crate::parsers::pdf::liteparse::screenshot_with_liteparse(path, Some(batch_pages))
-                .await
+            match crate::parsers::pdf::sidecar_render::render_pages(
+                path,
+                &batch_pages,
+                sidecar_url,
+            )
+            .await
             {
                 Ok(screenshots) => {
                     for ss in screenshots {
@@ -975,7 +986,7 @@ pub async fn quick_moldet_scan_pdf(
                 }
                 Err(e) => {
                     log::warn!(
-                        "[quick_moldet_scan] LiteParse screenshot failed for batch {}-{}: {}",
+                        "[quick_moldet_scan] Sidecar screenshot failed for batch {}-{}: {}",
                         batch_start + 1,
                         batch_end,
                         e
@@ -1113,7 +1124,7 @@ pub async fn quick_moldet_scan_pdf(
 /// 从 PDF 中提取分子图像（MolDet + MolScribe）
 ///
 /// 根据 PDF 类型选择不同策略：
-/// - TextBased（如中国专利）：LiteParse 截图每页 → MolDet 检测 → 裁剪 → MolScribe
+/// - TextBased（如中国专利）：sidecar 渲染每页 → MolDet 检测 → 裁剪 → MolScribe
 /// - Scanned（如美国专利）：使用 lopdf 提取的位图 → MolDet 检测 → 裁剪 → MolScribe
 ///
 /// # Arguments
@@ -1269,14 +1280,14 @@ pub async fn extract_molecules_from_pdf(
             }
         }
     } else {
-        // TextBased: LiteParse 截图每页
+        // TextBased: sidecar PyMuPDF 截图每页
         log::info!(
             "[extract_molecules] TextBased PDF: screenshot {} pages from {}",
             classified.page_count,
             path
         );
 
-        // 生成页码列表（1-indexed for LiteParse）
+        // 生成页码列表（1-indexed for sidecar）
         let page_numbers: Vec<u32> = (1..=classified.page_count).map(|p| p as u32).collect();
 
         // 分批截图（避免内存溢出，每批 10 页）
@@ -1285,8 +1296,12 @@ pub async fn extract_molecules_from_pdf(
             let batch_end = (batch_start + batch_size).min(page_numbers.len());
             let batch_pages: Vec<u32> = page_numbers[batch_start..batch_end].to_vec();
 
-            match crate::parsers::pdf::liteparse::screenshot_with_liteparse(path, Some(batch_pages))
-                .await
+            match crate::parsers::pdf::sidecar_render::render_pages(
+                path,
+                &batch_pages,
+                sidecar_url,
+            )
+            .await
             {
                 Ok(screenshots) => {
                     for ss in screenshots {
@@ -1303,7 +1318,7 @@ pub async fn extract_molecules_from_pdf(
                         }
 
                         let output_dir = mol_dir.clone();
-                        // LiteParse 截图是 text-based PDF，页面尺寸优先从 PDF 读取。
+                        // Sidecar 截图是 text-based PDF，页面尺寸优先从 PDF 读取。
                         let page_size =
                             pdf_page_size_pts(source_path, (page_idx - 1).max(0) as usize);
                         let (pw, ph) = page_size.unwrap_or((595.0_f64, 842.0_f64));
@@ -1392,7 +1407,7 @@ pub async fn extract_molecules_from_pdf(
                 }
                 Err(e) => {
                     log::warn!(
-                        "[extract_molecules] LiteParse screenshot failed for batch {}-{}: {}",
+                        "[extract_molecules] Page rendering failed for batch {}-{}: {}",
                         batch_start + 1,
                         batch_end,
                         e
@@ -1538,14 +1553,14 @@ pub async fn extract_molecules_with_coref(
             }
         }
     } else {
-        // TextBased: LiteParse 截图每页
+        // TextBased: sidecar PyMuPDF 截图每页
         log::info!(
             "[extract_coref] TextBased PDF: screenshot {} pages from {}",
             classified.page_count,
             path
         );
 
-        // 生成页码列表（1-indexed for LiteParse）
+        // 生成页码列表（1-indexed for sidecar）
         let page_numbers: Vec<u32> = (1..=classified.page_count).map(|p| p as u32).collect();
 
         // 分批截图（避免内存溢出，每批 10 页）
@@ -1554,8 +1569,12 @@ pub async fn extract_molecules_with_coref(
             let batch_end = (batch_start + batch_size).min(page_numbers.len());
             let batch_pages: Vec<u32> = page_numbers[batch_start..batch_end].to_vec();
 
-            match crate::parsers::pdf::liteparse::screenshot_with_liteparse(path, Some(batch_pages))
-                .await
+            match crate::parsers::pdf::sidecar_render::render_pages(
+                path,
+                &batch_pages,
+                sidecar_url,
+            )
+            .await
             {
                 Ok(screenshots) => {
                     for ss in screenshots {
@@ -1648,7 +1667,7 @@ pub async fn extract_molecules_with_coref(
                 }
                 Err(e) => {
                     log::warn!(
-                        "[extract_coref] LiteParse screenshot failed for batch {}-{}: {}",
+                        "[extract_coref] Page rendering failed for batch {}-{}: {}",
                         batch_start + 1,
                         batch_end,
                         e

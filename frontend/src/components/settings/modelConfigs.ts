@@ -63,9 +63,11 @@ export const VLM_MODELS: ModelMap = {
 }
 
 export const OCR_MODELS: ModelMap = {
-  paddle_ocr: [{ value: 'PaddleOCR-VL-0.9B', label: 'PaddleOCR-VL-0.9B' }],
-  mineru: [{ value: 'MinerU-1.0', label: 'MinerU 1.0' }],
-  dots_ocr: [{ value: 'dots.ocr', label: 'dots.ocr' }],
+  none: [{ value: '', label: '不启用' }],
+  mineru: [{ value: 'pipeline', label: 'pipeline (默认)' }, { value: 'vlm', label: 'vlm (推荐)' }],
+  uniparser: [{ value: 'default', label: '默认 (高质量)' }],
+  paddle_ocr: [{ value: 'PaddleOCR-VL-1.6', label: 'PaddleOCR-VL-1.6 (本地)' }],
+  paddleocr_online: [{ value: 'PaddleOCR-VL-1.6', label: 'PaddleOCR-VL-1.6 (AIStudio 云端)' }],
 }
 
 /** Provider 的可读标签 + 默认 placeholder URL（用于引导）。 */
@@ -81,9 +83,9 @@ export const PROVIDER_META: Record<string, { label: string; defaultUrl: string; 
   // VLM
   qwen_vl: { label: 'Qwen-VL (本地)', defaultUrl: '', needsKey: false },
   // OCR
-  paddle_ocr: { label: 'PaddleOCR (本地)', defaultUrl: '', needsKey: false },
-  mineru: { label: 'MinerU (本地)', defaultUrl: '', needsKey: false },
-  dots_ocr: { label: 'dots.ocr (本地)', defaultUrl: '', needsKey: false },
-  // 通用
   none: { label: '不启用', defaultUrl: '', needsKey: false },
+  mineru: { label: 'MinerU (云端)', defaultUrl: 'https://mineru.net/', needsKey: true },
+  uniparser: { label: 'Uniparser (云端)', defaultUrl: 'https://uniparser.dp.tech/api', needsKey: true },
+  paddle_ocr: { label: 'PaddleOCR (本地)', defaultUrl: '', needsKey: false },
+  paddleocr_online: { label: 'PaddleOCR AIStudio (云端)', defaultUrl: 'https://aistudio.baidu.com/paddleocr', needsKey: true },
 }

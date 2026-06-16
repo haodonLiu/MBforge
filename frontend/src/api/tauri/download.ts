@@ -42,7 +42,7 @@ export interface DownloadProgress {
 function inferModelType(id: string): string {
   if (id === 'embedding') return 'embedding'
   if (id === 'reranker') return 'reranker'
-  if (id === 'moldet' || id === 'molscribe') return 'detection'
+  if (id === 'moldet' || id === 'moldet_coref' || id === 'molscribe') return 'detection'
   return 'model'
 }
 
@@ -127,31 +127,47 @@ export function downloadModel(
   onProgress: (event: DownloadProgress) => void,
 ): () => void {
   let unlisten: UnlistenFn | null = null
+  let aborted = false
+  const logPrefix = `[downloadModel ${resourceId}]`
+  console.log(`${logPrefix} starting, registering listener...`)
 
-  // 监听进度事件
-  listen<DownloadProgress>('model-download-progress', (event) => {
-    onProgress(event.payload)
-  }).then((unlistenFn) => {
-    unlisten = unlistenFn
-  })
+  const start = async () => {
+    try {
+      unlisten = await listen<DownloadProgress>('model-download-progress', (event) => {
+        console.log(`${logPrefix} received progress event:`, event.payload)
+        onProgress(event.payload)
+      })
+      console.log(`${logPrefix} listener registered`)
+      if (aborted) {
+        unlisten()
+        return
+      }
 
-  // 发起下载
-  invokeWithError(
-    () => invoke<string>('models_download', { resourceId }),
-    ErrorCode.ApiError,
-  ).catch((err) => {
-    onProgress({
-      status: 'failed',
-      file: '',
-      file_progress: 0,
-      file_index: 0,
-      total_files: 0,
-      error: String(err),
-    })
-  })
+      console.log(`${logPrefix} invoking models_download...`)
+      const path = await invokeWithError(
+        () => invoke<string>('models_download', { resourceId }),
+        ErrorCode.ApiError,
+      )
+      console.log(`${logPrefix} models_download returned:`, path)
+    } catch (err) {
+      if (aborted) return
+      console.error(`${logPrefix} failed:`, err)
+      onProgress({
+        status: 'failed',
+        file: '',
+        file_progress: 0,
+        file_index: 0,
+        total_files: 0,
+        error: String(err),
+      })
+    }
+  }
+  void start()
 
   // 返回取消函数
   return () => {
+    console.log(`${logPrefix} cleanup called`)
+    aborted = true
     unlisten?.()
     invoke('models_cancel_download', { resourceId }).catch(() => {})
   }

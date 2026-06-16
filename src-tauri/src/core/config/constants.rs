@@ -116,6 +116,13 @@ pub const EVT_INGEST_QUEUE_UPDATE: &str = "ingest-queue-update";
 pub const EVT_INGEST_WORKER_HEARTBEAT: &str = "ingest-worker-heartbeat";
 /// Track C: 嵌入阶段子进度（独立于整体 ingest-progress）
 pub const EVT_INGEST_EMBED: &str = "ingest-embed";
+pub const EVT_INGEST_LOG: &str = "ingest-log";
+/// Scanned PDF detected but no OCR API key configured for the available
+/// backends. Frontend shows a modal reminding the user to configure
+/// MinerU/PaddleOCR/Uniparser credentials in Settings.
+/// Payload: `{ backend: "mineru"|"uniparser"|"paddleocr-online"|"paddleocr-local",
+///              doc_id: String, file_path: String }`
+pub const EVT_OCR_API_MISSING: &str = "ocr-api-missing";
 
 // Agent config
 pub const AGENT_MAX_ITERATIONS: usize = 5;

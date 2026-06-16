@@ -1,39 +1,32 @@
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { PageTitle, Tabs, TabPanel } from '@/components/ui'
-import WorkspaceOverview from './WorkspaceOverview'
-import WorkspaceDocumentBrowser from './WorkspaceDocumentBrowser'
+import { motion } from 'framer-motion'
+import { PageTitle } from '@/components/ui'
+import { fadeUp } from '@/hooks/useAnimations'
+import ProjectView from '@/components/ProjectView'
 
 /**
  * Workspace 页面。
  *
- * 提供「概览」与「文档」两个标签页，作为项目工作流的主入口。
+ * 合并概览与文档：顶部统计卡片 + 下方文档浏览器。
  */
 export default function Workspace() {
   const { t } = useTranslation()
-  const [activeTab, setActiveTab] = useState('overview')
-
-  const tabItems = [
-    { key: 'overview', label: t('workspace.overview') },
-    { key: 'documents', label: t('workspace.documents') },
-  ]
 
   return (
-    <div className="workspace-page">
-      <PageTitle>{t('workspace.title')}</PageTitle>
-      <Tabs
-        items={tabItems}
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        variant="underline"
-        style={{ marginTop: 16 }}
-      />
-      <TabPanel activeKey={activeTab} tabKey="overview">
-        <WorkspaceOverview />
-      </TabPanel>
-      <TabPanel activeKey={activeTab} tabKey="documents">
-        <WorkspaceDocumentBrowser />
-      </TabPanel>
-    </div>
+    <motion.div
+      className="workspace-page"
+      variants={fadeUp}
+      initial="hidden"
+      animate="visible"
+    >
+      <div className="workspace-header">
+        <PageTitle>{t('workspace.title')}</PageTitle>
+      </div>
+
+      {/* Document browser */}
+      <div className="workspace-content">
+        <ProjectView />
+      </div>
+    </motion.div>
   )
 }

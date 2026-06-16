@@ -193,11 +193,6 @@ pub async fn parse_pdf(
             )?;
             (result.markdown, result.page_count)
         }
-        "liteparse" => {
-            let result = super::pdf::liteparse::parse_with_liteparse(&path, false, None).await?;
-            let page_count = result.pages.len();
-            (result.text, page_count)
-        }
         _ => {
             let result = pdf_inspector::process_pdf(&path)
                 .map_err(|e| format!("pdf-inspector failed: {}", e))?;
@@ -794,7 +789,7 @@ pub async fn process_document(
     };
 
     // ===== Stage 2b: MolDet + MolScribe 分子图像提取 =====
-    // 统一处理：Scanned（lopdf 位图）和 TextBased（LiteParse 截图）都走 MolDet → 裁剪 → MolScribe
+    // 统一处理：Scanned（lopdf 位图）和 TextBased（sidecar 渲染）都走 MolDet → 裁剪 → MolScribe
     if let Some(ref root) = project_root {
         let classified_for_mol = extract::ClassifyResult {
             text: ctx.raw_text.clone(),
@@ -1228,7 +1223,7 @@ pub async fn index_project_rust(
     let total = pdf_files.len();
     let sidecar_url = crate::core::constants::sidecar_url();
 
-    // Phase 1: 并行提取（I/O 密集：MinerU OCR、LiteParse 截图、MolDet 检测）
+    // Phase 1: 并行提取（I/O 密集：MinerU OCR、sidecar 渲染、MolDet 检测）
     // 缓存命中的直接处理，未命中的并行 extract
     let mut cache_hits: Vec<(
         std::path::PathBuf,

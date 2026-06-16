@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ask } from '@tauri-apps/plugin-dialog'
 import { RefreshCwIcon } from '@/components/icons'
 import { Button, SectionTitle } from '@/components/ui'
 import ResponsiveStatGrid from '@/components/ui/ResponsiveStatGrid'
@@ -8,14 +7,12 @@ import StatCard from '@/components/settings/environment/StatCard'
 import LibrarySection, { type CapabilityStatus } from '@/components/settings/environment/LibrarySection'
 import {
   PathSection,
-  ModelsSection,
 } from '@/components/settings/environment/sections'
 import DetectionCacheCard from '@/components/settings/DetectionCacheCard'
 import SidecarCard from '@/components/settings/SidecarCard'
 import ModelServiceSection from '@/components/settings/sections/ModelServiceSection'
 import type { ModelInfo, ModelPaths } from '@/components/settings/environment/types'
 import { resourcesCatalog, resourcesStatus, modelsCacheDirInfo, refreshResolvedPaths } from '@/api/tauri/environment'
-import { downloadModel, deleteModel } from '@/api/tauri/download'
 import { saveSettings } from '@/api/tauri/settings'
 import { environmentCheck } from '@/api/tauri/sidecar'
 import { showToast } from '@/hooks/useToast'
@@ -111,35 +108,6 @@ export default function SystemTab({ settings, setSettings }: Props) {
       setPaths(null)
     }
   }, [t])
-
-  const handleDownloadModel = (modelId: string) => {
-    try {
-      let completed = false
-      const cancel = downloadModel(modelId, (progress) => {
-        if (progress.status === 'completed' || progress.status === 'failed') {
-          completed = true
-          void fetchModels()
-        }
-      })
-      setTimeout(() => {
-        cancel()
-        if (!completed) void fetchModels()
-      }, 30000)
-    } catch (e) {
-      showToast(t('systemTab.downloadFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
-    }
-  }
-
-  const handleDeleteModel = async (modelId: string) => {
-    const ok = await ask(t('systemTab.confirmDelete'), { kind: 'warning' })
-    if (!ok) return
-    try {
-      await deleteModel(modelId)
-      void fetchModels()
-    } catch (e) {
-      showToast(t('systemTab.deleteFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
-    }
-  }
 
   const handleRefreshModelEnv = async () => {
     try {
@@ -262,15 +230,6 @@ export default function SystemTab({ settings, setSettings }: Props) {
               onSave={savePath}
               onCancel={() => setEditingPath(null)}
               onChange={setEditValue}
-            />
-          </div>
-
-          <div className="system-block">
-            <ModelsSection
-              models={models}
-              downloadedCount={downloadedModels}
-              onDownload={handleDownloadModel}
-              onDelete={handleDeleteModel}
             />
           </div>
 

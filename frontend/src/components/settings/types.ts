@@ -52,6 +52,13 @@ export interface SettingsState {
   ocr_use_hf_mirror: boolean
   ocr_use_pdf_inspector: boolean
 
+  // —— OCR 云端后端 (per-backend keys) ——
+  ocr_mineru_api_key: string
+  ocr_uniparser_api_key: string
+  ocr_paddleocr_api_key: string
+  ocr_paddleocr_host: string
+  ocr_paddleocr_model: string
+
   // —— Model Service ——
   server_host: string
   server_port: number
@@ -63,7 +70,6 @@ export interface SettingsState {
   model_cache_dir: string
 
   // —— PDF 解析 ——
-  pdf_ocr_language: string
   pdf_chunk_size: number
   pdf_chunk_overlap: number
 
@@ -119,6 +125,12 @@ export const DEFAULT_SETTINGS: SettingsState = {
   ocr_use_hf_mirror: true,
   ocr_use_pdf_inspector: true,
 
+  ocr_mineru_api_key: '',
+  ocr_uniparser_api_key: '',
+  ocr_paddleocr_api_key: '',
+  ocr_paddleocr_host: '',
+  ocr_paddleocr_model: 'PaddleOCR-VL-1.6',
+
   server_host: '127.0.0.1',
   server_port: 18792,
   server_auto_start: true,
@@ -127,7 +139,6 @@ export const DEFAULT_SETTINGS: SettingsState = {
 
   model_cache_dir: '',
 
-  pdf_ocr_language: 'eng',
   pdf_chunk_size: 512,
   pdf_chunk_overlap: 50,
 
@@ -221,6 +232,11 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
     ocr_model: ocr.model_name || DEFAULT_SETTINGS.ocr_model,
     ocr_use_hf_mirror: ocr.use_hf_mirror !== false,
     ocr_use_pdf_inspector: ocr.use_pdf_inspector !== false,
+    ocr_mineru_api_key: ocr.mineru_api_key || DEFAULT_SETTINGS.ocr_mineru_api_key,
+    ocr_uniparser_api_key: ocr.uniparser_api_key || DEFAULT_SETTINGS.ocr_uniparser_api_key,
+    ocr_paddleocr_api_key: ocr.paddleocr_api_key || DEFAULT_SETTINGS.ocr_paddleocr_api_key,
+    ocr_paddleocr_host: ocr.paddleocr_host || DEFAULT_SETTINGS.ocr_paddleocr_host,
+    ocr_paddleocr_model: ocr.paddleocr_model || DEFAULT_SETTINGS.ocr_paddleocr_model,
 
     server_host: ms.host || DEFAULT_SETTINGS.server_host,
     server_port: ms.port || DEFAULT_SETTINGS.server_port,
@@ -230,7 +246,6 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
 
     model_cache_dir: s.model_cache_dir || DEFAULT_SETTINGS.model_cache_dir,
 
-    pdf_ocr_language: s.pdf_parse?.ocr_language || DEFAULT_SETTINGS.pdf_ocr_language,
     pdf_chunk_size: s.pdf_parse?.chunk_size || DEFAULT_SETTINGS.pdf_chunk_size,
     pdf_chunk_overlap: s.pdf_parse?.chunk_overlap || DEFAULT_SETTINGS.pdf_chunk_overlap,
 
@@ -293,6 +308,11 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
       model_name: s.ocr_model,
       use_hf_mirror: s.ocr_use_hf_mirror,
       use_pdf_inspector: s.ocr_use_pdf_inspector,
+      mineru_api_key: s.ocr_mineru_api_key || null,
+      uniparser_api_key: s.ocr_uniparser_api_key || null,
+      paddleocr_api_key: s.ocr_paddleocr_api_key || null,
+      paddleocr_host: s.ocr_paddleocr_host || null,
+      paddleocr_model: s.ocr_paddleocr_model || null,
     },
     model_server: {
       host: s.server_host,
@@ -303,7 +323,6 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
     },
     model_cache_dir: s.model_cache_dir,
     pdf_parse: {
-      ocr_language: s.pdf_ocr_language,
       chunk_size: s.pdf_chunk_size,
       chunk_overlap: s.pdf_chunk_overlap,
     },

@@ -1,4 +1,21 @@
-/* layout.css - domain styles for the layout area.
- * Reserved for future extraction from inline component styles.
- * Currently no global.css rules belong to this domain.
- */
+/* layout.css - Workspace page merged layout */
+
+.workspace-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 16px;
+  padding: 20px 24px;
+  overflow: hidden;
+}
+
+.workspace-header {
+  flex-shrink: 0;
+}
+
+/* Content area: document browser takes remaining space */
+.workspace-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}

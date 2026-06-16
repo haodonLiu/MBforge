@@ -82,7 +82,7 @@ def get_model_cache_dir() -> str:
             return cfg.model_cache_dir
     except Exception:
         pass
-    return str(Path.home() / MODEL_CACHE_DIR.replace(".", "").replace("/", os.sep).replace("~", str(Path.home())))
+    return str(Path.home() / ".cache" / "mbforge" / "models")
 
 
 # MODEL_CACHE_DIR is the relative path fragment used by get_model_cache_dir()

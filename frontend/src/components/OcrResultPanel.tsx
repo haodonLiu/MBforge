@@ -1,4 +1,5 @@
 import { useMemo, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { OcrBlock } from '../api/tauri/pdf'
 
 interface Props {
@@ -25,12 +26,12 @@ function blockTypeColor(type: string): string {
   }
 }
 
-/** 块类型中文标签 */
-function blockTypeLabel(type: string): string {
+/** Block type labels (i18n) */
+function blockTypeLabel(type: string, t: (key: string) => string): string {
   const map: Record<string, string> = {
-    text: '文本', image: '图片', table: '表格',
-    formula: '公式', chart: '图表', header: '页眉',
-    footer: '页脚', seal: '印章',
+    text: t('ocr.block.text'), image: t('ocr.block.image'), table: t('ocr.block.table'),
+    formula: t('ocr.block.formula'), chart: t('ocr.block.chart'), header: t('ocr.block.header'),
+    footer: t('ocr.block.footer'), seal: t('ocr.block.seal'),
   }
   return map[type] || type
 }
@@ -43,6 +44,7 @@ export default function OcrResultPanel({
   onSelect,
   onClose,
 }: Props) {
+  const { t } = useTranslation()
   const listRef = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map())
 
@@ -82,7 +84,7 @@ export default function OcrResultPanel({
         justifyContent: 'space-between',
         alignItems: 'center',
       }}>
-        <span>OCR 结果 (第 {currentPage} 页, {pageBlocks.length} 块)</span>
+        <span>{t('ocr.result.title', { page: currentPage, count: pageBlocks.length })}</span>
         <button
           onClick={onClose}
           style={{
@@ -115,7 +117,7 @@ export default function OcrResultPanel({
             textAlign: 'center',
             padding: '20px 8px',
           }}>
-            当前页没有 OCR 块数据
+            {t('ocr.result.noBlocks')}
           </div>
         )}
         {pageBlocks.map(({ block, originalIndex }) => {
@@ -156,7 +158,7 @@ export default function OcrResultPanel({
                   fontSize: '9px',
                   fontWeight: 600,
                 }}>
-                  {blockTypeLabel(block.block_type)}
+                  {blockTypeLabel(block.block_type, t)}
                 </span>
                 <span style={{
                   fontSize: '10px',
@@ -184,7 +186,7 @@ export default function OcrResultPanel({
                   color: 'var(--text-muted)',
                   fontStyle: 'italic',
                 }}>
-                  无文本内容
+                  {t('ocr.result.noContent')}
                 </div>
               )}
             </div>

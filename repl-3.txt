@@ -1,0 +1,13 @@
+﻿                log::error!(
+                    "IngestWorker: task {} stage {} failed: {}",
+                    task.id,
+                    task.stage,
+                    e
+                );
+                emit_log(
+                    &app_handle,
+                    &task.doc_id,
+                    &task.stage,
+                    "error",
+                    format!("{} 阶段失败 ({}): {}", task.stage, stage_dur_str, e),
+                );

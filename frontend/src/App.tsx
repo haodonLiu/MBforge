@@ -19,6 +19,7 @@ import { registerGlobalErrorHandlers } from './api/tauri/_utils'
 import { useSidecarEvents } from './hooks/useSidecarEvents'
 import { useIngestNotifications } from './hooks/useIngestNotifications'
 import GlobalDownloadBarHost from './components/GlobalDownloadBarHost'
+import OcrConfigModal from './components/OcrConfigModal'
 import { openProject, enqueueUnresolvedDocuments } from './api/tauri/project'
 
 function getContentColumn(showProjectScope: boolean): '2' | '3' {
@@ -83,6 +84,16 @@ function AppInner() {
   useEffect(() => {
     const cleanup = registerGlobalErrorHandlers()
     return cleanup
+  }, [])
+
+  // Listen for cross-component navigation requests (e.g. OcrApiMissingModal).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail
+      if (detail === 'settings') setCurrentPage('settings')
+    }
+    window.addEventListener('mbforge:navigate', handler)
+    return () => window.removeEventListener('mbforge:navigate', handler)
   }, [])
 
   // Restore the last-opened project on app start, so the user does not have
@@ -237,6 +248,7 @@ function AppInner() {
       </main>
       <GlobalDownloadBarHost />
       <ToastContainer />
+      <OcrConfigModal />
     </div>
   )
 }

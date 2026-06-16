@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { cachedExtractPage, getCachedPageDetections } from '../../../api/tauri/detection_cache'
+import { cachedExtractPage, getCachedPageDetections, clearDetectionCacheForDoc } from '../../../api/tauri/detection_cache'
 import { parsePdf, getDocumentOcrLayout } from '../../../api/tauri/pdf'
 import { showToast } from '../../../hooks/useToast'
 import { extractRoiText } from '../../../utils/roiText'
@@ -19,7 +19,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
   const [isDetecting, setIsDetecting] = useState(false)
   const [selectedDetection, setSelectedDetection] = useState<number | null>(null)
   const [pageInfo, setPageInfo] = useState<{
-    width: number; height: number; originalWidth: number; originalHeight: number; scale: number
+    pageNumber: number; width: number; height: number; originalWidth: number; originalHeight: number; scale: number
   } | null>(null)
   const pageInfoRef = useRef(pageInfo)
   const [currentPageDataUrl, setCurrentPageDataUrl] = useState<string | null>(null)
@@ -44,48 +44,71 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
   const [pdfLoading, setPdfLoading] = useState(true)
   const pdfScrollRef = useRef<HTMLDivElement>(null)
   const autoLoadOcrDone = useRef(false)
+  const wheelSwitchAtRef = useRef(0)
+  const WHEEL_SWITCH_COOLDOWN_MS = 400
+
+  const getOcrEmptyHint = (parser: string) => {
+    if (parser === 'pdf_inspector') {
+      return '当前 PDF 为文字版，无需 OCR 布局'
+    }
+    if (parser.startsWith('mineru')) {
+      return 'OCR 未返回布局块（MinerU Agent API 不提供 layout；使用 Precise API 可获取）'
+    }
+    return '未找到 OCR 布局数据'
+  }
 
   const currentDetections = pageDetections.get(currentPage) || []
   const currentTextItems = pageTextItems.get(currentPage) || []
   const currentTextTotal = currentTextItems.reduce((s, i) => s + i.str.length, 0)
   const hasTextLayer = currentTextTotal > 10
-  const canDetect = !!currentPageDataUrl && !!pageInfo && !pageDetections.has(currentPage)
+  const canDetect = !!currentPageDataUrl && !!pageInfo
 
   useEffect(() => {
     if (isDetectMode || isOcrMode) setScrollMode('single')
   }, [isDetectMode, isOcrMode])
 
+  const normalizePath = useCallback((p: string) => p.replace(/^\\\\\?\\/, '').replace(/^\?\//, '').replace(/\\/g, '/'), [])
+  const absDocPath = useMemo(() => {
+    const root = projectRoot
+    if (!root) return doc.path
+    const pdfPath = doc.source_path || doc.path
+    return pdfPath.includes(':') || pdfPath.startsWith('/')
+      ? normalizePath(pdfPath)
+      : `${normalizePath(root).replace(/\/$/, '')}/${pdfPath.replace(/\\/g, '/')}`
+  }, [doc.path, doc.source_path, projectRoot, normalizePath])
+
   useEffect(() => {
     let cancelled = false
     setPdfUrl('')
     setPdfLoading(true)
-    const root = projectRoot
-    if (!root) { setPdfLoading(false); return }
-    const normalizePath = (p: string) => p.replace(/^\\\\\?\\/, '').replace(/^\?\//, '').replace(/\\/g, '/')
-    const pdfPath = doc.source_path || doc.path
-    const absPath = pdfPath.includes(':') || pdfPath.startsWith('/')
-      ? normalizePath(pdfPath)
-      : `${normalizePath(root).replace(/\/$/, '')}/${pdfPath.replace(/\\/g, '/')}`
-    const url = convertFileSrc(absPath, 'mbforge')
+    if (!absDocPath) { setPdfLoading(false); return }
+    const url = convertFileSrc(absDocPath, 'mbforge')
     if (!cancelled) { setPdfUrl(url); setPdfLoading(false) }
     return () => { cancelled = true }
-  }, [doc.path, doc.source_path, projectRoot])
+  }, [absDocPath])
 
   useEffect(() => {
     if (initialMode === 'ocr' && !autoLoadOcrDone.current) {
       autoLoadOcrDone.current = true
       setIsLoadingOcr(true)
-      getDocumentOcrLayout(doc.path, doc.doc_id)
+      getDocumentOcrLayout(absDocPath, doc.doc_id)
         .then(result => {
           setOcrBlocks(result.blocks || [])
           setShowOcrPanel(true)
-          showToast(result.blocks.length > 0 ? `加载 ${result.blocks.length} 个 OCR 块` : '未找到 OCR 布局数据',
-            result.blocks.length > 0 ? 'success' : 'info')
+          const hasBlocks = result.blocks.length > 0
+          showToast(
+            hasBlocks ? `加载 ${result.blocks.length} 个 OCR 块` : getOcrEmptyHint(result.parser),
+            hasBlocks ? 'success' : 'info',
+          )
         })
-        .catch(e => { console.error('Failed to load OCR layout:', e); showToast('OCR 布局加载失败', 'error') })
+        .catch(e => {
+          console.error('Failed to load OCR layout:', e)
+          const msg = e instanceof Error ? e.message : String(e)
+          showToast(`OCR 布局加载失败：${msg}`, 'error')
+        })
         .finally(() => setIsLoadingOcr(false))
     }
-  }, [doc.path, doc.doc_id, initialMode])
+  }, [absDocPath, doc.doc_id, initialMode])
 
   const enrichResults = useCallback((results: ExtractionResult[], pageNum: number) => {
     const textItems = pageTextItems.get(pageNum) || []
@@ -115,12 +138,14 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     return false
   }, [projectRoot, doc.doc_id, enrichResults])
 
-  const handleDetectPage = useCallback(async () => {
+  const handleDetectPage = useCallback(async (force = false) => {
     if (!currentPageDataUrl || !pageInfo) { showToast('页面尚未渲染完成，请稍候', 'info'); return }
-    if (pageDetections.has(currentPage)) { showToast(`第 ${currentPage} 页已检测`, 'info'); return }
+    if (!force && pageDetections.has(currentPage)) { showToast(`第 ${currentPage} 页已检测`, 'info'); return }
     // First try cache-only lookup (quick scan may have populated bboxes).
-    const cached = await loadCachedDetections(currentPage)
-    if (cached) return
+    if (!force) {
+      const cached = await loadCachedDetections(currentPage)
+      if (cached) return
+    }
     setIsDetecting(true)
     setSelectedDetection(null)
     try {
@@ -129,6 +154,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
         projectRoot, docId: doc.doc_id, page: currentPage, imageBase64: base64,
         pageWPts: pageInfo.originalWidth, pageHPts: pageInfo.originalHeight,
         imageW: Math.round(pageInfo.width), imageH: Math.round(pageInfo.height),
+        force,
       })
       if (resp.source === 'sidecar_error') throw new Error(resp.error || 'sidecar error')
       const results = resp.results as ExtractionResult[]
@@ -152,6 +178,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
         projectRoot, docId: doc.doc_id, page: currentPage, imageBase64: base64,
         pageWPts: pageInfo.originalWidth, pageHPts: pageInfo.originalHeight,
         imageW: Math.round(pageInfo.width), imageH: Math.round(pageInfo.height),
+        force: true,
       })
       if (resp.source === 'sidecar_error') throw new Error(resp.error || 'sidecar error')
       const results = resp.results as ExtractionResult[]
@@ -165,9 +192,41 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     } finally { setIsDetecting(false) }
   }, [currentPageDataUrl, pageInfo, currentPage, projectRoot, doc.doc_id, enrichResults])
 
+  const handleClearDetectionCache = useCallback(async () => {
+    if (!projectRoot) return
+    setIsDetecting(true)
+    try {
+      await clearDetectionCacheForDoc(projectRoot, doc.doc_id)
+      setPageDetections(new Map())
+      setSelectedDetection(null)
+      showToast('分子识别缓存已清除', 'success')
+    } catch (e) {
+      console.error('Failed to clear detection cache:', e)
+      showToast('清除缓存失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally { setIsDetecting(false) }
+  }, [projectRoot, doc.doc_id])
+
   const handlePageRendered = useCallback((info: { pageNumber: number; width: number; height: number; originalWidth: number; originalHeight: number; scale: number }) => {
-    setPageInfo(info); pageInfoRef.current = info
-  }, [])
+    if (info.pageNumber !== currentPage) return
+    setPageInfo(info)
+    pageInfoRef.current = info
+  }, [currentPage])
+
+  const handleImageReady = useCallback((pageNum: number, dataUrl: string) => {
+    if (pageNum !== currentPage) return
+    setCurrentPageDataUrl(dataUrl)
+  }, [currentPage])
+  const handlePageCount = useCallback((count: number) => setPdfPageCount(count), [])
+
+  // 切页时清空当前页渲染状态，避免旧页面的 dataUrl / pageInfo 被复用到新页，
+  // 导致 MoldDet 把上一页的识别结果存到当前页（如第 2 页结果显示在第 3 页）。
+  // 该 effect 必须声明在自动检测 effect 之前，以确保先清空再判断。
+  useEffect(() => {
+    setCurrentPageDataUrl(null)
+    setPageInfo(null)
+    pageInfoRef.current = null
+    setSelectedDetection(null)
+  }, [currentPage])
 
   // 进入分子检测模式后，当前页渲染完成自动触发检测
   useEffect(() => {
@@ -175,9 +234,6 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     if (pageDetections.has(currentPage) || isDetecting) return
     handleDetectPage()
   }, [isDetectMode, currentPage, currentPageDataUrl, pageInfo, pageDetections, isDetecting, handleDetectPage])
-
-  const handleImageReady = useCallback((_num: number, dataUrl: string) => setCurrentPageDataUrl(dataUrl), [])
-  const handlePageCount = useCallback((count: number) => setPdfPageCount(count), [])
 
   const handleSaveMolecule = useCallback((newSmiles: string) => {
     if (selectedDetection === null) return
@@ -211,29 +267,33 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     if (extractedImages.length > 0) { setShowImagePanel(true); return }
     setIsLoadingImages(true)
     try {
-      const result = await parsePdf(doc.path, 512, 128, 'pdf_inspector')
+      const result = await parsePdf(absDocPath, 512, 128, 'pdf_inspector')
       setExtractedImages(result.images || [])
       setShowImagePanel(true)
     } catch (e) {
       console.error('Failed to load images:', e)
       showToast('图片提取失败', 'error')
     } finally { setIsLoadingImages(false) }
-  }, [doc.path, extractedImages.length])
+  }, [absDocPath, extractedImages.length])
 
   const handleLoadOcr = useCallback(async () => {
     if (ocrBlocks.length > 0) { setShowOcrPanel(true); return }
     setIsLoadingOcr(true)
     try {
-      const result = await getDocumentOcrLayout(doc.path, doc.doc_id)
+      const result = await getDocumentOcrLayout(absDocPath, doc.doc_id)
       setOcrBlocks(result.blocks || [])
       setShowOcrPanel(true)
-      showToast(result.blocks.length > 0 ? `加载 ${result.blocks.length} 个 OCR 块` : '未找到 OCR 布局数据',
-        result.blocks.length > 0 ? 'success' : 'info')
+      const hasBlocks = result.blocks.length > 0
+      showToast(
+        hasBlocks ? `加载 ${result.blocks.length} 个 OCR 块` : getOcrEmptyHint(result.parser),
+        hasBlocks ? 'success' : 'info',
+      )
     } catch (e) {
       console.error('Failed to load OCR layout:', e)
-      showToast('OCR 布局加载失败', 'error')
+      const msg = e instanceof Error ? e.message : String(e)
+      showToast(`OCR 布局加载失败：${msg}`, 'error')
     } finally { setIsLoadingOcr(false) }
-  }, [doc.path, doc.doc_id, ocrBlocks.length])
+  }, [absDocPath, doc.doc_id, ocrBlocks.length])
 
   const [imageBlobUrls, setImageBlobUrls] = useState<Map<string, string>>(new Map())
   useEffect(() => {
@@ -270,10 +330,18 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     const { scrollTop, scrollHeight, clientHeight } = el
     const atTop = scrollTop <= 0
     const atBottom = scrollTop + clientHeight >= scrollHeight - 1
-    if (e.deltaY < 0 && atTop) {
-      e.preventDefault(); setCurrentPage(p => Math.max(1, p - 1)); setSelectedDetection(null)
-    } else if (e.deltaY > 0 && atBottom) {
-      e.preventDefault(); setCurrentPage(p => Math.min(pdfPageCount || 1, p + 1)); setSelectedDetection(null)
+    if ((e.deltaY < 0 && atTop) || (e.deltaY > 0 && atBottom)) {
+      // 不再调用 preventDefault()，避免 passive event listener 警告；
+      // 用时间门控降低连续滚轮触发翻页的速度。
+      const now = Date.now()
+      if (now - wheelSwitchAtRef.current < WHEEL_SWITCH_COOLDOWN_MS) return
+      wheelSwitchAtRef.current = now
+      if (e.deltaY < 0) {
+        setCurrentPage(p => Math.max(1, p - 1))
+      } else {
+        setCurrentPage(p => Math.min(pdfPageCount || 1, p + 1))
+      }
+      setSelectedDetection(null)
     }
   }, [pdfLoading, pdfUrl, pdfPageCount])
 
@@ -295,7 +363,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     pdfUrl, pdfLoading, pdfScrollRef,
     currentDetections, currentTextItems, currentTextTotal, hasTextLayer, canDetect,
     imageBlobUrls,
-    handleDetectPage, handleRecognizePage, handlePageRendered, handleImageReady, handlePageCount,
+    handleDetectPage, handleRecognizePage, handleClearDetectionCache, handlePageRendered, handleImageReady, handlePageCount,
     handleSaveMolecule, handleTextContent,
     handleZoomIn, handleZoomOut, handleZoomReset,
     handleLoadImages, handleLoadOcr, handleJumpToPage,

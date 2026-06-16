@@ -17,6 +17,8 @@ import {
   ProviderField,
   ToggleField,
 } from '../SettingRow'
+import ApiKeyInput from '../ApiKeyInput'
+import { openExternalUrl } from '@/api/tauri/_utils'
 import { ModelSelector } from '../ModelComponents'
 import LlmStatusCard from '../LlmStatusCard'
 import {
@@ -40,6 +42,8 @@ const providerOptions = (map: Record<string, unknown>) =>
     value: k,
     label: (PROVIDER_META[k] ?? { label: k }).label,
   }))
+const getProviderMeta = (key: string) =>
+  PROVIDER_META[key] ?? { label: key, defaultUrl: '', needsKey: false }
 
 export default function AIModelsSection({ settings, setSettings }: Props) {
   const { t } = useTranslation()
@@ -84,8 +88,8 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
               apiKey={settings.embed_api_key}
               onApiKeyChange={v => setSettings(s => ({ ...s, embed_api_key: v }))}
               providerOptions={providerOptions(EMBED_MODELS)}
-              needsKey={PROVIDER_META[settings.embed_provider].needsKey}
-              baseUrlPlaceholder={PROVIDER_META[settings.embed_provider].defaultUrl}
+              needsKey={getProviderMeta(settings.embed_provider).needsKey}
+              baseUrlPlaceholder={getProviderMeta(settings.embed_provider).defaultUrl}
               showBaseUrl={settings.embed_provider === 'openai'}
             />
             <CustomField label={t('settings.model')}>
@@ -212,8 +216,8 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
               apiKey={settings.vlm_api_key}
               onApiKeyChange={v => setSettings(s => ({ ...s, vlm_api_key: v }))}
               providerOptions={providerOptions(VLM_MODELS)}
-              needsKey={PROVIDER_META[settings.vlm_provider].needsKey}
-              baseUrlPlaceholder={PROVIDER_META[settings.vlm_provider].defaultUrl}
+              needsKey={getProviderMeta(settings.vlm_provider).needsKey}
+              baseUrlPlaceholder={getProviderMeta(settings.vlm_provider).defaultUrl}
             />
             <CustomField label={t('settings.model')}>
               <ModelSelector
@@ -241,8 +245,8 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
               apiKey={settings.ocr_api_key}
               onApiKeyChange={v => setSettings(s => ({ ...s, ocr_api_key: v }))}
               providerOptions={providerOptions(OCR_MODELS)}
-              needsKey={PROVIDER_META[settings.ocr_provider].needsKey}
-              baseUrlPlaceholder={PROVIDER_META[settings.ocr_provider].defaultUrl}
+              needsKey={getProviderMeta(settings.ocr_provider).needsKey}
+              baseUrlPlaceholder={getProviderMeta(settings.ocr_provider).defaultUrl}
             />
             <CustomField label={t('settings.model')}>
               <ModelSelector
@@ -268,8 +272,133 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
               onChange={v => setSettings(s => ({ ...s, ocr_use_pdf_inspector: v }))}
             />
           </SettingGroup>
+
+          <SettingGroup title={t('ocr.backendSection.title')}>
+            <p style={{
+              margin: '0 0 12px',
+              fontSize: 12,
+              color: 'var(--text-muted)',
+            }}>
+              {t('ocr.backendSection.desc')}
+            </p>
+            <BackendKeyRow
+              label={t('ocr.config.mineru')}
+              placeholder="eyJ0eXBlIjoiSldU..."
+              getKeyUrl="https://mineru.net/"
+              getKeyLabel={t('ocr.config.getKey')}
+              value={settings.ocr_mineru_api_key}
+              onChange={v => setSettings(s => ({ ...s, ocr_mineru_api_key: v }))}
+            />
+            <BackendKeyRow
+              label={t('ocr.config.uniparser')}
+              placeholder="up_..."
+              getKeyUrl="https://uniparser.dp.tech/"
+              getKeyLabel={t('ocr.config.getKey')}
+              value={settings.ocr_uniparser_api_key}
+              onChange={v => setSettings(s => ({ ...s, ocr_uniparser_api_key: v }))}
+            />
+            <BackendKeyRow
+              label={t('ocr.config.paddleocr')}
+              placeholder="bearer token"
+              getKeyUrl="https://aistudio.baidu.com/paddleocr"
+              getKeyLabel={t('ocr.config.getKey')}
+              value={settings.ocr_paddleocr_api_key}
+              onChange={v => setSettings(s => ({ ...s, ocr_paddleocr_api_key: v }))}
+              extra={[
+                {
+                  label: t('ocr.config.paddleocrHost'),
+                  value: settings.ocr_paddleocr_host,
+                  onChange: (v: string) =>
+                    setSettings(s => ({ ...s, ocr_paddleocr_host: v })),
+                  placeholder: 'https://paddleocr.aistudio-app.com',
+                },
+                {
+                  label: t('ocr.config.paddleocrModel'),
+                  value: settings.ocr_paddleocr_model,
+                  onChange: (v: string) =>
+                    setSettings(s => ({ ...s, ocr_paddleocr_model: v })),
+                  placeholder: 'PaddleOCR-VL-1.6',
+                },
+              ]}
+            />
+          </SettingGroup>
         </SettingSection>
       </TabPanel>
     </>
+  )
+}
+
+interface BackendKeyRowProps {
+  label: string
+  placeholder: string
+  getKeyUrl: string
+  getKeyLabel: string
+  value: string
+  onChange: (v: string) => void
+  extra?: Array<{
+    label: string
+    value: string
+    onChange: (v: string) => void
+    placeholder: string
+  }>
+}
+
+function BackendKeyRow({ label, placeholder, getKeyUrl, getKeyLabel, value, onChange, extra }: BackendKeyRowProps) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 6,
+      }}>
+        <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+          {label}
+        </label>
+        <button
+          type="button"
+          onClick={() => void openExternalUrl(getKeyUrl)}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--accent)',
+            fontSize: 11,
+            cursor: 'pointer',
+            padding: 0,
+            textDecoration: 'underline',
+          }}
+        >
+          {getKeyLabel}
+        </button>
+      </div>
+      <ApiKeyInput value={value} onChange={onChange} placeholder={placeholder} />
+      {extra && extra.length > 0 && (
+        <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+          {extra.map(e => (
+            <div key={e.label} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)', minWidth: 80 }}>
+                {e.label}
+              </label>
+              <input
+                type="text"
+                value={e.value}
+                onChange={ev => e.onChange(ev.target.value)}
+                placeholder={e.placeholder}
+                style={{
+                  flex: 1,
+                  padding: '6px 8px',
+                  fontSize: 12,
+                  border: '1px solid var(--border)',
+                  borderRadius: 4,
+                  background: 'var(--bg-base)',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'var(--font-mono, monospace)',
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

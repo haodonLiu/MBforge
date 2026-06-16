@@ -2,6 +2,7 @@
  * Used by Settings > System tab. */
 
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { sidecarStatus, sidecarRestart, type SidecarStatus } from '../../api/tauri/sidecar'
 import { showToast } from '../../hooks/useToast'
 import Button from '../ui/Button'
@@ -16,6 +17,7 @@ function formatUptime(secs: number): string {
 }
 
 export default function SidecarCard() {
+  const { t } = useTranslation()
   const [status, setStatus] = useState<SidecarStatus | null>(null)
   const [loading, setLoading] = useState(false)
   const [restarting, setRestarting] = useState(false)
@@ -41,13 +43,13 @@ export default function SidecarCard() {
     setRestarting(true)
     try {
       await sidecarRestart()
-      showToast('Sidecar 重启中…', 'info')
+      showToast(t('sidecar.restarting'), 'info')
       // 等几秒再读状态（spawn + model prewarm 耗时）
       setTimeout(() => {
         void refresh()
       }, 3000)
     } catch (e) {
-      showToast('重启失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
+      showToast(t('sidecar.restartFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
     } finally {
       setRestarting(false)
     }
@@ -68,11 +70,11 @@ export default function SidecarCard() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0 }}>Python Sidecar</h3>
         <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
-          {loading ? '刷新中…' : '刷新'}
+          {loading ? t('sidecar.refreshing') : t('common.refresh')}
         </Button>
       </div>
       <Caption>
-        本地 FastAPI 模型服务器（Qwen3 Embed / Rerank / MolDet / MolScribe）。健康检查失败时手动重启。
+        {t('sidecar.description')}
       </Caption>
       <div
         style={{
@@ -82,13 +84,13 @@ export default function SidecarCard() {
         }}
       >
         <Stat
-          label="状态"
+          label={t('sidecar.status')}
           value={status ? (status.healthy ? 'Online' : 'Offline') : '—'}
           tone={status?.healthy === true ? 'ok' : status?.healthy === false ? 'error' : 'idle'}
         />
-        <Stat label="运行时长" value={status ? formatUptime(status.uptimeSecs) : '—'} />
-        <Stat label="重启次数" value={status ? String(status.restartCount) : '—'} />
-        <Stat label="最近错误" value={status?.lastError ?? '—'} mono />
+        <Stat label={t('sidecar.uptime')} value={status ? formatUptime(status.uptimeSecs) : '—'} />
+        <Stat label={t('sidecar.restartCount')} value={status ? String(status.restartCount) : '—'} />
+        <Stat label={t('sidecar.lastError')} value={status?.lastError ?? '—'} mono />
       </div>
       <div>
         <Button
@@ -97,7 +99,7 @@ export default function SidecarCard() {
           onClick={handleRestart}
           loading={restarting}
         >
-          重启 Sidecar
+          {t('sidecar.restart')}
         </Button>
       </div>
     </div>

@@ -168,7 +168,9 @@ pub fn reset_for_test() {
 pub struct HealthResponse {
     pub status: String,
     #[serde(default)]
-    pub models: Vec<String>,
+    pub models: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub resources: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub uptime_seconds: Option<f64>,
 }
@@ -205,5 +207,19 @@ mod tests {
         let a = get_or_init().expect("init");
         let b = get_or_init().expect("cached");
         assert!(Arc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn health_response_parses_object_models_and_resources() {
+        let json = r#"{
+            "status": "partial",
+            "models": {"embedder": "ready", "reranker": "ready", "moldet": "ready", "moldet_coref": "error"},
+            "resources": {"embedding": "ready", "molscribe": "ready"},
+            "error": null
+        }"#;
+        let parsed: HealthResponse = serde_json::from_str(json).expect("parse health");
+        assert_eq!(parsed.status, "partial");
+        assert_eq!(parsed.models.get("embedder"), Some(&"ready".to_string()));
+        assert_eq!(parsed.resources.get("embedding"), Some(&"ready".to_string()));
     }
 }

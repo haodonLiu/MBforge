@@ -1,5 +1,6 @@
 // Subdirectories
 pub mod chem;
+pub mod ocr;
 pub mod pdf;
 pub mod pipeline;
 pub mod structure;

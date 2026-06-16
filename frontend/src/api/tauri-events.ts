@@ -18,6 +18,8 @@ export const EVT = {
   IngestQueueUpdate: 'ingest-queue-update',
   IngestWorkerHeartbeat: 'ingest-worker-heartbeat',
   IngestEmbed: 'ingest-embed',
+  IngestLog: 'ingest-log',
+  OcrApiMissing: 'ocr-api-missing',
 } as const
 
 export type TauriEventName = (typeof EVT)[keyof typeof EVT]

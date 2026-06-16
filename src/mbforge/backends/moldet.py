@@ -103,30 +103,32 @@ class MolDetv2DocDetector:
         self._load_model()
 
     def _resolve_model_path(self, model_path: Path | None) -> Path:
-        """解析模型路径（支持子目录和扁平布局）."""
+        """解析模型路径 — 统一走 ResourceManager."""
         if model_path is not None:
             return Path(model_path)
 
-        base_dir = default_model_dir()
-        model_dir = base_dir / self.MODEL_SUBDIR
+        from mbforge.core.resource_manager import ResourceManager
 
-        # 搜索顺序：子目录 → 父目录（扁平布局）
-        search_dirs = [model_dir, base_dir]
-        patterns = [f"{self.MODEL_SUBDIR}.*", f"*{self.MODEL_SUBDIR.split('-')[-1]}*.pt"]
+        # 1. 通过 ResourceManager 查找 moldet 仓库目录
+        resolved = ResourceManager.resolve_model_for_backend("moldet")
+        if resolved is not None:
+            if resolved.is_dir():
+                # 在仓库目录中查找匹配的 .pt 文件
+                # MODEL_SUBDIR: "moldetv2-doc" → 关键词 "doc"
+                # MODEL_SUBDIR: "moldetv2-general" → 关键词 "general"
+                keyword = self.MODEL_SUBDIR.split("-")[-1]  # "doc" or "general"
+                for f in resolved.iterdir():
+                    if f.is_file() and f.suffix == ".pt" and keyword in f.name:
+                        return f
+                # 回退：找任何 .pt 文件
+                for f in resolved.iterdir():
+                    if f.is_file() and f.suffix == ".pt":
+                        return f
+            elif resolved.is_file():
+                return resolved
 
-        for search_dir in search_dirs:
-            if not search_dir.exists():
-                continue
-            for pat in patterns:
-                candidates = list(search_dir.glob(pat))
-                if candidates:
-                    for ext in (".pt", ".engine"):
-                        for c in candidates:
-                            if c.suffix.lower() == ext:
-                                return c
-                    return candidates[0]
-
-        return model_dir / f"{self.MODEL_SUBDIR}.pt"
+        # 2. 兜底：返回预期路径（让 _load_model 报告缺失）
+        return default_model_dir() / self.MODEL_SUBDIR / f"{self.MODEL_SUBDIR}.pt"
 
     def _load_model(self) -> None:
         """加载 YOLO 模型."""

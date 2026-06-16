@@ -17,7 +17,7 @@ MBForge 的构建依赖于众多优秀的开源项目和服务。感谢以下项
 |------|--------|------|
 | [pdf-inspector](https://github.com/firecrawl/pdf-inspector) | — | PDF 文本提取与分类（Rust） |
 | [lopdf](https://github.com/J-F-Liu/lopdf) | MIT | PDF 嵌入式图像提取（Rust） |
-| [LiteParse](https://developers.llamaindex.ai/liteparse/) | — | PDF 空间文本提取（待集成） |
+| [PyMuPDF](https://github.com/pymupdf/PyMuPDF) | AGPL-3.0 / 商业 | PDF 页面渲染（Python sidecar） |
 | [MinerU](https://mineru.net/) | 商业服务 | PDF OCR 解析 API |
 | [UniParser](https://uniparser.dp.tech/) | 商业服务 | PDF 解析 API |
 | [LlamaIndex LlamaParse](https://llamaindex.ai/) | 商业服务 | PDF 解析服务 |

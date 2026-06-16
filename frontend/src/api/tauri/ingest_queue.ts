@@ -55,6 +55,16 @@ export interface IngestWorkerHeartbeatEvent {
   alive: boolean
 }
 
+export interface IngestLogEvent {
+  doc_id: string
+  stage: string
+  /** "info" | "warn" | "error" */
+  level: string
+  message: string
+  /** Unix epoch milliseconds */
+  ts_ms: number
+}
+
 /** Track C: 嵌入阶段子进度事件 */
 export interface IngestEmbedEvent {
   doc_id: string

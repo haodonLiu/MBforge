@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { OcrBlock } from '../api/tauri/pdf'
 
 interface Props {
@@ -44,17 +45,17 @@ function blockTypeColor(type: string): string {
   }
 }
 
-/** 块类型中文标签 */
-function blockTypeLabel(type: string): string {
+/** Block type labels (i18n) */
+function blockTypeLabel(type: string, t: (key: string) => string): string {
   const map: Record<string, string> = {
-    text: '文本',
-    image: '图片',
-    table: '表格',
-    formula: '公式',
-    chart: '图表',
-    header: '页眉',
-    footer: '页脚',
-    seal: '印章',
+    text: t('ocr.block.text'),
+    image: t('ocr.block.image'),
+    table: t('ocr.block.table'),
+    formula: t('ocr.block.formula'),
+    chart: t('ocr.block.chart'),
+    header: t('ocr.block.header'),
+    footer: t('ocr.block.footer'),
+    seal: t('ocr.block.seal'),
   }
   return map[type] || type
 }
@@ -70,6 +71,7 @@ export default function OcrOverlay({
   onSelect,
   onHover,
 }: Props) {
+  const { t } = useTranslation()
   const boxes = useMemo(() => {
     return blocks
       .map((block, i) => ({ block, originalIndex: i }))
@@ -105,7 +107,7 @@ export default function OcrOverlay({
         const isSelected = selectedIndex === box.index
         const isHovered = hoveredIdx === box.index
         const color = blockTypeColor(box.block.block_type)
-        const label = blockTypeLabel(box.block.block_type)
+        const label = blockTypeLabel(box.block.block_type, t)
         const content = box.block.content || ''
 
         return (

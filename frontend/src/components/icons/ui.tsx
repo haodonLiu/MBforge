@@ -147,3 +147,25 @@ export const QueueIcon: FC<IconProps> = ({ size = 18 }) =>
     </>,
     size,
   )
+
+export const TableIcon: FC<IconProps> = ({ size = 16 }) =>
+  baseSvg(
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <line x1="3" y1="9" x2="21" y2="9" />
+      <line x1="3" y1="15" x2="21" y2="15" />
+      <line x1="12" y1="3" x2="12" y2="21" />
+    </>,
+    size,
+  )
+
+export const GridIcon: FC<IconProps> = ({ size = 16 }) =>
+  baseSvg(
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </>,
+    size,
+  )

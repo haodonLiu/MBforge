@@ -490,7 +490,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
             const canCancel =
               task.status === 'pending' || task.status === 'processing'
             const canRetry = task.status === 'failed'
-            const canDelete = task.status === 'cancelled' || task.status === 'done'
+            const canDelete = task.status === 'cancelled' || task.status === 'done' || task.status === 'failed'
             const canSetPriority = task.status === 'pending'
             const fileName = basename(task.file_path)
             const createdAtMs = task.created_at * 1000

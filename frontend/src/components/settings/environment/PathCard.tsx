@@ -1,5 +1,5 @@
-import { FolderIcon, EditIcon } from '../icons'
-import Button from '../ui/Button'
+import { FolderIcon, EditIcon } from '@/components/icons'
+import Button from '@/components/ui/Button'
 
 export interface PathCardProps {
   title: string

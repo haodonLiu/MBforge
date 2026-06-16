@@ -1,5 +1,5 @@
 /** Per-PDF molecule detection cache stats + clear button.
- * Used by the main Environment page. */
+ * Used by Settings > System tab. */
 
 import { useCallback, useEffect, useState } from 'react'
 import { getDetectionCacheStats, clearDetectionCache } from '../../api/tauri'

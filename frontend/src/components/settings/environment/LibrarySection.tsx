@@ -1,5 +1,5 @@
-import { CheckIcon, XIcon } from '../icons'
-import SectionTitle from '../ui/SectionTitle'
+import { CheckIcon, XIcon } from '@/components/icons'
+import SectionTitle from '@/components/ui/SectionTitle'
 
 // 库展示元数据 (label + hint)
 export const LIBRARY_INFO: Record<string, { name: string; hint?: string }> = {

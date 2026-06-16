@@ -1,5 +1,5 @@
-import { PageContainer, Skeleton, Card, SectionTitle } from '../ui'
-import ResponsiveStatGrid from '../ui/ResponsiveStatGrid'
+import { PageContainer, Skeleton, Card, SectionTitle } from '@/components/ui'
+import ResponsiveStatGrid from '@/components/ui/ResponsiveStatGrid'
 import PathCard from './PathCard'
 import ModelCard from './ModelCard'
 import type { ModelInfo, ModelPaths } from './types'

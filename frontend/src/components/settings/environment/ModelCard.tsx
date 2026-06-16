@@ -1,5 +1,5 @@
-import { CheckIcon, TrashIcon, DownloadIcon } from '../icons'
-import Button from '../ui/Button'
+import { CheckIcon, TrashIcon, DownloadIcon } from '@/components/icons'
+import Button from '@/components/ui/Button'
 import type { ModelInfo } from './types'
 
 export interface ModelCardProps {

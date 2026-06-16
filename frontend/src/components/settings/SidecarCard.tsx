@@ -1,5 +1,5 @@
 /** Sidecar (Python model server) health probe + manual restart.
- * Used by the main Environment page. */
+ * Used by Settings > System tab. */
 
 import { useCallback, useEffect, useState } from 'react'
 import { sidecarStatus, sidecarRestart, type SidecarStatus } from '../../api/tauri/sidecar'

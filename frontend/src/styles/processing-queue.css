@@ -329,3 +329,90 @@
 .processing-queue-worker-status.is-unknown {
   color: var(--text-mute);
 }
+
+/* ----- Ingest log panel ----- */
+.processing-queue-log-panel {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.ingest-log-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ingest-log-panel.is-empty {
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.ingest-log-row {
+  display: grid;
+  grid-template-columns: 72px 80px 56px 1fr;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 0.8rem;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, monospace);
+}
+
+.ingest-log-time {
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+
+.ingest-log-stage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent-muted);
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.ingest-log-level {
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ingest-log-level.is-info {
+  color: var(--text-soft);
+}
+
+.ingest-log-level.is-warn {
+  color: var(--warning);
+}
+
+.ingest-log-level.is-error {
+  color: var(--danger);
+}
+
+.ingest-log-message {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .ingest-log-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .ingest-log-time {
+    display: none;
+  }
+}

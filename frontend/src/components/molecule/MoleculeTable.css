@@ -1,0 +1,112 @@
+.molecule-table-wrapper {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: auto;
+  background: var(--bg-surface);
+}
+
+.molecule-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.molecule-table-header-row {
+  border-bottom: 1px solid var(--border);
+}
+
+.molecule-table-header-cell {
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.molecule-table-checkbox-header {
+  padding: 10px 12px;
+  width: 40px;
+  text-align: center;
+}
+
+.molecule-table-source-header {
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.molecule-table-row {
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.molecule-table-row.selected {
+  background: var(--accent-muted);
+}
+
+.molecule-table-cell {
+  padding: 10px 12px;
+}
+
+.molecule-table-checkbox-cell {
+  padding: 10px 12px;
+  text-align: center;
+}
+
+.molecule-table-name {
+  font-weight: 600;
+}
+
+.molecule-table-esmiles {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+  margin-top: 2px;
+}
+
+.molecule-table-sort-indicator {
+  margin-left: 6px;
+  color: var(--accent);
+}
+
+.molecule-table-muted-cell {
+  color: var(--text-muted);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.status-badge-confirmed {
+  background: var(--success-muted);
+  color: var(--success);
+}
+
+.status-badge-pending {
+  background: var(--warning-muted);
+  color: var(--warning);
+}
+
+.status-badge-corrected {
+  background: var(--info-muted);
+  color: var(--info);
+}
+
+.status-badge-rejected {
+  background: var(--danger-muted);
+  color: var(--danger);
+}
+
+.status-badge-default {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}

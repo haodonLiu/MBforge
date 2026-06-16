@@ -169,3 +169,19 @@ export const GridIcon: FC<IconProps> = ({ size = 16 }) =>
     </>,
     size,
   )
+
+export const ChevronDownIcon: FC<IconProps> = ({ size = 16 }) =>
+  baseSvg(
+    <>
+      <polyline points="6 9 12 15 18 9" />
+    </>,
+    size,
+  )
+
+export const ChevronUpIcon: FC<IconProps> = ({ size = 16 }) =>
+  baseSvg(
+    <>
+      <polyline points="6 15 12 9 18 15" />
+    </>,
+    size,
+  )

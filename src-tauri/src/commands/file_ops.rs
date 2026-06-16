@@ -125,6 +125,7 @@ pub async fn upload_files(
                             source_path.to_string_lossy().to_string(),
                             entry.doc_id.clone(),
                             "inspector",
+                            false,
                         )
                         .await;
                 }

@@ -15,6 +15,7 @@
   "common.process": "Process",
   "common.processing": "Processing",
   "common.detecting": "Detecting",
+  "common.reindex": "Reindex",
   "common.delete": "Delete",
   "nav.workspace": "Workspace",
   "nav.discover": "Discover",

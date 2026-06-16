@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
+import { EVT } from '../tauri-events'
 
 export interface DownloadModel {
   id: string
@@ -30,6 +31,7 @@ export interface DownloadedModel {
 }
 
 export interface DownloadProgress {
+  resource_id: string  // 模型/资源 ID，区分同时下载的多个模型
   status: string       // "connecting" | "downloading" | "completed" | "failed"
   file: string
   file_progress: number
@@ -133,7 +135,11 @@ export function downloadModel(
 
   const start = async () => {
     try {
-      unlisten = await listen<DownloadProgress>('model-download-progress', (event) => {
+      unlisten = await listen<DownloadProgress>(EVT.ModelDownloadProgress, (event) => {
+        if (event.payload.resource_id !== resourceId) {
+          // 忽略其他模型的进度事件
+          return
+        }
         console.log(`${logPrefix} received progress event:`, event.payload)
         onProgress(event.payload)
       })
@@ -153,6 +159,7 @@ export function downloadModel(
       if (aborted) return
       console.error(`${logPrefix} failed:`, err)
       onProgress({
+        resource_id: resourceId,
         status: 'failed',
         file: '',
         file_progress: 0,

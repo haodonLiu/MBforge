@@ -18,7 +18,6 @@ import { useIsMobile, useIsTablet } from './styles/responsive'
 import { registerGlobalErrorHandlers } from './api/tauri/_utils'
 import { useSidecarEvents } from './hooks/useSidecarEvents'
 import { useIngestNotifications } from './hooks/useIngestNotifications'
-import GlobalDownloadBarHost from './components/GlobalDownloadBarHost'
 import OcrConfigModal from './components/OcrConfigModal'
 import { openProject, enqueueUnresolvedDocuments } from './api/tauri/project'
 
@@ -246,7 +245,6 @@ function AppInner() {
           </div>
         </ErrorBoundary>
       </main>
-      <GlobalDownloadBarHost />
       <ToastContainer />
       <OcrConfigModal />
     </div>

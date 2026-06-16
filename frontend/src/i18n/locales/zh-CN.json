@@ -15,6 +15,7 @@
   "common.process": "处理",
   "common.processing": "处理中",
   "common.detecting": "检测中",
+  "common.reindex": "重新索引",
   "common.delete": "删除",
   "nav.workspace": "工作区",
   "nav.discover": "发现",

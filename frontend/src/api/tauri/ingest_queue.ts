@@ -111,14 +111,19 @@ export async function ingestCleanup(projectRoot: string): Promise<number> {
   )
 }
 
-/** 手动将 PDF 加入处理队列。返回任务 ID。 */
+/** 手动将 PDF 加入处理队列。返回任务 ID。
+ *
+ * `force=true` 跳过同 hash 幂等检查 — 用于对已索引文件强制重新入队，
+ * 新建任务而不复用现有 done 任务（保留历史记录）。
+ */
 export async function ingestEnqueue(
   projectRoot: string,
   filePath: string,
   docId: string,
+  force?: boolean,
 ): Promise<string> {
   return invokeWithError(
-    () => invoke<string>('ingest_enqueue', { projectRoot, filePath, docId }),
+    () => invoke<string>('ingest_enqueue', { projectRoot, filePath, docId, force: force ?? false }),
     ErrorCode.TauriInvoke,
   )
 }

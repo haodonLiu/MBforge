@@ -234,7 +234,7 @@ pub async fn enqueue_unresolved_documents(root: String) -> Result<serde_json::Va
         }
 
         match queue
-            .enqueue_with_stage(source_str, doc.doc_id.clone(), "inspector")
+            .enqueue_with_stage(source_str, doc.doc_id.clone(), "inspector", false)
             .await
         {
             Ok(_) => enqueued += 1,

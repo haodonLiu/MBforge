@@ -336,19 +336,21 @@ impl IngestQueue {
 
     /// 入队一个文件
     pub async fn enqueue(&self, file_path: String, doc_id: String) -> AppResult<String> {
-        self.enqueue_with_stage(file_path, doc_id, "inspector")
+        self.enqueue_with_stage(file_path, doc_id, "inspector", false)
             .await
     }
 
     /// 入队一个指定阶段的文件。
     ///
     /// 幂等：同文件 hash 且未失败/未取消的任务已存在时，直接返回已有任务 id。
+    /// `force=true` 跳过幂等检查 — 用于对已索引文件强制重新入队，保留历史记录。
     /// 背压：pending + processing 任务数达到 `MAX_ACTIVE_QUEUE_SIZE` 时拒绝入队。
     pub async fn enqueue_with_stage(
         &self,
         file_path: String,
         doc_id: String,
         stage: &str,
+        force: bool,
     ) -> AppResult<String> {
         let conn = self.conn.lock().await;
         let file_hash =
@@ -372,7 +374,7 @@ impl IngestQueue {
         }
 
         // 幂等：同 hash 且未失败/未取消的任务直接返回已有 id
-        if !file_hash.is_empty() {
+        if !force && !file_hash.is_empty() {
             let existing = conn.query_row(
                 "SELECT id, status FROM ingest_queue WHERE file_hash = ?1 ORDER BY created_at DESC LIMIT 1",
                 params![file_hash],
@@ -824,7 +826,7 @@ mod tests {
     async fn test_queue_with_stage() {
         let (_dir, queue) = setup_queue();
         let id = queue
-            .enqueue_with_stage("test.pdf".into(), "doc1".into(), "ocr")
+            .enqueue_with_stage("test.pdf".into(), "doc1".into(), "ocr", false)
             .await
             .unwrap();
         let task = queue.dequeue().await.unwrap().unwrap();

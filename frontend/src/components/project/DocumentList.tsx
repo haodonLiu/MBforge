@@ -78,12 +78,12 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
     }
   }
 
-  const handleEnqueue = async (doc: DocumentEntry) => {
+  const handleEnqueue = async (doc: DocumentEntry, force = false) => {
     if (!projectRoot) return
     const filePath = doc.source_path || `${projectRoot}/projects/${doc.doc_id}/source.pdf`
     setEnqueueingIds(prev => new Set(prev).add(doc.doc_id))
     try {
-      await ingestEnqueue(projectRoot, filePath, doc.doc_id)
+      await ingestEnqueue(projectRoot, filePath, doc.doc_id, force)
       trackSelfTriggeredDoc(doc.doc_id)
       setJustEnqueuedIds(prev => new Set(prev).add(doc.doc_id))
       showToast(t('project.processNow') + ': ' + (doc.title || doc.doc_id), 'success')
@@ -229,6 +229,12 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
             indexStatus === 'error')
         const canRetry = hasFailedStage && !isActivelyProcessing
 
+        // 已完成索引的文件 → 显示重新索引按钮（force 入队，保留历史）
+        const canReindex =
+          doc.doc_type === 'pdf' &&
+          !isActivelyProcessing &&
+          indexStatus === 'done'
+
         return (
           <motion.div
             key={doc.doc_id}
@@ -297,6 +303,19 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
                     onClick={() => handleEnqueue(doc)}
                   >
                     {t('common.retry')}
+                  </Button>
+                </div>
+              )}
+              {canReindex && (
+                <div className="project-doc-actions" onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={isEnqueueing}
+                    disabled={isEnqueueing}
+                    onClick={() => handleEnqueue(doc, true)}
+                  >
+                    {t('common.reindex')}
                   </Button>
                 </div>
               )}

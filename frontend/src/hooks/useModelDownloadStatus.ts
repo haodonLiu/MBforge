@@ -1,11 +1,13 @@
 /** Global model download status + resources sync. */
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { listen } from '@tauri-apps/api/event'
 import { resourcesCheck, type ResourceStatusItem } from '../api/tauri/environment'
+import { EVT } from '../api/tauri-events'
 
 export type ModelStatus = 'ready' | 'downloading' | 'missing' | 'failed' | 'unknown'
 
 export interface DownloadState {
+  resourceId: string
   status: 'idle' | 'connecting' | 'downloading' | 'completed' | 'failed'
   file: string
   fileProgress: number
@@ -30,6 +32,7 @@ const INITIAL_SNAPSHOT: ModelStatusSnapshot = {
 }
 
 const INITIAL_DOWNLOAD: DownloadState = {
+  resourceId: '',
   status: 'idle',
   file: '',
   fileProgress: 0,
@@ -57,19 +60,55 @@ function summarize(items: ResourceStatusItem[]): ModelStatusSnapshot {
   }
 }
 
+function toDownloadState(resourceId: string, p: {
+  status: string
+  file: string
+  file_progress: number
+  file_index: number
+  total_files: number
+  error: string
+}): DownloadState {
+  return {
+    resourceId,
+    status: p.status as DownloadState['status'],
+    file: p.file,
+    fileProgress: p.file_progress,
+    fileIndex: p.file_index,
+    totalFiles: p.total_files,
+    error: p.error,
+  }
+}
+
+function aggregateDownload(downloads: Record<string, DownloadState>): DownloadState {
+  const values = Object.values(downloads)
+  if (values.length === 0) return INITIAL_DOWNLOAD
+
+  // 优先展示进行中的下载；多个进行中时取最近更新（最后 in Object.values 顺序）
+  const active = values.filter(d => d.status === 'connecting' || d.status === 'downloading')
+  if (active.length > 0) return active[active.length - 1]
+
+  // 其次展示失败/完成的下载
+  const terminal = values.filter(d => d.status === 'failed' || d.status === 'completed')
+  if (terminal.length > 0) return terminal[terminal.length - 1]
+
+  return values[values.length - 1]
+}
+
 /**
  * 单一 hook：返回当前模型资源状态 + 当前进行中的下载状态。
  * - 启动时拉一次 `resources_check` 计算初始状态
- * - 监听 `model-download-progress` 事件更新下载态
+ * - 监听 `model-download-progress` 事件更新下载态（按 resource_id 隔离）
  * - 下载完成/失败后刷新资源状态
  */
 export function useModelDownloadStatus(): {
   snapshot: ModelStatusSnapshot
   download: DownloadState
+  downloads: Record<string, DownloadState>
   refresh: () => Promise<void>
 } {
   const [snapshot, setSnapshot] = useState<ModelStatusSnapshot>(INITIAL_SNAPSHOT)
-  const [download, setDownload] = useState<DownloadState>(INITIAL_DOWNLOAD)
+  const [downloads, setDownloads] = useState<Record<string, DownloadState>>({})
+  const lastTerminalRef = useRef<Set<string>>(new Set())
 
   const refresh = useCallback(async () => {
     try {
@@ -85,23 +124,24 @@ export function useModelDownloadStatus(): {
     let unlisten: (() => void) | null = null
     const setup = async () => {
       unlisten = await listen<{
+        resource_id: string
         status: string
         file: string
         file_progress: number
         file_index: number
         total_files: number
         error: string
-      }>('model-download-progress', (event) => {
+      }>(EVT.ModelDownloadProgress, (event) => {
         const p = event.payload
-        setDownload({
-          status: p.status as DownloadState['status'],
-          file: p.file,
-          fileProgress: p.file_progress,
-          fileIndex: p.file_index,
-          totalFiles: p.total_files,
-          error: p.error,
-        })
-        if (p.status === 'completed' || p.status === 'failed') {
+        const resourceId = p.resource_id
+        if (!resourceId) return
+
+        const next = toDownloadState(resourceId, p)
+        setDownloads(prev => ({ ...prev, [resourceId]: next }))
+
+        const isTerminal = p.status === 'completed' || p.status === 'failed'
+        if (isTerminal && !lastTerminalRef.current.has(resourceId)) {
+          lastTerminalRef.current.add(resourceId)
           // 重新拉一次资源状态
           void refresh()
         }
@@ -115,6 +155,8 @@ export function useModelDownloadStatus(): {
     }
   }, [refresh])
 
+  const download = aggregateDownload(downloads)
+
   // 下载中状态覆盖 missing/ready
   const effective: ModelStatusSnapshot = download.status === 'downloading' || download.status === 'connecting'
     ? { ...snapshot, status: 'downloading' as ModelStatus }
@@ -122,5 +164,5 @@ export function useModelDownloadStatus(): {
       ? { ...snapshot, status: 'failed' as ModelStatus }
       : snapshot
 
-  return { snapshot: effective, download, refresh }
+  return { snapshot: effective, download, downloads, refresh }
 }

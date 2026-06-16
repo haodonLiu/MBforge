@@ -7,6 +7,46 @@ pub use crate::core::models::catalog::*;
 pub use crate::core::models::download::{download_model, DownloadProgress};
 pub use crate::core::models::status::write_resolved_paths;
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+/// 下载任务管理器：防止同一模型重复下载 + 支持取消。
+#[derive(Default)]
+pub struct DownloadManagerState {
+    /// resource_id -> 取消标志。`true` 表示任务应停止。
+    active: Mutex<HashMap<String, Arc<AtomicBool>>>,
+}
+
+impl DownloadManagerState {
+    /// 尝试为 resource_id 注册一个新的下载任务。
+    /// 如果该模型已经在下载中，返回 `Err`。
+    pub fn start(&self, resource_id: &str) -> Result<Arc<AtomicBool>, String> {
+        let mut active = self.active.lock().map_err(|e| e.to_string())?;
+        if active.contains_key(resource_id) {
+            return Err(format!("{} 正在下载中", resource_id));
+        }
+        let flag = Arc::new(AtomicBool::new(false));
+        active.insert(resource_id.to_string(), Arc::clone(&flag));
+        Ok(flag)
+    }
+
+    /// 标记任务结束（成功、失败或取消），从 active 中移除。
+    pub fn finish(&self, resource_id: &str) {
+        if let Ok(mut active) = self.active.lock() {
+            active.remove(resource_id);
+        }
+    }
+
+    /// 请求取消指定 resource_id 的下载任务。
+    pub fn cancel(&self, resource_id: &str) -> Result<(), String> {
+        let active = self.active.lock().map_err(|e| e.to_string())?;
+        let flag = active.get(resource_id).ok_or_else(|| format!("{} 未在下载中", resource_id))?;
+        flag.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tauri Commands
 // ---------------------------------------------------------------------------
@@ -35,19 +75,34 @@ pub fn resources_catalog() -> Vec<serde_json::Value> {
 /// 下载模型 — 通过 Tauri 事件推送进度
 ///
 /// 前端监听 `model-download-progress` 事件获取实时进度。
+/// 同一模型同时只能有一个下载任务。
 #[tauri::command]
-pub async fn models_download(resource_id: String, app: tauri::AppHandle) -> Result<String, String> {
+pub async fn models_download(
+    resource_id: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DownloadManagerState>,
+) -> Result<String, String> {
     use tauri::Emitter;
 
     log::info!("[models_download {}] command invoked", resource_id);
+
+    // 1. 注册下载任务（防止重复启动）
+    let cancelled = match state.start(&resource_id) {
+        Ok(flag) => flag,
+        Err(e) => {
+            log::warn!("[models_download {}] {}", resource_id, e);
+            return Err(e);
+        }
+    };
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<DownloadProgress>(32);
 
     // 后台任务：下载 + 转发进度到 Tauri 事件
     let rid = resource_id.clone();
+    let cancelled_clone = Arc::clone(&cancelled);
     let download_task = tokio::spawn(async move {
         log::info!("[models_download {}] spawn download_model", rid);
-        let result = download_model(&rid, tx).await;
+        let result = download_model(&rid, tx, &cancelled_clone).await;
         match &result {
             Ok(path) => {
                 log::info!("[models_download {}] download_model succeeded: {}", rid, path.display());
@@ -76,21 +131,28 @@ pub async fn models_download(resource_id: String, app: tauri::AppHandle) -> Resu
     // 等待下载完成
     let result = download_task
         .await
-        .unwrap_or_else(|e| {
+        .map_err(|e| {
             log::error!("[models_download {}] download_task panicked: {}", resource_id, e);
-            Err(format!("Task failed: {}", e))
-        });
+            format!("Task failed: {}", e)
+        })
+        .and_then(|r| r.map_err(|e| e.to_string()));
     log::info!("[models_download {}] download_task finished: {:?}", resource_id, result);
     let _ = forward_task.await;
+
+    // 2. 无论成功失败，都从 active 中移除
+    state.finish(&resource_id);
     log::info!("[models_download {}] command returning: {:?}", resource_id, result);
     result
 }
 
-/// 取消下载（预留接口）
+/// 取消正在进行的下载任务。
 #[tauri::command]
-pub fn models_cancel_download(_resource_id: String) -> Result<(), String> {
-    // TODO: 实现下载取消逻辑
-    Ok(())
+pub fn models_cancel_download(
+    resource_id: String,
+    state: tauri::State<'_, DownloadManagerState>,
+) -> Result<(), String> {
+    log::info!("[models_cancel_download {}] requested", resource_id);
+    state.cancel(&resource_id)
 }
 
 /// 删除已下载的模型

@@ -229,6 +229,7 @@ pub async fn confirm_ocr(
             source_path.to_string_lossy().to_string(),
             doc_id.clone(),
             "ocr",
+            false,
         )
         .await
         .map_err(|e| format!("Failed to enqueue OCR task: {}", e))?
@@ -690,14 +691,18 @@ fn open_ingest_queue(project_root: &str) -> Result<IngestQueue, String> {
 }
 
 /// 入队一个 PDF 供异步处理。返回任务 ID。
+///
+/// `force=true` 时跳过同 hash 幂等检查 — 用于对已索引文件强制重新入队，
+/// 新建任务而不复用现有 done 任务，保留历史记录。
 #[tauri::command]
 pub async fn ingest_enqueue(
     project_root: String,
     file_path: String,
     doc_id: String,
+    force: Option<bool>,
 ) -> Result<String, String> {
     let q = open_ingest_queue(&project_root)?;
-    q.enqueue(file_path, doc_id)
+    q.enqueue_with_stage(file_path, doc_id, "inspector", force.unwrap_or(false))
         .await
         .map_err(|e| e.to_string())
 }

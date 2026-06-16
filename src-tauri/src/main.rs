@@ -74,6 +74,7 @@ fn main() {
         .manage(AgentState::new())
         .manage(MoleculeEngineState::new())
         .manage(IngestWorkerState::default())
+        .manage(crate::core::project::resource_manager::DownloadManagerState::default())
         .invoke_handler(commands::handler())
         .setup(|app| {
             let app_handle = app.handle();

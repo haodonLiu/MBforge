@@ -17,6 +17,7 @@ import './styles/analysis.css'
 import './styles/settings.css'
 import './styles/pdf-viewer.css'
 import './styles/notes.css'
+import './styles/molecule-display.css'
 import { initTheme } from './hooks/useTheme'
 
 // Initialize theme before React renders to prevent flash

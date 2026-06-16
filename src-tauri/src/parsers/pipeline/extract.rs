@@ -26,6 +26,12 @@ pub struct ClassifyResult {
     pub ocr_blocks: Vec<OcrBlock>,
 }
 
+/// 可选的进度/日志回调，用于把 `classify_and_extract` 内部的子步骤反馈给前端。
+pub trait ExtractProgressReporter: Send + Sync {
+    /// 报告一条人类可读的子步骤消息。
+    fn report(&self, message: &str);
+}
+
 /// 将提取的图片持久化到项目 reports/figures/<doc>/ 下
 fn persist_extracted_images(
     path: &str,
@@ -229,6 +235,14 @@ fn persist_mineru_images(
 // ---------------------------------------------------------------------------
 
 pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<ClassifyResult, String> {
+    classify_and_extract_with_progress(path, allow_ocr, None).await
+}
+
+pub async fn classify_and_extract_with_progress(
+    path: &str,
+    allow_ocr: bool,
+    progress: Option<&dyn ExtractProgressReporter>,
+) -> Result<ClassifyResult, String> {
     let source_path = Path::new(path);
     let project_root = find_project_root(source_path, None);
 
@@ -249,14 +263,20 @@ pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<Classif
     let is_scanned = md.len() < 100 && page_count > 0;
 
     if is_scanned && allow_ocr {
-        // 优先尝试 MinerU（云端 OCR）
-        if std::env::var("MINERU_API_KEY").is_ok() {
+        if let Some(p) = progress.as_ref() {
+            p.report("检测到扫描件，将调用 OCR backend");
+        }
+        // ---- Backend 1: MinerU (cloud) ----
+        if crate::parsers::ocr::mineru::is_available() {
             // 检查缓存
             if let Some(ref root) = project_root {
                 if let Some((cached_text, cached_images, cached_blocks)) =
                     get_cached_ocr(path, root)
                 {
                     log::info!("OCR cache HIT for {}", path);
+                    if let Some(p) = progress.as_ref() {
+                        p.report("OCR 缓存命中，跳过 backend 调用");
+                    }
                     let mut all_images = images;
                     all_images.extend(cached_images);
                     return Ok(ClassifyResult {
@@ -269,60 +289,164 @@ pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<Classif
                 }
             }
 
-            let host =
-                std::env::var("MINERU_HOST").unwrap_or_else(|_| "https://mineru.net".to_string());
-            let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
-            let client = crate::parsers::pdf::mineru::MineruClient::new(&host, &api_key);
-
-            // 扫描文档使用优化参数：启用 OCR + 自动语言推断 + VLM 模型
-            let options = crate::parsers::pdf::mineru::scanned_pdf_options(path);
-            log::info!(
-                "[MinerU] Parsing scanned PDF with options: is_ocr={}, language={}, model={}",
-                options.is_ocr,
-                options.language,
-                options.model_version
-            );
-
-            match client.parse_file_with_options(path, &options) {
-                Ok(result) => {
-                    // 将 MinerU 提取的图片持久化到项目目录
-                    let mineru_images = if let Some(ref root) = project_root {
-                        persist_mineru_images(path, root, &result.images)
-                    } else {
-                        result.images
-                    };
-
+            log::info!("[MinerU] Parsing scanned PDF {}", path);
+            if let Some(p) = progress.as_ref() {
+                p.report("尝试 MinerU OCR backend...");
+            }
+            match crate::parsers::ocr::mineru::run(path).await {
+                Ok(out) => {
                     // 保存缓存
                     if let Some(ref root) = project_root {
-                        save_ocr_cache(
-                            path,
-                            root,
-                            &result.markdown,
-                            &mineru_images,
-                            &result.ocr_blocks,
-                        );
+                        save_ocr_cache(path, root, &out.text, &[], &[]);
                     }
-
-                    let mut all_images = images;
-                    all_images.extend(mineru_images);
+                    if let Some(p) = progress.as_ref() {
+                        p.report("MinerU OCR 成功");
+                    }
                     return Ok(ClassifyResult {
-                        text: result.markdown,
-                        page_count: 0,
+                        text: out.text,
+                        page_count: out.page_count.max(page_count),
                         parser: "mineru".into(),
-                        images: all_images,
-                        ocr_blocks: result.ocr_blocks,
+                        images,
+                        ocr_blocks: vec![],
                     });
                 }
                 Err(e) => {
                     log::warn!("MinerU OCR failed for {}: {}", path, e);
+                    if let Some(p) = progress.as_ref() {
+                        p.report(&format!("MinerU OCR 失败: {}", e));
+                    }
+                }
+            }
+        } else {
+            log::warn!(
+                "Scanned PDF {} detected but MINERU_API_KEY is not set; \
+                 skipping MinerU backend. Configure in Settings → AI Models.",
+                path
+            );
+            if let Some(p) = progress.as_ref() {
+                p.report("MinerU 未配置，跳过");
+            }
+        }
+
+        // ---- Backend 2: Uniparser online (placeholder) ----
+        if crate::parsers::ocr::uniparser::is_available() {
+            log::info!("[Uniparser] Parsing scanned PDF {}", path);
+            if let Some(p) = progress.as_ref() {
+                p.report("尝试 Uniparser OCR backend...");
+            }
+            match crate::parsers::ocr::uniparser::run(path).await {
+                Ok(out) => {
+                    if let Some(p) = progress.as_ref() {
+                        p.report("Uniparser OCR 成功");
+                    }
+                    return Ok(ClassifyResult {
+                        text: out.text,
+                        page_count: out.page_count.max(page_count),
+                        parser: "uniparser".into(),
+                        images,
+                        ocr_blocks: vec![],
+                    });
+                }
+                Err(e) => {
+                    log::warn!("Uniparser OCR failed for {}: {}", path, e);
+                    if let Some(p) = progress.as_ref() {
+                        p.report(&format!("Uniparser OCR 失败: {}", e));
+                    }
+                }
+            }
+        } else {
+            log::warn!(
+                "UNIPARSER_API_KEY not set; Uniparser backend unavailable."
+            );
+            if let Some(p) = progress.as_ref() {
+                p.report("Uniparser 未配置，跳过");
+            }
+        }
+
+        // ---- Backend 3: PaddleOCR online (placeholder) ----
+        if crate::parsers::ocr::paddle::online_is_available() {
+            log::info!("[PaddleOCR/online] Parsing scanned PDF {}", path);
+            if let Some(p) = progress.as_ref() {
+                p.report("尝试 PaddleOCR online backend...");
+            }
+            match crate::parsers::ocr::paddle::run_online(path).await {
+                Ok(out) => {
+                    if let Some(p) = progress.as_ref() {
+                        p.report("PaddleOCR online 成功");
+                    }
+                    return Ok(ClassifyResult {
+                        text: out.text,
+                        page_count: out.page_count.max(page_count),
+                        parser: "paddleocr-online".into(),
+                        images,
+                        ocr_blocks: vec![],
+                    });
+                }
+                Err(e) => {
+                    log::warn!("PaddleOCR online failed for {}: {}", path, e);
+                    if let Some(p) = progress.as_ref() {
+                        p.report(&format!("PaddleOCR online 失败: {}", e));
+                    }
+                }
+            }
+        } else {
+            log::warn!("PADDLEOCR_API_KEY not set; PaddleOCR online backend unavailable.");
+            if let Some(p) = progress.as_ref() {
+                p.report("PaddleOCR online 未配置，跳过");
+            }
+        }
+
+        // ---- Backend 4: PaddleOCR local (placeholder) ----
+        if crate::parsers::ocr::paddle::local_is_available() {
+            log::info!("[PaddleOCR/local] Parsing scanned PDF {}", path);
+            if let Some(p) = progress.as_ref() {
+                p.report("尝试 PaddleOCR local backend...");
+            }
+            match crate::parsers::ocr::paddle::run_local(path).await {
+                Ok(out) => {
+                    if let Some(p) = progress.as_ref() {
+                        p.report("PaddleOCR local 成功");
+                    }
+                    return Ok(ClassifyResult {
+                        text: out.text,
+                        page_count: out.page_count.max(page_count),
+                        parser: "paddleocr-local".into(),
+                        images,
+                        ocr_blocks: vec![],
+                    });
+                }
+                Err(e) => {
+                    log::warn!("PaddleOCR local failed for {}: {}", path, e);
+                    if let Some(p) = progress.as_ref() {
+                        p.report(&format!("PaddleOCR local 失败: {}", e));
+                    }
                 }
             }
         }
+
         // 回退到 LiteParse（本地 OCR）
-        if let Ok(result) =
-            crate::parsers::pdf::liteparse::parse_with_liteparse(path, true, None).await
+        // LiteParse (via tesseract-rs) downloads `<lang>.traineddata` from
+        // GitHub on first use with NO client-side timeout
+        // (liteparse-2.0.7/src/ocr/tesseract.rs::ensure_traineddata uses
+        // `reqwest::get(&url).await?` against
+        // https://github.com/tesseract-ocr/tessdata_best/raw/main/...).
+        // In networks where GitHub is slow or blocked, that download
+        // hangs indefinitely and the worker is stuck forever in the
+        // `ocr` stage. Bound the call so we fall back to the
+        // pdf-inspector's text result instead of pinning the queue.
+        if let Some(p) = progress.as_ref() {
+            p.report("尝试 LiteParse 本地 OCR backend（最多 90 秒）...");
+        }
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(90),
+            crate::parsers::pdf::liteparse::parse_with_liteparse(path, true, None),
+        )
+        .await
         {
-            if !result.text.trim().is_empty() {
+            Ok(Ok(result)) if !result.text.trim().is_empty() => {
+                if let Some(p) = progress.as_ref() {
+                    p.report("LiteParse OCR 成功");
+                }
                 return Ok(ClassifyResult {
                     text: result.text,
                     page_count: result.pages.len(),
@@ -330,6 +454,37 @@ pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<Classif
                     images,
                     ocr_blocks: vec![],
                 });
+            }
+            Ok(Ok(_)) => {
+                if let Some(p) = progress.as_ref() {
+                    p.report("LiteParse OCR 返回空结果，将回退到 pdf-inspector");
+                }
+            }
+            Ok(Err(e)) => {
+                log::warn!("LiteParse failed for {}: {} (falling back to pdf_inspector)", path, e);
+                if let Some(p) = progress.as_ref() {
+                    p.report(&format!("LiteParse OCR 失败: {}，将回退到 pdf-inspector", e));
+                }
+            }
+            Err(_) => {
+                log::warn!(
+                    "LiteParse timed out after 90s for {} (likely tessdata download blocked) (falling back to pdf_inspector)",
+                    path
+                );
+                if let Some(p) = progress.as_ref() {
+                    p.report("LiteParse OCR 超时（可能是 tessdata 下载被墙），将回退到 pdf-inspector");
+                }
+            }
+        }
+        }
+
+
+    if is_scanned {
+        if let Some(p) = progress.as_ref() {
+            if allow_ocr {
+                p.report("OCR 未成功，回退到 pdf-inspector 原始文本");
+            } else {
+                p.report("扫描件已识别，但当前任务不允许 OCR，将使用 pdf-inspector 文本");
             }
         }
     }

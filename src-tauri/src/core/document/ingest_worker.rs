@@ -18,7 +18,7 @@ pub struct IngestWorkerState {
 
 use crate::core::constants::{
     EVT_INGEST_PROGRESS, EVT_INGEST_QUEUE_UPDATE, EVT_INGEST_WORKER_HEARTBEAT,
-    EVT_INGEST_EMBED,
+    EVT_INGEST_EMBED, EVT_INGEST_LOG, EVT_OCR_API_MISSING,
 };
 use crate::core::document::ingest_queue::{IngestQueue, IngestTask};
 use crate::core::document::knowledge_base::get_or_init_kb;
@@ -29,7 +29,8 @@ use crate::core::project::project::Project;
 use crate::parsers::chem::chem_validate::separate_esmiles_layers;
 use crate::parsers::doc_types::{ImageRef, OcrBlock};
 use crate::parsers::pipeline::{
-    classify_and_extract, extract_molecules_from_pdf, quick_moldet_scan_pdf, ClassifyResult,
+    classify_and_extract, classify_and_extract_with_progress, extract_molecules_from_pdf,
+    quick_moldet_scan_pdf, ClassifyResult, ExtractProgressReporter,
 };
 use crate::parsers::structure::sections::{build_sections, extract_headings};
 
@@ -139,6 +140,13 @@ async fn worker_loop(
             "processing",
         );
 
+        emit_log(
+            &app_handle,
+            &task.doc_id,
+            &task.stage,
+            "info",
+            format!("进入 {} 阶段 (task id={})", task.stage, task.id),
+        );
         let result = match task.stage.as_str() {
             "inspector" => process_inspector(&project_root, &queue, &task, &app_handle).await,
             "text_extract" => process_text_extract(&project_root, &queue, &task, &app_handle).await,
@@ -149,11 +157,20 @@ async fn worker_loop(
         };
 
         let stage_duration_secs = crate::core::helpers::now_secs_f64() - stage_started_at;
+        let stage_dur_str = format!("{:.2}s", stage_duration_secs);
         match result {
             Ok(StageResult::Continue(next_stage)) => {
                 if let Some(id) = stage_hist_id {
                     let _ = queue.record_stage_end(id, stage_duration_secs, true).await;
                 }
+                let stage_dur_str = format!("{:.2}s", stage_duration_secs);
+                emit_log(
+                    &app_handle,
+                    &task.doc_id,
+                    &task.stage,
+                    "info",
+                    format!("{} �׶���� ({}), ��һ�׶�: {}", task.stage, stage_dur_str, next_stage),
+                );
                 // 阶段完成，切到下一阶段并重新置为 pending，让下一轮继续处理。
                 if let Err(e) = queue
                     .update_progress(&task.id, &next_stage, 0.0, 0, 0, "")
@@ -183,6 +200,13 @@ async fn worker_loop(
                     task.id,
                     task.stage,
                     e
+                );
+                emit_log(
+                    &app_handle,
+                    &task.doc_id,
+                    &task.stage,
+                    "error",
+                    format!("{} �׶�ʧ�� ({}): {}", task.stage, stage_dur_str, e),
                 );
                 if let Err(inner) = queue.mark_failed(&task.id, e.clone()).await {
                     log::error!("IngestWorker: mark_failed failed: {}", inner);
@@ -374,6 +398,25 @@ async fn process_inspector(
     Ok(StageResult::Continue(next_stage.to_string()))
 }
 
+/// 把 `classify_and_extract` 内部的子步骤消息转发到前端日志面板与进度事件。
+struct IngestProgressReporter<'a> {
+    app_handle: &'a AppHandle,
+    doc_id: &'a str,
+    stage: &'a str,
+}
+
+impl ExtractProgressReporter for IngestProgressReporter<'_> {
+    fn report(&self, message: &str) {
+        emit_log(
+            self.app_handle,
+            self.doc_id,
+            self.stage,
+            "info",
+            message.to_string(),
+        );
+    }
+}
+
 async fn process_text_extract(
     project_root: &Path,
     queue: &IngestQueue,
@@ -387,6 +430,13 @@ async fn process_text_extract(
         .await
         .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "extracting text");
+    emit_log(
+        app_handle,
+        &task.doc_id,
+        &task.stage,
+        "info",
+        "开始文本提取".to_string(),
+    );
 
     let classified = classify_and_extract(&task.file_path, false)
         .await
@@ -399,6 +449,14 @@ async fn process_text_extract(
         let text_path = paths.pages_cache_dir.join("text.md");
         if let Err(e) = std::fs::write(&text_path, &classified.text) {
             log::warn!("IngestWorker: failed to write text.md: {}", e);
+        } else {
+            emit_log(
+                app_handle,
+                &task.doc_id,
+                &task.stage,
+                "info",
+                "文本已保存到 cache/pages/text.md".to_string(),
+            );
         }
     }
 
@@ -460,10 +518,117 @@ async fn process_ocr(
         .await
         .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "running OCR");
+    emit_log(
+        app_handle,
+        &task.doc_id,
+        &task.stage,
+        "info",
+        "OCR 预检通过，准备解析 PDF".to_string(),
+    );
 
-    let classified = classify_and_extract(&task.file_path, true)
+    // Pre-flight: if no online OCR API is configured for this scan, notify the
+    // user via modal before classify_and_extract logs and silently skips. Only
+    // emit when the PDF actually needs OCR (scanned) — text-based PDFs are
+    // handled by pdf_inspector without any OCR backend.
+    let pdf_meta = pdf_inspector::process_pdf(&task.file_path).ok();
+    let is_scanned = pdf_meta
+        .as_ref()
+        .map(|r| {
+            r.markdown
+                .as_deref()
+                .map(|m| m.len() < 100)
+                .unwrap_or(true)
+                && r.page_count > 0
+        })
+        .unwrap_or(false);
+
+    if is_scanned {
+        emit_log(
+            app_handle,
+            &task.doc_id,
+            &task.stage,
+            "info",
+            format!("检测到扫描件（共 {} 页），将尝试 OCR", pdf_meta.as_ref().map_or(0, |r| r.page_count)),
+        );
+        queue
+            .update_progress(&task.id, &task.stage, 20.0, 0, 0, "scanned PDF detected")
+            .await
+            .map_err(|e| format!("update progress failed: {}", e))?;
+        emit_progress(app_handle, task, &task.stage, 20.0, 0, 0, "scanned PDF detected");
+
+        for backend in [
+            ("mineru", crate::parsers::ocr::mineru::is_available()),
+            ("uniparser", crate::parsers::ocr::uniparser::is_available()),
+            ("paddleocr-online", crate::parsers::ocr::paddle::online_is_available()),
+        ] {
+            if !backend.1 {
+                let payload = serde_json::json!({
+                    "backend": backend.0,
+                    "doc_id": task.doc_id,
+                    "file_path": task.file_path,
+                });
+                log::warn!(
+                    "OCR backend '{}' unavailable for doc_id={} (env var not set)",
+                    backend.0,
+                    task.doc_id
+                );
+                if let Err(e) = app_handle.emit(EVT_OCR_API_MISSING, &payload) {
+                    log::warn!("Failed to emit {}: {}", EVT_OCR_API_MISSING, e);
+                }
+            }
+        }
+    } else {
+        emit_log(
+            app_handle,
+            &task.doc_id,
+            &task.stage,
+            "info",
+            "PDF 为文本型，将直接提取文本".to_string(),
+        );
+    }
+
+    queue
+        .update_progress(&task.id, &task.stage, 30.0, 0, 0, " invoking OCR backend")
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
+    emit_progress(app_handle, task, &task.stage, 30.0, 0, 0, " invoking OCR backend");
+
+    let reporter = IngestProgressReporter {
+        app_handle,
+        doc_id: &task.doc_id,
+        stage: &task.stage,
+    };
+    let classified = classify_and_extract_with_progress(&task.file_path, true, Some(&reporter))
         .await
         .map_err(|e| format!("OCR extraction failed: {}", e))?;
+
+    queue
+        .update_progress(
+            &task.id,
+            &task.stage,
+            50.0,
+            classified.page_count as i32,
+            classified.page_count as i32,
+            &format!("OCR result ready ({})", classified.parser),
+        )
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
+    emit_progress(
+        app_handle,
+        task,
+        &task.stage,
+        50.0,
+        classified.page_count as i32,
+        classified.page_count as i32,
+        &format!("OCR result ready ({})", classified.parser),
+    );
+    emit_log(
+        app_handle,
+        &task.doc_id,
+        &task.stage,
+        "info",
+        format!("OCR 结果已生成（parser={}，pages={}）", classified.parser, classified.page_count),
+    );
 
     // 保存 OCR 结果到 cache/ocr/ocr.json。
     if let Some(dp) = DocumentProject::load(project_root, &task.doc_id) {
@@ -479,8 +644,37 @@ async fn process_ocr(
         });
         if let Err(e) = crate::core::helpers::save_json(&ocr_path, &ocr_json) {
             log::warn!("IngestWorker: failed to save ocr.json: {}", e);
+        } else {
+            emit_log(
+                app_handle,
+                &task.doc_id,
+                &task.stage,
+                "info",
+                "OCR 结果已保存到 cache/ocr/ocr.json".to_string(),
+            );
         }
     }
+
+    queue
+        .update_progress(
+            &task.id,
+            &task.stage,
+            80.0,
+            classified.page_count as i32,
+            classified.page_count as i32,
+            "OCR result saved",
+        )
+        .await
+        .map_err(|e| format!("update progress failed: {}", e))?;
+    emit_progress(
+        app_handle,
+        task,
+        &task.stage,
+        80.0,
+        classified.page_count as i32,
+        classified.page_count as i32,
+        "OCR result saved",
+    );
 
     // 更新状态。
     if let Some(mut dp) = DocumentProject::load(project_root, &task.doc_id) {
@@ -900,6 +1094,31 @@ fn set_doc_status_error(project_root: &Path, task: &IngestTask, error: &str) {
         field,
         error
     );
+}
+
+/// Structured log line for the frontend log panel. Mirrors the same
+/// info into stderr via `log::` and emits a Tauri event so the UI can
+/// render a per-task expandable log box.
+fn emit_log(app_handle: &AppHandle, doc_id: &str, stage: &str, level: &str, message: String) {
+    let payload = serde_json::json!({
+        "doc_id": doc_id,
+        "stage": stage,
+        "level": level,
+        "message": message,
+        "ts_ms": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
+    });
+    // Mirror to stderr so devs can grep the Tauri log.
+    match level {
+        "warn" => log::warn!("[IngestWorker:{}:{}] {}", doc_id, stage, message),
+        "error" => log::error!("[IngestWorker:{}:{}] {}", doc_id, stage, message),
+        _ => log::info!("[IngestWorker:{}:{}] {}", doc_id, stage, message),
+    }
+    if let Err(e) = app_handle.emit(EVT_INGEST_LOG, &payload) {
+        log::warn!("IngestWorker: emit log failed: {}", e);
+    }
 }
 
 fn emit_progress(

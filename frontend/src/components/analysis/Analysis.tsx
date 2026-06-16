@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { PageContainer, PageTitle } from '@/components/ui'
-import SarPanel from './SarPanel'
 
-type AnalysisPanel = 'sar' | 'cluster' | 'similarity'
+type AnalysisPanel = 'cluster' | 'similarity'
 
 interface NavItem {
   key: AnalysisPanel
@@ -11,7 +10,6 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { key: 'sar', labelKey: 'analysis.sar' },
   { key: 'cluster', labelKey: 'analysis.cluster' },
   { key: 'similarity', labelKey: 'analysis.similarity' },
 ]
@@ -26,7 +24,7 @@ function PlaceholderPanel({ title }: { title: string }) {
 
 export default function Analysis() {
   const { t } = useTranslation()
-  const [activePanel, setActivePanel] = useState<AnalysisPanel>('sar')
+  const [activePanel, setActivePanel] = useState<AnalysisPanel>('cluster')
 
   return (
     <PageContainer className="analysis-page" noPadding>
@@ -53,7 +51,6 @@ export default function Analysis() {
       </aside>
 
       <main className="analysis-content">
-        {activePanel === 'sar' && <SarPanel />}
         {activePanel === 'cluster' && <PlaceholderPanel title={t('analysis.cluster')} />}
         {activePanel === 'similarity' && <PlaceholderPanel title={t('analysis.similarity')} />}
       </main>

@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { MoleculeRecord } from '@/types'
 import type {
@@ -6,6 +7,7 @@ import type {
 } from '@/hooks/useMoleculeLibrary'
 import Skeleton from '@/components/ui/Skeleton'
 import EmptyState from '@/components/ui/EmptyState'
+import './MoleculeTable.css'
 
 interface MoleculeTableProps {
   molecules: MoleculeRecord[]
@@ -40,19 +42,9 @@ export default function MoleculeTable({
   setLastClickedId,
 }: MoleculeTableProps) {
   const { t } = useTranslation()
+  const shiftKeyRef = useRef(false)
 
-  const handleCheckboxClick = (
-    e: React.MouseEvent<HTMLInputElement>,
-    molId: string,
-  ) => {
-    e.stopPropagation()
-    if (e.shiftKey && lastClickedId) {
-      onSelectRange(lastClickedId, molId)
-    } else {
-      onToggleSelect(molId)
-      setLastClickedId(molId)
-    }
-  }
+  const allSelected = molecules.length > 0 && molecules.every((m) => selectedIds.has(m.mol_id))
 
   const handleHeaderCheckboxChange = () => {
     if (allSelected) {
@@ -64,7 +56,23 @@ export default function MoleculeTable({
     }
   }
 
-  const allSelected = molecules.length > 0 && molecules.every((m) => selectedIds.has(m.mol_id))
+  const handleCheckboxMouseDown = (e: React.MouseEvent<HTMLInputElement>) => {
+    shiftKeyRef.current = e.shiftKey
+  }
+
+  const handleCheckboxClick = (e: React.MouseEvent<HTMLInputElement>) => {
+    e.stopPropagation()
+  }
+
+  const handleCheckboxChange = (molId: string) => {
+    if (shiftKeyRef.current && lastClickedId) {
+      onSelectRange(lastClickedId, molId)
+    } else {
+      onToggleSelect(molId)
+      setLastClickedId(molId)
+    }
+    shiftKeyRef.current = false
+  }
 
   if (loading) {
     return (
@@ -75,22 +83,15 @@ export default function MoleculeTable({
   }
 
   if (molecules.length === 0) {
-    return <EmptyState message={t('mol.empty') ?? '暂无分子'} />
+    return <EmptyState message={t('mol.empty')} />
   }
 
   return (
-    <div
-      style={{
-        border: '1px solid var(--border)',
-        borderRadius: 10,
-        overflow: 'auto',
-        background: 'var(--bg-surface)',
-      }}
-    >
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+    <div className="molecule-table-wrapper">
+      <table className="molecule-table">
         <thead>
-          <tr style={{ borderBottom: '1px solid var(--border)' }}>
-            <th style={{ padding: '10px 12px', width: 40, textAlign: 'center' }}>
+          <tr className="molecule-table-header-row">
+            <th className="molecule-table-checkbox-header" scope="col">
               <input
                 type="checkbox"
                 checked={allSelected}
@@ -101,25 +102,19 @@ export default function MoleculeTable({
             {headers.map((h) => (
               <th
                 key={h.key}
+                scope="col"
                 onClick={() => onSort(h.key)}
-                style={{
-                  padding: '10px 12px',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  userSelect: 'none',
-                  color: 'var(--text-secondary)',
-                  fontWeight: 600,
-                }}
+                className="molecule-table-header-cell"
               >
                 {h.label}
                 {sort.field === h.key && (
-                  <span style={{ marginLeft: 6, color: 'var(--accent)' }}>
+                  <span className="molecule-table-sort-indicator">
                     {sort.direction === 'asc' ? '↑' : '↓'}
                   </span>
                 )}
               </th>
             ))}
-            <th style={{ padding: '10px 12px', textAlign: 'left', color: 'var(--text-secondary)', fontWeight: 600 }}>
+            <th className="molecule-table-source-header" scope="col">
               Source
             </th>
           </tr>
@@ -129,38 +124,36 @@ export default function MoleculeTable({
             <tr
               key={mol.mol_id}
               onClick={() => onRowClick(mol)}
-              style={{
-                borderBottom: '1px solid var(--border-subtle)',
-                background: selectedIds.has(mol.mol_id) ? 'var(--accent-muted)' : undefined,
-                cursor: 'pointer',
-              }}
+              className={`molecule-table-row ${selectedIds.has(mol.mol_id) ? 'selected' : ''}`}
             >
-              <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+              <td className="molecule-table-checkbox-cell">
                 <input
                   type="checkbox"
                   checked={selectedIds.has(mol.mol_id)}
-                  onClick={(e) => handleCheckboxClick(e, mol.mol_id)}
+                  onMouseDown={handleCheckboxMouseDown}
+                  onClick={handleCheckboxClick}
+                  onChange={() => handleCheckboxChange(mol.mol_id)}
                   aria-label={`Select ${mol.name || mol.mol_id}`}
                 />
               </td>
-              <td style={{ padding: '10px 12px' }}>
-                <div style={{ fontWeight: 600 }}>{mol.name || mol.mol_id}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>
+              <td className="molecule-table-cell">
+                <div className="molecule-table-name">{mol.name || mol.mol_id}</div>
+                <div className="molecule-table-esmiles">
                   {mol.esmiles}
                 </div>
               </td>
-              <td style={{ padding: '10px 12px' }}>
-                {mol.activity !== null && mol.activity !== undefined
+              <td className="molecule-table-cell">
+                {mol.activity !== null
                   ? `${mol.activity.toFixed(2)} ${mol.units || 'nM'}`
                   : '-'}
               </td>
-              <td style={{ padding: '10px 12px' }}>
+              <td className="molecule-table-cell">
                 <StatusBadge status={mol.status} />
               </td>
-              <td style={{ padding: '10px 12px', color: 'var(--text-muted)' }}>
+              <td className="molecule-table-cell molecule-table-muted-cell">
                 {new Date(mol.created_at).toLocaleDateString()}
               </td>
-              <td style={{ padding: '10px 12px', color: 'var(--text-muted)' }}>
+              <td className="molecule-table-cell molecule-table-muted-cell">
                 {mol.source_doc || '-'}
               </td>
             </tr>
@@ -172,28 +165,15 @@ export default function MoleculeTable({
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, { bg: string; text: string }> = {
-    confirmed: { bg: 'var(--success-muted)', text: 'var(--success)' },
-    pending: { bg: 'var(--warning-muted)', text: 'var(--warning)' },
-    corrected: { bg: 'var(--info-muted)', text: 'var(--info)' },
-    rejected: { bg: 'var(--danger-muted)', text: 'var(--danger)' },
+  const colorClass: Record<string, string> = {
+    confirmed: 'status-badge-confirmed',
+    pending: 'status-badge-pending',
+    corrected: 'status-badge-corrected',
+    rejected: 'status-badge-rejected',
   }
-  const c = colors[status] || { bg: 'var(--bg-elevated)', text: 'var(--text-muted)' }
+  const badgeClass = colorClass[status] || 'status-badge-default'
   return (
-    <span
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 4,
-        padding: '2px 8px',
-        borderRadius: 6,
-        background: c.bg,
-        color: c.text,
-        fontSize: 11,
-        fontWeight: 600,
-        textTransform: 'capitalize',
-      }}
-    >
+    <span className={`status-badge ${badgeClass}`}>
       {status}
     </span>
   )

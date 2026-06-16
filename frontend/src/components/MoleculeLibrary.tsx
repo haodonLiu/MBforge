@@ -94,7 +94,7 @@ export default function MoleculeLibrary() {
           marginBottom: '16px',
         }}
       >
-        <PageTitle>{t('mol.title') ?? 'Molecule Library'}</PageTitle>
+        <PageTitle>{t('mol.title')}</PageTitle>
       </div>
 
       <div
@@ -188,17 +188,17 @@ export default function MoleculeLibrary() {
               {t('mol.selectionSummary', {
                 selected: selectedIds.size,
                 total: totalCount,
-              }) ?? `Selected ${selectedIds.size} / ${totalCount} molecules`}
+              })}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Button variant="secondary" size="sm" onClick={selectAll} disabled={loading}>
-                {t('mol.selectAll') ?? 'Select All'}
+                {t('mol.selectAll')}
               </Button>
               <Button variant="secondary" size="sm" onClick={clearSelection} disabled={selectedIds.size === 0}>
-                {t('mol.clearSelection') ?? 'Clear Selection'}
+                {t('mol.clearSelection')}
               </Button>
               <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)} disabled={!projectRoot}>
-                {t('mol.add') ?? 'Add'}
+                {t('mol.add')}
               </Button>
             </div>
           </div>

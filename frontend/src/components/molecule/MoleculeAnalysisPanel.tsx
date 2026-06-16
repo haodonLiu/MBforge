@@ -1,3 +1,5 @@
+import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Tabs, TabPanel, EmptyState } from '../ui'
 import SessionOverview from '../sar/SessionOverview'
 import OverviewTab from '../sar/OverviewTab'
@@ -5,6 +7,7 @@ import RGroupTab from '../sar/RGroupTab'
 import CliffsTab from '../sar/CliffsTab'
 import AnalyticsTab from './analysis/AnalyticsTab'
 import RelationsTab from './analysis/RelationsTab'
+import { moleculesToSession } from '../sar/utils'
 import type { MoleculeRecord, SARSession } from '../../types'
 import type { AnalysisTab } from '../../hooks/useMoleculeAnalysis'
 
@@ -17,14 +20,28 @@ export interface MoleculeAnalysisPanelProps {
   onRefresh: () => void
 }
 
+const ANALYSIS_INPUT_LIMIT = 200
+
 export default function MoleculeAnalysisPanel({
   analysisInput,
-  sarSession,
+  sarSession: _sarSession,
   activeTab,
   onTabChange,
   projectRoot,
   onRefresh,
 }: MoleculeAnalysisPanelProps) {
+  const { t } = useTranslation()
+
+  const effectiveInput = useMemo(
+    () => analysisInput.slice(0, ANALYSIS_INPUT_LIMIT),
+    [analysisInput],
+  )
+
+  const effectiveSession = useMemo(
+    () => (effectiveInput.length > 0 ? moleculesToSession(effectiveInput) : null),
+    [effectiveInput],
+  )
+
   if (analysisInput.length === 0) {
     return <EmptyState message="请选择或导入分子以开始分析" />
   }
@@ -39,6 +56,22 @@ export default function MoleculeAnalysisPanel({
 
   return (
     <div>
+      {analysisInput.length > ANALYSIS_INPUT_LIMIT && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: '10px 14px',
+            borderRadius: 8,
+            background: 'var(--info-muted)',
+            color: 'var(--info)',
+            fontSize: 13,
+          }}
+          role="status"
+        >
+          {t('mol.analysisLimited')}
+        </div>
+      )}
+
       <Tabs
         items={items}
         activeKey={activeTab}
@@ -46,30 +79,30 @@ export default function MoleculeAnalysisPanel({
       />
 
       <TabPanel activeKey={activeTab} tabKey="overview">
-        {sarSession && (
+        {effectiveSession && (
           <>
-            <SessionOverview session={sarSession} />
-            <OverviewTab session={sarSession} selectedCompoundId={null} onSelect={() => {}} />
+            <SessionOverview session={effectiveSession} />
+            <OverviewTab session={effectiveSession} selectedCompoundId={null} onSelect={() => {}} />
           </>
         )}
       </TabPanel>
 
       <TabPanel activeKey={activeTab} tabKey="rgroup">
-        {sarSession && <RGroupTab session={sarSession} onSelectCompound={() => {}} />}
+        {effectiveSession && <RGroupTab session={effectiveSession} onSelectCompound={() => {}} />}
       </TabPanel>
 
       <TabPanel activeKey={activeTab} tabKey="cliffs">
-        {sarSession && projectRoot && (
-          <CliffsTab session={sarSession} projectRoot={projectRoot} />
+        {effectiveSession && projectRoot && (
+          <CliffsTab session={effectiveSession} projectRoot={projectRoot} />
         )}
       </TabPanel>
 
       <TabPanel activeKey={activeTab} tabKey="analytics">
-        <AnalyticsTab molecules={analysisInput} projectRoot={projectRoot} onRefresh={onRefresh} />
+        <AnalyticsTab molecules={effectiveInput} projectRoot={projectRoot} onRefresh={onRefresh} />
       </TabPanel>
 
       <TabPanel activeKey={activeTab} tabKey="relations">
-        <RelationsTab molecules={analysisInput} />
+        <RelationsTab molecules={effectiveInput} />
       </TabPanel>
     </div>
   )

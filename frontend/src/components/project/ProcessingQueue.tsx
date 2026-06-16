@@ -4,7 +4,9 @@ import { listen } from '@tauri-apps/api/event'
 import Button from '../ui/Button'
 import ProgressBar from '../ui/ProgressBar'
 import { XIcon } from '../icons/actions'
+import { ChevronDownIcon, ChevronUpIcon } from '../icons/ui'
 import PdfPipelineFlow from './pdf/PdfPipelineFlow'
+import IngestLogPanel from './IngestLogPanel'
 import { EVT } from '../../api/tauri-events'
 import {
   ingestCancel,
@@ -17,6 +19,7 @@ import {
   type IngestTask,
   type IngestQueueUpdateEvent,
   type IngestWorkerHeartbeatEvent,
+  type IngestLogEvent,
   type QueueStats,
 } from '../../api/tauri/ingest_queue'
 import { showToast } from '../../hooks/useToast'
@@ -108,6 +111,8 @@ export default function ProcessingQueue({ projectRoot }: Props) {
   const [hideDone, setHideDone] = useState(true)
   const [workerStatus, setWorkerStatus] = useState<'online' | 'offline' | 'unknown'>('unknown')
   const [lastHeartbeatTs, setLastHeartbeatTs] = useState<number | null>(null)
+  const [logMap, setLogMap] = useState<Map<string, IngestLogEvent[]>>(new Map())
+  const [expandedLogDocs, setExpandedLogDocs] = useState<Set<string>>(new Set())
 
   // Live "now" timestamp for elapsed-time displays. Only ticks every second
   // while there is at least one processing task — saves re-renders when the
@@ -182,6 +187,30 @@ export default function ProcessingQueue({ projectRoot }: Props) {
     }, 1000)
     return () => window.clearInterval(id)
   }, [lastHeartbeatTs])
+
+  // Subscribe to per-document ingest logs.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null
+    const setup = async () => {
+      unlisten = await listen<IngestLogEvent>(EVT.IngestLog, (event) => {
+        const payload = event.payload
+        setLogMap((prev) => {
+          const next = new Map(prev)
+          const list = next.get(payload.doc_id) ?? []
+          const updated = [...list, payload]
+          if (updated.length > 200) updated.shift()
+          next.set(payload.doc_id, updated)
+          return next
+        })
+      })
+    }
+    void setup().catch((e: unknown) => {
+      console.error('[ProcessingQueue] log listen failed:', e)
+    })
+    return () => {
+      unlisten?.()
+    }
+  }, [])
 
   const handleCancel = useCallback(
     async (task: IngestTask) => {
@@ -275,6 +304,15 @@ export default function ProcessingQueue({ projectRoot }: Props) {
     },
     [projectRoot, load],
   )
+
+  const toggleLogs = useCallback((docId: string) => {
+    setExpandedLogDocs((prev) => {
+      const next = new Set(prev)
+      if (next.has(docId)) next.delete(docId)
+      else next.add(docId)
+      return next
+    })
+  }, [])
 
   // Filter + sort — memoized so the list doesn't re-sort on every keystroke
   // elsewhere. Sort priority: processing → pending → failed → cancelled → done.
@@ -540,6 +578,15 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                   </div>
 
                   <div className="processing-queue-item-actions">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleLogs(task.doc_id)}
+                      aria-label={expandedLogDocs.has(task.doc_id) ? '隐藏日志' : '显示日志'}
+                      title={expandedLogDocs.has(task.doc_id) ? '隐藏日志' : '显示日志'}
+                    >
+                      {expandedLogDocs.has(task.doc_id) ? <ChevronUpIcon size={16} /> : <ChevronDownIcon size={16} />}
+                    </Button>
                     {canCancel && (
                       <Button
                         variant="ghost"
@@ -604,6 +651,13 @@ export default function ProcessingQueue({ projectRoot }: Props) {
                   <div className="processing-queue-error">
                     <XIcon size={12} />
                     {task.error}
+                  </div>
+                )}
+
+                {/* Expandable log panel */}
+                {expandedLogDocs.has(task.doc_id) && (
+                  <div className="processing-queue-log-panel">
+                    <IngestLogPanel logs={logMap.get(task.doc_id) ?? []} />
                   </div>
                 )}
               </motion.div>

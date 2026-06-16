@@ -15,6 +15,7 @@ import './styles/workspace.css'
 import './styles/discover.css'
 import './styles/analysis.css'
 import './styles/settings.css'
+import './styles/pdf-viewer.css'
 import { initTheme } from './hooks/useTheme'
 
 // Initialize theme before React renders to prevent flash

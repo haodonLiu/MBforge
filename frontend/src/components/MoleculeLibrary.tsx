@@ -1,236 +1,250 @@
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { listMoleculesTauri, searchMoleculesTauri } from '../api/tauri/molecule'
-import type { MoleculeRecord } from '../types'
-import { FlaskIcon, SearchIcon, TargetIcon, BarChartIcon } from './icons'
-import { useAppContext } from '../context/AppContext'
-import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
-import PageContainer from '../components/ui/PageContainer'
-import PageTitle from '../components/ui/PageTitle'
-import CardGrid from '../components/ui/CardGrid'
-import Card from '../components/ui/Card'
-import IconContainer from '../components/ui/IconContainer'
-import Caption from '../components/ui/Caption'
-import BodyText from '../components/ui/BodyText'
-import Skeleton from '../components/ui/Skeleton'
-import Button from '../components/ui/Button'
-import EmptyState from '../components/ui/EmptyState'
-import Tabs, { TabPanel } from '../components/ui/Tabs'
-import { AddMoleculeDialog } from '../components/ui/AddMoleculeDialog'
-import SARAnalysis from './SARAnalysis'
-import MoleculeAnalytics from './molecule/MoleculeAnalytics'
+import PageContainer from '@/components/ui/PageContainer'
+import PageTitle from '@/components/ui/PageTitle'
+import Button from '@/components/ui/Button'
+import { AddMoleculeDialog } from '@/components/ui/AddMoleculeDialog'
+import { useAppContext } from '@/context/AppContext'
+import { useMoleculeLibrary } from '@/hooks/useMoleculeLibrary'
+import { useMoleculeAnalysis } from '@/hooks/useMoleculeAnalysis'
+import MoleculeFiltersComponent from '@/components/molecule/MoleculeFilters'
+import MoleculeTable from '@/components/molecule/MoleculeTable'
+import MoleculeCardGrid from '@/components/molecule/MoleculeCardGrid'
+import MoleculeAnalysisPanel from '@/components/molecule/MoleculeAnalysisPanel'
+import MoleculeDetailDrawer from '@/components/molecule/MoleculeDetailDrawer'
+import type { MoleculeRecord } from '@/types'
+import type { MoleculeSortField } from '@/hooks/useMoleculeLibrary'
 
 export default function MoleculeLibrary() {
   const { projectRoot } = useAppContext()
   const { t } = useTranslation()
-  // 顶层 tab：'library' = 分子列表；'sar' = SAR 分析。
-  // 原来是独立路由 /sar 的 SARAnalysis 页面，合并到这里作为子 tab。
-  type LibraryTab = 'library' | 'sar' | 'analytics'
-  const [activeTab, setActiveTab] = useState<LibraryTab>('library')
-  const [search, setSearch] = useState('')
-  const [molecules, setMolecules] = useState<MoleculeRecord[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+
+  const {
+    molecules,
+    totalCount,
+    loading,
+    error,
+    query,
+    filters,
+    sort,
+    viewMode,
+    selectedIds,
+    isCorrectionMode,
+    setQuery,
+    setFilters,
+    setSort,
+    setViewMode,
+    toggleSelection,
+    selectRange,
+    selectAll,
+    clearSelection,
+    refresh,
+  } = useMoleculeLibrary(projectRoot)
+
+  const {
+    activeTab,
+    setActiveTab,
+    analysisInput,
+    sarSession,
+  } = useMoleculeAnalysis(molecules, selectedIds)
+
+  const [selectedMolecule, setSelectedMolecule] = useState<MoleculeRecord | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [lastClickedId, setLastClickedId] = useState<string | null>(null)
   const [showAddDialog, setShowAddDialog] = useState(false)
 
-  const loadMolecules = async () => {
-    if (!projectRoot) {
-      setMolecules([])
-      return
-    }
-    setIsLoading(true)
-    setError(null)
-    try {
-      let resp
-      if (search.trim()) {
-        resp = await searchMoleculesTauri(projectRoot, search.trim())
-      } else {
-        resp = await listMoleculesTauri(projectRoot, 100, 0)
-      }
-      if (resp.success && resp.molecules) {
-        setMolecules(resp.molecules)
-      } else {
-        setMolecules([])
-      }
-    } catch (e) {
-      setMolecules([])
-      setError(e instanceof Error ? e.message : t('mol.loadFailed'))
-    } finally {
-      setIsLoading(false)
-    }
+  const sourceTypeOptions = useMemo(
+    () => Array.from(new Set(molecules.map((m) => m.source_type).filter(Boolean))),
+    [molecules],
+  )
+
+  const sourceDocOptions = useMemo(
+    () => Array.from(new Set(molecules.map((m) => m.source_doc).filter(Boolean))),
+    [molecules],
+  )
+
+  const handleSort = (field: MoleculeSortField) => {
+    setSort({
+      field,
+      direction: sort.field === field && sort.direction === 'asc' ? 'desc' : 'asc',
+    })
   }
 
-  useEffect(() => {
-    loadMolecules()
-  }, [])
-
-  const handleSearch = () => {
-    loadMolecules()
+  const handleRowClick = (mol: MoleculeRecord) => {
+    setSelectedMolecule(mol)
+    setDrawerOpen(true)
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSearch()
-    }
+  const handleDrawerClose = () => {
+    setDrawerOpen(false)
+    setSelectedMolecule(null)
+  }
+
+  const handleSaved = () => {
+    refresh()
   }
 
   return (
     <PageContainer>
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '16px',
-      }}>
-        <PageTitle>{t('mol.title')}</PageTitle>
-        <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)}>{t('mol.add')}</Button>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: '16px',
+        }}
+      >
+        <PageTitle>{t('mol.title') ?? 'Molecule Library'}</PageTitle>
       </div>
 
-      {/* 顶层 tab：library / sar */}
-      <Tabs
-        items={[
-          {
-            key: 'library',
-            label: (
-              <>
-                <FlaskIcon size={14} /> {t('mol.title')}
-              </>
-            ),
-            badge: molecules.length,
-          },
-          {
-            key: 'sar',
-            label: (
-              <>
-                <TargetIcon size={14} /> SAR 分析
-              </>
-            ),
-          },
-          {
-            key: 'analytics',
-            label: (
-              <>
-                <BarChartIcon size={14} /> 高级分析
-              </>
-            ),
-          },
-        ]}
-        activeKey={activeTab}
-        onChange={(k) => setActiveTab(k as LibraryTab)}
-      />
+      <div
+        style={{
+          display: 'flex',
+          gap: '16px',
+          height: 'calc(100vh - 180px)',
+          minHeight: 0,
+        }}
+      >
+        {/* Left column */}
+        <div
+          style={{
+            width: '40%',
+            minWidth: '360px',
+            maxWidth: '50%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            minHeight: 0,
+          }}
+        >
+          <MoleculeFiltersComponent
+            query={query}
+            onQueryChange={setQuery}
+            filters={filters}
+            onFiltersChange={setFilters}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            onSearch={refresh}
+            sourceTypeOptions={sourceTypeOptions}
+            sourceDocOptions={sourceDocOptions}
+            disabled={loading}
+          />
 
-      {activeTab === 'library' && (
-        <TabPanel activeKey={activeTab} tabKey="library">
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        padding: '12px 16px',
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: '10px',
-        marginBottom: '20px',
-      }}>
-        <SearchIcon size={18} />
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={projectRoot ? t('mol.search') : t('mol.searchNoProject')}
-          disabled={!projectRoot}
+          <div
+            style={{
+              flex: 1,
+              overflow: 'auto',
+              minHeight: 0,
+            }}
+          >
+            {error ? (
+              <div
+                style={{
+                  padding: '16px',
+                  color: 'var(--danger)',
+                  background: 'var(--danger-muted)',
+                  borderRadius: '8px',
+                }}
+              >
+                {error}
+              </div>
+            ) : viewMode === 'table' ? (
+              <MoleculeTable
+                molecules={molecules}
+                loading={loading}
+                selectedIds={selectedIds}
+                sort={sort}
+                onSort={handleSort}
+                onToggleSelect={toggleSelection}
+                onSelectRange={selectRange}
+                onRowClick={handleRowClick}
+                lastClickedId={lastClickedId}
+                setLastClickedId={setLastClickedId}
+              />
+            ) : (
+              <MoleculeCardGrid
+                molecules={molecules}
+                loading={loading}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelection}
+                onCardClick={handleRowClick}
+              />
+            )}
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              padding: '12px 16px',
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: '10px',
+            }}
+          >
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+              {t('mol.selectionSummary', {
+                selected: selectedIds.size,
+                total: totalCount,
+              }) ?? `Selected ${selectedIds.size} / ${totalCount} molecules`}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Button variant="secondary" size="sm" onClick={selectAll} disabled={loading}>
+                {t('mol.selectAll') ?? 'Select All'}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={clearSelection} disabled={selectedIds.size === 0}>
+                {t('mol.clearSelection') ?? 'Clear Selection'}
+              </Button>
+              <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)} disabled={!projectRoot}>
+                {t('mol.add') ?? 'Add'}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right column */}
+        <div
           style={{
             flex: 1,
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            fontSize: '14px',
-            color: 'var(--text-primary)',
-            fontFamily: 'inherit',
+            minWidth: 0,
+            minHeight: 0,
+            overflow: 'auto',
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: '10px',
+            padding: '16px',
           }}
-        />
-        <Button variant="primary" size="sm" onClick={handleSearch} disabled={!projectRoot}>
-          {t('mol.searchBtn')}
-        </Button>
+        >
+          <MoleculeAnalysisPanel
+            analysisInput={analysisInput}
+            sarSession={sarSession}
+            activeTab={activeTab}
+            onTabChange={(tab) => setActiveTab(tab)}
+            projectRoot={projectRoot}
+            onRefresh={refresh}
+          />
+        </div>
       </div>
-
-      {isLoading ? (
-        <StaggerContainer stagger={0.05}>
-          <CardGrid>
-            {Array.from({ length: 6 }).map((_, i) => (
-              <StaggerItem key={i}>
-                <Skeleton variant="card" count={1} />
-              </StaggerItem>
-            ))}
-          </CardGrid>
-        </StaggerContainer>
-      ) : error ? (
-        <EmptyState message={error} error />
-      ) : (
-        <StaggerContainer>
-          <CardGrid>
-            {molecules.map(mol => (
-              <StaggerItem key={mol.mol_id}>
-                <Card hoverable>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    marginBottom: '12px',
-                  }}>
-                    <IconContainer size={40}>
-                      <FlaskIcon size={20} />
-                    </IconContainer>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '15px' }}>{mol.name || mol.mol_id}</div>
-                      <Caption>{mol.source_doc || t('mol.unknownSource')}</Caption>
-                    </div>
-                  </div>
-                  <BodyText size="sm" style={{
-                    fontFamily: 'SF Mono, monospace',
-                    wordBreak: 'break-all',
-                    background: 'var(--bg-base)',
-                    padding: '8px',
-                    borderRadius: '6px',
-                  }}>
-                    {mol.esmiles}
-                  </BodyText>
-                  {mol.activity !== null && mol.activity !== undefined && (
-                    <BodyText size="sm" style={{ marginTop: '12px' }}>
-                       {t('mol.activity')}: {mol.activity.toFixed(2)} {mol.units || 'nM'}
-                    </BodyText>
-                  )}
-                </Card>
-              </StaggerItem>
-            ))}
-          </CardGrid>
-        </StaggerContainer>
-      )}
 
       {projectRoot && (
         <AddMoleculeDialog
           open={showAddDialog}
           onClose={() => setShowAddDialog(false)}
           projectRoot={projectRoot}
-          onAdded={loadMolecules}
+          onAdded={handleSaved}
         />
       )}
-        </TabPanel>
-      )}
 
-      {activeTab === 'sar' && (
-        <TabPanel activeKey={activeTab} tabKey="sar">
-          {/* 复用原 SARAnalysis 组件的所有内部 state（correction items、
-              selected compound 等）。它自己 fetch + 自己管 state。 */}
-          <SARAnalysis />
-        </TabPanel>
-      )}
-
-      {activeTab === 'analytics' && (
-        <TabPanel activeKey={activeTab} tabKey="analytics">
-          <MoleculeAnalytics />
-        </TabPanel>
-      )}
+      <MoleculeDetailDrawer
+        molecule={selectedMolecule}
+        open={drawerOpen}
+        isCorrectionMode={isCorrectionMode}
+        projectRoot={projectRoot}
+        onClose={handleDrawerClose}
+        onSaved={handleSaved}
+      />
     </PageContainer>
   )
 }

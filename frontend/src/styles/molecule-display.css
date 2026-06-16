@@ -1,0 +1,240 @@
+/* ---- MoleculeDisplay 组件 ---- */
+.mol-display {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+.mol-display--error {
+  border-color: var(--danger);
+}
+
+.mol-display-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mol-display-meta {
+  flex: 1;
+  min-width: 0;
+}
+.mol-display-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mol-display-source {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.mol-confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: rgba(255,255,255,0.9);
+  border: 1px solid;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+[data-theme="dark"] .mol-confidence-badge {
+  background: rgba(255,255,255,0.05);
+}
+.mol-confidence-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.mol-display-canvas {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mol-display-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.mol-display-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.mol-display-placeholder--error {
+  color: var(--danger);
+}
+.mol-display-placeholder-icon {
+  opacity: 0.4;
+  margin-bottom: 4px;
+}
+.mol-display-placeholder-title {
+  font-size: 12px;
+  font-weight: 500;
+}
+.mol-display-placeholder-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+.mol-display-placeholder-btn {
+  margin-top: 4px;
+  padding: 4px 12px;
+  font-size: 11px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.mol-edit-form {
+  width: 100%;
+  padding: 12px;
+}
+.mol-edit-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-family: monospace;
+  font-size: 13px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  outline: none;
+  box-sizing: border-box;
+}
+.mol-edit-input--error {
+  border-color: var(--danger);
+}
+.mol-edit-error {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mol-edit-error-hint {
+  color: var(--text-muted);
+}
+.mol-edit-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.mol-edit-btn {
+  flex: 1;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.mol-edit-btn--primary {
+  background: var(--accent);
+  color: white;
+  font-weight: 500;
+}
+.mol-edit-btn--secondary {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.mol-molecode-wrap {
+  width: 100%;
+  padding: 8px;
+}
+.mol-molecode-loading {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-muted);
+}
+.mol-molecode-error {
+  text-align: center;
+  padding: 24px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.mol-display-smiles {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  background: var(--bg-base);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  word-break: break-all;
+  max-height: 60px;
+  overflow: auto;
+}
+.mol-display-smiles--error {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.06);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.mol-display-metadata {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+}
+
+.mol-display-toolbar {
+  display: flex;
+  gap: 6px;
+}
+.mol-toolbar-btn {
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.mol-toolbar-btn--active {
+  background: var(--accent);
+  color: white;
+}
+.mol-toolbar-btn--edit {
+  flex: 1;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.mol-mono {
+  font-family: monospace;
+}

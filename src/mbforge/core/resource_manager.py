@@ -100,6 +100,7 @@ class ResourceInfo:
     local_name: str = ""       # 本地文件名
     source_url: str = ""       # 项目主页
     allow_patterns: list[str] = field(default_factory=list)  # snapshot 下载时仅匹配的文件模式
+    files: list[str] = field(default_factory=list)  # 资源包含的具体文件列表（与 Rust 端保持一致）
     # Python 包专用
     pip_name: str = ""         # pip 包名
     import_name: str = ""      # import 名（与 pip 名不同时）
@@ -185,6 +186,7 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         download_type="snapshot",
         local_name="MolDetv2",
         allow_patterns=["*.pt", "*.onnx", "*.json"],
+        files=["doc/moldet_v2_yolo11n_960_doc.pt", "general/moldet_v2_yolo11n_640_general.pt"],
     ),
     "molscribe": ResourceInfo(
         id="molscribe",
@@ -200,6 +202,7 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         local_name="MolScribe",
         source_url="https://github.com/thomas0809/MolScribe",
         allow_patterns=["*.pth", "*.safetensors", "*.json", "*.txt", "tokenizer*", "vocab*"],
+        files=["swin_base_char_aux_1m680k.pth"],
     ),
     "moldet_coref": ResourceInfo(
         id="moldet_coref",

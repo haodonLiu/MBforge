@@ -19,7 +19,8 @@ export default function ProjectView() {
   const { projectRoot, activeFile, setActiveFile } = useAppContext()
   const [docs, setDocs] = useState<DocumentEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  const [isIndexing, setIsIndexing] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncStage, setSyncStage] = useState<'scanning' | 'indexing' | null>(null)
   const [indexProgress, setIndexProgress] = useState<{ file: string; current: number; total: number } | null>(null)
   const [indexResult, setIndexResult] = useState<{ indexed: number; sections: number } | null>(null)
   const [error, setError] = useState('')
@@ -81,84 +82,77 @@ export default function ProjectView() {
     }
   }, [])
 
-  const handleScan = async () => {
+  const handleSync = async () => {
     if (!projectRoot) {
       setError(t('project.noProjectRoot'))
       return
     }
-    setIsLoading(true)
+    setIsSyncing(true)
+    setSyncStage('scanning')
     setError('')
     setScanWarnings([])
-    try {
-      const resp = await scanProjectFiles(projectRoot)
-      setDocs(resp.documents)
-      setScanWarnings(resp.warnings ?? [])
-      void enqueueUnresolvedDocuments(projectRoot).catch(() => {})
-      if (resp.documents.length === 0 && (resp.warnings ?? []).length === 0) {
-        setError(
-          t('project.noFilesFound', { papers: PAPERS_DIR, notes: NOTES_DIR }),
-        )
-      }
-    } catch (e) {
-      const msg = String(e)
-      console.error('[ProjectView] Scan error:', msg)
-      setError(msg.includes('not allowed') ? t('project.scanPermissionDenied') : t('project.scanFailed', { error: msg }))
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleIndex = async () => {
-    if (!projectRoot) return
-    setIsIndexing(true)
-    setError('')
     setIndexResult(null)
     setIndexProgress(null)
 
-    scanProjectFiles(projectRoot).then(scanResp => {
-      if (scanResp.documents) setDocs(scanResp.documents)
-    }).catch(() => {})
-
-    let total = 0
-    const unlisten = await listen<{ stage: string; payload: Record<string, unknown> }>(EVT.DocProgress, (event) => {
-      const payload = event.payload.payload
-      const parser = payload.parser as string || ''
-      if (parser.startsWith('indexing')) {
-        const match = parser.match(/indexing\s+(\d+)\/(\d+)/)
-        if (match) {
-          const current = parseInt(match[1], 10)
-          total = parseInt(match[2], 10)
-          setIndexProgress({ file: parser, current, total })
-        }
-      }
-    })
-
-    const INDEX_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
     try {
-      const result: IndexResult = await Promise.race([
-        indexProjectRust(projectRoot),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(t('project.indexTimeout'))), INDEX_TIMEOUT_MS)
-        ),
-      ])
-      setIndexResult({ indexed: result.indexed, sections: result.sections })
-      if (result.errors.length > 0) {
-        console.warn('Index errors:', result.errors)
+      const scanResp = await scanProjectFiles(projectRoot)
+      setDocs(scanResp.documents)
+      setScanWarnings(scanResp.warnings ?? [])
+      void enqueueUnresolvedDocuments(projectRoot).catch(() => {})
+
+      if (scanResp.documents.length === 0 && (scanResp.warnings ?? []).length === 0) {
+        setError(t('project.noFilesFound', { papers: PAPERS_DIR, notes: NOTES_DIR }))
+        return
       }
-      listProjectDocuments(projectRoot).then(r => { if (r.documents) setDocs(r.documents) })
+
+      setSyncStage('indexing')
+      let total = 0
+      const unlisten = await listen<{ stage: string; payload: Record<string, unknown> }>(EVT.DocProgress, (event) => {
+        const payload = event.payload.payload
+        const parser = (payload.parser as string) || ''
+        if (parser.startsWith('indexing')) {
+          const match = parser.match(/indexing\s+(\d+)\/(\d+)/)
+          if (match) {
+            const current = parseInt(match[1], 10)
+            total = parseInt(match[2], 10)
+            setIndexProgress({ file: parser, current, total })
+          }
+        }
+      })
+
+      const INDEX_TIMEOUT_MS = 5 * 60 * 1000
+      try {
+        const result: IndexResult = await Promise.race([
+          indexProjectRust(projectRoot),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(t('project.indexTimeout'))), INDEX_TIMEOUT_MS)
+          ),
+        ])
+        setIndexResult({ indexed: result.indexed, sections: result.sections })
+        if (result.errors.length > 0) {
+          console.warn('Index errors:', result.errors)
+        }
+        listProjectDocuments(projectRoot).then(r => { if (r.documents) setDocs(r.documents) })
+      } catch (e) {
+        const msg = String(e)
+        if (msg.includes('ipc.localhost') || msg.includes('Failed to fetch') || msg.includes('ERR_CONNECTION_REFUSED')) {
+          setError(t('project.indexEngineFailed'))
+        } else if (msg.includes('索引超时')) {
+          setError(t('project.indexOperationTimeout'))
+        } else {
+          setError(msg)
+        }
+      } finally {
+        unlisten()
+        setIndexProgress(null)
+      }
     } catch (e) {
       const msg = String(e)
-      if (msg.includes('ipc.localhost') || msg.includes('Failed to fetch') || msg.includes('ERR_CONNECTION_REFUSED')) {
-        setError(t('project.indexEngineFailed'))
-      } else if (msg.includes('索引超时')) {
-        setError(t('project.indexOperationTimeout'))
-      } else {
-        setError(msg)
-      }
+      console.error('[ProjectView] Sync error:', msg)
+      setError(msg.includes('not allowed') ? t('project.scanPermissionDenied') : t('project.scanFailed', { error: msg }))
     } finally {
-      unlisten()
-      setIndexProgress(null)
-      setIsIndexing(false)
+      setIsSyncing(false)
+      setSyncStage(null)
     }
   }
 
@@ -263,7 +257,8 @@ export default function ProjectView() {
       projectRoot={projectRoot}
       docs={docs}
       isLoading={isLoading}
-      isIndexing={isIndexing}
+      isSyncing={isSyncing}
+      syncStage={syncStage}
       indexProgress={indexProgress}
       indexResult={indexResult}
       isMoldetScanning={isMoldetScanning}
@@ -272,8 +267,7 @@ export default function ProjectView() {
       error={error}
       scanWarnings={scanWarnings}
       moleculeStats={moleculeStats}
-      onScan={handleScan}
-      onIndex={handleIndex}
+      onSync={handleSync}
       onMoldetScan={handleMoldetScan}
       onOpenFile={handleOpenFile}
       onDismissError={() => setError('')}

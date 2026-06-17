@@ -7,6 +7,7 @@ import PageContainer from '../ui/PageContainer'
 import BodyText from '../ui/BodyText'
 import Button from '../ui/Button'
 import Caption from '../ui/Caption'
+import IconButton from '../ui/IconButton'
 import Card from '../ui/Card'
 import IconContainer from '../ui/IconContainer'
 import AlertBanner from '../ui/AlertBanner'
@@ -24,7 +25,8 @@ interface Props {
   projectRoot: string
   docs: DocumentEntry[]
   isLoading: boolean
-  isIndexing: boolean
+  isSyncing: boolean
+  syncStage: 'scanning' | 'indexing' | null
   indexProgress: IndexProgress | null
   indexResult: { indexed: number; sections: number } | null
   isMoldetScanning: boolean
@@ -33,8 +35,7 @@ interface Props {
   error: string
   scanWarnings: ScanWarning[]
   moleculeStats: { total: number; confirmed: number } | null
-  onScan: () => void
-  onIndex: () => void
+  onSync: () => void
   onMoldetScan: () => void
   onOpenFile: (doc: DocumentEntry) => void
   onDismissError: () => void
@@ -46,7 +47,8 @@ export default function ProjectDashboard({
   projectRoot,
   docs,
   isLoading,
-  isIndexing,
+  isSyncing,
+  syncStage,
   indexProgress,
   indexResult,
   isMoldetScanning,
@@ -55,8 +57,7 @@ export default function ProjectDashboard({
   error,
   scanWarnings,
   moleculeStats,
-  onScan,
-  onIndex,
+  onSync,
   onMoldetScan,
   onOpenFile,
   onDismissError,
@@ -93,43 +94,36 @@ export default function ProjectDashboard({
           </div>
           <div className="project-dashboard-actions">
             <Button
-              variant="secondary"
+              variant="primary"
               size="sm"
               icon={<ExternalLinkIcon size={14} />}
-              onClick={onScan}
-              disabled={!projectRoot || isLoading || isIndexing || isMoldetScanning}
-              loading={isLoading}
+              onClick={onSync}
+              disabled={!projectRoot || isSyncing || isMoldetScanning}
+              loading={isSyncing}
             >
-              {isLoading ? t('project.scanning') : t('project.scan')}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<FlaskIcon size={14} />}
-              onClick={onIndex}
-              disabled={!projectRoot || isLoading || isIndexing || isMoldetScanning}
-              loading={isIndexing}
-            >
-              {isIndexing ? t('project.indexing') : t('project.index')}
+              {isSyncing
+                ? syncStage === 'scanning'
+                  ? t('project.syncScanning')
+                  : t('project.syncIndexing')
+                : t('project.sync')}
             </Button>
             <Button
               variant="secondary"
               size="sm"
               icon={<SearchIcon size={14} />}
               onClick={onMoldetScan}
-              disabled={!projectRoot || isLoading || isIndexing || isMoldetScanning}
+              disabled={!projectRoot || isSyncing || isMoldetScanning}
               loading={isMoldetScanning}
             >
-              {isMoldetScanning ? t('project.molScanning') : t('project.molScan')}
+              {isMoldetScanning ? t('project.detectingMolecules') : t('project.detectMolecules')}
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<SettingsIcon size={14} />}
+            <IconButton
+              title={t('nav.settings')}
               onClick={() => void navigate('/settings')}
+              size={32}
             >
-              {t('nav.settings')}
-            </Button>
+              <SettingsIcon size={18} />
+            </IconButton>
           </div>
         </div>
 
@@ -226,11 +220,11 @@ export default function ProjectDashboard({
             </Card>
           )}
 
-          {isIndexing && indexProgress && (
+          {isSyncing && syncStage === 'indexing' && indexProgress && (
             <Card padding="12px 16px" className="project-index-progress">
               <div className="project-index-progress-header">
                 <BodyText size="sm" className="project-index-progress-title">
-                  {t('project.indexingProgress', { current: indexProgress.current, total: indexProgress.total })}
+                  {t('project.syncIndexingProgress', { current: indexProgress.current, total: indexProgress.total })}
                 </BodyText>
                 <Caption truncate className="project-index-progress-file">
                   {indexProgress.file}

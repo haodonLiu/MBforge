@@ -582,9 +582,14 @@ impl MbforgeAgent {
         hook: ConcreteHook,
         memory: Arc<MbforgeManagedMemory>,
     ) -> Result<Self, String> {
-        if cfg.kind != MbforgeProviderKind::OpenAICompatible {
+        if !matches!(
+            cfg.kind,
+            MbforgeProviderKind::OpenAICompatible
+                | MbforgeProviderKind::DeepSeek
+                | MbforgeProviderKind::Ollama
+        ) {
             return Err(format!(
-                "from_openai_compatible called with non-OpenAI config: {:?}",
+                "from_openai_compatible called with non-OpenAI-compatible config: {:?}",
                 cfg.kind
             ));
         }
@@ -1149,10 +1154,10 @@ mod tests {
         let res = MbforgeAgent::from_openai_compatible(&cfg, &spec, Vec::new(), hook, memory);
         match res {
             Err(msg) => assert!(
-                msg.contains("from_openai_compatible called with non-OpenAI"),
+                msg.contains("from_openai_compatible called with non-OpenAI-compatible"),
                 "unexpected error message: {msg}"
             ),
-            Ok(_) => panic!("expected Err for non-OpenAI config, got Ok"),
+            Ok(_) => panic!("expected Err for non-OpenAI-compatible config, got Ok"),
         }
     }
 

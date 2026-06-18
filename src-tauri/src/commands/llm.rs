@@ -1,10 +1,10 @@
-//! Tauri commands that surface the **env-driven** LLM config to the
-//! Settings UI and run a connectivity probe against the provider's endpoint.
+//! Tauri commands that surface the active LLM config to the Settings UI and
+//! run a connectivity probe against the provider's endpoint.
 //!
-//! The LLM has no per-session override — Settings is read-only with respect
-//! to LLM. After reading the env, the frontend calls `get_llm_env_config`
-//! to display the values, and `test_llm_connection` to verify the endpoint
-//! is actually reachable with the configured credentials.
+//! The active config follows the precedence defined in
+//! `MbforgeProviderConfig::from_app_config`: `.env` wins, then `config.json`.
+//! The frontend calls `get_llm_env_config` to display the resolved values,
+//! and `test_llm_connection` to verify the endpoint is reachable.
 
 use std::time::{Duration, Instant};
 
@@ -49,10 +49,9 @@ pub struct LlmEnvStatus {
 }
 
 impl LlmEnvStatus {
-    /// Strict read: env is the source of truth. If any required var is
-    /// missing, this returns the env error verbatim — the Settings UI
-    /// surfaces it as a hard error, no silent "Not configured" status.
-    fn from_env() -> Result<Self, String> {
+    /// Read the currently active LLM config (env or config.json) and return a
+    /// status view. Mirrors `MbforgeProviderConfig::from_app_config` precedence.
+    fn from_active_config() -> Result<Self, String> {
         let cfg = MbforgeProviderConfig::from_app_config()?;
         Ok(Self {
             provider: cfg.kind.as_str().to_string(),
@@ -72,7 +71,7 @@ impl LlmEnvStatus {
 /// `test_llm_connection` separately.
 #[tauri::command]
 pub async fn get_llm_env_config() -> Result<LlmEnvStatus, String> {
-    LlmEnvStatus::from_env()
+    LlmEnvStatus::from_active_config()
 }
 
 /// Probe the configured LLM endpoint with a minimal request and report
@@ -92,10 +91,10 @@ pub async fn get_llm_env_config() -> Result<LlmEnvStatus, String> {
 /// it does not exercise tool calling.
 #[tauri::command]
 pub async fn test_llm_connection() -> Result<LlmEnvStatus, String> {
-    // Env resolution is strict — if anything is missing, the env error
-    // bubbles up. The Settings UI renders it verbatim.
+    // Active-config resolution follows `.env` → `config.json` precedence. If
+    // anything is missing, the error bubbles up and the Settings UI renders it.
     let cfg = MbforgeProviderConfig::from_app_config()?;
-    let mut status = LlmEnvStatus::from_env()?;
+    let mut status = LlmEnvStatus::from_active_config()?;
 
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(15))

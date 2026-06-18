@@ -160,6 +160,8 @@ export default function ModelConfigCard({
                 providerOptions={providerOptions(LLM_MODELS)}
                 needsKey={getProviderMeta(settings.llm_provider).needsKey}
                 baseUrlPlaceholder={getProviderMeta(settings.llm_provider).defaultUrl}
+                baseUrlLabel={t('settings.llmBaseUrl')}
+                apiKeyLabel={t('settings.llmApiKey')}
               />
               <SettingItem title={t('settings.llmModel')} layout="stacked">
                 <ModelSelector

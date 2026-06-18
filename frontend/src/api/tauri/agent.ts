@@ -13,7 +13,7 @@ export interface ChatMessage {
   content: string
 }
 
-// ---- LLM env config (read-only display + link-status probe) ----
+// ---- LLM env config (Settings UI editable with env precedence + link-status probe) ----
 
 /**
  * Link status as reported by the Rust side after `test_llm_connection`.
@@ -27,9 +27,10 @@ export type LlmLinkStatus =
   | 'auth_error'
 
 /**
- * Read-only view of the LLM env config + last probe result. The
- * Settings UI displays this verbatim; the actual `api_key` is never
- * returned — only `api_key_set` so the UI can show a warning.
+ * Editable view of the LLM env config + last probe result. The
+ * Settings UI can edit these values; env vars still take precedence
+ * at runtime. The actual `api_key` is never returned — only
+ * `api_key_set` so the UI can show a warning.
  */
 export interface LlmEnvStatus {
   provider: string
@@ -44,8 +45,9 @@ export interface LlmEnvStatus {
 
 /**
  * Initialize the agent subsystem. The LLM has no per-session override —
- * Settings is read-only with respect to LLM. `sidecarUrl` is still
- * needed for long-term-memory and skill-summarization calls.
+ * Settings UI edits the global LLM config (env vars take precedence).
+ * `sidecarUrl` is still needed for long-term-memory and
+ * skill-summarization calls.
  */
 export async function agentInit(sidecarUrl: string): Promise<void> {
   await invokeWithError(

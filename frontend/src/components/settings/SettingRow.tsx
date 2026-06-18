@@ -207,6 +207,8 @@ export function ProviderField({
   needsKey,
   baseUrlPlaceholder,
   showBaseUrl = true,
+  baseUrlLabel,
+  apiKeyLabel,
 }: {
   label: string
   description?: string
@@ -220,6 +222,8 @@ export function ProviderField({
   needsKey: boolean
   baseUrlPlaceholder?: string
   showBaseUrl?: boolean
+  baseUrlLabel?: string
+  apiKeyLabel?: string
 }) {
   return (
     <>
@@ -236,7 +240,7 @@ export function ProviderField({
       </SettingItem>
       {showBaseUrl && (
         <TextField
-          label="Base URL"
+          label={baseUrlLabel ?? 'Base URL'}
           value={baseUrl}
           onChange={onBaseUrlChange}
           placeholder={baseUrlPlaceholder}
@@ -244,7 +248,7 @@ export function ProviderField({
         />
       )}
       {needsKey && (
-        <SettingItem title="API Key">
+        <SettingItem title={apiKeyLabel ?? 'API Key'}>
           <ApiKeyInput value={apiKey} onChange={onApiKeyChange} />
         </SettingItem>
       )}

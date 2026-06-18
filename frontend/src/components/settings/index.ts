@@ -1,6 +1,5 @@
 export { ModelSelector, DownloadProgressBar, ModelCard, DownloadedModelItem } from './ModelComponents'
 export { default as ModelsTab } from './ModelsTab'
-export { default as LlmStatusCard } from './LlmStatusCard'
 export { default as SidecarCard } from './SidecarCard'
 export {
   LLM_MODELS,

@@ -96,6 +96,15 @@ impl MbforgeProviderKind {
             Self::Ollama => "ollama",
         }
     }
+
+    pub fn from_provider_str(s: &str) -> Self {
+        match s {
+            "anthropic" => Self::Anthropic,
+            "deepseek" => Self::DeepSeek,
+            "ollama" => Self::Ollama,
+            _ => Self::OpenAICompatible,
+        }
+    }
 }
 
 /// Configuration for the LLM provider backing an agent.
@@ -117,13 +126,22 @@ pub struct MbforgeProviderConfig {
     pub anthropic_betas: Vec<String>,
 }
 
-/// Read the first non-empty value among the given env-var names.
-/// Returns `None` if none of the names is set or all are blank.
-#[allow(dead_code)]
-fn first_nonempty(names: &[&str]) -> Option<String> {
-    names
-        .iter()
-        .find_map(|n| std::env::var(n).ok().filter(|s| !s.trim().is_empty()))
+#[derive(Debug, Clone, Copy)]
+enum ConfigSource {
+    Env,
+    Config,
+}
+
+impl ConfigSource {
+    fn note(self) -> &'static str {
+        match self {
+            Self::Env => {
+                "`MBFORGE_LLM_PROVIDER` is set, so environment variables are the active source \
+                 and config.json values are ignored."
+            }
+            Self::Config => "Values are read from config.json / Settings UI.",
+        }
+    }
 }
 
 impl MbforgeProviderConfig {
@@ -133,10 +151,12 @@ impl MbforgeProviderConfig {
         api_key: String,
         model: String,
         timeout_secs: u64,
+        source: ConfigSource,
     ) -> Result<Self, String> {
+        let note = source.note();
         if base_url.trim().is_empty() {
             return Err(format!(
-                "LLM base_url is not configured. Set `MBFORGE_LLM_BASE_URL` in the project-root .env \
+                "LLM base_url is not configured. {note} Set `MBFORGE_LLM_BASE_URL` in the project-root .env \
                  or in Settings > AI Models > LLM. Examples: https://api.openai.com/v1, \
                  https://openrouter.ai/api/v1, https://api.deepseek.com/v1, or a self-hosted \
                  llama.cpp server."
@@ -144,13 +164,13 @@ impl MbforgeProviderConfig {
         }
         if api_key.trim().is_empty() {
             return Err(format!(
-                "LLM api_key is not configured. Set `MBFORGE_LLM_API_KEY` in the project-root .env \
+                "LLM api_key is not configured. {note} Set `MBFORGE_LLM_API_KEY` in the project-root .env \
                  or in Settings > AI Models > LLM."
             ));
         }
         if model.trim().is_empty() {
             return Err(format!(
-                "LLM model is not configured. Set `MBFORGE_LLM_MODEL` in the project-root .env \
+                "LLM model is not configured. {note} Set `MBFORGE_LLM_MODEL` in the project-root .env \
                  or in Settings > AI Models > LLM."
             ));
         }
@@ -182,37 +202,45 @@ impl MbforgeProviderConfig {
             .ok()
             .filter(|s| !s.trim().is_empty())
         {
-            let kind = match provider.as_str() {
-                "anthropic" => MbforgeProviderKind::Anthropic,
-                "deepseek" => MbforgeProviderKind::DeepSeek,
-                "ollama" => MbforgeProviderKind::Ollama,
-                _ => MbforgeProviderKind::OpenAICompatible,
-            };
+            let kind = MbforgeProviderKind::from_provider_str(&provider);
             let env = |k: &str| std::env::var(k).ok().filter(|s| !s.trim().is_empty());
             let base_url = env("MBFORGE_LLM_BASE_URL").unwrap_or_default();
             let api_key = env("MBFORGE_LLM_API_KEY").unwrap_or_default();
             let model = env("MBFORGE_LLM_MODEL").unwrap_or_default();
-            let timeout_secs = env("MBFORGE_LLM_REQUEST_TIMEOUT")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(120);
-            return Self::validate_and_build(kind, base_url, api_key, model, timeout_secs);
+            let timeout_secs = match env("MBFORGE_LLM_REQUEST_TIMEOUT") {
+                Some(v) => match v.parse::<u64>() {
+                    Ok(n) => n,
+                    Err(_) => {
+                        log::warn!(
+                            "Invalid MBFORGE_LLM_REQUEST_TIMEOUT value {:?}; falling back to 120 seconds",
+                            v
+                        );
+                        120
+                    }
+                },
+                None => 120,
+            };
+            return Self::validate_and_build(
+                kind,
+                base_url,
+                api_key,
+                model,
+                timeout_secs,
+                ConfigSource::Env,
+            );
         }
 
         // 2. Fallback to config.json (Settings UI can edit these values).
         let config = crate::core::config::settings::AppConfig::load();
         let llm = &config.llm;
-        let kind = match llm.provider.as_str() {
-            "anthropic" => MbforgeProviderKind::Anthropic,
-            "deepseek" => MbforgeProviderKind::DeepSeek,
-            "ollama" => MbforgeProviderKind::Ollama,
-            _ => MbforgeProviderKind::OpenAICompatible,
-        };
+        let kind = MbforgeProviderKind::from_provider_str(llm.provider.as_str());
         Self::validate_and_build(
             kind,
             llm.base_url.clone(),
             llm.api_key.clone(),
             llm.model_name.clone(),
-            llm.request_timeout as u64,
+            u64::from(llm.request_timeout),
+            ConfigSource::Config,
         )
     }
 
@@ -927,6 +955,112 @@ fn map_multi_turn_item<R>(item: MultiTurnStreamItem<R>) -> Result<MbforgeStreamI
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::settings::AppConfig;
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    const LLM_ENV_KEYS: &[&str] = &[
+        "MBFORGE_LLM_PROVIDER",
+        "MBFORGE_LLM_BASE_URL",
+        "MBFORGE_LLM_API_KEY",
+        "MBFORGE_LLM_MODEL",
+        "MBFORGE_LLM_REQUEST_TIMEOUT",
+    ];
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Captures the original values of a set of env vars and restores them on drop.
+    struct EnvGuard {
+        original: HashMap<&'static str, Option<String>>,
+    }
+
+    impl EnvGuard {
+        fn new(keys: &'static [&'static str]) -> Self {
+            let mut original = HashMap::new();
+            for &key in keys {
+                original.insert(key, std::env::var(key).ok());
+            }
+            Self { original }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (key, value) in &self.original {
+                match value {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    fn clear_llm_env() {
+        for key in LLM_ENV_KEYS {
+            std::env::remove_var(key);
+        }
+    }
+
+    fn set_llm_env(
+        provider: &str,
+        base_url: &str,
+        api_key: &str,
+        model: &str,
+        timeout: Option<&str>,
+    ) {
+        std::env::set_var("MBFORGE_LLM_PROVIDER", provider);
+        std::env::set_var("MBFORGE_LLM_BASE_URL", base_url);
+        std::env::set_var("MBFORGE_LLM_API_KEY", api_key);
+        std::env::set_var("MBFORGE_LLM_MODEL", model);
+        match timeout {
+            Some(t) => std::env::set_var("MBFORGE_LLM_REQUEST_TIMEOUT", t),
+            None => std::env::remove_var("MBFORGE_LLM_REQUEST_TIMEOUT"),
+        }
+    }
+
+    /// Saves/restores the user's real `config.json` around a test.
+    struct ConfigFileGuard {
+        original: Option<String>,
+    }
+
+    impl ConfigFileGuard {
+        fn with_valid_llm_config() -> Self {
+            let path = AppConfig::config_path();
+            let original = std::fs::read_to_string(&path).ok();
+            let mut config = AppConfig::default();
+            config.llm.provider = "deepseek".into();
+            config.llm.base_url = "https://api.deepseek.com/v1".into();
+            config.llm.api_key = "cfg-key".into();
+            config.llm.model_name = "deepseek-chat".into();
+            config.llm.request_timeout = 90;
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            config.save().expect("failed to save test config.json");
+            Self { original }
+        }
+
+        fn empty() -> Self {
+            let path = AppConfig::config_path();
+            let original = std::fs::read_to_string(&path).ok();
+            let _ = std::fs::remove_file(&path);
+            Self { original }
+        }
+    }
+
+    impl Drop for ConfigFileGuard {
+        fn drop(&mut self) {
+            let path = AppConfig::config_path();
+            match &self.original {
+                Some(content) => {
+                    let _ = std::fs::write(&path, content);
+                }
+                None => {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_mbforge_provider_config_for_tests() {
@@ -1020,5 +1154,92 @@ mod tests {
             ),
             Ok(_) => panic!("expected Err for non-OpenAI config, got Ok"),
         }
+    }
+
+    #[test]
+    fn from_app_config_prefers_env_when_provider_set() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::new(LLM_ENV_KEYS);
+        clear_llm_env();
+        set_llm_env(
+            "anthropic",
+            "https://api.anthropic.com",
+            "env-key",
+            "claude-3",
+            None,
+        );
+
+        let cfg = MbforgeProviderConfig::from_app_config().expect("env-driven config should build");
+
+        assert_eq!(cfg.kind, MbforgeProviderKind::Anthropic);
+        assert_eq!(cfg.base_url, "https://api.anthropic.com");
+        assert_eq!(cfg.api_key, "env-key");
+        assert_eq!(cfg.model, "claude-3");
+        assert_eq!(cfg.timeout_secs, 120);
+    }
+
+    #[test]
+    fn from_app_config_falls_back_to_config_json() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::new(LLM_ENV_KEYS);
+        clear_llm_env();
+        let _cfg_file = ConfigFileGuard::with_valid_llm_config();
+
+        let cfg =
+            MbforgeProviderConfig::from_app_config().expect("config-driven config should build");
+
+        assert_eq!(cfg.kind, MbforgeProviderKind::DeepSeek);
+        assert_eq!(cfg.base_url, "https://api.deepseek.com/v1");
+        assert_eq!(cfg.api_key, "cfg-key");
+        assert_eq!(cfg.model, "deepseek-chat");
+        assert_eq!(cfg.timeout_secs, 90);
+    }
+
+    #[test]
+    fn from_app_config_errors_when_both_sources_missing() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::new(LLM_ENV_KEYS);
+        clear_llm_env();
+        let _cfg_file = ConfigFileGuard::empty();
+
+        let err = MbforgeProviderConfig::from_app_config().unwrap_err();
+        assert!(
+            err.to_lowercase().contains("base_url"),
+            "error should mention missing base_url: {err}"
+        );
+        assert!(
+            err.contains("config.json / Settings UI"),
+            "error should indicate the active source: {err}"
+        );
+    }
+
+    #[test]
+    fn from_app_config_env_timeout_parsing() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _env = EnvGuard::new(LLM_ENV_KEYS);
+        clear_llm_env();
+        set_llm_env(
+            "openai_compatible",
+            "http://localhost:11434/v1",
+            "key",
+            "model",
+            Some("45"),
+        );
+
+        let cfg = MbforgeProviderConfig::from_app_config().expect("valid timeout should parse");
+        assert_eq!(cfg.timeout_secs, 45);
+
+        clear_llm_env();
+        set_llm_env(
+            "openai_compatible",
+            "http://localhost:11434/v1",
+            "key",
+            "model",
+            Some("not-a-number"),
+        );
+
+        let cfg =
+            MbforgeProviderConfig::from_app_config().expect("invalid timeout should fall back");
+        assert_eq!(cfg.timeout_secs, 120);
     }
 }

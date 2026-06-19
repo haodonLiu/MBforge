@@ -11,10 +11,10 @@ export interface InlineAlertProps {
 }
 
 const toneMap: Record<InlineAlertTone, { border: string; bg: string; color: string }> = {
-  success: { border: 'var(--success)', bg: 'rgba(22, 163, 74, 0.08)', color: 'var(--success)' },
-  warning: { border: 'var(--warning)', bg: 'rgba(245, 158, 11, 0.08)', color: 'var(--warning)' },
-  danger:  { border: 'var(--danger)',  bg: 'rgba(220, 38, 38, 0.08)',  color: 'var(--danger)' },
-  info:    { border: 'var(--accent)',  bg: 'var(--accent-muted)',      color: 'var(--accent)' },
+  success: { border: 'var(--success)', bg: 'var(--success-muted)', color: 'var(--success)' },
+  warning: { border: 'var(--warning)', bg: 'var(--warning-muted)', color: 'var(--warning)' },
+  danger:  { border: 'var(--danger)',  bg: 'var(--danger-muted)',  color: 'var(--danger)' },
+  info:    { border: 'var(--accent)',  bg: 'var(--accent-muted)',  color: 'var(--accent)' },
 }
 
 export default function InlineAlert({ tone, title, children, className, style }: InlineAlertProps) {

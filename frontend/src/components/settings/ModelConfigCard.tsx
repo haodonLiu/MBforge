@@ -176,6 +176,8 @@ export default function ModelConfigCard({
                 baseUrlLabel={t('settings.llmBaseUrl')}
                 apiKeyLabel={t('settings.llmApiKey')}
                 dirty={dirtyFields.llm_provider}
+                baseUrlDirty={dirtyFields.llm_base_url}
+                apiKeyDirty={dirtyFields.llm_api_key}
               />
               <SettingItem title={t('settings.llmModel')} layout="stacked" dirty={dirtyFields.llm_model}>
                 <ModelSelector
@@ -204,6 +206,8 @@ export default function ModelConfigCard({
                 baseUrlPlaceholder={getProviderMeta(settings.embed_provider).defaultUrl}
                 showBaseUrl={settings.embed_provider === 'openai'}
                 dirty={dirtyFields.embed_provider}
+                baseUrlDirty={dirtyFields.embed_base_url}
+                apiKeyDirty={dirtyFields.embed_api_key}
               />
               <SettingItem title={t('settings.model')} layout="stacked" dirty={dirtyFields.embed_model}>
                 <ModelSelector
@@ -268,6 +272,8 @@ export default function ModelConfigCard({
                 needsKey={getProviderMeta(settings.vlm_provider).needsKey}
                 baseUrlPlaceholder={getProviderMeta(settings.vlm_provider).defaultUrl}
                 dirty={dirtyFields.vlm_provider}
+                baseUrlDirty={dirtyFields.vlm_base_url}
+                apiKeyDirty={dirtyFields.vlm_api_key}
               />
               <SettingItem title={t('settings.model')} layout="stacked" dirty={dirtyFields.vlm_model}>
                 <ModelSelector
@@ -295,6 +301,8 @@ export default function ModelConfigCard({
                 needsKey={getProviderMeta(settings.ocr_provider).needsKey}
                 baseUrlPlaceholder={getProviderMeta(settings.ocr_provider).defaultUrl}
                 dirty={dirtyFields.ocr_provider}
+                baseUrlDirty={dirtyFields.ocr_base_url}
+                apiKeyDirty={dirtyFields.ocr_api_key}
               />
               <SettingItem title={t('settings.model')} layout="stacked" dirty={dirtyFields.ocr_model}>
                 <ModelSelector

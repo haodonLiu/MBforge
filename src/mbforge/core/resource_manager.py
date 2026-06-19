@@ -8,15 +8,17 @@
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 import os
-import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+
+from platformdirs import user_config_dir
 
 logger = logging.getLogger("mbforge.resource_manager")
 
@@ -30,12 +32,18 @@ _RESOLVED_PATHS_MTIME: float = 0.0
 
 
 def _read_resolved_paths() -> dict[str, str] | None:
-    """读取 Rust 写入的 resolved_paths.json（按 mtime 失效的轻量缓存）."""
+    """读取 Rust 写入的 resolved_paths.json（按 mtime 失效的轻量缓存）.
+
+    路径必须与 Rust 端 `ProjectDirs::from("", "", "MBForge").config_dir()` 一致，
+    否则 Python 永远读不到 Rust 写入的内容（曾因 `.config/MBForge` vs `%APPDATA%/MBForge/config` 不匹配踩坑）。
+    """
     global _RESOLVED_PATHS_CACHE, _RESOLVED_PATHS_MTIME
 
-    import json
-
-    config_dir = Path.home() / ".config" / "MBForge"
+    # 与 Rust 端 `directories::ProjectDirs::from("", "", "MBForge")` 的 config_dir 对齐：
+    #   Windows : %APPDATA%\MBForge\config
+    #   Linux   : ~/.config/MBForge
+    #   macOS   : ~/Library/Application Support/MBForge
+    config_dir = Path(user_config_dir(appname="MBForge", appauthor=False, roaming=True)) / "config"
     path = config_dir / "resolved_paths.json"
     if not path.exists():
         return None
@@ -526,8 +534,9 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
             logger.warning("modelscope SDK 失败: %s", e)
 
         # 直接 HTTP 下载
-        import requests as _requests
         import fnmatch as _fnmatch
+
+        import requests as _requests
         _emit({"status": "downloading", "progress": 0})
         try:
             r = _requests.get(f"{ms_base}/{info.ms_repo}/repo/tree?Revision=master", timeout=30)
@@ -816,7 +825,7 @@ class ResourceManager:
         return None
 
     @classmethod
-    def resolve_model_for_backend(cls, resource_id: str) -> Path | None:
+    def resolve_model_for_backend(cls, resource_id: str, subpath: str | None = None) -> Path | None:
         """后端统一入口：解析模型路径，找不到返回 None.
 
         所有 Python 后端（moldet、moldet_coref、molscribe）应使用此方法
@@ -824,12 +833,16 @@ class ResourceManager:
         返回值：
         - snapshot 类型：返回包含权重文件的目录
         - file 类型：返回具体权重文件路径
+        - subpath 指定时：返回 `<resolved_dir>/<subpath>`（用于多文件资源的子文件定位）
         """
         # 1. Rust resolved_paths（最快）
         resolved = _read_resolved_paths()
         if resolved and resource_id in resolved:
             path = Path(resolved[resource_id])
             if path.exists():
+                if subpath:
+                    full = path / subpath
+                    return full if full.exists() else None
                 return path
         # 2. Python 侧扫描
         info = RESOURCE_CATALOG.get(resource_id)
@@ -838,8 +851,10 @@ class ResourceManager:
             p = Path(status.local_path)
             if info and info.download_type == "snapshot":
                 # snapshot 类型：返回目录（让调用方自己找具体文件）
-                if p.is_file():
-                    return p.parent
-                return p
+                base = p.parent if p.is_file() else p
+                if subpath:
+                    full = base / subpath
+                    return full if full.exists() else None
+                return base
             return p
         return None

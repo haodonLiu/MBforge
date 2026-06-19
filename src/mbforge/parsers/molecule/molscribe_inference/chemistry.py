@@ -454,7 +454,6 @@ def _expand_functional_group(mol, mappings, debug=False):
                 mol_r = convert_smiles_to_mol(sub_smiles)
 
                 if mol_r is None:
-                    # atom.SetAtomicNum(6)
                     atom.SetIsotope(0)
                     continue
 
@@ -480,7 +479,6 @@ def _expand_functional_group(mol, mappings, debug=False):
 
                 # connect substituent to main body with bonds
                 mol_w = Chem.RWMol(combo)
-                # if len(bonding_atoms_r) == 1:  # substituent uses one atom to bond to main body
                 for atm in bonding_atoms_w:
                     bond_order = mol_w.GetAtomWithIdx(atm).GetNumRadicalElectrons()
                     mol_w.AddBond(atm, bonding_atoms_r[0], order=BOND_TYPES[bond_order])

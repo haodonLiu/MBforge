@@ -116,22 +116,22 @@ export const modalPanel: CSSProperties = {
 }
 
 /** 标准设置行：固定 label 宽度，control 区自适应 */
-export const settingRow = (_labelWidth = 160): CSSProperties => ({
+export const settingRow: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 'var(--space-4)',
-})
+}
 
 export const settingLabel = (width = 160): CSSProperties => ({
   width,
   flexShrink: 0,
 })
 
-export const settingControl = (): CSSProperties => ({
+export const settingControl: CSSProperties = {
   flex: 1,
   minWidth: 280,
   maxWidth: 480,
-})
+}
 
 /** 所有 patterns 集合（便于一次性导入） */
 export const PATTERNS = {

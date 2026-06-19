@@ -15,7 +15,7 @@ export default function InlineAlert({ tone, title, children, className, style }:
   const isInfo = tone === 'info'
   const color = isInfo ? 'var(--accent)' : TONE_COLORS[tone].color
   const bg = isInfo ? 'var(--accent-muted)' : TONE_COLORS[tone].bg
-  const border = color
+  const border = isInfo ? 'var(--accent)' : TONE_COLORS[tone].border
 
   return (
     <div
@@ -31,7 +31,7 @@ export default function InlineAlert({ tone, title, children, className, style }:
         ...style,
       }}
     >
-      {title && <div style={{ fontWeight: 600, marginBottom: children ? 4 : 0 }}>{title}</div>}
+      {title && <div style={{ fontWeight: 600, marginBottom: children ? 'var(--space-1)' : 0 }}>{title}</div>}
       {children}
     </div>
   )

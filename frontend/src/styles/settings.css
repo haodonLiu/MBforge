@@ -1287,3 +1287,9 @@
   animation: settings-shake 0.3s ease-in-out;
 }
 
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-save-button--error {
+    animation: none;
+  }
+}

@@ -10,18 +10,25 @@ import type { SettingsState } from '../types'
 
 type Tab = 'llm' | 'embed' | 'rerank' | 'vlm' | 'ocr'
 
+interface TabConfig {
+  key: Tab
+  titleKey: string
+  descKey?: string
+  showTest?: boolean
+}
+
 interface Props {
   settings: SettingsState
   setSettings: React.Dispatch<React.SetStateAction<SettingsState>>
 }
 
-const TAB_CONFIG: Record<Tab, { titleKey: string; descKey?: string; showTest?: boolean }> = {
-  llm: { titleKey: 'settings.tabLlm', descKey: 'settings.tabLlmDesc', showTest: true },
-  embed: { titleKey: 'settings.tabEmbed', descKey: 'settings.tabEmbedDesc' },
-  rerank: { titleKey: 'settings.tabRerank', descKey: 'settings.tabRerankDesc' },
-  vlm: { titleKey: 'settings.tabVlm', descKey: 'settings.tabVlmDesc' },
-  ocr: { titleKey: 'settings.tabOcr', descKey: 'settings.tabOcrDesc' },
-}
+const TABS: TabConfig[] = [
+  { key: 'llm', titleKey: 'settings.tabLlm', descKey: 'settings.tabLlmDesc', showTest: true },
+  { key: 'embed', titleKey: 'settings.tabEmbed', descKey: 'settings.tabEmbedDesc' },
+  { key: 'rerank', titleKey: 'settings.tabRerank', descKey: 'settings.tabRerankDesc' },
+  { key: 'vlm', titleKey: 'settings.tabVlm', descKey: 'settings.tabVlmDesc' },
+  { key: 'ocr', titleKey: 'settings.tabOcr', descKey: 'settings.tabOcrDesc' },
+]
 
 export default function AIModelsSection({ settings, setSettings }: Props) {
   const { t } = useTranslation()
@@ -38,69 +45,25 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
 
       <Tabs
         id="ai-models-tabs"
-        items={[
-          { key: 'llm', label: t('settings.tabLlm') },
-          { key: 'embed', label: t('settings.tabEmbed') },
-          { key: 'rerank', label: t('settings.tabRerank') },
-          { key: 'vlm', label: t('settings.tabVlm') },
-          { key: 'ocr', label: t('settings.tabOcr') },
-        ]}
+        items={TABS.map(({ key, titleKey }) => ({ key, label: t(titleKey) }))}
         activeKey={tab}
         onChange={k => setTab(k as Tab)}
         variant="segment"
         size="sm"
       />
 
-      <TabPanel activeKey={tab} tabKey="llm" tabsId="ai-models-tabs">
-        <ModelConfigCard
-          modelType="llm"
-          title={t(TAB_CONFIG.llm.titleKey)}
-          description={TAB_CONFIG.llm.descKey ? t(TAB_CONFIG.llm.descKey) : undefined}
-          settings={settings}
-          setSettings={setSettings}
-          showTest={TAB_CONFIG.llm.showTest}
-        />
-      </TabPanel>
-
-      <TabPanel activeKey={tab} tabKey="embed" tabsId="ai-models-tabs">
-        <ModelConfigCard
-          modelType="embed"
-          title={t(TAB_CONFIG.embed.titleKey)}
-          description={TAB_CONFIG.embed.descKey ? t(TAB_CONFIG.embed.descKey) : undefined}
-          settings={settings}
-          setSettings={setSettings}
-        />
-      </TabPanel>
-
-      <TabPanel activeKey={tab} tabKey="rerank" tabsId="ai-models-tabs">
-        <ModelConfigCard
-          modelType="rerank"
-          title={t(TAB_CONFIG.rerank.titleKey)}
-          description={TAB_CONFIG.rerank.descKey ? t(TAB_CONFIG.rerank.descKey) : undefined}
-          settings={settings}
-          setSettings={setSettings}
-        />
-      </TabPanel>
-
-      <TabPanel activeKey={tab} tabKey="vlm" tabsId="ai-models-tabs">
-        <ModelConfigCard
-          modelType="vlm"
-          title={t(TAB_CONFIG.vlm.titleKey)}
-          description={TAB_CONFIG.vlm.descKey ? t(TAB_CONFIG.vlm.descKey) : undefined}
-          settings={settings}
-          setSettings={setSettings}
-        />
-      </TabPanel>
-
-      <TabPanel activeKey={tab} tabKey="ocr" tabsId="ai-models-tabs">
-        <ModelConfigCard
-          modelType="ocr"
-          title={t(TAB_CONFIG.ocr.titleKey)}
-          description={TAB_CONFIG.ocr.descKey ? t(TAB_CONFIG.ocr.descKey) : undefined}
-          settings={settings}
-          setSettings={setSettings}
-        />
-      </TabPanel>
+      {TABS.map(({ key, titleKey, descKey, showTest }) => (
+        <TabPanel key={key} activeKey={tab} tabKey={key} tabsId="ai-models-tabs">
+          <ModelConfigCard
+            modelType={key}
+            title={t(titleKey)}
+            description={descKey ? t(descKey) : undefined}
+            settings={settings}
+            setSettings={setSettings}
+            showTest={showTest}
+          />
+        </TabPanel>
+      ))}
     </div>
   )
 }

@@ -202,6 +202,8 @@ export function ProviderField({
   apiKeyLabel,
   labelWidth,
   dirty,
+  baseUrlDirty,
+  apiKeyDirty,
 }: {
   label: string
   description?: string
@@ -219,6 +221,8 @@ export function ProviderField({
   apiKeyLabel?: string
   labelWidth?: number
   dirty?: boolean
+  baseUrlDirty?: boolean
+  apiKeyDirty?: boolean
 }) {
   return (
     <>
@@ -242,11 +246,11 @@ export function ProviderField({
           placeholder={baseUrlPlaceholder}
           monospace
           labelWidth={labelWidth}
-          dirty={dirty}
+          dirty={baseUrlDirty ?? dirty}
         />
       )}
       {needsKey && (
-        <SettingItem title={apiKeyLabel ?? 'API Key'} labelWidth={labelWidth} dirty={dirty}>
+        <SettingItem title={apiKeyLabel ?? 'API Key'} labelWidth={labelWidth} dirty={apiKeyDirty ?? dirty}>
           <ApiKeyInput value={apiKey} onChange={onApiKeyChange} />
         </SettingItem>
       )}

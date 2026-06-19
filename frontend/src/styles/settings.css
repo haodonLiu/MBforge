@@ -132,13 +132,22 @@
 
 
 /* Select (settings modal — plural alias) */
+.settings-input,
 .settings-select {
-  padding: 9px 36px 9px 14px;
-  background: var(--bg-base);
+  height: 34px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
   color: var(--text-primary);
+  font-size: 13px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.settings-select {
+  padding-right: 36px;
   cursor: pointer;
   min-width: 200px;
   max-width: 320px;
@@ -146,17 +155,28 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
-  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
+.settings-input {
+  min-width: 200px;
+  max-width: 320px;
+}
+
+.settings-input:hover,
 .settings-select:hover {
   border-color: var(--border-light);
 }
 
+.settings-input:focus,
 .settings-select:focus {
-  outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(26, 122, 255, 0.12);
+  box-shadow: 0 0 0 3px var(--accent-muted);
+}
+
+.settings-input:disabled,
+.settings-select:disabled {
+  background: var(--bg-surface);
+  color: var(--text-muted);
 }
 
 .settings-select option {
@@ -167,28 +187,6 @@
 }
 
 /* Input (settings modal) */
-.settings-input {
-  padding: 9px 14px;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--text-primary);
-  min-width: 200px;
-  max-width: 320px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.settings-input:hover {
-  border-color: var(--border-light);
-}
-
-.settings-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(26, 122, 255, 0.12);
-}
-
 .settings-input::placeholder {
   color: var(--text-muted);
 }
@@ -1289,7 +1287,10 @@
 
 
 @media (prefers-reduced-motion: reduce) {
-  .settings-save-button--error {
+  .settings-save-button--error,
+  .settings-input,
+  .settings-select {
+    transition: none;
     animation: none;
   }
 }

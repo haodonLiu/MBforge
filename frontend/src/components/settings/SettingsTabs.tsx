@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import Tabs from '@/components/ui/Tabs'
 import ScrollColumn from '@/components/ui/ScrollColumn'
@@ -48,10 +48,6 @@ export default function SettingsTabs({
     { key: 'about', label: t('settings.tabs.about') },
   ], [t])
 
-  const handleCacheDirChange = useCallback((v: string) => {
-    setSettings((s) => ({ ...s, model_cache_dir: v }))
-  }, [setSettings])
-
   return (
     <div className="settings-tabs">
       <Tabs
@@ -73,10 +69,7 @@ export default function SettingsTabs({
             <PdfProcessingTab settings={settings} setSettings={setSettings} />
           )}
           {activeTab === 'models' && (
-            <ModelsTab
-              modelCacheDir={settings.model_cache_dir}
-              onCacheDirChange={handleCacheDirChange}
-            />
+            <ModelsTab />
           )}
           {activeTab === 'system' && (
             <SystemTab settings={settings} setSettings={setSettings} />

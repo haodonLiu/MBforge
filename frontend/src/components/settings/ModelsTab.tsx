@@ -5,9 +5,12 @@ import {
   listModels,
   downloadModel,
   deleteModel,
+  downloadModelSubfile,
+  testModel,
   type DownloadModel,
   type DownloadProgress,
 } from '@/api/tauri/download'
+import { refreshResolvedPaths } from '@/api/tauri/environment'
 import ModelCard from '@/components/settings/ModelCard'
 import { showToast } from '@/hooks/useToast'
 
@@ -23,12 +26,7 @@ export interface DownloadState {
   } | undefined
 }
 
-interface ModelsTabProps {
-  modelCacheDir: string
-  onCacheDirChange: (v: string) => void
-}
-
-export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTabProps) {
+export default function ModelsTab() {
   const { t } = useTranslation()
   const [models, setModels] = useState<DownloadModel[]>([])
   const [downloadState, setDownloadState] = useState<DownloadState>({})
@@ -36,19 +34,38 @@ export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTab
   const [customOpen, setCustomOpen] = useState(false)
   const [cacheDir, setCacheDir] = useState('')
   const [abortMap, setAbortMap] = useState<Map<string, () => void>>(new Map())
+  const [refreshing, setRefreshing] = useState(false)
+  const [testingSubfiles, setTestingSubfiles] = useState<Set<string>>(new Set())
 
-  const loadModels = useCallback(async () => {
+  const loadModels = useCallback(async (opts: { showToast?: boolean } = {}) => {
+    setRefreshing(true)
     try {
+      // 先让 Rust 重新扫描 ~/mbforge/ 并刷新 resolved_paths.json，
+      // 这样 Python 侧下一次读取也能立刻看到新放置的文件。
+      await refreshResolvedPaths().catch((e) => console.warn('refreshResolvedPaths failed:', e))
       const resp = await listModels()
       if (resp.success) {
         setModels(resp.models)
-      } else {
+        // 默认静默；只有显式 refresh 才 toast（避免初始挂载 / 增删后重复提示）
+        if (opts.showToast) {
+          const ready = resp.models.filter(m => m.downloaded).length
+          showToast(t('models.detectComplete', { ready, total: resp.models.length }), 'success')
+        }
+      } else if (opts.showToast) {
         showToast(resp.error || t('models.loadFailed'), 'error')
       }
     } catch (e) {
-      showToast(t('models.loadFailed') + ': ' + (e instanceof Error ? e.message : String(e)), 'error')
+      if (opts.showToast) {
+        showToast(t('models.loadFailed') + ': ' + (e instanceof Error ? e.message : String(e)), 'error')
+      }
+    } finally {
+      setRefreshing(false)
     }
   }, [t])
+
+  const manualRefresh = useCallback(() => {
+    void loadModels({ showToast: true })
+  }, [loadModels])
 
   const loadCacheDir = useCallback(async () => {
     try {
@@ -133,6 +150,67 @@ export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTab
     }
   }, [loadModels, t])
 
+  // ─── 多文件资源子级操作（key: `${modelId}::${subpath}`） ───
+  const handleDownloadSubfile = useCallback((modelId: string, subpath: string) => {
+    const key = `${modelId}::${subpath}`
+    setDownloadState(prev => ({
+      ...prev,
+      [key]: { progress: 0, status: 'connecting' },
+    }))
+    const cleanup = downloadModelSubfile(modelId, subpath, (event: DownloadProgress) => {
+      setDownloadState(prev => {
+        const current = prev[key] ?? { progress: 0, status: 'idle' }
+        if (event.status === 'completed') {
+          void loadModels()
+          return { ...prev, [key]: { progress: 100, status: 'completed' } }
+        }
+        if (event.status === 'failed') {
+          return { ...prev, [key]: { ...current, status: 'failed', error: event.error } }
+        }
+        return { ...prev, [key]: { ...current, status: event.status as DownloadState[string] extends infer T ? T extends { status: infer S } ? S : never : never } }
+      })
+    })
+    setAbortMap(prev => {
+      const next = new Map(prev)
+      next.set(key, cleanup)
+      return next
+    })
+  }, [loadModels])
+
+  // ─── 模型测试 ───
+  // 卡片级 Test：单文件直接测；多文件测首个 subfile（最常用 = doc）
+  const handleTest = useCallback(async (modelId: string, subpath?: string) => {
+    // 多文件模型：若未指定 subpath，测第一个 subfile（按 catalog 顺序，通常是 doc）
+    if (subpath === undefined) {
+      const m = models.find(x => x.id === modelId)
+      if (m?.subfiles && m.subfiles.length > 0) {
+        subpath = m.subfiles[0].relpath
+      }
+    }
+    const key = subpath ? `${modelId}::${subpath}` : `${modelId}::`
+    setTestingSubfiles(prev => {
+      const next = new Set(prev)
+      next.add(key)
+      return next
+    })
+    try {
+      const result = await testModel(modelId, subpath)
+      if (result.ok) {
+        showToast(t('models.testOk', { ms: result.duration_ms }), 'success')
+      } else {
+        showToast(t('models.testFailed', { error: result.error || '未知错误' }), 'error')
+      }
+    } catch (e) {
+      showToast(t('models.testFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
+    } finally {
+      setTestingSubfiles(prev => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+    }
+  }, [t, models])
+
   // 按 type 分组（保持顺序：embedding → reranker → detection）
   const typeOrder: Array<{ key: string; labelKey: string }> = [
     { key: 'embedding', labelKey: 'models.embedding' },
@@ -146,28 +224,26 @@ export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTab
   return (
     <div className="settings-section">
       <div className="settings-group">
-        {/* 摘要头部 */}
-        <div className="models-header">
-          <div className="models-header-summary">
-            <span className="models-header-count">
-              {t('models.readyCount', { ready: readyCount, total: totalCount })}
-            </span>
-            {cacheDir && (
-              <code className="models-header-dir" title={cacheDir}>
-                {cacheDir}
-              </code>
-            )}
-            <input
-              className="models-header-dir-input"
-              type="text"
-              value={modelCacheDir}
-              onChange={e => onCacheDirChange(e.target.value)}
-              placeholder={t('settings.modelCacheDirPlaceholder')}
-              spellCheck={false}
-            />
+        {/* 路径提示：用户应将模型文件放置在 cacheDir 下 — 醒目大字 */}
+        {cacheDir && (
+          <div className="models-path-hint">
+            <div className="models-path-hint-label">{t('models.pathHint')}</div>
+            <code className="models-path-hint-path">{cacheDir}</code>
           </div>
-          <button className="models-header-refresh" onClick={loadModels} title={t('models.refresh')}>
-            ↻ {t('models.refresh')}
+        )}
+
+        {/* 摘要 + 刷新（紧凑一行） */}
+        <div className="models-header">
+          <span className="models-header-count">
+            {t('models.readyCount', { ready: readyCount, total: totalCount })}
+          </span>
+          <button
+            className="models-header-refresh"
+            onClick={manualRefresh}
+            disabled={refreshing}
+            title={t('models.refresh')}
+          >
+            {refreshing ? '⟳' : '↻'} {t('models.refresh')}
           </button>
         </div>
 
@@ -187,19 +263,35 @@ export default function ModelsTab({ modelCacheDir, onCacheDirChange }: ModelsTab
                   <span className="settings-model-group-count">{groupReady} / {group.length}</span>
                 </div>
                 <div className="settings-model-list">
-                  {group.map(model => (
-                    <ModelCard
-                      key={model.id}
-                      model={model}
-                      state={downloadState[model.id]}
-                      deleteConfirm={deleteConfirm}
-                      onDownload={() => handleDownload(model.id)}
-                      onCancel={() => handleCancel(model.id)}
-                      onDelete={() => setDeleteConfirm(model.id)}
-                      onConfirmDelete={() => handleDelete(model.id)}
-                      onCancelDelete={() => setDeleteConfirm(null)}
-                    />
-                  ))}
+                  {group.map(model => {
+                    // 多文件资源：把子级状态从 downloadState 抽出来
+                    const subfileStates: Record<string, DownloadState[string]> = {}
+                    if (model.subfiles && model.subfiles.length > 0) {
+                      for (const sf of model.subfiles) {
+                        const key = `${model.id}::${sf.relpath}`
+                        if (downloadState[key]) subfileStates[sf.relpath] = downloadState[key]
+                      }
+                    }
+                    return (
+                      <ModelCard
+                        key={model.id}
+                        model={model}
+                        state={downloadState[model.id]}
+                        deleteConfirm={deleteConfirm}
+                        onDownload={() => handleDownload(model.id)}
+                        onCancel={() => handleCancel(model.id)}
+                        onDelete={() => setDeleteConfirm(model.id)}
+                        onConfirmDelete={() => handleDelete(model.id)}
+                        onCancelDelete={() => setDeleteConfirm(null)}
+                        onDownloadSubfile={subpath => handleDownloadSubfile(model.id, subpath)}
+                        onTest={subpath => handleTest(model.id, subpath)}
+                        subfileStates={subfileStates}
+                        testingSubfiles={new Set(
+                          [...testingSubfiles].filter(k => k.startsWith(`${model.id}::`))
+                        )}
+                      />
+                    )
+                  })}
                 </div>
               </div>
             )

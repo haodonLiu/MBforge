@@ -1,4 +1,4 @@
-// 存储管理栏目 — 缓存大小 + 清除按钮 + 模型迁移到统一缓存。
+// 存储管理栏目 — 缓存大小 + 清除按钮。
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -20,16 +20,6 @@ interface ClearResult {
   error: string
 }
 
-interface ConsolidateResult {
-  model_id: string
-  from: string
-  to: string
-  files_copied: number
-  already_present: boolean
-  success: boolean
-  error: string
-}
-
 interface Props {
   projectRoot: string
 }
@@ -45,7 +35,6 @@ export default function StorageSection({ projectRoot }: Props) {
   const { t } = useTranslation()
   const [size, setSize] = useState<CacheSize | null>(null)
   const [clearing, setClearing] = useState<string | null>(null)
-  const [consolidating, setConsolidating] = useState(false)
 
   const refresh = useCallback(async () => {
     if (!projectRoot) return
@@ -73,24 +62,6 @@ export default function StorageSection({ projectRoot }: Props) {
       showToast(String(e), 'error')
     } finally {
       setClearing(null)
-    }
-  }
-
-  const consolidate = async () => {
-    setConsolidating(true)
-    try {
-      const results = await invoke<ConsolidateResult[]>('consolidate_models')
-      const moved = results.filter(r => r.files_copied > 0).length
-      const present = results.filter(r => r.already_present).length
-      const none = results.filter(r => !r.already_present && r.files_copied === 0).length
-      showToast(
-        `迁移完成：${moved} 个模型已复制到统一缓存，${present} 个已就位，${none} 个未找到`,
-        moved > 0 || present > 0 ? 'success' : 'info',
-      )
-    } catch (e) {
-      showToast(String(e), 'error')
-    } finally {
-      setConsolidating(false)
     }
   }
 
@@ -140,20 +111,6 @@ export default function StorageSection({ projectRoot }: Props) {
                 </Button>
               </div>
             ))}
-            <div className="storage-row">
-              <div className="storage-row-info">
-                <span className="storage-row-label">{t('settings.consolidate')}</span>
-                <span className="storage-row-size">{t('settings.consolidateDesc')}</span>
-              </div>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={consolidating}
-                onClick={consolidate}
-              >
-                {consolidating ? t('settings.consolidating') : t('settings.consolidate')}
-              </Button>
-            </div>
           </div>
         )}
       </SettingGroup>

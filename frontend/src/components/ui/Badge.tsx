@@ -27,6 +27,11 @@ const toneToVariant: Record<BadgeTone, BadgeVariant | null> = {
   loading: 'neutral',
 }
 
+const sizeStyles: Record<'sm' | 'md', React.CSSProperties> = {
+  sm: { padding: '2px 8px', fontSize: '11px' },
+  md: { padding: '4px 10px', fontSize: '12px' },
+}
+
 export default function Badge({
   children,
   tone,
@@ -38,12 +43,7 @@ export default function Badge({
 }: BadgeProps) {
   // Prefer explicit tone; fall back to legacy variant.
   const effectiveVariant: BadgeVariant = tone ? (toneToVariant[tone] ?? 'neutral') : (variant ?? 'neutral')
-  const v = TONE_COLORS[effectiveVariant]
-
-  const sizeStyles: Record<'sm' | 'md', React.CSSProperties> = {
-    sm: { padding: '2px 8px', fontSize: '11px', gap: dot ? 4 : 0 },
-    md: { padding: '4px 10px', fontSize: '12px', gap: dot ? 6 : 4 },
-  }
+  const colors = TONE_COLORS[effectiveVariant]
 
   return (
     <span
@@ -55,8 +55,9 @@ export default function Badge({
         fontWeight: 500,
         lineHeight: 1,
         whiteSpace: 'nowrap',
-        color: v.color,
-        background: v.bg,
+        color: colors.color,
+        background: colors.bg,
+        gap: dot ? (size === 'sm' ? 4 : 6) : 0,
         ...sizeStyles[size],
         ...style,
       }}
@@ -66,7 +67,7 @@ export default function Badge({
           width: '6px',
           height: '6px',
           borderRadius: '50%',
-          background: v.color,
+          background: colors.color,
           flexShrink: 0,
         }} />
       )}

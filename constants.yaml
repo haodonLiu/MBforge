@@ -30,7 +30,7 @@ models:
   default_embed: "Qwen/Qwen3-Embedding-0.6B"
   default_rerank: "Qwen/Qwen3-Reranker-0.6B"
   default_hf_endpoint: "https://hf-mirror.com"
-  cache_dir: ".cache/mbforge/models"
+  cache_dir: "mbforge/models"
 
 providers:
   openai_compatible: "openai_compatible"

@@ -58,7 +58,7 @@ def get_model_cache_dir() -> Path:
         from mbforge.utils.constants import get_model_cache_dir
         return Path(get_model_cache_dir())
     except ImportError:
-        return Path.home() / ".cache" / "mbforge" / "models"
+        return Path.home() / "mbforge" / "models"
 
 
 def download_file(url: str, dest: Path, desc: str) -> bool:

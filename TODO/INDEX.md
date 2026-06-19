@@ -10,23 +10,20 @@
 
 ## P2 — 中期计划
 
-## P2 — 中期计划
-
 ## 技术债务
 
 > 与 `AGENTS.md`「技术债务」同步维护。修复后两边同时更新。
 
 | # | 债务 | 严重性 | 状态 | 修复方案 | 优先级 |
 |---|------|--------|------|---------|--------|
-| 1 | chem_validate.rs 与 core/chem.rs 重叠 | 中 | 🟥 待修复 | 合并到 chem.rs | P2 |
-| 2 | vector_store.rs 接口臃肿 | 低 | 🟥 待修复 | 合并到 sqlite_vector_store.rs | P3 |
-| 3 | 多个 std::sync::Mutex 在 async 上下文 | 高 | 🟧 进行中 | 迁移到 tokio::sync::Mutex | P1 |
-| 4 | chematic git 依赖缺 tag | 中 | 🟥 待修复 | 锁定到特定 commit | P2 |
-| 5 | Python sidecar 单进程无连接池 | 中 | 🟥 待修复 | 添加连接池 + 优雅降级 | P2 |
-| 6 | tracing 覆盖不全 | 中 | 🟧 部分完成 | 扩展 observability.rs 到所有跨边界调用 | P2 |
-| 7 | 无成本护栏 | 中 | 🟥 待修复 | 新增 BudgetEnforcer | P3 |
-| 8 | 27 分钟管线瓶颈 | 高 | 🟧 部分完成 | LLM 调用并行化 | P1 |
-| 9 | constants.rs 生成机制失效 | 中 | 🟧 部分完成 | 脚本已修复，Rust 侧改为参考文件 + 人工合并 | P2 |
+| 1 | chem_validate.rs 与 core/chem.rs 边界模糊（委派层而非重复） | 中 | 🟥 待修复 | 合并到 chem.rs | P2 |
+| 2 | 多个 std::sync::Mutex 在 async 上下文 | 高 | 🟧 进行中 | 迁移到 tokio::sync::Mutex | P1 |
+| 3 | chematic git 依赖缺 tag | 中 | 🟥 待修复 | 锁定到特定 commit | P2 |
+| 4 | Python sidecar 单进程无连接池 | 中 | 🟥 待修复 | 添加连接池 + 优雅降级 | P2 |
+| 5 | tracing 覆盖不全 | 中 | 🟧 部分完成 | 扩展 observability.rs 到所有跨边界调用 | P2 |
+| 6 | 无成本护栏 | 中 | 🟥 待修复 | 新增 BudgetEnforcer | P3 |
+| 7 | 27 分钟管线瓶颈 | 高 | 🟧 部分完成 | LLM 调用并行化 | P1 |
+| 8 | constants.rs 生成机制失效 | 中 | 🟧 部分完成 | 脚本已修复，Rust 侧改为参考文件 + 人工合并 | P2 |
 
 ---
 
@@ -50,7 +47,7 @@
 
 > 26 命令已暴露但**未被前端消费**。待 UI 集成 + 业务接入。
 
-- [ ] **前端消费层**：用 `chem.ts` / `moleculeAdmin.ts` 实现的 UI 组件（无明确 owner）
+- [ ] **前端消费层**：用 `chem.ts` / `molecule_admin.ts` 实现的 UI 组件（无明确 owner）
       - `chemCanonicalize` → dedup 提交前规范化（替换 `molecule_extractor` 内的 ad-hoc 标准化）
       - `chemSeparateEsmilesLayers` → 取代 `chem_validate::separate_esmiles_layers` 的 pipeline 调用点
       - `chemMarkushCheck` → 集成到 `claim_policy.rs` 的 `check_compound_against_claims`
@@ -62,9 +59,9 @@
       - 用 `chemSubstructureSearch` 替代让前端传候选
 - [ ] **`chemValidateSmiles` vs `chemSeparateEsmilesLayers` 统一入口**：
       前端两路径并存易混淆。统一为单一"输入 e-smiles" → 校验 + 分离 + 标签解析三合一函数
-- [ ] **orphan `preprocess` 模块补测试**：当前只跑了 sanitize / parse_tags 2 个测试
-      `preprocess_smiles` / `preprocess_rgroup_name` / `normalize_abbrev_name` / `sanitize_identifier` 仍无覆盖
-- [ ] **`chem_canonicalize` 作为 dedup 主键**：
+- [x] **orphan `preprocess` 模块补测试**：已加 12 个测试用例覆盖 preprocess_rgroup_name + preprocess() 管线
+      `preprocess_smiles` / `preprocess_rgroup_name` / `normalize_abbrev_name` / `sanitize_identifier` 全覆盖
+- [x] **`chem_canonicalize` 作为 dedup 主键**：canonicalize_esmiles 已升级为 chematic 化学规范化
       当前 `MoleculeRecord::smiles` 字段无 canonical 形式，重复分子（不同写法）可能插入多次
       需在 `molecule_dedup::run_dedup_batch` 入口用 `chemCanonicalize` 归一化候选 SMILES
 

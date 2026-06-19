@@ -71,6 +71,7 @@ dependencies = [
     # MolScribe dependencies (timm 版本通过 uv.sources 锁定)
     "timm",
     "OpenNMT-py==2.2.0",
+    "pycocotools>=2.0.11",
 ]
 
 [project.optional-dependencies]

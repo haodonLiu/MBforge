@@ -5,12 +5,24 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  background: var(--bg-base);
 }
 
-.pdf-main {
+/* ===== Dual Pane Layout ===== */
+.pdf-dual-pane {
   flex: 1;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  min-height: 0;
   overflow: hidden;
+}
+
+.pdf-source-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .pdf-single-page {
@@ -29,6 +41,7 @@
   overflow: hidden;
 }
 
+/* Loading state */
 .pdf-loading {
   display: flex;
   flex-direction: column;
@@ -37,13 +50,17 @@
   height: 60vh;
   min-width: 320px;
   color: var(--text-muted);
-  gap: 14px;
+  gap: 16px;
 }
 
 .pdf-loading-title {
   font-size: 14px;
   font-weight: 500;
   color: var(--text-secondary);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pdf-loading-sub {
@@ -51,72 +68,169 @@
   opacity: 0.7;
 }
 
-/* PDF Toolbar */
-.pdf-zoom-controls {
+/* ===== PDF Toolbar (Top) ===== */
+.pdf-toolbar {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
+  height: 44px;
+  padding: 0 12px;
+  background: var(--pdf-toolbar-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
-.pdf-zoom-reset {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 11px;
-  color: var(--text-muted);
-  padding: 2px 6px;
-  font-family: monospace;
+.pdf-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
 }
 
-.pdf-page-nav {
+.pdf-toolbar-right {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.pdf-page-btn {
-  padding: 3px 6px;
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  cursor: pointer;
+/* Toolbar separator */
+.pdf-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+  flex-shrink: 0;
 }
 
-.pdf-page-btn:disabled {
-  opacity: 0.4;
+/* ===== Floating Bottom Controls ===== */
+.pdf-floating-bar {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 6px;
+  background: var(--pdf-floating-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--pdf-floating-border);
+  border-radius: 999px;
+  box-shadow: var(--pdf-floating-shadow);
+  transition: opacity 0.2s;
+}
+
+.pdf-floating-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pdf-floating-btn:hover:not(:disabled) {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
+.pdf-floating-btn:disabled {
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
-.pdf-page-input {
-  width: 36px;
-  text-align: center;
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+.pdf-floating-page {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
   background: var(--bg-base);
-  color: var(--text-primary);
-  padding: 2px 4px;
-  font-family: monospace;
-  outline: none;
+  border: 1px solid var(--border);
 }
 
-.pdf-page-total {
+.pdf-floating-page-input {
+  width: 32px;
+  text-align: center;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  outline: none;
+  padding: 0;
+}
+
+.pdf-floating-page-input:focus {
+  color: var(--accent);
+}
+
+.pdf-floating-page-sep {
   font-size: 11px;
   color: var(--text-muted);
 }
 
+.pdf-floating-page-total {
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--text-muted);
+  min-width: 24px;
+}
+
+.pdf-floating-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+
+.pdf-floating-zoom {
+  min-width: 44px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pdf-floating-zoom:hover {
+  background: var(--accent-muted);
+  color: var(--accent);
+}
+
+/* ===== Segmented Controls ===== */
 .pdf-segmented {
   display: flex;
   gap: 2px;
   background: var(--bg-base);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 2px;
 }
 
 .pdf-segmented button {
-  padding: 4px 10px;
+  padding: 3px 10px;
   font-size: 11px;
   border-radius: 4px;
   border: none;
@@ -127,16 +241,28 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pdf-segmented button:hover:not(.active) {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 .pdf-segmented button.active {
-  background: var(--bg-surface);
-  color: var(--text-primary);
+  background: var(--accent);
+  color: #fff;
   font-weight: 600;
 }
 
+.pdf-segmented button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ===== Tool Buttons ===== */
 .pdf-tool-btn {
-  padding: 4px 8px;
+  padding: 3px 8px;
   font-size: 11px;
   border-radius: 4px;
   border: 1px solid var(--border);
@@ -146,10 +272,19 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.pdf-tool-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
 }
 
 .pdf-tool-btn.active {
-  background: var(--bg-surface);
+  background: var(--accent-muted);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
 }
 
 .pdf-tool-btn:disabled {
@@ -157,12 +292,16 @@
   cursor: not-allowed;
 }
 
+/* ===== OCR Badge ===== */
 .pdf-ocr-badge {
   font-size: 10px;
   color: var(--text-muted);
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  padding: 2px 6px;
+  background: var(--bg-base);
+  border-radius: 4px;
 }
 
 .pdf-ocr-dot {
@@ -175,9 +314,12 @@
 .pdf-ocr-dot.medium { background: var(--warning); }
 .pdf-ocr-dot.sparse { background: var(--danger); }
 
+/* ===== Detect Mode ===== */
 .pdf-detect-btn {
-  padding: 4px 10px;
+  padding: 3px 10px;
   font-size: 11px;
+  border-radius: 4px;
+  white-space: nowrap;
 }
 
 .pdf-detect-count {
@@ -186,11 +328,396 @@
   background: rgba(from var(--success) r g b / 0.1);
   padding: 2px 6px;
   border-radius: 4px;
+  font-weight: 500;
 }
 
-/* PDF Side Panels */
+/* Confidence Control */
+.pdf-confidence-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdf-confidence-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.pdf-confidence-slider {
+  width: 60px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.pdf-confidence-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.pdf-confidence-slider::-webkit-slider-thumb:hover {
+  background: var(--accent-hover);
+}
+
+.pdf-confidence-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+}
+
+.pdf-confidence-value {
+  font-size: 10px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--text-muted);
+  min-width: 28px;
+}
+
+/* ===== Result Pane (Right Side) ===== */
+.pdf-result-pane {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--bg-surface);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.pdf-result-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.pdf-result-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.pdf-result-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pdf-result-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pdf-result-page {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  background: var(--bg-base);
+  border-radius: 4px;
+}
+
+.pdf-result-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pdf-result-stat {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.pdf-result-stat-mol {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* Tabs */
+.pdf-result-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.pdf-result-tab {
+  flex: 1;
+  padding: 5px 10px;
+  font-size: 11px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pdf-result-tab:hover:not(.active) {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.pdf-result-tab.active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.pdf-result-tab-count {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Content */
+.pdf-result-content {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.pdf-result-text {
+  padding: 14px;
+}
+
+.pdf-result-text-pre {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+}
+
+.pdf-result-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.pdf-result-empty-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* Molecule Cards */
+.pdf-result-molecules {
+  padding: 10px;
+}
+
+/* Virtual List */
+.pdf-molecule-virtual-list {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.pdf-molecule-virtual-spacer {
+  position: relative;
+  width: 100%;
+}
+
+.pdf-molecule-virtual-item {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding: 0 4px;
+}
+
+.pdf-molecule-card {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-base);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.pdf-molecule-card:hover {
+  border-color: var(--border-light);
+}
+
+.pdf-molecule-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-muted);
+}
+
+.pdf-molecule-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.pdf-molecule-id {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pdf-molecule-index {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.pdf-molecule-name-tag {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-molecule-confidence {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--accent-muted);
+  color: var(--accent);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.pdf-molecule-smiles {
+  margin-bottom: 8px;
+}
+
+.pdf-molecule-smiles-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pdf-molecule-smiles-value {
+  display: block;
+  font-size: 11px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--success);
+  background: rgba(from var(--success) r g b / 0.06);
+  padding: 5px 8px;
+  border-radius: 4px;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.pdf-molecule-smiles-alt {
+  display: block;
+  font-size: 10px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--text-muted);
+  padding: 3px 8px;
+  background: var(--bg-surface);
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+/* 语义上下文（coref） */
+.pdf-molecule-coref {
+  margin-bottom: 8px;
+}
+
+.pdf-molecule-coref-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.pdf-molecule-coref-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.pdf-molecule-jump-btn {
+  font-size: 10px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-base);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.pdf-molecule-jump-btn:hover {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+}
+
+.pdf-molecule-coref-text {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  padding: 8px 10px;
+  background: var(--bg-base);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+}
+
+/* 语义高亮 */
+.pdf-highlight {
+  background: var(--accent-muted);
+  color: var(--accent);
+  padding: 1px 2px;
+  border-radius: 2px;
+  font-weight: 500;
+}
+
+.pdf-molecule-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.pdf-molecule-source {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdf-molecule-location {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+}
+
+/* ===== Side Panels (OCR) ===== */
 .pdf-side-panel {
-  width: 280px;
+  width: 300px;
   border-left: 1px solid var(--border);
   background: var(--bg-surface);
   display: flex;
@@ -200,13 +727,15 @@
 }
 
 .pdf-side-panel-header {
-  padding: 8px 12px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
+  color: var(--text-primary);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .pdf-side-panel-close {
@@ -216,38 +745,54 @@
   color: var(--text-muted);
   font-size: 14px;
   line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
 }
 
+.pdf-side-panel-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Text panel */
 .pdf-text-content {
-  padding: 12px;
-  font-size: 11px;
-  line-height: 1.6;
+  padding: 14px;
+  font-size: 12px;
+  line-height: 1.7;
   color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .pdf-text-footer {
-  padding: 6px 12px;
+  padding: 8px 14px;
   border-top: 1px solid var(--border);
   font-size: 10px;
   color: var(--text-muted);
   display: flex;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 
+/* Image panel */
 .pdf-image-list {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .pdf-image-card {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--bg-base);
+  transition: border-color 0.15s;
+}
+
+.pdf-image-card:hover {
+  border-color: var(--border-light);
 }
 
 .pdf-image-thumb {
@@ -269,7 +814,7 @@
 }
 
 .pdf-image-smiles {
-  font-family: monospace;
+  font-family: 'SF Mono', 'Fira Code', monospace;
   color: var(--success);
   font-size: 9px;
 }
@@ -289,4 +834,6 @@
 .pdf-panel-empty {
   font-size: 11px;
   color: var(--text-muted);
+  padding: 20px;
+  text-align: center;
 }

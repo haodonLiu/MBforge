@@ -11,10 +11,10 @@
   --text-muted: #999999;
   --border: #e0e0e0;
   --border-light: #d0d0d0;
+  --border-strong: #c0c0c0;
   --success: #16a34a;
   --danger: #dc2626;
   --warning: #f59e0b;
-  --border-strong: #d4d4d8;
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
@@ -70,6 +70,7 @@
   --danger: #ef4444;
   --warning: #f59e0b;
   --border-strong: #3f3f46;
+  /* Cards rely on border elevation in dark mode */
   --shadow-card: none;
   --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.35);
   /* MoleculeOverlay 状态色 */

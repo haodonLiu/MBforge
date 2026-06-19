@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { TONE_COLORS } from '../../styles/tokens'
 
 export type InlineAlertTone = 'success' | 'warning' | 'danger' | 'info'
 
@@ -11,11 +10,15 @@ export interface InlineAlertProps {
   style?: React.CSSProperties
 }
 
+const toneMap: Record<InlineAlertTone, { border: string; bg: string; color: string }> = {
+  success: { border: 'var(--success)', bg: 'rgba(22, 163, 74, 0.08)', color: 'var(--success)' },
+  warning: { border: 'var(--warning)', bg: 'rgba(245, 158, 11, 0.08)', color: 'var(--warning)' },
+  danger:  { border: 'var(--danger)',  bg: 'rgba(220, 38, 38, 0.08)',  color: 'var(--danger)' },
+  info:    { border: 'var(--accent)',  bg: 'var(--accent-muted)',      color: 'var(--accent)' },
+}
+
 export default function InlineAlert({ tone, title, children, className, style }: InlineAlertProps) {
-  const isInfo = tone === 'info'
-  const color = isInfo ? 'var(--accent)' : TONE_COLORS[tone].color
-  const bg = isInfo ? 'var(--accent-muted)' : TONE_COLORS[tone].bg
-  const border = isInfo ? 'var(--accent)' : TONE_COLORS[tone].border
+  const { border, bg, color } = toneMap[tone]
 
   return (
     <div

@@ -192,6 +192,7 @@
   "settings.testConnection": "Test Connection",
   "settings.testing": "Testing…",
   "settings.connectionFailed": "Connection failed",
+  "settings.connectionSucceeded": "Connection succeeded",
   "settings.testNow": "Test Now",
   "settings.serverOk": "Sidecar is online (uptime {{secs}}s)",
   "settings.serverDown": "Sidecar is down: {{err}}",

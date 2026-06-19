@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getLlmEnvConfig, testLlmConnection, type LlmEnvStatus } from '../../api/tauri/agent'
 import { openExternalUrl } from '@/api/tauri/_utils'
@@ -36,7 +36,7 @@ interface Props {
 }
 
 const STATUS_TONE: Record<NonNullable<LlmEnvStatus['status']>, BadgeTone> = {
-  not_configured: 'warning',
+  not_configured: 'neutral',
   ok: 'success',
   unreachable: 'danger',
   http_error: 'danger',
@@ -63,6 +63,8 @@ export default function ModelConfigCard({
   const { t } = useTranslation()
   const [testStatus, setTestStatus] = useState<LlmEnvStatus | null>(null)
   const [testing, setTesting] = useState(false)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Load the current active LLM config once on mount (env or saved config).
   // This only reads the resolved config; it does not perform a network probe.
@@ -75,15 +77,34 @@ export default function ModelConfigCard({
     return () => { cancelled = true }
   }, [showTest])
 
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) {
+        clearTimeout(successTimerRef.current)
+      }
+    }
+  }, [])
+
   const update = <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
     setSettings(s => ({ ...s, [key]: value }))
   }
 
   const runTest = async () => {
     setTesting(true)
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current)
+      successTimerRef.current = null
+    }
     try {
       const s = await testLlmConnection()
       setTestStatus(s)
+      if (s.status === 'ok') {
+        setSuccessMessage(t('settings.connectionSucceeded'))
+        successTimerRef.current = setTimeout(() => {
+          setSuccessMessage(null)
+          successTimerRef.current = null
+        }, 3000)
+      }
     } catch (e) {
       setTestStatus({
         provider: '',
@@ -406,6 +427,9 @@ export default function ModelConfigCard({
         <InlineAlert tone="danger" title={t('settings.connectionFailed')} style={{ marginTop: 'var(--space-4)' }}>
           {testStatus.error}
         </InlineAlert>
+      )}
+      {successMessage && (
+        <InlineAlert tone="success" title={successMessage} style={{ marginTop: 'var(--space-4)' }} />
       )}
     </div>
   )

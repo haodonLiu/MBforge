@@ -6,10 +6,11 @@ Week 1 (P0) 引擎接口层：
 - MolScribeRecognizer: 图像 → SMILES
 - MolImagePipeline: 组合上述组件的主管线
 
-模型路径约定（可通过 EmbedConfig/RerankConfig 或资源管理器覆盖）：
-- ~/.cache/mbforge/models/moldetv2-doc.pt
-- ~/.cache/mbforge/models/moldetv2-general.pt
-- ~/.cache/mbforge/models/molscribe/...
+模型路径约定（统一从 Rust resolved_paths.json 读取）：
+- ~/mbforge/models/MolDetv2/doc/moldet_v2_yolo11n_960_doc.pt
+- ~/mbforge/models/MolDetv2/general/moldet_v2_yolo11n_640_general.pt
+- ~/mbforge/models/MolScribe/swin_base_char_aux_1m680k.pth
+- ~/mbforge/models/MolDetect/coref_best.ckpt
 """
 
 from __future__ import annotations
@@ -69,24 +70,30 @@ class MolDetv2DocDetector:
     输出：图像坐标系中的 bbox 列表 [(x1, y1, x2, y2, conf), ...]
     """
 
-    MODEL_SUBDIR = "moldetv2-doc"
+    MODEL_RESOURCE_ID = "moldet"  # Rust RESOURCE_CATALOG 中的 id
+    MODEL_SUBPATH = "doc/moldet_v2_yolo11n_960_doc.pt"
     DEFAULT_INPUT_SIZE = (960, 960)
 
     def __init__(
         self,
         model_path: Path | None = None,
         device: str | None = None,
-        conf_threshold: float = 0.25,
+        conf_threshold: float = 0.4,
         iou_threshold: float = 0.45,
+        min_area_ratio: float = 0.0001,
+        max_area_ratio: float = 0.5,
+        max_aspect_ratio: float = 10.0,
     ) -> None:
         """初始化检测器.
 
         Args:
-            model_path: 模型文件路径（.pt）。若为 None，
-                       则在默认目录下查找 moldetv2-doc.*
+            model_path: 模型文件路径（.pt）。若为 None，从 Rust resolved_paths.json 取
             device: 推理设备，None=自动，'cpu', 'cuda', 'cuda:0' 等
-            conf_threshold: 置信度阈值
+            conf_threshold: 置信度阈值（默认 0.4，0.25 误检率过高）
             iou_threshold: NMS IoU 阈值
+            min_area_ratio: 最小面积比例（相对于图像面积），过滤噪点
+            max_area_ratio: 最大面积比例，过滤过大的检测框
+            max_aspect_ratio: 最大宽高比，过滤异常形状
         """
         if not _has_ultralytics():
             raise RuntimeError(
@@ -97,6 +104,9 @@ class MolDetv2DocDetector:
         self.device = device or os.getenv("MBFORGE_DEVICE", "auto")
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
+        self.min_area_ratio = min_area_ratio
+        self.max_area_ratio = max_area_ratio
+        self.max_aspect_ratio = max_aspect_ratio
 
         self.model_path = self._resolve_model_path(model_path)
         self.model: Any | None = None
@@ -107,40 +117,32 @@ class MolDetv2DocDetector:
         if model_path is not None:
             return Path(model_path)
 
-        from mbforge.core.resource_manager import ResourceManager
+        from mbforge.core.resource_manager import RESOURCE_CATALOG, ResourceManager
 
-        # 1. 通过 ResourceManager 查找 moldet 仓库目录
-        resolved = ResourceManager.resolve_model_for_backend("moldet")
-        if resolved is not None:
-            if resolved.is_dir():
-                # 在仓库目录中查找匹配的 .pt 文件
-                # MODEL_SUBDIR: "moldetv2-doc" → 关键词 "doc"
-                # MODEL_SUBDIR: "moldetv2-general" → 关键词 "general"
-                keyword = self.MODEL_SUBDIR.split("-")[-1]  # "doc" or "general"
-                for f in resolved.iterdir():
-                    if f.is_file() and f.suffix == ".pt" and keyword in f.name:
-                        return f
-                # 回退：找任何 .pt 文件
-                for f in resolved.iterdir():
-                    if f.is_file() and f.suffix == ".pt":
-                        return f
-            elif resolved.is_file():
-                return resolved
+        # 1. 从 Rust resolved_paths.json 取 dir，再拼子路径
+        resolved = ResourceManager.resolve_model_for_backend(
+            self.MODEL_RESOURCE_ID, subpath=self.MODEL_SUBPATH
+        )
+        if resolved is not None and resolved.exists():
+            return resolved
 
-        # 2. 兜底：返回预期路径（让 _load_model 报告缺失）
-        return default_model_dir() / self.MODEL_SUBDIR / f"{self.MODEL_SUBDIR}.pt"
+        # 2. 兜底：用 catalog 构造期望路径（让 _load_model 报告缺失）
+        info = RESOURCE_CATALOG.get(self.MODEL_RESOURCE_ID)
+        if info and info.files:
+            return default_model_dir() / info.local_name / self.MODEL_SUBPATH
+        return default_model_dir() / self.MODEL_RESOURCE_ID
 
     def _load_model(self) -> None:
         """加载 YOLO 模型."""
         if not self.model_path.exists():
             logger.warning(
-                "MolDetv2-Doc 模型未找到：%s（图像分子检测功能不可用，不影响核心功能）",
+                "MolDetv2 模型未找到：%s（图像分子检测功能不可用，不影响核心功能）",
                 self.model_path,
             )
             self.model = None
             return
 
-        model_name = getattr(self, "MODEL_SUBDIR", "moldetv2")
+        model_name = self.MODEL_RESOURCE_ID
         logger.info("正在加载 %s 模型：%s", model_name, self.model_path)
         start = time.perf_counter()
         from ultralytics import YOLO
@@ -188,6 +190,12 @@ class MolDetv2DocDetector:
         if not results:
             return []
 
+        # 计算图像面积用于尺寸过滤
+        if hasattr(image, 'width') and hasattr(image, 'height'):
+            img_area = image.width * image.height
+        else:
+            img_area = image.shape[0] * image.shape[1]  # type: ignore[index]
+
         boxes = []
         for r in results:
             if r.boxes is None:
@@ -195,6 +203,25 @@ class MolDetv2DocDetector:
             for box in r.boxes:
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().tolist()
                 conf = float(box.conf[0].cpu().item())
+
+                # 尺寸过滤
+                w, h = x2 - x1, y2 - y1
+                box_area = w * h
+                area_ratio = box_area / img_area if img_area > 0 else 0
+
+                # 过滤条件：
+                # 1. 太小（< min_area_ratio 页面面积）→ 噪点
+                # 2. 太大（> max_area_ratio 页面面积）→ 可能是整段文字
+                # 3. 太窄（宽高比 > max_aspect_ratio）→ 可能是线条
+                if area_ratio < self.min_area_ratio:
+                    continue
+                if area_ratio > self.max_area_ratio:
+                    continue
+                if w > 0 and h > 0:
+                    ratio = max(w / h, h / w)
+                    if ratio > self.max_aspect_ratio:
+                        continue
+
                 boxes.append((x1, y1, x2, y2, conf))
         return boxes
 
@@ -228,7 +255,13 @@ class MolDetv2DocDetector:
             return [[] for _ in images]
 
         batch_boxes: list[list[tuple[float, float, float, float, float]]] = []
-        for r in results:
+        for img, r in zip(images, results, strict=True):
+            # 计算图像面积
+            if hasattr(img, 'width') and hasattr(img, 'height'):
+                img_area = img.width * img.height
+            else:
+                img_area = img.shape[0] * img.shape[1]  # type: ignore[index]
+
             if r.boxes is None:
                 batch_boxes.append([])
                 continue
@@ -236,6 +269,21 @@ class MolDetv2DocDetector:
             for box in r.boxes:
                 x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().tolist()
                 conf = float(box.conf[0].cpu().item())
+
+                # 尺寸过滤
+                w, h = x2 - x1, y2 - y1
+                box_area = w * h
+                area_ratio = box_area / img_area if img_area > 0 else 0
+
+                if area_ratio < self.min_area_ratio:
+                    continue
+                if area_ratio > self.max_area_ratio:
+                    continue
+                if w > 0 and h > 0:
+                    ratio = max(w / h, h / w)
+                    if ratio > self.max_aspect_ratio:
+                        continue
+
                 boxes.append((x1, y1, x2, y2, conf))
             batch_boxes.append(boxes)
         return batch_boxes
@@ -247,11 +295,12 @@ class MolDetv2GeneralDetector(MolDetv2DocDetector):
     输入：裁剪后的分子区域图像
     输出：更精确的 bbox（通常比 Doc 版更准）
 
-    注意：MODEL_SUBDIR 和 DEFAULT_INPUT_SIZE 为类属性，
+    注意：MODEL_RESOURCE_ID / MODEL_SUBPATH / DEFAULT_INPUT_SIZE 为类属性，
     通过 Python MRO 在父类 __init__ 中自动正确解析，无需实例覆盖。
     """
 
-    MODEL_SUBDIR = "moldetv2-general"
+    MODEL_RESOURCE_ID = "moldet"
+    MODEL_SUBPATH = "general/moldet_v2_yolo11n_640_general.pt"
     DEFAULT_INPUT_SIZE = (640, 640)
 
     def __init__(
@@ -296,7 +345,7 @@ class MolScribeRecognizer:
 
         Args:
             model_path: 模型路径或 Hugging Face 模型 ID。
-                       None 时使用默认路径 ~/.cache/mbforge/models/molscribe/
+                       None 时使用默认路径 ~/mbforge/models/molscribe/
             device: 推理设备
             backend: 后端模式，auto 时优先 molscribe，其次 transformers
         """
@@ -333,8 +382,8 @@ class MolScribeRecognizer:
         ``ExtractionResult``，scribe_conf 字段在 molscribe.py::predict() 中填充。
         """
         try:
-            from . import molscribe as molscribe_backend
             from ..utils.helpers import is_gpu_available
+            from . import molscribe as molscribe_backend
             # Resolve 'auto' to cuda/cpu; backends.molscribe doesn't accept 'auto'
             dev = self.device
             if dev in (None, '', 'auto'):
@@ -592,6 +641,9 @@ class MolImagePipeline:
                         page_idx, bbox_pdf, exc,
                     )
 
+            # 2.5 计算综合置信度
+            composite_conf = det_conf * scribe_conf if scribe_conf > 0 else det_conf
+
             results.append(
                 ExtractionResult(
                     esmiles=smiles,
@@ -599,6 +651,7 @@ class MolImagePipeline:
                     source="image",
                     moldet_conf=det_conf,
                     scribe_conf=scribe_conf,
+                    composite_conf=composite_conf,
                     bbox_pdf=bbox_pdf,
                     page_idx=page_idx,
                     mol_img_path=mol_img_path,
@@ -702,7 +755,6 @@ class MolImagePipeline:
 
 # ---- Singleton accessors (moved from model_server/models/moldet.py) ----
 
-from typing import Any
 
 _moldet_instance: Any = None
 

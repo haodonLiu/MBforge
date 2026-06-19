@@ -192,6 +192,7 @@
   "settings.testConnection": "测试连接",
   "settings.testing": "测试中…",
   "settings.connectionFailed": "连接失败",
+  "settings.connectionSucceeded": "连接成功",
   "settings.testNow": "立即测试",
   "settings.serverOk": "Sidecar 在线（已运行 {{secs}}s）",
   "settings.serverDown": "Sidecar 离线：{{err}}",

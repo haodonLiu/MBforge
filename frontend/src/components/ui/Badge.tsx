@@ -27,6 +27,15 @@ const toneToVariant: Record<BadgeTone, BadgeVariant | null> = {
   loading: 'neutral',
 }
 
+const toneVarStyles: Record<BadgeTone, React.CSSProperties> = {
+  success: { background: 'var(--success)', color: '#fff' },
+  warning: { background: 'var(--warning)', color: '#fff' },
+  danger:  { background: 'var(--danger)',  color: '#fff' },
+  info:    { background: 'var(--accent)',  color: '#fff' },
+  neutral: { background: 'var(--bg-hover)', color: 'var(--text-secondary)' },
+  loading: { background: 'var(--bg-hover)', color: 'var(--text-secondary)' },
+}
+
 const sizeStyles: Record<'sm' | 'md', React.CSSProperties> = {
   sm: { padding: '2px 8px', fontSize: '11px' },
   md: { padding: '4px 10px', fontSize: '12px' },
@@ -41,9 +50,9 @@ export default function Badge({
   className,
   style,
 }: BadgeProps) {
-  // Prefer explicit tone; fall back to legacy variant.
-  const effectiveVariant: BadgeVariant = tone ? (toneToVariant[tone] ?? 'neutral') : (variant ?? 'neutral')
-  const colors = TONE_COLORS[effectiveVariant]
+  // New `tone` API uses CSS variables; legacy `variant`/`dot` API stays on TONE_COLORS.
+  const toneColors = tone ? toneVarStyles[tone] : null
+  const legacyColors = TONE_COLORS[tone ? (toneToVariant[tone] ?? 'neutral') : (variant ?? 'neutral')]
 
   return (
     <span
@@ -55,8 +64,8 @@ export default function Badge({
         fontWeight: 500,
         lineHeight: 1,
         whiteSpace: 'nowrap',
-        color: colors.color,
-        background: colors.bg,
+        color: toneColors ? toneColors.color : legacyColors.color,
+        background: toneColors ? toneColors.background : legacyColors.bg,
         gap: dot ? (size === 'sm' ? 4 : 6) : 0,
         ...sizeStyles[size],
         ...style,
@@ -67,7 +76,7 @@ export default function Badge({
           width: '6px',
           height: '6px',
           borderRadius: '50%',
-          background: colors.color,
+          background: toneColors ? toneColors.color : legacyColors.color,
           flexShrink: 0,
         }} />
       )}

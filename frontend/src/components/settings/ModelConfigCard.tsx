@@ -4,7 +4,8 @@ import { getLlmEnvConfig, testLlmConnection, type LlmEnvStatus } from '../../api
 import { openExternalUrl } from '@/api/tauri/_utils'
 import SettingSection, { SettingGroup, SettingItem } from '../ui/SettingSection'
 import Button from '../ui/Button'
-import Spinner from '../ui/Spinner'
+import Badge, { type BadgeTone } from '../ui/Badge'
+import InlineAlert from '../ui/InlineAlert'
 import {
   NumberField,
   ProviderField,
@@ -34,19 +35,12 @@ interface Props {
   showTest?: boolean
 }
 
-const STATUS_TONE: Record<NonNullable<LlmEnvStatus['status']>, 'ok' | 'warn' | 'error' | 'idle'> = {
-  not_configured: 'warn',
-  ok: 'ok',
-  unreachable: 'error',
-  http_error: 'error',
-  auth_error: 'error',
-}
-
-const STATUS_COLOR: Record<'ok' | 'warn' | 'error' | 'idle', string> = {
-  ok: '#10b981',
-  warn: '#f59e0b',
-  error: '#ef4444',
-  idle: '#6b7280',
+const STATUS_TONE: Record<NonNullable<LlmEnvStatus['status']>, BadgeTone> = {
+  not_configured: 'warning',
+  ok: 'success',
+  unreachable: 'danger',
+  http_error: 'danger',
+  auth_error: 'danger',
 }
 
 const providerOptions = (map: ModelMap) =>
@@ -106,9 +100,6 @@ export default function ModelConfigCard({
     }
   }
 
-  const statusTone = testStatus ? STATUS_TONE[testStatus.status] : null
-  const statusColor = statusTone ? STATUS_COLOR[statusTone] : undefined
-
   return (
     <div className="model-config-card" style={cardStyle}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
@@ -120,25 +111,14 @@ export default function ModelConfigCard({
         </div>
         {showTest && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            {testStatus && statusColor && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: statusColor,
-                    boxShadow: `0 0 6px ${statusColor}`,
-                  }}
-                />
-                <span style={{ color: statusColor }}>{t(`settings.llmStatus.${testStatus.status}`)}</span>
-                {testStatus.latency_ms != null && (
-                  <span style={{ color: 'var(--text-muted)' }}>({testStatus.latency_ms} ms)</span>
-                )}
-              </div>
+            {testStatus && (
+              <Badge tone={testing ? 'loading' : STATUS_TONE[testStatus.status]}>
+                {testing ? t('settings.testing') : t(`settings.llmStatus.${testStatus.status}`)}
+                {!testing && testStatus.latency_ms != null && ` (${testStatus.latency_ms} ms)`}
+              </Badge>
             )}
-            <Button size="sm" variant="secondary" onClick={runTest} disabled={testing}>
-              {testing ? <Spinner size={12} /> : t('settings.testConnection')}
+            <Button size="sm" variant="secondary" onClick={runTest} disabled={testing} loading={testing}>
+              {t('settings.testConnection')}
             </Button>
           </div>
         )}
@@ -423,7 +403,9 @@ export default function ModelConfigCard({
       </SettingSection>
 
       {testStatus?.error && (
-        <div style={errorStyle}>{testStatus.error}</div>
+        <InlineAlert tone="danger" title={t('settings.connectionFailed')} style={{ marginTop: 'var(--space-4)' }}>
+          {testStatus.error}
+        </InlineAlert>
       )}
     </div>
   )
@@ -553,21 +535,9 @@ function BackendKeyRow({ label, placeholder, value, onChange, getKeyUrl, getKeyL
 }
 
 const cardStyle: React.CSSProperties = {
-  padding: 20,
+  padding: 'var(--space-4)',
   border: '1px solid var(--border)',
-  borderRadius: 12,
+  borderRadius: 'var(--radius-lg)',
   background: 'var(--bg-surface)',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-}
-
-const errorStyle: React.CSSProperties = {
-  marginTop: 12,
-  padding: 10,
-  background: 'rgba(239, 68, 68, 0.08)',
-  border: '1px solid rgba(239, 68, 68, 0.3)',
-  borderRadius: 6,
-  color: '#ef4444',
-  fontSize: 12,
-  fontFamily: 'monospace',
-  wordBreak: 'break-all',
+  boxShadow: 'var(--shadow-card)',
 }

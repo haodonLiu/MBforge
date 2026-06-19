@@ -17,6 +17,7 @@ export function TextField({
   placeholder,
   type = 'text',
   monospace,
+  labelWidth,
 }: {
   label: string
   description?: string
@@ -25,9 +26,10 @@ export function TextField({
   placeholder?: string
   type?: 'text' | 'password' | 'number'
   monospace?: boolean
+  labelWidth?: number
 }) {
   return (
-    <SettingItem title={label} description={description}>
+    <SettingItem title={label} description={description} labelWidth={labelWidth}>
       <Input
         className="settings-input"
         type={type}
@@ -54,6 +56,7 @@ export function NumberField({
   step = 1,
   width = 120,
   placeholder,
+  labelWidth,
 }: {
   label: string
   description?: string
@@ -64,9 +67,10 @@ export function NumberField({
   step?: number
   width?: number
   placeholder?: string
+  labelWidth?: number
 }) {
   return (
-    <SettingItem title={label} description={description}>
+    <SettingItem title={label} description={description} labelWidth={labelWidth}>
       <input
         className="settings-input"
         type="number"
@@ -98,15 +102,17 @@ export function SelectField<T extends string | number>({
   value,
   onChange,
   options,
+  labelWidth,
 }: {
   label: string
   description?: string
   value: T
   onChange: (v: T) => void
   options: { value: T; label: string }[]
+  labelWidth?: number
 }) {
   return (
-    <SettingItem title={label} description={description}>
+    <SettingItem title={label} description={description} labelWidth={labelWidth}>
       <select
         className="settings-select"
         value={String(value)}
@@ -115,6 +121,7 @@ export function SelectField<T extends string | number>({
           const match = options.find(o => String(o.value) === v)
           if (match) onChange(match.value)
         }}
+        style={{ width: '100%' }}
       >
         {options.map(o => (
           <option key={String(o.value)} value={String(o.value)}>{o.label}</option>
@@ -130,14 +137,16 @@ export function ToggleField({
   description,
   value,
   onChange,
+  labelWidth,
 }: {
   label: string
   description?: string
   value: boolean
   onChange: (v: boolean) => void
+  labelWidth?: number
 }) {
   return (
-    <SettingItem title={label} description={description}>
+    <SettingItem title={label} description={description} labelWidth={labelWidth}>
       <button
         type="button"
         role="switch"
@@ -179,13 +188,15 @@ export function CustomField({
   label,
   description,
   children,
+  labelWidth,
 }: {
   label: string
   description?: string
   children: ReactNode
+  labelWidth?: number
 }) {
   return (
-    <SettingItem title={label} description={description} layout="stacked">
+    <SettingItem title={label} description={description} layout="stacked" labelWidth={labelWidth}>
       <div style={{ width: '100%' }}>{children}</div>
     </SettingItem>
   )
@@ -209,6 +220,7 @@ export function ProviderField({
   showBaseUrl = true,
   baseUrlLabel,
   apiKeyLabel,
+  labelWidth,
 }: {
   label: string
   description?: string
@@ -224,14 +236,16 @@ export function ProviderField({
   showBaseUrl?: boolean
   baseUrlLabel?: string
   apiKeyLabel?: string
+  labelWidth?: number
 }) {
   return (
     <>
-      <SettingItem title={label} description={description}>
+      <SettingItem title={label} description={description} labelWidth={labelWidth}>
         <select
           className="settings-select"
           value={provider}
           onChange={e => onProviderChange(e.target.value)}
+          style={{ width: '100%' }}
         >
           {providerOptions.map(o => (
             <option key={o.value} value={o.value}>{o.label}</option>
@@ -245,10 +259,11 @@ export function ProviderField({
           onChange={onBaseUrlChange}
           placeholder={baseUrlPlaceholder}
           monospace
+          labelWidth={labelWidth}
         />
       )}
       {needsKey && (
-        <SettingItem title={apiKeyLabel ?? 'API Key'}>
+        <SettingItem title={apiKeyLabel ?? 'API Key'} labelWidth={labelWidth}>
           <ApiKeyInput value={apiKey} onChange={onApiKeyChange} />
         </SettingItem>
       )}

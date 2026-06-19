@@ -18,8 +18,8 @@ PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询
 - **Python 侧载（Sidecar）**：FastAPI 模型服务器（port 18792），负责Embedding、MolScribe 分子图像识别
 
 **双语言分工**：
-- **Rust**（`src-tauri/src/`）：Agent 循环、PDF 原生解析（lopdf）、统一 SQLite 数据库（molecules.db + vectors.db + semantic_cache.json）、Tauri IPC 命令层
-- **Python**（`src/mbforge/`）：FastAPI REST API、LLM/Embedding/VLM 模型推理、MolScribe
+- **Rust**（`src-tauri/src/`）：Agent 循环（含 LLM/VLM 调用）、PDF 原生解析（lopdf）、统一 SQLite 数据库（molecules.db + vectors.db + semantic_cache.json）、Tauri IPC 命令层
+- **Python**（`src/mbforge/`）：FastAPI REST API、Embedding、Rerank、MolDet、MolScribe
 
 ---
 
@@ -48,16 +48,19 @@ PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询
 MBForge/
 ├── frontend/               # React + Vite 前端
 │   ├── src/
-│   │   ├── api/            # Tauri invoke 桥接 + HTTP fallback
+│   │   ├── api/            # Tauri invoke 桥接
 │   │   │   ├── tauri/      #   按域拆分的 Tauri invoke 子模块
 │   │   │   │   ├── _utils.ts       # 通用工具（listen/unlisten）
 │   │   │   │   ├── agent.ts        # Agent 会话
 │   │   │   │   ├── audit.ts        # 审计日志
+│   │   │   │   ├── chem.ts         # 化学信息学命令（规范化、子结构搜索等）
 │   │   │   │   ├── detection_cache.ts # 检测缓存
 │   │   │   │   ├── download.ts     # 模型下载
 │   │   │   │   ├── environment.ts  # 环境信息
+│   │   │   │   ├── ingest_queue.ts # PDF 处理队列
 │   │   │   │   ├── kb.ts           # 知识库
 │   │   │   │   ├── molecule.ts     # 分子数据库
+│   │   │   │   ├── molecule_admin.ts # 分子引擎 CRUD
 │   │   │   │   ├── notes.ts        # 笔记管理
 │   │   │   │   ├── pdf.ts          # PDF 操作
 │   │   │   │   ├── project.ts      # 项目管理
@@ -98,23 +101,25 @@ MBForge/
 │   ├── src/
 │   │   ├── main.rs         # Tauri 入口：命令注册 + Python sidecar 管理
 │   │   ├── lib.rs          # 模块导出
-│   │   ├── commands/       # Tauri IPC 命令层（18 模块）
+│   │   ├── commands/       # Tauri IPC 命令层（20 模块）
 │   │   │   ├── mod.rs            # 命令聚合（handler() 函数）
 │   │   │   ├── agent.rs          # Agent 会话
+│   │   │   ├── chem_ops.rs       # 化学信息学操作（规范化/子结构搜索/GESim 映射）
 │   │   │   ├── classifier.rs     # 页面/文档分类
 │   │   │   ├── detection_cache.rs# 检测缓存管理
 │   │   │   ├── extractor.rs      # 提取命令
 │   │   │   ├── file_ops.rs       # 文件操作
-│   │   │   ├── gesim.rs          # GESim 计算
 │   │   │   ├── llm.rs            # LLM 调用
 │   │   │   ├── mol_engine.rs     # 分子引擎状态
 │   │   │   ├── mol_store.rs      # 分子存储操作
 │   │   │   ├── molecode.rs       # MoleCode 生成
-│   │   │   ├── molecule.rs       # 分子数据库 CRUD
+│   │   │   ├── molecule.rs       # 分子数据库 CRUD（含 gesim_similarity）
+│   │   │   ├── molecule_admin.rs # 分子引擎管理 CRUD
 │   │   │   ├── notes.rs          # 笔记管理
 │   │   │   ├── pdf.rs            # PDF 操作
 │   │   │   ├── project_ops.rs    # 项目操作
 │   │   │   ├── settings.rs       # 设置管理
+│   │   │   ├── settings_extra.rs # 额外设置（构建信息/侧载状态）
 │   │   │   ├── sidecar.rs        # Sidecar 管理
 │   │   │   └── text_ops.rs       # 文本处理
 │   │   ├── core/           # Agent + 数据层（8 子目录 + 顶层模块）
@@ -134,7 +139,7 @@ MBForge/
 │   │   │   └── types.rs          # 共享类型
 │   │   └── parsers/        # PDF 解析管线
 │   │       ├── doc_types.rs        # 管线共享数据结构
-│   │       ├── pipeline.rs         # 统一解析管线入口
+│   │       ├── pipeline.rs         # 统一解析管线入口（声明子模块）
 │   │       │   ├── extract.rs      # 分类与提取逻辑
 │   │       │   ├── helpers.rs      # record 映射与文本提取
 │   │       │   ├── markdown_augment.rs # Markdown 增强
@@ -153,6 +158,9 @@ MBForge/
 │   │       │   ├── mineru.rs           # MinerU API 客户端
 │   │       │   ├── sidecar_render.rs   # Python sidecar PDF 页面渲染
 │   │       │   └── uniparser.rs        # UniParser API 客户端
+│   │       ├── ocr/                # OCR 解析客户端
+│   │       │   ├── paddle.rs           # PaddleOCR 集成
+│   │       │   └── uniparser.rs        # UniParser OCR 通道
 │   │       ├── structure/          # 文档结构处理
 │   │       │   ├── intent.rs           # 意图路由（LLM 分类）
 │   │       │   ├── post_process.rs     # LLM 后处理 / JSON 修复
@@ -197,12 +205,11 @@ MBForge/
 │   ├── pipeline-redesign.md
 │   ├── refactor-plan.md
 │   ├── rig_api_surface.md
-│   ├── esmiles-spec.md
-│   ├── molecode-spec.md
+│   ├── specs/esmiles-spec.md
+│   ├── specs/molecode-spec.md
 │   ├── specs/                # 架构 / 规范集（architecture-conventions 等）
 │   ├── superpowers/         # 近期设计稿与实现计划
 │   ├── pdf-pipeline-test/   # 解析管线测试输出样本
-│   └── archive/             # 已过时的迁移计划文档
 │
 ├── pyproject.toml          # Python 项目配置（uv + setuptools）
 ├── uv.lock                 # Python 依赖锁定
@@ -811,6 +818,84 @@ PDF 输入
 
 ---
 
+## 第一性原理：总目的与缺失分析
+
+> 以下分析从第一性原理出发，定义 MBForge 存在的根本目的，并识别当前实现与终极目标之间的差距。
+> 每个 AI 助手首次接触本项目时应阅读此节，理解"我们在建什么"和"还缺什么"。
+
+### 总目的
+
+**将非结构化的科学文献转化为可计算、可推理的分子知识，加速药物发现中的决策过程。**
+
+这个目的分解为四层能力，每层依赖前一层：
+
+```
+L1 知识获取：  PDF → 结构化数据（分子+活性+发现）
+L2 知识检索：  结构化数据 → 可查询知识库（向量+FTS5+指纹）
+L3 知识推理：  知识库 → 智能问答与综合分析（Agent RAG）
+L4 决策支持：  智能分析 → 可操作的实验设计建议（最大缺失）
+```
+
+### 第一性原理追问
+
+**药物化学家的核心问题**不是"如何搜索分子"，而是"接下来合成哪个分子最有前景"。MBForge 存在的理由，是缩短从"文献中的知识碎片"到"可执行的实验决策"之间的距离。
+
+```
+文献中的事实（IC50=10nM, scaffold=X）
+  → 系统化的知识（scaffold X 的 SAR 规律）
+  → 可检验的假设（修饰R3位点可提高选择性）
+  → 实验决策（合成化合物 5a-5g 验证）
+                    ↑ 目前系统止步于此
+```
+
+### 当前能力覆盖
+
+| 层级 | 能力 | 状态 |
+|------|------|------|
+| L1 | 多引擎 PDF 解析、分子结构图识别（MolDet+MolScribe）、化学验证 | 🟢 已建成 |
+| L1 | 专利 Claim 解析、Markush 结构提取 | 🟢 已建成 |
+| L2 | SQLite 向量知识库（FTS5+Embedding+RRF）、分子库（指纹+去重+聚类） | 🟢 已建成 |
+| L2 | 跨语言分子表示（SMILES→E-SMILES→MoleCode） | 🟢 已建成 |
+| L3 | ReAct Agent（20+ 工具、多轮记忆、轨迹审计） | 🟡 已建成 |
+| L3 | 化学信息学计算命令（规范化、子结构搜索、GESim 映射） | 🟡 已暴露但前端未消费 |
+| L4 | SAR 分析（骨架聚类、activity cliff、R-group） | 🔶 基础建成 |
+| L4 | 跨论文综合推理、假设-证据管理、主动发现 | 🔴 缺失 |
+
+### 关键缺失
+
+**缺失 1 — 跨论文综合推理（L3→L4 断裂）**
+- 当前：Agent 在单文档/单项目上下文中问答，无法跨论文追踪同一 scaffold 的 SAR 趋势
+- 应然：Agent 能回答"这个 scaffold 在哪些论文中出现过？活性趋势如何？"
+- 依赖：向量检索跨文档能力已具备，但 Agent 工具链缺少"跨文档对比分析"工具
+
+**缺失 2 — 假设-证据管理（L4 核心）**
+- 当前：对话有记忆，但无结构化假设记录。每个新会话从零开始
+- 应然：显式记录"为什么认为这个分子有活性"的证据链，支持假设的积累、强化/反驳
+- 依赖：需要新的数据模型（假设表 + 证据表）+ Agent 工具（create_hypothesis, add_evidence）
+
+**缺失 3 — 主动发现能力（L4 进阶）**
+- 当前：系统被动回答问题，不会主动扫描文献矛盾或知识缺口
+- 应然：在新文档入库时自动检测与现有知识的矛盾、新颖性、知识缺口，并向用户报告
+- 依赖：差异分析引擎 + 通知机制
+
+**缺失 4 — 决策闭环（最终目的）**
+- 当前：用户路径终点是 Q&A 界面
+- 应然：用户应能获得"基于现有知识，建议优先合成的 3 个类似物"之类的可操作输出
+- 依赖：需要结构化决策框架（多目标优化 + 不确定性量化）
+
+**缺失 5 — 前端消费断层（工程现实）**
+- 当前：26 个化学信息学命令已暴露（chem_ops + molecule_admin），但 UI 组件尚未接入
+- 记录见 `TODO/INDEX.md`「未完成（cheminformatics 后续 follow-up）」
+- 依赖：UI 组件开发 + 用户交互设计
+
+### 对开发决策的指导
+
+每个功能决策应当追问：**这个新功能是让系统更接近 L4（决策支持），还是停留在 L2/L3？**
+
+如果答案是后者，应优先评估是否有更接近 L4 的替代方案，或明确该功能是 L1-L3 的补强（仍有必要，但优先级低于填补 L4 空白）。
+
+---
+
 ## 设计原则
 
 1. **Harness > Model** — 基础设施质量比模型能力更重要（Harness Engineering 论文核心论点）
@@ -842,17 +927,17 @@ PDF 输入
 
 > 与 `TODO/INDEX.md` §技术债务 同步维护。修复后两边同时更新。
 
-| # | 债务 | 严重性 | 状态 | 修复方案 |
-|---|------|--------|------|---------|
-| 1 | chem_validate.rs 与 core/chem.rs 重叠 | 中 | 🔴 待修复 | 合并到 chem.rs |
-| 2 | vector_store.rs 接口冗余 | 低 | 🔴 待修复 | 合并到 sqlite_vector_store.rs |
-| 3 | 多个 std::sync::Mutex 在 async 上下文 | 高 | 🟡 进行中 | 迁移到 tokio::sync::Mutex |
-| 4 | chematic git 依赖无 tag | 中 | 🔴 待修复 | 锁定到特定 commit |
-| 5 | Python sidecar 单进程无连接池 | 中 | 🔴 待修复 | 添加连接池 + 优雅降级 |
-| 6 | tracing 覆盖不全 | 中 | 🟡 部分完成 | 扩展 observability.rs 到所有跨边界调用 |
-| 7 | 无成本追踪 | 中 | 🔴 待修复 | 新增 BudgetEnforcer |
-| 8 | 27 分钟管线瓶颈 | 高 | 🟡 部分完成 | LLM 调用并行化 |
-| 9 | constants.rs 生成机制失效 | 中 | 🟡 部分完成 | 脚本已修复路径与死代码；Rust 侧改为参考文件 + 人工合并 |
+| # | 债务 | 严重性 | 状态 | 修复方案 | 优先级 |
+|---|------|--------|------|---------|--------|
+| 1 | chem_validate.rs 与 core/chem.rs 边界模糊（委派层而非重复） | 中 | 🔴 待修复 | 合并到 chem.rs | P2 |
+| 2 | 多个 std::sync::Mutex 在 async 上下文 | 高 | 🟡 进行中 | 迁移到 tokio::sync::Mutex | P1 |
+| 3 | chematic git 依赖无 tag | 中 | 🔴 待修复 | 锁定到特定 commit | P2 |
+| 4 | Python sidecar 单进程无连接池 | 中 | 🔴 待修复 | 添加连接池 + 优雅降级 | P2 |
+| 5 | tracing 覆盖不全 | 中 | 🟡 部分完成 | 扩展 observability.rs 到所有跨边界调用 | P2 |
+| 6 | 无成本护栏 | 中 | 🔴 待修复 | 新增 BudgetEnforcer | P3 |
+| 7 | 27 分钟管线瓶颈 | 高 | 🟡 部分完成 | LLM 调用并行化 | P1 |
+| 8 | constants.rs 生成机制失效 | 中 | 🟡 部分完成 | 脚本已修复路径与死代码；Rust 侧改为参考文件 + 人工合并 | P2 |
+| 9 | 26 个 chem 命令已暴露但前端未消费 | 中 | 🔴 待修复 | 实现 chem.ts/molecule_admin.ts 对应的 UI 组件 + 业务接入 | P2 |
 
 ---
 
@@ -872,9 +957,9 @@ PDF 输入
 
 | 指标 | 状态 |
 |------|------|
-| Rust 核心 | 128 个文件（commands + core + parsers） |
-| Python 服务 | 36 个文件（backends + parsers + utils） |
-| 前端 | 177 个文件（TS/TSX） |
+| Rust 核心 | ~130 个文件（commands + core + parsers） |
+| Python 服务 | ~36 个文件（backends + parsers + utils） |
+| 前端 | ~270 个文件（TS/TSX） |
 | 数据库 | SQLite (molecules.db + vectors.db) + semantic_cache.json |
 | 核心流程 | PDF → 解析 → LLM 提取 → 分子入库 → 知识库索引 |
 
@@ -890,9 +975,8 @@ PDF 输入
 | 技术栈详情 | `docs/TECH_STACK.md` | 所有依赖的技术选型、版本、使用场景 |
 | 第三方引用 | `docs/REFERENCES.md` | 外部库、论文、数据引用 |
 | 分子表示规范 | `docs/specs/molecular-representation.md` | SMILES/E-SMILES/MoleCode 三层架构 |
-| E-SMILES 规范 | `docs/esmiles-spec.md` | E-SMILES 格式语法 + MBForge 集成 |
-| MoleCode 规范 | `docs/molecode-spec.md` | MoleCode 图语法 + 缩写展开规则 |
-| 归档文档 | `docs/archive/` | 已过时的迁移计划文档 |
+| E-SMILES 规范 | `docs/specs/esmiles-spec.md` | E-SMILES 格式语法 + MBForge 集成 |
+| MoleCode 规范 | `docs/specs/molecode-spec.md` | MoleCode 图语法 + 缩写展开规则 |
 | PyMuPDF 渲染 | `src/mbforge/server.py` | Python sidecar PDF 页面渲染 |
 
 下载模型的默认路径是~/.cache/,在处理模型下载任务的时候应当正确读取该路径下的文件，并确定每个模型的命名习惯以确保编码正确

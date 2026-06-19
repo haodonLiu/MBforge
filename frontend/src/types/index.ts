@@ -98,6 +98,20 @@ export interface ExtractionResult {
   properties: Record<string, unknown>
 }
 
+/** 任务状态 */
+export interface TaskState {
+  status: 'idle' | 'parsing' | 'detecting' | 'completed' | 'error'
+  progress: number       // 0-100
+  currentPage: number
+  totalPages: number
+  error?: string
+  startedAt?: number
+  completedAt?: number
+}
+
+/** 模型状态 */
+export type ModelStatusType = 'unknown' | 'ready' | 'loading' | 'error' | 'offline'
+
 /** MolDet 检测框（像素坐标） */
 export interface DetectionBox {
   x1: number

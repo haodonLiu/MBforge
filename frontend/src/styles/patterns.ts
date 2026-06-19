@@ -22,12 +22,10 @@ export const SIZES = {
     xl: 20,
   },
   radius: {
-    sm: 4,
-    md: 6,
-    lg: 8,
-    xl: 10,
-    '2xl': 12,
-    '3xl': 16,
+    sm: 6,
+    md: 8,
+    lg: 12,
+    xl: 16,
   },
   fontSize: {
     xs: '10px',
@@ -45,17 +43,18 @@ export const SIZES = {
 
 /** 表面块：背景 + 边框 + 圆角（最常用的容器） */
 export const surfaceBlock: CSSProperties = {
-  background: 'var(--bg-base)',
+  background: 'var(--bg-surface)',
   border: '1px solid var(--border)',
-  borderRadius: SIZES.radius.xl,
-  padding: SIZES.padding.xl,
+  borderRadius: 'var(--radius-lg)',
+  padding: 'var(--space-4)',
+  boxShadow: 'var(--shadow-card)',
 }
 
 /** 表面块（无 padding，由调用方决定） */
 export const surfaceBlockNoPadding: CSSProperties = {
   background: 'var(--bg-surface)',
   border: '1px solid var(--border)',
-  borderRadius: SIZES.radius.xl,
+  borderRadius: 'var(--radius-lg)',
 }
 
 /** 表面块（强调边框） */
@@ -108,13 +107,31 @@ export const fullscreenBackdrop: CSSProperties = {
 export const modalPanel: CSSProperties = {
   position: 'relative',
   background: 'var(--bg-surface)',
-  borderRadius: SIZES.radius['3xl'],
+  borderRadius: SIZES.radius.xl,
   border: '1px solid var(--border)',
   boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
 }
+
+/** 标准设置行：固定 label 宽度，control 区自适应 */
+export const settingRow = (_labelWidth = 160): CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 'var(--space-4)',
+})
+
+export const settingLabel = (width = 160): CSSProperties => ({
+  width,
+  flexShrink: 0,
+})
+
+export const settingControl = (): CSSProperties => ({
+  flex: 1,
+  minWidth: 280,
+  maxWidth: 480,
+})
 
 /** 所有 patterns 集合（便于一次性导入） */
 export const PATTERNS = {
@@ -125,4 +142,7 @@ export const PATTERNS = {
   centerContainer,
   fullscreenBackdrop,
   modalPanel,
+  settingRow,
+  settingLabel,
+  settingControl,
 } as const

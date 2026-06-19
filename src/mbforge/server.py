@@ -15,17 +15,16 @@ from __future__ import annotations
 import asyncio
 import base64
 import importlib
-import logging
 import os
 import subprocess
 import sys
 import time
 from contextlib import asynccontextmanager
+from functools import wraps
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import fitz
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -102,6 +101,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 装饰器：统一 JSON 解析 + try/except + set_model_status
+# ---------------------------------------------------------------------------
+
+
+def with_model_status(model_id: str):
+    """装饰器：自动解析 request body、统一异常处理、设置 model 状态。
+
+    包装后的函数签名为 ``async def fn(request: Request, body: dict) -> Any``。
+    request 保留给需要读 header 的端点（如 embed 的 X-Trace-Id）。
+    - 成功 → set_model_status(model_id, "ready")
+    - ValidationError / ModelNotAvailableError → 原样抛出
+    - 其他异常 → set_model_status("error") + 抛 ModelNotAvailableError
+    """
+    def decorator(fn):
+        @wraps(fn)
+        async def wrapper(request: Request) -> dict[str, Any]:
+            try:
+                body = await request.json()
+            except Exception as e:
+                raise ValidationError(f"Invalid JSON body: {e}") from e
+            try:
+                return await fn(request, body)
+            except (ValidationError, ModelNotAvailableError):
+                raise
+            except Exception as e:
+                set_model_status(model_id, "error")
+                raise ModelNotAvailableError(str(e)) from e
+        return wrapper
+    return decorator
 
 
 # ---------------------------------------------------------------------------
@@ -196,124 +227,93 @@ async def render_pages(request: Request) -> dict[str, Any]:
 # Embed
 # ---------------------------------------------------------------------------
 @app.post("/api/v1/embed")
-async def embed(request: Request) -> dict[str, Any]:
-    trace_id = request.headers.get("X-Trace-Id")
-    span_id = request.headers.get("X-Span-Id")
+@with_model_status("embedder")
+async def embed(request: Request, body: dict) -> dict[str, Any]:
+    # Rust 侧通过 X-Trace-Id / X-Span-Id header 传递 tracing 上下文
+    trace_id = request.headers.get("x-trace-id") or request.headers.get("X-Trace-Id")
+    span_id = request.headers.get("x-span-id") or request.headers.get("X-Span-Id")
+    texts = body.get("texts", [])
+    if isinstance(texts, str):
+        texts = [texts]
+    if not texts:
+        raise ValidationError("texts is required")
     if trace_id:
         logger.info(f"[trace={trace_id} span={span_id}] embed started")
-    try:
-        body = await request.json()
-        texts = body.get("texts", [])
-        if isinstance(texts, str):
-            texts = [texts]
-        loop = asyncio.get_running_loop()
-        embeddings = await loop.run_in_executor(None, lambda: qwen3_embed.embed(texts))
-        set_model_status("embedder", "ready")
-        dim = len(embeddings[0]) if embeddings else 0
-        if trace_id:
-            logger.info(f"[trace={trace_id} span={span_id}] embed done, dim={dim}")
-        return {"embeddings": embeddings}
-    except Exception as e:
-        set_model_status("embedder", "error")
-        raise ModelNotAvailableError(str(e))
+    loop = asyncio.get_running_loop()
+    embeddings = await loop.run_in_executor(None, lambda: qwen3_embed.embed(texts))
+    dim = len(embeddings[0]) if embeddings else 0
+    if trace_id:
+        logger.info(f"[trace={trace_id} span={span_id}] embed done, dim={dim}")
+    return {"embeddings": embeddings}
 
 
 # ---------------------------------------------------------------------------
 # Rerank
 # ---------------------------------------------------------------------------
 @app.post("/api/v1/rerank")
-async def rerank(request: Request) -> dict[str, Any]:
-    try:
-        body = await request.json()
-        query = body.get("query", "")
-        passages = body.get("passages", [])
-        if not query or not passages:
-            raise ValidationError("query and passages are required")
-        loop = asyncio.get_running_loop()
-        results = await loop.run_in_executor(
-            None, lambda: qwen3_rerank.rerank(query, passages)
-        )
-        set_model_status("reranker", "ready")
-        return {"results": [{"index": i, "score": s} for i, s in results]}
-    except (ValidationError, ModelNotAvailableError):
-        raise
-    except Exception as e:
-        set_model_status("reranker", "error")
-        raise ModelNotAvailableError(str(e))
+@with_model_status("reranker")
+async def rerank(request: Request, body: dict) -> dict[str, Any]:
+    query = body.get("query", "")
+    passages = body.get("passages", [])
+    if not query or not passages:
+        raise ValidationError("query and passages are required")
+    loop = asyncio.get_running_loop()
+    results = await loop.run_in_executor(
+        None, lambda: qwen3_rerank.rerank(query, passages)
+    )
+    return {"results": [{"index": i, "score": s} for i, s in results]}
 
 
 # ---------------------------------------------------------------------------
 # MolDet
 # ---------------------------------------------------------------------------
 @app.post("/api/v1/moldet/detect-page")
-async def detect_page(request: Request) -> dict[str, Any]:
-    try:
-        body = await request.json()
-        image_base64 = body.get("image_base64", "")
-        if not image_base64:
-            raise ValidationError("image_base64 is required")
-        image = decode_base64_image(image_base64)
-        pipeline = moldet.get_moldet()
-        if pipeline is None or not pipeline.is_available():
-            raise ModelNotAvailableError("MolDet pipeline not available")
-        loop = asyncio.get_running_loop()
-        boxes = await loop.run_in_executor(None, lambda: pipeline.doc_detector.detect(image))
-        set_model_status("moldet", "ready")
-        return {
-            "boxes": [{"x1": x1, "y1": y1, "x2": x2, "y2": y2, "conf": conf} for x1, y1, x2, y2, conf in boxes],
-            "count": len(boxes),
-        }
-    except (ValidationError, ModelNotAvailableError):
-        raise
-    except Exception as e:
-        set_model_status("moldet", "error")
-        raise ModelNotAvailableError(str(e))
+@with_model_status("moldet")
+async def detect_page(request: Request, body: dict) -> dict[str, Any]:
+    image_base64 = body.get("image_base64", "")
+    if not image_base64:
+        raise ValidationError("image_base64 is required")
+    image = decode_base64_image(image_base64)
+    pipeline = moldet.get_moldet()
+    if pipeline is None or not pipeline.is_available():
+        raise ModelNotAvailableError("MolDet pipeline not available")
+    loop = asyncio.get_running_loop()
+    boxes = await loop.run_in_executor(None, lambda: pipeline.doc_detector.detect(image))
+    return {
+        "boxes": [{"x1": x1, "y1": y1, "x2": x2, "y2": y2, "conf": conf} for x1, y1, x2, y2, conf in boxes],
+        "count": len(boxes),
+    }
 
 
 @app.post("/api/v1/moldet/detect-batch")
-async def detect_batch(request: Request) -> dict[str, Any]:
-    """批量检测多页图像中的分子 bbox.
-
-    请求体：
-        - image_base64_list: base64 编码的图像列表
-
-    返回：
-        - results: 每页的检测结果列表，每项包含 page_index、boxes、count
-        - total: 输入图像总数
-    """
-    try:
-        body = await request.json()
-        image_base64_list = body.get("image_base64_list", [])
-        if not isinstance(image_base64_list, list) or not image_base64_list:
-            raise ValidationError("image_base64_list must be a non-empty list")
-        images = [decode_base64_image(b64) for b64 in image_base64_list]
-        pipeline = moldet.get_moldet()
-        if pipeline is None or not pipeline.is_available():
-            raise ModelNotAvailableError("MolDet pipeline not available")
-        loop = asyncio.get_running_loop()
-        batch_boxes = await loop.run_in_executor(
-            None, lambda: pipeline.doc_detector.detect_batch(images)
-        )
-        set_model_status("moldet", "ready")
-        return {
-            "results": [
-                {
-                    "page_index": i,
-                    "boxes": [
-                        {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "conf": conf}
-                        for x1, y1, x2, y2, conf in boxes
-                    ],
-                    "count": len(boxes),
-                }
-                for i, boxes in enumerate(batch_boxes)
-            ],
-            "total": len(batch_boxes),
-        }
-    except (ValidationError, ModelNotAvailableError):
-        raise
-    except Exception as e:
-        set_model_status("moldet", "error")
-        raise ModelNotAvailableError(str(e))
+@with_model_status("moldet")
+async def detect_batch(request: Request, body: dict) -> dict[str, Any]:
+    """批量检测多页图像中的分子 bbox."""
+    image_base64_list = body.get("image_base64_list", [])
+    if not isinstance(image_base64_list, list) or not image_base64_list:
+        raise ValidationError("image_base64_list must be a non-empty list")
+    images = [decode_base64_image(b64) for b64 in image_base64_list]
+    pipeline = moldet.get_moldet()
+    if pipeline is None or not pipeline.is_available():
+        raise ModelNotAvailableError("MolDet pipeline not available")
+    loop = asyncio.get_running_loop()
+    batch_boxes = await loop.run_in_executor(
+        None, lambda: pipeline.doc_detector.detect_batch(images)
+    )
+    return {
+        "results": [
+            {
+                "page_index": i,
+                "boxes": [
+                    {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "conf": conf}
+                    for x1, y1, x2, y2, conf in boxes
+                ],
+                "count": len(boxes),
+            }
+            for i, boxes in enumerate(batch_boxes)
+        ],
+        "total": len(batch_boxes),
+    }
 
 
 @app.post("/api/v1/moldet/extract-page")
@@ -329,16 +329,60 @@ async def extract_page(request: Request) -> dict[str, Any]:
         image_w = body.get("image_w", 0)
         image_h = body.get("image_h", 0)
         dpi = body.get("dpi", 300.0)
+        use_coref = body.get("use_coref", True)
+
         if image_w == 0 or image_h == 0:
             raise ValidationError("image_w and image_h are required")
+
         image = decode_base64_image(image_base64)
         pipeline = moldet.get_moldet()
         if pipeline is None or not pipeline.is_available():
             raise ModelNotAvailableError("MolDet pipeline not available")
+
         loop = asyncio.get_running_loop()
+
+        # 1. 基础检测
         results = await loop.run_in_executor(
             None, lambda: pipeline.extract_page(image, page_idx, page_w_pts, page_h_pts, image_w, image_h, dpi)
         )
+
+        # 2. Coref 增强（可选）
+        if use_coref and results:
+            try:
+                coref_backend = moldet_coref.get_coref()
+                if coref_backend and coref_backend.is_available():
+                    # 提取 MolDet 检测到的 bbox
+                    mol_bboxes = []
+                    for r in results:
+                        if r.bbox_pdf:
+                            # 转换为归一化坐标（coref 需要）
+                            x1, y1, x2, y2 = r.bbox_pdf
+                            # bbox_pdf 是 PDF 坐标（左下原点），需要转换
+                            # 这里传入原始 bbox，由 coref_to_molecules 处理
+                            mol_bboxes.append({
+                                "x1": x1, "y1": y1, "x2": x2, "y2": y2
+                            })
+
+                    # 并行执行 coref 检测
+                    coref_result = await loop.run_in_executor(
+                        None,
+                        lambda: coref_backend.detect_coref_with_mapping(
+                            image,
+                            mol_bboxes=mol_bboxes,
+                        )
+                    )
+
+                    # 用 coref 结果增强 context_text
+                    if coref_result and "corefs" in coref_result:
+                        _enrich_results_with_coref(results, coref_result)
+                        logger.debug(
+                            "[extract-page] Coref enriched %d molecules",
+                            len(coref_result.get("corefs", []))
+                        )
+            except Exception as e:
+                # Coref 失败不影响基础检测结果
+                logger.warning("[extract-page] Coref enrichment failed: %s", e)
+
         set_model_status("moldet", "ready")
         return {"results": [r.to_dict() for r in results], "count": len(results)}
     except (ValidationError, ModelNotAvailableError):
@@ -348,60 +392,75 @@ async def extract_page(request: Request) -> dict[str, Any]:
         raise ModelNotAvailableError(str(e))
 
 
+def _enrich_results_with_coref(
+    results: list,
+    coref_result: dict,
+) -> None:
+    """用 coref 结果增强 ExtractionResult 的 context_text。
+
+    Args:
+        results: ExtractionResult 列表
+        coref_result: coref 检测结果
+    """
+    if not coref_result or "corefs" not in coref_result:
+        return
+
+    # 构建 mol_idx → idt_bbox 映射
+    mol_idt_map: dict[int, list[dict]] = {}
+    for coref in coref_result.get("corefs", []):
+        mol_idx = coref.get("mol_idx")
+        idt_bbox = coref.get("idt_bbox")
+        if mol_idx is not None and idt_bbox is not None:
+            if mol_idx not in mol_idt_map:
+                mol_idt_map[mol_idx] = []
+            mol_idt_map[mol_idx].append(idt_bbox)
+
+    # 增强每个 molecule 的 context_text
+    for i, result in enumerate(results):
+        if i in mol_idt_map and mol_idt_map[i]:
+            # 使用 idt_bbox 的位置信息作为 context 提示
+            idt_bboxes = mol_idt_map[i]
+            if len(idt_bboxes) == 1:
+                result.context_text = f"关联标号位置: {idt_bboxes[0]}"
+            else:
+                result.context_text = f"关联 {len(idt_bboxes)} 个标号位置"
+
+
 # ---------------------------------------------------------------------------
 # MolDetect Coref
 # ---------------------------------------------------------------------------
 @app.post("/api/v1/moldet/coref")
-async def detect_coref(request: Request) -> dict[str, Any]:
-    """检测分子和标识符的共指关系.
+@with_model_status("moldet_coref")
+async def detect_coref(request: Request, body: dict) -> dict[str, Any]:
+    """检测分子和标识符的共指关系."""
+    image_base64 = body.get("image_base64", "")
+    if not image_base64:
+        raise ValidationError("image_base64 is required")
+    mol_bboxes = body.get("mol_bboxes", [])
 
-    请求体：
-        - image_base64: base64 编码的图像
-        - mol_bboxes: MolDetv2 检测到的分子 bbox 列表（可选）
-          格式: [{"x1": 100, "y1": 200, "x2": 300, "y2": 400}, ...]
+    image = decode_base64_image(image_base64)
+    backend = moldet_coref.get_coref()
+    if backend is None or not backend.is_available():
+        raise ModelNotAvailableError("MolDetect coref backend not available")
 
-    响应：
-        - corefs: 共指对列表 [{mol_idx, idt_bbox}, ...]
-          mol_idx: 对应输入 mol_bboxes 的索引
-          idt_bbox: 标识符的归一化坐标
-    """
-    try:
-        body = await request.json()
-        image_base64 = body.get("image_base64", "")
-        if not image_base64:
-            raise ValidationError("image_base64 is required")
-        mol_bboxes = body.get("mol_bboxes", [])
-
-        image = decode_base64_image(image_base64)
-        backend = moldet_coref.get_coref()
-        if backend is None or not backend.is_available():
-            raise ModelNotAvailableError("MolDetect coref backend not available")
-
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: backend.detect_coref_with_mapping(
-                image,
-                mol_bboxes=mol_bboxes,
-            ),
-        )
-        set_model_status("moldet_coref", "ready")
-        return result
-    except (ValidationError, ModelNotAvailableError):
-        raise
-    except Exception as e:
-        set_model_status("moldet_coref", "error")
-        raise ModelNotAvailableError(str(e))
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        None,
+        lambda: backend.detect_coref_with_mapping(
+            image,
+            mol_bboxes=mol_bboxes,
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
 # MolScribe
 # ---------------------------------------------------------------------------
 @app.post("/api/v1/molscribe")
-async def molscribe_predict(request: Request) -> dict[str, Any]:
+@with_model_status("molscribe")
+async def molscribe_predict(request: Request, body: dict) -> dict[str, Any]:
     tmp_path = None
     try:
-        body = await request.json()
         image_base64 = body.get("image_base64", "")
         if not image_base64:
             raise ValidationError("image_base64 is required")
@@ -411,20 +470,136 @@ async def molscribe_predict(request: Request) -> dict[str, Any]:
         image = Image.open(tmp_path)
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(None, lambda: molscribe.predict(image))
-        if not result.success:
-            raise ModelNotAvailableError(f"MolScribe not available: {result.error}")
+        if not result.esmiles:
+            err_msg = result.properties.get("error", "unknown error")
+            raise ModelNotAvailableError(f"MolScribe not available: {err_msg}")
         return {
             "esmiles": result.esmiles,
-            "confidence": result.confidence,
-            "success": bool(result.esmiles),
+            "confidence": result.scribe_conf,
+            "success": True,
         }
-    except (ValidationError, ModelNotAvailableError):
-        raise
-    except Exception as e:
-        raise ModelNotAvailableError(str(e))
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# 模型测试端点：实际加载模型到内存并做最小推理，验证文件路径 + 权重有效
+# ---------------------------------------------------------------------------
+def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
+    """同步部分：在 executor 里跑。返回 ok/error + 错误详情。
+
+    每个后端跑最小真实推理（不仅是 load()）：
+    - embedding  : encode 1 个字符串，检查输出是 (1, dim) 向量
+    - reranker   : rerank 1 query + 1 passage，检查返回 [(idx, score), ...]
+    - molscribe  : 384x384 灰图预测，检查 esmiles 是 str
+    - moldet     : 与 input_size 匹配的灰图检测，检查返回 list
+    - moldet_coref: 480x480 灰图检测，检查返回 dict
+    """
+    import time
+
+    import numpy as np
+    start = time.perf_counter()
+    try:
+        rid = resource_id
+
+        if rid == "embedding":
+            qwen3_embed.load()
+            if qwen3_embed._MODEL is None:
+                return {"ok": False, "error": qwen3_embed._ERROR or "未加载到内存"}
+            vecs = qwen3_embed.embed(["test"])
+            if not isinstance(vecs, list) or len(vecs) != 1 or not isinstance(vecs[0], list) or len(vecs[0]) == 0:
+                return {"ok": False, "error": f"embed 输出异常: shape={getattr(vecs, 'shape', len(vecs) if hasattr(vecs, '__len__') else type(vecs).__name__)}"}
+
+        elif rid == "reranker":
+            qwen3_rerank.load()
+            if qwen3_rerank._MODEL is None:
+                return {"ok": False, "error": qwen3_rerank._ERROR or "未加载到内存"}
+            results = qwen3_rerank.rerank("test query", ["test passage"])
+            if not isinstance(results, list) or len(results) != 1:
+                return {"ok": False, "error": f"rerank 输出异常: {results}"}
+
+        elif rid == "molscribe":
+            molscribe.load()
+            if not molscribe._AVAILABLE:
+                return {"ok": False, "error": molscribe._ERROR or "未就绪"}
+            from PIL import Image
+            # MolScribe input_size 默认 384（从 checkpoint 读取，构造时已存到 args）
+            input_size = getattr(molscribe._MODEL, "input_size", 384) or 384
+            img = Image.new("RGB", (input_size, input_size), color=0)
+            result = molscribe.predict(img)
+            if result is None or not getattr(result, "success", False):
+                err = getattr(result, "error", None) if result else "predict 返回 None"
+                return {"ok": False, "error": f"molscribe 推理失败: {err}"}
+
+        elif rid == "moldet":
+            from mbforge.core.resource_manager import ResourceManager
+            path = ResourceManager.resolve_model_for_backend(
+                "moldet", subpath=subpath
+            )
+            if path is None:
+                return {"ok": False, "error": f"模型文件未找到 (subpath={subpath})"}
+            from mbforge.backends.moldet import (
+                MolDetv2DocDetector,
+                MolDetv2GeneralDetector,
+            )
+            is_doc = bool(subpath and subpath.startswith("doc"))
+            if is_doc:
+                det = MolDetv2DocDetector(model_path=path)
+                size = (960, 960)
+            else:
+                det = MolDetv2GeneralDetector(model_path=path)
+                size = (640, 640)
+            if not det.is_available():
+                return {"ok": False, "error": f"YOLO 加载失败: {det.model_path}"}
+            # 真实推理：与 input_size 匹配的全黑图
+            img = np.zeros((*size, 3), dtype=np.uint8)
+            boxes = det.detect(img)
+            if not isinstance(boxes, list):
+                return {"ok": False, "error": f"YOLO detect 返回非列表: {type(boxes).__name__}"}
+
+        elif rid == "moldet_coref":
+            from mbforge.core.resource_manager import ResourceManager
+            path = ResourceManager.resolve_model_for_backend("moldet_coref")
+            if path is None:
+                return {"ok": False, "error": "模型文件未找到"}
+            from mbforge.backends.moldet_coref import MolDetectCorefBackend
+            backend = MolDetectCorefBackend(model_path=str(path))
+            if not backend.is_available():
+                return {"ok": False, "error": "coref 加载失败"}
+            from PIL import Image
+            img = Image.new("RGB", (480, 480), color=0)
+            result = backend.detect_coref_with_mapping(img, mol_bboxes=[])
+            if not isinstance(result, dict):
+                return {"ok": False, "error": f"coref 输出非 dict: {type(result).__name__}"}
+
+        else:
+            return {"ok": False, "error": f"未知资源: {rid}"}
+    except Exception as e:
+        logger.warning(f"Test {resource_id} failed: {e}", exc_info=True)
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    return {"ok": True, "error": "", "duration_ms": duration_ms}
+
+
+@app.post("/api/v1/test/model")
+async def test_model(request: Request) -> dict[str, Any]:
+    """测试单个模型是否能正常加载。返回 {ok, error, duration_ms}."""
+    try:
+        body = await request.json()
+        resource_id = body.get("resource_id", "")
+        subpath = body.get("subpath")
+        if not resource_id:
+            raise ValidationError("resource_id is required")
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, lambda: _test_loading_sync(resource_id, subpath))
+        return result
+    except ValidationError:
+        raise
+    except Exception as e:
+        logger.error(f"test_model failed: {e}", exc_info=True)
+        return {"ok": False, "error": str(e), "duration_ms": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +610,7 @@ _model_status = {
     "reranker": "loading",
     "moldet": "loading",
     "moldet_coref": "loading",
+    "molscribe": "loading",
 }
 _resource_cache: dict[str, str] = {}
 _resource_cache_time: float = 0.0
@@ -554,7 +730,7 @@ async def health_check() -> dict[str, Any]:
 class _CapabilityStatus(BaseModel):
     name: str
     available: bool
-    version: Optional[str] = None
+    version: str | None = None
     description: str
     category: str
 
@@ -562,13 +738,13 @@ class _CapabilityStatus(BaseModel):
 class _EnvironmentCheckResult(BaseModel):
     python_version: str
     gpu_available: bool
-    gpu_name: Optional[str] = None
-    gpu_memory_mb: Optional[int] = None
-    cuda_version: Optional[str] = None
+    gpu_name: str | None = None
+    gpu_memory_mb: int | None = None
+    cuda_version: str | None = None
     capabilities: list[_CapabilityStatus]
 
 
-def _check_package(pkg_name: str) -> tuple[bool, Optional[str]]:
+def _check_package(pkg_name: str) -> tuple[bool, str | None]:
     try:
         m = importlib.import_module(pkg_name)
         ver = getattr(m, "__version__", None)

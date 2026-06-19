@@ -33,7 +33,7 @@ pub trait ExtractProgressReporter: Send + Sync {
 }
 
 /// 将提取的图片持久化到项目 reports/figures/<doc>/ 下
-fn persist_extracted_images(
+pub fn persist_extracted_images(
     path: &str,
     extracted: &[crate::parsers::pdf::images::ExtractedImage],
 ) -> Vec<ImageRef> {
@@ -277,14 +277,22 @@ pub async fn classify_and_extract_with_progress(
 
     // 提取嵌入图片并持久化到项目目录 (sync + I/O → spawn_blocking)
     let path_owned2 = path.to_owned();
-    let extracted = tokio::task::spawn_blocking(move || -> Vec<crate::parsers::pdf::images::ExtractedImage> {
-        let tmp = match tempfile::tempdir() {
-            Ok(t) => t,
-            Err(_) => return vec![],
-        };
-        crate::parsers::pdf::images::extract_images_from_pdf(&path_owned2, tmp.path(), 50, 5)
-            .unwrap_or_default()
-    })
+    let (extracted, _tmp) = tokio::task::spawn_blocking(
+        move || -> (Vec<crate::parsers::pdf::images::ExtractedImage>, tempfile::TempDir) {
+            let tmp = match tempfile::tempdir() {
+                Ok(t) => t,
+                Err(_) => return (vec![], tempfile::tempdir().unwrap()),
+            };
+            let images = crate::parsers::pdf::images::extract_images_from_pdf(
+                &path_owned2,
+                tmp.path(),
+                50,
+                5,
+            )
+            .unwrap_or_default();
+            (images, tmp)
+        },
+    )
     .await
     .map_err(|e| format!("image extraction join error: {e}"))?;
     let images = persist_extracted_images(path, &extracted);

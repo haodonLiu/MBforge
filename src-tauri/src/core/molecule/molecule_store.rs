@@ -835,20 +835,25 @@ impl MoleculeDatabase {
 
     /// Delete a molecule by ID.
     pub fn delete_molecule(&self, mol_id: &str) -> Result<bool, String> {
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Failed to begin transaction: {}", e))?;
         // 先清理关联图片
-        let _ = self.conn.execute(
+        let _ = tx.execute(
             "DELETE FROM molecule_images WHERE mol_id = ?1",
             params![mol_id],
         );
         // 先清理 FTS 条目
-        let _ = self.conn.execute(
+        let _ = tx.execute(
             "DELETE FROM mol_search WHERE rowid IN (SELECT rowid FROM molecules WHERE mol_id = ?1)",
             params![mol_id],
         );
-        let affected = self
-            .conn
+        let affected = tx
             .execute("DELETE FROM molecules WHERE mol_id = ?", params![mol_id])
             .map_err(|e| format!("Failed to delete molecule: {}", e))?;
+        tx.commit()
+            .map_err(|e| format!("Failed to commit delete transaction: {}", e))?;
         Ok(affected > 0)
     }
 
@@ -1014,8 +1019,13 @@ impl MoleculeDatabase {
             .as_ref()
             .map(|v| serde_json::to_string(v).unwrap_or_else(|_| "{}".to_string()));
         let esmiles_str = record.esmiles.as_deref().unwrap_or("");
-        let affected = self
+
+        let tx = self
             .conn
+            .unchecked_transaction()
+            .map_err(|e| format!("Failed to begin transaction: {}", e))?;
+
+        let affected = tx
             .execute(
                 "UPDATE molecules SET
                     smiles = ?1,
@@ -1056,16 +1066,18 @@ impl MoleculeDatabase {
         }
 
         // 同步 FTS5 索引 (mol_search)
-        let _ = self.conn.execute(
+        let _ = tx.execute(
             "DELETE FROM mol_search WHERE rowid = (SELECT rowid FROM molecules WHERE mol_id = ?1)",
             params![record.mol_id],
         );
-        let _ = self.conn.execute(
+        let _ = tx.execute(
             "INSERT INTO mol_search(rowid, name, notes, smiles)
              SELECT rowid, name, notes, smiles FROM molecules WHERE mol_id = ?1",
             params![record.mol_id],
         );
 
+        tx.commit()
+            .map_err(|e| format!("Failed to commit update transaction: {}", e))?;
         Ok(true)
     }
 

@@ -116,6 +116,10 @@ pub fn build_sections(
         };
 
         // 提取 section 文本
+        if start_line >= end_line {
+            // skip empty section (duplicate heading line_num)
+            continue;
+        }
         let section_text: String = lines[start_line..end_line].join("\n");
 
         // 更新 path stack

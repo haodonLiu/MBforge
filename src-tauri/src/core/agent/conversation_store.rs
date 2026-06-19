@@ -42,7 +42,7 @@ use rusqlite::{params, Connection};
 use tokio::sync::Mutex;
 
 use rig_core::memory::{ConversationMemory, MemoryError};
-use rig_core::message::{AssistantContent, Message, UserContent};
+use rig_core::message::{AssistantContent, Message, UserContent, ToolResultContent};
 use rig_core::wasm_compat::WasmBoxedFuture;
 
 /// A row in `conversation_messages` returned to the frontend by
@@ -111,7 +111,12 @@ impl SqliteConversationMemory {
                 ON conversation_messages(cid, evicted, seq);
             "#,
         )
-        .map_err(|e| format!("bootstrap schema: {e}"))
+        .map_err(|e| format!("bootstrap schema: {e}"))?;
+        // migration v2: add msg_type column for structured tool call/result storage
+        let _ = conn.execute_batch(
+            "ALTER TABLE conversation_messages ADD COLUMN msg_type TEXT NOT NULL DEFAULT 'text';",
+        );
+        Ok(())
     }
 
     /// Load all non-evicted messages for `cid` in chronological order.
@@ -125,7 +130,7 @@ impl SqliteConversationMemory {
         let conn = self.conn.lock().await;
         let mut stmt = conn
             .prepare(
-                "SELECT seq, role, content, is_summary FROM conversation_messages \
+                "SELECT seq, role, content, msg_type, is_summary FROM conversation_messages \
                  WHERE cid = ?1 AND evicted = 0 \
                  ORDER BY seq ASC",
             )
@@ -135,13 +140,14 @@ impl SqliteConversationMemory {
                 let seq: i64 = row.get(0)?;
                 let role: String = row.get(1)?;
                 let content: String = row.get(2)?;
-                let is_summary: i64 = row.get(3)?;
-                Ok((seq, role, content, is_summary))
+                let msg_type: String = row.get(3)?;
+                let is_summary: i64 = row.get(4)?;
+                Ok((seq, role, content, msg_type, is_summary))
             })
             .map_err(|e| format!("query load_active: {e}"))?;
         let mut out = Vec::new();
         for row in rows {
-            let (_, role, content, is_summary) =
+            let (_, role, content, msg_type, is_summary) =
                 row.map_err(|e| format!("row load_active: {e}"))?;
             if is_summary == 1 {
                 // The compactor writes a single system message at the
@@ -155,11 +161,36 @@ impl SqliteConversationMemory {
                     content
                 )));
             } else {
-                out.push(match role.as_str() {
-                    "system" => Message::system(content),
-                    "assistant" => Message::assistant(content),
-                    _ => Message::user(content),
-                });
+                match msg_type.as_str() {
+                    "tool_call" => {
+                        // content is JSON: {"id":"...","name":"...","arguments":{...}}
+                        if let Ok(tc) = serde_json::from_str::<serde_json::Value>(&content) {
+                            let id = tc["id"].as_str().unwrap_or("unknown").to_string();
+                            let name = tc["name"].as_str().unwrap_or("unknown").to_string();
+                            let args = tc.get("arguments").cloned().unwrap_or(serde_json::Value::Null);
+                            out.push(Message::from(AssistantContent::tool_call(id, name, args)));
+                        } else {
+                            out.push(Message::assistant(format!("[tool_call] {}", content)));
+                        }
+                    }
+                    "tool_result" => {
+                        // content is JSON: {"id":"...","call_id":"...","text":"..."}
+                        if let Ok(tr) = serde_json::from_str::<serde_json::Value>(&content) {
+                            let id = tr["id"].as_str().unwrap_or("unknown").to_string();
+                            let text = tr["text"].as_str().unwrap_or("").to_string();
+                            out.push(Message::tool_result(id, text));
+                        } else {
+                            out.push(Message::user(format!("[tool_result] {}", content)));
+                        }
+                    }
+                    _ => {
+                        out.push(match role.as_str() {
+                            "system" => Message::system(content),
+                            "assistant" => Message::assistant(content),
+                            _ => Message::user(content),
+                        });
+                    }
+                }
             }
         }
         Ok(out)
@@ -177,18 +208,13 @@ impl SqliteConversationMemory {
             .map_err(|e| format!("tx: {e}"))?;
         let now = crate::core::helpers::now_rfc3339();
         for m in msgs {
-            let role = match m {
-                Message::System { .. } => "system",
-                Message::User { .. } => "user",
-                Message::Assistant { .. } => "assistant",
-            };
-            let content = text_of(m);
+            let (role, content, msg_type) = message_to_row(m);
             tx.execute(
-                "INSERT INTO conversation_messages (cid, seq, role, content, evicted, is_summary, created_at) \
+                "INSERT INTO conversation_messages (cid, seq, role, content, msg_type, evicted, is_summary, created_at) \
                  VALUES (?1, \
                          COALESCE((SELECT MAX(seq) FROM conversation_messages WHERE cid = ?1), -1) + 1, \
-                         ?2, ?3, 0, 0, ?4)",
-                params![cid, role, content, now],
+                         ?2, ?3, ?4, 0, 0, ?5)",
+                params![cid, role, content, msg_type, now],
             )
             .map_err(|e| format!("insert append: {e}"))?;
         }
@@ -256,8 +282,8 @@ impl SqliteConversationMemory {
         let rows: Vec<(String, String)> = stmt
             .query_map(params![cid, count], |row| Ok((row.get(0)?, row.get(1)?)))
             .map_err(|e| format!("query mark_evicted: {e}"))?
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("read evicted row failed: {e}"))?;
         // Now actually evict the same N rows by seq. We do it in a
         // second statement so the snapshot above is consistent.
         conn.execute(
@@ -291,30 +317,35 @@ impl SqliteConversationMemory {
         summary: &str,
         evict_before: i64,
     ) -> Result<(), String> {
-        let conn = self.conn.lock().await;
+        let mut conn = self.conn.lock().await;
         let now = crate::core::helpers::now_rfc3339();
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("begin transaction for compaction: {e}"))?;
         // Evict old rows first (no-op if the compactor already marked
         // them via mark_evicted).
-        conn.execute(
+        tx.execute(
             "UPDATE conversation_messages SET evicted = 1 \
              WHERE cid = ?1 AND seq < ?2",
             params![cid, evict_before],
         )
         .map_err(|e| format!("evict for compaction: {e}"))?;
         // Delete any prior summary row — the new one replaces it.
-        conn.execute(
+        tx.execute(
             "DELETE FROM conversation_messages WHERE cid = ?1 AND is_summary = 1",
             params![cid],
         )
         .map_err(|e| format!("delete prior summary: {e}"))?;
         // Insert the new summary with `seq = -1` (sentinel that sorts
         // before any real message) and `is_summary = 1`.
-        conn.execute(
+        tx.execute(
             "INSERT INTO conversation_messages (cid, seq, role, content, evicted, is_summary, created_at) \
              VALUES (?1, -1, 'user', ?2, 0, 1, ?3)",
             params![cid, summary, now],
         )
         .map_err(|e| format!("insert summary: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("commit compaction transaction: {e}"))?;
         Ok(())
     }
 
@@ -346,6 +377,57 @@ impl SqliteConversationMemory {
     pub fn db_path(&self) -> PathBuf {
         self.project_root.join(".mbforge").join("conversations.db")
     }
+}
+
+/// Convert a rig `Message` to (role, content, msg_type) for SQLite storage.
+/// Tool calls and results are serialized as JSON with their type marker
+/// so they can be faithfully reconstructed on load.
+fn message_to_row(m: &Message) -> (&str, String, &str) {
+    match m {
+        Message::Assistant { content, .. } => {
+            if let AssistantContent::ToolCall(tc) = content.first_ref() {
+                let json = serde_json::json!({
+                    "id": tc.id,
+                    "name": tc.function.name,
+                    "arguments": tc.function.arguments,
+                });
+                ("assistant", json.to_string(), "tool_call")
+            } else {
+                ("assistant", text_of(m), "text")
+            }
+        }
+        Message::User { content } if has_tool_result(content) => {
+            // Take the first text block from the first tool result
+            for c in content.iter() {
+                if let UserContent::ToolResult(tr) = c {
+                    let result_text = match tr.content.first_ref() {
+                        ToolResultContent::Text(t) => t.text.clone(),
+                        _ => String::new(),
+                    };
+                    let json = serde_json::json!({
+                        "id": tr.id,
+                        "call_id": tr.call_id,
+                        "text": result_text,
+                    });
+                    return ("user", json.to_string(), "tool_result");
+                }
+            }
+            ("user", text_of(m), "text")
+        }
+        _ => {
+            let role = match m {
+                Message::System { .. } => "system",
+                Message::User { .. } => "user",
+                Message::Assistant { .. } => "assistant",
+            };
+            (role, text_of(m), "text")
+        }
+    }
+}
+
+/// Check if a user message contains any tool result.
+fn has_tool_result(content: &rig_core::OneOrMany<UserContent>) -> bool {
+    content.iter().any(|c| matches!(c, UserContent::ToolResult(_)))
 }
 
 /// Extract the first text block from a rig `Message`. Falls back to

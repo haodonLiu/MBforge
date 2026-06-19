@@ -350,15 +350,22 @@ impl MoleculeRelationDb {
     }
 
     fn row_to_relation(&self, row: &Row) -> Result<MoleculeRelation, String> {
-        let rel_type_str: String = row.get(3).unwrap_or_default();
+        let rel_type_str: String = row
+            .get::<_, String>(3)
+            .map_err(|e| format!("Invalid relation_type in DB: {}", e))?;
         let metadata_str: Option<String> = row.get(5).ok();
         let metadata: Option<JsonValue> = metadata_str.and_then(|s| serde_json::from_str(&s).ok());
+
+        let relation_type =
+            RelationType::from_str(&rel_type_str).ok_or_else(|| {
+                format!("Unknown relation_type '{}' in database", rel_type_str)
+            })?;
 
         Ok(MoleculeRelation {
             id: row.get(0).ok(),
             mol_a_id: row.get(1).unwrap_or_default(),
             mol_b_id: row.get(2).unwrap_or_default(),
-            relation_type: RelationType::from_str(&rel_type_str).unwrap_or(RelationType::Similar),
+            relation_type,
             score: row.get(4).ok(),
             metadata,
             created_at: row.get(6).unwrap_or_default(),

@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use super::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationType};
+use chematic_smiles::{canonical_smiles, parse};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DedupPair {
@@ -21,11 +22,17 @@ pub struct DedupResult {
 }
 
 pub fn canonicalize_esmiles(esmiles: &str) -> String {
-    let trimmed = esmiles.trim().to_string();
+    let trimmed = esmiles.trim();
     if trimmed.is_empty() {
         return String::new();
     }
-    trimmed
+    // 先取 <sep> 前的纯 SMILES 部分（处理 E-SMILES 格式）
+    let smiles_part = trimmed.split("<sep>").next().unwrap_or(trimmed);
+    // 化学规范化：解析 → canonical，失败时回退到 trim 后的原始值
+    match parse(smiles_part) {
+        Ok(mol) => canonical_smiles(&mol),
+        Err(_) => smiles_part.to_string(),
+    }
 }
 
 pub async fn run_dedup_batch(

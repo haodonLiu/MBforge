@@ -140,26 +140,41 @@ pub fn embed_base_url() -> String {
     format!("{}/v1", sidecar_url())
 }
 
+/// 展开前导 `~` 或 `~/` 到用户主目录。其余形式（含 `~name` 指向其他用户）原样返回。
+/// Windows 上 `~` 不是 shell 展开的字符，必须在代码里显式处理。
+fn expand_tilde(path: &str) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
+        if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf()) {
+            return home.join(rest);
+        }
+    } else if path == "~" {
+        if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf()) {
+            return home;
+        }
+    }
+    PathBuf::from(path)
+}
+
 pub fn model_cache_dir() -> PathBuf {
     // 1. 环境变量（最高优先级）
     if let Ok(dir) = std::env::var("MBFORGE_MODEL_CACHE_DIR") {
-        return PathBuf::from(dir);
+        return expand_tilde(&dir);
     }
     // 2. 用户配置（设置页面配置的路径）
     if let Ok(config) = std::fs::read_to_string(global_config_dir().join("config.json")) {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&config) {
             if let Some(dir) = val.get("model_cache_dir").and_then(|v| v.as_str()) {
                 if !dir.is_empty() {
-                    return PathBuf::from(dir);
+                    return expand_tilde(dir);
                 }
             }
         }
     }
     // 3. 默认路径
     if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf()) {
-        return home.join(".cache").join("mbforge").join("models");
+        return home.join("mbforge").join("models");
     }
-    PathBuf::from(".cache/mbforge/models")
+    PathBuf::from("mbforge/models")
 }
 
 pub fn global_config_dir() -> PathBuf {

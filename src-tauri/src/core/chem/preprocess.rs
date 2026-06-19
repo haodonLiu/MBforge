@@ -349,4 +349,89 @@ mod tests {
         assert!(preprocess_smiles("").is_err());
         assert!(preprocess_smiles("C C").is_err());
     }
+
+    // ── preprocess_rgroup_name ───────────────────────────────────
+
+    #[test]
+    fn test_rgroup_name_ok() {
+        assert_eq!(preprocess_rgroup_name("R[1]").unwrap(), "R1");
+        assert_eq!(preprocess_rgroup_name("boc").unwrap(), "Boc");
+    }
+
+    #[test]
+    fn test_rgroup_name_empty() {
+        assert!(matches!(
+            preprocess_rgroup_name(""),
+            Err(PreprocessError::Empty)
+        ));
+    }
+
+    #[test]
+    fn test_rgroup_name_too_long() {
+        let long = "R".repeat(1001);
+        assert!(matches!(
+            preprocess_rgroup_name(&long),
+            Err(PreprocessError::TooLong { len: 1001, max: 1000 })
+        ));
+    }
+
+    // ── preprocess() 管线组合 ────────────────────────────────────
+
+    #[test]
+    fn test_preprocess_validate_text_only() {
+        assert_eq!(
+            preprocess("CCO", &[PreprocessStep::ValidateText], 100).unwrap(),
+            "CCO"
+        );
+    }
+
+    #[test]
+    fn test_preprocess_validate_text_err() {
+        assert!(preprocess("", &[PreprocessStep::ValidateText], 100).is_err());
+    }
+
+    #[test]
+    fn test_preprocess_wildcard_only() {
+        assert_eq!(
+            preprocess("*c1ccccc1", &[PreprocessStep::NormalizeWildcards], 100).unwrap(),
+            "[*]c1ccccc1"
+        );
+    }
+
+    #[test]
+    fn test_preprocess_validate_then_wildcard() {
+        assert_eq!(
+            preprocess(
+                "*c1ccccc1",
+                &[PreprocessStep::ValidateText, PreprocessStep::NormalizeWildcards],
+                100,
+            )
+            .unwrap(),
+            "[*]c1ccccc1"
+        );
+    }
+
+    #[test]
+    fn test_preprocess_abbrev_only() {
+        assert_eq!(
+            preprocess("boc", &[PreprocessStep::NormalizeAbbrev], 100).unwrap(),
+            "Boc"
+        );
+    }
+
+    #[test]
+    fn test_preprocess_sanitize_only() {
+        assert_eq!(
+            preprocess("(E)-2-Butene", &[PreprocessStep::SanitizeIdentifier], 100).unwrap(),
+            "E2Butene"
+        );
+    }
+
+    #[test]
+    fn test_preprocess_empty_steps() {
+        assert_eq!(
+            preprocess("  hello  ", &[], 100).unwrap(),
+            "  hello  "
+        );
+    }
 }

@@ -122,7 +122,34 @@ pub fn clean_path(raw: &str) -> String {
 }
 
 /// Save data as JSON file (2-space indent).
+///
+/// Unchecked variant: caller is responsible for ensuring the path is safe.
+/// Prefer [`save_json_safe`] for any path that originates from user input
+/// or a project-relative location.
 pub fn save_json<T: serde::Serialize>(
+    path: &Path,
+    data: &T,
+) -> Result<(), Box<dyn std::error::Error>> {
+    write_json_to(path, data)
+}
+
+/// Save data as JSON file (2-space indent), verifying the path lies within
+/// `root` before any filesystem access.
+///
+/// Use this for any write to a project-relative location. Returns an error
+/// if `path` is absolute and outside `root`, or if the resolved path would
+/// escape `root` via `..` segments.
+pub fn save_json_safe<T: serde::Serialize>(
+    root: &str,
+    path: &Path,
+    data: &T,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let checked = assert_within_root_allow_missing(root, path)
+        .map_err(|e| format!("path safety: {}", e))?;
+    write_json_to(&checked, data)
+}
+
+fn write_json_to<T: serde::Serialize>(
     path: &Path,
     data: &T,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -160,7 +187,26 @@ pub fn available_space_bytes(path: &Path) -> Result<u64, Box<dyn std::error::Err
 }
 
 /// Load JSON file, returning default on error.
+///
+/// Unchecked variant: caller is responsible for ensuring the path is safe.
+/// Prefer [`load_json_safe`] for any path that originates from user input
+/// or a project-relative location.
 pub fn load_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
+    read_json_from(path)
+}
+
+/// Load JSON file from a project-relative path, verifying the resolved
+/// path lies within `root` before any filesystem access. Returns `None`
+/// if the path is outside `root` or the file is unreadable / malformed.
+pub fn load_json_safe<T: serde::de::DeserializeOwned>(
+    root: &str,
+    path: &Path,
+) -> Option<T> {
+    let checked = assert_within_root_allow_missing(root, path).ok()?;
+    read_json_from(&checked)
+}
+
+fn read_json_from<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
     let data = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&data).ok()
 }
@@ -245,6 +291,114 @@ pub fn assert_within_root(root: &str, target: &Path) -> Result<PathSafetyCheck, 
 pub fn safe_join(root: &Path, relative: &str) -> Result<PathBuf, String> {
     let target = root.join(relative);
     assert_within_root(root.to_string_lossy().as_ref(), &target).map(|c| c.canonical)
+}
+
+/// Path safety check that tolerates non-existent target paths.
+///
+/// Use this for write operations (the target may not exist yet) and for
+/// `save_json`/`load_json` callers that need to validate the *intended* path
+/// before the file is actually present on disk.
+///
+/// # Arguments
+/// * `root` - Project root directory (must exist and be canonicalizable)
+/// * `target` - Target path to check; absolute or relative to root
+///
+/// # Returns
+/// * `Ok(PathBuf)` - The resolved (lexical) path, which is guaranteed to lie
+///                   within the canonicalized root when normalized
+/// * `Err(String)` - The path escapes root or root itself cannot be resolved
+///
+/// # Why not just `assert_within_root`?
+/// `assert_within_root` calls `Path::canonicalize` on `target`, which fails
+/// for any non-existent path. Write operations inherently target paths that
+/// don't exist yet, so we resolve the root canonically and then normalize
+/// the target lexically — `..` and `.` segments are collapsed without
+/// touching the filesystem.
+pub fn assert_within_root_allow_missing(root: &str, target: &Path) -> Result<PathBuf, String> {
+    let canonical_root = Path::new(root)
+        .canonicalize()
+        .map_err(|e| format!("Root canonicalize error: {}", e))?;
+
+    // Resolve the target to an absolute path without touching the filesystem.
+    // If `target` is absolute, use it as-is; otherwise join with `root`.
+    // We avoid `Path::canonicalize` (which requires the path to exist) and
+    // instead use lexical normalization so write targets validate correctly.
+    let absolute = if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        Path::new(root).join(target)
+    };
+
+    // Lexical normalization: walk components, drop `.`, pop on `..` when
+    // safe. This does not cross symlinks, but neither did the previous
+    // `canonicalize` use of `target` for non-existent paths, so behavior
+    // matches `assert_within_root` for the only case where they overlap
+    // (when both root and target exist).
+    let normalized = lexical_normalize(&absolute);
+
+    // On Windows, `canonicalize` returns `\\?\C:\...` (extended-length path
+    // prefix). `normalized` does not have that prefix because we never went
+    // through `canonicalize`. Compare by stripping the `\\?\` prefix from the
+    // canonical root, which yields the canonical Win32 path that lexical
+    // normalization produces.
+    let root_for_compare = strip_unc_prefix(&canonical_root);
+    let target_for_compare = strip_unc_prefix(&normalized);
+
+    if !target_for_compare.starts_with(&root_for_compare) {
+        return Err(format!(
+            "Access denied: path '{}' escapes project root",
+            target.display()
+        ));
+    }
+
+    Ok(normalized)
+}
+
+/// Strip the Windows extended-length path prefix `\\?\` if present.
+fn strip_unc_prefix(p: &Path) -> PathBuf {
+    let s = p.as_os_str().to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        p.to_path_buf()
+    }
+}
+
+/// Normalize a path lexically (collapse `.` and `..`) without touching the
+/// filesystem. Returns a new `PathBuf`. Symlinks are NOT resolved.
+fn lexical_normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    let mut saw_prefix = false;
+    for comp in path.components() {
+        match comp {
+            Component::Prefix(p) => {
+                out.push(p.as_os_str());
+                saw_prefix = true;
+            }
+            Component::RootDir => {
+                if !saw_prefix {
+                    out.push(comp.as_os_str());
+                }
+            }
+            Component::CurDir => {} // skip "."
+            Component::ParentDir => {
+                // Only pop if the current stack has a real component to pop;
+                // never pop past a root, prefix, or the still-empty stack.
+                if let Some(last) = out.components().last() {
+                    if matches!(last, Component::Normal(_)) {
+                        out.pop();
+                    }
+                }
+            }
+            Component::Normal(c) => out.push(c),
+        }
+    }
+    if out.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        out
+    }
 }
 
 /// 统一 Mutex poison 处理：将 `unwrap_or_else(|e| e.into_inner())` 简化为 `.into_inner()`。
@@ -347,6 +501,84 @@ mod tests {
             result.is_err(),
             "Expected error for non-existent traversal path"
         );
+    }
+
+    #[test]
+    fn test_assert_within_root_allow_missing_within() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        // Target doesn't exist yet — write path
+        let target = root.join("subdir/new_file.json");
+        let result =
+            assert_within_root_allow_missing(root.to_string_lossy().as_ref(), &target);
+        assert!(result.is_ok(), "Expected Ok but got: {:?}", result);
+    }
+
+    #[test]
+    fn test_debug_lexical_normalize_windows() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        eprintln!("root (raw) = {:?}", root);
+        eprintln!("root (str) = {:?}", root.to_string_lossy());
+
+        let canonical_root = root.canonicalize().unwrap();
+        eprintln!("canonical_root = {:?}", canonical_root);
+        let stripped = strip_unc_prefix(&canonical_root);
+        eprintln!("stripped_root = {:?}", stripped);
+
+        let target = root.join("subdir/new_file.json");
+        eprintln!("target (raw) = {:?}", target);
+        eprintln!("target.is_absolute = {}", target.is_absolute());
+
+        let absolute = if target.is_absolute() {
+            target.clone()
+        } else {
+            root.join(&target)
+        };
+        eprintln!("absolute = {:?}", absolute);
+
+        let normalized = lexical_normalize(&absolute);
+        eprintln!("normalized = {:?}", normalized);
+        eprintln!("normalized_starts_with_stripped = {}",
+            normalized.starts_with(&stripped));
+        eprintln!("stripped_starts_with_normalized = {}",
+            stripped.starts_with(&normalized));
+    }
+
+    #[test]
+    fn test_assert_within_root_allow_missing_traversal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        // Escape attempt with `..`
+        let target = root.join("../outside.json");
+        let result =
+            assert_within_root_allow_missing(root.to_string_lossy().as_ref(), &target);
+        assert!(result.is_err(), "Expected Err for traversal");
+    }
+
+    #[test]
+    fn test_save_json_safe_blocks_traversal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let root_str = root.to_string_lossy().to_string();
+
+        let bad = root.join("../outside.json");
+        let result = save_json_safe(&root_str, &bad, &serde_json::json!({"x": 1}));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_save_json_safe_allows_within() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let root_str = root.to_string_lossy().to_string();
+
+        let good = root.join("nested/inside.json");
+        let result = save_json_safe(&root_str, &good, &serde_json::json!({"x": 1}));
+        assert!(result.is_ok());
+        assert!(good.exists());
     }
 
     #[test]

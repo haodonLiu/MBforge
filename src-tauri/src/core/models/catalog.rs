@@ -32,6 +32,11 @@ pub struct ResourceInfo {
     pub local_name: &'static str,    // 本地文件名/目录名
     pub pip_name: &'static str,      // Python 包名（非空表示需要 pip 安装）
     pub import_name: &'static str,   // Python import 名
+    /// snapshot 类型的精确文件路径列表（相对于仓库根）。
+    /// 非空时直接下载这些文件，跳过 allow_patterns + API 文件列表拉取。
+    /// 支持子目录：`"doc/moldet_v2_yolo11n_960_doc.pt"` 表示 `<dest>/doc/<file>`。
+    #[serde(skip)]
+    pub files: &'static [&'static str],
     pub allow_patterns: &'static [&'static str], // snapshot 下载时仅匹配的文件模式
 }
 
@@ -46,6 +51,25 @@ pub struct ResourceStatusResult {
     pub size_mb: f64,
     pub version: String,
     pub error: String,
+    /// 期望路径：模型应当被检测到的位置（`~/mbforge/models/...`）。Ready 时与 local_path 一致或为子路径，NotFound 时告诉用户应该把文件放在哪里。
+    #[serde(default)]
+    pub expected_path: String,
+    /// 多文件资源（如 MolDetv2 的 doc + general）逐文件状态。前端用于展示子行。
+    #[serde(default)]
+    pub subfiles: Vec<SubfileStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubfileStatus {
+    /// 相对仓库根的路径，如 "doc/moldet_v2_yolo11n_960_doc.pt"
+    pub relpath: String,
+    /// 友好标签（取第一段目录或文件名），如 "doc"
+    pub label: String,
+    /// 完整本地路径（不一定存在）
+    pub local_path: String,
+    /// 是否已下载
+    pub ready: bool,
+    pub size_mb: f64,
 }
 
 impl Default for ResourceStatusResult {
@@ -59,6 +83,8 @@ impl Default for ResourceStatusResult {
             size_mb: 0.0,
             version: String::new(),
             error: String::new(),
+            expected_path: String::new(),
+            subfiles: Vec::new(),
         }
     }
 }
@@ -89,7 +115,19 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "Qwen3-Embedding-0.6B",
         pip_name: "",
         import_name: "",
-        allow_patterns: &["*.safetensors", "*.json", "*.txt", "tokenizer*"],
+        files: &[
+            "model.safetensors",
+            "config.json",
+            "config_sentence_transformers.json",
+            "configuration.json",
+            "modules.json",
+            "1_Pooling/config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "vocab.json",
+            "merges.txt",
+        ],
+        allow_patterns: &[],
     },
     ResourceInfo {
         id: "reranker",
@@ -104,13 +142,23 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "Qwen3-Reranker-0.6B",
         pip_name: "",
         import_name: "",
-        allow_patterns: &["*.safetensors", "*.json", "*.txt", "tokenizer*"],
+        files: &[
+            "model.safetensors",
+            "config.json",
+            "configuration.json",
+            "generation_config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "vocab.json",
+            "merges.txt",
+        ],
+        allow_patterns: &[],
     },
     ResourceInfo {
         id: "moldet",
         name: "MolDetv2",
         resource_type: ResourceType::Model,
-        description: "MolDetv2 分子结构检测 (YOLO, doc + general)",
+        description: "MolDetv2 YOLO 检测 (doc 整页 + general 裁剪)",
         size_mb: 11,
         license: "Apache-2.0",
         ms_repo: "UniParser/MolDetv2",
@@ -119,14 +167,15 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "MolDetv2",
         pip_name: "",
         import_name: "",
-        allow_patterns: &["*.pt", "*.onnx", "*.json"],
+        files: &["doc/moldet_v2_yolo11n_960_doc.pt", "general/moldet_v2_yolo11n_640_general.pt"],
+        allow_patterns: &[],
     },
     ResourceInfo {
         id: "molscribe",
         name: "MolScribe",
         resource_type: ResourceType::Model,
         description: "MolScribe 分子图像 → SMILES (Swin-Base 1m680k checkpoint)",
-        size_mb: 1134,
+        size_mb: 432,
         license: "MIT",
         ms_repo: "polyai/MolScribe",
         download_type: "snapshot",
@@ -134,13 +183,14 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "MolScribe",
         pip_name: "",
         import_name: "",
-        allow_patterns: &["*.pth", "*.safetensors", "*.json", "*.txt", "tokenizer*", "vocab*"],
+        files: &["swin_base_char_aux_1m680k.pth"],
+        allow_patterns: &[],
     },
     ResourceInfo {
         id: "moldet_coref",
         name: "MolDetect Coref",
         resource_type: ResourceType::Model,
-        description: "MolDetect 分子-标号共指消解模型",
+        description: "MolDetect 分子-标号共指消解模型 (含 backbone)",
         size_mb: 200,
         license: "Apache-2.0",
         ms_repo: "polyai/MolDetect",
@@ -149,7 +199,8 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "MolDetect",
         pip_name: "",
         import_name: "",
-        allow_patterns: &["*.ckpt", "*.pt", "*.pth", "*.json", "*.txt"],
+        files: &["coref_best.ckpt"],
+        allow_patterns: &[],
     },
     // ──── Python 包 ────
     ResourceInfo {
@@ -165,6 +216,7 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "",
         pip_name: "torch",
         import_name: "torch",
+        files: &[],
         allow_patterns: &[],
     },
     ResourceInfo {
@@ -180,6 +232,7 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "",
         pip_name: "sentence-transformers",
         import_name: "sentence_transformers",
+        files: &[],
         allow_patterns: &[],
     },
     ResourceInfo {
@@ -195,6 +248,7 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "",
         pip_name: "transformers",
         import_name: "transformers",
+        files: &[],
         allow_patterns: &[],
     },
     ResourceInfo {
@@ -210,6 +264,7 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "",
         pip_name: "ultralytics",
         import_name: "ultralytics",
+        files: &[],
         allow_patterns: &[],
     },
 ];

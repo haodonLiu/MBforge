@@ -102,7 +102,7 @@ pub async fn models_download(
     let cancelled_clone = Arc::clone(&cancelled);
     let download_task = tokio::spawn(async move {
         log::info!("[models_download {}] spawn download_model", rid);
-        let result = download_model(&rid, tx, &cancelled_clone).await;
+        let result = download_model(&rid, tx, &cancelled_clone, None).await;
         match &result {
             Ok(path) => {
                 log::info!("[models_download {}] download_model succeeded: {}", rid, path.display());
@@ -139,6 +139,11 @@ pub async fn models_download(
     log::info!("[models_download {}] download_task finished: {:?}", resource_id, result);
     let _ = forward_task.await;
 
+    // 下载成功后刷新 resolved_paths.json，让 Python sidecar 立刻可见
+    if result.is_ok() {
+        crate::core::models::status::write_resolved_paths();
+    }
+
     // 2. 无论成功失败，都从 active 中移除
     state.finish(&resource_id);
     log::info!("[models_download {}] command returning: {:?}", resource_id, result);
@@ -155,41 +160,211 @@ pub fn models_cancel_download(
     state.cancel(&resource_id)
 }
 
+/// 下载多文件资源中的单个子文件（如 MolDetv2 的 doc/ 或 general/）
+#[tauri::command]
+pub async fn models_download_subfile(
+    resource_id: String,
+    subpath: String,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, DownloadManagerState>,
+) -> Result<String, String> {
+    use tauri::Emitter;
+
+    log::info!("[models_download_subfile {}] {} command invoked", resource_id, subpath);
+
+    let cancelled = match state.start(&resource_id) {
+        Ok(flag) => flag,
+        Err(e) => {
+            log::warn!("[models_download_subfile {}] {}", resource_id, e);
+            return Err(e);
+        }
+    };
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<DownloadProgress>(32);
+
+    let rid = resource_id.clone();
+    let cancelled_clone = Arc::clone(&cancelled);
+    let subpath_clone = subpath.clone();
+    let download_task = tokio::spawn(async move {
+        let result = download_model(&rid, tx, &cancelled_clone, Some(&subpath_clone)).await;
+        result.map(|p| p.to_string_lossy().to_string())
+    });
+
+    let app_events = app.clone();
+    let rid_forward = resource_id.clone();
+    let forward_task = tokio::spawn(async move {
+        while let Some(progress) = rx.recv().await {
+            let _ = app_events.emit("model-download-progress", progress);
+        }
+    });
+
+    let result = download_task
+        .await
+        .map_err(|e| format!("Task failed: {}", e))
+        .and_then(|r| r.map_err(|e| e.to_string()));
+    let _ = forward_task.await;
+
+    if result.is_ok() {
+        crate::core::models::status::write_resolved_paths();
+    }
+
+    state.finish(&resource_id);
+    result
+}
+
 /// 删除已下载的模型
 #[tauri::command]
 pub fn models_delete(resource_id: String) -> Result<(), String> {
+    use crate::core::models::resolve::ms_repo_dir;
     let info = RESOURCE_CATALOG.iter().find(|r| r.id == resource_id);
     let cache_dir = crate::core::config::constants::model_cache_dir();
 
-    let target = if let Some(info) = info {
+    // 收集要删除的候选路径（按优先级），并实际删除存在的那些
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Some(info) = info {
         if info.resource_type != ResourceType::Model {
             return Err(format!("{} 不是模型资源", resource_id));
         }
         if info.download_type == "file" {
-            cache_dir.join(&info.local_name)
+            candidates.push(cache_dir.join(&info.local_name));
         } else {
-            cache_dir.join(info.ms_repo.split('/').last().unwrap_or(info.ms_repo))
+            // snapshot：先按 info.files 精确定位（moldet_doc/general 共享同 dir，必须按文件删）
+            let dest = ms_repo_dir(info);
+            for rel in info.files {
+                candidates.push(dest.join(rel));
+            }
+            // 兜底：旧 flat 布局 `<cache>/<repo_name>`（兼容手工放置的旧文件）
+            let repo_name = info.ms_repo.split('/').last().unwrap_or(info.ms_repo);
+            let legacy = cache_dir.join(repo_name);
+            if legacy.exists() && !candidates.iter().any(|p| p.starts_with(&legacy)) {
+                candidates.push(legacy);
+            }
         }
     } else {
-        let file_target = cache_dir.join(format!("{}.pt", resource_id));
-        if file_target.exists() {
-            file_target
-        } else {
-            cache_dir.join(&resource_id)
-        }
-    };
-
-    if !target.exists() {
-        return Err(format!("模型不存在: {}", target.display()));
+        // 未知资源 id：尝试常见布局
+        candidates.push(cache_dir.join(format!("{}.pt", resource_id)));
+        candidates.push(cache_dir.join(&resource_id));
     }
 
+    // 实际删除存在的文件/目录
+    let mut any_removed = false;
+    let mut last_err = String::new();
+    for path in &candidates {
+        if !path.exists() {
+            continue;
+        }
+        let result = if path.is_dir() {
+            std::fs::remove_dir_all(path).map_err(|e| format!("删除目录失败: {}", e))
+        } else {
+            std::fs::remove_file(path).map_err(|e| format!("删除文件失败: {}", e))
+        };
+        match result {
+            Ok(()) => any_removed = true,
+            Err(e) => last_err = e,
+        }
+    }
+
+    if !any_removed {
+        let listed = candidates
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        return Err(format!("模型不存在: {}", listed));
+    }
+    if !last_err.is_empty() {
+        return Err(last_err);
+    }
+
+    // 刷新 resolved_paths.json
+    crate::core::models::status::write_resolved_paths();
+    Ok(())
+}
+
+/// 删除多文件资源（如 MolDetv2 的 doc/general）中的单个子文件。
+///
+/// `subpath` 必须是 `info.files` 中声明的相对路径（如 `"doc/moldet_v2_yolo11n_960_doc.pt"`）。
+/// 未知 `subpath` 返回错误，避免误删 catalog 之外的文件。
+#[tauri::command]
+pub fn models_delete_subfile(resource_id: String, subpath: String) -> Result<(), String> {
+    use crate::core::models::resolve::ms_repo_dir;
+
+    let info = RESOURCE_CATALOG
+        .iter()
+        .find(|r| r.id == resource_id)
+        .ok_or_else(|| format!("未知资源 id: {}", resource_id))?;
+    if info.resource_type != ResourceType::Model {
+        return Err(format!("{} 不是模型资源", resource_id));
+    }
+    // 仅允许删除 catalog 中声明的子文件，防止任意路径删除
+    if !info.files.iter().any(|f| *f == subpath) {
+        return Err(format!(
+            "子文件 {} 不在资源 {} 的文件列表中",
+            subpath, resource_id
+        ));
+    }
+
+    let target = ms_repo_dir(info).join(&subpath);
+    if !target.exists() {
+        return Err(format!("子文件不存在: {}", target.display()));
+    }
     if target.is_dir() {
-        std::fs::remove_dir_all(&target).map_err(|e| format!("删除目录失败: {}", e))?;
+        std::fs::remove_dir_all(&target)
+            .map_err(|e| format!("删除目录失败: {}", e))?;
     } else {
         std::fs::remove_file(&target).map_err(|e| format!("删除文件失败: {}", e))?;
     }
 
+    crate::core::models::status::write_resolved_paths();
     Ok(())
+}
+
+/// 测试单个模型：实际加载到内存 + 最小推理，验证文件路径与权重有效性。
+/// `subpath` 可选，用于多文件资源（如 moldet 的 doc/ 或 general/）。
+/// 返回 `{ok, error, duration_ms}`。
+#[tauri::command]
+pub async fn models_test(
+    resource_id: String,
+    subpath: Option<String>,
+) -> Result<serde_json::Value, String> {
+    use crate::core::config::constants::sidecar_url;
+    use crate::core::http::client_120s;
+
+    log::info!(
+        "[models_test {}] invoked (subpath={:?})",
+        resource_id,
+        subpath
+    );
+
+    let url = format!("{}/api/v1/test/model", sidecar_url());
+    let body = serde_json::json!({
+        "resource_id": resource_id,
+        "subpath": subpath,
+    });
+
+    let resp = client_120s()
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("调用 sidecar 失败: {}", e))?;
+
+    let status = resp.status();
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析响应失败: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("sidecar HTTP {}: {}", status, json));
+    }
+
+    log::info!(
+        "[models_test {}] result: {}",
+        resource_id,
+        serde_json::to_string(&json).unwrap_or_default()
+    );
+    Ok(json)
 }
 
 /// 刷新模型路径解析结果（重新扫描并写入 resolved_paths.json）

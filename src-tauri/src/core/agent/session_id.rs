@@ -27,8 +27,16 @@ pub struct SessionId(pub String);
 
 impl SessionId {
     /// Wrap any string-ish input as a `SessionId`.
-    pub fn new(s: impl Into<String>) -> Self {
-        Self(s.into())
+    /// Returns an error if the input is empty or contains invalid characters.
+    pub fn new(s: impl Into<String>) -> Result<Self, String> {
+        let inner = s.into();
+        if inner.is_empty() {
+            return Err("SessionId cannot be empty".to_string());
+        }
+        if inner.len() > 255 {
+            return Err(format!("SessionId too long: {} > 255", inner.len()));
+        }
+        Ok(Self(inner))
     }
 
     /// Borrow the underlying string slice.
@@ -87,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_deref_and_as_str() {
-        let s: SessionId = SessionId::new("hello");
+        let s: SessionId = SessionId::new("hello").unwrap();
         assert_eq!(s.as_str(), "hello");
         // Deref to &str — enables `&cid.len()` style call sites.
         assert_eq!(s.len(), 5);
@@ -95,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_display() {
-        let s: SessionId = SessionId::new("thread-1");
+        let s: SessionId = SessionId::new("thread-1").unwrap();
         assert_eq!(format!("{}", s), "thread-1");
     }
 }

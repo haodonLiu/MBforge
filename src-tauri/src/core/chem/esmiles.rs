@@ -250,9 +250,9 @@ fn find_byte(bytes: &[u8], start: usize, target: u8) -> Option<usize> {
 }
 
 fn find_close_tag(bytes: &[u8], start: usize, tag_type: u8) -> Option<usize> {
-    // 寻找 `</X>` 模式
+    // 寻找 `</X>` 模式 — 从后往前找以避免被 tag 值中的 `</X>` 字面量干扰
     let target = [b'<', b'/', tag_type, b'>'];
-    for i in start..bytes.len().saturating_sub(3) {
+    for i in (start..bytes.len().saturating_sub(3)).rev() {
         if bytes[i..i + 4] == target {
             return Some(i);
         }

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { hstack } from '../../styles/patterns'
 
-export interface SettingSectionProps {
+export interface SettingItemProps {
   title?: string
   description?: string
   children?: ReactNode
@@ -9,8 +9,13 @@ export interface SettingSectionProps {
   layout?: 'horizontal' | 'stacked'
   /** label/info 区域在 horizontal 布局下的固定宽度（默认 160px） */
   labelWidth?: number
+  /** 是否显示“已修改”脏标记小圆点 */
+  dirty?: boolean
   style?: React.CSSProperties
 }
+
+/** 历史兼容别名，仍被部分类型聚合文件引用 */
+export type SettingSectionProps = SettingItemProps
 
 /** 设置项容器：标题 + 描述 + 子控件 */
 export function SettingItem({
@@ -19,8 +24,9 @@ export function SettingItem({
   children,
   layout = 'horizontal',
   labelWidth = 160,
+  dirty,
   style,
-}: SettingSectionProps) {
+}: SettingItemProps) {
   return (
     <div
       className="setting-item"
@@ -48,7 +54,10 @@ export function SettingItem({
           )}
         </div>
       )}
-      <div style={{ flex: 1, minWidth: 280, maxWidth: 480 }}>{children}</div>
+      <div style={{ flex: 1, minWidth: 280, maxWidth: 480, display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        {children}
+        {dirty && <span className="setting-dirty-dot" aria-label="Modified" />}
+      </div>
     </div>
   )
 }

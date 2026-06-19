@@ -64,7 +64,18 @@ export default function ModelConfigCard({
   const [testStatus, setTestStatus] = useState<LlmEnvStatus | null>(null)
   const [testing, setTesting] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [dirtyFields, setDirtyFields] = useState<Record<string, boolean>>({})
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dirtyTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  const markDirty = (field: string) => {
+    setDirtyFields(d => ({ ...d, [field]: true }))
+    const existing = dirtyTimersRef.current[field]
+    if (existing) clearTimeout(existing)
+    dirtyTimersRef.current[field] = setTimeout(() => {
+      setDirtyFields(d => ({ ...d, [field]: false }))
+    }, 1000)
+  }
 
   // Load the current active LLM config once on mount (env or saved config).
   // This only reads the resolved config; it does not perform a network probe.
@@ -82,6 +93,7 @@ export default function ModelConfigCard({
       if (successTimerRef.current) {
         clearTimeout(successTimerRef.current)
       }
+      Object.values(dirtyTimersRef.current).forEach(clearTimeout)
     }
   }, [])
 
@@ -153,23 +165,24 @@ export default function ModelConfigCard({
                 label={t('settings.llmProvider')}
                 description={t('settings.llmProviderDesc')}
                 provider={settings.llm_provider}
-                onProviderChange={v => update('llm_provider', v)}
+                onProviderChange={v => { markDirty('llm_provider'); update('llm_provider', v) }}
                 baseUrl={settings.llm_base_url}
-                onBaseUrlChange={v => update('llm_base_url', v)}
+                onBaseUrlChange={v => { markDirty('llm_base_url'); update('llm_base_url', v) }}
                 apiKey={settings.llm_api_key}
-                onApiKeyChange={v => update('llm_api_key', v)}
+                onApiKeyChange={v => { markDirty('llm_api_key'); update('llm_api_key', v) }}
                 providerOptions={providerOptions(LLM_MODELS)}
                 needsKey={getProviderMeta(settings.llm_provider).needsKey}
                 baseUrlPlaceholder={getProviderMeta(settings.llm_provider).defaultUrl}
                 baseUrlLabel={t('settings.llmBaseUrl')}
                 apiKeyLabel={t('settings.llmApiKey')}
+                dirty={dirtyFields.llm_provider}
               />
-              <SettingItem title={t('settings.llmModel')} layout="stacked">
+              <SettingItem title={t('settings.llmModel')} layout="stacked" dirty={dirtyFields.llm_model}>
                 <ModelSelector
                   provider={settings.llm_provider}
                   modelValue={settings.llm_model}
                   models={LLM_MODELS}
-                  onChange={v => update('llm_model', v)}
+                  onChange={v => { markDirty('llm_model'); update('llm_model', v) }}
                 />
               </SettingItem>
             </>
@@ -181,30 +194,31 @@ export default function ModelConfigCard({
                 label={t('settings.embedProvider')}
                 description={t('settings.embedProviderDesc')}
                 provider={settings.embed_provider}
-                onProviderChange={v => update('embed_provider', v)}
+                onProviderChange={v => { markDirty('embed_provider'); update('embed_provider', v) }}
                 baseUrl={settings.embed_base_url}
-                onBaseUrlChange={v => update('embed_base_url', v)}
+                onBaseUrlChange={v => { markDirty('embed_base_url'); update('embed_base_url', v) }}
                 apiKey={settings.embed_api_key}
-                onApiKeyChange={v => update('embed_api_key', v)}
+                onApiKeyChange={v => { markDirty('embed_api_key'); update('embed_api_key', v) }}
                 providerOptions={providerOptions(EMBED_MODELS)}
                 needsKey={getProviderMeta(settings.embed_provider).needsKey}
                 baseUrlPlaceholder={getProviderMeta(settings.embed_provider).defaultUrl}
                 showBaseUrl={settings.embed_provider === 'openai'}
+                dirty={dirtyFields.embed_provider}
               />
-              <SettingItem title={t('settings.model')} layout="stacked">
+              <SettingItem title={t('settings.model')} layout="stacked" dirty={dirtyFields.embed_model}>
                 <ModelSelector
                   provider={settings.embed_provider}
                   modelValue={settings.embed_model}
                   models={EMBED_MODELS}
-                  onChange={v => update('embed_model', v)}
+                  onChange={v => { markDirty('embed_model'); update('embed_model', v) }}
                 />
               </SettingItem>
-              <SettingItem title={t('settings.instruction')} layout="stacked">
+              <SettingItem title={t('settings.instruction')} layout="stacked" dirty={dirtyFields.embed_instruction}>
                 <input
                   className="settings-input"
                   type="text"
                   value={settings.embed_instruction}
-                  onChange={e => update('embed_instruction', e.target.value)}
+                  onChange={e => { markDirty('embed_instruction'); update('embed_instruction', e.target.value) }}
                   placeholder={t('settings.instructionPlaceholder')}
                   style={{ width: '100%' }}
                 />
@@ -218,7 +232,7 @@ export default function ModelConfigCard({
                 label={t('settings.rerankProvider')}
                 description={t('settings.rerankProviderDesc')}
                 provider={settings.rerank_provider}
-                onProviderChange={v => update('rerank_provider', v)}
+                onProviderChange={v => { markDirty('rerank_provider'); update('rerank_provider', v) }}
                 baseUrl=""
                 onBaseUrlChange={() => {}}
                 apiKey=""
@@ -226,13 +240,14 @@ export default function ModelConfigCard({
                 providerOptions={providerOptions(RERANK_MODELS)}
                 needsKey={false}
                 showBaseUrl={false}
+                dirty={dirtyFields.rerank_provider}
               />
-              <SettingItem title={t('settings.model')} layout="stacked">
+              <SettingItem title={t('settings.model')} layout="stacked" dirty={dirtyFields.rerank_model}>
                 <ModelSelector
                   provider={settings.rerank_provider}
                   modelValue={settings.rerank_model}
                   models={RERANK_MODELS}
-                  onChange={v => update('rerank_model', v)}
+                  onChange={v => { markDirty('rerank_model'); update('rerank_model', v) }}
                 />
               </SettingItem>
             </>
@@ -244,21 +259,22 @@ export default function ModelConfigCard({
                 label={t('settings.vlmProvider')}
                 description={t('settings.vlmProviderDesc')}
                 provider={settings.vlm_provider}
-                onProviderChange={v => update('vlm_provider', v)}
+                onProviderChange={v => { markDirty('vlm_provider'); update('vlm_provider', v) }}
                 baseUrl={settings.vlm_base_url}
-                onBaseUrlChange={v => update('vlm_base_url', v)}
+                onBaseUrlChange={v => { markDirty('vlm_base_url'); update('vlm_base_url', v) }}
                 apiKey={settings.vlm_api_key}
-                onApiKeyChange={v => update('vlm_api_key', v)}
+                onApiKeyChange={v => { markDirty('vlm_api_key'); update('vlm_api_key', v) }}
                 providerOptions={providerOptions(VLM_MODELS)}
                 needsKey={getProviderMeta(settings.vlm_provider).needsKey}
                 baseUrlPlaceholder={getProviderMeta(settings.vlm_provider).defaultUrl}
+                dirty={dirtyFields.vlm_provider}
               />
-              <SettingItem title={t('settings.model')} layout="stacked">
+              <SettingItem title={t('settings.model')} layout="stacked" dirty={dirtyFields.vlm_model}>
                 <ModelSelector
                   provider={settings.vlm_provider}
                   modelValue={settings.vlm_model}
                   models={VLM_MODELS}
-                  onChange={v => update('vlm_model', v)}
+                  onChange={v => { markDirty('vlm_model'); update('vlm_model', v) }}
                 />
               </SettingItem>
             </>
@@ -270,21 +286,22 @@ export default function ModelConfigCard({
                 label={t('settings.ocrProvider')}
                 description={t('settings.ocrProviderDesc')}
                 provider={settings.ocr_provider}
-                onProviderChange={v => update('ocr_provider', v)}
+                onProviderChange={v => { markDirty('ocr_provider'); update('ocr_provider', v) }}
                 baseUrl={settings.ocr_base_url}
-                onBaseUrlChange={v => update('ocr_base_url', v)}
+                onBaseUrlChange={v => { markDirty('ocr_base_url'); update('ocr_base_url', v) }}
                 apiKey={settings.ocr_api_key}
-                onApiKeyChange={v => update('ocr_api_key', v)}
+                onApiKeyChange={v => { markDirty('ocr_api_key'); update('ocr_api_key', v) }}
                 providerOptions={providerOptions(OCR_MODELS)}
                 needsKey={getProviderMeta(settings.ocr_provider).needsKey}
                 baseUrlPlaceholder={getProviderMeta(settings.ocr_provider).defaultUrl}
+                dirty={dirtyFields.ocr_provider}
               />
-              <SettingItem title={t('settings.model')} layout="stacked">
+              <SettingItem title={t('settings.model')} layout="stacked" dirty={dirtyFields.ocr_model}>
                 <ModelSelector
                   provider={settings.ocr_provider}
                   modelValue={settings.ocr_model}
                   models={OCR_MODELS}
-                  onChange={v => update('ocr_model', v)}
+                  onChange={v => { markDirty('ocr_model'); update('ocr_model', v) }}
                 />
               </SettingItem>
             </>
@@ -297,41 +314,45 @@ export default function ModelConfigCard({
               label={t('settings.maxTokens')}
               description={t('settings.maxTokensDesc')}
               value={settings.llm_max_tokens}
-              onChange={v => update('llm_max_tokens', v)}
+              onChange={v => { markDirty('llm_max_tokens'); update('llm_max_tokens', v) }}
               min={1}
               max={65536}
               step={128}
               width={120}
+              dirty={dirtyFields.llm_max_tokens}
             />
             <NumberField
               label={t('settings.temperature')}
               description={t('settings.temperatureDesc')}
               value={settings.llm_temperature}
-              onChange={v => update('llm_temperature', v)}
+              onChange={v => { markDirty('llm_temperature'); update('llm_temperature', v) }}
               min={0}
               max={2}
               step={0.1}
               width={100}
+              dirty={dirtyFields.llm_temperature}
             />
             <NumberField
               label={t('settings.topP')}
               description={t('settings.topPDesc')}
               value={settings.llm_top_p}
-              onChange={v => update('llm_top_p', v)}
+              onChange={v => { markDirty('llm_top_p'); update('llm_top_p', v) }}
               min={0}
               max={1}
               step={0.05}
               width={100}
+              dirty={dirtyFields.llm_top_p}
             />
             <NumberField
               label={t('settings.requestTimeout')}
               description={t('settings.requestTimeoutDesc')}
               value={settings.llm_request_timeout}
-              onChange={v => update('llm_request_timeout', v)}
+              onChange={v => { markDirty('llm_request_timeout'); update('llm_request_timeout', v) }}
               min={1}
               max={600}
               step={10}
               width={120}
+              dirty={dirtyFields.llm_request_timeout}
             />
           </SettingGroup>
         )}
@@ -342,7 +363,7 @@ export default function ModelConfigCard({
               label={t('settings.device')}
               description={t('settings.deviceDesc')}
               provider={settings.embed_device}
-              onProviderChange={v => update('embed_device', v as SettingsState['embed_device'])}
+              onProviderChange={v => { markDirty('embed_device'); update('embed_device', v as SettingsState['embed_device']) }}
               baseUrl=""
               onBaseUrlChange={() => {}}
               apiKey=""
@@ -354,17 +375,19 @@ export default function ModelConfigCard({
               ]}
               needsKey={false}
               showBaseUrl={false}
+              dirty={dirtyFields.embed_device}
             />
             <NumberField
               label={t('settings.mrlDim')}
               description={t('settings.mrlDimDesc')}
               value={settings.embed_mrl_dim}
-              onChange={v => update('embed_mrl_dim', v)}
+              onChange={v => { markDirty('embed_mrl_dim'); update('embed_mrl_dim', v) }}
               min={0}
               max={4096}
               step={64}
               width={100}
               placeholder="0"
+              dirty={dirtyFields.embed_mrl_dim}
             />
           </SettingGroup>
         )}
@@ -375,7 +398,7 @@ export default function ModelConfigCard({
               label={t('settings.device')}
               description={t('settings.deviceDesc')}
               provider={settings.rerank_device}
-              onProviderChange={v => update('rerank_device', v as SettingsState['rerank_device'])}
+              onProviderChange={v => { markDirty('rerank_device'); update('rerank_device', v as SettingsState['rerank_device']) }}
               baseUrl=""
               onBaseUrlChange={() => {}}
               apiKey=""
@@ -387,17 +410,19 @@ export default function ModelConfigCard({
               ]}
               needsKey={false}
               showBaseUrl={false}
+              dirty={dirtyFields.rerank_device}
             />
             <NumberField
               label={t('settings.maxLength')}
               description={t('settings.maxLengthDesc')}
               value={settings.rerank_max_length}
-              onChange={v => update('rerank_max_length', v)}
+              onChange={v => { markDirty('rerank_max_length'); update('rerank_max_length', v) }}
               min={128}
               max={32768}
               step={256}
               width={120}
               placeholder="8192"
+              dirty={dirtyFields.rerank_max_length}
             />
           </SettingGroup>
         )}
@@ -409,16 +434,23 @@ export default function ModelConfigCard({
                 label={t('settings.useHfMirror')}
                 description={t('settings.useHfMirrorDesc')}
                 value={settings.ocr_use_hf_mirror}
-                onChange={v => update('ocr_use_hf_mirror', v)}
+                onChange={v => { markDirty('ocr_use_hf_mirror'); update('ocr_use_hf_mirror', v) }}
+                dirty={dirtyFields.ocr_use_hf_mirror}
               />
               <ToggleField
                 label={t('settings.usePdfInspector')}
                 description={t('settings.usePdfInspectorDesc')}
                 value={settings.ocr_use_pdf_inspector}
-                onChange={v => update('ocr_use_pdf_inspector', v)}
+                onChange={v => { markDirty('ocr_use_pdf_inspector'); update('ocr_use_pdf_inspector', v) }}
+                dirty={dirtyFields.ocr_use_pdf_inspector}
               />
             </SettingGroup>
-            <OcrBackendKeys settings={settings} setSettings={setSettings} />
+            <OcrBackendKeys
+              settings={settings}
+              setSettings={setSettings}
+              markDirty={markDirty}
+              dirtyFields={dirtyFields}
+            />
           </>
         )}
       </SettingSection>
@@ -435,7 +467,17 @@ export default function ModelConfigCard({
   )
 }
 
-function OcrBackendKeys({ settings, setSettings }: { settings: SettingsState; setSettings: React.Dispatch<React.SetStateAction<SettingsState>> }) {
+function OcrBackendKeys({
+  settings,
+  setSettings,
+  markDirty,
+  dirtyFields,
+}: {
+  settings: SettingsState
+  setSettings: React.Dispatch<React.SetStateAction<SettingsState>>
+  markDirty: (field: string) => void
+  dirtyFields: Record<string, boolean>
+}) {
   const { t } = useTranslation()
   const update = <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
     setSettings(s => ({ ...s, [key]: value }))
@@ -450,37 +492,42 @@ function OcrBackendKeys({ settings, setSettings }: { settings: SettingsState; se
         label={t('ocr.config.mineru')}
         placeholder="eyJ0eXBlIjoiSldU..."
         value={settings.ocr_mineru_api_key}
-        onChange={v => update('ocr_mineru_api_key', v)}
+        onChange={v => { markDirty('ocr_mineru_api_key'); update('ocr_mineru_api_key', v) }}
         getKeyUrl="https://mineru.net/"
         getKeyLabel={t('ocr.config.getKey')}
+        dirty={dirtyFields.ocr_mineru_api_key}
       />
       <BackendKeyRow
         label={t('ocr.config.uniparser')}
         placeholder="up_..."
         value={settings.ocr_uniparser_api_key}
-        onChange={v => update('ocr_uniparser_api_key', v)}
+        onChange={v => { markDirty('ocr_uniparser_api_key'); update('ocr_uniparser_api_key', v) }}
         getKeyUrl="https://uniparser.dp.tech/"
         getKeyLabel={t('ocr.config.getKey')}
+        dirty={dirtyFields.ocr_uniparser_api_key}
       />
       <BackendKeyRow
         label={t('ocr.config.paddleocr')}
         placeholder="bearer token"
         value={settings.ocr_paddleocr_api_key}
-        onChange={v => update('ocr_paddleocr_api_key', v)}
+        onChange={v => { markDirty('ocr_paddleocr_api_key'); update('ocr_paddleocr_api_key', v) }}
         getKeyUrl="https://aistudio.baidu.com/paddleocr"
         getKeyLabel={t('ocr.config.getKey')}
+        dirty={dirtyFields.ocr_paddleocr_api_key}
         extra={[
           {
             label: t('ocr.config.paddleocrHost'),
             value: settings.ocr_paddleocr_host,
-            onChange: v => update('ocr_paddleocr_host', v),
+            onChange: v => { markDirty('ocr_paddleocr_host'); update('ocr_paddleocr_host', v) },
             placeholder: 'https://paddleocr.aistudio-app.com',
+            dirty: dirtyFields.ocr_paddleocr_host,
           },
           {
             label: t('ocr.config.paddleocrModel'),
             value: settings.ocr_paddleocr_model,
-            onChange: v => update('ocr_paddleocr_model', v),
+            onChange: v => { markDirty('ocr_paddleocr_model'); update('ocr_paddleocr_model', v) },
             placeholder: 'PaddleOCR-VL-1.6',
+            dirty: dirtyFields.ocr_paddleocr_model,
           },
         ]}
       />
@@ -495,15 +542,17 @@ interface BackendKeyRowProps {
   onChange: (v: string) => void
   getKeyUrl?: string
   getKeyLabel?: string
+  dirty?: boolean
   extra?: Array<{
     label: string
     value: string
     onChange: (v: string) => void
     placeholder: string
+    dirty?: boolean
   }>
 }
 
-function BackendKeyRow({ label, placeholder, value, onChange, getKeyUrl, getKeyLabel, extra }: BackendKeyRowProps) {
+function BackendKeyRow({ label, placeholder, value, onChange, getKeyUrl, getKeyLabel, dirty, extra }: BackendKeyRowProps) {
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -528,7 +577,10 @@ function BackendKeyRow({ label, placeholder, value, onChange, getKeyUrl, getKeyL
           </button>
         )}
       </div>
-      <ApiKeyInput value={value} onChange={onChange} placeholder={placeholder} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <ApiKeyInput value={value} onChange={onChange} placeholder={placeholder} />
+        {dirty && <span className="setting-dirty-dot" aria-label="Modified" />}
+      </div>
       {extra && extra.length > 0 && (
         <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
           {extra.map(e => (
@@ -550,6 +602,7 @@ function BackendKeyRow({ label, placeholder, value, onChange, getKeyUrl, getKeyL
                   fontFamily: 'var(--font-mono, monospace)',
                 }}
               />
+              {e.dirty && <span className="setting-dirty-dot" aria-label="Modified" />}
             </div>
           ))}
         </div>

@@ -19,6 +19,7 @@ export function TextField({
   type = 'text',
   monospace,
   labelWidth,
+  dirty,
 }: {
   label: string
   description?: string
@@ -28,9 +29,10 @@ export function TextField({
   type?: 'text' | 'password' | 'number'
   monospace?: boolean
   labelWidth?: number
+  dirty?: boolean
 }) {
   return (
-    <SettingItem title={label} description={description} labelWidth={labelWidth}>
+    <SettingItem title={label} description={description} labelWidth={labelWidth} dirty={dirty}>
       <Input
         className="settings-input"
         type={type}
@@ -58,6 +60,7 @@ export function NumberField({
   width = 120,
   placeholder,
   labelWidth,
+  dirty,
 }: {
   label: string
   description?: string
@@ -69,9 +72,10 @@ export function NumberField({
   width?: number
   placeholder?: string
   labelWidth?: number
+  dirty?: boolean
 }) {
   return (
-    <SettingItem title={label} description={description} labelWidth={labelWidth}>
+    <SettingItem title={label} description={description} labelWidth={labelWidth} dirty={dirty}>
       <input
         className="settings-input"
         type="number"
@@ -104,6 +108,7 @@ export function SelectField<T extends string | number>({
   onChange,
   options,
   labelWidth,
+  dirty,
 }: {
   label: string
   description?: string
@@ -111,9 +116,10 @@ export function SelectField<T extends string | number>({
   onChange: (v: T) => void
   options: { value: T; label: string }[]
   labelWidth?: number
+  dirty?: boolean
 }) {
   return (
-    <SettingItem title={label} description={description} labelWidth={labelWidth}>
+    <SettingItem title={label} description={description} labelWidth={labelWidth} dirty={dirty}>
       <select
         className="settings-select"
         value={String(value)}
@@ -139,15 +145,17 @@ export function ToggleField({
   value,
   onChange,
   labelWidth,
+  dirty,
 }: {
   label: string
   description?: string
   value: boolean
   onChange: (v: boolean) => void
   labelWidth?: number
+  dirty?: boolean
 }) {
   return (
-    <SettingItem title={label} description={description} labelWidth={labelWidth}>
+    <SettingItem title={label} description={description} labelWidth={labelWidth} dirty={dirty}>
       <Switch checked={value} onChange={onChange} size="sm" />
     </SettingItem>
   )
@@ -159,14 +167,16 @@ export function CustomField({
   description,
   children,
   labelWidth,
+  dirty,
 }: {
   label: string
   description?: string
   children: ReactNode
   labelWidth?: number
+  dirty?: boolean
 }) {
   return (
-    <SettingItem title={label} description={description} layout="stacked" labelWidth={labelWidth}>
+    <SettingItem title={label} description={description} layout="stacked" labelWidth={labelWidth} dirty={dirty}>
       <div style={{ width: '100%' }}>{children}</div>
     </SettingItem>
   )
@@ -191,6 +201,7 @@ export function ProviderField({
   baseUrlLabel,
   apiKeyLabel,
   labelWidth,
+  dirty,
 }: {
   label: string
   description?: string
@@ -207,10 +218,11 @@ export function ProviderField({
   baseUrlLabel?: string
   apiKeyLabel?: string
   labelWidth?: number
+  dirty?: boolean
 }) {
   return (
     <>
-      <SettingItem title={label} description={description} labelWidth={labelWidth}>
+      <SettingItem title={label} description={description} labelWidth={labelWidth} dirty={dirty}>
         <select
           className="settings-select"
           value={provider}
@@ -230,10 +242,11 @@ export function ProviderField({
           placeholder={baseUrlPlaceholder}
           monospace
           labelWidth={labelWidth}
+          dirty={dirty}
         />
       )}
       {needsKey && (
-        <SettingItem title={apiKeyLabel ?? 'API Key'} labelWidth={labelWidth}>
+        <SettingItem title={apiKeyLabel ?? 'API Key'} labelWidth={labelWidth} dirty={dirty}>
           <ApiKeyInput value={apiKey} onChange={onApiKeyChange} />
         </SettingItem>
       )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppContext } from '@/context/AppContext'
 import PageContainer from '@/components/ui/PageContainer'
@@ -30,6 +30,8 @@ export default function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [buttonSaved, setButtonSaved] = useState(false)
   const [saveErrorShake, setSaveErrorShake] = useState(false)
+
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   const isDirty = !isSettingsEqual(settings, initialSettings)
 
@@ -68,21 +70,21 @@ export default function SettingsPage() {
         setInitialSettings(settings)
         setTheme(settings.theme === 'system' ? 'dark' : settings.theme)
         void i18n.changeLanguage(settings.language)
-        setTimeout(() => setSaveSuccess(false), 3000)
-        setTimeout(() => setButtonSaved(false), 1500)
+        timersRef.current.push(setTimeout(() => setSaveSuccess(false), 3000))
+        timersRef.current.push(setTimeout(() => setButtonSaved(false), 1500))
       } else {
         const msg = resp.error || t('settings.saveFailed')
         setError(msg)
         setSaveErrorShake(true)
         showToast(msg, 'error')
-        setTimeout(() => setSaveErrorShake(false), 300)
+        timersRef.current.push(setTimeout(() => setSaveErrorShake(false), 300))
       }
     } catch (e) {
       const msg = t('settings.saveFailed') + ': ' + (e instanceof Error ? e.message : String(e))
       setError(msg)
       setSaveErrorShake(true)
       showToast(msg, 'error')
-      setTimeout(() => setSaveErrorShake(false), 300)
+      timersRef.current.push(setTimeout(() => setSaveErrorShake(false), 300))
     } finally {
       setIsLoading(false)
     }
@@ -105,6 +107,13 @@ export default function SettingsPage() {
   useEffect(() => {
     void loadSettings()
   }, [loadSettings])
+
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout)
+      timersRef.current = []
+    }
+  }, [])
 
   return (
     <PageContainer>

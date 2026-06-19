@@ -1,18 +1,26 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
-import { cachedExtractPage, getCachedPageDetections, clearDetectionCacheForDoc } from '../../../api/tauri/detection_cache'
-import { parsePdf, getDocumentOcrLayout } from '../../../api/tauri/pdf'
+import {
+  detectPageMolecules,
+  getCachedDetections,
+  clearDocumentDetections,
+  extractPdfImages,
+  type ImageRef,
+} from '../../../services/pdfService'
+import { getDocumentOcrLayout } from '../../../api/tauri/pdf'
 import { showToast } from '../../../hooks/useToast'
 import { extractRoiText } from '../../../utils/roiText'
 import type { DocumentEntry, ExtractionResult } from '../../../types'
-import type { ImageRef, OcrBlock } from '../../../api/tauri/pdf'
+import type { OcrBlock } from '../../../api/tauri/pdf'
 
 export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMode?: 'read' | 'detect' | 'ocr') {
   const [pdfViewMode, setPdfViewMode] = useState(initialMode ?? 'read')
   const isDetectMode = pdfViewMode === 'detect'
   const isOcrMode = pdfViewMode === 'ocr'
-  const [scrollMode, setScrollMode] = useState<'single' | 'continuous'>('continuous')
-  const isSinglePageMode = isDetectMode || isOcrMode || scrollMode === 'single'
+  const isSinglePageMode = isDetectMode || isOcrMode
+
+  // 置信度阈值（0-1）
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.3)
 
   const [currentPage, setCurrentPage] = useState(1)
   const [pageDetections, setPageDetections] = useState<Map<number, ExtractionResult[]>>(new Map())
@@ -45,7 +53,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
   const pdfScrollRef = useRef<HTMLDivElement>(null)
   const autoLoadOcrDone = useRef(false)
   const wheelSwitchAtRef = useRef(0)
-  const WHEEL_SWITCH_COOLDOWN_MS = 400
+  const WHEEL_SWITCH_COOLDOWN_MS = 200
 
   const getOcrEmptyHint = (parser: string) => {
     if (parser === 'pdf_inspector') {
@@ -62,10 +70,6 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
   const currentTextTotal = currentTextItems.reduce((s, i) => s + i.str.length, 0)
   const hasTextLayer = currentTextTotal > 10
   const canDetect = !!currentPageDataUrl && !!pageInfo
-
-  useEffect(() => {
-    if (isDetectMode || isOcrMode) setScrollMode('single')
-  }, [isDetectMode, isOcrMode])
 
   const normalizePath = useCallback((p: string) => p.replace(/^\\\\\?\\/, '').replace(/^\?\//, '').replace(/\\/g, '/'), [])
   const absDocPath = useMemo(() => {
@@ -125,10 +129,13 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
   const loadCachedDetections = useCallback(async (pageNum: number): Promise<boolean> => {
     if (!projectRoot) return false
     try {
-      const resp = await getCachedPageDetections({ projectRoot, docId: doc.doc_id, page: pageNum })
-      if (resp.count > 0 && resp.results.length > 0) {
-        const results = resp.results as ExtractionResult[]
-        const enriched = enrichResults(results, pageNum)
+      const result = await getCachedDetections({
+        projectRoot,
+        docId: doc.doc_id,
+        page: pageNum,
+      })
+      if (result.success && result.data && result.data.count > 0) {
+        const enriched = enrichResults(result.data.results, pageNum)
         setPageDetections(prev => { const next = new Map(prev); next.set(pageNum, enriched); return next })
         return true
       }
@@ -140,6 +147,12 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
 
   const handleDetectPage = useCallback(async (force = false) => {
     if (!currentPageDataUrl || !pageInfo) { showToast('页面尚未渲染完成，请稍候', 'info'); return }
+    // 验证 pageInfo 和 currentPageDataUrl 属于当前页
+    if (pageInfo.pageNumber !== currentPage) {
+      console.warn(`[PdfViewer] 检测页面不匹配: pageInfo.pageNumber=${pageInfo.pageNumber}, currentPage=${currentPage}`)
+      showToast('页面状态异常，请稍候重试', 'warning')
+      return
+    }
     if (!force && pageDetections.has(currentPage)) { showToast(`第 ${currentPage} 页已检测`, 'info'); return }
     // First try cache-only lookup (quick scan may have populated bboxes).
     if (!force) {
@@ -150,18 +163,38 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     setSelectedDetection(null)
     try {
       const base64 = currentPageDataUrl.split(',')[1] || ''
-      const resp = await cachedExtractPage({
-        projectRoot, docId: doc.doc_id, page: currentPage, imageBase64: base64,
-        pageWPts: pageInfo.originalWidth, pageHPts: pageInfo.originalHeight,
-        imageW: Math.round(pageInfo.width), imageH: Math.round(pageInfo.height),
+      if (!base64) {
+        throw new Error('无法获取页面图像数据')
+      }
+      const result = await detectPageMolecules({
+        projectRoot,
+        docId: doc.doc_id,
+        page: currentPage,
+        imageBase64: base64,
+        pageWPts: pageInfo.originalWidth,
+        pageHPts: pageInfo.originalHeight,
+        imageW: Math.round(pageInfo.width),
+        imageH: Math.round(pageInfo.height),
         force,
       })
-      if (resp.source === 'sidecar_error') throw new Error(resp.error || 'sidecar error')
-      const results = resp.results as ExtractionResult[]
-      const enriched = enrichResults(results, currentPage)
+      if (!result.success || !result.data) {
+        throw new Error(result.error || '检测失败')
+      }
+      const results = result.data.results
+      // 验证返回的结果确实属于当前页
+      const validatedResults = results.filter(r => {
+        if (r.page_idx !== null && r.page_idx !== undefined) {
+          return r.page_idx === currentPage - 1
+        }
+        return true
+      })
+      if (validatedResults.length < results.length) {
+        console.warn(`[PdfViewer] 过滤掉 ${results.length - validatedResults.length} 个不属于当前页的检测结果`)
+      }
+      const enriched = enrichResults(validatedResults, currentPage)
       setPageDetections(prev => { const next = new Map(prev); next.set(currentPage, enriched); return next })
-      showToast(results.length > 0 ? `检测到 ${results.length} 个分子` : '未检测到分子',
-        results.length > 0 ? 'success' : 'info')
+      showToast(validatedResults.length > 0 ? `检测到 ${validatedResults.length} 个分子` : '未检测到分子',
+        validatedResults.length > 0 ? 'success' : 'info')
     } catch (e) {
       console.error('Detection failed:', e)
       showToast('检测失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
@@ -174,14 +207,21 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     setSelectedDetection(null)
     try {
       const base64 = currentPageDataUrl.split(',')[1] || ''
-      const resp = await cachedExtractPage({
-        projectRoot, docId: doc.doc_id, page: currentPage, imageBase64: base64,
-        pageWPts: pageInfo.originalWidth, pageHPts: pageInfo.originalHeight,
-        imageW: Math.round(pageInfo.width), imageH: Math.round(pageInfo.height),
+      const result = await detectPageMolecules({
+        projectRoot,
+        docId: doc.doc_id,
+        page: currentPage,
+        imageBase64: base64,
+        pageWPts: pageInfo.originalWidth,
+        pageHPts: pageInfo.originalHeight,
+        imageW: Math.round(pageInfo.width),
+        imageH: Math.round(pageInfo.height),
         force: true,
       })
-      if (resp.source === 'sidecar_error') throw new Error(resp.error || 'sidecar error')
-      const results = resp.results as ExtractionResult[]
+      if (!result.success || !result.data) {
+        throw new Error(result.error || '识别失败')
+      }
+      const results = result.data.results
       const enriched = enrichResults(results, currentPage)
       setPageDetections(prev => { const next = new Map(prev); next.set(currentPage, enriched); return next })
       showToast(results.length > 0 ? `识别到 ${results.length} 个分子` : '未识别到分子',
@@ -196,7 +236,10 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     if (!projectRoot) return
     setIsDetecting(true)
     try {
-      await clearDetectionCacheForDoc(projectRoot, doc.doc_id)
+      const result = await clearDocumentDetections(projectRoot, doc.doc_id)
+      if (!result.success) {
+        throw new Error(result.error || '清除缓存失败')
+      }
       setPageDetections(new Map())
       setSelectedDetection(null)
       showToast('分子识别缓存已清除', 'success')
@@ -207,13 +250,31 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
   }, [projectRoot, doc.doc_id])
 
   const handlePageRendered = useCallback((info: { pageNumber: number; width: number; height: number; originalWidth: number; originalHeight: number; scale: number }) => {
-    if (info.pageNumber !== currentPage) return
+    // 只接受当前页的渲染结果，防止旧页面的数据污染
+    if (info.pageNumber !== currentPage) {
+      console.debug(`[PdfViewer] 忽略非当前页的渲染结果: page=${info.pageNumber}, current=${currentPage}`)
+      return
+    }
+    // 验证页面尺寸合理性（防止异常数据）
+    if (info.width <= 0 || info.height <= 0 || info.originalWidth <= 0 || info.originalHeight <= 0) {
+      console.warn('[PdfViewer] 忽略异常的页面尺寸:', info)
+      return
+    }
     setPageInfo(info)
     pageInfoRef.current = info
   }, [currentPage])
 
   const handleImageReady = useCallback((pageNum: number, dataUrl: string) => {
-    if (pageNum !== currentPage) return
+    // 只接受当前页的图像数据
+    if (pageNum !== currentPage) {
+      console.debug(`[PdfViewer] 忽略非当前页的图像数据: page=${pageNum}, current=${currentPage}`)
+      return
+    }
+    // 验证 dataUrl 有效性
+    if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+      console.warn('[PdfViewer] 忽略无效的图像数据')
+      return
+    }
     setCurrentPageDataUrl(dataUrl)
   }, [currentPage])
   const handlePageCount = useCallback((count: number) => setPdfPageCount(count), [])
@@ -226,12 +287,33 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     setPageInfo(null)
     pageInfoRef.current = null
     setSelectedDetection(null)
+    // 清除非当前页的检测缓存，防止显示上一页的检测框
+    setPageDetections(prev => {
+      const next = new Map(prev)
+      // 只保留当前页的检测结果，删除其他页的
+      for (const key of next.keys()) {
+        if (key !== currentPage) {
+          next.delete(key)
+        }
+      }
+      return next
+    })
   }, [currentPage])
 
   // 进入分子检测模式后，当前页渲染完成自动触发检测
   useEffect(() => {
     if (!isDetectMode || !currentPageDataUrl || !pageInfo) return
+    // 验证 pageInfo 确实属于当前页
+    if (pageInfo.pageNumber !== currentPage) {
+      console.debug(`[PdfViewer] 跳过自动检测: pageInfo.pageNumber=${pageInfo.pageNumber}, currentPage=${currentPage}`)
+      return
+    }
     if (pageDetections.has(currentPage) || isDetecting) return
+    // 验证 currentPageDataUrl 有效性
+    if (!currentPageDataUrl.startsWith('data:image/')) {
+      console.debug('[PdfViewer] 跳过自动检测: 无效的 currentPageDataUrl')
+      return
+    }
     handleDetectPage()
   }, [isDetectMode, currentPage, currentPageDataUrl, pageInfo, pageDetections, isDetecting, handleDetectPage])
 
@@ -252,10 +334,13 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     setPageTextItems(prev => { const next = new Map(prev); next.set(_page, items); return next })
     const totalChars = items.reduce((s, i) => s + i.str.length, 0)
     if (totalChars > 10) {
-      setPdfOcrSummary(prev => ({
-        totalChars: (prev?.totalChars ?? 0) + totalChars,
-        textDensity: totalChars > 500 ? 'rich' : totalChars > 100 ? 'medium' : 'sparse',
-      }))
+      setPdfOcrSummary(prev => {
+        const newTotal = (prev?.totalChars ?? 0) + totalChars
+        return {
+          totalChars: newTotal,
+          textDensity: newTotal > 500 ? 'rich' : newTotal > 100 ? 'medium' : 'sparse',
+        }
+      })
     }
   }, [])
 
@@ -267,8 +352,11 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     if (extractedImages.length > 0) { setShowImagePanel(true); return }
     setIsLoadingImages(true)
     try {
-      const result = await parsePdf(absDocPath, 512, 128, 'pdf_inspector')
-      setExtractedImages(result.images || [])
+      const result = await extractPdfImages(absDocPath, 512, 128, 'pdf_inspector')
+      if (!result.success) {
+        throw new Error(result.error || '图片提取失败')
+      }
+      setExtractedImages(result.data || [])
       setShowImagePanel(true)
     } catch (e) {
       console.error('Failed to load images:', e)
@@ -347,9 +435,50 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
 
   useEffect(() => { pdfScrollRef.current?.focus() }, [doc.doc_id])
 
+  // 滚动到指定检测结果的位置（支持单页和连续模式）
+  const scrollToDetection = useCallback((detection: ExtractionResult) => {
+    if (!detection.bbox_pdf || !pageInfoRef.current) return
+    const container = pdfScrollRef.current
+    if (!container) return
+
+    const [, y1, , y2] = detection.bbox_pdf
+    const info = pageInfoRef.current
+
+    // 检查是否是连续模式（容器内有 [data-page] 元素）
+    const isContinuousMode = container.querySelector('[data-page]')
+
+    if (isContinuousMode) {
+      // 连续模式：找到当前页的元素，计算偏移量
+      const pageEl = container.querySelector(`[data-page="${detection.page_idx !== null ? detection.page_idx + 1 : currentPage}"]`)
+      if (pageEl) {
+        const pageRect = pageEl.getBoundingClientRect()
+        const containerRect = container.getBoundingClientRect()
+        // 计算检测框在页面内的相对位置
+        const cssY = (info.originalHeight - y2) * info.scale
+        const cssY2 = (info.originalHeight - y1) * info.scale
+        const centerY = (cssY + cssY2) / 2
+        // 滚动到检测框居中
+        container.scrollTo({
+          top: pageEl.scrollTop + (pageRect.top - containerRect.top) + centerY - container.clientHeight / 2,
+          behavior: 'smooth',
+        })
+      }
+    } else {
+      // 单页模式：直接计算 CSS 坐标
+      const cssY = (info.originalHeight - y2) * info.scale
+      const cssY2 = (info.originalHeight - y1) * info.scale
+      const centerY = (cssY + cssY2) / 2
+      container.scrollTo({
+        top: Math.max(0, centerY - container.clientHeight / 2),
+        behavior: 'smooth',
+      })
+    }
+  }, [currentPage])
+
   return {
     pdfViewMode, setPdfViewMode, isDetectMode, isOcrMode,
-    scrollMode, setScrollMode, isSinglePageMode,
+    isSinglePageMode,
+    confidenceThreshold, setConfidenceThreshold,
     currentPage, setCurrentPage, pageDetections, setPageDetections,
     isDetecting, selectedDetection, setSelectedDetection,
     pageInfo, pageInfoRef, currentPageDataUrl, pdfScale,
@@ -367,6 +496,6 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     handleSaveMolecule, handleTextContent,
     handleZoomIn, handleZoomOut, handleZoomReset,
     handleLoadImages, handleLoadOcr, handleJumpToPage,
-    handleKeyDown, handleWheel,
+    handleKeyDown, handleWheel, scrollToDetection,
   }
 }

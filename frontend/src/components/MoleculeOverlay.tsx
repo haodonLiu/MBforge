@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import type { ExtractionResult, DetectionBox } from '../types'
 
 interface Props {
@@ -12,6 +12,8 @@ interface Props {
   originalHeight: number
   /** 缩放比例 */
   scale: number
+  /** 当前页码（用于验证） */
+  currentPage?: number
   /** 选中的检测索引 */
   selectedIndex?: number
   /** 选中检测回调（用于已识别条目） */
@@ -53,15 +55,30 @@ export default function MoleculeOverlay({
   renderHeight,
   originalHeight,
   scale,
+  currentPage,
   selectedIndex,
   onSelect,
   onRecognize,
   isRecognizing,
 }: Props) {
+  // 验证检测结果是否属于当前页
+  const validDetections = useMemo(() => {
+    if (currentPage === undefined) return detections
+    return detections.filter(d => {
+      // 如果检测结果有 page_idx，验证是否匹配当前页
+      if (d.page_idx !== null && d.page_idx !== undefined) {
+        // page_idx 是 0-based，currentPage 是 1-based
+        return d.page_idx === currentPage - 1
+      }
+      // 没有 page_idx 的检测结果保留（可能是手动添加的）
+      return true
+    })
+  }, [detections, currentPage])
+
   // 将 PDF bbox 转换为 CSS 像素坐标
   const boxes: DetectionBox[] = useMemo(() => {
-    return detections
-      .filter(d => d.bbox_pdf != null)
+    return validDetections
+      .filter(d => d.bbox_pdf != null && d.bbox_pdf[2] > d.bbox_pdf[0] && d.bbox_pdf[3] > d.bbox_pdf[1])
       .map((d) => {
         const bbox = pdfToCss(d.bbox_pdf!, originalHeight, scale)
         return {
@@ -73,9 +90,19 @@ export default function MoleculeOverlay({
           result: d,
         }
       })
-  }, [detections, originalHeight, scale])
+  }, [validDetections, originalHeight, scale])
 
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
+
+  // 调试日志：检测到异常时输出
+  useEffect(() => {
+    if (detections.length > 0 && validDetections.length === 0) {
+      console.warn('[MoleculeOverlay] 所有检测结果被过滤掉', {
+        currentPage,
+        detections: detections.map(d => ({ page_idx: d.page_idx, bbox: d.bbox_pdf })),
+      })
+    }
+  }, [detections, validDetections, currentPage])
 
   if (boxes.length === 0) return null
 

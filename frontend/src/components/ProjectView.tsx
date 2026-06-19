@@ -14,7 +14,11 @@ import PdfViewer from './project/PdfViewer'
 import ProjectDashboard from './project/ProjectDashboard'
 import MarkdownViewer from './MarkdownViewer'
 
-export default function ProjectView() {
+interface ProjectViewProps {
+  onFileActive?: (active: boolean) => void
+}
+
+export default function ProjectView({ onFileActive }: ProjectViewProps) {
   const { t } = useTranslation()
   const { projectRoot, activeFile, setActiveFile } = useAppContext()
   const [docs, setDocs] = useState<DocumentEntry[]>([])
@@ -33,6 +37,11 @@ export default function ProjectView() {
   const [isMoldetScanning, setIsMoldetScanning] = useState(false)
   const [moldetProgress, setMoldetProgress] = useState<{ current: number; total: number } | null>(null)
   const [moldetResult, setMoldetResult] = useState<{ scanned: number; withMolecules: number } | null>(null)
+
+  const hasFileOpen = selectedPdf !== null || selectedMarkdown !== null
+  useEffect(() => {
+    onFileActive?.(hasFileOpen)
+  }, [hasFileOpen, onFileActive])
 
   const loadDocs = async () => {
     if (!projectRoot) return
@@ -98,7 +107,7 @@ export default function ProjectView() {
       const scanResp = await scanProjectFiles(projectRoot)
       setDocs(scanResp.documents)
       setScanWarnings(scanResp.warnings ?? [])
-      void enqueueUnresolvedDocuments(projectRoot).catch(() => {})
+      void enqueueUnresolvedDocuments(projectRoot).catch((e) => console.warn('enqueueUnresolvedDocuments failed:', e))
 
       if (scanResp.documents.length === 0 && (scanResp.warnings ?? []).length === 0) {
         setError(t('project.noFilesFound', { papers: PAPERS_DIR, notes: NOTES_DIR }))

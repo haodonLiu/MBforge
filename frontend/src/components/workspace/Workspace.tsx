@@ -1,16 +1,17 @@
-import { useTranslation } from 'react-i18next'
+import { useCallback, useState } from 'react'
 import { motion } from 'framer-motion'
-import { PageTitle } from '@/components/ui'
 import { fadeUp } from '@/hooks/useAnimations'
 import ProjectView from '@/components/ProjectView'
 
 /**
  * Workspace 页面。
  *
- * 合并概览与文档：顶部统计卡片 + 下方文档浏览器。
+ * 当无文件打开时显示项目仪表盘，打开文件（PDF/Markdown）时隐藏标题，
+ * 让文件查看器占据全部空间。
  */
 export default function Workspace() {
-  const { t } = useTranslation()
+  const [fileActive, setFileActive] = useState(false)
+  const handleFileActive = useCallback((active: boolean) => setFileActive(active), [])
 
   return (
     <motion.div
@@ -18,14 +19,16 @@ export default function Workspace() {
       variants={fadeUp}
       initial="hidden"
       animate="visible"
+      style={fileActive ? { padding: 0, gap: 0 } : undefined}
     >
-      <div className="workspace-header">
-        <PageTitle>{t('workspace.title')}</PageTitle>
-      </div>
+      {!fileActive && (
+        <div className="workspace-header">
+        </div>
+      )}
 
       {/* Document browser */}
       <div className="workspace-content">
-        <ProjectView />
+        <ProjectView onFileActive={handleFileActive} />
       </div>
     </motion.div>
   )

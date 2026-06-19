@@ -76,7 +76,7 @@ export default function Sidebar({ current, onNavigate, onSwitchProject, projectS
   return (
     <aside style={{
       gridColumn: '1',
-      gridRow: '1 / 4',
+      gridRow: '1 / 5',
       background: 'var(--bg-surface)',
       borderRight: '1px solid var(--border)',
       display: 'flex',

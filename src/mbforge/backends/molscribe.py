@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 from PIL import Image
 
@@ -19,27 +17,29 @@ _ERROR: str = ""
 
 
 def load(device: str | None = None) -> None:
-    """Lazy-load MolScribe model."""
+    """Lazy-load MolScribe model.
+
+    只读盘：若 `~/mbforge/models/MolScribe/` 下没有 checkpoint 或 safetensors，
+    标记为不可用，**不触发任何下载**。
+    """
     global _MODEL, _AVAILABLE, _ERROR
     if _MODEL is not None:
         return
     try:
-        from ..parsers.molecule.molscribe_inference import MolScribe as _MolScribeBackend
-        from ..parsers.molecule.molscribe_inference.download import ensure_molscribe_model
         from ..core.resource_manager import ResourceManager
+        from ..parsers.molecule.molscribe_inference import (
+            MolScribe as _MolScribeBackend,
+        )
 
-        ckpt = None
-        try:
-            path = ResourceManager.get_molscribe_path()
-            if path is not None:
-                ckpt = str(path)
-        except Exception:
-            pass
-        if ckpt is None:
-            ckpt = ensure_molscribe_model()
+        path = ResourceManager.get_molscribe_path()
+        if path is None:
+            _AVAILABLE = False
+            _ERROR = "MolScribe 模型未找到（请在 ~/mbforge/models/MolScribe/ 放置模型文件，或在设置中下载）"
+            logger.warning(_ERROR)
+            return
 
         dev = device or ("cuda" if is_gpu_available() else "cpu")
-        _MODEL = _MolScribeBackend(str(ckpt), device=dev, num_workers=1)
+        _MODEL = _MolScribeBackend(str(path), device=dev, num_workers=1)
         _AVAILABLE = True
         logger.info("MolScribe loaded successfully")
     except Exception as exc:

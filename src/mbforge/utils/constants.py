@@ -79,14 +79,20 @@ def get_model_cache_dir() -> str:
         from .config import load_global_config
         cfg = load_global_config()
         if cfg.model_cache_dir:
-            return cfg.model_cache_dir
+            # 展开前导 ~ 到用户主目录（兼容 Windows 和 Unix）
+            result = cfg.model_cache_dir
+            if result.startswith('~/') or result.startswith('~\\'):
+                return str(Path.home() / Path(result[2:]))
+            elif result == '~':
+                return str(Path.home())
+            return result
     except Exception:
         pass
-    return str(Path.home() / ".cache" / "mbforge" / "models")
+    return str(Path.home() / Path(MODEL_CACHE_DIR))
 
 
 # MODEL_CACHE_DIR is the relative path fragment used by get_model_cache_dir()
-MODEL_CACHE_DIR = ".cache/mbforge/models"
+MODEL_CACHE_DIR = "mbforge/models"
 
 
 def ensure_hf_mirror() -> None:

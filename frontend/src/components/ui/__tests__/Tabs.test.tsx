@@ -75,7 +75,7 @@ describe('Tabs', () => {
   })
 
   it('renders all variants without error', () => {
-    const variants = ['default', 'pills', 'underline'] as const
+    const variants = ['default', 'pills', 'underline', 'segment'] as const
     for (const variant of variants) {
       const { unmount } = render(<Tabs items={defaultItems} variant={variant} />)
       expect(screen.getByText('Tab One')).toBeInTheDocument()
@@ -106,6 +106,13 @@ describe('Tabs', () => {
     expect(onChange).toHaveBeenCalledWith('tab2')
   })
 
+  it('handles click in segment variant', () => {
+    const onChange = vi.fn()
+    render(<Tabs items={defaultItems} variant="segment" onChange={onChange} />)
+    fireEvent.click(screen.getByText('Tab Two'))
+    expect(onChange).toHaveBeenCalledWith('tab2')
+  })
+
   it('renders all sizes without error', () => {
     const sizes = ['sm', 'md', 'lg'] as const
     for (const size of sizes) {
@@ -126,6 +133,16 @@ describe('Tabs', () => {
     // className is forwarded to each tab button
     const btn = container.querySelector('button')
     expect(btn).toHaveClass('custom-tabs')
+  })
+
+  it('wires ARIA ids when id prop is provided', () => {
+    render(<Tabs items={defaultItems} id="settings" />)
+    const tab1 = screen.getByText('Tab One').closest('button')!
+    const tab2 = screen.getByText('Tab Two').closest('button')!
+    expect(tab1).toHaveAttribute('id', 'settings-tab1-tab')
+    expect(tab1).toHaveAttribute('aria-controls', 'settings-tab1-panel')
+    expect(tab2).toHaveAttribute('id', 'settings-tab2-tab')
+    expect(tab2).toHaveAttribute('aria-controls', 'settings-tab2-panel')
   })
 })
 
@@ -151,5 +168,12 @@ describe('TabPanel', () => {
     )
     expect(screen.getByText('Hidden')).toBeInTheDocument()
     expect(container.querySelector('[role="tabpanel"]')).toBeInTheDocument()
+  })
+
+  it('wires ARIA ids when tabsId prop is provided', () => {
+    render(<TabPanel activeKey="tab1" tabKey="tab1" tabsId="settings">Panel</TabPanel>)
+    const panel = screen.getByRole('tabpanel')
+    expect(panel).toHaveAttribute('id', 'settings-tab1-panel')
+    expect(panel).toHaveAttribute('aria-labelledby', 'settings-tab1-tab')
   })
 })

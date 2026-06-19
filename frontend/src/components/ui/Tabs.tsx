@@ -27,6 +27,8 @@ export interface TabsProps {
   size?: 'sm' | 'md' | 'lg'
   /** 是否填满整行 */
   fullWidth?: boolean
+  /** Tabs 根节点 id，用于 ARIA 关联 */
+  id?: string
   style?: React.CSSProperties
   className?: string
 }
@@ -37,21 +39,131 @@ const sizeMap = {
   lg: { padding: '10px 20px', fontSize: '14px' },
 }
 
+interface TabButtonProps {
+  item: TabItem
+  isActive: boolean
+  variant: TabsProps['variant']
+  size: TabsProps['size']
+  fullWidth?: boolean
+  tabsId?: string
+  className?: string
+  onClick: (key: string, disabled?: boolean) => void
+}
+
+function TabButton({
+  item,
+  isActive,
+  variant = 'default',
+  size = 'md',
+  fullWidth = false,
+  tabsId,
+  className,
+  onClick,
+}: TabButtonProps) {
+  const sizeStyle = sizeMap[size]
+
+  const baseStyle: React.CSSProperties = {
+    ...sizeStyle,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    border: 'none',
+    background: 'transparent',
+    color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
+    cursor: item.disabled ? 'not-allowed' : 'pointer',
+    opacity: item.disabled ? 0.4 : 1,
+    fontWeight: isActive ? 600 : 500,
+    transition: 'all 0.15s',
+    flex: fullWidth ? 1 : undefined,
+    justifyContent: fullWidth ? 'center' : undefined,
+    position: 'relative',
+  }
+
+  const variantStyle: React.CSSProperties =
+    variant === 'pills'
+      ? {
+          background: isActive ? 'var(--accent-muted)' : 'transparent',
+          borderRadius: 8,
+        }
+      : variant === 'segment'
+        ? {
+            background: isActive ? 'var(--bg-elevated)' : 'transparent',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: isActive ? 'var(--shadow-card)' : 'none',
+          }
+      : {}
+
+  const badgeStyle: React.CSSProperties =
+    variant === 'pills'
+      ? {
+          padding: '1px 6px',
+          background: 'var(--accent)',
+          color: 'white',
+          borderRadius: 8,
+          fontSize: 10,
+          fontWeight: 600,
+        }
+      : {
+          padding: '1px 6px',
+          background: 'var(--bg-elevated)',
+          color: 'var(--text-muted)',
+          borderRadius: 8,
+          fontSize: 10,
+          fontWeight: 600,
+        }
+
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={isActive}
+      id={tabsId ? `${tabsId}-${item.key}-tab` : undefined}
+      aria-controls={tabsId ? `${tabsId}-${item.key}-panel` : undefined}
+      onClick={() => onClick(item.key, item.disabled)}
+      disabled={item.disabled}
+      className={className}
+      style={{
+        ...baseStyle,
+        ...variantStyle,
+      }}
+    >
+      {item.label}
+      {item.badge !== undefined && <span style={badgeStyle}>{item.badge}</span>}
+      {variant === 'underline' && isActive && (
+        <motion.div
+          layoutId="tabs-underline"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: -1,
+            height: 2,
+            background: 'var(--accent)',
+            borderRadius: 1,
+          }}
+          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+        />
+      )}
+    </button>
+  )
+}
+
 /**
  * Tabs 标签页组件。
  *
- * 支持受控/非受控两种模式，3 种视觉变体，键盘可访问。
+ * 支持受控/非受控两种模式，4 种视觉变体，键盘可访问。
  */
 export default function Tabs({
   items,
   activeKey,
   defaultActiveKey,
   onChange,
-   
+
   position: _position = 'top',
   variant = 'default',
   size = 'md',
   fullWidth = false,
+  id,
   style,
   className,
 }: TabsProps) {
@@ -67,132 +179,18 @@ export default function Tabs({
 
   const renderTab = (item: TabItem) => {
     const isActive = item.key === currentKey
-    const sizeStyle = sizeMap[size]
-
-    const baseStyle: React.CSSProperties = {
-      ...sizeStyle,
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 6,
-      border: 'none',
-      background: 'transparent',
-      color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-      cursor: item.disabled ? 'not-allowed' : 'pointer',
-      opacity: item.disabled ? 0.4 : 1,
-      fontWeight: isActive ? 600 : 500,
-      transition: 'all 0.15s',
-      flex: fullWidth ? 1 : undefined,
-      justifyContent: fullWidth ? 'center' : undefined,
-      position: 'relative',
-    }
-
-    if (variant === 'pills') {
-      return (
-        <button
-          key={item.key}
-          type="button"
-          role="tab"
-          aria-selected={isActive}
-          onClick={() => handleClick(item.key, item.disabled)}
-          disabled={item.disabled}
-          className={className}
-          style={{
-            ...baseStyle,
-            background: isActive ? 'var(--accent-muted)' : 'transparent',
-            borderRadius: 8,
-          }}
-        >
-          {item.label}
-          {item.badge !== undefined && (
-            <span style={{
-              padding: '1px 6px',
-              background: 'var(--accent)',
-              color: 'white',
-              borderRadius: 8,
-              fontSize: 10,
-              fontWeight: 600,
-            }}>
-              {item.badge}
-            </span>
-          )}
-        </button>
-      )
-    }
-
-    if (variant === 'segment') {
-      return (
-        <button
-          key={item.key}
-          type="button"
-          role="tab"
-          aria-selected={isActive}
-          onClick={() => handleClick(item.key, item.disabled)}
-          disabled={item.disabled}
-          className={className}
-          style={{
-            ...baseStyle,
-            background: isActive ? 'var(--bg-elevated)' : 'transparent',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: isActive ? 'var(--shadow-card)' : 'none',
-          }}
-        >
-          {item.label}
-          {item.badge !== undefined && (
-            <span style={{
-              padding: '1px 6px',
-              background: 'var(--bg-elevated)',
-              color: 'var(--text-muted)',
-              borderRadius: 8,
-              fontSize: 10,
-              fontWeight: 600,
-            }}>
-              {item.badge}
-            </span>
-          )}
-        </button>
-      )
-    }
-
     return (
-      <button
+      <TabButton
         key={item.key}
-        type="button"
-        role="tab"
-        aria-selected={isActive}
-        onClick={() => handleClick(item.key, item.disabled)}
-        disabled={item.disabled}
+        item={item}
+        isActive={isActive}
+        variant={variant}
+        size={size}
+        fullWidth={fullWidth}
+        tabsId={id}
         className={className}
-        style={baseStyle}
-      >
-        {item.label}
-        {item.badge !== undefined && (
-          <span style={{
-            padding: '1px 6px',
-            background: 'var(--bg-elevated)',
-            color: 'var(--text-muted)',
-            borderRadius: 8,
-            fontSize: 10,
-            fontWeight: 600,
-          }}>
-            {item.badge}
-          </span>
-        )}
-        {variant === 'underline' && isActive && (
-          <motion.div
-            layoutId="tabs-underline"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: -1,
-              height: 2,
-              background: 'var(--accent)',
-              borderRadius: 1,
-            }}
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-          />
-        )}
-      </button>
+        onClick={handleClick}
+      />
     )
   }
 
@@ -229,12 +227,19 @@ export interface TabPanelProps {
   children: ReactNode
   /** 强制挂载（保留 DOM）*/
   forceMount?: boolean
+  /** 与 Tabs 的 id 关联，用于 ARIA */
+  tabsId?: string
 }
 
-export function TabPanel({ activeKey, tabKey, children, forceMount = false }: TabPanelProps) {
+export function TabPanel({ activeKey, tabKey, children, forceMount = false, tabsId }: TabPanelProps) {
   if (activeKey !== tabKey && !forceMount) return null
   return (
-    <div role="tabpanel" style={{ padding: '16px 0' }}>
+    <div
+      role="tabpanel"
+      id={tabsId ? `${tabsId}-${tabKey}-panel` : undefined}
+      aria-labelledby={tabsId ? `${tabsId}-${tabKey}-tab` : undefined}
+      style={{ padding: '16px 0' }}
+    >
       {children}
     </div>
   )

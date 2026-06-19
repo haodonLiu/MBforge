@@ -5,8 +5,17 @@ use crate::core::config::constants::sidecar_url;
 use crate::core::helpers::LockResultExt;
 use crate::sidecar::SidecarInner;
 
+#[derive(serde::Serialize)]
+pub struct SidecarStatusResponse {
+    healthy: bool,
+    restart_count: u32,
+    state: String,
+    uptime_secs: u64,
+    last_error: Option<String>,
+}
+
 #[tauri::command]
-pub fn sidecar_status(state: State<Arc<SidecarInner>>) -> serde_json::Value {
+pub fn sidecar_status(state: State<Arc<SidecarInner>>) -> SidecarStatusResponse {
     let healthy = state.healthy.load(std::sync::atomic::Ordering::Relaxed);
     let restarts = state
         .restart_count
@@ -18,13 +27,13 @@ pub fn sidecar_status(state: State<Arc<SidecarInner>>) -> serde_json::Value {
         .map(|t: std::time::Instant| t.elapsed().as_secs())
         .unwrap_or(0);
     let state_str = if healthy { "online" } else { "offline" };
-    serde_json::json!({
-        "healthy": healthy,
-        "restartCount": restarts,
-        "state": state_str,
-        "uptimeSecs": uptime,
-        "lastError": *state.last_error.lock().into_inner(),
-    })
+    SidecarStatusResponse {
+        healthy,
+        restart_count: restarts,
+        state: state_str.to_string(),
+        uptime_secs: uptime,
+        last_error: state.last_error.lock().into_inner().clone(),
+    }
 }
 
 #[tauri::command]

@@ -9,7 +9,7 @@
  * ```
  */
 import { useEffect, useState } from 'react'
-import { listen, UnlistenFn } from '@tauri-apps/api/event'
+import { listen } from '@tauri-apps/api/event'
 import { EVT } from '../api/tauri-events'
 import type { DocumentReport } from '../types'
 
@@ -29,8 +29,7 @@ export function useDocResult(): UseDocResult {
   })
 
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined
-    void listen<DocumentReport>(EVT.DocResult, (event) => {
+    const unlisten = listen<DocumentReport>(EVT.DocResult, (event) => {
       const report = event.payload
       setState({
         report,
@@ -38,11 +37,9 @@ export function useDocResult(): UseDocResult {
         litDecision: report?.lit_decision_summary ?? null,
         lastEventAt: Date.now(),
       })
-    }).then((u) => {
-      unlisten = u
     })
     return () => {
-      unlisten?.()
+      unlisten.then((u) => u())
     }
   }, [])
 

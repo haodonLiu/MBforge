@@ -1,54 +1,63 @@
 import type { ReactNode } from 'react'
-import { TONE_COLORS } from '../../styles/tokens'
 
-export type BadgeVariant = 'neutral' | 'success' | 'warning' | 'danger' | 'info'
+export type BadgeTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'loading'
 
 export interface BadgeProps {
+  tone: BadgeTone
   children: ReactNode
-  variant?: BadgeVariant
-  /** 显示左侧小圆点指示器 */
-  dot?: boolean
-  style?: React.CSSProperties
+  size?: 'sm' | 'md'
   className?: string
+  style?: React.CSSProperties
 }
 
-const variantMap: Record<BadgeVariant, keyof typeof TONE_COLORS> = {
-  neutral: 'neutral',
-  success: 'success',
-  warning: 'warning',
-  danger:  'danger',
-  info:    'info',
+const toneStyles: Record<BadgeTone, React.CSSProperties> = {
+  success: {
+    background: 'rgba(22, 163, 74, 0.10)',
+    color: 'var(--success)',
+  },
+  warning: {
+    background: 'rgba(245, 158, 11, 0.10)',
+    color: 'var(--warning)',
+  },
+  danger: {
+    background: 'rgba(220, 38, 38, 0.10)',
+    color: 'var(--danger)',
+  },
+  info: {
+    background: 'var(--accent-muted)',
+    color: 'var(--accent)',
+  },
+  neutral: {
+    background: 'var(--bg-hover)',
+    color: 'var(--text-secondary)',
+  },
+  loading: {
+    background: 'var(--bg-hover)',
+    color: 'var(--text-secondary)',
+  },
 }
 
-export default function Badge({ children, variant = 'neutral', dot = false, style, className }: BadgeProps) {
-  const v = TONE_COLORS[variantMap[variant]]
+const sizeStyles: Record<'sm' | 'md', React.CSSProperties> = {
+  sm: { padding: '2px 8px', fontSize: '11px', gap: 4 },
+  md: { padding: '4px 10px', fontSize: '12px', gap: 6 },
+}
 
+export default function Badge({ tone, children, size = 'sm', className, style }: BadgeProps) {
   return (
     <span
       className={className}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: dot ? '4px' : 0,
-        fontSize: '12px',
-        color: v.color,
-        padding: '2px 8px',
-        background: v.bg,
-        borderRadius: '4px',
+        borderRadius: 'var(--radius-md)',
         fontWeight: 500,
+        lineHeight: 1,
         whiteSpace: 'nowrap',
+        ...toneStyles[tone],
+        ...sizeStyles[size],
         ...style,
       }}
     >
-      {dot && (
-        <span style={{
-          width: '6px',
-          height: '6px',
-          borderRadius: '50%',
-          background: v.color,
-          flexShrink: 0,
-        }} />
-      )}
       {children}
     </span>
   )

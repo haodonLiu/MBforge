@@ -23,7 +23,7 @@ export interface TabsProps {
   /** 标签位置（预留字段，未来支持 bottom 布局）*/
   position?: 'top' | 'bottom'
   /** 变体 */
-  variant?: 'default' | 'pills' | 'underline'
+  variant?: 'default' | 'pills' | 'underline' | 'segment'
   size?: 'sm' | 'md' | 'lg'
   /** 是否填满整行 */
   fullWidth?: boolean
@@ -91,6 +91,8 @@ export default function Tabs({
         <button
           key={item.key}
           type="button"
+          role="tab"
+          aria-selected={isActive}
           onClick={() => handleClick(item.key, item.disabled)}
           disabled={item.disabled}
           className={className}
@@ -117,10 +119,46 @@ export default function Tabs({
       )
     }
 
+    if (variant === 'segment') {
+      return (
+        <button
+          key={item.key}
+          type="button"
+          role="tab"
+          aria-selected={isActive}
+          onClick={() => handleClick(item.key, item.disabled)}
+          disabled={item.disabled}
+          className={className}
+          style={{
+            ...baseStyle,
+            background: isActive ? 'var(--bg-elevated)' : 'transparent',
+            borderRadius: 'var(--radius-md)',
+            boxShadow: isActive ? 'var(--shadow-card)' : 'none',
+          }}
+        >
+          {item.label}
+          {item.badge !== undefined && (
+            <span style={{
+              padding: '1px 6px',
+              background: 'var(--bg-elevated)',
+              color: 'var(--text-muted)',
+              borderRadius: 8,
+              fontSize: 10,
+              fontWeight: 600,
+            }}>
+              {item.badge}
+            </span>
+          )}
+        </button>
+      )
+    }
+
     return (
       <button
         key={item.key}
         type="button"
+        role="tab"
+        aria-selected={isActive}
         onClick={() => handleClick(item.key, item.disabled)}
         disabled={item.disabled}
         className={className}
@@ -164,8 +202,12 @@ export default function Tabs({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: variant === 'default' ? 4 : 6,
-        borderBottom: variant === 'default' ? '1px solid var(--border)' : 'none',
+        gap: variant === 'segment' ? 4 : variant === 'default' ? 4 : 6,
+        padding: variant === 'segment' ? 4 : undefined,
+        background: variant === 'segment' ? 'var(--bg-surface)' : undefined,
+        borderRadius: variant === 'segment' ? 'var(--radius-lg)' : undefined,
+        border: variant === 'segment' ? '1px solid var(--border)' : undefined,
+        borderBottom: variant === 'default' ? '1px solid var(--border)' : variant === 'segment' ? 'none' : 'none',
         ...(variant === 'underline' && { borderBottom: '1px solid var(--border)' }),
         ...style,
       }}

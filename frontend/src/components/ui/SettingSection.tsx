@@ -7,11 +7,20 @@ export interface SettingSectionProps {
   children?: ReactNode
   /** 主轴方向：horizontal（label 左，control 右） / stacked（label 上，control 下） */
   layout?: 'horizontal' | 'stacked'
+  /** label/info 区域在 horizontal 布局下的固定宽度（默认 160px） */
+  labelWidth?: number
   style?: React.CSSProperties
 }
 
 /** 设置项容器：标题 + 描述 + 子控件 */
-export function SettingItem({ title, description, children, layout = 'horizontal', style }: SettingSectionProps) {
+export function SettingItem({
+  title,
+  description,
+  children,
+  layout = 'horizontal',
+  labelWidth = 160,
+  style,
+}: SettingSectionProps) {
   return (
     <div
       className="setting-item"
@@ -23,7 +32,14 @@ export function SettingItem({ title, description, children, layout = 'horizontal
       }}
     >
       {(title || description) && (
-        <div className="setting-info" style={{ flex: layout === 'horizontal' ? 1 : undefined, minWidth: 0 }}>
+        <div
+          className="setting-info"
+          style={{
+            width: layout === 'horizontal' ? labelWidth : undefined,
+            flexShrink: 0,
+            minWidth: 0,
+          }}
+        >
           {title && <div className="setting-label" style={{ fontSize: '13px', fontWeight: 500 }}>{title}</div>}
           {description && (
             <div className="setting-desc" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
@@ -32,7 +48,7 @@ export function SettingItem({ title, description, children, layout = 'horizontal
           )}
         </div>
       )}
-      <div style={{ flexShrink: 0 }}>{children}</div>
+      <div style={{ flex: 1, minWidth: 280, maxWidth: 480 }}>{children}</div>
     </div>
   )
 }

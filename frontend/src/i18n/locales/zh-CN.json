@@ -126,6 +126,7 @@
   "settings.tabs.about": "关于",
   "settings.loadFailed": "加载设置失败",
   "settings.aiModels": "AI 模型",
+  "settings.aiModelsDesc": "配置 AI 推理所需的服务商、接口地址和模型。",
   "settings.modelDownloads": "模型下载",
   "settings.diagnostics": "诊断",
   "settings.tabLlm": "LLM",

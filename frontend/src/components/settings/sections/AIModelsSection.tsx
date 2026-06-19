@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Tabs, { TabPanel } from '../../ui/Tabs'
 import ModelConfigCard from '../ModelConfigCard'
+import SectionTitle from '../../ui/SectionTitle'
 import type { SettingsState } from '../types'
 
 type Tab = 'llm' | 'embed' | 'rerank' | 'vlm' | 'ocr'
@@ -27,8 +28,16 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
   const [tab, setTab] = useState<Tab>('llm')
 
   return (
-    <>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+      <div>
+        <SectionTitle>{t('settings.aiModels')}</SectionTitle>
+        <p style={{ margin: 'var(--space-1) 0 0', fontSize: 'var(--font-size-small)', color: 'var(--text-secondary)' }}>
+          {t('settings.aiModelsDesc')}
+        </p>
+      </div>
+
       <Tabs
+        id="ai-models-tabs"
         items={[
           { key: 'llm', label: t('settings.tabLlm') },
           { key: 'embed', label: t('settings.tabEmbed') },
@@ -38,11 +47,11 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
         ]}
         activeKey={tab}
         onChange={k => setTab(k as Tab)}
-        variant="underline"
+        variant="segment"
         size="sm"
       />
 
-      <TabPanel activeKey={tab} tabKey="llm">
+      <TabPanel activeKey={tab} tabKey="llm" tabsId="ai-models-tabs">
         <ModelConfigCard
           modelType="llm"
           title={t(TAB_CONFIG.llm.titleKey)}
@@ -53,7 +62,7 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
         />
       </TabPanel>
 
-      <TabPanel activeKey={tab} tabKey="embed">
+      <TabPanel activeKey={tab} tabKey="embed" tabsId="ai-models-tabs">
         <ModelConfigCard
           modelType="embed"
           title={t(TAB_CONFIG.embed.titleKey)}
@@ -63,7 +72,7 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
         />
       </TabPanel>
 
-      <TabPanel activeKey={tab} tabKey="rerank">
+      <TabPanel activeKey={tab} tabKey="rerank" tabsId="ai-models-tabs">
         <ModelConfigCard
           modelType="rerank"
           title={t(TAB_CONFIG.rerank.titleKey)}
@@ -73,7 +82,7 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
         />
       </TabPanel>
 
-      <TabPanel activeKey={tab} tabKey="vlm">
+      <TabPanel activeKey={tab} tabKey="vlm" tabsId="ai-models-tabs">
         <ModelConfigCard
           modelType="vlm"
           title={t(TAB_CONFIG.vlm.titleKey)}
@@ -83,7 +92,7 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
         />
       </TabPanel>
 
-      <TabPanel activeKey={tab} tabKey="ocr">
+      <TabPanel activeKey={tab} tabKey="ocr" tabsId="ai-models-tabs">
         <ModelConfigCard
           modelType="ocr"
           title={t(TAB_CONFIG.ocr.titleKey)}
@@ -92,6 +101,6 @@ export default function AIModelsSection({ settings, setSettings }: Props) {
           setSettings={setSettings}
         />
       </TabPanel>
-    </>
+    </div>
   )
 }

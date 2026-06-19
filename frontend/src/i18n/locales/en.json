@@ -126,6 +126,7 @@
   "settings.tabs.about": "About",
   "settings.loadFailed": "Failed to load settings",
   "settings.aiModels": "AI Models",
+  "settings.aiModelsDesc": "Configure providers, endpoints and models for AI inference.",
   "settings.modelDownloads": "Model Downloads",
   "settings.diagnostics": "Diagnostics",
   "settings.tabLlm": "LLM",

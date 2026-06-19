@@ -1,4 +1,4 @@
-import { Suspense, useState, lazy, useEffect, useRef } from 'react'
+import { Suspense, useState, lazy, useEffect, useRef, useMemo } from 'react'
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { useTranslation, I18nextProvider } from 'react-i18next'
@@ -11,6 +11,9 @@ import Header from './components/Header'
 // Welcome is above-the-fold and stays static for fast first paint.
 import Welcome from './components/Welcome'
 import ProjectScope from './components/ProjectScope'
+import TabBar from './components/project/TabBar'
+import PdfViewer from './components/project/PdfViewer'
+import MarkdownViewer from './components/MarkdownViewer'
 import { AppProvider, useAppContext } from './context/AppContext'
 import { ask } from '@tauri-apps/plugin-dialog'
 import { showToast } from './hooks/useToast'
@@ -70,12 +73,18 @@ export default function App() {
 }
 
 function AppInner() {
-  const { projectRoot, setProjectRoot, setActiveFile } = useAppContext()
+  const { projectRoot, setProjectRoot, setActiveFile, openTabs, activeTabId, closeTab } = useAppContext()
   const [currentPage, setCurrentPage] = useState('workspace')
   const [projectScopeOpen, setProjectScopeOpen] = useState(true)
   const isMobile = useIsMobile()
   const isTablet = useIsTablet()
   const { t } = useTranslation()
+
+  // 当前激活的标签
+  const activeTab = useMemo(
+    () => (activeTabId ? openTabs.find(t => t.id === activeTabId) ?? null : null),
+    [activeTabId, openTabs],
+  )
 
   useSidecarEvents()
   useIngestNotifications(projectRoot)
@@ -108,7 +117,7 @@ function AppInner() {
         if (resp.success) {
           setProjectRoot(resp.project.root)
           setCurrentPage('workspace')
-          void enqueueUnresolvedDocuments(resp.project.root).catch(() => {})
+          void enqueueUnresolvedDocuments(resp.project.root).catch((e) => console.warn('enqueueUnresolvedDocuments failed:', e))
         } else {
           localStorage.removeItem('mbforge_project_root')
         }
@@ -180,7 +189,7 @@ function AppInner() {
         if (showProjectScope) return '56px 220px 1fr'
         return '56px 1fr'
       })(),
-      gridTemplateRows: 'auto 1fr auto',
+      gridTemplateRows: 'auto auto 1fr auto',
       height: '100vh',
     }}>
       <Sidebar
@@ -199,7 +208,7 @@ function AppInner() {
       {showProjectScope && (
         <div style={{
           gridColumn: '2',
-          gridRow: '1 / 4',
+          gridRow: '1 / 5',
           background: 'var(--bg-surface)',
           borderRight: '1px solid var(--border)',
           display: 'flex',
@@ -231,9 +240,12 @@ function AppInner() {
         </div>
       )}
       <Header gridColumn={contentColumn} />
+      <div style={{ gridColumn: contentColumn }}>
+        <TabBar />
+      </div>
       <main style={{
         gridColumn: contentColumn,
-        gridRow: '2 / 3',
+        gridRow: '3 / 5',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -241,7 +253,22 @@ function AppInner() {
       }}>
         <ErrorBoundary>
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            <AppRoutes projectRoot={projectRoot} />
+            {activeTabId === null ? (
+              <AppRoutes projectRoot={projectRoot} />
+            ) : activeTab && activeTab.type === 'pdf' ? (
+              <PdfViewer
+                doc={activeTab.doc}
+                projectRoot={activeTab.projectRoot}
+                initialMode={activeTab.initialMode}
+                onClose={() => closeTab(activeTab.id)}
+              />
+            ) : activeTab && activeTab.type === 'markdown' ? (
+              <MarkdownViewer
+                projectRoot={activeTab.projectRoot}
+                filePath={activeTab.doc.path}
+                onClose={() => closeTab(activeTab.id)}
+              />
+            ) : null}
           </div>
         </ErrorBoundary>
       </main>

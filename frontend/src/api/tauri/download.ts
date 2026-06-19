@@ -6,6 +6,14 @@ import { invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
 import { EVT } from '../tauri-events'
 
+export interface SubfileStatus {
+  label: string          // 友好标签，如 "doc" / "general"
+  relpath: string        // 相对仓库根路径
+  local_path: string     // 完整本地路径
+  ready: boolean
+  size_mb: number
+}
+
 export interface DownloadModel {
   id: string
   name: string
@@ -15,10 +23,14 @@ export interface DownloadModel {
   downloaded: boolean
   downloading: boolean
   local_path: string
+  /** 期望路径（模型应该被检测到的位置）。download 按钮用它提示用户。 */
+  expected_path: string
   license: string
   license_url: string
   size_mb: number
   source_url: string
+  /** 多文件资源（如 MolDetv2）的逐文件状态。空数组 = 单文件资源。 */
+  subfiles: SubfileStatus[]
 }
 
 export interface DownloadedModel {
@@ -59,8 +71,16 @@ export async function listModels(): Promise<{ success: boolean; models: Download
     for (const item of catalog) {
       const id = String(item.id ?? '')
       if (!id) continue
+      // 只展示模型；Python 包 (torch/transformers/...) 属于依赖，状态由 System 页展示
+      if (String(item.type ?? '') !== 'model') continue
       const status = await invokeWithError(
-        () => invoke<{ status: string; local_path: string; size_mb: number }>('resources_status', { resourceId: id }),
+        () => invoke<{
+          status: string
+          local_path: string
+          size_mb: number
+          expected_path: string
+          subfiles: { label: string; relpath: string; local_path: string; ready: boolean; size_mb: number }[]
+        }>('resources_status', { resourceId: id }),
         ErrorCode.ApiError,
       )
       models.push({
@@ -72,10 +92,12 @@ export async function listModels(): Promise<{ success: boolean; models: Download
         downloaded: status.status === 'ready',
         downloading: false,
         local_path: status.local_path ?? '',
+        expected_path: status.expected_path ?? '',
         license: String(item.license ?? ''),
         license_url: '',
         size_mb: Number(item.size_mb ?? 0),
         source_url: '',
+        subfiles: status.subfiles ?? [],
       })
     }
     return { success: true, models }
@@ -176,7 +198,7 @@ export function downloadModel(
     console.log(`${logPrefix} cleanup called`)
     aborted = true
     unlisten?.()
-    invoke('models_cancel_download', { resourceId }).catch(() => {})
+    invoke('models_cancel_download', { resourceId }).catch((e) => console.warn('cancel download failed:', e))
   }
 }
 
@@ -184,6 +206,76 @@ export function downloadModel(
 export async function deleteModel(resourceId: string): Promise<void> {
   await invokeWithError(
     () => invoke<void>('models_delete', { resourceId }),
+    ErrorCode.ApiError,
+  )
+}
+
+/** 下载多文件资源中的单个子文件 */
+export function downloadModelSubfile(
+  resourceId: string,
+  subpath: string,
+  onProgress: (event: DownloadProgress) => void,
+): () => void {
+  let unlisten: UnlistenFn | null = null
+  let aborted = false
+
+  const start = async () => {
+    try {
+      unlisten = await listen<DownloadProgress>(EVT.ModelDownloadProgress, (event) => {
+        if (event.payload.resource_id !== resourceId) return
+        onProgress(event.payload)
+      })
+      if (aborted) {
+        unlisten()
+        return
+      }
+      await invokeWithError(
+        () => invoke<string>('models_download_subfile', { resourceId, subpath }),
+        ErrorCode.ApiError,
+      )
+    } catch (err) {
+      if (aborted) return
+      onProgress({
+        resource_id: resourceId,
+        status: 'failed',
+        file: subpath,
+        file_progress: 0,
+        file_index: 0,
+        total_files: 0,
+        error: String(err),
+      })
+    }
+  }
+  void start()
+
+  return () => {
+    aborted = true
+    unlisten?.()
+    invoke('models_cancel_download', { resourceId }).catch((e) => console.warn('cancel download failed:', e))
+  }
+}
+
+/** 删除多文件资源中的单个子文件 */
+export async function deleteModelSubfile(resourceId: string, subpath: string): Promise<void> {
+  await invokeWithError(
+    () => invoke<void>('models_delete_subfile', { resourceId, subpath }),
+    ErrorCode.ApiError,
+  )
+}
+
+/** 测试模型：实际加载到内存 + 最小推理。返回 {ok, error, duration_ms} */
+export interface ModelTestResult {
+  ok: boolean
+  error: string
+  duration_ms: number
+}
+
+export async function testModel(
+  resourceId: string,
+  subpath?: string,
+): Promise<ModelTestResult> {
+  return invokeWithError(
+    () => invoke<ModelTestResult>('models_test', { resourceId, subpath }),
     ErrorCode.ApiError,
   )
 }

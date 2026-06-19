@@ -98,7 +98,7 @@ export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
 
     return () => {
       if (sessionIdRef.current) {
-        agentDestroySession(sessionIdRef.current).catch(() => {})
+        agentDestroySession(sessionIdRef.current).catch((e) => console.warn('agentDestroySession failed:', e))
       }
     }
   }, [projectRoot, t])
@@ -107,10 +107,10 @@ export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
     if (!projectRoot) return
     listDocumentsTauri(projectRoot).then(resp => {
       if (resp.success) setDocCount(resp.documents.length)
-    }).catch(() => {})
+    }).catch((e) => console.warn('listDocumentsTauri failed:', e))
     moleculeStatsTauri(projectRoot).then(resp => {
       if (resp.success) setMolCount(resp.stats.total || 0)
-    }).catch(() => {})
+    }).catch((e) => console.warn('moleculeStatsTauri failed:', e))
   }, [projectRoot])
 
   const sendMessage = useCallback(async () => {

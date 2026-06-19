@@ -42,7 +42,7 @@ export default function Welcome({ onProjectOpened }: Props) {
     // projectRoot, so we do not write it here. We only manage the
     // recent-projects list (separate localStorage key).
     persistRecent(root, name)
-    void enqueueUnresolvedDocuments(root).catch(() => {})
+    void enqueueUnresolvedDocuments(root).catch((e) => console.warn('enqueueUnresolvedDocuments failed:', e))
     onProjectOpened?.(root)
   }
 

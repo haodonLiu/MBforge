@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import type { ReactNode, MouseEvent } from 'react'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'dashed'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'dashed' | 'success'
 export type ButtonSize = 'sm' | 'md' | 'lg'
 
 export interface ButtonProps {
@@ -24,6 +24,7 @@ const variantStyles: Record<ButtonVariant, React.CSSProperties> = {
   ghost:     { background: 'transparent', color: 'var(--text-secondary)', border: 'none' },
   danger:    { background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.3)' },
   dashed:    { background: 'none', color: 'var(--text-secondary)', border: '1px dashed var(--border)' },
+  success:   { background: 'var(--success)', color: '#fff', border: 'none' },
 }
 
 const sizeStyles: Record<ButtonSize, React.CSSProperties> = {

@@ -28,6 +28,8 @@ export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [buttonSaved, setButtonSaved] = useState(false)
+  const [saveErrorShake, setSaveErrorShake] = useState(false)
 
   const isDirty = !isSettingsEqual(settings, initialSettings)
 
@@ -62,19 +64,25 @@ export default function SettingsPage() {
       const resp = await saveSettings(payload)
       if (resp.success) {
         setSaveSuccess(true)
+        setButtonSaved(true)
         setInitialSettings(settings)
         setTheme(settings.theme === 'system' ? 'dark' : settings.theme)
         void i18n.changeLanguage(settings.language)
         setTimeout(() => setSaveSuccess(false), 3000)
+        setTimeout(() => setButtonSaved(false), 1500)
       } else {
         const msg = resp.error || t('settings.saveFailed')
         setError(msg)
+        setSaveErrorShake(true)
         showToast(msg, 'error')
+        setTimeout(() => setSaveErrorShake(false), 300)
       }
     } catch (e) {
       const msg = t('settings.saveFailed') + ': ' + (e instanceof Error ? e.message : String(e))
       setError(msg)
+      setSaveErrorShake(true)
       showToast(msg, 'error')
+      setTimeout(() => setSaveErrorShake(false), 300)
     } finally {
       setIsLoading(false)
     }
@@ -112,12 +120,13 @@ export default function SettingsPage() {
             {t('common.cancel')}
           </Button>
           <Button
-            variant="primary"
+            variant={buttonSaved ? 'success' : 'primary'}
             onClick={handleSave}
             disabled={isLoading || !isDirty}
             loading={isLoading}
+            className={saveErrorShake ? 'settings-save-button--error' : undefined}
           >
-            {isLoading ? t('settings.saving') : t('common.save')}
+            {isLoading ? t('settings.saving') : buttonSaved ? t('settings.saved') + ' ✓' : t('common.save')}
           </Button>
         </div>
       </div>

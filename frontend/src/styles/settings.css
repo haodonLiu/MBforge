@@ -134,7 +134,7 @@
 /* Select (settings modal — plural alias) */
 .settings-input,
 .settings-select {
-  height: 34px;
+  min-height: 34px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -1289,8 +1289,19 @@
 @media (prefers-reduced-motion: reduce) {
   .settings-save-button--error,
   .settings-input,
-  .settings-select {
-    transition: none;
-    animation: none;
+  .settings-select,
+  .toggle-slider,
+  .toggle-slider::before,
+  .download-progress-fill,
+  .downloaded-model-item,
+  .resource-item,
+  .model-card,
+  .theme-option,
+  .about-links a,
+  .confirmation-page,
+  .settings-modal-nav-item,
+  .settings-custom-hint > summary::before {
+    transition: none !important;
+    animation: none !important;
   }
 }

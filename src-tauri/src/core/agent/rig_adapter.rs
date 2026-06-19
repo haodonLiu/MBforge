@@ -790,7 +790,7 @@ use crate::core::agent::trajectory::TrajectoryTracker;
 /// 新增工具：直接修改宏体里的 `tools.push(...)` 列表。
 macro_rules! assemble_rig_tool_vec {
     ($project_root:expr) => {{
-        let mut tools: Vec<Box<dyn rig_core::tool::ToolDyn>> = Vec::with_capacity(25);
+        let mut tools: Vec<Box<dyn rig_core::tool::ToolDyn>> = Vec::with_capacity(26);
         // 16 executor tools (take project_root).
         tools.push(Box::new(GrepSearchTool::new($project_root)));
         tools.push(Box::new(ListFilesTool::new($project_root)));

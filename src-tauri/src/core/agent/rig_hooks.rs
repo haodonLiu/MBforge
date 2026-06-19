@@ -141,9 +141,14 @@ where
 
     fn on_invalid_tool_call(
         &self,
-        _ctx: &InvalidToolCallContext,
+        ctx: &InvalidToolCallContext,
     ) -> impl Future<Output = InvalidToolCallHookAction> + WasmCompatSend {
-        async { InvalidToolCallHookAction::fail() }
+        let feedback = format!(
+            "Tool '{}' is not valid. Available tools: {}. Please correct your request.",
+            ctx.tool_name,
+            ctx.available_tools.join(", ")
+        );
+        async move { InvalidToolCallHookAction::retry(feedback) }
     }
 
     fn on_tool_call(

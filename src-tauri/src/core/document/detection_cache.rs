@@ -273,6 +273,32 @@ impl DetectionCache {
     pub fn cached_page_count(&self) -> usize {
         count_pages(&self.base_dir())
     }
+
+    /// List page numbers that have a cached entry for `doc_id`.
+    ///
+    /// Pages are returned sorted ascending. Files that do not match the
+    /// `page_NNNN.json` naming convention are ignored.
+    pub fn list_pages_for_doc(&self, doc_id: &str) -> Vec<usize> {
+        let dir = self.base_dir().join(doc_id);
+        let mut pages: Vec<usize> = std::fs::read_dir(&dir)
+            .map(|rd| {
+                rd.flatten()
+                    .filter_map(|e| {
+                        let name = e.file_name().to_string_lossy().to_string();
+                        parse_page_filename(&name)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        pages.sort_unstable();
+        pages
+    }
+}
+
+/// Parse `page_0042.json` → `Some(42)`. Returns `None` for other files.
+fn parse_page_filename(name: &str) -> Option<usize> {
+    let stem = name.strip_prefix("page_")?.strip_suffix(".json")?;
+    stem.parse().ok()
 }
 
 /// Compute SHA-256 of a file's contents, returned as a lowercase hex string.

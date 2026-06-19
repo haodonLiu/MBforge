@@ -8,6 +8,7 @@ use crate::core::document::detection_cache::DetectionCache;
 use crate::core::document::semantic_cache::SemanticCache;
 use crate::core::models::resolve::dir_size;
 
+
 // ─── 缓存大小与清除 ─────────────────────────────────────────────
 
 /// 单类缓存大小（MB）
@@ -118,137 +119,7 @@ fn clear_molecules(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-// ─── 缓存迁移（统一到 ~/.cache/mbforge/models/） ─────────────────
-
-#[derive(serde::Serialize)]
-pub struct ConsolidateResult {
-    pub model_id: String,
-    pub from: String,
-    pub to: String,
-    pub files_copied: usize,
-    pub already_present: bool,
-    pub success: bool,
-    pub error: String,
-}
-
-/// 把 HF / ModelScope 散落的模型迁移到 ~/.cache/mbforge/models/（统一缓存）
-#[tauri::command]
-pub fn consolidate_models() -> Vec<ConsolidateResult> {
-    use crate::core::config::constants::model_cache_dir;
-    use crate::core::models::catalog::{ResourceType, RESOURCE_CATALOG};
-
-    let dest_root = model_cache_dir();
-    let mut results = Vec::new();
-
-    for info in RESOURCE_CATALOG {
-        if info.resource_type != ResourceType::Model {
-            continue;
-        }
-        if info.download_type != "snapshot" {
-            continue; // file 类型已经在 mbforge cache，不需迁移
-        }
-        let repo_name = info.ms_repo.split('/').last().unwrap_or(info.ms_repo);
-
-        // 1. 已经在目标位置？跳过
-        let dest = dest_root.join(repo_name);
-        if dest.exists()
-            && std::fs::read_dir(&dest)
-                .map(|mut d| d.next().is_some())
-                .unwrap_or(false)
-        {
-            results.push(ConsolidateResult {
-                model_id: info.id.into(),
-                from: String::new(),
-                to: dest.to_string_lossy().to_string(),
-                files_copied: 0,
-                already_present: true,
-                success: true,
-                error: String::new(),
-            });
-            continue;
-        }
-
-        // 2. 在候选源（ModelScope / HF_HOME）寻找
-        let home = std::env::var_os("HOME")
-            .or_else(|| std::env::var_os("USERPROFILE"))
-            .map(std::path::PathBuf::from);
-        let Some(home) = home else { continue };
-
-        // ModelScope 新 SDK 布局：<home>/.cache/modelscope/hub/<org>/<repo>
-        let ms_repo_dir = home
-            .join(".cache")
-            .join("modelscope")
-            .join("hub")
-            .join(info.ms_repo.split('/').next().unwrap_or(""))
-            .join(info.ms_repo.replace('.', "___"));
-        // 老 SDK 布局
-        let ms_old = home.join(".cache").join("modelscope").join(repo_name);
-        // HF 布局
-        let hf_repo = home
-            .join(".cache")
-            .join("huggingface")
-            .join("hub")
-            .join(format!("models--{}", info.ms_repo.replace('/', "--")));
-
-        let source = [ms_repo_dir, ms_old, hf_repo]
-            .into_iter()
-            .find(|p| p.exists());
-
-        let Some(src) = source else { continue };
-
-        // 3. 复制
-        std::fs::create_dir_all(&dest).ok();
-        let mut count = 0usize;
-        let mut last_err = String::new();
-        if let Ok(entries) = std::fs::read_dir(&src) {
-            for entry in entries.flatten() {
-                let from = entry.path();
-                let to = dest.join(entry.file_name());
-                if to.exists() {
-                    continue;
-                }
-                let r = if from.is_dir() {
-                    copy_dir_recursive(&from, &to)
-                } else {
-                    std::fs::copy(&from, &to)
-                        .map(|_| ())
-                        .map_err(|e| e.to_string())
-                };
-                match r {
-                    Ok(()) => count += 1,
-                    Err(e) => last_err = e,
-                }
-            }
-        }
-        results.push(ConsolidateResult {
-            model_id: info.id.into(),
-            from: src.to_string_lossy().to_string(),
-            to: dest.to_string_lossy().to_string(),
-            files_copied: count,
-            already_present: false,
-            success: count > 0,
-            error: last_err,
-        });
-    }
-
-    // 触发一次路径解析刷新
-    crate::core::models::status::write_resolved_paths();
-    results
-}
-
-fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
-    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
-    for entry in std::fs::read_dir(src).map_err(|e| e.to_string())?.flatten() {
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        if from.is_dir() {
-            copy_dir_recursive(&from, &to)?;
-        } else {
-            std::fs::copy(&from, &to).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
+// ─── 最近项目 ────────────────────────────────────────────────────
 
 #[derive(serde::Serialize)]
 pub struct RecentProjectsResult {

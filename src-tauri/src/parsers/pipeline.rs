@@ -210,17 +210,7 @@ pub async fn parse_pdf(
         2,  // max_size_mb
     )
     .unwrap_or_default();
-    let mut images: Vec<ImageRef> = extracted
-        .into_iter()
-        .map(|img| ImageRef {
-            filename: img.filename,
-            page: img.page,
-            region: None,
-            description: None,
-            esmiles: None,
-            rel_path: None,
-        })
-        .collect();
+    let mut images: Vec<ImageRef> = extract::persist_extracted_images(&path, &extracted);
     images.extend(mineru_images);
 
     // Stage 2: Classification

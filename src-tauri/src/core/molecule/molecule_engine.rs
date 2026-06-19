@@ -7,7 +7,7 @@
 //! opening independent DB connections.
 
 use std::path::Path;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 use crate::core::chem::markush;
 use crate::core::molecule::molecule_db::{MoleculeRelation, MoleculeRelationDb, RelationStats};
@@ -52,50 +52,32 @@ impl MoleculeEngine {
     // =====================================================================
 
     pub fn add_molecule(&self, record: &MoleculeRecord) -> Result<(), String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .add_molecule(record)
+        self.store.blocking_lock().add_molecule(record)
     }
 
     pub fn add_molecules_batch(&self, records: &[MoleculeRecord]) -> Result<usize, String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .add_molecules_batch(records)
+        self.store.blocking_lock().add_molecules_batch(records)
     }
 
     /// 获取底层 MoleculeDatabase 锁 guard
-    pub fn store(&self) -> std::sync::MutexGuard<'_, MoleculeDatabase> {
-        self.store.lock().expect("store mutex poisoned")
+    pub fn store(&self) -> tokio::sync::MutexGuard<'_, MoleculeDatabase> {
+        self.store.blocking_lock()
     }
 
     pub fn get_molecule(&self, mol_id: &str) -> Result<Option<MoleculeRecord>, String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .get_molecule(mol_id)
+        self.store.blocking_lock().get_molecule(mol_id)
     }
 
     pub fn search_by_smiles(&self, smiles: &str) -> Result<Option<MoleculeRecord>, String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .search_by_smiles(smiles)
+        self.store.blocking_lock().search_by_smiles(smiles)
     }
 
     pub fn search_by_source(&self, doc_id: &str) -> Result<Vec<MoleculeRecord>, String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .search_by_source(doc_id)
+        self.store.blocking_lock().search_by_source(doc_id)
     }
 
     pub fn search_text(&self, query: &str) -> Result<Vec<MoleculeRecord>, String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .search_text(query)
+        self.store.blocking_lock().search_text(query)
     }
 
     pub fn list_all(
@@ -105,48 +87,30 @@ impl MoleculeEngine {
         source_type: Option<&str>,
         status: Option<&str>,
     ) -> Result<Vec<MoleculeRecord>, String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .list_all(limit, offset, source_type, status)
+        self.store.blocking_lock().list_all(limit, offset, source_type, status)
     }
 
     pub fn delete_molecule(&self, mol_id: &str) -> Result<bool, String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .delete_molecule(mol_id)
+        self.store.blocking_lock().delete_molecule(mol_id)
     }
 
     pub fn get_store_stats(&self) -> Result<serde_json::Value, String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .get_stats()
+        self.store.blocking_lock().get_stats()
     }
 
     pub fn update_status(&self, mol_id: &str, status: &str) -> Result<bool, String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .update_status(mol_id, status)
+        self.store.blocking_lock().update_status(mol_id, status)
     }
 
     pub fn update_molecule(&self, record: &MoleculeRecord) -> Result<bool, String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .update_molecule(record)
+        self.store.blocking_lock().update_molecule(record)
     }
 
     pub fn update_molecules_batch(
         &self,
         records: &[MoleculeRecord],
     ) -> Result<(usize, Vec<String>), String> {
-        self.store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?
-            .update_molecules_batch(records)
+        self.store.blocking_lock().update_molecules_batch(records)
     }
     // =====================================================================
     // Relation operations (delegated to molecule_db.rs)
@@ -240,10 +204,7 @@ impl MoleculeEngine {
             .await
             .map_err(|e| format!("find_similar failed: {}", e))?;
 
-        let store = self
-            .store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?;
+        let store = self.store.lock().await;
         let mconn = store.conn();
 
         let mut results = Vec::new();
@@ -278,10 +239,7 @@ impl MoleculeEngine {
     }
 
     pub fn scaffold_profile(&self, scaffold: &str) -> Result<ScaffoldProfile, String> {
-        let store = self
-            .store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?;
+        let store = self.store.blocking_lock();
         crate::core::chem::sar_query::scaffold_activity_profile(scaffold, store.conn())
     }
 
@@ -290,10 +248,7 @@ impl MoleculeEngine {
         min_sim: f64,
         min_ratio: f64,
     ) -> Result<Vec<ActivityCliff>, String> {
-        let store = self
-            .store
-            .lock()
-            .map_err(|e| format!("Store lock poisoned: {}", e))?;
+        let store = self.store.blocking_lock();
         crate::core::chem::sar_query::find_activity_cliffs(min_sim, min_ratio, store.conn())
     }
 

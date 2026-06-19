@@ -1,8 +1,11 @@
-//! 路径解析 �?检查资源是否已下载/安装
+//! 路径解析 — 检查资源是否已下载/安装
+//!
+//! 单一检测源：`~/mbforge/models/`。不扫描 HF_HOME / MODELSCOPE_CACHE / TORCH_HOME。
+//! 用户手动放置文件时必须放在此目录下，否则视为未下载。
 use super::catalog::*;
 use std::path::PathBuf;
 
-/// 检查单个资源状�?
+/// 检查单个资源状态
 pub fn check_resource(resource_id: &str) -> ResourceStatusResult {
     let info = RESOURCE_CATALOG.iter().find(|r| r.id == resource_id);
     let info = match info {
@@ -28,7 +31,7 @@ pub fn check_resource(resource_id: &str) -> ResourceStatusResult {
             }
         }
         ResourceType::PythonPackage => check_python_package(info),
-        ResourceType::Binary => not_found(info),
+        ResourceType::Binary => not_found_with_expected(info, &expected_path_for(info)),
     }
 }
 
@@ -42,100 +45,126 @@ pub fn get_model_path(resource_id: &str) -> Option<PathBuf> {
     }
 }
 
-// ─── 内部检查函�?───────────────────────────────────────────────
+// ─── 内部检查函数 ────────────────────────────────────────────────
 
-/// �?ENV 优先级顺序搜�?snapshot 类型模型�?
-/// 顺序: MBFORGE_MODEL_CACHE_DIR �?HF_HOME �?MODELSCOPE_CACHE �?TORCH_HOME �?默认回退
-fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
+/// 解析 ModelScope 仓库的本地目录：`<cache>/<org>/<encoded_repo>/`
+/// 编码规则：repo 中的 `.` 替换为 `___`（与 ModelScope SDK 行为一致）。
+pub fn ms_repo_dir(info: &ResourceInfo) -> PathBuf {
+    let cache = crate::core::config::constants::model_cache_dir();
+    let org = info.ms_repo.split('/').next().unwrap_or("");
     let repo_name = info.ms_repo.split('/').last().unwrap_or(info.ms_repo);
-    let ms_org = info.ms_repo.split('/').next().unwrap_or("Qwen");
-
-    // 1. MBForge 缓存（env > config > default�?
-    let mbforge_cache = crate::core::config::constants::model_cache_dir();
-    for name in &[repo_name, &repo_name.replace('.', "___")] {
-        let dir = mbforge_cache.join(name);
-        if let Some(result) = check_dir_for_weights(info, &dir) {
-            return result;
-        }
+    let encoded = repo_name.replace('.', "___");
+    if org.is_empty() {
+        cache.join(encoded)
+    } else {
+        cache.join(org).join(encoded)
     }
-
-    // 2. HF_HOME
-    if let Ok(hf_home) = std::env::var("HF_HOME") {
-        let hf_hub = PathBuf::from(&hf_home).join("hub");
-        let encoded_name = format!("models--{}", info.ms_repo.replace('/', "--"));
-        let snapshots = hf_hub.join(&encoded_name).join("snapshots");
-        if snapshots.exists() {
-            if let Ok(entries) = std::fs::read_dir(&snapshots) {
-                for entry in entries.flatten() {
-                    if entry.path().is_dir() {
-                        if let Some(result) = check_dir_for_weights(info, &entry.path()) {
-                            return result;
-                        }
-                    }
-                }
-            }
-        }
-        let direct = PathBuf::from(&hf_home).join(repo_name);
-        if let Some(result) = check_dir_for_weights(info, &direct) {
-            return result;
-        }
-    }
-
-    // 3. MODELSCOPE_CACHE（env > default�?
-    let ms_cache_candidates = vec![
-        std::env::var("MODELSCOPE_CACHE").ok().map(PathBuf::from),
-        directories::UserDirs::new().map(|u| u.home_dir().join(".cache").join("modelscope")),
-    ];
-    for ms_root in ms_cache_candidates.into_iter().flatten() {
-        // 覆盖新旧 SDK 布局�?"（早期）/"models"/"hub"（新版扁平）/"hub/models"（旧版嵌套）
-        for subdir in &["", "models", "hub", "hub/models"] {
-            for name in &[repo_name, &repo_name.replace('.', "___")] {
-                let dir = ms_root.join(subdir).join(ms_org).join(name);
-                if let Some(result) = check_dir_for_weights(info, &dir) {
-                    return result;
-                }
-            }
-        }
-    }
-
-    // 4. TORCH_HOME
-    if let Ok(torch_home) = std::env::var("TORCH_HOME") {
-        for name in &[repo_name, &repo_name.replace('.', "___")] {
-            let dir = PathBuf::from(&torch_home).join(name);
-            if let Some(result) = check_dir_for_weights(info, &dir) {
-                return result;
-            }
-        }
-    }
-
-    not_found(info)
 }
 
-fn check_dir_for_weights(
-    info: &ResourceInfo,
-    dir: &std::path::Path,
-) -> Option<ResourceStatusResult> {
-    if !dir.exists() {
-        return None;
+/// 计算资源在 `~/mbforge/models/` 下的期望路径。
+/// - info.files 唯一项 → 该文件
+/// - info.files 多项 → ms_repo_dir 目录
+/// - 否则：snapshot → ms_repo_dir；file → <local_name>
+fn expected_path_for(info: &ResourceInfo) -> PathBuf {
+    let cache = crate::core::config::constants::model_cache_dir();
+    if !info.files.is_empty() {
+        if info.files.len() == 1 {
+            return ms_repo_dir(info).join(info.files[0]);
+        }
+        return ms_repo_dir(info);
     }
-    if !has_file_with_ext(dir, &["bin", "safetensors", "pt", "pth"]) {
-        return None;
+    if info.download_type == "file" {
+        let local_name = if info.local_name.is_empty() {
+            format!("{}.pt", info.id)
+        } else {
+            info.local_name.to_string()
+        };
+        cache.join(local_name)
+    } else {
+        ms_repo_dir(info)
     }
-    let size = dir_size(dir);
-    Some(ResourceStatusResult {
-        id: info.id.to_string(),
-        name: info.name.to_string(),
-        resource_type: info.resource_type.clone(),
-        status: ResourceStatus::Ready,
-        local_path: dir.to_string_lossy().to_string(),
-        size_mb: (size as f64) / 1024.0 / 1024.0,
-        version: String::new(),
-        error: String::new(),
-    })
 }
 
-/// �?ENV 优先级顺序搜索单文件类型模型�?
-/// 顺序�?snapshot 一�? MBFORGE_MODEL_CACHE_DIR �?HF_HOME �?MODELSCOPE_CACHE �?TORCH_HOME �?默认回退
+/// snapshot 类型模型 — 唯一检测源：`~/mbforge/models/<org>/<encoded_repo>/`
+///
+/// 若 info.files 非空，按精确文件列表逐个检查（任一缺失 → NotFound）。
+/// 多文件时填充 subfiles 字段供前端逐行展示。
+fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
+    let cache = crate::core::config::constants::model_cache_dir();
+    let expected = expected_path_for(info);
+    let dest = ms_repo_dir(info);
+
+    if !info.files.is_empty() {
+        // 精确文件列表：全部存在才算 Ready；逐个填 subfiles
+        let mut all_ok = true;
+        let mut first_existing: Option<PathBuf> = None;
+        let mut existing_size: u64 = 0;
+        let mut subfiles: Vec<super::catalog::SubfileStatus> = Vec::new();
+        let mut total_size: u64 = 0;
+
+        for rel in info.files {
+            let p = dest.join(rel);
+            let size = p.metadata().map(|m| m.len()).unwrap_or(0);
+            let ready = p.exists() && size > 0;
+            if !ready {
+                all_ok = false;
+            } else {
+                total_size += size;
+                if first_existing.is_none() {
+                    first_existing = Some(p.clone());
+                    existing_size = size;
+                }
+            }
+            subfiles.push(super::catalog::SubfileStatus {
+                label: friendly_subfile_label(rel),
+                relpath: rel.to_string(),
+                local_path: p.to_string_lossy().to_string(),
+                ready,
+                size_mb: (size as f64) / 1024.0 / 1024.0,
+            });
+        }
+
+        if all_ok {
+            // local_path 写成 dest 目录（不是单个文件），与 Python 侧
+            // `get_molscribe_path` / `resolve_model_for_backend(..., subpath=)` 约定一致：
+            // 读 dir + 自己拼 subpath 定位子文件。
+            let mut result = mk_ready(info, &dest, total_size).with_expected(expected.to_string_lossy().to_string());
+            result.subfiles = subfiles;
+            return result;
+        }
+        let mut result = not_found_with_expected(info, &expected);
+        result.subfiles = subfiles;
+        return result;
+    }
+
+    // 回退：扫描 ms_repo_dir 是否有任意权重文件
+    if let Some(mut result) = check_dir_for_weights(info, &dest) {
+        result.expected_path = expected.to_string_lossy().to_string();
+        return result;
+    }
+
+    not_found_with_expected(info, &expected)
+}
+
+/// 子文件的友好标签：取第一段目录名（如 "doc/moldet_v2...pt" → "doc"），
+/// 否则取文件名（去扩展名）。
+fn friendly_subfile_label(rel: &str) -> String {
+    if let Some((dir, _)) = rel.split_once('/') {
+        return dir.to_string();
+    }
+    std::path::Path::new(rel)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(rel)
+        .to_string()
+}
+
+/// 单文件类型模型 — 唯一检测源：`~/mbforge/models/`
+///
+/// 支持三种布局（按用户放置习惯）：
+///   1. `~/mbforge/models/<local_name>`（精确文件）
+///   2. `~/mbforge/models/<local_stem>/<weights>`（子目录）
+///   3. `~/mbforge/models/<repo_name>/<weights>`（按 repo 分目录）
 fn check_model_file(info: &ResourceInfo) -> ResourceStatusResult {
     let local_name = if info.local_name.is_empty() {
         format!("{}.pt", info.id)
@@ -143,98 +172,43 @@ fn check_model_file(info: &ResourceInfo) -> ResourceStatusResult {
         info.local_name.to_string()
     };
     let repo_name = info.ms_repo.split('/').last().unwrap_or(info.ms_repo);
-
-    // local_name �?stem（去扩展名）�?用于子目录名匹配
     let local_stem = std::path::Path::new(&local_name)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or(&local_name);
 
-    // 在一�?base 目录下查找：精确文件�?�?local_stem 子目�?�?repo_name 子目�?�?递归
-    // 关键字过滤：递归 / 子目录扫描出来的文件必须包含模型 id 或 repo 末段，
-    // 否则会把别的模型权重误归到本模型（例如 molscribe 查询抓到 moldet 的 .pt）
     let id_key = info.id.to_lowercase();
-    let repo_key = info
-        .ms_repo
-        .split('/')
-        .last()
-        .unwrap_or(info.ms_repo)
-        .to_lowercase();
+    let repo_key = repo_name.to_lowercase();
+    let cache = crate::core::config::constants::model_cache_dir();
+    let expected = expected_path_for(info);
 
     let search_base = |base: &std::path::Path| -> Option<ResourceStatusResult> {
-        // 1. base/<local_name>（精确文件）
         let path = base.join(&local_name);
         if path.exists() && path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
             let size = path.metadata().map(|m| m.len()).unwrap_or(0);
             return Some(mk_ready(info, &path, size));
         }
-        // 2. base/<local_stem>/<local_name>（子目录匹配�?
         let stem_subdir = base.join(local_stem);
         if let Some(p) =
             find_weights_in_dir(&stem_subdir).filter(|p| path_matches(p, &id_key, &repo_key))
         {
-            return Some(mk_ready(
-                info,
-                &p,
-                p.metadata().map(|m| m.len()).unwrap_or(0),
-            ));
+            return Some(mk_ready(info, &p, p.metadata().map(|m| m.len()).unwrap_or(0)));
         }
-        // 3. base/<repo_name>/<any .pt|.pth>（按 repo 划分的子目录�?
         let subdir = base.join(&repo_name);
         if let Some(p) =
             find_weights_in_dir(&subdir).filter(|p| path_matches(p, &id_key, &repo_key))
         {
-            return Some(mk_ready(
-                info,
-                &p,
-                p.metadata().map(|m| m.len()).unwrap_or(0),
-            ));
-        }
-        // 4. 递归扫描 base �?2 层内�?.pt|.pth|.bin|.safetensors（兜底，匹配用户自定义子目录布局�?
-        if let Some(p) =
-            find_weights_recursive(base, 2).filter(|p| path_matches(p, &id_key, &repo_key))
-        {
-            return Some(mk_ready(
-                info,
-                &p,
-                p.metadata().map(|m| m.len()).unwrap_or(0),
-            ));
+            return Some(mk_ready(info, &p, p.metadata().map(|m| m.len()).unwrap_or(0)));
         }
         None
     };
 
-    // 1. MBForge 缓存
-    if let Some(result) = search_base(&crate::core::config::constants::model_cache_dir()) {
+    if let Some(mut result) = search_base(&cache) {
+        result.expected_path = expected.to_string_lossy().to_string();
         return result;
     }
 
-    // 2. HF_HOME
-    if let Ok(hf_home) = std::env::var("HF_HOME") {
-        if let Some(result) = search_base(&PathBuf::from(&hf_home)) {
-            return result;
-        }
-    }
-
-    // 3. MODELSCOPE_CACHE
-    if let Ok(ms_cache) = std::env::var("MODELSCOPE_CACHE") {
-        if let Some(result) = search_base(&PathBuf::from(&ms_cache)) {
-            return result;
-        }
-    }
-    if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf()) {
-        if let Some(result) = search_base(&home.join(".cache").join("modelscope")) {
-            return result;
-        }
-    }
-
-    // 4. TORCH_HOME
-    if let Ok(torch_home) = std::env::var("TORCH_HOME") {
-        if let Some(result) = search_base(&PathBuf::from(&torch_home)) {
-            return result;
-        }
-    }
-
-    not_found(info)
+    not_found_with_expected(info, &expected)
 }
 
 fn check_python_package(info: &ResourceInfo) -> ResourceStatusResult {
@@ -270,9 +244,11 @@ fn check_python_package(info: &ResourceInfo) -> ResourceStatusResult {
                 size_mb: 0.0,
                 version,
                 error: String::new(),
+                expected_path: String::new(),
+                subfiles: Vec::new(),
             }
         }
-        _ => not_found(info),
+        _ => not_found_with_expected(info, &expected_path_for(info)),
     }
 }
 
@@ -283,7 +259,21 @@ fn has_files(p: &std::path::Path) -> bool {
             .unwrap_or(false)
 }
 
-/// 构造一�?Ready 状态结�?
+fn check_dir_for_weights(
+    info: &ResourceInfo,
+    dir: &std::path::Path,
+) -> Option<ResourceStatusResult> {
+    if !dir.exists() {
+        return None;
+    }
+    if !has_file_with_ext(dir, &["bin", "safetensors", "pt", "pth"]) {
+        return None;
+    }
+    let size = dir_size(dir);
+    Some(mk_ready(info, dir, size))
+}
+
+/// 构造一个 Ready 状态结果（expected_path 留空，由调用方填入）
 fn mk_ready(info: &ResourceInfo, path: &std::path::Path, size: u64) -> ResourceStatusResult {
     ResourceStatusResult {
         id: info.id.to_string(),
@@ -294,10 +284,24 @@ fn mk_ready(info: &ResourceInfo, path: &std::path::Path, size: u64) -> ResourceS
         size_mb: (size as f64) / 1024.0 / 1024.0,
         version: String::new(),
         error: String::new(),
+        expected_path: String::new(),
+        subfiles: Vec::new(),
     }
 }
 
-/// 在指定目录（不递归）下找第一个权重文件（.pt/.pth/.bin/.safetensors�?
+/// 链式 helper：把 expected_path 一次性填上
+trait WithExpected {
+    fn with_expected(self, expected: String) -> Self;
+}
+
+impl WithExpected for ResourceStatusResult {
+    fn with_expected(mut self, expected: String) -> Self {
+        self.expected_path = expected;
+        self
+    }
+}
+
+/// 在指定目录（不递归）下找第一个权重文件（.pt/.pth/.bin/.safetensors）
 fn find_weights_in_dir(dir: &std::path::Path) -> Option<PathBuf> {
     if !dir.is_dir() {
         return None;
@@ -309,20 +313,6 @@ fn find_weights_in_dir(dir: &std::path::Path) -> Option<PathBuf> {
         }
     }
     None
-}
-
-/// 递归扫描 base 目录（限定深度）下第一个权重文�?
-fn find_weights_recursive(base: &std::path::Path, max_depth: usize) -> Option<PathBuf> {
-    if !base.is_dir() {
-        return None;
-    }
-    walkdir::WalkDir::new(base)
-        .max_depth(max_depth)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .find(|e| e.file_type().is_file() && is_weights_file(e.path()))
-        .map(|e| e.path().to_path_buf())
 }
 
 fn is_weights_file(p: &std::path::Path) -> bool {
@@ -350,7 +340,7 @@ fn path_matches(p: &std::path::Path, id_key: &str, repo_key: &str) -> bool {
 
 // ─── 工具函数 ───────────────────────────────────────────────────
 
-fn not_found(info: &ResourceInfo) -> ResourceStatusResult {
+fn not_found_with_expected(info: &ResourceInfo, expected: &std::path::Path) -> ResourceStatusResult {
     ResourceStatusResult {
         id: info.id.to_string(),
         name: info.name.to_string(),
@@ -360,6 +350,8 @@ fn not_found(info: &ResourceInfo) -> ResourceStatusResult {
         size_mb: 0.0,
         version: String::new(),
         error: String::new(),
+        expected_path: expected.to_string_lossy().to_string(),
+        subfiles: Vec::new(),
     }
 }
 
@@ -407,74 +399,135 @@ mod tests {
     use super::*;
     use crate::core::config::constants::model_cache_dir;
 
+    /// 通用工具：跑 check_resource 并断言 NotFound + expected_path 包含 mbforge。
+    /// 注：这些测试在用户的 ~/mbforge/ 通常是空时（CI/干净环境）会通过；
+    /// 已有模型文件时则 Ready。两个状态都合法。
+    fn assert_not_found_with_path(id: &str) -> ResourceStatusResult {
+        let status = check_resource(id);
+        assert!(
+            !status.expected_path.is_empty(),
+            "{}: expected_path 必须始终非空（告诉用户放哪）",
+            id
+        );
+        assert!(
+            status.expected_path.contains("mbforge"),
+            "{}: expected_path 应在 ~/mbforge/ 下，实际: {}",
+            id,
+            status.expected_path
+        );
+        status
+    }
+
     #[test]
-    fn finds_moldet_in_subdir() {
-        // 模拟用户实际布局：~/.cache/mbforge/models/moldetv2-doc/<file>.pt
-        let info = RESOURCE_CATALOG.iter().find(|r| r.id == "moldet").unwrap();
-        let status = check_model_file(info);
-        if model_cache_dir().join("moldetv2-doc").exists() {
-            assert_eq!(
-                status.status,
-                ResourceStatus::Ready,
-                "moldet should be Ready"
-            );
-            assert!(!status.local_path.is_empty());
-            eprintln!("moldet local_path = {}", status.local_path);
+    fn each_model_has_unique_expected_path() {
+        // 防御：catalog 不能有两条资源期望同一路径（用户删除会误伤）
+        use std::collections::HashSet;
+        let mut seen: HashSet<String> = HashSet::new();
+        for info in RESOURCE_CATALOG {
+            if info.resource_type != ResourceType::Model {
+                continue;
+            }
+            let p = expected_path_for(info).to_string_lossy().to_string();
+            assert!(seen.insert(p.clone()), "重复的 expected_path: {} (id={})", p, info.id);
         }
     }
 
     #[test]
-    fn finds_qwen_embedding_in_modelscope_hub() {
-        // 用户实际布局：~/.cache/modelscope/hub/Qwen/Qwen3-Embedding-0___6B/
-        let info = RESOURCE_CATALOG
-            .iter()
-            .find(|r| r.id == "embedding")
-            .unwrap();
-        let status = check_model_snapshot(info);
-        let home = directories::UserDirs::new()
-            .unwrap()
-            .home_dir()
-            .to_path_buf();
-        let ms_hub = home
-            .join(".cache")
-            .join("modelscope")
-            .join("hub")
-            .join("Qwen")
-            .join("Qwen3-Embedding-0___6B");
-        if ms_hub.exists() {
-            assert_eq!(
-                status.status,
-                ResourceStatus::Ready,
-                "embedding should be Ready"
-            );
-            eprintln!("embedding local_path = {}", status.local_path);
+    fn embedding_layout() {
+        // 多文件 (10 个)，expected_path 应为 org/repo 目录而非具体文件
+        let s = assert_not_found_with_path("embedding");
+        assert!(s.expected_path.contains("Qwen"), "embedding 应在 Qwen/ 组织下");
+        assert!(s.expected_path.contains("Qwen3-Embedding-0___6B"));
+        assert!(s.expected_path.ends_with("Qwen3-Embedding-0___6B"),
+            "应为目录，不是文件: {}", s.expected_path);
+    }
+
+    #[test]
+    fn reranker_layout() {
+        let s = assert_not_found_with_path("reranker");
+        assert!(s.expected_path.contains("Qwen3-Reranker-0___6B"));
+        assert!(s.expected_path.ends_with("Qwen3-Reranker-0___6B"));
+    }
+
+    #[test]
+    fn moldet_layout() {
+        // moldet 有 2 个子文件，expected_path 应为目录（不是具体文件）
+        let s = assert_not_found_with_path("moldet");
+        assert!(s.expected_path.contains("UniParser"));
+        assert!(s.expected_path.contains("MolDetv2"));
+        assert!(s.expected_path.ends_with("MolDetv2"),
+            "应为父目录: {}", s.expected_path);
+        // 验证 subfiles 数量
+        assert_eq!(s.subfiles.len(), 2, "moldet 应有 2 个子文件 (doc + general)");
+        // 验证子文件标签
+        let labels: Vec<&str> = s.subfiles.iter().map(|sf| sf.label.as_str()).collect();
+        assert!(labels.contains(&"doc"), "应有 doc 子文件");
+        assert!(labels.contains(&"general"), "应有 general 子文件");
+        // 子文件路径应在父目录下
+        for sf in &s.subfiles {
+            assert!(sf.local_path.starts_with(s.expected_path.trim_end_matches('\\').trim_end_matches('/'))
+                || sf.local_path.contains("MolDetv2"),
+                "子文件路径应在 moldet 目录下: {}", sf.local_path);
         }
     }
 
     #[test]
-    fn finds_qwen_reranker_in_modelscope_hub() {
-        let info = RESOURCE_CATALOG
-            .iter()
-            .find(|r| r.id == "reranker")
-            .unwrap();
-        let status = check_model_snapshot(info);
-        let home = directories::UserDirs::new()
-            .unwrap()
-            .home_dir()
-            .to_path_buf();
-        let ms_hub = home
-            .join(".cache")
-            .join("modelscope")
-            .join("hub")
-            .join("Qwen")
-            .join("Qwen3-Reranker-0___6B");
-        if ms_hub.exists() {
-            assert_eq!(
-                status.status,
-                ResourceStatus::Ready,
-                "reranker should be Ready"
+    fn molscribe_layout() {
+        // 单文件 (files.len() == 1)，expected_path 应指向 .pth
+        let s = assert_not_found_with_path("molscribe");
+        assert!(s.expected_path.contains("polyai"));
+        assert!(s.expected_path.contains("MolScribe"));
+        assert!(s.expected_path.ends_with("swin_base_char_aux_1m680k.pth"),
+            "应指向具体 .pth 文件: {}", s.expected_path);
+        // 单文件资源 subfiles 应为空（UI 走单文件卡布局）
+        assert!(s.subfiles.is_empty(), "molscribe 是单文件，不应有 subfiles");
+    }
+
+    #[test]
+    fn moldet_coref_layout() {
+        let s = assert_not_found_with_path("moldet_coref");
+        assert!(s.expected_path.contains("polyai"));
+        assert!(s.expected_path.contains("MolDetect"));
+        assert!(s.expected_path.ends_with("coref_best.ckpt"),
+            "应指向 coref_best.ckpt: {}", s.expected_path);
+        assert!(s.subfiles.is_empty());
+    }
+
+    #[test]
+    fn python_packages_not_in_models_check() {
+        // torch / transformers 等 Python 包不属于模型，其状态由 check_python_package 决定
+        // 验证：调用 check_resource 不会 panic 且 status 是 Ready 或 NotFound
+        for id in ["torch", "transformers", "sentence_transformers", "ultralytics"] {
+            let s = check_resource(id);
+            assert!(
+                matches!(s.status, ResourceStatus::Ready | ResourceStatus::NotFound),
+                "{} 应为 Ready 或 NotFound，实际: {:?}",
+                id, s.status
             );
-            eprintln!("reranker local_path = {}", status.local_path);
+            // Python 包不应有 expected_path（不是文件检测）
+            assert!(s.expected_path.is_empty(),
+                "{} 是 Python 包，expected_path 应为空", id);
         }
+    }
+
+    #[test]
+    fn friendly_subfile_label_extracts_dir_name() {
+        assert_eq!(friendly_subfile_label("doc/moldet_v2.pt"), "doc");
+        assert_eq!(friendly_subfile_label("general/foo.pt"), "general");
+        assert_eq!(friendly_subfile_label("single.pt"), "single");
+    }
+
+    #[test]
+    fn ms_repo_dir_encodes_dots() {
+        // UniParser/MolDetv2 → <cache>/UniParser/MolDetv2 (无点，不需要编码)
+        // Qwen/Qwen3-Embedding-0.6B → <cache>/Qwen/Qwen3-Embedding-0___6B (点变 ___)
+        let qwen = RESOURCE_CATALOG.iter().find(|r| r.id == "embedding").unwrap();
+        let d = ms_repo_dir(qwen);
+        assert!(d.to_string_lossy().contains("Qwen3-Embedding-0___6B"),
+            "点应被编码为 ___: {:?}", d);
+        let moldet = RESOURCE_CATALOG.iter().find(|r| r.id == "moldet").unwrap();
+        let d = ms_repo_dir(moldet);
+        assert!(d.to_string_lossy().contains("UniParser"),
+            "组织目录应保留: {:?}", d);
     }
 }

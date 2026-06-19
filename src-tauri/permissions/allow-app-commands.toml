@@ -162,8 +162,6 @@ commands.allow = [
   "projects_add_recent",
   "projects_remove_recent",
   "projects_clear_recent",
-  # settings_extra
-  "consolidate_models",
   # llm
   "get_llm_env_config",
   "test_llm_connection",
@@ -173,8 +171,11 @@ commands.allow = [
   "resources_get_model_path",
   "resources_catalog",
   "models_download",
+  "models_download_subfile",
   "models_cancel_download",
   "models_delete",
+  "models_delete_subfile",
+  "models_test",
   "models_cache_dir_info",
   "refresh_resolved_paths",
   # SAR

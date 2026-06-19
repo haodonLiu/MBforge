@@ -13,6 +13,7 @@ pub mod molecule_admin;
 pub mod notes;
 pub mod pdf;
 pub mod project_ops;
+pub mod result_pane;
 pub mod settings;
 pub mod settings_extra;
 pub mod sidecar;
@@ -184,14 +185,19 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::core::project::resource_manager::resources_get_model_path,
         crate::core::project::resource_manager::resources_catalog,
         crate::core::project::resource_manager::models_download,
+        crate::core::project::resource_manager::models_download_subfile,
         crate::core::project::resource_manager::models_cancel_download,
         crate::core::project::resource_manager::models_delete,
+        crate::core::project::resource_manager::models_delete_subfile,
+        crate::core::project::resource_manager::models_test,
         crate::core::project::resource_manager::models_cache_dir_info,
         crate::core::project::resource_manager::refresh_resolved_paths,
+        // result_pane (PDF right-hand panel: coref chain + page parse)
+        result_pane::get_molecule_coref_chain,
+        result_pane::get_page_parse_result,
         // extended settings (cache + recent projects)
         settings_extra::cache_size,
         settings_extra::cache_clear,
-        settings_extra::consolidate_models,
         settings_extra::projects_list_recent,
         settings_extra::projects_add_recent,
         settings_extra::projects_remove_recent,

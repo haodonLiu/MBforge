@@ -73,12 +73,14 @@ pub enum DownloadError {
 /// 下载单个模型到本地缓存目录
 ///
 /// 通过 `progress_tx` 推送进度事件，前端可通过 Tauri 事件监听。
+/// `subpath_filter`：可选，仅下载 `info.files` 中匹配的子文件（用于多文件资源如 MolDetv2）。
 pub async fn download_model(
     resource_id: &str,
     progress_tx: mpsc::Sender<DownloadProgress>,
     cancelled: &Arc<AtomicBool>,
+    subpath_filter: Option<&str>,
 ) -> Result<PathBuf, DownloadError> {
-    log::info!("[download_model {}] start", resource_id);
+    log::info!("[download_model {}] start (filter={:?})", resource_id, subpath_filter);
     let info = RESOURCE_CATALOG
         .iter()
         .find(|r| r.id == resource_id)
@@ -103,7 +105,7 @@ pub async fn download_model(
 
     log::info!("[download_model {}] download_type: {}", resource_id, info.download_type);
     let result = if info.download_type == "snapshot" {
-        download_snapshot(resource_id, info, &cache_dir, &progress_tx, cancelled).await
+        download_snapshot(resource_id, info, &cache_dir, &progress_tx, cancelled, subpath_filter).await
     } else {
         download_single_file(resource_id, info, &cache_dir, &progress_tx, cancelled).await
     };
@@ -120,15 +122,24 @@ pub async fn download_model(
 }
 
 /// 下载 snapshot 类型模型（多文件目录）
+/// `subpath_filter`：可选，仅下载 `info.files` 中匹配的子文件
 async fn download_snapshot(
     resource_id: &str,
     info: &ResourceInfo,
     cache_dir: &PathBuf,
     progress_tx: &mpsc::Sender<DownloadProgress>,
     cancelled: &Arc<AtomicBool>,
+    subpath_filter: Option<&str>,
 ) -> Result<PathBuf, DownloadError> {
     let repo_name = info.ms_repo.split('/').last().unwrap_or(info.ms_repo);
-    let dest = cache_dir.join(repo_name);
+    let org = info.ms_repo.split('/').next().unwrap_or("");
+    // ModelScope SDK 布局: <cache>/<org>/<repo>（repo 中 . 替换为 ___）
+    let encoded_repo = repo_name.replace('.', "___");
+    let dest = if org.is_empty() {
+        cache_dir.join(&encoded_repo)
+    } else {
+        cache_dir.join(org).join(&encoded_repo)
+    };
     log::info!("[download_snapshot {}] dest: {}", info.id, dest.display());
     std::fs::create_dir_all(&dest).map_err(|e| DownloadError::Io(e.to_string()))?;
 
@@ -141,8 +152,9 @@ async fn download_snapshot(
         .map_err(|e| DownloadError::Network(e.to_string()))?;
 
     // 1. 获取文件列表（ModelScope models API 使用 repo/files，不是 repo/tree）
+    //    Recursive=true 以便发现子目录文件（如 1_Pooling/config.json）
     let tree_url = format!(
-        "https://www.modelscope.cn/api/v1/models/{}/repo/files?Revision=master&Recursive=false",
+        "https://www.modelscope.cn/api/v1/models/{}/repo/files?Revision=master&Recursive=true",
         info.ms_repo
     );
     log::info!("[download_snapshot {}] fetch file list: {}", info.id, tree_url);
@@ -180,18 +192,40 @@ async fn download_snapshot(
 
     log::info!("[download_snapshot {}] total entries: {}", info.id, files.len());
 
-    // 2. 过滤必要文件（支持 allow_patterns）
-    let essential: Vec<&str> = files
+    // 2. 选择要下载的文件：
+    //    a) 若 info.files 非空（精确文件列表），用列表本身（跳过 API 列表拉取可优化，但保留拉取以便校验）
+    //    b) 否则按 allow_patterns 过滤
+    //    c) 兜底：通用 is_essential_file
+    let owned_paths: Vec<String> = files
         .iter()
-        .filter_map(|f| f["Path"].as_str().or_else(|| f["path"].as_str()))
-        .filter(|p| {
-            if info.allow_patterns.is_empty() {
-                is_essential_file(p)
-            } else {
-                info.allow_patterns.iter().any(|pat| glob_match(pat, p))
-            }
-        })
+        .filter_map(|f| f["Path"].as_str().or_else(|| f["path"].as_str()).map(String::from))
         .collect();
+    let essential: Vec<String> = if !info.files.is_empty() {
+        // 验证精确列表里的文件实际存在于仓库
+        info.files
+            .iter()
+            .filter(|want| {
+                let exists = owned_paths.iter().any(|p| p == *want);
+                if !exists {
+                    log::warn!("[download_snapshot {}] requested file not in repo: {}", info.id, want);
+                }
+                exists
+            })
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        owned_paths
+            .iter()
+            .filter(|p| {
+                if info.allow_patterns.is_empty() {
+                    is_essential_file(p)
+                } else {
+                    info.allow_patterns.iter().any(|pat| glob_match(pat, p))
+                }
+            })
+            .cloned()
+            .collect()
+    };
 
     let total = essential.len();
     log::info!("[download_snapshot {}] essential files: {:?}", info.id, essential);

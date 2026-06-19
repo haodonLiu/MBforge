@@ -4,6 +4,7 @@
 
 import type { ReactNode } from 'react'
 import Input from '../ui/Input'
+import Switch from '../ui/Switch'
 import { SettingItem } from '../ui/SettingSection'
 import Caption from '../ui/Caption'
 import ApiKeyInput from './ApiKeyInput'
@@ -74,7 +75,7 @@ export function NumberField({
       <input
         className="settings-input"
         type="number"
-        value={value || ''}
+        value={Number.isFinite(value) ? value : ''}
         onChange={e => {
           const raw = e.target.value
           if (raw === '') {
@@ -147,38 +148,7 @@ export function ToggleField({
 }) {
   return (
     <SettingItem title={label} description={description} labelWidth={labelWidth}>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={value}
-        onClick={() => onChange(!value)}
-        className="toggle"
-        style={{
-          position: 'relative',
-          width: 36,
-          height: 20,
-          borderRadius: 999,
-          border: 'none',
-          background: value ? 'var(--accent)' : 'var(--bg-hover)',
-          cursor: 'pointer',
-          transition: 'background 0.15s',
-          padding: 0,
-        }}
-      >
-        <span
-          style={{
-            position: 'absolute',
-            top: 2,
-            left: value ? 18 : 2,
-            width: 16,
-            height: 16,
-            borderRadius: '50%',
-            background: '#fff',
-            transition: 'left 0.15s',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
-          }}
-        />
-      </button>
+      <Switch checked={value} onChange={onChange} size="sm" />
     </SettingItem>
   )
 }

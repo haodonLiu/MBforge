@@ -28,8 +28,9 @@ use crate::core::project::document_project::DocumentProject;
 use crate::core::project::project::Project;
 use crate::parsers::chem::chem_validate::separate_esmiles_layers;
 use crate::parsers::doc_types::{ImageRef, OcrBlock};
+use crate::parsers::pdf::context::{PdfClassification, PdfInspectorContext};
 use crate::parsers::pipeline::{
-    classify_and_extract, classify_and_extract_with_progress, extract_molecules_from_pdf,
+    classify_and_extract, classify_and_extract_from_context_with_path, extract_molecules_from_pdf,
     quick_moldet_scan_pdf, ClassifyResult, ExtractProgressReporter,
 };
 use crate::parsers::structure::sections::{build_sections, extract_headings};
@@ -304,6 +305,49 @@ async fn preflight_check(stage: &str, file_path: &Path, project_root: &Path) -> 
     Ok(())
 }
 
+/// Load a PdfInspectorContext from cached inspector.json + text.md.
+/// Falls back to building from the original path if cache is missing.
+async fn load_cached_or_build_context(
+    project_root: &std::path::Path,
+    task: &IngestTask,
+) -> Result<PdfInspectorContext, String> {
+    let dp = DocumentProject::load(project_root, &task.doc_id)
+        .ok_or_else(|| "DocumentProject not found".to_string())?;
+    let paths = dp.paths();
+
+    let inspector_path = paths.cache_dir.join("inspector.json");
+    let text_path = paths.pages_cache_dir.join("text.md");
+
+    if inspector_path.exists() && text_path.exists() {
+        let content = std::fs::read_to_string(&inspector_path)
+            .map_err(|e| format!("failed to read inspector.json: {e}"))?;
+        let cached: serde_json::Value = serde_json::from_str(&content)
+            .map_err(|e| format!("failed to parse inspector.json: {e}"))?;
+
+        let classification: PdfClassification = serde_json::from_value(cached.clone())
+            .map_err(|e| format!("failed to deserialize classification: {e}"))?;
+
+        let markdown = std::fs::read_to_string(&text_path)
+            .map_err(|e| format!("failed to read text.md: {e}"))?;
+
+        let page_count = cached["page_count"].as_u64().unwrap_or(0) as usize;
+        let pages_needing_ocr: Vec<usize> = cached["pages_needing_ocr"]
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as usize)).collect())
+            .unwrap_or_default();
+
+        return Ok(PdfInspectorContext::from_cached(
+            classification,
+            markdown,
+            page_count,
+            pages_needing_ocr,
+        ));
+    }
+
+    // Fallback: build from path (loads PDF once).
+    PdfInspectorContext::from_path(&task.file_path).await
+}
+
 async fn process_inspector(
     project_root: &Path,
     queue: &IngestQueue,
@@ -312,10 +356,9 @@ async fn process_inspector(
 ) -> Result<StageResult, String> {
     preflight_check("inspector", Path::new(&task.file_path), project_root).await?;
 
-    let result = pdf_inspector::detect_pdf(&task.file_path)
-        .map_err(|e| format!("inspector detect failed: {}", e))?;
+    let ctx = PdfInspectorContext::from_path(&task.file_path).await?;
 
-    let pdf_type_str = match result.pdf_type {
+    let pdf_type_str = match ctx.classification.pdf_type {
         pdf_inspector::PdfType::TextBased => "TextBased",
         pdf_inspector::PdfType::Scanned => "Scanned",
         pdf_inspector::PdfType::Mixed => "Mixed",
@@ -328,20 +371,27 @@ async fn process_inspector(
         let _ = std::fs::create_dir_all(&paths.cache_dir);
         let inspector_json = serde_json::json!({
             "pdf_type": pdf_type_str,
-            "confidence": result.confidence,
-            "page_count": result.page_count,
-            "pages_needing_ocr": result.pages_needing_ocr,
-            "has_complex_layout": result.layout.is_complex,
-            "has_encoding_issues": result.has_encoding_issues,
-            "title": result.title,
+            "confidence": ctx.classification.confidence,
+            "page_count": ctx.page_count,
+            "pages_needing_ocr": ctx.pages_needing_ocr,
+            "has_complex_layout": ctx.classification.has_complex_layout,
+            "has_encoding_issues": ctx.classification.has_encoding_issues,
+            "title": ctx.classification.title,
             "inspected_at": chrono::Utc::now().to_rfc3339(),
         });
         let inspector_path = paths.cache_dir.join("inspector.json");
         let _ = crate::core::helpers::save_json(&inspector_path, &inspector_json);
 
+        // Persist markdown so later stages can reuse the context without reloading the PDF.
+        let _ = std::fs::create_dir_all(&paths.pages_cache_dir);
+        let text_path = paths.pages_cache_dir.join("text.md");
+        if let Err(e) = std::fs::write(&text_path, &ctx.markdown) {
+            log::warn!("IngestWorker: failed to write text.md in inspector stage: {}", e);
+        }
+
         dp.set_inspector_status(pdf_type_str.to_lowercase().as_str());
         dp.set_text_status("pending");
-        match result.pdf_type {
+        match ctx.classification.pdf_type {
             pdf_inspector::PdfType::TextBased => dp.set_ocr_status("not_needed"),
             _ => dp.set_ocr_status("pending_confirmation"),
         }
@@ -354,14 +404,14 @@ async fn process_inspector(
             "inspector_status",
             &pdf_type_str.to_lowercase(),
         );
-        let ocr_status = match result.pdf_type {
+        let ocr_status = match ctx.classification.pdf_type {
             pdf_inspector::PdfType::TextBased => "not_needed",
             _ => "pending_confirmation",
         };
         proj.set_document_status(&task.doc_id, "ocr_status", ocr_status);
     }
 
-    let next_stage = match result.pdf_type {
+    let next_stage = match ctx.classification.pdf_type {
         pdf_inspector::PdfType::TextBased => "text_extract",
         _ => "ocr",
     };
@@ -371,8 +421,8 @@ async fn process_inspector(
             &task.id,
             &task.stage,
             100.0,
-            result.page_count as i32,
-            result.page_count as i32,
+            ctx.page_count as i32,
+            ctx.page_count as i32,
             &format!("detected {}", pdf_type_str),
         )
         .await
@@ -383,8 +433,8 @@ async fn process_inspector(
         task,
         &task.stage,
         100.0,
-        result.page_count as i32,
-        result.page_count as i32,
+        ctx.page_count as i32,
+        ctx.page_count as i32,
         &format!("detected {}", pdf_type_str),
     );
 
@@ -438,7 +488,8 @@ async fn process_text_extract(
         "开始文本提取".to_string(),
     );
 
-    let classified = classify_and_extract(&task.file_path, false)
+    let ctx = load_cached_or_build_context(project_root, task).await?;
+    let classified = classify_and_extract_from_context_with_path(&ctx, &task.file_path, false, None)
         .await
         .map_err(|e| format!("text extraction failed: {}", e))?;
 
@@ -526,21 +577,15 @@ async fn process_ocr(
         "OCR 预检通过，准备解析 PDF".to_string(),
     );
 
+    // Reuse the inspector context so the PDF is not loaded again.
+    let ctx = load_cached_or_build_context(project_root, task).await?;
+
     // Pre-flight: if no online OCR API is configured for this scan, notify the
-    // user via modal before classify_and_extract logs and silently skips. Only
+    // user via modal before extraction logs and silently skips. Only
     // emit when the PDF actually needs OCR (scanned) — text-based PDFs are
     // handled by pdf_inspector without any OCR backend.
-    let pdf_meta = pdf_inspector::process_pdf(&task.file_path).ok();
-    let is_scanned = pdf_meta
-        .as_ref()
-        .map(|r| {
-            r.markdown
-                .as_deref()
-                .map(|m| m.len() < 100)
-                .unwrap_or(true)
-                && r.page_count > 0
-        })
-        .unwrap_or(false);
+    let is_scanned = (ctx.markdown.len() < 100 && ctx.page_count > 0)
+        || !ctx.pages_needing_ocr.is_empty();
 
     if is_scanned {
         emit_log(
@@ -548,7 +593,7 @@ async fn process_ocr(
             &task.doc_id,
             &task.stage,
             "info",
-            format!("检测到扫描件（共 {} 页），将尝试 OCR", pdf_meta.as_ref().map_or(0, |r| r.page_count)),
+            format!("检测到扫描件（共 {} 页），将尝试 OCR", ctx.page_count),
         );
         queue
             .update_progress(&task.id, &task.stage, 20.0, 0, 0, "scanned PDF detected")
@@ -598,9 +643,14 @@ async fn process_ocr(
         doc_id: &task.doc_id,
         stage: &task.stage,
     };
-    let classified = classify_and_extract_with_progress(&task.file_path, true, Some(&reporter))
-        .await
-        .map_err(|e| format!("OCR extraction failed: {}", e))?;
+    let classified = classify_and_extract_from_context_with_path(
+        &ctx,
+        &task.file_path,
+        true,
+        Some(&reporter),
+    )
+    .await
+    .map_err(|e| format!("OCR extraction failed: {}", e))?;
 
     queue
         .update_progress(

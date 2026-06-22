@@ -150,4 +150,26 @@ mod tests {
 
         assert_eq!(deserialized, original);
     }
+
+    #[tokio::test]
+    async fn test_from_cached_basic() {
+        let classification = PdfClassification {
+            pdf_type: pdf_inspector::PdfType::TextBased,
+            confidence: 0.95,
+            has_complex_layout: false,
+            has_encoding_issues: false,
+            title: Some("Test".to_string()),
+        };
+        let ctx = PdfInspectorContext::from_cached(
+            classification.clone(),
+            "# Heading\n\nBody".to_string(),
+            3,
+            vec![1, 2],
+        );
+        assert_eq!(ctx.markdown, "# Heading\n\nBody");
+        assert_eq!(ctx.page_count, 3);
+        assert_eq!(ctx.pages_needing_ocr, vec![1, 2]);
+        assert_eq!(ctx.classification, classification);
+        assert!(ctx.bytes().is_empty());
+    }
 }

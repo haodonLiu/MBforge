@@ -2,6 +2,14 @@
 
 use crate::parsers::pipeline_v2::context::{PipelineContext, PipelineEvent};
 use crate::parsers::pipeline_v2::error::PipelineError;
+use crate::parsers::pipeline_v2::models::persisted::IndexedDocument;
+use crate::parsers::pipeline_v2::models::source::SourceInput;
+use crate::parsers::pipeline_v2::services::ocr::OcrService;
+use crate::parsers::pipeline_v2::stages::enrich::EnrichStage;
+use crate::parsers::pipeline_v2::stages::extract::ExtractStage;
+use crate::parsers::pipeline_v2::stages::index::IndexStage;
+use crate::parsers::pipeline_v2::stages::persist::PersistStage;
+use crate::parsers::pipeline_v2::stages::segment::SegmentStage;
 
 /// A single progress log message produced by a pipeline stage.
 #[derive(Debug, Clone)]
@@ -111,6 +119,43 @@ impl Default for PipelineRunner {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Runs the full Extract → Segment → Enrich → Persist → Index pipeline.
+pub async fn run_pipeline(
+    input: SourceInput,
+    ctx: &PipelineContext,
+) -> Result<IndexedDocument, PipelineError> {
+    let runner = PipelineRunner::new();
+
+    let ocr = OcrService::new(vec![]); // Task 22 injects default backends
+    let extract_stage = ExtractStage::new(ocr);
+    let extracted = runner
+        .run_stage("extract", &extract_stage, input, ctx)
+        .await?;
+
+    let segment_stage = SegmentStage::new(ctx.config.chunk_max_chars);
+    let segmented = runner
+        .run_stage("segment", &segment_stage, extracted.clone(), ctx)
+        .await?;
+
+    let sidecar_url = crate::core::constants::sidecar_url();
+    let enrich_stage = EnrichStage::new(sidecar_url);
+    let enriched = runner
+        .run_stage("enrich", &enrich_stage, (extracted.clone(), segmented), ctx)
+        .await?;
+
+    let persist_stage = PersistStage::new();
+    let persisted = runner
+        .run_stage("persist", &persist_stage, (extracted, enriched), ctx)
+        .await?;
+
+    let index_stage = IndexStage::new();
+    let indexed = runner
+        .run_stage("index", &index_stage, persisted, ctx)
+        .await?;
+
+    Ok(indexed)
 }
 
 #[cfg(test)]

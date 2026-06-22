@@ -134,7 +134,8 @@ mod tests {
 
     #[test]
     fn output_dir_layout() {
-        let dir = super::output_dir(Path::new("/tmp/proj"), "doc-123");
+        let dir =
+            crate::parsers::pipeline_v2::writer::output_dir(Path::new("/tmp/proj"), "doc-123");
         assert_eq!(dir, PathBuf::from("/tmp/proj/projects/doc-123"));
     }
 }

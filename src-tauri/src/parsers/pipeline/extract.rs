@@ -344,16 +344,9 @@ pub async fn classify_and_extract_from_context_with_path(
                     let mut all_images = images;
                     all_images.extend(mineru_images);
 
-                    // MinerU 后端返回的是 serde_json::Value，需要转换成 OcrBlock。
-                    let ocr_blocks: Vec<OcrBlock> = out
-                        .ocr_blocks
-                        .into_iter()
-                        .filter_map(|v| serde_json::from_value(v).ok())
-                        .collect();
-
                     // 保存缓存 (含 mineru images + blocks)
                     if let Some(ref root) = project_root {
-                        save_ocr_cache(path, root, &out.text, &all_images, &ocr_blocks);
+                        save_ocr_cache(path, root, &out.text, &all_images, &out.ocr_blocks);
                     }
                     if let Some(p) = progress.as_ref() {
                         p.report("MinerU OCR 成功");
@@ -363,7 +356,7 @@ pub async fn classify_and_extract_from_context_with_path(
                         page_count: out.page_count.max(page_count),
                         parser: "mineru".into(),
                         images: all_images,
-                        ocr_blocks,
+                        ocr_blocks: out.ocr_blocks,
                     });
                 }
                 Err(e) => {

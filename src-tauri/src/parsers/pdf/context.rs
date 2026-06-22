@@ -105,6 +105,24 @@ impl PdfInspectorContext {
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
+
+    /// Build a context from cached values (no bytes stored).
+    /// Used by ingest_worker stages after the inspector stage has persisted
+    /// the classification and markdown.
+    pub fn from_cached(
+        classification: PdfClassification,
+        markdown: String,
+        page_count: usize,
+        pages_needing_ocr: Vec<usize>,
+    ) -> Self {
+        Self {
+            bytes: std::sync::Arc::new([]),
+            classification,
+            markdown,
+            page_count,
+            pages_needing_ocr,
+        }
+    }
 }
 
 #[cfg(test)]

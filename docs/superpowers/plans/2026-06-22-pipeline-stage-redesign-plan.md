@@ -153,83 +153,162 @@ git commit -m "chore(rust): scaffold pipeline_v2 module structure"
 
 - [ ] **Step 1: 写入错误类型**
 
+使用 `thiserror`（已在 `src-tauri/Cargo.toml` 中）。注意：字段原名 `source` 已改为 `detail`，因为 `thiserror` 会把名为 `source` 的字段当作 causal source。
+
 ```rust
+//! Structured error types for the PDF processing pipeline.
+
 use std::path::PathBuf;
+use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq)]
+/// Top-level error type for the PDF processing pipeline.
+#[derive(Debug, Clone, PartialEq, Error)]
 pub enum PipelineError {
-    Extract(ExtractError),
-    Segment(SegmentError),
-    Enrich(EnrichError),
-    Persist(PersistError),
-    Index(IndexError),
+    #[error("extract stage failed: {0}")]
+    Extract(#[from] ExtractError),
+    #[error("segment stage failed: {0}")]
+    Segment(#[from] SegmentError),
+    #[error("enrich stage failed: {0}")]
+    Enrich(#[from] EnrichError),
+    #[error("persist stage failed: {0}")]
+    Persist(#[from] PersistError),
+    #[error("index stage failed: {0}")]
+    Index(#[from] IndexError),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Error)]
 pub enum ExtractError {
+    #[error("source path invalid: {path}")]
     SourcePathInvalid { path: String },
+    #[error("project root not found for path: {path}")]
     ProjectRootNotFound { path: String },
-    InspectorFailed { path: String, source: String },
+    #[error("inspector failed for '{path}': {detail}")]
+    InspectorFailed { path: String, detail: String },
+    #[error("all OCR backends failed for '{path}': {details}")]
     OcrAllBackendsFailed { path: String, details: String },
-    ImagePersistFailed { filename: String, source: String },
-    CacheReadFailed { cache: String, source: String },
+    #[error("image persist failed for '{filename}': {detail}")]
+    ImagePersistFailed { filename: String, detail: String },
+    #[error("cache read failed for '{cache}': {detail}")]
+    CacheReadFailed { cache: String, detail: String },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Error)]
 pub enum SegmentError {
+    #[error("document contains no text content")]
     NoTextContent,
+    #[error("section '{title}' is too long ({chars} characters)")]
     SectionTooLong { title: String, chars: usize },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Error)]
 pub enum EnrichError {
-    SectionProcessingFailed { section: String, source: String },
-    MoleculeServiceFailed { source: String },
-    CaptionServiceFailed { filename: String, source: String },
-    MergeFailed { source: String },
-    ChemValidationFailed { esmiles: String, source: String },
+    #[error("section processing failed for '{section}': {detail}")]
+    SectionProcessingFailed { section: String, detail: String },
+    #[error("molecule service failed: {detail}")]
+    MoleculeServiceFailed { detail: String },
+    #[error("caption service failed for '{filename}': {detail}")]
+    CaptionServiceFailed { filename: String, detail: String },
+    #[error("merge failed: {detail}")]
+    MergeFailed { detail: String },
+    #[error("chemical validation failed for '{esmiles}': {detail}")]
+    ChemValidationFailed { esmiles: String, detail: String },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Error)]
 pub enum PersistError {
-    TextMdWriteFailed { path: PathBuf, source: String },
-    ReportMdWriteFailed { path: PathBuf, source: String },
-    MoleculeStoreFailed { source: String },
+    #[error("text markdown write failed for '{path}': {detail}")]
+    TextMdWriteFailed { path: PathBuf, detail: String },
+    #[error("report markdown write failed for '{path}': {detail}")]
+    ReportMdWriteFailed { path: PathBuf, detail: String },
+    #[error("molecule store failed: {detail}")]
+    MoleculeStoreFailed { detail: String },
+    #[error("document id not resolved for path: {path}")]
     DocIdNotResolved { path: String },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Error)]
 pub enum IndexError {
-    EmbeddingFailed { source: String },
-    VectorStoreFailed { source: String },
-    FileCacheWriteFailed { source: String },
+    #[error("embedding failed: {detail}")]
+    EmbeddingFailed { detail: String },
+    #[error("vector store failed: {detail}")]
+    VectorStoreFailed { detail: String },
+    #[error("file cache write failed: {detail}")]
+    FileCacheWriteFailed { detail: String },
 }
-
-impl std::fmt::Display for PipelineError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PipelineError::Extract(e) => write!(f, "Extract stage failed: {:?}", e),
-            PipelineError::Segment(e) => write!(f, "Segment stage failed: {:?}", e),
-            PipelineError::Enrich(e) => write!(f, "Enrich stage failed: {:?}", e),
-            PipelineError::Persist(e) => write!(f, "Persist stage failed: {:?}", e),
-            PipelineError::Index(e) => write!(f, "Index stage failed: {:?}", e),
-        }
-    }
-}
-
-impl std::error::Error for PipelineError {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn error_display_includes_stage() {
+    fn extract_error_display_includes_stage_and_details() {
         let err = PipelineError::Extract(ExtractError::InspectorFailed {
             path: "/tmp/x.pdf".into(),
-            source: "io".into(),
+            detail: "io".into(),
         });
-        assert!(err.to_string().contains("Extract stage failed"));
+        let msg = err.to_string();
+        assert!(msg.contains("extract stage failed"));
+        assert!(msg.contains("inspector failed for '/tmp/x.pdf': io"));
+    }
+
+    #[test]
+    fn segment_error_display_includes_stage_and_details() {
+        let err = PipelineError::Segment(SegmentError::SectionTooLong {
+            title: "Introduction".into(),
+            chars: 50000,
+        });
+        let msg = err.to_string();
+        assert!(msg.contains("segment stage failed"));
+        assert!(msg.contains("section 'Introduction' is too long (50000 characters)"));
+    }
+
+    #[test]
+    fn enrich_error_display_includes_stage_and_details() {
+        let err = PipelineError::Enrich(EnrichError::MoleculeServiceFailed {
+            detail: "timeout".into(),
+        });
+        let msg = err.to_string();
+        assert!(msg.contains("enrich stage failed"));
+        assert!(msg.contains("molecule service failed: timeout"));
+    }
+
+    #[test]
+    fn persist_error_display_includes_stage_and_details() {
+        let err = PipelineError::Persist(PersistError::TextMdWriteFailed {
+            path: PathBuf::from("/tmp/out.md"),
+            detail: "permission denied".into(),
+        });
+        let msg = err.to_string();
+        assert!(msg.contains("persist stage failed"));
+        assert!(msg.contains("text markdown write failed for '/tmp/out.md': permission denied"));
+    }
+
+    #[test]
+    fn index_error_display_includes_stage_and_details() {
+        let err = PipelineError::Index(IndexError::EmbeddingFailed {
+            detail: "model unavailable".into(),
+        });
+        let msg = err.to_string();
+        assert!(msg.contains("index stage failed"));
+        assert!(msg.contains("embedding failed: model unavailable"));
+    }
+
+    #[test]
+    fn from_conversions_build_pipeline_error() {
+        let extract: PipelineError = ExtractError::SourcePathInvalid { path: "/bad".into() }.into();
+        assert!(matches!(extract, PipelineError::Extract(_)));
+
+        let segment: PipelineError = SegmentError::NoTextContent.into();
+        assert!(matches!(segment, PipelineError::Segment(_)));
+
+        let enrich: PipelineError = EnrichError::MergeFailed { detail: "conflict".into() }.into();
+        assert!(matches!(enrich, PipelineError::Enrich(_)));
+
+        let persist: PipelineError = PersistError::DocIdNotResolved { path: "/missing".into() }.into();
+        assert!(matches!(persist, PipelineError::Persist(_)));
+
+        let index: PipelineError = IndexError::VectorStoreFailed { detail: "disk full".into() }.into();
+        assert!(matches!(index, PipelineError::Index(_)));
     }
 }
 ```

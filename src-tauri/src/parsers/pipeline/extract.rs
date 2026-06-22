@@ -177,54 +177,17 @@ fn save_ocr_cache(
     }
 }
 
-/// Merge OCR output for selected pages with pdf-inspector markdown for the rest.
+/// Merge OCR output with pdf-inspector markdown.
 ///
-/// If the markdown does not contain page markers, falls back to the OCR text
-/// when any pages needed OCR.
+/// Currently the OCR backends return full-document text, so when any pages
+/// needed OCR we use the OCR text as the authoritative text. In the future
+/// this can be refined to interleave per-page OCR text with pdf-inspector
+/// markdown for the remaining pages.
 fn merge_ocr_with_markdown(markdown: &str, ocr_text: &str, pages: &[usize]) -> String {
     if pages.is_empty() {
-        return ocr_text.to_string();
-    }
-
-    let page_markers: Vec<(usize, usize)> = markdown
-        .match_indices("<!-- Page ")
-        .filter_map(|(idx, _)| {
-            let rest = &markdown[idx + 9..];
-            rest.split_once(" -->")
-                .and_then(|(num, _)| num.parse::<usize>().ok())
-                .map(|n| (idx, n))
-        })
-        .collect();
-
-    if page_markers.is_empty() {
-        return ocr_text.to_string();
-    }
-
-    let page_set: std::collections::HashSet<usize> = pages.iter().copied().collect();
-    let mut result = String::new();
-    let mut last_end = 0;
-
-    for (i, (_start, page_num)) in page_markers.iter().enumerate() {
-        let end = if i + 1 < page_markers.len() {
-            page_markers[i + 1].0
-        } else {
-            markdown.len()
-        };
-
-        if page_set.contains(page_num) {
-            if result.is_empty() {
-                result.push_str(ocr_text);
-            }
-        } else {
-            result.push_str(&markdown[last_end..end]);
-        }
-        last_end = end;
-    }
-
-    if result.is_empty() {
-        ocr_text.to_string()
+        markdown.to_string()
     } else {
-        result
+        ocr_text.to_string()
     }
 }
 
@@ -299,15 +262,6 @@ fn persist_backend_images(
         .collect()
 }
 
-/// Back-compat shim — MinerU branch keeps the original name.
-fn persist_mineru_images(
-    path: &str,
-    project_root: &Path,
-    images: &[ImageRef],
-) -> Vec<ImageRef> {
-    persist_backend_images(path, project_root, images, "mineru")
-}
-
 // ---------------------------------------------------------------------------
 // classify_and_extract
 // ---------------------------------------------------------------------------
@@ -360,8 +314,7 @@ pub async fn classify_and_extract_from_context_with_path(
     let images = persist_extracted_images(path, &extracted);
 
     // 判断是否为扫描件（文本极少但有页面，或 pdf-inspector 标记需 OCR）
-    let is_scanned =
-        (md.len() < 100 && page_count > 0) || !pages_needing_ocr.is_empty();
+    let is_scanned = (md.len() < 100 && page_count > 0) || !pages_needing_ocr.is_empty();
 
     if is_scanned && allow_ocr {
         if let Some(p) = progress.as_ref() {
@@ -924,12 +877,8 @@ pub async fn quick_moldet_scan_pdf(
             let batch_end = (batch_start + batch_size).min(page_numbers.len());
             let batch_pages: Vec<u32> = page_numbers[batch_start..batch_end].to_vec();
 
-            match crate::parsers::pdf::sidecar_render::render_pages(
-                path,
-                &batch_pages,
-                sidecar_url,
-            )
-            .await
+            match crate::parsers::pdf::sidecar_render::render_pages(path, &batch_pages, sidecar_url)
+                .await
             {
                 Ok(screenshots) => {
                     for ss in screenshots {
@@ -1264,12 +1213,8 @@ pub async fn extract_molecules_from_pdf(
             let batch_end = (batch_start + batch_size).min(page_numbers.len());
             let batch_pages: Vec<u32> = page_numbers[batch_start..batch_end].to_vec();
 
-            match crate::parsers::pdf::sidecar_render::render_pages(
-                path,
-                &batch_pages,
-                sidecar_url,
-            )
-            .await
+            match crate::parsers::pdf::sidecar_render::render_pages(path, &batch_pages, sidecar_url)
+                .await
             {
                 Ok(screenshots) => {
                     for ss in screenshots {
@@ -1537,12 +1482,8 @@ pub async fn extract_molecules_with_coref(
             let batch_end = (batch_start + batch_size).min(page_numbers.len());
             let batch_pages: Vec<u32> = page_numbers[batch_start..batch_end].to_vec();
 
-            match crate::parsers::pdf::sidecar_render::render_pages(
-                path,
-                &batch_pages,
-                sidecar_url,
-            )
-            .await
+            match crate::parsers::pdf::sidecar_render::render_pages(path, &batch_pages, sidecar_url)
+                .await
             {
                 Ok(screenshots) => {
                     for ss in screenshots {
@@ -1922,5 +1863,24 @@ fn esmiles_to_molecode_opt(input: &str, name: &str) -> Option<String> {
             );
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_ocr_with_markdown;
+
+    #[test]
+    fn test_merge_empty_pages_returns_markdown() {
+        let md = "# Title\nbody".to_string();
+        let ocr = "OCR text".to_string();
+        assert_eq!(merge_ocr_with_markdown(&md, &ocr, &[]), md);
+    }
+
+    #[test]
+    fn test_merge_non_empty_pages_returns_ocr() {
+        let md = "# Title\nbody".to_string();
+        let ocr = "OCR text".to_string();
+        assert_eq!(merge_ocr_with_markdown(&md, &ocr, &[1, 2]), ocr);
     }
 }

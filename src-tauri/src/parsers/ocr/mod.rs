@@ -20,5 +20,3 @@ pub mod paddle;
 pub mod uniparser;
 
 pub use backend::OcrOutput;
-
-

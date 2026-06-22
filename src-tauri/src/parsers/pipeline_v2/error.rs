@@ -1,0 +1,1 @@
+//! Pipeline error types.

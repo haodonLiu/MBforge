@@ -16,6 +16,7 @@
 
 use serde::Serialize;
 
+pub mod backend;
 pub mod paddle;
 pub mod uniparser;
 

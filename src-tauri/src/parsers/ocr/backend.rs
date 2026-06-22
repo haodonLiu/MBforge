@@ -67,3 +67,85 @@ pub fn filter_pages(output: OcrOutput, pages: &[usize]) -> OcrOutput {
         ocr_blocks,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_output(page_count: usize) -> OcrOutput {
+        OcrOutput {
+            text: "full text".to_string(),
+            page_count,
+            images: vec![
+                ImageRef {
+                    filename: "p1.png".to_string(),
+                    page: 1,
+                    region: None,
+                    description: None,
+                    esmiles: None,
+                    rel_path: None,
+                },
+                ImageRef {
+                    filename: "p2.png".to_string(),
+                    page: 2,
+                    region: None,
+                    description: None,
+                    esmiles: None,
+                    rel_path: None,
+                },
+                ImageRef {
+                    filename: "p3.png".to_string(),
+                    page: 3,
+                    region: None,
+                    description: None,
+                    esmiles: None,
+                    rel_path: None,
+                },
+            ],
+            ocr_blocks: vec![
+                OcrBlock {
+                    page: 1,
+                    block_type: "text".to_string(),
+                    bbox: [0.0; 4],
+                    content: Some("block1".to_string()),
+                    index: 0,
+                    angle: 0,
+                },
+                OcrBlock {
+                    page: 2,
+                    block_type: "text".to_string(),
+                    bbox: [0.0; 4],
+                    content: Some("block2".to_string()),
+                    index: 0,
+                    angle: 0,
+                },
+                OcrBlock {
+                    page: 3,
+                    block_type: "text".to_string(),
+                    bbox: [0.0; 4],
+                    content: Some("block3".to_string()),
+                    index: 0,
+                    angle: 0,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn test_filter_pages_empty_returns_all() {
+        let out = make_output(3);
+        let filtered = filter_pages(out, &[]);
+        assert_eq!(filtered.images.len(), 3);
+        assert_eq!(filtered.ocr_blocks.len(), 3);
+    }
+
+    #[test]
+    fn test_filter_pages_selects_subset() {
+        let out = make_output(3);
+        let filtered = filter_pages(out, &[2]);
+        assert_eq!(filtered.images.len(), 1);
+        assert_eq!(filtered.images[0].page, 2);
+        assert_eq!(filtered.ocr_blocks.len(), 1);
+        assert_eq!(filtered.ocr_blocks[0].page, 2);
+    }
+}

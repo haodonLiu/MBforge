@@ -47,35 +47,39 @@ pub async fn run_online(pdf_path: &str) -> Result<OcrOutput, String> {
             "useDocUnwarping": false,
             "useChartRecognition": false,
         });
-        let job_id = if pdf_path_owned.starts_with("http://") || pdf_path_owned.starts_with("https://") {
-            // URL mode
-            let payload = serde_json::json!({
-                "fileUrl": pdf_path_owned,
-                "model": model,
-                "optionalPayload": optional,
-            });
-            let resp = client
-                .post(&job_url)
-                .header("Authorization", &auth)
-                .json(&payload)
-                .send()
-                .map_err(|e| format!("PaddleOCR submit (url) failed: {e}"))?;
-            parse_job_id(resp)?
-        } else {
-            // Local file mode
-            let form = reqwest::blocking::multipart::Form::new()
-                .text("model", model)
-                .text("optionalPayload", serde_json::to_string(&optional).unwrap_or_default())
-                .file("file", &pdf_path_owned)
-                .map_err(|e| format!("PaddleOCR multipart build failed: {e}"))?;
-            let resp = client
-                .post(&job_url)
-                .header("Authorization", &auth)
-                .multipart(form)
-                .send()
-                .map_err(|e| format!("PaddleOCR submit (file) failed: {e}"))?;
-            parse_job_id(resp)?
-        };
+        let job_id =
+            if pdf_path_owned.starts_with("http://") || pdf_path_owned.starts_with("https://") {
+                // URL mode
+                let payload = serde_json::json!({
+                    "fileUrl": pdf_path_owned,
+                    "model": model,
+                    "optionalPayload": optional,
+                });
+                let resp = client
+                    .post(&job_url)
+                    .header("Authorization", &auth)
+                    .json(&payload)
+                    .send()
+                    .map_err(|e| format!("PaddleOCR submit (url) failed: {e}"))?;
+                parse_job_id(resp)?
+            } else {
+                // Local file mode
+                let form = reqwest::blocking::multipart::Form::new()
+                    .text("model", model)
+                    .text(
+                        "optionalPayload",
+                        serde_json::to_string(&optional).unwrap_or_default(),
+                    )
+                    .file("file", &pdf_path_owned)
+                    .map_err(|e| format!("PaddleOCR multipart build failed: {e}"))?;
+                let resp = client
+                    .post(&job_url)
+                    .header("Authorization", &auth)
+                    .multipart(form)
+                    .send()
+                    .map_err(|e| format!("PaddleOCR submit (file) failed: {e}"))?;
+                parse_job_id(resp)?
+            };
 
         // Step 2: poll
         let mut jsonl_url = String::new();
@@ -182,7 +186,11 @@ pub async fn run_online(pdf_path: &str) -> Result<OcrOutput, String> {
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric())
                 .collect::<String>();
-            let ext = if ext.is_empty() { "png".to_string() } else { ext };
+            let ext = if ext.is_empty() {
+                "png".to_string()
+            } else {
+                ext
+            };
             let safe_name = format!("paddle_{i:04}_{}.{}", sanitize(name), ext);
             let dest = tmp_dir.path().join(&safe_name);
             if std::fs::write(&dest, &bytes).is_err() {
@@ -234,7 +242,13 @@ fn parse_job_id(resp: reqwest::blocking::Response) -> Result<String, String> {
 
 fn sanitize(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -248,7 +262,8 @@ struct RawPaddle {
 // ---------------------------------------------------------------------------
 
 pub fn local_is_available() -> bool {
-    true
+    // Local PaddleOCR is a stub until run_local is implemented.
+    false
 }
 
 pub async fn warmup_local() -> Result<(), String> {

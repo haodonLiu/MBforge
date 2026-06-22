@@ -106,17 +106,28 @@ fn ocr_cache_dir(project_root: &Path) -> PathBuf {
         .join("ocr-cache")
 }
 
-/// 计算 PDF 文件的缓存键（基于文件内容 SHA-256）
-fn ocr_cache_key(path: &str) -> Option<String> {
-    crate::core::helpers::sha256_file(Path::new(path)).ok()
+/// 计算 PDF 文件的缓存键（基于文件内容 SHA-256 + 目标页列表）
+fn ocr_cache_key(path: &str, pages: &[usize]) -> Option<String> {
+    let base = crate::core::helpers::sha256_file(Path::new(path)).ok()?;
+    if pages.is_empty() {
+        return Some(base);
+    }
+    use sha2::Digest;
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(base.as_bytes());
+    for p in pages {
+        hasher.update(p.to_le_bytes());
+    }
+    Some(format!("{:x}", hasher.finalize()))
 }
 
 /// 从缓存读取 OCR 结果（含图片引用 + OCR 块）
 fn get_cached_ocr(
     path: &str,
     project_root: &Path,
+    pages: &[usize],
 ) -> Option<(String, Vec<ImageRef>, Vec<OcrBlock>)> {
-    let hash = ocr_cache_key(path)?;
+    let hash = ocr_cache_key(path, pages)?;
     let cache_file = ocr_cache_dir(project_root).join(format!("{}.json", hash));
     let content = std::fs::read_to_string(&cache_file).ok()?;
     let val: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -147,8 +158,9 @@ fn save_ocr_cache(
     text: &str,
     images: &[ImageRef],
     ocr_blocks: &[OcrBlock],
+    pages: &[usize],
 ) {
-    if let Some(hash) = ocr_cache_key(path) {
+    if let Some(hash) = ocr_cache_key(path, pages) {
         let dir = ocr_cache_dir(project_root);
         if std::fs::create_dir_all(&dir).is_ok() {
             let cache_file = dir.join(format!("{}.json", hash));
@@ -162,6 +174,57 @@ fn save_ocr_cache(
                 log::warn!("Failed to write OCR cache {}: {}", cache_file.display(), e);
             }
         }
+    }
+}
+
+/// Merge OCR output for selected pages with pdf-inspector markdown for the rest.
+///
+/// If the markdown does not contain page markers, falls back to the OCR text
+/// when any pages needed OCR.
+fn merge_ocr_with_markdown(markdown: &str, ocr_text: &str, pages: &[usize]) -> String {
+    if pages.is_empty() {
+        return ocr_text.to_string();
+    }
+
+    let page_markers: Vec<(usize, usize)> = markdown
+        .match_indices("<!-- Page ")
+        .filter_map(|(idx, _)| {
+            let rest = &markdown[idx + 9..];
+            rest.split_once(" -->")
+                .and_then(|(num, _)| num.parse::<usize>().ok())
+                .map(|n| (idx, n))
+        })
+        .collect();
+
+    if page_markers.is_empty() {
+        return ocr_text.to_string();
+    }
+
+    let page_set: std::collections::HashSet<usize> = pages.iter().copied().collect();
+    let mut result = String::new();
+    let mut last_end = 0;
+
+    for (i, (_start, page_num)) in page_markers.iter().enumerate() {
+        let end = if i + 1 < page_markers.len() {
+            page_markers[i + 1].0
+        } else {
+            markdown.len()
+        };
+
+        if page_set.contains(page_num) {
+            if result.is_empty() {
+                result.push_str(ocr_text);
+            }
+        } else {
+            result.push_str(&markdown[last_end..end]);
+        }
+        last_end = end;
+    }
+
+    if result.is_empty() {
+        ocr_text.to_string()
+    } else {
+        result
     }
 }
 
@@ -304,183 +367,88 @@ pub async fn classify_and_extract_from_context_with_path(
         if let Some(p) = progress.as_ref() {
             p.report("检测到扫描件，将调用 OCR backend");
         }
-        // ---- Backend 1: MinerU (cloud) ----
-        if crate::parsers::ocr::mineru::is_available() {
-            // 检查缓存
-            if let Some(ref root) = project_root {
-                if let Some((cached_text, cached_images, cached_blocks)) =
-                    get_cached_ocr(path, root)
-                {
-                    log::info!("OCR cache HIT for {}", path);
-                    if let Some(p) = progress.as_ref() {
-                        p.report("OCR 缓存命中，跳过 backend 调用");
-                    }
-                    let mut all_images = images;
-                    all_images.extend(cached_images);
-                    return Ok(ClassifyResult {
-                        text: cached_text,
-                        page_count,
-                        parser: "mineru+cache".into(),
-                        images: all_images,
-                        ocr_blocks: cached_blocks,
-                    });
+
+        // 检查缓存（页列表参与缓存键）
+        if let Some(ref root) = project_root {
+            if let Some((cached_text, cached_images, cached_blocks)) =
+                get_cached_ocr(path, root, &pages_needing_ocr)
+            {
+                log::info!("OCR cache HIT for {}", path);
+                if let Some(p) = progress.as_ref() {
+                    p.report("OCR 缓存命中，跳过 backend 调用");
                 }
+                let mut all_images = images.clone();
+                all_images.extend(cached_images);
+                return Ok(ClassifyResult {
+                    text: cached_text,
+                    page_count,
+                    parser: "mineru+cache".into(),
+                    images: all_images,
+                    ocr_blocks: cached_blocks,
+                });
+            }
+        }
+
+        for backend in crate::parsers::ocr::backend::available_backends() {
+            if !backend.is_available() {
+                log::warn!("OCR backend '{}' unavailable", backend.name());
+                continue;
             }
 
-            log::info!("[MinerU] Parsing scanned PDF {}", path);
+            log::info!("[{}] Parsing scanned PDF {}", backend.name(), path);
             if let Some(p) = progress.as_ref() {
-                p.report("尝试 MinerU OCR backend...");
+                p.report(&format!("尝试 {} OCR backend...", backend.name()));
             }
-            match crate::parsers::ocr::mineru::run(path).await {
+
+            let pages = pages_needing_ocr.clone();
+            match backend.run_pages(path, &pages).await {
                 Ok(out) => {
-                    // MinerU returns images saved in its temp dir; copy to
-                    // project reports/figures/<doc>/mineru/ and merge into
-                    // the locally-extracted image list.
-                    let mineru_images = if let Some(ref root) = project_root {
-                        persist_mineru_images(path, root, &out.images)
+                    if let Some(p) = progress.as_ref() {
+                        p.report(&format!("{} OCR 成功", backend.name()));
+                    }
+
+                    // 将 backend 临时图片持久化到项目目录。
+                    let backend_images = if let Some(ref root) = project_root {
+                        persist_backend_images(path, root, &out.images, backend.name())
                     } else {
                         out.images
                     };
-                    let mut all_images = images;
-                    all_images.extend(mineru_images);
 
-                    // 保存缓存 (含 mineru images + blocks)
+                    let mut all_images = images.clone();
+                    all_images.extend(backend_images);
+
+                    // 尝试将 OCR 页与 pdf-inspector markdown 合并。
+                    let merged_text = merge_ocr_with_markdown(&md, &out.text, &pages);
+
+                    // 缓存键包含页列表。
                     if let Some(ref root) = project_root {
-                        save_ocr_cache(path, root, &out.text, &all_images, &out.ocr_blocks);
+                        save_ocr_cache(
+                            path,
+                            root,
+                            &merged_text,
+                            &all_images,
+                            &out.ocr_blocks,
+                            &pages,
+                        );
                     }
-                    if let Some(p) = progress.as_ref() {
-                        p.report("MinerU OCR 成功");
-                    }
+
                     return Ok(ClassifyResult {
-                        text: out.text,
+                        text: merged_text,
                         page_count: out.page_count.max(page_count),
-                        parser: "mineru".into(),
+                        parser: backend.name().into(),
                         images: all_images,
                         ocr_blocks: out.ocr_blocks,
                     });
                 }
                 Err(e) => {
-                    log::warn!("MinerU OCR failed for {}: {}", path, e);
+                    log::warn!("{} OCR failed for {}: {}", backend.name(), path, e);
                     if let Some(p) = progress.as_ref() {
-                        p.report(&format!("MinerU OCR 失败: {}", e));
-                    }
-                }
-            }
-        } else {
-            log::warn!(
-                "Scanned PDF {} detected but MINERU_API_KEY is not set; \
-                 skipping MinerU backend. Configure in Settings → AI Models.",
-                path
-            );
-            if let Some(p) = progress.as_ref() {
-                p.report("MinerU 未配置，跳过");
-            }
-        }
-
-        // ---- Backend 2: Uniparser online (placeholder) ----
-        if crate::parsers::ocr::uniparser::is_available() {
-            log::info!("[Uniparser] Parsing scanned PDF {}", path);
-            if let Some(p) = progress.as_ref() {
-                p.report("尝试 Uniparser OCR backend...");
-            }
-            match crate::parsers::ocr::uniparser::run(path).await {
-                Ok(out) => {
-                    if let Some(p) = progress.as_ref() {
-                        p.report("Uniparser OCR 成功");
-                    }
-                    return Ok(ClassifyResult {
-                        text: out.text,
-                        page_count: out.page_count.max(page_count),
-                        parser: "uniparser".into(),
-                        images,
-                        ocr_blocks: vec![],
-                    });
-                }
-                Err(e) => {
-                    log::warn!("Uniparser OCR failed for {}: {}", path, e);
-                    if let Some(p) = progress.as_ref() {
-                        p.report(&format!("Uniparser OCR 失败: {}", e));
-                    }
-                }
-            }
-        } else {
-            log::warn!(
-                "UNIPARSER_API_KEY not set; Uniparser backend unavailable."
-            );
-            if let Some(p) = progress.as_ref() {
-                p.report("Uniparser 未配置，跳过");
-            }
-        }
-
-        // ---- Backend 3: PaddleOCR online ----
-        if crate::parsers::ocr::paddle::online_is_available() {
-            log::info!("[PaddleOCR/online] Parsing scanned PDF {}", path);
-            if let Some(p) = progress.as_ref() {
-                p.report("尝试 PaddleOCR online backend...");
-            }
-            match crate::parsers::ocr::paddle::run_online(path).await {
-                Ok(out) => {
-                    let paddle_images = if let Some(ref root) = project_root {
-                        persist_backend_images(path, root, &out.images, "paddle")
-                    } else {
-                        out.images
-                    };
-                    let mut all_images = images;
-                    all_images.extend(paddle_images);
-                    if let Some(p) = progress.as_ref() {
-                        p.report("PaddleOCR online 成功");
-                    }
-                    return Ok(ClassifyResult {
-                        text: out.text,
-                        page_count: out.page_count.max(page_count),
-                        parser: "paddleocr-online".into(),
-                        images: all_images,
-                        ocr_blocks: vec![],
-                    });
-                }
-                Err(e) => {
-                    log::warn!("PaddleOCR online failed for {}: {}", path, e);
-                    if let Some(p) = progress.as_ref() {
-                        p.report(&format!("PaddleOCR online 失败: {}", e));
-                    }
-                }
-            }
-        } else {
-            log::warn!("PADDLEOCR_API_KEY not set; PaddleOCR online backend unavailable.");
-            if let Some(p) = progress.as_ref() {
-                p.report("PaddleOCR online 未配置，跳过");
-            }
-        }
-
-        // ---- Backend 4: PaddleOCR local (placeholder) ----
-        if crate::parsers::ocr::paddle::local_is_available() {
-            log::info!("[PaddleOCR/local] Parsing scanned PDF {}", path);
-            if let Some(p) = progress.as_ref() {
-                p.report("尝试 PaddleOCR local backend...");
-            }
-            match crate::parsers::ocr::paddle::run_local(path).await {
-                Ok(out) => {
-                    if let Some(p) = progress.as_ref() {
-                        p.report("PaddleOCR local 成功");
-                    }
-                    return Ok(ClassifyResult {
-                        text: out.text,
-                        page_count: out.page_count.max(page_count),
-                        parser: "paddleocr-local".into(),
-                        images,
-                        ocr_blocks: vec![],
-                    });
-                }
-                Err(e) => {
-                    log::warn!("PaddleOCR local failed for {}: {}", path, e);
-                    if let Some(p) = progress.as_ref() {
-                        p.report(&format!("PaddleOCR local 失败: {}", e));
+                        p.report(&format!("{} OCR 失败: {}", backend.name(), e));
                     }
                 }
             }
         }
 
-        // 所有云端 OCR 均不可用，回退到 pdf-inspector。
         if let Some(p) = progress.as_ref() {
             p.report("无可用 OCR 后端，将回退到 pdf-inspector 原始文本");
         }

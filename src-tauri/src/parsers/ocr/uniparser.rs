@@ -37,3 +37,21 @@ pub async fn run(pdf_path: &str) -> Result<OcrOutput, String> {
         images: vec![],
     })
 }
+
+/// Trait wrapper for the Uniparser OCR backend.
+pub struct UniparserBackend;
+
+#[async_trait::async_trait]
+impl crate::parsers::ocr::backend::OcrBackend for UniparserBackend {
+    fn name(&self) -> &'static str {
+        "uniparser"
+    }
+
+    fn is_available(&self) -> bool {
+        is_available()
+    }
+
+    async fn run(&self, path: &str) -> Result<crate::parsers::ocr::backend::OcrOutput, String> {
+        run(path).await
+    }
+}

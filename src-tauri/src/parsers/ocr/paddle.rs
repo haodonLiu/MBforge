@@ -258,3 +258,39 @@ pub async fn warmup_local() -> Result<(), String> {
 pub async fn run_local(_pdf_path: &str) -> Result<OcrOutput, String> {
     Err("paddleocr_local_not_implemented".into())
 }
+
+/// Trait wrapper for the PaddleOCR online backend.
+pub struct PaddleOnlineBackend;
+
+#[async_trait::async_trait]
+impl crate::parsers::ocr::backend::OcrBackend for PaddleOnlineBackend {
+    fn name(&self) -> &'static str {
+        "paddleocr-online"
+    }
+
+    fn is_available(&self) -> bool {
+        online_is_available()
+    }
+
+    async fn run(&self, path: &str) -> Result<crate::parsers::ocr::backend::OcrOutput, String> {
+        run_online(path).await
+    }
+}
+
+/// Trait wrapper for the PaddleOCR local backend.
+pub struct PaddleLocalBackend;
+
+#[async_trait::async_trait]
+impl crate::parsers::ocr::backend::OcrBackend for PaddleLocalBackend {
+    fn name(&self) -> &'static str {
+        "paddleocr-local"
+    }
+
+    fn is_available(&self) -> bool {
+        local_is_available()
+    }
+
+    async fn run(&self, path: &str) -> Result<crate::parsers::ocr::backend::OcrOutput, String> {
+        run_local(path).await
+    }
+}

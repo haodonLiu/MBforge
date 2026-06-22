@@ -16,6 +16,7 @@ mod extract;
 mod helpers;
 pub mod markdown_augment;
 mod merge;
+pub mod output;
 
 use helpers::{activity_entry_to_record, compound_entry_to_record, extract_section_text};
 use merge::{enhance_patent_data, merge_partial_results, run_merge_and_sar};
@@ -1145,6 +1146,61 @@ pub async fn process_document(
                 path
             );
         }
+    }
+
+    // ===== Stage 4.8: Persist text.md + report.md to DocumentProject =====
+    // 解析后的文本与 agent 报告都写到 `projects/<doc_id>/` 下，
+    // 扫描件与文本 PDF 走同一路径（空文本时写入「扫描件 PDF」占位）。
+    if let Some(ref root) = project_root {
+        let doc_id = crate::core::project::project::Project::open(root).and_then(|p| {
+            p.list_documents()
+                .iter()
+                .find(|d| {
+                    d.source_path
+                        .as_deref()
+                        .map(|sp| {
+                            let full = root.join(sp);
+                            full == ctx.source_path
+                                || full == std::path::PathBuf::from(&path)
+                        })
+                        .unwrap_or(false)
+                        || d.path == path
+                })
+                .map(|d| d.doc_id.clone())
+        });
+        match doc_id {
+            Some(did) => {
+                if let Err(e) = crate::parsers::pipeline::output::write_text_markdown(
+                    root,
+                    &did,
+                    &ctx.raw_text,
+                    &ctx.images,
+                    ctx.page_count,
+                    &ctx.parser_used,
+                ) {
+                    log::warn!("[process_document] text.md write failed: {}", e);
+                }
+                if let Err(e) = crate::parsers::pipeline::output::write_agent_report(
+                    root,
+                    &did,
+                    Some(&final_data),
+                    Some(&report.sar_analysis),
+                    &ctx.parser_used,
+                ) {
+                    log::warn!("[process_document] report.md write failed: {}", e);
+                }
+            }
+            None => {
+                log::warn!(
+                    "[process_document] could not resolve doc_id for {}, skipping text.md/report.md",
+                    path
+                );
+            }
+        }
+    } else {
+        log::warn!(
+            "[process_document] no project_root resolved, skipping text.md/report.md write"
+        );
     }
 
     // 最终结果发射

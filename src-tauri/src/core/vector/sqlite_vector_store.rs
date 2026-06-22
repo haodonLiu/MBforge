@@ -233,6 +233,11 @@ impl SqliteVectorStore {
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM vectors", [], |r| r.get(0))?;
         Ok(count as usize)
     }
+
+    /// 向量维度
+    pub fn dim(&self) -> usize {
+        self.dim
+    }
 }
 
 // ============================================================================

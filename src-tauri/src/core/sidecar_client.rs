@@ -81,10 +81,15 @@ impl SidecarClient {
     }
 
     /// Embedding 调用：POST /api/v1/embed
-    pub async fn embed(&self, texts: &[String]) -> AppResult<Vec<Vec<f32>>> {
+    pub async fn embed(
+        &self,
+        texts: &[String],
+        mrl_dim: Option<i32>,
+    ) -> AppResult<Vec<Vec<f32>>> {
         let url = format!("{}/api/v1/embed", self.base_url);
         let req = EmbedRequest {
             texts: texts.to_vec(),
+            mrl_dim,
         };
         // 120s timeout matches the previous `SidecarEmbedder` blocking path
         // (kept for KB long-document scenarios).
@@ -178,6 +183,8 @@ pub struct HealthResponse {
 #[derive(Debug, Clone, Serialize)]
 struct EmbedRequest {
     texts: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mrl_dim: Option<i32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

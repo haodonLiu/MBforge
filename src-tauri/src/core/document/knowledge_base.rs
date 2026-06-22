@@ -76,7 +76,10 @@ impl KnowledgeBase {
         let conn = Connection::open(&db_path)?;
         let shared_conn = Arc::new(Mutex::new(conn));
 
-        let vector_store = SqliteVectorStore::from_shared_conn(Arc::clone(&shared_conn), 384)?;
+        let vector_store = SqliteVectorStore::from_shared_conn(
+            Arc::clone(&shared_conn),
+            embed_config.map(|c| c.effective_dim()).unwrap_or(1024),
+        )?;
         let file_cache = FileCache::from_shared_conn(Arc::clone(&shared_conn))?;
 
         // FTS5 schema
@@ -133,7 +136,10 @@ impl KnowledgeBase {
             Self::migrate_legacy(&db_path, &legacy_vec, &legacy_cache)?;
         }
 
-        let vector_store = SqliteVectorStore::from_shared_conn(Arc::clone(&shared_conn), 384)?;
+        let vector_store = SqliteVectorStore::from_shared_conn(
+            Arc::clone(&shared_conn),
+            embed_config.map(|c| c.effective_dim()).unwrap_or(1024),
+        )?;
         let file_cache = FileCache::from_shared_conn(Arc::clone(&shared_conn))?;
 
         // FTS5 schema
@@ -174,8 +180,8 @@ impl KnowledgeBase {
     fn migrate_legacy(new_path: &Path, legacy_vec: &Path, legacy_cache: &Path) -> AppResult<()> {
         let conn = Connection::open(new_path)?;
 
-        // 初始化新库 schema
-        SqliteVectorStore::setup_schema(&conn, 384)?;
+        // 初始化新库 schema（默认维度与 Qwen3-Embedding-0.6B full dim 一致）
+        SqliteVectorStore::setup_schema(&conn, 1024)?;
         FileCache::setup_schema(&conn)?;
 
         // 迁移 vectors 表
@@ -257,16 +263,17 @@ impl KnowledgeBase {
             .collect();
 
         // 计算 embeddings
+        let dim = self.vector_store.dim();
         let vectors: Vec<Vec<f32>> = if let Some(embedder) = &self.embedder {
             match embedder.embed(texts.clone()) {
                 Ok(v) => v,
                 Err(e) => {
                     log::warn!("Embedding failed for {}: {}, using zero vectors", doc_id, e);
-                    vec![vec![0.0; 384]; sections.len()]
+                    vec![vec![0.0; dim]; sections.len()]
                 }
             }
         } else {
-            vec![vec![0.0; 384]; sections.len()]
+            vec![vec![0.0; dim]; sections.len()]
         };
 
         // 写入向量表

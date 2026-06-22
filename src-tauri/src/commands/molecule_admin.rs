@@ -37,6 +37,7 @@ pub async fn mol_admin_get(
     let guard = state.inner.lock().await;
     engine_or_err!(guard)?
         .get_molecule(&mol_id)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -51,6 +52,7 @@ pub async fn mol_admin_search_by_smiles(
     let guard = state.inner.lock().await;
     engine_or_err!(guard)?
         .search_by_smiles(&smiles)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -65,6 +67,7 @@ pub async fn mol_admin_search_text(
     let guard = state.inner.lock().await;
     engine_or_err!(guard)?
         .search_text(&query)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -82,6 +85,7 @@ pub async fn mol_admin_list(
     let guard = state.inner.lock().await;
     engine_or_err!(guard)?
         .list_all(limit, offset, source_type.as_deref(), status.as_deref())
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -95,6 +99,7 @@ pub async fn mol_admin_store_stats(
     let guard = state.inner.lock().await;
     engine_or_err!(guard)?
         .get_store_stats()
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -139,6 +144,7 @@ pub async fn mol_admin_add(
     let guard = state.inner.lock().await;
     engine_or_err!(guard)?
         .add_molecule(&record)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -153,6 +159,7 @@ pub async fn mol_admin_update(
     let guard = state.inner.lock().await;
     engine_or_err!(guard)?
         .update_molecule(&record)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -168,6 +175,7 @@ pub async fn mol_admin_update_status(
     let guard = state.inner.lock().await;
     engine_or_err!(guard)?
         .update_status(&mol_id, &status)
+        .await
         .map_err(|e| e.to_string())
 }
 
@@ -182,6 +190,7 @@ pub async fn mol_admin_delete(
     let guard = state.inner.lock().await;
     engine_or_err!(guard)?
         .delete_molecule(&mol_id)
+        .await
         .map_err(|e| e.to_string())
 }
 

@@ -41,15 +41,22 @@ pub struct Embedder {
     /// 标识当前是 sidecar 模式（vs Deterministic）。
     /// `embed_async` 据此决定走 `SidecarClient` 共享连接池。
     is_sidecar: bool,
+    /// 当前 embedding 维度，供 KnowledgeBase 创建向量表时使用。
+    dim: usize,
+    /// 传给 sidecar 的 MRL 截断维度（None 表示使用模型 full dim）。
+    mrl_dim: Option<i32>,
 }
 
 impl Embedder {
     pub fn new(config: &crate::core::config::settings::EmbedConfig) -> Self {
+        let dim = config.effective_dim();
         if config.api_key.is_empty() {
             // 无 API key，使用确定性 embedder（用于测试）
             return Self {
-                inner: Box::new(DeterministicEmbedder::new(384)),
+                inner: Box::new(DeterministicEmbedder::new(dim)),
                 is_sidecar: false,
+                dim,
+                mrl_dim: config.mrl_dim,
             };
         }
 
@@ -57,9 +64,15 @@ impl Embedder {
         // `inner` 用 `Box<SidecarEmbedder>`（同步路径用 blocking client），
         // `is_sidecar=true` 标记让 `embed_async` 走 `SidecarClient` 共享池。
         Self {
-            inner: Box::new(SidecarEmbedder::new(&config.base_url)),
+            inner: Box::new(SidecarEmbedder::new(&config.base_url, config.mrl_dim)),
             is_sidecar: true,
+            dim,
+            mrl_dim: config.mrl_dim,
         }
+    }
+
+    pub fn dim(&self) -> usize {
+        self.dim
     }
 
     pub fn embed(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
@@ -89,7 +102,7 @@ impl Embedder {
             let client = crate::core::sidecar_client::get_or_init()
                 .map_err(|e| format!("SidecarClient init failed: {}", e))?;
             return client
-                .embed(&texts)
+                .embed(&texts, self.mrl_dim)
                 .await
                 .map_err(|e| format!("Sidecar embed async failed: {}", e));
         }
@@ -111,16 +124,18 @@ impl EmbedderTrait for Embedder {
 pub struct SidecarEmbedder {
     client: Client,
     base_url: String,
+    mrl_dim: Option<i32>,
 }
 
 impl SidecarEmbedder {
-    pub fn new(base_url: &str) -> Self {
+    pub fn new(base_url: &str, mrl_dim: Option<i32>) -> Self {
         Self {
             client: Client::builder()
                 .timeout(Duration::from_secs(120))
                 .build()
                 .expect("reqwest blocking client build failed"),
             base_url: base_url.trim_end_matches('/').to_string(),
+            mrl_dim,
         }
     }
 
@@ -141,7 +156,7 @@ impl SidecarEmbedder {
         // 这里的 url 参数被忽略（保留以便未来做 base_url 覆盖）。
         let _ = url;
         client
-            .embed(&texts)
+            .embed(&texts, self.mrl_dim)
             .await
             .map_err(|e| format!("Sidecar embed async failed: {}", e))
     }
@@ -162,7 +177,10 @@ impl EmbedderTrait for SidecarEmbedder {
         }
 
         let url = format!("{}/api/v1/embed", self.base_url);
-        let body = serde_json::json!({ "texts": texts });
+        let mut body = serde_json::json!({ "texts": texts });
+        if let Some(dim) = self.mrl_dim {
+            body["mrl_dim"] = serde_json::json!(dim);
+        }
 
         // 构造 base request
         let mut req = self.client.post(&url).json(&body);
@@ -320,7 +338,7 @@ mod tests {
             .await
             .expect("async embed");
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0].len(), 384);
+        assert_eq!(result[0].len(), 1024);
         // 确定性 embedder 同样输入产生同样输出
         assert_eq!(result[0], result[0]);
     }

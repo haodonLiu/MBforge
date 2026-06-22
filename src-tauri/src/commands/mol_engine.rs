@@ -66,13 +66,29 @@ pub async fn get_or_init_engine(
 /// locks the state, then invokes `f` with a shared reference to the engine.
 /// Centralizes the boilerplate previously duplicated in every `mol_store_*`
 /// and (most) `molecule_*` Tauri commands.
+///
+/// `f` must return a boxed future because the engine methods are async and
+/// the closure borrows the `&MoleculeEngine` (which lives only as long as
+/// the state guard). Boxed futures avoid the higher-ranked lifetime
+/// constraint of an unboxed `impl Future` here.
+///
+/// Example:
+/// ```ignore
+/// with_engine(&state, &root, |engine| {
+///     Box::pin(async move { engine.get_molecule(&id).await })
+/// })
+/// .await
+/// ```
 pub async fn with_engine<F, T>(
     state: &MoleculeEngineState,
     project_root: &str,
     f: F,
 ) -> Result<T, String>
 where
-    F: FnOnce(&MoleculeEngine) -> Result<T, String>,
+    F: for<'a> FnOnce(
+        &'a MoleculeEngine,
+    )
+        -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, String>> + Send + 'a>>,
 {
     get_or_init_engine(state, project_root).await?;
     let guard = state.inner.lock().await;
@@ -80,5 +96,5 @@ where
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| "MoleculeEngine not initialized".to_string())?;
-    f(engine)
+    f(engine).await
 }

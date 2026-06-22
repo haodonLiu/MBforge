@@ -278,11 +278,9 @@ pub async fn classify_and_extract_from_context_with_path(
     // 提取嵌入图片并持久化到项目目录 (sync + I/O → spawn_blocking)
     let path_owned = path.to_owned();
     let (extracted, _tmp) = tokio::task::spawn_blocking(
-        move || -> (Vec<crate::parsers::pdf::images::ExtractedImage>, tempfile::TempDir) {
-            let tmp = match tempfile::tempdir() {
-                Ok(t) => t,
-                Err(_) => return (vec![], tempfile::tempdir().unwrap()),
-            };
+        move || -> Result<(Vec<crate::parsers::pdf::images::ExtractedImage>, tempfile::TempDir), String> {
+            let tmp = tempfile::tempdir()
+                .map_err(|e| format!("failed to create temp dir: {e}"))?;
             let images = crate::parsers::pdf::images::extract_images_from_pdf(
                 &path_owned,
                 tmp.path(),
@@ -290,11 +288,12 @@ pub async fn classify_and_extract_from_context_with_path(
                 5,
             )
             .unwrap_or_default();
-            (images, tmp)
+            Ok((images, tmp))
         },
     )
     .await
-    .map_err(|e| format!("image extraction join error: {e}"))?;
+    .map_err(|e| format!("image extraction join error: {e}"))?
+    .map_err(|e| format!("image extraction failed: {e}"))?;
     let images = persist_extracted_images(path, &extracted);
 
     // 判断是否为扫描件（文本极少但有页面，或 pdf-inspector 标记需 OCR）

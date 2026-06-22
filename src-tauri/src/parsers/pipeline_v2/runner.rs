@@ -128,7 +128,7 @@ pub async fn run_pipeline(
 ) -> Result<IndexedDocument, PipelineError> {
     let runner = PipelineRunner::new();
 
-    let ocr = OcrService::new(vec![]); // Task 22 injects default backends
+    let ocr = OcrService::new(crate::parsers::pipeline_v2::services::ocr::default_backends());
     let extract_stage = ExtractStage::new(ocr);
     let extracted = runner
         .run_stage("extract", &extract_stage, input, ctx)

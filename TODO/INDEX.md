@@ -86,6 +86,9 @@
 - [ ] **P2-4 — 化学抽取 LoRA 微调**（论文 §3.2.2）
 - [ ] **P2-5 — 负结果 / 失败案例库**（论文 §4.3）
 - [ ] **P2-6 — query-to-model 探索**（论文 §4.5）
+- [x] **P2-7 — pdf-inspector 深度优化**（2026-06-22）
+      见 `TODO/2026-06-22-pdf-inspector-investigation.md`。
+      P-S4 锁版本 · P-S2 单次加载复用 · P-S1 heading 解析简化 · P-S3 per-page OCR routing。
 
 详见 `TODO/2026-06-22-llm-extraction-paper-research.md` 完整定义。
 

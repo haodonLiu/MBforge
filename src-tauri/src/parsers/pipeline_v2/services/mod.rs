@@ -4,10 +4,14 @@
 pub mod cache;
 /// VLM image captioning.
 pub mod captions;
+/// Chemical structure validation.
+pub mod chem_validate;
 /// Embedded image extraction and persistence.
 pub mod images;
 /// PDF metadata inspection.
 pub mod inspector;
+/// Structured data merging and SAR analysis.
+pub mod merge;
 /// Molecule detection and recognition.
 pub mod molecules;
 /// OCR backend orchestration.

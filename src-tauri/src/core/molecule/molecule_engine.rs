@@ -49,68 +49,83 @@ impl MoleculeEngine {
 
     // =====================================================================
     // Store operations (delegated to molecule_store.rs)
+    //
+    // All store-mutating/reading methods are `async` so they can use
+    // `lock().await` instead of `blocking_lock()`. The underlying
+    // `MoleculeDatabase` operations are themselves synchronous and cheap
+    // (rusqlite is fast in-memory + WAL mode), so `await` is a no-op yield
+    // rather than a real suspension point. This is required because the
+    // methods are invoked from Tauri command handlers running on the
+    // Tokio runtime — calling `blocking_lock()` there panics with
+    // "Cannot block the current thread from within a runtime".
     // =====================================================================
 
-    pub fn add_molecule(&self, record: &MoleculeRecord) -> Result<(), String> {
-        self.store.blocking_lock().add_molecule(record)
+    pub async fn add_molecule(&self, record: &MoleculeRecord) -> Result<(), String> {
+        self.store.lock().await.add_molecule(record)
     }
 
-    pub fn add_molecules_batch(&self, records: &[MoleculeRecord]) -> Result<usize, String> {
-        self.store.blocking_lock().add_molecules_batch(records)
+    pub async fn add_molecules_batch(&self, records: &[MoleculeRecord]) -> Result<usize, String> {
+        self.store.lock().await.add_molecules_batch(records)
     }
 
-    /// 获取底层 MoleculeDatabase 锁 guard
-    pub fn store(&self) -> tokio::sync::MutexGuard<'_, MoleculeDatabase> {
-        self.store.blocking_lock()
+    pub async fn get_molecule(&self, mol_id: &str) -> Result<Option<MoleculeRecord>, String> {
+        self.store.lock().await.get_molecule(mol_id)
     }
 
-    pub fn get_molecule(&self, mol_id: &str) -> Result<Option<MoleculeRecord>, String> {
-        self.store.blocking_lock().get_molecule(mol_id)
+    pub async fn search_by_smiles(&self, smiles: &str) -> Result<Option<MoleculeRecord>, String> {
+        self.store.lock().await.search_by_smiles(smiles)
     }
 
-    pub fn search_by_smiles(&self, smiles: &str) -> Result<Option<MoleculeRecord>, String> {
-        self.store.blocking_lock().search_by_smiles(smiles)
+    pub async fn search_by_source(&self, doc_id: &str) -> Result<Vec<MoleculeRecord>, String> {
+        self.store.lock().await.search_by_source(doc_id)
     }
 
-    pub fn search_by_source(&self, doc_id: &str) -> Result<Vec<MoleculeRecord>, String> {
-        self.store.blocking_lock().search_by_source(doc_id)
+    pub async fn search_text(&self, query: &str) -> Result<Vec<MoleculeRecord>, String> {
+        self.store.lock().await.search_text(query)
     }
 
-    pub fn search_text(&self, query: &str) -> Result<Vec<MoleculeRecord>, String> {
-        self.store.blocking_lock().search_text(query)
-    }
-
-    pub fn list_all(
+    pub async fn list_all(
         &self,
         limit: usize,
         offset: usize,
         source_type: Option<&str>,
         status: Option<&str>,
     ) -> Result<Vec<MoleculeRecord>, String> {
-        self.store.blocking_lock().list_all(limit, offset, source_type, status)
+        self.store
+            .lock()
+            .await
+            .list_all(limit, offset, source_type, status)
     }
 
-    pub fn delete_molecule(&self, mol_id: &str) -> Result<bool, String> {
-        self.store.blocking_lock().delete_molecule(mol_id)
+    pub async fn delete_molecule(&self, mol_id: &str) -> Result<bool, String> {
+        self.store.lock().await.delete_molecule(mol_id)
     }
 
-    pub fn get_store_stats(&self) -> Result<serde_json::Value, String> {
-        self.store.blocking_lock().get_stats()
+    pub async fn get_store_stats(&self) -> Result<serde_json::Value, String> {
+        self.store.lock().await.get_stats()
     }
 
-    pub fn update_status(&self, mol_id: &str, status: &str) -> Result<bool, String> {
-        self.store.blocking_lock().update_status(mol_id, status)
+    pub async fn update_status(&self, mol_id: &str, status: &str) -> Result<bool, String> {
+        self.store.lock().await.update_status(mol_id, status)
     }
 
-    pub fn update_molecule(&self, record: &MoleculeRecord) -> Result<bool, String> {
-        self.store.blocking_lock().update_molecule(record)
+    pub async fn update_molecule(&self, record: &MoleculeRecord) -> Result<bool, String> {
+        self.store.lock().await.update_molecule(record)
     }
 
-    pub fn update_molecules_batch(
+    pub async fn update_molecules_batch(
         &self,
         records: &[MoleculeRecord],
     ) -> Result<(usize, Vec<String>), String> {
-        self.store.blocking_lock().update_molecules_batch(records)
+        self.store.lock().await.update_molecules_batch(records)
+    }
+
+    /// 取所有分子的 `(mol_id, smiles)` 对，供 chematic 同步计算使用。
+    ///
+    /// 等价于 `MoleculeDatabase::get_all_smiles`，但走 async 接口以兼容
+    /// Tauri command 调用上下文。
+    pub async fn list_all_smiles(&self) -> Result<Vec<(String, String)>, String> {
+        self.store.lock().await.get_all_smiles()
     }
     // =====================================================================
     // Relation operations (delegated to molecule_db.rs)
@@ -238,17 +253,17 @@ impl MoleculeEngine {
         Ok(results)
     }
 
-    pub fn scaffold_profile(&self, scaffold: &str) -> Result<ScaffoldProfile, String> {
-        let store = self.store.blocking_lock();
+    pub async fn scaffold_profile(&self, scaffold: &str) -> Result<ScaffoldProfile, String> {
+        let store = self.store.lock().await;
         crate::core::chem::sar_query::scaffold_activity_profile(scaffold, store.conn())
     }
 
-    pub fn find_activity_cliffs(
+    pub async fn find_activity_cliffs(
         &self,
         min_sim: f64,
         min_ratio: f64,
     ) -> Result<Vec<ActivityCliff>, String> {
-        let store = self.store.blocking_lock();
+        let store = self.store.lock().await;
         crate::core::chem::sar_query::find_activity_cliffs(min_sim, min_ratio, store.conn())
     }
 
@@ -320,16 +335,16 @@ impl MoleculeEngine {
         match action {
             "list" => {
                 let limit = params["limit"].as_u64().unwrap_or(20) as usize;
-                let mols = self.list_all(limit, 0, None, None)?;
+                let mols = self.list_all(limit, 0, None, None).await?;
                 Ok(serde_json::to_value(&mols).map_err(|e| e.to_string())?)
             }
             "search_by_smiles" => {
                 let smiles = params["smiles"].as_str().unwrap_or("");
                 let mut results = Vec::new();
-                if let Ok(Some(rec)) = self.search_by_smiles(smiles) {
+                if let Ok(Some(rec)) = self.search_by_smiles(smiles).await {
                     results.push(rec);
                 }
-                if let Ok(recs) = self.search_text(smiles) {
+                if let Ok(recs) = self.search_text(smiles).await {
                     for r in recs {
                         if !results
                             .iter()
@@ -343,11 +358,11 @@ impl MoleculeEngine {
             }
             "search_text" => {
                 let query = params["query"].as_str().unwrap_or("");
-                let mols = self.search_text(query)?;
+                let mols = self.search_text(query).await?;
                 Ok(serde_json::to_value(&mols).map_err(|e| e.to_string())?)
             }
             "get_stats" => {
-                let stats = self.get_store_stats()?;
+                let stats = self.get_store_stats().await?;
                 Ok(stats)
             }
             "get_relation_stats" => {
@@ -356,7 +371,7 @@ impl MoleculeEngine {
             }
             "scaffold_profile" => {
                 let scaffold = params["scaffold"].as_str().unwrap_or("");
-                let profile = self.scaffold_profile(scaffold)?;
+                let profile = self.scaffold_profile(scaffold).await?;
                 Ok(serde_json::to_value(&profile).map_err(|e| e.to_string())?)
             }
             "find_analogs" => {
@@ -368,7 +383,7 @@ impl MoleculeEngine {
             "find_activity_cliffs" => {
                 let min_sim = params["min_similarity"].as_f64().unwrap_or(0.7);
                 let min_ratio = params["min_activity_ratio"].as_f64().unwrap_or(10.0);
-                let cliffs = self.find_activity_cliffs(min_sim, min_ratio)?;
+                let cliffs = self.find_activity_cliffs(min_sim, min_ratio).await?;
                 Ok(serde_json::to_value(&cliffs).map_err(|e| e.to_string())?)
             }
             "check_markush" => {
@@ -417,7 +432,7 @@ mod tests {
         let engine = MoleculeEngine::new(&root).await.unwrap();
 
         // Store schema should exist
-        let stats = engine.get_store_stats().unwrap();
+        let stats = engine.get_store_stats().await.unwrap();
         assert_eq!(stats["total"], 0);
 
         // Relation schema should exist
@@ -458,7 +473,7 @@ mod tests {
         // Add a molecule via store
         let mut rec = MoleculeRecord::new("m1", "CCO");
         rec.name = "Ethanol".to_string();
-        engine.add_molecule(&rec).unwrap();
+        engine.add_molecule(&rec).await.unwrap();
 
         // Add a relation via relation DB
         let rel = MoleculeRelation {
@@ -474,7 +489,7 @@ mod tests {
         assert!(rid > 0);
 
         // Verify store can read it back
-        let loaded = engine.get_molecule("m1").unwrap().unwrap();
+        let loaded = engine.get_molecule("m1").await.unwrap().unwrap();
         assert_eq!(loaded.name, "Ethanol");
 
         // Verify relation DB can read it back

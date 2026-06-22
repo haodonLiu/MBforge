@@ -57,6 +57,20 @@ pub struct EmbedConfig {
     pub instruction: String,
 }
 
+impl EmbedConfig {
+    /// 返回 Rust 侧用于创建向量表/零向量的有效维度。
+    ///
+    /// 优先级：
+    /// 1. 显式配置的 `mrl_dim`（也是传给 sidecar 的截断维度）
+    /// 2. 默认 1024（匹配 Qwen3-Embedding-0.6B 的 full dim）
+    pub fn effective_dim(&self) -> usize {
+        self.mrl_dim
+            .filter(|d| *d > 0)
+            .map(|d| d as usize)
+            .unwrap_or(1024)
+    }
+}
+
 impl Default for EmbedConfig {
     fn default() -> Self {
         Self {

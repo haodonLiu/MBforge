@@ -282,7 +282,7 @@ pub async fn mol_scaffold_profile(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.scaffold_profile(&scaffold_esmiles).map_err(|e| {
+    engine.scaffold_profile(&scaffold_esmiles).await.map_err(|e| {
         log::error!(
             "mol_scaffold_profile esmiles={} failed: {}",
             scaffold_esmiles,
@@ -307,6 +307,7 @@ pub async fn mol_find_activity_cliffs(
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
     engine
         .find_activity_cliffs(min_similarity, min_activity_ratio)
+        .await
         .map_err(|e| {
             log::error!(
                 "mol_find_activity_cliffs failed: sim={} ratio={} err={}",
@@ -355,12 +356,12 @@ pub async fn mol_search_substructure(
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
 
-    let db = engine.store();
     let threshold = tanimoto_threshold.unwrap_or(0.3);
 
     // 1. 加载所有分子
-    let all_mols = db
-        .get_all_smiles()
+    let all_mols = engine
+        .list_all_smiles()
+        .await
         .map_err(|e| format!("get_all_smiles: {}", e))?;
     if all_mols.is_empty() {
         return Ok(vec![]);

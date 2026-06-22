@@ -103,6 +103,57 @@ export async function listProjectDocuments(
   )
 }
 
+/** 完成状态字段（仅在带状态的列表里出现）。 */
+export type IncompleteReason =
+  | 'complete'
+  | 'missing_text_md'
+  | 'missing_report_md'
+  | 'missing_both'
+
+/** 文档 + 完成状态（`text.md` + `report.md` 都存在才算完成）。 */
+export interface DocumentEntryWithStatus extends DocumentEntry {
+  is_complete: boolean
+  incomplete_reason: IncompleteReason
+}
+
+/** 列出项目文档，每项附带读取完成状态。
+ *
+ *  完成定义：`<project_root>/projects/<doc_id>/text.md` 与 `report.md`
+ *  都存在。任一缺失 → `is_complete: false`，UI 应标「未完成」并提示
+ *  用户重跑处理。
+ */
+export async function listProjectDocumentsWithStatus(
+  root: string,
+): Promise<{ success: boolean; documents: DocumentEntryWithStatus[] }> {
+  return invokeWithError(
+    () => invoke('list_project_documents_with_status', { root }),
+    ErrorCode.ProjectOpen,
+  )
+}
+
+/** 单个文档的输出文件状态。 */
+export interface DocumentOutputStatus {
+  success: boolean
+  doc_id: string
+  text_md_path: string
+  text_md_exists: boolean
+  report_md_path: string
+  report_md_exists: boolean
+  complete: boolean
+  incomplete_reason: IncompleteReason
+}
+
+/** 查询单个文档是否已生成 `text.md` + `report.md`。 */
+export async function getDocumentOutputStatus(
+  root: string,
+  docId: string,
+): Promise<DocumentOutputStatus> {
+  return invoke<DocumentOutputStatus>('get_document_output_status', {
+    root,
+    docId,
+  })
+}
+
 /** 文件树节点 */
 export interface FileNode {
   name: string

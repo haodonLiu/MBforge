@@ -102,7 +102,7 @@ class EmbedBackend(LazyBackend):
         return model
 
     @classmethod
-    def embed(cls, texts: list[str]) -> list[list[float]]:
+    def embed(cls, texts: list[str], mrl_dim: int | None = None) -> list[list[float]]:
         if cls._MODEL is None:
             cls.load()
         if cls._MODEL is None:
@@ -115,8 +115,9 @@ class EmbedBackend(LazyBackend):
             show_progress_bar=False,
             convert_to_numpy=True,
         )
-        if cls._MRL_DIM and embeddings.shape[1] > cls._MRL_DIM:
-            embeddings = embeddings[:, : cls._MRL_DIM]
+        target_dim = mrl_dim if mrl_dim is not None else cls._MRL_DIM
+        if target_dim and embeddings.shape[1] > target_dim:
+            embeddings = embeddings[:, :target_dim]
         return embeddings.tolist()
 
 
@@ -243,8 +244,8 @@ def health() -> dict[str, str]:
     return RerankBackend.health()
 
 
-def embed(texts: list[str]) -> list[list[float]]:
-    return EmbedBackend.embed(texts)
+def embed(texts: list[str], mrl_dim: int | None = None) -> list[list[float]]:
+    return EmbedBackend.embed(texts, mrl_dim=mrl_dim)
 
 
 def rerank(query: str, passages: list[str]) -> list[tuple[int, float]]:

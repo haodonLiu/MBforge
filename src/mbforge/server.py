@@ -237,10 +237,17 @@ async def embed(request: Request, body: dict) -> dict[str, Any]:
         texts = [texts]
     if not texts:
         raise ValidationError("texts is required")
+    mrl_dim = body.get("mrl_dim")
+    if isinstance(mrl_dim, (int, float)) and mrl_dim > 0:
+        mrl_dim = int(mrl_dim)
+    else:
+        mrl_dim = None
     if trace_id:
         logger.info(f"[trace={trace_id} span={span_id}] embed started")
     loop = asyncio.get_running_loop()
-    embeddings = await loop.run_in_executor(None, lambda: qwen3_embed.embed(texts))
+    embeddings = await loop.run_in_executor(
+        None, lambda: qwen3_embed.embed(texts, mrl_dim=mrl_dim)
+    )
     dim = len(embeddings[0]) if embeddings else 0
     if trace_id:
         logger.info(f"[trace={trace_id} span={span_id}] embed done, dim={dim}")

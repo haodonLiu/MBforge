@@ -35,6 +35,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         project_ops::open_project,
         project_ops::scan_project_files,
         project_ops::list_project_documents,
+        project_ops::list_project_documents_with_status,
+        project_ops::get_document_output_status,
         project_ops::get_file_tree,
         project_ops::enqueue_unresolved_documents,
         // pdf

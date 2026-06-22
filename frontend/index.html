@@ -10,6 +10,150 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // ====== DEV-ONLY: Tauri invoke mock for visual inspection ======
+      // Activated by ?devmock=1. Project root fixed to C:/Users/10954/Desktop/X2.
+      (function () {
+        if (typeof window === 'undefined') return;
+        var p = new URLSearchParams(window.location.search);
+        if (p.get('devmock') !== '1') return;
+        if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__._mbforgeDevMock) return;
+
+        var PROJECT_ROOT = 'C:/Users/10954/Desktop/X2';
+
+        var SYNTH_MOLECULES = [
+          { mol_id: 'm1', name: 'Imatinib', smiles: 'Cc1ccc(NC(=O)c2ccc(CN3CCN(C)CC3)cc2)cc1Nc1nccc(-c2cccnc2)n1', activity: 13, activity_type: 'IC50', units: 'nM', source_doc: 'DrugBank', status: 'confirmed' },
+          { mol_id: 'm2', name: 'Gefitinib', smiles: 'COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1', activity: 33, activity_type: 'IC50', units: 'nM', source_doc: 'Cancer Res 2004', status: 'confirmed' },
+          { mol_id: 'm3', name: 'Erlotinib', smiles: 'COCCOc1cc2ncnc(Nc3cccc(C#C)c3)c2cc1OCCOC', activity: 2, activity_type: 'IC50', units: 'nM', source_doc: 'J Med Chem 2003', status: 'confirmed' },
+          { mol_id: 'm4', name: 'Lapatinib', smiles: 'CS(=O)(=O)CCNCc1ccc(-c2ccc3ncnc(Nc4ccc(OCc5cccc(F)c5)c(Cl)c4)c3c2)o1', activity: 10.8, activity_type: 'IC50', units: 'nM', source_doc: 'Clin Cancer Res 2005', status: 'confirmed' },
+          { mol_id: 'm5', name: 'Sorafenib', smiles: 'CNC(=O)c1c(O)cc(-c2ccc(Cl)cc2Cl)cc1-c1nc(-c2ccc(N3CCN(CCO)CC3)cc2)c[nH]1', activity: 90, activity_type: 'IC50', units: 'nM', source_doc: 'Cancer Res 2006', status: 'confirmed' },
+          { mol_id: 'm6', name: 'Sunitinib', smiles: 'CCN(CC)CCNC(=O)c1c(C)[nH]c(/C=C2\\C(=O)Nc3ncc(F)cc23)c1C', activity: 8, activity_type: 'IC50', units: 'nM', source_doc: 'Nat Rev Drug Discov 2007', status: 'confirmed' },
+          { mol_id: 'm7', name: 'Dasatinib', smiles: 'CC1=C(C(=O)Nc2ncc(C)c(Cl)c2C)Sc2ncnc(N)c2N1CC1CCOCC1', activity: 0.6, activity_type: 'IC50', units: 'nM', source_doc: 'J Med Chem 2004', status: 'confirmed' },
+          { mol_id: 'm8', name: 'Nilotinib', smiles: 'Cc1ccc(NC(=O)c2cc(NC(=O)c3ccc(C)c(C)c3)c(C)cc2C)cc1F', activity: 25, activity_type: 'IC50', units: 'nM', source_doc: 'Leukemia 2005', status: 'confirmed' },
+          { mol_id: 'm9', name: 'Pazopanib', smiles: 'CC1=C(SC2=NC3=C(C=C(NS(=O)(=O)C4=C(O)C=CC=C4)C(=O)N3C)C(=O)N2)C=CC(C)=C1', activity: 71, activity_type: 'IC50', units: 'nM', source_doc: 'Cancer Chemother Pharmacol 2010', status: 'confirmed' },
+          { mol_id: 'm10', name: 'Vandetanib', smiles: 'CN1CCC(COc2ccc(F)cc2F)CC1c1nc(-c2cccs2)c(Cl)cc1N', activity: 50, activity_type: 'IC50', units: 'nM', source_doc: 'Clin Cancer Res 2007', status: 'confirmed' },
+          { mol_id: 'm11', name: 'Crizotinib', smiles: 'CC(c1c(C)cc(-c2ncnc3[nH]ccc23)cc1C)N1CC(N(C)C2CC2)CC1', activity: 11, activity_type: 'IC50', units: 'nM', source_doc: 'Cancer Discov 2011', status: 'confirmed' },
+          { mol_id: 'm12', name: 'Bosutinib', smiles: 'COc1cc(NC(=O)c2cccc(NCc3cc(O)cc(O)c3)c2F)c(Cl)cc1Cl', activity: 1.2, activity_type: 'IC50', units: 'nM', source_doc: 'Blood 2004', status: 'confirmed' }
+        ];
+        var SYNTH_DOCS = [
+          { doc_id: 'd1', title: 'Kinase Inhibitors in Oncology: A Comprehensive Review', path: 'papers/Kinase_Inhibitors_Review.pdf', file_hash: 'h1', file_size: 2508715, page_count: 28, status: 'indexed', indexed_at: 1718700000, source_type: 'pdf' },
+          { doc_id: 'd2', title: 'Structural Analysis of Tyrosine Kinase Binding Modes', path: 'papers/Tyrosine_Kinase_Binding.pdf', file_hash: 'h2', file_size: 4171950, page_count: 47, status: 'indexed', indexed_at: 1718700050, source_type: 'pdf' },
+          { doc_id: 'd3', title: 'SAR of Imatinib Derivatives (Supplementary Notes)', path: 'notes/sar-imatinib.md', file_hash: 'h3', file_size: 4321, page_count: 1, status: 'indexed', indexed_at: 1718700100, source_type: 'markdown' }
+        ];
+        var SYNTH_SECTIONS = [];
+        var sectionTexts = [
+          'Imatinib binds competitively at the ATP-binding site of BCR-ABL, stabilizing the kinase in an inactive conformation. The aniline ring establishes a critical hydrogen bond with Glu286 in the hinge region.',
+          'SAR studies indicate that meta-substitution on the pyrimidine ring is tolerated, while ortho-substitution abolishes activity due to steric clash with the gatekeeper Thr315.',
+          'Gefitinib targets EGFR with a 4-anilinoquinazoline scaffold that mimics the adenine ring of ATP. The morpholine side chain improves aqueous solubility without affecting potency.',
+          'Activity cliffs were observed at the meta position of the aniline ring, with a 50x jump in IC50 when the substituent is changed from -F to -Cl.',
+          'Vandetanib shows dual inhibition of VEGFR2 and EGFR, useful in medullary thyroid cancer. The quinazoline core is shared with erlotinib, but the 4-bromo-2-fluoroanilino group provides VEGFR selectivity.',
+          'Pazopanib has a distinctive indazole oxime core, providing selectivity over ABL. The sulfonamide linker points toward the solvent front and tolerates bulky substituents.',
+          'Crizotinib is the first clinically approved ALK/MET inhibitor, with an unusual aminopiperidine motif that fills the back pocket created by the gatekeeper mutation.',
+          'Dasatinib achieves sub-nanomolar potency through tight binding to the active kinase conformation. The thiazole-amide scaffold is a privileged structure in kinase inhibitor design.'
+        ];
+        for (var i = 0; i < 60; i++) {
+          SYNTH_SECTIONS.push({
+            chunk_id: 'd' + ((i % 3) + 1) + ':sec' + i,
+            text: 'Section ' + i + ': ' + sectionTexts[i % sectionTexts.length],
+            metadata: { title: SYNTH_DOCS[i % 3].title, path: SYNTH_DOCS[i % 3].path, page_start: Math.floor(i / 3) * 5 + 1, page_end: Math.floor(i / 3) * 5 + 4 },
+            score: 0.95 - i * 0.012
+          });
+        }
+        var SYNTH_SESSIONS = [
+          { id: 's1', title: 'Imatinib scaffold SAR analysis', created_at: 1718600000, updated_at: 1718700000, message_count: 12 },
+          { id: 's2', title: 'Compare EGFR inhibitor selectivity', created_at: 1718650000, updated_at: 1718710000, message_count: 8 },
+          { id: 's3', title: 'Activity cliff analysis in EGFR series', created_at: 1718700000, updated_at: 1718720000, message_count: 3 }
+        ];
+        var SYNTH_NOTES = [
+          { id: 'n1', title: 'Hinge-binding scaffold review', path: 'notes/scaffold.md', updated_at: 1718700000, tags: ['kinase', 'scaffold'] },
+          { id: 'n2', title: 'Solubility tricks (morpholine)', path: 'notes/morpholine.md', updated_at: 1718690000, tags: ['solubility'] },
+          { id: 'n3', title: 'Activity cliffs observations', path: 'notes/cliffs.md', updated_at: 1718680000, tags: ['sar'] }
+        ];
+        var SYNTH_QUEUE = [
+          { id: 'q1', doc_id: 'd4', title: 'Supplementary Data 5 — Synthesis Routes', status: 'pending', progress: 0, stage: 'queued' },
+          { id: 'q2', doc_id: 'd5', title: 'Patent WO2026/037254 — claims extract', status: 'processing', progress: 0.42, stage: 'ocr' },
+          { id: 'q3', doc_id: 'd6', title: 'Failed Runs 2026-05', status: 'failed', progress: 0.0, stage: 'extract' }
+        ];
+        var SYNTH_MODELS = [
+          { id: 'qwen3-embed', name: 'Qwen3-Embedding-0.6B', size: 1.2e9, status: 'ready', kind: 'embed' },
+          { id: 'qwen3-rerank', name: 'Qwen3-Reranker-0.6B', size: 1.2e9, status: 'ready', kind: 'rerank' },
+          { id: 'molscribe', name: 'MolScribe-Swin', size: 480e6, status: 'ready', kind: 'ocr' },
+          { id: 'moldet', name: 'MolDet-YOLOv8', size: 220e6, status: 'ready', kind: 'detect' }
+        ];
+
+        var handler = async function (cmd, args) {
+          if (cmd === 'plugin:dialog|ask') return true;
+          if (cmd === 'plugin:dialog|open') return PROJECT_ROOT + '/projects/587d1457-6866-4c38-bf1d-821e1d9b432e';
+          if (cmd === 'open_project') {
+            return { success: true, project: { root: PROJECT_ROOT, name: 'X2 — Demo Project', documents: SYNTH_DOCS, project_id: '587d1457' } };
+          }
+          if (cmd === 'close_project') return { success: true };
+          if (cmd === 'enqueue_unresolved_documents') return { enqueued: 1 };
+          if (cmd === 'list_documents') return { documents: SYNTH_DOCS };
+          if (cmd === 'list_project_documents') {
+            var enriched = SYNTH_DOCS.map(function (d) {
+              return {
+                doc_id: d.doc_id, title: d.title, path: d.path,
+                doc_type: d.source_type === 'pdf' ? 'pdf' : 'markdown',
+                index_status: 'done', indexed: true, indexed_at: d.indexed_at,
+                file_size: d.file_size, page_count: d.page_count, status: d.status
+              };
+            });
+            return { success: true, documents: enriched };
+          }
+          if (cmd === 'get_file_tree') {
+            return { success: true, tree: [
+              { name: 'papers', path: 'papers', kind: 'folder', children: [
+                { name: 'Kinase_Inhibitors_Review.pdf', path: 'papers/Kinase_Inhibitors_Review.pdf', kind: 'file', doc_id: 'd1' },
+                { name: 'Tyrosine_Kinase_Binding.pdf', path: 'papers/Tyrosine_Kinase_Binding.pdf', kind: 'file', doc_id: 'd2' }
+              ]},
+              { name: 'notes', path: 'notes', kind: 'folder', children: [
+                { name: 'scaffold.md', path: 'notes/scaffold.md', kind: 'file', doc_id: 'n1' },
+                { name: 'morpholine.md', path: 'notes/morpholine.md', kind: 'file', doc_id: 'n2' },
+                { name: 'cliffs.md', path: 'notes/cliffs.md', kind: 'file', doc_id: 'n3' }
+              ]}
+            ]};
+          }
+          if (cmd === 'list_recent_projects') return [{ root: PROJECT_ROOT, name: 'X2 — Demo Project', last_opened: 1718700000 }];
+          if (cmd === 'kb_stats') return { document_count: SYNTH_DOCS.length, section_count: SYNTH_SECTIONS.length, total_sections: SYNTH_SECTIONS.length };
+          if (cmd === 'kb_search') return { results: SYNTH_SECTIONS.slice(0, (args && args.top_k) || 10) };
+          if (cmd === 'list_molecules') return { molecules: SYNTH_MOLECULES, total: SYNTH_MOLECULES.length };
+          if (cmd === 'mol_search') return { molecules: SYNTH_MOLECULES.filter(function(m){ return !args || !args.query || m.name.toLowerCase().includes((args.query||'').toLowerCase()); }), total: SYNTH_MOLECULES.length };
+          if (cmd === 'mol_count') return { count: SYNTH_MOLECULES.length };
+          if (cmd === 'agent_list_sessions') return { sessions: SYNTH_SESSIONS };
+          if (cmd === 'list_notes') return { notes: SYNTH_NOTES };
+          if (cmd === 'list_queue') return { items: SYNTH_QUEUE };
+          if (cmd === 'list_models') return { models: SYNTH_MODELS };
+          if (cmd === 'get_environment') return { python: '3.11.9', cuda: '12.8', os: 'Windows 11', ram_gb: 16, disk_gb: 512, gpu: 'RTX 4060' };
+          if (cmd === 'sidecar_status') return { running: true, port: 18792, uptime_s: 3600 };
+          if (cmd === 'settings_get_all') return {
+            llm: { provider: 'openai', base_url: 'https://api.openai.com/v1', model: 'gpt-4o-mini', api_key: 'sk-***' },
+            embed: { provider: 'qwen3', base_url: 'http://127.0.0.1:18792', api_key: 'local', dim: 384 },
+            rerank: { provider: 'qwen3', base_url: 'http://127.0.0.1:18792', api_key: 'local' }
+          };
+          if (cmd === 'plugin:event|listen' || cmd === 'plugin:event|unlisten') return 1;
+          return { success: true };
+        };
+
+        var cbSeq = 0;
+        window.__TAURI_INTERNALS__ = {
+          invoke: handler,
+          transformCallback: function (callbackFn) {
+            var id = ++cbSeq;
+            window.__MBFORGE_CB__ = window.__MBFORGE_CB__ || {};
+            window.__MBFORGE_CB__[id] = callbackFn;
+            return id;
+          },
+          unregisterCallback: function (id) {
+            if (window.__MBFORGE_CB__ && window.__MBFORGE_CB__[id]) {
+              delete window.__MBFORGE_CB__[id];
+            }
+          },
+          _mbforgeDevMock: true
+        };
+        try { localStorage.setItem('mbforge_project_root', PROJECT_ROOT); } catch (e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

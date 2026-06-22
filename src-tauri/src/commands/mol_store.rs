@@ -32,7 +32,7 @@ pub async fn mol_store_add(
     units: Option<String>,
     source_type: Option<String>,
 ) -> Result<(), String> {
-    with_engine(&state, &project_root, |engine| {
+    with_engine(&state, &project_root, |engine| Box::pin(async move {
         let mut record = MoleculeRecord::new(&mol_id, &esmiles);
         if let Some(n) = name {
             record.name = n;
@@ -48,8 +48,8 @@ pub async fn mol_store_add(
             record.units = u;
         }
         record.source_type = source_type.unwrap_or_else(|| "manual".to_string());
-        engine.add_molecule(&record)
-    })
+        engine.add_molecule(&record).await
+    }))
     .await
 }
 
@@ -62,14 +62,15 @@ pub async fn mol_store_list(
     source_type: Option<String>,
     status: Option<String>,
 ) -> Result<Vec<MoleculeRecord>, String> {
-    with_engine(&state, &project_root, |engine| {
+    with_engine(&state, &project_root, |engine| Box::pin(async move {
         engine.list_all(
             limit.unwrap_or(100),
             offset.unwrap_or(0),
             source_type.as_deref(),
             status.as_deref(),
         )
-    })
+        .await
+    }))
     .await
 }
 
@@ -79,7 +80,10 @@ pub async fn mol_store_get(
     project_root: String,
     mol_id: String,
 ) -> Result<Option<MoleculeRecord>, String> {
-    with_engine(&state, &project_root, |engine| engine.get_molecule(&mol_id)).await
+    with_engine(&state, &project_root, |engine| Box::pin(async move {
+        engine.get_molecule(&mol_id).await
+    }))
+    .await
 }
 
 #[tauri::command]
@@ -88,7 +92,10 @@ pub async fn mol_store_search(
     project_root: String,
     query: String,
 ) -> Result<Vec<MoleculeRecord>, String> {
-    with_engine(&state, &project_root, |engine| engine.search_text(&query)).await
+    with_engine(&state, &project_root, |engine| Box::pin(async move {
+        engine.search_text(&query).await
+    }))
+    .await
 }
 
 #[tauri::command]
@@ -97,9 +104,9 @@ pub async fn mol_store_delete(
     project_root: String,
     mol_id: String,
 ) -> Result<bool, String> {
-    with_engine(&state, &project_root, |engine| {
-        engine.delete_molecule(&mol_id)
-    })
+    with_engine(&state, &project_root, |engine| Box::pin(async move {
+        engine.delete_molecule(&mol_id).await
+    }))
     .await
 }
 
@@ -113,9 +120,9 @@ pub async fn mol_store_update(
     project_root: String,
     record: MoleculeRecord,
 ) -> Result<bool, String> {
-    with_engine(&state, &project_root, |engine| {
-        engine.update_molecule(&record)
-    })
+    with_engine(&state, &project_root, |engine| Box::pin(async move {
+        engine.update_molecule(&record).await
+    }))
     .await
 }
 
@@ -129,13 +136,13 @@ pub async fn mol_store_update_batch(
     project_root: String,
     records: Vec<MoleculeRecord>,
 ) -> Result<serde_json::Value, String> {
-    with_engine(&state, &project_root, |engine| {
-        let (updated, failed) = engine.update_molecules_batch(&records)?;
+    with_engine(&state, &project_root, |engine| Box::pin(async move {
+        let (updated, failed) = engine.update_molecules_batch(&records).await?;
         Ok(serde_json::json!({
             "updated": updated,
             "failed": failed,
         }))
-    })
+    }))
     .await
 }
 
@@ -144,7 +151,10 @@ pub async fn mol_store_stats(
     state: tauri::State<'_, MoleculeEngineState>,
     project_root: String,
 ) -> Result<serde_json::Value, String> {
-    with_engine(&state, &project_root, |engine| engine.get_store_stats()).await
+    with_engine(&state, &project_root, |engine| Box::pin(async move {
+        engine.get_store_stats().await
+    }))
+    .await
 }
 
 #[tauri::command]
@@ -153,9 +163,9 @@ pub async fn mol_store_search_by_smiles(
     project_root: String,
     smiles: String,
 ) -> Result<Option<MoleculeRecord>, String> {
-    with_engine(&state, &project_root, |engine| {
-        engine.search_by_smiles(&smiles)
-    })
+    with_engine(&state, &project_root, |engine| Box::pin(async move {
+        engine.search_by_smiles(&smiles).await
+    }))
     .await
 }
 
@@ -165,8 +175,8 @@ pub async fn mol_store_list_by_doc(
     project_root: String,
     doc_id: String,
 ) -> Result<Vec<MoleculeRecord>, String> {
-    with_engine(&state, &project_root, |engine| {
-        engine.search_by_source(&doc_id)
-    })
+    with_engine(&state, &project_root, |engine| Box::pin(async move {
+        engine.search_by_source(&doc_id).await
+    }))
     .await
 }

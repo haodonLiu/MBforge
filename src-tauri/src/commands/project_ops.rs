@@ -191,6 +191,65 @@ pub fn list_project_documents(root: String) -> Result<serde_json::Value, String>
     }))
 }
 
+/// 列出项目中的所有文档，并附带每个文档的「读取完成」状态。
+///
+/// 完成判定：`<project_root>/projects/<doc_id>/text.md` 与 `report.md`
+/// **都**存在。任一缺失视为「未完成读取」，需要重跑 `process_document`。
+///
+/// 该命令替代 `list_project_documents` 用于文档列表 UI — UI 应基于
+/// `is_complete` 字段过滤/标记待处理文档，不要把它们当作已索引的。
+#[tauri::command]
+pub fn list_project_documents_with_status(
+    root: String,
+) -> Result<serde_json::Value, String> {
+    let root = clean_path(&root);
+    let path = PathBuf::from(&root);
+    let project = crate::core::project::Project::open(&path).ok_or_else(|| {
+        AppError::new(ErrorCode::ProjectOpen, format!("项目不存在: {root}")).to_string()
+    })?;
+
+    let docs: Vec<serde_json::Value> = project
+        .list_documents()
+        .iter()
+        .map(|d| {
+            let status = crate::parsers::pipeline::output::output_status(&path, &d.doc_id);
+            let mut base = doc_json(d);
+            base["is_complete"] = serde_json::Value::Bool(status.complete);
+            base["incomplete_reason"] = serde_json::to_value(
+                crate::parsers::pipeline::output::IncompleteReason::from_status(&status),
+            )
+            .unwrap_or(serde_json::Value::Null);
+            base
+        })
+        .collect();
+
+    Ok(serde_json::json!({
+        "success": true,
+        "documents": docs,
+    }))
+}
+
+/// 查询单个文档的输出文件状态。
+#[tauri::command]
+pub fn get_document_output_status(
+    root: String,
+    doc_id: String,
+) -> Result<serde_json::Value, String> {
+    let root = clean_path(&root);
+    let path = PathBuf::from(&root);
+    let status = crate::parsers::pipeline::output::output_status(&path, &doc_id);
+    Ok(serde_json::json!({
+        "success": true,
+        "doc_id": doc_id,
+        "text_md_path": status.text_md_path,
+        "text_md_exists": status.text_md_exists,
+        "report_md_path": status.report_md_path,
+        "report_md_exists": status.report_md_exists,
+        "complete": status.complete,
+        "incomplete_reason": crate::parsers::pipeline::output::IncompleteReason::from_status(&status),
+    }))
+}
+
 /// 自动将所有未解析的 PDF 文档加入 ingest queue。
 #[tauri::command]
 pub async fn enqueue_unresolved_documents(root: String) -> Result<serde_json::Value, String> {

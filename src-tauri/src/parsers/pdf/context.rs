@@ -4,6 +4,8 @@
 //! `process_pdf_mem` to load bytes once and derive both classification
 //! metadata and markdown text.
 
+use std::sync::Arc;
+
 /// Serde adapter for `pdf_inspector::PdfType`, which does not implement
 /// `Serialize` / `Deserialize` in version 0.1.0.
 mod pdf_type_serde {
@@ -40,7 +42,7 @@ mod pdf_type_serde {
 }
 
 /// Classification metadata produced by pdf-inspector.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PdfClassification {
     #[serde(with = "pdf_type_serde")]
     pub pdf_type: pdf_inspector::PdfType,
@@ -53,7 +55,7 @@ pub struct PdfClassification {
 /// Shared context for all pdf-inspector operations on a single document.
 #[derive(Clone)]
 pub struct PdfInspectorContext {
-    pub bytes: Vec<u8>,
+    pub(crate) bytes: Arc<[u8]>,
     pub classification: PdfClassification,
     pub markdown: String,
     pub page_count: usize,
@@ -63,16 +65,20 @@ pub struct PdfInspectorContext {
 impl PdfInspectorContext {
     /// Build from a file path. Reads the file once.
     pub async fn from_path(path: &str) -> Result<Self, String> {
-        let bytes = tokio::fs::read(path)
+        let bytes: Vec<u8> = tokio::fs::read(path)
             .await
             .map_err(|e| format!("failed to read PDF {}: {}", path, e))?;
-        Self::from_bytes(&bytes).await
+        Self::from_arc_bytes(Arc::from(bytes)).await
     }
 
     /// Build from an in-memory byte slice. Calls `process_pdf_mem` once.
     pub async fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        let bytes = bytes.to_vec();
-        let task_bytes = bytes.clone();
+        Self::from_arc_bytes(Arc::from(bytes)).await
+    }
+
+    /// Build from an already-owned `Arc<[u8]>` buffer.
+    async fn from_arc_bytes(arc_bytes: Arc<[u8]>) -> Result<Self, String> {
+        let task_bytes = arc_bytes.clone();
         let result = tokio::task::spawn_blocking(move || pdf_inspector::process_pdf_mem(&task_bytes))
             .await
             .map_err(|e| format!("process_pdf_mem join error: {e}"))?
@@ -87,7 +93,7 @@ impl PdfInspectorContext {
         };
 
         Ok(Self {
-            bytes,
+            bytes: arc_bytes,
             classification,
             markdown: result.markdown.unwrap_or_default(),
             page_count: result.page_count as usize,
@@ -95,14 +101,9 @@ impl PdfInspectorContext {
         })
     }
 
-    /// Re-run extraction on the already-loaded bytes.
-    pub async fn reextract(&self) -> Result<String, String> {
-        let bytes = self.bytes.clone();
-        let result = tokio::task::spawn_blocking(move || pdf_inspector::process_pdf_mem(&bytes))
-            .await
-            .map_err(|e| format!("process_pdf_mem join error: {e}"))?
-            .map_err(|e| format!("process_pdf_mem failed: {e}"))?;
-        Ok(result.markdown.unwrap_or_default())
+    /// Return a read-only view of the underlying PDF bytes.
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
     }
 }
 
@@ -114,5 +115,21 @@ mod tests {
     async fn test_context_from_empty_bytes_fails() {
         let result = PdfInspectorContext::from_bytes(b"").await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_pdf_classification_round_trip() {
+        let original = PdfClassification {
+            pdf_type: pdf_inspector::PdfType::TextBased,
+            confidence: 0.95,
+            has_complex_layout: true,
+            has_encoding_issues: false,
+            title: Some("dummy title".to_string()),
+        };
+
+        let json = serde_json::to_string(&original).expect("serialize");
+        let deserialized: PdfClassification = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(deserialized, original);
     }
 }

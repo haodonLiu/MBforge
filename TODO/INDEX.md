@@ -2,13 +2,92 @@
 
 ## P0 — 正在进行 / 阻塞
 
+- [ ] **抽取质量基线（P0-1: gold set + F1 harness）**
+      来源：`TODO/2026-06-22-llm-extraction-paper-research.md`（Chem. Soc. Rev. 2025, 54, 1125）
+      规范：`docs/specs/llm-chemical-extraction-reference.md` §6。
+      **必须先做**：不建立评估基线则后续所有改动盲改。
+      验收：(a) ≥50 gold PDF + 标注 JSON（**其中 ≥10 篇专利**含 claim/example/R-group 标注）；
+      (b) Rust 端 precision/recall/F1；(c) Hungarian assignment；(d) Levenshtein fuzzy；
+      (e) `cargo run --bin eval` 跑通给 baseline 数字；**(f) 专利子指标：claim-example mapping F1**。
+      工作量：2-3 周。
+
+- [ ] **P0-2 — temperature=0 强制（抽取路径）**
+      论文 §3.1, §3.3.1。`llm_gateway.rs:178` 当前 0.7 → 改为 0.0。
+      工作量：半天。
+
+- [ ] **P0-3 — constrained decoding 接 E-SMILES（含 Markush）**
+      论文 §3.3.1。选 `outlines` 或自实现 grammar；Python 侧 LLM 接 **E-SMILES + Markush 标签** 文法；
+      **专利 R-group 抽取保留率 ≥95%**。
+      工作量：1-2 周。
+
+- [ ] **P0-4 — chain-of-verification + LLM-as-judge**
+      论文 §3.2.5 + CoVe glossary + §3.3.2 LLM-as-judge。
+      (a) ReAct 主 agent 在"写入知识库"前插入 verifier 步骤；
+      **(b) 专利路径额外加 LLM-as-judge（第二 LLM 检查 factual inconsistency）**。
+      工作量：3-5 天。
+
 ## P1 — 近期计划
+
+- [ ] **P1-1 — document cleaning**（剥 references/ack/headers）
+      论文 §3.1.2。期望向量库大小下降 ≥ -30%。
+      工作量：3 天。
+
+- [ ] **P1-2 — semantic chunking + 分类预过滤**
+      论文 §3.1.3, Fig. 5。当前仅 `text-splitter` fixed-size。
+      工作量：1-2 周。
+
+- [ ] **P1-3 — ontology grounding**（ChEBI / PubChem CID）
+      论文 §3.3.1 SPIRES 范式。
+      工作量：1 周。
+
+- [ ] **P1-4 — multi-agent (creator + critic)**
+      论文 §3.2.5 multi-agent。`rig_adapter.rs` 加 verifier agent。
+      工作量：1-2 周。
+
+- [ ] **P1-5 — YAML schema 替换 JSON**
+      论文 §3.2.1 Patiny & Godin。
+      工作量：2 天。
+
+- [ ] **P1-6 — DSPy 引入可行性评估**
+      论文 §3.2.1。评估报告 `docs/dspy-eval.md`。
+      工作量：1 周。
+
+- [ ] **P1-7 — claim-example-reaction 三层 join**（专利域核心）
+      论文 §4.2 + §5.4 瓶颈 #1。
+      (a) DB schema 加 `claim_id` / `example_id` / `reaction_scheme_id` 三列；
+      (b) 抽取阶段产出三层 ID 映射；(c) 评测 claim-example F1（独立于单分子 F1）。
+      工作量：1-2 周。
+
+- [ ] **P1-8 — 同族专利 family traversal**（专利域，论文 §4.2 前沿提前）
+      (a) 新增 `agent 工具：patent_family(doc_id)` 抓 US/EP/JP/CN 同族；
+      (b) 同族 join 入知识库；(c) 跨语种 link。
+      工作量：2-3 周。
+
+- [ ] **P1-9 — Claim 语言学解析**（专利域）
+      论文 §5.4 瓶颈 #4。
+      (a) 新增 `parse_claim_language(text)`：识别 "comprising" / "consisting of" / "wherein"；
+      (b) 输出 claim scope 类型（open/closed/limited）；(c) 律师 review 校验。
+      工作量：1 周。
+
+- [ ] **P1-10 — CPC 分类 link**（专利域）
+      论文 §3.3.1 SPIRES + §5.4 瓶颈 #5。
+      (a) 抽到的分子映射 CPC code；(b) 知识库加 `cpc_code` 列；(c) 支持按 CPC 子领域检索。
+      工作量：1 周。
 
 - [x] **处理队列 UX 优化 + 当前 PDF 流程图**（2026-06-12）
       见 `TODO/2026-06-12-processing-queue-ux.md`。
       Phase 1+2：A PdfPipelineFlow · B 列表打磨 · C 吞吐洞察 · G 跨页 toast。
 
 ## P2 — 中期计划
+
+- [ ] **P2-1 — citation traversal 工具**（论文 §4.2）
+- [ ] **P2-2 — VLM 替代 A/B 实验**（论文 §3.2.4）
+- [ ] **P2-3 — Human-in-the-loop 标注 UI**（论文 §3.2.2 Dagdelen）
+- [ ] **P2-4 — 化学抽取 LoRA 微调**（论文 §3.2.2）
+- [ ] **P2-5 — 负结果 / 失败案例库**（论文 §4.3）
+- [ ] **P2-6 — query-to-model 探索**（论文 §4.5）
+
+详见 `TODO/2026-06-22-llm-extraction-paper-research.md` 完整定义。
 
 ## 技术债务
 

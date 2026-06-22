@@ -30,10 +30,21 @@ pub trait OcrBackend: Send + Sync {
     }
 }
 
+/// Return all available backends in priority order.
+pub fn available_backends() -> Vec<Box<dyn OcrBackend>> {
+    vec![
+        Box::new(crate::parsers::ocr::mineru::MineruBackend),
+        Box::new(crate::parsers::ocr::uniparser::UniparserBackend),
+        Box::new(crate::parsers::ocr::paddle::PaddleOnlineBackend),
+        Box::new(crate::parsers::ocr::paddle::PaddleLocalBackend),
+    ]
+}
+
 /// Filter OCR output down to selected page numbers.
 ///
-/// Backends that natively support page ranges should override `run_pages`
-/// instead of relying on this fallback.
+/// This fallback keeps the full OCR text but restricts returned images and
+/// OCR blocks to the requested pages. Backends that natively support page
+/// ranges should override `run_pages` instead of relying on this fallback.
 pub fn filter_pages(output: OcrOutput, pages: &[usize]) -> OcrOutput {
     if pages.is_empty() {
         return output;

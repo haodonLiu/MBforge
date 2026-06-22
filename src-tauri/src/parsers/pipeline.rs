@@ -15,7 +15,7 @@ use super::doc_types::{
 mod extract;
 mod helpers;
 pub mod markdown_augment;
-mod merge;
+pub mod merge;
 pub mod output;
 
 use helpers::{activity_entry_to_record, compound_entry_to_record, extract_section_text};
@@ -1161,8 +1161,7 @@ pub async fn process_document(
                         .as_deref()
                         .map(|sp| {
                             let full = root.join(sp);
-                            full == ctx.source_path
-                                || full == std::path::PathBuf::from(&path)
+                            full == ctx.source_path || full == std::path::PathBuf::from(&path)
                         })
                         .unwrap_or(false)
                         || d.path == path
@@ -1199,9 +1198,7 @@ pub async fn process_document(
             }
         }
     } else {
-        log::warn!(
-            "[process_document] no project_root resolved, skipping text.md/report.md write"
-        );
+        log::warn!("[process_document] no project_root resolved, skipping text.md/report.md write");
     }
 
     // 最终结果发射

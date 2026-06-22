@@ -1,9 +1,11 @@
 //! Unified OCR backend interface with per-page routing support.
 
+use serde::{Deserialize, Serialize};
+
 use crate::parsers::doc_types::{ImageRef, OcrBlock};
 
 /// Output of an OCR backend.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OcrOutput {
     pub text: String,
     pub page_count: usize,

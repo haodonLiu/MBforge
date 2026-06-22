@@ -14,11 +14,11 @@
 //! - PaddleOCR online: stub, returns `not_implemented`
 //! - PaddleOCR local: stub, returns `not_implemented`
 
-use serde::Serialize;
-
 pub mod backend;
 pub mod paddle;
 pub mod uniparser;
+
+pub use backend::OcrOutput;
 
 use crate::parsers::doc_types::ImageRef;
 
@@ -55,17 +55,11 @@ pub mod mineru {
         .await
         .map_err(|e| format!("MinerU task join error: {e}"))??;
 
-        let ocr_blocks = inner
-            .ocr_blocks
-            .into_iter()
-            .map(serde_json::to_value)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap_or_default();
         let images: Vec<ImageRef> = inner.images;
         Ok(OcrOutput {
             text: inner.markdown,
             page_count: 0,
-            ocr_blocks,
+            ocr_blocks: inner.ocr_blocks,
             images,
         })
     }
@@ -94,16 +88,4 @@ pub mod mineru {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct OcrOutput {
-    pub text: String,
-    pub page_count: usize,
-    /// Backend-reported block layout (page, bbox, type, content).
-    /// Empty when backend does not provide structured layout.
-    pub ocr_blocks: Vec<serde_json::Value>,
-    /// Backend-extracted images (figures, molecule renderings, etc.).
-    /// Empty when backend does not return structured images. For MinerU
-    /// these carry temp-dir paths until the caller persists them.
-    pub images: Vec<ImageRef>,
-}
 

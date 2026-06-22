@@ -1,6 +1,6 @@
 [package]
 name = "mbforge"
-version = "0.2.0"
+version = "0.3.0"
 description = "MBForge - Molecular Knowledge Base"
 authors = ["MBForge Team"]
 edition = "2021"
@@ -63,6 +63,12 @@ schemars = "1.0"
 mockito = "1.5"
 # Load .env files in integration tests (dotenvy is a sync/async-friendly dotenv)
 dotenvy = "0.15"
+criterion = { version = "0.5", features = ["html_reports"] }
+rand = "0.8"
+
+[[bench]]
+name = "vector_search"
+harness = false
 
 [lints.clippy]
 unwrap_used = "warn"

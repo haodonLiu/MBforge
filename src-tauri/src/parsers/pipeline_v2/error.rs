@@ -44,6 +44,9 @@ pub enum ExtractError {
     /// Reading from a cache failed.
     #[error("cache read failed for '{cache}': {detail}")]
     CacheReadFailed { cache: String, detail: String },
+    /// Writing to a cache failed.
+    #[error("cache write failed for '{cache}': {detail}")]
+    CacheWriteFailed { cache: String, detail: String },
 }
 
 /// Errors that can occur while segmenting document content.

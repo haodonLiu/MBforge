@@ -305,8 +305,73 @@ async fn preflight_check(stage: &str, file_path: &Path, project_root: &Path) -> 
     Ok(())
 }
 
+/// Try to load a `PdfInspectorContext` from cached `inspector.json` + `text.md`.
+/// Returns `None` if the cache is missing or unreadable so callers can fall back.
+async fn try_load_cached_context(
+    inspector_path: &std::path::Path,
+    text_path: &std::path::Path,
+) -> Option<PdfInspectorContext> {
+    if !inspector_path.exists() || !text_path.exists() {
+        return None;
+    }
+
+    let content = match tokio::fs::read_to_string(inspector_path).await {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!(
+                "IngestWorker: failed to read inspector.json, falling back to PDF parse: {}",
+                e
+            );
+            return None;
+        }
+    };
+    let cached: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!(
+                "IngestWorker: failed to parse inspector.json, falling back to PDF parse: {}",
+                e
+            );
+            return None;
+        }
+    };
+    let classification: PdfClassification = match serde_json::from_value(cached.clone()) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!(
+                "IngestWorker: failed to deserialize classification, falling back to PDF parse: {}",
+                e
+            );
+            return None;
+        }
+    };
+    let markdown = match tokio::fs::read_to_string(text_path).await {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!(
+                "IngestWorker: failed to read text.md, falling back to PDF parse: {}",
+                e
+            );
+            return None;
+        }
+    };
+
+    let page_count = cached["page_count"].as_u64().unwrap_or(0) as usize;
+    let pages_needing_ocr: Vec<usize> = cached["pages_needing_ocr"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as usize)).collect())
+        .unwrap_or_default();
+
+    Some(PdfInspectorContext::from_cached(
+        classification,
+        markdown,
+        page_count,
+        pages_needing_ocr,
+    ))
+}
+
 /// Load a PdfInspectorContext from cached inspector.json + text.md.
-/// Falls back to building from the original path if cache is missing.
+/// Falls back to building from the original path if cache is missing or corrupt.
 async fn load_cached_or_build_context(
     project_root: &std::path::Path,
     task: &IngestTask,
@@ -318,30 +383,8 @@ async fn load_cached_or_build_context(
     let inspector_path = paths.cache_dir.join("inspector.json");
     let text_path = paths.pages_cache_dir.join("text.md");
 
-    if inspector_path.exists() && text_path.exists() {
-        let content = std::fs::read_to_string(&inspector_path)
-            .map_err(|e| format!("failed to read inspector.json: {e}"))?;
-        let cached: serde_json::Value = serde_json::from_str(&content)
-            .map_err(|e| format!("failed to parse inspector.json: {e}"))?;
-
-        let classification: PdfClassification = serde_json::from_value(cached.clone())
-            .map_err(|e| format!("failed to deserialize classification: {e}"))?;
-
-        let markdown = std::fs::read_to_string(&text_path)
-            .map_err(|e| format!("failed to read text.md: {e}"))?;
-
-        let page_count = cached["page_count"].as_u64().unwrap_or(0) as usize;
-        let pages_needing_ocr: Vec<usize> = cached["pages_needing_ocr"]
-            .as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as usize)).collect())
-            .unwrap_or_default();
-
-        return Ok(PdfInspectorContext::from_cached(
-            classification,
-            markdown,
-            page_count,
-            pages_needing_ocr,
-        ));
+    if let Some(ctx) = try_load_cached_context(&inspector_path, &text_path).await {
+        return Ok(ctx);
     }
 
     // Fallback: build from path (loads PDF once).
@@ -368,7 +411,9 @@ async fn process_inspector(
     // 持久化 inspector 结果到 DocumentProject cache。
     if let Some(mut dp) = DocumentProject::load(project_root, &task.doc_id) {
         let paths = dp.paths();
-        let _ = std::fs::create_dir_all(&paths.cache_dir);
+        if let Err(e) = std::fs::create_dir_all(&paths.cache_dir) {
+            log::warn!("IngestWorker: failed to create cache directory: {}", e);
+        }
         let inspector_json = serde_json::json!({
             "pdf_type": pdf_type_str,
             "confidence": ctx.classification.confidence,
@@ -383,7 +428,9 @@ async fn process_inspector(
         let _ = crate::core::helpers::save_json(&inspector_path, &inspector_json);
 
         // Persist markdown so later stages can reuse the context without reloading the PDF.
-        let _ = std::fs::create_dir_all(&paths.pages_cache_dir);
+        if let Err(e) = std::fs::create_dir_all(&paths.pages_cache_dir) {
+            log::warn!("IngestWorker: failed to create pages cache directory: {}", e);
+        }
         let text_path = paths.pages_cache_dir.join("text.md");
         if let Err(e) = std::fs::write(&text_path, &ctx.markdown) {
             log::warn!("IngestWorker: failed to write text.md in inspector stage: {}", e);

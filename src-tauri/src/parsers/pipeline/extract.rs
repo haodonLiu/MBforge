@@ -10,6 +10,7 @@ use crate::parsers::chem::vlm_chem::{
     process_page_image, CorefMolecule, DetectedMolecule,
 };
 use crate::parsers::doc_types::{ImageRef, OcrBlock};
+use crate::parsers::pdf::context::PdfInspectorContext;
 use crate::parsers::pdf::images::{
     image_to_pdf_bbox, pdf_page_size_pts, pdf_to_image_bbox, scale_from_page_size,
 };
@@ -257,26 +258,25 @@ pub async fn classify_and_extract_with_progress(
     allow_ocr: bool,
     progress: Option<&dyn ExtractProgressReporter>,
 ) -> Result<ClassifyResult, String> {
+    let ctx = PdfInspectorContext::from_path(path).await?;
+    classify_and_extract_from_context_with_path(&ctx, path, allow_ocr, progress).await
+}
+
+pub async fn classify_and_extract_from_context_with_path(
+    ctx: &PdfInspectorContext,
+    path: &str,
+    allow_ocr: bool,
+    progress: Option<&dyn ExtractProgressReporter>,
+) -> Result<ClassifyResult, String> {
     let source_path = Path::new(path);
     let project_root = find_project_root(source_path, None);
 
-    // 先尝试 pdf-inspector (sync, offload to blocking pool to avoid
-    // panicking on single-thread runtimes that forbid sync I/O inside async).
-    let path_owned = path.to_owned();
-    let pdf_result = tokio::task::spawn_blocking(move || pdf_inspector::process_pdf(&path_owned))
-        .await
-        .map_err(|e| format!("pdf-inspector join error: {e}"))?
-        .map_err(|e| format!("pdf-inspector failed: {}", e))?;
-    let md = pdf_result.markdown.clone().unwrap_or_default();
-    let page_count = pdf_result.page_count as usize;
-    let pages_needing_ocr: Vec<usize> = pdf_result
-        .pages_needing_ocr
-        .iter()
-        .map(|&p| p as usize)
-        .collect();
+    let md = ctx.markdown.clone();
+    let page_count = ctx.page_count;
+    let pages_needing_ocr = ctx.pages_needing_ocr.clone();
 
     // 提取嵌入图片并持久化到项目目录 (sync + I/O → spawn_blocking)
-    let path_owned2 = path.to_owned();
+    let path_owned = path.to_owned();
     let (extracted, _tmp) = tokio::task::spawn_blocking(
         move || -> (Vec<crate::parsers::pdf::images::ExtractedImage>, tempfile::TempDir) {
             let tmp = match tempfile::tempdir() {
@@ -284,7 +284,7 @@ pub async fn classify_and_extract_with_progress(
                 Err(_) => return (vec![], tempfile::tempdir().unwrap()),
             };
             let images = crate::parsers::pdf::images::extract_images_from_pdf(
-                &path_owned2,
+                &path_owned,
                 tmp.path(),
                 50,
                 5,

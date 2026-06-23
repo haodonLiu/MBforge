@@ -20,6 +20,8 @@ pub mod molecule_store;
 pub mod molecules;
 /// OCR backend orchestration.
 pub mod ocr;
+/// OCR layout block extraction.
+pub mod ocr_layout;
 /// Quick page-level MoldDet scan (bbox only).
 pub mod quick_moldet;
 /// Section LLM post-processing.

@@ -673,6 +673,84 @@ async fn read_cached_molecules(
 }
 
 // ---------------------------------------------------------------------------
+// ensure_coref_for_image（懒迁移：旧 PDF 首次打开时按需补 coref）
+// ---------------------------------------------------------------------------
+
+/// Coref 懒迁移结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnsureCorefResult {
+    pub doc_id: String,
+    pub page: i64,
+    pub already_existed: bool, // true = KB 已有数据，跳过
+    pub labels_written: usize,
+    pub predictions_written: usize,
+    pub error: Option<String>,
+}
+
+/// 确保指定 (doc_id, page) 的 coref 标注存在。
+///
+/// 旧 PDF 首次打开页面时调用：
+/// - KB 中已有 figure_labels → 跳过（already_existed=true）
+/// - 无 → 调 sidecar 跑 coref，写 KB
+#[tauri::command]
+pub async fn ensure_coref_for_image(
+    project_root: String,
+    doc_id: String,
+    page: i64,
+    image_path: String,
+) -> Result<EnsureCorefResult, String> {
+    use crate::core::document::knowledge_base::get_or_init_kb;
+    use crate::parsers::pipeline::services::coref_persist::CorefPersistService;
+
+    let resolved = if std::path::Path::new(&image_path).is_absolute() {
+        std::path::PathBuf::from(&image_path)
+    } else {
+        std::path::PathBuf::from(clean_path(&project_root)).join(&image_path)
+    };
+
+    // 1. 检查 KB 是否已有数据
+    let kb_guard = get_or_init_kb(&project_root).map_err(|e| e.to_string())?;
+    let kb = kb_guard.value();
+    let existing = kb
+        .get_figure_labels(&doc_id, page)
+        .map_err(|e| e.to_string())?;
+    if !existing.is_empty() {
+        return Ok(EnsureCorefResult {
+            doc_id,
+            page,
+            already_existed: true,
+            labels_written: 0,
+            predictions_written: 0,
+            error: None,
+        });
+    }
+
+    // 2. 跑 coref 写 KB
+    let service = CorefPersistService::new();
+    match service
+        .persist_for_image(kb, &doc_id, page, &resolved, true, true)
+        .await
+    {
+        Ok(res) => Ok(EnsureCorefResult {
+            doc_id,
+            page,
+            already_existed: false,
+            labels_written: res.labels_written,
+            predictions_written: res.predictions_written,
+            error: None,
+        }),
+        Err(e) => Ok(EnsureCorefResult {
+            doc_id,
+            page,
+            already_existed: false,
+            labels_written: 0,
+            predictions_written: 0,
+            error: Some(format!("{e}")),
+        }),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

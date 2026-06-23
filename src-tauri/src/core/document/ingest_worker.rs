@@ -33,6 +33,7 @@ const WORKER_HEARTBEAT_INTERVAL_SECS: u64 = 5;
 /// App state that holds the active ingest worker.
 #[derive(Default)]
 pub struct IngestWorkerState {
+    /// Active ingest worker instance.
     pub worker: Mutex<Option<IngestWorker>>,
 }
 
@@ -259,6 +260,24 @@ fn spawn_heartbeat(
     });
 }
 
+/// Validate a task file path against the project root.
+fn validate_task_file_path(project_root: &Path, task: &IngestTask) -> Result<String, String> {
+    let path = Path::new(&task.file_path);
+    if !path.exists() {
+        return Err(format!("source file not found: {}", path.display()));
+    }
+    let check = crate::core::helpers::assert_within_root(
+        project_root.to_string_lossy().as_ref(),
+        path,
+    )
+    .map_err(|e| format!("task file path safety check failed: {}", e))?;
+    check
+        .canonical
+        .to_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| format!("task file path is not valid UTF-8: {}", check.canonical.display()))
+}
+
 /// 每阶段开始前的预检：文件、项目目录、磁盘空间、index 可写、sidecar 健康。
 async fn preflight_check(stage: &str, file_path: &Path, project_root: &Path) -> Result<(), String> {
     if !file_path.exists() {
@@ -289,6 +308,11 @@ async fn preflight_check(stage: &str, file_path: &Path, project_root: &Path) -> 
     if let Err(e) = std::fs::create_dir_all(&index_dir) {
         return Err(format!("无法创建 index 目录: {}", e));
     }
+    let index_dir = crate::core::helpers::safe_join(
+        project_root,
+        crate::core::constants::INDEX_DIR,
+    )
+    .map_err(|e| format!("index directory path safety check failed: {}", e))?;
     let probe = index_dir.join(".write_probe");
     if let Err(e) = std::fs::write(&probe, b"1") {
         return Err(format!("index 目录不可写: {}", e));
@@ -312,9 +336,10 @@ async fn process_inspector(
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
-    preflight_check("inspector", Path::new(&task.file_path), project_root).await?;
+    let file_path = validate_task_file_path(project_root, task)?;
+    preflight_check("inspector", Path::new(&file_path), project_root).await?;
 
-    let ctx = PdfInspectorContext::from_path(&task.file_path).await?;
+    let ctx = PdfInspectorContext::from_path(&file_path).await?;
 
     let pdf_type_str = match ctx.classification.pdf_type {
         pdf_inspector::PdfType::TextBased => "TextBased",
@@ -480,7 +505,8 @@ async fn process_text_extract(
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
-    preflight_check("text_extract", Path::new(&task.file_path), project_root).await?;
+    let file_path = validate_task_file_path(project_root, task)?;
+    preflight_check("text_extract", Path::new(&file_path), project_root).await?;
 
     queue
         .update_progress(&task.id, &task.stage, 10.0, 0, 0, "extracting text")
@@ -495,7 +521,7 @@ async fn process_text_extract(
         "开始文本提取".to_string(),
     );
 
-    let source_path = Path::new(&task.file_path);
+    let source_path = Path::new(&file_path);
     let input = SourceInput::new(source_path)
         .with_allow_ocr(false)
         .with_project_root(project_root);
@@ -579,7 +605,8 @@ async fn process_ocr(
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
-    preflight_check("ocr", Path::new(&task.file_path), project_root).await?;
+    let file_path = validate_task_file_path(project_root, task)?;
+    preflight_check("ocr", Path::new(&file_path), project_root).await?;
 
     queue
         .update_progress(&task.id, &task.stage, 10.0, 0, 0, "running OCR")
@@ -595,7 +622,7 @@ async fn process_ocr(
     );
 
     // Reuse the inspector context so the PDF is not loaded again.
-    let inspector_ctx = PdfInspectorContext::from_path(&task.file_path)
+    let inspector_ctx = PdfInspectorContext::from_path(&file_path)
         .await
         .map_err(|e| format!("OCR inspector context failed: {e}"))?;
 
@@ -672,7 +699,7 @@ async fn process_ocr(
         " invoking OCR backend",
     );
 
-    let source_path = Path::new(&task.file_path);
+    let source_path = Path::new(&file_path);
     let ocr_service = OcrService::new(default_backends());
     let (ocr_out, backend_name) = ocr_service
         .run(source_path)
@@ -838,7 +865,8 @@ async fn process_moldet(
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
-    preflight_check("moldet", Path::new(&task.file_path), project_root).await?;
+    let file_path = validate_task_file_path(project_root, task)?;
+    preflight_check("moldet", Path::new(&file_path), project_root).await?;
 
     queue
         .update_progress(&task.id, &task.stage, 10.0, 0, 0, "scanning molecules")
@@ -858,7 +886,7 @@ async fn process_moldet(
     let config = crate::core::config::settings::AppConfig::load();
     let batch_size = config.moldet.moldet_batch_size.max(1);
     let result = quick_scan_pdf(
-        &task.file_path,
+        &file_path,
         project_root,
         &sidecar_url,
         &task.doc_id,
@@ -919,7 +947,8 @@ async fn process_index(
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
-    preflight_check("index", Path::new(&task.file_path), project_root).await?;
+    let file_path = validate_task_file_path(project_root, task)?;
+    preflight_check("index", Path::new(&file_path), project_root).await?;
 
     queue
         .update_progress(&task.id, &task.stage, 10.0, 0, 0, "extracting for index")
@@ -939,8 +968,8 @@ async fn process_index(
         app_handle: app_handle.clone(),
         doc_id: task.doc_id.clone(),
     });
-    let input = SourceInput::new(&task.file_path).with_allow_ocr(true);
-    let ctx = PipelineContext::new(&task.file_path, "")
+    let input = SourceInput::new(&file_path).with_allow_ocr(true);
+    let ctx = PipelineContext::new(&file_path, "")
         .with_project_root(project_root)
         .with_reporter(reporter);
 

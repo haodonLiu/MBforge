@@ -7,7 +7,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::core::document::ingest_queue::{IngestQueue, IngestTask, QueueStats};
-use crate::core::helpers::{clean_path, save_json};
+use crate::core::helpers::{assert_within_root_allow_missing, clean_path, save_json};
 use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
 use crate::core::project::document_project::DocumentProject;
 use crate::core::project::project::Project;
@@ -109,7 +109,8 @@ pub fn classify_pdf(path: String) -> Result<PdfClassification, String> {
 /// 4. 更新 DocumentProject / Project index 的 `inspector_status` 与 `ocr_status`。
 #[tauri::command]
 pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassification, String> {
-    let root = std::path::PathBuf::from(clean_path(&project_root));
+    let root = assert_within_root_allow_missing(&clean_path(&project_root), Path::new("."))
+        .map_err(|e| format!("Invalid project_root {}: {}", project_root, e))?;
 
     let project =
         Project::open(&root).ok_or_else(|| format!("Cannot open project at {}", project_root))?;
@@ -226,7 +227,8 @@ pub async fn confirm_ocr(
     doc_id: String,
     confirm: bool,
 ) -> Result<serde_json::Value, String> {
-    let root = std::path::PathBuf::from(clean_path(&project_root));
+    let root = assert_within_root_allow_missing(&clean_path(&project_root), Path::new("."))
+        .map_err(|e| format!("Invalid project_root {}: {}", project_root, e))?;
 
     let project =
         Project::open(&root).ok_or_else(|| format!("Cannot open project at {}", project_root))?;
@@ -420,17 +422,27 @@ pub async fn extract_pdf_workflow_cmd(
     let work_root = base_dir.clone();
 
     // 真正的项目根（用于 SQLite 分子库），优先从 PDF 路径推导，其次 output_dir。
-    let project_root = SourceResolver::new()
-        .resolve_project_root(source_path, None)
-        .ok()
-        .or_else(|| {
+    let project_root = match SourceResolver::new().resolve_project_root(source_path, None) {
+        Ok(root) => Some(root),
+        Err(e) => {
+            log::warn!(
+                "[workflow] Failed to resolve project root from PDF path {}: {}",
+                path,
+                e
+            );
             let out = Path::new(&output_dir);
             if out.is_dir() {
+                log::warn!("[workflow] Falling back to output_dir as project root: {}", output_dir);
                 Some(out.to_path_buf())
             } else {
+                log::warn!(
+                    "[workflow] Output dir {} is not a valid directory; cannot determine project root",
+                    output_dir
+                );
                 None
             }
-        });
+        }
+    };
 
     log::info!(
         "[workflow] Starting v2 extraction: {} → {}",
@@ -544,115 +556,124 @@ pub async fn extract_pdf_workflow_cmd(
     // Stage 4: 将检测到的分子写入 SQLite（molecules + molecule_images）
     if !legacy_molecules.is_empty() {
         if let Some(ref root) = project_root {
-            if let Ok(db) = MoleculeDatabase::open(root) {
-                let mut lines_cache: std::collections::HashMap<
-                    i32,
-                    Vec<crate::parsers::chem::label_assoc::TextLine>,
-                > = std::collections::HashMap::new();
-                let page_h_pts = get_page_height(&path).unwrap_or(842.0);
+            match MoleculeDatabase::open(root) {
+                Ok(db) => {
+                    let mut lines_cache: std::collections::HashMap<
+                        i32,
+                        Vec<crate::parsers::chem::label_assoc::TextLine>,
+                    > = std::collections::HashMap::new();
+                    let page_h_pts = get_page_height(&path).unwrap_or(842.0);
 
-                let mut saved = 0usize;
-                for (idx, mol) in legacy_molecules.iter().enumerate() {
-                    let (clean_smiles, esmiles_opt, semantic_tags) =
-                        separate_esmiles_layers(&mol.esmiles);
+                    let mut saved = 0usize;
+                    for (idx, mol) in legacy_molecules.iter().enumerate() {
+                        let (clean_smiles, esmiles_opt, semantic_tags) =
+                            separate_esmiles_layers(&mol.esmiles);
 
-                    let page_num = (mol.page).max(0);
-                    let lines = lines_cache.entry(page_num).or_insert_with(|| {
-                        match crate::parsers::chem::label_assoc::extract_page_text_lines(
-                            &path,
-                            page_num as u32,
-                            page_h_pts,
-                        ) {
-                            Ok(lines) => lines,
-                            Err(e) => {
-                                log::warn!(
-                                    "[extract_workflow] page {} text extraction failed: {}",
-                                    page_num,
-                                    e
-                                );
-                                Vec::new()
+                        let page_num = (mol.page).max(0);
+                        let lines = lines_cache.entry(page_num).or_insert_with(|| {
+                            match crate::parsers::chem::label_assoc::extract_page_text_lines(
+                                &path,
+                                page_num as u32,
+                                page_h_pts,
+                            ) {
+                                Ok(lines) => lines,
+                                Err(e) => {
+                                    log::warn!(
+                                        "[extract_workflow] page {} text extraction failed: {}",
+                                        page_num,
+                                        e
+                                    );
+                                    Vec::new()
+                                }
+                            }
+                        });
+                        let label_match = if mol.bbox_pdf != [0.0, 0.0, 0.0, 0.0] {
+                            crate::parsers::chem::label_assoc::find_label_for_bbox(
+                                (
+                                    mol.bbox_pdf[0],
+                                    mol.bbox_pdf[1],
+                                    mol.bbox_pdf[2],
+                                    mol.bbox_pdf[3],
+                                ),
+                                lines,
+                                page_h_pts,
+                                80.0,
+                            )
+                        } else {
+                            None
+                        };
+                        let resolved_name = match &label_match {
+                            Some(m) => m.label.clone(),
+                            None => format!("IMG-{}-P{:03}-{:03}", pdf_name, mol.page, idx),
+                        };
+                        let mut properties = serde_json::json!({});
+                        if let Some(m) = &label_match {
+                            properties["context_text"] =
+                                serde_json::Value::String(m.context_text.clone());
+                        }
+                        properties["bbox_pdf"] = serde_json::json!(mol.bbox_pdf);
+
+                        let mol_id = crate::core::helpers::generate_uuid();
+                        let record = MoleculeRecord {
+                            mol_id: mol_id.clone(),
+                            smiles: clean_smiles,
+                            esmiles: esmiles_opt,
+                            semantic_tags,
+                            name: resolved_name,
+                            source_doc: pdf_name.clone(),
+                            activity: None,
+                            activity_type: String::new(),
+                            units: "nM".to_string(),
+                            source_type: "workflow_extract".to_string(),
+                            status: "pending".to_string(),
+                            properties,
+                            labels: vec!["image_extracted".to_string()],
+                            notes: format!(
+                                "Workflow extract: MolDet (conf={:.2}) + MolScribe (conf={:.2})",
+                                mol.moldet_conf, mol.confidence
+                            ),
+                            created_at: None,
+                            related_image_paths: vec![mol.crop_path.clone()],
+                            vlm_verified_esmiles: Some(mol.esmiles.clone()),
+                            vlm_confidence: mol.confidence,
+                        };
+                        if let Err(e) = db.add_molecule(&record) {
+                            log::warn!(
+                                "[extract_workflow] Failed to add molecule {}: {}",
+                                mol_id,
+                                e
+                            );
+                        } else {
+                            let img = MoleculeImage {
+                                image_id: crate::core::helpers::generate_uuid(),
+                                mol_id: mol_id.clone(),
+                                image_path: mol.crop_path.clone(),
+                                page: Some(mol.page as usize),
+                                vlm_esmiles: Some(mol.esmiles.clone()),
+                                vlm_confidence: mol.confidence,
+                                is_structure_diagram: true,
+                                created_at: None,
+                            };
+                            if let Err(e) = db.add_molecule_image(&img) {
+                                log::warn!("[extract_workflow] Failed to add image: {}", e);
+                            } else {
+                                saved += 1;
                             }
                         }
-                    });
-                    let label_match = if mol.bbox_pdf != [0.0, 0.0, 0.0, 0.0] {
-                        crate::parsers::chem::label_assoc::find_label_for_bbox(
-                            (
-                                mol.bbox_pdf[0],
-                                mol.bbox_pdf[1],
-                                mol.bbox_pdf[2],
-                                mol.bbox_pdf[3],
-                            ),
-                            lines,
-                            page_h_pts,
-                            80.0,
-                        )
-                    } else {
-                        None
-                    };
-                    let resolved_name = match &label_match {
-                        Some(m) => m.label.clone(),
-                        None => format!("IMG-{}-P{:03}-{:03}", pdf_name, mol.page, idx),
-                    };
-                    let mut properties = serde_json::json!({});
-                    if let Some(m) = &label_match {
-                        properties["context_text"] =
-                            serde_json::Value::String(m.context_text.clone());
                     }
-                    properties["bbox_pdf"] = serde_json::json!(mol.bbox_pdf);
-
-                    let mol_id = crate::core::helpers::generate_uuid();
-                    let record = MoleculeRecord {
-                        mol_id: mol_id.clone(),
-                        smiles: clean_smiles,
-                        esmiles: esmiles_opt,
-                        semantic_tags,
-                        name: resolved_name,
-                        source_doc: pdf_name.clone(),
-                        activity: None,
-                        activity_type: String::new(),
-                        units: "nM".to_string(),
-                        source_type: "workflow_extract".to_string(),
-                        status: "pending".to_string(),
-                        properties,
-                        labels: vec!["image_extracted".to_string()],
-                        notes: format!(
-                            "Workflow extract: MolDet (conf={:.2}) + MolScribe (conf={:.2})",
-                            mol.moldet_conf, mol.confidence
-                        ),
-                        created_at: None,
-                        related_image_paths: vec![mol.crop_path.clone()],
-                        vlm_verified_esmiles: Some(mol.esmiles.clone()),
-                        vlm_confidence: mol.confidence,
-                    };
-                    if let Err(e) = db.add_molecule(&record) {
-                        log::warn!(
-                            "[extract_workflow] Failed to add molecule {}: {}",
-                            mol_id,
-                            e
-                        );
-                    } else {
-                        let img = MoleculeImage {
-                            image_id: crate::core::helpers::generate_uuid(),
-                            mol_id: mol_id.clone(),
-                            image_path: mol.crop_path.clone(),
-                            page: Some(mol.page as usize),
-                            vlm_esmiles: Some(mol.esmiles.clone()),
-                            vlm_confidence: mol.confidence,
-                            is_structure_diagram: true,
-                            created_at: None,
-                        };
-                        if let Err(e) = db.add_molecule_image(&img) {
-                            log::warn!("[extract_workflow] Failed to add image: {}", e);
-                        } else {
-                            saved += 1;
-                        }
-                    }
+                    log::info!(
+                        "[extract_workflow] Persisted {}/{} molecules to DB",
+                        saved,
+                        legacy_molecules.len()
+                    );
                 }
-                log::info!(
-                    "[extract_workflow] Persisted {}/{} molecules to DB",
-                    saved,
-                    legacy_molecules.len()
-                );
+                Err(e) => {
+                    log::warn!(
+                        "[workflow] Failed to open molecule database at {}: {}",
+                        root.display(),
+                        e
+                    );
+                }
             }
         }
     }
@@ -777,7 +798,13 @@ pub async fn get_document_ocr_layout(
     let project_root = SourceResolver::new()
         .resolve_project_root(source_path, None)
         .ok();
-    let file_hash = crate::core::helpers::sha256_file(source_path).unwrap_or_default();
+    let file_hash = match crate::core::helpers::sha256_file(source_path) {
+        Ok(hash) => hash,
+        Err(e) => {
+            log::warn!("Failed to compute file hash for {}: {}", path, e);
+            String::new()
+        }
+    };
 
     // 辅助：更新 OCR 状态
     let update_status = |status: &str| {
@@ -808,37 +835,55 @@ pub async fn get_document_ocr_layout(
             )
             .map_err(|e| format!("Invalid OCR cache path: {}", e))?;
             if new_cache.exists() {
-                if let Ok(content) = std::fs::read_to_string(&new_cache) {
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                        let text = val["text"].as_str().unwrap_or("").to_string();
-                        let page_count = val["page_count"]
-                            .as_u64()
-                            .map(|n| n as usize)
-                            .unwrap_or_else(|| text.lines().count().max(1));
-                        let blocks: Vec<DocOcrBlock> = val["ocr_blocks"]
-                            .as_array()
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        let parser = val["parser"].as_str().unwrap_or("unknown").to_string();
-                        if !blocks.is_empty() {
-                            log::info!(
-                                "OCR layout cache HIT (new) for {}: {} blocks",
-                                path,
-                                blocks.len()
-                            );
-                            update_status("completed");
-                            return Ok(OcrLayoutResult {
-                                path: path.clone(),
-                                parser,
-                                page_count,
-                                blocks,
-                                from_cache: true,
-                            });
+                match std::fs::read_to_string(&new_cache) {
+                    Ok(content) => {
+                        match serde_json::from_str::<serde_json::Value>(&content) {
+                            Ok(val) => {
+                                let text = val["text"].as_str().unwrap_or("").to_string();
+                                let page_count = val["page_count"]
+                                    .as_u64()
+                                    .map(|n| n as usize)
+                                    .unwrap_or_else(|| text.lines().count().max(1));
+                                let blocks: Vec<DocOcrBlock> = val["ocr_blocks"]
+                                    .as_array()
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+                                let parser = val["parser"].as_str().unwrap_or("unknown").to_string();
+                                if !blocks.is_empty() {
+                                    log::info!(
+                                        "OCR layout cache HIT (new) for {}: {} blocks",
+                                        path,
+                                        blocks.len()
+                                    );
+                                    update_status("completed");
+                                    return Ok(OcrLayoutResult {
+                                        path: path.clone(),
+                                        parser,
+                                        page_count,
+                                        blocks,
+                                        from_cache: true,
+                                    });
+                                }
+                            }
+                            Err(e) => {
+                                log::debug!(
+                                    "Failed to parse OCR layout cache (new) {}: {}",
+                                    new_cache.display(),
+                                    e
+                                );
+                            }
                         }
+                    }
+                    Err(e) => {
+                        log::debug!(
+                            "Failed to read OCR layout cache (new) {}: {}",
+                            new_cache.display(),
+                            e
+                        );
                     }
                 }
             }
@@ -855,30 +900,48 @@ pub async fn get_document_ocr_layout(
         )
         .map_err(|e| format!("Invalid OCR cache path: {}", e))?;
         if cache_file.exists() {
-            if let Ok(content) = std::fs::read_to_string(&cache_file) {
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                    let text = val["text"].as_str().unwrap_or("").to_string();
-                    let page_count = text.lines().count().max(1);
-                    let blocks: Vec<DocOcrBlock> = val["ocr_blocks"]
-                        .as_array()
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    let parser = val["parser"].as_str().unwrap_or("unknown").to_string();
-                    if !blocks.is_empty() {
-                        log::info!("OCR layout cache HIT for {}: {} blocks", path, blocks.len());
-                        update_status("completed");
-                        return Ok(OcrLayoutResult {
-                            path: path.clone(),
-                            parser,
-                            page_count,
-                            blocks,
-                            from_cache: true,
-                        });
+            match std::fs::read_to_string(&cache_file) {
+                Ok(content) => {
+                    match serde_json::from_str::<serde_json::Value>(&content) {
+                        Ok(val) => {
+                            let text = val["text"].as_str().unwrap_or("").to_string();
+                            let page_count = text.lines().count().max(1);
+                            let blocks: Vec<DocOcrBlock> = val["ocr_blocks"]
+                                .as_array()
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            let parser = val["parser"].as_str().unwrap_or("unknown").to_string();
+                            if !blocks.is_empty() {
+                                log::info!("OCR layout cache HIT for {}: {} blocks", path, blocks.len());
+                                update_status("completed");
+                                return Ok(OcrLayoutResult {
+                                    path: path.clone(),
+                                    parser,
+                                    page_count,
+                                    blocks,
+                                    from_cache: true,
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            log::debug!(
+                                "Failed to parse OCR layout cache {}: {}",
+                                cache_file.display(),
+                                e
+                            );
+                        }
                     }
+                }
+                Err(e) => {
+                    log::debug!(
+                        "Failed to read OCR layout cache {}: {}",
+                        cache_file.display(),
+                        e
+                    );
                 }
             }
         }
@@ -936,26 +999,54 @@ fn into_doc_ocr_block_from_layout(
 fn get_page_height(pdf_path: &str) -> Option<f64> {
     let mut first_page: HashSet<u32> = HashSet::new();
     first_page.insert(1);
-    let items =
+    if let Err(e) =
         pdf_inspector::extractor::extract_text_with_positions_pages(pdf_path, Some(&first_page))
-            .ok()?;
-    // 用首个 item 的 height 字段反推页面尺寸不行；
-    // 直接走 pdf_inspector 的 page_height API
-    let _ = items;
+    {
+        log::warn!("Failed to extract text positions from {}: {}", pdf_path, e);
+        return None;
+    }
     // 走 Document API 拿页面尺寸
-    let doc = lopdf::Document::load(pdf_path).ok()?;
+    let doc = match lopdf::Document::load(pdf_path) {
+        Ok(d) => d,
+        Err(e) => {
+            log::warn!("Failed to load PDF {}: {}", pdf_path, e);
+            return None;
+        }
+    };
     let pages = doc.get_pages();
     let first_id = *pages.values().next()?;
-    let page_dict = doc.get_dictionary(first_id).ok()?;
-    let media_box = page_dict.get(b"MediaBox").ok()?;
-    let arr = media_box.as_array().ok()?;
+    let page_dict = match doc.get_dictionary(first_id) {
+        Ok(d) => d,
+        Err(e) => {
+            log::warn!("Failed to get first page dictionary for {}: {}", pdf_path, e);
+            return None;
+        }
+    };
+    let media_box = match page_dict.get(b"MediaBox") {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!("Failed to get MediaBox for {}: {}", pdf_path, e);
+            return None;
+        }
+    };
+    let arr = match media_box.as_array() {
+        Ok(a) => a,
+        Err(e) => {
+            log::warn!("MediaBox is not an array for {}: {}", pdf_path, e);
+            return None;
+        }
+    };
     if arr.len() < 4 {
+        log::warn!("MediaBox has fewer than 4 entries for {}", pdf_path);
         return None;
     }
     let h = match &arr[3] {
         lopdf::Object::Real(r) => *r as f64,
         lopdf::Object::Integer(i) => *i as f64,
-        _ => return None,
+        _ => {
+            log::warn!("MediaBox height is not a numeric value for {}", pdf_path);
+            return None;
+        }
     };
     Some(h)
 }
@@ -978,7 +1069,9 @@ pub fn augment_markdown_with_images(
 // ─── IngestQueue：PDF 异步处理队列 ────────────────────────────────
 
 fn open_ingest_queue(project_root: &str) -> Result<IngestQueue, String> {
-    IngestQueue::new(std::path::Path::new(project_root))
+    let root = assert_within_root_allow_missing(project_root, Path::new("."))
+        .map_err(|e| format!("Invalid project_root {}: {}", project_root, e))?;
+    IngestQueue::new(&root)
         .map_err(|e: crate::core::error::AppError| e.to_string())
 }
 

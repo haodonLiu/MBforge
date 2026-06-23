@@ -210,3 +210,38 @@ impl Stage<(ExtractedDocument, SegmentedDocument), EnrichedDocument> for EnrichS
         Ok(outcome)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+    use crate::parsers::pipeline_v2::context::PipelineContext;
+    use crate::parsers::pipeline_v2::models::extracted::{ExtractedDocument, ExtractedMetadata};
+    use crate::parsers::pipeline_v2::models::segmented::SegmentedDocument;
+
+    #[tokio::test]
+    async fn test_enrich_stage_empty_sections() {
+        let extracted = ExtractedDocument {
+            raw_text: "".into(),
+            page_count: 0,
+            parser: "test".into(),
+            images: Vec::new(),
+            ocr_blocks: Vec::new(),
+            metadata: ExtractedMetadata::default(),
+        };
+        let segmented = SegmentedDocument {
+            sections: Vec::new(),
+            document_tree: Vec::new(),
+            headings: Vec::new(),
+        };
+
+        let ctx = PipelineContext::new(Path::new("dummy.pdf"), "");
+        let stage = EnrichStage::new("http://127.0.0.1:18792");
+        let outcome = stage.run((extracted, segmented), &ctx).await.unwrap();
+
+        assert!(outcome.output.structured_data.compounds.is_empty());
+        assert!(outcome.output.structured_data.activities.is_empty());
+        assert!(outcome.output.sar_analysis.is_none());
+    }
+}

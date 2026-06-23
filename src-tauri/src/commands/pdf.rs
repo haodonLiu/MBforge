@@ -5,8 +5,8 @@ use std::path::Path;
 
 use chrono::Utc;
 use lopdf::{Document, Object};
-use pdf_inspector::extractor::extract_text_with_positions_pages;
 use pdf_inspector::{detect_pdf, process_pdf, PdfType};
+use pdf_inspector::extractor::extract_text_with_positions_pages;
 use serde::Serialize;
 use serde_json::{from_str, from_value, json, to_string_pretty, Value};
 
@@ -172,14 +172,25 @@ pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassifica
                 e
             );
         }
-        let inspector_path = paths.cache_dir.join("inspector.json");
-        if let Err(e) = save_json(&inspector_path, &inspector_json) {
-            log::warn!(
-                "Failed to save inspector json {} for doc {}: {}",
-                inspector_path.display(),
-                doc_id,
-                e
-            );
+        match safe_join(&paths.cache_dir, "inspector.json") {
+            Ok(inspector_path) => {
+                if let Err(e) = save_json(&inspector_path, &inspector_json) {
+                    log::warn!(
+                        "Failed to save inspector json {} for doc {}: {}",
+                        inspector_path.display(),
+                        doc_id,
+                        e
+                    );
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Invalid inspector cache path under {} for doc {}: {}",
+                    paths.cache_dir.display(),
+                    doc_id,
+                    e
+                );
+            }
         }
 
         // Update DocumentProject statuses.

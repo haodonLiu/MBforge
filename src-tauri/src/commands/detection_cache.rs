@@ -14,10 +14,10 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
 use tokio::sync::Mutex;
 
 use crate::core::config::constants::sidecar_url;
@@ -505,6 +505,7 @@ pub struct DetectionCacheStats {
     pub schema_version: u32,
 }
 
+/// Return aggregate statistics for the on-disk detection cache.
 #[tauri::command]
 pub fn get_detection_cache_stats(project_root: String) -> Result<DetectionCacheStats, String> {
     let root = std::path::PathBuf::from(clean_path(&project_root));
@@ -517,6 +518,7 @@ pub fn get_detection_cache_stats(project_root: String) -> Result<DetectionCacheS
     })
 }
 
+/// Delete all cached page detections for the project.
 #[tauri::command]
 pub fn clear_detection_cache(project_root: String) -> Result<(), String> {
     let root = std::path::PathBuf::from(clean_path(&project_root));

@@ -126,10 +126,16 @@ async fn worker_loop(
         );
 
         let stage_started_at = crate::core::helpers::now_secs_f64();
-        let stage_hist_id = queue
+        let stage_hist_id = match queue
             .record_stage_start(&task.id, &task.doc_id, &task.stage)
             .await
-            .ok();
+        {
+            Ok(id) => Some(id),
+            Err(e) => {
+                log::warn!("IngestWorker: record_stage_start failed: {}", e);
+                None
+            }
+        };
 
         emit_progress(
             &app_handle,
@@ -162,7 +168,9 @@ async fn worker_loop(
         match result {
             Ok(StageResult::Continue(next_stage)) => {
                 if let Some(id) = stage_hist_id {
-                    let _ = queue.record_stage_end(id, stage_duration_secs, true).await;
+                    if let Err(e) = queue.record_stage_end(id, stage_duration_secs, true).await {
+                        log::warn!("IngestWorker: record_stage_end failed: {}", e);
+                    }
                 }
                 emit_log(
                     &app_handle,
@@ -182,12 +190,16 @@ async fn worker_loop(
                     log::error!("IngestWorker: failed to advance stage: {}", e);
                 }
                 // 把状态改回 pending 以便 dequeue 能再次取到同一任务。
-                let _ = reset_pending(&queue, &task.id).await;
+                if let Err(e) = reset_pending(&queue, &task.id).await {
+                    log::error!("IngestWorker: reset_pending failed: {}", e);
+                }
                 emit_queue_update(&app_handle, &queue, &task.doc_id, &next_stage).await;
             }
             Ok(StageResult::Done) => {
                 if let Some(id) = stage_hist_id {
-                    let _ = queue.record_stage_end(id, stage_duration_secs, true).await;
+                    if let Err(e) = queue.record_stage_end(id, stage_duration_secs, true).await {
+                        log::warn!("IngestWorker: record_stage_end failed: {}", e);
+                    }
                 }
                 if let Err(e) = queue.mark_done(&task.id).await {
                     log::error!("IngestWorker: mark_done failed: {}", e);
@@ -196,7 +208,9 @@ async fn worker_loop(
             }
             Err(e) => {
                 if let Some(id) = stage_hist_id {
-                    let _ = queue.record_stage_end(id, stage_duration_secs, false).await;
+                    if let Err(inner) = queue.record_stage_end(id, stage_duration_secs, false).await {
+                        log::warn!("IngestWorker: record_stage_end failed: {}", inner);
+                    }
                 }
                 log::error!(
                     "IngestWorker: task {} stage {} failed: {}",
@@ -317,7 +331,9 @@ async fn preflight_check(stage: &str, file_path: &Path, project_root: &Path) -> 
     if let Err(e) = std::fs::write(&probe, b"1") {
         return Err(format!("index 目录不可写: {}", e));
     }
-    let _ = std::fs::remove_file(&probe);
+    if let Err(e) = std::fs::remove_file(&probe) {
+        log::warn!("IngestWorker: failed to remove write probe: {}", e);
+    }
 
     if stage == "moldet" || stage == "index" {
         let client = crate::core::sidecar_client::get_or_init()
@@ -539,7 +555,9 @@ async fn process_text_extract(
     // 保存文本到 cache/pages/text.md。
     if let Some(dp) = DocumentProject::load(project_root, &task.doc_id) {
         let paths = dp.paths();
-        let _ = std::fs::create_dir_all(&paths.pages_cache_dir);
+        if let Err(e) = std::fs::create_dir_all(&paths.pages_cache_dir) {
+            log::warn!("IngestWorker: failed to create pages cache directory: {}", e);
+        }
         let text_path = paths.pages_cache_dir.join("text.md");
         if let Err(e) = std::fs::write(&text_path, &extracted.raw_text) {
             log::warn!("IngestWorker: failed to write text.md: {}", e);
@@ -773,7 +791,9 @@ async fn process_ocr(
     // 保存 OCR 结果到 cache/ocr/ocr.json。
     if let Some(dp) = DocumentProject::load(project_root, &task.doc_id) {
         let paths = dp.paths();
-        let _ = std::fs::create_dir_all(&paths.ocr_cache_dir);
+        if let Err(e) = std::fs::create_dir_all(&paths.ocr_cache_dir) {
+            log::warn!("IngestWorker: failed to create OCR cache directory: {}", e);
+        }
         let ocr_path = paths.ocr_cache_dir.join("ocr.json");
         let ocr_json = serde_json::json!({
             "text": extracted.raw_text,

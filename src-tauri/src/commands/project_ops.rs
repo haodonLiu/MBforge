@@ -1,11 +1,13 @@
 //! 项目操作命令 — 创建、打开、扫描项目
 
-use log::{debug, error, info, warn};
 use std::path::PathBuf;
+
+use log::{debug, error, info, warn};
 use tauri::Manager;
 
 use crate::core::error::{AppError, ErrorCode};
-use crate::core::helpers::clean_path;
+use crate::core::helpers::{clean_path, LockResultExt};
+use crate::parsers::pipeline::writer::output_status::{output_status, IncompleteReason};
 
 /// 创建或打开项目（Tauri 命令）
 ///
@@ -199,9 +201,7 @@ pub fn list_project_documents(root: String) -> Result<serde_json::Value, String>
 /// 该命令替代 `list_project_documents` 用于文档列表 UI — UI 应基于
 /// `is_complete` 字段过滤/标记待处理文档，不要把它们当作已索引的。
 #[tauri::command]
-pub fn list_project_documents_with_status(
-    root: String,
-) -> Result<serde_json::Value, String> {
+pub fn list_project_documents_with_status(root: String) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     let path = PathBuf::from(&root);
     let project = crate::core::project::Project::open(&path).ok_or_else(|| {
@@ -212,13 +212,12 @@ pub fn list_project_documents_with_status(
         .list_documents()
         .iter()
         .map(|d| {
-            let status = crate::parsers::pipeline::output::output_status(&path, &d.doc_id);
+            let status = output_status(&path, &d.doc_id);
             let mut base = doc_json(d);
             base["is_complete"] = serde_json::Value::Bool(status.complete);
-            base["incomplete_reason"] = serde_json::to_value(
-                crate::parsers::pipeline::output::IncompleteReason::from_status(&status),
-            )
-            .unwrap_or(serde_json::Value::Null);
+            base["incomplete_reason"] =
+                serde_json::to_value(IncompleteReason::from_status(&status))
+                    .unwrap_or(serde_json::Value::Null);
             base
         })
         .collect();
@@ -237,7 +236,7 @@ pub fn get_document_output_status(
 ) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     let path = PathBuf::from(&root);
-    let status = crate::parsers::pipeline::output::output_status(&path, &doc_id);
+    let status = output_status(&path, &doc_id);
     Ok(serde_json::json!({
         "success": true,
         "doc_id": doc_id,
@@ -246,7 +245,7 @@ pub fn get_document_output_status(
         "report_md_path": status.report_md_path,
         "report_md_exists": status.report_md_exists,
         "complete": status.complete,
-        "incomplete_reason": crate::parsers::pipeline::output::IncompleteReason::from_status(&status),
+        "incomplete_reason": IncompleteReason::from_status(&status),
     }))
 }
 
@@ -384,7 +383,7 @@ fn start_or_restart_ingest_worker(app: &tauri::AppHandle, project_root: &std::pa
     use crate::core::document::ingest_worker::{IngestWorker, IngestWorkerState};
 
     if let Some(state) = app.try_state::<IngestWorkerState>() {
-        let mut guard = state.worker.lock().unwrap();
+        let mut guard = state.worker.lock().into_inner();
         if let Some(worker) = guard.take() {
             worker.stop();
         }

@@ -12,16 +12,16 @@ export interface IndexResult {
   errors: string[]
 }
 
-export async function indexProjectRust(root: string): Promise<IndexResult> {
+export async function indexProject(root: string): Promise<IndexResult> {
   try {
-    return await invoke<IndexResult>('index_project_rust', { root })
+    return await invoke<IndexResult>('index_project', { root })
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     // Tauri v2 on Windows sometimes has transient IPC protocol failures
     if (msg.includes('ipc.localhost') || msg.includes('ERR_CONNECTION_REFUSED') || msg.includes('Failed to fetch')) {
       console.warn('[tauri-bridge] IPC transport failure, retrying once...')
       await new Promise(r => setTimeout(r, 500))
-      return invoke<IndexResult>('index_project_rust', { root })
+      return invoke<IndexResult>('index_project', { root })
     }
     throw e
   }

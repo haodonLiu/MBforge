@@ -1,7 +1,7 @@
 import { EVT } from '../api/tauri-events'
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { listProjectDocuments, scanProjectFiles, enqueueUnresolvedDocuments, indexProjectRust, type IndexResult, type ScanWarning } from '../api/tauri'
+import { listProjectDocuments, scanProjectFiles, enqueueUnresolvedDocuments, indexProject, type IndexResult, type ScanWarning } from '../api/tauri'
 import { batchQuickMoldetScan } from '../api/tauri/detection_cache'
 import { molAdminStoreStats } from '../api/tauri/molecule_admin'
 import { listen } from '@tauri-apps/api/event'
@@ -132,7 +132,7 @@ export default function ProjectView({ onFileActive }: ProjectViewProps) {
       const INDEX_TIMEOUT_MS = 5 * 60 * 1000
       try {
         const result: IndexResult = await Promise.race([
-          indexProjectRust(projectRoot),
+          indexProject(projectRoot),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error(t('project.indexTimeout'))), INDEX_TIMEOUT_MS)
           ),

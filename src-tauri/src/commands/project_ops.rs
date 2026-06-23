@@ -1,7 +1,8 @@
 //! 项目操作命令 — 创建、打开、扫描项目
 
-use log::{debug, error, info, warn};
 use std::path::PathBuf;
+
+use log::{debug, error, info, warn};
 use tauri::Manager;
 
 use crate::core::error::{AppError, ErrorCode};

@@ -12,7 +12,7 @@ pub mod molecule;
 pub mod molecule_admin;
 pub mod notes;
 pub mod pdf;
-pub mod pipeline_v2;
+pub mod pipeline;
 pub mod project_ops;
 pub mod result_pane;
 pub mod settings;
@@ -92,8 +92,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // parsers
         crate::parsers::pipeline::legacy::parse_pdf,
         crate::parsers::pipeline::legacy::post_process_pdf,
-        crate::parsers::pipeline::legacy::process_document,
-        pipeline_v2::process_document_v2,
+        pipeline::process_document,
+        pipeline::index_project,
         crate::parsers::pipeline::legacy::index_project_rust,
         // knowledge_base
         crate::core::document::knowledge_base::kb_search,

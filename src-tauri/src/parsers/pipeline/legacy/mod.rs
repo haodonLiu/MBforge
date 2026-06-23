@@ -408,12 +408,9 @@ async fn review_with_lit_agent(
     }
 }
 
-/// 完整的文档处理入口
-
-/// 完整的文档处理入口
+/// 完整的文档处理入口（legacy 实现，不再注册为 Tauri 命令）。
 ///
 /// 异步执行 Stages 0-4，通过 Tauri event 发射进度。
-#[tauri::command]
 pub async fn process_document(
     path: String,
     user_request: Option<String>,

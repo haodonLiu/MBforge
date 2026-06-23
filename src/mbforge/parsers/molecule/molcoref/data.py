@@ -64,10 +64,12 @@ def postprocess_coref_results(
     mol_crops: list[Any] = []
     for i, b in enumerate(bboxes):
         cat = b.get("category", "")
-        if cat in ("mol", "sup"):
+        # BboxTokenizer 输出 token 字符串为 "[Mol]"/"[Txt]"/"[Idt]"/"[Sup]"（大写带方括号）
+        if cat in ("[Mol]", "[Sup]", "mol", "sup"):
             mol_indices.append(i)
             mol_crops.append(_crop(pil_image, b.get("bbox", (0, 0, 0, 0)), W, H))
-        elif cat in ("txt", "idt"):
+        elif cat in ("[Idt]", "idt"):
+            # 只 OCR 标识符（id）；Txt 是段落文本，coref 配对不需要
             idt_indices.append(i)
 
     smiles_map: dict[int, str] = {}
@@ -83,14 +85,32 @@ def postprocess_coref_results(
 
     text_map: dict[int, str] = {}
     if ocr and idt_indices:
+        # 一次全图 OCR（detail=1 返回 [(box, text, score), ...]），IoU 匹配到 idt bbox。
+        # 比每 idt 单独 OCR 快：1 次调用 vs N 次。
+        try:
+            results = ocr.readtext(pil_image, detail=1)
+        except Exception as exc:
+            logger.warning("ocr 全图读取失败（不影响 coref 配对）: %s", exc)
+            results = []
+        # results: list of ([box_pts_4], text, score)；box_pts_4 = [[x,y], [x,y], [x,y], [x,y]] 像素
+        ocr_boxes_norm: list[tuple[float, float, float, float]] = []
+        ocr_texts: list[str] = []
+        for box_pts, text, _score in results or []:
+            if not text or not box_pts:
+                continue
+            xs = [p[0] for p in box_pts]
+            ys = [p[1] for p in box_pts]
+            ocr_boxes_norm.append((min(xs) / W, min(ys) / H, max(xs) / W, max(ys) / H))
+            ocr_texts.append(text.strip())
         for i in idt_indices:
-            crop = _crop(pil_image, bboxes[i].get("bbox", (0, 0, 0, 0)), W, H)
-            try:
-                results = ocr.readtext(crop, detail=0)
-                text_map[i] = " ".join(results).strip() if results else ""
-            except Exception as exc:
-                logger.warning("ocr 读取失败（id=%d）: %s", i, exc)
-                text_map[i] = ""
+            ibox = bboxes[i].get("bbox", (0, 0, 0, 0))
+            best_iou, best_text = 0.0, ""
+            for obox, otext in zip(ocr_boxes_norm, ocr_texts):
+                iou = _iou_norm(ibox, obox)
+                if iou > best_iou:
+                    best_iou, best_text = iou, otext
+            # 阈值：IoU 太低（ocr box 完全在 idt 外）则丢弃
+            text_map[i] = best_text if best_iou >= 0.1 else ""
 
     out_bboxes: list[dict[str, Any]] = []
     for i, b in enumerate(bboxes):
@@ -135,8 +155,15 @@ def _to_pil(image: Any, image_file: str | None) -> Any:
 
 
 def _crop(pil_image: Any, bbox: tuple, W: int, H: int) -> Any:
-    """按 (x1, y1, x2, y2) crop，clip 到图像边界。bbox 无效时返回原图。"""
+    """按 (x1, y1, x2, y2) crop，clip 到图像边界。bbox 无效时返回原图。
+
+    支持 0-1 归一化坐标（自动乘 W/H）和像素坐标两种输入。
+    """
     x1, y1, x2, y2 = bbox
+    # 启发式：四个值都在 [0, 1] 区间视为归一化
+    if 0 <= x1 <= 1 and 0 <= y1 <= 1 and 0 <= x2 <= 1 and 0 <= y2 <= 1:
+        x1, x2 = x1 * W, x2 * W
+        y1, y2 = y1 * H, y2 * H
     x1 = max(0, min(int(x1), W))
     y1 = max(0, min(int(y1), H))
     x2 = max(0, min(int(x2), W))
@@ -144,6 +171,21 @@ def _crop(pil_image: Any, bbox: tuple, W: int, H: int) -> Any:
     if x2 <= x1 or y2 <= y1:
         return pil_image
     return pil_image.crop((x1, y1, x2, y2))
+
+
+def _iou_norm(a: tuple, b: tuple) -> float:
+    """两个 0-1 归一化 bbox 的 IoU。"""
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    if ix2 <= ix1 or iy2 <= iy1:
+        return 0.0
+    inter = (ix2 - ix1) * (iy2 - iy1)
+    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
+    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
 
 
 def _pair_corefs(

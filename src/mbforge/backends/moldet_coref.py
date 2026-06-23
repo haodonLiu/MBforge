@@ -52,7 +52,7 @@ _PIX2SEQ_ARGS = {
     "dropout": 0.1,
     "nheads": 8,
     "pre_norm": False,
-    "format": "coref",
+    "format": "bbox",
     "input_size": 1333,
     "pix2seq": True,
     "pix2seq_ckpt": None,
@@ -96,6 +96,22 @@ class MolDetectCorefBackend:
         logger.info("正在加载 MolDetect coref 模型：%s", self.model_path)
         start = time.perf_counter()
 
+        # ResourceManager snapshot 类型按契约返回目录；找到实际权重文件
+        ckpt_path = self.model_path
+        if ckpt_path.is_dir():
+            # 优先 `best.ckpt`（多类别，Mol+Txt+Idt+Sup），其次 `coref_best.ckpt`（仅 Mol，coref 退化版）
+            for name in ("best.ckpt", "best_hf.ckpt", "coref_best.ckpt"):
+                candidate = ckpt_path / name
+                if candidate.exists():
+                    ckpt_path = candidate
+                    break
+            else:
+                ckpts = sorted(ckpt_path.glob("*.ckpt"))
+                if not ckpts:
+                    raise FileNotFoundError(f"未在 {ckpt_path} 找到 .ckpt 权重文件")
+                ckpt_path = ckpts[0]
+            logger.info("MolDetect coref checkpoint：%s", ckpt_path)
+
         device = (
             torch.device("cuda" if torch.cuda.is_available() else "cpu")
             if self.device == "auto"
@@ -121,7 +137,7 @@ class MolDetectCorefBackend:
             tokenizer = get_tokenizer(args)
             self._tokenizer = tokenizer[args.format]
 
-            states = torch.load(str(self.model_path), map_location=torch.device("cpu"))
+            states = torch.load(str(ckpt_path), map_location=torch.device("cpu"))
             state_dict = states.get("state_dict", states)
             # 移除 'model.' 前缀（checkpoint 与模型 key 格式差异）
             cleaned = {(k[6:] if k.startswith("model.") else k): v for k, v in state_dict.items()}
@@ -168,14 +184,10 @@ class MolDetectCorefBackend:
         if self._ocr is not None:
             return self._ocr
         try:
-            import easyocr
-            use_gpu = "cuda" in str(self.device) or (
-                self.device == "auto" and is_gpu_available()
-            )
-            self._ocr = easyocr.Reader(["en"], gpu=use_gpu)
-            logger.info("EasyOCR loaded for coref backend")
+            self._ocr = _RapidOCRAdapter()
+            logger.info("RapidOCR loaded for coref backend")
         except Exception as exc:
-            logger.warning("EasyOCR load failed: %s", exc)
+            logger.warning("RapidOCR load failed: %s", exc)
         return self._ocr
 
     def detect_coref(
@@ -252,6 +264,9 @@ class MolDetectCorefBackend:
 
         Returns: {"corefs": [{"mol_idx", "idt_bbox"}, ...], "idt_bboxes": [[x1,y1,x2,y2], ...]}
         """
+        if isinstance(image, np.ndarray):
+            image = Image.fromarray(image)
+
         result = self.detect_coref(image, use_molscribe=False, use_ocr=False)
         if not result.corefs:
             return {"corefs": [], "idt_bboxes": []}
@@ -347,6 +362,46 @@ class _SimpleNamespace:
 
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
+
+
+class _RapidOCRAdapter:
+    """适配 RapidOCR 3.x 输出到 EasyOCR 兼容的 `readtext(image, detail=0) -> list[str]` 接口。
+
+    `data.py::postprocess_coref_results:89` 调 `ocr.readtext(crop, detail=0)`。
+    RapidOCR 3.x API 是 `engine(image) -> RapidOCROutput`，属性 `.txts/.scores/.boxes`。
+    使用 PP-OCRv6 en tiny（最小 v6 模型，首启自动下载）。
+    """
+
+    def __init__(self) -> None:
+        from rapidocr import RapidOCR, EngineType, LangDet, LangRec, ModelType, OCRVersion
+        self._engine = RapidOCR(
+            params={
+                "Det.engine_type": EngineType.ONNXRUNTIME,
+                "Det.lang_type": LangDet.EN,
+                "Det.model_type": ModelType.MEDIUM,
+                "Det.ocr_version": OCRVersion.PPOCRV6,
+                "Det.use_dml": True,
+                "Rec.engine_type": EngineType.ONNXRUNTIME,
+                "Rec.lang_type": LangRec.EN,
+                "Rec.model_type": ModelType.MEDIUM,
+                "Rec.ocr_version": OCRVersion.PPOCRV6,
+                "Rec.use_dml": True,
+            }
+        )
+
+    def readtext(self, image: Any, detail: int = 0) -> list[str]:
+        import numpy as np
+        if hasattr(image, "convert"):
+            arr = np.array(image.convert("RGB"))
+        else:
+            arr = image
+        out = self._engine(arr)
+        if out is None or not getattr(out, "txts", None):
+            return []
+        txts = [t for t in out.txts if t]
+        if detail == 0:
+            return txts
+        return list(zip(out.boxes.tolist(), txts, list(out.scores)))
 
 
 # ---- 单例访问（按 molscribe / moldet 同样约定） ----

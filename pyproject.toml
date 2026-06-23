@@ -65,13 +65,17 @@ dependencies = [
     "pymupdf>=1.23.0",
     # Molecular image detection & recognition pipeline
     "ultralytics>=8.3.0",
-    "opencv-python>=4.10.0",
+    "opencv-python-headless>=4.10.0",
     "matplotlib>=3.7.0",
     "python-multipart>=0.0.29",
     # MolScribe dependencies (timm 版本通过 uv.sources 锁定)
     "timm",
     "OpenNMT-py==2.2.0",
     "pycocotools>=2.0.11",
+    # OCR (MolDetect coref identifier recognition, ONNX runtime — Windows CUDA 12 兼容)
+    "rapidocr==3.9.0",
+    "pandas>=3.0.3",
+    "onnxruntime-directml>=1.24.4",
 ]
 
 [project.optional-dependencies]
@@ -80,9 +84,6 @@ dev = [
     "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
 ]
-
-[project.scripts]
-mbforge = "mbforge.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::core::config::constants::PROJECTS_DIR;
 
+pub mod markdown_augment;
 pub mod output_status;
 pub mod report_md;
 pub mod text_md;

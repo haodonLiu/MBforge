@@ -14,10 +14,10 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
 use tokio::sync::Mutex;
 
 use crate::core::config::constants::sidecar_url;
@@ -27,6 +27,7 @@ use crate::core::document::detection_cache::{
 use crate::core::helpers::clean_path;
 use crate::core::helpers::sha256_file;
 use crate::core::project::project::Project;
+use crate::parsers::pipeline::services::quick_moldet::{quick_scan_pdf, QuickMoldetDocResult};
 
 // ---------------------------------------------------------------------------
 // In-memory PDF hash LRU — avoid re-hashing unchanged files
@@ -504,6 +505,7 @@ pub struct DetectionCacheStats {
     pub schema_version: u32,
 }
 
+/// Return aggregate statistics for the on-disk detection cache.
 #[tauri::command]
 pub fn get_detection_cache_stats(project_root: String) -> Result<DetectionCacheStats, String> {
     let root = std::path::PathBuf::from(clean_path(&project_root));
@@ -516,6 +518,7 @@ pub fn get_detection_cache_stats(project_root: String) -> Result<DetectionCacheS
     })
 }
 
+/// Delete all cached page detections for the project.
 #[tauri::command]
 pub fn clear_detection_cache(project_root: String) -> Result<(), String> {
     let root = std::path::PathBuf::from(clean_path(&project_root));
@@ -529,10 +532,7 @@ pub fn clear_detection_cache(project_root: String) -> Result<(), String> {
 /// 同时清理 DocumentProject 缓存目录（`projects/<doc_id>/cache/detections`）
 /// 和旧版全局缓存目录（`index/detections/<doc_slug>`），避免遗留。
 #[tauri::command]
-pub fn clear_detection_cache_doc(
-    project_root: String,
-    doc_id: String,
-) -> Result<(), String> {
+pub fn clear_detection_cache_doc(project_root: String, doc_id: String) -> Result<(), String> {
     let project_root = clean_path(&project_root);
     let project_path = std::path::PathBuf::from(&project_root);
 
@@ -693,7 +693,7 @@ pub struct BatchQuickMoldetRequest {
 /// 批量快速 MoldDet 扫描结果。
 #[derive(Debug, Serialize)]
 pub struct BatchQuickMoldetResponse {
-    pub results: Vec<crate::parsers::pipeline::QuickMoldetDocResult>,
+    pub results: Vec<QuickMoldetDocResult>,
     pub processed: usize,
     pub total: usize,
     pub errors: Vec<String>,
@@ -709,7 +709,6 @@ pub async fn batch_quick_moldet_scan(
     request: BatchQuickMoldetRequest,
 ) -> Result<BatchQuickMoldetResponse, String> {
     use crate::core::project::project::Project;
-    use crate::parsers::pipeline::quick_moldet_scan_pdf;
 
     let project_root = clean_path(&request.project_root);
     let root_path = std::path::PathBuf::from(&project_root);
@@ -738,11 +737,11 @@ pub async fn batch_quick_moldet_scan(
     }
 
     let total = pdf_entries.len();
-    let mut results: Vec<crate::parsers::pipeline::QuickMoldetDocResult> = Vec::new();
+    let mut results: Vec<QuickMoldetDocResult> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
 
     for (doc_id, abs_path) in pdf_entries {
-        match quick_moldet_scan_pdf(&abs_path, &root_path, &sidecar, &doc_id, batch_size).await {
+        match quick_scan_pdf(&abs_path, &root_path, &sidecar, &doc_id, batch_size).await {
             Ok(mut result) => {
                 let pages = result.pages_with_molecules.clone();
                 let status = if pages.is_empty() {

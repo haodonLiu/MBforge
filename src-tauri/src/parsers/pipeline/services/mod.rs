@@ -1,5 +1,7 @@
 //! Pipeline services.
 
+/// Coref 持久化（molecule ↔ label 配对写入 KB）
+pub mod coref_persist;
 /// Persistent JSON file cache.
 pub mod cache;
 /// VLM image captioning.

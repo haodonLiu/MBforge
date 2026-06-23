@@ -7,19 +7,23 @@
 //! 2. Writing the augmented extraction output to `text.md`.
 //! 3. Writing the structured agent report to `report.md`.
 //! 4. Persisting extracted compounds and activities to the molecule store.
-//! 5. Counting images that still require verification.
+//! 5. Persisting coref annotations (figure_labels + coref_predictions) to KB.
+//! 6. Counting images that still require verification.
 
 use std::path::Path;
 
 use async_trait::async_trait;
 
+use crate::core::document::knowledge_base::get_or_init_kb;
 use crate::core::project::project::Project;
+use crate::parsers::chem::vlm_chem;
 use crate::parsers::pipeline::context::{PipelineContext, PipelineEvent};
 use crate::parsers::pipeline::error::{PersistError, PipelineError};
 use crate::parsers::pipeline::models::enriched::EnrichedDocument;
 use crate::parsers::pipeline::models::extracted::ExtractedDocument;
 use crate::parsers::pipeline::models::persisted::PersistedDocument;
 use crate::parsers::pipeline::runner::{Stage, StageOutcome};
+use crate::parsers::pipeline::services::coref_persist::CorefPersistService;
 use crate::parsers::pipeline::services::molecule_store::MoleculeStoreWriter;
 use crate::parsers::pipeline::writer::report_md::write_agent_report;
 use crate::parsers::pipeline::writer::text_md::write_text_markdown;
@@ -28,6 +32,8 @@ use crate::parsers::pipeline::writer::text_md::write_text_markdown;
 pub struct PersistStage {
     /// Writer for compound and activity records.
     pub molecule_writer: MoleculeStoreWriter,
+    /// Coref 持久化 service (写入 figure_labels + coref_predictions 到 KB)
+    pub coref_service: CorefPersistService,
 }
 
 impl PersistStage {
@@ -35,6 +41,7 @@ impl PersistStage {
     pub fn new() -> Self {
         Self {
             molecule_writer: MoleculeStoreWriter::new(),
+            coref_service: CorefPersistService::new(),
         }
     }
 
@@ -145,13 +152,68 @@ impl Stage<(ExtractedDocument, EnrichedDocument), PersistedDocument> for Persist
             &extracted.parser,
         )?;
 
-        let outcome = StageOutcome::new(PersistedDocument {
+        // Coref 持久化：每张图跑一次 coref，写 KB
+        // 失败不阻塞主流程（warning 记录）
+        ctx.reporter.report(PipelineEvent::StageProgress {
+            stage: "persist".into(),
+            message: "persisting coref annotations".into(),
+        });
+        let mut coref_warnings: Vec<String> = Vec::new();
+        match get_or_init_kb(project_root.to_str().unwrap_or("")) {
+            Ok(kb_guard) => {
+                let kb = kb_guard.value();
+                for img in &extracted.images {
+                    let Some(rel) = &img.rel_path else { continue };
+                    let img_path = project_root.join(rel);
+                    if !img_path.exists() {
+                        log::warn!(
+                            "[PersistStage] coref image path not found: {}",
+                            img_path.display()
+                        );
+                        continue;
+                    }
+                    let page = img.page as i64;
+                    match self
+                        .coref_service
+                        .persist_for_image(kb, &doc_id, page, &img_path, true, true)
+                        .await
+                    {
+                        Ok(res) => {
+                            log::info!(
+                                "[PersistStage] coref page={} labels={} preds={}",
+                                res.page,
+                                res.labels_written,
+                                res.predictions_written,
+                            );
+                        }
+                        Err(e) => {
+                            let msg = format!(
+                                "coref persist failed for page {}: {e}",
+                                img.page
+                            );
+                            log::warn!("[PersistStage] {}", msg);
+                            coref_warnings.push(msg);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                let msg = format!("KB init failed for coref: {e}");
+                log::warn!("[PersistStage] {}", msg);
+                coref_warnings.push(msg);
+            }
+        }
+
+        let mut outcome = StageOutcome::new(PersistedDocument {
             doc_id,
             text_md_path,
             report_md_path,
             unverified_image_count,
             persisted_molecule_count,
         });
+        for w in coref_warnings {
+            outcome = outcome.with_warning(w);
+        }
 
         Ok(outcome)
     }

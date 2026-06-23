@@ -66,7 +66,7 @@ struct PageImage {
 
 /// Run a quick MoldDet scan over a single PDF.
 ///
-/// This mirrors the legacy `quick_moldet_scan_pdf` signature and behaviour:
+/// This mirrors the legacy quick-scan signature and behaviour:
 /// only molecule bounding boxes are detected (no MolScribe), results are
 /// written to the detection cache as quick-scan entries, and the returned
 /// `QuickMoldetDocResult` uses the exact legacy field set.
@@ -77,7 +77,7 @@ struct PageImage {
 /// * `sidecar_url` - Python sidecar base URL.
 /// * `doc_id` - Document identifier used by callers.
 /// * `batch_size` - Number of pages to send to the sidecar in one batch.
-pub async fn quick_moldet_scan_pdf(
+pub async fn quick_scan_pdf(
     path: &str,
     project_root: &Path,
     sidecar_url: &str,
@@ -131,14 +131,14 @@ pub async fn quick_moldet_scan_pdf(
 
     let page_images = if is_scanned {
         log::info!(
-            "[quick_moldet_scan] Scanned PDF: processing {} embedded images from {}",
+            "[quick_scan] Scanned PDF: processing {} embedded images from {}",
             images.len(),
             path
         );
         collect_scanned_page_images(&images, &resolved_root).await
     } else {
         log::info!(
-            "[quick_moldet_scan] TextBased PDF: screenshot {} pages from {}",
+            "[quick_scan] TextBased PDF: screenshot {} pages from {}",
             page_count,
             path
         );
@@ -189,7 +189,7 @@ pub async fn quick_moldet_scan_pdf(
             }
             Err(e) => {
                 log::warn!(
-                    "[quick_moldet_scan] detect_batch failed for batch {}-{}: {}",
+                    "[quick_scan] detect_batch failed for batch {}-{}: {}",
                     batch_start + 1,
                     batch_end,
                     e
@@ -203,7 +203,7 @@ pub async fn quick_moldet_scan_pdf(
     pages_with_molecules.dedup();
 
     log::info!(
-        "[quick_moldet_scan] {}: scanned {} pages, {} with molecules",
+        "[quick_scan] {}: scanned {} pages, {} with molecules",
         path,
         pages.len(),
         pages_with_molecules.len()
@@ -258,7 +258,7 @@ async fn collect_scanned_page_images(
 
         if !img_path.exists() {
             log::warn!(
-                "[quick_moldet_scan] Image not found: {}",
+                "[quick_scan] Image not found: {}",
                 img_path.display()
             );
             continue;
@@ -304,7 +304,7 @@ async fn render_text_page_images(
                     let page_img_path = tmp_dir.join(format!("page_{:04}_screenshot.png", page_idx));
                     if let Err(e) = std::fs::write(&page_img_path, &ss.image_bytes) {
                         log::warn!(
-                            "[quick_moldet_scan] Failed to save screenshot page {}: {}",
+                            "[quick_scan] Failed to save screenshot page {}: {}",
                             page_idx,
                             e
                         );
@@ -320,7 +320,7 @@ async fn render_text_page_images(
             }
             Err(e) => {
                 log::warn!(
-                    "[quick_moldet_scan] Sidecar screenshot failed for batch {}-{}: {}",
+                    "[quick_scan] Sidecar screenshot failed for batch {}-{}: {}",
                     batch_start + 1,
                     batch_end,
                     e
@@ -395,7 +395,7 @@ fn write_quick_scan_cache(
 
     if let Err(e) = cache.put(&entry) {
         log::warn!(
-            "[quick_moldet_scan] cache write failed for {} page {}: {}",
+            "[quick_scan] cache write failed for {} page {}: {}",
             entry.doc_id,
             page,
             e

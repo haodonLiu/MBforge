@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::parsers::doc_types::ImageRef as DocTypeImageRef;
 use crate::parsers::pipeline::error::{PersistError, PipelineError};
-use crate::parsers::pipeline::legacy::markdown_augment::augment_markdown_with_images;
+use crate::parsers::pipeline::writer::markdown_augment::augment_markdown_with_images;
 
 /// One row in the "图片校对" appendix. An image is "verified" when it
 /// has any of: a VLM description, a recognized SMILES, an inline

@@ -544,4 +544,31 @@ mod tests {
             sections.len()
         );
     }
+
+    #[tokio::test]
+    async fn test_segment_stage_splits_by_headings() {
+        use std::path::Path;
+
+        use crate::parsers::pipeline_v2::context::PipelineContext;
+        use crate::parsers::pipeline_v2::models::extracted::ExtractedMetadata;
+
+        let extracted = ExtractedDocument {
+            raw_text: "# Title\n\nIntro.\n## Section A\nContent A.\n## Section B\nContent B."
+                .into(),
+            page_count: 1,
+            parser: "test".into(),
+            images: Vec::new(),
+            ocr_blocks: Vec::new(),
+            metadata: ExtractedMetadata::default(),
+        };
+
+        let ctx = PipelineContext::new(Path::new("dummy.pdf"), "");
+        let stage = SegmentStage::new(8000);
+        let outcome = stage.run(extracted, &ctx).await.unwrap();
+
+        assert_eq!(outcome.output.sections.len(), 3);
+        assert_eq!(outcome.output.sections[0].title, "Title");
+        assert_eq!(outcome.output.sections[1].title, "Section A");
+        assert!(!outcome.output.document_tree.is_empty());
+    }
 }

@@ -144,8 +144,8 @@ pub fn save_json_safe<T: serde::Serialize>(
     path: &Path,
     data: &T,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let checked = assert_within_root_allow_missing(root, path)
-        .map_err(|e| format!("path safety: {}", e))?;
+    let checked =
+        assert_within_root_allow_missing(root, path).map_err(|e| format!("path safety: {}", e))?;
     write_json_to(&checked, data)
 }
 
@@ -198,10 +198,7 @@ pub fn load_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
 /// Load JSON file from a project-relative path, verifying the resolved
 /// path lies within `root` before any filesystem access. Returns `None`
 /// if the path is outside `root` or the file is unreadable / malformed.
-pub fn load_json_safe<T: serde::de::DeserializeOwned>(
-    root: &str,
-    path: &Path,
-) -> Option<T> {
+pub fn load_json_safe<T: serde::de::DeserializeOwned>(root: &str, path: &Path) -> Option<T> {
     let checked = assert_within_root_allow_missing(root, path).ok()?;
     read_json_from(&checked)
 }
@@ -369,17 +366,13 @@ fn strip_unc_prefix(p: &Path) -> PathBuf {
 fn lexical_normalize(path: &Path) -> PathBuf {
     use std::path::Component;
     let mut out = PathBuf::new();
-    let mut saw_prefix = false;
     for comp in path.components() {
         match comp {
             Component::Prefix(p) => {
                 out.push(p.as_os_str());
-                saw_prefix = true;
             }
             Component::RootDir => {
-                if !saw_prefix {
-                    out.push(comp.as_os_str());
-                }
+                out.push(comp.as_os_str());
             }
             Component::CurDir => {} // skip "."
             Component::ParentDir => {
@@ -510,40 +503,17 @@ mod tests {
 
         // Target doesn't exist yet — write path
         let target = root.join("subdir/new_file.json");
-        let result =
-            assert_within_root_allow_missing(root.to_string_lossy().as_ref(), &target);
+        let result = assert_within_root_allow_missing(root.to_string_lossy().as_ref(), &target);
         assert!(result.is_ok(), "Expected Ok but got: {:?}", result);
     }
 
+
     #[test]
-    fn test_debug_lexical_normalize_windows() {
+    fn test_assert_within_root_allow_missing_nested_project_dir() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        eprintln!("root (raw) = {:?}", root);
-        eprintln!("root (str) = {:?}", root.to_string_lossy());
-
-        let canonical_root = root.canonicalize().unwrap();
-        eprintln!("canonical_root = {:?}", canonical_root);
-        let stripped = strip_unc_prefix(&canonical_root);
-        eprintln!("stripped_root = {:?}", stripped);
-
-        let target = root.join("subdir/new_file.json");
-        eprintln!("target (raw) = {:?}", target);
-        eprintln!("target.is_absolute = {}", target.is_absolute());
-
-        let absolute = if target.is_absolute() {
-            target.clone()
-        } else {
-            root.join(&target)
-        };
-        eprintln!("absolute = {:?}", absolute);
-
-        let normalized = lexical_normalize(&absolute);
-        eprintln!("normalized = {:?}", normalized);
-        eprintln!("normalized_starts_with_stripped = {}",
-            normalized.starts_with(&stripped));
-        eprintln!("stripped_starts_with_normalized = {}",
-            stripped.starts_with(&normalized));
+        let target = root.join("projects").join("doc-123");
+        let _ = assert_within_root_allow_missing(root.to_string_lossy().as_ref(), &target);
     }
 
     #[test]
@@ -553,8 +523,7 @@ mod tests {
 
         // Escape attempt with `..`
         let target = root.join("../outside.json");
-        let result =
-            assert_within_root_allow_missing(root.to_string_lossy().as_ref(), &target);
+        let result = assert_within_root_allow_missing(root.to_string_lossy().as_ref(), &target);
         assert!(result.is_err(), "Expected Err for traversal");
     }
 

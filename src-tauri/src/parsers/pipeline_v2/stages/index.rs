@@ -113,3 +113,30 @@ impl Stage<PersistedDocument, IndexedDocument> for IndexStage {
         Ok(outcome)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::parsers::pipeline_v2::context::PipelineContext;
+
+    #[tokio::test]
+    async fn test_index_stage_requires_project_root() {
+        let ctx = PipelineContext::new(std::path::Path::new("/tmp/dummy.pdf"), "");
+        let stage = IndexStage::new();
+        let persisted = PersistedDocument {
+            doc_id: "doc1".into(),
+            text_md_path: PathBuf::from("/tmp/dummy/text.md"),
+            report_md_path: PathBuf::from("/tmp/dummy/report.md"),
+            unverified_image_count: 0,
+            persisted_molecule_count: 0,
+        };
+
+        let result = stage.run(persisted, &ctx).await;
+        assert!(matches!(
+            result,
+            Err(PipelineError::Index(IndexError::VectorStoreFailed { .. }))
+        ));
+    }
+}

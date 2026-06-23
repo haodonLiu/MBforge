@@ -156,3 +156,70 @@ impl Stage<(ExtractedDocument, EnrichedDocument), PersistedDocument> for Persist
         Ok(outcome)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    use super::*;
+    use crate::parsers::doc_types::{DocumentMetadata, StructuredData};
+    use crate::parsers::pipeline_v2::context::PipelineContext;
+    use crate::parsers::pipeline_v2::models::enriched::EnrichedDocument;
+    use crate::parsers::pipeline_v2::models::extracted::{ExtractedDocument, ExtractedMetadata};
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_persist_stage_writes_markdown_files() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let mut project = Project::create(root).expect("create project");
+
+        let incoming = root.join("incoming");
+        std::fs::create_dir_all(&incoming).unwrap();
+        let source = incoming.join("test.pdf");
+        std::fs::write(&source, b"%PDF-1.4").unwrap();
+
+        let entry = project.add_file(&source).expect("add pdf");
+        let doc_id = entry.doc_id.clone();
+        let source_in_project = project.get_document_source_path(&doc_id).unwrap();
+
+        let ctx = PipelineContext::new(&source_in_project, "").with_project_root(root);
+
+        let extracted = ExtractedDocument {
+            raw_text: "Hello world".into(),
+            page_count: 1,
+            parser: "test".into(),
+            images: Vec::new(),
+            ocr_blocks: Vec::new(),
+            metadata: ExtractedMetadata::default(),
+        };
+        let enriched = EnrichedDocument {
+            structured_data: StructuredData {
+                metadata: DocumentMetadata {
+                    title: None,
+                    authors: Vec::new(),
+                    document_type: "unknown".into(),
+                    key_targets: Vec::new(),
+                    source_file: None,
+                },
+                summary: "".into(),
+                compounds: Vec::new(),
+                activities: Vec::new(),
+                key_findings: Vec::new(),
+                uncertain_items: Vec::new(),
+            },
+            sar_analysis: None,
+            molecule_results: Vec::new(),
+            image_captions: HashMap::new(),
+            sections: Vec::new(),
+        };
+
+        let stage = PersistStage::new();
+        let outcome = stage.run((extracted, enriched), &ctx).await.unwrap();
+
+        assert_eq!(outcome.output.doc_id, doc_id);
+        assert!(outcome.output.text_md_path.exists());
+        assert!(outcome.output.report_md_path.exists());
+    }
+}

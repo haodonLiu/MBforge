@@ -200,3 +200,62 @@ impl Stage<SourceInput, ExtractedDocument> for ExtractStage {
         Ok(StageOutcome::new(extracted))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+    use crate::parsers::pipeline_v2::context::PipelineContext;
+    use crate::parsers::pipeline_v2::services::cache::{Cache, CachedExtractResult};
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_extract_stage_returns_cached_document() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join(".mbforge")).unwrap();
+
+        let source = root.join("sample.pdf");
+        std::fs::write(&source, b"%PDF-1.4").unwrap();
+
+        let cache = FileCache::new(root);
+        let key = source.display().to_string();
+        cache
+            .put(
+                &key,
+                &CachedExtractResult {
+                    text: "cached text".into(),
+                    sections_json: "[]".into(),
+                    metadata_json: r#"{"page_count":3,"parser":"cached"}"#.into(),
+                },
+            )
+            .unwrap();
+
+        let ctx = PipelineContext::new(&source, "").with_project_root(root);
+        let stage = ExtractStage::new(OcrService::new(vec![]));
+        let outcome = stage
+            .run(SourceInput::new(&source).with_allow_ocr(true), &ctx)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome.output.raw_text, "cached text");
+        assert_eq!(outcome.output.page_count, 3);
+        assert_eq!(outcome.output.parser, "cached");
+    }
+
+    #[test]
+    fn test_document_from_cache_parses_metadata() {
+        let cached = CachedExtractResult {
+            text: "text".into(),
+            sections_json: "[]".into(),
+            metadata_json: r#"{"title":"T","authors":["A"],"document_type":"journal","page_count":2,"images":[{"filename":"x.png","page":1,"region":null,"description":null,"esmiles":null,"rel_path":null}],"ocr_blocks":[]}"#.into(),
+        };
+        let doc = ExtractStage::document_from_cache(cached).unwrap();
+        assert_eq!(doc.metadata.title, Some("T".into()));
+        assert_eq!(doc.metadata.authors, vec!["A"]);
+        assert_eq!(doc.metadata.document_type, Some("journal".into()));
+        assert_eq!(doc.page_count, 2);
+        assert_eq!(doc.images.len(), 1);
+    }
+}

@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 use crate::parsers::chem::chem_validate::validate_smiles_batch;
 use crate::parsers::doc_types::CompoundEntry;
-use crate::parsers::pipeline_v2::error::PipelineError;
+use crate::parsers::pipeline::error::PipelineError;
 
 /// Service that validates and canonicalizes E-SMILES in compound entries.
 #[derive(Debug, Clone)]

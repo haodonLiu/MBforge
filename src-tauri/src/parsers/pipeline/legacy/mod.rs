@@ -7,7 +7,7 @@ use crate::commands::classifier::classify_document;
 use crate::commands::extractor::{extract_activities, extract_esmiles_candidates};
 use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
 
-use super::doc_types::{
+use crate::parsers::doc_types::{
     DocProcessingContext, DocStructure, DocumentMetadata, DocumentReport, ImageRef, PdfParseResult,
     PostProcessResult, ProcessingLog, StageLog, StructuredData, UncertainItem,
 };
@@ -170,7 +170,7 @@ pub async fn parse_pdf(
             if api_key.is_empty() {
                 return Err("UNIPARSER_API_KEY not set".into());
             }
-            let client = super::pdf::uniparser::UniParserClient::new(&host, &api_key);
+            let client = crate::parsers::pdf::uniparser::UniParserClient::new(&host, &api_key);
             let result = client.parse_pdf(&path)?;
             (result.content, result.page_count)
         }
@@ -178,8 +178,8 @@ pub async fn parse_pdf(
             let host =
                 std::env::var("MINERU_HOST").unwrap_or_else(|_| "https://mineru.net".to_string());
             let api_key = std::env::var("MINERU_API_KEY").unwrap_or_default();
-            let client = super::pdf::mineru::MineruClient::new(&host, &api_key);
-            let options = super::pdf::mineru::scanned_pdf_options(&path);
+            let client = crate::parsers::pdf::mineru::MineruClient::new(&host, &api_key);
+            let options = crate::parsers::pdf::mineru::scanned_pdf_options(&path);
             let result = client.parse_file_with_options(&path, &options)?;
             mineru_images = result.images;
             (result.markdown, 0)
@@ -188,7 +188,7 @@ pub async fn parse_pdf(
             let pdf_bytes = tokio::fs::read(&path)
                 .await
                 .map_err(|e| format!("Failed to read PDF: {}", e))?;
-            let result = super::pdf::llama_parse::parse_with_llamaparse_sync(
+            let result = crate::parsers::pdf::llama_parse::parse_with_llamaparse_sync(
                 &crate::core::constants::sidecar_url(),
                 pdf_bytes,
                 None,
@@ -205,7 +205,7 @@ pub async fn parse_pdf(
 
     // Stage 1.5: Extract embedded images from PDF (lopdf)
     let tmp_dir = tempfile::tempdir().map_err(|e| format!("Temp dir error: {}", e))?;
-    let extracted = super::pdf::images::extract_images_from_pdf(
+    let extracted = crate::parsers::pdf::images::extract_images_from_pdf(
         &path,
         tmp_dir.path(),
         20, // max_images
@@ -220,9 +220,9 @@ pub async fn parse_pdf(
     let classification = classify_document(pages, None);
 
     // Stage 3: Section-based chunking (PageIndex)
-    let headings = super::structure::sections::extract_headings(&content);
+    let headings = crate::parsers::structure::sections::extract_headings(&content);
     let sections =
-        super::structure::sections::build_sections(&content, &headings, None, chunk_size);
+        crate::parsers::structure::sections::build_sections(&content, &headings, None, chunk_size);
     let chunks: Vec<String> = sections.iter().map(|s| s.text.clone()).collect();
 
     // Stage 4: Molecule extraction (text regex)
@@ -247,7 +247,7 @@ pub async fn parse_pdf(
 /// Post-process PDF extraction results using LLM.
 #[tauri::command]
 pub fn post_process_pdf(parse_result: PdfParseResult) -> Result<PostProcessResult, String> {
-    super::structure::post_process::post_process(&parse_result)
+    crate::parsers::structure::post_process::post_process(&parse_result)
 }
 
 /// ===== 以下为 A3: 完整文档处理管线 =====
@@ -507,7 +507,7 @@ pub async fn process_document(
             // Stage 0.6: 关键词与实体提取（来自 src/mbforge/core/summarizer.py 的端口，
             // 之前只在 Python 侧用，迁到 Rust 后未挂到 pipeline）。结果先以 stage log
             // 形式落 processing_log，未来扩展可以挂到 ctx / DocumentReport。
-            let kw = super::keywords::extract_keywords_and_entities(&ctx.raw_text);
+            let kw = crate::parsers::keywords::extract_keywords_and_entities(&ctx.raw_text);
             log::info!(
                 "[pipeline] keywords (top {}): {:?}; entity_tags ({}): {:?}",
                 kw.keywords.len(),
@@ -641,7 +641,7 @@ pub async fn process_document(
 
     // 并行调度：`post_process_sections_parallel` 内部用 `spawn_blocking` 跑
     // blocking LLM 客户端，`Semaphore` 等价的 channel 限流到 DEFAULT_SECTION_CONCURRENCY。
-    let parallel_results = super::structure::post_process::post_process_sections_parallel(
+    let parallel_results = crate::parsers::structure::post_process::post_process_sections_parallel(
         section_inputs,
         &ctx.parser_used,
         ctx.page_count,
@@ -666,7 +666,7 @@ pub async fn process_document(
             }
         } else {
             let err_msg = match &res.status {
-                super::structure::post_process::SectionStatus::Err(e) => e.clone(),
+                crate::parsers::structure::post_process::SectionStatus::Err(e) => e.clone(),
                 _ => String::new(),
             };
             processing_log.warnings.push(format!(
@@ -1170,7 +1170,7 @@ pub async fn process_document(
         });
         match doc_id {
             Some(did) => {
-                if let Err(e) = crate::parsers::pipeline::output::write_text_markdown(
+                if let Err(e) = self::output::write_text_markdown(
                     root,
                     &did,
                     &ctx.raw_text,
@@ -1180,7 +1180,7 @@ pub async fn process_document(
                 ) {
                     log::warn!("[process_document] text.md write failed: {}", e);
                 }
-                if let Err(e) = crate::parsers::pipeline::output::write_agent_report(
+                if let Err(e) = self::output::write_agent_report(
                     root,
                     &did,
                     Some(&final_data),

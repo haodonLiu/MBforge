@@ -6,8 +6,8 @@
 //! to the caller to log or surface.
 
 use crate::parsers::doc_types::StructuredData;
-use crate::parsers::pipeline_v2::error::PipelineError;
-use crate::parsers::pipeline_v2::models::segmented::SectionChunk;
+use crate::parsers::pipeline::error::PipelineError;
+use crate::parsers::pipeline::models::segmented::SectionChunk;
 
 /// Service that post-processes document sections into structured data.
 #[derive(Debug, Clone, Copy)]

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::parsers::pipeline_v2::error::{ExtractError, PipelineError};
+use crate::parsers::pipeline::error::{ExtractError, PipelineError};
 
 /// A generic key/value cache used by the extract stage.
 ///

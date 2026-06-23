@@ -8,8 +8,8 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use crate::parsers::pipeline_v2::error::{ExtractError, PipelineError};
-use crate::parsers::pipeline_v2::models::extracted::{ImageRef, OcrBlock};
+use crate::parsers::pipeline::error::{ExtractError, PipelineError};
+use crate::parsers::pipeline::models::extracted::{ImageRef, OcrBlock};
 
 /// Output produced by a single OCR backend.
 #[derive(Debug, Clone)]
@@ -87,10 +87,10 @@ impl OcrService {
 }
 
 // ---------------------------------------------------------------------------
-// Conversion helpers from legacy OCR types to pipeline_v2 OCR types.
+// Conversion helpers from legacy OCR types to pipeline OCR types.
 // ---------------------------------------------------------------------------
 
-/// Convert a legacy `doc_types::ImageRef` into the pipeline_v2 equivalent.
+/// Convert a legacy `doc_types::ImageRef` into the pipeline equivalent.
 fn adapt_image_ref(old: &crate::parsers::doc_types::ImageRef) -> ImageRef {
     ImageRef {
         filename: old.filename.clone(),
@@ -102,7 +102,7 @@ fn adapt_image_ref(old: &crate::parsers::doc_types::ImageRef) -> ImageRef {
     }
 }
 
-/// Convert a legacy `doc_types::OcrBlock` into the pipeline_v2 equivalent.
+/// Convert a legacy `doc_types::OcrBlock` into the pipeline equivalent.
 fn adapt_ocr_block(old: &crate::parsers::doc_types::OcrBlock) -> OcrBlock {
     OcrBlock {
         page: old.page,
@@ -114,7 +114,7 @@ fn adapt_ocr_block(old: &crate::parsers::doc_types::OcrBlock) -> OcrBlock {
     }
 }
 
-/// Convert a legacy OCR backend output into the pipeline_v2 `OcrOutput`.
+/// Convert a legacy OCR backend output into the pipeline `OcrOutput`.
 fn adapt_ocr_output(old: crate::parsers::ocr::OcrOutput) -> OcrOutput {
     OcrOutput {
         text: old.text,

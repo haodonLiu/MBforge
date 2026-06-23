@@ -1,15 +1,15 @@
 //! Pipeline runner and Stage trait.
 
-use crate::parsers::pipeline_v2::context::{PipelineContext, PipelineEvent};
-use crate::parsers::pipeline_v2::error::PipelineError;
-use crate::parsers::pipeline_v2::models::persisted::IndexedDocument;
-use crate::parsers::pipeline_v2::models::source::SourceInput;
-use crate::parsers::pipeline_v2::services::ocr::OcrService;
-use crate::parsers::pipeline_v2::stages::enrich::EnrichStage;
-use crate::parsers::pipeline_v2::stages::extract::ExtractStage;
-use crate::parsers::pipeline_v2::stages::index::IndexStage;
-use crate::parsers::pipeline_v2::stages::persist::PersistStage;
-use crate::parsers::pipeline_v2::stages::segment::SegmentStage;
+use crate::parsers::pipeline::context::{PipelineContext, PipelineEvent};
+use crate::parsers::pipeline::error::PipelineError;
+use crate::parsers::pipeline::models::persisted::IndexedDocument;
+use crate::parsers::pipeline::models::source::SourceInput;
+use crate::parsers::pipeline::services::ocr::OcrService;
+use crate::parsers::pipeline::stages::enrich::EnrichStage;
+use crate::parsers::pipeline::stages::extract::ExtractStage;
+use crate::parsers::pipeline::stages::index::IndexStage;
+use crate::parsers::pipeline::stages::persist::PersistStage;
+use crate::parsers::pipeline::stages::segment::SegmentStage;
 
 /// A single progress log message produced by a pipeline stage.
 #[derive(Debug, Clone)]
@@ -128,7 +128,7 @@ pub async fn run_pipeline(
 ) -> Result<IndexedDocument, PipelineError> {
     let runner = PipelineRunner::new();
 
-    let ocr = OcrService::new(crate::parsers::pipeline_v2::services::ocr::default_backends());
+    let ocr = OcrService::new(crate::parsers::pipeline::services::ocr::default_backends());
     let extract_stage = ExtractStage::new(ocr);
     let extracted = runner
         .run_stage("extract", &extract_stage, input, ctx)
@@ -162,7 +162,7 @@ pub async fn run_pipeline(
 mod tests {
     use std::sync::Arc;
 
-    use crate::parsers::pipeline_v2::context::{CollectingReporter, PipelineContext};
+    use crate::parsers::pipeline::context::{CollectingReporter, PipelineContext};
 
     use super::*;
 

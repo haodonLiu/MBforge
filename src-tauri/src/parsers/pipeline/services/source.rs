@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::parsers::pipeline_v2::error::{ExtractError, PipelineError};
+use crate::parsers::pipeline::error::{ExtractError, PipelineError};
 
 /// Resolves a source document path to its containing MBForge project root.
 pub struct SourceResolver;

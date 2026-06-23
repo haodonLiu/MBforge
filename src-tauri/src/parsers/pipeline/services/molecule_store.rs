@@ -4,8 +4,8 @@ use std::path::Path;
 
 use crate::core::molecule::molecule_store::MoleculeDatabase;
 use crate::parsers::doc_types::StructuredData;
-use crate::parsers::pipeline_v2::error::{PersistError, PipelineError};
-use crate::parsers::pipeline_v2::services::helpers::{
+use crate::parsers::pipeline::error::{PersistError, PipelineError};
+use crate::parsers::pipeline::services::helpers::{
     activity_entry_to_record, compound_entry_to_record,
 };
 

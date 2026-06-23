@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 // Re-export types that commands/ needs
 pub use crate::parsers::doc_types::{OcrBlock, PdfParseResult, PostProcessResult};
-pub use crate::parsers::pipeline::{ClassifyResult, WorkflowResult, PipelineOutput, IndexResult};
+pub use crate::parsers::pipeline::legacy::{ClassifyResult, WorkflowResult, PipelineOutput, IndexResult};
 // Note: ClassifyResult re-exported from pipeline::extract via pipeline.rs
 pub use crate::parsers::chem::association::ActivityEntry;
 pub use crate::parsers::chem::chem_validate::separate_esmiles_layers;
@@ -24,12 +24,12 @@ pub async fn parse_pdf(
     overlap: Option<usize>,
     parser: Option<String>,
 ) -> Result<PdfParseResult, String> {
-    crate::parsers::pipeline::parse_pdf(path, chunk_size, overlap, parser).await
+    crate::parsers::pipeline::legacy::parse_pdf(path, chunk_size, overlap, parser).await
 }
 
 /// 对解析结果进行后处理（LLM 结构化提取）。
 pub fn post_process_pdf(parse_result: PdfParseResult) -> Result<PostProcessResult, String> {
-    crate::parsers::pipeline::post_process_pdf(parse_result)
+    crate::parsers::pipeline::legacy::post_process_pdf(parse_result)
 }
 
 /// 处理单个文档（完整管线 Stage 0~7）。
@@ -39,7 +39,7 @@ pub async fn process_document(
     project_root: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    crate::parsers::pipeline::process_document(path, user_request, project_root, app).await
+    crate::parsers::pipeline::legacy::process_document(path, user_request, project_root, app).await
 }
 
 /// 批量索引项目下的所有 PDF 文件。
@@ -47,7 +47,7 @@ pub async fn index_project_rust(
     app: tauri::AppHandle,
     root: String,
 ) -> Result<IndexResult, String> {
-    crate::parsers::pipeline::index_project_rust(app, root).await
+    crate::parsers::pipeline::legacy::index_project_rust(app, root).await
 }
 
 /// PDF 分子提取工作流（完整封装）。
@@ -56,7 +56,7 @@ pub async fn extract_pdf_workflow(
     output_dir: &str,
     sidecar_url: &str,
 ) -> Result<WorkflowResult, String> {
-    crate::parsers::pipeline::extract_pdf_workflow(pdf_path, output_dir, sidecar_url).await
+    crate::parsers::pipeline::legacy::extract_pdf_workflow(pdf_path, output_dir, sidecar_url).await
 }
 
 /// 分类并提取文件（自动检测 parser）。
@@ -64,12 +64,12 @@ pub async fn extract_pdf_workflow(
 /// `allow_ocr` 控制是否允许对扫描件调用 MinerU OCR。
 /// Inspector 阶段和快速 MoldDet 扫描应传 `false`，避免在用户确认前跑 OCR。
 pub async fn classify_and_extract(path: &str, allow_ocr: bool) -> Result<ClassifyResult, String> {
-    crate::parsers::pipeline::classify_and_extract(path, allow_ocr).await
+    crate::parsers::pipeline::legacy::classify_and_extract(path, allow_ocr).await
 }
 
 /// 查找项目根目录（通过向上搜索 .mbforge 目录）。
 pub fn find_project_root(start: &Path, explicit: Option<&str>) -> Option<PathBuf> {
-    crate::parsers::pipeline::find_project_root(start, explicit)
+    crate::parsers::pipeline::legacy::find_project_root(start, explicit)
 }
 
 // ---------------------------------------------------------------------------

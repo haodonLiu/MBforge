@@ -15,18 +15,18 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use crate::parsers::pipeline_v2::context::{PipelineContext, PipelineEvent};
-use crate::parsers::pipeline_v2::error::{ExtractError, PipelineError};
-use crate::parsers::pipeline_v2::models::extracted::{
+use crate::parsers::pipeline::context::{PipelineContext, PipelineEvent};
+use crate::parsers::pipeline::error::{ExtractError, PipelineError};
+use crate::parsers::pipeline::models::extracted::{
     ExtractedDocument, ExtractedMetadata, ImageRef, OcrBlock,
 };
-use crate::parsers::pipeline_v2::models::source::SourceInput;
-use crate::parsers::pipeline_v2::runner::{Stage, StageOutcome};
-use crate::parsers::pipeline_v2::services::cache::{Cache, CachedExtractResult, FileCache};
-use crate::parsers::pipeline_v2::services::images::ImageService;
-use crate::parsers::pipeline_v2::services::inspector::InspectorService;
-use crate::parsers::pipeline_v2::services::ocr::OcrService;
-use crate::parsers::pipeline_v2::services::source::SourceResolver;
+use crate::parsers::pipeline::models::source::SourceInput;
+use crate::parsers::pipeline::runner::{Stage, StageOutcome};
+use crate::parsers::pipeline::services::cache::{Cache, CachedExtractResult, FileCache};
+use crate::parsers::pipeline::services::images::ImageService;
+use crate::parsers::pipeline::services::inspector::InspectorService;
+use crate::parsers::pipeline::services::ocr::OcrService;
+use crate::parsers::pipeline::services::source::SourceResolver;
 
 /// Pipeline stage that extracts raw content from a PDF source document.
 pub struct ExtractStage {
@@ -206,8 +206,8 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::parsers::pipeline_v2::context::PipelineContext;
-    use crate::parsers::pipeline_v2::services::cache::{Cache, CachedExtractResult};
+    use crate::parsers::pipeline::context::PipelineContext;
+    use crate::parsers::pipeline::services::cache::{Cache, CachedExtractResult};
     use tempfile::TempDir;
 
     #[tokio::test]

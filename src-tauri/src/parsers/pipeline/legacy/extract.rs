@@ -1719,7 +1719,7 @@ pub async fn extract_pdf_workflow(
     // generic "Image extracted from page N" — VLM captions are
     // unavailable until Stage 2 (extract_molecules_from_pdf) populates
     // the detection cache.
-    let augmented_text = crate::parsers::pipeline::markdown_augment::augment_markdown_with_images(
+    let augmented_text = super::markdown_augment::augment_markdown_with_images(
         &classified.text,
         &classified.images,
         Some(&classified.ocr_blocks),
@@ -1761,24 +1761,22 @@ pub async fn extract_pdf_workflow(
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
     let pdf_hash = crate::core::helpers::sha256_file(Path::new(pdf_path)).unwrap_or_default();
-    let n_captioned =
-        crate::parsers::pipeline::markdown_augment::populate_descriptions_from_detection_cache(
-            &mut classified.images,
-            &base_dir,
-            doc_slug,
-            &pdf_hash,
-        );
+    let n_captioned = super::markdown_augment::populate_descriptions_from_detection_cache(
+        &mut classified.images,
+        &base_dir,
+        doc_slug,
+        &pdf_hash,
+    );
     if n_captioned > 0 {
         log::info!(
             "[workflow] Injected {} VLM caption(s) into markdown augmentation",
             n_captioned
         );
-        let enriched_text =
-            crate::parsers::pipeline::markdown_augment::augment_markdown_with_images(
-                &classified.text,
-                &classified.images,
-                Some(&classified.ocr_blocks),
-            );
+        let enriched_text = super::markdown_augment::augment_markdown_with_images(
+            &classified.text,
+            &classified.images,
+            Some(&classified.ocr_blocks),
+        );
         std::fs::write(&text_path, &enriched_text)
             .map_err(|e| format!("Failed to re-write text.md: {}", e))?;
     }

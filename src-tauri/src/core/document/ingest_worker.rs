@@ -18,10 +18,10 @@ use crate::core::document::ingest_queue::{IngestQueue, IngestTask};
 use crate::core::project::document_project::DocumentProject;
 use crate::core::project::project::Project;
 use crate::parsers::pdf::context::{PdfClassification, PdfInspectorContext};
-use crate::parsers::pipeline::{
+use crate::parsers::pipeline::legacy::{
     classify_and_extract_from_context_with_path, quick_moldet_scan_pdf, ExtractProgressReporter,
 };
-use crate::parsers::pipeline_v2::{
+use crate::parsers::pipeline::{
     context::PipelineContext, models::source::SourceInput, runner::run_pipeline,
 };
 

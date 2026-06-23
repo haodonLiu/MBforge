@@ -7,8 +7,8 @@
 use std::path::Path;
 
 use crate::parsers::pdf::context::PdfInspectorContext;
-use crate::parsers::pipeline_v2::error::{ExtractError, PipelineError};
-use crate::parsers::pipeline_v2::models::extracted::{ExtractedDocument, ExtractedMetadata};
+use crate::parsers::pipeline::error::{ExtractError, PipelineError};
+use crate::parsers::pipeline::models::extracted::{ExtractedDocument, ExtractedMetadata};
 
 /// Service that extracts raw text and metadata from a PDF file.
 pub struct InspectorService;

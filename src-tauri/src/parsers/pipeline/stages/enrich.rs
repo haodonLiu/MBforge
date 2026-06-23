@@ -16,17 +16,17 @@ use async_trait::async_trait;
 
 use crate::parsers::chem::vlm_chem::ChemImageResult;
 use crate::parsers::doc_types::{DocumentMetadata, StructuredData};
-use crate::parsers::pipeline_v2::context::{PipelineContext, PipelineEvent};
-use crate::parsers::pipeline_v2::error::PipelineError;
-use crate::parsers::pipeline_v2::models::enriched::{DetectedMoleculeResult, EnrichedDocument};
-use crate::parsers::pipeline_v2::models::extracted::ExtractedDocument;
-use crate::parsers::pipeline_v2::models::segmented::SegmentedDocument;
-use crate::parsers::pipeline_v2::runner::{Stage, StageOutcome};
-use crate::parsers::pipeline_v2::services::captions::ImageCaptionService;
-use crate::parsers::pipeline_v2::services::chem_validate::ChemValidator;
-use crate::parsers::pipeline_v2::services::merge::StructuredDataMerger;
-use crate::parsers::pipeline_v2::services::molecules::MoleculeService;
-use crate::parsers::pipeline_v2::services::section_processor::SectionProcessor;
+use crate::parsers::pipeline::context::{PipelineContext, PipelineEvent};
+use crate::parsers::pipeline::error::PipelineError;
+use crate::parsers::pipeline::models::enriched::{DetectedMoleculeResult, EnrichedDocument};
+use crate::parsers::pipeline::models::extracted::ExtractedDocument;
+use crate::parsers::pipeline::models::segmented::SegmentedDocument;
+use crate::parsers::pipeline::runner::{Stage, StageOutcome};
+use crate::parsers::pipeline::services::captions::ImageCaptionService;
+use crate::parsers::pipeline::services::chem_validate::ChemValidator;
+use crate::parsers::pipeline::services::merge::StructuredDataMerger;
+use crate::parsers::pipeline::services::molecules::MoleculeService;
+use crate::parsers::pipeline::services::section_processor::SectionProcessor;
 
 /// Pipeline stage that enriches extracted and segmented documents with
 /// structured chemical data, molecule detections and image captions.
@@ -216,9 +216,9 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::parsers::pipeline_v2::context::PipelineContext;
-    use crate::parsers::pipeline_v2::models::extracted::{ExtractedDocument, ExtractedMetadata};
-    use crate::parsers::pipeline_v2::models::segmented::SegmentedDocument;
+    use crate::parsers::pipeline::context::PipelineContext;
+    use crate::parsers::pipeline::models::extracted::{ExtractedDocument, ExtractedMetadata};
+    use crate::parsers::pipeline::models::segmented::SegmentedDocument;
 
     #[tokio::test]
     async fn test_enrich_stage_empty_sections() {

@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use crate::parsers::doc_types::StructuredData;
-use crate::parsers::pipeline_v2::models::segmented::SectionChunk;
+use crate::parsers::pipeline::models::segmented::SectionChunk;
 
 /// A document after the enrichment stage.
 #[derive(Debug, Clone)]

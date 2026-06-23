@@ -12,10 +12,10 @@ use async_trait::async_trait;
 use crate::core::config::settings::AppConfig;
 use crate::core::document::knowledge_base::KnowledgeBase;
 use crate::core::types::SectionChunk;
-use crate::parsers::pipeline_v2::context::{PipelineContext, PipelineEvent};
-use crate::parsers::pipeline_v2::error::{IndexError, PipelineError};
-use crate::parsers::pipeline_v2::models::persisted::{IndexedDocument, PersistedDocument};
-use crate::parsers::pipeline_v2::runner::{Stage, StageOutcome};
+use crate::parsers::pipeline::context::{PipelineContext, PipelineEvent};
+use crate::parsers::pipeline::error::{IndexError, PipelineError};
+use crate::parsers::pipeline::models::persisted::{IndexedDocument, PersistedDocument};
+use crate::parsers::pipeline::runner::{Stage, StageOutcome};
 
 /// Pipeline stage that indexes persisted document sections for search.
 pub struct IndexStage;
@@ -119,7 +119,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::parsers::pipeline_v2::context::PipelineContext;
+    use crate::parsers::pipeline::context::PipelineContext;
 
     #[tokio::test]
     async fn test_index_stage_requires_project_root() {

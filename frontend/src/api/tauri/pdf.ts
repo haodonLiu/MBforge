@@ -137,7 +137,7 @@ export async function processDocument(
   projectRoot?: string,
 ): Promise<void> {
   return invokeWithError(
-    () => invoke<void>('process_document', {
+    () => invoke<void>('process_document_v2', {
       path,
       userRequest: userRequest ?? '',
       projectRoot,

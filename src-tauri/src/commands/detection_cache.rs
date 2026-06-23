@@ -27,6 +27,7 @@ use crate::core::document::detection_cache::{
 use crate::core::helpers::clean_path;
 use crate::core::helpers::sha256_file;
 use crate::core::project::project::Project;
+use crate::parsers::pipeline::services::quick_moldet::{quick_scan_pdf, QuickMoldetDocResult};
 
 // ---------------------------------------------------------------------------
 // In-memory PDF hash LRU — avoid re-hashing unchanged files
@@ -690,7 +691,7 @@ pub struct BatchQuickMoldetRequest {
 /// 批量快速 MoldDet 扫描结果。
 #[derive(Debug, Serialize)]
 pub struct BatchQuickMoldetResponse {
-    pub results: Vec<crate::parsers::pipeline::legacy::QuickMoldetDocResult>,
+    pub results: Vec<QuickMoldetDocResult>,
     pub processed: usize,
     pub total: usize,
     pub errors: Vec<String>,
@@ -706,7 +707,6 @@ pub async fn batch_quick_moldet_scan(
     request: BatchQuickMoldetRequest,
 ) -> Result<BatchQuickMoldetResponse, String> {
     use crate::core::project::project::Project;
-    use crate::parsers::pipeline::legacy::quick_moldet_scan_pdf;
 
     let project_root = clean_path(&request.project_root);
     let root_path = std::path::PathBuf::from(&project_root);
@@ -735,11 +735,11 @@ pub async fn batch_quick_moldet_scan(
     }
 
     let total = pdf_entries.len();
-    let mut results: Vec<crate::parsers::pipeline::legacy::QuickMoldetDocResult> = Vec::new();
+    let mut results: Vec<QuickMoldetDocResult> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
 
     for (doc_id, abs_path) in pdf_entries {
-        match quick_moldet_scan_pdf(&abs_path, &root_path, &sidecar, &doc_id, batch_size).await {
+        match quick_scan_pdf(&abs_path, &root_path, &sidecar, &doc_id, batch_size).await {
             Ok(mut result) => {
                 let pages = result.pages_with_molecules.clone();
                 let status = if pages.is_empty() {

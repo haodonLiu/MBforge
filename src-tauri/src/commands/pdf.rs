@@ -1,11 +1,27 @@
 #![allow(dead_code)]
 // PDF inspection commands — Task 2: classify_pdf
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use serde::Serialize;
 
+use crate::core::document::ingest_queue::{IngestQueue, IngestTask, QueueStats};
+use crate::core::helpers::{clean_path, save_json};
+use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
+use crate::core::project::document_project::DocumentProject;
+use crate::core::project::project::Project;
+use crate::parsers::chem::chem_validate::separate_esmiles_layers;
 use crate::parsers::doc_types::{ImageRef as DocImageRef, OcrBlock as DocOcrBlock};
+use crate::parsers::pipeline::context::PipelineContext;
+use crate::parsers::pipeline::models::source::SourceInput;
+use crate::parsers::pipeline::runner::Stage;
+use crate::parsers::pipeline::services::molecules::MoleculeService;
+use crate::parsers::pipeline::services::ocr::OcrService;
+use crate::parsers::pipeline::services::ocr_layout::get_ocr_layout;
+use crate::parsers::pipeline::services::source::SourceResolver;
+use crate::parsers::pipeline::stages::extract::ExtractStage;
+use crate::parsers::pipeline::writer::markdown_augment;
 
 /// Classification result returned to the frontend via Tauri IPC.
 ///
@@ -93,10 +109,6 @@ pub fn classify_pdf(path: String) -> Result<PdfClassification, String> {
 /// 4. 更新 DocumentProject / Project index 的 `inspector_status` 与 `ocr_status`。
 #[tauri::command]
 pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassification, String> {
-    use crate::core::helpers::{clean_path, save_json};
-    use crate::core::project::document_project::DocumentProject;
-    use crate::core::project::project::Project;
-
     let root = std::path::PathBuf::from(clean_path(&project_root));
 
     let project =
@@ -138,9 +150,23 @@ pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassifica
     });
     if let Some(mut dp) = DocumentProject::load(&root, &doc_id) {
         let paths = dp.paths();
-        let _ = std::fs::create_dir_all(&paths.cache_dir);
+        if let Err(e) = std::fs::create_dir_all(&paths.cache_dir) {
+            log::warn!(
+                "Failed to create cache dir {} for doc {}: {}",
+                paths.cache_dir.display(),
+                doc_id,
+                e
+            );
+        }
         let inspector_path = paths.cache_dir.join("inspector.json");
-        let _ = save_json(&inspector_path, &inspector_json);
+        if let Err(e) = save_json(&inspector_path, &inspector_json) {
+            log::warn!(
+                "Failed to save inspector json {} for doc {}: {}",
+                inspector_path.display(),
+                doc_id,
+                e
+            );
+        }
 
         // Update DocumentProject statuses.
         dp.set_inspector_status(pdf_type_str.to_lowercase().as_str());
@@ -200,10 +226,6 @@ pub async fn confirm_ocr(
     doc_id: String,
     confirm: bool,
 ) -> Result<serde_json::Value, String> {
-    use crate::core::helpers::clean_path;
-    use crate::core::project::document_project::DocumentProject;
-    use crate::core::project::project::Project;
-
     let root = std::path::PathBuf::from(clean_path(&project_root));
 
     let project =
@@ -382,17 +404,6 @@ pub async fn extract_pdf_workflow_cmd(
     path: String,
     output_dir: String,
 ) -> Result<WorkflowResult, String> {
-    use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
-    use crate::parsers::chem::chem_validate::separate_esmiles_layers;
-    use crate::parsers::pipeline::context::PipelineContext;
-    use crate::parsers::pipeline::models::source::SourceInput;
-    use crate::parsers::pipeline::runner::Stage;
-    use crate::parsers::pipeline::services::molecules::MoleculeService;
-    use crate::parsers::pipeline::services::ocr::OcrService;
-    use crate::parsers::pipeline::services::source::SourceResolver;
-    use crate::parsers::pipeline::stages::extract::ExtractStage;
-    use crate::parsers::pipeline::writer::markdown_augment;
-
     let sidecar_url = crate::core::constants::sidecar_url();
     let source_path = Path::new(&path);
     let pdf_name = source_path
@@ -762,10 +773,6 @@ pub async fn get_document_ocr_layout(
     path: String,
     doc_id: Option<String>,
 ) -> Result<OcrLayoutResult, String> {
-    use crate::parsers::pipeline::context::PipelineContext;
-    use crate::parsers::pipeline::services::ocr_layout::get_ocr_layout;
-    use crate::parsers::pipeline::services::source::SourceResolver;
-
     let source_path = Path::new(&path);
     let project_root = SourceResolver::new()
         .resolve_project_root(source_path, None)
@@ -787,12 +794,19 @@ pub async fn get_document_ocr_layout(
     if let Some(ref root) = project_root {
         // 1a. DocumentProject 新路径
         if let Some(ref id) = doc_id {
-            let new_cache = root
-                .join(crate::core::config::constants::PROJECTS_DIR)
-                .join(id)
-                .join("cache")
-                .join("ocr")
-                .join("ocr.json");
+            let root_str = root.to_string_lossy().to_string();
+            let new_cache_rel = std::path::PathBuf::from(
+                crate::core::config::constants::PROJECTS_DIR,
+            )
+            .join(id)
+            .join("cache")
+            .join("ocr")
+            .join("ocr.json");
+            let new_cache = crate::core::helpers::assert_within_root_allow_missing(
+                &root_str,
+                &new_cache_rel,
+            )
+            .map_err(|e| format!("Invalid OCR cache path: {}", e))?;
             if new_cache.exists() {
                 if let Ok(content) = std::fs::read_to_string(&new_cache) {
                     if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
@@ -831,10 +845,15 @@ pub async fn get_document_ocr_layout(
         }
 
         // 1b. 旧版按 hash 的缓存
-        let cache_dir = root
-            .join(crate::core::constants::PROJECT_META_DIR)
-            .join("ocr-cache");
-        let cache_file = cache_dir.join(format!("{}.json", file_hash));
+        let root_str = root.to_string_lossy().to_string();
+        let cache_file_rel = std::path::PathBuf::from(crate::core::constants::PROJECT_META_DIR)
+            .join("ocr-cache")
+            .join(format!("{}.json", file_hash));
+        let cache_file = crate::core::helpers::assert_within_root_allow_missing(
+            &root_str,
+            &cache_file_rel,
+        )
+        .map_err(|e| format!("Invalid OCR cache path: {}", e))?;
         if cache_file.exists() {
             if let Ok(content) = std::fs::read_to_string(&cache_file) {
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
@@ -915,7 +934,6 @@ fn into_doc_ocr_block_from_layout(
 /// 从 PDF 第一页拿页面高度（点单位）。仅用于 label 关联时的坐标转换。
 /// 拿不到时返回 842.0（A4 高度）。
 fn get_page_height(pdf_path: &str) -> Option<f64> {
-    use std::collections::HashSet;
     let mut first_page: HashSet<u32> = HashSet::new();
     first_page.insert(1);
     let items =
@@ -958,8 +976,6 @@ pub fn augment_markdown_with_images(
 }
 
 // ─── IngestQueue：PDF 异步处理队列 ────────────────────────────────
-
-use crate::core::document::ingest_queue::{IngestQueue, IngestStatus, IngestTask, QueueStats};
 
 fn open_ingest_queue(project_root: &str) -> Result<IngestQueue, String> {
     IngestQueue::new(std::path::Path::new(project_root))
@@ -1072,6 +1088,4 @@ pub async fn ingest_dequeue(project_root: String) -> Result<Option<IngestTask>, 
     q.dequeue().await.map_err(|e| e.to_string())
 }
 
-// re-export for handler!()
-#[allow(unused_imports)]
-use IngestStatus as _IngestStatusReexport;
+

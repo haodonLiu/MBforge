@@ -1,8 +1,11 @@
 #![allow(dead_code)]
 // PDF inspection commands — Task 2: classify_pdf
 
-use crate::parsers::doc_types::OcrBlock;
+use std::path::Path;
+
 use serde::Serialize;
+
+use crate::parsers::doc_types::{ImageRef as DocImageRef, OcrBlock as DocOcrBlock};
 
 /// Classification result returned to the frontend via Tauri IPC.
 ///
@@ -310,56 +313,227 @@ pub fn extract_text(path: String) -> Result<PdfExtraction, String> {
 // PDF 分子提取工作流
 // =========================================================================
 
+/// 工作流输出结果（与 legacy 保持同构，供前端消费）。
+#[derive(Debug, serde::Serialize)]
+pub struct WorkflowResult {
+    /// 输出目录
+    pub output_dir: String,
+    /// 文本文件路径
+    pub text_path: String,
+    /// manifest.json 路径
+    pub manifest_path: String,
+    /// 提取结果（文本、页数、解析器、图片引用）
+    pub classify: ClassifyResult,
+    /// 检测到的分子列表
+    pub molecules: Vec<crate::parsers::chem::vlm_chem::DetectedMolecule>,
+}
+
+/// 分类提取结果（与 legacy 同构）。
+#[derive(Debug, serde::Serialize)]
+pub struct ClassifyResult {
+    pub text: String,
+    pub page_count: usize,
+    pub parser: String,
+    pub images: Vec<DocImageRef>,
+    pub ocr_blocks: Vec<DocOcrBlock>,
+}
+
+/// 单个分子的元数据（写入 manifest.json）。
+#[derive(Debug, serde::Serialize)]
+struct MoleculeEntry {
+    index: usize,
+    smiles: String,
+    esmiles: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    molcode: Option<String>,
+    name: String,
+    page: i32,
+    moldet_confidence: f64,
+    molscribe_confidence: f64,
+    image_file: String,
+}
+
+/// manifest.json 结构
+#[derive(Debug, serde::Serialize)]
+struct Manifest {
+    source: String,
+    parser: String,
+    page_count: usize,
+    text_file: String,
+    molecules: Vec<MoleculeEntry>,
+}
+
 /// Tauri 命令：完整的 PDF 分子提取工作流。
 ///
 /// 输入 PDF → 提取文本 + 检测分子图片 + 识别 SMILES → 输出到指定目录 + 写入 SQLite。
 ///
-/// 输出结构（写入项目根目录下的规范位置，不再使用 `output_dir`）：
+/// 输出结构（写入项目根目录下的规范位置，不再使用 `output_dir`）:
 /// ```text
-/// <project_root>/
-///   reports/
-///     <pdf_name>/text.md
-///     figures/<pdf_name>/...
-///   molecules/
-///     <pdf_name>/manifest.json
-///     <pdf_name>/page_*_mol_*.png
+/// <output_dir>/
+///   <pdf_name>/text.md
+///   <pdf_name>/molecules/manifest.json
+///   <pdf_name>/molecules/<pdf_name>/page_*_mol_*.png
 /// ```
 ///
-/// `output_dir` 仍作为入参保留（向后兼容），但只有当它能解析为
-/// 项目根目录时才会被使用；否则我们从 `path` 推导项目根。
+/// `output_dir` 仍作为入参保留（向后兼容）。管线 v2 负责文本提取与分子识别；
+/// 本命令仅把 v2 产物整理成前端期望的 `WorkflowResult` 结构。
 #[tauri::command]
 pub async fn extract_pdf_workflow_cmd(
     path: String,
     output_dir: String,
-) -> Result<crate::parsers::pipeline::legacy::WorkflowResult, String> {
+) -> Result<WorkflowResult, String> {
     use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
     use crate::parsers::chem::chem_validate::separate_esmiles_layers;
+    use crate::parsers::pipeline::context::PipelineContext;
+    use crate::parsers::pipeline::models::source::SourceInput;
+    use crate::parsers::pipeline::runner::Stage;
+    use crate::parsers::pipeline::services::molecules::MoleculeService;
+    use crate::parsers::pipeline::services::ocr::OcrService;
+    use crate::parsers::pipeline::services::source::SourceResolver;
+    use crate::parsers::pipeline::stages::extract::ExtractStage;
+    use crate::parsers::pipeline::writer::markdown_augment;
 
     let sidecar_url = crate::core::constants::sidecar_url();
-    let result =
-        crate::parsers::pipeline::legacy::extract_pdf_workflow(&path, &output_dir, &sidecar_url)
-            .await?;
-
-    // 将检测到的分子写入 SQLite（molecules + molecule_images）
-    let filename = std::path::Path::new(&path)
-        .file_name()
+    let source_path = Path::new(&path);
+    let pdf_name = source_path
+        .file_stem()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown.pdf".to_string());
+        .unwrap_or_else(|| "output".to_string());
+    let base_dir = Path::new(&output_dir).join(&pdf_name);
+    let mol_dir = base_dir.join("molecules");
+    std::fs::create_dir_all(&mol_dir)
+        .map_err(|e| format!("Failed to create output dir: {}", e))?;
 
-    if !result.molecules.is_empty() {
-        // 优先从 path 推导项目根（canonical），output_dir 作为兜底
-        let project_root =
-            crate::parsers::pipeline::legacy::find_project_root(std::path::Path::new(&path), None)
-                .or_else(|| {
-                    crate::parsers::pipeline::legacy::find_project_root(
-                        std::path::Path::new(&output_dir),
-                        None,
-                    )
-                });
+    // 工作根目录：管线 v2 的提取/识别产物都落到 <output_dir>/<pdf_name>/ 下，
+    // 与 legacy extract_pdf_workflow 的 on-disk 布局保持一致。
+    let work_root = base_dir.clone();
 
-        if let Some(root) = project_root {
-            if let Ok(db) = MoleculeDatabase::open(&root) {
-                // 文本行缓存：同一页只解析一次 PDF
+    // 真正的项目根（用于 SQLite 分子库），优先从 PDF 路径推导，其次 output_dir。
+    let project_root = SourceResolver::new()
+        .resolve_project_root(source_path, None)
+        .ok()
+        .or_else(|| {
+            let out = Path::new(&output_dir);
+            if out.is_dir() {
+                Some(out.to_path_buf())
+            } else {
+                None
+            }
+        });
+
+    log::info!(
+        "[workflow] Starting v2 extraction: {} → {}",
+        path,
+        base_dir.display()
+    );
+
+    // Stage 1: 文本提取 + 分类（v2 ExtractStage）
+    let ctx = PipelineContext::new(source_path, "").with_project_root(&work_root);
+    let ocr = OcrService::new(crate::parsers::pipeline::services::ocr::default_backends());
+    let extract_stage = ExtractStage::new(ocr);
+    let extracted = extract_stage
+        .run(SourceInput::new(source_path).with_project_root(&work_root), &ctx)
+        .await
+        .map_err(|e| format!("Extract stage failed: {}", e))?
+        .output;
+
+    // 把 v2 模型类型转成 doc_types 类型以复用 markdown_augment。
+    let images_doc: Vec<DocImageRef> = extracted.images.iter().cloned().map(into_doc_image_ref).collect();
+    let ocr_blocks_doc: Vec<DocOcrBlock> = extracted
+        .ocr_blocks
+        .iter()
+        .cloned()
+        .map(into_doc_ocr_block)
+        .collect();
+
+    let augmented_text = markdown_augment::augment_markdown_with_images(
+        &extracted.raw_text,
+        &images_doc,
+        Some(&ocr_blocks_doc),
+    );
+
+    let text_path = base_dir.join("text.md");
+    std::fs::write(&text_path, &augmented_text)
+        .map_err(|e| format!("Failed to write text.md: {}", e))?;
+
+    log::info!(
+        "[workflow] Text extracted: {} pages, {} chars, parser={}",
+        extracted.page_count,
+        extracted.raw_text.len(),
+        extracted.parser
+    );
+
+    // Stage 2: 分子图像检测 + 识别（v2 MoleculeService）
+    let detected = if let Some(ref root) = project_root {
+        let mol_service = MoleculeService::new(&sidecar_url);
+        mol_service
+            .extract(&path, &extracted, root)
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!("[workflow] Molecule extraction failed: {}", e);
+                Vec::new()
+            })
+    } else {
+        Vec::new()
+    };
+
+    let legacy_molecules: Vec<crate::parsers::chem::vlm_chem::DetectedMolecule> = detected
+        .iter()
+        .map(into_legacy_molecule)
+        .collect();
+
+    log::info!("[workflow] Detected {} molecules", legacy_molecules.len());
+
+    // Stage 3: 生成 manifest.json
+    let molecules: Vec<MoleculeEntry> = legacy_molecules
+        .iter()
+        .enumerate()
+        .map(|(i, mol)| {
+            let image_file = Path::new(&mol.crop_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| format!("page_{:04}_mol_{:03}.png", mol.page, i));
+            let (smiles, esmiles_opt, _tags) = separate_esmiles_layers(&mol.esmiles);
+            let mol_name = format!("IMG-{}-P{}", pdf_name, mol.page);
+            let molcode = esmiles_opt
+                .as_deref()
+                .unwrap_or(&smiles)
+                .trim()
+                .is_empty()
+                .then(|| None)
+                .unwrap_or_else(|| esmiles_to_molecode_opt(esmiles_opt.as_deref().unwrap_or(&smiles), &mol_name));
+            MoleculeEntry {
+                index: i,
+                smiles,
+                esmiles: esmiles_opt,
+                molcode,
+                name: mol_name,
+                page: mol.page,
+                moldet_confidence: mol.moldet_conf,
+                molscribe_confidence: mol.confidence,
+                image_file,
+            }
+        })
+        .collect();
+
+    let manifest = Manifest {
+        source: pdf_name.clone(),
+        parser: extracted.parser.clone(),
+        page_count: extracted.page_count,
+        text_file: "text.md".to_string(),
+        molecules,
+    };
+
+    let manifest_path = mol_dir.join("manifest.json");
+    let manifest_json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
+    std::fs::write(&manifest_path, manifest_json)
+        .map_err(|e| format!("Failed to write manifest.json: {}", e))?;
+
+    // Stage 4: 将检测到的分子写入 SQLite（molecules + molecule_images）
+    if !legacy_molecules.is_empty() {
+        if let Some(ref root) = project_root {
+            if let Ok(db) = MoleculeDatabase::open(root) {
                 let mut lines_cache: std::collections::HashMap<
                     i32,
                     Vec<crate::parsers::chem::label_assoc::TextLine>,
@@ -367,12 +541,11 @@ pub async fn extract_pdf_workflow_cmd(
                 let page_h_pts = get_page_height(&path).unwrap_or(842.0);
 
                 let mut saved = 0usize;
-                for (idx, mol) in result.molecules.iter().enumerate() {
+                for (idx, mol) in legacy_molecules.iter().enumerate() {
                     let (clean_smiles, esmiles_opt, semantic_tags) =
                         separate_esmiles_layers(&mol.esmiles);
 
-                    // ---- label 关联（在 bbox 上方找 "化合物 26A" / "实施例 5" 等）----
-                    let page_num = (mol.page as i32).max(0);
+                    let page_num = (mol.page).max(0);
                     let lines = lines_cache.entry(page_num).or_insert_with(|| {
                         match crate::parsers::chem::label_assoc::extract_page_text_lines(
                             &path,
@@ -407,7 +580,7 @@ pub async fn extract_pdf_workflow_cmd(
                     };
                     let resolved_name = match &label_match {
                         Some(m) => m.label.clone(),
-                        None => format!("IMG-{}-P{:03}-{:03}", filename, mol.page, idx),
+                        None => format!("IMG-{}-P{:03}-{:03}", pdf_name, mol.page, idx),
                     };
                     let mut properties = serde_json::json!({});
                     if let Some(m) = &label_match {
@@ -423,7 +596,7 @@ pub async fn extract_pdf_workflow_cmd(
                         esmiles: esmiles_opt,
                         semantic_tags,
                         name: resolved_name,
-                        source_doc: filename.clone(),
+                        source_doc: pdf_name.clone(),
                         activity: None,
                         activity_type: String::new(),
                         units: "nM".to_string(),
@@ -467,20 +640,97 @@ pub async fn extract_pdf_workflow_cmd(
                 log::info!(
                     "[extract_workflow] Persisted {}/{} molecules to DB",
                     saved,
-                    result.molecules.len()
+                    legacy_molecules.len()
                 );
             }
         }
     }
 
-    // 注：[方案 1] PipelineOutput::from_filesystem 在 Rust 内部调用者
-    // 用了，但 Tauri command 保持 WorkflowResult 返回以兼容前端。
-    let _pipeline = crate::parsers::pipeline::legacy::PipelineOutput::from_filesystem(
-        std::path::PathBuf::from(&result.text_path),
-        std::path::PathBuf::from(&result.manifest_path),
+    let classify = ClassifyResult {
+        text: extracted.raw_text,
+        page_count: extracted.page_count,
+        parser: extracted.parser,
+        images: images_doc,
+        ocr_blocks: ocr_blocks_doc,
+    };
+
+    let result = WorkflowResult {
+        output_dir: base_dir.to_string_lossy().to_string(),
+        text_path: text_path.to_string_lossy().to_string(),
+        manifest_path: manifest_path.to_string_lossy().to_string(),
+        classify,
+        molecules: legacy_molecules,
+    };
+
+    log::info!(
+        "[workflow] Done: {} pages, {} molecules → {}",
+        result.classify.page_count,
         result.molecules.len(),
+        result.output_dir
     );
+
     Ok(result)
+}
+
+/// Best-effort wrapper around `esmiles_to_molecode` for the manifest
+/// generation path. Returns `None` on parse failure or empty input so
+/// the rest of `MoleculeEntry` is still useful.
+fn esmiles_to_molecode_opt(input: &str, name: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match crate::core::chem::chem::esmiles_to_molecode(trimmed, name) {
+        Ok(r) => Some(r.mermaid),
+        Err(e) => {
+            log::warn!(
+                "[molcode] esmiles_to_molecode failed for {} ({} chars): {}",
+                name,
+                trimmed.len(),
+                e
+            );
+            None
+        }
+    }
+}
+
+fn into_legacy_molecule(
+    m: &crate::parsers::pipeline::models::enriched::DetectedMoleculeResult,
+) -> crate::parsers::chem::vlm_chem::DetectedMolecule {
+    crate::parsers::chem::vlm_chem::DetectedMolecule {
+        esmiles: m.esmiles.clone(),
+        confidence: m.confidence,
+        moldet_conf: m.moldet_conf,
+        page: m.page as i32,
+        crop_path: m.crop_path.clone(),
+        bbox_pdf: m.bbox_pdf,
+    }
+}
+
+fn into_doc_image_ref(
+    img: crate::parsers::pipeline::models::extracted::ImageRef,
+) -> DocImageRef {
+    DocImageRef {
+        filename: img.filename,
+        page: img.page,
+        region: img.region,
+        description: img.description,
+        esmiles: img.esmiles,
+        rel_path: img.rel_path,
+    }
+}
+
+fn into_doc_ocr_block(
+    block: crate::parsers::pipeline::models::extracted::OcrBlock,
+) -> DocOcrBlock {
+    DocOcrBlock {
+        page: block.page,
+        block_type: block.block_type,
+        bbox: block.bbox,
+        content: block.content,
+        index: block.index,
+        angle: block.angle,
+    }
 }
 
 // =========================================================================
@@ -497,7 +747,7 @@ pub struct OcrLayoutResult {
     /// 总页数
     pub page_count: usize,
     /// OCR 布局块列表
-    pub blocks: Vec<OcrBlock>,
+    pub blocks: Vec<DocOcrBlock>,
     /// 是否来自缓存
     pub from_cache: bool,
 }
@@ -505,15 +755,21 @@ pub struct OcrLayoutResult {
 /// Tauri 命令：获取文档的 OCR 布局数据（用于可视化）。
 ///
 /// 优先从 OCR 缓存读取；如果没有缓存且文档需要 MinerU 解析，
-/// 则调用 classify_and_extract 获取（不写入缓存）。
+/// 则调用 v2 `get_ocr_layout` 获取（不写入缓存）。
 /// 若提供 doc_id，会在处理前后更新项目 index 中的 ocr_status。
 #[tauri::command]
 pub async fn get_document_ocr_layout(
     path: String,
     doc_id: Option<String>,
 ) -> Result<OcrLayoutResult, String> {
-    let source_path = std::path::Path::new(&path);
-    let project_root = crate::parsers::pipeline::legacy::find_project_root(source_path, None);
+    use crate::parsers::pipeline::context::PipelineContext;
+    use crate::parsers::pipeline::services::ocr_layout::get_ocr_layout;
+    use crate::parsers::pipeline::services::source::SourceResolver;
+
+    let source_path = Path::new(&path);
+    let project_root = SourceResolver::new()
+        .resolve_project_root(source_path, None)
+        .ok();
     let file_hash = crate::core::helpers::sha256_file(source_path).unwrap_or_default();
 
     // 辅助：更新 OCR 状态
@@ -545,7 +801,7 @@ pub async fn get_document_ocr_layout(
                             .as_u64()
                             .map(|n| n as usize)
                             .unwrap_or_else(|| text.lines().count().max(1));
-                        let blocks: Vec<OcrBlock> = val["ocr_blocks"]
+                        let blocks: Vec<DocOcrBlock> = val["ocr_blocks"]
                             .as_array()
                             .map(|arr| {
                                 arr.iter()
@@ -584,7 +840,7 @@ pub async fn get_document_ocr_layout(
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
                     let text = val["text"].as_str().unwrap_or("").to_string();
                     let page_count = text.lines().count().max(1);
-                    let blocks: Vec<OcrBlock> = val["ocr_blocks"]
+                    let blocks: Vec<DocOcrBlock> = val["ocr_blocks"]
                         .as_array()
                         .map(|arr| {
                             arr.iter()
@@ -609,25 +865,30 @@ pub async fn get_document_ocr_layout(
         }
     }
 
-    // 2. 缓存未命中：调用 classify_and_extract 获取
+    // 2. 缓存未命中：调用 v2 OCR layout service 获取
     log::info!("OCR layout cache MISS for {}, running extraction...", path);
     update_status("processing");
 
-    let result = crate::parsers::pipeline::legacy::classify_and_extract(&path, true).await;
+    let ctx = match project_root {
+        Some(ref root) => PipelineContext::new(source_path, "").with_project_root(root),
+        None => PipelineContext::new(source_path, ""),
+    };
+    let result = get_ocr_layout(source_path, &ctx).await;
 
     match result {
-        Ok(classified) => {
-            let has_blocks = !classified.ocr_blocks.is_empty();
+        Ok(blocks) => {
+            let has_blocks = !blocks.is_empty();
             update_status(if has_blocks {
                 "completed"
             } else {
                 "not_processed"
             });
+            let page_count = blocks.iter().map(|b| b.page).max().unwrap_or(1);
             Ok(OcrLayoutResult {
                 path: path.clone(),
-                parser: classified.parser,
-                page_count: classified.page_count,
-                blocks: classified.ocr_blocks,
+                parser: "ocr_layout".to_string(),
+                page_count,
+                blocks: blocks.into_iter().map(into_doc_ocr_block_from_layout).collect(),
                 from_cache: false,
             })
         }
@@ -635,6 +896,19 @@ pub async fn get_document_ocr_layout(
             update_status("error");
             Err(e)
         }
+    }
+}
+
+fn into_doc_ocr_block_from_layout(
+    block: crate::parsers::pipeline::services::ocr_layout::OcrLayoutBlock,
+) -> DocOcrBlock {
+    DocOcrBlock {
+        page: block.page,
+        block_type: block.block_type,
+        bbox: block.bbox,
+        content: block.content,
+        index: block.index,
+        angle: block.angle,
     }
 }
 
@@ -673,10 +947,10 @@ fn get_page_height(pdf_path: &str) -> Option<f64> {
 #[tauri::command]
 pub fn augment_markdown_with_images(
     markdown: String,
-    images: Vec<crate::parsers::doc_types::ImageRef>,
-    ocr_blocks: Option<Vec<crate::parsers::doc_types::OcrBlock>>,
+    images: Vec<DocImageRef>,
+    ocr_blocks: Option<Vec<DocOcrBlock>>,
 ) -> String {
-    crate::parsers::pipeline::legacy::markdown_augment::augment_markdown_with_images(
+    crate::parsers::pipeline::writer::markdown_augment::augment_markdown_with_images(
         &markdown,
         &images,
         ocr_blocks.as_deref(),

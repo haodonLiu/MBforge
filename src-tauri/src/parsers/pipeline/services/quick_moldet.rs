@@ -116,7 +116,8 @@ pub async fn quick_scan_pdf(
     std::fs::create_dir_all(&tmp_dir)
         .map_err(|e| format!("Failed to create molecule dir: {}", e))?;
 
-    let pdf_hash = crate::core::helpers::sha256_file(source_path).unwrap_or_default();
+    let pdf_hash = crate::core::helpers::sha256_file(source_path)
+        .map_err(|e| format!("Failed to hash PDF: {}", e))?;
     let pdf_mtime = std::fs::metadata(source_path)
         .and_then(|m| m.modified())
         .ok()
@@ -135,7 +136,7 @@ pub async fn quick_scan_pdf(
             images.len(),
             path
         );
-        collect_scanned_page_images(&images, &resolved_root).await
+        collect_scanned_page_images(&images, &resolved_root).await?
     } else {
         log::info!(
             "[quick_scan] TextBased PDF: screenshot {} pages from {}",
@@ -154,7 +155,7 @@ pub async fn quick_scan_pdf(
         let batch = &page_images[batch_start..batch_end];
         let paths: Vec<&str> = batch
             .iter()
-            .map(|p| p.path.to_str().unwrap_or(""))
+            .filter_map(|p| p.path.to_str())
             .collect();
 
         match detect_batch(&paths, sidecar_url).await {
@@ -242,12 +243,12 @@ async fn extract_and_persist_images(
 async fn collect_scanned_page_images(
     images: &[ImageRef],
     project_root: &Path,
-) -> Vec<PageImage> {
+) -> Result<Vec<PageImage>, String> {
     let mut page_images: Vec<PageImage> = Vec::new();
 
     for img_ref in images.iter() {
         let img_path = if let Some(ref rp) = img_ref.rel_path {
-            Some(project_root.join(rp))
+            Some(crate::core::helpers::safe_join(project_root, rp)?)
         } else {
             None
         };
@@ -279,7 +280,7 @@ async fn collect_scanned_page_images(
         });
     }
 
-    page_images
+    Ok(page_images)
 }
 
 /// Render all pages of a text-based PDF to temporary PNG images.

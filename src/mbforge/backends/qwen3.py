@@ -89,13 +89,13 @@ class EmbedBackend(LazyBackend):
     _INSTRUCTION: str = EMBED_INSTRUCTION_RETRIEVAL
 
     @classmethod
-    def _load_impl(cls, device, mrl_dim, instruction, **_):
+    def _load_impl(cls, device, mrl_dim=None, instruction=None, **_):
         cls._DEVICE = device or cls._DEVICE
         cls._MRL_DIM = mrl_dim
         cls._INSTRUCTION = instruction or EMBED_INSTRUCTION_RETRIEVAL
         path = _check_local_path("Qwen3-Embedding", DEFAULT_EMBED_MODEL)
         logger.info("Loading Qwen3-Embedding: %s (device=%s)", path, cls._DEVICE)
-        model = SentenceTransformer(path, device=cls._DEVICE, trust_remote_code=True)
+        model = SentenceTransformer(str(path), device=cls._DEVICE, trust_remote_code=True)
         full_dim = model.get_embedding_dimension()
         cls._DIM = cls._MRL_DIM if (cls._MRL_DIM and full_dim > cls._MRL_DIM) else full_dim
         logger.info("Model loaded. Full dim=%d, output dim=%d", full_dim, cls._DIM)
@@ -144,7 +144,7 @@ class RerankBackend(LazyBackend):
     _TOKEN_FALSE_ID: int | None = None
 
     @classmethod
-    def _load_impl(cls, device, max_length, **_):
+    def _load_impl(cls, device, max_length=8192, **_):
         cls._DEVICE = device or cls._DEVICE
         cls._MAX_LENGTH = max_length
         path = _check_local_path("Qwen3-Reranker", DEFAULT_RERANK_MODEL)

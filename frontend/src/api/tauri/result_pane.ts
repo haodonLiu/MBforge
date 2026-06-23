@@ -92,3 +92,123 @@ export async function getPageParseResult(params: {
     pageHPts: params.pageHPts,
   })
 }
+
+// ---------------------------------------------------------------------------
+// Coref 持久化（molecule ↔ label 配对，KB 存储）
+// ---------------------------------------------------------------------------
+
+/** 图内 OCR 检出的 label */
+export interface FigureLabel {
+  id: number
+  doc_id: string
+  page: number
+  /** 归一化 bbox [x1, y1, x2, y2] in image coords (0-1) */
+  label_bbox: [number, number, number, number]
+  label_text: string
+  ocr_conf: number
+  image_path: string | null
+}
+
+/** 分子-标识符配对预测 */
+export interface CorefPrediction {
+  id: number
+  doc_id: string
+  page: number
+  mol_smiles: string | null
+  mol_bbox: [number, number, number, number] | null
+  mol_conf: number | null
+  label_id: number | null
+  label_text: string | null
+  label_bbox: [number, number, number, number] | null
+  confidence: number
+  /** 'geometric' | 'llm' | 'manual' */
+  source: string
+  is_confirmed: boolean
+}
+
+/** 确保 (doc_id, page) 的 coref 标注存在（懒迁移入口） */
+export interface EnsureCorefResult {
+  doc_id: string
+  page: number
+  already_existed: boolean
+  labels_written: number
+  predictions_written: number
+  error: string | null
+}
+
+/** 查 (doc, page) 所有 label 标注 */
+export async function getFigureLabels(
+  projectRoot: string,
+  docId: string,
+  page: number,
+): Promise<FigureLabel[]> {
+  return invoke<FigureLabel[]>('get_figure_labels', {
+    projectRoot,
+    docId,
+    page,
+  })
+}
+
+/** 查 (doc, page) 所有 coref 配对预测 */
+export async function getCorefPredictions(
+  projectRoot: string,
+  docId: string,
+  page: number,
+): Promise<CorefPrediction[]> {
+  return invoke<CorefPrediction[]>('get_coref_predictions', {
+    projectRoot,
+    docId,
+    page,
+  })
+}
+
+/** 确保 (doc, page) 的 coref 标注存在（懒迁移） */
+export async function ensureCorefForImage(
+  projectRoot: string,
+  docId: string,
+  page: number,
+  imagePath: string,
+): Promise<EnsureCorefResult> {
+  return invoke<EnsureCorefResult>('ensure_coref_for_image', {
+    projectRoot,
+    docId,
+    page,
+    imagePath,
+  })
+}
+
+/** 标记某 coref 预测为人工确认（或撤销） */
+export async function confirmCorefPrediction(
+  projectRoot: string,
+  predictionId: number,
+  isConfirmed: boolean,
+): Promise<void> {
+  await invoke('confirm_coref_prediction', {
+    projectRoot,
+    predictionId,
+    isConfirmed,
+  })
+}
+
+/** 人工重选 coref pair：删旧 + 写新，返回新 id */
+export async function updateCorefPair(
+  projectRoot: string,
+  docId: string,
+  page: number,
+  oldPredictionId: number | null,
+  molImageId: number | null,
+  molSmiles: string | null,
+  molBbox: [number, number, number, number] | null,
+  labelId: number,
+): Promise<number> {
+  return invoke<number>('update_coref_pair', {
+    projectRoot,
+    docId,
+    page,
+    oldPredictionId,
+    molImageId,
+    molSmiles,
+    molBbox,
+    labelId,
+  })
+}

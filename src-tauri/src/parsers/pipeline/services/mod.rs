@@ -20,6 +20,8 @@ pub mod molecule_store;
 pub mod molecules;
 /// OCR backend orchestration.
 pub mod ocr;
+/// Quick page-level MoldDet scan (bbox only).
+pub mod quick_moldet;
 /// Section LLM post-processing.
 pub mod section_processor;
 /// Source path and project root resolution.

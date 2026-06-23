@@ -10,32 +10,28 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 
+use crate::core::constants::{
+    EVT_INGEST_LOG, EVT_INGEST_PROGRESS, EVT_INGEST_QUEUE_UPDATE, EVT_INGEST_WORKER_HEARTBEAT,
+    EVT_OCR_API_MISSING,
+};
+use crate::core::document::ingest_queue::{IngestQueue, IngestTask};
+use crate::core::project::document_project::DocumentProject;
+use crate::core::project::project::Project;
+use crate::parsers::pdf::context::{PdfClassification, PdfInspectorContext};
+use crate::parsers::pipeline::{
+    classify_and_extract_from_context_with_path, quick_moldet_scan_pdf, ExtractProgressReporter,
+};
+use crate::parsers::pipeline_v2::{
+    context::PipelineContext, models::source::SourceInput, runner::run_pipeline,
+};
+
+const WORKER_HEARTBEAT_INTERVAL_SECS: u64 = 5;
+
 /// App state that holds the active ingest worker.
 #[derive(Default)]
 pub struct IngestWorkerState {
     pub worker: Mutex<Option<IngestWorker>>,
 }
-
-use crate::core::constants::{
-    EVT_INGEST_PROGRESS, EVT_INGEST_QUEUE_UPDATE, EVT_INGEST_WORKER_HEARTBEAT,
-    EVT_INGEST_EMBED, EVT_INGEST_LOG, EVT_OCR_API_MISSING,
-};
-use crate::core::document::ingest_queue::{IngestQueue, IngestTask};
-use crate::core::document::knowledge_base::get_or_init_kb;
-use crate::core::helpers::generate_uuid;
-use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
-use crate::core::project::document_project::DocumentProject;
-use crate::core::project::project::Project;
-use crate::parsers::chem::chem_validate::separate_esmiles_layers;
-use crate::parsers::doc_types::{ImageRef, OcrBlock};
-use crate::parsers::pdf::context::{PdfClassification, PdfInspectorContext};
-use crate::parsers::pipeline::{
-    classify_and_extract, classify_and_extract_from_context_with_path, extract_molecules_from_pdf,
-    quick_moldet_scan_pdf, ClassifyResult, ExtractProgressReporter,
-};
-use crate::parsers::structure::sections::{build_sections, extract_headings};
-
-const WORKER_HEARTBEAT_INTERVAL_SECS: u64 = 5;
 
 /// 后台 ingest worker。
 pub struct IngestWorker {
@@ -164,13 +160,15 @@ async fn worker_loop(
                 if let Some(id) = stage_hist_id {
                     let _ = queue.record_stage_end(id, stage_duration_secs, true).await;
                 }
-                let stage_dur_str = format!("{:.2}s", stage_duration_secs);
                 emit_log(
                     &app_handle,
                     &task.doc_id,
                     &task.stage,
                     "info",
-                    format!("{} �׶���� ({}), ��һ�׶�: {}", task.stage, stage_dur_str, next_stage),
+                    format!(
+                        "{} 阶段完成 ({}), 下一阶段: {}",
+                        task.stage, stage_dur_str, next_stage
+                    ),
                 );
                 // 阶段完成，切到下一阶段并重新置为 pending，让下一轮继续处理。
                 if let Err(e) = queue
@@ -207,7 +205,7 @@ async fn worker_loop(
                     &task.doc_id,
                     &task.stage,
                     "error",
-                    format!("{} �׶�ʧ�� ({}): {}", task.stage, stage_dur_str, e),
+                    format!("{} 阶段失败 ({}): {}", task.stage, stage_dur_str, e),
                 );
                 if let Err(inner) = queue.mark_failed(&task.id, e.clone()).await {
                     log::error!("IngestWorker: mark_failed failed: {}", inner);
@@ -359,7 +357,11 @@ async fn try_load_cached_context(
     let page_count = cached["page_count"].as_u64().unwrap_or(0) as usize;
     let pages_needing_ocr: Vec<usize> = cached["pages_needing_ocr"]
         .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|n| n as usize)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_u64().map(|n| n as usize))
+                .collect()
+        })
         .unwrap_or_default();
 
     Some(PdfInspectorContext::from_cached(
@@ -429,11 +431,17 @@ async fn process_inspector(
 
         // Persist markdown so later stages can reuse the context without reloading the PDF.
         if let Err(e) = std::fs::create_dir_all(&paths.pages_cache_dir) {
-            log::warn!("IngestWorker: failed to create pages cache directory: {}", e);
+            log::warn!(
+                "IngestWorker: failed to create pages cache directory: {}",
+                e
+            );
         }
         let text_path = paths.pages_cache_dir.join("text.md");
         if let Err(e) = std::fs::write(&text_path, &ctx.markdown) {
-            log::warn!("IngestWorker: failed to write text.md in inspector stage: {}", e);
+            log::warn!(
+                "IngestWorker: failed to write text.md in inspector stage: {}",
+                e
+            );
         }
 
         dp.set_inspector_status(pdf_type_str.to_lowercase().as_str());
@@ -536,9 +544,10 @@ async fn process_text_extract(
     );
 
     let ctx = load_cached_or_build_context(project_root, task).await?;
-    let classified = classify_and_extract_from_context_with_path(&ctx, &task.file_path, false, None)
-        .await
-        .map_err(|e| format!("text extraction failed: {}", e))?;
+    let classified =
+        classify_and_extract_from_context_with_path(&ctx, &task.file_path, false, None)
+            .await
+            .map_err(|e| format!("text extraction failed: {}", e))?;
 
     // 保存文本到 cache/pages/text.md。
     if let Some(dp) = DocumentProject::load(project_root, &task.doc_id) {
@@ -631,8 +640,8 @@ async fn process_ocr(
     // user via modal before extraction logs and silently skips. Only
     // emit when the PDF actually needs OCR (scanned) — text-based PDFs are
     // handled by pdf_inspector without any OCR backend.
-    let is_scanned = (ctx.markdown.len() < 100 && ctx.page_count > 0)
-        || !ctx.pages_needing_ocr.is_empty();
+    let is_scanned =
+        (ctx.markdown.len() < 100 && ctx.page_count > 0) || !ctx.pages_needing_ocr.is_empty();
 
     if is_scanned {
         emit_log(
@@ -646,12 +655,23 @@ async fn process_ocr(
             .update_progress(&task.id, &task.stage, 20.0, 0, 0, "scanned PDF detected")
             .await
             .map_err(|e| format!("update progress failed: {}", e))?;
-        emit_progress(app_handle, task, &task.stage, 20.0, 0, 0, "scanned PDF detected");
+        emit_progress(
+            app_handle,
+            task,
+            &task.stage,
+            20.0,
+            0,
+            0,
+            "scanned PDF detected",
+        );
 
         for backend in [
             ("mineru", crate::parsers::ocr::mineru::is_available()),
             ("uniparser", crate::parsers::ocr::uniparser::is_available()),
-            ("paddleocr-online", crate::parsers::ocr::paddle::online_is_available()),
+            (
+                "paddleocr-online",
+                crate::parsers::ocr::paddle::online_is_available(),
+            ),
         ] {
             if !backend.1 {
                 let payload = serde_json::json!({
@@ -683,21 +703,25 @@ async fn process_ocr(
         .update_progress(&task.id, &task.stage, 30.0, 0, 0, " invoking OCR backend")
         .await
         .map_err(|e| format!("update progress failed: {}", e))?;
-    emit_progress(app_handle, task, &task.stage, 30.0, 0, 0, " invoking OCR backend");
+    emit_progress(
+        app_handle,
+        task,
+        &task.stage,
+        30.0,
+        0,
+        0,
+        " invoking OCR backend",
+    );
 
     let reporter = IngestProgressReporter {
         app_handle,
         doc_id: &task.doc_id,
         stage: &task.stage,
     };
-    let classified = classify_and_extract_from_context_with_path(
-        &ctx,
-        &task.file_path,
-        true,
-        Some(&reporter),
-    )
-    .await
-    .map_err(|e| format!("OCR extraction failed: {}", e))?;
+    let classified =
+        classify_and_extract_from_context_with_path(&ctx, &task.file_path, true, Some(&reporter))
+            .await
+            .map_err(|e| format!("OCR extraction failed: {}", e))?;
 
     queue
         .update_progress(
@@ -724,7 +748,10 @@ async fn process_ocr(
         &task.doc_id,
         &task.stage,
         "info",
-        format!("OCR 结果已生成（parser={}，pages={}）", classified.parser, classified.page_count),
+        format!(
+            "OCR 结果已生成（parser={}，pages={}）",
+            classified.parser, classified.page_count
+        ),
     );
 
     // 保存 OCR 结果到 cache/ocr/ocr.json。
@@ -921,129 +948,30 @@ async fn process_index(
         "extracting for index",
     );
 
-    // 优先复用 OCR/text_extract 阶段已保存的 ocr.json；若不存在则现场提取。
-    // 这样扫描件在 index 阶段不需要再次调用 OCR 服务。
-    #[derive(serde::Deserialize)]
-    struct OcrCache {
-        text: String,
-        page_count: usize,
-        parser: String,
-        ocr_blocks: Vec<OcrBlock>,
-        #[serde(default)]
-        images: Vec<ImageRef>,
-    }
-
-    let classified: ClassifyResult =
-        if let Some(dp) = DocumentProject::load(project_root, &task.doc_id) {
-            let ocr_path = dp.paths().ocr_cache_dir.join("ocr.json");
-            if ocr_path.exists() {
-                if let Ok(content) = std::fs::read_to_string(&ocr_path) {
-                    if let Ok(cache) = serde_json::from_str::<OcrCache>(&content) {
-                        log::info!("IngestWorker: reusing OCR cache for {}", task.doc_id);
-                        ClassifyResult {
-                            text: cache.text,
-                            page_count: cache.page_count,
-                            parser: cache.parser,
-                            images: cache.images,
-                            ocr_blocks: cache.ocr_blocks,
-                        }
-                    } else {
-                        classify_and_extract(&task.file_path, false)
-                            .await
-                            .map_err(|e| format!("Index extraction failed: {}", e))?
-                    }
-                } else {
-                    classify_and_extract(&task.file_path, false)
-                        .await
-                        .map_err(|e| format!("Index extraction failed: {}", e))?
-                }
-            } else {
-                classify_and_extract(&task.file_path, false)
-                    .await
-                    .map_err(|e| format!("Index extraction failed: {}", e))?
-            }
-        } else {
-            classify_and_extract(&task.file_path, false)
-                .await
-                .map_err(|e| format!("Index extraction failed: {}", e))?
-        };
+    let input = SourceInput::new(&task.file_path).with_allow_ocr(true);
+    let mut ctx = PipelineContext::new(&task.file_path, "");
+    ctx = ctx.with_project_root(project_root);
 
     queue
-        .update_progress(&task.id, &task.stage, 40.0, 0, 0, "indexing text")
+        .update_progress(&task.id, &task.stage, 40.0, 0, 0, "running v2 pipeline")
         .await
         .map_err(|e| format!("update progress failed: {}", e))?;
-    emit_progress(app_handle, task, &task.stage, 40.0, 0, 0, "indexing text");
+    emit_progress(
+        app_handle,
+        task,
+        &task.stage,
+        40.0,
+        0,
+        0,
+        "running v2 pipeline",
+    );
 
-    let headings = extract_headings(&classified.text);
-    let sections = build_sections(&classified.text, &headings, None, 8000);
-
-    let root_str = project_root.to_string_lossy().to_string();
-    if let Ok(kb) = get_or_init_kb(&root_str) {
-        // 文件内容缓存
-        let sections_json = serde_json::to_string(&sections).unwrap_or_default();
-        let meta_json = serde_json::to_string(&serde_json::json!({
-            "parser": classified.parser,
-            "page_count": classified.page_count,
-            "images": classified.images,
-        }))
-        .unwrap_or_default();
-        if let Err(e) = kb.file_cache().put(
-            Path::new(&task.file_path),
-            &classified.text,
-            &sections_json,
-            &meta_json,
-        ) {
-            log::warn!("IngestWorker: failed to write file cache: {}", e);
-        }
-
-        // 向量/FTS 索引
-        // Track C: emit embed sub-progress — 入口提示 + 完成提示
-        let _ = app_handle.emit(
-            EVT_INGEST_EMBED,
-            serde_json::json!({
-                "doc_id": task.doc_id,
-                "action": "start",
-                "model": if kb.has_vector_search() { "embed" } else { "deterministic" },
-                "progress": 0.0,
-            }),
-        );
-        if let Err(e) = kb.index_document(&task.doc_id, &sections, &[]) {
-            let _ = app_handle.emit(
-                EVT_INGEST_EMBED,
-                serde_json::json!({
-                    "doc_id": task.doc_id,
-                    "action": "failed",
-                    "model": "embed",
-                    "progress": 0.0,
-                    "error": e.to_string(),
-                }),
-            );
-            return Err(format!("KB index failed: {}", e));
-        }
-        let _ = app_handle.emit(
-            EVT_INGEST_EMBED,
-            serde_json::json!({
-                "doc_id": task.doc_id,
-                "action": "done",
-                "model": if kb.has_vector_search() { "embed" } else { "deterministic" },
-                "progress": 1.0,
-            }),
-        );
-    } else {
-        log::warn!("IngestWorker: KB not available for {}", task.doc_id);
-        let _ = app_handle.emit(
-            EVT_INGEST_EMBED,
-            serde_json::json!({
-                "doc_id": task.doc_id,
-                "action": "skipped",
-                "model": "none",
-                "progress": 0.0,
-            }),
-        );
-    }
+    let indexed = run_pipeline(input, &ctx)
+        .await
+        .map_err(|e| format!("v2 pipeline failed: {}", e))?;
 
     queue
-        .update_progress(&task.id, &task.stage, 70.0, 0, 0, "extracting molecules")
+        .update_progress(&task.id, &task.stage, 70.0, 0, 0, "v2 pipeline complete")
         .await
         .map_err(|e| format!("update progress failed: {}", e))?;
     emit_progress(
@@ -1053,80 +981,8 @@ async fn process_index(
         70.0,
         0,
         0,
-        "extracting molecules",
+        "v2 pipeline complete",
     );
-
-    let sidecar_url = crate::core::constants::sidecar_url();
-    let detected =
-        extract_molecules_from_pdf(&task.file_path, &classified, &sidecar_url, project_root)
-            .await
-            .unwrap_or_else(|e| {
-                log::warn!(
-                    "IngestWorker: molecule extraction failed for {}: {}",
-                    task.doc_id,
-                    e
-                );
-                vec![]
-            });
-
-    if !detected.is_empty() {
-        if let Ok(db) = MoleculeDatabase::open(project_root) {
-            let mut saved = 0usize;
-            for mol in &detected {
-                let (clean_smiles, esmiles_opt, semantic_tags) =
-                    separate_esmiles_layers(&mol.esmiles);
-                let mol_id = generate_uuid();
-                let record = MoleculeRecord {
-                    mol_id: mol_id.clone(),
-                    smiles: clean_smiles,
-                    esmiles: esmiles_opt,
-                    semantic_tags,
-                    name: format!("IMG-{}-P{}", task.doc_id, mol.page),
-                    source_doc: task.doc_id.clone(),
-                    activity: None,
-                    activity_type: String::new(),
-                    units: "nM".to_string(),
-                    source_type: "patent_image".to_string(),
-                    status: "pending".to_string(),
-                    properties: serde_json::json!({}),
-                    labels: vec!["image_extracted".to_string()],
-                    notes: format!(
-                        "Auto-extracted from page {} via MolDet (conf={:.2}) + MolScribe (conf={:.2})",
-                        mol.page, mol.moldet_conf, mol.confidence
-                    ),
-                    created_at: None,
-                    related_image_paths: vec![mol.crop_path.clone()],
-                    vlm_verified_esmiles: Some(mol.esmiles.clone()),
-                    vlm_confidence: mol.confidence,
-                };
-                if let Err(e) = db.add_molecule(&record) {
-                    log::warn!("IngestWorker: failed to add molecule {}: {}", mol_id, e);
-                    continue;
-                }
-                let img = MoleculeImage {
-                    image_id: generate_uuid(),
-                    mol_id: mol_id.clone(),
-                    image_path: mol.crop_path.clone(),
-                    page: Some(mol.page as usize),
-                    vlm_esmiles: Some(mol.esmiles.clone()),
-                    vlm_confidence: mol.confidence,
-                    is_structure_diagram: true,
-                    created_at: None,
-                };
-                if let Err(e) = db.add_molecule_image(&img) {
-                    log::warn!("IngestWorker: failed to add molecule image: {}", e);
-                } else {
-                    saved += 1;
-                }
-            }
-            log::info!(
-                "IngestWorker: saved {}/{} molecules from {}",
-                saved,
-                detected.len(),
-                task.doc_id
-            );
-        }
-    }
 
     if let Some(mut dp) = DocumentProject::load(project_root, &task.doc_id) {
         dp.set_index_status("done");
@@ -1142,10 +998,9 @@ async fn process_index(
     emit_progress(app_handle, task, &task.stage, 100.0, 0, 0, "indexed");
 
     log::info!(
-        "IngestWorker: index done doc_id={} sections={} molecules={}",
+        "IngestWorker: index done doc_id={} indexed_sections={}",
         task.doc_id,
-        sections.len(),
-        detected.len()
+        indexed.indexed_sections,
     );
 
     Ok(StageResult::Done)

@@ -365,7 +365,9 @@ async fn process_inspector(
             "inspected_at": chrono::Utc::now().to_rfc3339(),
         });
         let inspector_path = paths.cache_dir.join("inspector.json");
-        let _ = crate::core::helpers::save_json(&inspector_path, &inspector_json);
+        if let Err(e) = crate::core::helpers::save_json(&inspector_path, &inspector_json) {
+            log::warn!("IngestWorker: failed to save inspector.json: {}", e);
+        }
 
         // Persist markdown so later stages can reuse the context without reloading the PDF.
         if let Err(e) = std::fs::create_dir_all(&paths.pages_cache_dir) {

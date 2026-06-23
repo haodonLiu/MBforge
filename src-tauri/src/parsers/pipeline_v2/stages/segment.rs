@@ -390,6 +390,14 @@ impl Stage<ExtractedDocument, SegmentedDocument> for SegmentStage {
             message: "extracting headings".into(),
         });
 
+        if input.raw_text.trim().is_empty() {
+            return Ok(StageOutcome::new(SegmentedDocument {
+                sections: Vec::new(),
+                document_tree: Vec::new(),
+                headings: Vec::new(),
+            }));
+        }
+
         let headings = extract_headings(&input.raw_text);
         let sections = build_sections(&input.raw_text, &headings, None, self.max_chars);
         let document_tree = build_tree(&sections);

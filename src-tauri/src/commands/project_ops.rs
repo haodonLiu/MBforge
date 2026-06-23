@@ -5,10 +5,8 @@ use std::path::PathBuf;
 use tauri::Manager;
 
 use crate::core::error::{AppError, ErrorCode};
-use crate::core::helpers::clean_path;
-use crate::parsers::pipeline::writer::output_status::{
-    output_status, IncompleteReason, OutputStatus,
-};
+use crate::core::helpers::{clean_path, LockResultExt};
+use crate::parsers::pipeline::writer::output_status::{output_status, IncompleteReason};
 
 /// 创建或打开项目（Tauri 命令）
 ///
@@ -384,7 +382,7 @@ fn start_or_restart_ingest_worker(app: &tauri::AppHandle, project_root: &std::pa
     use crate::core::document::ingest_worker::{IngestWorker, IngestWorkerState};
 
     if let Some(state) = app.try_state::<IngestWorkerState>() {
-        let mut guard = state.worker.lock().unwrap();
+        let mut guard = state.worker.lock().into_inner();
         if let Some(worker) = guard.take() {
             worker.stop();
         }

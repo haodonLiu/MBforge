@@ -194,9 +194,11 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         crate::core::project::resource_manager::models_cache_dir_info,
         crate::core::project::resource_manager::refresh_resolved_paths,
         // result_pane (PDF right-hand panel: coref chain + page parse)
+        result_pane::confirm_coref_prediction,
         result_pane::ensure_coref_for_image,
         result_pane::get_molecule_coref_chain,
         result_pane::get_page_parse_result,
+        result_pane::update_coref_pair,
         // extended settings (cache + recent projects)
         settings_extra::cache_size,
         settings_extra::cache_clear,

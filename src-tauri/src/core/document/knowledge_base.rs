@@ -752,6 +752,24 @@ impl KnowledgeBase {
         Ok(n)
     }
 
+    /// 删除指定 (doc_id, page, mol_smiles, label_text) 的单个配对
+    pub fn delete_predictions_by_pair(
+        &self,
+        doc_id: &str,
+        page: i64,
+        mol_smiles: &str,
+        label_text: &str,
+    ) -> AppResult<usize> {
+        let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
+        let n = conn.execute(
+            "DELETE FROM coref_predictions
+             WHERE doc_id = ?1 AND page = ?2
+               AND mol_smiles = ?3 AND label_text = ?4",
+            rusqlite::params![doc_id, page, mol_smiles, label_text],
+        )?;
+        Ok(n)
+    }
+
     /// 删除指定 doc 的所有 figure_labels + coref_predictions（文档级清除）
     pub fn delete_figure_annotations(&self, doc_id: &str) -> AppResult<()> {
         let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;

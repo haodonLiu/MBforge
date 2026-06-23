@@ -42,6 +42,80 @@ pub struct KbStats {
     pub total_sections: usize,
 }
 
+// ============================================================================
+// Coref 持久化（figure_labels + coref_predictions）
+// ============================================================================
+
+/// 图内 OCR 检出的 label 标注
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FigureLabel {
+    pub id: i64,
+    pub doc_id: String,
+    pub page: i64,
+    pub label_bbox: Vec<f64>, // [x1, y1, x2, y2] in image coords
+    pub label_text: String,
+    pub ocr_conf: f64,
+    pub image_path: Option<String>,
+}
+
+/// 分子-标识符配对预测
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CorefPrediction {
+    pub id: i64,
+    pub doc_id: String,
+    pub page: i64,
+    pub mol_smiles: Option<String>,
+    pub mol_bbox: Option<Vec<f64>>,
+    pub mol_conf: Option<f64>,
+    pub label_id: Option<i64>,
+    pub label_text: Option<String>,
+    pub label_bbox: Option<Vec<f64>>,
+    pub confidence: f64,
+    pub source: String, // 'geometric' | 'llm' | 'manual'
+    pub is_confirmed: bool,
+}
+
+/// 设置 figure_annotations 相关 schema（幂等）
+fn setup_figure_annotations_schema(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS figure_labels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_id TEXT NOT NULL,
+            page INTEGER NOT NULL,
+            label_bbox TEXT NOT NULL,
+            label_text TEXT NOT NULL,
+            ocr_conf REAL NOT NULL,
+            image_path TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(doc_id, page, label_bbox, label_text)
+        );
+        CREATE INDEX IF NOT EXISTS idx_figure_labels_doc ON figure_labels(doc_id, page);
+        CREATE INDEX IF NOT EXISTS idx_figure_labels_text ON figure_labels(label_text);
+
+        CREATE TABLE IF NOT EXISTS coref_predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_id TEXT NOT NULL,
+            page INTEGER NOT NULL,
+            mol_smiles TEXT,
+            mol_bbox TEXT,
+            mol_conf REAL,
+            label_id INTEGER,
+            label_text TEXT,
+            label_bbox TEXT,
+            confidence REAL NOT NULL,
+            source TEXT NOT NULL,
+            is_confirmed INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_coref_pred_doc ON coref_predictions(doc_id, page);
+        CREATE INDEX IF NOT EXISTS idx_coref_pred_label ON coref_predictions(label_text);
+        CREATE INDEX IF NOT EXISTS idx_coref_pred_smiles ON coref_predictions(mol_smiles);
+        CREATE INDEX IF NOT EXISTS idx_coref_pred_label_id ON coref_predictions(label_id);
+        CREATE INDEX IF NOT EXISTS idx_coref_pred_confirmed ON coref_predictions(is_confirmed);",
+    )
+}
+
 /// 知识库：SQLite（向量 + FTS5）+ 文件缓存
 pub struct KnowledgeBase {
     vector_store: SqliteVectorStore,
@@ -95,6 +169,7 @@ impl KnowledgeBase {
                     id, text
                 )",
             )?;
+            setup_figure_annotations_schema(&guard)?;
         }
 
         let tree_index = DocumentTreeIndex::new(project_root);
@@ -155,6 +230,7 @@ impl KnowledgeBase {
                     id, text
                 )",
             )?;
+            setup_figure_annotations_schema(&guard)?;
         }
 
         let tree_index = DocumentTreeIndex::new(project_root);
@@ -444,6 +520,250 @@ impl KnowledgeBase {
 
     pub fn file_cache(&self) -> &FileCache {
         &self.file_cache
+    }
+
+    // ========================================================================
+    // Coref 持久化 CRUD
+    // ========================================================================
+
+    /// 插入图内 label 标注（按 (doc_id, page, label_bbox, label_text) 去重）
+    pub fn insert_figure_labels(
+        &self,
+        doc_id: &str,
+        page: i64,
+        labels: &[(Vec<f64>, String, f64, Option<String>)], // (bbox, text, ocr_conf, image_path)
+    ) -> AppResult<usize> {
+        let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
+        let mut inserted = 0;
+        for (bbox, text, ocr_conf, image_path) in labels {
+            let bbox_json = serde_json::to_string(bbox).unwrap_or_else(|_| "[]".to_string());
+            let res = conn.execute(
+                "INSERT OR IGNORE INTO figure_labels
+                 (doc_id, page, label_bbox, label_text, ocr_conf, image_path)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    doc_id,
+                    page,
+                    bbox_json,
+                    text,
+                    ocr_conf,
+                    image_path
+                ],
+            )?;
+            if res > 0 {
+                inserted += 1;
+            }
+        }
+        Ok(inserted)
+    }
+
+    /// 插入/更新 coref 配对预测（按 (doc_id, page, label_id) 去重更新）
+    pub fn upsert_coref_predictions(
+        &self,
+        doc_id: &str,
+        page: i64,
+        predictions: &[CorefPrediction],
+    ) -> AppResult<usize> {
+        let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
+        let mut upserted = 0;
+        for p in predictions {
+            let mol_bbox_json = p
+                .mol_bbox
+                .as_ref()
+                .and_then(|b| serde_json::to_string(b).ok());
+            let label_bbox_json = p
+                .label_bbox
+                .as_ref()
+                .and_then(|b| serde_json::to_string(b).ok());
+            let is_confirmed_i = if p.is_confirmed { 1 } else { 0 };
+            // 用 (doc_id, page, mol_smiles, label_text) 作为唯一键 — 允许更新
+            // 同 mol+label 多次配对只保留最新
+            let res = conn.execute(
+                "INSERT INTO coref_predictions
+                 (doc_id, page, mol_smiles, mol_bbox, mol_conf, label_id,
+                  label_text, label_bbox, confidence, source, is_confirmed)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                 ON CONFLICT(doc_id, page, mol_smiles, label_text) DO UPDATE SET
+                  confidence = excluded.confidence,
+                  source = excluded.source,
+                  is_confirmed = excluded.is_confirmed,
+                  updated_at = CURRENT_TIMESTAMP",
+                rusqlite::params![
+                    doc_id,
+                    page,
+                    p.mol_smiles,
+                    mol_bbox_json,
+                    p.mol_conf,
+                    p.label_id,
+                    p.label_text,
+                    label_bbox_json,
+                    p.confidence,
+                    p.source,
+                    is_confirmed_i
+                ],
+            )?;
+            upserted += res;
+        }
+        Ok(upserted)
+    }
+
+    /// 查询指定 (doc_id, page) 的所有 label 标注
+    pub fn get_figure_labels(&self, doc_id: &str, page: i64) -> AppResult<Vec<FigureLabel>> {
+        let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare(
+            "SELECT id, doc_id, page, label_bbox, label_text, ocr_conf, image_path
+             FROM figure_labels
+             WHERE doc_id = ?1 AND page = ?2
+             ORDER BY id",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![doc_id, page], |row| {
+            let bbox_str: String = row.get(3)?;
+            let bbox: Vec<f64> = serde_json::from_str(&bbox_str).unwrap_or_default();
+            Ok(FigureLabel {
+                id: row.get(0)?,
+                doc_id: row.get(1)?,
+                page: row.get(2)?,
+                label_bbox: bbox,
+                label_text: row.get(4)?,
+                ocr_conf: row.get(5)?,
+                image_path: row.get(6)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// 查询指定 (doc_id, page) 的所有 coref 预测
+    pub fn get_coref_predictions(
+        &self,
+        doc_id: &str,
+        page: i64,
+    ) -> AppResult<Vec<CorefPrediction>> {
+        let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare(
+            "SELECT id, doc_id, page, mol_smiles, mol_bbox, mol_conf, label_id,
+                    label_text, label_bbox, confidence, source, is_confirmed
+             FROM coref_predictions
+             WHERE doc_id = ?1 AND page = ?2
+             ORDER BY confidence DESC, id",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![doc_id, page], |row| {
+            let mol_bbox_str: Option<String> = row.get(4)?;
+            let mol_bbox: Option<Vec<f64>> =
+                mol_bbox_str.and_then(|s| serde_json::from_str(&s).ok());
+            let label_bbox_str: Option<String> = row.get(8)?;
+            let label_bbox: Option<Vec<f64>> =
+                label_bbox_str.and_then(|s| serde_json::from_str(&s).ok());
+            let is_confirmed_i: i64 = row.get(11)?;
+            Ok(CorefPrediction {
+                id: row.get(0)?,
+                doc_id: row.get(1)?,
+                page: row.get(2)?,
+                mol_smiles: row.get(3)?,
+                mol_bbox,
+                mol_conf: row.get(5)?,
+                label_id: row.get(6)?,
+                label_text: row.get(7)?,
+                label_bbox,
+                confidence: row.get(9)?,
+                source: row.get(10)?,
+                is_confirmed: is_confirmed_i != 0,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// 按 label_text 找所有关联的 coref 预测（跨文档隔离：必须传 doc_id）
+    pub fn get_predictions_by_label(
+        &self,
+        doc_id: &str,
+        label_text: &str,
+    ) -> AppResult<Vec<CorefPrediction>> {
+        let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare(
+            "SELECT id, doc_id, page, mol_smiles, mol_bbox, mol_conf, label_id,
+                    label_text, label_bbox, confidence, source, is_confirmed
+             FROM coref_predictions
+             WHERE doc_id = ?1 AND label_text = ?2
+             ORDER BY confidence DESC, id",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![doc_id, label_text], |row| {
+            let mol_bbox_str: Option<String> = row.get(4)?;
+            let mol_bbox: Option<Vec<f64>> =
+                mol_bbox_str.and_then(|s| serde_json::from_str(&s).ok());
+            let label_bbox_str: Option<String> = row.get(8)?;
+            let label_bbox: Option<Vec<f64>> =
+                label_bbox_str.and_then(|s| serde_json::from_str(&s).ok());
+            let is_confirmed_i: i64 = row.get(11)?;
+            Ok(CorefPrediction {
+                id: row.get(0)?,
+                doc_id: row.get(1)?,
+                page: row.get(2)?,
+                mol_smiles: row.get(3)?,
+                mol_bbox,
+                mol_conf: row.get(5)?,
+                label_id: row.get(6)?,
+                label_text: row.get(7)?,
+                label_bbox,
+                confidence: row.get(9)?,
+                source: row.get(10)?,
+                is_confirmed: is_confirmed_i != 0,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// 标记某预测为人工确认（is_confirmed=1, source='manual'）
+    pub fn confirm_coref_prediction(
+        &self,
+        prediction_id: i64,
+        is_confirmed: bool,
+    ) -> AppResult<()> {
+        let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
+        let new_source = if is_confirmed { "manual" } else { "geometric" };
+        let v = if is_confirmed { 1 } else { 0 };
+        conn.execute(
+            "UPDATE coref_predictions
+             SET is_confirmed = ?1, source = ?2, updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?3",
+            rusqlite::params![v, new_source, prediction_id],
+        )?;
+        Ok(())
+    }
+
+    /// 删除指定 (doc_id, page) 的所有 predictions（重跑用）
+    pub fn delete_coref_predictions(&self, doc_id: &str, page: i64) -> AppResult<usize> {
+        let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
+        let n = conn.execute(
+            "DELETE FROM coref_predictions WHERE doc_id = ?1 AND page = ?2",
+            rusqlite::params![doc_id, page],
+        )?;
+        Ok(n)
+    }
+
+    /// 删除指定 doc 的所有 figure_labels + coref_predictions（文档级清除）
+    pub fn delete_figure_annotations(&self, doc_id: &str) -> AppResult<()> {
+        let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM figure_labels WHERE doc_id = ?1",
+            rusqlite::params![doc_id],
+        )?;
+        conn.execute(
+            "DELETE FROM coref_predictions WHERE doc_id = ?1",
+            rusqlite::params![doc_id],
+        )?;
+        Ok(())
     }
 }
 

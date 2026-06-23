@@ -694,6 +694,8 @@ pub async fn extract_pdf_workflow_cmd(
                                 vlm_confidence: mol.confidence,
                                 is_structure_diagram: true,
                                 created_at: None,
+                                bbox_in_image: None,
+                                moldet_conf: None,
                             };
                             if let Err(e) = db.add_molecule_image(&img) {
                                 log::warn!("[extract_workflow] Failed to add image: {}", e);

@@ -67,6 +67,11 @@ pub struct MoleculeImage {
     pub vlm_confidence: f64,
     pub is_structure_diagram: bool,
     pub created_at: Option<String>,
+    /// 分子 bbox 在 figure 图像中的坐标 (JSON `[x1, y1, x2, y2]`)
+    /// 用于 coref 配对和预览时定位
+    pub bbox_in_image: Option<Vec<f64>>,
+    /// moldet 检测置信度（用于 coref confidence 计算）
+    pub moldet_conf: Option<f64>,
 }
 
 impl MoleculeImage {
@@ -80,6 +85,8 @@ impl MoleculeImage {
             vlm_confidence: 0.0,
             is_structure_diagram: true,
             created_at: None,
+            bbox_in_image: None,
+            moldet_conf: None,
         }
     }
 }
@@ -438,6 +445,8 @@ impl MoleculeDatabase {
                 vlm_confidence REAL,
                 is_structure_diagram INTEGER DEFAULT 1,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                bbox_in_image TEXT,
+                moldet_conf REAL,
                 FOREIGN KEY (mol_id) REFERENCES molecules(mol_id)
             );
             CREATE INDEX IF NOT EXISTS idx_molimg_mol_id ON molecule_images(mol_id);
@@ -446,6 +455,37 @@ impl MoleculeDatabase {
             )
             .map_err(|e| format!("Failed to create FTS5 table: {}", e))?;
 
+        // 迁移：旧库缺 bbox_in_image / moldet_col 列时添加
+        Self::migrate_v1_to_v2(&self.conn).ok();
+
+        Ok(())
+    }
+
+    /// Migrate v1 → v2: 给 molecule_images 加 bbox_in_image / moldet_conf 列（coref 持久化用）
+    fn migrate_v1_to_v2(conn: &rusqlite::Connection) -> Result<(), String> {
+        // 检查列是否已存在
+        let has_bbox: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('molecule_images') WHERE name = 'bbox_in_image'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+            > 0;
+
+        if !has_bbox {
+            log::info!("Migrating molecule_images table: adding bbox_in_image / moldet_conf columns");
+            conn.execute(
+                "ALTER TABLE molecule_images ADD COLUMN bbox_in_image TEXT",
+                [],
+            )
+            .map_err(|e| format!("Failed to add bbox_in_image column: {}", e))?;
+            conn.execute(
+                "ALTER TABLE molecule_images ADD COLUMN moldet_conf REAL",
+                [],
+            )
+            .map_err(|e| format!("Failed to add moldet_conf column: {}", e))?;
+        }
         Ok(())
     }
 
@@ -863,11 +903,15 @@ impl MoleculeDatabase {
 
     /// 为分子添加关联的化学结构图记录。
     pub fn add_molecule_image(&self, img: &MoleculeImage) -> Result<(), String> {
+        let bbox_json = img
+            .bbox_in_image
+            .as_ref()
+            .and_then(|b| serde_json::to_string(b).ok());
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO molecule_images
-                 (image_id, mol_id, image_path, page, vlm_esmiles, vlm_confidence, is_structure_diagram)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (image_id, mol_id, image_path, page, vlm_esmiles, vlm_confidence, is_structure_diagram, bbox_in_image, moldet_conf)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     img.image_id,
                     img.mol_id,
@@ -876,6 +920,8 @@ impl MoleculeDatabase {
                     img.vlm_esmiles.as_deref().unwrap_or(""),
                     img.vlm_confidence,
                     img.is_structure_diagram as i32,
+                    bbox_json,
+                    img.moldet_conf,
                 ],
             )
             .map_err(|e| format!("Failed to add molecule image: {}", e))?;
@@ -887,13 +933,16 @@ impl MoleculeDatabase {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT image_id, mol_id, image_path, page, vlm_esmiles, vlm_confidence, is_structure_diagram, created_at
+                "SELECT image_id, mol_id, image_path, page, vlm_esmiles, vlm_confidence, is_structure_diagram, created_at, bbox_in_image, moldet_conf
                  FROM molecule_images WHERE mol_id = ? ORDER BY page",
             )
             .map_err(|e| format!("Prepare failed: {}", e))?;
 
         let rows = stmt
             .query_map(params![mol_id], |row| {
+                let bbox_str: Option<String> = row.get(8).ok().flatten();
+                let bbox: Option<Vec<f64>> =
+                    bbox_str.and_then(|s| serde_json::from_str(&s).ok());
                 Ok(MoleculeImage {
                     image_id: row.get(0).unwrap_or_default(),
                     mol_id: row.get(1).unwrap_or_default(),
@@ -911,6 +960,8 @@ impl MoleculeDatabase {
                     vlm_confidence: row.get(5).unwrap_or(0.0),
                     is_structure_diagram: row.get::<_, i32>(6).unwrap_or(1) != 0,
                     created_at: row.get(7).ok(),
+                    bbox_in_image: bbox,
+                    moldet_conf: row.get(9).ok().flatten(),
                 })
             })
             .map_err(|e| format!("Query failed: {}", e))?;
@@ -957,6 +1008,8 @@ impl MoleculeDatabase {
                 vlm_confidence: row.get(5).unwrap_or(0.0),
                 is_structure_diagram: row.get::<_, i32>(6).unwrap_or(1) != 0,
                 created_at: row.get(7).ok(),
+                bbox_in_image: None,
+                moldet_conf: None,
             })),
             None => Ok(None),
         }

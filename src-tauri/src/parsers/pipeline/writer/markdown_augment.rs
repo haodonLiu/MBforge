@@ -19,6 +19,8 @@
 
 use std::path::Path;
 
+use pulldown_cmark::{Event, Parser, Tag};
+
 use crate::core::document::detection_cache::DetectionCache;
 use crate::parsers::doc_types::{ImageRef, OcrBlock};
 
@@ -37,8 +39,6 @@ fn default_description(img: &ImageRef) -> String {
 /// matched image's `rel_path` + description; otherwise pass the original
 /// slice through unchanged.
 fn rewrite_inline_references(markdown: &str, images: &[ImageRef]) -> String {
-    use pulldown_cmark::{Event, Parser, Tag};
-
     let parser = Parser::new(markdown);
     let mut out = String::with_capacity(markdown.len());
     let mut last_end: usize = 0;

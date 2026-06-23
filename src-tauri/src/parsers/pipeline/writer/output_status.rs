@@ -9,13 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::config::constants::PROJECTS_DIR;
-
-/// Resolve the canonical per-document output directory:
-/// `<project_root>/projects/<doc_id>/`.
-pub fn output_dir(project_root: &Path, doc_id: &str) -> PathBuf {
-    project_root.join(PROJECTS_DIR).join(doc_id)
-}
+use super::output_dir;
 
 /// Status of a single document's mandatory output files.
 #[derive(Debug, Clone, Serialize, Deserialize)]

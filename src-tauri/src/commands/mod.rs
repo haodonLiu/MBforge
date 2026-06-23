@@ -90,11 +90,11 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         agent::audit_log_get,
         agent::agent_get_history,
         // parsers
-        crate::parsers::pipeline::parse_pdf,
-        crate::parsers::pipeline::post_process_pdf,
-        crate::parsers::pipeline::process_document,
+        crate::parsers::pipeline::legacy::parse_pdf,
+        crate::parsers::pipeline::legacy::post_process_pdf,
+        crate::parsers::pipeline::legacy::process_document,
         pipeline_v2::process_document_v2,
-        crate::parsers::pipeline::index_project_rust,
+        crate::parsers::pipeline::legacy::index_project_rust,
         // knowledge_base
         crate::core::document::knowledge_base::kb_search,
         crate::core::document::knowledge_base::kb_search_stream,

@@ -7,8 +7,8 @@
 
 use crate::parsers::chem::vlm_chem::ChemImageResult;
 use crate::parsers::doc_types::{DocStructure, StructuredData};
-use crate::parsers::pipeline::merge::run_merge_and_sar;
-use crate::parsers::pipeline_v2::error::{EnrichError, PipelineError};
+use crate::parsers::pipeline::error::{EnrichError, PipelineError};
+use crate::parsers::pipeline::legacy::merge::run_merge_and_sar;
 
 /// Service that merges structured section results and VLM chemistry results.
 #[derive(Debug, Clone)]

@@ -8,10 +8,10 @@
 use std::path::Path;
 
 use crate::parsers::doc_types::{ImageRef as DocImageRef, OcrBlock as DocOcrBlock};
-use crate::parsers::pipeline::{extract_molecules_from_pdf, ClassifyResult};
-use crate::parsers::pipeline_v2::error::{EnrichError, PipelineError};
-use crate::parsers::pipeline_v2::models::enriched::DetectedMoleculeResult;
-use crate::parsers::pipeline_v2::models::extracted::ExtractedDocument;
+use crate::parsers::pipeline::error::{EnrichError, PipelineError};
+use crate::parsers::pipeline::legacy::{extract_molecules_from_pdf, ClassifyResult};
+use crate::parsers::pipeline::models::enriched::DetectedMoleculeResult;
+use crate::parsers::pipeline::models::extracted::ExtractedDocument;
 
 /// Service for detecting and recognizing molecules in a PDF document.
 #[derive(Debug, Clone)]

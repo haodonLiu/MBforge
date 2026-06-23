@@ -331,13 +331,14 @@ pub fn extract_text(path: String) -> Result<PdfExtraction, String> {
 pub async fn extract_pdf_workflow_cmd(
     path: String,
     output_dir: String,
-) -> Result<crate::parsers::pipeline::WorkflowResult, String> {
+) -> Result<crate::parsers::pipeline::legacy::WorkflowResult, String> {
     use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
     use crate::parsers::chem::chem_validate::separate_esmiles_layers;
 
     let sidecar_url = crate::core::constants::sidecar_url();
     let result =
-        crate::parsers::pipeline::extract_pdf_workflow(&path, &output_dir, &sidecar_url).await?;
+        crate::parsers::pipeline::legacy::extract_pdf_workflow(&path, &output_dir, &sidecar_url)
+            .await?;
 
     // 将检测到的分子写入 SQLite（molecules + molecule_images）
     let filename = std::path::Path::new(&path)
@@ -347,13 +348,14 @@ pub async fn extract_pdf_workflow_cmd(
 
     if !result.molecules.is_empty() {
         // 优先从 path 推导项目根（canonical），output_dir 作为兜底
-        let project_root = crate::parsers::pipeline::find_project_root(
-            std::path::Path::new(&path),
-            None,
-        )
-        .or_else(|| {
-            crate::parsers::pipeline::find_project_root(std::path::Path::new(&output_dir), None)
-        });
+        let project_root =
+            crate::parsers::pipeline::legacy::find_project_root(std::path::Path::new(&path), None)
+                .or_else(|| {
+                    crate::parsers::pipeline::legacy::find_project_root(
+                        std::path::Path::new(&output_dir),
+                        None,
+                    )
+                });
 
         if let Some(root) = project_root {
             if let Ok(db) = MoleculeDatabase::open(&root) {
@@ -473,7 +475,7 @@ pub async fn extract_pdf_workflow_cmd(
 
     // 注：[方案 1] PipelineOutput::from_filesystem 在 Rust 内部调用者
     // 用了，但 Tauri command 保持 WorkflowResult 返回以兼容前端。
-    let _pipeline = crate::parsers::pipeline::PipelineOutput::from_filesystem(
+    let _pipeline = crate::parsers::pipeline::legacy::PipelineOutput::from_filesystem(
         std::path::PathBuf::from(&result.text_path),
         std::path::PathBuf::from(&result.manifest_path),
         result.molecules.len(),
@@ -511,7 +513,7 @@ pub async fn get_document_ocr_layout(
     doc_id: Option<String>,
 ) -> Result<OcrLayoutResult, String> {
     let source_path = std::path::Path::new(&path);
-    let project_root = crate::parsers::pipeline::find_project_root(source_path, None);
+    let project_root = crate::parsers::pipeline::legacy::find_project_root(source_path, None);
     let file_hash = crate::core::helpers::sha256_file(source_path).unwrap_or_default();
 
     // 辅助：更新 OCR 状态
@@ -611,7 +613,7 @@ pub async fn get_document_ocr_layout(
     log::info!("OCR layout cache MISS for {}, running extraction...", path);
     update_status("processing");
 
-    let result = crate::parsers::pipeline::classify_and_extract(&path, true).await;
+    let result = crate::parsers::pipeline::legacy::classify_and_extract(&path, true).await;
 
     match result {
         Ok(classified) => {
@@ -674,7 +676,7 @@ pub fn augment_markdown_with_images(
     images: Vec<crate::parsers::doc_types::ImageRef>,
     ocr_blocks: Option<Vec<crate::parsers::doc_types::OcrBlock>>,
 ) -> String {
-    crate::parsers::pipeline::markdown_augment::augment_markdown_with_images(
+    crate::parsers::pipeline::legacy::markdown_augment::augment_markdown_with_images(
         &markdown,
         &images,
         ocr_blocks.as_deref(),

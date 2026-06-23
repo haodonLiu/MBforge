@@ -2,6 +2,8 @@
 pub mod context;
 /// Pipeline error types and stage-specific sub-errors.
 pub mod error;
+/// Legacy pipeline implementation kept for backward compatibility during migration.
+pub mod legacy;
 /// Pipeline data models (source, extracted, segmented, enriched, persisted, indexed).
 pub mod models;
 /// Pipeline runner, stage trait, and the top-level `run_pipeline` entry point.

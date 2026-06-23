@@ -1,4 +1,4 @@
-//! text.md writer for pipeline_v2.
+//! text.md writer for the pipeline module.
 //!
 //! Every processed document writes an augmented extraction markdown file
 //! inside its DocumentProject directory. The file contains the raw text
@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::parsers::doc_types::ImageRef as DocTypeImageRef;
-use crate::parsers::pipeline::markdown_augment::augment_markdown_with_images;
-use crate::parsers::pipeline_v2::error::{PersistError, PipelineError};
+use crate::parsers::pipeline::error::{PersistError, PipelineError};
+use crate::parsers::pipeline::legacy::markdown_augment::augment_markdown_with_images;
 
 /// One row in the "图片校对" appendix. An image is "verified" when it
 /// has any of: a VLM description, a recognized SMILES, an inline
@@ -106,7 +106,7 @@ pub fn write_text_markdown(
     project_root: &Path,
     doc_id: &str,
     raw_text: &str,
-    images: &[crate::parsers::pipeline_v2::models::extracted::ImageRef],
+    images: &[crate::parsers::pipeline::models::extracted::ImageRef],
     page_count: usize,
     parser_label: &str,
 ) -> Result<(PathBuf, Vec<ImageVerification>), PipelineError> {
@@ -223,10 +223,10 @@ fn build_text_body(
     out
 }
 
-/// Convert pipeline_v2 `ImageRef` values into the `doc_types::ImageRef`
+/// Convert pipeline `ImageRef` values into the `doc_types::ImageRef`
 /// shape expected by the existing markdown augmentation helpers.
 fn to_doc_type_image_refs(
-    images: &[crate::parsers::pipeline_v2::models::extracted::ImageRef],
+    images: &[crate::parsers::pipeline::models::extracted::ImageRef],
 ) -> Vec<DocTypeImageRef> {
     images
         .iter()
@@ -260,8 +260,8 @@ mod tests {
         filename: &str,
         page: usize,
         description: Option<&str>,
-    ) -> crate::parsers::pipeline_v2::models::extracted::ImageRef {
-        crate::parsers::pipeline_v2::models::extracted::ImageRef {
+    ) -> crate::parsers::pipeline::models::extracted::ImageRef {
+        crate::parsers::pipeline::models::extracted::ImageRef {
             filename: filename.to_string(),
             page,
             region: None,
@@ -376,8 +376,7 @@ mod tests {
 
     #[test]
     fn output_dir_layout() {
-        let dir =
-            crate::parsers::pipeline_v2::writer::output_dir(Path::new("/tmp/proj"), "doc-123");
+        let dir = crate::parsers::pipeline::writer::output_dir(Path::new("/tmp/proj"), "doc-123");
         assert_eq!(dir, PathBuf::from("/tmp/proj/projects/doc-123"));
     }
 }

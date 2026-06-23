@@ -1,10 +1,10 @@
 //! End-to-end integration test for the v2 PDF processing pipeline.
 
 use mbforge::core::project::project::Project;
-use mbforge::parsers::pipeline_v2::context::PipelineContext;
-use mbforge::parsers::pipeline_v2::models::source::SourceInput;
-use mbforge::parsers::pipeline_v2::runner::run_pipeline;
-use mbforge::parsers::pipeline_v2::services::cache::{Cache, CachedExtractResult};
+use mbforge::parsers::pipeline::context::PipelineContext;
+use mbforge::parsers::pipeline::models::source::SourceInput;
+use mbforge::parsers::pipeline::runner::run_pipeline;
+use mbforge::parsers::pipeline::services::cache::{Cache, CachedExtractResult};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -30,7 +30,7 @@ async fn pipeline_v2_processes_cached_pdf() {
     // Pre-populate the file cache so the extract stage can run without a
     // real PDF parser or OCR backend. Empty text keeps the enrichment stage
     // sidecar-free and the index stage deterministic.
-    let cache = mbforge::parsers::pipeline_v2::services::cache::FileCache::new(root);
+    let cache = mbforge::parsers::pipeline::services::cache::FileCache::new(root);
     cache
         .put(
             &source_in_project.display().to_string(),

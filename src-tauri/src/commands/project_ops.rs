@@ -199,9 +199,7 @@ pub fn list_project_documents(root: String) -> Result<serde_json::Value, String>
 /// 该命令替代 `list_project_documents` 用于文档列表 UI — UI 应基于
 /// `is_complete` 字段过滤/标记待处理文档，不要把它们当作已索引的。
 #[tauri::command]
-pub fn list_project_documents_with_status(
-    root: String,
-) -> Result<serde_json::Value, String> {
+pub fn list_project_documents_with_status(root: String) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     let path = PathBuf::from(&root);
     let project = crate::core::project::Project::open(&path).ok_or_else(|| {
@@ -212,11 +210,11 @@ pub fn list_project_documents_with_status(
         .list_documents()
         .iter()
         .map(|d| {
-            let status = crate::parsers::pipeline::output::output_status(&path, &d.doc_id);
+            let status = crate::parsers::pipeline::legacy::output::output_status(&path, &d.doc_id);
             let mut base = doc_json(d);
             base["is_complete"] = serde_json::Value::Bool(status.complete);
             base["incomplete_reason"] = serde_json::to_value(
-                crate::parsers::pipeline::output::IncompleteReason::from_status(&status),
+                crate::parsers::pipeline::legacy::output::IncompleteReason::from_status(&status),
             )
             .unwrap_or(serde_json::Value::Null);
             base
@@ -237,7 +235,7 @@ pub fn get_document_output_status(
 ) -> Result<serde_json::Value, String> {
     let root = clean_path(&root);
     let path = PathBuf::from(&root);
-    let status = crate::parsers::pipeline::output::output_status(&path, &doc_id);
+    let status = crate::parsers::pipeline::legacy::output::output_status(&path, &doc_id);
     Ok(serde_json::json!({
         "success": true,
         "doc_id": doc_id,
@@ -246,7 +244,7 @@ pub fn get_document_output_status(
         "report_md_path": status.report_md_path,
         "report_md_exists": status.report_md_exists,
         "complete": status.complete,
-        "incomplete_reason": crate::parsers::pipeline::output::IncompleteReason::from_status(&status),
+        "incomplete_reason": crate::parsers::pipeline::legacy::output::IncompleteReason::from_status(&status),
     }))
 }
 

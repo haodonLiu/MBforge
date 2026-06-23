@@ -12,13 +12,13 @@ use async_trait::async_trait;
 use regex::Regex;
 use text_splitter::{Characters, TextSplitter};
 
-use crate::parsers::pipeline_v2::context::{PipelineContext, PipelineEvent};
-use crate::parsers::pipeline_v2::error::PipelineError;
-use crate::parsers::pipeline_v2::models::extracted::ExtractedDocument;
-use crate::parsers::pipeline_v2::models::segmented::{
+use crate::parsers::pipeline::context::{PipelineContext, PipelineEvent};
+use crate::parsers::pipeline::error::PipelineError;
+use crate::parsers::pipeline::models::extracted::ExtractedDocument;
+use crate::parsers::pipeline::models::segmented::{
     Heading, SectionChunk, SegmentedDocument, TreeNode,
 };
-use crate::parsers::pipeline_v2::runner::{Stage, StageOutcome};
+use crate::parsers::pipeline::runner::{Stage, StageOutcome};
 
 /// Semantic boundary keywords used to split text without explicit headings.
 const SEMANTIC_BOUNDARY_PATTERNS: &[&str] = &[
@@ -557,8 +557,8 @@ mod tests {
     async fn test_segment_stage_splits_by_headings() {
         use std::path::Path;
 
-        use crate::parsers::pipeline_v2::context::PipelineContext;
-        use crate::parsers::pipeline_v2::models::extracted::ExtractedMetadata;
+        use crate::parsers::pipeline::context::PipelineContext;
+        use crate::parsers::pipeline::models::extracted::ExtractedMetadata;
 
         let extracted = ExtractedDocument {
             raw_text: "# Title\n\nIntro.\n## Section A\nContent A.\n## Section B\nContent B."

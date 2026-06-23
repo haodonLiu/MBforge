@@ -1,4 +1,4 @@
-//! report.md writer for pipeline_v2.
+//! report.md writer for the pipeline module.
 //!
 //! Every processed document writes a structured agent report inside its
 //! DocumentProject directory. When the enrichment stage produced no
@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::parsers::doc_types::StructuredData;
-use crate::parsers::pipeline_v2::error::{PersistError, PipelineError};
+use crate::parsers::pipeline::error::{PersistError, PipelineError};
 use crate::parsers::structure::report::generate_full_report;
 
 /// Write the structured agent report to
@@ -134,8 +134,7 @@ mod tests {
 
     #[test]
     fn output_dir_layout() {
-        let dir =
-            crate::parsers::pipeline_v2::writer::output_dir(Path::new("/tmp/proj"), "doc-123");
+        let dir = crate::parsers::pipeline::writer::output_dir(Path::new("/tmp/proj"), "doc-123");
         assert_eq!(dir, PathBuf::from("/tmp/proj/projects/doc-123"));
     }
 }

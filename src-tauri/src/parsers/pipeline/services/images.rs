@@ -6,8 +6,8 @@ use tokio::task::spawn_blocking;
 
 use crate::core::config::constants::REPORTS_DIR;
 use crate::parsers::pdf::images::{extract_images_from_pdf, ExtractedImage};
-use crate::parsers::pipeline_v2::error::{ExtractError, PipelineError};
-use crate::parsers::pipeline_v2::models::extracted::ImageRef;
+use crate::parsers::pipeline::error::{ExtractError, PipelineError};
+use crate::parsers::pipeline::models::extracted::ImageRef;
 
 /// Service responsible for extracting embedded images from PDFs and copying
 /// them into the project's report output directory.

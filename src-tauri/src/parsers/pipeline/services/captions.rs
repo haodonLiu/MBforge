@@ -12,8 +12,8 @@ use std::path::Path;
 use crate::parsers::chem::vlm_chem::{
     describe_image_cached, is_likely_chemical_structure, ImageCaptionCache,
 };
-use crate::parsers::pipeline_v2::error::{EnrichError, PipelineError};
-use crate::parsers::pipeline_v2::models::extracted::ImageRef;
+use crate::parsers::pipeline::error::{EnrichError, PipelineError};
+use crate::parsers::pipeline::models::extracted::ImageRef;
 
 /// Service that generates VLM captions for document images.
 #[derive(Debug, Clone)]

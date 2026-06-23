@@ -21,9 +21,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use super::markdown_augment::augment_markdown_with_images;
 use crate::core::config::constants::PROJECTS_DIR;
 use crate::parsers::doc_types::{ImageRef, StructuredData};
-use crate::parsers::pipeline::markdown_augment::augment_markdown_with_images;
 use crate::parsers::structure::report::generate_full_report;
 
 /// Output paths written for a single document.
@@ -156,8 +156,7 @@ fn detect_anchor(markdown: &str, img: &ImageRef) -> &'static str {
     }
     // Inline markdown reference: `![](<filename>)` or `![](<rel_path>)`.
     let rel = img.rel_path.as_deref().unwrap_or(&img.filename);
-    if markdown.contains(&format!("]({}", rel))
-        || markdown.contains(&format!("]({}", img.filename))
+    if markdown.contains(&format!("]({}", rel)) || markdown.contains(&format!("]({}", img.filename))
     {
         return "inline_ref";
     }
@@ -264,7 +263,11 @@ fn build_text_body(
         out.push_str("|------|----|------|------|\n");
         let verifications = verify_images(trimmed, images);
         for v in &verifications {
-            let status = if v.verified { "✅" } else { "⚠️ 未校对" };
+            let status = if v.verified {
+                "✅"
+            } else {
+                "⚠️ 未校对"
+            };
             out.push_str(&format!(
                 "| `{}` | {} | {} | {} |\n",
                 escape_inline(&v.filename),

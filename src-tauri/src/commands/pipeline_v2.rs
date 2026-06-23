@@ -5,9 +5,9 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 use crate::core::constants::EVT_DOC_PROGRESS;
-use crate::parsers::pipeline_v2::context::{PipelineContext, PipelineEvent, PipelineReporter};
-use crate::parsers::pipeline_v2::models::source::SourceInput;
-use crate::parsers::pipeline_v2::runner::run_pipeline;
+use crate::parsers::pipeline::context::{PipelineContext, PipelineEvent, PipelineReporter};
+use crate::parsers::pipeline::models::source::SourceInput;
+use crate::parsers::pipeline::runner::run_pipeline;
 
 /// Processes a PDF document through the new Extract → Segment → Enrich → Persist → Index pipeline.
 #[tauri::command]

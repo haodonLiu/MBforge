@@ -1,4 +1,4 @@
-//! Output writers for pipeline_v2.
+//! Output writers for the pipeline module.
 
 use std::path::{Path, PathBuf};
 

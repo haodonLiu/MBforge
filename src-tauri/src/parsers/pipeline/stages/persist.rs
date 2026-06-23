@@ -14,15 +14,15 @@ use std::path::Path;
 use async_trait::async_trait;
 
 use crate::core::project::project::Project;
-use crate::parsers::pipeline_v2::context::{PipelineContext, PipelineEvent};
-use crate::parsers::pipeline_v2::error::{PersistError, PipelineError};
-use crate::parsers::pipeline_v2::models::enriched::EnrichedDocument;
-use crate::parsers::pipeline_v2::models::extracted::ExtractedDocument;
-use crate::parsers::pipeline_v2::models::persisted::PersistedDocument;
-use crate::parsers::pipeline_v2::runner::{Stage, StageOutcome};
-use crate::parsers::pipeline_v2::services::molecule_store::MoleculeStoreWriter;
-use crate::parsers::pipeline_v2::writer::report_md::write_agent_report;
-use crate::parsers::pipeline_v2::writer::text_md::write_text_markdown;
+use crate::parsers::pipeline::context::{PipelineContext, PipelineEvent};
+use crate::parsers::pipeline::error::{PersistError, PipelineError};
+use crate::parsers::pipeline::models::enriched::EnrichedDocument;
+use crate::parsers::pipeline::models::extracted::ExtractedDocument;
+use crate::parsers::pipeline::models::persisted::PersistedDocument;
+use crate::parsers::pipeline::runner::{Stage, StageOutcome};
+use crate::parsers::pipeline::services::molecule_store::MoleculeStoreWriter;
+use crate::parsers::pipeline::writer::report_md::write_agent_report;
+use crate::parsers::pipeline::writer::text_md::write_text_markdown;
 
 /// Pipeline stage that persists extracted and enriched pipeline outputs to disk.
 pub struct PersistStage {
@@ -164,9 +164,9 @@ mod tests {
 
     use super::*;
     use crate::parsers::doc_types::{DocumentMetadata, StructuredData};
-    use crate::parsers::pipeline_v2::context::PipelineContext;
-    use crate::parsers::pipeline_v2::models::enriched::EnrichedDocument;
-    use crate::parsers::pipeline_v2::models::extracted::{ExtractedDocument, ExtractedMetadata};
+    use crate::parsers::pipeline::context::PipelineContext;
+    use crate::parsers::pipeline::models::enriched::EnrichedDocument;
+    use crate::parsers::pipeline::models::extracted::{ExtractedDocument, ExtractedMetadata};
     use tempfile::TempDir;
 
     #[tokio::test]

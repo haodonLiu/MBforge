@@ -1,24 +1,37 @@
-#![allow(dead_code)]
 // PDF inspection commands — Task 2: classify_pdf
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+use chrono::Utc;
+use lopdf::{Document, Object};
+use pdf_inspector::extractor::extract_text_with_positions_pages;
+use pdf_inspector::{detect_pdf, process_pdf, PdfType};
 use serde::Serialize;
+use serde_json::{from_str, from_value, json, to_string_pretty, Value};
 
+pub use crate::core::document::ingest_queue::IngestStatus;
+use crate::core::chem::chem::esmiles_to_molecode;
+use crate::core::config::constants::PROJECTS_DIR;
+use crate::core::constants::{PROJECT_META_DIR, sidecar_url};
 use crate::core::document::ingest_queue::{IngestQueue, IngestTask, QueueStats};
-use crate::core::helpers::{assert_within_root_allow_missing, clean_path, save_json};
+use crate::core::error::AppError;
+use crate::core::helpers::{assert_within_root_allow_missing, clean_path, generate_uuid, safe_join, save_json, sha256_file};
 use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
 use crate::core::project::document_project::DocumentProject;
 use crate::core::project::project::Project;
 use crate::parsers::chem::chem_validate::separate_esmiles_layers;
+use crate::parsers::chem::label_assoc::{extract_page_text_lines, find_label_for_bbox, TextLine};
+use crate::parsers::chem::vlm_chem::DetectedMolecule;
 use crate::parsers::doc_types::{ImageRef as DocImageRef, OcrBlock as DocOcrBlock};
 use crate::parsers::pipeline::context::PipelineContext;
+use crate::parsers::pipeline::models::enriched::DetectedMoleculeResult;
+use crate::parsers::pipeline::models::extracted::{ImageRef, OcrBlock};
 use crate::parsers::pipeline::models::source::SourceInput;
 use crate::parsers::pipeline::runner::Stage;
 use crate::parsers::pipeline::services::molecules::MoleculeService;
-use crate::parsers::pipeline::services::ocr::OcrService;
-use crate::parsers::pipeline::services::ocr_layout::get_ocr_layout;
+use crate::parsers::pipeline::services::ocr::{default_backends, OcrService};
+use crate::parsers::pipeline::services::ocr_layout::{get_ocr_layout, OcrLayoutBlock};
 use crate::parsers::pipeline::services::source::SourceResolver;
 use crate::parsers::pipeline::stages::extract::ExtractStage;
 use crate::parsers::pipeline::writer::markdown_augment;
@@ -51,22 +64,22 @@ pub struct PdfClassification {
 
 /// Tauri command: classify a PDF without full text extraction.
 ///
-/// Uses `pdf_inspector::detect_pdf` (ProcessMode::DetectOnly) for fast
+/// Uses `detect_pdf` (ProcessMode::DetectOnly) for fast
 /// classification (~10–50ms).  The returned `PdfClassification` contains
 /// the PDF type, per-page OCR needs, and layout / encoding diagnostics
 /// that the frontend can surface to the user.
 #[tauri::command]
 pub fn classify_pdf(path: String) -> Result<PdfClassification, String> {
-    let result = pdf_inspector::detect_pdf(&path).map_err(|e| {
+    let result = detect_pdf(&path).map_err(|e| {
         log::error!("classify_pdf failed for path={}: {}", path, e);
         format!("pdf-inspector detect failed: {}", e)
     })?;
 
     let pdf_type = match result.pdf_type {
-        pdf_inspector::PdfType::TextBased => "TextBased",
-        pdf_inspector::PdfType::Scanned => "Scanned",
-        pdf_inspector::PdfType::Mixed => "Mixed",
-        pdf_inspector::PdfType::ImageBased => "ImageBased",
+        PdfType::TextBased => "TextBased",
+        PdfType::Scanned => "Scanned",
+        PdfType::Mixed => "Mixed",
+        PdfType::ImageBased => "ImageBased",
     };
 
     log::info!(
@@ -104,7 +117,7 @@ pub fn classify_pdf(path: String) -> Result<PdfClassification, String> {
 ///
 /// 返回与 `classify_pdf` 相同的结构，但会：
 /// 1. 从 `doc_id` 解析出 `projects/<doc_id>/source.pdf` 路径；
-/// 2. 调用 `pdf_inspector::detect_pdf` 判定类型；
+/// 2. 调用 `detect_pdf` 判定类型；
 /// 3. 将结果写入 `projects/<doc_id>/cache/inspector.json`；
 /// 4. 更新 DocumentProject / Project index 的 `inspector_status` 与 `ocr_status`。
 #[tauri::command]
@@ -119,7 +132,7 @@ pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassifica
         .ok_or_else(|| format!("Document {} source path not found", doc_id))?;
 
     let result =
-        pdf_inspector::detect_pdf(source_path.to_string_lossy().as_ref()).map_err(|e| {
+        detect_pdf(source_path.to_string_lossy().as_ref()).map_err(|e| {
             log::error!("inspect_pdf failed for {}: {}", source_path.display(), e);
             // Best-effort: mark inspector status as error
             if let Some(mut dp) = DocumentProject::load(&root, &doc_id) {
@@ -132,14 +145,14 @@ pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassifica
         })?;
 
     let pdf_type_str = match result.pdf_type {
-        pdf_inspector::PdfType::TextBased => "TextBased",
-        pdf_inspector::PdfType::Scanned => "Scanned",
-        pdf_inspector::PdfType::Mixed => "Mixed",
-        pdf_inspector::PdfType::ImageBased => "ImageBased",
+        PdfType::TextBased => "TextBased",
+        PdfType::Scanned => "Scanned",
+        PdfType::Mixed => "Mixed",
+        PdfType::ImageBased => "ImageBased",
     };
 
     // Persist inspector result to the DocumentProject cache.
-    let inspector_json = serde_json::json!({
+    let inspector_json = json!({
         "pdf_type": pdf_type_str,
         "confidence": result.confidence,
         "page_count": result.page_count,
@@ -147,7 +160,7 @@ pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassifica
         "has_complex_layout": result.layout.is_complex,
         "has_encoding_issues": result.has_encoding_issues,
         "title": result.title,
-        "inspected_at": chrono::Utc::now().to_rfc3339(),
+        "inspected_at": Utc::now().to_rfc3339(),
     });
     if let Some(mut dp) = DocumentProject::load(&root, &doc_id) {
         let paths = dp.paths();
@@ -172,7 +185,7 @@ pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassifica
         // Update DocumentProject statuses.
         dp.set_inspector_status(pdf_type_str.to_lowercase().as_str());
         match result.pdf_type {
-            pdf_inspector::PdfType::TextBased => {
+            PdfType::TextBased => {
                 dp.set_text_status("pending");
                 dp.set_ocr_status("not_needed");
             }
@@ -187,7 +200,7 @@ pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassifica
     if let Some(mut proj) = Project::open(&root) {
         proj.set_document_status(&doc_id, "inspector_status", &pdf_type_str.to_lowercase());
         let ocr_status = match result.pdf_type {
-            pdf_inspector::PdfType::TextBased => "not_needed",
+            PdfType::TextBased => "not_needed",
             _ => "pending_confirmation",
         };
         proj.set_document_status(&doc_id, "ocr_status", ocr_status);
@@ -226,7 +239,7 @@ pub async fn confirm_ocr(
     project_root: String,
     doc_id: String,
     confirm: bool,
-) -> Result<serde_json::Value, String> {
+) -> Result<Value, String> {
     let root = assert_within_root_allow_missing(&clean_path(&project_root), Path::new("."))
         .map_err(|e| format!("Invalid project_root {}: {}", project_root, e))?;
 
@@ -250,7 +263,7 @@ pub async fn confirm_ocr(
 
     // Enqueue OCR task if confirmed (worker will consume it in Phase 3).
     let task_id = if confirm {
-        let q = crate::core::document::ingest_queue::IngestQueue::new(&root)
+        let q = IngestQueue::new(&root)
             .map_err(|e| format!("Failed to open ingest queue: {}", e))?;
         q.enqueue_with_stage(
             source_path.to_string_lossy().to_string(),
@@ -272,7 +285,7 @@ pub async fn confirm_ocr(
         if task_id.is_empty() { "none" } else { &task_id }
     );
 
-    Ok(serde_json::json!({
+    Ok(json!({
         "success": true,
         "doc_id": doc_id,
         "ocr_status": status,
@@ -303,11 +316,11 @@ pub struct PdfExtraction {
 
 /// Tauri command: extract structured Markdown from a PDF.
 ///
-/// Uses `pdf_inspector::process_pdf` (ProcessMode::Full) for complete
+/// Uses `process_pdf` (ProcessMode::Full) for complete
 /// extraction including text, tables, and layout detection.
 #[tauri::command]
 pub fn extract_text(path: String) -> Result<PdfExtraction, String> {
-    let result = pdf_inspector::process_pdf(&path).map_err(|e| {
+    let result = process_pdf(&path).map_err(|e| {
         log::error!("extract_text failed for path={}: {}", path, e);
         format!("pdf-inspector process failed: {}", e)
     })?;
@@ -320,6 +333,7 @@ pub fn extract_text(path: String) -> Result<PdfExtraction, String> {
     );
 
     Ok(PdfExtraction {
+        // An empty markdown field just means no text was recovered; default is safe.
         markdown: result.markdown.unwrap_or_default(),
         page_count: result.page_count as usize,
         pages_needing_ocr: result
@@ -349,7 +363,7 @@ pub struct WorkflowResult {
     /// 提取结果（文本、页数、解析器、图片引用）
     pub classify: ClassifyResult,
     /// 检测到的分子列表
-    pub molecules: Vec<crate::parsers::chem::vlm_chem::DetectedMolecule>,
+    pub molecules: Vec<DetectedMolecule>,
 }
 
 /// 分类提取结果（与 legacy 同构）。
@@ -406,14 +420,27 @@ pub async fn extract_pdf_workflow_cmd(
     path: String,
     output_dir: String,
 ) -> Result<WorkflowResult, String> {
-    let sidecar_url = crate::core::constants::sidecar_url();
+    let sidecar_url = sidecar_url();
     let source_path = Path::new(&path);
+
+    // Validate output_dir as the safe root for all generated workflow files.
+    let output_root = assert_within_root_allow_missing(&clean_path(&output_dir), Path::new("."))
+        .map_err(|e| format!("Invalid output_dir {}: {}", output_dir, e))?;
+    let output_root_str = output_root.to_string_lossy().to_string();
+
     let pdf_name = source_path
         .file_stem()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "output".to_string());
-    let base_dir = Path::new(&output_dir).join(&pdf_name);
-    let mol_dir = base_dir.join("molecules");
+        .unwrap_or_else(|| "output".to_string()); // Fallback stem when the source path has no usable filename.
+
+    // Build validated paths under output_root before any filesystem mutation.
+    let base_dir = assert_within_root_allow_missing(&output_root_str, Path::new(&pdf_name))
+        .map_err(|e| format!("Invalid workflow base dir under {}: {}", output_root.display(), e))?;
+    let mol_dir = assert_within_root_allow_missing(
+        &base_dir.to_string_lossy(),
+        Path::new("molecules"),
+    )
+    .map_err(|e| format!("Invalid molecules dir under {}: {}", base_dir.display(), e))?;
     std::fs::create_dir_all(&mol_dir)
         .map_err(|e| format!("Failed to create output dir: {}", e))?;
 
@@ -422,27 +449,28 @@ pub async fn extract_pdf_workflow_cmd(
     let work_root = base_dir.clone();
 
     // 真正的项目根（用于 SQLite 分子库），优先从 PDF 路径推导，其次 output_dir。
-    let project_root = match SourceResolver::new().resolve_project_root(source_path, None) {
-        Ok(root) => Some(root),
-        Err(e) => {
-            log::warn!(
-                "[workflow] Failed to resolve project root from PDF path {}: {}",
-                path,
-                e
-            );
-            let out = Path::new(&output_dir);
-            if out.is_dir() {
-                log::warn!("[workflow] Falling back to output_dir as project root: {}", output_dir);
-                Some(out.to_path_buf())
-            } else {
-                log::warn!(
-                    "[workflow] Output dir {} is not a valid directory; cannot determine project root",
-                    output_dir
-                );
-                None
+    let project_root =
+        match SourceResolver::new().resolve_project_root(source_path, Some(&output_root)) {
+            Ok(root) => {
+                let root = assert_within_root_allow_missing(&root.to_string_lossy(), Path::new("."))
+                    .map_err(|e| {
+                        format!("Resolved project root {} is invalid: {}", root.display(), e)
+                    })?;
+                Some(root)
             }
-        }
-    };
+            Err(e) => {
+                log::warn!(
+                    "[workflow] Failed to resolve project root from PDF path {}: {}",
+                    path,
+                    e
+                );
+                log::warn!(
+                    "[workflow] Falling back to output_dir as project root: {}",
+                    output_root.display()
+                );
+                Some(output_root.clone())
+            }
+        };
 
     log::info!(
         "[workflow] Starting v2 extraction: {} → {}",
@@ -452,7 +480,7 @@ pub async fn extract_pdf_workflow_cmd(
 
     // Stage 1: 文本提取 + 分类（v2 ExtractStage）
     let ctx = PipelineContext::new(source_path, "").with_project_root(&work_root);
-    let ocr = OcrService::new(crate::parsers::pipeline::services::ocr::default_backends());
+    let ocr = OcrService::new(default_backends());
     let extract_stage = ExtractStage::new(ocr);
     let extracted = extract_stage
         .run(SourceInput::new(source_path).with_project_root(&work_root), &ctx)
@@ -475,7 +503,8 @@ pub async fn extract_pdf_workflow_cmd(
         Some(&ocr_blocks_doc),
     );
 
-    let text_path = base_dir.join("text.md");
+    let text_path = safe_join(&base_dir, "text.md")
+        .map_err(|e| format!("Invalid text.md path under {}: {}", base_dir.display(), e))?;
     std::fs::write(&text_path, &augmented_text)
         .map_err(|e| format!("Failed to write text.md: {}", e))?;
 
@@ -493,6 +522,8 @@ pub async fn extract_pdf_workflow_cmd(
             .extract(&path, &extracted, root)
             .await
             .unwrap_or_else(|e| {
+                // Continue the workflow even if molecule recognition fails;
+                // the text/markdown output is still valuable on its own.
                 log::warn!("[workflow] Molecule extraction failed: {}", e);
                 Vec::new()
             })
@@ -500,7 +531,7 @@ pub async fn extract_pdf_workflow_cmd(
         Vec::new()
     };
 
-    let legacy_molecules: Vec<crate::parsers::chem::vlm_chem::DetectedMolecule> = detected
+    let legacy_molecules: Vec<DetectedMolecule> = detected
         .iter()
         .map(into_legacy_molecule)
         .collect();
@@ -515,12 +546,12 @@ pub async fn extract_pdf_workflow_cmd(
             let image_file = Path::new(&mol.crop_path)
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| format!("page_{:04}_mol_{:03}.png", mol.page, i));
+                .unwrap_or_else(|| format!("page_{:04}_mol_{:03}.png", mol.page, i)); // Fallback filename preserves page/index if crop path is missing.
             let (smiles, esmiles_opt, _tags) = separate_esmiles_layers(&mol.esmiles);
             let mol_name = format!("IMG-{}-P{}", pdf_name, mol.page);
             let molcode = esmiles_opt
                 .as_deref()
-                .unwrap_or(&smiles)
+                .unwrap_or(&smiles) // Use canonical SMILES when no E-SMILES layer is present.
                 .trim()
                 .is_empty()
                 .then(|| None)
@@ -547,8 +578,9 @@ pub async fn extract_pdf_workflow_cmd(
         molecules,
     };
 
-    let manifest_path = mol_dir.join("manifest.json");
-    let manifest_json = serde_json::to_string_pretty(&manifest)
+    let manifest_path = safe_join(&mol_dir, "manifest.json")
+        .map_err(|e| format!("Invalid manifest path under {}: {}", mol_dir.display(), e))?;
+    let manifest_json = to_string_pretty(&manifest)
         .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
     std::fs::write(&manifest_path, manifest_json)
         .map_err(|e| format!("Failed to write manifest.json: {}", e))?;
@@ -558,10 +590,8 @@ pub async fn extract_pdf_workflow_cmd(
         if let Some(ref root) = project_root {
             match MoleculeDatabase::open(root) {
                 Ok(db) => {
-                    let mut lines_cache: std::collections::HashMap<
-                        i32,
-                        Vec<crate::parsers::chem::label_assoc::TextLine>,
-                    > = std::collections::HashMap::new();
+                    let mut lines_cache: HashMap<i32, Vec<TextLine>> = HashMap::new();
+                    // Default to A4 height (842 pt) for coordinate conversion if PDF page metadata is unavailable.
                     let page_h_pts = get_page_height(&path).unwrap_or(842.0);
 
                     let mut saved = 0usize;
@@ -571,7 +601,7 @@ pub async fn extract_pdf_workflow_cmd(
 
                         let page_num = (mol.page).max(0);
                         let lines = lines_cache.entry(page_num).or_insert_with(|| {
-                            match crate::parsers::chem::label_assoc::extract_page_text_lines(
+                            match extract_page_text_lines(
                                 &path,
                                 page_num as u32,
                                 page_h_pts,
@@ -588,7 +618,7 @@ pub async fn extract_pdf_workflow_cmd(
                             }
                         });
                         let label_match = if mol.bbox_pdf != [0.0, 0.0, 0.0, 0.0] {
-                            crate::parsers::chem::label_assoc::find_label_for_bbox(
+                            find_label_for_bbox(
                                 (
                                     mol.bbox_pdf[0],
                                     mol.bbox_pdf[1],
@@ -606,14 +636,14 @@ pub async fn extract_pdf_workflow_cmd(
                             Some(m) => m.label.clone(),
                             None => format!("IMG-{}-P{:03}-{:03}", pdf_name, mol.page, idx),
                         };
-                        let mut properties = serde_json::json!({});
+                        let mut properties = json!({});
                         if let Some(m) = &label_match {
                             properties["context_text"] =
-                                serde_json::Value::String(m.context_text.clone());
+                                Value::String(m.context_text.clone());
                         }
-                        properties["bbox_pdf"] = serde_json::json!(mol.bbox_pdf);
+                        properties["bbox_pdf"] = json!(mol.bbox_pdf);
 
-                        let mol_id = crate::core::helpers::generate_uuid();
+                        let mol_id = generate_uuid();
                         let record = MoleculeRecord {
                             mol_id: mol_id.clone(),
                             smiles: clean_smiles,
@@ -645,7 +675,7 @@ pub async fn extract_pdf_workflow_cmd(
                             );
                         } else {
                             let img = MoleculeImage {
-                                image_id: crate::core::helpers::generate_uuid(),
+                                image_id: generate_uuid(),
                                 mol_id: mol_id.clone(),
                                 image_path: mol.crop_path.clone(),
                                 page: Some(mol.page as usize),
@@ -712,7 +742,7 @@ fn esmiles_to_molecode_opt(input: &str, name: &str) -> Option<String> {
     if trimmed.is_empty() {
         return None;
     }
-    match crate::core::chem::chem::esmiles_to_molecode(trimmed, name) {
+    match esmiles_to_molecode(trimmed, name) {
         Ok(r) => Some(r.mermaid),
         Err(e) => {
             log::warn!(
@@ -727,9 +757,9 @@ fn esmiles_to_molecode_opt(input: &str, name: &str) -> Option<String> {
 }
 
 fn into_legacy_molecule(
-    m: &crate::parsers::pipeline::models::enriched::DetectedMoleculeResult,
-) -> crate::parsers::chem::vlm_chem::DetectedMolecule {
-    crate::parsers::chem::vlm_chem::DetectedMolecule {
+    m: &DetectedMoleculeResult,
+) -> DetectedMolecule {
+    DetectedMolecule {
         esmiles: m.esmiles.clone(),
         confidence: m.confidence,
         moldet_conf: m.moldet_conf,
@@ -740,7 +770,7 @@ fn into_legacy_molecule(
 }
 
 fn into_doc_image_ref(
-    img: crate::parsers::pipeline::models::extracted::ImageRef,
+    img: ImageRef,
 ) -> DocImageRef {
     DocImageRef {
         filename: img.filename,
@@ -753,7 +783,7 @@ fn into_doc_image_ref(
 }
 
 fn into_doc_ocr_block(
-    block: crate::parsers::pipeline::models::extracted::OcrBlock,
+    block: OcrBlock,
 ) -> DocOcrBlock {
     DocOcrBlock {
         page: block.page,
@@ -797,8 +827,17 @@ pub async fn get_document_ocr_layout(
     let source_path = Path::new(&path);
     let project_root = SourceResolver::new()
         .resolve_project_root(source_path, None)
-        .ok();
-    let file_hash = match crate::core::helpers::sha256_file(source_path) {
+        .ok()
+        .and_then(|root| {
+            match assert_within_root_allow_missing(&root.to_string_lossy(), Path::new(".")) {
+                Ok(validated) => Some(validated),
+                Err(e) => {
+                    log::warn!("Resolved project root {} is invalid: {}", root.display(), e);
+                    None
+                }
+            }
+        });
+    let file_hash = match sha256_file(source_path) {
         Ok(hash) => hash,
         Err(e) => {
             log::warn!("Failed to compute file hash for {}: {}", path, e);
@@ -809,7 +848,7 @@ pub async fn get_document_ocr_layout(
     // 辅助：更新 OCR 状态
     let update_status = |status: &str| {
         if let (Some(root), Some(id)) = (&project_root, &doc_id) {
-            if let Some(mut project) = crate::core::project::Project::open(root) {
+            if let Some(mut project) = Project::open(root) {
                 project.set_document_ocr(id, status, &file_hash);
             }
         }
@@ -822,37 +861,28 @@ pub async fn get_document_ocr_layout(
         // 1a. DocumentProject 新路径
         if let Some(ref id) = doc_id {
             let root_str = root.to_string_lossy().to_string();
-            let new_cache_rel = std::path::PathBuf::from(
-                crate::core::config::constants::PROJECTS_DIR,
-            )
-            .join(id)
-            .join("cache")
-            .join("ocr")
-            .join("ocr.json");
-            let new_cache = crate::core::helpers::assert_within_root_allow_missing(
-                &root_str,
-                &new_cache_rel,
-            )
-            .map_err(|e| format!("Invalid OCR cache path: {}", e))?;
+            let new_cache_rel = format!("{}/{}/cache/ocr/ocr.json", PROJECTS_DIR, id);
+            let new_cache = assert_within_root_allow_missing(&root_str, Path::new(&new_cache_rel))
+                .map_err(|e| format!("Invalid OCR cache path: {}", e))?;
             if new_cache.exists() {
                 match std::fs::read_to_string(&new_cache) {
                     Ok(content) => {
-                        match serde_json::from_str::<serde_json::Value>(&content) {
+                        match from_str::<Value>(&content) {
                             Ok(val) => {
-                                let text = val["text"].as_str().unwrap_or("").to_string();
+                                let text = val["text"].as_str().unwrap_or("").to_string(); // Empty text is a safe default for a stale/malformed cache entry.
                                 let page_count = val["page_count"]
                                     .as_u64()
                                     .map(|n| n as usize)
-                                    .unwrap_or_else(|| text.lines().count().max(1));
+                                    .unwrap_or_else(|| text.lines().count().max(1)); // Infer from cached text, ensuring at least one page.
                                 let blocks: Vec<DocOcrBlock> = val["ocr_blocks"]
                                     .as_array()
                                     .map(|arr| {
                                         arr.iter()
-                                            .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                                            .filter_map(|v| from_value(v.clone()).ok())
                                             .collect()
                                     })
-                                    .unwrap_or_default();
-                                let parser = val["parser"].as_str().unwrap_or("unknown").to_string();
+                                    .unwrap_or_default(); // Missing block array defaults to empty; will fall through to live extraction.
+                                let parser = val["parser"].as_str().unwrap_or("unknown").to_string(); // Unknown parser for stale/malformed cache entries.
                                 if !blocks.is_empty() {
                                     log::info!(
                                         "OCR layout cache HIT (new) for {}: {} blocks",
@@ -891,30 +921,25 @@ pub async fn get_document_ocr_layout(
 
         // 1b. 旧版按 hash 的缓存
         let root_str = root.to_string_lossy().to_string();
-        let cache_file_rel = std::path::PathBuf::from(crate::core::constants::PROJECT_META_DIR)
-            .join("ocr-cache")
-            .join(format!("{}.json", file_hash));
-        let cache_file = crate::core::helpers::assert_within_root_allow_missing(
-            &root_str,
-            &cache_file_rel,
-        )
-        .map_err(|e| format!("Invalid OCR cache path: {}", e))?;
+        let cache_file_rel = format!("{}/ocr-cache/{}.json", PROJECT_META_DIR, file_hash);
+        let cache_file = assert_within_root_allow_missing(&root_str, Path::new(&cache_file_rel))
+            .map_err(|e| format!("Invalid OCR cache path: {}", e))?;
         if cache_file.exists() {
             match std::fs::read_to_string(&cache_file) {
                 Ok(content) => {
-                    match serde_json::from_str::<serde_json::Value>(&content) {
+                    match from_str::<Value>(&content) {
                         Ok(val) => {
-                            let text = val["text"].as_str().unwrap_or("").to_string();
-                            let page_count = text.lines().count().max(1);
+                            let text = val["text"].as_str().unwrap_or("").to_string(); // Empty text is a safe default for a stale/malformed cache entry.
+                            let page_count = text.lines().count().max(1); // Infer from cached text, ensuring at least one page.
                             let blocks: Vec<DocOcrBlock> = val["ocr_blocks"]
                                 .as_array()
                                 .map(|arr| {
                                     arr.iter()
-                                        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                                        .filter_map(|v| from_value(v.clone()).ok())
                                         .collect()
                                 })
-                                .unwrap_or_default();
-                            let parser = val["parser"].as_str().unwrap_or("unknown").to_string();
+                                .unwrap_or_default(); // Missing block array defaults to empty; will fall through to live extraction.
+                            let parser = val["parser"].as_str().unwrap_or("unknown").to_string(); // Unknown parser for stale/malformed cache entries.
                             if !blocks.is_empty() {
                                 log::info!("OCR layout cache HIT for {}: {} blocks", path, blocks.len());
                                 update_status("completed");
@@ -965,6 +990,7 @@ pub async fn get_document_ocr_layout(
             } else {
                 "not_processed"
             });
+            // At least one page if any blocks exist; an empty layout still reports one page.
             let page_count = blocks.iter().map(|b| b.page).max().unwrap_or(1);
             Ok(OcrLayoutResult {
                 path: path.clone(),
@@ -982,7 +1008,7 @@ pub async fn get_document_ocr_layout(
 }
 
 fn into_doc_ocr_block_from_layout(
-    block: crate::parsers::pipeline::services::ocr_layout::OcrLayoutBlock,
+    block: OcrLayoutBlock,
 ) -> DocOcrBlock {
     DocOcrBlock {
         page: block.page,
@@ -1000,13 +1026,13 @@ fn get_page_height(pdf_path: &str) -> Option<f64> {
     let mut first_page: HashSet<u32> = HashSet::new();
     first_page.insert(1);
     if let Err(e) =
-        pdf_inspector::extractor::extract_text_with_positions_pages(pdf_path, Some(&first_page))
+        extract_text_with_positions_pages(pdf_path, Some(&first_page))
     {
         log::warn!("Failed to extract text positions from {}: {}", pdf_path, e);
         return None;
     }
     // 走 Document API 拿页面尺寸
-    let doc = match lopdf::Document::load(pdf_path) {
+    let doc = match Document::load(pdf_path) {
         Ok(d) => d,
         Err(e) => {
             log::warn!("Failed to load PDF {}: {}", pdf_path, e);
@@ -1041,8 +1067,8 @@ fn get_page_height(pdf_path: &str) -> Option<f64> {
         return None;
     }
     let h = match &arr[3] {
-        lopdf::Object::Real(r) => *r as f64,
-        lopdf::Object::Integer(i) => *i as f64,
+        Object::Real(r) => *r as f64,
+        Object::Integer(i) => *i as f64,
         _ => {
             log::warn!("MediaBox height is not a numeric value for {}", pdf_path);
             return None;
@@ -1059,7 +1085,7 @@ pub fn augment_markdown_with_images(
     images: Vec<DocImageRef>,
     ocr_blocks: Option<Vec<DocOcrBlock>>,
 ) -> String {
-    crate::parsers::pipeline::writer::markdown_augment::augment_markdown_with_images(
+    markdown_augment::augment_markdown_with_images(
         &markdown,
         &images,
         ocr_blocks.as_deref(),
@@ -1069,10 +1095,10 @@ pub fn augment_markdown_with_images(
 // ─── IngestQueue：PDF 异步处理队列 ────────────────────────────────
 
 fn open_ingest_queue(project_root: &str) -> Result<IngestQueue, String> {
-    let root = assert_within_root_allow_missing(project_root, Path::new("."))
+    let root = assert_within_root_allow_missing(&clean_path(project_root), Path::new("."))
         .map_err(|e| format!("Invalid project_root {}: {}", project_root, e))?;
     IngestQueue::new(&root)
-        .map_err(|e: crate::core::error::AppError| e.to_string())
+        .map_err(|e: AppError| e.to_string())
 }
 
 /// 入队一个 PDF 供异步处理。返回任务 ID。
@@ -1087,9 +1113,14 @@ pub async fn ingest_enqueue(
     force: Option<bool>,
 ) -> Result<String, String> {
     let q = open_ingest_queue(&project_root)?;
-    q.enqueue_with_stage(file_path, doc_id, "inspector", force.unwrap_or(false))
-        .await
-        .map_err(|e| e.to_string())
+    q.enqueue_with_stage(
+        file_path,
+        doc_id,
+        "inspector",
+        force.unwrap_or(false), // Default to idempotent enqueue (skip duplicate done tasks).
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// 列出队列中所有任务。

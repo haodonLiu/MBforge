@@ -7,12 +7,11 @@
     clippy::unimplemented
 )]
 
-pub mod abbreviation_map;
+mod abbreviation_map;
 pub mod esmiles;
 pub mod gesim;
 pub mod markush;
 pub mod molecode;
-pub mod preprocess;
+mod preprocess;
 pub mod sar;
-pub mod sar_query;
 pub mod smiles;

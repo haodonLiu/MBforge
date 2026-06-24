@@ -41,7 +41,9 @@ impl DownloadManagerState {
     /// 请求取消指定 resource_id 的下载任务。
     pub fn cancel(&self, resource_id: &str) -> Result<(), String> {
         let active = self.active.lock().map_err(|e| e.to_string())?;
-        let flag = active.get(resource_id).ok_or_else(|| format!("{} 未在下载中", resource_id))?;
+        let flag = active
+            .get(resource_id)
+            .ok_or_else(|| format!("{} 未在下载中", resource_id))?;
         flag.store(true, Ordering::Relaxed);
         Ok(())
     }
@@ -57,7 +59,9 @@ pub fn resources_check() -> mbforge_infra::models::catalog::EnvironmentReport {
 }
 
 #[tauri::command]
-pub fn resources_status(resource_id: String) -> mbforge_infra::models::catalog::ResourceStatusResult {
+pub fn resources_status(
+    resource_id: String,
+) -> mbforge_infra::models::catalog::ResourceStatusResult {
     mbforge_infra::models::resolve::check_resource(&resource_id)
 }
 
@@ -105,7 +109,11 @@ pub async fn models_download(
         let result = download_model(&rid, tx, &cancelled_clone, None).await;
         match &result {
             Ok(path) => {
-                log::info!("[models_download {}] download_model succeeded: {}", rid, path.display());
+                log::info!(
+                    "[models_download {}] download_model succeeded: {}",
+                    rid,
+                    path.display()
+                );
             }
             Err(e) => {
                 log::error!("[models_download {}] download_model failed: {}", rid, e);
@@ -118,11 +126,22 @@ pub async fn models_download(
     let app_events = app.clone();
     let rid_forward = resource_id.clone();
     let forward_task = tokio::spawn(async move {
-        log::info!("[models_download {}] start forwarding progress events", rid_forward);
+        log::info!(
+            "[models_download {}] start forwarding progress events",
+            rid_forward
+        );
         while let Some(progress) = rx.recv().await {
-            log::debug!("[models_download {}] forward progress: {:?}", rid_forward, progress);
+            log::debug!(
+                "[models_download {}] forward progress: {:?}",
+                rid_forward,
+                progress
+            );
             if let Err(e) = app_events.emit("model-download-progress", progress) {
-                log::warn!("[models_download {}] emit progress failed: {}", rid_forward, e);
+                log::warn!(
+                    "[models_download {}] emit progress failed: {}",
+                    rid_forward,
+                    e
+                );
             }
         }
         log::info!("[models_download {}] progress channel closed", rid_forward);
@@ -132,11 +151,19 @@ pub async fn models_download(
     let result = download_task
         .await
         .map_err(|e| {
-            log::error!("[models_download {}] download_task panicked: {}", resource_id, e);
+            log::error!(
+                "[models_download {}] download_task panicked: {}",
+                resource_id,
+                e
+            );
             format!("Task failed: {}", e)
         })
         .and_then(|r| r.map_err(|e| e.to_string()));
-    log::info!("[models_download {}] download_task finished: {:?}", resource_id, result);
+    log::info!(
+        "[models_download {}] download_task finished: {:?}",
+        resource_id,
+        result
+    );
     let _ = forward_task.await;
 
     // 下载成功后刷新 resolved_paths.json，让 Python sidecar 立刻可见
@@ -146,7 +173,11 @@ pub async fn models_download(
 
     // 2. 无论成功失败，都从 active 中移除
     state.finish(&resource_id);
-    log::info!("[models_download {}] command returning: {:?}", resource_id, result);
+    log::info!(
+        "[models_download {}] command returning: {:?}",
+        resource_id,
+        result
+    );
     result
 }
 
@@ -170,7 +201,11 @@ pub async fn models_download_subfile(
 ) -> Result<String, String> {
     use tauri::Emitter;
 
-    log::info!("[models_download_subfile {}] {} command invoked", resource_id, subpath);
+    log::info!(
+        "[models_download_subfile {}] {} command invoked",
+        resource_id,
+        subpath
+    );
 
     let cancelled = match state.start(&resource_id) {
         Ok(flag) => flag,
@@ -308,8 +343,7 @@ pub fn models_delete_subfile(resource_id: String, subpath: String) -> Result<(),
         return Err(format!("子文件不存在: {}", target.display()));
     }
     if target.is_dir() {
-        std::fs::remove_dir_all(&target)
-            .map_err(|e| format!("删除目录失败: {}", e))?;
+        std::fs::remove_dir_all(&target).map_err(|e| format!("删除目录失败: {}", e))?;
     } else {
         std::fs::remove_file(&target).map_err(|e| format!("删除文件失败: {}", e))?;
     }

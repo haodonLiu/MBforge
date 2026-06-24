@@ -194,7 +194,7 @@ impl EmbedderTrait for SidecarEmbedder {
                     // 其它 trace 相关 header 按需扩展
                     _ => continue,
                 });
-                if let Ok(value) = HeaderValue::from_str(&v) {
+                if let Ok(value) = HeaderValue::from_str(v) {
                     req = req.header(name, value);
                 }
             }

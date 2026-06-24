@@ -3,8 +3,8 @@ use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use mbforge_infra::config::constants::INDEX_DIR;
 use crate::molecule::molecule_db::MOL_DB_FILENAME;
+use mbforge_infra::config::constants::INDEX_DIR;
 
 // ---------------------------------------------------------------------------
 // MoleculeRecord — port of Python `MoleculeRecord` from
@@ -551,7 +551,9 @@ impl MoleculeDatabase {
             > 0;
 
         if !has_bbox {
-            log::info!("Migrating molecule_images table: adding bbox_in_image / moldet_conf columns");
+            log::info!(
+                "Migrating molecule_images table: adding bbox_in_image / moldet_conf columns"
+            );
             conn.execute(
                 "ALTER TABLE molecule_images ADD COLUMN bbox_in_image TEXT",
                 [],
@@ -1018,8 +1020,7 @@ impl MoleculeDatabase {
         let rows = stmt
             .query_map(params![mol_id], |row| {
                 let bbox_str: Option<String> = row.get(8).ok().flatten();
-                let bbox: Option<Vec<f64>> =
-                    bbox_str.and_then(|s| serde_json::from_str(&s).ok());
+                let bbox: Option<Vec<f64>> = bbox_str.and_then(|s| serde_json::from_str(&s).ok());
                 Ok(MoleculeImage {
                     image_id: row.get(0).unwrap_or_default(),
                     mol_id: row.get(1).unwrap_or_default(),

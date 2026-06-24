@@ -121,7 +121,7 @@ impl ContentCache {
                     ORDER BY hit_count ASC, created_at ASC
                     LIMIT ?1
                 )",
-                params![(count - self.max_entries as i64 + 1) as i64],
+                params![count - self.max_entries as i64 + 1],
             )
             .ok();
         }

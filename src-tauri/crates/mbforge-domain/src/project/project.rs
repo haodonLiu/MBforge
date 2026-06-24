@@ -2,16 +2,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use crate::document::detection_cache::DetectionCache;
+use crate::document::knowledge_base::get_or_init_kb;
+use crate::document::summary::SummaryManager;
+use crate::molecule::molecule_store::MoleculeDatabase;
+use crate::project::document_project::DocumentProject;
 use mbforge_infra::config::constants::{
     INDEX_DIR, INDEX_FILE, MOLECULES_DIR, NOTES_DIR, NOTES_EXTS, PAPERS_DIR, PROJECTS_DIR,
     PROJECT_FORMAT_VERSION, PROJECT_META_DIR, REPORTS_DIR,
 };
-use crate::document::detection_cache::DetectionCache;
-use crate::document::knowledge_base::get_or_init_kb;
-use crate::document::summary::SummaryManager;
 use mbforge_infra::helpers::{generate_uuid, now_rfc3339, sha256_file};
-use crate::molecule::molecule_store::MoleculeDatabase;
-use crate::project::document_project::DocumentProject;
 
 /// The 6 user-visible folder names. Order matters for the bootstrap
 /// and for any "expected layout" checks.
@@ -178,24 +178,24 @@ impl Project {
             index_path.exists()
         );
 
-        let index: ProjectIndex = match mbforge_infra::helpers::load_json::<ProjectIndex>(&index_path)
-        {
-            Some(idx) => {
-                log::trace!(
-                    "[Rust Project::open] Loaded existing index with {} documents",
-                    idx.documents.len()
-                );
-                idx
-            }
-            None => {
-                log::trace!("[Rust Project::open] No existing index, creating empty");
-                ProjectIndex {
-                    version: PROJECT_FORMAT_VERSION,
-                    updated_at: now_rfc3339(),
-                    documents: vec![],
+        let index: ProjectIndex =
+            match mbforge_infra::helpers::load_json::<ProjectIndex>(&index_path) {
+                Some(idx) => {
+                    log::trace!(
+                        "[Rust Project::open] Loaded existing index with {} documents",
+                        idx.documents.len()
+                    );
+                    idx
                 }
-            }
-        };
+                None => {
+                    log::trace!("[Rust Project::open] No existing index, creating empty");
+                    ProjectIndex {
+                        version: PROJECT_FORMAT_VERSION,
+                        updated_at: now_rfc3339(),
+                        documents: vec![],
+                    }
+                }
+            };
 
         let mut path_map = HashMap::new();
         for doc in &index.documents {
@@ -842,9 +842,9 @@ impl Project {
 
     /// 彻底删除文档：清理所有数据，从索引移除，并删除 DocumentProject 目录。
     pub fn delete_document(&mut self, doc_id: &str) -> Result<(), String> {
-        let entry = self.get_document(doc_id).ok_or_else(|| {
-            format!("Document {doc_id} not found")
-        })?;
+        let entry = self
+            .get_document(doc_id)
+            .ok_or_else(|| format!("Document {doc_id} not found"))?;
         let source_filename = entry
             .source_path
             .as_deref()
@@ -879,15 +879,16 @@ impl Project {
 
     /// 重新读取文档：保留 source.pdf，清空派生数据，重置状态，并入队。
     pub fn reingest_document(&mut self, doc_id: &str) -> Result<(), String> {
-        let entry = self.get_document(doc_id).ok_or_else(|| {
-            format!("Document {doc_id} not found")
-        })?;
+        let entry = self
+            .get_document(doc_id)
+            .ok_or_else(|| format!("Document {doc_id} not found"))?;
         if entry.doc_type != "pdf" {
             return Err(format!("Only PDF documents can be re-ingested: {doc_id}"));
         }
-        let source_path = entry.source_path.clone().ok_or_else(|| {
-            format!("Document {doc_id} has no source_path")
-        })?;
+        let source_path = entry
+            .source_path
+            .clone()
+            .ok_or_else(|| format!("Document {doc_id} has no source_path"))?;
         let source_filename = Path::new(&source_path)
             .file_name()
             .and_then(|n| n.to_str())

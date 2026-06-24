@@ -356,10 +356,8 @@ impl MoleculeRelationDb {
         let metadata_str: Option<String> = row.get(5).ok();
         let metadata: Option<JsonValue> = metadata_str.and_then(|s| serde_json::from_str(&s).ok());
 
-        let relation_type =
-            RelationType::from_str(&rel_type_str).ok_or_else(|| {
-                format!("Unknown relation_type '{}' in database", rel_type_str)
-            })?;
+        let relation_type = RelationType::from_str(&rel_type_str)
+            .ok_or_else(|| format!("Unknown relation_type '{}' in database", rel_type_str))?;
 
         Ok(MoleculeRelation {
             id: row.get(0).ok(),

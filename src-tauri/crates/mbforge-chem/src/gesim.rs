@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! GESim: graph-based molecular similarity via von Neumann graph entropy
 //!
 //! Rust-native implementation using `chematic_core::Molecule` as the graph
@@ -21,6 +20,7 @@
 
 use chematic_core::implicit_hcount;
 use chematic_core::molecule::{AtomIdx, Molecule};
+use std::collections::VecDeque;
 
 // =============================================================================
 //  Constants (matching original)
@@ -319,13 +319,14 @@ fn generate_ecfp_nid(mol: &Molecule, nid: AtomIdx, max_rad: u8) -> BitSet1024 {
 /// manually-built adjacency HashMap.
 fn generate_path_fp(mol: &Molecule, nid: AtomIdx, max_rad: u8) -> String {
     let mut paths: Vec<String> = Vec::new();
-    let mut q: Vec<(AtomIdx, i32)> = vec![(nid, -1)];
+    let mut q: VecDeque<(AtomIdx, i32)> = VecDeque::new();
+    q.push_back((nid, -1));
     let mut path_prefix = "#";
 
     for r in 0..=max_rad {
         let size = q.len();
         for _ in 0..size {
-            let (node, parent) = q.remove(0);
+            let (node, parent) = q.pop_front().unwrap();
             let node_degree = mol.degree(node);
             let node_label = node_label_int(mol, node);
             let extended = format!("{}[{}:{}]", path_prefix, node_label, node_degree);
@@ -344,7 +345,7 @@ fn generate_path_fp(mol: &Molecule, nid: AtomIdx, max_rad: u8) -> String {
                 if r == max_rad {
                     paths.push(extended.clone());
                 } else {
-                    q.push((nbr, node.0 as i32));
+                    q.push_back((nbr, node.0 as i32));
                     paths.push(sub);
                 }
             }

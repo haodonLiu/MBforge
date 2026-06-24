@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! 化学缩写展开映射表
 //!
 //! 移植自 MoleCode 的 `abbreviation_map.py`，提供：

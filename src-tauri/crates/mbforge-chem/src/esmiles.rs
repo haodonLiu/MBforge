@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! E-SMILES 标签生成：SMILES → E-SMILES
 //!
 //! 给纯 SMILES 字符串添加语义标签（`<a>`, `<r>`, `<c>`），生成符合
@@ -36,7 +35,7 @@ use chematic_smiles::parse;
 ///
 /// 处理逻辑：逐字符扫描，遇到 `*` 时检查前一个字符是否为 `[`（说明已在 bracket 内），
 /// 如果不是则替换为 `[*]`。
-pub(crate) fn normalize_wildcards(smiles: &str) -> String {
+pub fn normalize_wildcards(smiles: &str) -> String {
     let bytes = smiles.as_bytes();
     let len = bytes.len();
     let mut out = Vec::with_capacity(len + 10);

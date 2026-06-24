@@ -3,9 +3,6 @@
 //! 将分散在 `chem.rs`、`esmiles.rs`、`abbreviation_map.rs`、`molecode.rs` 中的
 //! 预处理逻辑统一为可组合的流水线，减少重复代码并提高可维护性。
 
-use regex::Regex;
-use std::sync::LazyLock;
-
 // ============================================================================
 // SMILES 文本级清洗
 // ============================================================================
@@ -53,131 +50,16 @@ pub fn validate_smiles_text(smiles: &str, max_len: usize) -> Result<(), Preproce
 
 /// 将 bare `*` 转换为 bracket `[*]`，使 chematic 可以解析。
 ///
-/// E-SMILES / Markush SMILES 中的 `*` dummy atom 在 SMILES 规范中是 bare atom，
-/// 但 chematic 只识别 bracket 形式 `[*]`。
+/// Delegates to `esmiles::normalize_wildcards` (single source of truth).
 pub fn normalize_wildcards(smiles: &str) -> String {
-    let bytes = smiles.as_bytes();
-    let len = bytes.len();
-    let mut out = Vec::with_capacity(len + 10);
-
-    for (i, &b) in bytes.iter().enumerate() {
-        if b == b'*' {
-            // 检查前一个字符是否为 '[' —— 如果是，说明 * 已在 bracket 内
-            if i > 0 && bytes[i - 1] == b'[' {
-                out.push(b'*');
-            } else {
-                // bare * → [*]
-                out.extend_from_slice(b"[*]");
-            }
-        } else {
-            out.push(b);
-        }
-    }
-
-    String::from_utf8(out).unwrap_or_else(|_| smiles.to_string())
+    crate::esmiles::normalize_wildcards(smiles)
 }
-
-// ============================================================================
-// 缩写 / R-group 名称归一化
-// ============================================================================
-
-static BRACKET_DIGITS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[(\d+)\]").unwrap());
-static CHAIN_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"CH\[2\](?:\?[nx])?|CH2(?:\?[nx])?").unwrap());
 
 /// 缩写名称归一化。
 ///
-/// 处理：方括号、Unicode 上下标、大小写、同义词、尾部标点。
-/// 从 `abbreviation_map::normalize_abbrev_name` 提取，供 Markush / R-group 解析统一使用。
+/// Delegates to `abbreviation_map::normalize_abbrev_name` (single source of truth).
 pub fn normalize_abbrev_name(name: &str) -> String {
-    let mut s = name.trim().to_string();
-
-    // 1. 去 ^
-    s = s.replace('^', "");
-
-    // 2. 去方括号数字：R[1] → R1
-    s = BRACKET_DIGITS_RE.replace_all(&s, "$1").to_string();
-
-    // 3. Unicode 上下标转 ASCII
-    s = s
-        .replace('⁰', "0")
-        .replace('¹', "1")
-        .replace('²', "2")
-        .replace('³', "3")
-        .replace('⁴', "4")
-        .replace('⁵', "5")
-        .replace('⁶', "6")
-        .replace('⁷', "7")
-        .replace('⁸', "8")
-        .replace('⁹', "9")
-        .replace('₀', "0")
-        .replace('₁', "1")
-        .replace('₂', "2")
-        .replace('₃', "3")
-        .replace('₄', "4")
-        .replace('₅', "5")
-        .replace('₆', "6")
-        .replace('₇', "7")
-        .replace('₈', "8")
-        .replace('₉', "9");
-
-    // 4. 变量链归一化
-    s = CHAIN_RE.replace_all(&s, "(CH2)n").to_string();
-
-    // 5. 大小写归一化（精确匹配）
-    let lower = s.to_lowercase();
-    let case_map: &[(&str, &str)] = &[
-        ("boc", "Boc"),
-        ("cbz", "Cbz"),
-        ("fmoc", "Fmoc"),
-        ("tbdms", "TBDMS"),
-        ("tms", "TMS"),
-        ("ac", "Ac"),
-        ("ts", "Ts"),
-        ("tf", "Tf"),
-        ("me", "Me"),
-        ("et", "Et"),
-        ("ph", "Ph"),
-        ("bn", "Bn"),
-        ("ome", "OMe"),
-        ("oet", "OEt"),
-        ("oac", "OAc"),
-        ("obn", "OBn"),
-    ];
-    for &(from, to) in case_map {
-        if lower == from {
-            return to.to_string();
-        }
-    }
-
-    // 6. 同义词归一化（精确匹配）
-    let synonym_map: &[(&str, &str)] = &[
-        ("CO2R", "COOR"),
-        ("COOMe", "CO2Me"),
-        ("COOEt", "CO2Et"),
-        ("COOCH3", "CO2Me"),
-        ("CO2H", "COOH"),
-        ("MeO", "OMe"),
-        ("OCH3", "OMe"),
-        ("EtO", "OEt"),
-        ("AcHN", "NHAc"),
-        ("MeO2C", "CO2Me"),
-        ("O2N", "NO2"),
-        ("Tos", "Ts"),
-        ("BOC", "Boc"),
-    ];
-    for &(from, to) in synonym_map {
-        if s == from {
-            return to.to_string();
-        }
-    }
-
-    // 7. 去尾部标点
-    s = s
-        .trim_end_matches([',', '.', ' '])
-        .to_string();
-
-    s
+    crate::abbreviation_map::normalize_abbrev_name(name)
 }
 
 // ============================================================================
@@ -350,8 +232,6 @@ mod tests {
         assert!(preprocess_smiles("C C").is_err());
     }
 
-    // ── preprocess_rgroup_name ───────────────────────────────────
-
     #[test]
     fn test_rgroup_name_ok() {
         assert_eq!(preprocess_rgroup_name("R[1]").unwrap(), "R1");
@@ -374,8 +254,6 @@ mod tests {
             Err(PreprocessError::TooLong { len: 1001, max: 1000 })
         ));
     }
-
-    // ── preprocess() 管线组合 ────────────────────────────────────
 
     #[test]
     fn test_preprocess_validate_text_only() {

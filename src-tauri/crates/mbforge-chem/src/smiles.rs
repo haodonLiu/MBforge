@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! 纯 Rust 化学信息学 — 基于 chematic crate，替代 Python RDKit sidecar
 //!
 //! 实际 API（来自 `chematic-*` git 依赖，本地 cache `@ .cargo/git/checkouts/chematic-09e7e67b97ed9dba/47a69b1`）：

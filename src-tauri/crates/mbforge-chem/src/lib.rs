@@ -7,9 +7,6 @@
 //! 该 crate 基于 [`chematic`](https://github.com/kent-tokyo/chematic) 实现，
 //! 替代原有的 Python RDKit sidecar，用于 MBForge 桌面端。
 
-#![allow(dead_code)] // 迁移代码中遗留的内部/暂用辅助类型
-#![allow(clippy::unwrap_used, clippy::expect_used)] // 迁移代码中遗留的 unwrap/expect 模式
-
 mod abbreviation_map;
 pub mod esmiles;
 pub mod gesim;

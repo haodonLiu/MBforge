@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! MoleCode 生成：E-SMILES → MoleCode (Mermaid graph text)
 //!
 //! 将 SMILES/E-SMILES 分子表示转换为 MoleCode 格式——一种以 Mermaid 图语法
@@ -89,16 +88,7 @@ impl AtomIdGenerator {
 
 /// Clean a string to be a valid Mermaid identifier.
 fn sanitize_identifier(name: &str) -> String {
-    let mut out: String = name
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
-        .collect();
-    if out.is_empty() {
-        out = "Molecule".to_string();
-    } else if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        out = format!("M{}", out);
-    }
-    out
+    crate::preprocess::sanitize_identifier(name)
 }
 
 /// Generate atom display label: `Element[Hcount][(charge)]`
@@ -187,7 +177,6 @@ pub fn esmiles_to_molecode(esmiles: &str, name: &str) -> Result<MoleCodeResult, 
     // atom_idx (usize) → node_id (String)
     let mut node_ids: HashMap<usize, String> = HashMap::new();
     let mut nodes: Vec<(String, String, bool)> = Vec::new(); // (id, label, is_abbrev)
-    let mut atom_counter = 0usize;
 
     for (idx, atom) in mol.atoms() {
         let idx_usize = idx.0 as usize;
@@ -215,8 +204,6 @@ pub fn esmiles_to_molecode(esmiles: &str, name: &str) -> Result<MoleCodeResult, 
             let label = atom_display_label(symbol, h, atom.charge);
             nodes.push((node_id, label, false));
         }
-
-        atom_counter += 1;
     }
 
     // 7. 生成边
@@ -263,7 +250,7 @@ pub fn esmiles_to_molecode(esmiles: &str, name: &str) -> Result<MoleCodeResult, 
 
     Ok(MoleCodeResult {
         mermaid,
-        atom_count: atom_counter,
+        atom_count: mol.atom_count(),
         bond_count: edges.len(),
     })
 }

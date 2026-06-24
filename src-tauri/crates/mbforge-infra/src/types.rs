@@ -91,3 +91,33 @@ impl ExtractionResult {
         s
     }
 }
+
+// ---------------------------------------------------------------------------
+// Classification / extraction types (from commands/classifier.rs + extractor.rs)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PageClassification {
+    pub page_idx: usize,
+    pub text_density: f64,
+    pub is_scanned: bool,
+    pub has_molecular_patterns: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DocumentClassification {
+    pub text_density: f64,
+    pub is_scanned: bool,
+    pub has_molecular_patterns: bool,
+    pub metadata_hints: Option<serde_json::Value>,
+    pub pages: Vec<PageClassification>,
+    pub needs_confirmation: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActivityData {
+    pub activity_type: String,
+    pub value: f64,
+    pub units: String,
+    pub context: String,
+}

@@ -13,8 +13,6 @@ pub fn esmiles_to_molecode_cmd(esmiles: String, name: String) -> Result<String, 
 ///
 /// 使用 chematic-chem 计算 MW、LogP、TPSA、HBA、HBD、可旋转键数、分子式
 #[tauri::command]
-pub fn chem_descriptors_cmd(
-    smiles: String,
-) -> Result<mbforge_chem::chem::ChemDescriptors, String> {
+pub fn chem_descriptors_cmd(smiles: String) -> Result<mbforge_chem::chem::ChemDescriptors, String> {
     mbforge_chem::chem::compute_descriptors(&smiles)
 }

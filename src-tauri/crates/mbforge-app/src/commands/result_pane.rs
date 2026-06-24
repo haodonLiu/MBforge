@@ -19,9 +19,9 @@ use std::path::PathBuf;
 
 use mbforge_domain::document::detection_cache::{DetectionCache, PageDetection};
 use mbforge_domain::document::knowledge_base::get_or_init_kb;
-use mbforge_infra::helpers::clean_path;
 use mbforge_domain::molecule::molecule_store::MoleculeDatabase;
 use mbforge_domain::project::project::Project;
+use mbforge_infra::helpers::clean_path;
 use mbforge_pipeline::chem::label_assoc::{self, TextLine};
 
 // ---------------------------------------------------------------------------
@@ -86,22 +86,20 @@ pub async fn get_molecule_coref_chain(
     };
 
     for doc_id in doc_ids {
-        let (pdf_abs, _doc_slug, is_legacy) = match Project::open(&root)
-            .and_then(|p| p.get_document_source_path(&doc_id))
-        {
-            Some(path) => {
-                let slug = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(&doc_id)
-                    .to_string();
-                let legacy = path.starts_with(
-                    root.join(mbforge_infra::config::constants::PAPERS_DIR),
-                );
-                (path, slug, legacy)
-            }
-            None => continue,
-        };
+        let (pdf_abs, _doc_slug, is_legacy) =
+            match Project::open(&root).and_then(|p| p.get_document_source_path(&doc_id)) {
+                Some(path) => {
+                    let slug = path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or(&doc_id)
+                        .to_string();
+                    let legacy =
+                        path.starts_with(root.join(mbforge_infra::config::constants::PAPERS_DIR));
+                    (path, slug, legacy)
+                }
+                None => continue,
+            };
         let cache_key = if is_legacy {
             // Legacy cache keyed by PDF file stem; we don't have it here,
             // skip — the bulk of detections live in DocumentProject cache.
@@ -373,11 +371,7 @@ fn composite_conf(det: &mbforge_domain::document::detection_cache::Detection) ->
 /// Pull a 240-char text snippet from the lines that vertically overlap
 /// the bbox. The bbox is in PDF bottom-left coords; the lines we got
 /// from `label_assoc` are top-left, so we flip by `page_h_pts` here.
-fn extract_context_text(
-    pdf_abs: &std::path::Path,
-    page: usize,
-    bbox_pdf: &[f64; 4],
-) -> String {
+fn extract_context_text(pdf_abs: &std::path::Path, page: usize, bbox_pdf: &[f64; 4]) -> String {
     let page_h_pts = estimate_page_h_pts(pdf_abs, page);
     let lines = label_assoc::extract_page_text_lines(
         pdf_abs.to_string_lossy().as_ref(),
@@ -390,7 +384,11 @@ fn extract_context_text(
         .iter()
         .filter(|l| line_overlaps_y(&flipped, l))
         .collect();
-    hits.sort_by(|a, b| a.bbox[1].partial_cmp(&b.bbox[1]).unwrap_or(std::cmp::Ordering::Equal));
+    hits.sort_by(|a, b| {
+        a.bbox[1]
+            .partial_cmp(&b.bbox[1])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let joined: String = hits
         .iter()
         .map(|l| l.text.as_str())
@@ -612,7 +610,9 @@ async fn read_cached_molecules(
     page: usize,
 ) -> Result<Vec<serde_json::Value>, String> {
     let root = project_root;
-    let (doc_slug, is_legacy) = match Project::open(root).and_then(|p| p.get_document_source_path(doc_id)) {
+    let (doc_slug, is_legacy) = match Project::open(root)
+        .and_then(|p| p.get_document_source_path(doc_id))
+    {
         Some(path) => {
             let slug = path
                 .file_stem()
@@ -624,7 +624,11 @@ async fn read_cached_molecules(
         }
         None => (doc_id.to_string(), true),
     };
-    let cache_key = if is_legacy { doc_slug } else { doc_id.to_string() };
+    let cache_key = if is_legacy {
+        doc_slug
+    } else {
+        doc_id.to_string()
+    };
 
     let hash = match pdf_hash_cached(pdf_abs).await {
         Some(h) => h,
@@ -837,8 +841,7 @@ pub fn update_coref_pair(
         }),
         Some(&label.label_text),
     ) {
-        let _ = kb
-            .delete_predictions_by_pair(&doc_id, page, old_smiles, old_text);
+        let _ = kb.delete_predictions_by_pair(&doc_id, page, old_smiles, old_text);
     }
 
     kb.upsert_coref_predictions(&doc_id, page, &[new_pred])
@@ -857,10 +860,7 @@ pub fn update_coref_pair(
 
 /// 删除指定 coref 预测
 #[tauri::command]
-pub fn delete_coref_prediction(
-    project_root: String,
-    prediction_id: i64,
-) -> Result<(), String> {
+pub fn delete_coref_prediction(project_root: String, prediction_id: i64) -> Result<(), String> {
     let kb_guard = get_or_init_kb(&project_root).map_err(|e| e.to_string())?;
     let kb = kb_guard.value();
 
@@ -872,7 +872,10 @@ pub fn delete_coref_prediction(
     // 临时方案：读取所有页找到后用 delete_coref_predictions
     // 简化：暂时不实现单点删除，要求前端调 confirm_coref_prediction(false) 标记
     let _ = (kb, prediction_id);
-    Err("Single-id delete not yet implemented. Use confirm_coref_prediction(false) to unconfirm.".to_string())
+    Err(
+        "Single-id delete not yet implemented. Use confirm_coref_prediction(false) to unconfirm."
+            .to_string(),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -880,6 +883,7 @@ pub fn delete_coref_prediction(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -961,14 +965,26 @@ mod tests {
 
     #[test]
     fn classify_block_detects_figure_caption() {
-        assert_eq!(classify_block("Figure 1. Synthetic route to compound 7", 1), "figure");
-        assert_eq!(classify_block("Fig. 3. Inhibition curve of analog 12", 1), "figure");
-        assert_eq!(classify_block("Scheme 2. Retrosynthesis overview", 1), "figure");
+        assert_eq!(
+            classify_block("Figure 1. Synthetic route to compound 7", 1),
+            "figure"
+        );
+        assert_eq!(
+            classify_block("Fig. 3. Inhibition curve of analog 12", 1),
+            "figure"
+        );
+        assert_eq!(
+            classify_block("Scheme 2. Retrosynthesis overview", 1),
+            "figure"
+        );
     }
 
     #[test]
     fn classify_block_detects_table_caption() {
-        assert_eq!(classify_block("Table 2. IC50 values for series A", 1), "table");
+        assert_eq!(
+            classify_block("Table 2. IC50 values for series A", 1),
+            "table"
+        );
     }
 
     #[test]
@@ -985,6 +1001,9 @@ mod tests {
         // Period-terminated single line: not a heading.
         assert_eq!(classify_block("Introduction.", 1), "paragraph");
         // Caption-like prefix but no number: not a caption.
-        assert_eq!(classify_block("Figure caption without a number", 1), "heading");
+        assert_eq!(
+            classify_block("Figure caption without a number", 1),
+            "heading"
+        );
     }
 }

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use tauri::State;
 
+use crate::sidecar::SidecarInner;
 use mbforge_infra::config::constants::sidecar_url;
 use mbforge_infra::helpers::LockResultExt;
-use crate::sidecar::SidecarInner;
 
 #[derive(serde::Serialize)]
 pub struct SidecarStatusResponse {

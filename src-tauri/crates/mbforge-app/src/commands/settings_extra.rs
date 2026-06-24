@@ -2,12 +2,11 @@
 
 use std::path::{Path, PathBuf};
 
-use mbforge_infra::config::constants::global_data_dir;
-use mbforge_infra::config::settings::AppConfig;
 use mbforge_domain::document::detection_cache::DetectionCache;
 use mbforge_domain::document::semantic_cache::SemanticCache;
+use mbforge_infra::config::constants::global_data_dir;
+use mbforge_infra::config::settings::AppConfig;
 use mbforge_infra::models::resolve::dir_size;
-
 
 // ─── 缓存大小与清除 ─────────────────────────────────────────────
 

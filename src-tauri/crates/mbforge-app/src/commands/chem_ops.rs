@@ -290,15 +290,16 @@ pub fn chem_gesim_atom_mapping(a: String, b: String) -> Result<[Vec<Option<usize
 
 /// 提取共同骨架（MCS）
 #[tauri::command]
-pub fn sar_find_scaffold(
-    smiles_list: Vec<String>,
-) -> Option<mbforge_chem::sar::ScaffoldResult> {
+pub fn sar_find_scaffold(smiles_list: Vec<String>) -> Option<mbforge_chem::sar::ScaffoldResult> {
     mbforge_chem::sar::sar_find_scaffold(smiles_list)
 }
 
 /// 将单个化合物分解为骨架 + R-group
 #[tauri::command]
-pub fn sar_decompose(smiles: String, core_smiles: String) -> mbforge_chem::sar::RGroupDecomposition {
+pub fn sar_decompose(
+    smiles: String,
+    core_smiles: String,
+) -> mbforge_chem::sar::RGroupDecomposition {
     mbforge_chem::sar::sar_decompose(smiles, core_smiles)
 }
 

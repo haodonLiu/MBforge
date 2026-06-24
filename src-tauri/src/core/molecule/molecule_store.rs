@@ -461,6 +461,83 @@ impl MoleculeDatabase {
         Ok(())
     }
 
+    /// 确保 molecule_relations / molecule_detections 表存在。
+    /// 这两个表原本由 MoleculeRelationDb 创建；MoleculeDatabase 在清理时需要直接操作它们。
+    fn ensure_relations_and_detections_schema(conn: &rusqlite::Connection) -> Result<(), String> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS molecule_relations (
+                id INTEGER PRIMARY KEY,
+                mol_a_id TEXT NOT NULL,
+                mol_b_id TEXT NOT NULL,
+                relation_type TEXT NOT NULL CHECK(relation_type IN ('similar','same_as','scaffold','cluster')),
+                score REAL,
+                metadata TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(mol_a_id, mol_b_id, relation_type)
+            );
+            CREATE INDEX IF NOT EXISTS idx_relations_type ON molecule_relations(relation_type);
+            CREATE INDEX IF NOT EXISTS idx_relations_a ON molecule_relations(mol_a_id);
+            CREATE INDEX IF NOT EXISTS idx_relations_b ON molecule_relations(mol_b_id);
+
+            CREATE TABLE IF NOT EXISTS molecule_detections (
+                id INTEGER PRIMARY KEY,
+                mol_id TEXT NOT NULL,
+                doc_id TEXT NOT NULL,
+                page INTEGER NOT NULL,
+                bbox_x0 REAL NOT NULL,
+                bbox_y0 REAL NOT NULL,
+                bbox_x1 REAL NOT NULL,
+                bbox_y1 REAL NOT NULL,
+                crop_relpath TEXT,
+                conf_moldet REAL,
+                conf_molscribe REAL,
+                vlm_verified_esmiles TEXT,
+                vlm_confidence REAL,
+                detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(mol_id, doc_id, page)
+            );
+            CREATE INDEX IF NOT EXISTS idx_detect_doc_page ON molecule_detections(doc_id, page);
+            CREATE INDEX IF NOT EXISTS idx_detect_mol ON molecule_detections(mol_id);",
+        )
+        .map_err(|e| format!("Failed to ensure relations/detections schema: {e}"))?;
+        Ok(())
+    }
+
+    /// Delete all relations where either endpoint is in `mol_ids`.
+    pub fn delete_relations_for_mol_ids(&self, mol_ids: &[String]) -> Result<usize, String> {
+        if mol_ids.is_empty() {
+            return Ok(0);
+        }
+        Self::ensure_relations_and_detections_schema(&self.conn)?;
+        let placeholders: Vec<String> = (0..mol_ids.len()).map(|i| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "DELETE FROM molecule_relations WHERE mol_a_id IN ({}) OR mol_b_id IN ({})",
+            placeholders.join(","),
+            placeholders.join(",")
+        );
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .map_err(|e| format!("Prepare failed: {e}"))?;
+        let affected = stmt
+            .execute(rusqlite::params_from_iter(mol_ids.iter()))
+            .map_err(|e| format!("Failed to delete relations: {e}"))?;
+        Ok(affected)
+    }
+
+    /// Delete all molecule detections for one document.
+    pub fn delete_detections_for_doc(&self, doc_id: &str) -> Result<usize, String> {
+        Self::ensure_relations_and_detections_schema(&self.conn)?;
+        let affected = self
+            .conn
+            .execute(
+                "DELETE FROM molecule_detections WHERE doc_id = ?1",
+                rusqlite::params![doc_id],
+            )
+            .map_err(|e| format!("Failed to delete detections for doc {doc_id}: {e}"))?;
+        Ok(affected)
+    }
+
     /// Migrate v1 → v2: 给 molecule_images 加 bbox_in_image / moldet_conf 列（coref 持久化用）
     fn migrate_v1_to_v2(conn: &rusqlite::Connection) -> Result<(), String> {
         // 检查列是否已存在

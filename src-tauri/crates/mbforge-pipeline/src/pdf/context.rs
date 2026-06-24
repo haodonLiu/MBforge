@@ -79,10 +79,11 @@ impl PdfInspectorContext {
     /// Build from an already-owned `Arc<[u8]>` buffer.
     async fn from_arc_bytes(arc_bytes: Arc<[u8]>) -> Result<Self, String> {
         let task_bytes = arc_bytes.clone();
-        let result = tokio::task::spawn_blocking(move || pdf_inspector::process_pdf_mem(&task_bytes))
-            .await
-            .map_err(|e| format!("process_pdf_mem join error: {e}"))?
-            .map_err(|e| format!("process_pdf_mem failed: {e}"))?;
+        let result =
+            tokio::task::spawn_blocking(move || pdf_inspector::process_pdf_mem(&task_bytes))
+                .await
+                .map_err(|e| format!("process_pdf_mem join error: {e}"))?
+                .map_err(|e| format!("process_pdf_mem failed: {e}"))?;
 
         let classification = PdfClassification {
             pdf_type: result.pdf_type,
@@ -97,7 +98,11 @@ impl PdfInspectorContext {
             classification,
             markdown: result.markdown.unwrap_or_default(),
             page_count: result.page_count as usize,
-            pages_needing_ocr: result.pages_needing_ocr.iter().map(|&p| p as usize).collect(),
+            pages_needing_ocr: result
+                .pages_needing_ocr
+                .iter()
+                .map(|&p| p as usize)
+                .collect(),
         })
     }
 

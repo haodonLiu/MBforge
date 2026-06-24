@@ -11,10 +11,10 @@
 
 use std::path::Path;
 
-use mbforge_infra::config::constants::sidecar_url;
-use mbforge_domain::document::knowledge_base::{CorefPrediction, FigureLabel, KnowledgeBase};
-use mbforge_infra::error::{AppError, AppResult, ErrorCode};
 use crate::chem::vlm_chem;
+use mbforge_domain::document::knowledge_base::{CorefPrediction, FigureLabel, KnowledgeBase};
+use mbforge_infra::config::constants::sidecar_url;
+use mbforge_infra::error::{AppError, AppResult, ErrorCode};
 
 /// Coref 持久化结果（单页）
 #[derive(Debug, Clone, Default)]
@@ -59,19 +59,14 @@ impl CorefPersistService {
         let path_str = image_path.to_string_lossy().to_string();
 
         // 1. 调 sidecar
-        let coref = vlm_chem::detect_coref(
-            &path_str,
-            &self.sidecar_url,
-            use_molscribe,
-            use_ocr,
-        )
-        .await
-        .map_err(|e| AppError {
-            code: ErrorCode::Unknown,
-            message: format!("coref sidecar call failed: {e}"),
-            path: Some(path_str.clone()),
-            suggestion: None,
-        })?;
+        let coref = vlm_chem::detect_coref(&path_str, &self.sidecar_url, use_molscribe, use_ocr)
+            .await
+            .map_err(|e| AppError {
+                code: ErrorCode::Unknown,
+                message: format!("coref sidecar call failed: {e}"),
+                path: Some(path_str.clone()),
+                suggestion: None,
+            })?;
 
         // 2. 解析 → records
         let labels: Vec<FigureLabel> = coref
@@ -119,7 +114,14 @@ impl CorefPersistService {
         // 3. 写 KB
         let label_tuples: Vec<(Vec<f64>, String, f64, Option<String>)> = labels
             .iter()
-            .map(|l| (l.label_bbox.clone(), l.label_text.clone(), l.ocr_conf, l.image_path.clone()))
+            .map(|l| {
+                (
+                    l.label_bbox.clone(),
+                    l.label_text.clone(),
+                    l.ocr_conf,
+                    l.image_path.clone(),
+                )
+            })
             .collect();
         let labels_written = kb.insert_figure_labels(doc_id, page, &label_tuples)?;
 
@@ -132,8 +134,7 @@ impl CorefPersistService {
                     if let Some(stored) = stored_labels.iter().find(|l| {
                         &l.label_text == label_text
                             && l.label_bbox.len() == label_bbox.len()
-                            && l
-                                .label_bbox
+                            && l.label_bbox
                                 .iter()
                                 .zip(label_bbox.iter())
                                 .all(|(a, b)| (a - b).abs() < 1e-3)

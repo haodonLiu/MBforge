@@ -1,8 +1,8 @@
 //! Helpers for mapping pipeline extracted entries to molecule records.
 
-use mbforge_infra::helpers::{generate_uuid, sha256_text};
-use mbforge_domain::molecule::molecule_store::MoleculeRecord;
 use crate::doc_types::{ActivityEntry, CompoundEntry};
+use mbforge_domain::molecule::molecule_store::MoleculeRecord;
+use mbforge_infra::helpers::{generate_uuid, sha256_text};
 
 /// CompoundEntry → MoleculeRecord 映射（三层分离）
 ///

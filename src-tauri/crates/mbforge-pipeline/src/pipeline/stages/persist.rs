@@ -14,8 +14,6 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use mbforge_domain::document::knowledge_base::get_or_init_kb;
-use mbforge_domain::project::project::Project;
 use crate::pipeline::context::{PipelineContext, PipelineEvent};
 use crate::pipeline::error::{PersistError, PipelineError};
 use crate::pipeline::models::enriched::EnrichedDocument;
@@ -26,6 +24,8 @@ use crate::pipeline::services::coref_persist::CorefPersistService;
 use crate::pipeline::services::molecule_store::MoleculeStoreWriter;
 use crate::pipeline::writer::report_md::write_agent_report;
 use crate::pipeline::writer::text_md::write_text_markdown;
+use mbforge_domain::document::knowledge_base::get_or_init_kb;
+use mbforge_domain::project::project::Project;
 
 /// Pipeline stage that persists extracted and enriched pipeline outputs to disk.
 pub struct PersistStage {
@@ -186,10 +186,7 @@ impl Stage<(ExtractedDocument, EnrichedDocument), PersistedDocument> for Persist
                             );
                         }
                         Err(e) => {
-                            let msg = format!(
-                                "coref persist failed for page {}: {e}",
-                                img.page
-                            );
+                            let msg = format!("coref persist failed for page {}: {e}", img.page);
                             log::warn!("[PersistStage] {}", msg);
                             coref_warnings.push(msg);
                         }

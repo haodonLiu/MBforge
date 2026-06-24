@@ -4,10 +4,10 @@ use std::path::Path;
 
 use tokio::task::spawn_blocking;
 
-use mbforge_infra::config::constants::REPORTS_DIR;
 use crate::pdf::images::{extract_images_from_pdf, ExtractedImage};
 use crate::pipeline::error::{ExtractError, PipelineError};
 use crate::pipeline::models::extracted::ImageRef;
+use mbforge_infra::config::constants::REPORTS_DIR;
 
 /// Service responsible for extracting embedded images from PDFs and copying
 /// them into the project's report output directory.

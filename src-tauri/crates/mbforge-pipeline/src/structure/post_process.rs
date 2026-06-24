@@ -4,11 +4,11 @@ use rig_core::completion::{AssistantContent, CompletionModel};
 use rig_core::providers::anthropic::Client as AnthropicClient;
 use rig_core::providers::openai::CompletionsClient as OpenAiClient;
 
-use mbforge_infra::config::llm_config::{MbforgeProviderConfig, MbforgeProviderKind};
 use crate::doc_types::{
     ActivityEntry, CompoundEntry, DocumentMetadata, FindingEntry, PdfParseResult,
     PostProcessResult, StructuredData, UncertainItem,
 };
+use mbforge_infra::config::llm_config::{MbforgeProviderConfig, MbforgeProviderKind};
 
 // ---------------------------------------------------------------------------
 // Batch splitting
@@ -366,10 +366,14 @@ struct BatchResult {
 // 详见 src-tauri/src/core/config/llm_config.rs。
 // ---------------------------------------------------------------------------
 
-/// 同步入口：自建当前线程 tokio runtime 跑 async 实现。
+/// 同步入口：若已在 tokio runtime 内则转 blocking thread 执行，否则自建当前线程 runtime。
 /// PDF 解析流水线在同步上下文调用，包装一次 runtime 比强制整个 post_process async 化更稳。
 pub fn call_llm_api(system: &str, user: &str) -> Result<(String, Option<u32>), String> {
     let cfg = MbforgeProviderConfig::from_app_config().map_err(|e| e.to_string())?;
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        // 在异步上下文被调用时，转 blocking thread 避免阻塞 executor，同时禁止嵌套 runtime。
+        return tokio::task::block_in_place(|| handle.block_on(dispatch_chat(&cfg, system, user)));
+    }
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -674,9 +678,9 @@ pub fn parse_structured_data(val: &serde_json::Value) -> Result<StructuredData, 
                     let raw_value = v["value"]
                         .as_f64()
                         .or_else(|| {
-                            v["value"].as_str().and_then(
-                                crate::chem::chem_validate::sanitize_activity_value,
-                            )
+                            v["value"]
+                                .as_str()
+                                .and_then(crate::chem::chem_validate::sanitize_activity_value)
                         })
                         .unwrap_or(0.0);
                     ActivityEntry {
@@ -949,10 +953,9 @@ pub async fn post_process_sections_parallel(
                 let status = match outcome {
                     Ok(Ok(r)) => SectionStatus::Ok(r),
                     Ok(Err(e)) => SectionStatus::Err(e),
-                    Err(join_err) => SectionStatus::Err(format!(
-                        "blocking task join error: {}",
-                        join_err
-                    )),
+                    Err(join_err) => {
+                        SectionStatus::Err(format!("blocking task join error: {}", join_err))
+                    }
                 };
                 SectionResult {
                     index: idx,

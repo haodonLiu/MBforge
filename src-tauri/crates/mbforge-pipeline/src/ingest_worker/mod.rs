@@ -10,13 +10,6 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
 
-use mbforge_infra::config::constants::{
-    EVT_INGEST_LOG, EVT_INGEST_PROGRESS, EVT_INGEST_QUEUE_UPDATE, EVT_INGEST_WORKER_HEARTBEAT,
-    EVT_OCR_API_MISSING,
-};
-use mbforge_domain::ingest_queue::{IngestQueue, IngestTask, QueueStats};
-use mbforge_domain::project::document_project::DocumentProject;
-use mbforge_domain::project::project::Project;
 use crate::pdf::context::PdfInspectorContext;
 use crate::pipeline::context::{PipelineContext, PipelineEvent, PipelineReporter};
 use crate::pipeline::models::extracted::{ExtractedDocument, ExtractedMetadata};
@@ -27,6 +20,13 @@ use crate::pipeline::services::images::ImageService;
 use crate::pipeline::services::ocr::{default_backends, OcrService};
 use crate::pipeline::services::quick_moldet::quick_scan_pdf;
 use crate::pipeline::stages::extract::ExtractStage;
+use mbforge_domain::ingest_queue::{IngestQueue, IngestTask, QueueStats};
+use mbforge_domain::project::document_project::DocumentProject;
+use mbforge_domain::project::project::Project;
+use mbforge_infra::config::constants::{
+    EVT_INGEST_LOG, EVT_INGEST_PROGRESS, EVT_INGEST_QUEUE_UPDATE, EVT_INGEST_WORKER_HEARTBEAT,
+    EVT_OCR_API_MISSING,
+};
 
 const WORKER_HEARTBEAT_INTERVAL_SECS: u64 = 5;
 
@@ -212,7 +212,8 @@ async fn worker_loop(
             }
             Err(e) => {
                 if let Some(id) = stage_hist_id {
-                    if let Err(inner) = queue.record_stage_end(id, stage_duration_secs, false).await {
+                    if let Err(inner) = queue.record_stage_end(id, stage_duration_secs, false).await
+                    {
                         log::warn!("IngestWorker: record_stage_end failed: {}", inner);
                     }
                 }
@@ -286,16 +287,19 @@ fn validate_task_file_path(project_root: &Path, task: &IngestTask) -> Result<Str
     if !path.exists() {
         return Err(format!("source file not found: {}", path.display()));
     }
-    let check = mbforge_infra::helpers::assert_within_root(
-        project_root.to_string_lossy().as_ref(),
-        path,
-    )
-    .map_err(|e| format!("task file path safety check failed: {}", e))?;
+    let check =
+        mbforge_infra::helpers::assert_within_root(project_root.to_string_lossy().as_ref(), path)
+            .map_err(|e| format!("task file path safety check failed: {}", e))?;
     check
         .canonical
         .to_str()
         .map(|s| s.to_string())
-        .ok_or_else(|| format!("task file path is not valid UTF-8: {}", check.canonical.display()))
+        .ok_or_else(|| {
+            format!(
+                "task file path is not valid UTF-8: {}",
+                check.canonical.display()
+            )
+        })
 }
 
 /// 每阶段开始前的预检：文件、项目目录、磁盘空间、index 可写、sidecar 健康。
@@ -478,14 +482,13 @@ impl PipelineReporter for QueueStageReporter {
     fn report(&self, event: PipelineEvent) {
         let (stage, message) = match &event {
             PipelineEvent::StageStart { stage } => (stage.as_str(), format!("阶段 {} 开始", stage)),
-            PipelineEvent::StageProgress { stage, message } => {
-                (stage.as_str(), message.clone())
+            PipelineEvent::StageProgress { stage, message } => (stage.as_str(), message.clone()),
+            PipelineEvent::StageComplete { stage } => {
+                (stage.as_str(), format!("阶段 {} 完成", stage))
             }
-            PipelineEvent::StageComplete { stage } => (stage.as_str(), format!("阶段 {} 完成", stage)),
-            PipelineEvent::StageWarning { stage, message } => (
-                stage.as_str(),
-                format!("阶段 {} 警告: {}", stage, message),
-            ),
+            PipelineEvent::StageWarning { stage, message } => {
+                (stage.as_str(), format!("阶段 {} 警告: {}", stage, message))
+            }
         };
         log::debug!("PipelineEvent {:?}: {}", event, message);
         emit_log(
@@ -569,7 +572,10 @@ async fn process_text_extract(
     if let Some(dp) = DocumentProject::load(project_root, &task.doc_id) {
         let paths = dp.paths();
         if let Err(e) = std::fs::create_dir_all(&paths.pages_cache_dir) {
-            log::warn!("IngestWorker: failed to create pages cache directory: {}", e);
+            log::warn!(
+                "IngestWorker: failed to create pages cache directory: {}",
+                e
+            );
         }
         let text_path = paths.pages_cache_dir.join("text.md");
         if let Err(e) = std::fs::write(&text_path, &extracted.raw_text) {
@@ -674,7 +680,10 @@ async fn process_ocr(
             &task.id,
             &task.stage,
             "info",
-            format!("检测到扫描件（共 {} 页），将尝试 OCR", inspector_ctx.page_count),
+            format!(
+                "检测到扫描件（共 {} 页），将尝试 OCR",
+                inspector_ctx.page_count
+            ),
         );
         queue
             .update_progress(&task.id, &task.stage, 20.0, 0, 0, "scanned PDF detected")

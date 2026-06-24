@@ -15,9 +15,7 @@ use text_splitter::{Characters, TextSplitter};
 use crate::pipeline::context::{PipelineContext, PipelineEvent};
 use crate::pipeline::error::PipelineError;
 use crate::pipeline::models::extracted::ExtractedDocument;
-use crate::pipeline::models::segmented::{
-    Heading, SectionChunk, SegmentedDocument, TreeNode,
-};
+use crate::pipeline::models::segmented::{Heading, SectionChunk, SegmentedDocument, TreeNode};
 use crate::pipeline::runner::{Stage, StageOutcome};
 
 /// Semantic boundary keywords used to split text without explicit headings.

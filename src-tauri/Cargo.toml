@@ -25,6 +25,11 @@ fs2 = "0.4"
 tempfile = "3"
 directories = "5"
 tauri = { version = "2", default-features = false }
+chematic-core = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
+chematic-smiles = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
+chematic-fp = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
+chematic-smarts = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
+chematic-chem = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
 
 [workspace.lints.clippy]
 unwrap_used = "warn"

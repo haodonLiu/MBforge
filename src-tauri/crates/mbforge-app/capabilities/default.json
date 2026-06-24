@@ -10,7 +10,8 @@
     "dialog:allow-ask",
     "dialog:allow-confirm",
     "dialog:allow-message",
-    "shell:default"
+    "shell:default",
+    "allow-app-commands"
   ],
   "platforms": ["macOS", "windows", "linux", "android", "iOS"]
 }

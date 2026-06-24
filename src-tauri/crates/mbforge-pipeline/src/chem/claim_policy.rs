@@ -285,11 +285,8 @@ fn check_markush_mention(
     };
 
     // 3. 调用真正的 Markush 子结构匹配
-    let overlap = mbforge_chem::markush::analyze_markush_coverage(
-        &candidate,
-        esmiles,
-        Some(&claim.raw_text),
-    );
+    let overlap =
+        mbforge_chem::markush::analyze_markush_coverage(&candidate, esmiles, Some(&claim.raw_text));
 
     let (score, details) = match overlap.match_level {
         mbforge_chem::markush::MatchLevel::FullOverlap => (

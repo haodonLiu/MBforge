@@ -9,13 +9,13 @@
 
 use async_trait::async_trait;
 
-use mbforge_infra::config::settings::AppConfig;
-use mbforge_domain::document::knowledge_base::KnowledgeBase;
-use mbforge_infra::types::SectionChunk;
 use crate::pipeline::context::{PipelineContext, PipelineEvent};
 use crate::pipeline::error::{IndexError, PipelineError};
 use crate::pipeline::models::persisted::{IndexedDocument, PersistedDocument};
 use crate::pipeline::runner::{Stage, StageOutcome};
+use mbforge_domain::document::knowledge_base::KnowledgeBase;
+use mbforge_infra::config::settings::AppConfig;
+use mbforge_infra::types::SectionChunk;
 
 /// Pipeline stage that indexes persisted document sections for search.
 pub struct IndexStage;

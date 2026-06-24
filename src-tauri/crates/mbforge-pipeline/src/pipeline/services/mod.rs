@@ -1,13 +1,13 @@
 //! Pipeline services.
 
-/// Coref 持久化（molecule ↔ label 配对写入 KB）
-pub mod coref_persist;
 /// Persistent JSON file cache.
 pub mod cache;
 /// VLM image captioning.
 pub mod captions;
 /// Chemical structure validation.
 pub mod chem_validate;
+/// Coref 持久化（molecule ↔ label 配对写入 KB）
+pub mod coref_persist;
 /// Helpers for mapping extracted entries to molecule records.
 pub mod helpers;
 /// Embedded image extraction and persistence.

@@ -77,5 +77,9 @@ pub async fn get_ocr_layout(
         path.display()
     );
 
-    Ok(output.ocr_blocks.into_iter().map(OcrLayoutBlock::from).collect())
+    Ok(output
+        .ocr_blocks
+        .into_iter()
+        .map(OcrLayoutBlock::from)
+        .collect())
 }

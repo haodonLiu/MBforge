@@ -21,8 +21,8 @@ use std::path::Path;
 
 use pulldown_cmark::{Event, Parser, Tag};
 
-use mbforge_domain::document::detection_cache::DetectionCache;
 use crate::doc_types::{ImageRef, OcrBlock};
+use mbforge_domain::document::detection_cache::DetectionCache;
 
 /// Default description text when neither `ImageRef.description` nor a
 /// VLM caption is available.

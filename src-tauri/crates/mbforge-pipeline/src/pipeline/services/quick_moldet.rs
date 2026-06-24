@@ -11,10 +11,6 @@ use std::path::{Path, PathBuf};
 use image::GenericImageView;
 use serde::{Deserialize, Serialize};
 
-use mbforge_infra::config::constants::{MOLECULES_DIR, PROJECTS_DIR, PROJECT_SOURCE_FILE};
-use mbforge_domain::document::detection_cache::{
-    Detection as CachedDetection, DetectionCache, PageDetection, DETECTION_CACHE_SCHEMA_VERSION,
-};
 use crate::chem::vlm_chem::{detect_batch, Bbox};
 use crate::pdf::images::{image_to_pdf_bbox, pdf_page_size_pts, scale_from_page_size};
 use crate::pdf::sidecar_render::render_pages;
@@ -22,6 +18,10 @@ use crate::pipeline::models::extracted::ImageRef;
 use crate::pipeline::services::images::ImageService;
 use crate::pipeline::services::inspector::InspectorService;
 use crate::pipeline::services::source::SourceResolver;
+use mbforge_domain::document::detection_cache::{
+    Detection as CachedDetection, DetectionCache, PageDetection, DETECTION_CACHE_SCHEMA_VERSION,
+};
+use mbforge_infra::config::constants::{MOLECULES_DIR, PROJECTS_DIR, PROJECT_SOURCE_FILE};
 
 /// Per-page quick MoldDet scan result.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,10 +153,7 @@ pub async fn quick_scan_pdf(
     for batch_start in (0..page_images.len()).step_by(batch_size) {
         let batch_end = (batch_start + batch_size).min(page_images.len());
         let batch = &page_images[batch_start..batch_end];
-        let paths: Vec<&str> = batch
-            .iter()
-            .filter_map(|p| p.path.to_str())
-            .collect();
+        let paths: Vec<&str> = batch.iter().filter_map(|p| p.path.to_str()).collect();
 
         match detect_batch(&paths, sidecar_url).await {
             Ok(batch_bboxes) => {
@@ -258,16 +255,17 @@ async fn collect_scanned_page_images(
         };
 
         if !img_path.exists() {
-            log::warn!(
-                "[quick_scan] Image not found: {}",
-                img_path.display()
-            );
+            log::warn!("[quick_scan] Image not found: {}", img_path.display());
             continue;
         }
 
         let dims = tokio::task::spawn_blocking({
             let img_path = img_path.clone();
-            move || image::open(&img_path).map(|img| img.dimensions()).unwrap_or((0, 0))
+            move || {
+                image::open(&img_path)
+                    .map(|img| img.dimensions())
+                    .unwrap_or((0, 0))
+            }
         })
         .await
         .unwrap_or((0, 0));
@@ -302,7 +300,8 @@ async fn render_text_page_images(
             Ok(screenshots) => {
                 for ss in screenshots {
                     let page_idx = ss.page_num as usize;
-                    let page_img_path = tmp_dir.join(format!("page_{:04}_screenshot.png", page_idx));
+                    let page_img_path =
+                        tmp_dir.join(format!("page_{:04}_screenshot.png", page_idx));
                     if let Err(e) = std::fs::write(&page_img_path, &ss.image_bytes) {
                         log::warn!(
                             "[quick_scan] Failed to save screenshot page {}: {}",

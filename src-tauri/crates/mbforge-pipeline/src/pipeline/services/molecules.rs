@@ -6,8 +6,6 @@
 
 use std::path::{Path, PathBuf};
 
-use mbforge_infra::config::constants::{MOLECULES_DIR, PROJECTS_DIR, PROJECT_SOURCE_FILE};
-use mbforge_infra::helpers::assert_within_root_allow_missing;
 use crate::chem::vlm_chem::{process_page_image, DetectedMolecule};
 use crate::pdf::images::pdf_page_size_pts;
 use crate::pdf::sidecar_render::render_pages;
@@ -15,6 +13,8 @@ use crate::pipeline::error::{EnrichError, PipelineError};
 use crate::pipeline::models::enriched::DetectedMoleculeResult;
 use crate::pipeline::models::extracted::{ExtractedDocument, ImageRef};
 use crate::pipeline::services::images::ImageService;
+use mbforge_infra::config::constants::{MOLECULES_DIR, PROJECTS_DIR, PROJECT_SOURCE_FILE};
+use mbforge_infra::helpers::assert_within_root_allow_missing;
 
 /// Service for detecting and recognizing molecules in a PDF document.
 #[derive(Debug, Clone)]
@@ -74,7 +74,8 @@ impl MoleculeService {
             self.extract_from_scanned(source_path, project_root, extracted, &mol_dir)
                 .await
         } else {
-            self.extract_from_text(source_path, extracted, &mol_dir).await
+            self.extract_from_text(source_path, extracted, &mol_dir)
+                .await
         }
         .map_err(|e| PipelineError::Enrich(EnrichError::MoleculeServiceFailed { detail: e }))?;
 
@@ -107,10 +108,7 @@ impl MoleculeService {
                 continue;
             };
             if !img_path.exists() {
-                log::warn!(
-                    "[molecule_service] Image not found: {}",
-                    img_path.display()
-                );
+                log::warn!("[molecule_service] Image not found: {}", img_path.display());
                 continue;
             }
 
@@ -243,12 +241,13 @@ async fn extract_scanned_images(
     let service = ImageService::new();
     let tmp = tempfile::tempdir().map_err(|e| format!("failed to create temp dir: {e}"))?;
 
-    match service.extract_embedded_images(source_path, tmp.path()).await {
-        Ok(extracted_images) => Ok(service.persist_extracted_images(
-            source_path,
-            project_root,
-            &extracted_images,
-        )),
+    match service
+        .extract_embedded_images(source_path, tmp.path())
+        .await
+    {
+        Ok(extracted_images) => {
+            Ok(service.persist_extracted_images(source_path, project_root, &extracted_images))
+        }
         Err(e) => {
             log::warn!(
                 "[molecule_service] ImageService extraction failed ({}), falling back to extracted images",
@@ -302,10 +301,7 @@ fn molecule_output_dir(
 
 /// If `source_path` is a DocumentProject source file
 /// (`projects/<doc_id>/source.pdf`), return the `<doc_id>`.
-fn document_project_id_from_source_path(
-    project_root: &Path,
-    source_path: &Path,
-) -> Option<String> {
+fn document_project_id_from_source_path(project_root: &Path, source_path: &Path) -> Option<String> {
     let projects_dir = project_root.join(PROJECTS_DIR);
     if !source_path.starts_with(&projects_dir) {
         return None;

@@ -91,6 +91,12 @@ pub fn parse_with_llamaparse_sync(
     pdf_bytes: Vec<u8>,
     api_key: Option<String>,
 ) -> Result<LlamaParseResult, String> {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        // 在异步上下文被调用时，转 blocking thread 避免阻塞 executor，同时禁止嵌套 runtime。
+        return tokio::task::block_in_place(|| {
+            handle.block_on(parse_with_llamaparse(api_url, pdf_bytes, api_key))
+        });
+    }
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
     rt.block_on(parse_with_llamaparse(api_url, pdf_bytes, api_key))

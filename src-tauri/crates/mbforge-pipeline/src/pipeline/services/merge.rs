@@ -9,9 +9,7 @@
 use crate::chem::vlm_chem::ChemImageResult;
 use crate::doc_types::{DocStructure, StructuredData};
 use crate::pipeline::error::{EnrichError, PipelineError};
-use crate::structure::post_process::{
-    call_llm_api_async, extract_json, parse_structured_data,
-};
+use crate::structure::post_process::{call_llm_api_async, extract_json, parse_structured_data};
 
 /// Service that merges structured section results and VLM chemistry results.
 #[derive(Debug, Clone)]

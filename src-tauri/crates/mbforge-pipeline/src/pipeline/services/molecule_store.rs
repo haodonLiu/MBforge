@@ -2,12 +2,10 @@
 
 use std::path::Path;
 
-use mbforge_domain::molecule::molecule_store::MoleculeDatabase;
 use crate::doc_types::StructuredData;
 use crate::pipeline::error::{PersistError, PipelineError};
-use crate::pipeline::services::helpers::{
-    activity_entry_to_record, compound_entry_to_record,
-};
+use crate::pipeline::services::helpers::{activity_entry_to_record, compound_entry_to_record};
+use mbforge_domain::molecule::molecule_store::MoleculeDatabase;
 
 /// Writes extracted compound and activity entries to the project's molecule database.
 pub struct MoleculeStoreWriter;

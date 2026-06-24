@@ -1,11 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use mbforge_infra::types::{
-    ActivityData, DocumentClassification, Heading, SectionChunk,
-};
 use crate::chem::vlm_chem::ChemImageResult;
 use crate::chem::vlm_chem::DetectedMolecule;
+use mbforge_infra::types::{ActivityData, DocumentClassification, Heading, SectionChunk};
 
 // ---------------------------------------------------------------------------
 // Core pipeline types

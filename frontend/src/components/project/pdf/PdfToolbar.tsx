@@ -6,8 +6,8 @@ import type { DocumentEntry } from '../../../types'
 interface Props {
   doc: DocumentEntry
   onClose: () => void
-  pdfViewMode: 'read' | 'detect' | 'ocr'
-  onViewModeChange: (mode: 'read' | 'detect' | 'ocr') => void
+  pdfViewMode: 'read' | 'detect' | 'ocr' | 'coref'
+  onViewModeChange: (mode: 'read' | 'detect' | 'ocr' | 'coref') => void
   onLoadOcr: () => void
   isLoadingOcr: boolean
   showTextLayer: boolean
@@ -28,6 +28,14 @@ interface Props {
   currentDetectionsCount: number
   confidenceThreshold: number
   onConfidenceThresholdChange: (threshold: number) => void
+  /** coref 模式专属 */
+  isCorefMode?: boolean
+  isLoadingCoref?: boolean
+  corefLabelsCount?: number
+  corefPredictionsCount?: number
+  corefThreshold?: number
+  onCorefThresholdChange?: (threshold: number) => void
+  onRefreshCoref?: () => void
 }
 
 export default function PdfToolbar(props: Props) {
@@ -40,6 +48,8 @@ export default function PdfToolbar(props: Props) {
     pdfOcrSummary,
     isDetectMode, isDetecting, canDetect, onDetect, onClearDetectionCache, currentDetectionsCount,
     confidenceThreshold, onConfidenceThresholdChange,
+    isCorefMode, isLoadingCoref, corefLabelsCount, corefPredictionsCount,
+    corefThreshold, onCorefThresholdChange, onRefreshCoref,
   } = props
 
   return (
@@ -69,6 +79,17 @@ export default function PdfToolbar(props: Props) {
             disabled={isLoadingOcr}
           >
             {isLoadingOcr ? '加载中...' : 'OCR'}
+          </button>
+          <button
+            className={pdfViewMode === 'coref' ? 'active' : ''}
+            onClick={() => onViewModeChange(pdfViewMode === 'coref' ? 'read' : 'coref')}
+            disabled={isLoadingCoref}
+            title="分子 ↔ 标识符 共指标注（增强专利 PDF 检索）"
+          >
+            {isLoadingCoref ? '加载中...' : '共指'}
+            {isCorefMode && (corefPredictionsCount ?? 0) > 0 && (
+              <span style={{ marginLeft: 4, fontSize: 10, opacity: 0.7 }}>{corefPredictionsCount}</span>
+            )}
           </button>
         </div>
 
@@ -138,6 +159,37 @@ export default function PdfToolbar(props: Props) {
               />
               <span className="pdf-confidence-value">{Math.round(confidenceThreshold * 100)}%</span>
             </div>
+          </>
+        )}
+
+        {/* coref 模式：阈值 + 计数 + 刷新 */}
+        {isCorefMode && (
+          <>
+            <div className="pdf-toolbar-sep" />
+            <div className="pdf-confidence-control">
+              <span className="pdf-confidence-label">配对阈值</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={Math.round((corefThreshold ?? 0.3) * 100)}
+                onChange={e => onCorefThresholdChange?.(Number(e.target.value) / 100)}
+                className="pdf-confidence-slider"
+                title="置信度阈值：低于此值的共指配对不显示"
+              />
+              <span className="pdf-confidence-value">{Math.round((corefThreshold ?? 0.3) * 100)}%</span>
+            </div>
+            <span className="pdf-detect-count" title="label / 配对 数量">
+              {corefLabelsCount ?? 0}标 / {corefPredictionsCount ?? 0}配
+            </span>
+            <button
+              className="btn btn-secondary pdf-detect-btn"
+              onClick={onRefreshCoref}
+              disabled={isLoadingCoref}
+              title="从 KB 重新加载当前页 coref 数据"
+            >
+              刷新
+            </button>
           </>
         )}
       </div>

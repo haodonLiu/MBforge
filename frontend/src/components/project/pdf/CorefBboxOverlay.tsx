@@ -11,8 +11,8 @@
  */
 
 import { useMemo } from 'react'
-import type { CSSProperties } from 'react'
-import type { FigureLabel, CorefPrediction } from '../../api/tauri/result_pane'
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
+import type { FigureLabel, CorefPrediction } from '../../../api/tauri/result_pane'
 
 export interface CorefBboxOverlayProps {
   /** OCR 检出的 label 标注（confidence 可用于过滤） */
@@ -26,6 +26,8 @@ export interface CorefBboxOverlayProps {
   containerHeight: number
   /** 点击 mol bbox 回调（用于"重选 coref"菜单） */
   onMolClick?: (molInfo: MolClickInfo) => void
+  /** 右键点击 mol bbox 回调（用于打开上下文菜单） */
+  onMolContextMenu?: (molInfo: MolClickInfo, e: ReactMouseEvent) => void
   /** 点击 label bbox 回调 */
   onLabelClick?: (label: FigureLabel) => void
 }
@@ -44,8 +46,8 @@ const SOURCE_COLORS: Record<string, string> = {
 
 const LABEL_DEFAULT_COLOR = '#f59e0b' // amber（未配对的独立 label）
 
-export function CorefBboxOverlay(props: CorefBboxOverlayProps): JSX.Element | null {
-  const { labels, predictions, threshold, containerWidth, containerHeight, onMolClick, onLabelClick } = props
+export function CorefBboxOverlay(props: CorefBboxOverlayProps): React.ReactElement | null {
+  const { labels, predictions, threshold, containerWidth, containerHeight, onMolClick, onMolContextMenu, onLabelClick } = props
 
   // 过滤低于阈值的 prediction
   const visiblePreds = useMemo(
@@ -160,7 +162,8 @@ export function CorefBboxOverlay(props: CorefBboxOverlayProps): JSX.Element | nu
               stroke={color}
               strokeWidth={2}
               style={{ pointerEvents: 'auto', cursor: onMolClick ? 'pointer' : 'default' }}
-              onClick={() => onMolClick?.(clickInfo)}
+              onClick={(e) => { e.stopPropagation(); onMolClick?.(clickInfo) }}
+              onContextMenu={(e) => { e.stopPropagation(); onMolContextMenu?.(clickInfo, e) }}
             >
               <title>
                 {p.mol_smiles ?? '(no SMILES)'} [conf={p.confidence.toFixed(2)}]
@@ -198,3 +201,5 @@ const statsBarStyle: CSSProperties = {
   pointerEvents: 'auto',
   zIndex: 10,
 }
+
+export default CorefBboxOverlay

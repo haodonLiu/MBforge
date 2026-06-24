@@ -10,10 +10,7 @@
     "dialog:allow-ask",
     "dialog:allow-confirm",
     "dialog:allow-message",
-    "fs:default",
-    "fs:allow-read-dir",
-    "shell:default",
-    "allow-app-commands"
+    "shell:default"
   ],
   "platforms": ["macOS", "windows", "linux", "android", "iOS"]
 }

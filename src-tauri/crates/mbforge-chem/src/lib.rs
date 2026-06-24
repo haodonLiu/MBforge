@@ -15,8 +15,12 @@ pub mod esmiles;
 pub mod gesim;
 pub mod markush;
 pub mod molecode;
+pub mod preprocess;
 pub mod sar;
 pub mod smiles;
+
+/// 向后兼容别名：旧代码中的 `core::chem::chem` 对应新的 `smiles` 模块。
+pub use smiles as chem;
 
 pub use abbreviation_map::{find_abbrev, normalize_abbrev_name, AbbrevDef};
 pub use esmiles::{parse_esmiles_tags, smiles_to_esmiles, smiles_with_rgroups_to_esmiles, EsTag};

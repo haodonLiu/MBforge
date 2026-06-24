@@ -139,13 +139,9 @@ pub fn save_json<T: serde::Serialize>(path: &Path, data: &T) -> AppResult<()> {
 /// Use this for any write to a project-relative location. Returns an error
 /// if `path` is absolute and outside `root`, or if the resolved path would
 /// escape `root` via `..` segments.
-pub fn save_json_safe<T: serde::Serialize>(
-    root: &str,
-    path: &Path,
-    data: &T,
-) -> AppResult<()> {
-    let checked =
-        assert_within_root_allow_missing(root, path).map_err(|e| AppError::new(ErrorCode::FilePermission, e))?;
+pub fn save_json_safe<T: serde::Serialize>(root: &str, path: &Path, data: &T) -> AppResult<()> {
+    let checked = assert_within_root_allow_missing(root, path)
+        .map_err(|e| AppError::new(ErrorCode::FilePermission, e))?;
     write_json_to(&checked, data)
 }
 
@@ -180,8 +176,7 @@ pub fn atomic_write<P: AsRef<Path>>(path: P, contents: &[u8]) -> std::io::Result
 
 /// 获取指定路径所在文件系统的可用空间（字节）。
 pub fn available_space_bytes(path: &Path) -> AppResult<u64> {
-    let stat = fs2::statvfs(path)
-        .map_err(|e| AppError::new(ErrorCode::FileRead, e.to_string()))?;
+    let stat = fs2::statvfs(path).map_err(|e| AppError::new(ErrorCode::FileRead, e.to_string()))?;
     Ok(stat.available_space())
 }
 
@@ -566,7 +561,6 @@ mod tests {
         let result = assert_within_root_allow_missing(root.to_string_lossy().as_ref(), &target);
         assert!(result.is_ok(), "Expected Ok but got: {:?}", result);
     }
-
 
     #[test]
     fn test_assert_within_root_allow_missing_nested_project_dir() {

@@ -1,4 +1,7 @@
-#![allow(clippy::double_ended_iterator_last, clippy::needless_borrows_for_generic_args)]
+#![allow(
+    clippy::double_ended_iterator_last,
+    clippy::needless_borrows_for_generic_args
+)]
 
 //! 路径解析 — 检查资源是否已下载/安装
 //!
@@ -110,7 +113,6 @@ fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
         // 精确文件列表：全部存在才算 Ready；逐个填 subfiles
         let mut all_ok = true;
         let mut first_existing: Option<PathBuf> = None;
-        let mut existing_size: u64 = 0;
         let mut subfiles: Vec<super::catalog::SubfileStatus> = Vec::new();
         let mut total_size: u64 = 0;
 
@@ -124,7 +126,6 @@ fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
                 total_size += size;
                 if first_existing.is_none() {
                     first_existing = Some(p.clone());
-                    existing_size = size;
                 }
             }
             subfiles.push(super::catalog::SubfileStatus {
@@ -140,7 +141,8 @@ fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
             // local_path 写成 dest 目录（不是单个文件），与 Python 侧
             // `get_molscribe_path` / `resolve_model_for_backend(..., subpath=)` 约定一致：
             // 读 dir + 自己拼 subpath 定位子文件。
-            let mut result = mk_ready(info, &dest, total_size).with_expected(expected.to_string_lossy().to_string());
+            let mut result = mk_ready(info, &dest, total_size)
+                .with_expected(expected.to_string_lossy().to_string());
             if info.files.len() > 1 {
                 result.subfiles = subfiles;
             }
@@ -208,13 +210,21 @@ fn check_model_file(info: &ResourceInfo) -> ResourceStatusResult {
         if let Some(p) =
             find_weights_in_dir(&stem_subdir).filter(|p| path_matches(p, &id_key, &repo_key))
         {
-            return Some(mk_ready(info, &p, p.metadata().map(|m| m.len()).unwrap_or(0)));
+            return Some(mk_ready(
+                info,
+                &p,
+                p.metadata().map(|m| m.len()).unwrap_or(0),
+            ));
         }
         let subdir = base.join(repo_name);
         if let Some(p) =
             find_weights_in_dir(&subdir).filter(|p| path_matches(p, &id_key, &repo_key))
         {
-            return Some(mk_ready(info, &p, p.metadata().map(|m| m.len()).unwrap_or(0)));
+            return Some(mk_ready(
+                info,
+                &p,
+                p.metadata().map(|m| m.len()).unwrap_or(0),
+            ));
         }
         None
     };
@@ -367,7 +377,10 @@ fn path_matches(p: &std::path::Path, id_key: &str, repo_key: &str) -> bool {
 
 // ─── 工具函数 ───────────────────────────────────────────────────
 
-fn not_found_with_expected(info: &ResourceInfo, expected: &std::path::Path) -> ResourceStatusResult {
+fn not_found_with_expected(
+    info: &ResourceInfo,
+    expected: &std::path::Path,
+) -> ResourceStatusResult {
     ResourceStatusResult {
         id: info.id.to_string(),
         name: info.name.to_string(),
@@ -455,7 +468,12 @@ mod tests {
                 continue;
             }
             let p = expected_path_for(info).to_string_lossy().to_string();
-            assert!(seen.insert(p.clone()), "重复的 expected_path: {} (id={})", p, info.id);
+            assert!(
+                seen.insert(p.clone()),
+                "重复的 expected_path: {} (id={})",
+                p,
+                info.id
+            );
         }
     }
 
@@ -463,10 +481,16 @@ mod tests {
     fn embedding_layout() {
         // 多文件 (10 个)，expected_path 应为 org/repo 目录而非具体文件
         let s = assert_not_found_with_path("embedding");
-        assert!(s.expected_path.contains("Qwen"), "embedding 应在 Qwen/ 组织下");
+        assert!(
+            s.expected_path.contains("Qwen"),
+            "embedding 应在 Qwen/ 组织下"
+        );
         assert!(s.expected_path.contains("Qwen3-Embedding-0___6B"));
-        assert!(s.expected_path.ends_with("Qwen3-Embedding-0___6B"),
-            "应为目录，不是文件: {}", s.expected_path);
+        assert!(
+            s.expected_path.ends_with("Qwen3-Embedding-0___6B"),
+            "应为目录，不是文件: {}",
+            s.expected_path
+        );
     }
 
     #[test]
@@ -482,19 +506,30 @@ mod tests {
         let s = assert_not_found_with_path("moldet");
         assert!(s.expected_path.contains("UniParser"));
         assert!(s.expected_path.contains("MolDetv2"));
-        assert!(s.expected_path.ends_with("MolDetv2"),
-            "应为父目录: {}", s.expected_path);
+        assert!(
+            s.expected_path.ends_with("MolDetv2"),
+            "应为父目录: {}",
+            s.expected_path
+        );
         // 验证 subfiles 数量
-        assert_eq!(s.subfiles.len(), 2, "moldet 应有 2 个子文件 (doc + general)");
+        assert_eq!(
+            s.subfiles.len(),
+            2,
+            "moldet 应有 2 个子文件 (doc + general)"
+        );
         // 验证子文件标签
         let labels: Vec<&str> = s.subfiles.iter().map(|sf| sf.label.as_str()).collect();
         assert!(labels.contains(&"doc"), "应有 doc 子文件");
         assert!(labels.contains(&"general"), "应有 general 子文件");
         // 子文件路径应在父目录下
         for sf in &s.subfiles {
-            assert!(sf.local_path.starts_with(s.expected_path.trim_end_matches('\\').trim_end_matches('/'))
-                || sf.local_path.contains("MolDetv2"),
-                "子文件路径应在 moldet 目录下: {}", sf.local_path);
+            assert!(
+                sf.local_path
+                    .starts_with(s.expected_path.trim_end_matches('\\').trim_end_matches('/'))
+                    || sf.local_path.contains("MolDetv2"),
+                "子文件路径应在 moldet 目录下: {}",
+                sf.local_path
+            );
         }
     }
 
@@ -504,8 +539,11 @@ mod tests {
         let s = assert_not_found_with_path("molscribe");
         assert!(s.expected_path.contains("polyai"));
         assert!(s.expected_path.contains("MolScribe"));
-        assert!(s.expected_path.ends_with("swin_base_char_aux_1m680k.pth"),
-            "应指向具体 .pth 文件: {}", s.expected_path);
+        assert!(
+            s.expected_path.ends_with("swin_base_char_aux_1m680k.pth"),
+            "应指向具体 .pth 文件: {}",
+            s.expected_path
+        );
         // 单文件资源 subfiles 应为空（UI 走单文件卡布局）
         assert!(s.subfiles.is_empty(), "molscribe 是单文件，不应有 subfiles");
     }
@@ -514,16 +552,25 @@ mod tests {
     fn python_packages_not_in_models_check() {
         // torch / transformers 等 Python 包不属于模型，其状态由 check_python_package 决定
         // 验证：调用 check_resource 不会 panic 且 status 是 Ready 或 NotFound
-        for id in ["torch", "transformers", "sentence_transformers", "ultralytics"] {
+        for id in [
+            "torch",
+            "transformers",
+            "sentence_transformers",
+            "ultralytics",
+        ] {
             let s = check_resource(id);
             assert!(
                 matches!(s.status, ResourceStatus::Ready | ResourceStatus::NotFound),
                 "{} 应为 Ready 或 NotFound，实际: {:?}",
-                id, s.status
+                id,
+                s.status
             );
             // Python 包不应有 expected_path（不是文件检测）
-            assert!(s.expected_path.is_empty(),
-                "{} 是 Python 包，expected_path 应为空", id);
+            assert!(
+                s.expected_path.is_empty(),
+                "{} 是 Python 包，expected_path 应为空",
+                id
+            );
         }
     }
 
@@ -538,13 +585,22 @@ mod tests {
     fn ms_repo_dir_encodes_dots() {
         // UniParser/MolDetv2 → <cache>/UniParser/MolDetv2 (无点，不需要编码)
         // Qwen/Qwen3-Embedding-0.6B → <cache>/Qwen/Qwen3-Embedding-0___6B (点变 ___)
-        let qwen = RESOURCE_CATALOG.iter().find(|r| r.id == "embedding").unwrap();
+        let qwen = RESOURCE_CATALOG
+            .iter()
+            .find(|r| r.id == "embedding")
+            .unwrap();
         let d = ms_repo_dir(qwen);
-        assert!(d.to_string_lossy().contains("Qwen3-Embedding-0___6B"),
-            "点应被编码为 ___: {:?}", d);
+        assert!(
+            d.to_string_lossy().contains("Qwen3-Embedding-0___6B"),
+            "点应被编码为 ___: {:?}",
+            d
+        );
         let moldet = RESOURCE_CATALOG.iter().find(|r| r.id == "moldet").unwrap();
         let d = ms_repo_dir(moldet);
-        assert!(d.to_string_lossy().contains("UniParser"),
-            "组织目录应保留: {:?}", d);
+        assert!(
+            d.to_string_lossy().contains("UniParser"),
+            "组织目录应保留: {:?}",
+            d
+        );
     }
 }

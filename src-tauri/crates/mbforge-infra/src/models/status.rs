@@ -35,7 +35,11 @@ pub fn write_resolved_paths() {
 
     let config_dir = global_config_dir();
     if let Err(e) = std::fs::create_dir_all(&config_dir) {
-        log::error!("Failed to create config dir {}: {}", config_dir.display(), e);
+        log::error!(
+            "Failed to create config dir {}: {}",
+            config_dir.display(),
+            e
+        );
         return;
     }
     let path = config_dir.join("resolved_paths.json");
@@ -63,7 +67,11 @@ pub fn write_resolved_paths() {
     match std::fs::File::create(&path) {
         Ok(mut f) => {
             if let Err(e) = f.write_all(pretty.as_bytes()) {
-                log::error!("Failed to write resolved paths to {}: {}", path.display(), e);
+                log::error!(
+                    "Failed to write resolved paths to {}: {}",
+                    path.display(),
+                    e
+                );
             } else {
                 log::info!("Wrote resolved model paths to {}", path.display());
             }
@@ -95,19 +103,17 @@ pub fn catalog_json() -> Vec<serde_json::Value> {
 
 fn get_python_version() -> String {
     let cmd = "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')";
-    let result = ["python", "python3"]
-        .iter()
-        .find_map(|py| {
-            std::process::Command::new(py)
-                .args(["-c", cmd])
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .and_then(|o| String::from_utf8(o.stdout).ok())
-                .map(|s| s.trim().to_string())
-        });
+    let result = ["python", "python3"].iter().find_map(|py| {
+        std::process::Command::new(py)
+            .args(["-c", cmd])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .map(|s| s.trim().to_string())
+    });
     match result {
         Some(v) => v,
         None => {

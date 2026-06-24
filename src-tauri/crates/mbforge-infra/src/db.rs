@@ -85,8 +85,11 @@ impl DbManager {
 /// 多个连接互相等待时立即返回 `SQLITE_BUSY`。
 fn open_wal_connection(path: &Path) -> AppResult<SharedConn> {
     let conn = Connection::open(path).map_err(|e| {
-        AppError::new(ErrorCode::FileWrite, format!("Failed to open {}: {}", path.display(), e))
-            .with_path(path.display().to_string())
+        AppError::new(
+            ErrorCode::FileWrite,
+            format!("Failed to open {}: {}", path.display(), e),
+        )
+        .with_path(path.display().to_string())
     })?;
     conn.execute_batch(
         "PRAGMA journal_mode=WAL;

@@ -1,4 +1,3 @@
-pub mod agent;
 pub mod chem_ops;
 pub mod classifier;
 pub mod detection_cache;
@@ -84,16 +83,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         extractor::extract_activities,
         extractor::extract_associated_molecules,
         extractor::extract_with_associations,
-        // agent
-        agent::agent_init,
-        agent::agent_create_session,
-        agent::agent_chat,
-        agent::agent_chat_stream,
-        agent::agent_switch_project,
-        agent::agent_clear,
-        agent::agent_destroy_session,
-        agent::audit_log_get,
-        agent::agent_get_history,
         // parsers
         pipeline::process_document,
         pipeline::index_project,

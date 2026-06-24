@@ -110,18 +110,27 @@ package-lock.json
 # ============================================================================
 src-tauri/target/
 src-tauri/gen/
+src-tauri/crates/*/gen/
+src-tauri/crates/*/gen/**
 src-tauri/vendor/pdfium/release/
 # PDFium 安装包缓存（setup.ps1 默认下载到此）
 pdfium-win-x64.tgz
 
 # ============================================================================
-# Vendored reference repos (ref/)
+# Vendored reference repos (ref/, setup/)
 # ============================================================================
-# ref/{GESim,chematic,paddleocr-vl-local,MoleCode}/ are local clones of external repos.
-# Each has its own .git/. Use  to fetch/update.
+# ref/{GESim,chematic,paddleocr-vl-local,MoleCode}/ and setup/MolScribe/ are
+# local clones of external repos. Each has its own .git/.
 # Not tracked by MBForge git.
 ref/
 ref/*
+setup/
+setup/*
+
+# ============================================================================
+# Claude Skills (local dev tool, not for distribution)
+# ============================================================================
+skills/
 
 # Legacy workspace files
 frontend/tsclog.txt

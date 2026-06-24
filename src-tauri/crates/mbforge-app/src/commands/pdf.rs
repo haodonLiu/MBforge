@@ -5,21 +5,23 @@ use std::path::Path;
 
 use chrono::Utc;
 use lopdf::{Document, Object};
-use pdf_inspector::{detect_pdf, process_pdf, PdfType};
 use pdf_inspector::extractor::extract_text_with_positions_pages;
+use pdf_inspector::{detect_pdf, process_pdf, PdfType};
 use serde::Serialize;
 use serde_json::{from_str, from_value, json, to_string_pretty, Value};
 
-pub use mbforge_domain::ingest_queue::IngestStatus;
 use mbforge_chem::chem::esmiles_to_molecode;
-use mbforge_infra::config::constants::PROJECTS_DIR;
-use mbforge_infra::config::constants::{PROJECT_META_DIR, sidecar_url};
+pub use mbforge_domain::ingest_queue::IngestStatus;
 use mbforge_domain::ingest_queue::{IngestQueue, IngestTask, QueueStats};
-use mbforge_infra::error::AppError;
-use mbforge_infra::helpers::{assert_within_root_allow_missing, clean_path, generate_uuid, safe_join, save_json, sha256_file};
 use mbforge_domain::molecule::molecule_store::{MoleculeDatabase, MoleculeImage, MoleculeRecord};
 use mbforge_domain::project::document_project::DocumentProject;
 use mbforge_domain::project::project::Project;
+use mbforge_infra::config::constants::PROJECTS_DIR;
+use mbforge_infra::config::constants::{sidecar_url, PROJECT_META_DIR};
+use mbforge_infra::error::AppError;
+use mbforge_infra::helpers::{
+    assert_within_root_allow_missing, clean_path, generate_uuid, safe_join, save_json, sha256_file,
+};
 use mbforge_pipeline::chem::chem_validate::separate_esmiles_layers;
 use mbforge_pipeline::chem::label_assoc::{extract_page_text_lines, find_label_for_bbox, TextLine};
 use mbforge_pipeline::chem::vlm_chem::DetectedMolecule;
@@ -131,18 +133,17 @@ pub fn inspect_pdf(project_root: String, doc_id: String) -> Result<PdfClassifica
         .get_document_source_path(&doc_id)
         .ok_or_else(|| format!("Document {} source path not found", doc_id))?;
 
-    let result =
-        detect_pdf(source_path.to_string_lossy().as_ref()).map_err(|e| {
-            log::error!("inspect_pdf failed for {}: {}", source_path.display(), e);
-            // Best-effort: mark inspector status as error
-            if let Some(mut dp) = DocumentProject::load(&root, &doc_id) {
-                dp.set_inspector_status("error");
-            }
-            if let Some(mut proj) = Project::open(&root) {
-                proj.set_document_status(&doc_id, "inspector_status", "error");
-            }
-            format!("pdf-inspector detect failed: {}", e)
-        })?;
+    let result = detect_pdf(source_path.to_string_lossy().as_ref()).map_err(|e| {
+        log::error!("inspect_pdf failed for {}: {}", source_path.display(), e);
+        // Best-effort: mark inspector status as error
+        if let Some(mut dp) = DocumentProject::load(&root, &doc_id) {
+            dp.set_inspector_status("error");
+        }
+        if let Some(mut proj) = Project::open(&root) {
+            proj.set_document_status(&doc_id, "inspector_status", "error");
+        }
+        format!("pdf-inspector detect failed: {}", e)
+    })?;
 
     let pdf_type_str = match result.pdf_type {
         PdfType::TextBased => "TextBased",
@@ -274,8 +275,8 @@ pub async fn confirm_ocr(
 
     // Enqueue OCR task if confirmed (worker will consume it in Phase 3).
     let task_id = if confirm {
-        let q = IngestQueue::new(&root)
-            .map_err(|e| format!("Failed to open ingest queue: {}", e))?;
+        let q =
+            IngestQueue::new(&root).map_err(|e| format!("Failed to open ingest queue: {}", e))?;
         q.enqueue_with_stage(
             source_path.to_string_lossy().to_string(),
             doc_id.clone(),
@@ -446,42 +447,46 @@ pub async fn extract_pdf_workflow_cmd(
 
     // Build validated paths under output_root before any filesystem mutation.
     let base_dir = assert_within_root_allow_missing(&output_root_str, Path::new(&pdf_name))
-        .map_err(|e| format!("Invalid workflow base dir under {}: {}", output_root.display(), e))?;
-    let mol_dir = assert_within_root_allow_missing(
-        &base_dir.to_string_lossy(),
-        Path::new("molecules"),
-    )
-    .map_err(|e| format!("Invalid molecules dir under {}: {}", base_dir.display(), e))?;
-    std::fs::create_dir_all(&mol_dir)
-        .map_err(|e| format!("Failed to create output dir: {}", e))?;
+        .map_err(|e| {
+            format!(
+                "Invalid workflow base dir under {}: {}",
+                output_root.display(),
+                e
+            )
+        })?;
+    let mol_dir =
+        assert_within_root_allow_missing(&base_dir.to_string_lossy(), Path::new("molecules"))
+            .map_err(|e| format!("Invalid molecules dir under {}: {}", base_dir.display(), e))?;
+    std::fs::create_dir_all(&mol_dir).map_err(|e| format!("Failed to create output dir: {}", e))?;
 
     // 工作根目录：管线 v2 的提取/识别产物都落到 <output_dir>/<pdf_name>/ 下，
     // 与 legacy extract_pdf_workflow 的 on-disk 布局保持一致。
     let work_root = base_dir.clone();
 
     // 真正的项目根（用于 SQLite 分子库），优先从 PDF 路径推导，其次 output_dir。
-    let project_root =
-        match SourceResolver::new().resolve_project_root(source_path, Some(&output_root)) {
-            Ok(root) => {
-                let root = assert_within_root_allow_missing(&root.to_string_lossy(), Path::new("."))
-                    .map_err(|e| {
-                        format!("Resolved project root {} is invalid: {}", root.display(), e)
-                    })?;
-                Some(root)
-            }
-            Err(e) => {
-                log::warn!(
-                    "[workflow] Failed to resolve project root from PDF path {}: {}",
-                    path,
-                    e
-                );
-                log::warn!(
-                    "[workflow] Falling back to output_dir as project root: {}",
-                    output_root.display()
-                );
-                Some(output_root.clone())
-            }
-        };
+    let project_root = match SourceResolver::new()
+        .resolve_project_root(source_path, Some(&output_root))
+    {
+        Ok(root) => {
+            let root = assert_within_root_allow_missing(&root.to_string_lossy(), Path::new("."))
+                .map_err(|e| {
+                    format!("Resolved project root {} is invalid: {}", root.display(), e)
+                })?;
+            Some(root)
+        }
+        Err(e) => {
+            log::warn!(
+                "[workflow] Failed to resolve project root from PDF path {}: {}",
+                path,
+                e
+            );
+            log::warn!(
+                "[workflow] Falling back to output_dir as project root: {}",
+                output_root.display()
+            );
+            Some(output_root.clone())
+        }
+    };
 
     log::info!(
         "[workflow] Starting v2 extraction: {} → {}",
@@ -494,13 +499,21 @@ pub async fn extract_pdf_workflow_cmd(
     let ocr = OcrService::new(default_backends());
     let extract_stage = ExtractStage::new(ocr);
     let extracted = extract_stage
-        .run(SourceInput::new(source_path).with_project_root(&work_root), &ctx)
+        .run(
+            SourceInput::new(source_path).with_project_root(&work_root),
+            &ctx,
+        )
         .await
         .map_err(|e| format!("Extract stage failed: {}", e))?
         .output;
 
     // 把 v2 模型类型转成 doc_types 类型以复用 markdown_augment。
-    let images_doc: Vec<DocImageRef> = extracted.images.iter().cloned().map(into_doc_image_ref).collect();
+    let images_doc: Vec<DocImageRef> = extracted
+        .images
+        .iter()
+        .cloned()
+        .map(into_doc_image_ref)
+        .collect();
     let ocr_blocks_doc: Vec<DocOcrBlock> = extracted
         .ocr_blocks
         .iter()
@@ -542,10 +555,8 @@ pub async fn extract_pdf_workflow_cmd(
         Vec::new()
     };
 
-    let legacy_molecules: Vec<DetectedMolecule> = detected
-        .iter()
-        .map(into_legacy_molecule)
-        .collect();
+    let legacy_molecules: Vec<DetectedMolecule> =
+        detected.iter().map(into_legacy_molecule).collect();
 
     log::info!("[workflow] Detected {} molecules", legacy_molecules.len());
 
@@ -566,7 +577,9 @@ pub async fn extract_pdf_workflow_cmd(
                 .trim()
                 .is_empty()
                 .then(|| None)
-                .unwrap_or_else(|| esmiles_to_molecode_opt(esmiles_opt.as_deref().unwrap_or(&smiles), &mol_name));
+                .unwrap_or_else(|| {
+                    esmiles_to_molecode_opt(esmiles_opt.as_deref().unwrap_or(&smiles), &mol_name)
+                });
             MoleculeEntry {
                 index: i,
                 smiles,
@@ -591,8 +604,8 @@ pub async fn extract_pdf_workflow_cmd(
 
     let manifest_path = safe_join(&mol_dir, "manifest.json")
         .map_err(|e| format!("Invalid manifest path under {}: {}", mol_dir.display(), e))?;
-    let manifest_json = to_string_pretty(&manifest)
-        .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
+    let manifest_json =
+        to_string_pretty(&manifest).map_err(|e| format!("Failed to serialize manifest: {}", e))?;
     std::fs::write(&manifest_path, manifest_json)
         .map_err(|e| format!("Failed to write manifest.json: {}", e))?;
 
@@ -612,11 +625,7 @@ pub async fn extract_pdf_workflow_cmd(
 
                         let page_num = (mol.page).max(0);
                         let lines = lines_cache.entry(page_num).or_insert_with(|| {
-                            match extract_page_text_lines(
-                                &path,
-                                page_num as u32,
-                                page_h_pts,
-                            ) {
+                            match extract_page_text_lines(&path, page_num as u32, page_h_pts) {
                                 Ok(lines) => lines,
                                 Err(e) => {
                                     log::warn!(
@@ -649,8 +658,7 @@ pub async fn extract_pdf_workflow_cmd(
                         };
                         let mut properties = json!({});
                         if let Some(m) = &label_match {
-                            properties["context_text"] =
-                                Value::String(m.context_text.clone());
+                            properties["context_text"] = Value::String(m.context_text.clone());
                         }
                         properties["bbox_pdf"] = json!(mol.bbox_pdf);
 
@@ -769,9 +777,7 @@ fn esmiles_to_molecode_opt(input: &str, name: &str) -> Option<String> {
     }
 }
 
-fn into_legacy_molecule(
-    m: &DetectedMoleculeResult,
-) -> DetectedMolecule {
+fn into_legacy_molecule(m: &DetectedMoleculeResult) -> DetectedMolecule {
     DetectedMolecule {
         esmiles: m.esmiles.clone(),
         confidence: m.confidence,
@@ -782,9 +788,7 @@ fn into_legacy_molecule(
     }
 }
 
-fn into_doc_image_ref(
-    img: ImageRef,
-) -> DocImageRef {
+fn into_doc_image_ref(img: ImageRef) -> DocImageRef {
     DocImageRef {
         filename: img.filename,
         page: img.page,
@@ -795,9 +799,7 @@ fn into_doc_image_ref(
     }
 }
 
-fn into_doc_ocr_block(
-    block: OcrBlock,
-) -> DocOcrBlock {
+fn into_doc_ocr_block(block: OcrBlock) -> DocOcrBlock {
     DocOcrBlock {
         page: block.page,
         block_type: block.block_type,
@@ -895,7 +897,8 @@ pub async fn get_document_ocr_layout(
                                             .collect()
                                     })
                                     .unwrap_or_default(); // Missing block array defaults to empty; will fall through to live extraction.
-                                let parser = val["parser"].as_str().unwrap_or("unknown").to_string(); // Unknown parser for stale/malformed cache entries.
+                                let parser =
+                                    val["parser"].as_str().unwrap_or("unknown").to_string(); // Unknown parser for stale/malformed cache entries.
                                 if !blocks.is_empty() {
                                     log::info!(
                                         "OCR layout cache HIT (new) for {}: {} blocks",
@@ -954,7 +957,11 @@ pub async fn get_document_ocr_layout(
                                 .unwrap_or_default(); // Missing block array defaults to empty; will fall through to live extraction.
                             let parser = val["parser"].as_str().unwrap_or("unknown").to_string(); // Unknown parser for stale/malformed cache entries.
                             if !blocks.is_empty() {
-                                log::info!("OCR layout cache HIT for {}: {} blocks", path, blocks.len());
+                                log::info!(
+                                    "OCR layout cache HIT for {}: {} blocks",
+                                    path,
+                                    blocks.len()
+                                );
                                 update_status("completed");
                                 return Ok(OcrLayoutResult {
                                     path: path.clone(),
@@ -1009,7 +1016,10 @@ pub async fn get_document_ocr_layout(
                 path: path.clone(),
                 parser: "ocr_layout".to_string(),
                 page_count,
-                blocks: blocks.into_iter().map(into_doc_ocr_block_from_layout).collect(),
+                blocks: blocks
+                    .into_iter()
+                    .map(into_doc_ocr_block_from_layout)
+                    .collect(),
                 from_cache: false,
             })
         }
@@ -1020,9 +1030,7 @@ pub async fn get_document_ocr_layout(
     }
 }
 
-fn into_doc_ocr_block_from_layout(
-    block: OcrLayoutBlock,
-) -> DocOcrBlock {
+fn into_doc_ocr_block_from_layout(block: OcrLayoutBlock) -> DocOcrBlock {
     DocOcrBlock {
         page: block.page,
         block_type: block.block_type,
@@ -1038,9 +1046,7 @@ fn into_doc_ocr_block_from_layout(
 fn get_page_height(pdf_path: &str) -> Option<f64> {
     let mut first_page: HashSet<u32> = HashSet::new();
     first_page.insert(1);
-    if let Err(e) =
-        extract_text_with_positions_pages(pdf_path, Some(&first_page))
-    {
+    if let Err(e) = extract_text_with_positions_pages(pdf_path, Some(&first_page)) {
         log::warn!("Failed to extract text positions from {}: {}", pdf_path, e);
         return None;
     }
@@ -1057,7 +1063,11 @@ fn get_page_height(pdf_path: &str) -> Option<f64> {
     let page_dict = match doc.get_dictionary(first_id) {
         Ok(d) => d,
         Err(e) => {
-            log::warn!("Failed to get first page dictionary for {}: {}", pdf_path, e);
+            log::warn!(
+                "Failed to get first page dictionary for {}: {}",
+                pdf_path,
+                e
+            );
             return None;
         }
     };
@@ -1098,11 +1108,7 @@ pub fn augment_markdown_with_images(
     images: Vec<DocImageRef>,
     ocr_blocks: Option<Vec<DocOcrBlock>>,
 ) -> String {
-    markdown_augment::augment_markdown_with_images(
-        &markdown,
-        &images,
-        ocr_blocks.as_deref(),
-    )
+    markdown_augment::augment_markdown_with_images(&markdown, &images, ocr_blocks.as_deref())
 }
 
 // ─── Figure bbox on PDF page（coref overlay 投影用） ────────────────
@@ -1158,10 +1164,7 @@ pub async fn get_figure_bboxes(pdf_path: String) -> Result<Vec<PageFigureBboxes>
     let mut out = Vec::new();
     if let Some(pages) = raw.get("pages").and_then(|p| p.as_array()) {
         for page in pages {
-            let page_num = page
-                .get("page_num")
-                .and_then(|n| n.as_u64())
-                .unwrap_or(0) as u32;
+            let page_num = page.get("page_num").and_then(|n| n.as_u64()).unwrap_or(0) as u32;
             let mut figures = Vec::new();
             if let Some(arr) = page.get("figures").and_then(|f| f.as_array()) {
                 for fig in arr {
@@ -1183,7 +1186,12 @@ pub async fn get_figure_bboxes(pdf_path: String) -> Result<Vec<PageFigureBboxes>
                         .unwrap_or([0.0, 0.0, 0.0, 0.0]);
                     let width = fig.get("width").and_then(|w| w.as_u64()).map(|v| v as u32);
                     let height = fig.get("height").and_then(|h| h.as_u64()).map(|v| v as u32);
-                    figures.push(FigureBbox { xref, bbox_pdf: bbox, width, height });
+                    figures.push(FigureBbox {
+                        xref,
+                        bbox_pdf: bbox,
+                        width,
+                        height,
+                    });
                 }
             }
             out.push(PageFigureBboxes { page_num, figures });
@@ -1197,8 +1205,7 @@ pub async fn get_figure_bboxes(pdf_path: String) -> Result<Vec<PageFigureBboxes>
 fn open_ingest_queue(project_root: &str) -> Result<IngestQueue, String> {
     let root = assert_within_root_allow_missing(&clean_path(project_root), Path::new("."))
         .map_err(|e| format!("Invalid project_root {}: {}", project_root, e))?;
-    IngestQueue::new(&root)
-        .map_err(|e: AppError| e.to_string())
+    IngestQueue::new(&root).map_err(|e: AppError| e.to_string())
 }
 
 /// 入队一个 PDF 供异步处理。返回任务 ID。
@@ -1323,5 +1330,3 @@ pub async fn ingest_dequeue(project_root: String) -> Result<Option<IngestTask>, 
     let q = open_ingest_queue(&project_root)?;
     q.dequeue().await.map_err(|e| e.to_string())
 }
-
-

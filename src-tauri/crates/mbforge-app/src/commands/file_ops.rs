@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
+use mbforge_domain::project::project::DocumentEntry;
 use mbforge_infra::error::{AppError, AppResult, ErrorCode};
 use mbforge_infra::helpers::{assert_within_root, clean_path};
-use mbforge_domain::project::project::DocumentEntry;
 
 fn wrap<T>(result: AppResult<T>) -> Result<T, String> {
     result.map_err(|e| e.to_string())
@@ -113,8 +113,7 @@ pub async fn upload_files(
             // 按设置决定是否自动入队处理。默认关闭，用户可手动触发。
             let config = mbforge_infra::config::settings::AppConfig::load();
             if config.ingest.auto_enqueue_on_import {
-                if let Ok(q) = mbforge_domain::ingest_queue::IngestQueue::new(&project.root)
-                {
+                if let Ok(q) = mbforge_domain::ingest_queue::IngestQueue::new(&project.root) {
                     let source_path = project
                         .root
                         .join(mbforge_infra::config::constants::PROJECTS_DIR)
@@ -195,17 +194,14 @@ pub async fn project_delete_document(project_root: String, doc_id: String) -> Re
         .to_string()
     })?;
 
-    project.delete_document(&doc_id).map_err(|e| {
-        AppError::new(ErrorCode::FileWrite, format!("删除文档失败: {e}")).to_string()
-    })
+    project
+        .delete_document(&doc_id)
+        .map_err(|e| AppError::new(ErrorCode::FileWrite, format!("删除文档失败: {e}")).to_string())
 }
 
 /// 重新读取已有 PDF：保留源文件，清空所有抽取结果后重新入队。
 #[tauri::command]
-pub async fn project_reingest_document(
-    project_root: String,
-    doc_id: String,
-) -> Result<(), String> {
+pub async fn project_reingest_document(project_root: String, doc_id: String) -> Result<(), String> {
     let root_path = wrap(resolve_path(&project_root))?;
 
     let mut project = mbforge_domain::project::Project::open(&root_path).ok_or_else(|| {

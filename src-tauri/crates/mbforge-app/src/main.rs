@@ -1,6 +1,5 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
 // 迁移遗留代码中存在大量不符合当前 clippy 严格规则的模式；集中允许而非逐处改写。
 #![allow(
     clippy::expect_used,
@@ -98,11 +97,7 @@ fn main() {
                 .ok()
                 .and_then(|manifest| {
                     let manifest_path = std::path::PathBuf::from(manifest);
-                    let project_root = manifest_path
-                        .parent()?
-                        .parent()?
-                        .parent()?
-                        .to_path_buf();
+                    let project_root = manifest_path.parent()?.parent()?.parent()?.to_path_buf();
                     let script = project_root.join("src").join("mbforge").join("server.py");
                     if script.exists() {
                         Some((script, project_root.clone()))

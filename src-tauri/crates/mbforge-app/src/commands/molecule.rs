@@ -282,14 +282,17 @@ pub async fn mol_scaffold_profile(
         .as_ref()
         .map(|(_, e)| e)
         .ok_or_else(|| log_err!("MoleculeEngine not initialized"))?;
-    engine.scaffold_profile(&scaffold_esmiles).await.map_err(|e| {
-        log::error!(
-            "mol_scaffold_profile esmiles={} failed: {}",
-            scaffold_esmiles,
-            e
-        );
-        e.to_string()
-    })
+    engine
+        .scaffold_profile(&scaffold_esmiles)
+        .await
+        .map_err(|e| {
+            log::error!(
+                "mol_scaffold_profile esmiles={} failed: {}",
+                scaffold_esmiles,
+                e
+            );
+            e.to_string()
+        })
 }
 
 #[tauri::command]
@@ -372,12 +375,9 @@ pub async fn mol_search_substructure(
         .iter()
         .map(|(id, s)| (id.clone(), s.clone()))
         .collect();
-    let matches = mbforge_chem::chem::substructure_search_with_filter(
-        &query_smiles,
-        &candidates,
-        threshold,
-    )
-    .map_err(|e| format!("Substructure search failed: {}", e))?;
+    let matches =
+        mbforge_chem::chem::substructure_search_with_filter(&query_smiles, &candidates, threshold)
+            .map_err(|e| format!("Substructure search failed: {}", e))?;
 
     // 构建返回结果
     let results: Vec<serde_json::Value> = matches
@@ -429,8 +429,8 @@ pub async fn gesim_similarity(
     smiles_b: String,
     use_scaler: Option<bool>,
 ) -> Result<f64, String> {
-    use mbforge_chem::gesim;
     use chematic_smiles::parse;
+    use mbforge_chem::gesim;
 
     let mol_a = parse(&smiles_a).map_err(|e| format!("SMILES a parse error: {e}"))?;
     let mol_b = parse(&smiles_b).map_err(|e| format!("SMILES b parse error: {e}"))?;
@@ -459,9 +459,5 @@ pub async fn chem_tanimoto_batch_filter(
     candidates: Vec<(String, String)>,
     threshold: Option<f64>,
 ) -> Result<Vec<(String, String, f64)>, String> {
-    mbforge_chem::chem::tanimoto_batch_filter(
-        &query_smiles,
-        &candidates,
-        threshold.unwrap_or(0.5),
-    )
+    mbforge_chem::chem::tanimoto_batch_filter(&query_smiles, &candidates, threshold.unwrap_or(0.5))
 }

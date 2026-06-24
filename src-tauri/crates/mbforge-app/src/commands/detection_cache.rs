@@ -20,13 +20,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use mbforge_infra::config::constants::sidecar_url;
 use mbforge_domain::document::detection_cache::{
     Detection as CachedDetection, DetectionCache, PageDetection, DETECTION_CACHE_SCHEMA_VERSION,
 };
+use mbforge_domain::project::project::Project;
+use mbforge_infra::config::constants::sidecar_url;
 use mbforge_infra::helpers::clean_path;
 use mbforge_infra::helpers::sha256_file;
-use mbforge_domain::project::project::Project;
 use mbforge_pipeline::pipeline::services::quick_moldet::{quick_scan_pdf, QuickMoldetDocResult};
 
 // ---------------------------------------------------------------------------
@@ -136,8 +136,8 @@ pub async fn cached_extract_page(
                     .and_then(|s| s.to_str())
                     .unwrap_or(&doc_id)
                     .to_string();
-                let legacy =
-                    path.starts_with(project_path.join(mbforge_infra::config::constants::PAPERS_DIR));
+                let legacy = path
+                    .starts_with(project_path.join(mbforge_infra::config::constants::PAPERS_DIR));
                 (path, slug, legacy)
             }
             None => {
@@ -334,8 +334,8 @@ pub async fn get_cached_page_detections(
                     .and_then(|s| s.to_str())
                     .unwrap_or(&doc_id)
                     .to_string();
-                let legacy =
-                    path.starts_with(project_path.join(mbforge_infra::config::constants::PAPERS_DIR));
+                let legacy = path
+                    .starts_with(project_path.join(mbforge_infra::config::constants::PAPERS_DIR));
                 (path, slug, legacy)
             }
             None => {
@@ -544,8 +544,8 @@ pub fn clear_detection_cache_doc(project_root: String, doc_id: String) -> Result
                     .and_then(|s| s.to_str())
                     .unwrap_or(&doc_id)
                     .to_string();
-                let legacy =
-                    path.starts_with(project_path.join(mbforge_infra::config::constants::PAPERS_DIR));
+                let legacy = path
+                    .starts_with(project_path.join(mbforge_infra::config::constants::PAPERS_DIR));
                 (path, slug, legacy)
             }
             None => {

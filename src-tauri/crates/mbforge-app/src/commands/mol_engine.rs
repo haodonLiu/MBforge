@@ -87,8 +87,9 @@ pub async fn with_engine<F, T>(
 where
     F: for<'a> FnOnce(
         &'a MoleculeEngine,
-    )
-        -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, String>> + Send + 'a>>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<T, String>> + Send + 'a>,
+    >,
 {
     get_or_init_engine(state, project_root).await?;
     let guard = state.inner.lock().await;

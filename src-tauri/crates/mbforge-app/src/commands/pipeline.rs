@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter};
 
-use mbforge_infra::config::constants::EVT_DOC_PROGRESS;
 use mbforge_domain::project::Project;
+use mbforge_infra::config::constants::EVT_DOC_PROGRESS;
 use mbforge_pipeline::pipeline::context::{PipelineContext, PipelineEvent, PipelineReporter};
 use mbforge_pipeline::pipeline::models::source::SourceInput;
 use mbforge_pipeline::pipeline::runner::run_pipeline;
@@ -39,8 +39,7 @@ pub async fn process_document(
 #[tauri::command]
 pub async fn index_project(project_root: String, app: AppHandle) -> Result<String, String> {
     let root = PathBuf::from(&project_root);
-    let project = Project::open(&root)
-        .ok_or_else(|| format!("项目不存在: {project_root}"))?;
+    let project = Project::open(&root).ok_or_else(|| format!("项目不存在: {project_root}"))?;
 
     let docs: Vec<_> = project
         .list_documents()

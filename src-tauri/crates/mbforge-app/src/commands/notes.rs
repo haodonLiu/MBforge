@@ -2,11 +2,11 @@
 
 use std::path::PathBuf;
 
-use mbforge_infra::error::{AppError, ErrorCode};
-use mbforge_infra::helpers::clean_path;
 use mbforge_domain::project::notes::{
     delete_note, find_backlinks, get_note, list_notes, save_note, Note,
 };
+use mbforge_infra::error::{AppError, ErrorCode};
+use mbforge_infra::helpers::clean_path;
 
 fn wrap<T>(result: Result<T, AppError>) -> Result<T, String> {
     result.map_err(|e| e.to_string())

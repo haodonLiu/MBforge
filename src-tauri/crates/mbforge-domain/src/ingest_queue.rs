@@ -667,24 +667,13 @@ impl IngestQueue {
         conn.execute(
             "INSERT INTO ingest_logs (doc_id, stage, level, message, ts_ms, task_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                doc_id,
-                stage,
-                level,
-                message,
-                ts_ms as i64,
-                task_id,
-            ],
+            params![doc_id, stage, level, message, ts_ms as i64, task_id,],
         )?;
         Ok(())
     }
 
     /// 获取某 doc_id 的最近 N 条日志，按 ts_ms 升序返回。
-    pub async fn list_logs(
-        &self,
-        doc_id: &str,
-        limit: usize,
-    ) -> AppResult<Vec<IngestLogRecord>> {
+    pub async fn list_logs(&self, doc_id: &str, limit: usize) -> AppResult<Vec<IngestLogRecord>> {
         let conn = self.conn.lock().await;
         let mut stmt = conn.prepare(
             "SELECT doc_id, stage, level, message, ts_ms, task_id
@@ -809,11 +798,12 @@ impl IngestQueue {
             "DELETE FROM ingest_queue WHERE doc_id = ?1",
             params![doc_id],
         )?;
-        let _ = conn.execute(
-            "DELETE FROM ingest_logs WHERE doc_id = ?1",
-            params![doc_id],
+        let _ = conn.execute("DELETE FROM ingest_logs WHERE doc_id = ?1", params![doc_id]);
+        log::info!(
+            "IngestQueue: deleted {} tasks/logs for doc {}",
+            changed,
+            doc_id
         );
-        log::info!("IngestQueue: deleted {} tasks/logs for doc {}", changed, doc_id);
         Ok(changed)
     }
 

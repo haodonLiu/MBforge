@@ -73,6 +73,9 @@ pub struct CorefPrediction {
     pub confidence: f64,
     pub source: String, // 'geometric' | 'llm' | 'manual'
     pub is_confirmed: bool,
+    /// 所属 figure 路径 — 用于前端把 figure 局部 0-1 bbox 投影到 PDF 页面坐标
+    #[serde(default)]
+    pub image_path: Option<String>,
 }
 
 /// 设置 figure_annotations 相关 schema（幂等）
@@ -105,6 +108,7 @@ fn setup_figure_annotations_schema(conn: &Connection) -> rusqlite::Result<()> {
             confidence REAL NOT NULL,
             source TEXT NOT NULL,
             is_confirmed INTEGER NOT NULL DEFAULT 0,
+            image_path TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -112,8 +116,33 @@ fn setup_figure_annotations_schema(conn: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_coref_pred_label ON coref_predictions(label_text);
         CREATE INDEX IF NOT EXISTS idx_coref_pred_smiles ON coref_predictions(mol_smiles);
         CREATE INDEX IF NOT EXISTS idx_coref_pred_label_id ON coref_predictions(label_id);
-        CREATE INDEX IF NOT EXISTS idx_coref_pred_confirmed ON coref_predictions(is_confirmed);",
-    )
+        CREATE INDEX IF NOT EXISTS idx_coref_pred_confirmed ON coref_predictions(is_confirmed);
+        CREATE INDEX IF NOT EXISTS idx_coref_pred_image_path ON coref_predictions(image_path);",
+    )?;
+
+    // 旧库兼容：image_path 列在 v3 才加
+    add_column_if_missing(conn, "coref_predictions", "image_path", "TEXT")?;
+    Ok(())
+}
+
+/// 兼容旧库：检测列是否存在，不存在则 ALTER TABLE ADD COLUMN
+fn add_column_if_missing(
+    conn: &Connection,
+    table: &str,
+    column: &str,
+    type_sql: &str,
+) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            return Ok(());
+        }
+    }
+    let sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, type_sql);
+    conn.execute(&sql, [])?;
+    Ok(())
 }
 
 /// 知识库：SQLite（向量 + FTS5）+ 文件缓存
@@ -581,12 +610,13 @@ impl KnowledgeBase {
             let res = conn.execute(
                 "INSERT INTO coref_predictions
                  (doc_id, page, mol_smiles, mol_bbox, mol_conf, label_id,
-                  label_text, label_bbox, confidence, source, is_confirmed)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                  label_text, label_bbox, confidence, source, is_confirmed, image_path)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                  ON CONFLICT(doc_id, page, mol_smiles, label_text) DO UPDATE SET
                   confidence = excluded.confidence,
                   source = excluded.source,
                   is_confirmed = excluded.is_confirmed,
+                  image_path = excluded.image_path,
                   updated_at = CURRENT_TIMESTAMP",
                 rusqlite::params![
                     doc_id,
@@ -599,7 +629,8 @@ impl KnowledgeBase {
                     label_bbox_json,
                     p.confidence,
                     p.source,
-                    is_confirmed_i
+                    is_confirmed_i,
+                    p.image_path,
                 ],
             )?;
             upserted += res;
@@ -645,7 +676,7 @@ impl KnowledgeBase {
         let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn.prepare(
             "SELECT id, doc_id, page, mol_smiles, mol_bbox, mol_conf, label_id,
-                    label_text, label_bbox, confidence, source, is_confirmed
+                    label_text, label_bbox, confidence, source, is_confirmed, image_path
              FROM coref_predictions
              WHERE doc_id = ?1 AND page = ?2
              ORDER BY confidence DESC, id",
@@ -671,6 +702,7 @@ impl KnowledgeBase {
                 confidence: row.get(9)?,
                 source: row.get(10)?,
                 is_confirmed: is_confirmed_i != 0,
+                image_path: row.get(12)?,
             })
         })?;
         let mut results = Vec::new();
@@ -689,7 +721,7 @@ impl KnowledgeBase {
         let conn = self.fts_conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn.prepare(
             "SELECT id, doc_id, page, mol_smiles, mol_bbox, mol_conf, label_id,
-                    label_text, label_bbox, confidence, source, is_confirmed
+                    label_text, label_bbox, confidence, source, is_confirmed, image_path
              FROM coref_predictions
              WHERE doc_id = ?1 AND label_text = ?2
              ORDER BY confidence DESC, id",
@@ -715,6 +747,7 @@ impl KnowledgeBase {
                 confidence: row.get(9)?,
                 source: row.get(10)?,
                 is_confirmed: is_confirmed_i != 0,
+                image_path: row.get(12)?,
             })
         })?;
         let mut results = Vec::new();

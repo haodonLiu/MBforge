@@ -111,6 +111,7 @@ impl CorefPersistService {
                     confidence: (mol_bbox.score + idt_bbox.ocr_conf_or_default()) / 2.0,
                     source: "geometric".to_string(),
                     is_confirmed: false,
+                    image_path: Some(path_str.clone()),
                 })
             })
             .collect();

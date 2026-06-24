@@ -33,6 +33,41 @@ interface CorefContextMenu {
   y: number
 }
 
+/** 从 image_path basename (e.g. "page_3_img_2.png") 提取 (page, imgIdx)。
+ *  失败返回 null（持久化前端的 image_path 可能不含此格式） */
+function parseImageBasename(p: string | null | undefined): { page: number; imgIdx: number } | null {
+  if (!p) return null
+  const m = /page[_-](\d+)[_-]img[_-](\d+)/i.exec(p.split(/[\\/]/).pop() ?? '')
+  if (!m) return null
+  return { page: parseInt(m[1], 10), imgIdx: parseInt(m[2], 10) }
+}
+
+/** 从全文档 figure bbox 映射里挑出当前页需要的 subset。
+ *  按 image_path basename 匹配 `__order__:page:idx`，失败 → 全空 → 投影退化为 0-1（近似） */
+function buildFigureBoxesForPage(
+  allBoxes: Map<string, [number, number, number, number]>,
+  labels: FigureLabel[],
+  predictions: CorefPrediction[],
+  currentPage: number,
+): Map<string, [number, number, number, number]> {
+  const out = new Map<string, [number, number, number, number]>()
+  const needImagePaths = new Set<string>()
+  for (const l of labels) if (l.image_path) needImagePaths.add(l.image_path)
+  for (const p of predictions) if (p.image_path) needImagePaths.add(p.image_path)
+
+  for (const path of needImagePaths) {
+    const parsed = parseImageBasename(path)
+    if (!parsed) continue
+    if (parsed.page !== currentPage) continue
+    const orderKey = `__order__:${parsed.page}:${parsed.imgIdx}`
+    const bbox = allBoxes.get(orderKey)
+    if (bbox) {
+      out.set(path.split(/[\\/]/).pop() ?? path, bbox)
+    }
+  }
+  return out
+}
+
 export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Props) {
   const v = usePdfViewer(doc, projectRoot, initialMode)
   const pipeline = useIngestPipeline(doc.doc_id, projectRoot)
@@ -223,6 +258,14 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
                     threshold={v.corefThreshold}
                     containerWidth={v.pageInfo.width}
                     containerHeight={v.pageInfo.height}
+                    originalHeight={v.pageInfo.originalHeight}
+                    scale={v.pageInfo.scale}
+                    figureBoxes={buildFigureBoxesForPage(
+                      v.corefFigureBoxes,
+                      v.corefLabels,
+                      v.corefPredictions,
+                      v.currentPage,
+                    )}
                     onMolClick={(info) => {
                       // 左键点击：toggle 选中态 + 显示侧栏
                       handleMolClick(info)

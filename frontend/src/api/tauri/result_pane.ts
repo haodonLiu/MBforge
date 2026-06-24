@@ -124,6 +124,8 @@ export interface CorefPrediction {
   /** 'geometric' | 'llm' | 'manual' */
   source: string
   is_confirmed: boolean
+  /** 所属 figure 路径（persistence 时记录的 image_path，用于 bbox 投影） */
+  image_path: string | null
 }
 
 /** 确保 (doc_id, page) 的 coref 标注存在（懒迁移入口） */

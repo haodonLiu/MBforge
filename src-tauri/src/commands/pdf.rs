@@ -1105,6 +1105,93 @@ pub fn augment_markdown_with_images(
     )
 }
 
+// ─── Figure bbox on PDF page（coref overlay 投影用） ────────────────
+
+/// 一页内一个嵌入图的 on-page bbox（PDF points，左下原点）。
+#[derive(Debug, Clone, Serialize)]
+pub struct FigureBbox {
+    /// PyMuPDF xref（同一 image 被多次引用时合并为并集 bbox）
+    pub xref: u32,
+    /// [x1, y1, x2, y2] in PDF points (bottom-left origin)
+    pub bbox_pdf: [f64; 4],
+    /// 原图 width (pixels)
+    pub width: Option<u32>,
+    /// 原图 height (pixels)
+    pub height: Option<u32>,
+}
+
+/// 一页的 figures
+#[derive(Debug, Clone, Serialize)]
+pub struct PageFigureBboxes {
+    pub page_num: u32,
+    pub figures: Vec<FigureBbox>,
+}
+
+/// 返回整个 PDF 中所有嵌入图在各自页面上的 bbox（PyMuPDF 通过 sidecar）。
+///
+/// 用于 coref overlay 把 `figure_labels.label_bbox`（figure 内归一化 0-1）
+/// 投影到 PDF 页面坐标系（与 MoleculeOverlay / OcrOverlay 同一坐标系）。
+#[tauri::command]
+pub async fn get_figure_bboxes(pdf_path: String) -> Result<Vec<PageFigureBboxes>, String> {
+    let url = format!("{}/api/v1/pdf/figure-bboxes", sidecar_url());
+    let body = serde_json::json!({ "pdf_path": pdf_path });
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("reqwest build failed: {e}"))?;
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("sidecar unreachable: {e}"))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("sidecar figure-bboxes HTTP {}: {}", status, text));
+    }
+    let raw: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("invalid JSON from sidecar: {e}"))?;
+
+    let mut out = Vec::new();
+    if let Some(pages) = raw.get("pages").and_then(|p| p.as_array()) {
+        for page in pages {
+            let page_num = page
+                .get("page_num")
+                .and_then(|n| n.as_u64())
+                .unwrap_or(0) as u32;
+            let mut figures = Vec::new();
+            if let Some(arr) = page.get("figures").and_then(|f| f.as_array()) {
+                for fig in arr {
+                    let xref = fig.get("xref").and_then(|x| x.as_u64()).unwrap_or(0) as u32;
+                    let bbox = fig
+                        .get("bbox_pdf")
+                        .and_then(|b| b.as_array())
+                        .and_then(|arr| {
+                            if arr.len() != 4 {
+                                return None;
+                            }
+                            Some([
+                                arr[0].as_f64()?,
+                                arr[1].as_f64()?,
+                                arr[2].as_f64()?,
+                                arr[3].as_f64()?,
+                            ])
+                        })
+                        .unwrap_or([0.0, 0.0, 0.0, 0.0]);
+                    let width = fig.get("width").and_then(|w| w.as_u64()).map(|v| v as u32);
+                    let height = fig.get("height").and_then(|h| h.as_u64()).map(|v| v as u32);
+                    figures.push(FigureBbox { xref, bbox_pdf: bbox, width, height });
+                }
+            }
+            out.push(PageFigureBboxes { page_num, figures });
+        }
+    }
+    Ok(out)
+}
+
 // ─── IngestQueue：PDF 异步处理队列 ────────────────────────────────
 
 fn open_ingest_queue(project_root: &str) -> Result<IngestQueue, String> {

@@ -47,6 +47,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         pdf::extract_text,
         pdf::get_document_ocr_layout,
         pdf::augment_markdown_with_images,
+        pdf::get_figure_bboxes,
         // ingest queue
         pdf::ingest_enqueue,
         pdf::ingest_list,

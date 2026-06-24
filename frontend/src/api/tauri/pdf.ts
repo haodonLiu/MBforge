@@ -137,7 +137,7 @@ export async function processDocument(
   projectRoot?: string,
 ): Promise<void> {
   return invokeWithError(
-    () => invoke<void>('process_document', {
+    () => invoke('process_document', {
       path,
       userRequest: userRequest ?? '',
       projectRoot,
@@ -168,6 +168,32 @@ export interface OcrLayoutResult {
 export async function getDocumentOcrLayout(path: string, doc_id?: string): Promise<OcrLayoutResult> {
   return invokeWithError(
     () => invoke<OcrLayoutResult>('get_document_ocr_layout', { path, doc_id }),
+    ErrorCode.PdfParse,
+  )
+}
+
+// ---- 嵌入图在 PDF 页面上的 bbox（coref 投影用） ----
+
+export interface FigureBbox {
+  xref: number
+  /** [x1, y1, x2, y2] in PDF points (bottom-left origin) */
+  bbox_pdf: [number, number, number, number]
+  width: number | null
+  height: number | null
+}
+
+export interface PageFigureBboxes {
+  page_num: number
+  figures: FigureBbox[]
+}
+
+/** 返回整本 PDF 中所有嵌入图在各自页面上的 bbox。
+ *
+ * 用于 coref overlay 把 figure 局部 0-1 坐标投影到 PDF 页面坐标。
+ */
+export async function getFigureBboxes(pdfPath: string): Promise<PageFigureBboxes[]> {
+  return invokeWithError(
+    () => invoke<PageFigureBboxes[]>('get_figure_bboxes', { pdfPath }),
     ErrorCode.PdfParse,
   )
 }

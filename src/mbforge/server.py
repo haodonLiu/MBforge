@@ -224,6 +224,105 @@ async def render_pages(request: Request) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Figure bbox extraction (PyMuPDF image positions on PDF page)
+# ---------------------------------------------------------------------------
+
+def _extract_figure_bboxes_sync(pdf_path: str) -> dict[str, Any]:
+    """Return every embedded image's on-page bbox for the whole document.
+
+    Used by the coref overlay to project figure-local OCR bboxes (0–1 in
+    the extracted figure image) onto PDF page coordinates.
+
+    PyMuPDF `Page.get_image_info(xrefs=True)` returns one record per drawn
+    image instance; we keep the union bbox when the same image xref is
+    referenced multiple times on one page.
+
+    Returns:
+        {
+            "pages": [
+                {"page_num": int, "figures": [
+                    {"xref": int, "bbox_pdf": [x1, y1, x2, y2], "width": int, "height": int}
+                ]},
+                ...
+            ],
+            "count": int,  # total figure instances
+        }
+    """
+    doc = fitz.open(pdf_path)
+    try:
+        pages_out: list[dict[str, Any]] = []
+        total = 0
+        for page_index in range(doc.page_count):
+            page = doc.load_page(page_index)
+            try:
+                infos = page.get_image_info(xrefs=True)
+            except Exception as e:
+                logger.debug(f"get_image_info failed on page {page_index + 1}: {e}")
+                infos = []
+
+            # 按 xref 合并 bbox（同一 image 被多次引用时取并集）
+            by_xref: dict[int, dict[str, Any]] = {}
+            for info in infos:
+                xref = info.get("xref")
+                bbox = info.get("bbox")  # fitz.Rect-like: (x0, y0, x1, y1) in PDF points
+                if xref is None or bbox is None:
+                    continue
+                try:
+                    x0, y0, x1, y1 = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+                except (TypeError, ValueError):
+                    continue
+                entry = by_xref.get(int(xref))
+                if entry is None:
+                    by_xref[int(xref)] = {
+                        "xref": int(xref),
+                        "bbox_pdf": [x0, y0, x1, y1],
+                        "width": info.get("width"),
+                        "height": info.get("height"),
+                    }
+                else:
+                    ex0, ey0, ex1, ey1 = entry["bbox_pdf"]
+                    entry["bbox_pdf"] = [min(ex0, x0), min(ey0, y0), max(ex1, x1), max(ey1, y1)]
+
+            figures = list(by_xref.values())
+            total += len(figures)
+            pages_out.append({"page_num": page_index + 1, "figures": figures})
+        return {"pages": pages_out, "count": total}
+    finally:
+        doc.close()
+
+
+@app.post("/api/v1/pdf/figure-bboxes")
+async def figure_bboxes(request: Request) -> dict[str, Any]:
+    """Extract on-page bbox for every embedded image in a PDF.
+
+    Request body:
+        - pdf_path: absolute path to the PDF file
+
+    Returns:
+        - pages: list of {page_num, figures: [{xref, bbox_pdf, width, height}]}
+        - count: total figure instances
+    """
+    pdf_path = ""
+    try:
+        body = await request.json()
+        pdf_path = body.get("pdf_path", "")
+        if not pdf_path:
+            raise ValidationError("pdf_path is required")
+        if not Path(pdf_path).exists():
+            raise ValidationError(f"PDF not found: {pdf_path}")
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, lambda: _extract_figure_bboxes_sync(pdf_path)
+        )
+        return result
+    except (ValidationError, ModelNotAvailableError):
+        raise
+    except Exception as e:
+        logger.error(f"figure-bboxes failed for {pdf_path}: {e}", exc_info=True)
+        raise ModelNotAvailableError(str(e))
+
+
+# ---------------------------------------------------------------------------
 # Embed
 # ---------------------------------------------------------------------------
 @app.post("/api/v1/embed")

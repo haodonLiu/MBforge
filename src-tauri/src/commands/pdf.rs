@@ -1237,6 +1237,18 @@ pub async fn ingest_stats(project_root: String) -> Result<QueueStats, String> {
     q.stats().await.map_err(|e| e.to_string())
 }
 
+/// 获取某 doc_id 的最近 N 条 ingest 日志（DB 兜底通道 — 即便 Tauri 事件丢失也能拉到）。
+#[tauri::command]
+pub async fn ingest_get_logs(
+    project_root: String,
+    doc_id: String,
+    limit: Option<usize>,
+) -> Result<Vec<crate::core::document::ingest_queue::IngestLogRecord>, String> {
+    let q = open_ingest_queue(&project_root)?;
+    let limit = limit.unwrap_or(500);
+    q.list_logs(&doc_id, limit).await.map_err(|e| e.to_string())
+}
+
 /// 取消单个任务。
 #[tauri::command]
 pub async fn ingest_cancel(project_root: String, task_id: String) -> Result<(), String> {

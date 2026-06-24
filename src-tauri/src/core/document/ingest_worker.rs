@@ -86,7 +86,7 @@ async fn worker_loop(
     last_heartbeat: Arc<AtomicU64>,
 ) {
     let queue = match IngestQueue::new(&project_root) {
-        Ok(q) => q,
+        Ok(q) => Arc::new(q),
         Err(e) => {
             log::error!("IngestWorker: failed to open queue: {}", e);
             return;
@@ -148,8 +148,10 @@ async fn worker_loop(
         );
 
         emit_log(
+            Some(&queue),
             &app_handle,
             &task.doc_id,
+            &task.id,
             &task.stage,
             "info",
             format!("进入 {} 阶段 (task id={})", task.stage, task.id),
@@ -173,8 +175,10 @@ async fn worker_loop(
                     }
                 }
                 emit_log(
+                    Some(&queue),
                     &app_handle,
                     &task.doc_id,
+                    &task.id,
                     &task.stage,
                     "info",
                     format!(
@@ -219,8 +223,10 @@ async fn worker_loop(
                     e
                 );
                 emit_log(
+                    Some(&queue),
                     &app_handle,
                     &task.doc_id,
+                    &task.id,
                     &task.stage,
                     "error",
                     format!("{} 阶段失败 ({}): {}", task.stage, stage_dur_str, e),
@@ -348,7 +354,7 @@ async fn preflight_check(stage: &str, file_path: &Path, project_root: &Path) -> 
 
 async fn process_inspector(
     project_root: &Path,
-    queue: &IngestQueue,
+    queue: &Arc<IngestQueue>,
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
@@ -463,6 +469,9 @@ async fn process_inspector(
 struct QueueStageReporter {
     app_handle: AppHandle,
     doc_id: String,
+    /// 可选 queue 引用 — 若提供则同时落库（DB 兜底通道）
+    queue: Option<Arc<IngestQueue>>,
+    task_id: String,
 }
 
 impl PipelineReporter for QueueStageReporter {
@@ -480,8 +489,10 @@ impl PipelineReporter for QueueStageReporter {
         };
         log::debug!("PipelineEvent {:?}: {}", event, message);
         emit_log(
+            self.queue.as_ref(),
             &self.app_handle,
             &self.doc_id,
+            &self.task_id,
             stage,
             "info",
             message,
@@ -519,7 +530,7 @@ fn cache_extracted_document(
 
 async fn process_text_extract(
     project_root: &Path,
-    queue: &IngestQueue,
+    queue: &Arc<IngestQueue>,
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
@@ -532,8 +543,10 @@ async fn process_text_extract(
         .map_err(|e| format!("update progress failed: {e}"))?;
     emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "extracting text");
     emit_log(
+        Some(queue),
         app_handle,
         &task.doc_id,
+        &task.id,
         &task.stage,
         "info",
         "开始文本提取".to_string(),
@@ -563,8 +576,10 @@ async fn process_text_extract(
             log::warn!("IngestWorker: failed to write text.md: {}", e);
         } else {
             emit_log(
+                Some(queue),
                 app_handle,
                 &task.doc_id,
+                &task.id,
                 &task.stage,
                 "info",
                 "文本已保存到 cache/pages/text.md".to_string(),
@@ -621,7 +636,7 @@ async fn process_text_extract(
 
 async fn process_ocr(
     project_root: &Path,
-    queue: &IngestQueue,
+    queue: &Arc<IngestQueue>,
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
@@ -634,8 +649,10 @@ async fn process_ocr(
         .map_err(|e| format!("update progress failed: {e}"))?;
     emit_progress(app_handle, task, &task.stage, 10.0, 0, 0, "running OCR");
     emit_log(
+        Some(queue),
         app_handle,
         &task.doc_id,
+        &task.id,
         &task.stage,
         "info",
         "OCR 预检通过，准备解析 PDF".to_string(),
@@ -651,8 +668,10 @@ async fn process_ocr(
 
     if is_scanned {
         emit_log(
+            Some(queue),
             app_handle,
             &task.doc_id,
+            &task.id,
             &task.stage,
             "info",
             format!("检测到扫描件（共 {} 页），将尝试 OCR", inspector_ctx.page_count),
@@ -672,8 +691,10 @@ async fn process_ocr(
         );
     } else {
         emit_log(
+            Some(queue),
             app_handle,
             &task.doc_id,
+            &task.id,
             &task.stage,
             "info",
             "PDF 为文本型，将直接提取文本".to_string(),
@@ -778,8 +799,10 @@ async fn process_ocr(
         &format!("OCR result ready ({})", extracted.parser),
     );
     emit_log(
+        Some(queue),
         app_handle,
         &task.doc_id,
+        &task.id,
         &task.stage,
         "info",
         format!(
@@ -806,8 +829,10 @@ async fn process_ocr(
             log::warn!("IngestWorker: failed to save ocr.json: {}", e);
         } else {
             emit_log(
+                Some(queue),
                 app_handle,
                 &task.doc_id,
+                &task.id,
                 &task.stage,
                 "info",
                 "OCR 结果已保存到 cache/ocr/ocr.json".to_string(),
@@ -883,7 +908,7 @@ async fn process_ocr(
 
 async fn process_moldet(
     project_root: &Path,
-    queue: &IngestQueue,
+    queue: &Arc<IngestQueue>,
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
@@ -965,7 +990,7 @@ async fn process_moldet(
 
 async fn process_index(
     project_root: &Path,
-    queue: &IngestQueue,
+    queue: &Arc<IngestQueue>,
     task: &IngestTask,
     app_handle: &AppHandle,
 ) -> Result<StageResult, String> {
@@ -989,6 +1014,8 @@ async fn process_index(
     let reporter = Arc::new(QueueStageReporter {
         app_handle: app_handle.clone(),
         doc_id: task.doc_id.clone(),
+        queue: Some(Arc::clone(queue)),
+        task_id: task.id.clone(),
     });
     let input = SourceInput::new(&file_path).with_allow_ocr(true);
     let ctx = PipelineContext::new(&file_path, "")
@@ -1092,25 +1119,56 @@ fn set_doc_status_error(project_root: &Path, task: &IngestTask, error: &str) {
 }
 
 /// Structured log line for the frontend log panel. Mirrors the same
-/// info into stderr via `log::` and emits a Tauri event so the UI can
-/// render a per-task expandable log box.
-fn emit_log(app_handle: &AppHandle, doc_id: &str, stage: &str, level: &str, message: String) {
-    let payload = serde_json::json!({
-        "doc_id": doc_id,
-        "stage": stage,
-        "level": level,
-        "message": message,
-        "ts_ms": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0),
-    });
+/// info into stderr via `log::`, emits a Tauri event so the UI can
+/// render a per-task expandable log box, and best-effort writes the
+/// line to `ingest_logs` so the UI has a DB-backed fallback when the
+/// event channel fails.
+fn emit_log(
+    queue: Option<&Arc<IngestQueue>>,
+    app_handle: &AppHandle,
+    doc_id: &str,
+    task_id: &str,
+    stage: &str,
+    level: &str,
+    message: String,
+) {
+    let ts_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
     // Mirror to stderr so devs can grep the Tauri log.
     match level {
         "warn" => log::warn!("[IngestWorker:{}:{}] {}", doc_id, stage, message),
         "error" => log::error!("[IngestWorker:{}:{}] {}", doc_id, stage, message),
         _ => log::info!("[IngestWorker:{}:{}] {}", doc_id, stage, message),
     }
+
+    // Fire-and-forget DB write (ingest_logs 表的兜底通道)
+    if let Some(q) = queue {
+        let q = Arc::clone(q);
+        let doc_id = doc_id.to_string();
+        let task_id = task_id.to_string();
+        let stage = stage.to_string();
+        let level = level.to_string();
+        let message = message.clone();
+        tokio::spawn(async move {
+            if let Err(e) = q
+                .add_log(&doc_id, &stage, &level, &message, ts_ms, Some(&task_id))
+                .await
+            {
+                log::warn!("IngestWorker: add_log failed: {}", e);
+            }
+        });
+    }
+
+    let payload = serde_json::json!({
+        "doc_id": doc_id,
+        "stage": stage,
+        "level": level,
+        "message": message,
+        "ts_ms": ts_ms,
+    });
     if let Err(e) = app_handle.emit(EVT_INGEST_LOG, &payload) {
         log::warn!("IngestWorker: emit log failed: {}", e);
     }

@@ -63,7 +63,12 @@ export interface IngestLogEvent {
   message: string
   /** Unix epoch milliseconds */
   ts_ms: number
+  /** 关联 task id（仅 DB 落库通道携带） */
+  task_id?: string | null
 }
+
+/** DB 落库通道的日志行（与 IngestLogEvent 同构）。 */
+export type IngestLogRecord = IngestLogEvent
 
 /** Track C: 嵌入阶段子进度事件 */
 export interface IngestEmbedEvent {
@@ -84,6 +89,19 @@ export async function ingestList(projectRoot: string): Promise<IngestTask[]> {
 export async function ingestStats(projectRoot: string): Promise<QueueStats> {
   return invokeWithError(
     () => invoke<QueueStats>('ingest_stats', { projectRoot }),
+    ErrorCode.TauriInvoke,
+  )
+}
+
+/** 获取某 doc_id 的最近 N 条 ingest 日志（DB 兜底通道）。
+ *  默认 limit=500；可按需调小。 */
+export async function ingestGetLogs(
+  projectRoot: string,
+  docId: string,
+  limit?: number,
+): Promise<IngestLogRecord[]> {
+  return invokeWithError(
+    () => invoke<IngestLogRecord[]>('ingest_get_logs', { projectRoot, docId, limit }),
     ErrorCode.TauriInvoke,
   )
 }

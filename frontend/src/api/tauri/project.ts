@@ -188,6 +188,22 @@ export async function deleteFile(projectRoot: string, docId: string): Promise<bo
   )
 }
 
+/** 彻底删除 PDF 文档及其所有派生数据。 */
+export async function deleteDocument(projectRoot: string, docId: string): Promise<void> {
+  return invokeWithError(
+    () => invoke('project_delete_document', { projectRoot, docId }),
+    ErrorCode.ProjectOpen,
+  )
+}
+
+/** 重新读取已有 PDF：清空派生数据后重新入队。 */
+export async function reingestDocument(projectRoot: string, docId: string): Promise<void> {
+  return invokeWithError(
+    () => invoke('project_reingest_document', { projectRoot, docId }),
+    ErrorCode.ProjectOpen,
+  )
+}
+
 /** 读取文本文件内容（Rust 直接读取，无需 HTTP） */
 export async function readTextFile(projectRoot: string, path: string): Promise<string> {
   return invokeWithError(

@@ -186,22 +186,6 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         files: &["swin_base_char_aux_1m680k.pth"],
         allow_patterns: &[],
     },
-    ResourceInfo {
-        id: "moldet_coref",
-        name: "MolDetect Coref",
-        resource_type: ResourceType::Model,
-        description: "MolDetect 分子-标号共指消解模型 (含 backbone)",
-        size_mb: 200,
-        license: "Apache-2.0",
-        ms_repo: "polyai/MolDetect",
-        download_type: "snapshot",
-        ms_file: "",
-        local_name: "MolDetect",
-        pip_name: "",
-        import_name: "",
-        files: &["coref_best.ckpt"],
-        allow_patterns: &[],
-    },
     // ──── Python 包 ────
     ResourceInfo {
         id: "torch",

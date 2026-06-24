@@ -189,13 +189,13 @@ class TestMolDetv2DocDetector:
             return_value=True,
         ), patch.object(MolDetv2DocDetector, "_load_model"):
             detector = MolDetv2DocDetector.__new__(MolDetv2DocDetector)
-            detector.MODEL_SUBDIR = "moldetv2-doc"
+            detector.MODEL_SUBPATH = "doc/moldet_v2_yolo11n_960_doc.pt"
             detector.DEFAULT_INPUT_SIZE = (960, 960)
             detector.device = "cpu"
             detector.conf_threshold = 0.25
             detector.iou_threshold = 0.45
             path = detector._resolve_model_path(None)
-            assert "moldetv2-doc" in str(path)
+            assert "doc" in str(path)
             assert path.suffix in (".pt",)
 
 

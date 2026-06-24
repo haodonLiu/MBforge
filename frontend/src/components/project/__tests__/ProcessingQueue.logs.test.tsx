@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import ProcessingQueue from '../ProcessingQueue'
 import { EVT } from '../../../api/tauri-events'
 import { ingestList, ingestDeleteTask } from '../../../api/tauri/ingest_queue'
+import i18n from '../../../i18n'
 
 const mockListen = vi.fn()
 
@@ -50,8 +51,9 @@ vi.mock('../../../api/tauri/ingest_queue', async () => {
 })
 
 describe('ProcessingQueue logs', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks()
+    await i18n.changeLanguage('zh')
     vi.mocked(ingestList).mockResolvedValue([
       {
         id: 't1',

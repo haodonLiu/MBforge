@@ -1,4 +1,4 @@
-﻿/** Sidecar-dependent commands.
+/** Sidecar-dependent commands.
  *
  * - `sidecarStatus` / `sidecarRestart`: sidecar process lifecycle.
  * - `environmentCheck`: probes Python via the sidecar HTTP API; lives here
@@ -34,7 +34,7 @@ export async function sidecarRestart(): Promise<void> {
   )
 }
 
-/** 鎺㈡祴 Python sidecar 鐜淇℃伅锛圥ython 鐗堟湰銆丟PU銆丆UDA銆佸簱渚濊禦銆?*/
+/** 探测 Python sidecar 环境信息（Python 版本、GPU、CUDA、库依赖）。 */
 export async function environmentCheck(): Promise<unknown> {
   return invokeWithError(
     () => invoke<unknown>('environment_check'),

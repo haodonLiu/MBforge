@@ -5,7 +5,6 @@ Python sidecar hosts only five fixed local models:
     - Qwen3-Reranker    (backends.qwen3_rerank)
     - MolScribe         (backends.molscribe)
     - MolDet            (backends.moldet)
-    - MolDet Coref      (backends.moldet_coref)
 
 All API-based models (OpenAI, Anthropic, etc.) are called directly from Rust.
 """
@@ -30,8 +29,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from .backends import moldet, moldet_coref, molscribe, qwen3_embed, qwen3_rerank
+from .backends import moldet, molscribe, qwen3_embed, qwen3_rerank
 from .core.resource_manager import ResourceManager
+from .parsers.molecule.coref_alt import (
+    CorefResult as CorefResultData,
+    coref_to_rust_dict,
+    detect_coref_via_moldet_ocr,
+    get_rapid_ocr,
+)
 from .utils.helpers import (
     ModelNotAvailableError,
     ValidationError,
@@ -45,7 +50,7 @@ logger = get_logger("mbforge.server")
 # ---------------------------------------------------------------------------
 # Backend registry — add a new backend here to register it for lifespan
 # ---------------------------------------------------------------------------
-_BACKENDS = [qwen3_embed, qwen3_rerank, molscribe, moldet, moldet_coref]
+_BACKENDS = [qwen3_embed, qwen3_rerank, molscribe, moldet]
 
 
 def _prewarm() -> None:
@@ -452,39 +457,26 @@ async def extract_page(request: Request) -> dict[str, Any]:
             None, lambda: pipeline.extract_page(image, page_idx, page_w_pts, page_h_pts, image_w, image_h, dpi)
         )
 
-        # 2. Coref 增强（可选）
+        # 2. Coref 增强（可选，coref_alt 实现）
         if use_coref and results:
             try:
-                coref_backend = moldet_coref.get_coref()
-                if coref_backend and coref_backend.is_available():
-                    # 提取 MolDet 检测到的 bbox
-                    mol_bboxes = []
-                    for r in results:
-                        if r.bbox_pdf:
-                            # 转换为归一化坐标（coref 需要）
-                            x1, y1, x2, y2 = r.bbox_pdf
-                            # bbox_pdf 是 PDF 坐标（左下原点），需要转换
-                            # 这里传入原始 bbox，由 coref_to_molecules 处理
-                            mol_bboxes.append({
-                                "x1": x1, "y1": y1, "x2": x2, "y2": y2
-                            })
-
-                    # 并行执行 coref 检测
+                if pipeline.doc_detector is not None and pipeline.doc_detector.is_available():
+                    ocr_adapter = get_rapid_ocr()
                     coref_result = await loop.run_in_executor(
                         None,
-                        lambda: coref_backend.detect_coref_with_mapping(
+                        lambda: detect_coref_via_moldet_ocr(
                             image,
-                            mol_bboxes=mol_bboxes,
-                        )
+                            pipeline.doc_detector,
+                            ocr_adapter,
+                            page_w_pts,
+                            page_h_pts,
+                        ),
                     )
-
-                    # 用 coref 结果增强 context_text
-                    if coref_result and "corefs" in coref_result:
-                        _enrich_results_with_coref(results, coref_result)
-                        logger.debug(
-                            "[extract-page] Coref enriched %d molecules",
-                            len(coref_result.get("corefs", []))
-                        )
+                    _enrich_results_with_coref(results, coref_result)
+                    logger.debug(
+                        "[extract-page] Coref enriched %d molecules",
+                        len(coref_result.corefs),
+                    )
             except Exception as e:
                 # Coref 失败不影响基础检测结果
                 logger.warning("[extract-page] Coref enrichment failed: %s", e)
@@ -500,63 +492,69 @@ async def extract_page(request: Request) -> dict[str, Any]:
 
 def _enrich_results_with_coref(
     results: list,
-    coref_result: dict,
+    coref_result: CorefResultData,
 ) -> None:
     """用 coref 结果增强 ExtractionResult 的 context_text。
 
     Args:
         results: ExtractionResult 列表
-        coref_result: coref 检测结果
+        coref_result: coref_alt 输出的 CorefResult
     """
-    if not coref_result or "corefs" not in coref_result:
+    if not coref_result or not coref_result.corefs:
         return
 
-    # 构建 mol_idx → idt_bbox 映射
-    mol_idt_map: dict[int, list[dict]] = {}
-    for coref in coref_result.get("corefs", []):
-        mol_idx = coref.get("mol_idx")
-        idt_bbox = coref.get("idt_bbox")
-        if mol_idx is not None and idt_bbox is not None:
-            if mol_idx not in mol_idt_map:
-                mol_idt_map[mol_idx] = []
-            mol_idt_map[mol_idx].append(idt_bbox)
+    # 构建 mol_idx → idt 文本列表映射
+    mol_idt_map: dict[int, list[str]] = {}
+    for mol_idx, idt_idx in coref_result.corefs:
+        if 0 <= idt_idx < len(coref_result.bboxes):
+            text = coref_result.bboxes[idt_idx].text
+            if text is None:
+                continue
+            mol_idt_map.setdefault(mol_idx, []).append(text)
 
     # 增强每个 molecule 的 context_text
     for i, result in enumerate(results):
-        if i in mol_idt_map and mol_idt_map[i]:
-            # 使用 idt_bbox 的位置信息作为 context 提示
-            idt_bboxes = mol_idt_map[i]
-            if len(idt_bboxes) == 1:
-                result.context_text = f"关联标号位置: {idt_bboxes[0]}"
-            else:
-                result.context_text = f"关联 {len(idt_bboxes)} 个标号位置"
+        labels = mol_idt_map.get(i)
+        if not labels:
+            continue
+        if len(labels) == 1:
+            result.context_text = f"关联标号: {labels[0]}"
+        else:
+            result.context_text = f"关联 {len(labels)} 个标号: {', '.join(labels)}"
 
 
 # ---------------------------------------------------------------------------
-# MolDetect Coref
+# MolDetect Coref（coref_alt 实现）
 # ---------------------------------------------------------------------------
 @app.post("/api/v1/moldet/coref")
 @with_model_status("moldet_coref")
 async def detect_coref(request: Request, body: dict) -> dict[str, Any]:
-    """检测分子和标识符的共指关系."""
+    """检测分子和标识符的共指关系（moldet + RapidOCR 实现）。
+
+    返回格式对齐 vlm_chem.rs 解析期望：
+      bboxes[*]: {category_id, bbox[4], smiles?, molfile?, text?, score}
+      corefs[*]: [mol_idx, idt_idx]
+    """
     image_base64 = body.get("image_base64", "")
     if not image_base64:
         raise ValidationError("image_base64 is required")
-    mol_bboxes = body.get("mol_bboxes", [])
 
     image = decode_base64_image(image_base64)
-    backend = moldet_coref.get_coref()
-    if backend is None or not backend.is_available():
-        raise ModelNotAvailableError("MolDetect coref backend not available")
+    pipeline = moldet.get_moldet()
+    if pipeline is None or pipeline.doc_detector is None or not pipeline.doc_detector.is_available():
+        raise ModelNotAvailableError("MolDet doc detector not available")
 
+    ocr_adapter = get_rapid_ocr()
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
+    coref_result = await loop.run_in_executor(
         None,
-        lambda: backend.detect_coref_with_mapping(
+        lambda: detect_coref_via_moldet_ocr(
             image,
-            mol_bboxes=mol_bboxes,
+            pipeline.doc_detector,
+            ocr_adapter,
         ),
     )
+    return coref_to_rust_dict(coref_result)
 
 
 # ---------------------------------------------------------------------------
@@ -611,7 +609,7 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
 
         if rid == "embedding":
             qwen3_embed.load()
-            if qwen3_embed._MODEL is None:
+            if qwen3_embed._PROVIDER is None:
                 return {"ok": False, "error": qwen3_embed._ERROR or "未加载到内存"}
             vecs = qwen3_embed.embed(["test"])
             if not isinstance(vecs, list) or len(vecs) != 1 or not isinstance(vecs[0], list) or len(vecs[0]) == 0:
@@ -665,19 +663,19 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
                 return {"ok": False, "error": f"YOLO detect 返回非列表: {type(boxes).__name__}"}
 
         elif rid == "moldet_coref":
-            from mbforge.core.resource_manager import ResourceManager
-            path = ResourceManager.resolve_model_for_backend("moldet_coref")
-            if path is None:
-                return {"ok": False, "error": "模型文件未找到"}
-            from mbforge.backends.moldet_coref import MolDetectCorefBackend
-            backend = MolDetectCorefBackend(model_path=str(path))
-            if not backend.is_available():
-                return {"ok": False, "error": "coref 加载失败"}
+            # coref_alt 不需额外模型，验证 moldet doc detector + RapidOCR 可用
             from PIL import Image
+            from mbforge.parsers.molecule.coref_alt import (
+                detect_coref_via_moldet_ocr,
+                get_rapid_ocr,
+            )
+            pipeline = moldet.get_moldet()
+            if pipeline is None or pipeline.doc_detector is None or not pipeline.doc_detector.is_available():
+                return {"ok": False, "error": "MolDet doc detector 不可用"}
             img = Image.new("RGB", (480, 480), color=0)
-            result = backend.detect_coref_with_mapping(img, mol_bboxes=[])
-            if not isinstance(result, dict):
-                return {"ok": False, "error": f"coref 输出非 dict: {type(result).__name__}"}
+            result = detect_coref_via_moldet_ocr(img, pipeline.doc_detector, get_rapid_ocr())
+            if not hasattr(result, "bboxes") or not hasattr(result, "corefs"):
+                return {"ok": False, "error": f"coref 输出结构异常: {type(result).__name__}"}
 
         else:
             return {"ok": False, "error": f"未知资源: {rid}"}
@@ -785,11 +783,13 @@ async def health_check() -> dict[str, Any]:
             _mark_failure("moldet")
             logger.debug(f"MolDet health check failed: {e}")
 
-    # MolDet Coref
+    # MolDet Coref (coref_alt: 复用 MolDet doc detector + RapidOCR，无独立模型)
     if not _should_skip_due_to_cooldown("moldet_coref"):
         try:
-            backend = moldet_coref.get_coref()
-            if backend and backend.is_available():
+            pipeline = moldet.get_moldet()
+            if pipeline is not None and pipeline.doc_detector is not None and pipeline.doc_detector.is_available():
+                # 触发 RapidOCR 懒加载（首次较慢）
+                get_rapid_ocr()
                 _model_status["moldet_coref"] = "ready"
                 _clear_failure("moldet_coref")
             else:

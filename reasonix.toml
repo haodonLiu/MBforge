@@ -1,0 +1,2 @@
+[permissions]
+allow = ["Bash(cd \"C:/Users/10954/Desktop/MBForge/src-tauri\" && wc -l src/core/agent/*.rs src/commands/agent.rs src/core/document/lit_review.rs 2>nul)"]

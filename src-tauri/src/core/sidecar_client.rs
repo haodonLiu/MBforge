@@ -220,7 +220,7 @@ mod tests {
     fn health_response_parses_object_models_and_resources() {
         let json = r#"{
             "status": "partial",
-            "models": {"embedder": "ready", "reranker": "ready", "moldet": "ready", "moldet_coref": "error"},
+            "models": {"embedder": "ready", "reranker": "ready", "moldet": "ready"},
             "resources": {"embedding": "ready", "molscribe": "ready"},
             "error": null
         }"#;

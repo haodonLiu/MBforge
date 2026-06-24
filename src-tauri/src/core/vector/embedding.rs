@@ -29,7 +29,7 @@ pub trait EmbedderTrait: Send + Sync {
     fn embed_with_trace(
         &self,
         texts: Vec<String>,
-        _trace: Option<&crate::core::agent::observability::TraceContext>,
+        _trace: Option<&crate::core::trace::TraceContext>,
     ) -> Result<Vec<Vec<f32>>, String> {
         self.embed(texts)
     }
@@ -87,7 +87,7 @@ impl Embedder {
     pub fn embed_with_trace(
         &self,
         texts: Vec<String>,
-        trace: Option<&crate::core::agent::observability::TraceContext>,
+        trace: Option<&crate::core::trace::TraceContext>,
     ) -> Result<Vec<Vec<f32>>, String> {
         self.inner.embed_with_trace(texts, trace)
     }
@@ -170,7 +170,7 @@ impl EmbedderTrait for SidecarEmbedder {
     fn embed_with_trace(
         &self,
         texts: Vec<String>,
-        trace: Option<&crate::core::agent::observability::TraceContext>,
+        trace: Option<&crate::core::trace::TraceContext>,
     ) -> Result<Vec<Vec<f32>>, String> {
         if texts.is_empty() {
             return Ok(Vec::new());

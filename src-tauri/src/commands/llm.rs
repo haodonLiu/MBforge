@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-use crate::core::agent::rig_adapter::{MbforgeProviderConfig, MbforgeProviderKind};
+use crate::core::config::llm_config::{MbforgeProviderConfig, MbforgeProviderKind};
 
 /// Status string returned to the frontend (mirrors an enum on the TS side).
 ///

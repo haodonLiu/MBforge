@@ -4,7 +4,7 @@ use rig_core::completion::{AssistantContent, CompletionModel};
 use rig_core::providers::anthropic::Client as AnthropicClient;
 use rig_core::providers::openai::CompletionsClient as OpenAiClient;
 
-use crate::core::agent::rig_adapter::{MbforgeProviderConfig, MbforgeProviderKind};
+use crate::core::config::llm_config::{MbforgeProviderConfig, MbforgeProviderKind};
 use crate::parsers::doc_types::{
     ActivityEntry, CompoundEntry, DocumentMetadata, FindingEntry, PdfParseResult,
     PostProcessResult, StructuredData, UncertainItem,
@@ -363,7 +363,7 @@ struct BatchResult {
 // ---------------------------------------------------------------------------
 // LLM API call — 走项目内 MbforgeProviderConfig + rig 内部函数，
 // 不再自己拼 HTTP / Bearer auth / OpenAI JSON 协议。
-// 详见 src-tauri/src/core/agent/rig_adapter.rs。
+// 详见 src-tauri/src/core/config/llm_config.rs。
 // ---------------------------------------------------------------------------
 
 /// 同步入口：自建当前线程 tokio runtime 跑 async 实现。
@@ -922,105 +922,51 @@ pub async fn post_process_sections_parallel(
     page_count: usize,
     concurrency: Option<usize>,
 ) -> Vec<SectionResult> {
-    use futures::stream::{FuturesUnordered, StreamExt};
+    use futures::stream::{self, StreamExt};
     use std::sync::Arc;
     use tokio::task::spawn_blocking;
 
     let limit = concurrency
         .filter(|&n| n > 0)
         .unwrap_or(DEFAULT_SECTION_CONCURRENCY);
-    let total = sections.len();
     let parser = Arc::new(parser.to_string());
 
-    // 限制在途任务数：用 `FuturesUnordered` 手动背压（poll 时检查已 spawn 数量）。
-    // `buffer_unordered` 不支持动态限流 — 我们需要「in-flight ≤ limit」语义，
-    // 所以用 `FuturesUnordered` + 计数 channel 比 JoinSet+Semaphore 更直接。
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<()>(limit);
-    let mut tasks: FuturesUnordered<
-        tokio::task::JoinHandle<(
-            usize,
-            String,
-            Result<PostProcessResult, String>,
-            std::time::Duration,
-        )>,
-    > = FuturesUnordered::new();
-
-    for (idx, (name, text)) in sections.into_iter().enumerate() {
-        // 等待槽位
-        let _permit = match rx.recv().await {
-            Some(()) => (), // 收到释放信号 — 但此时 channel 已被新 permit 占位，下面 spawn 后再 send 一个回来
-            None => break,  // channel 关闭 — 不会再有 permit
-        };
-        let name_for_blocking = name.clone();
-        let parser_for_blocking = Arc::clone(&parser);
-        let tx_permit = tx.clone();
-        tasks.push(tokio::spawn(async move {
-            // `post_process_section` 内部走 `reqwest::blocking::Client`，
-            // 不能直接在 tokio task 中跑 — 必须丢到 dedicated blocking thread
-            // pool，否则 `.await` 退出 task 时 runtime 会 panic。
-            let start = std::time::Instant::now();
-            let outcome = spawn_blocking(move || {
-                post_process_section_sync(&text, parser_for_blocking.as_str(), page_count)
-            })
-            .await;
-            let elapsed = start.elapsed();
-            // 释放槽位（drop 时自动 send）
-            drop(tx_permit);
-            let result = match outcome {
-                Ok(Ok(r)) => Ok(r),
-                Ok(Err(e)) => Err(e),
-                Err(join_err) => Err(format!("blocking task join error: {}", join_err)),
-            };
-            (idx, name_for_blocking, result, elapsed)
-        }));
-    }
-    // 关闭发送端：当所有 task 完成（drop 自己的 tx 副本）后，recv 会返回 None。
-    drop(tx);
-
-    // 按 index 收集，保持与输入同顺序。
-    let mut results: Vec<Option<SectionResult>> = (0..total).map(|_| None).collect();
-    while let Some(joined) = tasks.next().await {
-        match joined {
-            Ok((idx, name, Ok(r), elapsed)) => {
-                if idx < results.len() {
-                    results[idx] = Some(SectionResult {
-                        index: idx,
-                        name,
-                        status: SectionStatus::Ok(r),
-                        elapsed,
-                    });
+    // `buffered(limit)` 同时保证：
+    //   - 最多 `limit` 个 future 在并发执行（自动背压）
+    //   - 输出顺序与输入顺序一致
+    // 每个 future 内部把同步 LLM 调用 `post_process_section_sync` 丢到
+    // `spawn_blocking` 线程池，避免在 tokio task 里嵌套 block_on。
+    let results: Vec<SectionResult> = stream::iter(sections.into_iter().enumerate())
+        .map(|(idx, (name, text))| {
+            let parser_for_blocking = Arc::clone(&parser);
+            async move {
+                let start = std::time::Instant::now();
+                let outcome = spawn_blocking(move || {
+                    post_process_section_sync(&text, parser_for_blocking.as_str(), page_count)
+                })
+                .await;
+                let elapsed = start.elapsed();
+                let status = match outcome {
+                    Ok(Ok(r)) => SectionStatus::Ok(r),
+                    Ok(Err(e)) => SectionStatus::Err(e),
+                    Err(join_err) => SectionStatus::Err(format!(
+                        "blocking task join error: {}",
+                        join_err
+                    )),
+                };
+                SectionResult {
+                    index: idx,
+                    name,
+                    status,
+                    elapsed,
                 }
             }
-            Ok((idx, name, Err(e), elapsed)) => {
-                if idx < results.len() {
-                    results[idx] = Some(SectionResult {
-                        index: idx,
-                        name,
-                        status: SectionStatus::Err(e),
-                        elapsed,
-                    });
-                }
-            }
-            Err(e) => {
-                // task panic：记录为日志
-                log::error!("post_process_sections_parallel task join error: {}", e);
-            }
-        }
-    }
-
-    // 任何 join 失败的槽位都补成 Err 状态，避免 None 漏报。
-    results
-        .into_iter()
-        .enumerate()
-        .map(|(i, slot)| {
-            slot.unwrap_or_else(|| SectionResult {
-                index: i,
-                name: format!("__missing_{}", i),
-                status: SectionStatus::Err("join task dropped".into()),
-                elapsed: std::time::Duration::ZERO,
-            })
         })
+        .buffered(limit)
         .collect()
+        .await;
+
+    results
 }
 
 /// `post_process_section` 的 sync 版本，专门给 `tokio::task::spawn_blocking` 调用。

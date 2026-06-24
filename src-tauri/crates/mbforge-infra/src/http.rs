@@ -6,37 +6,24 @@
 use std::sync::LazyLock;
 use std::time::Duration;
 
-/// 短超时客户端（15s）— 用于快速 sidecar 调用（agent LLM、skills 创建）
-static CLIENT_15S: LazyLock<reqwest::Client> = LazyLock::new(|| {
+fn build_client(timeout_secs: u64) -> reqwest::Client {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(timeout_secs))
         .build()
-        .expect("Failed to build HTTP client (15s)")
-});
+        .unwrap_or_else(|_| reqwest::Client::new())
+}
+
+/// 短超时客户端（15s）— 用于快速 sidecar 调用（agent LLM、skills 创建）
+static CLIENT_15S: LazyLock<reqwest::Client> = LazyLock::new(|| build_client(15));
 
 /// 中等超时客户端（30s）— 用于 sidecar 工具执行、记忆提取
-static CLIENT_30S: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .expect("Failed to build HTTP client (30s)")
-});
+static CLIENT_30S: LazyLock<reqwest::Client> = LazyLock::new(|| build_client(30));
 
 /// 标准超时客户端（120s）— 用于 VLM、KB 索引等中等耗时操作
-static CLIENT_120S: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .expect("Failed to build HTTP client (120s)")
-});
+static CLIENT_120S: LazyLock<reqwest::Client> = LazyLock::new(|| build_client(120));
 
 /// 长超时客户端（300s）— 用于 VLM describe 等长时间操作
-static CLIENT_300S: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(300))
-        .build()
-        .expect("Failed to build HTTP client (300s)")
-});
+static CLIENT_300S: LazyLock<reqwest::Client> = LazyLock::new(|| build_client(300));
 
 /// 获取短超时客户端（15s）
 pub fn client_15s() -> &'static reqwest::Client {

@@ -1,14 +1,17 @@
-#![allow(dead_code)]
-use regex::Regex;
-use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+use regex::Regex;
+use sha2::{Digest, Sha256};
+
+use crate::error::{AppError, AppResult, ErrorCode};
+
 /// SMILES candidate pattern (simplified — no RDKit validation in Rust).
 /// Shared between classifier.rs and extractor.rs to avoid duplication.
+#[allow(clippy::expect_used)] // regex literal is compile-time valid; initialization-only
 pub static SMILES_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"[A-Za-z0-9@.+\-=#$()\[\]\\/%~]{4,}").expect("valid SMILES regex")
+    Regex::new(r"[A-Za-z0-9@.+=\-#$()\[\]\\/%~]{4,}").expect("valid SMILES regex")
 });
 
 /// Get current UTC time as RFC 3339 string.
@@ -126,10 +129,7 @@ pub fn clean_path(raw: &str) -> String {
 /// Unchecked variant: caller is responsible for ensuring the path is safe.
 /// Prefer [`save_json_safe`] for any path that originates from user input
 /// or a project-relative location.
-pub fn save_json<T: serde::Serialize>(
-    path: &Path,
-    data: &T,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn save_json<T: serde::Serialize>(path: &Path, data: &T) -> AppResult<()> {
     write_json_to(path, data)
 }
 
@@ -143,19 +143,17 @@ pub fn save_json_safe<T: serde::Serialize>(
     root: &str,
     path: &Path,
     data: &T,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> AppResult<()> {
     let checked =
-        assert_within_root_allow_missing(root, path).map_err(|e| format!("path safety: {}", e))?;
+        assert_within_root_allow_missing(root, path).map_err(|e| AppError::new(ErrorCode::FilePermission, e))?;
     write_json_to(&checked, data)
 }
 
-fn write_json_to<T: serde::Serialize>(
-    path: &Path,
-    data: &T,
-) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_dir(path.parent().unwrap_or(Path::new(".")))?;
+fn write_json_to<T: serde::Serialize>(path: &Path, data: &T) -> AppResult<()> {
+    ensure_dir(path.parent().unwrap_or(Path::new(".")))
+        .map_err(|e| AppError::new(ErrorCode::FileWrite, e.to_string()))?;
     let json = serde_json::to_string_pretty(data)?;
-    std::fs::write(path, json)?;
+    std::fs::write(path, json).map_err(|e| AppError::new(ErrorCode::FileWrite, e.to_string()))?;
     Ok(())
 }
 
@@ -191,21 +189,23 @@ pub fn available_space_bytes(path: &Path) -> Result<u64, Box<dyn std::error::Err
 /// Unchecked variant: caller is responsible for ensuring the path is safe.
 /// Prefer [`load_json_safe`] for any path that originates from user input
 /// or a project-relative location.
-pub fn load_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
+pub fn load_json<T: serde::de::DeserializeOwned>(path: &Path) -> AppResult<T> {
     read_json_from(path)
 }
 
 /// Load JSON file from a project-relative path, verifying the resolved
 /// path lies within `root` before any filesystem access. Returns `None`
 /// if the path is outside `root` or the file is unreadable / malformed.
-pub fn load_json_safe<T: serde::de::DeserializeOwned>(root: &str, path: &Path) -> Option<T> {
-    let checked = assert_within_root_allow_missing(root, path).ok()?;
+pub fn load_json_safe<T: serde::de::DeserializeOwned>(root: &str, path: &Path) -> AppResult<T> {
+    let checked = assert_within_root_allow_missing(root, path)
+        .map_err(|e| AppError::new(ErrorCode::FilePermission, e))?;
     read_json_from(&checked)
 }
 
-fn read_json_from<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
-    let data = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&data).ok()
+fn read_json_from<T: serde::de::DeserializeOwned>(path: &Path) -> AppResult<T> {
+    let data = std::fs::read_to_string(path).map_err(|e| AppError::new(ErrorCode::FileRead, e.to_string()))?;
+    let value = serde_json::from_str(&data)?;
+    Ok(value)
 }
 
 /// Estimate token count (rough heuristic: CJK ~1.5 token/char, other ~0.25 token/char).
@@ -302,7 +302,7 @@ pub fn safe_join(root: &Path, relative: &str) -> Result<PathBuf, String> {
 ///
 /// # Returns
 /// * `Ok(PathBuf)` - The resolved (lexical) path, which is guaranteed to lie
-///                   within the canonicalized root when normalized
+///   within the canonicalized root when normalized
 /// * `Err(String)` - The path escapes root or root itself cannot be resolved
 ///
 /// # Why not just `assert_within_root`?
@@ -378,7 +378,7 @@ fn lexical_normalize(path: &Path) -> PathBuf {
             Component::ParentDir => {
                 // Only pop if the current stack has a real component to pop;
                 // never pop past a root, prefix, or the still-empty stack.
-                if let Some(last) = out.components().last() {
+                if let Some(last) = out.components().next_back() {
                     if matches!(last, Component::Normal(_)) {
                         out.pop();
                     }
@@ -407,6 +407,8 @@ impl<T> LockResultExt<T> for std::sync::LockResult<T> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
     use super::*;
     use std::fs;
 
@@ -455,6 +457,41 @@ mod tests {
         assert!(cut.len() <= 500);
         // 500 / 4 = 125 complete emoji (no partial 4-byte sequences)
         assert_eq!(cut.len() % 4, 0);
+    }
+
+    #[test]
+    fn test_safe_filename() {
+        assert_eq!(safe_filename("a/b:c*d?e"), "a_b_c_d_e");
+    }
+
+    #[test]
+    fn test_estimate_tokens() {
+        let tokens = estimate_tokens("Hello 你好");
+        assert!(tokens > 0);
+    }
+
+    #[test]
+    fn test_now_secs_f64_monotonic() {
+        let a = now_secs_f64();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let b = now_secs_f64();
+        assert!(b >= a);
+        // Sanity: must be a plausible UNIX timestamp (post-2020).
+        assert!(a > 1_577_836_800.0);
+    }
+
+    #[test]
+    fn test_now_secs_u64_is_integer() {
+        let v = now_secs_u64();
+        assert!(v > 1_577_836_800);
+    }
+
+    #[test]
+    fn test_now_rfc3339_format() {
+        let s = now_rfc3339();
+        // RFC 3339: e.g. "2026-06-10T12:34:56.789012345+00:00"
+        assert!(s.contains('T'));
+        assert!(s.ends_with("+00:00"));
     }
 
     #[test]
@@ -551,6 +588,19 @@ mod tests {
     }
 
     #[test]
+    fn test_load_json_safe_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let root_str = root.to_string_lossy().to_string();
+
+        let path = root.join("data.json");
+        save_json(&path, &serde_json::json!({"key": "value"})).unwrap();
+
+        let loaded: serde_json::Value = load_json_safe(&root_str, &path).unwrap();
+        assert_eq!(loaded["key"], "value");
+    }
+
+    #[test]
     fn test_assert_within_root_absolute_inside() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
@@ -577,40 +627,5 @@ mod tests {
         let joined = safe_join(root, "docs");
         assert!(joined.is_ok(), "Expected Ok but got: {:?}", joined);
         assert!(joined.unwrap().to_string_lossy().contains("docs"));
-    }
-
-    #[test]
-    fn test_safe_filename() {
-        assert_eq!(safe_filename("a/b:c*d?e"), "a_b_c_d_e");
-    }
-
-    #[test]
-    fn test_estimate_tokens() {
-        let tokens = estimate_tokens("Hello 你好");
-        assert!(tokens > 0);
-    }
-
-    #[test]
-    fn test_now_secs_f64_monotonic() {
-        let a = now_secs_f64();
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        let b = now_secs_f64();
-        assert!(b >= a);
-        // Sanity: must be a plausible UNIX timestamp (post-2020).
-        assert!(a > 1_577_836_800.0);
-    }
-
-    #[test]
-    fn test_now_secs_u64_is_integer() {
-        let v = now_secs_u64();
-        assert!(v > 1_577_836_800);
-    }
-
-    #[test]
-    fn test_now_rfc3339_format() {
-        let s = now_rfc3339();
-        // RFC 3339: e.g. "2026-06-10T12:34:56.789012345+00:00"
-        assert!(s.contains('T'));
-        assert!(s.ends_with("+00:00"));
     }
 }

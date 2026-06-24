@@ -1,11 +1,53 @@
-#![allow(dead_code)]
-use serde::{Deserialize, Serialize};
+//! Application settings — global `config.json` model and in-memory env overrides.
+
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{LazyLock, Mutex};
+
+use serde::{Deserialize, Serialize};
 
 use super::constants::{
     embed_base_url, global_config_dir, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL,
 };
-use crate::helpers::{load_json, save_json};
+use crate::error::AppResult;
+use crate::helpers::{load_json, save_json, LockResultExt};
+
+/// In-memory overrides for credentials that would otherwise live in process
+/// environment variables.
+///
+/// `OcrConfig::apply_to_env` populates this map so settings-saved API keys can
+/// be read by code that currently resolves credentials via `std::env::var`
+/// without using `std::env::set_var` (which is `unsafe` on some platforms and
+/// prohibited by project style).
+static ENV_OVERRIDES: LazyLock<Mutex<HashMap<String, String>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Read a process environment variable, checking in-memory overrides first.
+///
+/// Resolution order:
+/// 1. Value previously set by `set_env_override` (typically from saved settings).
+/// 2. Actual process environment variable via `std::env::var`.
+pub fn env_var(key: &str) -> Option<String> {
+    let overrides = ENV_OVERRIDES.lock().into_inner();
+    if let Some(value) = overrides.get(key) {
+        return Some(value.clone());
+    }
+    std::env::var(key).ok()
+}
+
+/// Set an in-memory environment override.
+pub fn set_env_override(key: &str, value: &str) {
+    let mut overrides = ENV_OVERRIDES.lock().into_inner();
+    overrides.insert(key.to_string(), value.to_string());
+}
+
+/// Clear in-memory overrides for the given keys.
+fn clear_env_overrides(keys: &[&str]) {
+    let mut overrides = ENV_OVERRIDES.lock().into_inner();
+    for key in keys {
+        overrides.remove(*key);
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfig {
@@ -113,9 +155,9 @@ pub struct OcrConfig {
     pub use_pdf_inspector: bool,
     /// Per-backend API keys. Populated from the OCR config modal so
     /// users can configure each cloud backend without setting env vars.
-    /// On app load, `AppConfig::load` calls `apply_to_env` which mirrors
-    /// these into the corresponding `*_API_KEY` env vars (only if those
-    /// env vars are not already set, so .env / CI configs win).
+    /// On app load, `AppConfig::load` calls `apply_to_env` which registers
+    /// these as in-memory overrides (only if those env vars are not already
+    /// set, so .env / CI configs win).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mineru_api_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -147,43 +189,44 @@ impl Default for OcrConfig {
 }
 
 impl OcrConfig {
-    /// Mirror per-backend keys/hosts into process env vars, but only when
-    /// the env var is currently unset (so explicit .env or shell exports
+    /// Register per-backend keys/hosts as in-memory env overrides, but only
+    /// when the env var is currently unset (so explicit .env or shell exports
     /// win over saved settings).
     pub fn apply_to_env(&self) {
+        const KEYS: &[&str] = &[
+            "MINERU_API_KEY",
+            "UNIPARSER_API_KEY",
+            "PADDLEOCR_API_KEY",
+            "PADDLEOCR_HOST",
+            "PADDLEOCR_MODEL",
+        ];
+        clear_env_overrides(KEYS);
+
         if let Some(k) = self.mineru_api_key.as_deref() {
-            if !k.trim().is_empty() {
-                set_if_unset("MINERU_API_KEY", k);
+            if !k.trim().is_empty() && std::env::var_os("MINERU_API_KEY").is_none() {
+                set_env_override("MINERU_API_KEY", k);
             }
         }
         if let Some(k) = self.uniparser_api_key.as_deref() {
-            if !k.trim().is_empty() {
-                set_if_unset("UNIPARSER_API_KEY", k);
+            if !k.trim().is_empty() && std::env::var_os("UNIPARSER_API_KEY").is_none() {
+                set_env_override("UNIPARSER_API_KEY", k);
             }
         }
         if let Some(k) = self.paddleocr_api_key.as_deref() {
-            if !k.trim().is_empty() {
-                set_if_unset("PADDLEOCR_API_KEY", k);
+            if !k.trim().is_empty() && std::env::var_os("PADDLEOCR_API_KEY").is_none() {
+                set_env_override("PADDLEOCR_API_KEY", k);
             }
         }
         if let Some(h) = self.paddleocr_host.as_deref() {
-            if !h.trim().is_empty() {
-                set_if_unset("PADDLEOCR_HOST", h);
+            if !h.trim().is_empty() && std::env::var_os("PADDLEOCR_HOST").is_none() {
+                set_env_override("PADDLEOCR_HOST", h);
             }
         }
         if let Some(m) = self.paddleocr_model.as_deref() {
-            if !m.trim().is_empty() {
-                set_if_unset("PADDLEOCR_MODEL", m);
+            if !m.trim().is_empty() && std::env::var_os("PADDLEOCR_MODEL").is_none() {
+                set_env_override("PADDLEOCR_MODEL", m);
             }
         }
-    }
-}
-
-fn set_if_unset(key: &str, value: &str) {
-    if std::env::var_os(key).is_none() {
-        // SAFETY: caller is single-threaded at startup (AppConfig::load
-        // runs before any worker / Tauri command handler is spawned).
-        unsafe { std::env::set_var(key, value) };
     }
 }
 
@@ -410,33 +453,24 @@ impl AppConfig {
     pub fn load() -> Self {
         let path = Self::config_path();
         let config: Self = load_json(&path).unwrap_or_default();
-        // Mirror OCR per-backend keys into process env vars so the
+        // Register OCR per-backend keys as in-memory overrides so the
         // existing `is_available()` checks (MinerU / Uniparser / PaddleOCR)
         // pick them up without code changes. Env wins over saved settings.
         config.ocr.apply_to_env();
         config
     }
 
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save(&self) -> AppResult<()> {
         save_json(&Self::config_path(), self)
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OptimizationConfig {
     #[serde(default)]
     pub semantic_cache: SemanticCacheConfig,
     #[serde(default)]
     pub streaming_search: StreamingSearchConfig,
-}
-
-impl Default for OptimizationConfig {
-    fn default() -> Self {
-        Self {
-            semantic_cache: SemanticCacheConfig::default(),
-            streaming_search: StreamingSearchConfig::default(),
-        }
-    }
 }
 
 #[cfg(test)]

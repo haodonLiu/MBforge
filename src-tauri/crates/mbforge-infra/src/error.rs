@@ -1,4 +1,5 @@
-#![allow(dead_code)]
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 /// 机器可读的错误码，与前端 `ErrorCode` 枚举对齐。
@@ -28,8 +29,8 @@ pub enum ErrorCode {
     KbSearch,
 }
 
-impl std::fmt::Display for ErrorCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ErrorCode::Unknown => write!(f, "UNKNOWN"),
             ErrorCode::Network => write!(f, "NETWORK"),

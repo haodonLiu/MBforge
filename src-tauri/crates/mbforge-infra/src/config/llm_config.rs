@@ -4,6 +4,9 @@
 //! - `commands/llm.rs` — settings UI read/probe
 //! - `parsers/structure/post_process.rs` — LLM post-processing calls
 
+use crate::config::settings::env_var;
+use crate::error::{AppError, AppResult, ErrorCode};
+
 /// Which LLM provider to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MbforgeProviderKind {
@@ -82,26 +85,35 @@ impl MbforgeProviderConfig {
         model: String,
         timeout_secs: u64,
         source: ConfigSource,
-    ) -> Result<Self, String> {
+    ) -> AppResult<Self> {
         let note = source.note();
         if base_url.trim().is_empty() {
-            return Err(format!(
-                "LLM base_url is not configured. {note} Set `MBFORGE_LLM_BASE_URL` in the project-root .env \
-                 or in Settings > AI Models > LLM. Examples: https://api.openai.com/v1, \
-                 https://openrouter.ai/api/v1, https://api.deepseek.com/v1, or a self-hosted \
-                 llama.cpp server."
+            return Err(AppError::new(
+                ErrorCode::SettingsLoad,
+                format!(
+                    "LLM base_url is not configured. {note} Set `MBFORGE_LLM_BASE_URL` in the project-root .env \
+                     or in Settings > AI Models > LLM. Examples: https://api.openai.com/v1, \
+                     https://openrouter.ai/api/v1, https://api.deepseek.com/v1, or a self-hosted \
+                     llama.cpp server."
+                ),
             ));
         }
         if api_key.trim().is_empty() {
-            return Err(format!(
-                "LLM api_key is not configured. {note} Set `MBFORGE_LLM_API_KEY` in the project-root .env \
-                 or in Settings > AI Models > LLM."
+            return Err(AppError::new(
+                ErrorCode::SettingsLoad,
+                format!(
+                    "LLM api_key is not configured. {note} Set `MBFORGE_LLM_API_KEY` in the project-root .env \
+                     or in Settings > AI Models > LLM."
+                ),
             ));
         }
         if model.trim().is_empty() {
-            return Err(format!(
-                "LLM model is not configured. {note} Set `MBFORGE_LLM_MODEL` in the project-root .env \
-                 or in Settings > AI Models > LLM."
+            return Err(AppError::new(
+                ErrorCode::SettingsLoad,
+                format!(
+                    "LLM model is not configured. {note} Set `MBFORGE_LLM_MODEL` in the project-root .env \
+                     or in Settings > AI Models > LLM."
+                ),
             ));
         }
         Ok(Self {
@@ -121,14 +133,11 @@ impl MbforgeProviderConfig {
     /// 1. If `MBFORGE_LLM_PROVIDER` is set in the environment, use all
     ///    `MBFORGE_LLM_*` env vars.
     /// 2. Otherwise load `AppConfig` from `config.json` and use `AppConfig.llm`.
-    pub fn from_app_config() -> Result<Self, String> {
+    pub fn from_app_config() -> AppResult<Self> {
         // 1. Environment variables take precedence.
-        if let Some(provider) = std::env::var("MBFORGE_LLM_PROVIDER")
-            .ok()
-            .filter(|s| !s.trim().is_empty())
-        {
+        if let Some(provider) = env_var("MBFORGE_LLM_PROVIDER").filter(|s| !s.trim().is_empty()) {
             let kind = MbforgeProviderKind::from_provider_str(&provider);
-            let env = |k: &str| std::env::var(k).ok().filter(|s| !s.trim().is_empty());
+            let env = |k: &str| env_var(k).filter(|s| !s.trim().is_empty());
             let base_url = env("MBFORGE_LLM_BASE_URL").unwrap_or_default();
             let api_key = env("MBFORGE_LLM_API_KEY").unwrap_or_default();
             let model = env("MBFORGE_LLM_MODEL").unwrap_or_default();

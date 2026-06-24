@@ -361,7 +361,7 @@ fn string_hash(s: &str) -> usize {
     let mut h: usize = 0xcbf29ce484222325;
     for b in s.bytes() {
         h ^= b as usize;
-        h = h.wrapping_mul(0x0100_0000_0000_001b3);
+        h = h.wrapping_mul(0x0000_1000_0000_0000_01b3);
     }
     h
 }

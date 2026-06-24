@@ -1,8 +1,9 @@
 #![allow(dead_code)]
-use regex::Regex;
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
+
+use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 // ─── Data Types ──────────────────────────────────────────────────────────
 
@@ -34,28 +35,47 @@ pub struct AbstractRing {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum RGroupDef {
+    /// 明确枚举出的允许取代基列表，如 `["Me", "Et", "Ph"]`。
     Enumerated(Vec<String>),
+    /// 按取代基类别（烷基、卤素等）描述。
     GenericClass(SubstituentClass),
+    /// 文本自由描述，未解析为结构化类别。
     TextDescribed(String),
+    /// 任意取代基（通配）。
     Any,
+    /// 未定义/未知。
     None,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum SubstituentClass {
+    /// 卤素（F、Cl、Br、I）。
     Halogen,
+    /// 烷基，碳数范围 `[min, max]`。
     Alkyl { min: u32, max: u32 },
+    /// 卤代烷基。
     Haloalkyl { min: u32, max: u32 },
+    /// 烷氧基。
     Alkoxy { min: u32, max: u32 },
+    /// 芳基。
     Aryl,
+    /// 杂芳基。
     Heteroaryl,
+    /// 环烷基。
     Cycloalkyl { min: u32, max: u32 },
+    /// 氢原子。
     Hydrogen,
+    /// 羟基。
     Hydroxyl,
+    /// 羧基。
     Carboxyl,
+    /// 氨基。
     Amino,
+    /// 硝基。
     Nitro,
+    /// 氰基。
     Cyano,
+    /// 三氟甲基。
     Trifluoromethyl,
 }
 
@@ -309,7 +329,7 @@ fn tokenize_smiles(smiles: &str) -> Vec<SmilesToken> {
                         element.pop();
                         charge *= n;
                     }
-                } else if let Some(pos) = element.find(|c: char| c == '+' || c == '-') {
+                } else if let Some(pos) = element.find(['+', '-']) {
                     let sign = &element[pos..];
                     let base = &element[..pos];
                     charge = if sign.contains('+') {
@@ -342,7 +362,7 @@ fn tokenize_smiles(smiles: &str) -> Vec<SmilesToken> {
                     element
                 };
 
-                let aromatic = elem.chars().next().map_or(false, |c| {
+                let aromatic = elem.chars().next().is_some_and(|c| {
                     c.is_lowercase() && c != 'c' && c != 's' && c != 'p' && c != 'n' && c != 'o'
                 });
                 let element = if elem.len() == 1 {
@@ -522,10 +542,7 @@ fn atoms_compatible(p_atom: &Atom, q_atom: &Atom) -> bool {
     let p_elem = p_atom.element.as_str();
     let q_elem = q_atom.element.as_str();
     // c (aromatic C) matches both "C" and aromatic C
-    if p_atom.is_aromatic
-        && (q_elem == "C" || q_elem == "c" || q_elem == "C")
-        && !q_atom.is_aromatic
-    {
+    if p_atom.is_aromatic && (q_elem == "C" || q_elem == "c") && !q_atom.is_aromatic {
         // Allow aromatic C in pattern to match aliphatic C in query
         return p_elem == "C" || p_elem == "c";
     }
@@ -735,7 +752,7 @@ fn classify_rgroup_text(desc: &str) -> RGroupDef {
         // Could be hydrogen among other options — check for enumerated values
         if desc.len() < 10 {
             let values: Vec<String> = desc
-                .split(|c: char| c == ',' || c == '/' || c == ';')
+                .split([',', '/', ';'])
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
@@ -749,7 +766,7 @@ fn classify_rgroup_text(desc: &str) -> RGroupDef {
     // Try enumerated list (comma-separated, short strings)
     if desc.len() < 50 && desc.contains(',') {
         let values: Vec<String> = desc
-            .split(|c: char| c == ',' || c == '/' || c == ';')
+            .split([',', '/', ';'])
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty() && s.len() <= 10)
             .collect();

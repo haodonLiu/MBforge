@@ -95,7 +95,7 @@ fn sanitize_identifier(name: &str) -> String {
         .collect();
     if out.is_empty() {
         out = "Molecule".to_string();
-    } else if out.chars().next().map_or(false, |c| c.is_ascii_digit()) {
+    } else if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
         out = format!("M{}", out);
     }
     out

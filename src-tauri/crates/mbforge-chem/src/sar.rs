@@ -60,6 +60,7 @@ pub struct RGroupMatrix {
 
 // ─── 工具函数 ────────────────────────────────────────────────────
 
+#[allow(clippy::expect_used)] // regex is static and validated at compile time
 static ESMILES_TAG_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"</?[a-zA-Z]>").expect("valid E-SMILES tag regex"));
 

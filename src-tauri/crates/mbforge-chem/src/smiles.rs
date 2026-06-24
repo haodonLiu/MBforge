@@ -23,8 +23,6 @@ use chematic_fp::BitVec2048;
 use chematic_smarts::{find_matches, parse_smarts};
 use chematic_smiles::{canonical_smiles, parse};
 
-
-
 /// SMILES 校验结果
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SmilesValidation {

@@ -78,6 +78,7 @@ fn build_single_atom_map() -> HashMap<&'static str, &'static str> {
 // 多原子子图映射表
 // ============================================================================
 
+#[allow(clippy::unwrap_used)] // aliases reference keys inserted just above; guaranteed present
 fn build_subgraph_map() -> HashMap<&'static str, SubgraphDef> {
     let mut m = HashMap::new();
 
@@ -704,11 +705,12 @@ fn build_non_expandable() -> Vec<&'static str> {
 // 名称归一化
 // ============================================================================
 
+#[allow(clippy::expect_used)] // regex is static and validated at compile time
 static BRACKET_DIGITS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[(\d+)\]").expect("valid bracket digits regex"));
-static CHAIN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"CH\[2\](?:\?[nx])?|CH2(?:\?[nx])?").expect("valid chain regex")
-});
+#[allow(clippy::expect_used)] // regex is static and validated at compile time
+static CHAIN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"CH\[2\](?:\?[nx])?|CH2(?:\?[nx])?").expect("valid chain regex"));
 
 /// 缩写名称归一化
 ///
@@ -784,9 +786,7 @@ pub fn normalize_abbrev_name(name: &str) -> String {
     }
 
     // 7. 去尾部标点
-    s = s
-        .trim_end_matches([',', '.', ' '])
-        .to_string();
+    s = s.trim_end_matches([',', '.', ' ']).to_string();
 
     s
 }
@@ -843,6 +843,7 @@ pub fn find_abbrev(name: &str) -> Option<&'static AbbrevDef> {
 }
 
 /// 检查是否为不可展开的占位符
+#[allow(dead_code)] // public API; currently exercised only in unit tests
 pub fn is_non_expandable(name: &str) -> bool {
     matches!(find_abbrev(name), Some(AbbrevDef::NonExpandable))
 }

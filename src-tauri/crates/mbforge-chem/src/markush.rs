@@ -573,24 +573,31 @@ fn check_consistency(
 
 static ESMILES_SEP: &str = "<sep>";
 
+#[allow(clippy::expect_used)] // regex is static and validated at compile time
 static ATOM_TAG_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"<a>(\d+):([^<]+)</a>").expect("valid atom tag regex"));
+#[allow(clippy::expect_used)] // regex is static and validated at compile time
 static RING_TAG_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"<r>(\d+):([^<]+)</r>").expect("valid ring tag regex"));
+#[allow(clippy::expect_used)] // regex is static and validated at compile time
 static CIRCLE_TAG_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"<c>(\d+):([^<]+)</c>").expect("valid circle tag regex"));
+#[allow(clippy::expect_used)] // regex is static and validated at compile time
 static RGROUP_TEXT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?i)(?:R\[?(\d+)\]?\s*(?:is|represents|selected from|chosen from|independently|can be|are|may be)\s*:\s*)(.+?)(?:[.;]|and\s|or\s|where\s|provided\s|$)"
     ).expect("valid Rgroup text regex")
 });
+#[allow(clippy::expect_used)] // regex is static and validated at compile time
 static RGROUP_PAREN_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:R\[?(\d+)\]?\s*=\s*)([A-Za-z0-9\-, \{\}/]+)")
         .expect("valid Rgroup paren regex")
 });
+#[allow(clippy::expect_used)] // regex is static and validated at compile time
 static ALKYL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkyl").expect("valid alkyl regex")
 });
+#[allow(clippy::expect_used)] // regex is static and validated at compile time
 static ALKOXY_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)C(\d+)?\s*[-–]\s*C(\d+)?\s*alkoxy").expect("valid alkoxy regex")
 });
@@ -867,13 +874,10 @@ pub fn check_overlap(markush: &MarkushPattern, query_smiles: &str) -> MarkushOve
 
                         // 尝试缩写展开匹配
                         let normalized_name =
-                            crate::abbreviation_map::normalize_abbrev_name(
-                                &rg.group_name,
-                            );
+                            crate::abbreviation_map::normalize_abbrev_name(&rg.group_name);
                         let in_scope = if let Some(single_atom) =
-                            crate::abbreviation_map::get_single_atom_label(
-                                &normalized_name,
-                            ) {
+                            crate::abbreviation_map::get_single_atom_label(&normalized_name)
+                        {
                             // 缩写有单原子等价，用等价标签匹配
                             check_rgroup_scope(&rg.definition, single_atom)
                         } else {

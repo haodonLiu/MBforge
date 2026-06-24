@@ -179,8 +179,9 @@ pub fn atomic_write<P: AsRef<Path>>(path: P, contents: &[u8]) -> std::io::Result
 }
 
 /// 获取指定路径所在文件系统的可用空间（字节）。
-pub fn available_space_bytes(path: &Path) -> Result<u64, Box<dyn std::error::Error>> {
-    let stat = fs2::statvfs(path)?;
+pub fn available_space_bytes(path: &Path) -> AppResult<u64> {
+    let stat = fs2::statvfs(path)
+        .map_err(|e| AppError::new(ErrorCode::FileRead, e.to_string()))?;
     Ok(stat.available_space())
 }
 

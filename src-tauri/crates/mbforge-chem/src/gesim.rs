@@ -326,7 +326,9 @@ fn generate_path_fp(mol: &Molecule, nid: AtomIdx, max_rad: u8) -> String {
     for r in 0..=max_rad {
         let size = q.len();
         for _ in 0..size {
-            let (node, parent) = q.pop_front().unwrap();
+            let Some((node, parent)) = q.pop_front() else {
+                break;
+            };
             let node_degree = mol.degree(node);
             let node_label = node_label_int(mol, node);
             let extended = format!("{}[{}:{}]", path_prefix, node_label, node_degree);

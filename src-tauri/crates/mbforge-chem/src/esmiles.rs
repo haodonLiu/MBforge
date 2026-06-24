@@ -206,20 +206,16 @@ fn extract_tags_from_extension(ext: &str) -> Vec<EsTag> {
             let tag_type = bytes[i + 1];
             if tag_type == b'a' || tag_type == b'r' || tag_type == b'c' {
                 // 找到 tag 开始，寻找闭合
-                let open_end = find_byte(bytes, i, b'>');
-                if open_end.is_none() {
+                let Some(open_end) = find_byte(bytes, i, b'>') else {
                     i += 1;
                     continue;
-                }
-                let open_end = open_end.unwrap();
+                };
 
                 // 寻找闭合标签 </X>
-                let close_start = find_close_tag(bytes, open_end + 1, tag_type);
-                if close_start.is_none() {
+                let Some(close_start) = find_close_tag(bytes, open_end + 1, tag_type) else {
                     i = open_end + 1;
                     continue;
-                }
-                let close_start = close_start.unwrap();
+                };
 
                 let content = &ext[open_end + 1..close_start];
                 if let Some(tag) = parse_tag_content(tag_type, content) {

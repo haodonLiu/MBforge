@@ -251,7 +251,10 @@ mod tests {
         let long = "R".repeat(1001);
         assert!(matches!(
             preprocess_rgroup_name(&long),
-            Err(PreprocessError::TooLong { len: 1001, max: 1000 })
+            Err(PreprocessError::TooLong {
+                len: 1001,
+                max: 1000
+            })
         ));
     }
 
@@ -281,7 +284,10 @@ mod tests {
         assert_eq!(
             preprocess(
                 "*c1ccccc1",
-                &[PreprocessStep::ValidateText, PreprocessStep::NormalizeWildcards],
+                &[
+                    PreprocessStep::ValidateText,
+                    PreprocessStep::NormalizeWildcards
+                ],
                 100,
             )
             .unwrap(),
@@ -307,9 +313,6 @@ mod tests {
 
     #[test]
     fn test_preprocess_empty_steps() {
-        assert_eq!(
-            preprocess("  hello  ", &[], 100).unwrap(),
-            "  hello  "
-        );
+        assert_eq!(preprocess("  hello  ", &[], 100).unwrap(), "  hello  ");
     }
 }

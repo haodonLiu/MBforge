@@ -1,0 +1,27 @@
+[package]
+name = "mbforge-infra"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+rusqlite.workspace = true
+reqwest.workspace = true
+tokio.workspace = true
+log.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+regex.workspace = true
+sha2.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+fs2.workspace = true
+tempfile.workspace = true
+directories.workspace = true
+tauri.workspace = true
+
+[lints]
+workspace = true

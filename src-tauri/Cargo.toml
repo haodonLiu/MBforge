@@ -1,71 +1,32 @@
-[package]
-name = "mbforge"
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
 version = "0.3.0"
-description = "MBForge - Molecular Knowledge Base"
-authors = ["MBForge Team"]
 edition = "2021"
+authors = ["MBForge Team"]
+license = "MIT"
 
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
-
-[dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
-tauri-plugin-shell = "2"
+[workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-pdf-inspector = "=0.1.0"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
+log = "0.4"
+anyhow = "1"
+thiserror = "1"
 regex = "1"
 sha2 = "0.10"
-uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-walkdir = "2"
-directories = "5"
+uuid = { version = "1", features = ["v4"] }
 fs2 = "0.4"
 tempfile = "3"
-reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls", "multipart", "blocking"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
-futures = "0.3"
-base64 = "0.22"
-dashmap = "6"
-zip = "0.6"
-image = "0.25"
-pulldown-cmark = { version = "0.12", default-features = false }
-text-splitter = { version = "0.11", default-features = false }
-rusqlite = { version = "0.32", features = ["bundled"] }
-log = "0.4"
-thiserror = "1"
-async-trait = "0.1"
-ctrlc = "3"
-lopdf = { git = "https://github.com/J-F-Liu/lopdf", rev = "7a05512d831415b1f2b1ce522391d6beab8a1284", version = "0.40.0" }
-# 化学信息学（纯 Rust，替代 Python RDKit）
-chematic-core = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
-chematic-smiles = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
-chematic-fp = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
-chematic-smarts = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
-chematic-chem = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636" }
+directories = "5"
+tauri = { version = "2", default-features = false }
 
-# LLM agent framework — replaces hand-rolled ReAct loop, multi-provider LLM
-# client, tool dispatch, and streaming. Pinned to 0.38.x (latest as of 2026-06).
-# The `derive` feature brings in `rig-derive` for the `#[rig_tool]` proc macro.
-rig-core = { version = "0.38", features = ["derive", "reqwest", "rustls"] }
-
-# Schemars is re-exported from rig-core but we need it as a direct dep
-# so the JsonSchema derive works on our tool Args structs.
-
-[dev-dependencies]
-mockito = "1.5"
-# Load .env files in integration tests (dotenvy is a sync/async-friendly dotenv)
-dotenvy = "0.15"
-criterion = { version = "0.5", features = ["html_reports"] }
-rand = "0.8"
-
-[[bench]]
-name = "vector_search"
-harness = false
-
-[lints.clippy]
+[workspace.lints.clippy]
 unwrap_used = "warn"
 expect_used = "warn"
 panic = "warn"

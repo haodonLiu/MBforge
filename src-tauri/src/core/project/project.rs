@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::core::config::constants::{
@@ -688,11 +688,12 @@ impl Project {
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_string();
-        Self::gc_document_data(
+        let _ = Self::cleanup_document_data(
             &self.root,
             doc_id,
             &source_filename,
             entry.source_path.as_deref(),
+            false,
         );
 
         if let Some(sp) = &entry.source_path {
@@ -712,23 +713,28 @@ impl Project {
         true
     }
 
-    /// 删除文档后清理全局数据库/缓存中的残留条目。
-    fn gc_document_data(
+    /// 删除文档的所有派生数据。若 `keep_source` 为 true，保留 `source.pdf` 与 `.mbforge/index.json`。
+    fn cleanup_document_data(
         root: &Path,
         doc_id: &str,
         source_filename: &str,
         source_path: Option<&str>,
-    ) {
+        keep_source: bool,
+    ) -> Result<(), String> {
+        let mut errors: Vec<String> = Vec::new();
+
         // 1. 检测缓存（DocumentProject + 旧版全局）
         let dp_cache = DetectionCache::for_document_project(root, doc_id);
-        let _ = dp_cache.clear_doc(doc_id);
+        if let Err(e) = dp_cache.clear_doc(doc_id) {
+            errors.push(format!("detection cache (doc): {e}"));
+        }
         let legacy_cache = DetectionCache::new(root);
         let _ = legacy_cache.clear_doc(doc_id);
         if !source_filename.is_empty() {
             let _ = legacy_cache.clear_doc(source_filename);
         }
 
-        // 2. 分子数据库：按 source_doc（目前为 PDF 文件名）删除。
+        // 2. 分子数据库：按 source_doc 查 mol_id，再级联删除关系、检测、图片、分子。
         if let Ok(db) = MoleculeDatabase::open(root) {
             let targets: Vec<String> = [source_filename, doc_id]
                 .iter()
@@ -739,26 +745,98 @@ impl Project {
                         .into_iter()
                         .map(|r| r.mol_id)
                 })
+                .collect::<HashSet<_>>()
+                .into_iter()
                 .collect();
-            for mol_id in targets {
-                let _ = db.delete_molecule(&mol_id);
+
+            if let Err(e) = db.delete_relations_for_mol_ids(&targets) {
+                errors.push(format!("molecule relations: {e}"));
+            }
+            if let Err(e) = db.delete_detections_for_doc(doc_id) {
+                errors.push(format!("molecule detections: {e}"));
+            }
+            for mol_id in &targets {
+                if let Err(e) = db.delete_molecule(mol_id) {
+                    errors.push(format!("molecule {mol_id}: {e}"));
+                }
             }
         }
 
-        // 3. 知识库：向量 + 文档树
+        // 3. 知识库：向量 + 文档树 + coref 标注 + 文件缓存
         let root_str = root.to_string_lossy().to_string();
         if let Ok(kb) = get_or_init_kb(&root_str) {
-            let _ = kb.remove_document(doc_id);
-            // 4. 文件内容缓存
+            if let Err(e) = kb.remove_document(doc_id) {
+                errors.push(format!("knowledge base: {e}"));
+            }
+            if let Err(e) = kb.delete_figure_annotations(doc_id) {
+                errors.push(format!("figure annotations: {e}"));
+            }
             if let Some(sp) = source_path {
                 let full = root.join(sp);
-                let _ = kb.file_cache().invalidate(&full);
+                if let Err(e) = kb.file_cache().invalidate(&full) {
+                    errors.push(format!("file cache: {e}"));
+                }
             }
         }
 
-        // 5. 文档摘要
+        // 4. 文档摘要
         if let Ok(sm) = SummaryManager::new(root) {
-            let _ = sm.delete(doc_id);
+            if let Err(e) = sm.delete(doc_id) {
+                errors.push(format!("summary: {e}"));
+            }
+        }
+
+        // 5. 处理队列：直接通过 knowledge_base.db 同步连接删除该 doc 的任务和日志
+        let kb_db_path = root.join(INDEX_DIR).join("knowledge_base.db");
+        if kb_db_path.exists() {
+            if let Ok(conn) = rusqlite::Connection::open(&kb_db_path) {
+                let _ = conn.execute(
+                    "DELETE FROM ingest_queue WHERE doc_id = ?1",
+                    rusqlite::params![doc_id],
+                );
+                let _ = conn.execute(
+                    "DELETE FROM ingest_logs WHERE doc_id = ?1",
+                    rusqlite::params![doc_id],
+                );
+            }
+        }
+
+        // 6. 文件系统：保留或删除 DocumentProject 目录
+        let project_dir = root.join(PROJECTS_DIR).join(doc_id);
+        if project_dir.exists() {
+            if keep_source {
+                let paths = [
+                    project_dir.join("text.md"),
+                    project_dir.join("report.md"),
+                    project_dir.join("cache"),
+                    project_dir.join("molecules"),
+                    project_dir.join("reports"),
+                ];
+                for p in &paths {
+                    if p.exists() {
+                        let res = if p.is_dir() {
+                            std::fs::remove_dir_all(p)
+                        } else {
+                            std::fs::remove_file(p)
+                        };
+                        if let Err(e) = res {
+                            errors.push(format!("fs cleanup {:?}: {e}", p));
+                        }
+                    }
+                }
+            } else if let Err(e) = std::fs::remove_dir_all(&project_dir) {
+                errors.push(format!("remove project dir {:?}: {e}", project_dir));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "cleanup_document_data for {} completed with errors: {}",
+                doc_id,
+                errors.join("; ")
+            ))
         }
     }
 

@@ -1156,13 +1156,60 @@ mod tests {
         cache.put(&page_det).unwrap();
         assert!(cache.get(&doc_id, 1, "hash").is_some());
 
+        // 写入分子记录
+        use crate::core::molecule::molecule_store::MoleculeDatabase;
+        let mol_db = MoleculeDatabase::open(root).unwrap();
+        let mut rec = crate::core::molecule::molecule_store::MoleculeRecord::new("m1", "CCO");
+        rec.source_doc = doc_id.clone();
+        mol_db.add_molecule(&rec).unwrap();
+        assert_eq!(mol_db.search_by_source(&doc_id).unwrap().len(), 1);
+
         // 删除文档
         assert!(project.remove_document(&doc_id));
         assert!(project.get_document(&doc_id).is_none());
 
-        // 摘要、检测缓存、项目目录都应被清理
+        // 摘要、检测缓存、项目目录、分子记录都应被清理
         assert!(sm.load(&doc_id).is_none());
         assert!(cache.get(&doc_id, 1, "hash").is_none());
         assert!(!root.join(PROJECTS_DIR).join(&doc_id).exists());
+        assert!(mol_db.search_by_source(&doc_id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_reingest_document_resets_status() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        let mut project = Project::create(root).expect("create should succeed");
+        let source_dir = root.join("incoming");
+        std::fs::create_dir_all(&source_dir).unwrap();
+        let pdf = make_pdf(&source_dir, "reingest.pdf", b"%PDF-1.4 reingest");
+        let entry = project.add_file(&pdf).expect("add_file should succeed");
+        let doc_id = entry.doc_id.clone();
+
+        // 模拟处理完成状态
+        project.set_document_status(&doc_id, "inspector_status", "text_based");
+        project.set_document_status(&doc_id, "text_status", "done");
+        project.set_document_status(&doc_id, "index_status", "done");
+
+        // 写入派生文件
+        let dp_dir = root.join(PROJECTS_DIR).join(&doc_id);
+        std::fs::write(dp_dir.join("text.md"), "# text").unwrap();
+        std::fs::write(dp_dir.join("report.md"), "# report").unwrap();
+
+        // 重新读取
+        project.reingest_document(&doc_id).unwrap();
+
+        let doc = project.get_document(&doc_id).unwrap();
+        assert_eq!(doc.inspector_status, "pending");
+        assert_eq!(doc.text_status, "pending");
+        assert_eq!(doc.index_status, "pending");
+        assert_eq!(doc.ocr_status, "pending");
+        assert_eq!(doc.moldet_status, "not_processed");
+
+        // source.pdf 必须保留，派生文件应被清理
+        assert!(dp_dir.join(PROJECT_SOURCE_FILE).exists());
+        assert!(!dp_dir.join("text.md").exists());
+        assert!(!dp_dir.join("report.md").exists());
     }
 }

@@ -53,21 +53,8 @@ commands.allow = [
   "extract_activities",
   "extract_associated_molecules",
   "extract_with_associations",
-  # agent
-  "agent_init",
-  "agent_create_session",
-  "agent_chat",
-  "agent_chat_stream",
-  "agent_switch_project",
-  "agent_clear",
-  "agent_destroy_session",
-  "audit_log_get",
-  "agent_get_history",
   # parsers / pipeline
-  "parse_pdf",
-  "post_process_pdf",
   "process_document",
-  "index_project_rust",
   # knowledge_base
   "kb_search",
   "kb_search_stream",

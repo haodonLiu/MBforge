@@ -242,8 +242,17 @@ pub struct PathSafetyCheck {
 /// * `Err(String)` - Check failed, contains error message
 ///
 /// # Example
-/// ```rust
-/// let check = assert_within_root("/project", Path::new("docs/readme.md"))?;
+/// ```
+/// use std::path::Path;
+/// use mbforge_infra::helpers::assert_within_root;
+///
+/// let root = tempfile::tempdir().unwrap();
+/// std::fs::create_dir_all(root.path().join("docs")).unwrap();
+/// std::fs::write(root.path().join("docs/readme.md"), "").unwrap();
+/// let check = assert_within_root(
+///     root.path().to_str().unwrap(),
+///     Path::new("docs/readme.md"),
+/// ).unwrap();
 /// assert!(check.within_root);
 /// ```
 pub fn assert_within_root(root: &str, target: &Path) -> Result<PathSafetyCheck, String> {

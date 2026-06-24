@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
+import { ask } from '@tauri-apps/plugin-dialog'
 
 import BodyText from '../ui/BodyText'
 import Badge from '../ui/Badge'
 import Button from '../ui/Button'
 import Skeleton from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
-import { FileTextIcon } from '../icons'
+import { FileTextIcon, RefreshCwIcon, TrashIcon } from '../icons'
 import { inspectPdf, confirmOcr } from '../../api/tauri/pdf'
 import { ingestEnqueue, trackSelfTriggeredDoc } from '../../api/tauri/ingest_queue'
+import { deleteDocument, reingestDocument } from '../../api/tauri/project'
 import { showToast } from '../../hooks/useToast'
 import type { DocumentEntry } from '../../types'
 
@@ -28,6 +30,8 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
   const [confirmingIds, setConfirmingIds] = useState<Set<string>>(new Set())
   const [enqueueingIds, setEnqueueingIds] = useState<Set<string>>(new Set())
   const [justEnqueuedIds, setJustEnqueuedIds] = useState<Set<string>>(new Set())
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
+  const [reingestingIds, setReingestingIds] = useState<Set<string>>(new Set())
 
   // 对未检测的 PDF 自动运行 Inspector（仅一次）
   useEffect(() => {
@@ -93,6 +97,56 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
       showToast(t('doc.enqueueFailed', { error: String(e) }), 'error')
     } finally {
       setEnqueueingIds(prev => {
+        const next = new Set(prev)
+        next.delete(doc.doc_id)
+        return next
+      })
+    }
+  }
+
+  const handleDelete = async (doc: DocumentEntry) => {
+    if (!projectRoot) return
+    const confirmed = await ask(
+      t('doc.deleteConfirm', { filename: doc.title || doc.doc_id }),
+      { title: t('doc.delete'), kind: 'warning' }
+    )
+    if (!confirmed) return
+    setDeletingIds(prev => new Set(prev).add(doc.doc_id))
+    try {
+      await deleteDocument(projectRoot, doc.doc_id)
+      showToast(t('doc.deleteSuccess', { filename: doc.title || doc.doc_id }), 'success')
+      onRefreshDocs?.()
+    } catch (e) {
+      console.error('[DocumentList] delete failed:', e)
+      showToast(t('doc.deleteError', { error: String(e) }), 'error')
+    } finally {
+      setDeletingIds(prev => {
+        const next = new Set(prev)
+        next.delete(doc.doc_id)
+        return next
+      })
+    }
+  }
+
+  const handleReingest = async (doc: DocumentEntry) => {
+    if (!projectRoot) return
+    const confirmed = await ask(
+      t('doc.reingestConfirm', { filename: doc.title || doc.doc_id }),
+      { title: t('doc.reingest'), kind: 'warning' }
+    )
+    if (!confirmed) return
+    setReingestingIds(prev => new Set(prev).add(doc.doc_id))
+    try {
+      await reingestDocument(projectRoot, doc.doc_id)
+      trackSelfTriggeredDoc(doc.doc_id)
+      setJustEnqueuedIds(prev => new Set(prev).add(doc.doc_id))
+      showToast(t('doc.reingestSuccess', { filename: doc.title || doc.doc_id }), 'success')
+      onRefreshDocs?.()
+    } catch (e) {
+      console.error('[DocumentList] reingest failed:', e)
+      showToast(t('doc.reingestError', { error: String(e) }), 'error')
+    } finally {
+      setReingestingIds(prev => {
         const next = new Set(prev)
         next.delete(doc.doc_id)
         return next
@@ -316,6 +370,31 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
                     onClick={() => handleEnqueue(doc, true)}
                   >
                     {t('common.reindex')}
+                  </Button>
+                </div>
+              )}
+              {doc.doc_type === 'pdf' && (
+                <div className="project-doc-actions" onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title={t('doc.reingest')}
+                    loading={reingestingIds.has(doc.doc_id)}
+                    disabled={reingestingIds.has(doc.doc_id) || deletingIds.has(doc.doc_id) || isActivelyProcessing}
+                    onClick={() => handleReingest(doc)}
+                  >
+                    <RefreshCwIcon size={14} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title={t('doc.delete')}
+                    loading={deletingIds.has(doc.doc_id)}
+                    disabled={reingestingIds.has(doc.doc_id) || deletingIds.has(doc.doc_id)}
+                    onClick={() => handleDelete(doc)}
+                    className="doc-delete-btn"
+                  >
+                    <TrashIcon size={14} />
                   </Button>
                 </div>
               )}

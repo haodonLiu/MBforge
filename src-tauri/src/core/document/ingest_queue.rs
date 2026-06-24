@@ -802,6 +802,21 @@ impl IngestQueue {
         Ok(changed > 0)
     }
 
+    /// 删除某文档的所有队列任务和日志（无论状态），用于文档彻底删除或重新读取前清理。
+    pub async fn delete_by_doc_id(&self, doc_id: &str) -> AppResult<usize> {
+        let conn = self.conn.lock().await;
+        let changed = conn.execute(
+            "DELETE FROM ingest_queue WHERE doc_id = ?1",
+            params![doc_id],
+        )?;
+        let _ = conn.execute(
+            "DELETE FROM ingest_logs WHERE doc_id = ?1",
+            params![doc_id],
+        );
+        log::info!("IngestQueue: deleted {} tasks/logs for doc {}", changed, doc_id);
+        Ok(changed)
+    }
+
     /// 记录阶段开始，返回历史行 id。
     pub async fn record_stage_start(
         &self,
@@ -1196,5 +1211,20 @@ mod tests {
         queue.mark_done(&id).await.unwrap();
         assert!(queue.delete_task(&id).await.unwrap());
         assert!(!queue.list_all().await.unwrap().iter().any(|t| t.id == id));
+    }
+
+    #[tokio::test]
+    async fn test_delete_by_doc_id() {
+        let (_dir, queue) = setup_queue();
+        let id1 = queue.enqueue("a.pdf".into(), "doc1".into()).await.unwrap();
+        let id2 = queue.enqueue("b.pdf".into(), "doc2".into()).await.unwrap();
+
+        let deleted = queue.delete_by_doc_id("doc1").await.unwrap();
+        assert_eq!(deleted, 1);
+
+        let remaining: Vec<_> = queue.list_all().await.unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, id2);
+        assert!(!remaining.iter().any(|t| t.id == id1));
     }
 }

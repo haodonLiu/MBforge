@@ -34,7 +34,10 @@ pub fn write_resolved_paths() {
     use std::io::Write;
 
     let config_dir = global_config_dir();
-    let _ = std::fs::create_dir_all(&config_dir);
+    if let Err(e) = std::fs::create_dir_all(&config_dir) {
+        log::error!("Failed to create config dir {}: {}", config_dir.display(), e);
+        return;
+    }
     let path = config_dir.join("resolved_paths.json");
 
     let mut map = serde_json::Map::new();
@@ -50,13 +53,24 @@ pub fn write_resolved_paths() {
     }
 
     let json = serde_json::Value::Object(map);
-    if let Ok(mut f) = std::fs::File::create(&path) {
-        let _ = f.write_all(
-            serde_json::to_string_pretty(&json)
-                .unwrap_or_default()
-                .as_bytes(),
-        );
-        log::info!("Wrote resolved model paths to {}", path.display());
+    let pretty = match serde_json::to_string_pretty(&json) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("Failed to serialize resolved paths: {}", e);
+            return;
+        }
+    };
+    match std::fs::File::create(&path) {
+        Ok(mut f) => {
+            if let Err(e) = f.write_all(pretty.as_bytes()) {
+                log::error!("Failed to write resolved paths to {}: {}", path.display(), e);
+            } else {
+                log::info!("Wrote resolved model paths to {}", path.display());
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to create {}: {}", path.display(), e);
+        }
     }
 }
 
@@ -81,7 +95,7 @@ pub fn catalog_json() -> Vec<serde_json::Value> {
 
 fn get_python_version() -> String {
     let cmd = "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')";
-    ["python", "python3"]
+    let result = ["python", "python3"]
         .iter()
         .find_map(|py| {
             std::process::Command::new(py)
@@ -93,8 +107,14 @@ fn get_python_version() -> String {
                 .filter(|o| o.status.success())
                 .and_then(|o| String::from_utf8(o.stdout).ok())
                 .map(|s| s.trim().to_string())
-        })
-        .unwrap_or_else(|| "unknown".to_string())
+        });
+    match result {
+        Some(v) => v,
+        None => {
+            log::debug!("Python not found in PATH");
+            "unknown".to_string()
+        }
+    }
 }
 
 fn detect_gpu() -> (bool, String, String) {
@@ -112,6 +132,13 @@ fn detect_gpu() -> (bool, String, String) {
             let cuda = parts.get(1).unwrap_or(&"").trim().to_string();
             (true, name, cuda)
         }
-        _ => (false, String::new(), String::new()),
+        Ok(out) => {
+            log::debug!("nvidia-smi exited with status: {}", out.status);
+            (false, String::new(), String::new())
+        }
+        Err(e) => {
+            log::debug!("nvidia-smi not found: {}", e);
+            (false, String::new(), String::new())
+        }
     }
 }

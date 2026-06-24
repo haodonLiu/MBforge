@@ -106,18 +106,26 @@ impl From<String> for AppError {
                 let code_str = &captured[..end];
                 let message = captured[end + 1..].trim().to_string();
                 let code = match code_str {
+                    "UNKNOWN" => ErrorCode::Unknown,
+                    "NETWORK" => ErrorCode::Network,
+                    "TAURI_INVOKE" => ErrorCode::TauriInvoke,
+                    "API_ERROR" => ErrorCode::ApiError,
+                    "SETTINGS_LOAD" => ErrorCode::SettingsLoad,
+                    "SETTINGS_SAVE" => ErrorCode::SettingsSave,
                     "PROJECT_OPEN" => ErrorCode::ProjectOpen,
                     "PDF_PARSE" => ErrorCode::PdfParse,
                     "MOLECULE_SEARCH" => ErrorCode::MoleculeSearch,
+                    "MODEL_NOT_AVAILABLE" => ErrorCode::ModelNotAvailable,
                     "NOTE_NOT_FOUND" => ErrorCode::NoteNotFound,
                     "NOTE_SAVE" => ErrorCode::NoteSave,
                     "NOTE_DELETE" => ErrorCode::NoteDelete,
                     "FILE_NOT_FOUND" => ErrorCode::FileNotFound,
                     "FILE_READ" => ErrorCode::FileRead,
                     "FILE_WRITE" => ErrorCode::FileWrite,
-                    "PROJECT_CREATE" => ErrorCode::ProjectCreate,
                     "FILE_PERMISSION" => ErrorCode::FilePermission,
+                    "PROJECT_CREATE" => ErrorCode::ProjectCreate,
                     "PROJECT_MIGRATE" => ErrorCode::ProjectMigrate,
+                    "QUEUE_FULL" => ErrorCode::QueueFull,
                     "AGENT_ERROR" => ErrorCode::AgentError,
                     "KB_SEARCH" => ErrorCode::KbSearch,
                     _ => ErrorCode::Unknown,
@@ -152,12 +160,22 @@ impl From<std::io::Error> for AppError {
 
 impl From<serde_json::Error> for AppError {
     fn from(e: serde_json::Error) -> Self {
-        AppError::new(ErrorCode::Unknown, format!("JSON 序列化失败: {e}"))
+        AppError::new(
+            ErrorCode::FileRead,
+            format!("JSON 序列化失败: {e}"),
+        )
     }
 }
 
 impl From<rusqlite::Error> for AppError {
     fn from(e: rusqlite::Error) -> Self {
-        AppError::new(ErrorCode::Unknown, format!("数据库错误: {e}"))
+        let code = match &e {
+            rusqlite::Error::QueryReturnedNoRows => ErrorCode::FileNotFound,
+            rusqlite::Error::InvalidQuery | rusqlite::Error::InvalidParameterName(_) => {
+                ErrorCode::FileRead
+            }
+            _ => ErrorCode::FileRead,
+        };
+        AppError::new(code, format!("数据库错误: {e}"))
     }
 }

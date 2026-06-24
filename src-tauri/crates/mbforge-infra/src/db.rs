@@ -84,22 +84,18 @@ impl DbManager {
 /// `busy_timeout` 让 SQLite 在遇到锁竞争时自动重试 5 秒，避免
 /// 多个连接互相等待时立即返回 `SQLITE_BUSY`。
 fn open_wal_connection(path: &Path) -> AppResult<SharedConn> {
-    let conn = Connection::open(path).map_err(|e| AppError {
-        code: ErrorCode::Unknown,
-        message: format!("Failed to open {}: {}", path.display(), e),
-        path: Some(path.display().to_string()),
-        suggestion: None,
+    let conn = Connection::open(path).map_err(|e| {
+        AppError::new(ErrorCode::FileWrite, format!("Failed to open {}: {}", path.display(), e))
+            .with_path(path.display().to_string())
     })?;
     conn.execute_batch(
         "PRAGMA journal_mode=WAL;
          PRAGMA busy_timeout=5000;
          PRAGMA wal_autocheckpoint=1000;",
     )
-    .map_err(|e| AppError {
-        code: ErrorCode::Unknown,
-        message: format!("PRAGMA setup failed: {}", e),
-        path: Some(path.display().to_string()),
-        suggestion: None,
+    .map_err(|e| {
+        AppError::new(ErrorCode::FileWrite, format!("PRAGMA setup failed: {}", e))
+            .with_path(path.display().to_string())
     })?;
     Ok(Arc::new(Mutex::new(conn)))
 }
@@ -109,6 +105,10 @@ fn open_wal_connection(path: &Path) -> AppResult<SharedConn> {
 /// 用 `Mutex<HashMap>`（而非 `DashMap`）因为：
 /// - 写不频繁（只在新建项目时插入）
 /// - 简单即可，避免引入额外依赖
+///
+/// NOTE: Uses `std::sync::Mutex` because all callers are sync (Tauri commands).
+/// Migration to `tokio::sync::Mutex` requires async callers throughout,
+/// tracked in tech debt #2.
 static DB_CACHE: OnceLock<Mutex<std::collections::HashMap<PathBuf, Arc<DbManager>>>> =
     OnceLock::new();
 

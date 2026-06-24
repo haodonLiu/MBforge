@@ -74,7 +74,7 @@ impl ExtractionResult {
             context_text: context_text.to_string(),
             properties: serde_json::json!({}),
             esmiles: String::new(),
-            source: "image".into(),
+            source: String::new(),
             moldet_conf: 0.0,
             scribe_conf: 0.0,
             composite_conf: 0.0,
@@ -88,6 +88,12 @@ impl ExtractionResult {
     pub fn with_esmiles(context_text: &str, esmiles: &str) -> Self {
         let mut s = Self::new(context_text);
         s.esmiles = esmiles.to_string();
+        s
+    }
+
+    pub fn with_source(context_text: &str, source: &str) -> Self {
+        let mut s = Self::new(context_text);
+        s.source = source.to_string();
         s
     }
 }

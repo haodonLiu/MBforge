@@ -1,13 +1,4 @@
-#![allow(
-    clippy::double_ended_iterator_last,
-    clippy::ineffective_open_options,
-    clippy::needless_borrow,
-    clippy::needless_borrows_for_generic_args,
-    clippy::ptr_arg,
-    dead_code,
-    unused_assignments,
-    unused_variables
-)]
+#![allow(clippy::double_ended_iterator_last, clippy::ineffective_open_options, clippy::needless_borrow, clippy::needless_borrows_for_generic_args, clippy::ptr_arg)]
 
 //! ModelScope 模型下载（Rust 原生）
 //!
@@ -15,6 +6,7 @@
 //! 替代 Python sidecar 的 download.py。
 
 use super::catalog::*;
+use crate::config::constants::APP_VERSION;
 use futures_util::StreamExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -110,9 +102,13 @@ pub async fn download_model(
     std::fs::create_dir_all(&cache_dir).map_err(|e| DownloadError::Io(e.to_string()))?;
 
     // 发送 connecting 状态
-    let _ = progress_tx
+    if progress_tx
         .send(DownloadProgress::new(resource_id, "connecting"))
-        .await;
+        .await
+        .is_err()
+    {
+        log::warn!("[download_model {}] progress channel closed", resource_id);
+    }
 
     log::info!("[download_model {}] download_type: {}", resource_id, info.download_type);
     let result = if info.download_type == "snapshot" {
@@ -137,7 +133,7 @@ pub async fn download_model(
 async fn download_snapshot(
     resource_id: &str,
     info: &ResourceInfo,
-    cache_dir: &PathBuf,
+    cache_dir: &std::path::Path,
     progress_tx: &mpsc::Sender<DownloadProgress>,
     cancelled: &Arc<AtomicBool>,
     subpath_filter: Option<&str>,
@@ -154,10 +150,10 @@ async fn download_snapshot(
     log::info!("[download_snapshot {}] dest: {}", info.id, dest.display());
     std::fs::create_dir_all(&dest).map_err(|e| DownloadError::Io(e.to_string()))?;
 
+    let user_agent = format!("MBForge/{APP_VERSION} (model-downloader; +https://github.com/mbforge/mbforge)");
     let client = reqwest::Client::builder()
-        // ModelScope 大文件通过 HTTP/2 传输时偶发中断，强制 HTTP/1.1 更稳定
         .http1_only()
-        .user_agent("MBForge/0.2.0 (model-downloader; +https://github.com/mbforge/mbforge)")
+        .user_agent(user_agent)
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|e| DownloadError::Network(e.to_string()))?;
@@ -183,7 +179,7 @@ async fn download_snapshot(
 
     // 检查是否返回了 HTML（登录页/错误页）或非 JSON
     let trimmed = tree_text.trim();
-    if trimmed.starts_with('<') || trimmed.starts_with("404") || trimmed.starts_with("50") {
+    if !tree_status.is_success() || trimmed.starts_with('<') {
         log::error!("[download_snapshot {}] non-JSON / error response (HTTP {}): {}", info.id, tree_status, &tree_text[..tree_text.len().min(200)]);
         return Err(DownloadError::Api(format!(
             "API 错误 (HTTP {}): {}",
@@ -379,7 +375,9 @@ async fn download_snapshot(
                     .await;
             }
         }
-        std::io::Write::flush(&mut file).ok();
+        if let Err(e) = std::io::Write::flush(&mut file) {
+            log::warn!("[download_snapshot {}] flush failed for {}: {}", info.id, file_path, e);
+        }
 
         // 原子重命名：.part -> 最终文件
         std::fs::rename(&part_path, &local_path).map_err(|e| DownloadError::Io(e.to_string()))?;
@@ -440,9 +438,10 @@ async fn download_single_file(
         0
     };
 
+    let user_agent = format!("MBForge/{APP_VERSION} (model-downloader; +https://github.com/mbforge/mbforge)");
     let client = reqwest::Client::builder()
         .http1_only()
-        .user_agent("MBForge/0.2.0 (model-downloader; +https://github.com/mbforge/mbforge)")
+        .user_agent(user_agent)
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|e| DownloadError::Network(e.to_string()))?;
@@ -520,7 +519,9 @@ async fn download_single_file(
                 .await;
         }
     }
-    std::io::Write::flush(&mut file).ok();
+    if let Err(e) = std::io::Write::flush(&mut file) {
+        log::warn!("[download_single_file] flush failed for {}: {}", info.id, e);
+    }
 
     // 原子重命名
     std::fs::rename(&part_path, &local_path).map_err(|e| DownloadError::Io(e.to_string()))?;

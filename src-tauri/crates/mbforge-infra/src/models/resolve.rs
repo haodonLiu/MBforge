@@ -1,4 +1,4 @@
-#![allow(clippy::double_ended_iterator_last, clippy::needless_borrows_for_generic_args, dead_code, unused_assignments, unused_variables)]
+#![allow(clippy::double_ended_iterator_last, clippy::needless_borrows_for_generic_args)]
 
 //! 路径解析 — 检查资源是否已下载/安装
 //!
@@ -53,6 +53,11 @@ pub fn get_model_path(resource_id: &str) -> Option<PathBuf> {
 /// 编码规则：repo 中的 `.` 替换为 `___`（与 ModelScope SDK 行为一致）。
 pub fn ms_repo_dir(info: &ResourceInfo) -> PathBuf {
     let cache = crate::config::constants::model_cache_dir();
+    ms_repo_dir_with_cache(info, &cache)
+}
+
+/// 解析 ModelScope 仓库的本地目录（接受预计算的 cache 路径，避免重复 I/O）。
+fn ms_repo_dir_with_cache(info: &ResourceInfo, cache: &std::path::Path) -> PathBuf {
     let org = info.ms_repo.split('/').next().unwrap_or("");
     let repo_name = info.ms_repo.split('/').next_back().unwrap_or(info.ms_repo);
     let encoded = repo_name.replace('.', "___");
@@ -69,11 +74,16 @@ pub fn ms_repo_dir(info: &ResourceInfo) -> PathBuf {
 /// - 否则：snapshot → ms_repo_dir；file → <local_name>
 fn expected_path_for(info: &ResourceInfo) -> PathBuf {
     let cache = crate::config::constants::model_cache_dir();
+    expected_path_for_with_cache(info, &cache)
+}
+
+/// 计算期望路径（接受预计算的 cache 路径，避免重复 I/O）。
+fn expected_path_for_with_cache(info: &ResourceInfo, cache: &std::path::Path) -> PathBuf {
     if !info.files.is_empty() {
         if info.files.len() == 1 {
-            return ms_repo_dir(info).join(info.files[0]);
+            return ms_repo_dir_with_cache(info, cache).join(info.files[0]);
         }
-        return ms_repo_dir(info);
+        return ms_repo_dir_with_cache(info, cache);
     }
     if info.download_type == "file" {
         let local_name = if info.local_name.is_empty() {
@@ -83,7 +93,7 @@ fn expected_path_for(info: &ResourceInfo) -> PathBuf {
         };
         cache.join(local_name)
     } else {
-        ms_repo_dir(info)
+        ms_repo_dir_with_cache(info, cache)
     }
 }
 
@@ -93,8 +103,8 @@ fn expected_path_for(info: &ResourceInfo) -> PathBuf {
 /// 多文件时填充 subfiles 字段供前端逐行展示。
 fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
     let cache = crate::config::constants::model_cache_dir();
-    let expected = expected_path_for(info);
-    let dest = ms_repo_dir(info);
+    let expected = expected_path_for_with_cache(info, &cache);
+    let dest = ms_repo_dir_with_cache(info, &cache);
 
     if !info.files.is_empty() {
         // 精确文件列表：全部存在才算 Ready；逐个填 subfiles
@@ -186,7 +196,7 @@ fn check_model_file(info: &ResourceInfo) -> ResourceStatusResult {
     let id_key = info.id.to_lowercase();
     let repo_key = repo_name.to_lowercase();
     let cache = crate::config::constants::model_cache_dir();
-    let expected = expected_path_for(info);
+    let expected = expected_path_for_with_cache(info, &cache);
 
     let search_base = |base: &std::path::Path| -> Option<ResourceStatusResult> {
         let path = base.join(&local_name);
@@ -269,13 +279,6 @@ fn check_python_package(info: &ResourceInfo) -> ResourceStatusResult {
     }
 }
 
-fn has_files(p: &std::path::Path) -> bool {
-    p.exists()
-        && std::fs::read_dir(p)
-            .map(|mut d| d.next().is_some())
-            .unwrap_or(false)
-}
-
 fn check_dir_for_weights(
     info: &ResourceInfo,
     dir: &std::path::Path,
@@ -323,7 +326,14 @@ fn find_weights_in_dir(dir: &std::path::Path) -> Option<PathBuf> {
     if !dir.is_dir() {
         return None;
     }
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(e) => {
+            log::debug!("Failed to read dir {}: {}", dir.display(), e);
+            return None;
+        }
+    };
+    for entry in entries.flatten() {
         let p = entry.path();
         if p.is_file() && is_weights_file(&p) {
             return Some(p);

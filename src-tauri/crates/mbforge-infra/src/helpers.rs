@@ -63,11 +63,13 @@ pub fn sha256_text(text: &str) -> String {
 }
 
 /// Truncate text to max_len, breaking at word boundary.
+///
+/// Uses [`safe_truncate`] internally so multi-byte UTF-8 characters are never split.
 pub fn truncate_text(text: &str, max_len: usize) -> String {
     if text.len() <= max_len {
         return text.to_string();
     }
-    let truncated = &text[..max_len];
+    let truncated = safe_truncate(text, max_len);
     match truncated.rfind(' ') {
         Some(pos) => format!("{}...", &truncated[..pos]),
         None => format!("{}...", truncated),
@@ -81,9 +83,7 @@ pub fn truncate_text(text: &str, max_len: usize) -> String {
 /// (CJK, emoji, combining marks). When `text.len() <= max_bytes` the slice is
 /// returned unchanged — no allocation.
 ///
-/// Backed by the stable [`str::floor_char_boundary`] method, so it is safe for
-/// Backed by manual `is_char_boundary` walk — `str::floor_char_boundary` is
-/// still nightly-only as of rustc 1.81, so we use the stable alternative.
+/// Backed by manual `is_char_boundary` walk.
 pub fn safe_truncate(text: &str, max_bytes: usize) -> &str {
     if text.len() <= max_bytes {
         return text;
@@ -150,7 +150,7 @@ pub fn save_json_safe<T: serde::Serialize>(
 }
 
 fn write_json_to<T: serde::Serialize>(path: &Path, data: &T) -> AppResult<()> {
-    ensure_dir(path.parent().unwrap_or(Path::new(".")))
+    ensure_dir(path.parent().unwrap_or_else(|| Path::new(".")))
         .map_err(|e| AppError::new(ErrorCode::FileWrite, e.to_string()))?;
     let json = serde_json::to_string_pretty(data)?;
     std::fs::write(path, json).map_err(|e| AppError::new(ErrorCode::FileWrite, e.to_string()))?;
@@ -203,18 +203,32 @@ pub fn load_json_safe<T: serde::de::DeserializeOwned>(root: &str, path: &Path) -
 }
 
 fn read_json_from<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
-    let data = std::fs::read_to_string(path).ok()?;
-    let value = serde_json::from_str(&data).ok()?;
-    Some(value)
+    let data = match std::fs::read_to_string(path) {
+        Ok(d) => d,
+        Err(e) => {
+            log::debug!("Failed to read JSON from {}: {}", path.display(), e);
+            return None;
+        }
+    };
+    match serde_json::from_str(&data) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            log::warn!("Failed to parse JSON from {}: {}", path.display(), e);
+            None
+        }
+    }
 }
 
 /// Estimate token count (rough heuristic: CJK ~1.5 token/char, other ~0.25 token/char).
 pub fn estimate_tokens(text: &str) -> usize {
     let cjk = text
         .chars()
-        .filter(|c| *c >= '\u{4e00}' && *c <= '\u{9fff}' || *c >= '\u{3400}' && *c <= '\u{4dbf}')
+        .filter(|c| {
+            (*c >= '\u{4e00}' && *c <= '\u{9fff}') || (*c >= '\u{3400}' && *c <= '\u{4dbf}')
+        })
         .count();
-    let other = text.len() - cjk;
+    let total_chars = text.chars().count();
+    let other = total_chars - cjk;
     (cjk as f64 * 1.5 + other as f64 * 0.25) as usize
 }
 

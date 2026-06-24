@@ -11,6 +11,8 @@
 
 use std::path::PathBuf;
 
+use crate::config::settings::env_var;
+
 // NOTE: Keep in sync with src/mbforge/utils/constants.py (Python sidecar).
 // When changing a value here, update the corresponding Python constant.
 
@@ -54,6 +56,7 @@ pub const REPORTS_DIR: &str = "reports";
 /// Per-folder extension whitelist.
 /// - `papers/`  accepts only .pdf
 /// - `notes/`   accepts .md and .txt
+///
 /// Files with other extensions in either folder are reported as warnings.
 pub const PAPERS_EXTS: &[&str] = &["pdf"];
 pub const NOTES_EXTS: &[&str] = &["md", "txt"];
@@ -132,7 +135,7 @@ pub const AGENT_MAX_TOTAL_TOKENS: usize = 32000;
 // ===== Path helpers =====
 
 pub fn sidecar_url() -> String {
-    std::env::var("MBFORGE_SIDECAR_URL").unwrap_or_else(|_| DEFAULT_SIDECAR_URL.to_string())
+    env_var("MBFORGE_SIDECAR_URL").unwrap_or_else(|| DEFAULT_SIDECAR_URL.to_string())
 }
 
 /// Embedding base URL — derived from sidecar_url (always sidecar + /v1)
@@ -157,7 +160,7 @@ fn expand_tilde(path: &str) -> PathBuf {
 
 pub fn model_cache_dir() -> PathBuf {
     // 1. 环境变量（最高优先级）
-    if let Ok(dir) = std::env::var("MBFORGE_MODEL_CACHE_DIR") {
+    if let Some(dir) = env_var("MBFORGE_MODEL_CACHE_DIR") {
         return expand_tilde(&dir);
     }
     // 2. 用户配置（设置页面配置的路径）

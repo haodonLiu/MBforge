@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Sidecar HTTP 客户端抽象（Phase 3 重构）
 //!
 //! 解决问题：先前 `sidecar_url` 作为 `&str` 参数在 15+ 个函数间穿透，
@@ -150,21 +149,9 @@ static SIDECAR_CLIENT: OnceLock<Arc<SidecarClient>> = OnceLock::new();
 /// - 之后所有 caller 共享同一实例
 /// - 注意：base_url 在初始化时确定。运行中改环境变量不会影响。
 pub fn get_or_init() -> AppResult<Arc<SidecarClient>> {
-    if let Some(existing) = SIDECAR_CLIENT.get() {
-        return Ok(Arc::clone(existing));
-    }
-    let client = Arc::new(SidecarClient::from_env());
-    // OnceLock::set 在竞争时可能失败，回落：先 set 再 get
-    let _ = SIDECAR_CLIENT.set(Arc::clone(&client));
-    Ok(SIDECAR_CLIENT.get().map(Arc::clone).unwrap_or(client))
-}
-
-/// 测试辅助：重置全局单例。仅供测试使用。
-#[cfg(test)]
-pub fn reset_for_test() {
-    // OnceLock 没有 take；新建 SIDECAR_CLIENT 静态。但 Rust 不允许重赋值
-    // 静态，所以这里只能 None 化。直接 None 检查。
-    // 实际测试中通过 base_url 自管 client 而不调 get_or_init。
+    Ok(SIDECAR_CLIENT
+        .get_or_init(|| Arc::new(SidecarClient::from_env()))
+        .clone())
 }
 
 // ─── 响应 DTO ─────────────────────────────────────────────
@@ -194,6 +181,8 @@ struct EmbedResponse {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
     use super::*;
 
     #[test]

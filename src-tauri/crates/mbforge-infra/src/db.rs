@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! 统一数据库连接管理器（Phase 2 重构）
 //!
 //! 解决问题：先前多个模块各自 `Connection::open()`，导致：
@@ -22,6 +21,7 @@ use rusqlite::Connection;
 
 use crate::config::constants::INDEX_DIR;
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::helpers::LockResultExt;
 
 /// 共享的 SQLite 连接，WAL 模式配置。
 ///
@@ -115,7 +115,7 @@ static DB_CACHE: OnceLock<Mutex<std::collections::HashMap<PathBuf, Arc<DbManager
 /// 获取或创建项目的 DbManager（缓存的）。
 pub fn get_or_init_db(project_root: &Path) -> AppResult<Arc<DbManager>> {
     let cache = DB_CACHE.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
-    let mut map = cache.lock().expect("DbManager cache mutex poisoned");
+    let mut map = cache.lock().into_inner();
     if let Some(existing) = map.get(project_root) {
         return Ok(Arc::clone(existing));
     }
@@ -128,15 +128,14 @@ pub fn get_or_init_db(project_root: &Path) -> AppResult<Arc<DbManager>> {
 #[cfg(test)]
 pub fn clear_db_cache_for_test() {
     if let Some(cache) = DB_CACHE.get() {
-        cache
-            .lock()
-            .expect("DbManager cache mutex poisoned")
-            .clear();
+        cache.lock().into_inner().clear();
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
     use super::*;
     use tempfile::TempDir;
 

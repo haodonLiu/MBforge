@@ -23,15 +23,14 @@ Five-layer split, top-down:
 | UI | `frontend/src/` | React components, routing, AppContext global state |
 | IPC | `src-tauri/crates/mbforge-app/src/commands/` | `#[tauri::command]` handlers; bridge frontend ↔ core |
 | Core | `src-tauri/crates/mbforge-{domain,chem,infra,pipeline}/` | Domain logic, persistence, embeddings, chem, pipeline |
-| Models | `src/mbforge/server.py` + `src/mbforge/backends/` | FastAPI + 4 local model backends |
-| Native | `src-tauri/crates/zvec-bindings/` | Rust ↔ C ABI for zvec vector index |
+| Models | `src/mbforge/server.py` + `src/mbforge/backends/` | FastAPI + 5 local model backends (incl. Zvec) |
 
 **Data flow** (PDF in → query out):
 
 1. Frontend uploads PDF via `file_ops::upload_files` → stored under `{project_root}/`.
 2. `pipeline::process_document` classifies the doc (paper / patent / report), routes to a parser client (lopdf / LlamaParse / MinerU / UniParser / PaddleOCR), runs MolDet + MolScribe on figures.
-3. `pipeline::index_project` writes results: vectors → `vectors.db` (FTS5 + Embedding), molecules → `molecules.db` (SMILES + 2048-bit Morgan fingerprint), semantic cache → `semantic_cache.json`.
-4. Frontend queries via `kb_search` / `kb_search_stream` (RRF fusion of FTS5 + cosine); molecule ops go through `molecule` / `mol_store` / `molecule_admin` / `chem_ops`.
+3. `pipeline::index_project` writes results: vectors → `.mbforge/search.zvec` (Zvec dense + FTS + hybrid), molecules → `molecules.db` (SMILES + 2048-bit Morgan fingerprint), semantic cache → `semantic_cache.json`.
+4. Frontend queries via `kb_search` / `kb_search_stream` (RRF fusion of Zvec FTS + cosine); molecule ops go through `molecule` / `mol_store` / `molecule_admin` / `chem_ops`.
 5. Agent chat (`agent_chat_stream`) runs ReAct over `agent` tool set (KB search, molecule search, document fetch, etc.) and streams back to UI.
 
 **Cross-boundary data types**: `ParsedDocument`, `Section`, `Molecule`, `AgentTrajectory` — all serialized as JSON across Tauri IPC.
@@ -49,20 +48,19 @@ MBForge/
 │       ├── styles/                 CSS variables + theme tokens
 │       └── test/setup.ts           @testing-library/jest-dom
 ├── src-tauri/
-│   ├── Cargo.toml                  Rust workspace (5 members + zvec-bindings)
+│   ├── Cargo.toml                  Rust workspace (5 members)
 │   ├── crates/
 │   │   ├── mbforge-app/            Tauri entry, commands, sidecar control
 │   │   ├── mbforge-domain/         Document, KB, vector, project, resource manager
 │   │   ├── mbforge-infra/          Config, AppError, HTTP clients, helpers
 │   │   ├── mbforge-chem/           Molecules, fingerprints, Markush
-│   │   ├── mbforge-pipeline/       PDF parsing pipeline + ingest worker
-│   │   └── zvec-bindings/          C ABI wrapper for zvec
+│   │   └── mbforge-pipeline/       PDF parsing pipeline + ingest worker
 │   ├── tests/pipeline_v2.rs        Workspace integration test
 │   └── .cargo/config.toml          rustflags = ["-Awarnings"] (suppresses warnings)
 ├── src/mbforge/                    Python sidecar
 │   ├── server.py                   FastAPI app + lifespan prewarm
 │   ├── __main__.py                 `python -m mbforge` → uvicorn
-│   ├── backends/                   qwen3.py, molscribe.py, moldet.py
+│   ├── backends/                   qwen3.py, molscribe.py, moldet.py, zvec_backend.py
 │   └── parsers/molecule/           MolScribe inference, coords, coref
 ├── tests/                          Python tests (unit/, parser_io/, integration/)
 ├── docs/                           Specs, plans, references
@@ -182,7 +180,7 @@ cd src-tauri && cargo tauri build           # bundles desktop app
 
 **Configuration precedence**: GUI settings > env vars > `config.json` defaults.
 
-**Storage locations** (per project): `{root}/index/molecules.db`, `{root}/.mbforge/knowledge_base/vectors.db`, `{root}/.mbforge/cache/semantic_cache.json`, `{root}/.mbforge/search.zvec`. Global config: `~/.config/MBForge/config.json` (Linux) / `%APPDATA%\MBForge\config\config.json` (Windows).
+**Storage locations** (per project): `{root}/index/molecules.db`, `{root}/.mbforge/knowledge_base.db` (SQLite business tables), `{root}/.mbforge/search.zvec/` (Zvec collection for vectors + FTS), `{root}/.mbforge/cache/semantic_cache.json`. Global config: `~/.config/MBForge/config.json` (Linux) / `%APPDATA%\MBForge\config\config.json` (Windows).
 
 ## Runtime & Tooling Preferences
 

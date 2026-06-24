@@ -53,7 +53,7 @@
         ];
         for (var i = 0; i < 60; i++) {
           SYNTH_SECTIONS.push({
-            chunk_id: 'd' + ((i % 3) + 1) + ':sec' + i,
+            chunk_id: 'd' + ((i % 3) + 1) + '__sec' + i,
             text: 'Section ' + i + ': ' + sectionTexts[i % sectionTexts.length],
             metadata: { title: SYNTH_DOCS[i % 3].title, path: SYNTH_DOCS[i % 3].path, page_start: Math.floor(i / 3) * 5 + 1, page_end: Math.floor(i / 3) * 5 + 4 },
             score: 0.95 - i * 0.012

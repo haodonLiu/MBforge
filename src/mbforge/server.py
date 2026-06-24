@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import importlib
+import inspect
 import os
 import subprocess
 import sys
@@ -29,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from .backends import moldet, molscribe, qwen3_embed, qwen3_rerank
+from .backends import moldet, molscribe, qwen3_embed, qwen3_rerank, zvec
 from .core.resource_manager import ResourceManager
 from .parsers.molecule.coref_alt import (
     CorefResult as CorefResultData,
@@ -50,7 +51,7 @@ logger = get_logger("mbforge.server")
 # ---------------------------------------------------------------------------
 # Backend registry — add a new backend here to register it for lifespan
 # ---------------------------------------------------------------------------
-_BACKENDS = [qwen3_embed, qwen3_rerank, molscribe, moldet]
+_BACKENDS = [qwen3_embed, qwen3_rerank, molscribe, moldet, zvec]
 
 
 def _prewarm() -> None:
@@ -136,6 +137,11 @@ def with_model_status(model_id: str):
             except Exception as e:
                 set_model_status(model_id, "error")
                 raise ModelNotAvailableError(str(e)) from e
+        # FastAPI >=0.95 follows __wrapped__ when resolving call signatures,
+        # which would incorrectly inject ``body`` as a dependency. Expose only
+        # the wrapper's ``(request: Request)`` signature to the router.
+        wrapper.__signature__ = inspect.signature(wrapper, follow_wrapped=False)  # type: ignore[attr-defined]
+        del wrapper.__wrapped__
         return wrapper
     return decorator
 
@@ -588,6 +594,99 @@ async def molscribe_predict(request: Request, body: dict) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Zvec (vector + FTS + hybrid search)
+# ---------------------------------------------------------------------------
+@app.post("/api/v1/zvec/collection/open")
+@with_model_status("zvec")
+async def zvec_collection_open(request: Request, body: dict) -> dict[str, Any]:
+    path = body.get("path", "")
+    dim = body.get("dim")
+    if not path or dim is None:
+        raise ValidationError("path and dim are required")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, lambda: zvec.open_collection(path, int(dim)))
+    return {"success": True}
+
+
+@app.post("/api/v1/zvec/index")
+@with_model_status("zvec")
+async def zvec_index(request: Request, body: dict) -> dict[str, Any]:
+    doc_id = body.get("doc_id", "")
+    chunk_ids = body.get("chunk_ids", [])
+    texts = body.get("texts", [])
+    metadatas = body.get("metadatas", [])
+    embeddings = body.get("embeddings", [])
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: zvec.index_document(doc_id, chunk_ids, texts, metadatas, embeddings),
+    )
+    return result
+
+
+@app.post("/api/v1/zvec/delete")
+@with_model_status("zvec")
+async def zvec_delete(request: Request, body: dict) -> dict[str, Any]:
+    doc_id = body.get("doc_id", "")
+    if not doc_id:
+        raise ValidationError("doc_id is required")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, lambda: zvec.delete_document(doc_id))
+    return {"deleted": True}
+
+
+@app.post("/api/v1/zvec/search/vector")
+@with_model_status("zvec")
+async def zvec_search_vector(request: Request, body: dict) -> dict[str, Any]:
+    query_embedding = body.get("query_embedding", [])
+    top_k = body.get("top_k", 10)
+    doc_id_filter = body.get("doc_id_filter")
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: zvec.vector_search(query_embedding, int(top_k), doc_id_filter),
+    )
+    return result
+
+
+@app.post("/api/v1/zvec/search/text")
+@with_model_status("zvec")
+async def zvec_search_text(request: Request, body: dict) -> dict[str, Any]:
+    query = body.get("query", "")
+    top_k = body.get("top_k", 10)
+    doc_id_filter = body.get("doc_id_filter")
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: zvec.text_search(query, int(top_k), doc_id_filter),
+    )
+    return result
+
+
+@app.post("/api/v1/zvec/search/hybrid")
+@with_model_status("zvec")
+async def zvec_search_hybrid(request: Request, body: dict) -> dict[str, Any]:
+    query_vec = body.get("query_vec", [])
+    query_text = body.get("query_text", "")
+    top_k = body.get("top_k", 10)
+    doc_id_filter = body.get("doc_id_filter")
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: zvec.hybrid_search(query_vec, query_text, int(top_k), doc_id_filter),
+    )
+    return result
+
+
+@app.post("/api/v1/zvec/count")
+@with_model_status("zvec")
+async def zvec_count(request: Request, body: dict) -> dict[str, Any]:
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, zvec.count)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # 模型测试端点：实际加载模型到内存并做最小推理，验证文件路径 + 权重有效
 # ---------------------------------------------------------------------------
 def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
@@ -715,6 +814,7 @@ _model_status = {
     "moldet": "loading",
     "moldet_coref": "loading",
     "molscribe": "loading",
+    "zvec": "loading",
 }
 _resource_cache: dict[str, str] = {}
 _resource_cache_time: float = 0.0
@@ -799,6 +899,21 @@ async def health_check() -> dict[str, Any]:
             _model_status["moldet_coref"] = "error"
             _mark_failure("moldet_coref")
             logger.debug(f"MolDet coref health check failed: {e}")
+
+    # Zvec
+    if not _should_skip_due_to_cooldown("zvec"):
+        try:
+            zvec.load()
+            if zvec.health()["status"] == "ready":
+                _model_status["zvec"] = "ready"
+                _clear_failure("zvec")
+            else:
+                _model_status["zvec"] = "error"
+                _mark_failure("zvec")
+        except Exception as e:
+            _model_status["zvec"] = "error"
+            _mark_failure("zvec")
+            logger.debug(f"Zvec health check failed: {e}")
 
     statuses = list(_model_status.values())
     if all(s == "ready" for s in statuses):

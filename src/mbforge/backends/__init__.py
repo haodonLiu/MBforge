@@ -9,6 +9,7 @@ from pathlib import Path
 # 保留旧模块名以兼容 server.py 中的 `from .backends import qwen3_embed, qwen3_rerank`
 from . import qwen3 as qwen3_embed  # noqa: F401
 from . import qwen3 as qwen3_rerank  # noqa: F401
+from . import zvec_backend as zvec  # noqa: F401
 
 logger = logging.getLogger("mbforge.backends")
 

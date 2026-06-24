@@ -8,14 +8,14 @@ license.workspace = true
 [dependencies]
 mbforge-infra = { path = "../mbforge-infra" }
 mbforge-chem = { path = "../mbforge-chem" }
-zvec-bindings = { version = "0.4", features = ["sync"] }
 serde.workspace = true
 serde_json.workspace = true
 rusqlite.workspace = true
 tokio.workspace = true
 log.workspace = true
 tauri = { version = "2", features = ["wry"] }
-reqwest = { workspace = true, features = ["blocking"] }
+reqwest = { workspace = true, features = ["json", "blocking"] }
+ureq = { version = "2", features = ["json"] }
 chematic-smiles.workspace = true
 dashmap = "6"
 walkdir = "2"

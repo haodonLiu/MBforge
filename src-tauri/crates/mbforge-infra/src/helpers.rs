@@ -190,23 +190,22 @@ pub fn available_space_bytes(path: &Path) -> AppResult<u64> {
 /// Unchecked variant: caller is responsible for ensuring the path is safe.
 /// Prefer [`load_json_safe`] for any path that originates from user input
 /// or a project-relative location.
-pub fn load_json<T: serde::de::DeserializeOwned>(path: &Path) -> AppResult<T> {
+pub fn load_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
     read_json_from(path)
 }
 
 /// Load JSON file from a project-relative path, verifying the resolved
 /// path lies within `root` before any filesystem access. Returns `None`
 /// if the path is outside `root` or the file is unreadable / malformed.
-pub fn load_json_safe<T: serde::de::DeserializeOwned>(root: &str, path: &Path) -> AppResult<T> {
-    let checked = assert_within_root_allow_missing(root, path)
-        .map_err(|e| AppError::new(ErrorCode::FilePermission, e))?;
+pub fn load_json_safe<T: serde::de::DeserializeOwned>(root: &str, path: &Path) -> Option<T> {
+    let checked = assert_within_root_allow_missing(root, path).ok()?;
     read_json_from(&checked)
 }
 
-fn read_json_from<T: serde::de::DeserializeOwned>(path: &Path) -> AppResult<T> {
-    let data = std::fs::read_to_string(path).map_err(|e| AppError::new(ErrorCode::FileRead, e.to_string()))?;
-    let value = serde_json::from_str(&data)?;
-    Ok(value)
+fn read_json_from<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
+    let data = std::fs::read_to_string(path).ok()?;
+    let value = serde_json::from_str(&data).ok()?;
+    Some(value)
 }
 
 /// Estimate token count (rough heuristic: CJK ~1.5 token/char, other ~0.25 token/char).

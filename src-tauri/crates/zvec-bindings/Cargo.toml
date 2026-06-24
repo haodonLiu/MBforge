@@ -1,0 +1,9 @@
+[package]
+name = "zvec-bindings"
+version = "0.4.1"
+edition = "2021"
+description = "Local compile-time stub for zvec-bindings. Replace with the real crate when CMake/C++ toolchain is available."
+
+[features]
+default = []
+sync = []

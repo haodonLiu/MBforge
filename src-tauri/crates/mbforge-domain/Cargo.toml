@@ -1,26 +1,28 @@
 [package]
-name = "mbforge-infra"
+name = "mbforge-domain"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
+mbforge-infra = { path = "../mbforge-infra" }
+mbforge-chem = { path = "../mbforge-chem" }
+zvec-bindings = { version = "0.4", features = ["sync"] }
 serde.workspace = true
 serde_json.workspace = true
 rusqlite.workspace = true
 tokio.workspace = true
-reqwest = { workspace = true, features = ["stream"] }
 log.workspace = true
-thiserror.workspace = true
-regex.workspace = true
-sha2.workspace = true
-chrono.workspace = true
-uuid.workspace = true
-fs2.workspace = true
-directories.workspace = true
+tauri = { version = "2", features = ["wry"] }
+reqwest = { workspace = true, features = ["blocking"] }
+chematic-smiles.workspace = true
+dashmap = "6"
 walkdir = "2"
-futures-util = "0.3"
+sha2.workspace = true
+uuid.workspace = true
+regex.workspace = true
+directories.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

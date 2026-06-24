@@ -1,17 +1,16 @@
-//! Zvec 搜索封装 — 替代 SQLite 向量/FTS 存储。
+//! Zvec 搜索封装 — 通过 Python sidecar HTTP 服务实现。
 //!
-//! 使用 `zvec-bindings` 的同步 API 打开本地 collection，提供：
-//! - 向量索引（HNSW + Cosine）
-//! - 全文检索（FTS）
-//! - 混合搜索（MultiQuery + RRF）
+//! Rust 端不再直接链接本地 `zvec-bindings`，而是调用 sidecar 暴露的
+//! `/api/v1/zvec/*` 端点完成 collection 打开、索引、删除和搜索。
+//! 使用同步 HTTP 客户端 `ureq`（不依赖 tokio runtime），因此可以在异步
+//! Tauri 命令/单测上下文中安全创建和销毁。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use mbforge_infra::config::constants::sidecar_url;
 use mbforge_infra::error::{AppError, AppResult, ErrorCode};
-use zvec_bindings::{
-    create_and_open_shared, CollectionSchema, Doc, FieldSchema, FtsQuery, MetricType, MultiQuery,
-    RrfReranker, SharedCollection, VectorQuery,
-};
+use serde::{Deserialize, Serialize};
 
 /// 搜索结果。
 #[derive(Debug, Clone)]
@@ -22,10 +21,11 @@ pub struct SearchResult {
     pub score: f32,
 }
 
-/// Zvec 搜索引擎。
+/// Zvec 搜索引擎（HTTP 客户端封装）。
 pub struct SearchEngine {
-    collection: SharedCollection,
+    collection_path: PathBuf,
     dim: usize,
+    base_url: String,
 }
 
 impl SearchEngine {
@@ -41,34 +41,77 @@ impl SearchEngine {
             std::fs::create_dir_all(parent)?;
         }
 
-        let schema = CollectionSchema::builder("mbforge_kb")
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("schema builder: {e}")))?
-            .field(FieldSchema::string("chunk_id").primary_key(true))
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("chunk_id field: {e}")))?
-            .field(FieldSchema::string("doc_id").invert_index(true, false))
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("doc_id field: {e}")))?
-            .field(FieldSchema::string("text").fts_tokenizer("standard"))
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("text field: {e}")))?
-            .field(FieldSchema::string("metadata"))
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("metadata field: {e}")))?
-            .field(
-                FieldSchema::vector_fp32("embedding", dim)
-                    .hnsw(16, 200)
-                    .metric(MetricType::Cosine),
-            )
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("embedding field: {e}")))?
-            .build()
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("schema build: {e}")))?;
-
-        let collection = create_and_open_shared(path, &schema, None)
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("open zvec: {e}")))?;
-
-        Ok(Self { collection, dim })
+        let base_url = sidecar_url();
+        let engine = Self {
+            collection_path: path.to_path_buf(),
+            dim,
+            base_url,
+        };
+        engine.open_collection()?;
+        Ok(engine)
     }
 
     /// 向量维度。
     pub fn dim(&self) -> usize {
         self.dim
+    }
+
+    fn sidecar_url(&self, endpoint: &str) -> String {
+        format!(
+            "{}/api/v1/zvec/{}",
+            self.base_url.trim_end_matches('/'),
+            endpoint
+        )
+    }
+
+    fn open_collection(&self) -> AppResult<()> {
+        let path_str = self.collection_path.to_string_lossy().to_string();
+        let body = OpenRequest {
+            path: path_str,
+            dim: self.dim,
+        };
+        self.post::<OpenRequest, GenericResponse>("collection/open", &body)
+            .map(|_| ())
+    }
+
+    fn post<B, R>(&self, endpoint: &str, body: &B) -> AppResult<R>
+    where
+        B: Serialize,
+        R: for<'de> Deserialize<'de>,
+    {
+        let url = self.sidecar_url(endpoint);
+        let resp = ureq::post(&url)
+            .set("Content-Type", "application/json")
+            .timeout(Duration::from_secs(120))
+            .send_json(body)
+            .map_err(|e| AppError {
+                code: ErrorCode::Network,
+                message: format!("sidecar zvec request failed: {e}"),
+                path: Some(url.clone()),
+                suggestion: Some("检查 Python sidecar 是否在运行".to_string()),
+            })?;
+
+        let status = resp.status();
+        let text = resp.into_string().unwrap_or_default();
+
+        if status >= 400 {
+            let err: GenericResponse = serde_json::from_str(&text).unwrap_or(GenericResponse {
+                error: Some(text.clone()),
+            });
+            return Err(AppError {
+                code: ErrorCode::ApiError,
+                message: err.error.unwrap_or_else(|| text.clone()),
+                path: Some(url),
+                suggestion: None,
+            });
+        }
+
+        serde_json::from_str(&text).map_err(|e| AppError {
+            code: ErrorCode::ApiError,
+            message: format!("failed to parse sidecar response: {e}, body: {text}"),
+            path: Some(url),
+            suggestion: None,
+        })
     }
 
     /// 索引/重新索引一个文档的全部 chunks。
@@ -97,33 +140,23 @@ impl SearchEngine {
             }
         }
 
-        self.delete_document(doc_id)?;
-
-        let mut docs = Vec::with_capacity(chunk_ids.len());
-        for i in 0..chunk_ids.len() {
-            let mut doc = Doc::id(&chunk_ids[i]);
-            doc.add_string("doc_id", doc_id)
-                .map_err(|e| AppError::new(ErrorCode::Unknown, format!("doc field: {e}")))?;
-            doc.add_string("text", &texts[i])
-                .map_err(|e| AppError::new(ErrorCode::Unknown, format!("text field: {e}")))?;
-            doc.add_string("metadata", &metadatas[i])
-                .map_err(|e| AppError::new(ErrorCode::Unknown, format!("metadata field: {e}")))?;
-            doc.add_vector_fp32("embedding", &embeddings[i])
-                .map_err(|e| AppError::new(ErrorCode::Unknown, format!("embedding field: {e}")))?;
-            docs.push(doc);
-        }
-
-        self.collection
-            .insert(&docs)
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("zvec insert: {e}")))?;
+        let body = IndexRequest {
+            doc_id: doc_id.to_string(),
+            chunk_ids: chunk_ids.to_vec(),
+            texts: texts.to_vec(),
+            metadatas: metadatas.to_vec(),
+            embeddings: embeddings.to_vec(),
+        };
+        self.post::<IndexRequest, IndexResponse>("index", &body)?;
         Ok(())
     }
 
     /// 删除一个文档的所有 chunks。
     pub fn delete_document(&self, doc_id: &str) -> AppResult<()> {
-        self.collection
-            .delete_by_filter(&format!("doc_id = '{}'", doc_id))
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("zvec delete: {e}")))?;
+        let body = DeleteRequest {
+            doc_id: doc_id.to_string(),
+        };
+        self.post::<DeleteRequest, GenericResponse>("delete", &body)?;
         Ok(())
     }
 
@@ -134,23 +167,13 @@ impl SearchEngine {
         top_k: usize,
         doc_id_filter: Option<&str>,
     ) -> AppResult<Vec<SearchResult>> {
-        let mut q = VectorQuery::builder()
-            .field("embedding")
-            .vector_fp32(query_embedding)
-            .topk(top_k)
-            .build()
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("vector query: {e}")))?;
-
-        if let Some(doc_id) = doc_id_filter {
-            q = q.filter(&format!("doc_id = '{}'", doc_id));
-        }
-
-        let results = self
-            .collection
-            .query(&q)
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("zvec vector search: {e}")))?;
-
-        Ok(results.iter().map(parse_row).collect())
+        let body = VectorSearchRequest {
+            query_embedding: query_embedding.to_vec(),
+            top_k,
+            doc_id_filter: doc_id_filter.map(String::from),
+        };
+        let resp: SearchResponse = self.post("search/vector", &body)?;
+        Ok(resp.results.into_iter().map(Into::into).collect())
     }
 
     /// 纯全文搜索。
@@ -160,16 +183,13 @@ impl SearchEngine {
         top_k: usize,
         doc_id_filter: Option<&str>,
     ) -> AppResult<Vec<SearchResult>> {
-        let filter = doc_id_filter.map(|d| format!("doc_id = '{}'", d));
-        let q = FtsQuery::new("text", query, top_k, filter.as_deref())
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("fts query: {e}")))?;
-
-        let results = self
-            .collection
-            .query(&q)
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("zvec text search: {e}")))?;
-
-        Ok(results.iter().map(parse_row).collect())
+        let body = TextSearchRequest {
+            query: query.to_string(),
+            top_k,
+            doc_id_filter: doc_id_filter.map(String::from),
+        };
+        let resp: SearchResponse = self.post("search/text", &body)?;
+        Ok(resp.results.into_iter().map(Into::into).collect())
     }
 
     /// 混合搜索：向量 + FTS + RRF 融合。
@@ -180,44 +200,113 @@ impl SearchEngine {
         top_k: usize,
         doc_id_filter: Option<&str>,
     ) -> AppResult<Vec<SearchResult>> {
-        let filter = doc_id_filter.map(|d| format!("doc_id = '{}'", d));
-
-        let vq = VectorQuery::builder()
-            .field("embedding")
-            .vector_fp32(query_vec)
-            .topk(top_k * 3)
-            .build()
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("vector query: {e}")))?;
-
-        let fq = FtsQuery::new("text", query_text, top_k * 3, filter.as_deref())
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("fts query: {e}")))?;
-
-        let multi = MultiQuery::new(vec![Box::new(vq), Box::new(fq)])
-            .reranker(RrfReranker::with_top_n(top_k))
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("multi query: {e}")))?;
-
-        let results = self
-            .collection
-            .query(&multi)
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("zvec hybrid search: {e}")))?;
-
-        Ok(results.iter().map(parse_row).collect())
+        let body = HybridSearchRequest {
+            query_vec: query_vec.to_vec(),
+            query_text: query_text.to_string(),
+            top_k,
+            doc_id_filter: doc_id_filter.map(String::from),
+        };
+        let resp: SearchResponse = self.post("search/hybrid", &body)?;
+        Ok(resp.results.into_iter().map(Into::into).collect())
     }
 
     /// 总 chunk 数。
     pub fn count(&self) -> AppResult<usize> {
-        self.collection
-            .count()
-            .map_err(|e| AppError::new(ErrorCode::Unknown, format!("zvec count: {e}")))
+        let body = serde_json::json!({});
+        let resp: CountResponse = self.post("count", &body)?;
+        Ok(resp.count)
     }
 }
 
-fn parse_row(row: &zvec_bindings::SearchResult) -> SearchResult {
-    SearchResult {
-        id: row.pk().to_string(),
-        text: row.field_as_string("text").unwrap_or_default(),
-        metadata: serde_json::from_str(&row.field_as_string("metadata").unwrap_or_default())
-            .unwrap_or_else(|_| serde_json::json!({})),
-        score: row.score(),
+// ============================================================================
+// DTOs
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+struct OpenRequest {
+    path: String,
+    dim: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct IndexRequest {
+    doc_id: String,
+    chunk_ids: Vec<String>,
+    texts: Vec<String>,
+    metadatas: Vec<String>,
+    embeddings: Vec<Vec<f32>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct IndexResponse {
+    #[allow(dead_code)]
+    indexed: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DeleteRequest {
+    doc_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct VectorSearchRequest {
+    query_embedding: Vec<f32>,
+    top_k: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    doc_id_filter: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TextSearchRequest {
+    query: String,
+    top_k: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    doc_id_filter: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct HybridSearchRequest {
+    query_vec: Vec<f32>,
+    query_text: String,
+    top_k: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    doc_id_filter: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SearchResponse {
+    #[serde(default)]
+    results: Vec<SearchResultDto>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SearchResultDto {
+    id: String,
+    text: String,
+    #[serde(default)]
+    metadata: serde_json::Value,
+    #[serde(default)]
+    score: f32,
+}
+
+impl From<SearchResultDto> for SearchResult {
+    fn from(dto: SearchResultDto) -> Self {
+        Self {
+            id: dto.id,
+            text: dto.text,
+            metadata: dto.metadata,
+            score: dto.score,
+        }
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct CountResponse {
+    count: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct GenericResponse {
+    #[serde(default)]
+    error: Option<String>,
 }

@@ -77,6 +77,8 @@ dependencies = [
     "pandas>=3.0.3",
     "onnxruntime-directml>=1.24.4",
     "accelerate>=1.14.0",
+    # Vector search (Zvec Python SDK)
+    "zvec>=0.5.1",
 ]
 
 [project.optional-dependencies]

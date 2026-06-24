@@ -16,10 +16,10 @@ use dashmap::DashMap;
 use rusqlite::Connection;
 use tauri::Emitter;
 
+use crate::vector::embedding::Embedder;
 use mbforge_infra::config::constants::{EVT_KB_SEARCH_CHUNK, INDEX_DIR, PROJECT_META_DIR};
 use mbforge_infra::db::SharedConn;
 use mbforge_infra::error::{AppError, AppResult, ErrorCode};
-use crate::vector::embedding::Embedder;
 
 use super::document_tree::DocumentTreeIndex;
 use super::file_cache::FileCache;
@@ -259,7 +259,7 @@ impl KnowledgeBase {
         let chunk_ids: Vec<String> = sections
             .iter()
             .enumerate()
-            .map(|(i, _)| format!("{}:sec{}", doc_id, i))
+            .map(|(i, _)| format!("{}__sec{}", doc_id, i))
             .collect();
         let texts: Vec<String> = sections.iter().map(|s| s.text.clone()).collect();
         let metadatas: Vec<String> = sections
@@ -401,14 +401,7 @@ impl KnowledgeBase {
                 "INSERT OR IGNORE INTO figure_labels
                  (doc_id, page, label_bbox, label_text, ocr_conf, image_path)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![
-                    doc_id,
-                    page,
-                    bbox_json,
-                    text,
-                    ocr_conf,
-                    image_path
-                ],
+                rusqlite::params![doc_id, page, bbox_json, text, ocr_conf, image_path],
             )?;
             if res > 0 {
                 inserted += 1;

@@ -15,7 +15,7 @@ use crate::core::molecule::molecule_store::{MoleculeDatabase, MoleculeRecord};
 
 // Re-export types that callers need.
 pub use crate::core::chem::markush::{MarkushOverlap, MarkushPattern};
-pub use crate::core::chem::sar_query::{
+pub use crate::core::molecule::sar_query::{
     ActivityCliff, ActivitySummary, AnalogWithActivity, ScaffoldActivityRecord, ScaffoldProfile,
 };
 pub use crate::core::molecule::molecule_cluster::ClusterInfo;
@@ -231,7 +231,7 @@ impl MoleculeEngine {
             };
 
             if let Some(record) =
-                crate::core::chem::sar_query::get_molecule_activity(&neighbor_id, mconn)
+                crate::core::molecule::sar_query::get_molecule_activity(&neighbor_id, mconn)
             {
                 results.push(AnalogWithActivity {
                     mol_id: neighbor_id,
@@ -255,7 +255,7 @@ impl MoleculeEngine {
 
     pub async fn scaffold_profile(&self, scaffold: &str) -> Result<ScaffoldProfile, String> {
         let store = self.store.lock().await;
-        crate::core::chem::sar_query::scaffold_activity_profile(scaffold, store.conn())
+        crate::core::molecule::sar_query::scaffold_activity_profile(scaffold, store.conn())
     }
 
     pub async fn find_activity_cliffs(
@@ -264,7 +264,7 @@ impl MoleculeEngine {
         min_ratio: f64,
     ) -> Result<Vec<ActivityCliff>, String> {
         let store = self.store.lock().await;
-        crate::core::chem::sar_query::find_activity_cliffs(min_sim, min_ratio, store.conn())
+        crate::core::molecule::sar_query::find_activity_cliffs(min_sim, min_ratio, store.conn())
     }
 
     // =====================================================================

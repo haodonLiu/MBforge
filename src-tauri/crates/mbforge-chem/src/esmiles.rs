@@ -16,7 +16,7 @@
 //! # 示例
 //!
 //! ```
-//! use mbforge_lib::core::esmiles::{smiles_to_esmiles, smiles_with_rgroups_to_esmiles, EsTag};
+//! use mbforge_chem::esmiles::{smiles_to_esmiles, smiles_with_rgroups_to_esmiles, EsTag};
 //!
 //! // 手动指定标签
 //! let result = smiles_to_esmiles("CC(=O)O", &[EsTag::atom(0, "R1")]);
@@ -137,13 +137,13 @@ pub fn smiles_to_esmiles(smiles: &str, tags: &[EsTag]) -> String {
 /// # 示例
 ///
 /// ```
-/// use mbforge_lib::core::esmiles::smiles_with_rgroups_to_esmiles;
+/// use mbforge_chem::esmiles::smiles_with_rgroups_to_esmiles;
 ///
 /// let esmiles = smiles_with_rgroups_to_esmiles(
 ///     "*c1ccc(*)cc1",
 ///     &["R[1]".into(), "R[2]".into()],
 /// );
-/// assert_eq!(esmiles, "*c1ccc(*)cc1<sep><a>0:R[1]</a><a>4:R[2]</a>");
+/// assert_eq!(esmiles, "*c1ccc(*)cc1<sep><a>0:R[1]</a><a>5:R[2]</a>");
 /// ```
 pub fn smiles_with_rgroups_to_esmiles(smiles: &str, rgroup_names: &[String]) -> String {
     let normalized = normalize_wildcards(smiles);

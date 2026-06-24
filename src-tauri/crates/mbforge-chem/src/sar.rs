@@ -347,22 +347,19 @@ pub fn build_rgroup_matrix(
     }
 }
 
-// ─── Tauri 命令 ──────────────────────────────────────────────────
+// ─── 公共 API 包装 ────────────────────────────────────────────────
 
 /// 提取共同骨架（MCS，带 ring constraints）
-#[tauri::command]
 pub fn sar_find_scaffold(smiles_list: Vec<String>) -> Option<ScaffoldResult> {
     find_common_scaffold(&smiles_list, Some(5000), 3)
 }
 
 /// 分解单个化合物为骨架 + R-group
-#[tauri::command]
 pub fn sar_decompose(smiles: String, core_smiles: String) -> RGroupDecomposition {
     decompose_compound(&smiles, &core_smiles, "", "")
 }
 
 /// 构建 R-group 矩阵
-#[tauri::command]
 pub fn sar_build_matrix(
     compounds: Vec<CompoundInput>,
     core_smiles: Option<String>,
@@ -449,8 +446,7 @@ pub fn build_activity_heatmap(
     heatmaps
 }
 
-/// Tauri 命令：构建热力图
-#[tauri::command]
+/// 构建热力图
 pub fn sar_heatmap(matrix: RGroupMatrix, lower_is_better: bool) -> Vec<ActivityHeatmap> {
     build_activity_heatmap(&matrix, lower_is_better)
 }

@@ -2,6 +2,9 @@
 //!
 //! 将分散在 `chem.rs`、`esmiles.rs`、`abbreviation_map.rs`、`molecode.rs` 中的
 //! 预处理逻辑统一为可组合的流水线，减少重复代码并提高可维护性。
+//!
+//! 当前 crate 内部暂未连接本模块；保留为内部工具供后续阶段使用。
+#![allow(dead_code)]
 
 use regex::Regex;
 use std::sync::LazyLock;

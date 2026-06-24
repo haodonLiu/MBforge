@@ -12,6 +12,7 @@ pub mod molecule_db;
 pub mod molecule_dedup;
 pub mod molecule_engine;
 pub mod molecule_store;
+pub mod sar_query;
 
 #[allow(unused_imports)]
 pub use molecule_cluster::{

@@ -1,6 +1,7 @@
 [workspace]
 members = ["crates/*"]
 resolver = "2"
+default-members = ["crates/mbforge-app"]
 
 # Local stub for zvec-bindings: the real crate needs CMake + C++ toolchain.
 # Remove this patch once the build environment can compile zvec-sys.

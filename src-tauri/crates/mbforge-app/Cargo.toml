@@ -1,0 +1,32 @@
+[package]
+name = "mbforge-app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+mbforge-infra = { path = "../mbforge-infra" }
+mbforge-chem = { path = "../mbforge-chem" }
+mbforge-domain = { path = "../mbforge-domain" }
+mbforge-pipeline = { path = "../mbforge-pipeline" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+log.workspace = true
+chrono.workspace = true
+reqwest = { workspace = true, features = ["blocking"] }
+ctrlc = "3"
+tauri = { version = "2", features = ["wry"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+lopdf = { git = "https://github.com/J-F-Liu/lopdf", rev = "7a05512d831415b1f2b1ce522391d6beab8a1284", version = "0.40.0" }
+pdf-inspector = "=0.1.0"
+regex.workspace = true
+chematic-smiles.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[lints]
+workspace = true

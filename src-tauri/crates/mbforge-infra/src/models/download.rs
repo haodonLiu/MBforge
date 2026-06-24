@@ -1,4 +1,10 @@
-#![allow(clippy::double_ended_iterator_last, clippy::ineffective_open_options, clippy::needless_borrow, clippy::needless_borrows_for_generic_args, clippy::ptr_arg)]
+#![allow(
+    clippy::double_ended_iterator_last,
+    clippy::ineffective_open_options,
+    clippy::needless_borrow,
+    clippy::needless_borrows_for_generic_args,
+    clippy::ptr_arg
+)]
 
 //! ModelScope 模型下载（Rust 原生）
 //!
@@ -83,14 +89,22 @@ pub async fn download_model(
     cancelled: &Arc<AtomicBool>,
     subpath_filter: Option<&str>,
 ) -> Result<PathBuf, DownloadError> {
-    log::info!("[download_model {}] start (filter={:?})", resource_id, subpath_filter);
+    log::info!(
+        "[download_model {}] start (filter={:?})",
+        resource_id,
+        subpath_filter
+    );
     let info = RESOURCE_CATALOG
         .iter()
         .find(|r| r.id == resource_id)
         .ok_or_else(|| DownloadError::NotFound(resource_id.to_string()))?;
 
     if info.resource_type != ResourceType::Model {
-        log::error!("[download_model {}] not a model resource (type {:?})", resource_id, info.resource_type);
+        log::error!(
+            "[download_model {}] not a model resource (type {:?})",
+            resource_id,
+            info.resource_type
+        );
         return Err(DownloadError::NotFound(format!(
             "{} 不是模型资源",
             resource_id
@@ -98,7 +112,11 @@ pub async fn download_model(
     }
 
     let cache_dir = crate::config::constants::model_cache_dir();
-    log::info!("[download_model {}] cache_dir: {}", resource_id, cache_dir.display());
+    log::info!(
+        "[download_model {}] cache_dir: {}",
+        resource_id,
+        cache_dir.display()
+    );
     std::fs::create_dir_all(&cache_dir).map_err(|e| DownloadError::Io(e.to_string()))?;
 
     // 发送 connecting 状态
@@ -110,9 +128,21 @@ pub async fn download_model(
         log::warn!("[download_model {}] progress channel closed", resource_id);
     }
 
-    log::info!("[download_model {}] download_type: {}", resource_id, info.download_type);
+    log::info!(
+        "[download_model {}] download_type: {}",
+        resource_id,
+        info.download_type
+    );
     let result = if info.download_type == "snapshot" {
-        download_snapshot(resource_id, info, &cache_dir, &progress_tx, cancelled, subpath_filter).await
+        download_snapshot(
+            resource_id,
+            info,
+            &cache_dir,
+            &progress_tx,
+            cancelled,
+            subpath_filter,
+        )
+        .await
     } else {
         download_single_file(resource_id, info, &cache_dir, &progress_tx, cancelled).await
     };
@@ -150,7 +180,8 @@ async fn download_snapshot(
     log::info!("[download_snapshot {}] dest: {}", info.id, dest.display());
     std::fs::create_dir_all(&dest).map_err(|e| DownloadError::Io(e.to_string()))?;
 
-    let user_agent = format!("MBForge/{APP_VERSION} (model-downloader; +https://github.com/mbforge/mbforge)");
+    let user_agent =
+        format!("MBForge/{APP_VERSION} (model-downloader; +https://github.com/mbforge/mbforge)");
     let client = reqwest::Client::builder()
         .http1_only()
         .user_agent(user_agent)
@@ -164,14 +195,22 @@ async fn download_snapshot(
         "https://www.modelscope.cn/api/v1/models/{}/repo/files?Revision=master&Recursive=true",
         info.ms_repo
     );
-    log::info!("[download_snapshot {}] fetch file list: {}", info.id, tree_url);
+    log::info!(
+        "[download_snapshot {}] fetch file list: {}",
+        info.id,
+        tree_url
+    );
     let tree_resp = client
         .get(&tree_url)
         .send()
         .await
         .map_err(|e| DownloadError::Network(e.to_string()))?;
     let tree_status = tree_resp.status();
-    log::info!("[download_snapshot {}] file list response status: {}", info.id, tree_status);
+    log::info!(
+        "[download_snapshot {}] file list response status: {}",
+        info.id,
+        tree_status
+    );
     let tree_text = tree_resp
         .text()
         .await
@@ -180,7 +219,12 @@ async fn download_snapshot(
     // 检查是否返回了 HTML（登录页/错误页）或非 JSON
     let trimmed = tree_text.trim();
     if !tree_status.is_success() || trimmed.starts_with('<') {
-        log::error!("[download_snapshot {}] non-JSON / error response (HTTP {}): {}", info.id, tree_status, &tree_text[..tree_text.len().min(200)]);
+        log::error!(
+            "[download_snapshot {}] non-JSON / error response (HTTP {}): {}",
+            info.id,
+            tree_status,
+            &tree_text[..tree_text.len().min(200)]
+        );
         return Err(DownloadError::Api(format!(
             "API 错误 (HTTP {}): {}",
             tree_status,
@@ -188,8 +232,13 @@ async fn download_snapshot(
         )));
     }
 
-    let tree_val: serde_json::Value = serde_json::from_str(&tree_text)
-        .map_err(|e| DownloadError::Api(format!("JSON 解析失败: {} | 原文: {}", e, &tree_text[..tree_text.len().min(200)])))?;
+    let tree_val: serde_json::Value = serde_json::from_str(&tree_text).map_err(|e| {
+        DownloadError::Api(format!(
+            "JSON 解析失败: {} | 原文: {}",
+            e,
+            &tree_text[..tree_text.len().min(200)]
+        ))
+    })?;
 
     // ModelScope API 返回格式: { "Data": { "Files": [...] } }
     let files = tree_val["Data"]["Files"]
@@ -197,7 +246,11 @@ async fn download_snapshot(
         .or_else(|| tree_val["Data"].as_array())
         .ok_or_else(|| DownloadError::Api(format!("无法获取文件列表: {:?}", tree_val)))?;
 
-    log::info!("[download_snapshot {}] total entries: {}", info.id, files.len());
+    log::info!(
+        "[download_snapshot {}] total entries: {}",
+        info.id,
+        files.len()
+    );
 
     // 2. 选择要下载的文件：
     //    a) 若 info.files 非空（精确文件列表），用列表本身（跳过 API 列表拉取可优化，但保留拉取以便校验）
@@ -205,7 +258,12 @@ async fn download_snapshot(
     //    c) 兜底：通用 is_essential_file
     let owned_paths: Vec<String> = files
         .iter()
-        .filter_map(|f| f["Path"].as_str().or_else(|| f["path"].as_str()).map(String::from))
+        .filter_map(|f| {
+            f["Path"]
+                .as_str()
+                .or_else(|| f["path"].as_str())
+                .map(String::from)
+        })
         .collect();
     let essential: Vec<String> = if !info.files.is_empty() {
         // 验证精确列表里的文件实际存在于仓库
@@ -214,7 +272,11 @@ async fn download_snapshot(
             .filter(|want| {
                 let exists = owned_paths.iter().any(|p| p == *want);
                 if !exists {
-                    log::warn!("[download_snapshot {}] requested file not in repo: {}", info.id, want);
+                    log::warn!(
+                        "[download_snapshot {}] requested file not in repo: {}",
+                        info.id,
+                        want
+                    );
                 }
                 exists
             })
@@ -234,8 +296,22 @@ async fn download_snapshot(
             .collect()
     };
 
+    // 应用可选的子路径过滤
+    let essential: Vec<String> = if let Some(filter) = subpath_filter {
+        essential
+            .into_iter()
+            .filter(|p| p.contains(filter))
+            .collect()
+    } else {
+        essential
+    };
+
     let total = essential.len();
-    log::info!("[download_snapshot {}] essential files: {:?}", info.id, essential);
+    log::info!(
+        "[download_snapshot {}] essential files: {:?}",
+        info.id,
+        essential
+    );
     if total == 0 {
         log::error!("[download_snapshot {}] no essential files found", info.id);
         return Err(DownloadError::Api("没有找到可下载的文件".into()));
@@ -245,7 +321,11 @@ async fn download_snapshot(
     let mut failed_files: Vec<String> = Vec::new();
     for (i, file_path) in essential.iter().enumerate() {
         if cancelled.load(Ordering::Relaxed) {
-            log::info!("[download_snapshot {}] cancelled before {}", resource_id, file_path);
+            log::info!(
+                "[download_snapshot {}] cancelled before {}",
+                resource_id,
+                file_path
+            );
             return Err(DownloadError::Api("下载已取消".into()));
         }
 
@@ -261,7 +341,14 @@ async fn download_snapshot(
             "https://www.modelscope.cn/{}/resolve/master/{}",
             info.ms_repo, file_path
         );
-        log::info!("[download_snapshot {}] [{}/{}] downloading {} from {}", info.id, i + 1, total, file_path, url);
+        log::info!(
+            "[download_snapshot {}] [{}/{}] downloading {} from {}",
+            info.id,
+            i + 1,
+            total,
+            file_path,
+            url
+        );
 
         let local_path = dest.join(file_path);
         let part_path = local_path.with_extension("part");
@@ -272,10 +359,13 @@ async fn download_snapshot(
         // 已下载的字节数（断点续传）
         let mut existing_size: u64 = 0;
         if part_path.exists() {
-            existing_size = std::fs::metadata(&part_path)
-                .map(|m| m.len())
-                .unwrap_or(0);
-            log::info!("[download_snapshot {}] {} resuming from {} bytes", resource_id, file_path, existing_size);
+            existing_size = std::fs::metadata(&part_path).map(|m| m.len()).unwrap_or(0);
+            log::info!(
+                "[download_snapshot {}] {} resuming from {} bytes",
+                resource_id,
+                file_path,
+                existing_size
+            );
         }
 
         let mut req = client.get(&url);
@@ -284,13 +374,25 @@ async fn download_snapshot(
         }
 
         let resp = req.send().await.map_err(|e| {
-            log::error!("[download_snapshot {}] request failed for {}: {}", info.id, file_path, e);
+            log::error!(
+                "[download_snapshot {}] request failed for {}: {}",
+                info.id,
+                file_path,
+                e
+            );
             DownloadError::Network(format!("下载 {} 失败: {}", file_path, e))
         })?;
 
         let status = resp.status();
-        if status.is_server_error() || (status.is_client_error() && status != reqwest::StatusCode::RANGE_NOT_SATISFIABLE) {
-            log::error!("[download_snapshot {}] HTTP error for {}: {}", info.id, file_path, status);
+        if status.is_server_error()
+            || (status.is_client_error() && status != reqwest::StatusCode::RANGE_NOT_SATISFIABLE)
+        {
+            log::error!(
+                "[download_snapshot {}] HTTP error for {}: {}",
+                info.id,
+                file_path,
+                status
+            );
             failed_files.push(file_path.to_string());
             let _ = progress_tx
                 .send(
@@ -314,20 +416,32 @@ async fn download_snapshot(
             (file, existing_size)
         } else if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
             // 416：Range 不满足，说明文件已完整，直接重命名
-            log::info!("[download_snapshot {}] {} already complete (416)", resource_id, file_path);
-            std::fs::rename(&part_path, &local_path).map_err(|e| DownloadError::Io(e.to_string()))?;
+            log::info!(
+                "[download_snapshot {}] {} already complete (416)",
+                resource_id,
+                file_path
+            );
+            std::fs::rename(&part_path, &local_path)
+                .map_err(|e| DownloadError::Io(e.to_string()))?;
             continue;
         } else {
             // 200 OK 或其他：服务器不支持 Range，从头下载
             if existing_size > 0 {
-                log::warn!("[download_snapshot {}] {} server ignored Range, restarting", resource_id, file_path);
+                log::warn!(
+                    "[download_snapshot {}] {} server ignored Range, restarting",
+                    resource_id,
+                    file_path
+                );
             }
-            let file = std::fs::File::create(&part_path).map_err(|e| DownloadError::Io(e.to_string()))?;
+            let file =
+                std::fs::File::create(&part_path).map_err(|e| DownloadError::Io(e.to_string()))?;
             (file, 0)
         };
 
         let content_len = resp.content_length();
-        let total_size = content_len.map(|c| c + effective_existing).unwrap_or(effective_existing);
+        let total_size = content_len
+            .map(|c| c + effective_existing)
+            .unwrap_or(effective_existing);
         let mut stream = resp.bytes_stream();
 
         let mut downloaded: u64 = effective_existing;
@@ -341,7 +455,11 @@ async fn download_snapshot(
         let mut unknown_tick_index: u32 = (effective_existing / UNKNOWN_SIZE_TICK) as u32;
         while let Some(chunk) = stream.next().await {
             if cancelled.load(Ordering::Relaxed) {
-                log::info!("[download_snapshot {}] cancelled during {}", resource_id, file_path);
+                log::info!(
+                    "[download_snapshot {}] cancelled during {}",
+                    resource_id,
+                    file_path
+                );
                 return Err(DownloadError::Api("下载已取消".into()));
             }
             let chunk = chunk
@@ -376,12 +494,23 @@ async fn download_snapshot(
             }
         }
         if let Err(e) = std::io::Write::flush(&mut file) {
-            log::warn!("[download_snapshot {}] flush failed for {}: {}", info.id, file_path, e);
+            log::warn!(
+                "[download_snapshot {}] flush failed for {}: {}",
+                info.id,
+                file_path,
+                e
+            );
         }
 
         // 原子重命名：.part -> 最终文件
         std::fs::rename(&part_path, &local_path).map_err(|e| DownloadError::Io(e.to_string()))?;
-        log::info!("[download_snapshot {}] [{}/{}] finished {}", info.id, i + 1, total, file_path);
+        log::info!(
+            "[download_snapshot {}] [{}/{}] finished {}",
+            info.id,
+            i + 1,
+            total,
+            file_path
+        );
     }
 
     if !failed_files.is_empty() {
@@ -438,7 +567,8 @@ async fn download_single_file(
         0
     };
 
-    let user_agent = format!("MBForge/{APP_VERSION} (model-downloader; +https://github.com/mbforge/mbforge)");
+    let user_agent =
+        format!("MBForge/{APP_VERSION} (model-downloader; +https://github.com/mbforge/mbforge)");
     let client = reqwest::Client::builder()
         .http1_only()
         .user_agent(user_agent)
@@ -451,7 +581,10 @@ async fn download_single_file(
         req = req.header("Range", format!("bytes={}-", existing_size));
     }
 
-    let resp = req.send().await.map_err(|e| DownloadError::Network(e.to_string()))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| DownloadError::Network(e.to_string()))?;
 
     let content_type = resp
         .headers()
@@ -463,7 +596,9 @@ async fn download_single_file(
     }
 
     let status = resp.status();
-    if status.is_server_error() || (status.is_client_error() && status != reqwest::StatusCode::RANGE_NOT_SATISFIABLE) {
+    if status.is_server_error()
+        || (status.is_client_error() && status != reqwest::StatusCode::RANGE_NOT_SATISFIABLE)
+    {
         return Err(DownloadError::Api(format!("HTTP {}", status)));
     }
 
@@ -479,12 +614,15 @@ async fn download_single_file(
         std::fs::rename(&part_path, &local_path).map_err(|e| DownloadError::Io(e.to_string()))?;
         return Ok(local_path);
     } else {
-        let file = std::fs::File::create(&part_path).map_err(|e| DownloadError::Io(e.to_string()))?;
+        let file =
+            std::fs::File::create(&part_path).map_err(|e| DownloadError::Io(e.to_string()))?;
         (file, 0)
     };
 
     let content_len = resp.content_length();
-    let total_size = content_len.map(|c| c + effective_existing).unwrap_or(effective_existing);
+    let total_size = content_len
+        .map(|c| c + effective_existing)
+        .unwrap_or(effective_existing);
     let mut stream = resp.bytes_stream();
 
     let mut downloaded: u64 = effective_existing;

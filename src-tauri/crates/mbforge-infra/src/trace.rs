@@ -48,10 +48,7 @@ impl TraceContext {
 
     /// 把当前 trace 信息转成 HTTP Header 列表
     pub fn to_headers(&self) -> [(&'static str, &str); 2] {
-        [
-            ("X-Trace-Id", &self.trace_id),
-            ("X-Span-Id", &self.span_id),
-        ]
+        [("X-Trace-Id", &self.trace_id), ("X-Span-Id", &self.span_id)]
     }
 }
 

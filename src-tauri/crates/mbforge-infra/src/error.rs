@@ -160,10 +160,7 @@ impl From<std::io::Error> for AppError {
 
 impl From<serde_json::Error> for AppError {
     fn from(e: serde_json::Error) -> Self {
-        AppError::new(
-            ErrorCode::FileRead,
-            format!("JSON 序列化失败: {e}"),
-        )
+        AppError::new(ErrorCode::FileRead, format!("JSON 序列化失败: {e}"))
     }
 }
 

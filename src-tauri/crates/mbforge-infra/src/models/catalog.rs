@@ -167,7 +167,10 @@ pub const RESOURCE_CATALOG: &[ResourceInfo] = &[
         local_name: "MolDetv2",
         pip_name: "",
         import_name: "",
-        files: &["doc/moldet_v2_yolo11n_960_doc.pt", "general/moldet_v2_yolo11n_640_general.pt"],
+        files: &[
+            "doc/moldet_v2_yolo11n_960_doc.pt",
+            "general/moldet_v2_yolo11n_640_general.pt",
+        ],
         allow_patterns: &[],
     },
     ResourceInfo {

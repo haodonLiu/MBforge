@@ -80,11 +80,7 @@ impl SidecarClient {
     }
 
     /// Embedding 调用：POST /api/v1/embed
-    pub async fn embed(
-        &self,
-        texts: &[String],
-        mrl_dim: Option<i32>,
-    ) -> AppResult<Vec<Vec<f32>>> {
+    pub async fn embed(&self, texts: &[String], mrl_dim: Option<i32>) -> AppResult<Vec<Vec<f32>>> {
         let url = format!("{}/api/v1/embed", self.base_url);
         let req = EmbedRequest {
             texts: texts.to_vec(),
@@ -217,6 +213,9 @@ mod tests {
         let parsed: HealthResponse = serde_json::from_str(json).expect("parse health");
         assert_eq!(parsed.status, "partial");
         assert_eq!(parsed.models.get("embedder"), Some(&"ready".to_string()));
-        assert_eq!(parsed.resources.get("embedding"), Some(&"ready".to_string()));
+        assert_eq!(
+            parsed.resources.get("embedding"),
+            Some(&"ready".to_string())
+        );
     }
 }

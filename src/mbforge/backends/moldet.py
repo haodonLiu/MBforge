@@ -10,7 +10,6 @@ Week 1 (P0) 引擎接口层：
 - ~/mbforge/models/MolDetv2/doc/moldet_v2_yolo11n_960_doc.pt
 - ~/mbforge/models/MolDetv2/general/moldet_v2_yolo11n_640_general.pt
 - ~/mbforge/models/MolScribe/swin_base_char_aux_1m680k.pth
-- ~/mbforge/models/MolDetect/coref_best.ckpt
 """
 
 from __future__ import annotations

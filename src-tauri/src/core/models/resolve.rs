@@ -129,11 +129,15 @@ fn check_model_snapshot(info: &ResourceInfo) -> ResourceStatusResult {
             // `get_molscribe_path` / `resolve_model_for_backend(..., subpath=)` 约定一致：
             // 读 dir + 自己拼 subpath 定位子文件。
             let mut result = mk_ready(info, &dest, total_size).with_expected(expected.to_string_lossy().to_string());
-            result.subfiles = subfiles;
+            if info.files.len() > 1 {
+                result.subfiles = subfiles;
+            }
             return result;
         }
         let mut result = not_found_with_expected(info, &expected);
-        result.subfiles = subfiles;
+        if info.files.len() > 1 {
+            result.subfiles = subfiles;
+        }
         return result;
     }
 
@@ -248,7 +252,18 @@ fn check_python_package(info: &ResourceInfo) -> ResourceStatusResult {
                 subfiles: Vec::new(),
             }
         }
-        _ => not_found_with_expected(info, &expected_path_for(info)),
+        _ => ResourceStatusResult {
+            id: info.id.to_string(),
+            name: info.name.to_string(),
+            resource_type: info.resource_type.clone(),
+            status: ResourceStatus::NotFound,
+            local_path: String::new(),
+            size_mb: 0.0,
+            version: String::new(),
+            error: String::new(),
+            expected_path: String::new(),
+            subfiles: Vec::new(),
+        },
     }
 }
 
@@ -481,16 +496,6 @@ mod tests {
             "应指向具体 .pth 文件: {}", s.expected_path);
         // 单文件资源 subfiles 应为空（UI 走单文件卡布局）
         assert!(s.subfiles.is_empty(), "molscribe 是单文件，不应有 subfiles");
-    }
-
-    #[test]
-    fn moldet_coref_layout() {
-        let s = assert_not_found_with_path("moldet_coref");
-        assert!(s.expected_path.contains("polyai"));
-        assert!(s.expected_path.contains("MolDetect"));
-        assert!(s.expected_path.ends_with("coref_best.ckpt"),
-            "应指向 coref_best.ckpt: {}", s.expected_path);
-        assert!(s.subfiles.is_empty());
     }
 
     #[test]

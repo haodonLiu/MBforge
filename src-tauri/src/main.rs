@@ -7,7 +7,6 @@ mod parsers;
 mod protocol;
 mod sidecar;
 
-use commands::agent::AgentState;
 use commands::mol_engine::MoleculeEngineState;
 use core::document::ingest_worker::{IngestWorker, IngestWorkerState};
 
@@ -71,7 +70,6 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .register_asynchronous_uri_scheme_protocol("mbforge", protocol::handle_mbforge_request)
-        .manage(AgentState::new())
         .manage(MoleculeEngineState::new())
         .manage(IngestWorkerState::default())
         .manage(crate::core::project::resource_manager::DownloadManagerState::default())

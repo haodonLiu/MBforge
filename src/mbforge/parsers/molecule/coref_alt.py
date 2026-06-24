@@ -11,18 +11,34 @@
 - 标识符检测从训练模型 → 启发式过滤（精度略降，速度显著提升）
 - 配对逻辑一致：归一化距离 + 水平权重 + 置信度优先
 """
-
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from PIL import Image
 
-from mbforge.backends.moldet_coref import CorefBbox, CorefResult
 from mbforge.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+# ---- 数据类型（moldet_coref 移除后唯一来源） ----
+
+@dataclass
+class CorefBbox:
+    category_id: int                # 1=分子, 3=标识符
+    bbox: tuple[float, float, float, float]
+    smiles: str | None = None
+    text: str | None = None
+    score: float = 0.0
+
+
+@dataclass
+class CorefResult:
+    bboxes: list[CorefBbox]
+    corefs: list[tuple[int, int]]    # [(mol_idx, idt_idx), ...]
 
 # 段落文本特征词（不应作为 identifier）
 _COMMON_WORDS: frozenset[str] = frozenset({
@@ -225,3 +241,82 @@ def detect_coref_via_moldet_ocr(
         len(mol_indices), len(idt_indices), len(corefs),
     )
     return CorefResult(bboxes=bboxes, corefs=corefs)
+
+
+# ---- RapidOCR 适配器（独占：原 moldet_coref.py 内的 _RapidOCRAdapter） ----
+
+class _RapidOCRAdapter:
+    """适配 RapidOCR 3.x 输出到 EasyOCR 兼容的 `readtext(image, detail=0|1)` 接口。
+
+    RapidOCR 3.x API 是 `engine(image) -> RapidOCROutput`，属性 `.txts/.scores/.boxes`。
+    使用 PP-OCRv6 en medium（det+rec，~35MB），首启会从 venv 加载已下载的模型。
+    """
+
+    def __init__(self) -> None:
+        from rapidocr import RapidOCR, EngineType, LangDet, LangRec, ModelType, OCRVersion
+        self._engine = RapidOCR(
+            params={
+                "Det.engine_type": EngineType.ONNXRUNTIME,
+                "Det.lang_type": LangDet.EN,
+                "Det.model_type": ModelType.MEDIUM,
+                "Det.ocr_version": OCRVersion.PPOCRV6,
+                "Det.use_dml": True,
+                "Rec.engine_type": EngineType.ONNXRUNTIME,
+                "Rec.lang_type": LangRec.EN,
+                "Rec.model_type": ModelType.MEDIUM,
+                "Rec.ocr_version": OCRVersion.PPOCRV6,
+                "Rec.use_dml": True,
+            }
+        )
+
+    def readtext(self, image: Any, detail: int = 0) -> list:
+        import numpy as np
+        if hasattr(image, "convert"):
+            arr = np.array(image.convert("RGB"))
+        else:
+            arr = image
+        out = self._engine(arr)
+        if out is None or not getattr(out, "txts", None):
+            return []
+        txts = [t for t in out.txts if t]
+        if detail == 0:
+            return txts
+        return list(zip(out.boxes.tolist(), txts, list(out.scores)))
+
+
+# ---- Rust 侧 JSON 序列化（vlm_chem.rs 期望格式） ----
+
+def coref_to_rust_dict(result: CorefResult) -> dict[str, Any]:
+    """把 CorefResult 序列化为 vlm_chem.rs 期望的 JSON 结构。
+
+    Rust 侧（vlm_chem.rs:detect_coref）解析：
+      bboxes[*]: {category_id, bbox[4], smiles?, molfile?, text?, score}
+      corefs[*]: [mol_idx, idt_idx]  (嵌套数组)
+    """
+    return {
+        "bboxes": [
+            {
+                "category_id": b.category_id,
+                "bbox": list(b.bbox),
+                "smiles": b.smiles,
+                "molfile": None,
+                "text": b.text,
+                "score": b.score,
+            }
+            for b in result.bboxes
+        ],
+        "corefs": [list(pair) for pair in result.corefs],
+    }
+
+
+# ---- 单例便捷访问（从 server.py 调用） ----
+
+_ocr_singleton: _RapidOCRAdapter | None = None
+
+
+def get_rapid_ocr() -> _RapidOCRAdapter:
+    """获取全局 RapidOCR 适配器单例。"""
+    global _ocr_singleton
+    if _ocr_singleton is None:
+        _ocr_singleton = _RapidOCRAdapter()
+    return _ocr_singleton

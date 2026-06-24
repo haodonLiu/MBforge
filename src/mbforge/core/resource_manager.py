@@ -212,18 +212,6 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         allow_patterns=["*.pth", "*.safetensors", "*.json", "*.txt", "tokenizer*", "vocab*"],
         files=["swin_base_char_aux_1m680k.pth"],
     ),
-    "moldet_coref": ResourceInfo(
-        id="moldet_coref",
-        name="MolDetect Coref",
-        type=ResourceType.MODEL,
-        description="MolDetect 分子-标号共指消解模型",
-        size_mb=200,
-        license="Apache-2.0",
-        ms_repo="studio-test/MolDetectCkpt",
-        download_type="snapshot",
-        local_name="MolDetectCkpt",
-        allow_patterns=["*.ckpt", "*.pt", "*.pth", "*.json", "*.txt"],
-    ),
     # ──── Python 包（清华源）────
     "rdkit": ResourceInfo(
         id="rdkit",
@@ -828,7 +816,7 @@ class ResourceManager:
     def resolve_model_for_backend(cls, resource_id: str, subpath: str | None = None) -> Path | None:
         """后端统一入口：解析模型路径，找不到返回 None.
 
-        所有 Python 后端（moldet、moldet_coref、molscribe）应使用此方法
+        所有 Python 后端（moldet、molscribe）应使用此方法
         而非自行实现路径搜索逻辑。
         返回值：
         - snapshot 类型：返回包含权重文件的目录

@@ -2,18 +2,27 @@
 
 两个后端都是 transformers-based，都走"从本地路径加载 + 错误捕获"流程。
 合并后共享 LazyBackend 骨架，每个子模块只实现 _load_impl / inference。
+
+Embedding 走 Provider 抽象层（Phase 2）：支持本地 SentenceTransformer
+和外部 OpenAI 兼容 API（如阿里云百炼 / OpenAI / OpenRouter / DeepSeek），
+通过 EmbedConfig.provider 切换。
 """
 # ruff: noqa: E402  （import 顺序略）
 
 from __future__ import annotations
 
+import os
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
+import httpx
 import torch
+from openai import OpenAI
 from sentence_transformers import SentenceTransformer
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer
 
+from ..utils.config import load_global_config
 from ..utils.constants import (
     DEFAULT_EMBED_MODEL,
     DEFAULT_RERANK_MODEL,
@@ -23,7 +32,6 @@ from ..utils.helpers import get_default_device
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
-
 
 def _check_local_path(name: str, model_id: str) -> Path:
     """解析本地路径；不存在时抛 FileNotFoundError（被 LazyBackend.load 捕获）。
@@ -79,47 +87,265 @@ class LazyBackend:
 
 
 # ---------------------------------------------------------------------------
-# Embedding
+# Embedding Provider 抽象层
 # ---------------------------------------------------------------------------
 
-class EmbedBackend(LazyBackend):
-    _DIM: int | None = None
-    _DEVICE: str = get_default_device()
-    _MRL_DIM: int | None = None
-    _INSTRUCTION: str = EMBED_INSTRUCTION_RETRIEVAL
 
-    @classmethod
-    def _load_impl(cls, device, mrl_dim=None, instruction=None, **_):
-        cls._DEVICE = device or cls._DEVICE
-        cls._MRL_DIM = mrl_dim
-        cls._INSTRUCTION = instruction or EMBED_INSTRUCTION_RETRIEVAL
-        path = _check_local_path("Qwen3-Embedding", DEFAULT_EMBED_MODEL)
-        logger.info("Loading Qwen3-Embedding: %s (device=%s)", path, cls._DEVICE)
-        model = SentenceTransformer(str(path), device=cls._DEVICE, trust_remote_code=True)
-        full_dim = model.get_embedding_dimension()
-        cls._DIM = cls._MRL_DIM if (cls._MRL_DIM and full_dim > cls._MRL_DIM) else full_dim
-        logger.info("Model loaded. Full dim=%d, output dim=%d", full_dim, cls._DIM)
-        return model
+class EmbeddingProvider(ABC):
+    """Embedding 后端抽象接口。
 
-    @classmethod
-    def embed(cls, texts: list[str], mrl_dim: int | None = None) -> list[list[float]]:
-        if cls._MODEL is None:
-            cls.load()
-        if cls._MODEL is None:
-            err = cls._ERROR or "model failed to load (unknown reason)"
-            raise RuntimeError(f"Qwen3-Embedding not available: {err}")
-        prefixed = [f"{cls._INSTRUCTION}\n{t}" for t in texts]
-        embeddings = cls._MODEL.encode(
+    实现类：
+    - LocalSentenceTransformerProvider：本地 SentenceTransformer + PyTorch
+    - OpenAICompatibleProvider：外部 OpenAI 兼容 API（百炼 / OpenAI / OpenRouter / DeepSeek）
+
+    设计要点：
+    - 统一接口（embed / health）让 EmbedBackend 不知道具体后端
+    - load() / unload() 负责资源生命周期
+    - 返回 list[list[float]] 与原 SentenceTransformer 行为一致（numpy → list）
+    """
+
+    @abstractmethod
+    def load(self) -> None:
+        ...
+
+    @abstractmethod
+    def embed(self, texts: list[str], mrl_dim: int | None = None) -> list[list[float]]:
+        ...
+
+    @abstractmethod
+    def unload(self) -> None:
+        ...
+
+    @abstractmethod
+    def health(self) -> dict[str, str]:
+        ...
+
+    @abstractmethod
+    def dim(self) -> int:
+        ...
+
+
+class LocalSentenceTransformerProvider(EmbeddingProvider):
+    """本地 SentenceTransformer + PyTorch（默认 provider）。"""
+
+    def __init__(
+        self,
+        model_name: str,
+        device: str,
+        instruction: str,
+    ) -> None:
+        self._model_name = model_name
+        self._device = device
+        self._instruction = instruction
+        self._model: SentenceTransformer | None = None
+        self._full_dim: int = 0
+        self._error: str = ""
+
+    def load(self) -> None:
+        path = _check_local_path("Qwen3-Embedding", self._model_name)
+        logger.info(
+            "Loading Qwen3-Embedding (local): %s (device=%s)", path, self._device
+        )
+        self._model = SentenceTransformer(
+            str(path), device=self._device, trust_remote_code=True
+        )
+        self._full_dim = self._model.get_embedding_dimension()
+
+    def embed(
+        self, texts: list[str], mrl_dim: int | None = None
+    ) -> list[list[float]]:
+        if self._model is None:
+            raise RuntimeError(f"Local embedder not available: {self._error}")
+        prefixed = [f"{self._instruction}\n{t}" for t in texts]
+        embeddings = self._model.encode(
             prefixed,
             normalize_embeddings=True,
             show_progress_bar=False,
             convert_to_numpy=True,
         )
-        target_dim = mrl_dim if mrl_dim is not None else cls._MRL_DIM
-        if target_dim and embeddings.shape[1] > target_dim:
-            embeddings = embeddings[:, :target_dim]
+        target = mrl_dim if mrl_dim is not None else None
+        if target and embeddings.shape[1] > target:
+            embeddings = embeddings[:, :target]
         return embeddings.tolist()
 
+    def unload(self) -> None:
+        self._model = None
+        self._error = ""
+
+    def health(self) -> dict[str, str]:
+        if self._model is not None:
+            return {"status": "ready"}
+        return {"status": "error" if self._error else "loading", "error": self._error}
+
+    def dim(self) -> int:
+        return self._full_dim
+
+
+class OpenAICompatibleProvider(EmbeddingProvider):
+    """外部 OpenAI 兼容 Embedding API（阿里云百炼 / OpenAI / OpenRouter / DeepSeek）。
+
+    调用路径：POST {base_url}/embeddings（OpenAI 兼容）
+    Auth：Authorization: Bearer {api_key}
+    Body: {"model": ..., "input": [...]}
+    Response: {"data": [{"embedding": [...]}, ...], "usage": {...}}
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._api_key = api_key
+        self._model = model
+        self._client: OpenAI | None = None
+        self._dim: int = 0
+        self._error: str = ""
+
+    def load(self) -> None:
+        if not self._api_key:
+            raise ValueError(
+                f"provider=openai_compatible but api_key is empty; set {self._model}'s api_key in Settings"
+            )
+        if not self._base_url:
+            raise ValueError(
+                f"provider=openai_compatible but base_url is empty; configure {self._model}'s base_url in Settings"
+            )
+        logger.info(
+            "Loading Embedding (openai_compatible): model=%s base_url=%s",
+            self._model,
+            self._base_url,
+        )
+        # OpenAI 客户端创建很轻（懒连接）；首次 embed 才发请求
+        self._client = OpenAI(api_key=self._api_key, base_url=self._base_url)
+        # 探测维度：发 1 个最小请求取 response.data[0].embedding 长度
+        try:
+            resp = self._client.embeddings.create(
+                model=self._model, input=["health probe"]
+            )
+            self._dim = len(resp.data[0].embedding)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Embedding probe failed: model={self._model} base_url={self._base_url}: {exc}"
+            ) from exc
+
+    def embed(
+        self, texts: list[str], mrl_dim: int | None = None
+    ) -> list[list[float]]:
+        if self._client is None:
+            raise RuntimeError(
+                f"openai_compatible embedder not available: {self._error}"
+            )
+        if not texts:
+            return []
+        # OpenAI 兼容接口支持 str 或 list[str]；batch 整批传更高效
+        resp = self._client.embeddings.create(
+            model=self._model,
+            input=texts,
+        )
+        # resp.data 按 index 排序；保险起见显式 sort
+        vectors = [item.embedding for item in sorted(resp.data, key=lambda d: d.index)]
+        # MRL 维度截断（与本地 provider 行为一致）
+        if mrl_dim and len(vectors[0]) > mrl_dim:
+            vectors = [v[:mrl_dim] for v in vectors]
+        return vectors
+
+    def unload(self) -> None:
+        self._client = None
+        self._error = ""
+
+    def health(self) -> dict[str, str]:
+        if self._client is not None:
+            return {"status": "ready"}
+        return {"status": "error" if self._error else "loading", "error": self._error}
+
+    def dim(self) -> int:
+        return self._dim
+
+
+# ---------------------------------------------------------------------------
+# Embedding
+# ---------------------------------------------------------------------------
+
+def _build_embed_provider() -> EmbeddingProvider:
+    """根据 EmbedConfig 构造对应的 provider。
+
+    选择规则：
+    1. provider == "openai_compatible" 且 api_key 非空 → OpenAICompatibleProvider
+    2. 否则（默认）→ LocalSentenceTransformerProvider
+
+    配置读取来源（按优先级）：
+    1. load_global_config().embed（用户从 settings UI 设置的）
+    2. 环境变量 MBFORGE_EMBED_*（fallback）
+    """
+    cfg = load_global_config().embed
+    provider_name = (cfg.provider or "qwen3").lower()
+    api_key = cfg.api_key or os.environ.get("MBFORGE_EMBED_API_KEY", "")
+    base_url = cfg.base_url or os.environ.get("MBFORGE_EMBED_BASE_URL", "")
+
+    if provider_name == "openai_compatible" and api_key:
+        return OpenAICompatibleProvider(
+            base_url=base_url
+            or "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            api_key=api_key,
+            model=cfg.model_name or "text-embedding-v4",
+        )
+
+    # 默认：本地 SentenceTransformer
+    return LocalSentenceTransformerProvider(
+        model_name=cfg.model_name or DEFAULT_EMBED_MODEL,
+        device=cfg.device or get_default_device(),
+        instruction=cfg.instruction or EMBED_INSTRUCTION_RETRIEVAL,
+    )
+
+
+class EmbedBackend(LazyBackend):
+    _PROVIDER: EmbeddingProvider | None = None
+    _DIM: int | None = None
+    _MRL_DIM: int | None = None
+
+    @classmethod
+    def _load_impl(cls, provider=None, mrl_dim=None, **_):
+        """加载 embedding 后端。
+
+        参数 provider 是 EmbeddingProvider 实例（用于测试时注入 mock），
+        生产路径从 _build_embed_provider() 读取。
+        """
+        cls._PROVIDER = provider or _build_embed_provider()
+        cls._PROVIDER.load()
+        cls._DIM = cls._PROVIDER.dim()
+        cls._MRL_DIM = mrl_dim
+        full_dim = cls._DIM or 0
+        if mrl_dim and full_dim > mrl_dim:
+            full_dim = mrl_dim
+        logger.info("Embedding loaded. effective dim=%d", full_dim)
+        return cls._PROVIDER
+
+    @classmethod
+    def embed(cls, texts: list[str], mrl_dim: int | None = None) -> list[list[float]]:
+        if cls._PROVIDER is None:
+            cls.load()
+        if cls._PROVIDER is None:
+            err = cls._ERROR or "model failed to load (unknown reason)"
+            raise RuntimeError(f"Embedding not available: {err}")
+        target_dim = mrl_dim if mrl_dim is not None else cls._MRL_DIM
+        return cls._PROVIDER.embed(texts, mrl_dim=target_dim)
+
+    @classmethod
+    def unload(cls) -> None:
+        if cls._PROVIDER is not None:
+            cls._PROVIDER.unload()
+        cls._PROVIDER = None
+        cls._DIM = None
+        cls._MRL_DIM = None
+        cls._ERROR = ""
+
+    @classmethod
+    def health(cls) -> dict[str, str]:
+        if cls._PROVIDER is not None:
+            return cls._PROVIDER.health()
+        return {"status": "error" if cls._ERROR else "loading", "error": cls._ERROR}
 
 # ---------------------------------------------------------------------------
 # Reranking
@@ -142,6 +368,11 @@ class RerankBackend(LazyBackend):
     _SUFFIX_TOKENS: list[int] | None = None
     _TOKEN_TRUE_ID: int | None = None
     _TOKEN_FALSE_ID: int | None = None
+    # 缓存 embed_tokens.weight 用于手动取 yes/no token 的 logits。
+    # 用 AutoModel（无 head）替代 AutoModelForCausalLM：
+    #   - 避免 tie_word_embeddings=true 触发 "lm_head.weight MISSING" 警告
+    #   - 节省 ~600MB 显存（vocab_size × hidden × 4 bytes 未使用权重）
+    _EMBED_WEIGHT: torch.Tensor | None = None
 
     @classmethod
     def _load_impl(cls, device, max_length=8192, **_):
@@ -153,16 +384,16 @@ class RerankBackend(LazyBackend):
             path, padding_side="left", trust_remote_code=True
         )
         # device_map 避免 meta tensor → .to() 失败；torch_dtype=fp32 避免 bf16/fp32 matmul 不匹配
-        device_map = cls._DEVICE if cls._DEVICE in ("cpu", "cuda", "cuda:0", "mps") else "auto"
-        cls._MODEL = AutoModelForCausalLM.from_pretrained(
+        device_map = cls._DEVICE if cls._DEVICE in ("cpu", "cuda", "cuda:0", "cuda:1", "mps") else "auto"
+        cls._MODEL = AutoModel.from_pretrained(
             path,
             trust_remote_code=True,
-            # tie_word_embeddings=true 触发，ignore_mismatched_sizes 抑制 MISSING 报告
-            ignore_mismatched_sizes=True,
             device_map=device_map,
             torch_dtype=torch.float32,
         )
         cls._MODEL.eval()
+        # 缓存 token embedding 当作手动 lm_head（tie_word_embeddings=true 时两者权重相同）
+        cls._EMBED_WEIGHT = cls._MODEL.get_input_embeddings().weight
         cls._TOKEN_TRUE_ID = cls._TOKENIZER.convert_tokens_to_ids("yes")
         cls._TOKEN_FALSE_ID = cls._TOKENIZER.convert_tokens_to_ids("no")
         cls._PREFIX_TOKENS = cls._TOKENIZER.encode(_PREFIX, add_special_tokens=False)
@@ -177,6 +408,7 @@ class RerankBackend(LazyBackend):
         cls._SUFFIX_TOKENS = None
         cls._TOKEN_TRUE_ID = None
         cls._TOKEN_FALSE_ID = None
+        cls._EMBED_WEIGHT = None
 
     @classmethod
     def rerank(cls, query: str, passages: list[str]) -> list[tuple[int, float]]:
@@ -205,7 +437,10 @@ class RerankBackend(LazyBackend):
             inputs[key] = inputs[key].to(cls._DEVICE)
         with torch.no_grad():
             outputs = cls._MODEL(**inputs)
-            logits = outputs.logits[:, -1, :]
+            # 手动构造 lm_head：last_hidden_state @ embed_tokens.T
+            # tie_word_embeddings=true 时两者权重相同，结果与原 AutoModelForCausalLM 一致
+            hidden = outputs.last_hidden_state[:, -1, :]
+            logits = hidden @ cls._EMBED_WEIGHT.T  # [batch, vocab]
             false_vec = logits[:, cls._TOKEN_FALSE_ID]
             true_vec = logits[:, cls._TOKEN_TRUE_ID]
             scores = torch.stack([false_vec, true_vec], dim=1)
@@ -239,7 +474,7 @@ def unload() -> None:
 
 
 def health() -> dict[str, str]:
-    if EmbedBackend._MODEL is not None:
+    if EmbedBackend._PROVIDER is not None:
         return EmbedBackend.health()
     return RerankBackend.health()
 

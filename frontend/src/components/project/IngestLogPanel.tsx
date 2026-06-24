@@ -7,7 +7,7 @@ interface IngestLogPanelProps {
 
 function formatTime(tsMs: number): string {
   const d = new Date(tsMs)
-  return d.toLocaleTimeString('zh-CN', { hour12: false })
+  return d.toLocaleTimeString([], { hour12: false })
 }
 
 function levelClass(level: string): string {

@@ -29,10 +29,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"
 futures = "0.3"
 base64 = "0.22"
 dashmap = "6"
-grep-searcher = "0.1"
-grep-regex = "0.1"
-ignore = "0.4"
-globset = "0.4"
 zip = "0.6"
 image = "0.25"
 pulldown-cmark = { version = "0.12", default-features = false }
@@ -54,11 +50,9 @@ chematic-chem = { git = "https://github.com/kent-tokyo/chematic", rev = "2702636
 # client, tool dispatch, and streaming. Pinned to 0.38.x (latest as of 2026-06).
 # The `derive` feature brings in `rig-derive` for the `#[rig_tool]` proc macro.
 rig-core = { version = "0.38", features = ["derive", "reqwest", "rustls"] }
-rig-derive = "0.38"
 
 # Schemars is re-exported from rig-core but we need it as a direct dep
 # so the JsonSchema derive works on our tool Args structs.
-schemars = "1.0"
 
 [dev-dependencies]
 mockito = "1.5"

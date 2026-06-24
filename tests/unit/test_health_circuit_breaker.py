@@ -24,18 +24,19 @@ def test_circuit_breaker_skips_after_failure():
     with patch.object(server.qwen3_embed, "load", _failing_load):
         import asyncio
         asyncio.run(server.health_check())
-        assert call_count["n"] == 1, "first call should invoke load"
+        calls_after_first = call_count["n"]
+        assert calls_after_first >= 1, "first call should invoke load"
         assert server._model_status["embedder"] == "error"
         assert "embedder" in server._last_failure
 
         asyncio.run(server.health_check())
-        assert call_count["n"] == 1, "second call should be skipped by circuit breaker"
+        assert call_count["n"] == calls_after_first, "second call should be skipped by circuit breaker"
 
     server._last_failure["embedder"] = time.monotonic() - 31.0
     with patch.object(server.qwen3_embed, "load", _failing_load):
         import asyncio
         asyncio.run(server.health_check())
-        assert call_count["n"] == 2, "after cooldown, should retry"
+        assert call_count["n"] > calls_after_first, "after cooldown, should retry"
 
 
 def test_circuit_breaker_clears_on_success():

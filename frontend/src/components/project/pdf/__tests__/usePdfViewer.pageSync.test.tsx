@@ -4,10 +4,10 @@ import { usePdfViewer } from '../usePdfViewer'
 import type { DocumentEntry } from '../../../../types'
 
 const mockConvertFileSrc = vi.fn()
-const mockCachedExtractPage = vi.fn()
-const mockGetCachedPageDetections = vi.fn()
-const mockClearDetectionCacheForDoc = vi.fn()
-const mockParsePdf = vi.fn()
+const mockDetectPageMolecules = vi.fn()
+const mockGetCachedDetections = vi.fn()
+const mockClearDocumentDetections = vi.fn()
+const mockExtractPdfImages = vi.fn()
 const mockGetDocumentOcrLayout = vi.fn()
 const mockShowToast = vi.fn()
 
@@ -15,14 +15,14 @@ vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: (...args: unknown[]) => mockConvertFileSrc(...args),
 }))
 
-vi.mock('../../../../api/tauri/detection_cache', () => ({
-  cachedExtractPage: (...args: unknown[]) => mockCachedExtractPage(...args),
-  getCachedPageDetections: (...args: unknown[]) => mockGetCachedPageDetections(...args),
-  clearDetectionCacheForDoc: (...args: unknown[]) => mockClearDetectionCacheForDoc(...args),
+vi.mock('../../../../services/pdfService', () => ({
+  detectPageMolecules: (...args: unknown[]) => mockDetectPageMolecules(...args),
+  getCachedDetections: (...args: unknown[]) => mockGetCachedDetections(...args),
+  clearDocumentDetections: (...args: unknown[]) => mockClearDocumentDetections(...args),
+  extractPdfImages: (...args: unknown[]) => mockExtractPdfImages(...args),
 }))
 
 vi.mock('../../../../api/tauri/pdf', () => ({
-  parsePdf: (...args: unknown[]) => mockParsePdf(...args),
   getDocumentOcrLayout: (...args: unknown[]) => mockGetDocumentOcrLayout(...args),
 }))
 
@@ -45,10 +45,11 @@ describe('usePdfViewer page synchronization', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockConvertFileSrc.mockReturnValue('mock://pdf')
-    mockGetCachedPageDetections.mockResolvedValue({ results: [], count: 0, source: 'cache_miss' })
-    mockCachedExtractPage.mockResolvedValue({ results: [], count: 0, source: 'sidecar' })
-    mockParsePdf.mockResolvedValue({ images: [] })
+    mockGetCachedDetections.mockResolvedValue({ success: true, data: { results: [], count: 0, source: 'cache_miss' } })
+    mockDetectPageMolecules.mockResolvedValue({ success: true, data: { results: [], count: 0, source: 'sidecar' } })
+    mockExtractPdfImages.mockResolvedValue({ success: true, data: [] })
     mockGetDocumentOcrLayout.mockResolvedValue({ blocks: [] })
+    mockClearDocumentDetections.mockResolvedValue({ success: true })
   })
 
   it('ignores page rendered callback for a stale page', () => {
@@ -136,15 +137,13 @@ describe('usePdfViewer page synchronization', () => {
   })
 
   it('force detection bypasses cache lookup and calls sidecar', async () => {
-    mockGetCachedPageDetections.mockResolvedValue({
-      results: [{ esmiles: 'cached' }],
-      count: 1,
-      source: 'cache',
+    mockGetCachedDetections.mockResolvedValue({
+      success: true,
+      data: { results: [{ esmiles: 'cached' }], count: 1, source: 'cache' },
     })
-    mockCachedExtractPage.mockResolvedValue({
-      results: [{ esmiles: 'forced' }],
-      count: 1,
-      source: 'sidecar',
+    mockDetectPageMolecules.mockResolvedValue({
+      success: true,
+      data: { results: [{ esmiles: 'forced' }], count: 1, source: 'sidecar' },
     })
 
     // Use read mode to avoid auto-trigger effect.
@@ -166,18 +165,16 @@ describe('usePdfViewer page synchronization', () => {
       await result.current.handleDetectPage(true)
     })
 
-    expect(mockGetCachedPageDetections).not.toHaveBeenCalled()
-    expect(mockCachedExtractPage).toHaveBeenCalledWith(expect.objectContaining({ force: true }))
+    expect(mockGetCachedDetections).not.toHaveBeenCalled()
+    expect(mockDetectPageMolecules).toHaveBeenCalledWith(expect.objectContaining({ force: true }))
     expect(result.current.currentDetections.length).toBe(1)
   })
 
   it('clearing detection cache removes all cached pages', async () => {
-    mockCachedExtractPage.mockResolvedValue({
-      results: [{ esmiles: 'C' }],
-      count: 1,
-      source: 'sidecar',
+    mockDetectPageMolecules.mockResolvedValue({
+      success: true,
+      data: { results: [{ esmiles: 'C' }], count: 1, source: 'sidecar' },
     })
-    mockClearDetectionCacheForDoc.mockResolvedValue(undefined)
 
     // Use read mode to avoid auto-trigger effect repopulating after clear.
     const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project', 'read'))
@@ -204,7 +201,7 @@ describe('usePdfViewer page synchronization', () => {
       await result.current.handleClearDetectionCache()
     })
 
-    expect(mockClearDetectionCacheForDoc).toHaveBeenCalledWith('/project', 'doc-1')
+    expect(mockClearDocumentDetections).toHaveBeenCalledWith('/project', 'doc-1')
     expect(result.current.currentDetections.length).toBe(0)
     expect(result.current.selectedDetection).toBeNull()
   })

@@ -20,8 +20,6 @@ _MODEL_NAME_TO_RESOURCE_ID = {
     "MolDetv2": "moldet",
     "moldetv2": "moldet",
     "MolScribe": "molscribe",
-    "moldetect-coref": "moldet_coref",
-    "MolDetectCkpt": "moldet_coref",
 }
 
 

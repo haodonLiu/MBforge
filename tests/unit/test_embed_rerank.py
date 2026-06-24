@@ -1,6 +1,7 @@
 """Embedding + Reranker 集成测试 — 验证模型加载和推理."""
 
 import time
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -154,3 +155,135 @@ class TestEmbedRerankIntegration:
         assert len(reranked) == 3
         best_score = reranked[0][1]
         assert best_score > 0.5
+
+
+# ---------------------------------------------------------------------------
+# OpenAI 兼容 Provider 单元测试
+# ---------------------------------------------------------------------------
+
+class TestOpenAICompatibleProvider:
+    """OpenAI 兼容 Provider 单元测试（构造 + 错误路径，不发真实网络请求）."""
+
+    def test_construct(self):
+        from mbforge.backends.qwen3 import OpenAICompatibleProvider
+        p = OpenAICompatibleProvider(
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "sk-test", "text-embedding-v4",
+        )
+        assert p._base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        assert p._api_key == "sk-test"
+        assert p._model == "text-embedding-v4"
+        assert p._client is None
+        assert p._dim == 0
+
+    def test_load_requires_api_key(self):
+        from mbforge.backends.qwen3 import OpenAICompatibleProvider
+        p = OpenAICompatibleProvider("https://example.com", "", "model")
+        with pytest.raises(ValueError, match="api_key is empty"):
+            p.load()
+
+    def test_load_requires_base_url(self):
+        from mbforge.backends.qwen3 import OpenAICompatibleProvider
+        p = OpenAICompatibleProvider("", "sk-test", "model")
+        with pytest.raises(ValueError, match="base_url is empty"):
+            p.load()
+
+    def test_health_unloaded(self):
+        from mbforge.backends.qwen3 import OpenAICompatibleProvider
+        p = OpenAICompatibleProvider("https://example.com", "k", "m")
+        h = p.health()
+        assert h["status"] == "loading"
+
+    def test_health_loaded(self):
+        from mbforge.backends.qwen3 import OpenAICompatibleProvider
+        p = OpenAICompatibleProvider("https://example.com", "k", "m")
+        p._client = MagicMock()
+        assert p.health()["status"] == "ready"
+
+    def test_unload_clears_state(self):
+        from mbforge.backends.qwen3 import OpenAICompatibleProvider
+        p = OpenAICompatibleProvider("https://example.com", "k", "m")
+        p._client = MagicMock()
+        p._error = "test"
+        p.unload()
+        assert p._client is None
+        assert p._error == ""
+
+    def test_embed_empty_returns_empty(self):
+        from mbforge.backends.qwen3 import OpenAICompatibleProvider
+        p = OpenAICompatibleProvider("https://example.com", "k", "m")
+        p._client = MagicMock()
+        assert p.embed([]) == []
+
+    def test_embed_calls_client_and_sorts(self):
+        """embed() 调用 OpenAI client，按 index 排序后返回."""
+        from mbforge.backends.qwen3 import OpenAICompatibleProvider
+        p = OpenAICompatibleProvider("https://example.com", "k", "m")
+        p._client = MagicMock()
+        resp = MagicMock()
+        resp.data = [
+            MagicMock(index=1, embedding=[0.2, 0.2]),
+            MagicMock(index=0, embedding=[0.1, 0.1]),
+        ]
+        p._client.embeddings.create = MagicMock(return_value=resp)
+        result = p.embed(["a", "b"])
+        p._client.embeddings.create.assert_called_once_with(
+            model="m", input=["a", "b"]
+        )
+        assert result == [[0.1, 0.1], [0.2, 0.2]]
+
+    def test_embed_mrl_dim_truncates(self):
+        from mbforge.backends.qwen3 import OpenAICompatibleProvider
+        p = OpenAICompatibleProvider("https://example.com", "k", "m")
+        p._client = MagicMock()
+        resp = MagicMock()
+        resp.data = [MagicMock(index=0, embedding=[0.1, 0.2, 0.3, 0.4])]
+        p._client.embeddings.create = MagicMock(return_value=resp)
+        result = p.embed(["a"], mrl_dim=2)
+        assert result == [[0.1, 0.2]]
+
+    def test_build_provider_falls_back_to_local_when_no_apikey(self):
+        """provider=openai_compatible 但 api_key 为空 → 强制走本地."""
+        from mbforge.backends.qwen3 import _build_embed_provider, LocalSentenceTransformerProvider
+        from unittest.mock import patch
+        mock_cfg = MagicMock()
+        mock_cfg.embed.provider = "openai_compatible"
+        mock_cfg.embed.api_key = ""
+        mock_cfg.embed.base_url = "https://x"
+        mock_cfg.embed.model_name = "Qwen/Qwen3-Embedding-0.6B"
+        mock_cfg.embed.device = "cpu"
+        mock_cfg.embed.instruction = "instruct"
+        with patch("mbforge.backends.qwen3.load_global_config", return_value=mock_cfg):
+            with patch.dict("os.environ", {}, clear=True):
+                p = _build_embed_provider()
+        assert isinstance(p, LocalSentenceTransformerProvider)
+
+    def test_build_provider_uses_external_when_apikey_set(self):
+        """provider=openai_compatible + api_key → 外部 provider."""
+        from mbforge.backends.qwen3 import _build_embed_provider, OpenAICompatibleProvider
+        from unittest.mock import patch
+        mock_cfg = MagicMock()
+        mock_cfg.embed.provider = "openai_compatible"
+        mock_cfg.embed.api_key = "sk-real"
+        mock_cfg.embed.base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        mock_cfg.embed.model_name = "text-embedding-v4"
+        with patch("mbforge.backends.qwen3.load_global_config", return_value=mock_cfg):
+            p = _build_embed_provider()
+        assert isinstance(p, OpenAICompatibleProvider)
+        assert p._model == "text-embedding-v4"
+        assert p._api_key == "sk-real"
+
+    def test_build_provider_default_is_local(self):
+        """provider='qwen3'（默认） → 走本地."""
+        from mbforge.backends.qwen3 import _build_embed_provider, LocalSentenceTransformerProvider
+        from unittest.mock import patch
+        mock_cfg = MagicMock()
+        mock_cfg.embed.provider = "qwen3"
+        mock_cfg.embed.api_key = ""
+        mock_cfg.embed.base_url = ""
+        mock_cfg.embed.model_name = "Qwen/Qwen3-Embedding-0.6B"
+        mock_cfg.embed.device = "cpu"
+        mock_cfg.embed.instruction = "instruct"
+        with patch("mbforge.backends.qwen3.load_global_config", return_value=mock_cfg):
+            p = _build_embed_provider()
+        assert isinstance(p, LocalSentenceTransformerProvider)

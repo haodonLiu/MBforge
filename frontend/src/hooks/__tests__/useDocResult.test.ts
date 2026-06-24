@@ -35,7 +35,7 @@ describe('useDocResult', () => {
     expect(mockListen).toHaveBeenCalledWith(EVT.DocResult, expect.any(Function))
   })
 
-  it('extracts lit_reviewed and lit_decision_summary on event', async () => {
+  it('extracts lit_reviewed and lit_decision_summary on event', () => {
     let capturedHandler: ((event: { payload: DocumentReport }) => void) | null = null
     mockListen.mockImplementation((eventName: string, handler: unknown) => {
       if (eventName === EVT.DocResult) {
@@ -66,7 +66,9 @@ describe('useDocResult', () => {
     }
 
     act(() => {
-      capturedHandler!({ payload: report })
+      if (capturedHandler) {
+        capturedHandler({ payload: report })
+      }
     })
 
     expect(result.current.report).toEqual(report)
@@ -75,7 +77,7 @@ describe('useDocResult', () => {
     expect(result.current.lastEventAt).not.toBeNull()
   })
 
-  it('handles event without lit_reviewed (default false)', async () => {
+  it('handles event without lit_reviewed (default false)', () => {
     let capturedHandler: ((event: { payload: DocumentReport }) => void) | null = null
     mockListen.mockImplementation((eventName: string, handler: unknown) => {
       if (eventName === EVT.DocResult) {
@@ -105,7 +107,9 @@ describe('useDocResult', () => {
     }
 
     act(() => {
-      capturedHandler!({ payload: report })
+      if (capturedHandler) {
+        capturedHandler({ payload: report })
+      }
     })
 
     expect(result.current.litReviewed).toBe(false)
@@ -127,7 +131,10 @@ describe('useDocResult', () => {
       await Promise.resolve()
     })
 
-    unmount()
+    await act(() => {
+      unmount()
+      return Promise.resolve()
+    })
 
     expect(unlisten).toHaveBeenCalledTimes(1)
   })

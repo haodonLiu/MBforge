@@ -840,6 +840,90 @@ impl Project {
         }
     }
 
+    /// 彻底删除文档：清理所有数据，从索引移除，并删除 DocumentProject 目录。
+    pub fn delete_document(&mut self, doc_id: &str) -> Result<(), String> {
+        let entry = self.get_document(doc_id).ok_or_else(|| {
+            format!("Document {doc_id} not found")
+        })?;
+        let source_filename = entry
+            .source_path
+            .as_deref()
+            .or_else(|| Some(entry.path.as_str()))
+            .and_then(|p| Path::new(p).file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+        let source_path = entry.source_path.clone();
+
+        Self::cleanup_document_data(
+            &self.root,
+            doc_id,
+            &source_filename,
+            source_path.as_deref(),
+            false,
+        )?;
+
+        let pos = self
+            .index
+            .iter()
+            .position(|d| d.doc_id == doc_id)
+            .ok_or_else(|| format!("Document {doc_id} not found"))?;
+        let entry = self.index.remove(pos);
+        if let Some(sp) = &entry.source_path {
+            self.path_map.remove(&self.root.join(sp));
+        }
+        self.path_map.remove(&self.root.join(&entry.path));
+        self.save_index();
+        Ok(())
+    }
+
+    /// 重新读取文档：保留 source.pdf，清空派生数据，重置状态，并入队。
+    pub fn reingest_document(&mut self, doc_id: &str) -> Result<(), String> {
+        let entry = self.get_document(doc_id).ok_or_else(|| {
+            format!("Document {doc_id} not found")
+        })?;
+        if entry.doc_type != "pdf" {
+            return Err(format!("Only PDF documents can be re-ingested: {doc_id}"));
+        }
+        let source_path = entry.source_path.clone().ok_or_else(|| {
+            format!("Document {doc_id} has no source_path")
+        })?;
+        let source_filename = Path::new(&source_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
+
+        // 清理派生数据，保留 source.pdf
+        Self::cleanup_document_data(
+            &self.root,
+            doc_id,
+            &source_filename,
+            Some(&source_path),
+            true,
+        )?;
+
+        // 重置 DocumentProject meta 状态
+        if let Some(mut dp) = DocumentProject::load(&self.root, doc_id) {
+            dp.meta.inspector_status = "pending".to_string();
+            dp.meta.text_status = "pending".to_string();
+            dp.meta.ocr_status = "pending".to_string();
+            dp.meta.moldet_status = "not_processed".to_string();
+            dp.meta.moldet_pages = Vec::new();
+            dp.meta.index_status = "pending".to_string();
+            let _ = dp.save_meta();
+        }
+
+        // 重置 Project index 状态
+        self.set_document_status(doc_id, "inspector_status", "pending");
+        self.set_document_status(doc_id, "text_status", "pending");
+        self.set_document_status(doc_id, "ocr_status", "pending");
+        self.set_document_status(doc_id, "moldet_status", "not_processed");
+        self.set_document_status(doc_id, "index_status", "pending");
+
+        Ok(())
+    }
+
     /// Migrate legacy `papers/*.pdf` files into isolated DocumentProjects.
     ///
     /// For each PDF in `papers/` that does not already have a corresponding

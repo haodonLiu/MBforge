@@ -1,0 +1,286 @@
+//! Persistence stage for the PDF processing pipeline.
+//!
+//! This stage turns an [`ExtractedDocument`] and an [`EnrichedDocument`] into a
+//! [`PersistedDocument`] by:
+//!
+//! 1. Resolving the MBForge `doc_id` for the source path.
+//! 2. Writing the augmented extraction output to `text.md`.
+//! 3. Writing the structured agent report to `report.md`.
+//! 4. Persisting extracted compounds and activities to the molecule store.
+//! 5. Persisting coref annotations (figure_labels + coref_predictions) to KB.
+//! 6. Counting images that still require verification.
+
+use std::path::Path;
+
+use async_trait::async_trait;
+
+use mbforge_domain::document::knowledge_base::get_or_init_kb;
+use mbforge_domain::project::project::Project;
+use crate::pipeline::context::{PipelineContext, PipelineEvent};
+use crate::pipeline::error::{PersistError, PipelineError};
+use crate::pipeline::models::enriched::EnrichedDocument;
+use crate::pipeline::models::extracted::ExtractedDocument;
+use crate::pipeline::models::persisted::PersistedDocument;
+use crate::pipeline::runner::{Stage, StageOutcome};
+use crate::pipeline::services::coref_persist::CorefPersistService;
+use crate::pipeline::services::molecule_store::MoleculeStoreWriter;
+use crate::pipeline::writer::report_md::write_agent_report;
+use crate::pipeline::writer::text_md::write_text_markdown;
+
+/// Pipeline stage that persists extracted and enriched pipeline outputs to disk.
+pub struct PersistStage {
+    /// Writer for compound and activity records.
+    pub molecule_writer: MoleculeStoreWriter,
+    /// Coref 持久化 service (写入 figure_labels + coref_predictions 到 KB)
+    pub coref_service: CorefPersistService,
+}
+
+impl PersistStage {
+    /// Creates a new persistence stage.
+    pub fn new() -> Self {
+        Self {
+            molecule_writer: MoleculeStoreWriter::new(),
+            coref_service: CorefPersistService::new(),
+        }
+    }
+
+    /// Resolves the document ID for `ctx.source_path` by matching it against the
+    /// documents known to the project at `project_root`.
+    ///
+    /// Returns the first matching `doc_id`, or an error when the project cannot be
+    /// opened or no document source path matches.
+    fn resolve_doc_id(
+        &self,
+        ctx: &PipelineContext,
+        project_root: &Path,
+    ) -> Result<String, PipelineError> {
+        let source_path = &ctx.source_path;
+        let project = Project::open(project_root).ok_or_else(|| {
+            PipelineError::Persist(PersistError::DocIdNotResolved {
+                path: source_path.display().to_string(),
+            })
+        })?;
+
+        let target = source_path
+            .canonicalize()
+            .unwrap_or_else(|_| source_path.to_path_buf());
+
+        for doc in project.list_documents() {
+            let Some(full_source) = project.get_document_source_path(&doc.doc_id) else {
+                continue;
+            };
+            let canonical_source = full_source
+                .canonicalize()
+                .unwrap_or_else(|_| full_source.to_path_buf());
+            if canonical_source == target {
+                return Ok(doc.doc_id.clone());
+            }
+        }
+
+        Err(PipelineError::Persist(PersistError::DocIdNotResolved {
+            path: source_path.display().to_string(),
+        }))
+    }
+}
+
+impl Default for PersistStage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl Stage<(ExtractedDocument, EnrichedDocument), PersistedDocument> for PersistStage {
+    /// Executes the persistence stage on an extracted and enriched document.
+    async fn run(
+        &self,
+        input: (ExtractedDocument, EnrichedDocument),
+        ctx: &PipelineContext,
+    ) -> Result<StageOutcome<PersistedDocument>, PipelineError> {
+        let (extracted, enriched) = input;
+
+        let Some(project_root) = ctx.project_root.as_ref() else {
+            return Err(PipelineError::Persist(PersistError::DocIdNotResolved {
+                path: ctx.source_path.display().to_string(),
+            }));
+        };
+
+        ctx.reporter.report(PipelineEvent::StageProgress {
+            stage: "persist".into(),
+            message: "resolving document id".into(),
+        });
+
+        let doc_id = self.resolve_doc_id(ctx, project_root)?;
+
+        ctx.reporter.report(PipelineEvent::StageProgress {
+            stage: "persist".into(),
+            message: "writing text.md".into(),
+        });
+
+        let (text_md_path, verifications) = write_text_markdown(
+            project_root,
+            &doc_id,
+            &extracted.raw_text,
+            &extracted.images,
+            extracted.page_count,
+            &extracted.parser,
+        )?;
+        let unverified_image_count = verifications.iter().filter(|v| !v.verified).count();
+
+        ctx.reporter.report(PipelineEvent::StageProgress {
+            stage: "persist".into(),
+            message: "writing report.md".into(),
+        });
+
+        let report_md_path = write_agent_report(
+            project_root,
+            &doc_id,
+            Some(&enriched.structured_data),
+            enriched.sar_analysis.as_deref(),
+            &extracted.parser,
+        )?;
+
+        ctx.reporter.report(PipelineEvent::StageProgress {
+            stage: "persist".into(),
+            message: "persisting molecules".into(),
+        });
+
+        let persisted_molecule_count = self.molecule_writer.write(
+            project_root,
+            &enriched.structured_data,
+            &extracted.parser,
+        )?;
+
+        // Coref 持久化：每张图跑一次 coref，写 KB
+        // 失败不阻塞主流程（warning 记录）
+        ctx.reporter.report(PipelineEvent::StageProgress {
+            stage: "persist".into(),
+            message: "persisting coref annotations".into(),
+        });
+        let mut coref_warnings: Vec<String> = Vec::new();
+        match get_or_init_kb(project_root.to_str().unwrap_or("")) {
+            Ok(kb_guard) => {
+                let kb = kb_guard.value();
+                for img in &extracted.images {
+                    let Some(rel) = &img.rel_path else { continue };
+                    let img_path = project_root.join(rel);
+                    if !img_path.exists() {
+                        log::warn!(
+                            "[PersistStage] coref image path not found: {}",
+                            img_path.display()
+                        );
+                        continue;
+                    }
+                    let page = img.page as i64;
+                    match self
+                        .coref_service
+                        .persist_for_image(kb, &doc_id, page, &img_path, true, true)
+                        .await
+                    {
+                        Ok(res) => {
+                            log::info!(
+                                "[PersistStage] coref page={} labels={} preds={}",
+                                res.page,
+                                res.labels_written,
+                                res.predictions_written,
+                            );
+                        }
+                        Err(e) => {
+                            let msg = format!(
+                                "coref persist failed for page {}: {e}",
+                                img.page
+                            );
+                            log::warn!("[PersistStage] {}", msg);
+                            coref_warnings.push(msg);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                let msg = format!("KB init failed for coref: {e}");
+                log::warn!("[PersistStage] {}", msg);
+                coref_warnings.push(msg);
+            }
+        }
+
+        let mut outcome = StageOutcome::new(PersistedDocument {
+            doc_id,
+            text_md_path,
+            report_md_path,
+            unverified_image_count,
+            persisted_molecule_count,
+        });
+        for w in coref_warnings {
+            outcome = outcome.with_warning(w);
+        }
+
+        Ok(outcome)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    use super::*;
+    use crate::doc_types::{DocumentMetadata, StructuredData};
+    use crate::pipeline::context::PipelineContext;
+    use crate::pipeline::models::enriched::EnrichedDocument;
+    use crate::pipeline::models::extracted::{ExtractedDocument, ExtractedMetadata};
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_persist_stage_writes_markdown_files() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        let mut project = Project::create(root).expect("create project");
+
+        let incoming = root.join("incoming");
+        std::fs::create_dir_all(&incoming).unwrap();
+        let source = incoming.join("test.pdf");
+        std::fs::write(&source, b"%PDF-1.4").unwrap();
+
+        let entry = project.add_file(&source).expect("add pdf");
+        let doc_id = entry.doc_id.clone();
+        let source_in_project = project.get_document_source_path(&doc_id).unwrap();
+
+        let ctx = PipelineContext::new(&source_in_project, "").with_project_root(root);
+
+        let extracted = ExtractedDocument {
+            raw_text: "Hello world".into(),
+            page_count: 1,
+            parser: "test".into(),
+            images: Vec::new(),
+            ocr_blocks: Vec::new(),
+            metadata: ExtractedMetadata::default(),
+        };
+        let enriched = EnrichedDocument {
+            structured_data: StructuredData {
+                metadata: DocumentMetadata {
+                    title: None,
+                    authors: Vec::new(),
+                    document_type: "unknown".into(),
+                    key_targets: Vec::new(),
+                    source_file: None,
+                },
+                summary: "".into(),
+                compounds: Vec::new(),
+                activities: Vec::new(),
+                key_findings: Vec::new(),
+                uncertain_items: Vec::new(),
+            },
+            sar_analysis: None,
+            molecule_results: Vec::new(),
+            image_captions: HashMap::new(),
+            sections: Vec::new(),
+        };
+
+        let stage = PersistStage::new();
+        let outcome = stage.run((extracted, enriched), &ctx).await.unwrap();
+
+        assert_eq!(outcome.output.doc_id, doc_id);
+        assert!(outcome.output.text_md_path.exists());
+        assert!(outcome.output.report_md_path.exists());
+    }
+}

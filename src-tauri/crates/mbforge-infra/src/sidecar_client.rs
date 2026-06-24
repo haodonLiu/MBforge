@@ -1,7 +1,7 @@
 //! Sidecar HTTP 客户端抽象（Phase 3 重构）
 //!
 //! 解决问题：先前 `sidecar_url` 作为 `&str` 参数在 15+ 个函数间穿透，
-//! 有的 caller 还直接 `crate::core::constants::sidecarcar_url()` 调，
+//! 有的 caller 还直接 `crate::core::constants::sidecar_url()` 调，
 //! 有的接受参数但忽略（`_sidecar_url`），混乱无一致性。
 //!
 //! 新设计：
@@ -124,7 +124,7 @@ impl SidecarClient {
     pub async fn ping(&self) -> AppResult<u128> {
         let url = format!("{}/api/v1/health", self.base_url);
         let start = std::time::Instant::now();
-        let _ = http::client_15s()
+        let resp = http::client_15s()
             .get(&url)
             .send()
             .await
@@ -134,6 +134,7 @@ impl SidecarClient {
                 path: Some(url),
                 suggestion: None,
             })?;
+        let _ = resp.bytes().await;
         Ok(start.elapsed().as_millis())
     }
 }

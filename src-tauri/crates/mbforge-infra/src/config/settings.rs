@@ -19,6 +19,10 @@ use crate::helpers::{load_json, save_json, LockResultExt};
 /// be read by code that currently resolves credentials via `std::env::var`
 /// without using `std::env::set_var` (which is `unsafe` on some platforms and
 /// prohibited by project style).
+///
+/// NOTE: Uses `std::sync::Mutex` because all callers are sync (Tauri commands,
+/// settings load). Migration to `tokio::sync::Mutex` requires async callers
+/// throughout, tracked in tech debt #2.
 static ENV_OVERRIDES: LazyLock<Mutex<HashMap<String, String>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -452,7 +456,16 @@ impl AppConfig {
 
     pub fn load() -> Self {
         let path = Self::config_path();
-        let config: Self = load_json(&path).unwrap_or_default();
+        let config: Self = match load_json(&path) {
+            Some(c) => c,
+            None => {
+                log::warn!(
+                    "Failed to load config from {}, using defaults",
+                    path.display()
+                );
+                Self::default()
+            }
+        };
         // Register OCR per-backend keys as in-memory overrides so the
         // existing `is_available()` checks (MinerU / Uniparser / PaddleOCR)
         // pick them up without code changes. Env wins over saved settings.

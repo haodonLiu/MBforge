@@ -145,13 +145,15 @@ pub fn embed_base_url() -> String {
 
 /// 展开前导 `~` 或 `~/` 到用户主目录。其余形式（含 `~name` 指向其他用户）原样返回。
 /// Windows 上 `~` 不是 shell 展开的字符，必须在代码里显式处理。
+/// 如果无法获取用户主目录，返回原始路径。
 fn expand_tilde(path: &str) -> PathBuf {
+    let home = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf());
     if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
-        if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf()) {
+        if let Some(home) = home {
             return home.join(rest);
         }
     } else if path == "~" {
-        if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf()) {
+        if let Some(home) = home {
             return home;
         }
     }
@@ -164,14 +166,24 @@ pub fn model_cache_dir() -> PathBuf {
         return expand_tilde(&dir);
     }
     // 2. 用户配置（设置页面配置的路径）
-    if let Ok(config) = std::fs::read_to_string(global_config_dir().join("config.json")) {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&config) {
-            if let Some(dir) = val.get("model_cache_dir").and_then(|v| v.as_str()) {
-                if !dir.is_empty() {
-                    return expand_tilde(dir);
+    let config_path = global_config_dir().join("config.json");
+    match std::fs::read_to_string(&config_path) {
+        Ok(config) => match serde_json::from_str::<serde_json::Value>(&config) {
+            Ok(val) => {
+                if let Some(dir) = val.get("model_cache_dir").and_then(|v| v.as_str()) {
+                    if !dir.is_empty() {
+                        return expand_tilde(dir);
+                    }
                 }
             }
+            Err(e) => {
+                log::warn!("Failed to parse {}: {}", config_path.display(), e);
+            }
+        },
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            log::warn!("Failed to read {}: {}", config_path.display(), e);
         }
+        _ => {}
     }
     // 3. 默认路径
     if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf()) {

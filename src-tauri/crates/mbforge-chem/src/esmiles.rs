@@ -154,15 +154,13 @@ pub fn smiles_with_rgroups_to_esmiles(smiles: &str, rgroup_names: &[String]) -> 
 
     let mut tags = Vec::new();
     let mut rgroup_iter = rgroup_names.iter();
-    let mut atom_idx = 0usize;
 
-    for (_idx, atom) in mol.atoms() {
+    for (atom_idx, (_idx, atom)) in mol.atoms().enumerate() {
         if atom.wildcard {
             if let Some(name) = rgroup_iter.next() {
                 tags.push(EsTag::atom(atom_idx, name));
             }
         }
-        atom_idx += 1;
     }
 
     smiles_to_esmiles(smiles, &tags)
@@ -241,12 +239,7 @@ fn extract_tags_from_extension(ext: &str) -> Vec<EsTag> {
 }
 
 fn find_byte(bytes: &[u8], start: usize, target: u8) -> Option<usize> {
-    for i in start..bytes.len() {
-        if bytes[i] == target {
-            return Some(i);
-        }
-    }
-    None
+    (start..bytes.len()).find(|&i| bytes[i] == target)
 }
 
 fn find_close_tag(bytes: &[u8], start: usize, tag_type: u8) -> Option<usize> {

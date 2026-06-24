@@ -10,6 +10,9 @@
 //! 用于 Markush 结构匹配时的缩写感知比较。
 
 use std::collections::HashMap;
+use std::sync::LazyLock;
+
+use regex::Regex;
 
 // ============================================================================
 // 数据类型
@@ -702,6 +705,12 @@ fn build_non_expandable() -> Vec<&'static str> {
 // 名称归一化
 // ============================================================================
 
+static BRACKET_DIGITS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[(\d+)\]").expect("valid bracket digits regex"));
+static CHAIN_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"CH\[2\](?:\?[nx])?|CH2(?:\?[nx])?").expect("valid chain regex")
+});
+
 /// 缩写名称归一化
 ///
 /// 处理：方括号、Unicode 上下标、大小写、同义词、尾部标点
@@ -712,8 +721,7 @@ pub fn normalize_abbrev_name(name: &str) -> String {
     s = s.replace('^', "");
 
     // 2. 去方括号数字：R[1] → R1
-    let bracket_re = regex::Regex::new(r"\[(\d+)\]").unwrap();
-    s = bracket_re.replace_all(&s, "$1").to_string();
+    s = BRACKET_DIGITS_RE.replace_all(&s, "$1").to_string();
 
     // 3. Unicode 上下标转 ASCII
     s = s.replace('⁰', "0").replace('¹', "1").replace('²', "2");
@@ -726,8 +734,7 @@ pub fn normalize_abbrev_name(name: &str) -> String {
     s = s.replace('₉', "9");
 
     // 4. 变量链归一化
-    let chain_re = regex::Regex::new(r"CH\[2\](?:\?[nx])?|CH2(?:\?[nx])?").unwrap();
-    s = chain_re.replace_all(&s, "(CH2)n").to_string();
+    s = CHAIN_RE.replace_all(&s, "(CH2)n").to_string();
 
     // 5. 大小写归一化
     let lower = s.to_lowercase();
@@ -779,7 +786,7 @@ pub fn normalize_abbrev_name(name: &str) -> String {
 
     // 7. 去尾部标点
     s = s
-        .trim_end_matches(|c| c == ',' || c == '.' || c == ' ')
+        .trim_end_matches([',', '.', ' '])
         .to_string();
 
     s

@@ -821,8 +821,6 @@ dependencies = [
  "chematic-fp",
  "chematic-smarts",
  "chematic-smiles",
- "log",
- "mbforge-infra",
  "regex",
  "serde",
  "serde_json",

@@ -6,10 +6,8 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-mbforge-infra = { path = "../mbforge-infra" }
 serde.workspace = true
 serde_json.workspace = true
-log.workspace = true
 regex.workspace = true
 chematic-core.workspace = true
 chematic-smiles.workspace = true

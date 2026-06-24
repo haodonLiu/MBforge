@@ -5,6 +5,9 @@
 //! - 共同骨架提取（MCS，支持 ringMatchesRingOnly + completeRingsOnly）
 //! - R-group 分解
 
+use std::sync::LazyLock;
+
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 // ─── 数据类型 ────────────────────────────────────────────────────
@@ -57,10 +60,12 @@ pub struct RGroupMatrix {
 
 // ─── 工具函数 ────────────────────────────────────────────────────
 
+static ESMILES_TAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"</?[a-zA-Z]>").expect("valid E-SMILES tag regex"));
+
 /// 剥离 E-SMILES 语义标签（<a>, <r>, <c>），保留标签内的内容
 fn strip_esmiles_tags(smiles: &str) -> String {
-    let re = regex::Regex::new(r"</?[a-zA-Z]>").unwrap();
-    re.replace_all(smiles, "").to_string()
+    ESMILES_TAG_RE.replace_all(smiles, "").to_string()
 }
 
 /// 解析 SMILES 为 Molecule

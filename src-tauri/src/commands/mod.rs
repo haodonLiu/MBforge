@@ -30,6 +30,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         file_ops::read_text_file,
         file_ops::upload_files,
         file_ops::delete_file,
+        file_ops::project_delete_document,
+        file_ops::project_reingest_document,
         file_ops::open_file,
         file_ops::open_external_url,
         // project_ops

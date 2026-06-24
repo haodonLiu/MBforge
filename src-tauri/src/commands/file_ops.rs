@@ -181,6 +181,67 @@ pub async fn delete_file(project_root: String, doc_id: String) -> Result<bool, S
     Ok(true)
 }
 
+/// 彻底删除 PDF 文档及其所有派生数据。
+#[tauri::command]
+pub async fn project_delete_document(project_root: String, doc_id: String) -> Result<(), String> {
+    let root_path = wrap(resolve_path(&project_root))?;
+
+    let mut project = crate::core::project::Project::open(&root_path).ok_or_else(|| {
+        AppError::new(
+            ErrorCode::ProjectOpen,
+            format!("项目不存在: {}", root_path.display()),
+        )
+        .with_path(root_path.to_string_lossy())
+        .to_string()
+    })?;
+
+    project.delete_document(&doc_id).map_err(|e| {
+        AppError::new(ErrorCode::FileWrite, format!("删除文档失败: {e}")).to_string()
+    })
+}
+
+/// 重新读取已有 PDF：保留源文件，清空所有抽取结果后重新入队。
+#[tauri::command]
+pub async fn project_reingest_document(
+    project_root: String,
+    doc_id: String,
+) -> Result<(), String> {
+    let root_path = wrap(resolve_path(&project_root))?;
+
+    let mut project = crate::core::project::Project::open(&root_path).ok_or_else(|| {
+        AppError::new(
+            ErrorCode::ProjectOpen,
+            format!("项目不存在: {}", root_path.display()),
+        )
+        .with_path(root_path.to_string_lossy())
+        .to_string()
+    })?;
+
+    let source_path = project.get_document_source_path(&doc_id).ok_or_else(|| {
+        AppError::new(
+            ErrorCode::FileNotFound,
+            format!("文档源文件未找到: {doc_id}"),
+        )
+        .to_string()
+    })?;
+
+    project.reingest_document(&doc_id).map_err(|e| {
+        AppError::new(ErrorCode::FileWrite, format!("重新读取文档失败: {e}")).to_string()
+    })?;
+
+    let queue = crate::core::document::ingest_queue::IngestQueue::new(&project.root).map_err(|e| {
+        AppError::new(ErrorCode::QueueFull, format!("打开处理队列失败: {e}")).to_string()
+    })?;
+
+    let file_path = source_path.to_string_lossy().to_string();
+    queue
+        .enqueue_with_stage(file_path, doc_id.clone(), "inspector", true)
+        .await
+        .map_err(|e| format!("重新入队失败: {e}"))?;
+
+    Ok(())
+}
+
 /// 读取文本文件内容（UTF-8，异步不阻塞 UI）。
 #[tauri::command]
 pub async fn read_text_file(project_root: String, path: String) -> Result<String, String> {

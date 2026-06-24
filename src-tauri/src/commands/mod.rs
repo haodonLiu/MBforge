@@ -61,6 +61,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         pdf::ingest_mark_done,
         pdf::ingest_mark_failed,
         pdf::ingest_dequeue,
+        pdf::ingest_get_logs,
         // text_ops
         text_ops::text_chunk,
         // detection_cache

@@ -116,6 +116,19 @@ impl IngestTask {
     }
 }
 
+/// 单条 ingest 日志（DB 兜底通道，事件通道的镜像）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestLogRecord {
+    pub doc_id: String,
+    pub stage: String,
+    pub level: String,
+    pub message: String,
+    pub ts_ms: u64,
+    /// 关联 task id（nullable，便于跨 task 聚合日志）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+}
+
 /// 提取队列 — SQLite 后端
 pub struct IngestQueue {
     conn: Mutex<Connection>,
@@ -243,6 +256,24 @@ impl IngestQueue {
         )?;
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_stage_history_stage ON ingest_stage_history(stage)",
+            [],
+        )?;
+
+        // ingest 日志表（事件通道的 DB 兜底 — 即使 Tauri 事件丢失/订阅失败，UI 也能拉到）
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS ingest_logs (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                doc_id  TEXT NOT NULL,
+                stage   TEXT NOT NULL,
+                level   TEXT NOT NULL,
+                message TEXT NOT NULL,
+                ts_ms   INTEGER NOT NULL,
+                task_id TEXT
+            )",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ingest_logs_doc_id ON ingest_logs(doc_id, ts_ms)",
             [],
         )?;
 
@@ -619,6 +650,63 @@ impl IngestQueue {
             tasks.push(row?);
         }
         Ok(tasks)
+    }
+
+    /// 追加一条 ingest 日志（事件通道的 DB 兜底）
+    /// `task_id` 可选 — 兼容历史调用。
+    pub async fn add_log(
+        &self,
+        doc_id: &str,
+        stage: &str,
+        level: &str,
+        message: &str,
+        ts_ms: u64,
+        task_id: Option<&str>,
+    ) -> AppResult<()> {
+        let conn = self.conn.lock().await;
+        conn.execute(
+            "INSERT INTO ingest_logs (doc_id, stage, level, message, ts_ms, task_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                doc_id,
+                stage,
+                level,
+                message,
+                ts_ms as i64,
+                task_id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// 获取某 doc_id 的最近 N 条日志，按 ts_ms 升序返回。
+    pub async fn list_logs(
+        &self,
+        doc_id: &str,
+        limit: usize,
+    ) -> AppResult<Vec<IngestLogRecord>> {
+        let conn = self.conn.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT doc_id, stage, level, message, ts_ms, task_id
+             FROM ingest_logs WHERE doc_id = ?1
+             ORDER BY ts_ms DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![doc_id, limit as i64], |row| {
+            Ok(IngestLogRecord {
+                doc_id: row.get(0)?,
+                stage: row.get(1)?,
+                level: row.get(2)?,
+                message: row.get(3)?,
+                ts_ms: row.get::<_, i64>(4)? as u64,
+                task_id: row.get(5)?,
+            })
+        })?;
+        let mut out: Vec<IngestLogRecord> = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        out.reverse();
+        Ok(out)
     }
 
     /// 检查文件是否已在队列中（Pending/Processing/Done 状态）

@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { listen } from '@tauri-apps/api/event'
+import PageContainer from '../ui/PageContainer'
 import Button from '../ui/Button'
+import IconButton from '../ui/IconButton'
+import Badge from '../ui/Badge'
+import Switch from '../ui/Switch'
 import ProgressBar from '../ui/ProgressBar'
-import { XIcon } from '../icons/actions'
-import { ChevronDownIcon, ChevronUpIcon } from '../icons/ui'
+import EmptyState from '../ui/EmptyState'
+import { ChevronDownIcon, ChevronUpIcon, QueueIcon } from '../icons/ui'
+import { XIcon, PinIcon, UnpinIcon, TrashIcon, RefreshCwIcon } from '../icons/actions'
 import PdfPipelineFlow from './pdf/PdfPipelineFlow'
 import IngestLogPanel from './IngestLogPanel'
 import { EVT } from '../../api/tauri-events'
@@ -13,6 +18,7 @@ import {
   ingestCancel,
   ingestCleanup,
   ingestDeleteTask,
+  ingestGetLogs,
   ingestList,
   ingestRetry,
   ingestSetPriority,
@@ -32,9 +38,6 @@ interface Props {
 type StatusKey = IngestTask['status']
 type FilterKey = 'all' | StatusKey
 
-// Status display labels and accent colors.
-// Note: STATUS_LABEL and FILTERS are now derived from t() inside the component.
-
 // Sort priority: actionable first (processing > pending > failed),
 // then non-actionable (cancelled > done).
 const STATUS_RANK: Record<StatusKey, number> = {
@@ -45,8 +48,20 @@ const STATUS_RANK: Record<StatusKey, number> = {
   done: 4,
 }
 
-// Sort priority: actionable first (processing > pending > failed),
-// then non-actionable (cancelled > done).
+/** Map queue status to Badge tone. */
+const STATUS_TONE: Record<StatusKey, 'info' | 'warning' | 'success' | 'danger' | 'neutral'> = {
+  processing: 'info',
+  pending: 'warning',
+  done: 'success',
+  failed: 'danger',
+  cancelled: 'neutral',
+}
+
+// ---------------------------------------------------------------------------
+// Formatting helpers
+// ---------------------------------------------------------------------------
+
+/** Format elapsed milliseconds as "1m 23s" / "12s" / "2h 3m". */
 function formatElapsed(ms: number): string {
   if (ms < 0 || !Number.isFinite(ms)) return '—'
   const totalSec = Math.floor(ms / 1000)
@@ -89,17 +104,13 @@ function basename(p: string): string {
   return parts[parts.length - 1] ?? p
 }
 
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export default function ProcessingQueue({ projectRoot }: Props) {
   const { t } = useTranslation()
   const [tasks, setTasks] = useState<IngestTask[]>([])
-
-  const STATUS_LABEL: Record<StatusKey, string> = useMemo(() => ({
-    pending: t('queue.pending'),
-    processing: t('queue.processing'),
-    done: t('queue.done'),
-    failed: t('queue.failed'),
-    cancelled: t('queue.cancelled'),
-  }), [t])
 
   const FILTERS: { key: FilterKey; label: string }[] = useMemo(() => [
     { key: 'all', label: t('queue.all') },
@@ -109,6 +120,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
     { key: 'cancelled', label: t('queue.cancelled') },
     { key: 'done', label: t('queue.done') },
   ], [t])
+
   const [stats, setStats] = useState<QueueStats | null>(null)
   const [actionId, setActionId] = useState<string | null>(null)
   const [filter, setFilter] = useState<FilterKey>('all')
@@ -201,6 +213,14 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         setLogMap((prev) => {
           const next = new Map(prev)
           const list = next.get(payload.doc_id) ?? []
+          // 去重：DB 预填 + 事件通道可能带来同一条日志（ts_ms + message 判重）
+          if (
+            list.some(
+              (e) => e.ts_ms === payload.ts_ms && e.message === payload.message,
+            )
+          ) {
+            return prev
+          }
           const updated = [...list, payload]
           if (updated.length > 200) updated.shift()
           next.set(payload.doc_id, updated)
@@ -215,6 +235,47 @@ export default function ProcessingQueue({ projectRoot }: Props) {
       unlisten?.()
     }
   }, [])
+
+  /** DB 兜底通道：从 SQLite 拉取该 doc 的历史日志。 */
+  const fetchLogsForDoc = useCallback(
+    async (docId: string) => {
+      try {
+        const records = await ingestGetLogs(projectRoot, docId, 500)
+        if (records.length === 0) return
+        setLogMap((prev) => {
+          const list = prev.get(docId) ?? []
+          // 合并 + 去重（ts_ms + message 复合键）
+          const seen = new Set(list.map((e) => `${e.ts_ms}::${e.message}`))
+          const merged = [...list]
+          for (const r of records) {
+            const key = `${r.ts_ms}::${r.message}`
+            if (!seen.has(key)) {
+              seen.add(key)
+              merged.push(r)
+            }
+          }
+          merged.sort((a, b) => a.ts_ms - b.ts_ms)
+          const trimmed = merged.length > 200 ? merged.slice(-200) : merged
+          const next = new Map(prev)
+          next.set(docId, trimmed)
+          return next
+        })
+      } catch (e) {
+        console.error('[ProcessingQueue] fetchLogsForDoc failed:', e)
+      }
+    },
+    [projectRoot],
+  )
+
+  /** 任务列表加载完后，对每个 doc 预拉一次历史日志（覆盖早期事件丢失场景）。 */
+  useEffect(() => {
+    if (!projectRoot) return
+    const docIds = new Set(tasks.map((t) => t.doc_id))
+    for (const docId of docIds) {
+      void fetchLogsForDoc(docId)
+    }
+    // 只在 tasks 变化时拉取（数量或成员变化）
+  }, [projectRoot, tasks, fetchLogsForDoc])
 
   const handleCancel = useCallback(
     async (task: IngestTask) => {
@@ -231,7 +292,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         setActionId(null)
       }
     },
-    [projectRoot, load],
+    [projectRoot, load, t],
   )
 
   const handleRetry = useCallback(
@@ -253,7 +314,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         setActionId(null)
       }
     },
-    [projectRoot, load],
+    [projectRoot, load, t],
   )
 
   const handleCleanup = useCallback(async () => {
@@ -266,7 +327,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
       console.error('[ProcessingQueue] cleanup failed:', e)
       showToast(t('queue.cleanupFailed', { error: String(e) }), 'error')
     }
-  }, [projectRoot, load])
+  }, [projectRoot, load, t])
 
   const handleSetPriority = useCallback(
     async (task: IngestTask) => {
@@ -284,7 +345,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         setActionId(null)
       }
     },
-    [projectRoot, load],
+    [projectRoot, load, t],
   )
 
   const handleDelete = useCallback(
@@ -306,17 +367,24 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         setActionId(null)
       }
     },
-    [projectRoot, load],
+    [projectRoot, load, t],
   )
 
-  const toggleLogs = useCallback((docId: string) => {
-    setExpandedLogDocs((prev) => {
-      const next = new Set(prev)
-      if (next.has(docId)) next.delete(docId)
-      else next.add(docId)
-      return next
-    })
-  }, [])
+  const toggleLogs = useCallback(
+    (docId: string) => {
+      let willExpand = false
+      setExpandedLogDocs((prev) => {
+        willExpand = !prev.has(docId)
+        const next = new Set(prev)
+        if (willExpand) next.add(docId)
+        else next.delete(docId)
+        return next
+      })
+      // 展开时重拉一次（fetchLogsForDoc 内部会去重，重复调用开销低）
+      if (willExpand) void fetchLogsForDoc(docId)
+    },
+    [fetchLogsForDoc],
+  )
 
   // Filter + sort — memoized so the list doesn't re-sort on every keystroke
   // elsewhere. Sort priority: processing → pending → failed → cancelled → done.
@@ -345,330 +413,452 @@ export default function ProcessingQueue({ projectRoot }: Props) {
     return c
   }, [tasks])
 
-  return (
-    <div className="processing-queue">
-      {/* ----- Sticky header ----- */}
-      <div className="processing-queue-header">
-        <span className="processing-queue-title">{t('queue.title')}</span>
-        <span
-          className={`processing-queue-worker-status is-${workerStatus}`}
-          title={
-            workerStatus === 'online'
-              ? t('queue.workerOnlineTitle')
-              : workerStatus === 'offline'
-                ? t('queue.workerOfflineTitle')
-                : t('queue.workerUnknownTitle')
-          }
-        >
-          {workerStatus === 'online'
-            ? t('queue.workerOnline')
-            : workerStatus === 'offline'
-              ? t('queue.workerOffline')
-              : t('queue.workerUnknown')}
-        </span>
+  const avgTotalMs = stats ? stats.avg_stage_durations_ms.reduce((a, b) => a + b, 0) : 0
 
-        {stats && (
-          <div className="processing-queue-stats" aria-label={t('queue.total')}>
-            <span className="processing-queue-stat">
-              <span>{t('queue.total')}</span>
-              <span className="num">{stats.total}</span>
-            </span>
-            {stats.processing > 0 && (
-              <span className="processing-queue-stat is-processing">
-                <span>{t('queue.processing')}</span>
-                <span className="num">{stats.processing}</span>
+  return (
+    <PageContainer>
+      <div className="queue-page">
+        {/* ----- Hero / header ----- */}
+        <header className="queue-page-header">
+          <div className="queue-page-title-row">
+            <div className="queue-page-title">
+              <span className="queue-page-icon" aria-hidden>
+                <QueueIcon size={22} />
+              </span>
+              <h1 className="queue-page-title-text">{t('queue.title')}</h1>
+              <WorkerStatusBadge status={workerStatus} />
+            </div>
+            <div className="queue-page-header-actions">
+              <label className="queue-hide-done-toggle">
+                <Switch
+                  size="sm"
+                  checked={hideDone}
+                  onChange={setHideDone}
+                />
+                <span>{t('queue.hideDone')}</span>
+              </label>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<TrashIcon size={14} />}
+                onClick={handleCleanup}
+                disabled={!stats || stats.done === 0}
+              >
+                {t('queue.cleanupDone')}
+              </Button>
+            </div>
+          </div>
+
+          {/* ----- Stats row ----- */}
+          {stats && (
+            <div className="queue-stats-row">
+              <StatPill
+                label={t('queue.total')}
+                value={stats.total}
+                tone="neutral"
+                icon={<QueueIcon size={14} />}
+              />
+              {stats.processing > 0 && (
+                <StatPill
+                  label={t('queue.processing')}
+                  value={stats.processing}
+                  tone="info"
+                  pulse
+                />
+              )}
+              {stats.pending > 0 && (
+                <StatPill
+                  label={t('queue.pending')}
+                  value={stats.pending}
+                  tone="warning"
+                />
+              )}
+              {stats.failed > 0 && (
+                <StatPill
+                  label={t('queue.failed')}
+                  value={stats.failed}
+                  tone="danger"
+                />
+              )}
+              {stats.done > 0 && (
+                <StatPill
+                  label={t('queue.done')}
+                  value={stats.done}
+                  tone="success"
+                />
+              )}
+              {stats.cancelled > 0 && (
+                <StatPill
+                  label={t('queue.cancelled')}
+                  value={stats.cancelled}
+                  tone="neutral"
+                />
+              )}
+              {avgTotalMs > 0 && (
+                <StatPill
+                  label={t('queue.recent5')}
+                  value={t('queue.avgPer', { time: formatElapsed(avgTotalMs) })}
+                  tone="neutral"
+                />
+              )}
+            </div>
+          )}
+        </header>
+
+        {/* ----- Filter chips ----- */}
+        <div className="queue-filters" role="tablist" aria-label="状态筛选">
+          {FILTERS.map((f) => {
+            const isActive = filter === f.key
+            const count = counts[f.key]
+            return (
+              <button
+                key={f.key}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                className={`queue-filter-chip${isActive ? ' is-active' : ''}`}
+                onClick={() => setFilter(f.key)}
+              >
+                <span>{f.label}</span>
+                <span className="queue-filter-chip-count">{count}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* ----- Task list ----- */}
+        {visibleTasks.length === 0 ? (
+          <EmptyState
+            className="queue-empty"
+            message={tasks.length === 0 ? t('queue.emptyHint') : t('queue.filterHint')}
+            icon={
+              <div className="queue-empty-icon">
+                <QueueIcon size={28} />
+              </div>
+            }
+          />
+        ) : (
+          <motion.div
+            className="queue-list"
+            initial="hidden"
+            animate="visible"
+            variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.03 } } }}
+          >
+            <AnimatePresence initial={false}>
+              {visibleTasks.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  now={now}
+                  isLogsExpanded={expandedLogDocs.has(task.doc_id)}
+                  logs={logMap.get(task.doc_id) ?? []}
+                  isActioning={actionId === task.id}
+                  onToggleLogs={() => toggleLogs(task.doc_id)}
+                  onCancel={() => handleCancel(task)}
+                  onRetry={() => handleRetry(task)}
+                  onDelete={() => handleDelete(task)}
+                  onTogglePin={() => handleSetPriority(task)}
+                />
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </div>
+    </PageContainer>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+interface WorkerStatusBadgeProps {
+  status: 'online' | 'offline' | 'unknown'
+}
+
+const WORKER_STATUS_CONFIG = {
+  online:  { i18nKey: 'queue.workerOnline',  titleKey: 'queue.workerOnlineTitle' },
+  offline: { i18nKey: 'queue.workerOffline', titleKey: 'queue.workerOfflineTitle' },
+  unknown: { i18nKey: 'queue.workerUnknown', titleKey: 'queue.workerUnknownTitle' },
+} as const
+
+function WorkerStatusBadge({ status }: WorkerStatusBadgeProps) {
+  const { t } = useTranslation()
+  const config = WORKER_STATUS_CONFIG[status]
+  return (
+    <span
+      className={`queue-worker-status is-${status}`}
+      title={t(config.titleKey)}
+    >
+      <span className="queue-worker-dot" />
+      {t(config.i18nKey)}
+    </span>
+  )
+}
+
+interface StatPillProps {
+  label: string
+  value: number | string
+  tone: 'neutral' | 'info' | 'success' | 'warning' | 'danger'
+  icon?: React.ReactNode
+  pulse?: boolean
+}
+
+function StatPill({ label, value, tone, icon, pulse = false }: StatPillProps) {
+  return (
+    <div className={`queue-stat-pill is-${tone}`}>
+      {icon && <span className="queue-stat-pill-icon">{icon}</span>}
+      <div className="queue-stat-pill-body">
+        <div className="queue-stat-pill-label">{label}</div>
+        <div className={`queue-stat-pill-value${pulse ? ' is-pulse' : ''}`}>{value}</div>
+      </div>
+    </div>
+  )
+}
+
+interface TaskRowProps {
+  task: IngestTask
+  now: number
+  isLogsExpanded: boolean
+  logs: IngestLogEvent[]
+  isActioning: boolean
+  onToggleLogs: () => void
+  onCancel: () => void
+  onRetry: () => void
+  onDelete: () => void
+  onTogglePin: () => void
+}
+
+const STATUS_LABELS_I18N = {
+  pending: 'queue.pending',
+  processing: 'queue.processing',
+  done: 'queue.done',
+  failed: 'queue.failed',
+  cancelled: 'queue.cancelled',
+} as const
+
+function TaskRow({
+  task,
+  now,
+  isLogsExpanded,
+  logs,
+  isActioning,
+  onToggleLogs,
+  onCancel,
+  onRetry,
+  onDelete,
+  onTogglePin,
+}: TaskRowProps) {
+  const { t } = useTranslation()
+  const canCancel = task.status === 'pending' || task.status === 'processing'
+  const canRetry = task.status === 'failed'
+  const canDelete = task.status === 'cancelled' || task.status === 'done' || task.status === 'failed'
+  const canSetPriority = task.status === 'pending'
+
+  const fileName = basename(task.file_path) || task.doc_id
+  const startedAtMs = task.started_at ? task.started_at * 1000 : null
+  const createdAtMs = task.created_at * 1000
+  const startTimeMs = startedAtMs ?? createdAtMs
+  const elapsedMs = now - startTimeMs
+  const showElapsed = task.status !== 'done' && task.status !== 'cancelled'
+  const stale = isStale(task, now)
+  const showPages =
+    task.pages_total > 0 &&
+    (task.status === 'processing' || task.status === 'failed')
+  const etaMs =
+    task.status === 'processing'
+      ? estimateRemainingMs(now - (startedAtMs ?? createdAtMs), task.progress_pct)
+      : null
+  const isProcessing = task.status === 'processing'
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -4 }}
+      transition={{ duration: 0.2 }}
+      className={`queue-task is-${task.status}${isProcessing ? ' is-processing' : ''}`}
+    >
+      {/* Accent edge for status */}
+      <div className="queue-task-edge" aria-hidden />
+
+      <div className="queue-task-body">
+        {/* Top row: filename + status + actions */}
+        <div className="queue-task-top">
+          <div className="queue-task-info">
+            <div className="queue-task-title-row">
+              <h3 className="queue-task-title" title={task.file_path || task.doc_id}>
+                {fileName}
+              </h3>
+              <Badge tone={STATUS_TONE[task.status]} size="sm" dot>
+                {t(STATUS_LABELS_I18N[task.status])}
+              </Badge>
+              {task.priority > 0 && (
+                <Badge tone="info" size="sm">
+                  {t('queue.pinTask')}
+                </Badge>
+              )}
+            </div>
+            <div className="queue-task-subtitle">
+              <span className="queue-task-doc-id">{task.doc_id}</span>
+              {task.file_size_bytes != null && (
+                <>
+                  <span className="queue-task-sep">·</span>
+                  <span>{formatBytes(task.file_size_bytes)}</span>
+                </>
+              )}
+              {showPages && (
+                <>
+                  <span className="queue-task-sep">·</span>
+                  <span className="queue-task-pages">
+                    {t('queue.pagesUnit', { done: task.pages_done, total: task.pages_total })}
+                  </span>
+                </>
+              )}
+              {task.retry_count > 0 && (
+                <>
+                  <span className="queue-task-sep">·</span>
+                  <span className="queue-task-retry">
+                    {t('queue.retryCount', { count: task.retry_count, max: task.max_retries })}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="queue-task-meta">
+            {showElapsed && (
+              <span
+                className={`queue-task-elapsed${stale ? ' is-stale' : ''}`}
+                title={
+                  stale
+                    ? t('queue.staleHint')
+                    : startedAtMs
+                      ? t('queue.elapsedSinceStart')
+                      : t('queue.elapsedSinceCreate')
+                }
+              >
+                {formatElapsed(elapsedMs)}
               </span>
             )}
-            {stats.pending > 0 && (
-              <span className="processing-queue-stat is-pending">
-                <span>{t('queue.pending')}</span>
-                <span className="num">{stats.pending}</span>
+            {etaMs != null && (
+              <span
+                className="queue-task-eta"
+                title={t('queue.etaTitle')}
+              >
+                {t('queue.estimated', { time: formatElapsed(etaMs) })}
               </span>
             )}
-            {stats.failed > 0 && (
-              <span className="processing-queue-stat is-failed">
-                <span>{t('queue.failed')}</span>
-                <span className="num">{stats.failed}</span>
-              </span>
+          </div>
+        </div>
+
+        {/* Pipeline flow */}
+        <PdfPipelineFlow variant="compact" task={task} />
+
+        {/* Progress (only when actively progressing) */}
+        {(task.status === 'pending' || task.status === 'processing') && (
+          <div className="queue-task-progress">
+            <ProgressBar
+              value={task.progress_pct}
+              showPercent={task.status === 'processing'}
+              color="var(--accent)"
+              height={4}
+            />
+            {task.details && (
+              <span className="queue-task-progress-detail">{task.details}</span>
             )}
-            {stats.done > 0 && (
-              <span className="processing-queue-stat is-done">
-                <span>{t('queue.done')}</span>
-                <span className="num">{stats.done}</span>
-              </span>
-            )}
-            {stats.cancelled > 0 && (
-              <span className="processing-queue-stat is-cancelled">
-                <span>{t('queue.cancelled')}</span>
-                <span className="num">{stats.cancelled}</span>
-              </span>
-            )}
-            {(() => {
-              const avgTotalMs = stats.avg_stage_durations_ms.reduce((a, b) => a + b, 0)
-              return avgTotalMs > 0 ? (
-                <span
-                  className="processing-queue-stat is-throughput"
-                  title={t('queue.recent5')}
-                >
-                  <span>{t('queue.recent5')}</span>
-                  <span className="num">{t('queue.avgPer', { time: formatElapsed(avgTotalMs) })}</span>
-                </span>
-              ) : null
-            })()}
           </div>
         )}
 
-        <div className="processing-queue-header-actions">
-          <label
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: '0.8rem',
-              color: 'var(--text-soft)',
-              cursor: 'pointer',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={hideDone}
-              onChange={(e) => setHideDone(e.target.checked)}
-              style={{ accentColor: 'var(--accent)' }}
-            />
-            {t('queue.hideDone')}
-          </label>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleCleanup}
-            disabled={!stats || stats.done === 0}
-          >
-            {t('queue.cleanupDone')}
-          </Button>
-        </div>
-      </div>
+        {/* Error block (failed only) */}
+        {task.status === 'failed' && task.error && (
+          <div className="queue-task-error">
+            <XIcon size={12} />
+            <span>{task.error}</span>
+          </div>
+        )}
 
-      {/* ----- Filter chips ----- */}
-      <div className="processing-queue-filters" role="tablist" aria-label="状态筛选">
-        {FILTERS.map((f) => {
-          const isActive = filter === f.key
-          const count = counts[f.key]
-          return (
-            <button
-              key={f.key}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              className={`processing-queue-chip${isActive ? ' is-active' : ''}`}
-              onClick={() => setFilter(f.key)}
+        {/* Bottom action bar */}
+        <div className="queue-task-actions">
+          <div className="queue-task-actions-left">
+            {logs.length > 0 && (
+              <span className="queue-task-log-count">
+                {t('queue.logCount', { count: logs.length })}
+              </span>
+            )}
+          </div>
+          <div className="queue-task-actions-right">
+            {canSetPriority && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={task.priority > 0 ? <UnpinIcon size={14} /> : <PinIcon size={14} />}
+                loading={isActioning}
+                onClick={onTogglePin}
+                title={task.priority > 0 ? t('queue.unpinTask') : t('queue.pinTask')}
+              >
+                {task.priority > 0 ? t('queue.unpinTask') : t('queue.pinTask')}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={isLogsExpanded ? <ChevronUpIcon size={14} /> : <ChevronDownIcon size={14} />}
+              onClick={onToggleLogs}
+              title={isLogsExpanded ? t('queue.hideLogs') : t('queue.showLogs')}
             >
-              <span>{f.label}</span>
-              <span className="num">{count}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* ----- Task list ----- */}
-      {visibleTasks.length === 0 ? (
-        <div className="processing-queue-empty">
-          <div>
-            <div className="processing-queue-empty-title">
-              {tasks.length === 0 ? t('queue.empty') : t('queue.noTasksInFilter')}
-            </div>
-            <div className="processing-queue-empty-hint">
-              {tasks.length === 0
-                ? t('queue.emptyHint')
-                : t('queue.filterHint')}
-            </div>
+              {isLogsExpanded ? t('queue.hideLogs') : t('queue.showLogs')}
+            </Button>
+            {canRetry && (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<RefreshCwIcon size={14} />}
+                loading={isActioning}
+                onClick={onRetry}
+              >
+                {t('queue.retryTask')}
+              </Button>
+            )}
+            {canCancel && (
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={isActioning}
+                onClick={onCancel}
+              >
+                {t('queue.cancelTask')}
+              </Button>
+            )}
+            {canDelete && (
+              <IconButton
+                size={32}
+                title={t('queue.deleteTask')}
+                onClick={onDelete}
+              >
+                <TrashIcon size={14} />
+              </IconButton>
+            )}
           </div>
         </div>
-      ) : (
-        <motion.div
-          className="processing-queue-list"
-          initial="hidden"
-          animate="visible"
-          variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.02 } } }}
-        >
-          {visibleTasks.map((task) => {
-            const canCancel =
-              task.status === 'pending' || task.status === 'processing'
-            const canRetry = task.status === 'failed'
-            const canDelete = task.status === 'cancelled' || task.status === 'done' || task.status === 'failed'
-            const canSetPriority = task.status === 'pending'
-            const fileName = basename(task.file_path)
-            const createdAtMs = task.created_at * 1000
-            const startedAtMs = task.started_at ? task.started_at * 1000 : null
-            const startTimeMs = startedAtMs ?? createdAtMs
-            const elapsedMs = now - startTimeMs
-            const showElapsed = task.status !== 'done' && task.status !== 'cancelled'
-            const stale = isStale(task, now)
-            const showPages =
-              task.pages_total > 0 &&
-              (task.status === 'processing' || task.status === 'failed')
-            const etaMs =
-              task.status === 'processing'
-                ? estimateRemainingMs(now - (startedAtMs ?? createdAtMs), task.progress_pct)
-                : null
 
-            return (
-              <motion.div
-                key={task.id}
-                variants={{
-                  hidden: { opacity: 0, y: 4 },
-                  visible: { opacity: 1, y: 0 },
-                }}
-                transition={{ duration: 0.2 }}
-                className={`processing-queue-item is-${task.status}`}
-              >
-                {/* Top row: filename + doc_id on left, status + actions on right */}
-                <div className="processing-queue-item-top">
-                  <div className="processing-queue-item-info">
-                    <div
-                      className="processing-queue-item-title"
-                      title={task.file_path || task.doc_id}
-                    >
-                      {fileName || task.doc_id}
-                      <span className="doc-id">{task.doc_id}</span>
-                      {task.file_size_bytes != null && (
-                        <span className="processing-queue-item-size">
-                          {formatBytes(task.file_size_bytes)}
-                        </span>
-                      )}
-                    </div>
-                    <div className="processing-queue-item-meta">
-                      <span
-                        className={`processing-queue-status-badge is-${task.status}`}
-                      >
-                        {STATUS_LABEL[task.status]}
-                      </span>
-                      <PdfPipelineFlow variant="compact" task={task} />
-                      {showPages && (
-                        <span className="processing-queue-item-pages">
-                          {task.pages_done}/{task.pages_total}
-                        </span>
-                      )}
-                      {showElapsed && (
-                        <span
-                          className={
-                            'processing-queue-item-elapsed' +
-                            (stale ? ' is-slow' : '')
-                          }
-                          title={
-                            stale
-                              ? t('queue.staleHint')
-                              : startedAtMs
-                                ? t('queue.elapsedSinceStart')
-                                : t('queue.elapsedSinceCreate')
-                          }
-                        >
-                          ⏱ {formatElapsed(elapsedMs)}
-                        </span>
-                      )}
-                      {etaMs != null && (
-                        <span
-                          className="processing-queue-item-eta"
-                          title={t('queue.etaTitle')}
-                        >
-                          {t('queue.estimated', { time: formatElapsed(etaMs) })}
-                        </span>
-                      )}
-                      {task.retry_count > 0 && (
-                        <span className="processing-queue-retry-info">
-                          {t('queue.retryCount', { count: task.retry_count, max: task.max_retries })}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="processing-queue-item-actions">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleLogs(task.doc_id)}
-                      aria-label={expandedLogDocs.has(task.doc_id) ? t('queue.hideLogs') : t('queue.showLogs')}
-                      title={expandedLogDocs.has(task.doc_id) ? t('queue.hideLogs') : t('queue.showLogs')}
-                    >
-                      {expandedLogDocs.has(task.doc_id) ? <ChevronUpIcon size={16} /> : <ChevronDownIcon size={16} />}
-                    </Button>
-                    {canCancel && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        loading={actionId === task.id}
-                        onClick={() => handleCancel(task)}
-                      >
-                        {t('queue.cancelTask')}
-                      </Button>
-                    )}
-                    {canRetry && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        loading={actionId === task.id}
-                        onClick={() => handleRetry(task)}
-                      >
-                        {t('queue.retryTask')}
-                      </Button>
-                    )}
-                    {canSetPriority && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        loading={actionId === task.id}
-                        onClick={() => handleSetPriority(task)}
-                        title={task.priority > 0 ? t('queue.unpinTask') : t('queue.pinTask')}
-                      >
-                        {task.priority > 0 ? t('queue.unpinTask') : t('queue.pinTask')}
-                      </Button>
-                    )}
-                    {canDelete && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        loading={actionId === task.id}
-                        onClick={() => handleDelete(task)}
-                      >
-                        {t('queue.deleteTask')}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Progress (only when actively progressing) */}
-                {(task.status === 'pending' || task.status === 'processing') && (
-                  <div className="processing-queue-progress">
-                    <ProgressBar
-                      value={task.progress_pct}
-                      showPercent={task.status === 'processing'}
-                    />
-                    {task.details && (
-                      <span className="processing-queue-progress-detail">
-                        {task.details}
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {/* Error block (failed only) */}
-                {task.status === 'failed' && task.error && (
-                  <div className="processing-queue-error">
-                    <XIcon size={12} />
-                    {task.error}
-                  </div>
-                )}
-
-                {/* Expandable log panel */}
-                {expandedLogDocs.has(task.doc_id) && (
-                  <div className="processing-queue-log-panel">
-                    <IngestLogPanel logs={logMap.get(task.doc_id) ?? []} />
-                  </div>
-                )}
-              </motion.div>
-            )
-          })}
-        </motion.div>
-      )}
-    </div>
+        {/* Expandable log panel */}
+        <AnimatePresence initial={false}>
+          {isLogsExpanded && (
+            <motion.div
+              key="logs"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.18 }}
+              className="queue-task-logs"
+            >
+              <IngestLogPanel logs={logs} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
   )
 }

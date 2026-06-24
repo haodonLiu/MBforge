@@ -14,6 +14,7 @@ import type { DocumentEntry, ExtractionResult } from '../../../types'
 import type { OcrBlock } from '../../../api/tauri/pdf'
 import type { FigureLabel, CorefPrediction } from '../../../api/tauri/result_pane'
 import { getFigureLabels, getCorefPredictions } from '../../../api/tauri/result_pane'
+import { getFigureBboxes as fetchFigureBboxes } from '../../../api/tauri/pdf'
 
 export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMode?: 'read' | 'detect' | 'ocr' | 'coref') {
   const [pdfViewMode, setPdfViewMode] = useState(initialMode ?? 'read')
@@ -55,6 +56,9 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
   const [corefThreshold, setCorefThreshold] = useState(0.3)
   const [corefLabelsByPage, setCorefLabelsByPage] = useState<Map<number, FigureLabel[]>>(new Map())
   const [corefPredictionsByPage, setCorefPredictionsByPage] = useState<Map<number, CorefPrediction[]>>(new Map())
+  /** 当前文档 figure → page bbox (PDF points) — 用 xref 对不上 image_path（PyMuPDF 抽象层差）
+   *  实际用 image_path basename → bbox_pdf 一一对应（一个 figure 一行） */
+  const [corefFigureBoxes, setCorefFigureBoxes] = useState<Map<string, [number, number, number, number]>>(new Map())
   const [isLoadingCoref, setIsLoadingCoref] = useState(false)
 
   const [pdfUrl, setPdfUrl] = useState('')
@@ -373,6 +377,40 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     await loadCorefForPage(currentPage)
   }, [currentPage, loadCorefForPage])
 
+  /** coref mode 进入时一次性加载整本 PDF 的 figure bbox（page-level） */
+  const loadFigureBboxes = useCallback(async () => {
+    if (corefFigureBoxes.size > 0) return
+    const pdfPath = doc.source_path || doc.path
+    try {
+      const pages = await fetchFigureBboxes(pdfPath)
+      const map = new Map<string, [number, number, number, number]>()
+      // 当前以 xref 为 key — 前端 project 时再补 file basename 匹配逻辑
+      // 因持久化的 image_path 形如 <project>/reports/figures/<doc>/page_N_img_M.ext
+      // 与 sidecar 返回的 xref 不直接对应，所以这里再叠加一份 basename → bbox 的猜测：
+      // PyMuPDF xref 是 PDF 内部对象号；持久化的 image basename 是 Rust extract 顺序
+      // — 两者顺序通常一致 (按 page + extract order)，保守地存 xref→bbox，
+      //   前端用 filename 顺序匹配（fallback）
+      for (const p of pages) {
+        for (let i = 0; i < p.figures.length; i++) {
+          const fig = p.figures[i]
+          // key 1: 顺序占位（前端用 image_path basename 对不上时回退到 page 内顺序）
+          const orderKey = `__order__:${p.page_num}:${i + 1}`
+          map.set(orderKey, fig.bbox_pdf)
+          // key 2: xref（兼容未来按 xref 反查）
+          map.set(`xref:${fig.xref}`, fig.bbox_pdf)
+        }
+      }
+      setCorefFigureBoxes(map)
+    } catch (e) {
+      console.warn('Failed to load figure bboxes:', e)
+    }
+  }, [corefFigureBoxes.size, doc.source_path, doc.path])
+
+  useEffect(() => {
+    if (!isCorefMode) return
+    void loadFigureBboxes()
+  }, [isCorefMode, loadFigureBboxes])
+
   const handleSaveMolecule = useCallback((newSmiles: string) => {
     if (selectedDetection === null) return
     setPageDetections(prev => {
@@ -548,6 +586,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     corefThreshold, setCorefThreshold,
     corefLabels: corefLabelsByPage.get(currentPage) ?? [],
     corefPredictions: corefPredictionsByPage.get(currentPage) ?? [],
+    corefFigureBoxes,
     isLoadingCoref,
     refreshCorefForPage,
     pdfUrl, pdfLoading, pdfScrollRef,

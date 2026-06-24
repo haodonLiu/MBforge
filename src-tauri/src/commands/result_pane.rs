@@ -824,6 +824,7 @@ pub fn update_coref_pair(
         confidence: 1.0,
         source: "manual".to_string(),
         is_confirmed: true,
+        image_path: label.image_path.clone(),
     };
 
     // 4. 如果有旧的（mol_smiles, label_text）配对，先删

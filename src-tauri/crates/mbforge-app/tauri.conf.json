@@ -5,7 +5,7 @@
   "build": {
     "frontendDist": "../../../frontend/dist",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm --prefix ../../../frontend run build"
+    "beforeDevCommand": "npm --prefix ../../frontend run dev"
   },
   "app": {
     "windows": [
@@ -29,10 +29,7 @@
       "dangerousDisableAssetCspModification": true
     }
   },
-  "plugins": {
-    "dialog": {},
-    "shell": {}
-  },
+  "plugins": {},
   "bundle": {
     "active": true,
     "targets": "all",

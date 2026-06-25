@@ -24,8 +24,8 @@ use mbforge_domain::ingest_queue::{IngestQueue, IngestTask, QueueStats};
 use mbforge_domain::project::document_project::DocumentProject;
 use mbforge_domain::project::project::Project;
 use mbforge_infra::config::constants::{
-    EVT_INGEST_LOG, EVT_INGEST_PROGRESS, EVT_INGEST_QUEUE_UPDATE, EVT_INGEST_WORKER_HEARTBEAT,
-    EVT_OCR_API_MISSING,
+    EVT_DOC_RESULT, EVT_INGEST_LOG, EVT_INGEST_PROGRESS, EVT_INGEST_QUEUE_UPDATE,
+    EVT_INGEST_WORKER_HEARTBEAT, EVT_OCR_API_MISSING,
 };
 
 const WORKER_HEARTBEAT_INTERVAL_SECS: u64 = 5;
@@ -904,6 +904,12 @@ async fn process_ocr(
         "IngestWorker: ocr done doc_id={} pages={}",
         task.doc_id,
         extracted.page_count
+    );
+
+    // Notify frontend so the document list refreshes and shows the new status.
+    let _ = app_handle.emit(
+        EVT_DOC_RESULT,
+        serde_json::json!({ "doc_id": task.doc_id, "stage": "ocr", "status": "done" }),
     );
 
     let config = mbforge_infra::config::settings::AppConfig::load();

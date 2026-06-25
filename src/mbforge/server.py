@@ -708,16 +708,16 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
 
         if rid == "embedding":
             qwen3_embed.load()
-            if qwen3_embed._PROVIDER is None:
-                return {"ok": False, "error": qwen3_embed._ERROR or "未加载到内存"}
+            if qwen3_embed.EmbedBackend._PROVIDER is None:
+                return {"ok": False, "error": qwen3_embed.EmbedBackend._ERROR or "未加载到内存"}
             vecs = qwen3_embed.embed(["test"])
             if not isinstance(vecs, list) or len(vecs) != 1 or not isinstance(vecs[0], list) or len(vecs[0]) == 0:
                 return {"ok": False, "error": f"embed 输出异常: shape={getattr(vecs, 'shape', len(vecs) if hasattr(vecs, '__len__') else type(vecs).__name__)}"}
 
         elif rid == "reranker":
             qwen3_rerank.load()
-            if qwen3_rerank._MODEL is None:
-                return {"ok": False, "error": qwen3_rerank._ERROR or "未加载到内存"}
+            if qwen3_rerank.RerankBackend._MODEL is None:
+                return {"ok": False, "error": qwen3_rerank.RerankBackend._ERROR or "未加载到内存"}
             results = qwen3_rerank.rerank("test query", ["test passage"])
             if not isinstance(results, list) or len(results) != 1:
                 return {"ok": False, "error": f"rerank 输出异常: {results}"}

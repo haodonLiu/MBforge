@@ -380,7 +380,7 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
                     size="sm"
                     title={t('doc.reingest')}
                     loading={reingestingIds.has(doc.doc_id)}
-                    disabled={reingestingIds.has(doc.doc_id) || deletingIds.has(doc.doc_id) || isActivelyProcessing}
+                    disabled={reingestingIds.has(doc.doc_id) || deletingIds.has(doc.doc_id)}
                     onClick={() => handleReingest(doc)}
                   >
                     <RefreshCwIcon size={14} />

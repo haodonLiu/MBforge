@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- 容器：纯黑圆角方形（macOS squircle, 22% 圆角） -->
+  <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225" fill="#000000"/>
+
+  <!-- 六边形外环：flat-top, 外接圆 R=400, 描边 28, 纯白 -->
+  <polygon points="112,512 312,165 712,165 912,512 712,859 312,859"
+           fill="none" stroke="#FFFFFF" stroke-width="28" stroke-linejoin="miter"/>
+
+  <!-- 铁砧剪影：纯白填充，由 3 个矩形 + 1 个角锥组成 -->
+  <!-- 顶面 (face) -->
+  <rect x="320" y="400" width="360" height="60" fill="#FFFFFF"/>
+  <!-- 角锥 (horn) — 顶面右端尖出 -->
+  <polygon points="680,400 730,430 680,460" fill="#FFFFFF"/>
+  <!-- 腰 (waist) -->
+  <rect x="380" y="460" width="264" height="80" fill="#FFFFFF"/>
+  <!-- 底座 (base) -->
+  <rect x="280" y="540" width="464" height="90" fill="#FFFFFF"/>
+</svg>

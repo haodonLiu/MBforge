@@ -518,7 +518,7 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
             return True
         except ImportError:
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — ModelScope SDK can raise anything (HTTP, FS, Auth). Log + fall through to direct-HTTP path.
             logger.warning("modelscope SDK 失败: %s", e)
 
         # 直接 HTTP 下载
@@ -530,7 +530,7 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
             r = _requests.get(f"{ms_base}/{info.ms_repo}/repo/tree?Revision=master", timeout=30)
             tree = r.json().get("Data", []) if r.ok else []
             files = [f["Path"] for f in tree if f.get("Type") == "blob"]
-        except Exception:
+        except Exception:  # noqa: BLE001 — listing request can fail (network, JSON); empty file list triggers the "failed" event below.
             files = []
 
         if info.allow_patterns:
@@ -728,6 +728,10 @@ class ResourceManager:
             pass
 
         if not report.gpu_available:
+            # nvidia-smi probe — blocks up to 5s on host (no GPU present → 5s
+            # timeout fires). Caller must wrap in `loop.run_in_executor`; the
+            # 5s ceiling makes that mandatory, not optional. See server.py
+            # `check_environment` for the only production caller.
             try:
                 result = subprocess.run(
                     ["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"],
@@ -740,6 +744,7 @@ class ResourceManager:
                     if len(parts) > 1:
                         report.cuda_version = parts[1].strip()
             except (subprocess.SubprocessError, FileNotFoundError):
+                # nvidia-smi not installed or not on PATH — GPU stays unavailable.
                 pass
 
         # 逐个检查资源

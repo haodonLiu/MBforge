@@ -6,6 +6,8 @@ commands.allow = [
   "read_text_file",
   "upload_files",
   "delete_file",
+  "project_delete_document",
+  "project_reingest_document",
   "open_file",
   "open_external_url",
   # project_ops
@@ -21,6 +23,7 @@ commands.allow = [
   "extract_text",
   "get_document_ocr_layout",
   "augment_markdown_with_images",
+  "get_figure_bboxes",
   # ingest queue
   "ingest_enqueue",
   "ingest_list",
@@ -34,8 +37,12 @@ commands.allow = [
   "ingest_mark_done",
   "ingest_mark_failed",
   "ingest_dequeue",
+  "ingest_get_logs",
   # text_ops
   "text_chunk",
+  "ocr_test_mineru",
+  "ocr_test_uniparser",
+  "ocr_test_paddleocr",
   # detection_cache
   "cached_extract_page",
   "get_cached_page_detections",
@@ -152,6 +159,15 @@ commands.allow = [
   # llm
   "get_llm_env_config",
   "test_llm_connection",
+  # agent
+  "agent_init",
+  "agent_create_session",
+  "agent_chat",
+  "agent_chat_stream",
+  "agent_switch_project",
+  "agent_clear",
+  "agent_destroy_session",
+  "agent_get_history",
   # resource_manager
   "resources_check",
   "resources_status",
@@ -165,6 +181,15 @@ commands.allow = [
   "models_test",
   "models_cache_dir_info",
   "refresh_resolved_paths",
+  # result_pane
+  "confirm_coref_prediction",
+  "delete_coref_prediction",
+  "ensure_coref_for_image",
+  "get_figure_labels",
+  "get_coref_predictions",
+  "get_molecule_coref_chain",
+  "get_page_parse_result",
+  "update_coref_pair",
   # SAR
   "sar_find_scaffold",
   "sar_decompose",

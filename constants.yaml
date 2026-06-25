@@ -9,8 +9,12 @@
 
 app:
   name: "MBForge"
-  version: "0.2.0"
+  version: "0.3.0"
   author: "MBForge"
+  # Python sidecar version policy. When true (default), pyproject.toml
+  # [project].version is auto-synced from app.version. Set to false to
+  # let the Python sidecar evolve independently as its own crate.
+  sync_python_version: true
 
 project:
   format_version: 2

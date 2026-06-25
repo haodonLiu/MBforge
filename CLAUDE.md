@@ -126,17 +126,23 @@ cd src-tauri && cargo tauri build
 ┌──────────────────────────┼──────────────────────────────┐
 │  Tauri v2 Shell          │                               │
 │  ┌───────────────────────┴─────────────────────────┐    │
-│  │  Rust (src-tauri/src/)                          │    │
-│  │  commands/ (IPC 命令层)                         │    │
-│  │  core/ (Agent ReAct + 数据层 + 化学信息学)       │    │
-│  │  parsers/ (PDF 解析管线)                        │    │
+│  │  Rust (src-tauri/crates/)  — 5-crate workspace   │    │
+│  │  mbforge-app/      (commands/ IPC 层)            │    │
+│  │  mbforge-domain/   (document/, molecule/,       │    │
+│  │                     project/, vector/)          │    │
+│  │  mbforge-pipeline/ (PDF 解析管线 + ingest worker)│    │
+│  │  mbforge-infra/    (config, http, error, helpers)│    │
+│  │  mbforge-chem/     (smiles, molecode, markush)   │    │
+│  │  Agent ReAct 循环由 mbforge-app/commands/agent.rs│    │
+│  │  提供，LLM 调用走 mbforge-pipeline/structure/    │    │
+│  │  post_process.rs::call_llm_api[_async]。        │    │
 │  └──────────────────────┬──────────────────────────┘    │
 │  ┌──────────────────────┴──────────────────────────┐    │
 │  │  FastAPI Sidecar (port 18792, spawned by Tauri)  │    │
 │  │  5 个后端: Embed / Rerank / MolDet / MolScribe   │    │
-│  │  + 辅助端点: PDF render / health / environment   │    │
+│  │  / Zvec  + 辅助端点: PDF render / health /      │    │
+│  │  environment                                     │    │
 │  └──────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────┘
 ```
 
 **Dev mode**: Vite dev server proxies `/api/v1/*` to `localhost:18792` for sidecar health checks; all frontend business logic goes through `window.__TAURI__.invoke()`.
@@ -144,42 +150,41 @@ cd src-tauri && cargo tauri build
 
 ### Central Data Flow
 
-PDF 经 Rust `parsers/pipeline.rs` 解析，流向两条路径：
+PDF 经 Rust `crates/mbforge-pipeline` 解析，流向两条路径：
 
 ```
-PDF ─→ Rust parsers/pipeline.rs
+PDF ─→ Rust crates/mbforge-pipeline
   │
   ├─ 文档解析流程（抽取文本+图像+结构）
-  │   ├─ classify:   parsers/structure/intent.rs → PDF type / structure
-  │   ├─ extract:    parsers/pdf/{mineru,llama_parse,uniparser}.rs → Markdown
-  │   ├─ images:     parsers/pdf/images.rs (lopdf) → embedded images
-  │   ├─ ocr:        parsers/ocr/{paddle,uniparser}.rs → OCR 文本补充
-  │   ├─ vlm:        parsers/chem/vlm_chem.rs → 化学结构图 VLM 识别
-  │   ├─ associate:  parsers/chem/association.rs → 分子-文本关联
-  │   ├─ validate:   parsers/chem/chem_validate.rs → 化学结构验证
-  │   └─ report:     parsers/structure/{report,post_process,sections}.rs
+  │   ├─ classify:   pipeline/structure/intent.rs → PDF type / structure
+  │   ├─ extract:    pipeline/pdf/{mineru,llama_parse,uniparser}.rs → Markdown
+  │   ├─ images:     pipeline/pdf/images.rs (lopdf) → embedded images
+  │   ├─ ocr:        pipeline/ocr/{paddle,uniparser}.rs → OCR 文本补充
+  │   ├─ vlm:        pipeline/chem/vlm_chem.rs → 化学结构图 VLM 识别
+  │   ├─ associate:  pipeline/chem/association.rs → 分子-文本关联
+  │   ├─ validate:   pipeline/chem/chem_validate.rs → 化学结构验证
+  │   └─ report:     pipeline/structure/{report,post_process,sections}.rs
   │
-  ├─ 数据持久化（core/document/ + core/molecule/）
-  │   ├─ core/document/knowledge_base.rs   → SQLite 知识库
-  │   ├─ core/document/ingest_queue.rs      → 持久化处理队列
-  │   ├─ core/document/file_cache.rs        → 文件解析缓存
-  │   ├─ core/document/semantic_cache.rs    → 语义查询缓存
-  │   ├─ core/molecule/molecule_store.rs    → 分子入库
-  │   └─ core/molecule/molecule_db.rs       → 分子数据库 CRUD
+  ├─ 数据持久化（crates/mbforge-domain/）
+  │   ├─ document/knowledge_base.rs   → SQLite 知识库
+  │   ├─ document/ingest_queue.rs      → 持久化处理队列
+  │   ├─ document/file_cache.rs        → 文件解析缓存
+  │   ├─ document/semantic_cache.rs    → 语义查询缓存
+  │   ├─ molecule/molecule_store.rs    → 分子入库
+  │   └─ molecule/molecule_db.rs       → 分子数据库 CRUD
   │
   └─ 查询路径
-      ├─ core/vector/sqlite_vector_store.rs → 向量搜索 + FTS5
-      └─ core/agent/ → ReAct 循环（LLM + 工具调用 + 记忆 + 轨迹审计）
+      ├─ domain/vector/vector_store.rs → 向量搜索 + FTS5 (Zvec)
+      └─ app/commands/agent.rs → 会话管理；LLM 走 pipeline/structure/post_process.rs::call_llm_api[_async]
 ```
-
 ### Sidecar Backends（Python, port 18792）
 
 | 端点 | 后端模块 | 职责 |
-|------|---------|------|
-| `/api/v1/embed` | `backends/qwen3_embed.py` | 文本 → 384 维向量 |
-| `/api/v1/rerank` | `backends/qwen3_rerank.py` | 搜索结果的语义重排序 |
-| `/api/v1/moldet/*` | `backends/moldet.py` + `moldet_coref.py` | YOLO 分子检测 + 跨页关联 |
+| `/api/v1/embed` | `backends/qwen3.py`（`qwen3_embed` 别名）| 文本 → 1024 维向量 |
+| `/api/v1/rerank` | `backends/qwen3.py`（`qwen3_rerank` 别名）| 搜索结果的语义重排序 |
+| `/api/v1/moldet/*` | `backends/moldet.py` | YOLO 分子检测；coref 走 `parsers/molecule/coref_alt.py` |
 | `/api/v1/molscribe` | `backends/molscribe.py` | 分子结构图 → SMILES |
+| `/api/v1/zvec/*` | `backends/zvec_backend.py` | 混合检索：dense + FTS5 |
 | `/api/v1/pdf/render-pages` | `server.py`（内联） | PDF 页面渲染（PyMuPDF） |
 
 ### 分子三层表示

@@ -90,17 +90,23 @@ Natural Language Query + Reasoning Analysis
 ┌──────────────────────────┼──────────────────────────────────┐
 │  Tauri Shell (Tauri v2 + Rust Core + Python Sidecar)        │
 │  ┌────────────────────┐  ┌──────────────────────────────┐  │
-│  │  src-tauri/src/    │  │  FastAPI Sidecar             │  │
+│  │  src-tauri/crates/ │  │  FastAPI Sidecar             │  │
 │  │                    │  │  (port 18792)                 │  │
-│  │  commands/ (18)    │  │  ┌────────────────────────┐  │  │
-│  │  core/     (74)    │  │  │ Qwen3-Embedding       │  │  │
-│  │    agent/          │  │  │ Qwen3-Reranker        │  │  │
-│  │    chem/           │  │  │ MolDet (YOLO)         │  │  │
+│  │  mbforge-app/      │  │  ┌────────────────────────┐  │  │
+│  │    commands/ (~30) │  │  │ Qwen3-Embedding       │  │  │
+│  │  ────────────────  │  │  │ Qwen3-Reranker        │  │  │
+│  │  mbforge-domain/   │  │  │ MolDet (YOLO)         │  │  │
 │  │    document/       │  │  │ MolScribe (Swin+TR)   │  │  │
-│  │    molecule/       │  │  └────────────────────────┘  │  │
-│  │  parsers/  (27)    │  │                              │  │
+│  │    molecule/       │  │  │ Zvec (dense+FTS)      │  │  │
+│  │    project/        │  │  └────────────────────────┘  │  │
+│  │    vector/         │  │                              │  │
+│  │  mbforge-pipeline/ │  │                              │  │
+│  │    pipeline/       │  │                              │  │
+│  │    structure/      │  │                              │  │
+│  │    pdf/, ocr/, chem/│  │                              │  │
+│  │  mbforge-infra/    │  │                              │  │
+│  │  mbforge-chem/     │  │                              │  │
 │  └────────────────────┘  └──────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
 ```
 
 ### Dual-language Architecture
@@ -108,7 +114,7 @@ Natural Language Query + Reasoning Analysis
 | Layer | Language | Responsibility |
 |-------|----------|----------------|
 | **Rust Core** | Rust | Agent loop, PDF native parsing, SQLite database, Tauri IPC command layer, API model calls |
-| **Python Service** | Python | Local model inference (Embedding, Rerank, MolDet, MolScribe), FastAPI REST API |
+| **Python Service** | Python | Local model inference (Embedding, Rerank, MolDet, MolScribe, Zvec dense+FTS), FastAPI REST API |
 | **Frontend** | TypeScript | React components, page routing, state management, Tauri bridging |
 
 ### Performance Optimizations
@@ -120,25 +126,7 @@ Natural Language Query + Reasoning Analysis
 
 ## Quick Start
 
-### One-click Setup
-
-```bash
-# Linux/macOS
-./setup/index.sh
-
-# Windows
-setup\index.bat
-```
-
-Interactive script guides you through:
-1. Environment check and dependency installation
-2. UniParser service configuration
-3. Ollama detection
-4. LLM provider selection (OpenAI/Anthropic/Ollama)
-5. Embedding/Rerank model configuration
-6. ModelScope model download
-7. Write `.env` configuration file
-8. Verify installation
+> **Note:** The legacy one-click installer (`setup/index.sh` / `setup\index.bat`) was retired when the project moved to a 5-crate Rust workspace and a single Python sidecar. Use the **Manual Start** below — it is the supported path as of 2026-06-25.
 
 ### Manual Start
 
@@ -168,7 +156,7 @@ cd src-tauri && cargo tauri build
 |----------|-----------|---------|---------|
 | **Rust Core** | Tauri v2, lopdf, rusqlite, reqwest, tokio | 2 | Desktop shell, PDF parsing, database, HTTP, async |
 | **Python Service** | FastAPI, uvicorn, PyTorch (CUDA 12.8) | ≥0.115, ≥2.6 | REST API, model inference |
-| **Frontend** | React 19, TypeScript, Vite 6 | 19, 6 | UI framework, build tools |
+| **Frontend** | React 19, TypeScript 6, Vite 8 | 19, 6, 8 | UI framework, type system, build tool |
 | **Cheminformatics** | chematic (Rust), RDKit (Python), MolScribe | — | Molecule parsing, fingerprints, image recognition |
 | **AI/ML** | sentence-transformers, ultralytics (YOLO) | ≥2.5, ≥8.3 | Embedding, molecule detection |
 | **PDF Parsing** | lopdf (Rust), PyMuPDF, MinerU, LlamaParse, UniParser | — | Multi-engine document parsing |
@@ -260,8 +248,8 @@ Scopes: frontend | rust | python | tauri | api | parser | agent | deps
 | **Project Entry** | [README.md](README.md) | Human user quick start |
 | **Agent Spec + Architecture** | [AGENTS.md](AGENTS.md) | AI coding assistant manual |
 | **Coding Guide** | [CLAUDE.md](CLAUDE.md) | Claude context + architecture quick reference |
-| **E-SMILES Spec** | [docs/esmiles-spec.md](docs/esmiles-spec.md) | Molecular representation spec |
-| **MoleCode Spec** | [docs/molecode-spec.md](docs/molecode-spec.md) | Graph syntax spec |
+| **E-SMILES Spec** | [docs/specs/esmiles-spec.md](docs/specs/esmiles-spec.md) | Molecular representation spec |
+| **MoleCode Spec** | [docs/specs/molecode-spec.md](docs/specs/molecode-spec.md) | Graph syntax spec |
 | **Tech Stack** | [docs/TECH_STACK.md](docs/TECH_STACK.md) | Dependency selection details |
 | **Pipeline Redesign** | [docs/pipeline-redesign.md](docs/pipeline-redesign.md) | Parsing pipeline incremental design |
 | **Architecture Conventions** | [docs/specs/architecture-conventions.md](docs/specs/architecture-conventions.md) | Module boundaries and layering constraints |
@@ -538,8 +526,8 @@ uv run ruff check src/ && uv run ruff format src/ --check
 | **项目入口** | [README.md](README.md) | 人类用户快速开始 |
 | **Agent 规范 + 架构** | [AGENTS.md](AGENTS.md) | AI 编码助手操作手册 |
 | **编码指南** | [CLAUDE.md](CLAUDE.md) | Claude 上下文 + 架构速查 |
-| **E-SMILES 规范** | [docs/esmiles-spec.md](docs/esmiles-spec.md) | 分子表示规范 |
-| **MoleCode 规范** | [docs/molecode-spec.md](docs/molecode-spec.md) | 图语法规范 |
+| **E-SMILES 规范** | [docs/specs/esmiles-spec.md](docs/specs/esmiles-spec.md) | 分子表示规范 |
+| **MoleCode 规范** | [docs/specs/molecode-spec.md](docs/specs/molecode-spec.md) | 图语法规范 |
 | **技术栈** | [docs/TECH_STACK.md](docs/TECH_STACK.md) | 依赖选型详情 |
 | **管线重设计** | [docs/pipeline-redesign.md](docs/pipeline-redesign.md) | 解析管线增量设计 |
 | **架构约定** | [docs/specs/architecture-conventions.md](docs/specs/architecture-conventions.md) | 模块边界与分层约束 |

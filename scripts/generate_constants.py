@@ -1,345 +1,593 @@
 #!/usr/bin/env python3
-"""从 constants.yaml 生成 Rust 和 Python 常量文件.
+"""MBForge constants codegen — single source of truth → Rust + Python.
 
-用法:
-    python scripts/generate_constants.py
+Reads ``constants.yaml`` (project root) and emits:
 
-生成:
-    src-tauri/src/core/constants.rs
-    src/mbforge/utils/constants.py
+  - ``src/mbforge/utils/constants.py``                       (overwritten)
+  - ``<rust-out>/constants.rs``                              (YAML-derived only;
+                                                              consumed by build.rs
+                                                              via ``include!``)
+
+The Rust output is YAML-derived ONLY. Rust-only constants and helpers
+(Tauri event names, path helpers, project layout) live in
+``src-tauri/crates/mbforge-infra/src/config/constants.rs`` by hand.
+
+Usage:
+    python scripts/generate_constants.py                 # write Python (default)
+    python scripts/generate_constants.py --rust-out DIR  # also write Rust to DIR
+    python scripts/generate_constants.py --check         # CI: exit 1 on drift
 """
 
 from __future__ import annotations
 
+import argparse
+import json
+import re
 import sys
+import tomllib
+from pathlib import Path
+from typing import Any
+
+try:
+    import yaml
+except ImportError:  # transitive dep (e.g. via openai). Add to dev deps if missing.
+    sys.exit(
+        "PyYAML not importable. Run `uv sync` or add `pyyaml` to pyproject.toml."
+    )
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+REPO_ROOT = Path(__file__).resolve().parent.parent
+YAML_PATH = REPO_ROOT / "constants.yaml"
+PY_OUT = REPO_ROOT / "src" / "mbforge" / "utils" / "constants.py"
+
+# Version-sync targets. Each path contains a version string managed by
+# `app.version` in constants.yaml. The kind controls sync/check behavior:
+#   "toml-section:K"   — required to match; K is the TOML section header
+#                        (e.g. "[workspace.package]") where `version` lives.
+#                        Drift = hard fail.
+#   "toml-section-opt:K" — like above but drift = warn only (Python sidecar
+#                        can evolve as an independent crate, controlled by
+#                        `app.sync_python_version` in YAML).
+#   "json-top"         — required to match; updates top-level "version".
+#                        Drift = hard fail.
+VERSION_TARGETS: list[tuple[str, Path, str]] = [
+    ("Cargo workspace", REPO_ROOT / "src-tauri" / "Cargo.toml", "toml-section:[workspace.package]"),
+    ("Tauri config", REPO_ROOT / "src-tauri" / "crates" / "mbforge-app" / "tauri.conf.json", "json-top"),
+    ("Frontend package", REPO_ROOT / "frontend" / "package.json", "json-top"),
+    ("Python sidecar", REPO_ROOT / "pyproject.toml", "toml-section-opt:[project]"),
+]
+
+# ---------------------------------------------------------------------------
+# Type registry — YAML key path → (Rust type, Python type)
+# Every key in constants.yaml must appear here, or the script aborts.
+# ---------------------------------------------------------------------------
+TYPE_MAP: dict[str, tuple[str, str]] = {
+    "app.name": ("&str", "str"),
+    "app.version": ("&str", "str"),
+    "app.author": ("&str", "str"),
+    "project.format_version": ("u32", "int"),
+    "project.meta_dir": ("&str", "str"),
+    "directories.memory": ("&str", "str"),
+    "directories.trajectory": ("&str", "str"),
+    "directories.trajectory_file": ("&str", "str"),
+    "directories.summary": ("&str", "str"),
+    "directories.mol_db_filename": ("&str", "str"),
+    "directories.kb_collection_docs": ("&str", "str"),
+    "directories.index_file": ("&str", "str"),
+    "directories.settings_file": ("&str", "str"),
+    "models.default_embed": ("&str", "str"),
+    "models.default_rerank": ("&str", "str"),
+    "models.default_hf_endpoint": ("&str", "str"),
+    "models.cache_dir": ("&str", "str"),
+    "providers.openai_compatible": ("&str", "str"),
+    "providers.anthropic": ("&str", "str"),
+    "providers.qwen3": ("&str", "str"),
+    "providers.sentence_transformers": ("&str", "str"),
+    "providers.ollama": ("&str", "str"),
+    "providers.api": ("&str", "str"),
+    "providers.local": ("&str", "str"),
+    "providers.ocr_none": ("&str", "str"),
+    "llm.max_tokens": ("u32", "int"),
+    "llm.temperature": ("f32", "float"),
+    "llm.top_p": ("f32", "float"),
+    "pdf.chunk_size": ("usize", "int"),
+    "pdf.chunk_overlap": ("usize", "int"),
+    "sidecar.default_port": ("u16", "int"),
+    "sidecar.default_url": ("&str", "str"),
+    "supported_doc_exts": ("&[&str]", "set[str]"),
+    "supported_mol_exts": ("&[&str]", "set[str]"),
+}
+
+# YAML key → final const identifier. Explicit because identifiers don't
+# follow a strict rule from YAML paths (some drop the section prefix, some
+# add suffix). Keep in sync with the 50+ call sites in src-tauri/crates/**.
+IDENTS: dict[str, str] = {
+    "app.name": "APP_NAME",
+    "app.version": "APP_VERSION",
+    "app.author": "APP_AUTHOR",
+    "project.format_version": "PROJECT_FORMAT_VERSION",
+    "project.meta_dir": "PROJECT_META_DIR",
+    "directories.memory": "MEMORY_DIR",
+    "directories.trajectory": "TRAJECTORY_DIR",
+    "directories.trajectory_file": "TRAJECTORY_FILE",
+    "directories.summary": "SUMMARY_DIR",
+    "directories.mol_db_filename": "MOL_DB_FILENAME",
+    "directories.kb_collection_docs": "KB_COLLECTION_DOCS",
+    "directories.index_file": "INDEX_FILE",
+    "directories.settings_file": "SETTINGS_FILE",
+    "models.default_embed": "DEFAULT_EMBED_MODEL",
+    "models.default_rerank": "DEFAULT_RERANK_MODEL",
+    "models.default_hf_endpoint": "DEFAULT_HF_ENDPOINT",
+    "models.cache_dir": "MODEL_CACHE_DIR",
+    "providers.openai_compatible": "PROVIDER_OPENAI_COMPATIBLE",
+    "providers.anthropic": "PROVIDER_ANTHROPIC",
+    "providers.qwen3": "PROVIDER_QWEN3",
+    "providers.sentence_transformers": "PROVIDER_SENTENCE_TRANSFORMERS",
+    "providers.ollama": "PROVIDER_OLLAMA",
+    "providers.api": "PROVIDER_API",
+    "providers.local": "PROVIDER_LOCAL",
+    "providers.ocr_none": "PROVIDER_OCR_NONE",
+    "llm.max_tokens": "LLM_MAX_TOKENS",
+    "llm.temperature": "LLM_TEMPERATURE",
+    "llm.top_p": "LLM_TOP_P",
+    "pdf.chunk_size": "PDF_CHUNK_SIZE",
+    "pdf.chunk_overlap": "PDF_CHUNK_OVERLAP",
+    "sidecar.default_port": "DEFAULT_SIDECAR_PORT",
+    "sidecar.default_url": "DEFAULT_SIDECAR_URL",
+    "supported_doc_exts": "SUPPORTED_DOC_EXTS",
+    "supported_mol_exts": "SUPPORTED_MOL_EXTS",
+}
+
+
+def ident_for(key: str) -> str:
+    if key not in IDENTS:
+        sys.exit(f"Missing IDENTS entry for YAML key: {key!r}")
+    return IDENTS[key]
+
+
+# ---------------------------------------------------------------------------
+# YAML load + validation
+# ---------------------------------------------------------------------------
+def load_yaml() -> dict[str, Any]:
+    if not YAML_PATH.exists():
+        sys.exit(f"constants.yaml not found at {YAML_PATH}")
+    with YAML_PATH.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def flatten(data: dict[str, Any], prefix: str = "") -> list[tuple[str, Any]]:
+    out: list[tuple[str, Any]] = []
+    for k, v in data.items():
+        key = f"{prefix}.{k}" if prefix else str(k)
+        if isinstance(v, dict):
+            out.extend(flatten(v, key))
+        else:
+            out.append((key, v))
+    return out
+
+
+def resolve(key: str) -> tuple[str, str]:
+    if key not in TYPE_MAP:
+        sys.exit(
+            f"Unknown YAML key: {key!r}\n"
+            f"Add it to TYPE_MAP and IDENTS in scripts/generate_constants.py."
+        )
+    return TYPE_MAP[key]
+
+
+# YAML keys that exist purely as script config (read by main/sync_versions)
+# and are not emitted as Rust/Python constants. Listed here so the unknown-key
+# check in the emission loop doesn't reject them.
+META_KEYS: set[str] = {
+    "app.sync_python_version",
+}
+
+
+# ---------------------------------------------------------------------------
+# Rust emitter (no inner attributes — apply at the include! site)
+# ---------------------------------------------------------------------------
+RUST_HEADER = """\
+// ============================================================
+// AUTO-GENERATED from constants.yaml — DO NOT EDIT MANUALLY
+// Generated by: python scripts/generate_constants.py
+// Consumed via `include!` in `mbforge-infra/src/config/generated.rs`.
+// No inner attributes here — apply them at the include! site.
+// ============================================================
+
+use std::path::PathBuf;
+"""
+
+
+def emit_rust_value(rust_type: str, value: Any) -> str:
+    if rust_type == "&str":
+        return f'"{value}"'
+    if rust_type in {"u16", "u32", "usize", "u64", "i32", "i64"}:
+        return str(value)
+    if rust_type in {"f32", "f64"}:
+        suffix = "f64" if rust_type == "f64" else "f32"
+        return f"{value}_{suffix}"
+    if rust_type == "bool":
+        return "true" if value else "false"
+    if rust_type == "&[&str]":
+        if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+            sys.exit(f"Expected list[str] for &[&str], got: {value!r}")
+        return "&[" + ", ".join(f'"{x}"' for x in value) + "]"
+    sys.exit(f"Unsupported Rust type: {rust_type}")
+
+
+def emit_rust_constants(items: list[tuple[str, Any, str]]) -> str:
+    lines: list[str] = []
+    last_section = None
+    for key, value, rust_type in items:
+        section = key.split(".", 1)[0]
+        if section != last_section:
+            if lines:
+                lines.append("")
+            lines.append(f"// {section}")
+            last_section = section
+        lines.append(
+            f"pub const {ident_for(key)}: {rust_type} = "
+            f"{emit_rust_value(rust_type, value)};"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def render_rust(items: list[tuple[str, Any, str]]) -> str:
+    return RUST_HEADER + "\n" + emit_rust_constants(items)
+
+
+# ---------------------------------------------------------------------------
+# Python emitter
+# ---------------------------------------------------------------------------
+PY_HEADER = '''\
+"""MBForge 全局常量 — 从 constants.yaml 自动生成.
+
+DO NOT EDIT MANUALLY. Run ``python scripts/generate_constants.py`` instead.
+"""
+
+from __future__ import annotations
+
+import os
 from pathlib import Path
 
-import yaml
+try:
+    from platformdirs import user_config_dir, user_data_dir
+except ImportError:
+    user_config_dir = user_data_dir = lambda *a, **kw: str(
+        Path.home() / ".config" / a[0] if a else ".config"
+    )
 
-ROOT = Path(__file__).resolve().parent.parent
-YAML_PATH = ROOT / "constants.yaml"
-RUST_REF = ROOT / ".generated" / "rust_constants.rs"  # 参考文件，需人工合并到 constants.rs
-PYTHON_OUT = ROOT / "src" / "mbforge" / "utils" / "constants.py"
-
-
-def load_yaml() -> dict:
-    with open(YAML_PATH, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+# Python-only constants (not shared with Rust) live below the generated block.
+'''
 
 
-# ---------------------------------------------------------------------------
-# Rust 生成
-# ---------------------------------------------------------------------------
+def emit_py_value(py_type: str, value: Any) -> str:
+    if py_type == "str":
+        return repr(str(value))
+    if py_type in {"int", "float"}:
+        return repr(value)
+    if py_type == "bool":
+        return "True" if value else "False"
+    if py_type == "set[str]":
+        if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+            sys.exit(f"Expected list[str] for set[str], got: {value!r}")
+        # Python uses dotted extensions; YAML has no-dot.
+        return "{" + ", ".join(f'".{x}"' for x in value) + "}"
+    sys.exit(f"Unsupported Python type: {py_type}")
 
-def generate_rust(data: dict) -> str:
-    lines = []
-    lines.append("// ============================================================")
-    lines.append("// AUTO-GENERATED from constants.yaml — DO NOT EDIT MANUALLY")
-    lines.append("// Run: python scripts/generate_constants.py")
-    lines.append("// ============================================================")
-    lines.append("")
-    lines.append("use std::path::PathBuf;")
-    lines.append("")
-    lines.append("// NOTE: Keep in sync with src/mbforge/utils/constants.py (Python sidecar).")
-    lines.append("// When changing a value here, update the corresponding Python constant.")
-    lines.append("")
 
-    # App
-    lines.append(f'pub const APP_NAME: &str = "{data["app"]["name"]}";')
-    lines.append(f'pub const APP_VERSION: &str = "{data["app"]["version"]}";')
-    lines.append(f'pub const PROJECT_FORMAT_VERSION: u32 = {data["project"]["format_version"]};')
-    lines.append(f'pub const PROJECT_META_DIR: &str = "{data["project"]["meta_dir"]}";')
-    lines.append("")
-
-    # Default models
-    m = data["models"]
-    lines.append(f'pub const DEFAULT_EMBED_MODEL: &str = "{m["default_embed"]}";')
-    lines.append(f'pub const DEFAULT_RERANK_MODEL: &str = "{m["default_rerank"]}";')
-    lines.append("")
-
-    # HF mirror
-    lines.append(f'pub const DEFAULT_HF_ENDPOINT: &str = "{m["default_hf_endpoint"]}";')
-    lines.append("")
-
-    # PDF
-    p = data["pdf"]
-    lines.append(f'pub const PDF_CHUNK_SIZE: usize = {p["chunk_size"]};')
-    lines.append(f'pub const PDF_CHUNK_OVERLAP: usize = {p["chunk_overlap"]};')
-    lines.append("")
-
-    # LLM
-    l = data["llm"]
-    lines.append(f'pub const LLM_MAX_TOKENS: u32 = {l["max_tokens"]};')
-    lines.append(f'pub const LLM_TEMPERATURE: f32 = {l["temperature"]};')
-    lines.append(f'pub const LLM_TOP_P: f32 = {l["top_p"]};')
-    lines.append("")
-
-    # Providers
-    pv = data["providers"]
-    lines.append(f'pub const PROVIDER_OPENAI_COMPATIBLE: &str = "{pv["openai_compatible"]}";')
-    lines.append(f'pub const PROVIDER_ANTHROPIC: &str = "{pv["anthropic"]}";')
-    lines.append(f'pub const PROVIDER_QWEN3: &str = "{pv["qwen3"]}";')
-    lines.append(f'pub const PROVIDER_SENTENCE_TRANSFORMERS: &str = "{pv["sentence_transformers"]}";')
-    lines.append(f'pub const PROVIDER_OLLAMA: &str = "{pv["ollama"]}";')
-    lines.append(f'pub const PROVIDER_API: &str = "{pv["api"]}";')
-    lines.append(f'pub const PROVIDER_LOCAL: &str = "{pv["local"]}";')
-    lines.append("")
-
-    # Directories
-    d = data["directories"]
-    lines.append(f'pub const MEMORY_DIR: &str = "{d["memory"]}";')
-    lines.append(f'pub const TRAJECTORY_DIR: &str = "{d["trajectory"]}";')
-    lines.append(f'pub const TRAJECTORY_FILE: &str = "{d["trajectory_file"]}";')
-    lines.append(f'pub const SUMMARY_DIR: &str = "{d["summary"]}";')
-    lines.append(f'pub const INDEX_FILE: &str = "{d["index_file"]}";')
-    lines.append(f'pub const SETTINGS_FILE: &str = "{d["settings_file"]}";')
-    lines.append(f'pub const MOL_DB_FILENAME: &str = "{d["mol_db_filename"]}";')
-    lines.append("")
-
-    # Sidecar
-    sc = data["sidecar"]
-    lines.append(f'pub const DEFAULT_SIDECAR_PORT: u16 = {sc["default_port"]};')
-    lines.append(f'pub const DEFAULT_SIDECAR_URL: &str = "{sc["default_url"]}";')
-    lines.append("")
-
-    # Extensions (Rust: no dot)
-    doc_exts = ", ".join(f'"{e}"' for e in data["supported_doc_exts"])
-    mol_exts = ", ".join(f'"{e}"' for e in data["supported_mol_exts"])
-    lines.append(f"pub const SUPPORTED_DOC_EXTS: &[&str] = &[{doc_exts}];")
-    lines.append(f"pub const SUPPORTED_MOL_EXTS: &[&str] = &[{mol_exts}];")
-    lines.append("")
-
-    # Rust-only constants (Tauri events, agent config)
-    lines.append("// ===== Rust-only constants (not shared with Python) =====")
-    lines.append("")
-    lines.append("// Metadata keys")
-    lines.append('pub const META_SOURCE: &str = "source";')
-    lines.append('pub const META_FILENAME: &str = "filename";')
-    lines.append('pub const META_DOC_ID: &str = "doc_id";')
-    lines.append("")
-    lines.append("// Tauri IPC event names")
-    lines.append('pub const EVT_DOC_PROGRESS: &str = "doc-progress";')
-    lines.append('pub const EVT_DOC_RESULT: &str = "doc-result";')
-    lines.append('pub const EVT_SIDECAR_LOG: &str = "sidecar://log";')
-    lines.append('pub const EVT_SIDECAR_STATUS: &str = "sidecar://status";')
-    lines.append('pub const EVT_AGENT_STREAM_CHUNK: &str = "agent-stream-chunk";')
-    lines.append('pub const EVT_AGENT_STREAM_DONE: &str = "agent-stream-done";')
-    lines.append('pub const EVT_KB_SEARCH_CHUNK: &str = "kb-search-chunk";')
-    lines.append('pub const EVT_MODEL_DOWNLOAD_PROGRESS: &str = "model-download-progress";')
-    lines.append('pub const EVT_INGEST_PROGRESS: &str = "ingest-progress";')
-    lines.append('pub const EVT_INGEST_QUEUE_UPDATE: &str = "ingest-queue-update";')
-    lines.append('pub const EVT_INGEST_WORKER_HEARTBEAT: &str = "ingest-worker-heartbeat";')
-    lines.append("")
-    lines.append("// Agent config")
-    lines.append("pub const AGENT_MAX_ITERATIONS: usize = 5;")
-    lines.append("pub const AGENT_MAX_HISTORY_ROUNDS: usize = 20;")
-    lines.append("pub const AGENT_MAX_TOTAL_TOKENS: usize = 32000;")
-    lines.append("")
-    lines.append("// Embedding base URL (same as sidecar URL)")
-    lines.append(f'pub const DEFAULT_EMBED_BASE_URL: &str = "{sc["default_url"]}";')
-    lines.append("")
-
-    # Path functions
-    lines.append("// ===== Path helpers =====")
-    lines.append("")
-    lines.append("pub fn sidecar_url() -> String {")
-    lines.append('    std::env::var("MBFORGE_SIDECAR_URL").unwrap_or_else(|_| DEFAULT_SIDECAR_URL.to_string())')
-    lines.append("}")
-    lines.append("")
-    lines.append("pub fn model_cache_dir() -> PathBuf {")
-    lines.append('    if let Ok(dir) = std::env::var("MBFORGE_MODEL_CACHE_DIR") {')
-    lines.append("        return PathBuf::from(dir);")
-    lines.append("    }")
-    lines.append("    if let Some(home) = directories::UserDirs::new().map(|u| u.home_dir().to_path_buf()) {")
-    lines.append('        return home.join("mbforge").join("models");')
-    lines.append("    }")
-    lines.append('    PathBuf::from("mbforge/models")')
-    lines.append("}")
-    lines.append("")
-    lines.append("pub fn global_config_dir() -> PathBuf {")
-    lines.append("    directories::ProjectDirs::from(\"\", \"\", \"MBForge\")")
-    lines.append("        .map(|d| d.config_dir().to_path_buf())")
-    lines.append("        .unwrap_or_else(|| PathBuf::from(\".\").join(\".config\").join(\"MBForge\"))")
-    lines.append("}")
-    lines.append("")
-    lines.append("pub fn global_data_dir() -> PathBuf {")
-    lines.append("    directories::ProjectDirs::from(\"\", \"\", \"MBForge\")")
-    lines.append("        .map(|d| d.data_dir().to_path_buf())")
-    lines.append("        .unwrap_or_else(|| PathBuf::from(\".\").join(\".local\").join(\"share\").join(\"MBForge\"))")
-    lines.append("}")
-    lines.append("")
-
+def emit_py_constants(items: list[tuple[str, Any, str, str]]) -> str:
+    # items: (key, value, rust_type, py_type)
+    lines: list[str] = []
+    last_section = None
+    for key, value, _rust, py_type in items:
+        section = key.split(".", 1)[0]
+        if section != last_section:
+            if lines:
+                lines.append("")
+            lines.append(f"# {section}")
+            last_section = section
+        ident = ident_for(key)
+        literal = emit_py_value(py_type, value)
+        if py_type == "set[str]":
+            lines.append(f"{ident}: {py_type} = {literal}")
+        else:
+            lines.append(f"{ident} = {literal}")
     return "\n".join(lines) + "\n"
 
 
+PY_PRESERVED = '''\
+# ===== Python-only constants (not shared with Rust) =====
+
+# Qwen3 Embedding/Reranker 指令前缀
+EMBED_INSTRUCTION_RETRIEVAL = "Given a web search query, retrieve relevant passages that answer the query"
+EMBED_INSTRUCTION_CLUSTER = "Given a document, retrieve relevant passages that are semantically similar"
+RERANK_DEFAULT_INSTRUCTION = "Given a web search query, retrieve relevant passages that answer the query"
+
+# ===== Path helpers =====
+
+GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))
+GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
+
+
+def get_model_cache_dir() -> str:
+    """获取模型缓存目录（优先配置文件，其次默认路径）."""
+    try:
+        from .config import load_global_config
+        cfg = load_global_config()
+        if cfg.model_cache_dir:
+            result = cfg.model_cache_dir
+            if result.startswith("~/") or result.startswith("~\\\\"):
+                return str(Path.home() / Path(result[2:]))
+            elif result == "~":
+                return str(Path.home())
+            return result
+    except Exception:
+        pass
+    return str(Path.home() / Path(MODEL_CACHE_DIR))
+
+
+def ensure_hf_mirror() -> None:
+    """设置 HuggingFace 镜像环境变量（如果未设置）。"""
+    if not os.environ.get("HF_ENDPOINT"):
+        os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
+'''
+
+
+def render_py(items: list[tuple[str, Any, str, str]]) -> str:
+    return PY_HEADER + "\n" + emit_py_constants(items) + "\n" + PY_PRESERVED
+
+
 # ---------------------------------------------------------------------------
-# Python 生成
+# Version sync
 # ---------------------------------------------------------------------------
+def read_toml_section_version(path: Path, section: str) -> str | None:
+    """Return the `version = "..."` value inside the given TOML section, or
+    None if the section/version is absent. Section may be nested (e.g.
+    "workspace.package"); tomllib exposes it as nested dicts, so we walk
+    the dotted path."""
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    cur: Any = data
+    for part in section.strip("[]").split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    if not isinstance(cur, dict):
+        return None
+    v = cur.get("version")
+    return v if isinstance(v, str) else None
 
-def generate_python(data: dict) -> str:
-    lines = []
-    lines.append('"""MBForge 全局常量 — 从 constants.yaml 自动生成."""')
-    lines.append("")
-    lines.append("# ============================================================")
-    lines.append("# AUTO-GENERATED from constants.yaml — DO NOT EDIT MANUALLY")
-    lines.append("# Run: python scripts/generate_constants.py")
-    lines.append("# ============================================================")
-    lines.append("")
-    lines.append("from __future__ import annotations")
-    lines.append("")
-    lines.append("import os")
-    lines.append("from pathlib import Path")
-    lines.append("")
-    lines.append("try:")
-    lines.append("    from platformdirs import user_config_dir, user_data_dir")
-    lines.append("except ImportError:")
-    lines.append("    user_config_dir = user_data_dir = lambda *a, **kw: str(Path.home() / \".config\" / a[0] if a else \".config\")")
-    lines.append("")
-    lines.append("# NOTE: Keep in sync with src-tauri/src/core/constants.rs (Rust side).")
-    lines.append("# When changing a value here, update the corresponding Rust constant.")
-    lines.append("")
 
-    # App
-    a = data["app"]
-    lines.append(f'APP_NAME = "{a["name"]}"')
-    lines.append(f'APP_VERSION = "{a["version"]}"')
-    lines.append(f'APP_AUTHOR = "{a["author"]}"')
-    lines.append("")
+def write_toml_section_version(path: Path, section: str, version: str) -> bool:
+    """Update the first `version = "..."` line inside the given TOML section
+    in `path` to `version`. Preserves all other content (comments, formatting)
+    by line-level replacement. Validates the result via tomllib. Returns True
+    if the file changed."""
+    text = path.read_text(encoding="utf-8")
+    section_header = section.strip()
+    lines = text.splitlines(keepends=True)
+    in_section = False
+    version_re = re.compile(r'^(\s*)version\s*=\s*"([^"]*)"(.*)$')
+    target_idx: int | None = None
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_section = stripped == section_header
+            continue
+        if in_section and version_re.match(line):
+            target_idx = i
+            break
+    if target_idx is None:
+        sys.exit(
+            f"Could not find `version = ...` in section [{section_header}] of {path}"
+        )
+    line = lines[target_idx]
+    m = version_re.match(line)
+    assert m
+    if m.group(2) == version:
+        return False
+    lines[target_idx] = f'{m.group(1)}version = "{version}"{m.group(3)}\n'
+    new_text = "".join(lines)
+    try:
+        tomllib.loads(new_text)
+    except tomllib.TOMLDecodeError as e:
+        sys.exit(
+            f"After updating {path}, file is no longer valid TOML: {e}\n"
+            f"This is a bug in the script — please report."
+        )
+    path.write_text(new_text, encoding="utf-8")
+    return True
 
-    # Project
-    p = data["project"]
-    lines.append(f'PROJECT_FORMAT_VERSION = {p["format_version"]}')
-    lines.append(f'PROJECT_META_DIR = "{p["meta_dir"]}"')
-    lines.append("")
 
-    # Directories
-    d = data["directories"]
-    lines.append(f'MEMORY_DIR = "{d["memory"]}"')
-    lines.append(f'TRAJECTORY_DIR = "{d["trajectory"]}"')
-    lines.append(f'TRAJECTORY_FILE = "{d["trajectory_file"]}"')
-    lines.append(f'SUMMARY_DIR = "{d["summary"]}"')
-    lines.append(f'INDEX_FILE = "{d["index_file"]}"')
-    lines.append(f'SETTINGS_FILE = "{d["settings_file"]}"')
-    lines.append(f'MOL_DB_FILENAME = "{d["mol_db_filename"]}"')
-    lines.append(f'KB_COLLECTION_DOCS = "{d["kb_collection_docs"]}"')
-    lines.append("")
+def read_json_top_version(path: Path) -> str | None:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    v = data.get("version")
+    return v if isinstance(v, str) else None
 
-    # Models
-    m = data["models"]
-    lines.append(f'DEFAULT_EMBED_MODEL = "{m["default_embed"]}"')
-    lines.append(f'DEFAULT_RERANK_MODEL = "{m["default_rerank"]}"')
-    lines.append(f'DEFAULT_HF_ENDPOINT = "{m["default_hf_endpoint"]}"')
-    lines.append("")
 
-    # Providers
-    pv = data["providers"]
-    lines.append(f'PROVIDER_OPENAI_COMPATIBLE = "{pv["openai_compatible"]}"')
-    lines.append(f'PROVIDER_ANTHROPIC = "{pv["anthropic"]}"')
-    lines.append(f'PROVIDER_QWEN3 = "{pv["qwen3"]}"')
-    lines.append(f'PROVIDER_SENTENCE_TRANSFORMERS = "{pv["sentence_transformers"]}"')
-    lines.append(f'PROVIDER_OLLAMA = "{pv["ollama"]}"')
-    lines.append(f'PROVIDER_API = "{pv["api"]}"')
-    lines.append(f'PROVIDER_LOCAL = "{pv["local"]}"')
-    lines.append(f'OCR_PROVIDER_NONE = "{pv["ocr_none"]}"')
-    lines.append("")
+def write_json_top_version(path: Path, version: str) -> bool:
+    """Round-trip JSON, updating only the top-level `version`. Loses comments
+    (JSON has no comment syntax) and may reformat keys — acceptable for the
+    two targets (tauri.conf.json, package.json) which carry no comments."""
+    text = path.read_text(encoding="utf-8")
+    data = json.loads(text)
+    if "version" not in data:
+        sys.exit(f"No top-level 'version' in {path}")
+    if data["version"] == version:
+        return False
+    data["version"] = version
+    # Detect indentation: prefer the existing style (json.tool doesn't help).
+    indent = 2
+    m = re.search(r"\n( +)\"", text)
+    if m:
+        indent = len(m.group(1))
+    # Preserve trailing newline if present.
+    trailing = "\n" if text.endswith("\n") else ""
+    new_text = json.dumps(data, indent=indent, ensure_ascii=False) + trailing
+    path.write_text(new_text, encoding="utf-8")
+    return True
 
-    # LLM
-    l = data["llm"]
-    lines.append(f'LLM_MAX_TOKENS = {l["max_tokens"]}')
-    lines.append(f'LLM_TEMPERATURE = {l["temperature"]}')
-    lines.append(f'LLM_TOP_P = {l["top_p"]}')
-    lines.append("")
 
-    # PDF
-    p = data["pdf"]
-    lines.append(f'PDF_CHUNK_SIZE = {p["chunk_size"]}')
-    lines.append(f'PDF_CHUNK_OVERLAP = {p["chunk_overlap"]}')
-    lines.append("")
+def sync_versions(
+    yaml_version: str, sync_python: bool, *, write: bool
+) -> list[tuple[str, str, str, str]]:
+    """Compare each version target against `yaml_version`.
 
-    # Sidecar
-    sc = data["sidecar"]
-    lines.append(f'DEFAULT_SIDECAR_PORT = {sc["default_port"]}')
-    lines.append(f'DEFAULT_SIDECAR_URL = "{sc["default_url"]}"')
-    lines.append("")
+    Returns a list of (label, path_rel, current, status) tuples, where
+    status is one of:
+      "ok"        — already matches
+      "updated"   — file was just updated (only when write=True)
+      "drift"     — file differs; hard fail in --check
+      "warn"      — optional target differs; warn in --check
+      "skipped"   — optional target, sync disabled
+      "missing"   — section/version absent
+    """
+    results: list[tuple[str, str, str, str]] = []
+    for label, path, kind in VERSION_TARGETS:
+        try:
+            rel = str(path.relative_to(REPO_ROOT))
+        except ValueError:
+            rel = str(path)
+        if kind.startswith("toml-section:"):
+            section = kind.split(":", 1)[1]
+            optional = False
+        elif kind.startswith("toml-section-opt:"):
+            section = kind.split(":", 1)[1]
+            optional = True
+        elif kind == "json-top":
+            section = ""
+            optional = False
+        else:
+            sys.exit(f"Unknown VERSION_TARGETS kind: {kind!r}")
 
-    # Extensions (Python: with dot)
-    doc_exts = ", ".join(f'".{e}"' for e in data["supported_doc_exts"])
-    mol_exts = ", ".join(f'".{e}"' for e in data["supported_mol_exts"])
-    lines.append(f"SUPPORTED_DOC_EXTS: set[str] = {{{doc_exts}}}")
-    lines.append(f"SUPPORTED_MOL_EXTS: set[str] = {{{mol_exts}}}")
-    lines.append("")
+        if kind == "json-top":
+            current = read_json_top_version(path)
+        else:
+            current = read_toml_section_version(path, section)
 
-    # Python-only constants
-    lines.append("# ===== Python-only constants (not shared with Rust) =====")
-    lines.append("")
-    lines.append("# Qwen3 Embedding/Reranker 指令前缀")
-    lines.append('EMBED_INSTRUCTION_RETRIEVAL = "Given a web search query, retrieve relevant passages that answer the query"')
-    lines.append('EMBED_INSTRUCTION_CLUSTER = "Given a document, retrieve relevant passages that are semantically similar"')
-    lines.append('RERANK_DEFAULT_INSTRUCTION = "Given a web search query, retrieve relevant passages that answer the query"')
-    lines.append("")
+        if current is None:
+            results.append((label, rel, "—", "missing"))
+            continue
 
-    # Path helpers
-    lines.append("# ===== Path helpers =====")
-    lines.append("")
-    lines.append("GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))")
-    lines.append("GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))")
-    lines.append("")
-    lines.append("")
-    lines.append("def get_model_cache_dir() -> str:")
-    lines.append('    """获取模型缓存目录（优先配置文件，其次默认路径）."""')
-    lines.append("    try:")
-    lines.append("        from .config import load_global_config")
-    lines.append("        cfg = load_global_config()")
-    lines.append("        if cfg.model_cache_dir:")
-    lines.append("            # 展开前导 ~ 到用户主目录（兼容 Windows 和 Unix）")
-    lines.append("            result = cfg.model_cache_dir")
-    lines.append("            if result.startswith('~/') or result.startswith('~\\\\'):")
-    lines.append("                return str(Path.home() / Path(result[2:]))")
-    lines.append("            elif result == '~':")
-    lines.append("                return str(Path.home())")
-    lines.append("            return result")
-    lines.append("    except Exception:")
-    lines.append("        pass")
-    lines.append("    return str(Path.home() / Path(MODEL_CACHE_DIR))")
-    lines.append("")
-    lines.append("")
-    lines.append("# MODEL_CACHE_DIR is the relative path fragment used by get_model_cache_dir()")
-    lines.append(f'MODEL_CACHE_DIR = "{m["cache_dir"]}"')
-    lines.append("")
-    lines.append("")
-    lines.append("def ensure_hf_mirror() -> None:")
-    lines.append('    """设置 HuggingFace 镜像环境变量（如果未设置）。"""')
-    lines.append('    if not os.environ.get("HF_ENDPOINT"):')
-    lines.append('        os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT')
-    lines.append("")
+        if current == yaml_version:
+            results.append((label, rel, current, "ok"))
+            continue
 
-    return "\n".join(lines) + "\n"
+        if optional and not sync_python:
+            results.append((label, rel, current, "skipped"))
+            continue
+
+        if not write:
+            status = "warn" if optional else "drift"
+            results.append((label, rel, current, status))
+            continue
+
+        if kind == "json-top":
+            write_json_top_version(path, yaml_version)
+        else:
+            write_toml_section_version(path, section, yaml_version)
+        results.append((label, rel, current, "updated"))
+    return results
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--check", action="store_true", help="Exit 1 on drift")
+    ap.add_argument(
+        "--rust-out",
+        type=Path,
+        default=None,
+        help="Also write YAML-derived Rust to <DIR>/constants.rs (for build.rs).",
+    )
+    args = ap.parse_args()
 
-def main():
-    data = load_yaml()
+    raw = load_yaml()
+    flat = flatten(raw)
 
-    # Generate Rust reference — constants.rs 已手动扩展，不再自动覆盖。
-    # 将参考输出到 .generated/rust_constants.rs，由开发者 diff 后手动合并。
-    RUST_REF.parent.mkdir(exist_ok=True)
-    rust_code = generate_rust(data)
-    RUST_REF.write_text(rust_code, encoding="utf-8")
-    print(f"Generated Rust reference: {RUST_REF.relative_to(ROOT)}")
-    print("  [WARNING] constants.rs is now manually maintained.")
-    print("            Please diff and manually merge changes from the reference file.")
+    rust_items: list[tuple[str, Any, str]] = []
+    py_items: list[tuple[str, Any, str, str]] = []
+    for key, value in flat:
+        if key in META_KEYS:
+            continue
+        rust_t, py_t = resolve(key)
+        rust_items.append((key, value, rust_t))
+        py_items.append((key, value, rust_t, py_t))
 
-    # Generate Python — 完整覆盖（Python 侧无常量文件的手动扩展）
-    python_code = generate_python(data)
-    PYTHON_OUT.write_text(python_code, encoding="utf-8")
-    print(f"Generated {PYTHON_OUT.relative_to(ROOT)}")
+    new_py = render_py(py_items)
+    new_rust = render_rust(rust_items) if args.rust_out else None
+    yaml_version = raw.get("app", {}).get("version", "")
+    sync_python = bool(raw.get("app", {}).get("sync_python_version", True))
 
-    print(f"\nSource: {YAML_PATH.relative_to(ROOT)}")
-    print("Done. Run 'cargo check' and 'uv run python -c \"from mbforge.utils.constants import *\"' to verify.")
+    if args.check:
+        old_py = PY_OUT.read_text(encoding="utf-8") if PY_OUT.exists() else ""
+        py_drift = old_py != new_py
+        version_results = sync_versions(yaml_version, sync_python, write=False)
+        hard_drift = py_drift or any(
+            r[3] in {"drift", "missing"} for r in version_results
+        )
+        if hard_drift:
+            for label, rel, current, status in version_results:
+                if status == "drift":
+                    sys.stderr.write(
+                        f"  [drift] {label} ({rel}): "
+                        f"{current or '?'} != {yaml_version}\n"
+                    )
+                elif status == "missing":
+                    sys.stderr.write(f"  [missing] {label} ({rel})\n")
+            if py_drift:
+                sys.stderr.write(
+                    f"  [drift] {PY_OUT.relative_to(REPO_ROOT)}\n"
+                )
+            sys.stderr.write(
+                "Constants/version drift detected. "
+                "Run: python scripts/generate_constants.py\n"
+            )
+            return 1
+        # Print warnings even on success.
+        for label, rel, current, status in version_results:
+            if status == "warn":
+                sys.stderr.write(
+                    f"  [warn] {label} ({rel}): {current} != {yaml_version} "
+                    f"(set app.sync_python_version: true in YAML to sync)\n"
+                )
+        return 0
+
+    PY_OUT.parent.mkdir(parents=True, exist_ok=True)
+    PY_OUT.write_text(new_py, encoding="utf-8")
+    print(f"wrote {PY_OUT.relative_to(REPO_ROOT)} ({len(new_py)} bytes)")
+
+    if new_rust is not None:
+        rust_target = args.rust_out / "constants.rs"
+        rust_target.parent.mkdir(parents=True, exist_ok=True)
+        rust_target.write_text(new_rust, encoding="utf-8")
+        label = (
+            str(rust_target.relative_to(REPO_ROOT))
+            if rust_target.is_relative_to(REPO_ROOT)
+            else str(rust_target)
+        )
+        print(f"wrote {label} ({len(new_rust)} bytes)")
+
+    # Version sync (Cargo workspace, tauri.conf, frontend, optional pyproject)
+    for label, rel, current, status in sync_versions(
+        yaml_version, sync_python, write=True
+    ):
+        if status == "updated":
+            print(f"updated version in {label} ({rel}): {current} → {yaml_version}")
+        elif status == "skipped":
+            print(
+                f"skipped {label} ({rel}): {current} != {yaml_version} "
+                f"(app.sync_python_version is false in YAML)"
+            )
+        elif status == "missing":
+            sys.stderr.write(f"warning: version field missing in {label} ({rel})\n")
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

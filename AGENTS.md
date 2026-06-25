@@ -12,7 +12,7 @@ Stack:
 
 - **Frontend**: React 19 + Vite 8 + TypeScript 6, runs in Tauri WebView and (for UI work) in the browser.
 - **Desktop shell**: Tauri v2 (Rust 2021). Owns IPC, SQLite persistence, native PDF parsing, and the agent ReAct loop.
-- **Python sidecar**: FastAPI on `127.0.0.1:18792`. Hosts 4 backends: `qwen3` (embed + rerank), `molscribe`, `moldet`.
+- **Python sidecar**: FastAPI on `127.0.0.1:18792`. Hosts 5 backends: `qwen3` (embed + rerank), `molscribe`, `moldet`, `zvec` (dense+FTS+hybrid). See `src/mbforge/server.py::_BACKENDS` for the source of truth.
 
 ## Architecture & Data Flow
 
@@ -62,14 +62,15 @@ MBForge/
 │   ├── __main__.py                 `python -m mbforge` → uvicorn
 │   ├── backends/                   qwen3.py, molscribe.py, moldet.py, zvec_backend.py
 │   └── parsers/molecule/           MolScribe inference, coords, coref
-├── tests/                          Python tests (unit/, parser_io/, integration/)
+├── tests/                          Python tests (unit/, integration/) — see Testing section
 ├── docs/                           Specs, plans, references
-├── setup/                          8-module installer (index.sh / index.bat)
-├── TODO/INDEX.md                   Master task board
+├── TODO/INDEX.md                   Master task board (replaces retired `TODO.md`)
 ├── pyproject.toml                  uv + ruff + pytest
 ├── uv.lock                         Python lock
-└── .env.template                   Environment variable template
-```
+├── LICENSE                         CC BY-NC-SA 4.0 (root + pyproject + Cargo.toml must agree)
+├── constants.yaml                  Cross-language constant source of truth
+├── archived/                       Deprecated subsystems (e.g. legacy agent code)
+├── ref/                            Third-party reference implementations (e.g. `ref/MoleCode/`)
 
 ## Development Commands
 
@@ -152,7 +153,7 @@ cd src-tauri && cargo tauri build           # bundles desktop app
 
 - **Adding a Tauri command**: define `#[tauri::command]` in the appropriate `commands/{module}.rs` → append one line to `commands::handler()` in `commands/mod.rs` → add the command name to `permissions/allow-app-commands.toml`.
 - **Adding a Python endpoint**: route in `server.py` with prefix `/api/v1/{resource}`; if a new backend, create `backends/{name}.py` and register in `_BACKENDS`.
-- **Adding a Rust agent tool** (rig-core pattern): `struct <Name>Tool` + `Args` in `core/agent/executor_rig.rs`; implement `Tool` calling `core/agent/{fs,kb,document,molecule}.rs::native_*`; register in `rig_adapter.rs::assemble_rig_tool_vec()`.
+- **Adding a Tauri agent command** (replaces archived `core/agent/executor_rig.rs`): see `crates/mbforge-app/src/commands/agent.rs` for the in-memory session store + LLM dispatch via `pipeline::structure::post_process::call_llm_api[_async]`. Reuse the existing rig-core provider; do not spin up a new HTTP client.
 
 ## Important Files
 
@@ -169,7 +170,7 @@ cd src-tauri && cargo tauri build           # bundles desktop app
 | `src-tauri/crates/mbforge-infra/src/helpers.rs` | `safe_join` / `assert_within_root` — path safety |
 | `src-tauri/crates/mbforge-infra/src/error.rs` | `AppError` + `AppResult<T>` + `From` impls |
 | `src-tauri/crates/mbforge-pipeline/src/ingest_worker/mod.rs` | Worker loop with `AtomicBool` + `Interval` heartbeat |
-| `src/mbforge/server.py` | FastAPI app, 11+ endpoints, lifespan prewarms 4 backends |
+| `src/mbforge/server.py` | FastAPI app, 11+ endpoints, lifespan prewarms 5 backends |
 | `src/mbforge/__main__.py` | `python -m mbforge` → uvicorn on port 18792 |
 | `src/mbforge/utils/helpers.py` | `MBForgeError` + 7 subclasses |
 | `frontend/src/main.tsx` | React 19 root, BrowserRouter, App |
@@ -178,7 +179,7 @@ cd src-tauri && cargo tauri build           # bundles desktop app
 | `frontend/src/hooks/useAnimations.ts` | framer-motion variants hub (fadeUp, stagger, modalEntrance, …) |
 | `frontend/index.html` | Mounts `#root`; embeds devmock when `?devmock=1` |
 
-**Configuration precedence**: GUI settings > env vars > `config.json` defaults.
+**Configuration precedence** (verified against `crates/mbforge-infra/src/config/llm_config.rs`): env vars (`MBFORGE_LLM_*`, etc.) > `config.json` (Settings UI) > Rust defaults. The Settings UI writes to `config.json`, but env vars always win on read.
 
 **Storage locations** (per project): `{root}/index/molecules.db`, `{root}/.mbforge/knowledge_base.db` (SQLite business tables), `{root}/.mbforge/search.zvec/` (Zvec collection for vectors + FTS), `{root}/.mbforge/cache/semantic_cache.json`. Global config: `~/.config/MBForge/config.json` (Linux) / `%APPDATA%\MBForge\config\config.json` (Windows).
 
@@ -198,14 +199,14 @@ cd src-tauri && cargo tauri build           # bundles desktop app
 | GPU | CUDA 12.8 (PyTorch wheel index `pytorch-cu128`) | Required only for `moldet`/`molscribe`; LLM/embed run on CPU |
 | Tauri v2 permissions | `permissions/allow-app-commands.toml` + `capabilities/default.json` | Both must be updated together |
 
-**.env template** (`.env.template`): `MBFORGE_{LLM,EMBED,RERANK,VLM}_*` for providers; `HF_HOME`, `MODELSCOPE_CACHE`, `TORCH_HOME` for caches; `UNIPARSER_*`, `MINERU_*`, `DEEPXIV_API_KEY` for remote parsers.
+**.env template** (see `.env.template` if it exists in your checkout; the repo currently ships without one — generate it from the variables documented in `docs/specs/` and `pyproject.toml`): `MBFORGE_{LLM,EMBED,RERANK,VLM}_*` for providers; `HF_HOME`, `MODELSCOPE_CACHE`, `TORCH_HOME` for caches; `UNIPARSER_*`, `MINERU_*`, `DEEPXIV_API_KEY` for remote parsers.
 
 ## Testing & QA
 
 ### Frameworks
 
 - **Rust**: `#[cfg(test)] mod tests` (in-module) + `src-tauri/tests/pipeline_v2.rs` (workspace integration). ~55 in-module test mods across 5 crates.
-- **Python**: pytest. 8 files: `tests/unit/` (6 files), `tests/parser_io/`, `tests/integration/`. `pyproject.toml` sets `testpaths = ["tests"]`.
+- **Python**: pytest. `pyproject.toml` sets `testpaths = ["tests"]`. Current layout: 1 root smoke test (`tests/test_unicode_smoke.py`), `tests/unit/` (6 files including `tests/unit/parsers/test_molecule_parsers.py`), `tests/integration/` (`tests/integration/test_real_pdfs.py`). There is no `tests/parser_io/` — that directory was retired when the parser tests moved under `tests/unit/parsers/`.
 - **Frontend**: vitest 4 + jsdom + `@testing-library/jest-dom` (via `frontend/src/test/setup.ts`). 19 test files in `src/**/*.test.{ts,tsx}`. Coverage via `@vitest/coverage-v8` (configured but only used on Button/Card/Tabs).
 
 ### Running tests
@@ -243,4 +244,4 @@ cd frontend && npm run test -- --coverage       # v8 coverage
 
 ---
 
-**Don't see what you need?** Check `docs/` (8 top-level + 6 specs + 22 superpowers plans), `TODO/INDEX.md` (master task board, P0–P3 priorities), or `archived/` for deprecated subsystems (e.g. legacy agent code lives under `archived/agent/`).
+**Don't see what you need?** Check `docs/` (7 top-level .md + 7 specs + 12 superpowers plans + 13 superpowers specs = 39 docs), `TODO/INDEX.md` (master task board, P0–P3 priorities), or `archived/` for deprecated subsystems (e.g. legacy agent code lives under `archived/agent/`).

@@ -87,12 +87,16 @@ fn compiled() -> &'static CompiledPatterns {
             table
                 .iter()
                 .map(|(name, pat)| {
-                    (
-                        *name,
-                        Regex::new(pat).unwrap_or_else(|e| {
-                            panic!("invalid label regex {name:?} ({pat:?}): {e}")
-                        }),
-                    )
+                    let re = Regex::new(pat).unwrap_or_else(|e| {
+                        // A bad regex here is a code bug, not user input — but a
+                        // panic propagates out of OnceLock init into the worker
+                        // thread, killing the pipeline. Log and substitute a
+                        // never-match regex so the rest of the patterns still
+                        // work; the broken pattern contributes no matches.
+                        log::error!("invalid label regex {name:?} ({pat:?}): {e}; substituting never-match");
+                        Regex::new("$.^").expect("$.^ is a valid never-match regex")
+                    });
+                    (*name, re)
                 })
                 .collect()
         };

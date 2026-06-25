@@ -258,11 +258,17 @@ struct RawPaddle {
 }
 
 // ---------------------------------------------------------------------------
-// Local (stub)
+// Local backend — explicitly unimplemented stubs
 // ---------------------------------------------------------------------------
+//
+// The PaddleOCR local backend (in-process, no network) is not yet wired.
+// These three functions are registered so the config UI and `default_backends`
+// can list the option; `local_is_available` always returns false and
+// `warmup_local` / `run_local` return a descriptive error. See TODO/INDEX.md.
+// Do not call them from the hot path — guard with `local_is_available()` first.
 
 pub fn local_is_available() -> bool {
-    // Local PaddleOCR is a stub until run_local is implemented.
+    // Always false until the in-process PaddleOCR runtime is integrated.
     false
 }
 

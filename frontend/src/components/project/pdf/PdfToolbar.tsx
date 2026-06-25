@@ -6,8 +6,6 @@ import type { DocumentEntry } from '../../../types'
 interface Props {
   doc: DocumentEntry
   onClose: () => void
-  onLoadOcr: () => void
-  isLoadingOcr: boolean
   showTextLayer: boolean
   onToggleTextLayer: () => void
   hasTextLayer: boolean
@@ -36,7 +34,6 @@ interface Props {
 export default function PdfToolbar(props: Props) {
   const {
     doc, onClose,
-    onLoadOcr, isLoadingOcr,
     showTextLayer, onToggleTextLayer, hasTextLayer,
     showTextPanel, onToggleTextPanel,
     showImagePanel, extractedImagesCount, isLoadingImages, onLoadImages,

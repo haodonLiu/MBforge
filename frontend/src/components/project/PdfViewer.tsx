@@ -143,8 +143,6 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
       <PdfToolbar
         doc={doc}
         onClose={onClose}
-        onLoadOcr={v.handleLoadOcr}
-        isLoadingOcr={v.isLoadingOcr}
         showTextLayer={v.showTextLayer}
         onToggleTextLayer={() => v.setShowTextLayer(!v.showTextLayer)}
         hasTextLayer={v.hasTextLayer}

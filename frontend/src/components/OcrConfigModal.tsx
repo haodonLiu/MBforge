@@ -24,6 +24,7 @@ import ApiKeyInput from './settings/ApiKeyInput'
 import { EVT } from '../api/tauri-events'
 import { getSettings, saveSettings } from '../api/tauri/settings'
 import { openExternalUrl } from '../api/tauri/_utils'
+import { testOcrMineru, testOcrUniparser, testOcrPaddleocr, type OcrTestResult } from '../api/tauri/text'
 
 type Backend = 'mineru' | 'uniparser' | 'paddleocr-online' | 'paddleocr-local'
 
@@ -77,6 +78,12 @@ export default function OcrConfigModal() {
   const [form, setForm] = useState<FormState>(EMPTY)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [testing, setTesting] = useState<null | 'mineru' | 'uniparser' | 'paddleocr'>(null)
+  const [testResults, setTestResults] = useState<{
+    mineru: OcrTestResult | null
+    uniparser: OcrTestResult | null
+    paddleocr: OcrTestResult | null
+  }>({ mineru: null, uniparser: null, paddleocr: null })
 
   // Listen for the missing-API event from the Rust ingest worker.
   useEffect(() => {
@@ -140,6 +147,28 @@ export default function OcrConfigModal() {
     ? '' // payload removed in event handler above; could pass through if needed
     : ''
 
+  const runTest = async (which: 'mineru' | 'uniparser' | 'paddleocr') => {
+    setTesting(which)
+    try {
+      const key =
+        which === 'mineru' ? form.mineru_api_key.trim()
+        : which === 'uniparser' ? form.uniparser_api_key.trim()
+        : form.paddleocr_api_key.trim()
+      const result =
+        which === 'mineru' ? await testOcrMineru(null, key)
+        : which === 'uniparser' ? await testOcrUniparser(null, key)
+        : await testOcrPaddleocr(form.paddleocr_host.trim() || null, key, form.paddleocr_model.trim() || null)
+      setTestResults(prev => ({ ...prev, [which]: result }))
+    } catch (e) {
+      setTestResults(prev => ({
+        ...prev,
+        [which]: { ok: false, status: null, message: String(e) },
+      }))
+    } finally {
+      setTesting(null)
+    }
+  }
+
   return (
     <Modal
       open={open}
@@ -178,6 +207,9 @@ export default function OcrConfigModal() {
         onChange={v => setForm(s => ({ ...s, mineru_api_key: v }))}
         onGetKey={() => openExternal(ACQUISITION_URLS.mineru)}
         getKeyLabel={t('ocr.config.getKey')}
+        onTest={() => runTest('mineru')}
+        testing={testing === 'mineru'}
+        testResult={testResults.mineru}
       />
 
       <BackendRow
@@ -187,6 +219,9 @@ export default function OcrConfigModal() {
         onChange={v => setForm(s => ({ ...s, uniparser_api_key: v }))}
         onGetKey={() => openExternal(ACQUISITION_URLS.uniparser)}
         getKeyLabel={t('ocr.config.getKey')}
+        onTest={() => runTest('uniparser')}
+        testing={testing === 'uniparser'}
+        testResult={testResults.uniparser}
       />
 
       <BackendRow
@@ -196,6 +231,9 @@ export default function OcrConfigModal() {
         onChange={v => setForm(s => ({ ...s, paddleocr_api_key: v }))}
         onGetKey={() => openExternal(ACQUISITION_URLS['paddleocr-online'])}
         getKeyLabel={t('ocr.config.getKey')}
+        onTest={() => runTest('paddleocr')}
+        testing={testing === 'paddleocr'}
+        testResult={testResults.paddleocr}
         extra={[
           {
             label: t('ocr.config.paddleocrHost'),
@@ -228,6 +266,9 @@ interface BackendRowProps {
   onChange: (v: string) => void
   onGetKey: () => void
   getKeyLabel: string
+  onTest: () => void
+  testing: boolean
+  testResult: OcrTestResult | null
   extra?: Array<{
     label: string
     value: string
@@ -236,7 +277,8 @@ interface BackendRowProps {
   }>
 }
 
-function BackendRow({ label, placeholder, value, onChange, onGetKey, getKeyLabel, extra }: BackendRowProps) {
+function BackendRow({ label, placeholder, value, onChange, onGetKey, getKeyLabel, onTest, testing, testResult, extra }: BackendRowProps) {
+  const { t } = useTranslation()
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{
@@ -265,6 +307,20 @@ function BackendRow({ label, placeholder, value, onChange, onGetKey, getKeyLabel
         </button>
       </div>
       <ApiKeyInput value={value} onChange={onChange} placeholder={placeholder} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+        <Button variant="secondary" size="sm" onClick={onTest} loading={testing} disabled={!value.trim() || testing}>
+          {t('ocr.config.test', { defaultValue: '测试' })}
+        </Button>
+        {testResult && (
+          <span style={{
+            fontSize: 11,
+            color: testResult.ok ? '#16a34a' : '#dc2626',
+          }}>
+            {testResult.ok ? '✓ ' : '✗ '}
+            {testResult.message}
+          </span>
+        )}
+      </div>
       {extra && extra.length > 0 && (
         <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
           {extra.map(e => (

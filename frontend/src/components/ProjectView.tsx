@@ -33,7 +33,6 @@ export default function ProjectView({ onFileActive }: ProjectViewProps) {
 
   const [selectedPdf, setSelectedPdf] = useState<DocumentEntry | null>(null)
   const [selectedMarkdown, setSelectedMarkdown] = useState<DocumentEntry | null>(null)
-  const [pdfInitialMode, setPdfInitialMode] = useState<'read' | 'detect' | 'ocr'>('read')
   const [isMoldetScanning, setIsMoldetScanning] = useState(false)
   const [moldetProgress, setMoldetProgress] = useState<{ current: number; total: number } | null>(null)
   const [moldetResult, setMoldetResult] = useState<{ scanned: number; withMolecules: number } | null>(null)
@@ -165,9 +164,8 @@ export default function ProjectView({ onFileActive }: ProjectViewProps) {
     }
   }
 
-  const handleOpenFile = (doc: DocumentEntry, mode?: 'read' | 'detect' | 'ocr') => {
+  const handleOpenFile = (doc: DocumentEntry) => {
     if (doc.doc_type === 'pdf') {
-      setPdfInitialMode(mode ?? 'read')
       setSelectedPdf(doc)
     } else if (doc.doc_type === 'markdown' || doc.path.toLowerCase().endsWith('.md')) {
       setSelectedMarkdown(doc)
@@ -195,7 +193,6 @@ export default function ProjectView({ onFileActive }: ProjectViewProps) {
 
     const targetDoc = doc ?? fallbackDoc
     if (activeFile.type === 'pdf') {
-      setPdfInitialMode((activeFile.mode as 'read' | 'detect' | 'ocr') ?? 'read')
       setSelectedPdf(targetDoc)
     } else if (activeFile.type === 'markdown') {
       setSelectedMarkdown(targetDoc)
@@ -248,7 +245,7 @@ export default function ProjectView({ onFileActive }: ProjectViewProps) {
   }
 
   if (selectedPdf) {
-    return <PdfViewer doc={selectedPdf} projectRoot={projectRoot} onClose={handleCloseFile} initialMode={pdfInitialMode} />
+    return <PdfViewer doc={selectedPdf} projectRoot={projectRoot} onClose={handleCloseFile} />
   }
 
   if (selectedMarkdown) {

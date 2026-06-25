@@ -259,7 +259,6 @@ function AppInner() {
               <PdfViewer
                 doc={activeTab.doc}
                 projectRoot={activeTab.projectRoot}
-                initialMode={activeTab.initialMode}
                 onClose={() => closeTab(activeTab.id)}
               />
             ) : activeTab && activeTab.type === 'markdown' ? (

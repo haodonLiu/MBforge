@@ -219,47 +219,6 @@
   color: var(--accent);
 }
 
-/* ===== Segmented Controls ===== */
-.pdf-segmented {
-  display: flex;
-  gap: 2px;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 2px;
-}
-
-.pdf-segmented button {
-  padding: 3px 10px;
-  font-size: 11px;
-  border-radius: 4px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-weight: 400;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  transition: background 0.15s, color 0.15s;
-}
-
-.pdf-segmented button:hover:not(.active) {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.pdf-segmented button.active {
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-
-.pdf-segmented button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 /* ===== Tool Buttons ===== */
 .pdf-tool-btn {
   padding: 3px 8px;
@@ -397,7 +356,7 @@
 }
 
 .pdf-result-header {
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -406,7 +365,6 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
 }
 
 .pdf-result-title {
@@ -445,48 +403,37 @@
   font-weight: 500;
 }
 
-/* Tabs */
-.pdf-result-tabs {
-  display: flex;
-  gap: 2px;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 2px;
+/* Sections (unified text + molecules) */
+.pdf-result-section {
+  border-bottom: 1px solid var(--border);
 }
 
-.pdf-result-tab {
-  flex: 1;
-  padding: 5px 10px;
-  font-size: 11px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
+.pdf-result-section:last-child {
+  border-bottom: none;
+}
+
+.pdf-result-section-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  transition: background 0.15s, color 0.15s;
+  gap: 6px;
 }
 
-.pdf-result-tab:hover:not(.active) {
-  background: var(--bg-hover);
-  color: var(--text-secondary);
-}
-
-.pdf-result-tab.active {
+.pdf-result-section-count {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
   background: var(--accent);
   color: #fff;
-  font-weight: 600;
-}
-
-.pdf-result-tab-count {
-  font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.2);
+  font-weight: 500;
 }
 
 /* Content */
@@ -494,10 +441,6 @@
   flex: 1;
   overflow-y: auto;
   min-height: 0;
-}
-
-.pdf-result-text {
-  padding: 14px;
 }
 
 .pdf-result-text-pre {
@@ -511,16 +454,10 @@
 }
 
 .pdf-result-empty {
-  padding: 40px 20px;
+  padding: 20px 14px;
   text-align: center;
   color: var(--text-muted);
   font-size: 13px;
-}
-
-.pdf-result-empty-hint {
-  margin-top: 8px;
-  font-size: 11px;
-  opacity: 0.7;
 }
 
 /* Molecule Cards */

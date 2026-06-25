@@ -6,13 +6,19 @@
   height: 100%;
   overflow: hidden;
   background: var(--bg-base);
+  /* OCR 面板用 absolute 浮层定位（覆盖右侧 PdfResultPane 上方），
+   * 需要这里 position:relative 作为定位锚点。 */
+  position: relative;
 }
 
 /* ===== Dual Pane Layout ===== */
 .pdf-dual-pane {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 360px;
+  /* minmax(0, 1fr): 让左侧 PDF 预览列可以收缩到 0 宽度以下，
+   * 否则 grid 默认 min-content，右侧结果面板内容（长 SMILES 等）
+   * 会撑大列并挤压 PDF 预览。 */
+  grid-template-columns: minmax(0, 1fr) 360px;
   min-height: 0;
   overflow: hidden;
 }
@@ -403,39 +409,6 @@
   font-weight: 500;
 }
 
-/* Sections (unified text + molecules) */
-.pdf-result-section {
-  border-bottom: 1px solid var(--border);
-}
-
-.pdf-result-section:last-child {
-  border-bottom: none;
-}
-
-.pdf-result-section-header {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 8px 14px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.pdf-result-section-count {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 500;
-}
-
 /* Content */
 .pdf-result-content {
   flex: 1;
@@ -451,6 +424,25 @@
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
+}
+
+/* 统一内容流（文本 + 分子交错排列） */
+.pdf-unified-stream {
+  width: 100%;
+}
+
+.pdf-stream-text {
+  padding: 6px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-left: 2px solid transparent;
+}
+
+.pdf-stream-mol {
+  padding: 4px 8px;
 }
 
 .pdf-result-empty {
@@ -500,6 +492,25 @@
 .pdf-molecule-card.selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent-muted);
+}
+
+/* 紧凑内联分子卡片（统一内容流使用） */
+.pdf-molecule-card.inline {
+  padding: 8px 10px;
+  margin: 2px 0;
+  border-left: 3px solid var(--accent);
+}
+
+.pdf-molecule-card.inline .pdf-molecule-header {
+  margin-bottom: 4px;
+}
+
+.pdf-molecule-card.inline .pdf-molecule-smiles {
+  margin-bottom: 4px;
+}
+
+.pdf-molecule-card.inline .pdf-molecule-coref {
+  margin-bottom: 0;
 }
 
 .pdf-molecule-header {

@@ -73,11 +73,14 @@ pub async fn cache_clear(project_root: String, cache: String) -> ClearResult {
         }
     };
     let before = size_mb(&target);
+    // The first match above already exhausts the variant set. If a new cache
+    // kind is added and the match above is forgotten, fall through with a
+    // descriptive error instead of panicking the IPC handler.
     let result = match cache.as_str() {
         "semantic" => clear_semantic(&root).await,
         "detection" => clear_detection(&root),
         "molecules" => clear_molecules(&root),
-        _ => unreachable!(),
+        other => Err(format!("unknown cache kind: {other:?}")),
     };
     let after = size_mb(&target);
     match result {

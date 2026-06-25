@@ -85,7 +85,7 @@ fn main() {
         .register_asynchronous_uri_scheme_protocol("mbforge", protocol::handle_mbforge_request)
         .manage(MoleculeEngineState::new())
         .manage(IngestWorkerState::default())
-        .manage(DownloadManagerState::default())
+        .manage(commands::agent::AgentSessionState::default())
         .invoke_handler(commands::handler())
         .setup(|app| {
             let app_handle = app.handle();

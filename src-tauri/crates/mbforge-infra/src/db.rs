@@ -110,8 +110,8 @@ fn open_wal_connection(path: &Path) -> AppResult<SharedConn> {
 /// - 简单即可，避免引入额外依赖
 ///
 /// NOTE: Uses `std::sync::Mutex` because all callers are sync (Tauri commands).
-/// Migration to `tokio::sync::Mutex` requires async callers throughout,
-/// tracked in tech debt #2.
+/// Migration to `tokio::sync::Mutex` requires async callers throughout;
+/// tracked at TODO/INDEX.md if/when async callers appear.
 static DB_CACHE: OnceLock<Mutex<std::collections::HashMap<PathBuf, Arc<DbManager>>>> =
     OnceLock::new();
 

@@ -1,4 +1,4 @@
-//! Sidecar HTTP 客户端抽象（Phase 3 重构）
+//! Sidecar HTTP 客户端抽象。
 //!
 //! 解决问题：先前 `sidecar_url` 作为 `&str` 参数在 15+ 个函数间穿透，
 //! 有的 caller 还直接 `crate::core::constants::sidecar_url()` 调，

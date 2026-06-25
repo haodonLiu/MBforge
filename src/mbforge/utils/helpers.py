@@ -110,11 +110,17 @@ def save_json(path: Path, data: Any) -> None:
 
 
 def load_json(path: Path, default: Any = None) -> Any:
-    """加载 JSON 文件，失败时返回默认值."""
+    """加载 JSON 文件，失败时返回默认值.
+
+    Any `OSError` (missing file, permission denied) or `JSONDecodeError`
+    (corrupt file) returns the supplied default rather than propagating —
+    callers use this for "best-effort" config lookups where a missing or
+    corrupt file should not crash startup.
+    """
     try:
         with open(path, encoding="utf-8") as f:
             return _json.load(f)
-    except Exception:
+    except Exception:  # noqa: BLE001 — see docstring; this is a "tolerate corrupt config" helper, not a parser.
         return default
 
 

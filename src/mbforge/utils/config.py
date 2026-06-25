@@ -109,7 +109,7 @@ def load_global_config() -> AppConfig:
         if data is not None:
             try:
                 return AppConfig.model_validate(data)
-            except Exception:
+            except Exception:  # noqa: BLE001 — corrupt config must fall back to env, never crash startup. See load_json above.
                 pass
     cfg = _config_from_env()
     save_global_config(cfg)

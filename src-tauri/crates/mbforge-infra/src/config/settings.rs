@@ -22,7 +22,7 @@ use crate::helpers::{load_json, save_json, LockResultExt};
 ///
 /// NOTE: Uses `std::sync::Mutex` because all callers are sync (Tauri commands,
 /// settings load). Migration to `tokio::sync::Mutex` requires async callers
-/// throughout, tracked in tech debt #2.
+/// throughout; tracked at TODO/INDEX.md if/when async callers appear.
 static ENV_OVERRIDES: LazyLock<Mutex<HashMap<String, String>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -40,9 +40,16 @@ pub fn env_var(key: &str) -> Option<String> {
 }
 
 /// Set an in-memory environment override.
+///
+/// Also propagates to the process environment via `std::env::set_var` so
+/// code paths that read credentials via `std::env::var` (OCR backends:
+/// MinerU / Uniparser / PaddleOCR) see the override. Project style avoids
+/// scattered `set_var` calls; this single chokepoint is the meet point
+/// between saved settings and the process env. Safe under edition 2021.
 pub fn set_env_override(key: &str, value: &str) {
     let mut overrides = ENV_OVERRIDES.lock().into_inner();
     overrides.insert(key.to_string(), value.to_string());
+    std::env::set_var(key, value);
 }
 
 /// Clear in-memory overrides for the given keys.

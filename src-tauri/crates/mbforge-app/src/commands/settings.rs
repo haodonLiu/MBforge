@@ -26,7 +26,9 @@ pub fn save_settings(settings: serde_json::Value) -> Result<(), String> {
     config = serde_json::from_value(current).map_err(|e| format!("Deserialize error: {}", e))?;
     config
         .save()
-        .map_err(|e| format!("Save config failed: {}", e))
+        .map_err(|e| format!("Save config failed: {}", e))?;
+    config.ocr.apply_to_env();
+    Ok(())
 }
 
 /// 递归合并 JSON：将 other 中的非 null 值覆盖到 base

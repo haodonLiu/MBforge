@@ -48,6 +48,15 @@ pub async fn render_pages(
     if page_numbers.is_empty() {
         return Ok(vec![]);
     }
+    // Cap the page count to prevent accidental DoS on a 10k-page PDF.
+    const MAX_PAGES: usize = 256;
+    if page_numbers.len() > MAX_PAGES {
+        return Err(format!(
+            "Too many pages requested ({} > {}); narrow the page_numbers range",
+            page_numbers.len(),
+            MAX_PAGES
+        ));
+    }
 
     let url = format!("{}/api/v1/pdf/render-pages", sidecar_url);
     let body = RenderPagesRequest {
@@ -56,10 +65,9 @@ pub async fn render_pages(
         dpi: Some(300.0),
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(|e| format!("HTTP client init: {}", e))?;
+    // Use the shared connection pool instead of building a new client
+    // per call.
+    let client = mbforge_infra::http::client_120s();
 
     let resp = client
         .post(&url)

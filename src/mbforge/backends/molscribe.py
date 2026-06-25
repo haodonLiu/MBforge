@@ -91,6 +91,11 @@ def predict(image: Image.Image | np.ndarray) -> ExtractionResult:
         )
 
 
-def predict_batch(images: list) -> list[ExtractionResult]:
-    """Predict batch of images."""
+def predict_batch(images: list[Image.Image | np.ndarray]) -> list[ExtractionResult]:
+    """Predict batch of images.
+
+    Accepts a mix of PIL `Image.Image` and `numpy.ndarray` (uint8 HxWxC or HxW).
+    Each entry is forwarded to `predict` after the array→PIL normalization
+    performed there, so callers do not need to pre-convert.
+    """
     return [predict(img) for img in images]

@@ -39,7 +39,7 @@ def _convert_smiles_to_inchi(smiles):
     try:
         mol = Chem.MolFromSmiles(smiles)
         inchi = Chem.MolToInchi(mol)
-    except Exception:
+    except Exception:  # noqa: BLE001 — RDKit raises on malformed SMILES; caller substitutes water InChI
         inchi = None
     return inchi
 
@@ -66,9 +66,8 @@ def merge_inchi(inchi1, inchi2):
 def _get_num_atoms(smiles):
     try:
         return Chem.MolFromSmiles(smiles).GetNumAtoms()
-    except Exception:
+    except Exception:  # noqa: BLE001 — malformed SMILES → 0 atoms is the agreed fallback
         return 0
-
 
 def get_num_atoms(smiles, num_workers=16):
     if type(smiles) is str:
@@ -151,7 +150,7 @@ def _verify_chirality(mol, coords, symbols, edges, debug=False):
                 atom.SetChiralTag(Chem.rdchem.ChiralType.CHI_UNSPECIFIED)
         mol = mol.GetMol()
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — RDKit geometry assignment is best-effort; caller can re-raise via debug=True
         if debug:
             raise e
         pass
@@ -414,8 +413,7 @@ def convert_smiles_to_mol(smiles):
         return None
     try:
         mol = Chem.MolFromSmiles(smiles)
-    except Exception:
-        # TODO-AUDIT: bare except — silently returns None for malformed SMILES.
+    except Exception:  # noqa: BLE001 — RDKit raises on malformed SMILES; None is the agreed sentinel for "skip this molecule"
         return None
     return mol
 
@@ -553,23 +551,22 @@ def _convert_graph_to_smiles(coords, symbols, edges, image=None, debug=False):
     pred_smiles = '<invalid>'
 
     try:
-        # TODO: move to an util function
+        # See TODO/INDEX.md#P-3 — extract image-shape scaling into a helper in `utils/`.
         if image is not None:
             height, width, _ = image.shape
             ratio = width / height
             coords = [[x * ratio * 10, y * 10] for x, y in coords]
         mol = _verify_chirality(mol, coords, symbols, edges, debug)
         # molblock is obtained before expanding func groups, otherwise the expanded group won't have coordinates.
-        # TODO: make sure molblock has the abbreviation information
+        # See TODO/INDEX.md#P-3 — verify molblock carries Chem.SetAtomAlias() info for abbreviations.
         pred_molblock = Chem.MolToMolBlock(mol)
         pred_smiles, mol = _expand_functional_group(mol, {}, debug)
         success = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — RDKit graph→SMILES conversion is best-effort; traceback logged only when debug=True
         if debug:
             logger.debug(traceback.format_exc())
         pred_molblock = ''
         success = False
-
     if debug:
         return pred_smiles, pred_molblock, mol, success
     return pred_smiles, pred_molblock, success
@@ -601,11 +598,10 @@ def _keep_main_molecule(smiles, debug=False):
             num_atoms = [m.GetNumAtoms() for m in frags]
             main_mol = frags[np.argmax(num_atoms)]
             smiles = Chem.MolToSmiles(main_mol)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — fragment picking is best-effort; traceback logged only when debug=True
         if debug:
             logger.debug(traceback.format_exc())
     return smiles
-
 
 def keep_main_molecule(smiles, num_workers=16):
     with multiprocessing.Pool(num_workers) as p:

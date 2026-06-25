@@ -5,6 +5,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from . import (
+    moldet,  # noqa: F401
+    molscribe,  # noqa: F401
+)
+
 # qwen3_embed.py + qwen3_rerank.py 已合并到 qwen3.py
 # 保留旧模块名以兼容 server.py 中的 `from .backends import qwen3_embed, qwen3_rerank`
 from . import qwen3 as qwen3_embed  # noqa: F401
@@ -38,6 +43,7 @@ def resolve_model_path(model_name: str, cache_name: str | None = None) -> str:
             ResourceManager,
             _read_resolved_paths,
         )
+
         resolved = _read_resolved_paths()
         rid = cache_name or model_name
         for prefix, mapped in _MODEL_NAME_TO_RESOURCE_ID.items():
@@ -49,7 +55,9 @@ def resolve_model_path(model_name: str, cache_name: str | None = None) -> str:
                 if resolved and mapped in resolved:
                     rpath = resolved[mapped]
                     if Path(rpath).exists():
-                        logger.info(f"Resolved {rid} → {rpath} (via Rust resolved_paths)")
+                        logger.info(
+                            f"Resolved {rid} → {rpath} (via Rust resolved_paths)"
+                        )
                         return rpath
     except ImportError:
         pass

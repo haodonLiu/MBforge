@@ -12,7 +12,6 @@ import PdfToolbar from './pdf/PdfToolbar'
 import PdfFloatingControls from './pdf/PdfFloatingControls'
 import PdfResultPane from './pdf/PdfResultPane'
 import PdfPipelineFlow from './pdf/PdfPipelineFlow'
-import { OcrPanel } from './pdf/PdfViewerPanels'
 import { updateCorefPair, confirmCorefPrediction } from '../../api/tauri/result_pane'
 import type { FigureLabel, CorefPrediction } from '../../api/tauri/result_pane'
 import { showToast } from '../../hooks/useToast'
@@ -266,43 +265,18 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
           />
         </div>
 
-        {/* 右侧：识别结果面板（PdfResultPane 和 OcrPanel 互斥显示，共享同一列） */}
-        {v.showOcrPanel ? (
-          <OcrPanel
-            blocks={v.ocrBlocks}
-            currentPage={v.currentPage}
-            selectedIndex={v.selectedOcrIndex}
-            hoveredIndex={v.hoveredOcrIndex}
-            onSelect={(index) => {
-              const block = v.ocrBlocks[index]
-              if (!block) return
-              const needPageChange = block.page !== v.currentPage
-              if (needPageChange) v.setCurrentPage(block.page)
-              v.setSelectedOcrIndex(index)
-              const doScroll = () => {
-                const info = v.pageInfoRef.current
-                const container = v.pdfScrollRef.current
-                if (!info || !container) return
-                const [, , , y2] = block.bbox
-                const cssY = (info.originalHeight - y2) * info.scale
-                container.scrollTo({ top: Math.max(0, cssY - 40), behavior: 'smooth' })
-              }
-              needPageChange ? setTimeout(doScroll, 300) : doScroll()
-            }}
-            onClose={() => v.setShowOcrPanel(false)}
-          />
-        ) : (
-          <PdfResultPane
-            currentPage={v.currentPage}
-            currentTextItems={v.currentTextItems}
-            currentTextTotal={v.currentTextTotal}
-            detections={v.currentDetections}
-            selectedDetection={v.selectedDetection}
-            onSelectDetection={v.setSelectedDetection}
-            onScrollToDetection={v.scrollToDetection}
-            confidenceThreshold={v.confidenceThreshold}
-          />
-        )}
+        {/* 右侧：文本+分子合并视图（OCR bbox 用于文本段落分组） */}
+        <PdfResultPane
+          currentPage={v.currentPage}
+          currentTextItems={v.currentTextItems}
+          currentTextTotal={v.currentTextTotal}
+          detections={v.currentDetections}
+          selectedDetection={v.selectedDetection}
+          onSelectDetection={v.setSelectedDetection}
+          onScrollToDetection={v.scrollToDetection}
+          confidenceThreshold={v.confidenceThreshold}
+          ocrBlocks={v.ocrBlocks}
+        />
       </div>
 
       {/* Coref 右键菜单 */}

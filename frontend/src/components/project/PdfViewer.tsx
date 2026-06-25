@@ -279,31 +279,43 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
         />
       </div>
 
-      {/* OCR 结果面板 */}
+      {/* OCR 结果面板：浮层覆盖在右侧 PdfResultPane 上方（不挤 PDF 预览） */}
       {v.showOcrPanel && (
-        <OcrPanel
-          blocks={v.ocrBlocks}
-          currentPage={v.currentPage}
-          selectedIndex={v.selectedOcrIndex}
-          hoveredIndex={v.hoveredOcrIndex}
-          onSelect={(index) => {
-            const block = v.ocrBlocks[index]
-            if (!block) return
-            const needPageChange = block.page !== v.currentPage
-            if (needPageChange) v.setCurrentPage(block.page)
-            v.setSelectedOcrIndex(index)
-            const doScroll = () => {
-              const info = v.pageInfoRef.current
-              const container = v.pdfScrollRef.current
-              if (!info || !container) return
-              const [, , , y2] = block.bbox
-              const cssY = (info.originalHeight - y2) * info.scale
-              container.scrollTo({ top: Math.max(0, cssY - 40), behavior: 'smooth' })
-            }
-            needPageChange ? setTimeout(doScroll, 300) : doScroll()
+        <div
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: '300px',
+            zIndex: 10,
+            boxShadow: '-2px 0 12px rgba(0,0,0,0.2)',
           }}
-          onClose={() => v.setShowOcrPanel(false)}
-        />
+        >
+          <OcrPanel
+            blocks={v.ocrBlocks}
+            currentPage={v.currentPage}
+            selectedIndex={v.selectedOcrIndex}
+            hoveredIndex={v.hoveredOcrIndex}
+            onSelect={(index) => {
+              const block = v.ocrBlocks[index]
+              if (!block) return
+              const needPageChange = block.page !== v.currentPage
+              if (needPageChange) v.setCurrentPage(block.page)
+              v.setSelectedOcrIndex(index)
+              const doScroll = () => {
+                const info = v.pageInfoRef.current
+                const container = v.pdfScrollRef.current
+                if (!info || !container) return
+                const [, , , y2] = block.bbox
+                const cssY = (info.originalHeight - y2) * info.scale
+                container.scrollTo({ top: Math.max(0, cssY - 40), behavior: 'smooth' })
+              }
+              needPageChange ? setTimeout(doScroll, 300) : doScroll()
+            }}
+            onClose={() => v.setShowOcrPanel(false)}
+          />
+        </div>
       )}
 
       {/* Coref 右键菜单 */}

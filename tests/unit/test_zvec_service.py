@@ -10,6 +10,9 @@ import pytest
 
 from mbforge.backends import zvec_backend as zvec
 from mbforge.utils.helpers import ValidationError
+from mbforge.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 @pytest.fixture

@@ -27,5 +27,8 @@ def test_unicode_emit_under_gbk_like_stdout():
         log.info("  ✓ resource C: ready")
     finally:
         sys.stdout = saved
-    # If we got here without UnicodeEncodeError, the fix works
-    print("OK: ✓/✗ emitted without UnicodeEncodeError under gbk stdout")
+    # If we got here without UnicodeEncodeError, the fix works. The test
+    # passes by virtue of not raising. We deliberately do NOT log/print
+    # the success marker: the original `print` used the real stdout
+    # (outside the gbk-swap), so it didn't actually exercise the
+    # encoding path and was dead weight per AGENTS.md "never print()".

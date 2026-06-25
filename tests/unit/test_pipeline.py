@@ -5,6 +5,10 @@ from pathlib import Path
 
 import pytest
 
+from mbforge.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class TestDocumentClassification:
     """测试文档分类逻辑."""

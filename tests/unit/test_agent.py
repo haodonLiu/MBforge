@@ -8,6 +8,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from mbforge.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 class TestAgentTools:
     """测试 Agent 工具注册和执行."""

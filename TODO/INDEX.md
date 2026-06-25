@@ -1,154 +1,84 @@
-# MBForge 任务看板
+# MBForge Master Task Board
 
-## P0 — 正在进行 / 阻塞
+> Single source of truth for prioritized work. Replaces the deprecated root `TODO.md`
+> (now `archived/`) and the empty placeholder that previously sat at this path.
+> Generated from the 2026-06-25 codebase comment audit.
 
-- [ ] **抽取质量基线（P0-1: gold set + F1 harness）**
-      来源：`TODO/2026-06-22-llm-extraction-paper-research.md`（Chem. Soc. Rev. 2025, 54, 1125）
-      规范：`docs/specs/llm-chemical-extraction-reference.md` §6。
-      **必须先做**：不建立评估基线则后续所有改动盲改。
-      验收：(a) ≥50 gold PDF + 标注 JSON（**其中 ≥10 篇专利**含 claim/example/R-group 标注）；
-      (b) Rust 端 precision/recall/F1；(c) Hungarian assignment；(d) Levenshtein fuzzy；
-      (e) `cargo run --bin eval` 跑通给 baseline 数字；**(f) 专利子指标：claim-example mapping F1**。
-      工作量：2-3 周。
+## Legend
 
-- [ ] **P0-2 — temperature=0 强制（抽取路径）**
-      论文 §3.1, §3.3.1。`llm_gateway.rs:178` 当前 0.7 → 改为 0.0。
-      工作量：半天。
+| Priority | Meaning |
+|---|---|
+| P0 | Critical: blocks startup / production runs |
+| P1 | High: data loss, panic paths, doc drift that misleads new contributors |
+| P2 | Medium: code quality, doc/comment drift, lint violations |
+| P3 | Low: stylistic, anchors, type-hint polish |
 
-- [ ] **P0-3 — constrained decoding 接 E-SMILES（含 Markush）**
-      论文 §3.3.1。选 `outlines` 或自实现 grammar；Python 侧 LLM 接 **E-SMILES + Markush 标签** 文法；
-      **专利 R-group 抽取保留率 ≥95%**。
-      工作量：1-2 周。
+## P0 — Critical (run-blockers)
 
-- [ ] **P0-4 — chain-of-verification + LLM-as-judge**
-      论文 §3.2.5 + CoVe glossary + §3.3.2 LLM-as-judge。
-      (a) ReAct 主 agent 在"写入知识库"前插入 verifier 步骤；
-      **(b) 专利路径额外加 LLM-as-judge（第二 LLM 检查 factual inconsistency）**。
-      工作量：3-5 天。
+| ID | Area | Finding | File | Status |
+|---|---|---|---|---|
+| C-1 | Rust+TS | 6 `agent_*` IPC commands (`agent_init` / `agent_create_session` / `agent_chat_stream` / `agent_switch_project` / `agent_clear` / `agent_destroy_session`) called by frontend but **not registered** in `commands/mod.rs`. Remove the broken frontend calls + delete the orphan doc-comment mention in `mol_engine.rs:33`, OR implement them in `commands/agent.rs` against `pipeline/structure/post_process.rs::dispatch_chat`. | `frontend/src/api/tauri/agent.ts:54,84,128,143,150,157`; `src-tauri/crates/mbforge-app/src/commands/mod.rs`; `src-tauri/crates/mbforge-app/src/commands/mol_engine.rs:33` | **OPEN** |
+| C-2 | Python | (RESOLVED 2026-06-25) `backends/__init__.py` was missing `moldet`/`molscribe` re-exports — `python -m mbforge` would fail with `ImportError`. Added `from . import moldet  # noqa: F401` and `from . import molscribe  # noqa: F401`. | `src/mbforge/backends/__init__.py:13-14` | DONE |
+| C-3 | Docs | `README.md:155,158` references `./setup/index.sh` and `setup\index.bat`; `setup/` directory does not exist. Either re-add the installer or remove the section. | `README.md` | OPEN |
+| C-4 | Docs | `AGENTS.md:35` tree lists `setup/  8-module installer` — same path is gone. | `AGENTS.md` | OPEN |
+| C-5 | Docs | `AGENTS.md:39` lists `.env.template` at root — file does not exist. | `AGENTS.md` | OPEN |
+| C-6 | Rust | (RESOLVED 2026-06-25) `src-tauri/Cargo.toml:10` license was "MIT" but repo `LICENSE` and `pyproject.toml` both declare CC BY-NC-SA 4.0. Changed to `license = "CC-BY-NC-SA-4.0"`. | `src-tauri/Cargo.toml:10` | DONE |
+| C-7 | Docs | (RESOLVED 2026-06-25) `TODO/INDEX.md` was 0 bytes. Repopulated with this board. | `TODO/INDEX.md` | DONE |
+| C-8 | Docs | `README.md:348,355` link to `docs/esmiles-spec.md` / `docs/molecode-spec.md` / `docs/pipeline-redesign.md` — actual files are at `docs/specs/...`. | `README.md` | OPEN |
+| C-9 | Docs | `AGENTS.md:171` says pytest layout includes `tests/parser_io/`, but that directory does not exist. | `AGENTS.md` | OPEN |
 
-## P1 — 近期计划
+## P1 — High (data loss, panics, runtime crashes)
 
-- [ ] **P1-1 — document cleaning**（剥 references/ack/headers）
-      论文 §3.1.2。期望向量库大小下降 ≥ -30%。
-      工作量：3 天。
+| ID | Area | Finding | File | Status |
+|---|---|---|---|---|
+| R-1 | Rust | `unreachable!()` in Tauri command match arm — upstream enum gain = IPC panic. Replace with explicit `Err(...)` return. | `src-tauri/crates/mbforge-app/src/commands/settings_extra.rs:80` | OPEN |
+| R-2 | Rust | `panic!("invalid label regex ...")` on user-supplied patterns — single bad input crashes the pipeline worker. Convert to `AppError::PdfParse`. | `src-tauri/crates/mbforge-pipeline/src/chem/label_assoc.rs:93` | OPEN |
+| R-3 | Rust | TODO at `result_pane.rs:803` — brute-force `delete_coref_predictions` in production path; needs fine-grained delete. | `src-tauri/crates/mbforge-app/src/commands/result_pane.rs:803` | OPEN |
+| R-4 | Rust | 5 `eprintln!` calls in production code; AGENTS.md mandates `log::*` only. | `src-tauri/crates/mbforge-pipeline/src/chem/label_assoc.rs:350,378,389,407,409` | OPEN |
+| R-5 | Rust | "Placeholder adapter" doc on GLM-OCR / GLM-4.6V-Flash modules wired into Tauri command surface. Implement or `#[cfg(feature=…)]` guard. | `src-tauri/crates/mbforge-pipeline/src/pipeline/services/ocr.rs:203,224` | OPEN |
+| R-6 | Rust | "Local (stub)" comments on production Paddle module. Implement or remove. | `src-tauri/crates/mbforge-pipeline/src/ocr/paddle.rs:261,265` | OPEN |
+| R-7 | Rust | Crate-level `#![allow(clippy::unwrap_used, clippy::panic)]` in production crate contradicts AGENTS.md "no unwrap in non-test code". | `src-tauri/crates/mbforge-domain/src/lib.rs:7` | OPEN |
+| P-1 | Python | 6 `except Exception:` without follow-up comment in chemistry.py. Annotate or narrow. | `src/mbforge/parsers/molecule/molscribe_inference/chemistry.py:42,69,154,417,597,604` | OPEN |
+| P-2 | Python | `# TODO-AUDIT: bare except ...` at chemistry.py:418 — author-flagged; resolve or accept and remove. | `src/mbforge/parsers/molecule/molscribe_inference/chemistry.py:418` | OPEN |
+| P-3 | Python | Open TODOs in chemistry preprocessing + decoder attn shape. | `src/mbforge/parsers/molecule/molscribe_inference/chemistry.py:556,563`; `transformer/decoder.py:479` | OPEN |
+| T-1 | TS | `console.log` calls in production code path; gate with `import.meta.env.DEV` or add `// DEV ONLY` markers. | `frontend/src/api/tauri/project.ts:29-44` | OPEN |
+| T-2 | TS | TODO references `AppContext.openDocument()` which is not exported. Implement or remove TODO. | `frontend/src/components/search/SearchResultItem.tsx:61` | OPEN |
 
-- [ ] **P1-2 — semantic chunking + 分类预过滤**
-      论文 §3.1.3, Fig. 5。当前仅 `text-splitter` fixed-size。
-      工作量：1-2 周。
+## P2 — Medium (drift, type hints, docstring quality)
 
-- [ ] **P1-3 — ontology grounding**（ChEBI / PubChem CID）
-      论文 §3.3.1 SPIRES 范式。
-      工作量：1 周。
+| ID | Area | Finding | File | Status |
+|---|---|---|---|---|
+| D-1 | Python | `class TestConfigWithRealPaths` declared twice in same file — pytest only collects the second. Merge or rename. | `tests/integration/test_real_pdfs.py:191,217` | OPEN |
+| D-2 | Python | `platformdirs` fallback lambda has wrong signature — produces incorrect Windows paths when `platformdirs` missing. Mirror the real function signature. | `src/mbforge/utils/constants.py:89` | OPEN |
+| D-3 | Python | `print("OK: ✓/✗ emitted ...")` in test — AGENTS.md forbids `print()`. Use `logging.info`. | `tests/test_unicode_smoke.py:31` | OPEN |
+| D-4 | Python | `subprocess.run(nvidia-smi, timeout=5)` blocks ~5s; doc should warn. | `src/mbforge/core/resource_manager.py:521` | OPEN |
+| D-5 | Python | `load_json` / `load_global_config` swallow `JSONDecodeError` / validation errors. Add explanatory comment. | `src/mbforge/utils/helpers.py:117`; `src/mbforge/utils/config.py:112` | OPEN |
+| D-6 | Python | `qwen3.py` header says "embed + rerank" — actual module also hosts `EmbeddingProvider`, `OpenAICompatibleProvider`, external-API. Update header. | `src/mbforge/backends/qwen3.py:1` | OPEN |
+| D-7 | Rust | Self-contradicting header: "AUTO-GENERATED" + "manually extended" — pick one. | `src-tauri/crates/mbforge-infra/src/config/constants.rs:1-15` | OPEN |
+| D-8 | Rust | Orphan "tech debt #2" references in 2 places; ticket never created. | `src-tauri/crates/mbforge-infra/src/config/settings.rs:20,25`; `src-tauri/crates/mbforge-infra/src/db.rs:114` | OPEN |
+| D-9 | Python | 6 test modules missing `logger = get_logger(__name__)` (AGENTS.md convention). | `tests/unit/test_pipeline.py`, `tests/unit/test_embed_rerank.py`, `tests/unit/test_zvec_service.py`, `tests/unit/test_agent.py`, `tests/unit/parsers/test_molecule_parsers.py`, `tests/integration/test_real_pdfs.py` | OPEN |
+| X-1 | Docs | `README.md` says "Vite 6" — actual is Vite 8. Tech-stack table also wrong on architecture diagram (4 backends vs 5; flat `core/` vs 5-crate workspace). | `README.md:201,230,241` | OPEN |
+| X-2 | Docs | `AGENTS.md` says "4 backends" line 9 vs "5 backends (incl. Zvec)" line 11. Reconcile to 5. Also `agent_switch_project` doc-comment path is `archived/agent/` — actual live path is `pipeline/structure/post_process.rs`. | `AGENTS.md:9,11,90,121,140,147,171,202` | OPEN |
+| X-3 | Docs | `CLAUDE.md` references `core/agent/`, `core/document/`, `core/vector/`, `core/chem/`, `core/molecule/` — all migrated to `src-tauri/crates/mbforge-{app,domain,chem,infra,pipeline}/`. Update every reference. | `CLAUDE.md:53,73,80,99,118,140` | OPEN |
+| X-4 | Docs | `CLAUDE.md:99` lists `backends/qwen3_embed.py` and `backends/qwen3_rerank.py` — both merged into `backends/qwen3.py`. Also `moldet_coref.py` doesn't exist; coref is in `parsers/molecule/coref_alt.py`. | `CLAUDE.md:99` | OPEN |
+| X-5 | Deps | `pyproject.toml:79` `pandas>=3.0.3` is unreleased; `>=2.0.0` minimum. | `pyproject.toml:79` | OPEN |
+| X-6 | Deps | `pyproject.toml:81` `accelerate>=1.14.0` declared but no `accelerate` import in python sources. Verify and remove. | `pyproject.toml:81` | OPEN |
+| X-7 | Deps | `pyproject.toml:23` `pymupdf>=1.23.0` and `transformers>=4.51.0` floors are below lock resolution. Bump. | `pyproject.toml:23` | OPEN |
+| X-8 | Deps | `frontend/package.json:5` `engines.node >=18` is below Vite 8 baseline (Node 20.19+ or 22.12+). Bump. | `frontend/package.json:5` | OPEN |
 
-- [ ] **P1-4 — multi-agent (creator + critic)**
-      论文 §3.2.5 multi-agent。`rig_adapter.rs` 加 verifier agent。
-      工作量：1-2 周。
+## P3 — Low (style, anchors, type hints)
 
-- [ ] **P1-5 — YAML schema 替换 JSON**
-      论文 §3.2.1 Patiny & Godin。
-      工作量：2 天。
+| ID | Area | Finding | File | Status |
+|---|---|---|---|---|
+| S-1 | Rust | "Phase 3 重构" anchor on sidecar_client.rs header — phase numbers drift. | `src-tauri/crates/mbforge-infra/src/sidecar_client.rs:2` | OPEN |
+| S-2 | Rust | Hardcoded local cache path anchor on smiles.rs header. | `src-tauri/crates/mbforge-chem/src/smiles.rs:2` | OPEN |
+| S-3 | Python | `zvec_backend.index_document` iterates `statuses` outside `_WRITE_LOCK` after `delete_by_filter`+`upsert` — docstring should mention read-after-write ordering. | `src/mbforge/backends/zvec_backend.py:194` | OPEN |
+| S-4 | Python | `molscribe.predict_batch(images: list)` — inner type missing; tighten. | `src/mbforge/backends/molscribe.py:55` | OPEN |
+| S-5 | Python | `qwen3.load(device, **kwargs)` missing `-> None` return type hint. | `src/mbforge/backends/qwen3.py:472` | OPEN |
+| S-6 | Rust | `canonicalize_esmiles` actually handles SMILES+ESMILES; rename or split. | `src-tauri/crates/mbforge-domain/src/molecule/molecule_dedup.rs:32` | OPEN |
 
-- [ ] **P1-6 — DSPy 引入可行性评估**
-      论文 §3.2.1。评估报告 `docs/dspy-eval.md`。
-      工作量：1 周。
+## How this board stays current
 
-- [ ] **P1-7 — claim-example-reaction 三层 join**（专利域核心）
-      论文 §4.2 + §5.4 瓶颈 #1。
-      (a) DB schema 加 `claim_id` / `example_id` / `reaction_scheme_id` 三列；
-      (b) 抽取阶段产出三层 ID 映射；(c) 评测 claim-example F1（独立于单分子 F1）。
-      工作量：1-2 周。
-
-- [ ] **P1-8 — 同族专利 family traversal**（专利域，论文 §4.2 前沿提前）
-      (a) 新增 `agent 工具：patent_family(doc_id)` 抓 US/EP/JP/CN 同族；
-      (b) 同族 join 入知识库；(c) 跨语种 link。
-      工作量：2-3 周。
-
-- [ ] **P1-9 — Claim 语言学解析**（专利域）
-      论文 §5.4 瓶颈 #4。
-      (a) 新增 `parse_claim_language(text)`：识别 "comprising" / "consisting of" / "wherein"；
-      (b) 输出 claim scope 类型（open/closed/limited）；(c) 律师 review 校验。
-      工作量：1 周。
-
-- [ ] **P1-10 — CPC 分类 link**（专利域）
-      论文 §3.3.1 SPIRES + §5.4 瓶颈 #5。
-      (a) 抽到的分子映射 CPC code；(b) 知识库加 `cpc_code` 列；(c) 支持按 CPC 子领域检索。
-      工作量：1 周。
-
-- [x] **处理队列 UX 优化 + 当前 PDF 流程图**（2026-06-12）
-      见 `TODO/2026-06-12-processing-queue-ux.md`。
-      Phase 1+2：A PdfPipelineFlow · B 列表打磨 · C 吞吐洞察 · G 跨页 toast。
-
-## P2 — 中期计划
-
-- [ ] **P2-1 — citation traversal 工具**（论文 §4.2）
-- [ ] **P2-2 — VLM 替代 A/B 实验**（论文 §3.2.4）
-- [ ] **P2-3 — Human-in-the-loop 标注 UI**（论文 §3.2.2 Dagdelen）
-- [ ] **P2-4 — 化学抽取 LoRA 微调**（论文 §3.2.2）
-- [ ] **P2-5 — 负结果 / 失败案例库**（论文 §4.3）
-- [ ] **P2-6 — query-to-model 探索**（论文 §4.5）
-- [x] **P2-7 — pdf-inspector 深度优化**（2026-06-22）
-      见 `TODO/2026-06-22-pdf-inspector-investigation.md`。
-      P-S4 锁版本 · P-S2 单次加载复用 · P-S1 heading 解析简化 · P-S3 per-page OCR routing。
-
-详见 `TODO/2026-06-22-llm-extraction-paper-research.md` 完整定义。
-
-## 技术债务
-
-> 与 `AGENTS.md`「技术债务」同步维护。修复后两边同时更新。
-
-| # | 债务 | 严重性 | 状态 | 修复方案 | 优先级 |
-|---|------|--------|------|---------|--------|
-| 1 | chem_validate.rs 与 core/chem.rs 边界模糊（委派层而非重复） | 中 | 🟥 待修复 | 合并到 chem.rs | P2 |
-| 2 | 多个 std::sync::Mutex 在 async 上下文 | 高 | 🟧 进行中 | 迁移到 tokio::sync::Mutex | P1 |
-| 3 | chematic git 依赖缺 tag | 中 | 🟥 待修复 | 锁定到特定 commit | P2 |
-| 4 | Python sidecar 单进程无连接池 | 中 | 🟥 待修复 | 添加连接池 + 优雅降级 | P2 |
-| 5 | tracing 覆盖不全 | 中 | 🟧 部分完成 | 扩展 observability.rs 到所有跨边界调用 | P2 |
-| 6 | 无成本护栏 | 中 | 🟥 待修复 | 新增 BudgetEnforcer | P3 |
-| 7 | 27 分钟管线瓶颈 | 高 | 🟧 部分完成 | LLM 调用并行化 | P1 |
-| 8 | constants.rs 生成机制失效 | 中 | 🟧 部分完成 | 脚本已修复，Rust 侧改为参考文件 + 人工合并 | P2 |
-
----
-
-## P3 — 远期 / 想法
-
-## 已完成（本次会话）
-
-- [x] 前端 API 彻底统一到单层（`api/tauri/*`）
-- [x] Environment 页面添加"刷新模型环境"按钮（调用 `refresh_resolved_paths` + 自动重载模型列表）
-- [x] 删除遗留顶层 API 文件（`http.ts`、`download.ts`、`moldet.ts`、`settings.ts`）
-- [x] Rust/Python 模型路径扫描统一为 ENV 优先级顺序（MBFORGE → HF_HOME → MODELSCOPE → TORCH_HOME）
-- [x] Python 侧改为优先读 Rust 写入的 `resolved_paths.json`（单一真相源）
-- [x] Rust 添加 `refresh_resolved_paths` Tauri 命令供前端刷新调用
-- [x] `resolved_paths.json` 缓存改为 mtime 感知，Rust 刷新后 Python 自动重读
-- [x] **化学信息学模块封装为 26 个 Tauri 命令**（2026-06-15）
-      14 纯计算 (`chem_ops.rs`) + 12 engine CRUD (`molecule_admin.rs`) + 2 个 frontend API 文件。
-      Commit `8b998a8`。surgical 修复：orphan `preprocess` 模块注册 + `lazy_static` → `LazyLock`。
-      Spec 在 `docs/superpowers/specs/2026-06-15-cheminformatics-optimization-design.md`。
-
-## 未完成（cheminformatics 后续 follow-up）
-
-> 26 命令已暴露但**未被前端消费**。待 UI 集成 + 业务接入。
-
-- [ ] **前端消费层**：用 `chem.ts` / `molecule_admin.ts` 实现的 UI 组件（无明确 owner）
-      - `chemCanonicalize` → dedup 提交前规范化（替换 `molecule_extractor` 内的 ad-hoc 标准化）
-      - `chemSeparateEsmilesLayers` → 取代 `chem_validate::separate_esmiles_layers` 的 pipeline 调用点
-      - `chemMarkushCheck` → 集成到 `claim_policy.rs` 的 `check_compound_against_claims`
-      - `molAdminList` + `molAdminStoreStats` → "库管理" 面板（搜索/分页/统计）
-      - `molAdminAdd` / `Update` / `Delete` → 手动编辑/删除分子 UI
-      - `chemGesimAtomMapping` → 分子对齐高亮可视化
-- [ ] **`mol_search_substructure` 重构**：当前用 `db.get_all_smiles()` 全表扫描 O(N)，N 大时性能劣化
-      - 加 SQLite FTS5 加速候选筛选，或
-      - 用 `chemSubstructureSearch` 替代让前端传候选
-- [ ] **`chemValidateSmiles` vs `chemSeparateEsmilesLayers` 统一入口**：
-      前端两路径并存易混淆。统一为单一"输入 e-smiles" → 校验 + 分离 + 标签解析三合一函数
-- [x] **orphan `preprocess` 模块补测试**：已加 12 个测试用例覆盖 preprocess_rgroup_name + preprocess() 管线
-      `preprocess_smiles` / `preprocess_rgroup_name` / `normalize_abbrev_name` / `sanitize_identifier` 全覆盖
-- [x] **`chem_canonicalize` 作为 dedup 主键**：canonicalize_esmiles 已升级为 chematic 化学规范化
-      当前 `MoleculeRecord::smiles` 字段无 canonical 形式，重复分子（不同写法）可能插入多次
-      需在 `molecule_dedup::run_dedup_batch` 入口用 `chemCanonicalize` 归一化候选 SMILES
-
-## 待评估（pageindex 调研）
-
-- [ ] **PageIndex 替换向量检索可行性评估**
-      调研报告 `docs/pageindex-research.md`（2026-06-14）结论：PageIndex **不建议完全替换**。
-      详见下方 pageindex 评估章节。
+- New audits land here as dated P0–P3 sections; resolved items move to DONE with the date.
+- The deprecated root `TODO.md` is archived; do not recreate it.
+- All `code-review` runs and comment-audit sweeps MUST append to this file, not a side file.

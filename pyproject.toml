@@ -27,7 +27,7 @@ timm = { git = "https://github.com/rwightman/pytorch-image-models.git", rev = "5
 
 [project]
 name = "mbforge"
-version = "0.2.0"
+version = "0.3.0"
 description = "MBForge - Molecular Knowledge Base & AI Workbench"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -45,7 +45,7 @@ dependencies = [
     "rdkit>=2024.3.0",
     # AI / RAG
     "sentence-transformers>=2.5.0",
-    "transformers>=4.51.0",
+    "transformers>=4.55.0",
     "openai>=1.0.0",
     # PyTorch (CUDA 12.8)
     "torch>=2.6.0",
@@ -62,7 +62,7 @@ dependencies = [
     "uvicorn[standard]>=0.34.0",
     "httpx>=0.28.0",
     # PDF rendering (PyMuPDF page images for MoldDet)
-    "pymupdf>=1.23.0",
+    "pymupdf>=1.27.0",
     # Molecular image detection & recognition pipeline
     "ultralytics>=8.3.0",
     "opencv-python-headless>=4.10.0",
@@ -74,9 +74,8 @@ dependencies = [
     "pycocotools>=2.0.11",
     # OCR (MolDetect coref identifier recognition, ONNX runtime — Windows CUDA 12 兼容)
     "rapidocr==3.9.0",
-    "pandas>=3.0.3",
+    "pandas>=2.2.0",
     "onnxruntime-directml>=1.24.4",
-    "accelerate>=1.14.0",
     # Vector search (Zvec Python SDK)
     "zvec>=0.5.1",
 ]
@@ -91,6 +90,7 @@ dev = [
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
+    "pyyaml>=6.0",
 ]
 
 [tool.setuptools.packages.find]

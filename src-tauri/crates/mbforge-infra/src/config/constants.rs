@@ -1,31 +1,27 @@
 // ============================================================
-// AUTO-GENERATED from constants.yaml — DO NOT EDIT MANUALLY
-// Run: python scripts/generate_constants.py
+// Hand-written constants for mbforge-infra.
+//
+// YAML-derived shared constants live in `super::generated` (auto-generated
+// at build time from `constants.yaml` via `scripts/generate_constants.py`).
+// They are re-exported from `super` so call sites can write
+// `use crate::config::DEFAULT_SIDECAR_PORT;` unchanged.
+//
+// This file holds Rust-only constants and helpers that have no analogue
+// on the Python side (Tauri event names, env resolution, project layout).
 // ============================================================
-
-// These constants are part of the cross-language public API (frontend +
-// Python sidecar). Many are not referenced from this crate's bin, but
-// are stable identifiers shared across components. Suppress dead_code
-// to keep the auto-generated file free of noise.
-#![allow(dead_code)]
 
 use std::path::PathBuf;
 
 use crate::config::settings::env_var;
 
-// NOTE: Keep in sync with src/mbforge/utils/constants.py (Python sidecar).
-// When changing a value here, update the corresponding Python constant.
+// Re-export YAML-derived constants so existing call sites that write
+// `config::constants::DEFAULT_SIDECAR_PORT` keep working.
+#[allow(unused_imports)]
+pub use super::generated::*;
 
-pub const APP_NAME: &str = "MBForge";
-pub const APP_VERSION: &str = "0.2.0";
-pub const PROJECT_FORMAT_VERSION: u32 = 2;
-pub const PROJECT_META_DIR: &str = ".mbforge";
-
-// ============================================================
-// Canonical project folder layout (strict convention)
-// ============================================================
+// ===== Project layout (Rust-only; not in constants.yaml) =====
 //
-// Every MBForge project MUST have these 6 directories at its root:
+// Canonical project folder layout (strict convention):
 //   projects/  — INPUT:  one isolated DocumentProject per imported PDF
 //   notes/     — INPUT:  user-written .md/.txt notes
 //   molecules/ — OUTPUT: pipeline extracts .sdf/.mol/.pdb/.smi here
@@ -44,7 +40,6 @@ pub const PROJECT_META_DIR: &str = ".mbforge";
 // document-projects. The scanner walks projects/*/.mbforge/index.json
 // to discover DocumentProjects. Legacy projects using papers/ are
 // automatically migrated on open.
-// ============================================================
 pub const PROJECTS_DIR: &str = "projects";
 pub const PROJECT_SOURCE_FILE: &str = "source.pdf";
 pub const PAPERS_DIR: &str = "papers";
@@ -61,51 +56,12 @@ pub const REPORTS_DIR: &str = "reports";
 pub const PAPERS_EXTS: &[&str] = &["pdf"];
 pub const NOTES_EXTS: &[&str] = &["md", "txt"];
 
-// NOTE: This file was originally auto-generated from constants.yaml.
-// It has since been manually extended with Rust-only constants and helpers.
-// LLM/VLM defaults removed: Rust side uses openai_compatible/anthropic APIs directly.
-pub const DEFAULT_EMBED_MODEL: &str = "Qwen/Qwen3-Embedding-0.6B";
-pub const DEFAULT_RERANK_MODEL: &str = "Qwen/Qwen3-Reranker-0.6B";
-
-pub const DEFAULT_HF_ENDPOINT: &str = "https://hf-mirror.com";
-
-pub const PDF_CHUNK_SIZE: usize = 512;
-pub const PDF_CHUNK_OVERLAP: usize = 128;
-
-pub const LLM_MAX_TOKENS: u32 = 4096;
-pub const LLM_TEMPERATURE: f32 = 0.7;
-pub const LLM_TOP_P: f32 = 0.9;
-
-pub const PROVIDER_OPENAI_COMPATIBLE: &str = "openai_compatible";
-pub const PROVIDER_ANTHROPIC: &str = "anthropic";
-pub const PROVIDER_QWEN3: &str = "qwen3";
-pub const PROVIDER_SENTENCE_TRANSFORMERS: &str = "sentence_transformers";
-pub const PROVIDER_OLLAMA: &str = "ollama";
-pub const PROVIDER_API: &str = "api";
-pub const PROVIDER_LOCAL: &str = "local";
-
-pub const MEMORY_DIR: &str = "memory";
-pub const TRAJECTORY_DIR: &str = "trajectory";
-pub const TRAJECTORY_FILE: &str = "trajectory.json";
-pub const SUMMARY_DIR: &str = "summaries";
-pub const INDEX_FILE: &str = "index.json";
-pub const SETTINGS_FILE: &str = "settings.json";
-pub const MOL_DB_FILENAME: &str = "molecules.db";
-
-pub const DEFAULT_SIDECAR_PORT: u16 = 18792;
-pub const DEFAULT_SIDECAR_URL: &str = "http://127.0.0.1:18792";
-
-pub const SUPPORTED_DOC_EXTS: &[&str] = &["md", "txt", "pdf"];
-pub const SUPPORTED_MOL_EXTS: &[&str] = &["sdf", "mol", "mol2", "pdb", "smi"];
-
-// ===== Rust-only constants (not shared with Python) =====
-
-// Metadata keys
+// ===== Metadata keys =====
 pub const META_SOURCE: &str = "source";
 pub const META_FILENAME: &str = "filename";
 pub const META_DOC_ID: &str = "doc_id";
 
-// Tauri IPC event names
+// ===== Tauri IPC event names =====
 pub const EVT_DOC_PROGRESS: &str = "doc-progress";
 pub const EVT_DOC_RESULT: &str = "doc-result";
 pub const EVT_SIDECAR_LOG: &str = "sidecar://log";
@@ -127,7 +83,7 @@ pub const EVT_INGEST_LOG: &str = "ingest-log";
 ///              doc_id: String, file_path: String }`
 pub const EVT_OCR_API_MISSING: &str = "ocr-api-missing";
 
-// Agent config
+// ===== Agent config (Rust-only tuning; not in constants.yaml) =====
 pub const AGENT_MAX_ITERATIONS: usize = 5;
 pub const AGENT_MAX_HISTORY_ROUNDS: usize = 20;
 pub const AGENT_MAX_TOTAL_TOKENS: usize = 32000;

@@ -24,7 +24,7 @@ export default function DownloadedModelItem({
         <div className="settings-downloaded-name">
           <span>{model.name}</span>
           <span className="settings-downloaded-size">{model.size_mb > 0 ? `${model.size_mb} MB` : ''}</span>
-          {model.in_catalog && <span className="settings-downloaded-badge">官方</span>}
+          {model.in_catalog && <span className="settings-downloaded-badge">{t('models.official')}</span>}
         </div>
         <div className="settings-downloaded-path">{model.path}</div>
       </div>

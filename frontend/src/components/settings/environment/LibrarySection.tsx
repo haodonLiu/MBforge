@@ -1,16 +1,17 @@
+import { useTranslation } from 'react-i18next'
 import { CheckIcon, XIcon } from '@/components/icons'
 import SectionTitle from '@/components/ui/SectionTitle'
 
-// 库展示元数据 (label + hint)
+// 库展示元数据 (label + hint 为 i18n key)
 export const LIBRARY_INFO: Record<string, { name: string; hint?: string }> = {
-  rdkit:    { name: 'RDKit', hint: '分子信息学' },
-  numpy:    { name: 'NumPy', hint: '数值计算' },
-  scipy:    { name: 'SciPy', hint: '科学计算' },
-  pandas:   { name: 'Pandas', hint: '数据分析' },
-  openmm:   { name: 'OpenMM', hint: '分子动力学' },
-  vina:     { name: 'AutoDock Vina', hint: '分子对接' },
-  deepchem: { name: 'DeepChem', hint: 'ADMET 预测' },
-  torch:    { name: 'PyTorch', hint: '深度学习' },
+  rdkit:    { name: 'RDKit', hint: 'cheminformatics' },
+  numpy:    { name: 'NumPy', hint: 'numerical computing' },
+  scipy:    { name: 'SciPy', hint: 'scientific computing' },
+  pandas:   { name: 'Pandas', hint: 'data analysis' },
+  openmm:   { name: 'OpenMM', hint: 'molecular dynamics' },
+  vina:     { name: 'AutoDock Vina', hint: 'molecular docking' },
+  deepchem: { name: 'DeepChem', hint: 'ADMET prediction' },
+  torch:    { name: 'PyTorch', hint: 'deep learning' },
 }
 
 // 与后端 /api/v1/environment/check 返回的 capabilities 元素对齐
@@ -27,6 +28,7 @@ export interface CapabilityStatus {
 // ============================================================================
 
 export function LibRow({ lib }: { lib: CapabilityStatus }) {
+  const { t } = useTranslation()
   const info = LIBRARY_INFO[lib.name] || { name: lib.name }
   return (
     <div
@@ -58,7 +60,7 @@ export function LibRow({ lib }: { lib: CapabilityStatus }) {
         <div>
           <div style={{ fontSize: '14px', fontWeight: 500 }}>{info.name}</div>
           {info.hint && (
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{info.hint}</div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{t(info.hint)}</div>
           )}
         </div>
       </div>
@@ -68,7 +70,7 @@ export function LibRow({ lib }: { lib: CapabilityStatus }) {
           color: lib.available ? 'var(--success)' : 'var(--text-muted)',
         }}
       >
-        {lib.available ? lib.version || 'Installed' : 'Not installed'}
+        {lib.available ? lib.version || t('libraries.installed') : t('libraries.notInstalled')}
       </div>
     </div>
   )

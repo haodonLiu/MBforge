@@ -13,7 +13,8 @@ interface Props {
   onOpenConfig: () => void
 }
 
-const APP_VERSION = '0.2.0'
+// __APP_VERSION__ is injected by vite.config.ts from package.json version
+// (kept in sync with constants.yaml app.version via scripts/generate_constants.py).
 
 export default function AboutSection({ onReset, onOpenConfig }: Props) {
   const { t } = useTranslation()
@@ -61,7 +62,7 @@ export default function AboutSection({ onReset, onOpenConfig }: Props) {
       <SettingGroup title={t('settings.version')}>
         <CustomField label="MBForge">
           <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono, monospace)' }}>
-            v{APP_VERSION}
+            v{__APP_VERSION__}
           </span>
         </CustomField>
         <CustomField label={t('settings.buildInfo')}>

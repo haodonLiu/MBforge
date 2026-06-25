@@ -18,6 +18,10 @@ from pathlib import Path
 
 import pytest
 
+from mbforge.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 # 测试用 PDF 路径
 X2_DIR = Path("C:/Users/10954/Desktop/X2")
 US_PDF = X2_DIR / "US20260027089A1.PDF"
@@ -214,21 +218,10 @@ class TestConfigWithRealPaths:
 # 配置系统与模型路径
 # ---------------------------------------------------------------------------
 
-class TestConfigWithRealPaths:
-    """验证配置系统与真实路径的集成."""
-
-    def test_model_cache_dir_exists(self):
-        """模型缓存目录应存在."""
-        from mbforge.utils.constants import get_model_cache_dir
-        cache_dir = Path(get_model_cache_dir())
-        assert cache_dir.exists(), f"模型缓存目录不存在: {cache_dir}"
+class TestResourceManagerReadiness:
+    """ResourceManager 与已下载模型的集成（独立于 TestConfigWithRealPaths 避免类名冲突）."""
 
     def test_resource_manager_detects_models(self):
-        """ResourceManager 应检测到已下载的模型."""
-        from mbforge.core.resource_manager import ResourceManager
-        for model_id in ["embedding", "reranker"]:
-            status = ResourceManager.check(model_id)
-            assert status.status.value == "ready", f"{model_id} 应该是 ready，实际: {status.status.value}"
         """ResourceManager 应检测到已下载的模型."""
         from mbforge.core.resource_manager import ResourceManager
         for model_id in ["embedding", "reranker"]:

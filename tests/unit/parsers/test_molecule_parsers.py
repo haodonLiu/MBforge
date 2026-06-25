@@ -9,6 +9,10 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from mbforge.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 from mbforge.parsers.molecule.coords import (
     image_to_pdf_bbox,
     pdf_to_image_bbox,

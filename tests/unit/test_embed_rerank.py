@@ -6,6 +6,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from mbforge.backends import qwen3_embed, qwen3_rerank
+from mbforge.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------

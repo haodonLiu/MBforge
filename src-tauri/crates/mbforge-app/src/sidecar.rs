@@ -221,8 +221,8 @@ pub fn start_health_monitor(inner: Arc<SidecarInner>, app: AppHandle) {
         std::thread::sleep(Duration::from_secs(3));
 
         let mut consecutive_failures = 0u32;
-        const MAX_FAILURES: u32 = 3;
-        const INTERVAL_SECS: u64 = 5;
+        const MAX_FAILURES: u32 = 6;
+        const INTERVAL_SECS: u64 = 10;
         const MAX_RESTARTS: u32 = 5;
 
         loop {

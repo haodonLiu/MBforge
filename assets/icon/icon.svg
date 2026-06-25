@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- 容器：纯黑圆角方形（macOS squircle, 22% 圆角） -->
-  <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225" fill="#000000"/>
+  <!-- 容器：纯白圆角方形（macOS squircle, 22% 圆角） -->
+  <rect x="0" y="0" width="1024" height="1024" rx="225" ry="225" fill="#FFFFFF"/>
 
-  <!-- 六边形外环：flat-top, 外接圆 R=400, 描边 28, 纯白 -->
+  <!-- 六边形外环：flat-top, 外接圆 R=400, 描边 28, 纯黑 -->
   <polygon points="112,512 312,165 712,165 912,512 712,859 312,859"
-           fill="none" stroke="#FFFFFF" stroke-width="28" stroke-linejoin="miter"/>
+           fill="none" stroke="#000000" stroke-width="28" stroke-linejoin="miter"/>
 
   <!-- 铁砧剪影：单 path 经典侧面轮廓
        部件：顶面 + 角锥(右) | 腰(收) | 底座(展)
@@ -24,5 +24,5 @@
            L 403 460
            L 353 460
            Z"
-        fill="#FFFFFF"/>
+        fill="#000000"/>
 </svg>

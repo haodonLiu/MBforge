@@ -126,7 +126,7 @@ def test_ios_appicon_dimensions() -> None:
 
 
 def test_master_png_anvil_is_solid() -> None:
-    """主稿 PNG 铁砧剪影为实心白色（采样关键点应全白）。"""
+    """主稿 PNG 铁砧剪影为实心黑色（采样关键点应全黑）。"""
     master = TAURI_ICONS / "icon.png"
     img = Image.open(master).convert("RGBA")
     px = img.load()
@@ -140,13 +140,13 @@ def test_master_png_anvil_is_solid() -> None:
     ]
     for x, y in samples:
         r, g, b, _ = px[x, y]
-        assert r > 200 and g > 200 and b > 200, (
-            f"anvil pixel ({x},{y}) should be white, got ({r},{g},{b})"
+        assert r < 50 and g < 50 and b < 50, (
+            f"anvil pixel ({x},{y}) should be black, got ({r},{g},{b})"
         )
 
 
-def test_master_png_bg_is_black() -> None:
-    """主稿 PNG 背景为纯黑（中心角区域，不在铁砧/六边形内）。"""
+def test_master_png_bg_is_white() -> None:
+    """主稿 PNG 背景为纯白（中心角区域，不在铁砧/六边形内）。"""
     master = TAURI_ICONS / "icon.png"
     img = Image.open(master).convert("RGBA")
     px = img.load()
@@ -154,7 +154,6 @@ def test_master_png_bg_is_black() -> None:
     samples = [(512, 250), (250, 512), (770, 512), (512, 770)]
     for x, y in samples:
         r, g, b, _ = px[x, y]
-        # 此区域应在内切六边形外、圆角矩形内 → 黑色 bg
-        assert r < 50 and g < 50 and b < 50, (
-            f"bg pixel ({x},{y}) should be black, got ({r},{g},{b})"
+        assert r > 200 and g > 200 and b > 200, (
+            f"bg pixel ({x},{y}) should be white, got ({r},{g},{b})"
         )

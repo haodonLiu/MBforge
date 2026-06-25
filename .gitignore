@@ -113,6 +113,8 @@ src-tauri/gen/
 src-tauri/crates/*/gen/
 src-tauri/crates/*/gen/**
 src-tauri/vendor/pdfium/release/
+# Cargo doc JSON dump (produced by `cargo doc --output-format json`).
+src-tauri/doc_comments.txt
 # PDFium 安装包缓存（setup.ps1 默认下载到此）
 pdfium-win-x64.tgz
 

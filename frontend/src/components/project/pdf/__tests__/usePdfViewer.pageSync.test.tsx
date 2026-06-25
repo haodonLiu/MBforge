@@ -53,7 +53,7 @@ describe('usePdfViewer page synchronization', () => {
   })
 
   it('ignores page rendered callback for a stale page', () => {
-    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project', 'detect'))
+    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project'))
 
     act(() => {
       result.current.handlePageRendered({
@@ -70,7 +70,7 @@ describe('usePdfViewer page synchronization', () => {
   })
 
   it('accepts page rendered callback only for the current page', () => {
-    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project', 'detect'))
+    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project'))
 
     act(() => {
       result.current.handlePageRendered({
@@ -88,7 +88,7 @@ describe('usePdfViewer page synchronization', () => {
   })
 
   it('ignores image ready callback for a stale page', () => {
-    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project', 'detect'))
+    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project'))
 
     act(() => {
       result.current.handleImageReady(2, 'data:image/png;base64,page2')
@@ -98,7 +98,7 @@ describe('usePdfViewer page synchronization', () => {
   })
 
   it('accepts image ready callback only for the current page', () => {
-    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project', 'detect'))
+    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project'))
 
     act(() => {
       result.current.handleImageReady(1, 'data:image/png;base64,page1')
@@ -108,7 +108,7 @@ describe('usePdfViewer page synchronization', () => {
   })
 
   it('resets render state when current page changes', async () => {
-    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project', 'detect'))
+    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project'))
 
     act(() => {
       result.current.handlePageRendered({
@@ -147,7 +147,7 @@ describe('usePdfViewer page synchronization', () => {
     })
 
     // Use read mode to avoid auto-trigger effect.
-    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project', 'read'))
+    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project'))
 
     act(() => {
       result.current.handlePageRendered({
@@ -177,7 +177,7 @@ describe('usePdfViewer page synchronization', () => {
     })
 
     // Use read mode to avoid auto-trigger effect repopulating after clear.
-    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project', 'read'))
+    const { result } = renderHook(() => usePdfViewer(makeDoc(), '/project'))
 
     act(() => {
       result.current.handlePageRendered({

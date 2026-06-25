@@ -92,8 +92,17 @@ impl PipelineRunner {
             stage: stage_name.clone(),
         });
 
-        let mut outcome = stage.run(input, ctx).await?;
-
+        let result = stage.run(input, ctx).await;
+        let mut outcome = match result {
+            Ok(o) => o,
+            Err(e) => {
+                ctx.reporter.report(PipelineEvent::StageFailed {
+                    stage: stage_name.clone(),
+                    error: e.to_string(),
+                });
+                return Err(e);
+            }
+        };
         for log in outcome.logs.drain(..) {
             ctx.reporter.report(PipelineEvent::StageProgress {
                 stage: stage_name.clone(),

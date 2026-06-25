@@ -489,6 +489,14 @@ impl PipelineReporter for QueueStageReporter {
             PipelineEvent::StageWarning { stage, message } => {
                 (stage.as_str(), format!("阶段 {} 警告: {}", stage, message))
             }
+            PipelineEvent::StageFailed { stage, error } => {
+                (stage.as_str(), format!("阶段 {} 失败: {}", stage, error))
+            }
+        };
+        let level = if matches!(event, PipelineEvent::StageFailed { .. }) {
+            "error"
+        } else {
+            "info"
         };
         log::debug!("PipelineEvent {:?}: {}", event, message);
         emit_log(
@@ -497,7 +505,7 @@ impl PipelineReporter for QueueStageReporter {
             &self.doc_id,
             &self.task_id,
             stage,
-            "info",
+            level,
             message,
         );
     }

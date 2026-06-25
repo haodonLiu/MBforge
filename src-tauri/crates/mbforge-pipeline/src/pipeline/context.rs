@@ -93,6 +93,8 @@ pub enum PipelineEvent {
     StageComplete { stage: String },
     /// A stage emitted a non-fatal warning.
     StageWarning { stage: String, message: String },
+    /// A stage failed (after the error has already been produced).
+    StageFailed { stage: String, error: String },
 }
 
 /// Trait for objects that receive pipeline events.

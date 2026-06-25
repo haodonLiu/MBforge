@@ -43,10 +43,10 @@ const STATUS_TONE: Record<NonNullable<LlmEnvStatus['status']>, BadgeTone> = {
   auth_error: 'danger',
 }
 
-const providerOptions = (map: ModelMap) =>
+const providerOptions = (map: ModelMap, t?: (key: string, options?: Record<string, unknown>) => string) =>
   Object.keys(map).map(k => ({
     value: k,
-    label: (PROVIDER_META[k] ?? { label: k }).label,
+    label: t ? t(`providers.${k}`, { defaultValue: (PROVIDER_META[k] ?? { label: k }).label }) : (PROVIDER_META[k] ?? { label: k }).label,
   }))
 
 const getProviderMeta = (key: string) =>
@@ -170,7 +170,7 @@ export default function ModelConfigCard({
                 onBaseUrlChange={v => { markDirty('llm_base_url'); update('llm_base_url', v) }}
                 apiKey={settings.llm_api_key}
                 onApiKeyChange={v => { markDirty('llm_api_key'); update('llm_api_key', v) }}
-                providerOptions={providerOptions(LLM_MODELS)}
+                providerOptions={providerOptions(LLM_MODELS, t)}
                 needsKey={getProviderMeta(settings.llm_provider).needsKey}
                 baseUrlPlaceholder={getProviderMeta(settings.llm_provider).defaultUrl}
                 baseUrlLabel={t('settings.llmBaseUrl')}
@@ -201,7 +201,7 @@ export default function ModelConfigCard({
                 onBaseUrlChange={v => { markDirty('embed_base_url'); update('embed_base_url', v) }}
                 apiKey={settings.embed_api_key}
                 onApiKeyChange={v => { markDirty('embed_api_key'); update('embed_api_key', v) }}
-                providerOptions={providerOptions(EMBED_MODELS)}
+                providerOptions={providerOptions(EMBED_MODELS, t)}
                 needsKey={getProviderMeta(settings.embed_provider).needsKey}
                 baseUrlPlaceholder={getProviderMeta(settings.embed_provider).defaultUrl}
                 showBaseUrl={settings.embed_provider === 'openai'}
@@ -241,7 +241,7 @@ export default function ModelConfigCard({
                 onBaseUrlChange={() => {}}
                 apiKey=""
                 onApiKeyChange={() => {}}
-                providerOptions={providerOptions(RERANK_MODELS)}
+                providerOptions={providerOptions(RERANK_MODELS, t)}
                 needsKey={false}
                 showBaseUrl={false}
                 dirty={dirtyFields.rerank_provider}
@@ -268,7 +268,7 @@ export default function ModelConfigCard({
                 onBaseUrlChange={v => { markDirty('vlm_base_url'); update('vlm_base_url', v) }}
                 apiKey={settings.vlm_api_key}
                 onApiKeyChange={v => { markDirty('vlm_api_key'); update('vlm_api_key', v) }}
-                providerOptions={providerOptions(VLM_MODELS)}
+                providerOptions={providerOptions(VLM_MODELS, t)}
                 needsKey={getProviderMeta(settings.vlm_provider).needsKey}
                 baseUrlPlaceholder={getProviderMeta(settings.vlm_provider).defaultUrl}
                 dirty={dirtyFields.vlm_provider}
@@ -297,7 +297,7 @@ export default function ModelConfigCard({
                 onBaseUrlChange={v => { markDirty('ocr_base_url'); update('ocr_base_url', v) }}
                 apiKey={settings.ocr_api_key}
                 onApiKeyChange={v => { markDirty('ocr_api_key'); update('ocr_api_key', v) }}
-                providerOptions={providerOptions(OCR_MODELS)}
+                providerOptions={providerOptions(OCR_MODELS, t)}
                 needsKey={getProviderMeta(settings.ocr_provider).needsKey}
                 baseUrlPlaceholder={getProviderMeta(settings.ocr_provider).defaultUrl}
                 dirty={dirtyFields.ocr_provider}

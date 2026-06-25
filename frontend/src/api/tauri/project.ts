@@ -21,28 +21,38 @@ export type ProjectResponse =
   | { success: true; project: ProjectInfo }
   | { success: false; error: string }
 
+// DEV ONLY — these console statements exist to debug the Tauri IPC bridge
+// during local development. Vite tree-shakes them out of production builds
+// (the body becomes dead code under `import.meta.env.DEV === false`).
+const dlog = (...args: unknown[]) => {
+  if (import.meta.env.DEV) console.log(...args)
+}
+const derr = (...args: unknown[]) => {
+  if (import.meta.env.DEV) console.error(...args)
+}
+
 /** 打开或创建项目（Rust native，不依赖 Python sidecar） */
 export async function openProject(
   root: string,
   name?: string,
 ): Promise<ProjectResponse> {
-  console.log('[tauri-bridge] === openProject START ===')
-  console.log('[tauri-bridge] Root:', root)
-  console.log('[tauri-bridge] Name:', name)
+  dlog('[tauri-bridge] === openProject START ===')
+  dlog('[tauri-bridge] Root:', root)
+  dlog('[tauri-bridge] Name:', name)
 
   try {
-    console.log('[tauri-bridge] Calling invoke("open_project", {...})')
+    dlog('[tauri-bridge] Calling invoke("open_project", {...})')
     const response = await invoke<ProjectResponse>('open_project', {
       root,
       name: name ?? null,
     })
-    console.log('[tauri-bridge] Response:', JSON.stringify(response, null, 2))
-    console.log('[tauri-bridge] === openProject END ===')
+    dlog('[tauri-bridge] Response:', JSON.stringify(response, null, 2))
+    dlog('[tauri-bridge] === openProject END ===')
     return response
   } catch (e: unknown) {
     const error = e instanceof Error ? e : undefined
-    console.error('[tauri-bridge] === openProject ERROR ===')
-    console.error('[tauri-bridge] Error:', error?.message || String(e))
+    derr('[tauri-bridge] === openProject ERROR ===')
+    derr('[tauri-bridge] Error:', error?.message || String(e))
     const msg = error?.message || String(e)
     return { success: false, error: msg }
   }

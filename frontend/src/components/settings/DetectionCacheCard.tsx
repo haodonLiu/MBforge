@@ -2,6 +2,7 @@
  * Used by Settings > System tab. */
 
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { getDetectionCacheStats, clearDetectionCache } from '../../api/tauri'
 import { useAppContext } from '../../context/AppContext'
 import { showToast } from '../../hooks/useToast'
@@ -15,6 +16,7 @@ function formatBytes(n: number) {
 }
 
 export default function DetectionCacheCard() {
+  const { t } = useTranslation()
   const { projectRoot } = useAppContext()
   const [stats, setStats] = useState<{
     disk_usage_bytes: number
@@ -51,10 +53,10 @@ export default function DetectionCacheCard() {
     setClearing(true)
     try {
       await clearDetectionCache(projectRoot)
-      showToast('检测缓存已清空', 'success')
+      showToast(t('settings.cacheCleared'), 'success')
       await refresh()
     } catch (e) {
-      showToast('清空失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
+      showToast(t('settings.cacheClearFailed') + ': ' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally {
       setClearing(false)
     }
@@ -73,13 +75,13 @@ export default function DetectionCacheCard() {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0 }}>分子检测缓存</h3>
+        <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0 }}>{t('settings.cacheDetectionTitle')}</h3>
         <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
-          {loading ? '刷新中…' : '刷新'}
+          {loading ? t('common.loading') : t('common.refresh')}
         </Button>
       </div>
       <Caption>
-        缓存每页 PDF 的分子检测结果，再次打开同一页时直接读盘，跳过模型推理。
+        {t('settings.cacheDetectionDesc')}
       </Caption>
       <div
         style={{
@@ -88,9 +90,9 @@ export default function DetectionCacheCard() {
           gap: '10px',
         }}
       >
-        <Stat label="磁盘占用" value={stats ? formatBytes(stats.disk_usage_bytes) : '—'} />
-        <Stat label="已缓存页数" value={stats ? String(stats.cached_page_count) : '—'} />
-        <Stat label="已缓存文档数" value={stats ? String(stats.cached_doc_count) : '—'} />
+        <Stat label={t('settings.cacheDiskUsage')} value={stats ? formatBytes(stats.disk_usage_bytes) : '—'} />
+        <Stat label={t('settings.cachePageCount')} value={stats ? String(stats.cached_page_count) : '—'} />
+        <Stat label={t('settings.cacheDocCount')} value={stats ? String(stats.cached_doc_count) : '—'} />
         <Stat label="Schema" value={stats ? `v${stats.schema_version}` : '—'} />
       </div>
       <div>
@@ -101,7 +103,7 @@ export default function DetectionCacheCard() {
           loading={clearing}
           disabled={!stats || stats.cached_page_count === 0}
         >
-          清空所有检测缓存
+          {t('settings.cacheClearDetection')}
         </Button>
       </div>
     </div>

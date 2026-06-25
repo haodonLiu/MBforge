@@ -63,11 +63,11 @@ export const VLM_MODELS: ModelMap = {
 }
 
 export const OCR_MODELS: ModelMap = {
-  none: [{ value: '', label: '不启用' }],
-  mineru: [{ value: 'pipeline', label: 'pipeline (默认)' }, { value: 'vlm', label: 'vlm (推荐)' }],
-  uniparser: [{ value: 'default', label: '默认 (高质量)' }],
-  paddle_ocr: [{ value: 'PaddleOCR-VL-1.6', label: 'PaddleOCR-VL-1.6 (本地)' }],
-  paddleocr_online: [{ value: 'PaddleOCR-VL-1.6', label: 'PaddleOCR-VL-1.6 (AIStudio 云端)' }],
+  none: [{ value: '', label: 'Off' }],
+  mineru: [{ value: 'pipeline', label: 'pipeline (default)' }, { value: 'vlm', label: 'vlm (recommended)' }],
+  uniparser: [{ value: 'default', label: 'default (high quality)' }],
+  paddle_ocr: [{ value: 'PaddleOCR-VL-1.6', label: 'PaddleOCR-VL-1.6 (local)' }],
+  paddleocr_online: [{ value: 'PaddleOCR-VL-1.6', label: 'PaddleOCR-VL-1.6 (AIStudio Cloud)' }],
 }
 
 /** Provider 的可读标签 + 默认 placeholder URL（用于引导）。 */
@@ -75,17 +75,17 @@ export const PROVIDER_META: Record<string, { label: string; defaultUrl: string; 
   // LLM
   openai_compatible: { label: 'OpenAI Compatible', defaultUrl: 'https://api.openai.com/v1', needsKey: true },
   anthropic: { label: 'Anthropic', defaultUrl: 'https://api.anthropic.com', needsKey: true },
-  ollama: { label: 'Ollama (本地)', defaultUrl: 'http://localhost:11434', needsKey: false },
+  ollama: { label: 'Ollama (local)', defaultUrl: 'http://localhost:11434', needsKey: false },
   // Embed
-  qwen3: { label: 'Qwen3 (本地)', defaultUrl: '', needsKey: false },
-  sentence_transformers: { label: 'Sentence Transformers (本地)', defaultUrl: '', needsKey: false },
+  qwen3: { label: 'Qwen3 (local)', defaultUrl: '', needsKey: false },
+  sentence_transformers: { label: 'Sentence Transformers (local)', defaultUrl: '', needsKey: false },
   openai: { label: 'OpenAI (API)', defaultUrl: 'https://api.openai.com/v1', needsKey: true },
   // VLM
-  qwen_vl: { label: 'Qwen-VL (本地)', defaultUrl: '', needsKey: false },
+  qwen_vl: { label: 'Qwen-VL (local)', defaultUrl: '', needsKey: false },
   // OCR
-  none: { label: '不启用', defaultUrl: '', needsKey: false },
-  mineru: { label: 'MinerU (云端)', defaultUrl: 'https://mineru.net/', needsKey: true },
-  uniparser: { label: 'Uniparser (云端)', defaultUrl: 'https://uniparser.dp.tech/api', needsKey: true },
-  paddle_ocr: { label: 'PaddleOCR (本地)', defaultUrl: '', needsKey: false },
-  paddleocr_online: { label: 'PaddleOCR AIStudio (云端)', defaultUrl: 'https://aistudio.baidu.com/paddleocr', needsKey: true },
+  none: { label: 'Off', defaultUrl: '', needsKey: false },
+  mineru: { label: 'MinerU (Cloud)', defaultUrl: 'https://mineru.net/', needsKey: true },
+  uniparser: { label: 'Uniparser (Cloud)', defaultUrl: 'https://uniparser.dp.tech/api', needsKey: true },
+  paddle_ocr: { label: 'PaddleOCR (local)', defaultUrl: '', needsKey: false },
+  paddleocr_online: { label: 'PaddleOCR AIStudio (Cloud)', defaultUrl: 'https://aistudio.baidu.com/paddleocr', needsKey: true },
 }

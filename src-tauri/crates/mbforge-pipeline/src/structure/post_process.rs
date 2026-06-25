@@ -1323,8 +1323,74 @@ mod tests {
             result.err()
         );
         let parsed = result.unwrap();
-        assert_eq!(parsed.data.compounds.len(), 1);
-        assert_eq!(parsed.data.compounds[0].name, "C1");
         // acronym / structure_or_phase 是 silently dropped — 由未来 PR 添加存储字段
     }
+
+    /// `parse_merge_response` must accept BOTH the `{"data": ...}` wrapper
+    /// shape (defensive) and the flat shape the merge prompt actually
+    /// asks for. Regression guard for review §6: the merge path used
+    /// to silently drop data when the LLM output was wrapped.
+    #[test]
+    fn test_parse_merge_response_flat_shape() {
+        // Flat shape: merge prompt says "只输出 JSON（metadata + summary + ...）"
+        let resp = r#"{
+            "metadata": {"title": "T", "authors": [], "document_type": "patent", "key_targets": []},
+            "summary": "merged summary",
+            "compounds": [
+                {"name": "C1", "smiles": "CCO", "category": "lead", "description": "d1",
+                 "source_ref": "p.1", "confidence": "high", "uncertainty_reason": null}
+            ],
+            "activities": [
+                {"compound": "C1", "activity_type": "IC50", "value": 5.2, "units": "nM",
+                 "source_quote": "IC50 = 5.2 nM", "source_ref": "p.1",
+                 "confidence": "high", "uncertainty_reason": null}
+            ],
+            "key_findings": [],
+            "uncertain_items": []
+        }"#;
+        let result = parse_merge_response(resp, "test-model", Some(100), 3);
+        let parsed = result.expect("merge flat shape must parse");
+        assert_eq!(parsed.data.compounds.len(), 1, "compound dropped in flat shape");
+        assert_eq!(parsed.data.compounds[0].name, "C1");
+        assert_eq!(parsed.data.activities.len(), 1, "activity dropped in flat shape");
+        assert!((parsed.data.activities[0].value - 5.2).abs() < 1e-9);
+        assert_eq!(parsed.data.summary, "merged summary");
+        assert_eq!(parsed.model, "test-model");
+        assert_eq!(parsed.batch_count, 3);
+    }
+
+    /// `parse_merge_response` must also accept the wrapped `{"data": ...}`
+    /// shape (defensive — some LLMs wrap despite the prompt).
+    #[test]
+    fn test_parse_merge_response_wrapped_shape() {
+        let resp = r#"{"data": {
+            "metadata": {"title": "T", "authors": [], "document_type": "patent", "key_targets": []},
+            "summary": "merged",
+            "compounds": [{"name": "C1", "smiles": null, "category": null,
+                          "description": "d", "source_ref": "p.1", "confidence": "high",
+                          "uncertainty_reason": null}],
+            "activities": [], "key_findings": [], "uncertain_items": []
+        }}"#;
+        let parsed = parse_merge_response(resp, "m", Some(50), 2)
+            .expect("merge wrapped shape must parse");
+        assert_eq!(parsed.data.compounds.len(), 1, "compound dropped in wrapped shape");
+        assert_eq!(parsed.data.compounds[0].name, "C1");
+    }
+
+    /// `parse_batch_response` must also accept the flat shape (some
+    /// LLMs strip the wrapper).
+    #[test]
+    fn test_parse_batch_response_flat_shape() {
+        let resp = r#"{
+            "metadata": {"title": "T", "authors": [], "document_type": "paper", "key_targets": []},
+            "summary": "s",
+            "compounds": [{"name": "C1", "smiles": null, "category": null,
+                          "description": "d", "source_ref": "p.1", "confidence": "high",
+                          "uncertainty_reason": null}],
+            "activities": [], "key_findings": [], "uncertain_items": []
+        }"#;
+        let parsed = parse_batch_response(resp).expect("batch flat shape must parse");
+        assert_eq!(parsed.data.compounds.len(), 1, "compound dropped in flat shape");
+    }
 }
+

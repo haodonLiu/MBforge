@@ -380,7 +380,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
   /** coref mode 进入时一次性加载整本 PDF 的 figure bbox（page-level） */
   const loadFigureBboxes = useCallback(async () => {
     if (corefFigureBoxes.size > 0) return
-    const pdfPath = doc.source_path || doc.path
+    const pdfPath = absDocPath
     try {
       const pages = await fetchFigureBboxes(pdfPath)
       const map = new Map<string, [number, number, number, number]>()

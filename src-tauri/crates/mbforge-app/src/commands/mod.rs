@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod chem_ops;
 pub mod classifier;
 pub mod detection_cache;
@@ -65,6 +66,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         pdf::ingest_get_logs,
         // text_ops
         text_ops::text_chunk,
+        text_ops::ocr_test_mineru,
+        text_ops::ocr_test_uniparser,
+        text_ops::ocr_test_paddleocr,
         // detection_cache
         detection_cache::cached_extract_page,
         detection_cache::get_cached_page_detections,
@@ -188,10 +192,22 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         mbforge_domain::project::resource_manager::refresh_resolved_paths,
         // result_pane (PDF right-hand panel: coref chain + page parse)
         result_pane::confirm_coref_prediction,
+        result_pane::delete_coref_prediction,
         result_pane::ensure_coref_for_image,
+        result_pane::get_figure_labels,
+        result_pane::get_coref_predictions,
         result_pane::get_molecule_coref_chain,
         result_pane::get_page_parse_result,
         result_pane::update_coref_pair,
+        // agent (LLM chat sessions; see commands/agent.rs)
+        agent::agent_init,
+        agent::agent_create_session,
+        agent::agent_chat,
+        agent::agent_chat_stream,
+        agent::agent_switch_project,
+        agent::agent_clear,
+        agent::agent_destroy_session,
+        agent::agent_get_history,
         // extended settings (cache + recent projects)
         settings_extra::cache_size,
         settings_extra::cache_clear,

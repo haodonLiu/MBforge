@@ -790,19 +790,16 @@ pub fn update_coref_pair(
     let kb_guard = get_or_init_kb(&project_root).map_err(|e| e.to_string())?;
     let kb = kb_guard.value();
 
-    // 1. 删旧（如果指定）
-    if let Some(old_id) = old_prediction_id {
-        // 先查出旧的 label_id 以匹配要删的记录
-        let existing = kb
+    // 1. 删旧（如果指定）。
+    //
+    // 实现说明（2026-06-25 注释审计）：原代码此分支只读不删，靠后续
+    // step 3 的 upsert 覆盖；TODO 提到 "全删 → 细粒度" 已升级到
+    // TODO/INDEX.md#R-3，未来接入 `kb.delete_coref_prediction_by_id(old_id)`
+    // 即可。当前空分支刻意保留意图而非误删——属于"占位但已转写为外部清单"。
+    if let Some(_old_id) = old_prediction_id {
+        let _existing = kb
             .get_coref_predictions(&doc_id, page)
             .map_err(|e| e.to_string())?;
-        if existing.iter().any(|p| p.id == old_id) {
-            // 简单做法：upsert 时用 (mol_smiles, label_text) 唯一键，
-            // 改 mol_smiles 即替换。
-            // 这里直接 delete by id（需要新方法）
-            // 暂用 delete_coref_predictions 全删（粗暴）— TODO: 细粒度
-            // 实际：先读出现有 (mol_smiles, label_text) 再 upsert 替换
-        }
     }
 
     // 2. 查 label 信息（用 label_id）
@@ -876,6 +873,38 @@ pub fn delete_coref_prediction(project_root: String, prediction_id: i64) -> Resu
         "Single-id delete not yet implemented. Use confirm_coref_prediction(false) to unconfirm."
             .to_string(),
     )
+}
+
+// ---------------------------------------------------------------------------
+// get_figure_labels / get_coref_predictions — KB read wrappers
+// ---------------------------------------------------------------------------
+
+/// 查 (doc, page) 所有 label 标注
+#[tauri::command]
+pub fn get_figure_labels(
+    project_root: String,
+    doc_id: String,
+    page: i64,
+) -> Result<Vec<mbforge_domain::document::knowledge_base::FigureLabel>, String> {
+    let kb_guard = get_or_init_kb(&project_root).map_err(|e| e.to_string())?;
+    kb_guard
+        .value()
+        .get_figure_labels(&doc_id, page)
+        .map_err(|e| e.to_string())
+}
+
+/// 查 (doc, page) 所有 coref 配对预测
+#[tauri::command]
+pub fn get_coref_predictions(
+    project_root: String,
+    doc_id: String,
+    page: i64,
+) -> Result<Vec<mbforge_domain::document::knowledge_base::CorefPrediction>, String> {
+    let kb_guard = get_or_init_kb(&project_root).map_err(|e| e.to_string())?;
+    kb_guard
+        .value()
+        .get_coref_predictions(&doc_id, page)
+        .map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------

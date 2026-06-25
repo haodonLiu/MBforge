@@ -21,8 +21,8 @@ interface Props {
 }
 
 // 虚拟滚动常量
-const ITEM_HEIGHT = 140 // 每个分子卡片约 140px
-const OVERSCAN = 5 // 额外渲染的卡片数
+const ITEM_HEIGHT = 140
+const OVERSCAN = 5
 
 function itemsToText(items: TextItem[]): string {
   if (items.length === 0) return ''
@@ -47,7 +47,6 @@ function itemsToText(items: TextItem[]): string {
   return lines.map(line => line.join(' ').trim()).join('\n')
 }
 
-// 高亮分子名称在上下文中的位置
 function highlightContext(text: string, name: string): React.ReactNode {
   if (!name || !text) return text
   const parts = text.split(new RegExp(`(${escapeRegex(name)})`, 'gi'))
@@ -72,41 +71,30 @@ export default function PdfResultPane({
   onScrollToDetection,
   confidenceThreshold = 0.3,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<'text' | 'molecules'>('text')
   const textContent = itemsToText(currentTextItems)
   const containerRef = useRef<HTMLDivElement>(null)
   const prevPageRef = useRef(currentPage)
 
-  // 按置信度过滤并排序分子
   const groupedDetections = useMemo(() => {
     if (detections.length === 0) return []
-
-    // 过滤低置信度的检测结果
     const filtered = detections.filter(d => d.composite_conf >= confidenceThreshold)
-
-    // 按 bbox 的 Y 坐标排序，实现从上到下的阅读顺序
     const sorted = filtered.map((d, i) => ({ ...d, _originalIndex: i }))
     sorted.sort((a, b) => {
       const ay = a.bbox_pdf?.[1] ?? 0
       const by = b.bbox_pdf?.[1] ?? 0
       return ay - by
     })
-
     return sorted
   }, [detections, confidenceThreshold])
 
-  // 页码变化时自动滚动到新内容
   useEffect(() => {
     if (currentPage !== prevPageRef.current) {
       prevPageRef.current = currentPage
-      if (activeTab === 'molecules' && containerRef.current) {
-        const firstCard = containerRef.current.querySelector('.pdf-molecule-card')
-        if (firstCard) {
-          firstCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-        }
+      if (containerRef.current) {
+        containerRef.current.scrollTop = 0
       }
     }
-  }, [currentPage, activeTab, groupedDetections])
+  }, [currentPage])
 
   const handleMoleculeClick = (mol: ExtractionResult, index: number) => {
     onSelectDetection(selectedDetection === index ? null : index)
@@ -117,7 +105,6 @@ export default function PdfResultPane({
 
   return (
     <div className="pdf-result-pane">
-      {/* Header */}
       <div className="pdf-result-header">
         <div className="pdf-result-header-top">
           <div className="pdf-result-title">
@@ -128,59 +115,43 @@ export default function PdfResultPane({
             {currentTextTotal > 0 && (
               <span className="pdf-result-stat">{currentTextTotal} 字符</span>
             )}
-            {detections.length > 0 && (
-              <span className="pdf-result-stat pdf-result-stat-mol">{detections.length} 分子</span>
+            {groupedDetections.length > 0 && (
+              <span className="pdf-result-stat pdf-result-stat-mol">{groupedDetections.length} 分子</span>
             )}
           </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="pdf-result-tabs">
-          <button
-            className={`pdf-result-tab ${activeTab === 'text' ? 'active' : ''}`}
-            onClick={() => setActiveTab('text')}
-          >
-            文本内容
-          </button>
-          <button
-            className={`pdf-result-tab ${activeTab === 'molecules' ? 'active' : ''}`}
-            onClick={() => setActiveTab('molecules')}
-          >
-            分子识别
-            {detections.length > 0 && (
-              <span className="pdf-result-tab-count">{detections.length}</span>
-            )}
-          </button>
         </div>
       </div>
 
-      {/* Content */}
       <div className="pdf-result-content" ref={containerRef}>
-        {activeTab === 'text' ? (
-          <div className="pdf-result-text">
-            {textContent ? (
-              <pre className="pdf-result-text-pre">{textContent}</pre>
-            ) : (
-              <div className="pdf-result-empty">当前页无文本内容</div>
+        {/* 文本内容区 */}
+        <div className="pdf-result-section">
+          <div className="pdf-result-section-header">文本内容</div>
+          {textContent ? (
+            <pre className="pdf-result-text-pre">{textContent}</pre>
+          ) : (
+            <div className="pdf-result-empty">当前页无文本内容</div>
+          )}
+        </div>
+
+        {/* 分子识别区 */}
+        <div className="pdf-result-section">
+          <div className="pdf-result-section-header">
+            分子识别
+            {groupedDetections.length > 0 && (
+              <span className="pdf-result-section-count">{groupedDetections.length}</span>
             )}
           </div>
-        ) : (
-          <div className="pdf-result-molecules">
-            {groupedDetections.length === 0 ? (
-              <div className="pdf-result-empty">
-                当前页未检测到分子
-                <div className="pdf-result-empty-hint">切换到「分子」模式并点击检测按钮</div>
-              </div>
-            ) : (
-              <MoleculeVirtualList
-                detections={groupedDetections}
-                selectedDetection={selectedDetection}
-                onSelect={handleMoleculeClick}
-                onScrollToDetection={onScrollToDetection}
-              />
-            )}
-          </div>
-        )}
+          {groupedDetections.length === 0 ? (
+            <div className="pdf-result-empty">当前页未检测到分子</div>
+          ) : (
+            <MoleculeVirtualList
+              detections={groupedDetections}
+              selectedDetection={selectedDetection}
+              onSelect={handleMoleculeClick}
+              onScrollToDetection={onScrollToDetection}
+            />
+          )}
+        </div>
       </div>
     </div>
   )
@@ -212,7 +183,6 @@ function MoleculeVirtualList({
     }
   }, [])
 
-  // 计算可见范围
   const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN)
   const endIndex = Math.min(
     detections.length,
@@ -226,14 +196,11 @@ function MoleculeVirtualList({
       onScroll={handleScroll}
       className="pdf-molecule-virtual-list"
     >
-      {/* 占位容器，保持滚动条正确 */}
       <div
         className="pdf-molecule-virtual-spacer"
         style={{ height: detections.length * ITEM_HEIGHT }}
       >
-        {/* 渲染可见项 */}
         {visibleItems.map((mol, idx) => {
-          // 使用排序后的连续索引定位（offset 基于 startIndex + idx）
           const actualIndex = startIndex + idx
           const offset = actualIndex * ITEM_HEIGHT
           return (
@@ -273,7 +240,6 @@ function MoleculeCard({ mol, isSelected, onClick, onLocate }: MoleculeCardProps)
       className={`pdf-molecule-card ${isSelected ? 'selected' : ''}`}
       onClick={onClick}
     >
-      {/* 头部：序号 + 置信度 */}
       <div className="pdf-molecule-header">
         <div className="pdf-molecule-id">
           <span className="pdf-molecule-index">#{mol._originalIndex + 1}</span>
@@ -284,7 +250,6 @@ function MoleculeCard({ mol, isSelected, onClick, onLocate }: MoleculeCardProps)
         </span>
       </div>
 
-      {/* SMILES */}
       <div className="pdf-molecule-smiles">
         <div className="pdf-molecule-smiles-row">
           <code className="pdf-molecule-smiles-value">
@@ -298,7 +263,6 @@ function MoleculeCard({ mol, isSelected, onClick, onLocate }: MoleculeCardProps)
         </div>
       </div>
 
-      {/* 语义上下文（coref） */}
       {mol.context_text && (
         <div className="pdf-molecule-coref">
           <div className="pdf-molecule-coref-header">
@@ -322,7 +286,6 @@ function MoleculeCard({ mol, isSelected, onClick, onLocate }: MoleculeCardProps)
         </div>
       )}
 
-      {/* 元信息 */}
       <div className="pdf-molecule-meta">
         <span className="pdf-molecule-source">
           {mol.source === 'image' ? '图像识别' : mol.source === 'text' ? '文本提取' : '手动添加'}

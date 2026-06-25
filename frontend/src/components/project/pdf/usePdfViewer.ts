@@ -16,13 +16,7 @@ import type { FigureLabel, CorefPrediction } from '../../../api/tauri/result_pan
 import { getFigureLabels, getCorefPredictions } from '../../../api/tauri/result_pane'
 import { getFigureBboxes as fetchFigureBboxes } from '../../../api/tauri/pdf'
 
-export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMode?: 'read' | 'detect' | 'ocr' | 'coref') {
-  const [pdfViewMode, setPdfViewMode] = useState(initialMode ?? 'read')
-  const isDetectMode = pdfViewMode === 'detect'
-  const isOcrMode = pdfViewMode === 'ocr'
-  const isCorefMode = pdfViewMode === 'coref'
-  const isSinglePageMode = isDetectMode || isOcrMode || isCorefMode
-
+export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
   // 置信度阈值（0-1）
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.3)
 
@@ -104,28 +98,28 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     return () => { cancelled = true }
   }, [absDocPath])
 
+  // 自动加载 OCR 布局数据
   useEffect(() => {
-    if (initialMode === 'ocr' && !autoLoadOcrDone.current) {
-      autoLoadOcrDone.current = true
-      setIsLoadingOcr(true)
-      getDocumentOcrLayout(absDocPath, doc.doc_id)
-        .then(result => {
-          setOcrBlocks(result.blocks)
-          setShowOcrPanel(true)
-          const hasBlocks = result.blocks.length > 0
-          showToast(
-            hasBlocks ? `加载 ${result.blocks.length} 个 OCR 块` : getOcrEmptyHint(result.parser),
-            hasBlocks ? 'success' : 'info',
-          )
-        })
-        .catch((e: unknown) => {
-          console.error('Failed to load OCR layout:', e)
-          const msg = e instanceof Error ? e.message : String(e)
-          showToast(`OCR 布局加载失败：${msg}`, 'error')
-        })
-        .finally(() => setIsLoadingOcr(false))
-    }
-  }, [absDocPath, doc.doc_id, initialMode])
+    if (autoLoadOcrDone.current || ocrBlocks.length > 0 || !absDocPath) return
+    autoLoadOcrDone.current = true
+    setIsLoadingOcr(true)
+    getDocumentOcrLayout(absDocPath, doc.doc_id)
+      .then(result => {
+        setOcrBlocks(result.blocks)
+        setShowOcrPanel(true)
+        const hasBlocks = result.blocks.length > 0
+        showToast(
+          hasBlocks ? `加载 ${result.blocks.length} 个 OCR 块` : getOcrEmptyHint(result.parser),
+          hasBlocks ? 'success' : 'info',
+        )
+      })
+      .catch((e: unknown) => {
+        console.error('Failed to load OCR layout:', e)
+        const msg = e instanceof Error ? e.message : String(e)
+        showToast(`OCR 布局加载失败：${msg}`, 'error')
+      })
+      .finally(() => setIsLoadingOcr(false))
+  }, [absDocPath, doc.doc_id, ocrBlocks.length])
 
   const enrichResults = useCallback((results: ExtractionResult[], pageNum: number) => {
     const textItems = pageTextItems.get(pageNum) || []
@@ -314,26 +308,17 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     })
   }, [currentPage])
 
-  // 进入分子检测模式后，当前页渲染完成自动触发检测
+  // 当前页渲染完成自动触发检测（无模式切换，始终自动）
   useEffect(() => {
-    if (!isDetectMode || !currentPageDataUrl || !pageInfo) return
-    // 验证 pageInfo 确实属于当前页
-    if (pageInfo.pageNumber !== currentPage) {
-      console.debug(`[PdfViewer] 跳过自动检测: pageInfo.pageNumber=${pageInfo.pageNumber}, currentPage=${currentPage}`)
-      return
-    }
+    if (!currentPageDataUrl || !pageInfo) return
+    if (pageInfo.pageNumber !== currentPage) return
     if (pageDetections.has(currentPage) || isDetecting) return
-    // 验证 currentPageDataUrl 有效性
-    if (!currentPageDataUrl.startsWith('data:image/')) {
-      console.debug('[PdfViewer] 跳过自动检测: 无效的 currentPageDataUrl')
-      return
-    }
+    if (!currentPageDataUrl.startsWith('data:image/')) return
     void handleDetectPage()
-  }, [isDetectMode, currentPage, currentPageDataUrl, pageInfo, pageDetections, isDetecting, handleDetectPage])
+  }, [currentPage, currentPageDataUrl, pageInfo, pageDetections, isDetecting, handleDetectPage])
 
-  // Coref mode: 切页时清空非当前页的 coref 缓存 + 拉取当前页 labels/predictions
+  // 切页时清空非当前页的 coref 缓存
   useEffect(() => {
-    if (!isCorefMode) return
     setCorefLabelsByPage(prev => {
       const next = new Map(prev)
       for (const k of next.keys()) if (k !== currentPage) next.delete(k)
@@ -344,7 +329,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
       for (const k of next.keys()) if (k !== currentPage) next.delete(k)
       return next
     })
-  }, [isCorefMode, currentPage])
+  }, [currentPage])
 
   const loadCorefForPage = useCallback(async (pageNum: number) => {
     if (!projectRoot || !doc.doc_id) return
@@ -365,11 +350,10 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
     }
   }, [projectRoot, doc.doc_id, corefLabelsByPage, corefPredictionsByPage])
 
-  // 进入 coref 模式或切页时拉取数据
+  // 切页时拉取 coref 数据
   useEffect(() => {
-    if (!isCorefMode) return
     void loadCorefForPage(currentPage)
-  }, [isCorefMode, currentPage, loadCorefForPage])
+  }, [currentPage, loadCorefForPage])
 
   const refreshCorefForPage = useCallback(async () => {
     setCorefLabelsByPage(prev => { const next = new Map(prev); next.delete(currentPage); return next })
@@ -407,9 +391,8 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
   }, [corefFigureBoxes.size, doc.source_path, doc.path])
 
   useEffect(() => {
-    if (!isCorefMode) return
     void loadFigureBboxes()
-  }, [isCorefMode, loadFigureBboxes])
+  }, [loadFigureBboxes])
 
   const handleSaveMolecule = useCallback((newSmiles: string) => {
     if (selectedDetection === null) return
@@ -570,8 +553,6 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string, initialMod
   }, [currentPage])
 
   return {
-    pdfViewMode, setPdfViewMode, isDetectMode, isOcrMode, isCorefMode,
-    isSinglePageMode,
     confidenceThreshold, setConfidenceThreshold,
     currentPage, setCurrentPage, pageDetections, setPageDetections,
     isDetecting, selectedDetection, setSelectedDetection,

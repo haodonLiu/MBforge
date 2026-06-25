@@ -24,7 +24,7 @@ export interface Tab {
   title: string
   doc: DocumentEntry
   projectRoot: string
-  initialMode?: 'read' | 'detect' | 'ocr'
+
 }
 
 let _tabIdSeq = 0

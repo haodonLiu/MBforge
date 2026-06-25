@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import PdfCanvas from '../PdfCanvas'
-import PdfContinuousViewer from '../PdfContinuousViewer'
 import MoleculeOverlay from '../MoleculeOverlay'
 import OcrOverlay from '../OcrOverlay'
 import CorefBboxOverlay, { type MolClickInfo } from './pdf/CorefBboxOverlay'
@@ -22,19 +21,14 @@ interface Props {
   doc: DocumentEntry
   projectRoot: string
   onClose: () => void
-  initialMode?: 'read' | 'detect' | 'ocr' | 'coref'
 }
 
 interface CorefContextMenu {
-  /** Mol 信息（含同色配对组） */
   clickInfo: MolClickInfo
-  /** 鼠标点击位置（屏幕坐标） */
   x: number
   y: number
 }
 
-/** 从 image_path basename (e.g. "page_3_img_2.png") 提取 (page, imgIdx)。
- *  失败返回 null（持久化前端的 image_path 可能不含此格式） */
 function parseImageBasename(p: string | null | undefined): { page: number; imgIdx: number } | null {
   if (!p) return null
   const m = /page[_-](\d+)[_-]img[_-](\d+)/i.exec(p.split(/[\\/]/).pop() ?? '')
@@ -42,8 +36,6 @@ function parseImageBasename(p: string | null | undefined): { page: number; imgId
   return { page: parseInt(m[1], 10), imgIdx: parseInt(m[2], 10) }
 }
 
-/** 从全文档 figure bbox 映射里挑出当前页需要的 subset。
- *  按 image_path basename 匹配 `__order__:page:idx`，失败 → 全空 → 投影退化为 0-1（近似） */
 function buildFigureBoxesForPage(
   allBoxes: Map<string, [number, number, number, number]>,
   labels: FigureLabel[],
@@ -68,12 +60,11 @@ function buildFigureBoxesForPage(
   return out
 }
 
-export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Props) {
-  const v = usePdfViewer(doc, projectRoot, initialMode)
+export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
+  const v = usePdfViewer(doc, projectRoot)
   const pipeline = useIngestPipeline(doc.doc_id, projectRoot)
   const [corefMenu, setCorefMenu] = useState<CorefContextMenu | null>(null)
 
-  // 关闭右键菜单：点击页面其它位置 / Esc
   useEffect(() => {
     if (!corefMenu) return
     const onDown = (e: MouseEvent) => {
@@ -93,10 +84,9 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
   }, [corefMenu])
 
   const handleMolClick = useCallback((info: MolClickInfo) => {
-    // 左键点击：仅打开菜单（不做其它操作）
     setCorefMenu({
       clickInfo: info,
-      x: window.innerWidth / 2, // 占位；onContextMenu 会用真实坐标
+      x: window.innerWidth / 2,
       y: window.innerHeight / 2,
     })
   }, [])
@@ -116,7 +106,7 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
         doc.doc_id,
         v.currentPage,
         prediction.id,
-        null,                 // molImageId — 未持久化 mol_image 关联
+        null,
         prediction.mol_smiles,
         prediction.mol_bbox,
         label.id,
@@ -153,8 +143,6 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
       <PdfToolbar
         doc={doc}
         onClose={onClose}
-        pdfViewMode={v.pdfViewMode}
-        onViewModeChange={v.setPdfViewMode}
         onLoadOcr={v.handleLoadOcr}
         isLoadingOcr={v.isLoadingOcr}
         showTextLayer={v.showTextLayer}
@@ -167,7 +155,6 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
         isLoadingImages={v.isLoadingImages}
         onLoadImages={v.handleLoadImages}
         pdfOcrSummary={v.pdfOcrSummary}
-        isDetectMode={v.isDetectMode}
         isDetecting={v.isDetecting}
         canDetect={v.canDetect}
         onDetect={() => v.handleDetectPage(true)}
@@ -175,7 +162,6 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
         currentDetectionsCount={v.currentDetections.length}
         confidenceThreshold={v.confidenceThreshold}
         onConfidenceThresholdChange={v.setConfidenceThreshold}
-        isCorefMode={v.isCorefMode}
         isLoadingCoref={v.isLoadingCoref}
         corefLabelsCount={v.corefLabels.length}
         corefPredictionsCount={v.corefPredictions.length}
@@ -185,99 +171,17 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
       />
 
       <div className="pdf-dual-pane">
-        {/* 左侧：PDF 内容 */}
+        {/* 左侧：PDF 内容 + 所有 bbox overlay */}
         <div className="pdf-source-pane">
-          {v.isSinglePageMode ? (
-            <ScrollColumn
-              ref={v.pdfScrollRef}
-              tabIndex={0}
-              onKeyDown={v.handleKeyDown}
-              onWheel={v.handleWheel}
-              className="pdf-single-page"
-              style={{
-                background: 'var(--bg-base)',
-                padding: v.isDetectMode || v.isOcrMode || v.isCorefMode ? '20px' : '0',
-              }}
-            >
-              <div className="pdf-canvas-wrap">
-                {v.pdfLoading || !v.pdfUrl ? (
-                  <div className="pdf-loading">
-                    <Spinner size={32} />
-                    <div className="pdf-loading-title">{doc.title || doc.path.split(/[\\/]/).pop()}</div>
-                    <div className="pdf-loading-sub">读取文件中，请稍候…</div>
-                  </div>
-                ) : (
-                  <PdfCanvas
-                    url={v.pdfUrl}
-                    pageNumber={v.currentPage}
-                    scale={v.pdfScale}
-                    generateImage={v.isDetectMode}
-                    showTextLayer={v.showTextLayer && v.hasTextLayer}
-                    onPageRendered={v.handlePageRendered}
-                    onImageReady={v.handleImageReady}
-                    onTextContent={v.handleTextContent}
-                    onTextLayerClick={() => v.setShowTextPanel(true)}
-                    onPageCount={v.handlePageCount}
-                    style={{
-                      background: '#fff',
-                      boxShadow: v.isDetectMode || v.isCorefMode ? '0 2px 12px rgba(0,0,0,0.15)' : 'none',
-                    }}
-                  />
-                )}
-                {v.isDetectMode && v.pageInfo && v.currentDetections.length > 0 && (
-                  <MoleculeOverlay
-                    detections={v.currentDetections}
-                    renderWidth={v.pageInfo.width}
-                    renderHeight={v.pageInfo.height}
-                    originalHeight={v.pageInfo.originalHeight}
-                    scale={v.pageInfo.scale}
-                    currentPage={v.currentPage}
-                    selectedIndex={v.selectedDetection ?? undefined}
-                    onSelect={v.setSelectedDetection}
-                    onRecognize={v.handleRecognizePage}
-                    isRecognizing={v.isDetecting}
-                  />
-                )}
-                {v.isOcrMode && v.pageInfo && v.ocrBlocks.length > 0 && (
-                  <OcrOverlay
-                    blocks={v.ocrBlocks}
-                    renderWidth={v.pageInfo.width}
-                    renderHeight={v.pageInfo.height}
-                    originalHeight={v.pageInfo.originalHeight}
-                    scale={v.pageInfo.scale}
-                    page={v.currentPage}
-                    selectedIndex={v.selectedOcrIndex ?? undefined}
-                    onSelect={v.setSelectedOcrIndex}
-                    onHover={v.setHoveredOcrIndex}
-                  />
-                )}
-                {v.isCorefMode && v.pageInfo && (
-                  <CorefBboxOverlay
-                    labels={v.corefLabels}
-                    predictions={v.corefPredictions}
-                    threshold={v.corefThreshold}
-                    containerWidth={v.pageInfo.width}
-                    containerHeight={v.pageInfo.height}
-                    originalHeight={v.pageInfo.originalHeight}
-                    scale={v.pageInfo.scale}
-                    figureBoxes={buildFigureBoxesForPage(
-                      v.corefFigureBoxes,
-                      v.corefLabels,
-                      v.corefPredictions,
-                      v.currentPage,
-                    )}
-                    onMolClick={(info) => {
-                      // 左键点击：toggle 选中态 + 显示侧栏
-                      handleMolClick(info)
-                    }}
-                    onMolContextMenu={handleMolContextMenu}
-                    onLabelClick={() => { /* 暂仅 tooltip，无操作 */ }}
-                  />
-                )}
-              </div>
-            </ScrollColumn>
-          ) : (
-            <div className="pdf-continuous" style={{ background: 'var(--bg-base)' }}>
+          <ScrollColumn
+            ref={v.pdfScrollRef}
+            tabIndex={0}
+            onKeyDown={v.handleKeyDown}
+            onWheel={v.handleWheel}
+            className="pdf-single-page"
+            style={{ background: 'var(--bg-base)', padding: '20px' }}
+          >
+            <div className="pdf-canvas-wrap">
               {v.pdfLoading || !v.pdfUrl ? (
                 <div className="pdf-loading">
                   <Spinner size={32} />
@@ -285,18 +189,70 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
                   <div className="pdf-loading-sub">读取文件中，请稍候…</div>
                 </div>
               ) : (
-                <PdfContinuousViewer
-                  ref={v.pdfScrollRef}
+                <PdfCanvas
                   url={v.pdfUrl}
+                  pageNumber={v.currentPage}
                   scale={v.pdfScale}
-                  onPageChange={v.setCurrentPage}
+                  generateImage
+                  showTextLayer={v.showTextLayer && v.hasTextLayer}
+                  onPageRendered={v.handlePageRendered}
+                  onImageReady={v.handleImageReady}
+                  onTextContent={v.handleTextContent}
+                  onTextLayerClick={() => v.setShowTextPanel(true)}
                   onPageCount={v.handlePageCount}
+                  style={{ background: '#fff', boxShadow: '0 2px 12px rgba(0,0,0,0.15)' }}
+                />
+              )}
+              {v.pageInfo && v.currentDetections.length > 0 && (
+                <MoleculeOverlay
+                  detections={v.currentDetections}
+                  renderWidth={v.pageInfo.width}
+                  renderHeight={v.pageInfo.height}
+                  originalHeight={v.pageInfo.originalHeight}
+                  scale={v.pageInfo.scale}
+                  currentPage={v.currentPage}
+                  selectedIndex={v.selectedDetection ?? undefined}
+                  onSelect={v.setSelectedDetection}
+                  onRecognize={v.handleRecognizePage}
+                  isRecognizing={v.isDetecting}
+                />
+              )}
+              {v.pageInfo && v.ocrBlocks.length > 0 && (
+                <OcrOverlay
+                  blocks={v.ocrBlocks}
+                  renderWidth={v.pageInfo.width}
+                  renderHeight={v.pageInfo.height}
+                  originalHeight={v.pageInfo.originalHeight}
+                  scale={v.pageInfo.scale}
+                  page={v.currentPage}
+                  selectedIndex={v.selectedOcrIndex ?? undefined}
+                  onSelect={v.setSelectedOcrIndex}
+                  onHover={v.setHoveredOcrIndex}
+                />
+              )}
+              {v.pageInfo && (
+                <CorefBboxOverlay
+                  labels={v.corefLabels}
+                  predictions={v.corefPredictions}
+                  threshold={v.corefThreshold}
+                  containerWidth={v.pageInfo.width}
+                  containerHeight={v.pageInfo.height}
+                  originalHeight={v.pageInfo.originalHeight}
+                  scale={v.pageInfo.scale}
+                  figureBoxes={buildFigureBoxesForPage(
+                    v.corefFigureBoxes,
+                    v.corefLabels,
+                    v.corefPredictions,
+                    v.currentPage,
+                  )}
+                  onMolClick={handleMolClick}
+                  onMolContextMenu={handleMolContextMenu}
+                  onLabelClick={() => {}}
                 />
               )}
             </div>
-          )}
+          </ScrollColumn>
 
-          {/* 底部浮动控件 */}
           <PdfFloatingControls
             pdfScale={v.pdfScale}
             onZoomIn={v.handleZoomIn}
@@ -312,7 +268,7 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
           />
         </div>
 
-        {/* 右侧：识别结果面板 */}
+        {/* 右侧：识别结果（文本 + 分子合并） */}
         <PdfResultPane
           currentPage={v.currentPage}
           currentTextItems={v.currentTextItems}
@@ -325,7 +281,7 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
         />
       </div>
 
-      {/* OCR 结果面板（保留，仅在 OCR 模式显示） */}
+      {/* OCR 结果面板 */}
       {v.showOcrPanel && (
         <OcrPanel
           blocks={v.ocrBlocks}
@@ -378,7 +334,6 @@ export default function PdfViewer({ doc, projectRoot, onClose, initialMode }: Pr
             置信度：{(corefMenu.clickInfo.prediction.confidence * 100).toFixed(0)}%
             （source={corefMenu.clickInfo.prediction.source}）
           </div>
-          {/* 确认/撤销 */}
           <button
             className="pdf-tool-btn"
             style={{ display: 'block', width: '100%', textAlign: 'left', padding: '4px 8px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit' }}

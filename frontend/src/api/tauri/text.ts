@@ -18,6 +18,30 @@ export async function textChunk(text: string, chunkSize = 512, overlap = 128): P
   )
 }
 
+// ---- ocr test (cloud backend auth probe) ----
+
+export interface OcrTestResult {
+  ok: boolean
+  status: number | null
+  message: string
+}
+
+export async function testOcrMineru(host: string | null, apiKey: string): Promise<OcrTestResult> {
+  return invoke<OcrTestResult>('ocr_test_mineru', { host, apiKey })
+}
+
+export async function testOcrUniparser(host: string | null, apiKey: string): Promise<OcrTestResult> {
+  return invoke<OcrTestResult>('ocr_test_uniparser', { host, apiKey })
+}
+
+export async function testOcrPaddleocr(
+  host: string | null,
+  apiKey: string,
+  model: string | null,
+): Promise<OcrTestResult> {
+  return invoke<OcrTestResult>('ocr_test_paddleocr', { host, apiKey, model })
+}
+
 // ---- classifier ----
 
 export interface PageClassification {

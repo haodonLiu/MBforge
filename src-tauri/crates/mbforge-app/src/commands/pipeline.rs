@@ -116,6 +116,10 @@ impl PipelineReporter for TauriReporter {
             PipelineEvent::StageWarning { stage, message } => {
                 DocProgressEvent::Error { stage, message }
             }
+            PipelineEvent::StageFailed { stage, error } => DocProgressEvent::Error {
+                stage,
+                message: error,
+            },
         };
         let _ = self.app.emit(EVT_DOC_PROGRESS, payload);
     }

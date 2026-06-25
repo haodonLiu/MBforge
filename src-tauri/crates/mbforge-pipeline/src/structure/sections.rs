@@ -18,6 +18,24 @@ use std::sync::LazyLock;
 static MD_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(#{1,6})\s+(.+)$").expect("valid md heading regex"));
 
+/// Pre-compiled boundary regexes (one per pattern) to avoid per-paragraph
+/// `Regex::new` cost when `is_semantic_boundary` is called inside the
+/// `split_semantic_chunks` loop.
+static SEMANTIC_BOUNDARY_REGEX: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    SEMANTIC_BOUNDARY_PATTERNS
+        .iter()
+        .map(|pat| Regex::new(&format!(r"^{}\b", regex::escape(pat))).expect("valid boundary regex"))
+        .collect()
+});
+
+static NUMBERED_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*\d+[\.\)]\s+\w").expect("valid numbered regex"));
+
+static PAREN_NUMBERED_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*[(\[]\d+[)\]]\s+\w").expect("valid paren-numbered regex")
+});
+
+
 pub fn extract_headings(text: &str) -> Vec<Heading> {
     text.lines()
         .enumerate()
@@ -246,21 +264,13 @@ fn is_semantic_boundary(para: &str) -> Option<String> {
     let lower = trimmed.to_lowercase();
 
     // 1. 检查是否以边界词开头（作为独立单词，允许后面跟数字和标点）
-    for pat in SEMANTIC_BOUNDARY_PATTERNS {
-        let word_re = format!(r"^{}\b", regex::escape(pat));
-        if let Ok(re) = Regex::new(&word_re) {
-            if re.is_match(&lower) {
-                return Some(trimmed.chars().take(60).collect());
-            }
+    for re in SEMANTIC_BOUNDARY_REGEX.iter() {
+        if re.is_match(&lower) {
+            return Some(trimmed.chars().take(60).collect());
         }
     }
 
-    // 2. 纯数字编号行（如 "1. Introduction", "(a) Method"）也视为弱边界
-    if Regex::new(r"^\s*\d+[\.\)]\s+\w").ok()?.is_match(trimmed)
-        || Regex::new(r"^\s*[(\[]\d+[)\]]\s+\w")
-            .ok()?
-            .is_match(trimmed)
-    {
+    if NUMBERED_RE.is_match(trimmed) || PAREN_NUMBERED_RE.is_match(trimmed) {
         return Some(trimmed.chars().take(60).collect());
     }
     None

@@ -13,6 +13,7 @@ use crate::pipeline::context::{PipelineContext, PipelineEvent};
 use crate::pipeline::error::{IndexError, PipelineError};
 use crate::pipeline::models::persisted::{IndexedDocument, PersistedDocument};
 use crate::pipeline::runner::{Stage, StageOutcome};
+use crate::pipeline::services::cache::{Cache, FileCache};
 use mbforge_domain::document::knowledge_base::KnowledgeBase;
 use mbforge_infra::config::settings::AppConfig;
 use mbforge_infra::types::SectionChunk;
@@ -69,27 +70,31 @@ impl Stage<PersistedDocument, IndexedDocument> for IndexStage {
             stage: "index".into(),
             message: "retrieving cached sections".into(),
         });
-
-        let sections: Vec<SectionChunk> = match kb.file_cache().get(&ctx.source_path) {
-            Ok(Some(cached)) => {
-                match serde_json::from_str::<Vec<SectionChunk>>(&cached.sections_json) {
-                    Ok(sections) => sections,
-                    Err(e) => {
-                        log::warn!(
-                            "failed to parse cached sections for {:?}: {}",
-                            ctx.source_path,
-                            e
-                        );
-                        Vec::new()
+        // Read sections from the filesystem FileCache that PersistStage writes
+        // to. (The KB's SQLite FileCache is unused on the v2 happy path; we
+        // only need KB here for the vector store / FTS, not the section cache.)
+        let cache_key = ctx.source_path.display().to_string();
+        let sections: Vec<SectionChunk> =
+            match FileCache::new(project_root).get(&cache_key) {
+                Ok(Some(cached)) => {
+                    match serde_json::from_str::<Vec<SectionChunk>>(&cached.sections_json) {
+                        Ok(sections) => sections,
+                        Err(e) => {
+                            log::warn!(
+                                "failed to parse cached sections for {:?}: {}",
+                                ctx.source_path,
+                                e
+                            );
+                            Vec::new()
+                        }
                     }
                 }
-            }
-            Ok(None) => Vec::new(),
-            Err(e) => {
-                log::warn!("file cache read failed for {:?}: {}", ctx.source_path, e);
-                Vec::new()
-            }
-        };
+                Ok(None) => Vec::new(),
+                Err(e) => {
+                    log::warn!("file cache read failed for {:?}: {}", ctx.source_path, e);
+                    Vec::new()
+                }
+            };
 
         ctx.reporter.report(PipelineEvent::StageProgress {
             stage: "index".into(),

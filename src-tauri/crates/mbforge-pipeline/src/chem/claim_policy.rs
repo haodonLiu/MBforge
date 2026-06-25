@@ -41,7 +41,13 @@ fn extract_candidate_esmiles(text: &str) -> Option<String> {
     }
 
     // 策略 2：搜索符合 SMILES 字符集的连续子串
-    for caps in SMILES_CANDIDATE_RE.captures_iter(text) {
+    // Cap the match count to avoid pathological inputs producing thousands of
+    // candidates (each of which triggers `markush::parse_esmiles`).
+    const MAX_CANDIDATES: usize = 32;
+    for (i, caps) in SMILES_CANDIDATE_RE.captures_iter(text).enumerate() {
+        if i >= MAX_CANDIDATES {
+            break;
+        }
         let candidate = caps.get(0).map(|m| m.as_str()).unwrap_or("");
         if candidate.len() >= 5 && !candidate.contains(' ') {
             let pattern = mbforge_chem::markush::parse_esmiles(candidate);
@@ -126,8 +132,10 @@ pub fn check_compound_against_claims(
             continue;
         }
 
-        // 2. Markush Overlap（若化合物有 E-SMILES）
-        if compound.vlm_verified_esmiles.is_some() || !compound.molecule.context_text.is_empty() {
+        // 2. Markush Overlap: only when the compound has a verified
+        // E-SMILES string. (Calling `check_markush_mention` for compounds
+        // with no E-SMILES produces false-positive MarkushOverlap matches.)
+        if compound.vlm_verified_esmiles.is_some() {
             if let Some(m) = check_markush_mention(compound, claim) {
                 matches.push(m);
                 continue;

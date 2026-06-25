@@ -20,6 +20,7 @@ use crate::pipeline::models::enriched::EnrichedDocument;
 use crate::pipeline::models::extracted::ExtractedDocument;
 use crate::pipeline::models::persisted::PersistedDocument;
 use crate::pipeline::runner::{Stage, StageOutcome};
+use crate::pipeline::services::cache::{Cache, CachedExtractResult, FileCache};
 use crate::pipeline::services::coref_persist::CorefPersistService;
 use crate::pipeline::services::molecule_store::MoleculeStoreWriter;
 use crate::pipeline::writer::report_md::write_agent_report;
@@ -209,6 +210,24 @@ impl Stage<(ExtractedDocument, EnrichedDocument), PersistedDocument> for Persist
         });
         for w in coref_warnings {
             outcome = outcome.with_warning(w);
+        }
+
+        // Write the section list into the file cache so the index stage can
+        // pick it up. Without this, IndexStage reads from a different
+        // (SQLite) cache and always sees an empty list.
+        let cache_key = ctx.source_path.display().to_string();
+        let cached = CachedExtractResult {
+            text: String::new(),
+            sections_json: serde_json::to_string(&enriched.sections)
+                .unwrap_or_else(|_| "[]".to_string()),
+            metadata_json: serde_json::json!({
+                "page_count": extracted.page_count,
+                "parser": extracted.parser,
+            })
+            .to_string(),
+        };
+        if let Err(e) = FileCache::new(project_root).put(&cache_key, &cached) {
+            outcome = outcome.with_warning(format!("file cache write failed: {e}"));
         }
 
         Ok(outcome)

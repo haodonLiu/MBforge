@@ -59,6 +59,20 @@ impl StructuredDataMerger {
     }
 }
 
+/// Returns the longest prefix of `s` (≤ `max_bytes`) that does not split
+/// a UTF-8 code point. Used to safely cap strings before embedding in a
+/// prompt without panicking on multi-byte characters.
+fn summary_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut idx = max_bytes;
+    while idx > 0 && !s.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    &s[..idx]
+}
+
 /// Stage 3: 多 section 结果合并 + 构效关系 (SAR) 分析
 ///
 /// 输入：各 section 的提取结果 + VLM 识别的 SMILES
@@ -82,7 +96,7 @@ async fn run_merge_and_sar(
                 "## Section {}: {}\n摘要: {}\n化合物: {} 个 | 活性数据: {} 条",
                 i + 1,
                 title,
-                &s.summary[..s.summary.len().min(300)],
+                summary_char_boundary(&s.summary, 300),
                 s.compounds.len(),
                 s.activities.len(),
             )

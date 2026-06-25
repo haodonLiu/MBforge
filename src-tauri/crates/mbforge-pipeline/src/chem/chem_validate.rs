@@ -1,4 +1,14 @@
 #![allow(dead_code)]
+
+use std::sync::LazyLock;
+
+/// E-SMILES tag pattern: `<c>1:R1</c>` or `<TAG>VALUE</TAG>`.
+/// Compiled once at first use; avoids per-call recompilation in
+/// `separate_esmiles_layers`.
+static TAG_RE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"<[a-zA-Z]>\d+:[^<]+</[a-zA-Z]>").expect("valid tag regex")
+});
+
 /// 化学结构验证模块（纯 Rust）
 ///
 /// 使用 `chematic` crate 对 SMILES/E-SMILES 进行结构校验：
@@ -94,7 +104,7 @@ pub fn separate_esmiles_layers(raw: &str) -> (String, Option<String>, Option<ser
     }
 
     // 检测是否包含 E-SMILES 标签（<c>N:VALUE</c> 或 <TAG>VALUE</TAG> 格式）
-    let tag_re = regex::Regex::new(r"<[a-zA-Z]>\d+:[^<]+</[a-zA-Z]>").unwrap();
+    let tag_re = &*TAG_RE;
     let tags: Vec<(String, String)> = tag_re
         .find_iter(&cleaned)
         .filter_map(|m| {
@@ -111,7 +121,7 @@ pub fn separate_esmiles_layers(raw: &str) -> (String, Option<String>, Option<ser
         .collect();
 
     // 剥离标签得到纯净 SMILES
-    let clean_smiles: String = tag_re.replace_all(&cleaned, "").to_string();
+    let clean_smiles: String = TAG_RE.replace_all(&cleaned, "").to_string();
     let clean_smiles = clean_smiles.trim().to_string();
 
     // 构建 semantic_tags JSON

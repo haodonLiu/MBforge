@@ -58,6 +58,25 @@ const SEMANTIC_BOUNDARY_PATTERNS: &[&str] = &[
     "背景",
     "目的",
 ];
+/// Pre-compiled regexes for each semantic boundary pattern. Built once
+/// at first use to avoid the hot-loop `Regex::new` cost when
+/// `is_semantic_boundary` is called per paragraph.
+static SEMANTIC_BOUNDARY_REGEX: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    SEMANTIC_BOUNDARY_PATTERNS
+        .iter()
+        .map(|pat| Regex::new(&format!(r"^{}\b", regex::escape(pat))).expect("valid boundary regex"))
+        .collect()
+});
+
+/// Numbered list pattern (e.g. "1. Introduction" or "(a) Method").
+static NUMBERED_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*\d+[\.\)]\s+\w").expect("valid numbered regex"));
+
+/// Parenthesized numbered list pattern (e.g. "(1) Foo" or "[1] Foo").
+static PAREN_NUMBERED_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\s*[\(\[]\d+[\)\]]\s+\w").expect("valid paren-numbered regex")
+});
+
 
 /// Regex matching Markdown headings (H1-H6).
 static MD_RE: LazyLock<Regex> =
@@ -251,23 +270,15 @@ fn is_semantic_boundary(para: &str) -> Option<String> {
     }
     let lower = trimmed.to_lowercase();
 
-    for pat in SEMANTIC_BOUNDARY_PATTERNS {
-        let word_re = format!(r"^{}\b", regex::escape(pat));
-        if let Ok(re) = Regex::new(&word_re) {
-            if re.is_match(&lower) {
-                return Some(trimmed.chars().take(60).collect());
-            }
+    for re in SEMANTIC_BOUNDARY_REGEX.iter() {
+        if re.is_match(&lower) {
+            return Some(trimmed.chars().take(60).collect());
         }
     }
 
-    if Regex::new(r"^\s*\d+[\.\)]\s+\w").ok()?.is_match(trimmed)
-        || Regex::new(r"^\s*[\(\[]\d+[\)\]]\s+\w")
-            .ok()?
-            .is_match(trimmed)
-    {
+    if NUMBERED_RE.is_match(trimmed) || PAREN_NUMBERED_RE.is_match(trimmed) {
         return Some(trimmed.chars().take(60).collect());
     }
-
     None
 }
 

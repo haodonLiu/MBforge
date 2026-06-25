@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import type { ExtractionResult, DetectionBox } from '../types'
 import { pdfToCss } from '../utils/pdf'
 
@@ -44,19 +44,9 @@ export default function MoleculeOverlay({
   onRecognize,
   isRecognizing,
 }: Props) {
-  // 验证检测结果是否属于当前页
-  const validDetections = useMemo(() => {
-    if (currentPage === undefined) return detections
-    return detections.filter(d => {
-      // 如果检测结果有 page_idx，验证是否匹配当前页
-      if (d.page_idx !== null && d.page_idx !== undefined) {
-        // page_idx 是 0-based，currentPage 是 1-based
-        return d.page_idx === currentPage - 1
-      }
-      // 没有 page_idx 的检测结果保留（可能是手动添加的）
-      return true
-    })
-  }, [detections, currentPage])
+  // 当前页的 detections 由调用方（usePdfViewer）按 1-based page key 提供；
+  // 此处不再做 0-based/1-based 转换，避免重复过滤把数据全丢掉。
+  const validDetections = detections
 
   // 将 PDF bbox 转换为 CSS 像素坐标
   const boxes: DetectionBox[] = useMemo(() => {
@@ -73,19 +63,9 @@ export default function MoleculeOverlay({
           result: d,
         }
       })
-  }, [validDetections, originalHeight, scale])
+  }, [detections, originalHeight, scale])
 
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
-
-  // 调试日志：检测到异常时输出
-  useEffect(() => {
-    if (detections.length > 0 && validDetections.length === 0) {
-      console.warn('[MoleculeOverlay] 所有检测结果被过滤掉', {
-        currentPage,
-        detections: detections.map(d => ({ page_idx: d.page_idx, bbox: d.bbox_pdf })),
-      })
-    }
-  }, [detections, validDetections, currentPage])
 
   if (boxes.length === 0) return null
 

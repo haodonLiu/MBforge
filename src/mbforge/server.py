@@ -52,10 +52,12 @@ logger = get_logger("mbforge.server")
 # Backend registry — add a new backend here to register it for lifespan
 # ---------------------------------------------------------------------------
 _BACKENDS = [qwen3_embed, qwen3_rerank, molscribe, moldet, zvec]
+# 启动时只 prewarm 高频后端（embed + zvec），其余在首次调用时懒加载
+_CORE_BACKENDS = [qwen3_embed, zvec]
 
 
 def _prewarm() -> None:
-    for mod in _BACKENDS:
+    for mod in _CORE_BACKENDS:
         try:
             mod.load()
             logger.info(f"{mod.__name__} prewarmed")
@@ -579,6 +581,8 @@ async def molscribe_predict(request: Request, body: dict) -> dict[str, Any]:
         from PIL import Image
         image = Image.open(tmp_path)
         loop = asyncio.get_running_loop()
+        # 懒加载：首次调用时加载模型到内存
+        await loop.run_in_executor(None, molscribe.load)
         result = await loop.run_in_executor(None, lambda: molscribe.predict(image))
         if not result.esmiles:
             err_msg = result.properties.get("error", "unknown error")

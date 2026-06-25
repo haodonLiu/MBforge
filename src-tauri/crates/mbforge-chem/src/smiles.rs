@@ -1,6 +1,6 @@
 //! 纯 Rust 化学信息学 — 基于 chematic crate，替代 Python RDKit sidecar
 //!
-//! 实际 API（来自 `chematic-*` git 依赖，本地 cache `@ .cargo/git/checkouts/chematic-09e7e67b97ed9dba/47a69b1`）：
+//! 实际 API（来自 `chematic-*` git 依赖，见 `src-tauri/Cargo.toml` 的 `chematic` 引用 — 版本号/commit 会随 dep bump 变化，所以这里不再写死 commit hash）：
 //! - `chematic_smiles::parse(&str) -> Result<Molecule, SmilesError>`
 //! - `chematic_smiles::canonical_smiles(&Molecule) -> String`
 //! - `chematic_fp::ecfp4(&Molecule) -> BitVec2048`

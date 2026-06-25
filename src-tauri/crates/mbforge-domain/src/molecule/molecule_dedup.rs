@@ -21,7 +21,7 @@ pub struct DedupResult {
     pub relations_added: i64,
 }
 
-pub fn canonicalize_esmiles(esmiles: &str) -> String {
+pub fn canonicalize_smiles_or_esmiles(esmiles: &str) -> String {
     let trimmed = esmiles.trim();
     if trimmed.is_empty() {
         return String::new();
@@ -44,7 +44,7 @@ pub async fn run_dedup_batch(
     let existing = load_existing_molecules(db);
     let mut seen_esmiles: HashSet<String> = existing
         .iter()
-        .map(|(_, esmiles)| canonicalize_esmiles(esmiles))
+        .map(|(_, esmiles)| canonicalize_smiles_or_esmiles(esmiles))
         .collect();
 
     let mut duplicates = Vec::new();
@@ -52,7 +52,7 @@ pub async fn run_dedup_batch(
     let mut relations_added = 0i64;
 
     for (mol_id, esmiles) in new_mols {
-        let normalized = canonicalize_esmiles(esmiles);
+        let normalized = canonicalize_smiles_or_esmiles(esmiles);
         if normalized.is_empty() {
             new_mol_ids.push(mol_id.clone());
             continue;
@@ -60,7 +60,7 @@ pub async fn run_dedup_batch(
 
         if let Some((match_id, _)) = existing
             .iter()
-            .find(|(_, existing_esmiles)| canonicalize_esmiles(existing_esmiles).eq(&normalized))
+            .find(|(_, existing_esmiles)| canonicalize_smiles_or_esmiles(existing_esmiles).eq(&normalized))
         {
             duplicates.push(DedupPair {
                 mol_a_id: mol_id.clone(),
@@ -72,7 +72,7 @@ pub async fn run_dedup_batch(
             if let Some((match_id, _)) = new_mols
                 .iter()
                 .filter(|(id, _)| id.as_str() != mol_id.as_str())
-                .find(|(_, s)| canonicalize_esmiles(s).eq(&normalized))
+                .find(|(_, s)| canonicalize_smiles_or_esmiles(s).eq(&normalized))
             {
                 duplicates.push(DedupPair {
                     mol_a_id: mol_id.clone(),

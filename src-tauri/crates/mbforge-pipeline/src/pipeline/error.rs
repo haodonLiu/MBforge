@@ -38,6 +38,9 @@ pub enum ExtractError {
     /// All configured OCR backends failed to process the document.
     #[error("all OCR backends failed for '{path}': {details}")]
     OcrAllBackendsFailed { path: String, details: String },
+    /// No OCR backends are registered with the service.
+    #[error("no OCR backends registered")]
+    NoBackends,
     /// An extracted image could not be persisted to disk.
     #[error("image persist failed for '{filename}': {detail}")]
     ImagePersistFailed { filename: String, detail: String },

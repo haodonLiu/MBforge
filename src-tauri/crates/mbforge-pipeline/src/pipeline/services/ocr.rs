@@ -63,14 +63,24 @@ impl OcrService {
     ///
     /// # Errors
     ///
-    /// Returns `PipelineError::Extract(ExtractError::OcrAllBackendsFailed)`
-    /// when every available backend fails, or when no backend is available.
+    /// Returns `PipelineError::Extract(ExtractError::NoBackends)` when the
+    /// service was built with an empty backend list. Returns
+    /// `PipelineError::Extract(ExtractError::OcrAllBackendsFailed)` when no
+    /// backend was available or every available backend failed.
     pub async fn run(&self, path: &Path) -> Result<(OcrOutput, &'static str), PipelineError> {
+        if self.backends.is_empty() {
+            return Err(PipelineError::Extract(ExtractError::NoBackends));
+        }
+
         let path_str = path.to_string_lossy().to_string();
-        let mut errors = Vec::new();
+        // Pre-size to the full backend count: we never push more than one
+        // entry per backend, and knowing the final capacity up front lets
+        // `Vec::push` avoid reallocations while iterating.
+        let mut errors = Vec::with_capacity(self.backends.len());
 
         for backend in &self.backends {
             if !backend.is_available() {
+                errors.push(format!("{}: unavailable", backend.name()));
                 continue;
             }
             match backend.run(path).await {
@@ -128,77 +138,43 @@ fn adapt_ocr_output(old: crate::ocr::OcrOutput) -> OcrOutput {
 // Backend adapters wiring legacy OCR free functions into the new trait.
 // ---------------------------------------------------------------------------
 
-/// Adapter wiring the MinerU cloud OCR backend into the new pipeline.
-pub struct MineruBackendAdapter;
+/// Macro generating a `OcrBackend` adapter around a legacy free function.
+///
+/// Each legacy backend exposes `is_available()` and an async `run(&str)` that
+/// returns `Result<crate::ocr::backend::OcrOutput, String>`. This macro wires
+/// the three call sites (MinerU, UniParser, Paddle) into the new trait in a
+/// uniform way, eliminating four near-duplicate `impl` blocks.
+macro_rules! legacy_backend {
+    ($adapter:ident, $name:literal, $is_avail:path, $run_fn:path) => {
+        pub struct $adapter;
 
-#[async_trait]
-impl OcrBackend for MineruBackendAdapter {
-    fn name(&self) -> &'static str {
-        "mineru"
-    }
+        #[async_trait]
+        impl OcrBackend for $adapter {
+            fn name(&self) -> &'static str {
+                $name
+            }
 
-    fn is_available(&self) -> bool {
-        crate::ocr::mineru::is_available()
-    }
+            fn is_available(&self) -> bool {
+                $is_avail()
+            }
 
-    async fn run(&self, path: &Path) -> Result<OcrOutput, PipelineError> {
-        match crate::ocr::mineru::run(path.to_string_lossy().as_ref()).await {
-            Ok(out) => Ok(adapt_ocr_output(out)),
-            Err(e) => Err(PipelineError::Extract(ExtractError::InspectorFailed {
-                path: path.to_string_lossy().to_string(),
-                detail: e,
-            })),
+            async fn run(&self, path: &Path) -> Result<OcrOutput, PipelineError> {
+                let path_str = path.to_string_lossy().to_string();
+                match $run_fn(path_str.as_str()).await {
+                    Ok(out) => Ok(adapt_ocr_output(out)),
+                    Err(e) => Err(PipelineError::Extract(ExtractError::InspectorFailed {
+                        path: path_str,
+                        detail: e,
+                    })),
+                }
+            }
         }
-    }
+    };
 }
 
-/// Adapter wiring the UniParser online OCR backend into the new pipeline.
-pub struct UniparserBackendAdapter;
-
-#[async_trait]
-impl OcrBackend for UniparserBackendAdapter {
-    fn name(&self) -> &'static str {
-        "uniparser"
-    }
-
-    fn is_available(&self) -> bool {
-        crate::ocr::uniparser::is_available()
-    }
-
-    async fn run(&self, path: &Path) -> Result<OcrOutput, PipelineError> {
-        match crate::ocr::uniparser::run(path.to_string_lossy().as_ref()).await {
-            Ok(out) => Ok(adapt_ocr_output(out)),
-            Err(e) => Err(PipelineError::Extract(ExtractError::InspectorFailed {
-                path: path.to_string_lossy().to_string(),
-                detail: e,
-            })),
-        }
-    }
-}
-
-/// Adapter wiring the PaddleOCR online backend into the new pipeline.
-pub struct PaddleBackendAdapter;
-
-#[async_trait]
-impl OcrBackend for PaddleBackendAdapter {
-    fn name(&self) -> &'static str {
-        "paddleocr-online"
-    }
-
-    fn is_available(&self) -> bool {
-        crate::ocr::paddle::online_is_available()
-    }
-
-    async fn run(&self, path: &Path) -> Result<OcrOutput, PipelineError> {
-        match crate::ocr::paddle::run_online(path.to_string_lossy().as_ref()).await {
-            Ok(out) => Ok(adapt_ocr_output(out)),
-            Err(e) => Err(PipelineError::Extract(ExtractError::InspectorFailed {
-                path: path.to_string_lossy().to_string(),
-                detail: e,
-            })),
-        }
-    }
-}
+legacy_backend!(MineruBackendAdapter, "mineru", crate::ocr::mineru::is_available, crate::ocr::mineru::run);
+legacy_backend!(UniparserBackendAdapter, "uniparser", crate::ocr::uniparser::is_available, crate::ocr::uniparser::run);
+legacy_backend!(PaddleBackendAdapter, "paddleocr-online", crate::ocr::paddle::online_is_available, crate::ocr::paddle::run_online);
 
 /// Placeholder adapter for the GLM-OCR backend.
 pub struct GlmOcrBackendAdapter;

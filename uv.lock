@@ -27,24 +27,6 @@ wheels = [
 ]
 
 [[package]]
-name = "accelerate"
-version = "1.14.0"
-source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-dependencies = [
-    { name = "huggingface-hub" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "psutil" },
-    { name = "pyyaml" },
-    { name = "safetensors" },
-    { name = "torch" },
-]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/8d/75/94cd5d389649578aca399e5aa822637eec18319a1dadc400ffe2f9a7493f/accelerate-1.14.0.tar.gz", hash = "sha256:41b9c4377a54e0b460a959b0defa1b736e4ca0a2373252d9a539964c2afe3c8d", size = 412167, upload-time = "2026-06-11T13:45:52.326Z" }
-wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a8/db/253133d7e7cb40d3af384bb2f5c0b4a2b7fdcffbc95c688cc67a20a3c103/accelerate-1.14.0-py3-none-any.whl", hash = "sha256:e94390c2863b873be18f623f9df48a0d8fe5eff13ea7f1a00092b0a7904888c6", size = 389246, upload-time = "2026-06-11T13:45:50.477Z" },
-]
-
-[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -1224,10 +1206,9 @@ wheels = [
 
 [[package]]
 name = "mbforge"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
-    { name = "accelerate" },
     { name = "anthropic" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -1270,11 +1251,11 @@ dev = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "accelerate", specifier = ">=1.14.0" },
     { name = "anthropic", specifier = ">=0.103.1" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.28.0" },
@@ -1284,13 +1265,13 @@ requires-dist = [
     { name = "openai", specifier = ">=1.0.0" },
     { name = "opencv-python-headless", specifier = ">=4.10.0" },
     { name = "opennmt-py", specifier = "==2.2.0" },
-    { name = "pandas", specifier = ">=3.0.3" },
+    { name = "pandas", specifier = ">=2.2.0" },
     { name = "pillow", specifier = ">=10.4.0" },
     { name = "platformdirs", specifier = ">=4.0.0" },
     { name = "pycocotools", specifier = ">=2.0.11" },
     { name = "pydantic", specifier = ">=2.2.0" },
     { name = "pydantic-settings", specifier = ">=2.2.0" },
-    { name = "pymupdf", specifier = ">=1.23.0" },
+    { name = "pymupdf", specifier = ">=1.27.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
@@ -1304,7 +1285,7 @@ requires-dist = [
     { name = "torch", specifier = ">=2.6.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchaudio", specifier = ">=0.21.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchvision", specifier = ">=0.21.0", index = "https://download.pytorch.org/whl/cu128" },
-    { name = "transformers", specifier = ">=4.51.0" },
+    { name = "transformers", specifier = ">=4.55.0" },
     { name = "ultralytics", specifier = ">=8.3.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
     { name = "zvec", specifier = ">=0.5.1" },
@@ -1312,7 +1293,10 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.0.3" }]
+dev = [
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
 
 [[package]]
 name = "mdurl"

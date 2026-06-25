@@ -46,16 +46,20 @@ pub async fn parse_with_llamaparse(
         )
         .text("result_type", "markdown");
 
+    // Send API key via `Authorization: Bearer` header rather than as a
+    // form field. Form fields are visible in HTTP access logs and
+    // intermediate proxies; headers are at least somewhat less exposed.
+    let mut request = client
+        .post(&url)
+        .multipart(form)
+        .timeout(std::time::Duration::from_secs(120));
     if let Some(key) = api_key {
         if !key.is_empty() {
-            form = form.text("api_key", key);
+            request = request.bearer_auth(key);
         }
     }
 
-    let resp = client
-        .post(&url)
-        .multipart(form)
-        .timeout(std::time::Duration::from_secs(120))
+    let resp = request
         .send()
         .await
         .map_err(|e| format!("LlamaParse request failed: {}", e))?;

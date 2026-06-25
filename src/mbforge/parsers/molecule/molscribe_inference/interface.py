@@ -4,12 +4,15 @@ No albumentations, no indigo. Uses PIL for image preprocessing.
 """
 
 import argparse
+import logging
 import os
 from typing import List
 
 import numpy as np
 import torch
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 from .model import Encoder, Decoder
 from .tokenizer import get_tokenizer
@@ -113,13 +116,33 @@ class MolScribe:
         predictions = []
         self.decoder.compute_confidence = return_confidence
 
+        # If a batch raises a tensor-shape mismatch (Swin/attention batch
+        # inconsistency seen with certain checkpoints), fall back to per-image
+        # prediction so one bad image does not waste a whole batch.
+        def _decode_one(img):
+            t = _preprocess_image(img, self.input_size).unsqueeze(0).to(device)
+            with torch.no_grad():
+                f, h = self.encoder(t)
+                return self.decoder.decode(f, h)[0]
+
         for idx in range(0, len(input_images), batch_size):
             batch_images = input_images[idx : idx + batch_size]
             tensors = [_preprocess_image(img, self.input_size) for img in batch_images]
             images = torch.cat(tensors, dim=0).to(device)
-            with torch.no_grad():
-                features, hiddens = self.encoder(images)
-                batch_predictions = self.decoder.decode(features, hiddens)
+            try:
+                with torch.no_grad():
+                    features, hiddens = self.encoder(images)
+                    batch_predictions = self.decoder.decode(features, hiddens)
+            except RuntimeError as exc:
+                msg = str(exc)
+                if "batch" in msg and ("tensor" in msg or "dimension" in msg):
+                    logger.warning(
+                        "MolScribe batch=%d failed (%s); falling back to per-image",
+                        len(batch_images), msg,
+                    )
+                    batch_predictions = [_decode_one(img) for img in batch_images]
+                else:
+                    raise
             predictions += batch_predictions
 
         smiles = [pred["chartok_coords"]["smiles"] for pred in predictions]

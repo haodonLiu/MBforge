@@ -14,7 +14,7 @@
 //! 中文/英文专利常见标号都被覆盖；使用 lookahead 等价物（match 后校验终止符）
 //! 排除化学名中的假阳性 "化合物6-氯-2-甲基-..."。
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use regex::Regex;
 
@@ -79,14 +79,11 @@ struct CompiledPatterns {
     section: Vec<(&'static str, Regex)>,
 }
 
-static COMPILED: OnceLock<CompiledPatterns> = OnceLock::new();
-
-fn compiled() -> &'static CompiledPatterns {
-    COMPILED.get_or_init(|| {
-        let compile = |table: &[(&'static str, &'static str)]| {
-            table
-                .iter()
-                .map(|(name, pat)| {
+static COMPILED: LazyLock<CompiledPatterns> = LazyLock::new(|| {
+    let compile = |table: &[(&'static str, &'static str)]| {
+        table
+            .iter()
+            .map(|(name, pat)| {
                 let re = Regex::new(pat).unwrap_or_else(|e| {
                     // A bad regex here is a code bug, not user input. In debug
                     // builds, panic to surface the bug immediately. In release
@@ -102,15 +99,18 @@ fn compiled() -> &'static CompiledPatterns {
                     Regex::new("$.^").expect("$.^ is a valid never-match regex")
                 });
                 (*name, re)
-                })
-                .collect()
-        };
-        CompiledPatterns {
-            zh: compile(LABEL_PATTERNS_ZH),
-            en: compile(LABEL_PATTERNS_EN),
-            section: compile(SECTION_PATTERNS),
-        }
-    })
+            })
+            .collect()
+    };
+    CompiledPatterns {
+        zh: compile(LABEL_PATTERNS_ZH),
+        en: compile(LABEL_PATTERNS_EN),
+        section: compile(SECTION_PATTERNS),
+    }
+});
+
+fn compiled() -> &'static CompiledPatterns {
+    &COMPILED
 }
 
 // ---------------------------------------------------------------------------

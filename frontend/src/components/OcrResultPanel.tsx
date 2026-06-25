@@ -66,13 +66,16 @@ export default function OcrResultPanel({
 
   return (
     <div style={{
-      width: '300px',
+      // 不强制 width:300px，由父容器（grid 列 / 浮层）决定宽度。
+      // 旧版强制 300px 会跟 grid 360px 列冲突，留白不自然。
       borderLeft: '1px solid var(--border)',
       background: 'var(--bg-surface)',
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
-      flexShrink: 0,
+      minWidth: 0,
+      height: '100%',
+      width: '100%',
     }}>
       {/* 头部 */}
       <div style={{

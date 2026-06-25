@@ -266,32 +266,8 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
           />
         </div>
 
-        {/* 右侧：识别结果（文本 + 分子合并） */}
-        <PdfResultPane
-          currentPage={v.currentPage}
-          currentTextItems={v.currentTextItems}
-          currentTextTotal={v.currentTextTotal}
-          detections={v.currentDetections}
-          selectedDetection={v.selectedDetection}
-          onSelectDetection={v.setSelectedDetection}
-          onScrollToDetection={v.scrollToDetection}
-          confidenceThreshold={v.confidenceThreshold}
-        />
-      </div>
-
-      {/* OCR 结果面板：浮层覆盖在右侧 PdfResultPane 上方（不挤 PDF 预览） */}
-      {v.showOcrPanel && (
-        <div
-          style={{
-            position: 'absolute',
-            right: 0,
-            top: 0,
-            bottom: 0,
-            width: '300px',
-            zIndex: 10,
-            boxShadow: '-2px 0 12px rgba(0,0,0,0.2)',
-          }}
-        >
+        {/* 右侧：识别结果面板（PdfResultPane 和 OcrPanel 互斥显示，共享同一列） */}
+        {v.showOcrPanel ? (
           <OcrPanel
             blocks={v.ocrBlocks}
             currentPage={v.currentPage}
@@ -315,8 +291,19 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
             }}
             onClose={() => v.setShowOcrPanel(false)}
           />
-        </div>
-      )}
+        ) : (
+          <PdfResultPane
+            currentPage={v.currentPage}
+            currentTextItems={v.currentTextItems}
+            currentTextTotal={v.currentTextTotal}
+            detections={v.currentDetections}
+            selectedDetection={v.selectedDetection}
+            onSelectDetection={v.setSelectedDetection}
+            onScrollToDetection={v.scrollToDetection}
+            confidenceThreshold={v.confidenceThreshold}
+          />
+        )}
+      </div>
 
       {/* Coref 右键菜单 */}
       {corefMenu && (

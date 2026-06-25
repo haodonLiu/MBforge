@@ -1,9 +1,7 @@
-"""MBForge 全局常量 — 从 constants.yaml 自动生成."""
+"""MBForge 全局常量 — 从 constants.yaml 自动生成.
 
-# ============================================================
-# AUTO-GENERATED from constants.yaml — DO NOT EDIT MANUALLY
-# Run: python scripts/generate_constants.py
-# ============================================================
+DO NOT EDIT MANUALLY. Run ``python scripts/generate_constants.py`` instead.
+"""
 
 from __future__ import annotations
 
@@ -13,51 +11,64 @@ from pathlib import Path
 try:
     from platformdirs import user_config_dir, user_data_dir
 except ImportError:
-    user_config_dir = user_data_dir = lambda *a, **kw: str(Path.home() / ".config" / a[0] if a else ".config")
+    user_config_dir = user_data_dir = lambda *a, **kw: str(
+        Path.home() / ".config" / a[0] if a else ".config"
+    )
 
-# NOTE: Keep in sync with src-tauri/src/core/constants.rs (Rust side).
-# When changing a value here, update the corresponding Rust constant.
+# Python-only constants (not shared with Rust) live below the generated block.
 
-APP_NAME = "MBForge"
-APP_VERSION = "0.2.0"
-APP_AUTHOR = "MBForge"
+# app
+APP_NAME = 'MBForge'
+APP_VERSION = '0.3.0'
+APP_AUTHOR = 'MBForge'
 
+# project
 PROJECT_FORMAT_VERSION = 2
-PROJECT_META_DIR = ".mbforge"
+PROJECT_META_DIR = '.mbforge'
 
-MEMORY_DIR = "memory"
-TRAJECTORY_DIR = "trajectory"
-TRAJECTORY_FILE = "trajectory.json"
-SUMMARY_DIR = "summaries"
-INDEX_FILE = "index.json"
-SETTINGS_FILE = "settings.json"
-MOL_DB_FILENAME = "molecules.db"
-KB_COLLECTION_DOCS = "documents"
+# directories
+MEMORY_DIR = 'memory'
+TRAJECTORY_DIR = 'trajectory'
+TRAJECTORY_FILE = 'trajectory.json'
+SUMMARY_DIR = 'summaries'
+MOL_DB_FILENAME = 'molecules.db'
+KB_COLLECTION_DOCS = 'documents'
+INDEX_FILE = 'index.json'
+SETTINGS_FILE = 'settings.json'
 
-DEFAULT_EMBED_MODEL = "Qwen/Qwen3-Embedding-0.6B"
-DEFAULT_RERANK_MODEL = "Qwen/Qwen3-Reranker-0.6B"
-DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
+# models
+DEFAULT_EMBED_MODEL = 'Qwen/Qwen3-Embedding-0.6B'
+DEFAULT_RERANK_MODEL = 'Qwen/Qwen3-Reranker-0.6B'
+DEFAULT_HF_ENDPOINT = 'https://hf-mirror.com'
+MODEL_CACHE_DIR = 'mbforge/models'
 
-PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
-PROVIDER_ANTHROPIC = "anthropic"
-PROVIDER_QWEN3 = "qwen3"
-PROVIDER_SENTENCE_TRANSFORMERS = "sentence_transformers"
-PROVIDER_OLLAMA = "ollama"
-PROVIDER_API = "api"
-PROVIDER_LOCAL = "local"
-OCR_PROVIDER_NONE = "none"
+# providers
+PROVIDER_OPENAI_COMPATIBLE = 'openai_compatible'
+PROVIDER_ANTHROPIC = 'anthropic'
+PROVIDER_QWEN3 = 'qwen3'
+PROVIDER_SENTENCE_TRANSFORMERS = 'sentence_transformers'
+PROVIDER_OLLAMA = 'ollama'
+PROVIDER_API = 'api'
+PROVIDER_LOCAL = 'local'
+PROVIDER_OCR_NONE = 'none'
 
+# llm
 LLM_MAX_TOKENS = 4096
 LLM_TEMPERATURE = 0.7
 LLM_TOP_P = 0.9
 
+# pdf
 PDF_CHUNK_SIZE = 512
 PDF_CHUNK_OVERLAP = 128
 
+# sidecar
 DEFAULT_SIDECAR_PORT = 18792
-DEFAULT_SIDECAR_URL = "http://127.0.0.1:18792"
+DEFAULT_SIDECAR_URL = 'http://127.0.0.1:18792'
 
+# supported_doc_exts
 SUPPORTED_DOC_EXTS: set[str] = {".md", ".txt", ".pdf"}
+
+# supported_mol_exts
 SUPPORTED_MOL_EXTS: set[str] = {".sdf", ".mol", ".mol2", ".pdb", ".smi"}
 
 # ===== Python-only constants (not shared with Rust) =====
@@ -79,11 +90,10 @@ def get_model_cache_dir() -> str:
         from .config import load_global_config
         cfg = load_global_config()
         if cfg.model_cache_dir:
-            # 展开前导 ~ 到用户主目录（兼容 Windows 和 Unix）
             result = cfg.model_cache_dir
-            if result.startswith('~/') or result.startswith('~\\'):
+            if result.startswith("~/") or result.startswith("~\\"):
                 return str(Path.home() / Path(result[2:]))
-            elif result == '~':
+            elif result == "~":
                 return str(Path.home())
             return result
     except Exception:
@@ -91,12 +101,7 @@ def get_model_cache_dir() -> str:
     return str(Path.home() / Path(MODEL_CACHE_DIR))
 
 
-# MODEL_CACHE_DIR is the relative path fragment used by get_model_cache_dir()
-MODEL_CACHE_DIR = "mbforge/models"
-
-
 def ensure_hf_mirror() -> None:
     """设置 HuggingFace 镜像环境变量（如果未设置）。"""
     if not os.environ.get("HF_ENDPOINT"):
         os.environ["HF_ENDPOINT"] = DEFAULT_HF_ENDPOINT
-

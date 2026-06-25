@@ -57,8 +57,12 @@ export default function SearchResultItem({ result }: SearchResultItemProps) {
   const scoreLabel = `${(result.score * 100).toFixed(0)}%`
   const pageText = pageLabel(result.page, result.pageEnd, t)
 
+  // Source click currently shows a "coming soon" toast. The full
+  // openDocument(docId, page) integration is tracked at TODO/INDEX.md#T-2:
+  // it requires (a) an `openDocument` setter in AppContext, and (b) a
+  // backend command that resolves a search-result id to a file path.
+  // Until both ship, do not add a partial handler — leave the toast.
   const handleSourceClick = () => {
-    // TODO 下一迭代：AppContext.openDocument(docId, page)
     showToast(t('search.pdfJumpComingSoon'), 'info')
   }
 

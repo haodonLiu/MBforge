@@ -3,6 +3,19 @@ use std::path::Path;
 
 use crate::doc_types::{ImageRef, OcrBlock};
 
+/// Maximum bytes we will accept in a single MinerU zip response
+/// (advertised by Content-Length). 512 MiB is generous for a
+/// research paper and well above any single MinerU output.
+const MAX_ZIP_BYTES: u64 = 512 * 1024 * 1024;
+
+/// Maximum number of entries we will extract from a single zip.
+/// Defends against zip-bombs that use a huge central directory.
+const MAX_ZIP_ENTRIES: usize = 50_000;
+
+/// Maximum uncompressed bytes per zip entry (advisory; the zip
+/// crate does not enforce this — it trusts the header).
+const MAX_ZIP_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
+
 // ---------------------------------------------------------------------------
 // Options & Result
 // ---------------------------------------------------------------------------
@@ -384,18 +397,46 @@ impl MineruClient {
     /// 下载 zip 包并提取 markdown + images。
     fn download_and_extract(&self, zip_url: &str, task_id: &str) -> Result<MineruResult, String> {
         // Download zip to temp file
-        let resp = self
+        let mut resp = self
             .client
             .get(zip_url)
             .send()
             .map_err(|e| format!("Failed to download zip: {}", e))?;
-        let zip_bytes = resp
-            .bytes()
-            .map_err(|e| format!("Failed to read zip: {}", e))?;
+        // Pre-check Content-Length so honest servers that advertise
+        // an oversize response fail fast before we start writing.
+        if let Some(len) = resp.content_length() {
+            if len > MAX_ZIP_BYTES {
+                return Err(format!(
+                    "MinerU zip too large (Content-Length {len} > {MAX_ZIP_BYTES})"
+                ));
+            }
+        }
 
         let tmp_dir = tempfile::tempdir().map_err(|e| format!("Temp dir error: {}", e))?;
         let zip_path = tmp_dir.path().join("result.zip");
-        std::fs::write(&zip_path, &zip_bytes).map_err(|e| format!("Failed to write zip: {}", e))?;
+
+        // Stream the response body to disk in 32 KiB chunks with a
+        // hard byte cap (`Take` from `std::io`). This avoids the OOM
+        // that `resp.bytes()` would cause on a multi-GB response
+        // and stops a malicious / buggy server that lies about (or
+        // omits) Content-Length at MAX_ZIP_BYTES.
+        {
+            use std::io::Read;
+            let mut out = std::fs::File::create(&zip_path)
+                .map_err(|e| format!("Failed to create zip file: {}", e))?;
+            let mut limited = (&mut resp).take(MAX_ZIP_BYTES);
+            let mut buf = [0u8; 32 * 1024];
+            loop {
+                let n = limited
+                    .read(&mut buf)
+                    .map_err(|e| format!("Failed to read zip: {}", e))?;
+                if n == 0 {
+                    break;
+                }
+                std::io::Write::write_all(&mut out, &buf[..n])
+                    .map_err(|e| format!("Failed to write zip: {}", e))?;
+            }
+        }
 
         // Extract zip
         let zip_file =
@@ -412,11 +453,32 @@ impl MineruClient {
         let extract_base = tmp_dir.path().join("extracted");
         std::fs::create_dir_all(&extract_base).ok();
 
-        for i in 0..archive.len() {
+        // Defend against zip-bombs: cap the total number of entries
+        // and the uncompressed size of any single entry. The zip
+        // crate trusts header values, so an oversize entry could
+        // still OOM during decompression; we skip those rather than
+        // fail so a single bad asset doesn't kill the whole run.
+        if archive.len() > MAX_ZIP_ENTRIES {
+            return Err(format!(
+                "MinerU zip has too many entries ({} > {MAX_ZIP_ENTRIES})",
+                archive.len()
+            ));
+        }
+         for i in 0..archive.len() {
             let mut entry = archive
                 .by_index(i)
                 .map_err(|e| format!("Zip entry error: {}", e))?;
             let name = entry.name().to_string();
+
+            // Skip oversize entries (advisory — see MAX_ZIP_ENTRY_BYTES).
+            if entry.size() > MAX_ZIP_ENTRY_BYTES {
+                log::warn!(
+                    "[mineru] zip entry {name} too large ({} > {}), skipping",
+                    entry.size(),
+                    MAX_ZIP_ENTRY_BYTES
+                );
+                continue;
+            }
 
             // 提取图片
             if name.starts_with("images/") && !name.ends_with('/') {
@@ -735,3 +797,38 @@ fn parse_layout_json(layout: &serde_json::Value) -> Vec<OcrBlock> {
 
     blocks
 }
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zip_caps_are_sane() {
+    // 512 MiB zip is generous; 50k entries is well above any
+    // reasonable MinerU output. These constants are load-bearing
+    // for the OOM + zip-bomb defence — change only with care.
+        assert_eq!(MAX_ZIP_BYTES, 512 * 1024 * 1024);
+        // for the OOM + zip-bomb defence — change only with care.
+        assert_eq!(MAX_ZIP_ENTRIES, 50_000);
+        assert_eq!(MAX_ZIP_ENTRY_BYTES, 256 * 1024 * 1024);
+        assert!(MAX_ZIP_ENTRY_BYTES < MAX_ZIP_BYTES);
+    }
+
+    #[test]
+    fn test_infer_language_known_prefixes() {
+        assert_eq!(infer_language_from_path("USP2024.pdf"), "en");
+        assert_eq!(infer_language_from_path("EP1234567.pdf"), "en");
+        assert_eq!(infer_language_from_path("WO2024.pdf"), "en");
+        assert_eq!(infer_language_from_path("CN123.pdf"), "ch");
+        assert_eq!(infer_language_from_path("random.pdf"), "ch");
+    }
+
+    #[test]
+    fn test_scanned_pdf_options_ocr_enabled() {
+        let opts = scanned_pdf_options("random.pdf");
+        assert!(opts.is_ocr, "scanned PDF options must enable OCR");
+        assert_eq!(opts.model_version, "vlm");
+    }
+}
+

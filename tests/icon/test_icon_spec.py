@@ -130,11 +130,13 @@ def test_master_png_anvil_is_solid() -> None:
     master = TAURI_ICONS / "icon.png"
     img = Image.open(master).convert("RGBA")
     px = img.load()
-    # 铁砧剪影关键点（viewBox 1024 → 中心区域）
+    # 铁砧剪影关键点（viewBox 1024，单 path 重绘后几何）
+    # 顶面 x∈[353,613] y∈[400,460]; 腰 x∈[403,563] y∈[460,540]; 底座 x∈[251,715] y∈[540,630]
     samples = [
-        (512, 430),  # 顶面
-        (400, 500), (500, 500), (600, 500),  # 腰
-        (512, 580),  # 底座
+        (480, 430),  # 顶面中
+        (480, 500),  # 腰中
+        (480, 580),  # 底座中
+        (700, 440),  # 角锥尖端附近
     ]
     for x, y in samples:
         r, g, b, _ = px[x, y]

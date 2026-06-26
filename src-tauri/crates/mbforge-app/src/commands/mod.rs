@@ -11,6 +11,7 @@ pub mod molecode;
 pub mod molecule;
 pub mod molecule_admin;
 pub mod notes;
+pub mod okf_pipeline;
 pub mod pdf;
 pub mod pipeline;
 pub mod project_ops;
@@ -78,6 +79,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         detection_cache::vlm_chem_coref,
         detection_cache::label_for_mol_bbox,
         detection_cache::batch_quick_moldet_scan,
+        detection_cache::update_detection_smiles,
         // classifier
         classifier::classify_page,
         classifier::classify_document,
@@ -220,5 +222,9 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         chem_ops::sar_decompose,
         chem_ops::sar_build_matrix,
         chem_ops::sar_heatmap,
+        // molecule rendering
+        chem_ops::chem_render_molecule,
+        // OKF pipeline
+        okf_pipeline::okf_extract_patent_cmd,
     ]
 }

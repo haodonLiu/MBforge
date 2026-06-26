@@ -21,7 +21,7 @@ ctrlc = "3"
 tauri = { version = "2", features = ["wry"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
-lopdf = { git = "https://github.com/J-F-Liu/lopdf", rev = "7a05512d831415b1f2b1ce522391d6beab8a1284", version = "0.40.0" }
+lopdf = "0.42"
 pdf-inspector = "=0.1.0"
 regex.workspace = true
 chematic-smiles.workspace = true

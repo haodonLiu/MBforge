@@ -221,15 +221,28 @@ def paddle_ocr_pdf(
         time.sleep(8)
     if not jsonl_url:
         raise RuntimeError("PaddleOCR job timed out")
-    # Fetch JSONL
+    # Fetch JSONL — PaddleOCR-VL often returns Chinese in GBK; re-decode per line
     resp = requests.get(jsonl_url, timeout=180)
     resp.raise_for_status()
+    raw_bytes = resp.content
     pages: dict[int, str] = {}
     page_num = 0
-    for line in resp.text.splitlines():
-        line = line.strip()
-        if not line:
+    for raw_line in raw_bytes.splitlines():
+        if not raw_line.strip():
             continue
+        # Try UTF-8 first; on mojibake markers fall back to GB18030
+        for enc in ("utf-8", "gb18030"):
+            try:
+                line = raw_line.decode(enc)
+                # mojibake sentinel: characters that only appear when bytes are mis-decoded
+                if "�" in line or any(c in line for c in ("ʵ", "ʩ", "��")):
+                    if enc == "utf-8":
+                        continue  # try GB18030
+                break
+            except UnicodeDecodeError:
+                if enc == "utf-8":
+                    continue
+                line = raw_line.decode("utf-8", errors="replace")
         try:
             rec = json.loads(line)
         except json.JSONDecodeError as e:
@@ -291,23 +304,68 @@ def stage_render(
     return sorted(results, key=lambda x: x[0])
 
 
-# ─── Stage 3: coref ────────────────────────────────────────────────────────
+# ─── Stage 3: moldet (batch) + molscribe (per crop) ───────────────────────
 
-def stage_coref(
+def _molscribe_one(args) -> tuple[int, int, str | None, str | None]:
+    """Worker: molscribe on one crop. Returns (page, idx, smiles, err)."""
+    p, idx, crop_path, sidecar = args
+    try:
+        cb = base64.b64encode(Path(crop_path).read_bytes()).decode()
+        r = requests.post(
+            f"{sidecar}/api/v1/molscribe",
+            json={"image_base64": cb, "ext": "png"},
+            timeout=120,
+        )
+        r.raise_for_status()
+        ms = r.json()
+        esmiles = (ms.get("esmiles") or "").strip()
+        if esmiles and "*" not in esmiles[:20] and len(esmiles) < 1500:
+            return p, idx, esmiles, None
+        return p, idx, None, "empty_or_garbage"
+    except Exception as e:
+        return p, idx, None, str(e)
+
+
+def stage_moldet(
     page_paths: list[tuple[int, Path]],
     out_dir: Path,
     sidecar: str,
     err: ErrorLog,
     lg: logging.Logger,
+    parallel: int = 4,
 ) -> list[CorefPage]:
-    """Two-pass: (1) coref without molscribe → bboxes + idt labels; (2) molscribe per mol crop."""
+    """Phase A: moldet+ocr (no molscribe) for all pages, parallel. Caches to coref/{p}.json."""
+    from concurrent.futures import ThreadPoolExecutor
+
     coref_dir = out_dir / "coref"
-    crops_dir = out_dir / "crops"
     coref_dir.mkdir(parents=True, exist_ok=True)
-    crops_dir.mkdir(parents=True, exist_ok=True)
-    out: list[CorefPage] = []
-    for p, png in page_paths:
-        # Pass 1: moldet+ocr (no molscribe)
+
+    def _run(p_png: tuple[int, Path]) -> CorefPage:
+        p, png = p_png
+        cp_path = coref_dir / f"{p:04d}.json"
+        # Cache hit (skip molscribe-populated to avoid re-call)
+        if cp_path.exists():
+            try:
+                d = json.loads(cp_path.read_text(encoding="utf-8"))
+                boxes = [
+                    CorefBox(
+                        category_id=int(b["category_id"]),
+                        bbox=list(b["bbox"]),
+                        smiles=b.get("smiles"),
+                        text=b.get("text"),
+                        score=float(b.get("score", 0.0)),
+                    )
+                    for b in d.get("bboxes", [])
+                ]
+                return CorefPage(
+                    page=p,
+                    width=int(d.get("image_width", 0)),
+                    height=int(d.get("image_height", 0)),
+                    bboxes=boxes,
+                    corefs=[(int(a), int(b)) for a, b in d.get("corefs", [])],
+                )
+            except Exception:
+                pass
         try:
             b64 = base64.b64encode(png.read_bytes()).decode()
             r = requests.post(
@@ -318,9 +376,8 @@ def stage_coref(
             r.raise_for_status()
             data = r.json()
         except Exception as e:
-            err.record("coref", f"page {p} moldet+ocr failed", {"err": str(e)})
-            out.append(CorefPage(page=p, width=0, height=0, error=str(e)))
-            continue
+            err.record("moldet", f"page {p} failed", {"err": str(e)})
+            return CorefPage(page=p, width=0, height=0, error=str(e))
 
         boxes: list[CorefBox] = []
         for b in data.get("bboxes", []):
@@ -329,59 +386,20 @@ def stage_coref(
                     CorefBox(
                         category_id=int(b["category_id"]),
                         bbox=list(b["bbox"]),
-                        smiles=None,  # filled in pass 2
+                        smiles=None,
                         text=b.get("text"),
                         score=float(b.get("score", 0.0)),
                     )
                 )
             except Exception as e:
-                err.record("coref", f"page {p} bbox parse failed", {"err": str(e), "b": b})
+                err.record("moldet", f"page {p} bbox parse failed", {"err": str(e), "b": b})
 
         pairs: list[tuple[int, int]] = []
         for pair in data.get("corefs", []):
             try:
                 pairs.append((int(pair[0]), int(pair[1])))
             except Exception as e:
-                err.record("coref", f"page {p} coref pair parse failed", {"err": str(e)})
-
-        # Pass 2: molscribe per category_id=1 crop
-        try:
-            from PIL import Image
-            img = Image.open(png)
-            iw, ih = img.size
-            for idx, b in enumerate(boxes):
-                if b.category_id != 1:
-                    continue
-                x1, y1, x2, y2 = b.bbox
-                # expand bbox by 10% on each side (more context for MolScribe)
-                w, h = x2 - x1, y2 - y1
-                pad_x, pad_y = w * 0.10, h * 0.10
-                x1e, y1e = max(0.0, x1 - pad_x), max(0.0, y1 - pad_y)
-                x2e, y2e = min(1.0, x2 + pad_x), min(1.0, y2 + pad_y)
-                # normalized [0,1] top-left origin → pixel crop
-                px1, py1 = max(0, int(x1e * iw)), max(0, int(y1e * ih))
-                px2, py2 = min(iw, int(x2e * iw)), min(ih, int(y2e * ih))
-                if px2 - px1 < 8 or py2 - py1 < 8:
-                    continue
-                crop = img.crop((px1, py1, px2, py2))
-                crop_path = crops_dir / f"page_{p:04d}_mol_{idx:03d}.png"
-                crop.save(crop_path)
-                try:
-                    cb = base64.b64encode(crop_path.read_bytes()).decode()
-                    rr = requests.post(
-                        f"{sidecar}/api/v1/molscribe",
-                        json={"image_base64": cb, "ext": "png"},
-                        timeout=120,
-                    )
-                    rr.raise_for_status()
-                    ms = rr.json()
-                    esmiles = (ms.get("esmiles") or "").strip()
-                    if esmiles and "*" not in esmiles[:20] and len(esmiles) < 1500:
-                        b.smiles = esmiles
-                except Exception as e:
-                    err.record("coref", f"page {p} molscribe crop {idx} failed", {"err": str(e)})
-        except Exception as e:
-            err.record("coref", f"page {p} crop+ms pass failed", {"err": str(e)})
+                err.record("moldet", f"page {p} coref pair parse failed", {"err": str(e)})
 
         cp = CorefPage(
             page=p,
@@ -390,10 +408,12 @@ def stage_coref(
             bboxes=boxes,
             corefs=pairs,
         )
-        (coref_dir / f"{p:04d}.json").write_text(
+        cp_path.write_text(
             json.dumps(
                 {
                     "page": p,
+                    "image_width": cp.width,
+                    "image_height": cp.height,
                     "bboxes": [asdict(b) for b in boxes],
                     "corefs": pairs,
                 },
@@ -401,11 +421,100 @@ def stage_coref(
             ),
             encoding="utf-8",
         )
-        out.append(cp)
+        return cp
+
+    out: list[CorefPage] = []
+    with ThreadPoolExecutor(max_workers=parallel) as ex:
+        for cp in ex.map(_run, page_paths):
+            out.append(cp)
+    out.sort(key=lambda c: c.page)
     ok = sum(1 for c in out if c.error is None)
-    smiles_n = sum(1 for c in out for b in c.bboxes if b.smiles)
-    lg.info("coref: %d/%d pages ok, %d mols with SMILES", ok, len(out), smiles_n)
+    lg.info("moldet: %d/%d pages ok", ok, len(out))
     return out
+
+
+def stage_molscribe(
+    coref_pages: list[CorefPage],
+    page_paths: list[tuple[int, Path]],
+    out_dir: Path,
+    sidecar: str,
+    err: ErrorLog,
+    lg: logging.Logger,
+    parallel: int = 2,
+    pad_frac: float = 0.10,
+) -> list[CorefPage]:
+    """Phase B: crop + molscribe per category_id=1 bbox, parallel. Mutates in place."""
+    from concurrent.futures import ThreadPoolExecutor
+    from PIL import Image
+
+    crops_dir = out_dir / "crops"
+    crops_dir.mkdir(parents=True, exist_ok=True)
+    page_png = {p: path for p, path in page_paths}
+    work: list[tuple[int, int, Path]] = []
+    img_cache: dict[int, Image.Image] = {}
+    for cp in coref_pages:
+        for idx, b in enumerate(cp.bboxes):
+            if b.category_id != 1 or b.smiles:
+                continue
+            p = cp.page
+            if p not in page_png:
+                continue
+            try:
+                if p not in img_cache:
+                    img_cache[p] = Image.open(page_png[p])
+                img = img_cache[p]
+                iw, ih = img.size
+                x1, y1, x2, y2 = b.bbox
+                w, h = x2 - x1, y2 - y1
+                pad_x, pad_y = w * pad_frac, h * pad_frac
+                x1e, y1e = max(0.0, x1 - pad_x), max(0.0, y1 - pad_y)
+                x2e, y2e = min(1.0, x2 + pad_x), min(1.0, y2 + pad_y)
+                px1, py1 = max(0, int(x1e * iw)), max(0, int(y1e * ih))
+                px2, py2 = min(iw, int(x2e * iw)), min(ih, int(y2e * ih))
+                if px2 - px1 < 8 or py2 - py1 < 8:
+                    continue
+                crop = img.crop((px1, py1, px2, py2))
+                crop_path = crops_dir / f"page_{p:04d}_mol_{idx:03d}.png"
+                crop.save(crop_path)
+                work.append((p, idx, crop_path))
+            except Exception as e:
+                err.record("molscribe", f"page {p} crop {idx} failed", {"err": str(e)})
+
+    page_to_cp = {cp.page: cp for cp in coref_pages}
+
+    def _assign(result):
+        p, idx, smi, e = result
+        cp = page_to_cp.get(p)
+        if not cp:
+            return
+        if smi:
+            cp.bboxes[idx].smiles = smi
+        elif e and e != "empty_or_garbage":
+            err.record("molscribe", f"page {p} mol {idx}", {"err": e})
+
+    args = [(p, idx, str(cp_path), sidecar) for p, idx, cp_path in work]
+    with ThreadPoolExecutor(max_workers=parallel) as ex:
+        for r in ex.map(_molscribe_one, args):
+            _assign(r)
+
+    for cp in coref_pages:
+        cp_path = out_dir / "coref" / f"{cp.page:04d}.json"
+        cp_path.write_text(
+            json.dumps(
+                {
+                    "page": cp.page,
+                    "image_width": cp.width,
+                    "image_height": cp.height,
+                    "bboxes": [asdict(b) for b in cp.bboxes],
+                    "corefs": cp.corefs,
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    smiles_n = sum(1 for c in coref_pages for b in c.bboxes if b.smiles)
+    lg.info("molscribe: %d/%d crops done with SMILES", smiles_n, len(work))
+    return coref_pages
 
 
 # ─── Stage 4: LLM extract activity ────────────────────────────────────────
@@ -561,17 +670,21 @@ def stage_llm(
 def stage_join(
     records: list[ActivityRecord],
     coref_pages: list[CorefPage],
+    pages: dict[int, str],
     lg: logging.Logger,
 ) -> list[ActivityRecord]:
-    """Map compound_label → coref mol bbox + SMILES (best-effort exact match)."""
-    # Build label → (smiles, page, bbox, score) index
+    """Map compound_label → SMILES via two strategies:
+    1) direct label match in coref idt text (works if OCR caught compound numbers)
+    2) cross-page: for activity records on a table page, find page that mentions
+       '化合物<label>的制备' (preparation) and take SMILES from that page.
+    """
+    # Strategy 1: direct label → (smiles, page) from OCR idt text
     label_idx: dict[str, dict[str, Any]] = {}
     for cp in coref_pages:
         idt_by_idx = {i: b for i, b in enumerate(cp.bboxes) if b.category_id == 3}
         for i, b in enumerate(cp.bboxes):
             if b.category_id != 1:
                 continue
-            # find any idt that coref-pairs to this mol
             for mol_i, idt_i in cp.corefs:
                 if mol_i != i:
                     continue
@@ -580,16 +693,60 @@ def stage_join(
                     continue
                 txt = idt.text.strip()
                 smi = (b.smiles or "").strip() or None
-                label_idx.setdefault(
-                    txt,
-                    {"smiles": smi, "page": cp.page, "bbox": b.bbox, "score": b.score},
-                )
+                if smi:
+                    label_idx.setdefault(
+                        txt, {"smiles": smi, "page": cp.page, "bbox": b.bbox}
+                    )
+
+    # Strategy 2: cross-page lookup. Build label → list of (page, smiles, bbox)
+    # from any coref page where the label can be inferred from text "化合物 LABEL 的制备"
+    prep_re = re.compile(
+        r"化合物\s*([0-9]+[a-zA-Z]?)\s*的\s*制备|实施例\s*\d+[：:]\s*化合物\s*([0-9]+[a-zA-Z]?)",
+        re.UNICODE,
+    )
+    # label → list of pages that "prepare" it
+    prep_pages: dict[str, list[int]] = {}
+    for p, t in pages.items():
+        for m in prep_re.finditer(t or ""):
+            lab = (m.group(1) or m.group(2) or "").strip()
+            if lab:
+                prep_pages.setdefault(lab, []).append(p)
+
+    # Also build label → list of (smiles, page) from mols on each page (no idt pairing)
+    page_mols: dict[int, list[CorefBox]] = {}
+    for cp in coref_pages:
+        page_mols[cp.page] = [b for b in cp.bboxes if b.category_id == 1 and b.smiles]
+
+    matched = 0
     for r in records:
-        hit = label_idx.get(r.compound_label.strip())
-        if hit and not r.smiles and hit["smiles"]:
+        if r.smiles:
+            matched += 1
+            continue
+        lab = (r.compound_label or "").strip()
+        # Strategy 1
+        hit = label_idx.get(lab)
+        if hit and hit["smiles"]:
             r.smiles = hit["smiles"]
-    matched = sum(1 for r in records if r.smiles)
+            matched += 1
+            continue
+        # Strategy 2: find preparation page
+        cand_pages = prep_pages.get(lab, [])
+        for cp_p in cand_pages:
+            mols = page_mols.get(cp_p, [])
+            if len(mols) == 1:
+                r.smiles = mols[0].smiles
+                matched += 1
+                break
+            elif len(mols) > 1:
+                # heuristic: pick the mol whose bbox is roughly centered (often the "main" structure)
+                mols.sort(key=lambda b: abs((b.bbox[0]+b.bbox[2])/2 - 0.5) + abs((b.bbox[1]+b.bbox[3])/2 - 0.5))
+                r.smiles = mols[0].smiles
+                matched += 1
+                break
     lg.info("join: %d/%d records linked to coref SMILES", matched, len(records))
+    if matched < len(records):
+        miss = [r.compound_label for r in records if not r.smiles]
+        lg.info("join misses: %s", miss[:10])
     return records
 
 
@@ -808,6 +965,8 @@ def main() -> int:
                     help="project dir (gets .mbforge/index/molecules.db)")
     ap.add_argument("--sidecar", default=SIDECAR_URL, help="sidecar base URL")
     ap.add_argument("--max-pages", type=int, default=200, help="max PDF pages to process")
+    ap.add_argument("--moldet-workers", type=int, default=4, help="parallel moldet+ocr workers")
+    ap.add_argument("--molscribe-workers", type=int, default=2, help="parallel molscribe workers (per crop)")
     args = ap.parse_args()
 
     pdf: Path = args.pdf.resolve()
@@ -828,9 +987,10 @@ def main() -> int:
     try:
         pages = stage_text(pdf, out_dir, err, lg)
         page_paths = stage_render(pdf, out_dir, args.sidecar, err, lg, max_pages=args.max_pages)
-        coref_pages = stage_coref(page_paths, out_dir, args.sidecar, err, lg)
+        coref_pages = stage_moldet(page_paths, out_dir, args.sidecar, err, lg, parallel=args.moldet_workers)
+        coref_pages = stage_molscribe(coref_pages, page_paths, out_dir, args.sidecar, err, lg, parallel=args.molscribe_workers)
         records = stage_llm(pages, out_dir, err, lg, max_pages=args.max_pages)
-        records = stage_join(records, coref_pages, lg)
+        records = stage_join(records, coref_pages, pages, lg)
         reg = stage_register(records, pdf, project_dir, err, lg)
         bundle = stage_okf(records, pages, pdf, patent_id, out_dir, lg)
     except Exception as e:
@@ -843,6 +1003,7 @@ def main() -> int:
         "pages_text": len(pages),
         "pages_rendered": len(page_paths),
         "pages_with_coref": sum(1 for c in coref_pages if c.error is None),
+        "mols_with_smiles": sum(1 for c in coref_pages for b in c.bboxes if b.smiles),
         "activity_records": len(records),
         "register": reg,
         "okf_bundle": str(bundle),

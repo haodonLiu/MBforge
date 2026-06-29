@@ -6,11 +6,17 @@ import asyncio
 import base64
 import hashlib
 import json as _json
+import logging as _logging
+import os as _os
 import re
 import tempfile
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 
 def get_default_device() -> str:
@@ -124,7 +130,7 @@ def load_json(path: Path, default: Any = None) -> Any:
         return default
 
 
-def run_sync(sync_func: "Callable[..., Any]", *args: Any) -> Any:
+def run_sync(sync_func: Callable[..., Any], *args: Any) -> Any:
     """在当前事件循环的线程池中同步执行函数（异步兼容）."""
     try:
         loop = asyncio.get_running_loop()
@@ -139,9 +145,7 @@ def run_sync(sync_func: "Callable[..., Any]", *args: Any) -> Any:
     return sync_func(*args)
 
 
-def decode_base64_to_tempfile(
-    image_base64: str, ext: str = "png"
-) -> str:
+def decode_base64_to_tempfile(image_base64: str, ext: str = "png") -> str:
     """将 base64 编码的图片解码到临时文件，返回文件路径."""
     data = base64.b64decode(image_base64)
     with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as f:
@@ -149,9 +153,10 @@ def decode_base64_to_tempfile(
         return f.name
 
 
-def decode_base64_image(image_base64: str) -> "Image.Image":
+def decode_base64_image(image_base64: str) -> Image.Image:
     """将 base64 编码的图片解码为 PIL Image 对象."""
     from io import BytesIO
+
     from PIL import Image
 
     data = base64.b64decode(image_base64)
@@ -215,9 +220,6 @@ class ToolExecutionError(MBForgeError):
 
 # ---- GPU helpers (moved from gpu.py) ----
 
-import logging as _logging
-import os as _os
-
 _gpu_logger = _logging.getLogger(__name__)
 _gpu_cached: bool | None = None
 
@@ -232,6 +234,7 @@ def is_gpu_available() -> bool:
         return False
     try:
         import torch  # noqa: F401
+
         available = torch.cuda.is_available()
     except ImportError:
         available = False

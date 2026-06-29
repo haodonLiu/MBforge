@@ -36,6 +36,7 @@ def _has_ultralytics() -> bool:
     """运行时检查 ultralytics 是否安装."""
     try:
         import ultralytics  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -45,9 +46,11 @@ def _has_molscribe() -> bool:
     """运行时检查 molscribe 是否可用（本地 molscribe_inference 包）."""
     try:
         from ..parsers.molecule.molscribe_inference import MolScribe  # noqa: F401
+
         return True
     except ImportError:
         return False
+
 
 # ---------------------------------------------------------------------------
 # 模型路径管理
@@ -57,6 +60,7 @@ def _has_molscribe() -> bool:
 def default_model_dir() -> Path:
     """返回模型缓存目录（使用统一常量）."""
     from mbforge.utils.constants import get_model_cache_dir
+
     cache_dir = Path(get_model_cache_dir())
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
@@ -70,14 +74,14 @@ class MolDetv2DocDetector:
     """
 
     MODEL_RESOURCE_ID = "moldet"  # Rust RESOURCE_CATALOG 中的 id
-    MODEL_SUBPATH = "doc/moldet_v2_yolo11n_960_doc.pt"
+    MODEL_SUBPATH = "doc/moldet_v2_yolo26n_960_doc.pt"
     DEFAULT_INPUT_SIZE = (960, 960)
 
     def __init__(
         self,
         model_path: Path | None = None,
         device: str | None = None,
-        conf_threshold: float = 0.4,
+        conf_threshold: float = 0.5,
         iou_threshold: float = 0.45,
         min_area_ratio: float = 0.0001,
         max_area_ratio: float = 0.5,
@@ -88,7 +92,7 @@ class MolDetv2DocDetector:
         Args:
             model_path: 模型文件路径（.pt）。若为 None，从 Rust resolved_paths.json 取
             device: 推理设备，None=自动，'cpu', 'cuda', 'cuda:0' 等
-            conf_threshold: 置信度阈值（默认 0.4，0.25 误检率过高）
+            conf_threshold: 置信度阈值（默认 0.5，YOLO26 低置信度误检较多）
             iou_threshold: NMS IoU 阈值
             min_area_ratio: 最小面积比例（相对于图像面积），过滤噪点
             max_area_ratio: 最大面积比例，过滤过大的检测框
@@ -153,9 +157,7 @@ class MolDetv2DocDetector:
             verbose=False,
             device=self.device if self.device != "auto" else None,
         )
-        logger.info(
-            "%s 加载完成，耗时 %.2fs", model_name, time.perf_counter() - start
-        )
+        logger.info("%s 加载完成，耗时 %.2fs", model_name, time.perf_counter() - start)
 
     def is_available(self) -> bool:
         """检测器是否可用（模型已加载）."""
@@ -174,9 +176,7 @@ class MolDetv2DocDetector:
             坐标系为**图像坐标系**（左上原点，像素单位）
         """
         if not self.is_available():
-            raise RuntimeError(
-                f"MolDetv2-Doc 模型未加载：{self.model_path} 不存在。"
-            )
+            raise RuntimeError(f"MolDetv2-Doc 模型未加载：{self.model_path} 不存在。")
 
         # ultralytics 支持 PIL Image 和 np.ndarray
         results = self.model.predict(  # type: ignore[union-attr]
@@ -190,7 +190,7 @@ class MolDetv2DocDetector:
             return []
 
         # 计算图像面积用于尺寸过滤
-        if hasattr(image, 'width') and hasattr(image, 'height'):
+        if hasattr(image, "width") and hasattr(image, "height"):
             img_area = image.width * image.height
         else:
             img_area = image.shape[0] * image.shape[1]  # type: ignore[index]
@@ -237,9 +237,7 @@ class MolDetv2DocDetector:
             坐标系为**图像坐标系**（左上原点，像素单位）
         """
         if not self.is_available():
-            raise RuntimeError(
-                f"MolDetv2-Doc 模型未加载：{self.model_path} 不存在。"
-            )
+            raise RuntimeError(f"MolDetv2-Doc 模型未加载：{self.model_path} 不存在。")
         if not images:
             return []
 
@@ -256,7 +254,7 @@ class MolDetv2DocDetector:
         batch_boxes: list[list[tuple[float, float, float, float, float]]] = []
         for img, r in zip(images, results, strict=True):
             # 计算图像面积
-            if hasattr(img, 'width') and hasattr(img, 'height'):
+            if hasattr(img, "width") and hasattr(img, "height"):
                 img_area = img.width * img.height
             else:
                 img_area = img.shape[0] * img.shape[1]  # type: ignore[index]
@@ -369,9 +367,7 @@ class MolScribeRecognizer:
                 self._backend_name = "transformers"
                 return
 
-        logger.warning(
-            "MolScribe 后端不可用（SMILES 识别功能不可用，不影响核心功能）"
-        )
+        logger.warning("MolScribe 后端不可用（SMILES 识别功能不可用，不影响核心功能）")
 
     def _load_molscribe(self) -> None:
         """加载 MolScribe 推理后端（复用 backends.molscribe 的 singleton）.
@@ -383,17 +379,18 @@ class MolScribeRecognizer:
         try:
             from ..utils.helpers import is_gpu_available
             from . import molscribe as molscribe_backend
+
             # Resolve 'auto' to cuda/cpu; backends.molscribe doesn't accept 'auto'
             dev = self.device
-            if dev in (None, '', 'auto'):
-                dev = 'cuda' if is_gpu_available() else 'cpu'
+            if dev in (None, "", "auto"):
+                dev = "cuda" if is_gpu_available() else "cpu"
             molscribe_backend.load(device=dev)
             if molscribe_backend._MODEL is None:
-                raise RuntimeError('backends.molscribe singleton failed to load')
+                raise RuntimeError("backends.molscribe singleton failed to load")
             self._model = molscribe_backend
-            logger.info('MolScribe (singleton) loaded, device=%s', dev)
+            logger.info("MolScribe (singleton) loaded, device=%s", dev)
         except Exception as exc:
-            logger.warning('MolScribe load failed: %s', exc)
+            logger.warning("MolScribe load failed: %s", exc)
             self._model = None
 
     def _load_transformers(self) -> None:
@@ -411,20 +408,12 @@ class MolScribeRecognizer:
 
                 ModelClass = AutoModelForImageTextToText
 
-            model_id = (
-                str(self.model_path)
-                if self.model_path
-                else "yujieq/MolScribe"
-            )
-            logger.info(
-                "尝试加载 MolScribe (transformers 后端)：%s", model_id
-            )
+            model_id = str(self.model_path) if self.model_path else "yujieq/MolScribe"
+            logger.info("尝试加载 MolScribe (transformers 后端)：%s", model_id)
             self._processor = AutoProcessor.from_pretrained(
                 model_id, local_files_only=True
             )
-            self._model = ModelClass.from_pretrained(
-                model_id, local_files_only=True
-            )
+            self._model = ModelClass.from_pretrained(model_id, local_files_only=True)
             if self.device != "auto":
                 dev = "cuda" if "cuda" in self.device else self.device
                 self._model = self._model.to(dev)
@@ -438,9 +427,7 @@ class MolScribeRecognizer:
         """识别器是否可用."""
         return self._model is not None
 
-    def predict(
-        self, image: Image.Image | np.ndarray
-    ) -> tuple[str, float]:
+    def predict(self, image: Image.Image | np.ndarray) -> tuple[str, float]:
         """将分子图像转换为 SMILES.
 
         Args:
@@ -450,9 +437,7 @@ class MolScribeRecognizer:
             (smiles, confidence)
         """
         if not self.is_available():
-            raise RuntimeError(
-                "MolScribe 不可用。请安装依赖并下载模型。"
-            )
+            raise RuntimeError("MolScribe 不可用。请安装依赖并下载模型。")
 
         if isinstance(image, np.ndarray):
             image = Image.fromarray(image)
@@ -543,15 +528,11 @@ class MolImagePipeline:
         self.device = device or os.getenv("MBFORGE_DEVICE", "auto")
         self.crop_cache_dir = crop_cache_dir
 
-        self.doc_detector = doc_detector or MolDetv2DocDetector(
-            device=self.device
-        )
+        self.doc_detector = doc_detector or MolDetv2DocDetector(device=self.device)
         self.general_detector = general_detector or MolDetv2GeneralDetector(
             device=self.device
         )
-        self.recognizer = recognizer or MolScribeRecognizer(
-            device=self.device
-        )
+        self.recognizer = recognizer or MolScribeRecognizer(device=self.device)
 
     def is_available(self) -> bool:
         """管线核心组件是否可用（至少检测器可用）."""
@@ -615,10 +596,7 @@ class MolImagePipeline:
             mol_img_path: Path | None = None
             if self.crop_cache_dir is not None:
                 prefix = cache_prefix or f"page_{page_idx:04d}"
-                mol_img_path = (
-                    self.crop_cache_dir
-                    / f"{prefix}_mol_{idx:03d}.png"
-                )
+                mol_img_path = self.crop_cache_dir / f"{prefix}_mol_{idx:03d}.png"
                 crop.save(mol_img_path)
 
             # 2.3 坐标转换：图像坐标 → PDF 坐标
@@ -637,7 +615,9 @@ class MolImagePipeline:
                 except Exception as exc:
                     logger.warning(
                         "SMILES 识别失败 (page=%d, bbox=%s): %s",
-                        page_idx, bbox_pdf, exc,
+                        page_idx,
+                        bbox_pdf,
+                        exc,
                     )
 
             # 2.5 计算综合置信度
@@ -660,7 +640,9 @@ class MolImagePipeline:
 
         logger.info(
             "页面 %d 检测到 %d 个分子区域，识别 %d 个 E-SMILES",
-            page_idx, len(img_boxes), sum(1 for r in results if r.esmiles),
+            page_idx,
+            len(img_boxes),
+            sum(1 for r in results if r.esmiles),
         )
         return results
 
@@ -763,10 +745,12 @@ def get_moldet() -> MolImagePipeline | None:
     global _moldet_instance
     if _moldet_instance is None:
         from mbforge.utils.helpers import gpu_warning, is_gpu_available
+
         if not is_gpu_available():
             gpu_warning("MolDet/MolScribe image pipeline")
             return None
         from mbforge.utils.config import load_global_config
+
         device = load_global_config().embed.device
         _moldet_instance = MolImagePipeline(device=device)
     return _moldet_instance
@@ -780,14 +764,17 @@ def reset_moldet() -> None:
 
 # ---- Backend convention wrappers ----
 
+
 def load(device: str | None = None) -> None:
     """Lazy-load MolDet pipeline (no-op if already loaded)."""
     global _moldet_instance
     if _moldet_instance is None:
         from mbforge.utils.helpers import is_gpu_available
+
         if not is_gpu_available():
             return
         from mbforge.utils.config import load_global_config
+
         dev = device or load_global_config().embed.device
         _moldet_instance = MolImagePipeline(device=dev)
 

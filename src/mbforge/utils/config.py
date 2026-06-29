@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .constants import GLOBAL_CONFIG_DIR, DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL
+from .constants import DEFAULT_EMBED_MODEL, DEFAULT_RERANK_MODEL, GLOBAL_CONFIG_DIR
 from .helpers import get_default_device, load_json, save_json
 
 

@@ -34,6 +34,8 @@ from .backends import moldet, molscribe, qwen3_embed, qwen3_rerank, zvec
 from .core.resource_manager import ResourceManager
 from .parsers.molecule.coref_alt import (
     CorefResult as CorefResultData,
+)
+from .parsers.molecule.coref_alt import (
     coref_to_rust_dict,
     detect_coref_via_moldet_ocr,
     get_rapid_ocr,
@@ -52,8 +54,8 @@ logger = get_logger("mbforge.server")
 # Backend registry — add a new backend here to register it for lifespan
 # ---------------------------------------------------------------------------
 _BACKENDS = [qwen3_embed, qwen3_rerank, molscribe, moldet, zvec]
-# 启动时只 prewarm 高频后端（embed + zvec），其余在首次调用时懒加载
-_CORE_BACKENDS = [qwen3_embed, zvec]
+# 启动时只 prewarm zvec；embed/rerank 在首次调用时懒加载，节省启动显存与时间
+_CORE_BACKENDS = [zvec]
 
 
 def _prewarm() -> None:
@@ -93,7 +95,11 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         _shutdown()
-        pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task() and not t.done()]
+        pending = [
+            t
+            for t in asyncio.all_tasks()
+            if t is not asyncio.current_task() and not t.done()
+        ]
         if pending:
             for t in pending:
                 t.cancel()
@@ -125,6 +131,7 @@ def with_model_status(model_id: str):
     - ValidationError / ModelNotAvailableError → 原样抛出
     - 其他异常 → set_model_status("error") + 抛 ModelNotAvailableError
     """
+
     def decorator(fn):
         @wraps(fn)
         async def wrapper(request: Request) -> dict[str, Any]:
@@ -139,12 +146,14 @@ def with_model_status(model_id: str):
             except Exception as e:
                 set_model_status(model_id, "error")
                 raise ModelNotAvailableError(str(e)) from e
+
         # FastAPI >=0.95 follows __wrapped__ when resolving call signatures,
         # which would incorrectly inject ``body`` as a dependency. Expose only
         # the wrapper's ``(request: Request)`` signature to the router.
         wrapper.__signature__ = inspect.signature(wrapper, follow_wrapped=False)  # type: ignore[attr-defined]
         del wrapper.__wrapped__
         return wrapper
+
     return decorator
 
 
@@ -152,7 +161,9 @@ def with_model_status(model_id: str):
 # Exception handlers
 # ---------------------------------------------------------------------------
 @app.exception_handler(ModelNotAvailableError)
-async def _model_error_handler(request: Request, exc: ModelNotAvailableError) -> JSONResponse:
+async def _model_error_handler(
+    request: Request, exc: ModelNotAvailableError
+) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content={"success": False, "error": exc.message, "error_code": exc.error_code},
@@ -172,7 +183,10 @@ async def _generic_error_handler(request: Request, exc: Exception) -> JSONRespon
 # PDF rendering (PyMuPDF page images for MoldDet)
 # ---------------------------------------------------------------------------
 
-def _render_pages_sync(pdf_path: str, page_numbers: list[int], dpi: float) -> list[dict[str, Any]]:
+
+def _render_pages_sync(
+    pdf_path: str, page_numbers: list[int], dpi: float
+) -> list[dict[str, Any]]:
     """Render selected pages of a PDF to base64-encoded PNG images using PyMuPDF."""
     doc = fitz.open(pdf_path)
     try:
@@ -188,12 +202,14 @@ def _render_pages_sync(pdf_path: str, page_numbers: list[int], dpi: float) -> li
             pix = page.get_pixmap(matrix=mat, alpha=False)
             img_bytes = pix.tobytes("png")
             encoded = base64.b64encode(img_bytes).decode("utf-8")
-            screenshots.append({
-                "page_num": int(page_num),
-                "width": pix.width,
-                "height": pix.height,
-                "image_base64": encoded,
-            })
+            screenshots.append(
+                {
+                    "page_num": int(page_num),
+                    "width": pix.width,
+                    "height": pix.height,
+                    "image_base64": encoded,
+                }
+            )
         return screenshots
     finally:
         doc.close()
@@ -233,12 +249,13 @@ async def render_pages(request: Request) -> dict[str, Any]:
         raise
     except Exception as e:
         logger.error(f"PDF render failed for {pdf_path}: {e}", exc_info=True)
-        raise ModelNotAvailableError(str(e))
+        raise ModelNotAvailableError(str(e)) from e
 
 
 # ---------------------------------------------------------------------------
 # Figure bbox extraction (PyMuPDF image positions on PDF page)
 # ---------------------------------------------------------------------------
+
 
 def _extract_figure_bboxes_sync(pdf_path: str) -> dict[str, Any]:
     """Return every embedded image's on-page bbox for the whole document.
@@ -277,11 +294,18 @@ def _extract_figure_bboxes_sync(pdf_path: str) -> dict[str, Any]:
             by_xref: dict[int, dict[str, Any]] = {}
             for info in infos:
                 xref = info.get("xref")
-                bbox = info.get("bbox")  # fitz.Rect-like: (x0, y0, x1, y1) in PDF points
+                bbox = info.get(
+                    "bbox"
+                )  # fitz.Rect-like: (x0, y0, x1, y1) in PDF points
                 if xref is None or bbox is None:
                     continue
                 try:
-                    x0, y0, x1, y1 = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+                    x0, y0, x1, y1 = (
+                        float(bbox[0]),
+                        float(bbox[1]),
+                        float(bbox[2]),
+                        float(bbox[3]),
+                    )
                 except (TypeError, ValueError):
                     continue
                 entry = by_xref.get(int(xref))
@@ -294,7 +318,12 @@ def _extract_figure_bboxes_sync(pdf_path: str) -> dict[str, Any]:
                     }
                 else:
                     ex0, ey0, ex1, ey1 = entry["bbox_pdf"]
-                    entry["bbox_pdf"] = [min(ex0, x0), min(ey0, y0), max(ex1, x1), max(ey1, y1)]
+                    entry["bbox_pdf"] = [
+                        min(ex0, x0),
+                        min(ey0, y0),
+                        max(ex1, x1),
+                        max(ey1, y1),
+                    ]
 
             figures = list(by_xref.values())
             total += len(figures)
@@ -332,7 +361,7 @@ async def figure_bboxes(request: Request) -> dict[str, Any]:
         raise
     except Exception as e:
         logger.error(f"figure-bboxes failed for {pdf_path}: {e}", exc_info=True)
-        raise ModelNotAvailableError(str(e))
+        raise ModelNotAvailableError(str(e)) from e
 
 
 # ---------------------------------------------------------------------------
@@ -389,19 +418,92 @@ async def rerank(request: Request, body: dict) -> dict[str, Any]:
 @app.post("/api/v1/moldet/detect-page")
 @with_model_status("moldet")
 async def detect_page(request: Request, body: dict) -> dict[str, Any]:
+    """检测分子 bbox。支持两种模式：
+    1. 图像模式: {image_base64: "..."}  (兼容旧接口)
+    2. PDF模式: {pdf_path: "...", page_numbers: [1,2,...], dpi: 300}
+    """
+    pdf_path = body.get("pdf_path", "")
     image_base64 = body.get("image_base64", "")
-    if not image_base64:
-        raise ValidationError("image_base64 is required")
-    image = decode_base64_image(image_base64)
+
+    if pdf_path:
+        # PDF 模式：渲染 + 检测一步完成
+        page_numbers = body.get("page_numbers", [1])
+        dpi = body.get("dpi", 300.0)
+        if not Path(pdf_path).exists():
+            raise ValidationError(f"PDF not found: {pdf_path}")
+        loop = asyncio.get_running_loop()
+        results = await loop.run_in_executor(
+            None, lambda: _detect_from_pdf_sync(pdf_path, page_numbers, dpi)
+        )
+        return results
+    elif image_base64:
+        # 图像模式：兼容旧接口
+        image = decode_base64_image(image_base64)
+        pipeline = moldet.get_moldet()
+        if pipeline is None or not pipeline.is_available():
+            raise ModelNotAvailableError("MolDet pipeline not available")
+        loop = asyncio.get_running_loop()
+        boxes = await loop.run_in_executor(
+            None, lambda: pipeline.doc_detector.detect(image)
+        )
+        return {
+            "boxes": [
+                {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "conf": conf}
+                for x1, y1, x2, y2, conf in boxes
+            ],
+            "count": len(boxes),
+        }
+    else:
+        raise ValidationError("image_base64 or pdf_path is required")
+
+
+def _detect_from_pdf_sync(
+    pdf_path: str, page_numbers: list[int], dpi: float
+) -> dict[str, Any]:
+    """渲染 PDF 页面并检测分子 bbox（一步完成，无 PNG/base64 中间格式）。"""
+    import fitz
+    import numpy as np
+    from PIL import Image
+
     pipeline = moldet.get_moldet()
     if pipeline is None or not pipeline.is_available():
         raise ModelNotAvailableError("MolDet pipeline not available")
-    loop = asyncio.get_running_loop()
-    boxes = await loop.run_in_executor(None, lambda: pipeline.doc_detector.detect(image))
-    return {
-        "boxes": [{"x1": x1, "y1": y1, "x2": x2, "y2": y2, "conf": conf} for x1, y1, x2, y2, conf in boxes],
-        "count": len(boxes),
-    }
+
+    doc = fitz.open(pdf_path)
+    try:
+        all_results = []
+        for page_num in page_numbers:
+            page_index = int(page_num) - 1
+            if page_index < 0 or page_index >= doc.page_count:
+                continue
+            page = doc.load_page(page_index)
+            zoom = dpi / 72.0
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+
+            # 直接转 numpy，不经过 PNG
+            img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+                pix.height, pix.width, pix.n
+            )
+            image = Image.fromarray(img_array)
+
+            # YOLO 检测
+            boxes = pipeline.doc_detector.detect(image)
+            all_results.append(
+                {
+                    "page_num": int(page_num),
+                    "width": pix.width,
+                    "height": pix.height,
+                    "boxes": [
+                        {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "conf": conf}
+                        for x1, y1, x2, y2, conf in boxes
+                    ],
+                    "count": len(boxes),
+                }
+            )
+        return {"results": all_results, "total": len(all_results)}
+    finally:
+        doc.close()
 
 
 @app.post("/api/v1/moldet/detect-batch")
@@ -462,13 +564,19 @@ async def extract_page(request: Request) -> dict[str, Any]:
 
         # 1. 基础检测
         results = await loop.run_in_executor(
-            None, lambda: pipeline.extract_page(image, page_idx, page_w_pts, page_h_pts, image_w, image_h, dpi)
+            None,
+            lambda: pipeline.extract_page(
+                image, page_idx, page_w_pts, page_h_pts, image_w, image_h, dpi
+            ),
         )
 
         # 2. Coref 增强（可选，coref_alt 实现）
         if use_coref and results:
             try:
-                if pipeline.doc_detector is not None and pipeline.doc_detector.is_available():
+                if (
+                    pipeline.doc_detector is not None
+                    and pipeline.doc_detector.is_available()
+                ):
                     ocr_adapter = get_rapid_ocr()
                     coref_result = await loop.run_in_executor(
                         None,
@@ -495,7 +603,7 @@ async def extract_page(request: Request) -> dict[str, Any]:
         raise
     except Exception as e:
         set_model_status("moldet", "error")
-        raise ModelNotAvailableError(str(e))
+        raise ModelNotAvailableError(str(e)) from e
 
 
 def _enrich_results_with_coref(
@@ -549,7 +657,11 @@ async def detect_coref(request: Request, body: dict) -> dict[str, Any]:
 
     image = decode_base64_image(image_base64)
     pipeline = moldet.get_moldet()
-    if pipeline is None or pipeline.doc_detector is None or not pipeline.doc_detector.is_available():
+    if (
+        pipeline is None
+        or pipeline.doc_detector is None
+        or not pipeline.doc_detector.is_available()
+    ):
         raise ModelNotAvailableError("MolDet doc detector not available")
 
     ocr_adapter = get_rapid_ocr()
@@ -565,23 +677,229 @@ async def detect_coref(request: Request, body: dict) -> dict[str, Any]:
     return coref_to_rust_dict(coref_result)
 
 
+def _dbscan_preprocess(pil_image):
+    """DBSCAN 提取分子主体，去除周围文字。"""
+    import cv2
+    import numpy as np
+    from PIL import Image
+    from sklearn.cluster import DBSCAN
+
+    img = np.array(pil_image.convert("RGB"))
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    side = max(h, w)
+
+    _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    bw_sq = cv2.resize(bw, (side, side), interpolation=cv2.INTER_NEAREST)
+
+    ys, xs = np.where(bw_sq > 0)
+    if len(xs) == 0:
+        return pil_image
+    coords = np.column_stack([xs, ys])
+    db = DBSCAN(eps=13, min_samples=5, n_jobs=-1)
+    labels = db.fit_predict(coords)
+
+    unique, counts = np.unique(labels, return_counts=True)
+    mask = unique != -1
+    if not mask.any():
+        return pil_image
+    uc, cc = unique[mask], counts[mask]
+    best = uc[np.argmax(cc)]
+
+    mol_mask = np.zeros((side, side), dtype=np.uint8)
+    main_pts = coords[labels == best]
+    mol_mask[main_pts[:, 1], main_pts[:, 0]] = 255
+
+    output = np.where(mol_mask == 255, 0, 255).astype(np.uint8)
+    output = cv2.resize(output, (w, h), interpolation=cv2.INTER_NEAREST)
+    return Image.fromarray(output).convert("RGB")
+
+
+# ---------------------------------------------------------------------------
+# MolExtract — 全流程 PDF→MolDet→Coref→MolScribe
+# ---------------------------------------------------------------------------
+@app.post("/api/v1/moldet/extract-pdf-page")
+async def extract_pdf_page(request: Request, body: dict) -> dict[str, Any]:
+    """单页 PDF 全流程：渲染→MolDet→Coref→MolScribe，返回规整 JSON。
+
+    Request:
+        pdf_path: str    PDF 文件路径
+        page: int        页码（从 1 开始）
+        dpi: float       渲染 DPI（默认 300）
+        use_coref: bool  是否启用 Coref 配对（默认 True）
+
+    Response:
+        {
+            page_num, width, height, dpi,
+            molecules: [{bbox, bbox_pdf, confidence, smiles, scribe_conf, context_text}],
+            corefs: [[mol_idx, idt_idx], ...],
+            bboxes: [{category_id, bbox, text?, score}],
+            count
+        }
+    """
+    import numpy as np
+    from PIL import Image
+
+    pdf_path = body.get("pdf_path", "")
+    if not pdf_path or not Path(pdf_path).exists():
+        raise ValidationError("pdf_path is required and must exist")
+
+    page_num = body.get("page", 1)
+    dpi = body.get("dpi", 300.0)
+    use_coref = body.get("use_coref", True)
+
+    # 1. 渲染 PDF 页面
+    doc = fitz.open(pdf_path)
+    try:
+        page_index = int(page_num) - 1
+        if page_index < 0 or page_index >= doc.page_count:
+            raise ValidationError(f"Page {page_num} out of range (1-{doc.page_count})")
+        page = doc.load_page(page_index)
+        page_w_pts = page.rect.width
+        page_h_pts = page.rect.height
+
+        zoom = dpi / 72.0
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat, alpha=False)
+        img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+            pix.height, pix.width, pix.n
+        )
+        image = Image.fromarray(img_array)
+        img_w, img_h = pix.width, pix.height
+    finally:
+        doc.close()
+
+    # 2. MolDet 检测 + Coref
+    pipeline = moldet.get_moldet()
+    if pipeline is None or not pipeline.is_available():
+        raise ModelNotAvailableError("MolDet pipeline not available")
+
+    loop = asyncio.get_running_loop()
+
+    # MolDet 检测（仅检测 bbox，不识别 SMILES）
+    boxes = await loop.run_in_executor(
+        None,
+        lambda: pipeline.doc_detector.detect(image),
+    )
+
+    scale_x = page_w_pts / img_w if img_w > 0 else 0
+    scale_y = page_h_pts / img_h if img_h > 0 else 0
+
+    # Coref 配对（可选）
+    coref_result = None
+    coref_dict: dict[str, Any] = {"bboxes": [], "corefs": []}
+    if use_coref and boxes:
+        try:
+            ocr_adapter = get_rapid_ocr()
+            coref_result = await loop.run_in_executor(
+                None,
+                lambda: detect_coref_via_moldet_ocr(
+                    image,
+                    pipeline.doc_detector,
+                    ocr_adapter,
+                    page_w_pts,
+                    page_h_pts,
+                ),
+            )
+            coref_dict = coref_to_rust_dict(coref_result)
+        except Exception as e:
+            logger.warning("[extract-pdf-page] Coref failed: %s", e)
+
+    # 3. 裁剪 + MolScribe 识别每个分子
+    await loop.run_in_executor(None, molscribe.load)
+
+    async def _recognize_one(x1, y1, x2, y2):
+        px1, py1 = max(0, int(x1)), max(0, int(y1))
+        px2, py2 = min(img_w, int(x2)), min(img_h, int(y2))
+        if px2 <= px1 or py2 <= py1:
+            return ""
+        crop = image.crop((px1, py1, px2, py2))
+        crop_gray = crop.convert("L")
+        sr = await loop.run_in_executor(None, lambda: molscribe.predict(crop_gray))
+        return sr.esmiles if sr.esmiles else ""
+
+    smiles_list = []
+    for b in boxes:
+        smi = await _recognize_one(*b[:4])
+        smiles_list.append(smi)
+
+    # 4. 用 coref 关联标号到分子
+    coref_label_map: dict[int, str] = {}
+    if coref_result:
+        for mol_idx, idt_idx in coref_result.corefs:
+            if 0 <= idt_idx < len(coref_result.bboxes):
+                text = coref_result.bboxes[idt_idx].text
+                if text:
+                    coref_label_map[mol_idx] = text
+
+    # 5. 组装结果
+    molecules = []
+    for i, (b, smi) in enumerate(zip(boxes, smiles_list)):
+        x1, y1, x2, y2, conf = b
+        label = coref_label_map.get(i, "")
+        molecules.append(
+            {
+                "index": i,
+                "bbox": {
+                    "x1": round(x1 * scale_x, 2),
+                    "y1": round(page_h_pts - y2 * scale_y, 2),
+                    "x2": round(x2 * scale_x, 2),
+                    "y2": round(page_h_pts - y1 * scale_y, 2),
+                },
+                "confidence": round(conf, 4),
+                "smiles": smi,
+                "scribe_conf": 0.0,
+                "context_text": f"关联标号: {label}" if label else "",
+            }
+        )
+
+    return {
+        "page_num": int(page_num),
+        "width": img_w,
+        "height": img_h,
+        "page_w_pts": page_w_pts,
+        "page_h_pts": page_h_pts,
+        "dpi": dpi,
+        "molecules": molecules,
+        "corefs": coref_dict.get("corefs", []),
+        "bboxes": coref_dict.get("bboxes", []),
+        "count": len(molecules),
+    }
+
+
 # ---------------------------------------------------------------------------
 # MolScribe
 # ---------------------------------------------------------------------------
 @app.post("/api/v1/molscribe")
 @with_model_status("molscribe")
-async def molscribe_predict(request: Request, body: dict) -> dict[str, Any]:
+async def molscribe_predict(request: Request) -> dict[str, Any]:
     tmp_path = None
     try:
-        image_base64 = body.get("image_base64", "")
-        if not image_base64:
-            raise ValidationError("image_base64 is required")
-        ext = body.get("ext", "png")
-        tmp_path = decode_base64_to_tempfile(image_base64, ext)
+        import numpy as np
         from PIL import Image
-        image = Image.open(tmp_path)
+
+        content_type = request.headers.get("content-type", "")
+
+        if content_type == "application/octet-stream":
+            # 二进制模式：header 传宽高，body 是灰度字节
+            width = int(request.headers.get("x-image-width", "0"))
+            height = int(request.headers.get("x-image-height", "0"))
+            if width <= 0 or height <= 0:
+                raise ValidationError("X-Image-Width and X-Image-Height required")
+            raw_bytes = await request.body()
+            arr = np.frombuffer(raw_bytes, dtype=np.uint8).reshape(height, width)
+            image = Image.fromarray(arr, "L")
+        else:
+            # JSON 模式：兼容旧接口
+            body = await request.json()
+            image_base64 = body.get("image_base64", "")
+            if not image_base64:
+                raise ValidationError("image_base64 is required")
+            ext = body.get("ext", "png")
+            tmp_path = decode_base64_to_tempfile(image_base64, ext)
+            image = Image.open(tmp_path)
+
         loop = asyncio.get_running_loop()
-        # 懒加载：首次调用时加载模型到内存
         await loop.run_in_executor(None, molscribe.load)
         result = await loop.run_in_executor(None, lambda: molscribe.predict(image))
         if not result.esmiles:
@@ -706,6 +1024,7 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
     import time
 
     import numpy as np
+
     start = time.perf_counter()
     try:
         rid = resource_id
@@ -713,15 +1032,29 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
         if rid == "embedding":
             qwen3_embed.load()
             if qwen3_embed.EmbedBackend._PROVIDER is None:
-                return {"ok": False, "error": qwen3_embed.EmbedBackend._ERROR or "未加载到内存"}
+                return {
+                    "ok": False,
+                    "error": qwen3_embed.EmbedBackend._ERROR or "未加载到内存",
+                }
             vecs = qwen3_embed.embed(["test"])
-            if not isinstance(vecs, list) or len(vecs) != 1 or not isinstance(vecs[0], list) or len(vecs[0]) == 0:
-                return {"ok": False, "error": f"embed 输出异常: shape={getattr(vecs, 'shape', len(vecs) if hasattr(vecs, '__len__') else type(vecs).__name__)}"}
+            if (
+                not isinstance(vecs, list)
+                or len(vecs) != 1
+                or not isinstance(vecs[0], list)
+                or len(vecs[0]) == 0
+            ):
+                return {
+                    "ok": False,
+                    "error": f"embed 输出异常: shape={getattr(vecs, 'shape', len(vecs) if hasattr(vecs, '__len__') else type(vecs).__name__)}",
+                }
 
         elif rid == "reranker":
             qwen3_rerank.load()
             if qwen3_rerank.RerankBackend._MODEL is None:
-                return {"ok": False, "error": qwen3_rerank.RerankBackend._ERROR or "未加载到内存"}
+                return {
+                    "ok": False,
+                    "error": qwen3_rerank.RerankBackend._ERROR or "未加载到内存",
+                }
             results = qwen3_rerank.rerank("test query", ["test passage"])
             if not isinstance(results, list) or len(results) != 1:
                 return {"ok": False, "error": f"rerank 输出异常: {results}"}
@@ -731,6 +1064,7 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
             if not molscribe._AVAILABLE:
                 return {"ok": False, "error": molscribe._ERROR or "未就绪"}
             from PIL import Image
+
             # MolScribe input_size 默认 384（从 checkpoint 读取，构造时已存到 args）
             input_size = getattr(molscribe._MODEL, "input_size", 384) or 384
             img = Image.new("RGB", (input_size, input_size), color=0)
@@ -741,15 +1075,15 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
 
         elif rid == "moldet":
             from mbforge.core.resource_manager import ResourceManager
-            path = ResourceManager.resolve_model_for_backend(
-                "moldet", subpath=subpath
-            )
+
+            path = ResourceManager.resolve_model_for_backend("moldet", subpath=subpath)
             if path is None:
                 return {"ok": False, "error": f"模型文件未找到 (subpath={subpath})"}
             from mbforge.backends.moldet import (
                 MolDetv2DocDetector,
                 MolDetv2GeneralDetector,
             )
+
             is_doc = bool(subpath and subpath.startswith("doc"))
             if is_doc:
                 det = MolDetv2DocDetector(model_path=path)
@@ -763,22 +1097,36 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
             img = np.zeros((*size, 3), dtype=np.uint8)
             boxes = det.detect(img)
             if not isinstance(boxes, list):
-                return {"ok": False, "error": f"YOLO detect 返回非列表: {type(boxes).__name__}"}
+                return {
+                    "ok": False,
+                    "error": f"YOLO detect 返回非列表: {type(boxes).__name__}",
+                }
 
         elif rid == "moldet_coref":
             # coref_alt 不需额外模型，验证 moldet doc detector + RapidOCR 可用
             from PIL import Image
+
             from mbforge.parsers.molecule.coref_alt import (
                 detect_coref_via_moldet_ocr,
                 get_rapid_ocr,
             )
+
             pipeline = moldet.get_moldet()
-            if pipeline is None or pipeline.doc_detector is None or not pipeline.doc_detector.is_available():
+            if (
+                pipeline is None
+                or pipeline.doc_detector is None
+                or not pipeline.doc_detector.is_available()
+            ):
                 return {"ok": False, "error": "MolDet doc detector 不可用"}
             img = Image.new("RGB", (480, 480), color=0)
-            result = detect_coref_via_moldet_ocr(img, pipeline.doc_detector, get_rapid_ocr())
+            result = detect_coref_via_moldet_ocr(
+                img, pipeline.doc_detector, get_rapid_ocr()
+            )
             if not hasattr(result, "bboxes") or not hasattr(result, "corefs"):
-                return {"ok": False, "error": f"coref 输出结构异常: {type(result).__name__}"}
+                return {
+                    "ok": False,
+                    "error": f"coref 输出结构异常: {type(result).__name__}",
+                }
 
         else:
             return {"ok": False, "error": f"未知资源: {rid}"}
@@ -800,7 +1148,9 @@ async def test_model(request: Request) -> dict[str, Any]:
         if not resource_id:
             raise ValidationError("resource_id is required")
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, lambda: _test_loading_sync(resource_id, subpath))
+        result = await loop.run_in_executor(
+            None, lambda: _test_loading_sync(resource_id, subpath)
+        )
         return result
     except ValidationError:
         raise
@@ -813,8 +1163,8 @@ async def test_model(request: Request) -> dict[str, Any]:
 # Health + Circuit Breaker
 # ---------------------------------------------------------------------------
 _model_status = {
-    "embedder": "loading",
-    "reranker": "loading",
+    "embedder": "not_loaded",
+    "reranker": "not_loaded",
     "moldet": "loading",
     "moldet_coref": "loading",
     "molscribe": "loading",
@@ -850,27 +1200,11 @@ def set_model_status(name: str, status: str) -> None:
 
 @app.get("/api/v1/health")
 async def health_check() -> dict[str, Any]:
-    # Embedder
-    if not _should_skip_due_to_cooldown("embedder"):
-        try:
-            qwen3_embed.load()
-            _model_status["embedder"] = "ready"
-            _clear_failure("embedder")
-        except Exception as e:
-            _model_status["embedder"] = "error"
-            _mark_failure("embedder")
-            logger.debug(f"Embedder health check failed: {e}")
+    # Embedder: 懒加载。健康检查不触发加载；首次调用 /api/v1/embed 时由
+    # EmbedBackend.embed() 内部 cls.load() 触发。
 
-    # Reranker
-    if not _should_skip_due_to_cooldown("reranker"):
-        try:
-            qwen3_rerank.load()
-            _model_status["reranker"] = "ready"
-            _clear_failure("reranker")
-        except Exception as e:
-            _model_status["reranker"] = "error"
-            _mark_failure("reranker")
-            logger.debug(f"Reranker health check failed: {e}")
+    # Reranker: 懒加载。健康检查不触发加载；首次调用 /api/v1/rerank 时由
+    # RerankBackend.rerank() 内部 cls.load() 触发。
 
     # MolDet
     if not _should_skip_due_to_cooldown("moldet"):
@@ -891,7 +1225,11 @@ async def health_check() -> dict[str, Any]:
     if not _should_skip_due_to_cooldown("moldet_coref"):
         try:
             pipeline = moldet.get_moldet()
-            if pipeline is not None and pipeline.doc_detector is not None and pipeline.doc_detector.is_available():
+            if (
+                pipeline is not None
+                and pipeline.doc_detector is not None
+                and pipeline.doc_detector.is_available()
+            ):
                 # 触发 RapidOCR 懒加载（首次较慢）
                 get_rapid_ocr()
                 _model_status["moldet_coref"] = "ready"
@@ -991,35 +1329,97 @@ def _check_command(cmd: str) -> bool:
         return False
 
 
+# ---------------------------------------------------------------------------
+# Mol Image Generation (SMILES → 2D structure)
+# ---------------------------------------------------------------------------
+@app.post("/api/v1/mol/render")
+async def render_molecule(request: Request, body: dict) -> dict[str, Any]:
+    """Generate a 2D structure image from SMILES.
+
+    Returns base64-encoded PNG.
+    """
+    smiles = body.get("smiles", "")
+    if not smiles:
+        raise ValidationError("smiles is required")
+
+    width = body.get("width", 300)
+    height = body.get("height", 200)
+
+    loop = asyncio.get_running_loop()
+
+    def _render() -> str:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem, Draw
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            raise ValidationError(f"Invalid SMILES: {smiles}")
+
+        AllChem.Compute2DCoords(mol)
+        img = Draw.MolToImage(mol, size=(width, height))
+        import io
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return base64.b64encode(buf.getvalue()).decode("ascii")
+
+    b64 = await loop.run_in_executor(None, _render)
+    return {"success": True, "image_base64": b64}
+
+
 @app.get("/api/v1/environment/check", response_model=_EnvironmentCheckResult)
 async def check_environment() -> _EnvironmentCheckResult:
     capabilities: list[_CapabilityStatus] = []
-    for pkg, version, desc, cat in [
+    for pkg, _version, desc, cat in [
         ("rdkit", None, "分子信息学: SMILES 解析、分子属性计算", "core"),
         ("numpy", None, "数值计算: 数组运算、线性代数", "core"),
         ("scipy", None, "科学计算: 优化、插值、统计", "core"),
         ("pandas", None, "数据分析: 表格处理", "core"),
     ]:
         available, ver = _check_package(pkg)
-        capabilities.append(_CapabilityStatus(
-            name=pkg, available=available, version=ver, description=desc, category=cat
-        ))
+        capabilities.append(
+            _CapabilityStatus(
+                name=pkg,
+                available=available,
+                version=ver,
+                description=desc,
+                category=cat,
+            )
+        )
     for pkg, desc in [("openmm", "分子动力学模拟 (GPU 加速)")]:
         available, ver = _check_package(pkg)
-        capabilities.append(_CapabilityStatus(
-            name=pkg, available=available, version=ver, description=desc, category="md"
-        ))
+        capabilities.append(
+            _CapabilityStatus(
+                name=pkg,
+                available=available,
+                version=ver,
+                description=desc,
+                category="md",
+            )
+        )
     for cmd, pkg, desc in [("vina", "autodock_vina", "分子对接 (命令行)")]:
         available = _check_command(cmd)
         _, ver = _check_package(pkg)
-        capabilities.append(_CapabilityStatus(
-            name=cmd, available=available, version=ver, description=desc, category="docking"
-        ))
+        capabilities.append(
+            _CapabilityStatus(
+                name=cmd,
+                available=available,
+                version=ver,
+                description=desc,
+                category="docking",
+            )
+        )
     for pkg, desc in [("deepchem", "深度学习 ADMET 预测")]:
         available, ver = _check_package(pkg)
-        capabilities.append(_CapabilityStatus(
-            name=pkg, available=available, version=ver, description=desc, category="admet"
-        ))
+        capabilities.append(
+            _CapabilityStatus(
+                name=pkg,
+                available=available,
+                version=ver,
+                description=desc,
+                category="admet",
+            )
+        )
 
     gpu_available = False
     gpu_name = None
@@ -1027,18 +1427,27 @@ async def check_environment() -> _EnvironmentCheckResult:
     cuda_version = None
     try:
         import torch
+
         if torch.cuda.is_available():
             gpu_available = True
             gpu_name = torch.cuda.get_device_name(0)
-            gpu_memory_mb = int(torch.cuda.get_device_properties(0).total_memory / 1024 / 1024)
+            gpu_memory_mb = int(
+                torch.cuda.get_device_properties(0).total_memory / 1024 / 1024
+            )
             cuda_version = torch.version.cuda
     except ImportError:
         pass
     if not gpu_available:
         try:
             result = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader"],
-                capture_output=True, text=True, timeout=5,
+                [
+                    "nvidia-smi",
+                    "--query-gpu=name,memory.total,driver_version",
+                    "--format=csv,noheader",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if result.returncode == 0:
                 parts = result.stdout.strip().split(",")
@@ -1046,7 +1455,13 @@ async def check_environment() -> _EnvironmentCheckResult:
                     gpu_available = True
                     gpu_name = parts[0].strip()
                     if len(parts) > 1:
-                        mem_str = parts[1].strip().replace(" MiB", "").replace("MiB", "").strip()
+                        mem_str = (
+                            parts[1]
+                            .strip()
+                            .replace(" MiB", "")
+                            .replace("MiB", "")
+                            .strip()
+                        )
                         try:
                             gpu_memory_mb = int(mem_str)
                         except ValueError:

@@ -1,0 +1,208 @@
+"""Agent chat endpoints with SSE streaming — LangGraph implementation."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+
+from ..utils.logger import get_logger
+
+logger = get_logger("mbforge.agent_router")
+
+router = APIRouter()
+
+# Lazy-initialized components
+_llm = None
+_agent = None
+_tools = None
+
+
+def _ensure_agent():
+    global _llm, _agent, _tools
+    if _agent is not None:
+        return
+    try:
+        from ..agent.llm_factory import create_llm_from_settings
+        from ..agent.graph import create_agent
+        from ..agent.tools import get_all_tools
+
+        import os
+        api_key = os.environ.get("MBFORGE_LLM_API_KEY", "")
+        if not api_key:
+            logger.info("No LLM API key configured — agent running in stub mode")
+            return
+
+        _llm = create_llm_from_settings()
+        _tools = get_all_tools()
+        _agent = create_agent(_llm, _tools)
+        logger.info("Agent initialized successfully")
+    except Exception as e:
+        logger.warning("Agent init failed (stub mode): %s", e)
+        _agent = None
+
+
+@router.post("/init")
+async def agent_init() -> dict:
+    try:
+        from ..agent.sessions import session_store
+
+        session_store.clear_all()
+        global _llm, _agent, _tools
+        _llm = None
+        _agent = None
+        _tools = None
+        _ensure_agent()
+        return {"success": True, "agent_ready": _agent is not None}
+    except Exception as e:
+        logger.error("Agent init error: %s", e)
+        return {"success": True, "agent_ready": False, "warning": str(e)}
+
+
+@router.post("/session")
+async def agent_create_session(body: dict) -> dict:
+    try:
+        from ..agent.sessions import session_store
+        import uuid
+
+        sid = body.get("session_id", str(uuid.uuid4()))
+        session_store.create(sid, body.get("project_root"))
+        return {"success": True, "session_id": sid}
+    except Exception as e:
+        logger.error("Session create error: %s", e)
+        return {"success": False, "error": str(e)}
+
+
+@router.delete("/session/{session_id}")
+async def agent_destroy_session(session_id: str) -> dict:
+    from ..agent.sessions import session_store
+
+    session_store.delete(session_id)
+    return {"success": True}
+
+
+@router.post("/session/{session_id}/clear")
+async def agent_clear(session_id: str) -> dict:
+    from ..agent.sessions import session_store
+
+    session_store.clear(session_id)
+    return {"success": True}
+
+
+@router.put("/session/{session_id}/project")
+async def agent_switch_project(session_id: str, body: dict) -> dict:
+    from ..agent.sessions import session_store
+
+    session = session_store.get(session_id)
+    if session:
+        session.project_root = body.get("project_root")
+    return {"success": True}
+
+
+@router.get("/session/{session_id}/history")
+async def agent_get_history(session_id: str) -> dict:
+    try:
+        from ..agent.sessions import session_store
+
+        session = session_store.get(session_id)
+        if not session:
+            return {"success": False, "messages": []}
+        messages = [{"role": m.role, "content": m.content} for m in session.messages]
+        return {"success": True, "messages": messages}
+    except Exception as e:
+        logger.error("History error: %s", e)
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/session/{session_id}/chat")
+async def agent_chat(session_id: str, body: dict) -> dict:
+    try:
+        from ..agent.sessions import session_store, ChatMessage
+
+        session = session_store.get(session_id)
+        if not session:
+            return {"success": False, "error": "session not found"}
+        user_input = body.get("user_input", "")
+        if not user_input.strip():
+            return {"success": False, "error": "empty input"}
+
+        session.messages.append(ChatMessage(role="user", content=user_input))
+
+        _ensure_agent()
+        if _agent is not None:
+            try:
+                # Build LangChain messages
+                lc_messages = []
+                for m in session.messages:
+                    lc_messages.append({"role": m.role, "content": m.content})
+
+                response = await _agent.ainvoke({"messages": lc_messages})
+                reply = response["messages"][-1].content if response.get("messages") else ""
+            except Exception as e:
+                logger.error("Agent invoke failed: %s", e)
+                reply = f"[Agent error: {e}]"
+        else:
+            reply = f"[Agent stub] Received: {user_input}"
+
+        session.messages.append(ChatMessage(role="assistant", content=reply))
+        return {"success": True, "reply": reply}
+    except Exception as e:
+        logger.error("Agent chat error: %s", e)
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/session/{session_id}/chat/stream")
+async def agent_chat_stream(session_id: str, user_input: str = "") -> StreamingResponse:
+    """SSE streaming chat with LangGraph agent."""
+    from ..agent.sessions import session_store, ChatMessage
+
+    session = session_store.get(session_id)
+    if not session:
+        return StreamingResponse(
+            iter([f"data: {json.dumps({'error': 'session not found'})}\n\n"]),
+            media_type="text/event-stream",
+        )
+
+    _ensure_agent()
+
+    async def event_stream():
+        session.messages.append(ChatMessage(role="user", content=user_input))
+
+        if _agent is not None:
+            try:
+                from ..agent.graph import stream_agent_response
+
+                lc_messages = [{"role": m.role, "content": m.content} for m in session.messages]
+                full_reply = ""
+                async for event in stream_agent_response(_agent, lc_messages):
+                    if event["type"] == "chunk":
+                        content = event.get("content", "")
+                        full_reply += content
+                        yield f"data: {json.dumps({'session_id': session_id, 'delta': content, 'event': 'chunk'})}\n\n"
+                    elif event["type"] == "tool_call":
+                        yield f"data: {json.dumps({'session_id': session_id, 'event': 'tool_call', 'tool': event.get('tool', '')})}\n\n"
+                    elif event["type"] == "tool_result":
+                        yield f"data: {json.dumps({'session_id': session_id, 'event': 'tool_result', 'output': event.get('output', '')[:200]})}\n\n"
+
+                if not full_reply:
+                    full_reply = "[No response from agent]"
+                session.messages.append(ChatMessage(role="assistant", content=full_reply))
+            except Exception as e:
+                logger.error("Agent streaming error: %s", e)
+                error_msg = f"[Agent error: {e}]"
+                session.messages.append(ChatMessage(role="assistant", content=error_msg))
+                yield f"data: {json.dumps({'session_id': session_id, 'delta': error_msg, 'event': 'chunk'})}\n\n"
+        else:
+            # Stub mode
+            reply = f"[Agent stub] {user_input}"
+            for i in range(0, len(reply), 24):
+                chunk = reply[i : i + 24]
+                yield f"data: {json.dumps({'session_id': session_id, 'delta': chunk, 'event': 'chunk'})}\n\n"
+                await asyncio.sleep(0.02)
+            session.messages.append(ChatMessage(role="assistant", content=reply))
+
+        yield f"data: {json.dumps({'session_id': session_id, 'event': 'done'})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

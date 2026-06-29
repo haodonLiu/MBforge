@@ -16,7 +16,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
-import httpx
 import torch
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer
@@ -33,12 +32,14 @@ from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+
 def _check_local_path(name: str, model_id: str) -> Path:
     """解析本地路径；不存在时抛 FileNotFoundError（被 LazyBackend.load 捕获）。
 
     resolve_model_path 懒加载：避免 backends/__init__.py 与本模块互相 import。
     """
     from . import resolve_model_path  # late import: 防 __init__.py 部分初始化循环
+
     path = Path(resolve_model_path(model_id, model_id))
     if not path.exists():
         raise FileNotFoundError(
@@ -50,6 +51,7 @@ def _check_local_path(name: str, model_id: str) -> Path:
 # ---------------------------------------------------------------------------
 # 共享骨架：load / unload / health
 # ---------------------------------------------------------------------------
+
 
 class LazyBackend:
     """子模块的契约：
@@ -105,24 +107,21 @@ class EmbeddingProvider(ABC):
     """
 
     @abstractmethod
-    def load(self) -> None:
-        ...
+    def load(self) -> None: ...
 
     @abstractmethod
-    def embed(self, texts: list[str], mrl_dim: int | None = None) -> list[list[float]]:
-        ...
+    def embed(
+        self, texts: list[str], mrl_dim: int | None = None
+    ) -> list[list[float]]: ...
 
     @abstractmethod
-    def unload(self) -> None:
-        ...
+    def unload(self) -> None: ...
 
     @abstractmethod
-    def health(self) -> dict[str, str]:
-        ...
+    def health(self) -> dict[str, str]: ...
 
     @abstractmethod
-    def dim(self) -> int:
-        ...
+    def dim(self) -> int: ...
 
 
 class LocalSentenceTransformerProvider(EmbeddingProvider):
@@ -151,9 +150,7 @@ class LocalSentenceTransformerProvider(EmbeddingProvider):
         )
         self._full_dim = self._model.get_embedding_dimension()
 
-    def embed(
-        self, texts: list[str], mrl_dim: int | None = None
-    ) -> list[list[float]]:
+    def embed(self, texts: list[str], mrl_dim: int | None = None) -> list[list[float]]:
         if self._model is None:
             raise RuntimeError(f"Local embedder not available: {self._error}")
         prefixed = [f"{self._instruction}\n{t}" for t in texts]
@@ -230,9 +227,7 @@ class OpenAICompatibleProvider(EmbeddingProvider):
                 f"Embedding probe failed: model={self._model} base_url={self._base_url}: {exc}"
             ) from exc
 
-    def embed(
-        self, texts: list[str], mrl_dim: int | None = None
-    ) -> list[list[float]]:
+    def embed(self, texts: list[str], mrl_dim: int | None = None) -> list[list[float]]:
         if self._client is None:
             raise RuntimeError(
                 f"openai_compatible embedder not available: {self._error}"
@@ -268,6 +263,7 @@ class OpenAICompatibleProvider(EmbeddingProvider):
 # Embedding
 # ---------------------------------------------------------------------------
 
+
 def _build_embed_provider() -> EmbeddingProvider:
     """根据 EmbedConfig 构造对应的 provider。
 
@@ -286,8 +282,7 @@ def _build_embed_provider() -> EmbeddingProvider:
 
     if provider_name == "openai_compatible" and api_key:
         return OpenAICompatibleProvider(
-            base_url=base_url
-            or "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            base_url=base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1",
             api_key=api_key,
             model=cfg.model_name or "text-embedding-v4",
         )
@@ -347,6 +342,7 @@ class EmbedBackend(LazyBackend):
             return cls._PROVIDER.health()
         return {"status": "error" if cls._ERROR else "loading", "error": cls._ERROR}
 
+
 # ---------------------------------------------------------------------------
 # Reranking
 # ---------------------------------------------------------------------------
@@ -384,7 +380,11 @@ class RerankBackend(LazyBackend):
             path, padding_side="left", trust_remote_code=True
         )
         # device_map 避免 meta tensor → .to() 失败；torch_dtype=fp32 避免 bf16/fp32 matmul 不匹配
-        device_map = cls._DEVICE if cls._DEVICE in ("cpu", "cuda", "cuda:0", "cuda:1", "mps") else "auto"
+        device_map = (
+            cls._DEVICE
+            if cls._DEVICE in ("cpu", "cuda", "cuda:0", "cuda:1", "mps")
+            else "auto"
+        )
         cls._MODEL = AutoModel.from_pretrained(
             path,
             trust_remote_code=True,
@@ -421,7 +421,9 @@ class RerankBackend(LazyBackend):
         assert cls._PREFIX_TOKENS is not None
         assert cls._SUFFIX_TOKENS is not None
 
-        max_content_len = cls._MAX_LENGTH - len(cls._PREFIX_TOKENS) - len(cls._SUFFIX_TOKENS)
+        max_content_len = (
+            cls._MAX_LENGTH - len(cls._PREFIX_TOKENS) - len(cls._SUFFIX_TOKENS)
+        )
         pairs = [RerankBackend._format_pair(query, p) for p in passages]
         inputs = cls._TOKENIZER(
             pairs,
@@ -432,7 +434,9 @@ class RerankBackend(LazyBackend):
         )
         for i, ids in enumerate(inputs["input_ids"]):
             inputs["input_ids"][i] = cls._PREFIX_TOKENS + ids + cls._SUFFIX_TOKENS
-        inputs = cls._TOKENIZER.pad(inputs, padding=True, return_tensors="pt", max_length=cls._MAX_LENGTH)
+        inputs = cls._TOKENIZER.pad(
+            inputs, padding=True, return_tensors="pt", max_length=cls._MAX_LENGTH
+        )
         for key in inputs:
             inputs[key] = inputs[key].to(cls._DEVICE)
         with torch.no_grad():
@@ -461,6 +465,7 @@ class RerankBackend(LazyBackend):
 # ---------------------------------------------------------------------------
 # Module-level API（保持向后兼容：server.py / test endpoint 调用 qwen3_embed.*）
 # ---------------------------------------------------------------------------
+
 
 def load(device: str | None = None, **kwargs) -> None:
     """Prewarm 入口：依次加载两个后端。"""

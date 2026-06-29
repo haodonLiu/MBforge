@@ -14,16 +14,14 @@ import logging
 import os
 import sys
 import traceback
+from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
-from collections.abc import Callable
 
 from .constants import APP_NAME, GLOBAL_DATA_DIR
 
 # 日志格式 —— 增加进程ID、线程名，方便多线程/多进程诊断
-_CONSOLE_FORMAT = (
-    "%(asctime)s | %(levelname)-8s | %(process)d:%(threadName)s | %(name)s | %(message)s"
-)
+_CONSOLE_FORMAT = "%(asctime)s | %(levelname)-8s | %(process)d:%(threadName)s | %(name)s | %(message)s"
 _FILE_FORMAT = (
     "%(asctime)s | %(levelname)-8s | %(process)d:%(threadName)s | %(name)s | "
     "%(funcName)s:%(lineno)d | %(message)s"
@@ -118,7 +116,9 @@ def setup_logging(
         except Exception as e:
             # 文件日志初始化失败不影响运行，但要打一条控制台日志
             fallback = logging.StreamHandler(sys.stderr)
-            fallback.setFormatter(logging.Formatter(_CONSOLE_FORMAT, datefmt=_DATE_FORMAT))
+            fallback.setFormatter(
+                logging.Formatter(_CONSOLE_FORMAT, datefmt=_DATE_FORMAT)
+            )
             root_logger.addHandler(fallback)
             root_logger.error(f"文件日志初始化失败: {e}")
 
@@ -146,7 +146,9 @@ def get_logger(name: str) -> logging.Logger:
 T = TypeVar("T")
 
 
-def log_call(level: int = logging.DEBUG) -> Callable[[Callable[..., T]], Callable[..., T]]:
+def log_call(
+    level: int = logging.DEBUG,
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """装饰器：自动记录函数进入/退出及耗时.
 
     用法:
@@ -154,6 +156,7 @@ def log_call(level: int = logging.DEBUG) -> Callable[[Callable[..., T]], Callabl
         def my_func(x, y):
             ...
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         func_name = f"{func.__module__}.{func.__qualname__}"
         func_logger = get_logger(func.__module__)
@@ -176,6 +179,7 @@ def log_call(level: int = logging.DEBUG) -> Callable[[Callable[..., T]], Callabl
 
             func_logger.log(level, f"[CALL] → {func_name}({args_str})")
             import time
+
             t0 = time.perf_counter()
             try:
                 result = func(*args, **kwargs)

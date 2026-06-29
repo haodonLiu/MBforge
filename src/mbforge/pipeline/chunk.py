@@ -63,11 +63,12 @@ def chunk_text(
         if chunk:
             chunks.append(chunk)
 
+        if end >= text_len:
+            break
+
         start = end - overlap
         if start < 0:
             start = 0
-        if start >= end or start >= text_len:
-            break
 
     return chunks
 

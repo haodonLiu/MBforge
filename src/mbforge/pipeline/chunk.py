@@ -6,8 +6,6 @@ Splits sections into fixed-size chunks with overlap for embedding.
 from __future__ import annotations
 
 import hashlib
-import re
-import uuid
 
 
 def chunk_text(

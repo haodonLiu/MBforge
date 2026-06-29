@@ -6,7 +6,6 @@ Each tool wraps an MBForge capability as a callable function.
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from langchain_core.tools import tool
 
@@ -47,10 +46,10 @@ def molecule_search(query: str) -> str:
         JSON string with matching molecules.
     """
     try:
-        from ..routers.molecule import mol_search
-
         # Synchronous wrapper
         import asyncio
+
+        from ..routers.molecule import mol_search
 
         loop = asyncio.new_event_loop()
         result = loop.run_until_complete(mol_search({"query": query, "project_root": "", "top_k": 10}))
@@ -119,7 +118,6 @@ def list_project_documents() -> str:
         JSON string with document list.
     """
     try:
-        from ..core.project import list_documents
 
         # This needs project_root from session — will be injected
         return json.dumps({"message": "Use the session's project_root to list documents"})

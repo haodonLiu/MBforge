@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import time
-from typing import Any
 
 
 def _query_hash(query: str) -> str:

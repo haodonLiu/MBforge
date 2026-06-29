@@ -28,6 +28,7 @@ async def notes_save(body: dict) -> dict:
     if not doc_id or not root:
         return {"success": False, "error": "doc_id and project_root required"}
     from pathlib import Path
+
     from ..utils.helpers import ensure_dir
     notes_dir = Path(root) / "projects" / doc_id
     ensure_dir(notes_dir)

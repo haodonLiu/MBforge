@@ -25,11 +25,11 @@ def _ensure_agent():
     if _agent is not None:
         return
     try:
-        from ..agent.llm_factory import create_llm_from_settings
-        from ..agent.graph import create_agent
-        from ..agent.tools import get_all_tools
-
         import os
+
+        from ..agent.graph import create_agent
+        from ..agent.llm_factory import create_llm_from_settings
+        from ..agent.tools import get_all_tools
         api_key = os.environ.get("MBFORGE_LLM_API_KEY", "")
         if not api_key:
             logger.info("No LLM API key configured — agent running in stub mode")
@@ -64,8 +64,9 @@ async def agent_init() -> dict:
 @router.post("/session")
 async def agent_create_session(body: dict) -> dict:
     try:
-        from ..agent.sessions import session_store
         import uuid
+
+        from ..agent.sessions import session_store
 
         sid = body.get("session_id", str(uuid.uuid4()))
         session_store.create(sid, body.get("project_root"))
@@ -119,7 +120,7 @@ async def agent_get_history(session_id: str) -> dict:
 @router.post("/session/{session_id}/chat")
 async def agent_chat(session_id: str, body: dict) -> dict:
     try:
-        from ..agent.sessions import session_store, ChatMessage
+        from ..agent.sessions import ChatMessage, session_store
 
         session = session_store.get(session_id)
         if not session:
@@ -156,7 +157,7 @@ async def agent_chat(session_id: str, body: dict) -> dict:
 @router.get("/session/{session_id}/chat/stream")
 async def agent_chat_stream(session_id: str, user_input: str = "") -> StreamingResponse:
     """SSE streaming chat with LangGraph agent."""
-    from ..agent.sessions import session_store, ChatMessage
+    from ..agent.sessions import ChatMessage, session_store
 
     session = session_store.get(session_id)
     if not session:

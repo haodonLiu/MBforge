@@ -27,9 +27,9 @@ async def fingerprint(body: dict) -> dict:
     if not smiles:
         return {"success": False, "error": "empty SMILES"}
     try:
+        import numpy as np
         from rdkit import Chem
         from rdkit.Chem import AllChem
-        import numpy as np
 
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:

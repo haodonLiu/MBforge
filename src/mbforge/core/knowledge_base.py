@@ -5,9 +5,7 @@ Coordinates: embed query → Zvec hybrid search → semantic cache → rerank.
 
 from __future__ import annotations
 
-import hashlib
 import json
-import time
 from typing import Any
 
 from ..utils.logger import get_logger

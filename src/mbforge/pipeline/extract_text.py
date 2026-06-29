@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import fitz
+
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.pipeline.extract")
@@ -85,8 +87,9 @@ def extract_pdf_text(pdf_path: str, ocr_fallback: bool = True) -> ExtractedDocum
 def _ocr_pages(doc, page_indices: list[int]) -> list[str]:
     """OCR specific pages using RapidOCR."""
     try:
-        from ..parsers.molecule.coref_alt import get_rapid_ocr
         import numpy as np
+
+        from ..parsers.molecule.coref_alt import get_rapid_ocr
 
         ocr = get_rapid_ocr()
         results = []

@@ -52,7 +52,7 @@ Desktop.ini
 
 # Runtime data
 .obsidian/
-.mbccforge/
+.mbforge/
 output/
 
 # SQLite databases (project-level)

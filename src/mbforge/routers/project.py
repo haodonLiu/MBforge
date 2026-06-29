@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from ..core.project import get_file_tree, list_documents, open_project, scan_project_files
+from ..core.project import (
+    get_file_tree,
+    list_documents,
+    open_project,
+    scan_project_files,
+)
 from ..models.project import ProjectResponse, ScanResponse
 
 router = APIRouter()

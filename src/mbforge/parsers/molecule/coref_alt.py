@@ -11,6 +11,7 @@
 - 标识符检测从训练模型 → 启发式过滤（精度略降，速度显著提升）
 - 配对逻辑一致：归一化距离 + 水平权重 + 置信度优先
 """
+
 from __future__ import annotations
 
 import re
@@ -26,9 +27,22 @@ logger = get_logger(__name__)
 
 # ---- 数据类型（moldet_coref 移除后唯一来源） ----
 
+
 @dataclass
 class CorefBbox:
-    category_id: int                # 1=分子, 3=标识符
+    category_id: int  # 1=分子, 3=标识符
+    # Bounding box in **image-relative normalized coordinates**:
+    # `[x1, y1, x2, y2]` with values in `[0, 1]`, **top-left origin**
+    # (y grows downward, image-processing convention).
+    #
+    # This is the contract expected by:
+    # - `vlm_chem::coref_to_molecules` (Rust) — converts to PDF points
+    # - KB `figure_labels.label_bbox` / `coref_predictions.{mol,label}_bbox`
+    #   — frontend `projectFigureBboxToPage` projects to PDF page coords
+    #
+    # Internal pipeline (moldet + RapidOCR) returns pixel coords; the
+    # conversion to normalized happens in `detect_coref_via_moldet_ocr`
+    # at construction time.
     bbox: tuple[float, float, float, float]
     smiles: str | None = None
     text: str | None = None
@@ -38,15 +52,43 @@ class CorefBbox:
 @dataclass
 class CorefResult:
     bboxes: list[CorefBbox]
-    corefs: list[tuple[int, int]]    # [(mol_idx, idt_idx), ...]
+    corefs: list[tuple[int, int]]  # [(mol_idx, idt_idx), ...]
+
 
 # 段落文本特征词（不应作为 identifier）
-_COMMON_WORDS: frozenset[str] = frozenset({
-    "the", "of", "and", "or", "a", "an", "to", "in", "for", "is", "are",
-    "with", "by", "as", "on", "at", "from", "this", "that", "be", "or",
-    "an", "or", "formula", "compound", "salt", "pharmaceutically",
-    "acceptable", "some", "embodiments", "structure", "has",
-})
+_COMMON_WORDS: frozenset[str] = frozenset(
+    {
+        "the",
+        "of",
+        "and",
+        "or",
+        "a",
+        "an",
+        "to",
+        "in",
+        "for",
+        "is",
+        "are",
+        "with",
+        "by",
+        "as",
+        "on",
+        "at",
+        "from",
+        "this",
+        "that",
+        "be",
+        "formula",
+        "compound",
+        "salt",
+        "pharmaceutically",
+        "acceptable",
+        "some",
+        "embodiments",
+        "structure",
+        "has",
+    }
+)
 
 # identifier 字符约束：首字符为字母或左括号，后续字母/数字/常见化学符号
 _IDT_CHARS = re.compile(r"^[\(]?[A-Za-z][A-Za-z0-9¹²³⁴⁵⁶⁷⁸⁹⁰\-\)]*[\),]?$")
@@ -88,10 +130,14 @@ def _pair_corefs(
     page_width: float = 595.0,
     page_height: float = 842.0,
 ) -> list[tuple[int, int]]:
-    """几何配对：归一化距离 + 水平权重 + 置信度优先（与 data.py:_pair_corefs 一致）。
+    """几何配对：归一化距离 + 水平权重 + 置信度优先。
 
-    额外约束：idt bbox 必须**不与 mol bbox 重叠**（IoU == 0），
-    过滤掉分子结构内部的元素符号（O/N/Y/H/C）。
+    所有 bbox 都是 image-relative 归一化 [0,1] 坐标（top-left origin），
+    中心点距离直接用归一化单位计算，不再除以 page_width/page_height。
+    阈值（0.3 页面比例、水平权重 3、垂直权重 2）按"归一化页面比例"理解。
+
+    额外约束：idt bbox 必须**不与 mol bbox 重叠**（IoU 必须为 0），
+    过滤掉分子结构内部的元素符号。
     """
     if not mol_indices or not idt_indices:
         return []
@@ -117,16 +163,16 @@ def _pair_corefs(
             if mi in used_mols:
                 continue
             mx, my = centers[mi]
-            dx = (mx - ix) / page_width
-            dy = (my - iy) / page_height
-            # 任一轴超 30% 页面即视为太远（formula label 不会离分子这么远）
+            # 归一化页面比例：0.3 = 30% 页面
+            dx = mx - ix
+            dy = my - iy
             if abs(dx) > 0.3 or abs(dy) > 0.3:
                 continue
             # 约束：idt bbox 不在 mol bbox 内部（IoU 必须为 0）
             if _bbox_iou(bboxes[idt_i].bbox, bboxes[mi].bbox) > 0:
                 continue
-            h_dist = abs(mx - ix) / page_width
-            v_dist = abs(my - iy) / page_height
+            h_dist = abs(mx - ix)
+            v_dist = abs(my - iy)
             score = 1.0 / (1.0 + h_dist * 3 + v_dist * 2)
             if score > best_score:
                 best_score = score
@@ -195,12 +241,32 @@ def detect_coref_via_moldet_ocr(
         `CorefResult` — 与 `MolDetectCorefBackend.detect_coref` 输出一致。
     """
     W, H = image.size
+    inv_w = 1.0 / W if W > 0 else 0.0
+    inv_h = 1.0 / H if H > 0 else 0.0
+
+    def _to_norm(
+        box: tuple[float, float, float, float],
+    ) -> tuple[float, float, float, float]:
+        """Pixel bbox (top-left origin) → image-relative normalized bbox.
+
+        Clamps to [0, 1] so detector noise that returns slightly
+        out-of-bounds boxes (e.g. MolDet rounding) doesn't propagate
+        garbage into the frontend projector.
+        """
+        x1, y1, x2, y2 = box
+        nx1 = max(0.0, min(1.0, x1 * inv_w))
+        ny1 = max(0.0, min(1.0, y1 * inv_h))
+        nx2 = max(0.0, min(1.0, x2 * inv_w))
+        ny2 = max(0.0, min(1.0, y2 * inv_h))
+        return (nx1, ny1, nx2, ny2)
 
     # 1. moldet 检测分子（像素坐标）
     mol_results = doc_detector.detect(image)  # [(x1,y1,x2,y2,conf), ...]
 
     # 2. RapidOCR 全图
-    ocr_results = ocr_adapter.readtext(image, detail=1)  # [(box_4pts, text, score), ...]
+    ocr_results = ocr_adapter.readtext(
+        image, detail=1
+    )  # [(box_4pts, text, score), ...]
 
     bboxes: list[CorefBbox] = []
     mol_indices: list[int] = []
@@ -209,7 +275,9 @@ def detect_coref_via_moldet_ocr(
     for x1, y1, x2, y2, conf in mol_results:
         if conf < mol_conf_threshold:
             continue
-        bboxes.append(CorefBbox(category_id=1, bbox=(x1, y1, x2, y2), score=conf))
+        bboxes.append(
+            CorefBbox(category_id=1, bbox=_to_norm((x1, y1, x2, y2)), score=conf)
+        )
         mol_indices.append(len(bboxes) - 1)
 
     # 4. 加 Idt bbox（OCR 候选 + 启发式过滤）
@@ -219,31 +287,40 @@ def detect_coref_via_moldet_ocr(
             continue
         xs = [p[0] for p in box_pts]
         ys = [p[1] for p in box_pts]
-        idt_bbox = (min(xs), min(ys), max(xs), max(ys))
-        # 过滤：idt 50%+ 面积在某个 mol 内部 → 视为分子结构内部元素（非 label）
-        if any(_contain_ratio(idt_bbox, bboxes[mi].bbox) > 0.5 for mi in mol_indices):
+        idt_bbox_px = (min(xs), min(ys), max(xs), max(ys))
+        idt_bbox_norm = _to_norm(idt_bbox_px)
+        # 过滤：idt 50%+ 面积在某个 mol 内部 → 视为分子结构内部元素（非 label）。
+        # 必须用归一化坐标比（`bboxes[mi].bbox` 已是 [0,1]）—— 像素 vs 归一化
+        # 跨坐标系比，数值无意义，会让几乎所有 idt 被误判为"内部元素"。
+        if any(
+            _contain_ratio(idt_bbox_norm, bboxes[mi].bbox) > 0.5 for mi in mol_indices
+        ):
             continue
         bboxes.append(
             CorefBbox(
                 category_id=3,
-                bbox=idt_bbox,
+                bbox=_to_norm(idt_bbox_px),
                 text=_normalize_idt(text),
                 score=ocr_conf,
             )
         )
         idt_indices.append(len(bboxes) - 1)
-
     # 5. 几何配对
-    corefs = _pair_corefs(bboxes, mol_indices, idt_indices, W, H, page_width, page_height)
+    corefs = _pair_corefs(
+        bboxes, mol_indices, idt_indices, W, H, page_width, page_height
+    )
 
     logger.info(
         "coref_alt: mols=%d, idts=%d, pairs=%d",
-        len(mol_indices), len(idt_indices), len(corefs),
+        len(mol_indices),
+        len(idt_indices),
+        len(corefs),
     )
     return CorefResult(bboxes=bboxes, corefs=corefs)
 
 
 # ---- RapidOCR 适配器（独占：原 moldet_coref.py 内的 _RapidOCRAdapter） ----
+
 
 class _RapidOCRAdapter:
     """适配 RapidOCR 3.x 输出到 EasyOCR 兼容的 `readtext(image, detail=0|1)` 接口。
@@ -253,7 +330,15 @@ class _RapidOCRAdapter:
     """
 
     def __init__(self) -> None:
-        from rapidocr import RapidOCR, EngineType, LangDet, LangRec, ModelType, OCRVersion
+        from rapidocr import (
+            EngineType,
+            LangDet,
+            LangRec,
+            ModelType,
+            OCRVersion,
+            RapidOCR,
+        )
+
         self._engine = RapidOCR(
             params={
                 "Det.engine_type": EngineType.ONNXRUNTIME,
@@ -271,6 +356,7 @@ class _RapidOCRAdapter:
 
     def readtext(self, image: Any, detail: int = 0) -> list:
         import numpy as np
+
         if hasattr(image, "convert"):
             arr = np.array(image.convert("RGB"))
         else:
@@ -285,6 +371,7 @@ class _RapidOCRAdapter:
 
 
 # ---- Rust 侧 JSON 序列化（vlm_chem.rs 期望格式） ----
+
 
 def coref_to_rust_dict(result: CorefResult) -> dict[str, Any]:
     """把 CorefResult 序列化为 vlm_chem.rs 期望的 JSON 结构。

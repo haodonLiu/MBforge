@@ -7,10 +7,16 @@ MolDetv2 输出的图像坐标、pdfplumber 输出的文本坐标、用户框选
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import fitz
+
 
 # ---------------------------------------------------------------------------
 # 图像坐标 ↔ PDF 坐标
 # ---------------------------------------------------------------------------
+
 
 def scale_from_page_size(
     page_w_pts: float,
@@ -145,6 +151,7 @@ def pdf_to_img_rect(
 # 屏幕坐标 ↔ 图像坐标
 # ---------------------------------------------------------------------------
 
+
 def screen_to_img_rect(
     bbox_screen,  # QRect
     view_scale: float,
@@ -172,6 +179,7 @@ def screen_to_img_rect(
 # 屏幕坐标 → PDF 坐标（一站式转换）
 # ---------------------------------------------------------------------------
 
+
 def screen_to_pdf_rect(
     bbox_screen,
     view_scale: float,
@@ -196,6 +204,7 @@ def screen_to_pdf_rect(
 # ---------------------------------------------------------------------------
 # 辅助：从 fitz.Page 计算渲染参数
 # ---------------------------------------------------------------------------
+
 
 def get_render_params(page: fitz.Page, dpi: int = 300) -> tuple[float, int, int]:
     """计算页面渲染参数.

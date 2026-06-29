@@ -43,7 +43,10 @@ def _read_resolved_paths() -> dict[str, str] | None:
     #   Windows : %APPDATA%\MBForge\config
     #   Linux   : ~/.config/MBForge
     #   macOS   : ~/Library/Application Support/MBForge
-    config_dir = Path(user_config_dir(appname="MBForge", appauthor=False, roaming=True)) / "config"
+    config_dir = (
+        Path(user_config_dir(appname="MBForge", appauthor=False, roaming=True))
+        / "config"
+    )
     path = config_dir / "resolved_paths.json"
     if not path.exists():
         return None
@@ -75,6 +78,7 @@ def _invalidate_resolved_paths_cache() -> None:
 # 数据类型
 # ---------------------------------------------------------------------------
 
+
 class ResourceType(str, Enum):
     MODEL = "model"
     PYTHON_PACKAGE = "python_package"
@@ -83,16 +87,17 @@ class ResourceType(str, Enum):
 
 
 class ResourceStatus(str, Enum):
-    READY = "ready"          # 已就绪
+    READY = "ready"  # 已就绪
     NOT_FOUND = "not_found"  # 未下载/未安装
-    PARTIAL = "partial"      # 部分就绪（如目录存在但缺文件）
-    ERROR = "error"          # 检查出错
+    PARTIAL = "partial"  # 部分就绪（如目录存在但缺文件）
+    ERROR = "error"  # 检查出错
     DOWNLOADING = "downloading"  # 下载中
 
 
 @dataclass
 class ResourceInfo:
     """资源目录条目."""
+
     id: str
     name: str
     type: ResourceType
@@ -101,23 +106,28 @@ class ResourceInfo:
     license: str = ""
     license_url: str = ""
     # 模型专用
-    ms_repo: str = ""          # ModelScope 仓库 ID
-    hf_repo: str = ""          # HuggingFace 仓库 ID（备用/元数据）
+    ms_repo: str = ""  # ModelScope 仓库 ID
+    hf_repo: str = ""  # HuggingFace 仓库 ID（备用/元数据）
     download_type: str = "snapshot"  # snapshot | file
-    ms_file: str = ""          # 单文件下载时的远程文件名
-    local_name: str = ""       # 本地文件名
-    source_url: str = ""       # 项目主页
-    allow_patterns: list[str] = field(default_factory=list)  # snapshot 下载时仅匹配的文件模式
-    files: list[str] = field(default_factory=list)  # 资源包含的具体文件列表（与 Rust 端保持一致）
+    ms_file: str = ""  # 单文件下载时的远程文件名
+    local_name: str = ""  # 本地文件名
+    source_url: str = ""  # 项目主页
+    allow_patterns: list[str] = field(
+        default_factory=list
+    )  # snapshot 下载时仅匹配的文件模式
+    files: list[str] = field(
+        default_factory=list
+    )  # 资源包含的具体文件列表（与 Rust 端保持一致）
     # Python 包专用
-    pip_name: str = ""         # pip 包名
-    import_name: str = ""      # import 名（与 pip 名不同时）
-    mirror: str = ""           # 镜像源 URL
+    pip_name: str = ""  # pip 包名
+    import_name: str = ""  # import 名（与 pip 名不同时）
+    mirror: str = ""  # 镜像源 URL
 
 
 @dataclass
 class ResourceStatusResult:
     """单个资源的检查结果."""
+
     id: str
     name: str
     type: ResourceType
@@ -131,6 +141,7 @@ class ResourceStatusResult:
 @dataclass
 class EnvironmentReport:
     """全量环境检查报告."""
+
     python_version: str = ""
     gpu_available: bool = False
     gpu_name: str = ""
@@ -194,7 +205,10 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         download_type="snapshot",
         local_name="MolDetv2",
         allow_patterns=["*.pt", "*.onnx", "*.json"],
-        files=["doc/moldet_v2_yolo11n_960_doc.pt", "general/moldet_v2_yolo11n_640_general.pt"],
+        files=[
+            "doc/moldet_v2_yolo11n_960_doc.pt",
+            "general/moldet_v2_yolo11n_640_general.pt",
+        ],
     ),
     "molscribe": ResourceInfo(
         id="molscribe",
@@ -209,7 +223,14 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         download_type="snapshot",
         local_name="MolScribe",
         source_url="https://github.com/thomas0809/MolScribe",
-        allow_patterns=["*.pth", "*.safetensors", "*.json", "*.txt", "tokenizer*", "vocab*"],
+        allow_patterns=[
+            "*.pth",
+            "*.safetensors",
+            "*.json",
+            "*.txt",
+            "tokenizer*",
+            "vocab*",
+        ],
         files=["swin_base_char_aux_1m680k.pth"],
     ),
     # ──── Python 包（清华源）────
@@ -268,9 +289,11 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
 # 检查函数
 # ---------------------------------------------------------------------------
 
+
 def _get_model_cache_dir() -> Path:
     """获取模型缓存目录."""
     from mbforge.utils.constants import get_model_cache_dir
+
     return Path(get_model_cache_dir())
 
 
@@ -311,7 +334,9 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
     local_dir = cache_dir / repo_name
     if _has_weights(local_dir):
         return ResourceStatusResult(
-            id=info.id, name=info.name, type=info.type,
+            id=info.id,
+            name=info.name,
+            type=info.type,
             status=ResourceStatus.READY,
             local_path=str(local_dir),
             size_mb=_dir_size(local_dir),
@@ -323,7 +348,9 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
         hf_dir = Path(hf_home) / repo_name
         if _has_weights(hf_dir):
             return ResourceStatusResult(
-                id=info.id, name=info.name, type=info.type,
+                id=info.id,
+                name=info.name,
+                type=info.type,
                 status=ResourceStatus.READY,
                 local_path=str(hf_dir),
                 size_mb=_dir_size(hf_dir),
@@ -342,7 +369,9 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
                 ms_dir = ms_root / subdir / ms_org / name
                 if _has_weights(ms_dir):
                     return ResourceStatusResult(
-                        id=info.id, name=info.name, type=info.type,
+                        id=info.id,
+                        name=info.name,
+                        type=info.type,
                         status=ResourceStatus.READY,
                         local_path=str(ms_dir),
                         size_mb=_dir_size(ms_dir),
@@ -354,14 +383,18 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
         torch_dir = Path(torch_home) / repo_name
         if _has_weights(torch_dir):
             return ResourceStatusResult(
-                id=info.id, name=info.name, type=info.type,
+                id=info.id,
+                name=info.name,
+                type=info.type,
                 status=ResourceStatus.READY,
                 local_path=str(torch_dir),
                 size_mb=_dir_size(torch_dir),
             )
 
     return ResourceStatusResult(
-        id=info.id, name=info.name, type=info.type,
+        id=info.id,
+        name=info.name,
+        type=info.type,
         status=ResourceStatus.NOT_FOUND,
     )
 
@@ -383,7 +416,9 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
         path = base / local_name
         if path.is_file() and path.stat().st_size > 0:
             return ResourceStatusResult(
-                id=info.id, name=info.name, type=info.type,
+                id=info.id,
+                name=info.name,
+                type=info.type,
                 status=ResourceStatus.READY,
                 local_path=str(path),
                 size_mb=round(path.stat().st_size / 1024 / 1024, 1),
@@ -393,9 +428,16 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
             subdir = base / subdir_name
             if subdir.is_dir():
                 for f in subdir.iterdir():
-                    if f.is_file() and f.suffix in (".pt", ".pth", ".bin", ".safetensors"):
+                    if f.is_file() and f.suffix in (
+                        ".pt",
+                        ".pth",
+                        ".bin",
+                        ".safetensors",
+                    ):
                         return ResourceStatusResult(
-                            id=info.id, name=info.name, type=info.type,
+                            id=info.id,
+                            name=info.name,
+                            type=info.type,
                             status=ResourceStatus.READY,
                             local_path=str(f),
                             size_mb=round(f.stat().st_size / 1024 / 1024, 1),
@@ -404,7 +446,9 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
         for f in base.iterdir():
             if f.is_file() and f.suffix in (".pt", ".pth", ".bin", ".safetensors"):
                 return ResourceStatusResult(
-                    id=info.id, name=info.name, type=info.type,
+                    id=info.id,
+                    name=info.name,
+                    type=info.type,
                     status=ResourceStatus.READY,
                     local_path=str(f),
                     size_mb=round(f.stat().st_size / 1024 / 1024, 1),
@@ -458,10 +502,11 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
         result = _search_in(Path(torch_home))
         if result:
             return result
-            return result
 
     return ResourceStatusResult(
-        id=info.id, name=info.name, type=info.type,
+        id=info.id,
+        name=info.name,
+        type=info.type,
         status=ResourceStatus.NOT_FOUND,
     )
 
@@ -473,13 +518,17 @@ def _check_python_package(info: ResourceInfo) -> ResourceStatusResult:
         mod = importlib.import_module(import_name)
         ver = getattr(mod, "__version__", "")
         return ResourceStatusResult(
-            id=info.id, name=info.name, type=info.type,
+            id=info.id,
+            name=info.name,
+            type=info.type,
             status=ResourceStatus.READY,
             version=ver,
         )
     except ImportError:
         return ResourceStatusResult(
-            id=info.id, name=info.name, type=info.type,
+            id=info.id,
+            name=info.name,
+            type=info.type,
             status=ResourceStatus.NOT_FOUND,
         )
 
@@ -488,7 +537,10 @@ def _check_python_package(info: ResourceInfo) -> ResourceStatusResult:
 # 下载函数
 # ---------------------------------------------------------------------------
 
-def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict], None] | None = None) -> bool:
+
+def _download_model_from_modelscope(
+    info: ResourceInfo, callback: Callable[[dict], None] | None = None
+) -> bool:
     """从 ModelScope 下载模型. 返回是否成功."""
     cache_dir = _get_model_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -508,12 +560,22 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
         # 尝试 modelscope SDK
         try:
             from modelscope import snapshot_download as ms_snapshot
+
             _emit({"status": "downloading", "progress": 0})
             try:
-                ms_snapshot(info.ms_repo, local_dir=str(dest), local_dir_use_symlinks=False, allow_patterns=info.allow_patterns or None)
+                ms_snapshot(
+                    info.ms_repo,
+                    local_dir=str(dest),
+                    local_dir_use_symlinks=False,
+                    allow_patterns=info.allow_patterns or None,
+                )
             except TypeError:
                 # 新版 modelscope 不支持 local_dir_use_symlinks
-                ms_snapshot(info.ms_repo, local_dir=str(dest), allow_patterns=info.allow_patterns or None)
+                ms_snapshot(
+                    info.ms_repo,
+                    local_dir=str(dest),
+                    allow_patterns=info.allow_patterns or None,
+                )
             _emit({"status": "completed", "source": "modelscope"})
             return True
         except ImportError:
@@ -525,16 +587,23 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
         import fnmatch as _fnmatch
 
         import requests as _requests
+
         _emit({"status": "downloading", "progress": 0})
         try:
-            r = _requests.get(f"{ms_base}/{info.ms_repo}/repo/tree?Revision=master", timeout=30)
+            r = _requests.get(
+                f"{ms_base}/{info.ms_repo}/repo/tree?Revision=master", timeout=30
+            )
             tree = r.json().get("Data", []) if r.ok else []
             files = [f["Path"] for f in tree if f.get("Type") == "blob"]
         except Exception:  # noqa: BLE001 — listing request can fail (network, JSON); empty file list triggers the "failed" event below.
             files = []
 
         if info.allow_patterns:
-            files = [f for f in files if any(_fnmatch.fnmatch(f, p) for p in info.allow_patterns)]
+            files = [
+                f
+                for f in files
+                if any(_fnmatch.fnmatch(f, p) for p in info.allow_patterns)
+            ]
 
         if not files:
             _emit({"status": "failed", "error": "无法获取 ModelScope 文件列表"})
@@ -547,7 +616,8 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
                 r = _requests.get(
                     f"{ms_base}/{info.ms_repo}/repo",
                     params={"Revision": "master", "FilePath": fpath},
-                    timeout=300, stream=True,
+                    timeout=300,
+                    stream=True,
                 )
                 r.raise_for_status()
                 fsize = int(r.headers.get("Content-Length", 0))
@@ -557,13 +627,15 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
                         f.write(chunk)
                         got += len(chunk)
                         if fsize > 0:
-                            _emit({
-                                "status": "downloading",
-                                "file": fpath,
-                                "file_progress": int(got * 100 / fsize),
-                                "file_index": i + 1,
-                                "total_files": len(files),
-                            })
+                            _emit(
+                                {
+                                    "status": "downloading",
+                                    "file": fpath,
+                                    "file_progress": int(got * 100 / fsize),
+                                    "file_index": i + 1,
+                                    "total_files": len(files),
+                                }
+                            )
             except Exception as e:
                 _emit({"status": "failed", "error": f"下载 {fpath} 失败: {e}"})
                 return False
@@ -576,11 +648,13 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
         dest = cache_dir / (info.local_name or f"{info.id}.pt")
         dest.parent.mkdir(parents=True, exist_ok=True)
         import requests as _requests
+
         try:
             r = _requests.get(
                 f"{ms_base}/{info.ms_repo}/repo",
                 params={"Revision": "master", "FilePath": info.ms_file},
-                timeout=300, stream=True,
+                timeout=300,
+                stream=True,
             )
             r.raise_for_status()
             total = int(r.headers.get("Content-Length", 0))
@@ -590,7 +664,12 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
                     f.write(chunk)
                     downloaded += len(chunk)
                     if total > 0:
-                        _emit({"status": "downloading", "progress": int(downloaded * 100 / total)})
+                        _emit(
+                            {
+                                "status": "downloading",
+                                "progress": int(downloaded * 100 / total),
+                            }
+                        )
             _emit({"status": "completed", "source": "modelscope"})
             return True
         except Exception as e:
@@ -598,8 +677,11 @@ def _download_model_from_modelscope(info: ResourceInfo, callback: Callable[[dict
             return False
 
 
-def _install_python_package(info: ResourceInfo, callback: Callable[[dict], None] | None = None) -> bool:
+def _install_python_package(
+    info: ResourceInfo, callback: Callable[[dict], None] | None = None
+) -> bool:
     """通过 pip 安装 Python 包. 返回是否成功."""
+
     def _emit(event: dict):
         if callback:
             callback(event)
@@ -611,13 +693,21 @@ def _install_python_package(info: ResourceInfo, callback: Callable[[dict], None]
     _emit({"status": "downloading", "progress": 0})
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=600,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=600,
         )
         if result.returncode == 0:
             _emit({"status": "completed"})
             return True
         else:
-            _emit({"status": "failed", "error": result.stderr[-500:] if result.stderr else "Unknown error"})
+            _emit(
+                {
+                    "status": "failed",
+                    "error": result.stderr[-500:] if result.stderr else "Unknown error",
+                }
+            )
             return False
     except subprocess.TimeoutExpired:
         _emit({"status": "failed", "error": "安装超时"})
@@ -631,6 +721,7 @@ def _install_python_package(info: ResourceInfo, callback: Callable[[dict], None]
 # 检查分发
 # ---------------------------------------------------------------------------
 
+
 def _check_resource(resource_id: str) -> ResourceStatusResult:
     """检查单个资源的状态.
 
@@ -640,8 +731,11 @@ def _check_resource(resource_id: str) -> ResourceStatusResult:
     info = RESOURCE_CATALOG.get(resource_id)
     if info is None:
         return ResourceStatusResult(
-            id=resource_id, name=resource_id, type=ResourceType.MODEL,
-            status=ResourceStatus.ERROR, error=f"未知资源: {resource_id}",
+            id=resource_id,
+            name=resource_id,
+            type=ResourceType.MODEL,
+            status=ResourceStatus.ERROR,
+            error=f"未知资源: {resource_id}",
         )
 
     # 1. 优先读取 Rust 解析结果（snapshot/file 模型均适用）
@@ -656,12 +750,19 @@ def _check_resource(resource_id: str) -> ResourceStatusResult:
                         size_mb = round(path.stat().st_size / 1024 / 1024, 1)
                     else:
                         size_mb = round(
-                            sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / 1024 / 1024, 1
+                            sum(
+                                f.stat().st_size for f in path.rglob("*") if f.is_file()
+                            )
+                            / 1024
+                            / 1024,
+                            1,
                         )
                 except Exception:
                     size_mb = 0.0
                 return ResourceStatusResult(
-                    id=info.id, name=info.name, type=info.type,
+                    id=info.id,
+                    name=info.name,
+                    type=info.type,
                     status=ResourceStatus.READY,
                     local_path=str(path),
                     size_mb=size_mb,
@@ -680,24 +781,32 @@ def _check_resource(resource_id: str) -> ResourceStatusResult:
             return _check_python_package(info)
         elif info.type == ResourceType.BINARY:
             return ResourceStatusResult(
-                id=resource_id, name=info.name, type=info.type,
+                id=resource_id,
+                name=info.name,
+                type=info.type,
                 status=ResourceStatus.NOT_FOUND,
             )
         else:
             return ResourceStatusResult(
-                id=resource_id, name=info.name, type=info.type,
+                id=resource_id,
+                name=info.name,
+                type=info.type,
                 status=ResourceStatus.NOT_FOUND,
             )
     except Exception as e:
         return ResourceStatusResult(
-            id=resource_id, name=info.name, type=info.type,
-            status=ResourceStatus.ERROR, error=str(e),
+            id=resource_id,
+            name=info.name,
+            type=info.type,
+            status=ResourceStatus.ERROR,
+            error=str(e),
         )
 
 
 # ---------------------------------------------------------------------------
 # 公开 API
 # ---------------------------------------------------------------------------
+
 
 class ResourceManager:
     """统一资源管理器."""
@@ -720,6 +829,7 @@ class ResourceManager:
         # GPU
         try:
             import torch
+
             if torch.cuda.is_available():
                 report.gpu_available = True
                 report.gpu_name = torch.cuda.get_device_name(0)
@@ -734,8 +844,14 @@ class ResourceManager:
             # `check_environment` for the only production caller.
             try:
                 result = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"],
-                    capture_output=True, text=True, timeout=5,
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=name,driver_version",
+                        "--format=csv,noheader",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 if result.returncode == 0:
                     parts = result.stdout.strip().split(",")
@@ -754,7 +870,9 @@ class ResourceManager:
         return report
 
     @classmethod
-    def ensure(cls, resource_id: str, callback: Callable[[dict], None] | None = None) -> ResourceStatusResult:
+    def ensure(
+        cls, resource_id: str, callback: Callable[[dict], None] | None = None
+    ) -> ResourceStatusResult:
         """确保资源可用（缺失则下载/安装）."""
         status = cls.check(resource_id)
         if status.status == ResourceStatus.READY:
@@ -771,7 +889,12 @@ class ResourceManager:
             success = _install_python_package(info, callback)
         elif info.type == ResourceType.BINARY:
             if callback:
-                callback({"status": "failed", "error": f"二进制资源 {info.name} 需要手动安装，请参考项目文档"})
+                callback(
+                    {
+                        "status": "failed",
+                        "error": f"二进制资源 {info.name} 需要手动安装，请参考项目文档",
+                    }
+                )
             return status
 
         if success:
@@ -818,7 +941,9 @@ class ResourceManager:
         return None
 
     @classmethod
-    def resolve_model_for_backend(cls, resource_id: str, subpath: str | None = None) -> Path | None:
+    def resolve_model_for_backend(
+        cls, resource_id: str, subpath: str | None = None
+    ) -> Path | None:
         """后端统一入口：解析模型路径，找不到返回 None.
 
         所有 Python 后端（moldet、molscribe）应使用此方法

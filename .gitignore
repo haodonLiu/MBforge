@@ -17,7 +17,6 @@ wheels/
 out*
 !MBForge.spec
 pip-log.txt
-pip-delete-this-directory.txt
 
 # ============================================================================
 # Virtual environments
@@ -35,9 +34,6 @@ env/
 *.swp
 *.swo
 *~
-.*
-!.editorconfig
-.claude/
 
 # ============================================================================
 # OS
@@ -50,30 +46,28 @@ Desktop.ini
 # ============================================================================
 # Project: MBForge
 # ============================================================================
-# 敏感配置（API 密钥、本地环境变量）
+# Sensitive config
 .env
 !.env.template
 
-# 项目运行时数据
+# Runtime data
 .obsidian/
-.mbforge/
+.mbccforge/
 output/
 
-# openSAR 代码已合并入 src/mbforge/sar|csar_io|csar_vis|clustering|mcs|molecules
-# 根目录 openSAR/ 是独立 git 仓库，保留在本地但不由 MBForge 追踪
-# setup/ 下的子模块引用已清除
-
-# SQLite 数据库（项目级和临时）
+# SQLite databases (project-level)
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 
-# 日志
+# Logs
 *.log
 
 # ============================================================================
-# pytest / Coverage
+# Testing / Coverage
 # ============================================================================
 .pytest_cache/
 .coverage
@@ -82,15 +76,14 @@ htmlcov/
 .tox/
 
 # ============================================================================
-# Ruff / Linter / Formatter
+# Linting / Type checking
 # ============================================================================
 .ruff_cache/
 .mypy_cache/
 .dmypy.json
-.dmypy.json.5
 
 # ============================================================================
-# PyInstaller
+# Build artifacts
 # ============================================================================
 *.exe
 *.app
@@ -107,47 +100,17 @@ frontend/dist/
 package-lock.json
 
 # ============================================================================
-# Tauri
+# Vendored reference repos
 # ============================================================================
-src-tauri/target/
-src-tauri/gen/
-src-tauri/crates/*/gen/
-src-tauri/crates/*/gen/**
-src-tauri/vendor/pdfium/release/
-# Cargo doc JSON dump (produced by `cargo doc --output-format json`).
-src-tauri/doc_comments.txt
-# PDFium 安装包缓存（setup.ps1 默认下载到此）
-pdfium-win-x64.tgz
-
-# ============================================================================
-# Vendored reference repos (ref/, setup/)
-# ============================================================================
-# ref/{GESim,chematic,paddleocr-vl-local,MoleCode}/ and setup/MolScribe/ are
-# local clones of external repos. Each has its own .git/.
-# Not tracked by MBForge git.
 ref/
-ref/*
 setup/
-setup/*
 
 # ============================================================================
-# Claude Skills (local dev tool, not for distribution)
+# Dev artifacts
 # ============================================================================
-skills/
-
-# Legacy workspace files
-frontend/tsclog.txt
-
-# ============================================================================
-# Root-scattered dev artifacts (added 2026-06-29)
-# ============================================================================
-# /tools/ — scratch / benchmark workspace (developer-local)
 /tools/
-# /runs/ — ultralytics detect() runtime output
 /runs/
-# /assets/models/ — dev model fixtures (canonical cache is ~/mbforge/models)
 /assets/models/
-# Model weight blobs at repo root
 /*.pt
 /*.onnx
 /*.safetensors

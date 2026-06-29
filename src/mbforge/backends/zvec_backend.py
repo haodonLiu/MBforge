@@ -163,7 +163,9 @@ def _validate_index_payload(
     if n == 0:
         raise ValidationError("chunk_ids must not be empty")
     if not (len(texts) == len(metadatas) == len(embeddings) == n):
-        raise ValidationError("chunk_ids, texts, metadatas and embeddings must have the same length")
+        raise ValidationError(
+            "chunk_ids, texts, metadatas and embeddings must have the same length"
+        )
     for cid in chunk_ids:
         if not cid:
             raise ValidationError("chunk_id must not be empty")
@@ -208,10 +210,16 @@ def index_document(
         _COLLECTION.delete_by_filter(f"doc_id = '{doc_id}'")
         statuses = _COLLECTION.upsert(docs)
 
-    failed = [i for i, status in enumerate(statuses) if not getattr(status, "ok", lambda: True)()]
+    failed = [
+        i
+        for i, status in enumerate(statuses)
+        if not getattr(status, "ok", lambda: True)()
+    ]
     if failed:
         errors = [str(statuses[i]) for i in failed]
-        raise RuntimeError(f"Zvec insert failed for chunks {failed}: {'; '.join(errors)}")
+        raise RuntimeError(
+            f"Zvec insert failed for chunks {failed}: {'; '.join(errors)}"
+        )
 
     logger.debug("Indexed %d chunks for doc %s", len(docs), doc_id)
     return {"indexed": len(docs)}

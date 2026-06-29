@@ -14,6 +14,7 @@ build/
 wheels/
 *.manifest
 *.spec
+out*
 !MBForge.spec
 pip-log.txt
 pip-delete-this-directory.txt
@@ -136,3 +137,19 @@ skills/
 
 # Legacy workspace files
 frontend/tsclog.txt
+
+# ============================================================================
+# Root-scattered dev artifacts (added 2026-06-29)
+# ============================================================================
+# /tools/ — scratch / benchmark workspace (developer-local)
+/tools/
+# /runs/ — ultralytics detect() runtime output
+/runs/
+# /assets/models/ — dev model fixtures (canonical cache is ~/mbforge/models)
+/assets/models/
+# Model weight blobs at repo root
+/*.pt
+/*.onnx
+/*.safetensors
+/*.pkl
+/*.gguf

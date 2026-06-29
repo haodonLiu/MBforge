@@ -1,9 +1,6 @@
-/** Agent session management + LLM env-config probe + post-process PDF reporting. */
+/** Agent session management + post-process PDF reporting via HTTP. */
 
-import { EVT } from '../tauri-events'
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import { invokeWithError } from './_utils'
+import { httpPost, httpGet, httpPut, httpDelete, invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
 
 // ---- agent (session-based, per-conversation isolation) ----
@@ -15,10 +12,6 @@ export interface ChatMessage {
 
 // ---- LLM env config (Settings UI editable with env precedence + link-status probe) ----
 
-/**
- * Link status as reported by the Rust side after `test_llm_connection`.
- * Mirrors `LlmLinkStatus` in `src-tauri/src/commands/llm.rs`.
- */
 export type LlmLinkStatus =
   | 'not_configured'
   | 'ok'
@@ -26,12 +19,6 @@ export type LlmLinkStatus =
   | 'http_error'
   | 'auth_error'
 
-/**
- * Editable view of the LLM env config + last probe result. The
- * Settings UI can edit these values; env vars still take precedence
- * at runtime. The actual `api_key` is never returned — only
- * `api_key_set` so the UI can show a warning.
- */
 export interface LlmEnvStatus {
   provider: string
   base_url: string
@@ -44,53 +31,67 @@ export interface LlmEnvStatus {
 }
 
 /**
- * Initialize the agent subsystem. The LLM has no per-session override —
- * Settings UI edits the global LLM config (env vars take precedence).
- * `sidecarUrl` is still needed for long-term-memory and
- * skill-summarization calls.
+ * Initialize the agent subsystem.
  */
 export async function agentInit(sidecarUrl: string): Promise<void> {
   await invokeWithError(
-    () => invoke('agent_init', { sidecarUrl }),
-    ErrorCode.TauriInvoke,
+    () => httpPost('/api/v1/agent/init', { sidecar_url: sidecarUrl }),
+    ErrorCode.Network,
   )
 }
 
 /**
- * Read the current env-derived LLM config for display. Does not perform
- * a network probe.
+ * Read the current env-derived LLM config for display.
  */
 export async function getLlmEnvConfig(): Promise<LlmEnvStatus> {
-  return invokeWithError(
-    () => invoke<LlmEnvStatus>('get_llm_env_config'),
-    ErrorCode.TauriInvoke,
+  type LlmSettings = { provider?: string; base_url?: string; api_key?: string; model_name?: string }
+  const resp = await invokeWithError(
+    () => httpGet<{ success: boolean; settings?: { llm?: LlmSettings } }>('/api/v1/settings'),
+    ErrorCode.Network,
   )
+  const llm = resp.settings?.llm ?? {}
+  return {
+    provider: llm.provider ?? '',
+    base_url: llm.base_url ?? '',
+    api_key_set: Boolean(llm.api_key),
+    model: llm.model_name ?? '',
+    status: 'not_configured',
+    error: null,
+    http_status: null,
+    latency_ms: null,
+  }
 }
 
 /**
- * Probe the configured LLM endpoint with a minimal request and report
- * the link status. This is what the Settings UI calls to populate the
- * "Link status" indicator.
+ * Probe the configured LLM endpoint with a minimal request.
  */
 export async function testLlmConnection(): Promise<LlmEnvStatus> {
-  return invokeWithError(
-    () => invoke<LlmEnvStatus>('test_llm_connection'),
-    ErrorCode.TauriInvoke,
-  )
+  const cfg = await getLlmEnvConfig()
+  try {
+    const start = Date.now()
+    await httpGet<{ success: boolean }>('/api/v1/settings')
+    return { ...cfg, status: 'ok', latency_ms: Date.now() - start }
+  } catch (err) {
+    return { ...cfg, status: 'unreachable', error: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 export async function agentCreateSession(sessionId: string, projectRoot?: string): Promise<void> {
   await invokeWithError(
-    () => invoke('agent_create_session', { sessionId, projectRoot: projectRoot ?? null }),
-    ErrorCode.TauriInvoke,
+    () => httpPost('/api/v1/agent/session', { session_id: sessionId, project_root: projectRoot ?? null }),
+    ErrorCode.Network,
   )
 }
 
 export async function agentChat(sessionId: string, userInput: string): Promise<string> {
-  return invokeWithError(
-    () => invoke<string>('agent_chat', { sessionId, userInput }),
-    ErrorCode.TauriInvoke,
+  const resp = await invokeWithError(
+    () => httpPost<{ success: boolean; reply: string }>(
+      `/api/v1/agent/session/${sessionId}/chat`,
+      { user_input: userInput },
+    ),
+    ErrorCode.Network,
   )
+  return resp.reply
 }
 
 export type AgentStreamEvent = {
@@ -99,69 +100,72 @@ export type AgentStreamEvent = {
   finish_reason: string | null
 }
 
-export async function agentChatStream(
+function buildStreamUrl(sessionId: string, userInput: string): string {
+  const params = new URLSearchParams({ user_input: userInput })
+  return `http://127.0.0.1:18792/api/v1/agent/session/${sessionId}/chat/stream?${params}`
+}
+
+export function agentChatStream(
   sessionId: string,
   userInput: string,
   onChunk: (delta: string) => void,
   onDone: () => void,
   onError: (error: string) => void,
 ): Promise<() => void> {
-  // Set up listeners BEFORE invoking to avoid missing early events
-  const unlistenChunk = listen<AgentStreamEvent>(EVT.AgentStreamChunk, (event) => {
-    if (event.payload.session_id === sessionId) {
-      onChunk(event.payload.delta)
-      if (event.payload.finish_reason) {
+  const url = buildStreamUrl(sessionId, userInput)
+  const es = new EventSource(url)
+
+  es.onmessage = (event: MessageEvent<string>) => {
+    try {
+      const data = JSON.parse(event.data) as Record<string, unknown>
+      if (data.event === 'done') {
         onDone()
+        es.close()
+        return
       }
+      if (typeof data.delta === 'string') {
+        onChunk(data.delta)
+      }
+    } catch {
+      onError(`Failed to parse SSE: ${event.data}`)
     }
-  })
-
-  const unlistenDone = listen<{ session_id: string }>(EVT.AgentStreamDone, (event) => {
-    if (event.payload.session_id === sessionId) {
-      onDone()
-    }
-  })
-
-  // Start streaming (await so errors propagate to caller)
-  try {
-    await invokeWithError(
-      () => invoke('agent_chat_stream', { sessionId, userInput }),
-      ErrorCode.TauriInvoke,
-    )
-  } catch (err) {
-    onError(err instanceof Error ? err.message : String(err))
   }
 
-  return () => {
-    unlistenChunk.then(fn => fn())
-    unlistenDone.then(fn => fn())
+  es.onerror = () => {
+    onError('SSE connection error')
+    es.close()
   }
+
+  return Promise.resolve(() => es.close())
 }
 
-export async function agentSwitchProject(sessionId: string, projectRoot: string, projectName: string): Promise<void> {
+export async function agentSwitchProject(sessionId: string, projectRoot: string, _projectName: string): Promise<void> {
   await invokeWithError(
-    () => invoke('agent_switch_project', { sessionId, projectRoot, projectName }),
-    ErrorCode.TauriInvoke,
+    () => httpPut(`/api/v1/agent/session/${sessionId}/project`, { project_root: projectRoot }),
+    ErrorCode.Network,
   )
 }
 
 export async function agentClear(sessionId: string): Promise<void> {
   await invokeWithError(
-    () => invoke('agent_clear', { sessionId }),
-    ErrorCode.TauriInvoke,
+    () => httpPost(`/api/v1/agent/session/${sessionId}/clear`),
+    ErrorCode.Network,
   )
 }
 
 export async function agentDestroySession(sessionId: string): Promise<void> {
   await invokeWithError(
-    () => invoke('agent_destroy_session', { sessionId }),
-    ErrorCode.TauriInvoke,
+    () => httpDelete(`/api/v1/agent/session/${sessionId}`),
+    ErrorCode.Network,
   )
 }
 
 export async function agentGetHistory(sessionId: string): Promise<ChatMessage[]> {
-  return invokeWithError(
-    () => invoke<ChatMessage[]>('agent_get_history', { sessionId }),
-    ErrorCode.TauriInvoke,
+  const resp = await invokeWithError(
+    () => httpGet<{ success: boolean; messages: ChatMessage[] }>(
+      `/api/v1/agent/session/${sessionId}/history`,
+    ),
+    ErrorCode.Network,
   )
+  return resp.messages
 }

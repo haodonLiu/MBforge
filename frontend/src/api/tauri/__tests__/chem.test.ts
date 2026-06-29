@@ -1,10 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('../_utils', () => ({
+  httpPost: vi.fn(),
+  httpGet: vi.fn(),
+  httpPut: vi.fn(),
+  httpDelete: vi.fn(),
+  invokeWithError: vi.fn((_fn: () => Promise<unknown>) => _fn()),
 }))
 
-import { invoke } from '@tauri-apps/api/core'
+import { httpPost } from '../_utils'
 import {
   chemValidateSmiles,
   chemTanimotoSimilarity,
@@ -12,9 +16,9 @@ import {
   type SmilesValidation,
 } from '../molecule'
 
-const mockInvoke = vi.mocked(invoke)
+const mockHttpPost = vi.mocked(httpPost)
 
-describe('chem API (pure-Rust chematic)', () => {
+describe('chem API (HTTP chematic)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -26,13 +30,13 @@ describe('chem API (pure-Rust chematic)', () => {
         canonical_smiles: 'CCO',
         error: null,
       }
-      mockInvoke.mockResolvedValue(stub)
+      mockHttpPost.mockResolvedValue(stub as never)
 
       const result = await chemValidateSmiles('CCO')
 
       expect(result.valid).toBe(true)
       expect(result.canonical_smiles).toBe('CCO')
-      expect(invoke).toHaveBeenCalledWith('chem_validate_smiles', { smiles: 'CCO' })
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/chem/validate-smiles', { smiles: 'CCO' })
     })
 
     it('returns invalid result with error for malformed SMILES', async () => {
@@ -41,7 +45,7 @@ describe('chem API (pure-Rust chematic)', () => {
         canonical_smiles: null,
         error: 'SMILES parse failed: UnexpectedEnd',
       }
-      mockInvoke.mockResolvedValue(stub)
+      mockHttpPost.mockResolvedValue(stub as never)
 
       const result = await chemValidateSmiles('XYZ[')
 
@@ -53,19 +57,19 @@ describe('chem API (pure-Rust chematic)', () => {
 
   describe('chemTanimotoSimilarity', () => {
     it('passes both SMILES and returns f64 in [0, 1]', async () => {
-      mockInvoke.mockResolvedValue(1.0)
+      mockHttpPost.mockResolvedValue({ similarity: 1.0 } as never)
 
       const result = await chemTanimotoSimilarity('CCO', 'CCO')
 
       expect(result).toBe(1.0)
-      expect(invoke).toHaveBeenCalledWith('chem_tanimoto_similarity', {
-        smilesA: 'CCO',
-        smilesB: 'CCO',
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/chem/tanimoto', {
+        smiles_a: 'CCO',
+        smiles_b: 'CCO',
       })
     })
 
-    it('returns 0.0 for completely distinct molecules', async () => {
-      mockInvoke.mockResolvedValue(0.05)
+    it('returns low similarity for distinct molecules', async () => {
+      mockHttpPost.mockResolvedValue({ similarity: 0.05 } as never)
 
       const result = await chemTanimotoSimilarity('CCO', 'c1ccccc1')
 
@@ -74,12 +78,12 @@ describe('chem API (pure-Rust chematic)', () => {
   })
 
   describe('chemTanimotoBatchFilter', () => {
-    it('forwards query, candidates, threshold and parses tuple list', async () => {
+    it('forwards query, candidates, threshold and parses result', async () => {
       const stub: Array<[string, string, number]> = [
         ['mol1', 'CCN', 0.9],
         ['mol2', 'c1ccccc1', 0.2],
       ]
-      mockInvoke.mockResolvedValue(stub)
+      mockHttpPost.mockResolvedValue(stub as never)
 
       const result = await chemTanimotoBatchFilter('CCO', [
         ['mol1', 'CCN'],
@@ -89,8 +93,8 @@ describe('chem API (pure-Rust chematic)', () => {
       expect(result).toHaveLength(2)
       expect(result[0][0]).toBe('mol1')
       expect(result[0][2]).toBeGreaterThan(0.5)
-      expect(invoke).toHaveBeenCalledWith('chem_tanimoto_batch_filter', {
-        querySmiles: 'CCO',
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/chem/substructure-search', {
+        query: 'CCO',
         candidates: [
           ['mol1', 'CCN'],
           ['mol2', 'c1ccccc1'],
@@ -100,12 +104,12 @@ describe('chem API (pure-Rust chematic)', () => {
     })
 
     it('uses default threshold 0.5 when omitted', async () => {
-      mockInvoke.mockResolvedValue([])
+      mockHttpPost.mockResolvedValue([] as never)
 
       await chemTanimotoBatchFilter('CCO', [['x', 'C']])
 
-      expect(invoke).toHaveBeenCalledWith('chem_tanimoto_batch_filter', {
-        querySmiles: 'CCO',
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/chem/substructure-search', {
+        query: 'CCO',
         candidates: [['x', 'C']],
         threshold: 0.5,
       })

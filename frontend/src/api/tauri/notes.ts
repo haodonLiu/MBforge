@@ -1,7 +1,6 @@
-/** Notes API — project-level note storage via Rust JSON persistence. */
+/** Notes API — project-level note storage via HTTP. */
 
-import { invoke } from '@tauri-apps/api/core'
-import { invokeWithError } from './_utils'
+import { httpPost, invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
 
 export interface NoteLink {
@@ -22,28 +21,28 @@ export interface Note {
 
 export async function notesList(projectRoot: string): Promise<Note[]> {
   return invokeWithError(
-    () => invoke<Note[]>('notes_list', { projectRoot }),
+    () => httpPost<Note[]>('/api/v1/notes/list', { projectRoot }),
     ErrorCode.ApiError,
   )
 }
 
 export async function notesGet(projectRoot: string, id: string): Promise<Note | null> {
   return invokeWithError(
-    () => invoke<Note | null>('notes_get', { projectRoot, id }),
+    () => httpPost<Note | null>('/api/v1/notes/get', { projectRoot, id }),
     ErrorCode.ApiError,
   )
 }
 
 export async function notesSave(projectRoot: string, note: Note): Promise<Note> {
   return invokeWithError(
-    () => invoke<Note>('notes_save', { projectRoot, note }),
+    () => httpPost<Note>('/api/v1/notes/save', { projectRoot, note }),
     ErrorCode.ApiError,
   )
 }
 
 export async function notesDelete(projectRoot: string, id: string): Promise<boolean> {
   return invokeWithError(
-    () => invoke<boolean>('notes_delete', { projectRoot, id }),
+    () => httpPost<boolean>('/api/v1/notes/delete', { projectRoot, id }),
     ErrorCode.ApiError,
   )
 }
@@ -54,7 +53,7 @@ export async function notesBacklinks(
   targetId: string,
 ): Promise<Note[]> {
   return invokeWithError(
-    () => invoke<Note[]>('notes_backlinks', { projectRoot, targetId }),
+    () => httpPost<Note[]>('/api/v1/notes/backlinks', { projectRoot, targetId }),
     ErrorCode.ApiError,
   )
 }

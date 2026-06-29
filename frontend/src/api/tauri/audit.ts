@@ -1,4 +1,4 @@
-/** Audit log bridge — Rust `AuditLog` (see core::observability).
+/** Audit log bridge — HTTP backend.
  *
  * Audit entries are appended by:
  * - `Agent::chat` / `Agent::chat_stream` (LLM calls)
@@ -9,8 +9,7 @@
  * with the discriminator `action: "llm_call" | "tool_call" | "molecule_add" | ...`.
  */
 
-import { invoke } from '@tauri-apps/api/core'
-import { invokeWithError } from './_utils'
+import { httpPost, invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
 
 /** Audit entry — 与 Rust `AuditEntry` 一一对应 */
@@ -37,7 +36,7 @@ export async function auditLogGet(
 ): Promise<AuditEntry[]> {
   return invokeWithError(
     () =>
-      invoke<AuditEntry[]>('audit_log_get', {
+      httpPost<AuditEntry[]>('/api/v1/audit/log-get', {
         projectRoot,
         traceId: traceId ?? null,
         limit,

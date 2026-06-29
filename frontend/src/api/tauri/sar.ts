@@ -1,7 +1,6 @@
-/** SAR 分析 — Tauri 原生（替代 Python sidecar HTTP） */
+/** SAR 分析 — HTTP backend */
 
-import { invoke } from '@tauri-apps/api/core'
-import { invokeWithError, ErrorCode } from './_utils'
+import { httpPost, invokeWithError, ErrorCode } from './_utils'
 
 export interface ScaffoldResult {
   scaffold_smarts: string
@@ -61,7 +60,7 @@ export interface ActivityHeatmap {
 /** 提取共同骨架（MCS，带 ring constraints） */
 export async function sarFindScaffold(smilesList: string[]): Promise<ScaffoldResult | null> {
   return invokeWithError(
-    () => invoke<ScaffoldResult | null>('sar_find_scaffold', { smilesList }),
+    () => httpPost<ScaffoldResult | null>('/api/v1/sar/find-scaffold', { smilesList }),
     ErrorCode.ApiError,
   )
 }
@@ -69,7 +68,7 @@ export async function sarFindScaffold(smilesList: string[]): Promise<ScaffoldRes
 /** 分解单个化合物为骨架 + R-group */
 export async function sarDecompose(smiles: string, coreSmiles: string): Promise<RGroupDecomposition> {
   return invokeWithError(
-    () => invoke<RGroupDecomposition>('sar_decompose', { smiles, coreSmiles }),
+    () => httpPost<RGroupDecomposition>('/api/v1/sar/decompose', { smiles, coreSmiles }),
     ErrorCode.ApiError,
   )
 }
@@ -80,7 +79,7 @@ export async function sarBuildMatrix(
   coreSmiles?: string,
 ): Promise<RGroupMatrix> {
   return invokeWithError(
-    () => invoke<RGroupMatrix>('sar_build_matrix', { compounds, coreSmiles: coreSmiles ?? null }),
+    () => httpPost<RGroupMatrix>('/api/v1/sar/build-matrix', { compounds, coreSmiles: coreSmiles ?? null }),
     ErrorCode.ApiError,
   )
 }
@@ -95,7 +94,7 @@ export async function sarHeatmap(
   lowerIsBetter: boolean = true,
 ): Promise<ActivityHeatmap[]> {
   return invokeWithError(
-    () => invoke<ActivityHeatmap[]>('sar_heatmap', { matrix, lowerIsBetter }),
+    () => httpPost<ActivityHeatmap[]>('/api/v1/sar/heatmap', { matrix, lowerIsBetter }),
     ErrorCode.ApiError,
   )
 }

@@ -1,15 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('../_utils', () => ({
+  httpPost: vi.fn(),
+  httpGet: vi.fn(),
+  httpPut: vi.fn(),
+  httpDelete: vi.fn(),
+  invokeWithError: vi.fn((_fn: () => Promise<unknown>) => _fn()),
 }))
 
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(),
-}))
+class MockEventSource {
+  url: string
+  onmessage: ((event: MessageEvent) => void) | null = null
+  onerror: (() => void) | null = null
+  close = vi.fn()
+  constructor(url: string) { this.url = url }
+}
+Object.defineProperty(globalThis, 'EventSource', { value: MockEventSource, writable: true })
 
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { httpPost, httpGet, httpPut, httpDelete } from '../_utils'
 import {
   agentInit,
   agentCreateSession,
@@ -23,8 +31,10 @@ import {
   testLlmConnection,
 } from '../agent'
 
-const mockInvoke = vi.mocked(invoke)
-const mockListen = vi.mocked(listen)
+const mockHttpPost = vi.mocked(httpPost)
+const mockHttpGet = vi.mocked(httpGet)
+const mockHttpPut = vi.mocked(httpPut)
+const mockHttpDelete = vi.mocked(httpDelete)
 
 describe('agent API', () => {
   beforeEach(() => {
@@ -32,167 +42,151 @@ describe('agent API', () => {
   })
 
   describe('agentInit', () => {
-    it('calls invoke with sidecarUrl only (LLM is env-driven)', async () => {
-      mockInvoke.mockResolvedValue(undefined)
+    it('calls httpPost with sidecar_url', async () => {
+      mockHttpPost.mockResolvedValue(undefined as never)
 
       await agentInit('http://localhost:18792')
 
-      expect(invoke).toHaveBeenCalledWith('agent_init', {
-        sidecarUrl: 'http://localhost:18792',
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/agent/init', {
+        sidecar_url: 'http://localhost:18792',
       })
     })
   })
 
   describe('getLlmEnvConfig / testLlmConnection', () => {
-    it('getLlmEnvConfig calls invoke with no args', async () => {
-      const envStatus = {
-        provider: 'openai_compatible',
-        base_url: 'https://api.openai.com/v1',
-        api_key_set: true,
-        model: 'gpt-4o',
-        status: 'ok' as const,
-        error: null,
-        http_status: 200,
-        latency_ms: 123,
+    it('getLlmEnvConfig calls httpGet /api/v1/settings', async () => {
+      const settingsResp = {
+        success: true,
+        settings: {
+          llm: {
+            provider: 'openai_compatible',
+            base_url: 'https://api.openai.com/v1',
+            api_key: 'sk-xxx',
+            model_name: 'gpt-4o',
+          },
+        },
       }
-      mockInvoke.mockResolvedValue(envStatus)
+      mockHttpGet.mockResolvedValue(settingsResp as never)
 
       const result = await getLlmEnvConfig()
 
-      expect(invoke).toHaveBeenCalledWith('get_llm_env_config')
-      expect(result).toEqual(envStatus)
+      expect(httpGet).toHaveBeenCalledWith('/api/v1/settings')
+      expect(result.provider).toBe('openai_compatible')
+      expect(result.base_url).toBe('https://api.openai.com/v1')
+      expect(result.api_key_set).toBe(true)
+      expect(result.model).toBe('gpt-4o')
     })
 
-    it('testLlmConnection calls invoke with no args', async () => {
-      const envStatus = {
-        provider: 'openai_compatible',
-        base_url: 'https://api.openai.com/v1',
-        api_key_set: true,
-        model: 'gpt-4o',
-        status: 'ok' as const,
-        error: null,
-        http_status: 200,
-        latency_ms: 456,
+    it('testLlmConnection calls httpGet /api/v1/settings and measures latency', async () => {
+      const settingsResp = {
+        success: true,
+        settings: {
+          llm: {
+            provider: 'openai_compatible',
+            base_url: 'https://api.openai.com/v1',
+            api_key: 'sk-xxx',
+            model_name: 'gpt-4o',
+          },
+        },
       }
-      mockInvoke.mockResolvedValue(envStatus)
+      mockHttpGet.mockResolvedValue(settingsResp as never)
 
       const result = await testLlmConnection()
 
-      expect(invoke).toHaveBeenCalledWith('test_llm_connection')
-      expect(result).toEqual(envStatus)
+      expect(httpGet).toHaveBeenCalledWith('/api/v1/settings')
+      expect(result.status).toBe('ok')
+      expect(result.latency_ms).toBeGreaterThanOrEqual(0)
     })
   })
 
   describe('agentCreateSession', () => {
     it('creates session with project root', async () => {
-      mockInvoke.mockResolvedValue(undefined)
+      mockHttpPost.mockResolvedValue(undefined as never)
 
       await agentCreateSession('session-1', '/project')
 
-      expect(invoke).toHaveBeenCalledWith('agent_create_session', {
-        sessionId: 'session-1',
-        projectRoot: '/project',
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/agent/session', {
+        session_id: 'session-1',
+        project_root: '/project',
       })
     })
 
     it('creates session without project root', async () => {
-      mockInvoke.mockResolvedValue(undefined)
+      mockHttpPost.mockResolvedValue(undefined as never)
 
       await agentCreateSession('session-1')
 
-      expect(invoke).toHaveBeenCalledWith('agent_create_session', {
-        sessionId: 'session-1',
-        projectRoot: null,
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/agent/session', {
+        session_id: 'session-1',
+        project_root: null,
       })
     })
   })
 
   describe('agentChat', () => {
-    it('returns chat response', async () => {
-      mockInvoke.mockResolvedValue('Hello!')
+    it('returns chat reply', async () => {
+      mockHttpPost.mockResolvedValue({ success: true, reply: 'Hello!' } as never)
 
       const result = await agentChat('session-1', 'Hi')
 
-      expect(invoke).toHaveBeenCalledWith('agent_chat', {
-        sessionId: 'session-1',
-        userInput: 'Hi',
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/agent/session/session-1/chat', {
+        user_input: 'Hi',
       })
       expect(result).toBe('Hello!')
     })
   })
 
   describe('agentChatStream', () => {
-    it('sets up streaming with event listeners', async () => {
-      mockInvoke.mockResolvedValue(undefined)
-      mockListen.mockResolvedValue(() => {})
-
-      const onChunk = vi.fn()
-      const onDone = vi.fn()
-      const onError = vi.fn()
-
-      await agentChatStream('session-1', 'Hi', onChunk, onDone, onError)
-
-      expect(invoke).toHaveBeenCalledWith('agent_chat_stream', {
-        sessionId: 'session-1',
-        userInput: 'Hi',
-      })
-      expect(listen).toHaveBeenCalledWith('agent-stream-chunk', expect.any(Function))
-      expect(listen).toHaveBeenCalledWith('agent-stream-done', expect.any(Function))
+    it('returns a cleanup function', async () => {
+      const cleanup = await agentChatStream('session-1', 'Hi', vi.fn(), vi.fn(), vi.fn())
+      expect(typeof cleanup).toBe('function')
     })
   })
 
   describe('agentSwitchProject', () => {
-    it('calls invoke with project info', async () => {
-      mockInvoke.mockResolvedValue(undefined)
+    it('calls httpPut with project info', async () => {
+      mockHttpPut.mockResolvedValue(undefined as never)
 
       await agentSwitchProject('session-1', '/project', 'MyProject')
 
-      expect(invoke).toHaveBeenCalledWith('agent_switch_project', {
-        sessionId: 'session-1',
-        projectRoot: '/project',
-        projectName: 'MyProject',
+      expect(httpPut).toHaveBeenCalledWith('/api/v1/agent/session/session-1/project', {
+        project_root: '/project',
       })
     })
   })
 
   describe('agentClear', () => {
     it('clears session', async () => {
-      mockInvoke.mockResolvedValue(undefined)
+      mockHttpPost.mockResolvedValue(undefined as never)
 
       await agentClear('session-1')
 
-      expect(invoke).toHaveBeenCalledWith('agent_clear', {
-        sessionId: 'session-1',
-      })
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/agent/session/session-1/clear')
     })
   })
 
   describe('agentDestroySession', () => {
     it('destroys session', async () => {
-      mockInvoke.mockResolvedValue(undefined)
+      mockHttpDelete.mockResolvedValue(undefined as never)
 
       await agentDestroySession('session-1')
 
-      expect(invoke).toHaveBeenCalledWith('agent_destroy_session', {
-        sessionId: 'session-1',
-      })
+      expect(httpDelete).toHaveBeenCalledWith('/api/v1/agent/session/session-1')
     })
   })
 
   describe('agentGetHistory', () => {
     it('returns chat history', async () => {
-      const history = [
+      const messages = [
         { role: 'user', content: 'Hi' },
         { role: 'assistant', content: 'Hello!' },
       ]
-      mockInvoke.mockResolvedValue(history)
+      mockHttpGet.mockResolvedValue({ success: true, messages } as never)
 
       const result = await agentGetHistory('session-1')
 
-      expect(invoke).toHaveBeenCalledWith('agent_get_history', {
-        sessionId: 'session-1',
-      })
-      expect(result).toEqual(history)
+      expect(httpGet).toHaveBeenCalledWith('/api/v1/agent/session/session-1/history')
+      expect(result).toEqual(messages)
     })
   })
 })

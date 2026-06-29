@@ -16,12 +16,10 @@
  */
 
 import { useEffect, useState, useCallback } from 'react'
-import { listen } from '@tauri-apps/api/event'
 import { useTranslation } from 'react-i18next'
 import Modal from './ui/Modal'
 import Button from './ui/Button'
 import ApiKeyInput from './settings/ApiKeyInput'
-import { EVT } from '../api/tauri-events'
 import { getSettings, saveSettings } from '../api/tauri/settings'
 import { openExternalUrl } from '../api/tauri/_utils'
 import { testOcrMineru, testOcrUniparser, testOcrPaddleocr, type OcrTestResult } from '../api/tauri/text'
@@ -87,21 +85,7 @@ export default function OcrConfigModal() {
 
   // Listen for the missing-API event from the Rust ingest worker.
   useEffect(() => {
-    let unlisten: (() => void) | null = null
-    const setup = async () => {
-      unlisten = await listen<OcrApiMissingPayload>(EVT.OcrApiMissing, (event) => {
-        if (isDismissedForever(event.payload.backend)) return
-        setMissingBackend(event.payload.backend)
-        // Pre-fill from saved settings (in case user edited earlier).
-        void loadSaved(setForm)
-        setError(null)
-        setOpen(true)
-      })
-    }
-    void setup()
-    return () => {
-      if (unlisten) unlisten()
-    }
+    // No-op: Tauri events not available in web mode
   }, [])
 
   const close = useCallback(() => setOpen(false), [])

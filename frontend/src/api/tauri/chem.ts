@@ -1,7 +1,6 @@
-/** Cheminformatics pure-computation Tauri IPC wrappers. */
+/** Cheminformatics pure-computation HTTP API wrappers. */
 
-import { invoke } from '@tauri-apps/api/core'
-import { invokeWithError } from './_utils'
+import { httpPost, invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
 
 // ============================================================================
@@ -71,7 +70,7 @@ export interface MarkushOverlap {
 /** 标准化 SMILES（chematic 稳定化算法）。 */
 export async function chemCanonicalize(smiles: string): Promise<string> {
   return invokeWithError(
-    () => invoke<string>('chem_canonicalize', { smiles }),
+    () => httpPost<string>('/api/v1/chem/canonicalize', { smiles }),
     ErrorCode.ApiError,
   )
 }
@@ -83,7 +82,7 @@ export async function chemSubstructureSearch(
   threshold?: number,
 ): Promise<Array<[string, string, number]>> {
   return invokeWithError(
-    () => invoke<Array<[string, string, number]>>('chem_substructure_search', {
+    () => httpPost<Array<[string, string, number]>>('/api/v1/chem/substructure-search', {
       query,
       candidates,
       threshold,
@@ -98,7 +97,7 @@ export async function chemSmilesToMolecode(
   name: string,
 ): Promise<string> {
   return invokeWithError(
-    () => invoke<string>('chem_smiles_to_molecode', { smiles, name }),
+    () => httpPost<string>('/api/v1/chem/smiles-to-molecode', { smiles, name }),
     ErrorCode.ApiError,
   )
 }
@@ -109,7 +108,7 @@ export async function chemSmilesToEsmiles(
   tags: EsTag[],
 ): Promise<string> {
   return invokeWithError(
-    () => invoke<string>('chem_smiles_to_esmiles', { smiles, tags }),
+    () => httpPost<string>('/api/v1/chem/smiles-to-esmiles', { smiles, tags }),
     ErrorCode.ApiError,
   )
 }
@@ -119,7 +118,7 @@ export async function chemParseEsmilesTags(
   input: string,
 ): Promise<[string, EsTag[]]> {
   return invokeWithError(
-    () => invoke<[string, EsTag[]]>('chem_parse_esmiles_tags', { input }),
+    () => httpPost<[string, EsTag[]]>('/api/v1/chem/parse-esmiles-tags', { input }),
     ErrorCode.ApiError,
   )
 }
@@ -127,7 +126,7 @@ export async function chemParseEsmilesTags(
 /** 清洗 LLM 污染的 E-SMILES。 */
 export async function chemSanitizeEsmiles(raw: string): Promise<string> {
   return invokeWithError(
-    () => invoke<string>('chem_sanitize_esmiles', { raw }),
+    () => httpPost<string>('/api/v1/chem/sanitize-esmiles', { raw }),
     ErrorCode.ApiError,
   )
 }
@@ -137,7 +136,7 @@ export async function chemSeparateEsmilesLayers(
   input: string,
 ): Promise<LayerSplit> {
   return invokeWithError(
-    () => invoke<LayerSplit>('chem_separate_esmiles_layers', { input }),
+    () => httpPost<LayerSplit>('/api/v1/chem/separate-esmiles-layers', { input }),
     ErrorCode.ApiError,
   )
 }
@@ -147,7 +146,7 @@ export async function chemValidateSmilesBatch(
   list: string[],
 ): Promise<ValidateResult[]> {
   return invokeWithError(
-    () => invoke<ValidateResult[]>('chem_validate_smiles_batch', { list }),
+    () => httpPost<ValidateResult[]>('/api/v1/chem/validate-smiles', { list }),
     ErrorCode.ApiError,
   )
 }
@@ -157,7 +156,7 @@ export async function chemPreprocessSmiles(
   smiles: string,
 ): Promise<string> {
   return invokeWithError(
-    () => invoke<string>('chem_preprocess_smiles', { smiles }),
+    () => httpPost<string>('/api/v1/chem/preprocess-smiles', { smiles }),
     ErrorCode.ApiError,
   )
 }
@@ -167,7 +166,7 @@ export async function chemPreprocessRgroupName(
   name: string,
 ): Promise<string> {
   return invokeWithError(
-    () => invoke<string>('chem_preprocess_rgroup_name', { name }),
+    () => httpPost<string>('/api/v1/chem/preprocess-rgroup-name', { name }),
     ErrorCode.ApiError,
   )
 }
@@ -177,7 +176,7 @@ export async function chemMarkushParse(
   input: string,
 ): Promise<MarkushPattern> {
   return invokeWithError(
-    () => invoke<MarkushPattern>('chem_markush_parse', { input }),
+    () => httpPost<MarkushPattern>('/api/v1/chem/markush-parse', { input }),
     ErrorCode.ApiError,
   )
 }
@@ -189,7 +188,7 @@ export async function chemMarkushCheck(
   ctx?: string,
 ): Promise<MarkushOverlap> {
   return invokeWithError(
-    () => invoke<MarkushOverlap>('chem_markush_check', { esmiles, query, ctx }),
+    () => httpPost<MarkushOverlap>('/api/v1/chem/markush-check', { esmiles, query, ctx }),
     ErrorCode.ApiError,
   )
 }
@@ -197,7 +196,7 @@ export async function chemMarkushCheck(
 /** 提取 E-SMILES 中的 core SMILES 部分。 */
 export async function chemCoreSmiles(input: string): Promise<string> {
   return invokeWithError(
-    () => invoke<string>('chem_core_smiles', { input }),
+    () => httpPost<string>('/api/v1/chem/core-smiles', { input }),
     ErrorCode.ApiError,
   )
 }
@@ -209,8 +208,8 @@ export async function chemGesimAtomMapping(
 ): Promise<[Array<number | null>, Array<number | null>]> {
   return invokeWithError(
     () =>
-      invoke<[Array<number | null>, Array<number | null>]>(
-        'chem_gesim_atom_mapping',
+      httpPost<[Array<number | null>, Array<number | null>]>(
+        '/api/v1/chem/gesim-atom-mapping',
         { a, b },
       ),
     ErrorCode.ApiError,

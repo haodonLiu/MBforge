@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
-import { ask } from '@tauri-apps/plugin-dialog'
 
 import BodyText from '../ui/BodyText'
 import Badge from '../ui/Badge'
@@ -106,9 +105,8 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
 
   const handleDelete = async (doc: DocumentEntry) => {
     if (!projectRoot) return
-    const confirmed = await ask(
-      t('doc.deleteConfirm', { filename: doc.title || doc.doc_id }),
-      { title: t('doc.delete'), kind: 'warning' }
+    const confirmed = window.confirm(
+      t('doc.deleteConfirm', { filename: doc.title || doc.doc_id })
     )
     if (!confirmed) return
     setDeletingIds(prev => new Set(prev).add(doc.doc_id))
@@ -130,9 +128,8 @@ export default function DocumentList({ docs, isLoading, projectRoot, onOpenFile,
 
   const handleReingest = async (doc: DocumentEntry) => {
     if (!projectRoot) return
-    const confirmed = await ask(
-      t('doc.reingestConfirm', { filename: doc.title || doc.doc_id }),
-      { title: t('doc.reingest'), kind: 'warning' }
+    const confirmed = window.confirm(
+      t('doc.reingestConfirm', { filename: doc.title || doc.doc_id })
     )
     if (!confirmed) return
     setReingestingIds(prev => new Set(prev).add(doc.doc_id))

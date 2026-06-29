@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { listen } from '@tauri-apps/api/event'
 import {
   listProjectDocuments,
   uploadFiles,
@@ -52,22 +51,6 @@ export default function ProjectScope({ onFileClick }: Props) {
 
   useEffect(() => {
     void loadDocs()
-
-    let unlistenQueue: (() => void) | null = null
-
-    const setup = async () => {
-      unlistenQueue = await listen(EVT.IngestQueueUpdate, () => {
-        void loadDocs()
-      })
-    }
-
-    void setup().catch((e: unknown) => {
-      console.error('[ProjectScope] listen failed:', e)
-    })
-
-    return () => {
-      unlistenQueue?.()
-    }
   }, [loadDocs])
 
   const handleImport = async () => {

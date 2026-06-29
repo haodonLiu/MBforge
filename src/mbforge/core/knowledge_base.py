@@ -43,7 +43,6 @@ def search(
         query_embedding = []
 
     # Search
-    collection_path = f"{project_root}/.mbforge/search.zvec"
     results: list[dict] = []
 
     try:

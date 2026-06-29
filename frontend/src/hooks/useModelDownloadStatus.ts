@@ -1,8 +1,7 @@
 /** Global model download status + resources sync. */
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { listen } from '@tauri-apps/api/event'
+import { httpGet } from '../api/tauri/_utils'
 import { resourcesCheck, type ResourceStatusItem } from '../api/tauri/environment'
-import { EVT } from '../api/tauri-events'
 
 export type ModelStatus = 'ready' | 'downloading' | 'missing' | 'failed' | 'unknown'
 
@@ -17,7 +16,6 @@ export interface DownloadState {
 }
 
 export interface ModelStatusSnapshot {
-  /** 'ready' = all present, 'missing' = at least one NotFound, 'unknown' = not yet checked */
   status: ModelStatus
   total: number
   missing: number
@@ -83,23 +81,15 @@ function aggregateDownload(downloads: Record<string, DownloadState>): DownloadSt
   const values = Object.values(downloads)
   if (values.length === 0) return INITIAL_DOWNLOAD
 
-  // 优先展示进行中的下载；多个进行中时取最近更新（最后 in Object.values 顺序）
   const active = values.filter(d => d.status === 'connecting' || d.status === 'downloading')
   if (active.length > 0) return active[active.length - 1]
 
-  // 其次展示失败/完成的下载
   const terminal = values.filter(d => d.status === 'failed' || d.status === 'completed')
   if (terminal.length > 0) return terminal[terminal.length - 1]
 
   return values[values.length - 1]
 }
 
-/**
- * 单一 hook：返回当前模型资源状态 + 当前进行中的下载状态。
- * - 启动时拉一次 `resources_check` 计算初始状态
- * - 监听 `model-download-progress` 事件更新下载态（按 resource_id 隔离）
- * - 下载完成/失败后刷新资源状态
- */
 export function useModelDownloadStatus(): {
   snapshot: ModelStatusSnapshot
   download: DownloadState
@@ -121,43 +111,47 @@ export function useModelDownloadStatus(): {
 
   useEffect(() => {
     void refresh()
-    let unlisten: (() => void) | null = null
-    const setup = async () => {
-      unlisten = await listen<{
-        resource_id: string
-        status: string
-        file: string
-        file_progress: number
-        file_index: number
-        total_files: number
-        error: string
-      }>(EVT.ModelDownloadProgress, (event) => {
-        const p = event.payload
-        const resourceId = p.resource_id
+    let cancelled = false
+    let timer: ReturnType<typeof setInterval> | null = null
+
+    const poll = async () => {
+      if (cancelled) return
+      try {
+        const data = await httpGet<{
+          resource_id: string
+          status: string
+          file: string
+          file_progress: number
+          file_index: number
+          total_files: number
+          error: string
+        }>('/api/v1/models/download-status')
+        if (cancelled) return
+        const resourceId = data.resource_id
         if (!resourceId) return
 
-        const next = toDownloadState(resourceId, p)
+        const next = toDownloadState(resourceId, data)
         setDownloads(prev => ({ ...prev, [resourceId]: next }))
 
-        const isTerminal = p.status === 'completed' || p.status === 'failed'
+        const isTerminal = data.status === 'completed' || data.status === 'failed'
         if (isTerminal && !lastTerminalRef.current.has(resourceId)) {
           lastTerminalRef.current.add(resourceId)
-          // 重新拉一次资源状态
           void refresh()
         }
-      })
+      } catch {
+        // polling — ignore transient errors
+      }
     }
-    void setup().catch(e => {
-      console.error('[useModelDownloadStatus] listen failed:', e)
-    })
+
+    timer = setInterval(poll, 2000)
     return () => {
-      unlisten?.()
+      cancelled = true
+      if (timer !== null) clearInterval(timer)
     }
   }, [refresh])
 
   const download = aggregateDownload(downloads)
 
-  // 下载中状态覆盖 missing/ready
   const effective: ModelStatusSnapshot = download.status === 'downloading' || download.status === 'connecting'
     ? { ...snapshot, status: 'downloading' as ModelStatus }
     : download.status === 'failed' && snapshot.status === 'ready'

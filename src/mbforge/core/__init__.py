@@ -1,9 +1,3 @@
-"""MBForge 核心模块."""
+"""MBForge core module."""
 
 from __future__ import annotations
-
-__all__ = [
-    "Project",
-    "DocumentEntry",
-    "ProjectSettings",
-]

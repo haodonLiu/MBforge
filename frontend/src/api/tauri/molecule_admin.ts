@@ -1,7 +1,6 @@
-/** MoleculeEngine CRUD Tauri IPC wrappers. */
+/** MoleculeEngine CRUD HTTP API wrappers. */
 
-import { invoke } from '@tauri-apps/api/core'
-import { invokeWithError } from './_utils'
+import { httpPost, httpPut, httpDelete, invokeWithError } from './_utils'
 import { ErrorCode } from '@/utils/errors'
 import type { MoleculeRecord } from '@/types'
 import type { MarkushOverlap, MarkushPattern } from './chem'
@@ -15,11 +14,14 @@ export async function molAdminGet(
   projectRoot: string,
   molId: string,
 ): Promise<MoleculeRecord | null> {
-  return invokeWithError(
-    () =>
-      invoke<MoleculeRecord | null>('mol_admin_get', { projectRoot, molId }),
+  const resp = await invokeWithError(
+    () => httpPost<{ success: boolean; molecule?: MoleculeRecord }>(
+      '/api/v1/molecule/get',
+      { project_root: projectRoot, mol_id: molId },
+    ),
     ErrorCode.MoleculeSearch,
   )
+  return resp.success && resp.molecule ? resp.molecule : null
 }
 
 /** 按 SMILES 精确查询。 */
@@ -27,14 +29,14 @@ export async function molAdminSearchBySmiles(
   projectRoot: string,
   smiles: string,
 ): Promise<MoleculeRecord | null> {
-  return invokeWithError(
-    () =>
-      invoke<MoleculeRecord | null>('mol_admin_search_by_smiles', {
-        projectRoot,
-        smiles,
-      }),
+  const resp = await invokeWithError(
+    () => httpPost<{ success: boolean; results: MoleculeRecord[] }>(
+      '/api/v1/molecule/search',
+      { project_root: projectRoot, query: smiles },
+    ),
     ErrorCode.MoleculeSearch,
   )
+  return resp.results[0] ?? null
 }
 
 /** FTS 全文搜索（name / notes / source_doc）。 */
@@ -42,11 +44,14 @@ export async function molAdminSearchText(
   projectRoot: string,
   query: string,
 ): Promise<MoleculeRecord[]> {
-  return invokeWithError(
-    () =>
-      invoke<MoleculeRecord[]>('mol_admin_search_text', { projectRoot, query }),
+  const resp = await invokeWithError(
+    () => httpPost<{ success: boolean; results: MoleculeRecord[] }>(
+      '/api/v1/molecule/search',
+      { project_root: projectRoot, query },
+    ),
     ErrorCode.MoleculeSearch,
   )
+  return resp.results
 }
 
 /** 分页列举（可选 source_type / status 过滤）。 */
@@ -54,20 +59,23 @@ export async function molAdminList(
   projectRoot: string,
   limit: number,
   offset: number,
-  sourceType?: string,
+  _sourceType?: string,
   status?: string,
 ): Promise<MoleculeRecord[]> {
-  return invokeWithError(
-    () =>
-      invoke<MoleculeRecord[]>('mol_admin_list', {
-        projectRoot,
-        limit,
-        offset,
-        sourceType,
-        status,
-      }),
+  const page = offset > 0 ? Math.floor(offset / limit) + 1 : 1
+  const resp = await invokeWithError(
+    () => httpPost<{ success: boolean; items: MoleculeRecord[]; total: number }>(
+      '/api/v1/molecule/list',
+      {
+        project_root: projectRoot,
+        page,
+        page_size: limit,
+        status: status ?? '',
+      },
+    ),
     ErrorCode.MoleculeSearch,
   )
+  return resp.items
 }
 
 /** 库统计。 */
@@ -75,42 +83,38 @@ export async function molAdminStoreStats(
   projectRoot: string,
 ): Promise<Record<string, unknown>> {
   return invokeWithError(
-    () =>
-      invoke<Record<string, unknown>>('mol_admin_store_stats', { projectRoot }),
+    () => httpPost<Record<string, unknown>>(
+      '/api/v1/molecule/stats',
+      { project_root: projectRoot },
+    ),
     ErrorCode.MoleculeSearch,
   )
 }
 
-/** Markush 覆盖度检查（engine wrapper；与 chemMarkushCheck 路径不同）。 */
+/** Markush 覆盖度检查。 */
 export async function molAdminCheckMarkush(
-  projectRoot: string,
+  _projectRoot: string,
   esmiles: string,
   query: string,
   ctx?: string,
 ): Promise<MarkushOverlap> {
   return invokeWithError(
-    () =>
-      invoke<MarkushOverlap>('mol_admin_check_markush', {
-        projectRoot,
-        esmiles,
-        query,
-        ctx,
-      }),
+    () => httpPost<MarkushOverlap>('/api/v1/chem/markush-check', {
+      esmiles,
+      query,
+      ctx,
+    }),
     ErrorCode.MoleculeSearch,
   )
 }
 
-/** E-SMILES → MarkushPattern（engine wrapper）。 */
+/** E-SMILES → MarkushPattern。 */
 export async function molAdminParseEsmiles(
-  projectRoot: string,
+  _projectRoot: string,
   input: string,
 ): Promise<MarkushPattern> {
   return invokeWithError(
-    () =>
-      invoke<MarkushPattern>('mol_admin_parse_esmiles', {
-        projectRoot,
-        input,
-      }),
+    () => httpPost<MarkushPattern>('/api/v1/chem/markush-parse', { input }),
     ErrorCode.MoleculeSearch,
   )
 }
@@ -125,7 +129,14 @@ export async function molAdminAdd(
   record: MoleculeRecord,
 ): Promise<void> {
   await invokeWithError(
-    () => invoke('mol_admin_add', { projectRoot, record }),
+    () => httpPost('/api/v1/molecule/create', {
+      project_root: projectRoot,
+      mol_id: record.mol_id,
+      smiles: record.esmiles,
+      esmiles: record.esmiles,
+      name: record.name,
+      source_type: record.source_type,
+    }),
     ErrorCode.ApiError,
   )
 }
@@ -135,10 +146,14 @@ export async function molAdminUpdate(
   projectRoot: string,
   record: MoleculeRecord,
 ): Promise<boolean> {
-  return invokeWithError(
-    () => invoke<boolean>('mol_admin_update', { projectRoot, record }),
+  const resp = await invokeWithError(
+    () => httpPut<{ success: boolean }>(
+      `/api/v1/molecule/${record.mol_id}`,
+      { project_root: projectRoot, ...record },
+    ),
     ErrorCode.ApiError,
   )
+  return resp.success
 }
 
 /** 仅更新 status 字段。 */
@@ -147,15 +162,14 @@ export async function molAdminUpdateStatus(
   molId: string,
   status: string,
 ): Promise<boolean> {
-  return invokeWithError(
-    () =>
-      invoke<boolean>('mol_admin_update_status', {
-        projectRoot,
-        molId,
-        status,
-      }),
+  const resp = await invokeWithError(
+    () => httpPut<{ success: boolean }>(
+      `/api/v1/molecule/${molId}`,
+      { project_root: projectRoot, status },
+    ),
     ErrorCode.ApiError,
   )
+  return resp.success
 }
 
 /** 物理删除单条分子。 */
@@ -163,28 +177,22 @@ export async function molAdminDelete(
   projectRoot: string,
   molId: string,
 ): Promise<boolean> {
-  return invokeWithError(
-    () =>
-      invoke<boolean>('mol_admin_delete', { projectRoot, molId }),
+  const resp = await invokeWithError(
+    () => httpDelete<{ success: boolean }>(
+      `/api/v1/molecule/${molId}`,
+      { project_root: projectRoot },
+    ),
     ErrorCode.ApiError,
   )
+  return resp.success
 }
 
 /** 添加相似度关系。 */
-export async function molAdminAddSimilarity(
-  projectRoot: string,
-  molAId: string,
-  molBId: string,
-  score: number,
+export function molAdminAddSimilarity(
+  _projectRoot: string,
+  _molAId: string,
+  _molBId: string,
+  _score: number,
 ): Promise<number> {
-  return invokeWithError(
-    () =>
-      invoke<number>('mol_admin_add_similarity', {
-        projectRoot,
-        molAId,
-        molBId,
-        score,
-      }),
-    ErrorCode.ApiError,
-  )
+  throw new Error('molAdminAddSimilarity: no HTTP route available yet')
 }

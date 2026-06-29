@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { listen } from '@tauri-apps/api/event'
 import PageContainer from '../ui/PageContainer'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'

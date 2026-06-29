@@ -1,23 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('../_utils', () => ({
+  httpPost: vi.fn(),
+  httpGet: vi.fn(),
+  httpPut: vi.fn(),
+  httpDelete: vi.fn(),
+  invokeWithError: vi.fn((_fn: () => Promise<unknown>) => _fn()),
 }))
 
-import { invoke } from '@tauri-apps/api/core'
+import { httpPost } from '../_utils'
 import { auditLogGet, type AuditEntry } from '../audit'
 
-const mockInvoke = vi.mocked(invoke)
-
-// 类型 hack: vi.mocked(invoke) 的 mock.calls 类型推断为 unknown[][]，
-// 但实际 invoke(cmd, args) 是 (string, Record<string, unknown>)。
-// 我们只断言 cmd 名 + 关键 args 字段，强制 cast 即可。
-type InvokeCall = [string, Record<string, unknown>]
-
-function lastCallArgs(): Record<string, unknown> {
-  const calls = mockInvoke.mock.calls as unknown as InvokeCall[]
-  return calls[calls.length - 1]?.[1] ?? {}
-}
+const mockHttpPost = vi.mocked(httpPost)
 
 describe('auditLogGet', () => {
   beforeEach(() => {
@@ -45,7 +39,7 @@ describe('auditLogGet', () => {
         duration_ms: 50,
       },
     ]
-    mockInvoke.mockResolvedValue(stub)
+    mockHttpPost.mockResolvedValue(stub as never)
 
     const result = await auditLogGet('/tmp/proj', 'trace-1', 50)
 
@@ -53,7 +47,7 @@ describe('auditLogGet', () => {
     expect(result[0].action).toBe('llm_call')
     expect(result[0].tokens_used).toBe(150)
     expect(result[1].details['tool']).toBe('search')
-    expect(mockInvoke).toHaveBeenCalledWith('audit_log_get', {
+    expect(httpPost).toHaveBeenCalledWith('/api/v1/audit/log-get', {
       projectRoot: '/tmp/proj',
       traceId: 'trace-1',
       limit: 50,
@@ -61,11 +55,11 @@ describe('auditLogGet', () => {
   })
 
   it('uses default limit 200 when omitted', async () => {
-    mockInvoke.mockResolvedValue([])
+    mockHttpPost.mockResolvedValue([] as never)
 
     await auditLogGet('/tmp/proj')
 
-    expect(mockInvoke).toHaveBeenCalledWith('audit_log_get', {
+    expect(httpPost).toHaveBeenCalledWith('/api/v1/audit/log-get', {
       projectRoot: '/tmp/proj',
       traceId: null,
       limit: 200,
@@ -73,16 +67,16 @@ describe('auditLogGet', () => {
   })
 
   it('passes null traceId when not filtering', async () => {
-    mockInvoke.mockResolvedValue([])
+    mockHttpPost.mockResolvedValue([] as never)
 
     await auditLogGet('/tmp/proj')
 
-    const args = lastCallArgs()
-    expect(args.traceId).toBeNull()
+    const callArgs = mockHttpPost.mock.calls[0]?.[1] as Record<string, unknown>
+    expect(callArgs.traceId).toBeNull()
   })
 
   it('handles empty audit log gracefully', async () => {
-    mockInvoke.mockResolvedValue([])
+    mockHttpPost.mockResolvedValue([] as never)
 
     const result = await auditLogGet('/tmp/empty')
     expect(result).toEqual([])

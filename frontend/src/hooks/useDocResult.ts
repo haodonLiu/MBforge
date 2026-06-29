@@ -1,16 +1,6 @@
-/** useDocResult — listen to `EVT_DOC_RESULT` and return the latest `DocumentReport`.
- *
- * Usage:
- * ```ts
- * const { report, litReviewed, litDecision } = useDocResult()
- * // report = 最新文档报告（含化合物 / 活性 / 关键发现）
- * // litReviewed = LitAgent 是否在 Stage 4 后做过二次审阅
- * // litDecision = LitAgent 决策摘要（仅当 litReviewed=true 时有意义）
- * ```
- */
-import { useEffect, useState } from 'react'
-import { listen } from '@tauri-apps/api/event'
-import { EVT } from '../api/tauri-events'
+/** useDocResult — poll the latest DocumentReport for the current project. */
+import { useEffect, useState, useRef } from 'react'
+import { httpGet } from '../api/tauri/_utils'
 import type { DocumentReport } from '../types'
 
 export interface UseDocResult {
@@ -28,18 +18,35 @@ export function useDocResult(): UseDocResult {
     lastEventAt: null,
   })
 
+  const lastEtagRef = useRef<string | null>(null)
+
   useEffect(() => {
-    const unlisten = listen<DocumentReport>(EVT.DocResult, (event) => {
-      const report = event.payload
-      setState({
-        report,
-        litReviewed: report?.lit_reviewed ?? false,
-        litDecision: report?.lit_decision_summary ?? null,
-        lastEventAt: Date.now(),
-      })
-    })
+    let cancelled = false
+    let timer: ReturnType<typeof setInterval> | null = null
+
+    const poll = async () => {
+      if (cancelled) return
+      try {
+        const report = await httpGet<DocumentReport>('/api/v1/documents/latest-report')
+        if (cancelled) return
+        const etag = report?.id ?? null
+        if (etag === lastEtagRef.current) return
+        lastEtagRef.current = etag
+        setState({
+          report,
+          litReviewed: report?.lit_reviewed ?? false,
+          litDecision: report?.lit_decision_summary ?? null,
+          lastEventAt: Date.now(),
+        })
+      } catch {
+        if (!cancelled) console.warn('[useDocResult] poll failed')
+      }
+    }
+
+    timer = setInterval(poll, 3000)
     return () => {
-      unlisten.then((u) => u())
+      cancelled = true
+      if (timer !== null) clearInterval(timer)
     }
   }, [])
 

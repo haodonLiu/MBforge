@@ -1,7 +1,6 @@
-/** Ingest queue — 文档处理队列操作。 */
+/** Ingest queue — 文档处理队列操作 via HTTP. */
 
-import { invoke } from '@tauri-apps/api/core'
-import { invokeWithError } from './_utils'
+import { httpPost, invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
 
 export interface IngestTask {
@@ -81,14 +80,14 @@ export interface IngestEmbedEvent {
 
 export async function ingestList(projectRoot: string): Promise<IngestTask[]> {
   return invokeWithError(
-    () => invoke<IngestTask[]>('ingest_list', { projectRoot }),
+    () => httpPost<IngestTask[]>('/api/v1/pipeline/queue', { project_root: projectRoot }),
     ErrorCode.TauriInvoke,
   )
 }
 
 export async function ingestStats(projectRoot: string): Promise<QueueStats> {
   return invokeWithError(
-    () => invoke<QueueStats>('ingest_stats', { projectRoot }),
+    () => httpPost<QueueStats>('/api/v1/pipeline/queue/stats', { project_root: projectRoot }),
     ErrorCode.TauriInvoke,
   )
 }
@@ -101,7 +100,11 @@ export async function ingestGetLogs(
   limit?: number,
 ): Promise<IngestLogRecord[]> {
   return invokeWithError(
-    () => invoke<IngestLogRecord[]>('ingest_get_logs', { projectRoot, docId, limit }),
+    () => httpPost<IngestLogRecord[]>('/api/v1/pipeline/queue/logs', {
+      project_root: projectRoot,
+      doc_id: docId,
+      limit,
+    }),
     ErrorCode.TauriInvoke,
   )
 }
@@ -109,7 +112,7 @@ export async function ingestGetLogs(
 export async function ingestCancel(projectRoot: string, taskId: string): Promise<void> {
   return invokeWithError(
     async () => {
-      await invoke('ingest_cancel', { projectRoot, taskId })
+      await httpPost(`/api/v1/pipeline/queue/${taskId}/cancel`, { project_root: projectRoot })
     },
     ErrorCode.TauriInvoke,
   )
@@ -117,14 +120,14 @@ export async function ingestCancel(projectRoot: string, taskId: string): Promise
 
 export async function ingestRetry(projectRoot: string, taskId: string): Promise<boolean> {
   return invokeWithError(
-    () => invoke<boolean>('ingest_retry', { projectRoot, taskId }),
+    () => httpPost<boolean>(`/api/v1/pipeline/queue/${taskId}/retry`, { project_root: projectRoot }),
     ErrorCode.TauriInvoke,
   )
 }
 
 export async function ingestCleanup(projectRoot: string): Promise<number> {
   return invokeWithError(
-    () => invoke<number>('ingest_cleanup', { projectRoot }),
+    () => httpPost<number>('/api/v1/pipeline/queue/cleanup', { project_root: projectRoot }),
     ErrorCode.TauriInvoke,
   )
 }
@@ -141,7 +144,12 @@ export async function ingestEnqueue(
   force?: boolean,
 ): Promise<string> {
   return invokeWithError(
-    () => invoke<string>('ingest_enqueue', { projectRoot, filePath, docId, force: force ?? false }),
+    () => httpPost<string>('/api/v1/pipeline/enqueue', {
+      project_root: projectRoot,
+      file_path: filePath,
+      doc_id: docId,
+      force: force ?? false,
+    }),
     ErrorCode.TauriInvoke,
   )
 }
@@ -176,7 +184,10 @@ export async function ingestSetPriority(
 ): Promise<void> {
   return invokeWithError(
     async () => {
-      await invoke('ingest_set_priority', { projectRoot, taskId, priority })
+      await httpPost(`/api/v1/pipeline/queue/${taskId}/priority`, {
+        project_root: projectRoot,
+        priority,
+      })
     },
     ErrorCode.TauriInvoke,
   )
@@ -187,7 +198,9 @@ export async function ingestDeleteTask(
   taskId: string,
 ): Promise<boolean> {
   return invokeWithError(
-    () => invoke<boolean>('ingest_delete_task', { projectRoot, taskId }),
+    () => httpPost<boolean>(`/api/v1/pipeline/queue/${taskId}/delete`, {
+      project_root: projectRoot,
+    }),
     ErrorCode.TauriInvoke,
   )
 }

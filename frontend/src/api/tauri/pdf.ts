@@ -1,7 +1,6 @@
 /** PDF processing — classify, extract, parse, full pipeline. */
 
-import { invoke } from '@tauri-apps/api/core'
-import { invokeWithError } from './_utils'
+import { httpPost, invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
 import type { ActivityData, DocumentClassification } from './text'
 
@@ -29,7 +28,7 @@ export interface PdfExtraction {
 
 export async function classifyPdf(path: string): Promise<PdfClassification> {
   return invokeWithError(
-    () => invoke<PdfClassification>('classify_pdf', { path }),
+    () => httpPost<PdfClassification>('/api/v1/pdf/classify', { path }),
     ErrorCode.PdfParse,
   )
 }
@@ -39,7 +38,7 @@ export async function inspectPdf(
   docId: string,
 ): Promise<PdfClassification> {
   return invokeWithError(
-    () => invoke<PdfClassification>('inspect_pdf', { projectRoot, docId }),
+    () => httpPost<PdfClassification>('/api/v1/pdf/inspect', { projectRoot, docId }),
     ErrorCode.PdfParse,
   )
 }
@@ -50,7 +49,7 @@ export async function confirmOcr(
   confirm: boolean,
 ): Promise<{ success: boolean; doc_id: string; ocr_status: string; task_id: string }> {
   return invokeWithError(
-    () => invoke<{ success: boolean; doc_id: string; ocr_status: string; task_id: string }>('confirm_ocr', {
+    () => httpPost<{ success: boolean; doc_id: string; ocr_status: string; task_id: string }>('/api/v1/pdf/confirm-ocr', {
       projectRoot,
       docId,
       confirm,
@@ -61,7 +60,7 @@ export async function confirmOcr(
 
 export async function extractText(path: string): Promise<PdfExtraction> {
   return invokeWithError(
-    () => invoke<PdfExtraction>('extract_text', { path }),
+    () => httpPost<PdfExtraction>('/api/v1/pdf/extract-text', { path }),
     ErrorCode.PdfParse,
   )
 }
@@ -114,7 +113,7 @@ export async function parsePdf(
   parser?: string,
 ): Promise<PdfParseResult> {
   return invokeWithError(
-    () => invoke<PdfParseResult>('parse_pdf', {
+    () => httpPost<PdfParseResult>('/api/v1/pdf/parse', {
       path,
       chunkSize: chunkSize ?? 512,
       overlap: overlap ?? 128,
@@ -137,7 +136,7 @@ export async function processDocument(
   projectRoot?: string,
 ): Promise<void> {
   return invokeWithError(
-    () => invoke('process_document', {
+    () => httpPost('/api/v1/pdf/process-document', {
       path,
       userRequest: userRequest ?? '',
       projectRoot,
@@ -167,7 +166,7 @@ export interface OcrLayoutResult {
 
 export async function getDocumentOcrLayout(path: string, doc_id?: string): Promise<OcrLayoutResult> {
   return invokeWithError(
-    () => invoke<OcrLayoutResult>('get_document_ocr_layout', { path, doc_id }),
+    () => httpPost<OcrLayoutResult>('/api/v1/pdf/ocr-layout', { path, doc_id }),
     ErrorCode.PdfParse,
   )
 }
@@ -193,7 +192,7 @@ export interface PageFigureBboxes {
  */
 export async function getFigureBboxes(pdfPath: string): Promise<PageFigureBboxes[]> {
   return invokeWithError(
-    () => invoke<PageFigureBboxes[]>('get_figure_bboxes', { pdfPath }),
+    () => httpPost<PageFigureBboxes[]>('/api/v1/pdf/figure-bboxes', { pdfPath }),
     ErrorCode.PdfParse,
   )
 }

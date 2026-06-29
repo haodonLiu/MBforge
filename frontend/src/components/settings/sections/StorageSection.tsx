@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { invoke } from '@tauri-apps/api/core'
+import { httpPost } from '../../../api/tauri/_utils'
 import SettingSection, { SettingGroup } from '../../ui/SettingSection'
 import Button from '../../ui/Button'
 import { showToast } from '../../../hooks/useToast'
@@ -39,7 +39,7 @@ export default function StorageSection({ projectRoot }: Props) {
   const refresh = useCallback(async () => {
     if (!projectRoot) return
     try {
-      const s = await invoke<CacheSize>('cache_size', { projectRoot })
+      const s = await httpPost<CacheSize>('/api/v1/settings/cache-size', { project_root: projectRoot })
       setSize(s)
     } catch (e) {
       console.error('cache_size failed', e)
@@ -51,7 +51,7 @@ export default function StorageSection({ projectRoot }: Props) {
   const clear = async (kind: 'semantic' | 'detection' | 'molecules') => {
     setClearing(kind)
     try {
-      const res = await invoke<ClearResult>('cache_clear', { projectRoot, cache: kind })
+      const res = await httpPost<ClearResult>('/api/v1/settings/cache-clear', { project_root: projectRoot, cache: kind })
       if (res.success) {
         showToast(`已释放 ${fmtSize(res.freed_mb)}`, 'success')
         void refresh()

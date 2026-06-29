@@ -1,10 +1,7 @@
-/** 模型下载 — Tauri 原生（替代 Python sidecar HTTP 端点） */
+/** 模型下载 — HTTP API (替代 Tauri IPC) */
 
-import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { invokeWithError } from './_utils'
+import { httpPost, invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
-import { EVT } from '../tauri-events'
 
 export interface SubfileStatus {
   label: string          // 友好标签，如 "doc" / "general"
@@ -66,21 +63,20 @@ function inferModelType(id: string): string {
  */
 export async function listModels(): Promise<{ success: boolean; models: DownloadModel[]; error?: string }> {
   try {
-    const catalog = await invoke<Record<string, unknown>[]>('resources_catalog')
+    const catalog = await httpPost<Record<string, unknown>[]>('/api/v1/resources/catalog')
     const models: DownloadModel[] = []
     for (const item of catalog) {
       const id = String(item.id ?? '')
       if (!id) continue
-      // 只展示模型；Python 包 (torch/transformers/...) 属于依赖，状态由 System 页展示
       if (String(item.type ?? '') !== 'model') continue
       const status = await invokeWithError(
-        () => invoke<{
+        () => httpPost<{
           status: string
           local_path: string
           size_mb: number
           expected_path: string
           subfiles: { label: string; relpath: string; local_path: string; ready: boolean; size_mb: number }[]
-        }>('resources_status', { resourceId: id }),
+        }>('/api/v1/resources/status', { resource_id: id }),
         ErrorCode.ApiError,
       )
       models.push({
@@ -112,13 +108,13 @@ export async function listModels(): Promise<{ success: boolean; models: Download
  */
 export async function listDownloaded(): Promise<{ success: boolean; models: DownloadedModel[]; model_dir: string; error?: string }> {
   try {
-    const catalog = await invoke<Record<string, unknown>[]>('resources_catalog')
+    const catalog = await httpPost<Record<string, unknown>[]>('/api/v1/resources/catalog')
     const models: DownloadedModel[] = []
     for (const item of catalog) {
       const id = String(item.id ?? '')
       if (!id) continue
       const status = await invokeWithError(
-        () => invoke<{ status: string; local_path: string; size_mb: number }>('resources_status', { resourceId: id }),
+        () => httpPost<{ status: string; local_path: string; size_mb: number }>('/api/v1/resources/status', { resource_id: id }),
         ErrorCode.ApiError,
       )
       if (status.status === 'ready') {
@@ -132,7 +128,7 @@ export async function listDownloaded(): Promise<{ success: boolean; models: Down
         })
       }
     }
-    const dirInfo = await invoke<{ mbforge: { path: string } }>('models_cache_dir_info')
+    const dirInfo = await httpPost<{ mbforge: { path: string } }>('/api/v1/resource/cache-dir-info')
     return { success: true, models, model_dir: dirInfo.mbforge?.path ?? '' }
   } catch (e) {
     return { success: false, models: [], model_dir: '', error: String(e) }
@@ -140,7 +136,7 @@ export async function listDownloaded(): Promise<{ success: boolean; models: Down
 }
 
 /**
- * 下载模型（Rust 原生，通过 Tauri 事件推送进度）
+ * 下载模型（通过 HTTP API 触发，返回进度回调）
  *
  * @param resourceId - 资源 ID（如 "embedding", "molscribe"）
  * @param onProgress - 进度回调
@@ -150,33 +146,29 @@ export function downloadModel(
   resourceId: string,
   onProgress: (event: DownloadProgress) => void,
 ): () => void {
-  let unlisten: UnlistenFn | null = null
   let aborted = false
   const logPrefix = `[downloadModel ${resourceId}]`
-  console.log(`${logPrefix} starting, registering listener...`)
+  console.log(`${logPrefix} starting...`)
 
   const start = async () => {
     try {
-      unlisten = await listen<DownloadProgress>(EVT.ModelDownloadProgress, (event) => {
-        if (event.payload.resource_id !== resourceId) {
-          // 忽略其他模型的进度事件
-          return
-        }
-        console.log(`${logPrefix} received progress event:`, event.payload)
-        onProgress(event.payload)
-      })
-      console.log(`${logPrefix} listener registered`)
-      if (aborted) {
-        unlisten()
-        return
-      }
-
-      console.log(`${logPrefix} invoking models_download...`)
+      console.log(`${logPrefix} invoking resource/download...`)
       const path = await invokeWithError(
-        () => invoke<string>('models_download', { resourceId }),
+        () => httpPost<string>('/api/v1/resource/download', { resource_id: resourceId }),
         ErrorCode.ApiError,
       )
-      console.log(`${logPrefix} models_download returned:`, path)
+      console.log(`${logPrefix} download returned:`, path)
+      if (!aborted) {
+        onProgress({
+          resource_id: resourceId,
+          status: 'completed',
+          file: path,
+          file_progress: 1,
+          file_index: 0,
+          total_files: 1,
+          error: '',
+        })
+      }
     } catch (err) {
       if (aborted) return
       console.error(`${logPrefix} failed:`, err)
@@ -193,19 +185,16 @@ export function downloadModel(
   }
   void start()
 
-  // 返回取消函数
   return () => {
     console.log(`${logPrefix} cleanup called`)
     aborted = true
-    unlisten?.()
-    invoke('models_cancel_download', { resourceId }).catch((e) => console.warn('cancel download failed:', e))
   }
 }
 
 /** 删除已下载的模型 */
 export async function deleteModel(resourceId: string): Promise<void> {
   await invokeWithError(
-    () => invoke<void>('models_delete', { resourceId }),
+    () => httpPost<void>('/api/v1/resource/delete', { resource_id: resourceId }),
     ErrorCode.ApiError,
   )
 }
@@ -216,23 +205,25 @@ export function downloadModelSubfile(
   subpath: string,
   onProgress: (event: DownloadProgress) => void,
 ): () => void {
-  let unlisten: UnlistenFn | null = null
   let aborted = false
 
   const start = async () => {
     try {
-      unlisten = await listen<DownloadProgress>(EVT.ModelDownloadProgress, (event) => {
-        if (event.payload.resource_id !== resourceId) return
-        onProgress(event.payload)
-      })
-      if (aborted) {
-        unlisten()
-        return
-      }
       await invokeWithError(
-        () => invoke<string>('models_download_subfile', { resourceId, subpath }),
+        () => httpPost<string>('/api/v1/resource/download-subfile', { resource_id: resourceId, subpath }),
         ErrorCode.ApiError,
       )
+      if (!aborted) {
+        onProgress({
+          resource_id: resourceId,
+          status: 'completed',
+          file: subpath,
+          file_progress: 1,
+          file_index: 0,
+          total_files: 1,
+          error: '',
+        })
+      }
     } catch (err) {
       if (aborted) return
       onProgress({
@@ -250,15 +241,13 @@ export function downloadModelSubfile(
 
   return () => {
     aborted = true
-    unlisten?.()
-    invoke('models_cancel_download', { resourceId }).catch((e) => console.warn('cancel download failed:', e))
   }
 }
 
 /** 删除多文件资源中的单个子文件 */
 export async function deleteModelSubfile(resourceId: string, subpath: string): Promise<void> {
   await invokeWithError(
-    () => invoke<void>('models_delete_subfile', { resourceId, subpath }),
+    () => httpPost<void>('/api/v1/resource/delete-subfile', { resource_id: resourceId, subpath }),
     ErrorCode.ApiError,
   )
 }
@@ -275,7 +264,7 @@ export async function testModel(
   subpath?: string,
 ): Promise<ModelTestResult> {
   return invokeWithError(
-    () => invoke<ModelTestResult>('models_test', { resourceId, subpath }),
+    () => httpPost<ModelTestResult>('/api/v1/resource/test', { resource_id: resourceId, subpath }),
     ErrorCode.ApiError,
   )
 }

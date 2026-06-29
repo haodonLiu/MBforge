@@ -1,14 +1,11 @@
-/** Tauri commands wrapping the per-PDF detection cache.
+/** Detection cache — per-PDF molecule detection via HTTP.
  *
  * - `cachedExtractPage` — cache-aware single-page molecule detection.
- *   Returns the same shape as the Python sidecar's
- *   `/api/v1/moldet/extract-page`, with an extra `source` field
- *   (`"cache"` | `"sidecar"` | `"sidecar_error"`).
  * - `getDetectionCacheStats` — disk usage + page count for Settings.
  * - `clearDetectionCache` — wipe all `index/detections` JSON files.
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { httpPost } from './_utils'
 
 export interface CachedExtractPageResponse {
   results: unknown[]
@@ -41,15 +38,15 @@ export async function cachedExtractPage(params: {
   imageH: number
   force?: boolean
 }): Promise<CachedExtractPageResponse> {
-  return invoke<CachedExtractPageResponse>('cached_extract_page', {
-    projectRoot: params.projectRoot,
-    docId: params.docId,
+  return httpPost<CachedExtractPageResponse>('/api/v1/detection-cache/extract-page', {
+    project_root: params.projectRoot,
+    doc_id: params.docId,
     page: params.page,
-    imageBase64: params.imageBase64,
-    pageWPts: params.pageWPts,
-    pageHPts: params.pageHPts,
-    imageW: params.imageW,
-    imageH: params.imageH,
+    image_base64: params.imageBase64,
+    page_w_pts: params.pageWPts,
+    page_h_pts: params.pageHPts,
+    image_w: params.imageW,
+    image_h: params.imageH,
     force: params.force ?? false,
   })
 }
@@ -65,9 +62,9 @@ export async function getCachedPageDetections(params: {
   docId: string
   page: number
 }): Promise<CachedExtractPageResponse> {
-  return invoke<CachedExtractPageResponse>('get_cached_page_detections', {
-    projectRoot: params.projectRoot,
-    docId: params.docId,
+  return httpPost<CachedExtractPageResponse>('/api/v1/detection-cache/get', {
+    project_root: params.projectRoot,
+    doc_id: params.docId,
     page: params.page,
   })
 }
@@ -75,18 +72,18 @@ export async function getCachedPageDetections(params: {
 export async function getDetectionCacheStats(
   projectRoot: string,
 ): Promise<DetectionCacheStats> {
-  return invoke<DetectionCacheStats>('get_detection_cache_stats', { projectRoot })
+  return httpPost<DetectionCacheStats>('/api/v1/detection-cache/stats', { project_root: projectRoot })
 }
 
 export async function clearDetectionCache(projectRoot: string): Promise<void> {
-  return invoke<void>('clear_detection_cache', { projectRoot })
+  return httpPost<void>('/api/v1/detection-cache/clear', { project_root: projectRoot })
 }
 
 export async function clearDetectionCacheForDoc(
   projectRoot: string,
   docId: string,
 ): Promise<void> {
-  return invoke<void>('clear_detection_cache_doc', { projectRoot, docId })
+  return httpPost<void>('/api/v1/detection-cache/clear-doc', { project_root: projectRoot, doc_id: docId })
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +119,8 @@ export async function batchQuickMoldetScan(
   projectRoot: string,
   docIds?: string[],
 ): Promise<BatchQuickMoldetResponse> {
-  return invoke<BatchQuickMoldetResponse>('batch_quick_moldet_scan', {
-    request: { project_root: projectRoot, doc_ids: docIds ?? [] },
+  return httpPost<BatchQuickMoldetResponse>('/api/v1/detection-cache/batch-scan', {
+    project_root: projectRoot,
+    doc_ids: docIds ?? [],
   })
 }

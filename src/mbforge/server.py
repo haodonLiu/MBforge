@@ -62,20 +62,20 @@ def _prewarm() -> None:
     for mod in _CORE_BACKENDS:
         try:
             mod.load()
-            logger.info(f"{mod.__name__} prewarmed")
+            logger.info("%s prewarmed", mod.__name__)
         except Exception as e:
-            logger.warning(f"{mod.__name__} prewarm failed: {e}")
+            logger.warning("%s prewarm failed: %s", mod.__name__, e)
 
 
 def _check_environment() -> None:
     try:
         report = ResourceManager.check_all()
-        logger.info(f"Environment check: {report.summary}")
+        logger.info("Environment check: %s", report.summary)
         for r in report.resources:
             icon = "✓" if r.status.value == "ready" else "✗"
-            logger.info(f"  {icon} {r.name}: {r.status.value}")
+            logger.info("  %s %s: %s", icon, r.name, r.status.value)
     except Exception as e:
-        logger.warning(f"Environment check failed: {e}")
+        logger.warning("Environment check failed: %s", e)
 
 
 def _shutdown() -> None:
@@ -172,7 +172,7 @@ async def _model_error_handler(
 
 @app.exception_handler(Exception)
 async def _generic_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.error(f"Unhandled error on {request.url.path}: {exc}", exc_info=True)
+    logger.error("Unhandled error on %s: %s", request.url.path, exc, exc_info=True)
     return JSONResponse(
         status_code=500,
         content={"success": False, "error": str(exc), "error_code": "internal_error"},
@@ -194,7 +194,7 @@ def _render_pages_sync(
         for page_num in page_numbers:
             page_index = int(page_num) - 1  # 1-based to 0-based
             if page_index < 0 or page_index >= doc.page_count:
-                logger.warning(f"Invalid page number {page_num} for {pdf_path}")
+                logger.warning("Invalid page number %s for %s", page_num, pdf_path)
                 continue
             page = doc.load_page(page_index)
             zoom = dpi / 72.0
@@ -248,7 +248,7 @@ async def render_pages(request: Request) -> dict[str, Any]:
     except (ValidationError, ModelNotAvailableError):
         raise
     except Exception as e:
-        logger.error(f"PDF render failed for {pdf_path}: {e}", exc_info=True)
+        logger.error("PDF render failed for %s: %s", pdf_path, e, exc_info=True)
         raise ModelNotAvailableError(str(e)) from e
 
 
@@ -287,7 +287,7 @@ def _extract_figure_bboxes_sync(pdf_path: str) -> dict[str, Any]:
             try:
                 infos = page.get_image_info(xrefs=True)
             except Exception as e:
-                logger.debug(f"get_image_info failed on page {page_index + 1}: {e}")
+                logger.debug("get_image_info failed on page %d: %s", page_index + 1, e)
                 infos = []
 
             # 按 xref 合并 bbox（同一 image 被多次引用时取并集）
@@ -360,7 +360,7 @@ async def figure_bboxes(request: Request) -> dict[str, Any]:
     except (ValidationError, ModelNotAvailableError):
         raise
     except Exception as e:
-        logger.error(f"figure-bboxes failed for {pdf_path}: {e}", exc_info=True)
+        logger.error("figure-bboxes failed for %s: %s", pdf_path, e, exc_info=True)
         raise ModelNotAvailableError(str(e)) from e
 
 
@@ -384,14 +384,14 @@ async def embed(request: Request, body: dict) -> dict[str, Any]:
     else:
         mrl_dim = None
     if trace_id:
-        logger.info(f"[trace={trace_id} span={span_id}] embed started")
+        logger.info("[trace=%s span=%s] embed started", trace_id, span_id)
     loop = asyncio.get_running_loop()
     embeddings = await loop.run_in_executor(
         None, lambda: qwen3_embed.embed(texts, mrl_dim=mrl_dim)
     )
     dim = len(embeddings[0]) if embeddings else 0
     if trace_id:
-        logger.info(f"[trace={trace_id} span={span_id}] embed done, dim={dim}")
+        logger.info("[trace=%s span=%s] embed done, dim=%d", trace_id, span_id, dim)
     return {"embeddings": embeddings}
 
 
@@ -1131,7 +1131,7 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
         else:
             return {"ok": False, "error": f"未知资源: {rid}"}
     except Exception as e:
-        logger.warning(f"Test {resource_id} failed: {e}", exc_info=True)
+        logger.warning("Test %s failed: %s", resource_id, e, exc_info=True)
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
     duration_ms = int((time.perf_counter() - start) * 1000)
@@ -1155,7 +1155,7 @@ async def test_model(request: Request) -> dict[str, Any]:
     except ValidationError:
         raise
     except Exception as e:
-        logger.error(f"test_model failed: {e}", exc_info=True)
+        logger.error("test_model failed: %s", e, exc_info=True)
         return {"ok": False, "error": str(e), "duration_ms": 0}
 
 
@@ -1219,7 +1219,7 @@ async def health_check() -> dict[str, Any]:
         except Exception as e:
             _model_status["moldet"] = "error"
             _mark_failure("moldet")
-            logger.debug(f"MolDet health check failed: {e}")
+            logger.debug("MolDet health check failed: %s", e)
 
     # MolDet Coref (coref_alt: 复用 MolDet doc detector + RapidOCR，无独立模型)
     if not _should_skip_due_to_cooldown("moldet_coref"):
@@ -1240,7 +1240,7 @@ async def health_check() -> dict[str, Any]:
         except Exception as e:
             _model_status["moldet_coref"] = "error"
             _mark_failure("moldet_coref")
-            logger.debug(f"MolDet coref health check failed: {e}")
+            logger.debug("MolDet coref health check failed: %s", e)
 
     # Zvec
     if not _should_skip_due_to_cooldown("zvec"):
@@ -1255,7 +1255,7 @@ async def health_check() -> dict[str, Any]:
         except Exception as e:
             _model_status["zvec"] = "error"
             _mark_failure("zvec")
-            logger.debug(f"Zvec health check failed: {e}")
+            logger.debug("Zvec health check failed: %s", e)
 
     statuses = list(_model_status.values())
     if all(s == "ready" for s in statuses):
@@ -1277,7 +1277,7 @@ async def health_check() -> dict[str, Any]:
                 _resource_cache[rid] = res.status.value
             _resource_cache_time = now
         except Exception as e:
-            logger.debug(f"Resource status check failed: {e}")
+            logger.debug("Resource status check failed: %s", e)
 
     return {
         "status": overall,

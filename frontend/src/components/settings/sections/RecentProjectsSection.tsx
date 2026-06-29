@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { invoke } from '@tauri-apps/api/core'
+import { httpPost, httpPut } from '../../../api/tauri/_utils'
 import SettingSection, { SettingGroup } from '../../ui/SettingSection'
 import Button from '../../ui/Button'
 import { showToast } from '../../../hooks/useToast'
@@ -16,10 +16,10 @@ export default function RecentProjectsSection() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const resp = await invoke<{ projects: string[] }>('projects_list_recent')
-      setProjects(resp.projects)
+      const resp = await httpPost<{ settings?: { recent_projects?: string[] } }>('/api/v1/settings')
+      setProjects(resp.settings?.recent_projects ?? [])
     } catch (e) {
-      console.error('projects_list_recent failed', e)
+      console.error('load recent projects failed', e)
     } finally {
       setLoading(false)
     }
@@ -31,8 +31,11 @@ export default function RecentProjectsSection() {
     try {
       const resp = await openProject(path)
       if (resp.success) {
-        // openProject 内部会写 recent，但保险起见手动加一次
-        await invoke('projects_add_recent', { path })
+        const current = await httpPost<{ settings?: { recent_projects?: string[] } }>('/api/v1/settings')
+        const recent = current.settings?.recent_projects ?? []
+        if (!recent.includes(path)) {
+          await httpPut('/api/v1/settings', { recent_projects: [path, ...recent].slice(0, 20) })
+        }
         showToast(t('settings.recentOpen') + ' ✓', 'success')
       } else {
         showToast(resp.error || t('settings.recentOpen') + ' ✗', 'error')
@@ -44,8 +47,10 @@ export default function RecentProjectsSection() {
 
   const onRemove = async (path: string) => {
     try {
-      const resp = await invoke<{ projects: string[] }>('projects_remove_recent', { path })
-      setProjects(resp.projects)
+      const current = await httpPost<{ settings?: { recent_projects?: string[] } }>('/api/v1/settings')
+      const recent = (current.settings?.recent_projects ?? []).filter((p: string) => p !== path)
+      await httpPut('/api/v1/settings', { recent_projects: recent })
+      setProjects(recent)
     } catch (e) {
       showToast(String(e), 'error')
     }
@@ -53,8 +58,8 @@ export default function RecentProjectsSection() {
 
   const onClear = async () => {
     try {
-      const resp = await invoke<{ projects: string[] }>('projects_clear_recent')
-      setProjects(resp.projects)
+      await httpPut('/api/v1/settings', { recent_projects: [] })
+      setProjects([])
     } catch (e) {
       showToast(String(e), 'error')
     }

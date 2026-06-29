@@ -1,18 +1,7 @@
-/** Listen to sidecar lifecycle events (logs + health status).
- *
- * These events are emitted from Rust (`src-tauri/src/sidecar.rs`) and
- * provide real-time visibility into the Python sidecar process.
- */
+/** Poll sidecar health status (replaces Tauri IPC listen). */
 
 import { useEffect } from 'react'
-import { listen } from '@tauri-apps/api/event'
-import { EVT } from '../api/tauri-events'
-
-export interface SidecarLogEvent {
-  stream: 'stdout' | 'stderr'
-  line: string
-  timestamp: number
-}
+import { httpGet } from '../api/tauri/_utils'
 
 export interface SidecarStatusEvent {
   healthy: boolean
@@ -24,33 +13,35 @@ export interface SidecarStatusEvent {
 
 export function useSidecarEvents() {
   useEffect(() => {
-    let unlistenLog: (() => void) | null = null
-    let unlistenStatus: (() => void) | null = null
+    let cancelled = false
+    let timer: ReturnType<typeof setInterval> | null = null
 
-    const setup = async () => {
-      unlistenLog = await listen<SidecarLogEvent>(EVT.SidecarLog, (event) => {
-        const { stream, line } = event.payload
-        if (stream === 'stderr') {
-          console.warn('[sidecar stderr]', line)
-        } else {
-          console.log('[sidecar stdout]', line)
-        }
-      })
-
-      unlistenStatus = await listen<SidecarStatusEvent>(EVT.SidecarStatus, (event) => {
-        const { state, healthy, restartCount, uptimeSecs, lastError } = event.payload
+    const poll = async () => {
+      if (cancelled) return
+      try {
+        const data = await httpGet<{
+          healthy: boolean
+          restart_count: number
+          state: string
+          uptime_secs: number
+          last_error: string | null
+        }>('/api/v1/sidecar/status')
+        if (cancelled) return
         console.log(
-          `[sidecar status] state=${state} healthy=${healthy} restarts=${restartCount} uptime=${uptimeSecs}s`,
-          lastError ? `error=${lastError}` : '',
+          `[sidecar status] state=${data.state} healthy=${data.healthy} uptime=${data.uptime_secs}s`,
+          data.last_error ? `error=${data.last_error}` : '',
         )
-      })
+      } catch {
+        if (!cancelled) console.warn('[sidecar status] poll failed')
+      }
     }
 
-    setup().catch(console.error)
+    void poll()
+    timer = setInterval(poll, 5000)
 
     return () => {
-      unlistenLog?.()
-      unlistenStatus?.()
+      cancelled = true
+      if (timer !== null) clearInterval(timer)
     }
   }, [])
 }

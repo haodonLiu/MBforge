@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { invoke } from '@tauri-apps/api/core'
 import {
   listModels,
   downloadModel,
@@ -10,7 +9,7 @@ import {
   type DownloadModel,
   type DownloadProgress,
 } from '@/api/tauri/download'
-import { refreshResolvedPaths } from '@/api/tauri/environment'
+import { refreshResolvedPaths, modelsCacheDirInfo } from '@/api/tauri/environment'
 import ModelCard from '@/components/settings/ModelCard'
 import { showToast } from '@/hooks/useToast'
 
@@ -69,7 +68,7 @@ export default function ModelsTab() {
 
   const loadCacheDir = useCallback(async () => {
     try {
-      const info = await invoke<{ mbforge: { path: string } }>('models_cache_dir_info')
+      const info = await modelsCacheDirInfo()
       setCacheDir(info.mbforge.path)
     } catch (e) {
       showToast(t('models.cacheDirFailed') + ': ' + (e instanceof Error ? e.message : String(e)), 'error')

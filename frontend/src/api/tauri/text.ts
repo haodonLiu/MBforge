@@ -1,7 +1,6 @@
 /** Text utilities — chunking, page classification, structured extraction. */
 
-import { invoke } from '@tauri-apps/api/core'
-import { invokeWithError } from './_utils'
+import { httpPost, invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
 
 // ---- text_ops ----
@@ -13,7 +12,7 @@ export interface TextChunkResult {
 
 export async function textChunk(text: string, chunkSize = 512, overlap = 128): Promise<TextChunkResult> {
   return invokeWithError(
-    () => invoke<TextChunkResult>('text_chunk', { text, chunkSize, overlap }),
+    () => httpPost<TextChunkResult>('/api/v1/text/chunk', { text, chunkSize, overlap }),
     ErrorCode.ApiError,
   )
 }
@@ -27,11 +26,11 @@ export interface OcrTestResult {
 }
 
 export async function testOcrMineru(host: string | null, apiKey: string): Promise<OcrTestResult> {
-  return invoke<OcrTestResult>('ocr_test_mineru', { host, apiKey })
+  return httpPost<OcrTestResult>('/api/v1/ocr/test-mineru', { host, apiKey })
 }
 
 export async function testOcrUniparser(host: string | null, apiKey: string): Promise<OcrTestResult> {
-  return invoke<OcrTestResult>('ocr_test_uniparser', { host, apiKey })
+  return httpPost<OcrTestResult>('/api/v1/ocr/test-uniparser', { host, apiKey })
 }
 
 export async function testOcrPaddleocr(
@@ -39,7 +38,7 @@ export async function testOcrPaddleocr(
   apiKey: string,
   model: string | null,
 ): Promise<OcrTestResult> {
-  return invoke<OcrTestResult>('ocr_test_paddleocr', { host, apiKey, model })
+  return httpPost<OcrTestResult>('/api/v1/ocr/test-paddleocr', { host, apiKey, model })
 }
 
 // ---- classifier ----
@@ -62,14 +61,14 @@ export interface DocumentClassification {
 
 export async function classifyPage(pageText: string, pageIdx: number): Promise<PageClassification> {
   return invokeWithError(
-    () => invoke<PageClassification>('classify_page', { pageText, pageIdx }),
+    () => httpPost<PageClassification>('/api/v1/classify/page', { pageText, pageIdx }),
     ErrorCode.ApiError,
   )
 }
 
 export async function classifyDocument(pages: string[], metadata?: Record<string, unknown>): Promise<DocumentClassification> {
   return invokeWithError(
-    () => invoke<DocumentClassification>('classify_document', { pages, metadata: metadata ?? null }),
+    () => httpPost<DocumentClassification>('/api/v1/classify/document', { pages, metadata: metadata ?? null }),
     ErrorCode.ApiError,
   )
 }
@@ -84,11 +83,11 @@ export interface ActivityData {
 }
 
 export async function extractSmilesCandidates(text: string): Promise<string[]> {
-  return invoke<string[]>('extract_esmiles_candidates', { text })
+  return httpPost<string[]>('/api/v1/extract/esmiles-candidates', { text })
 }
 
 export async function extractActivities(text: string): Promise<ActivityData[]> {
-  return invoke<ActivityData[]>('extract_activities', { text })
+  return httpPost<ActivityData[]>('/api/v1/extract/activities', { text })
 }
 
 export interface AssociatedMolecule {
@@ -104,7 +103,7 @@ export async function extractAssociatedMolecules(
   text: string,
   sourceDoc: string,
 ): Promise<AssociatedMolecule[]> {
-  return invoke<AssociatedMolecule[]>('extract_associated_molecules', {
+  return httpPost<AssociatedMolecule[]>('/api/v1/extract/associated-molecules', {
     text,
     sourceDoc,
   })

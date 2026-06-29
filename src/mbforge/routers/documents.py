@@ -40,5 +40,20 @@ async def doc_reingest(body: dict) -> dict:
     doc_id = body.get("doc_id", "")
     if not root or not doc_id:
         return {"success": False, "error": "root and doc_id required"}
-    # TODO: re-enqueue document for processing
-    return {"success": True, "message": "reingest queued"}
+    from ..pipeline.runner import run_pipeline
+    import asyncio
+
+    idx_path = Path(root) / ".mbforge" / "index.json"
+    data = load_json(idx_path, [])
+    doc_entry = next((d for d in data if d.get("doc_id") == doc_id), None)
+    if not doc_entry:
+        return {"success": False, "error": f"document {doc_id} not found"}
+    pdf_path = doc_entry.get("file_path", "")
+    if not pdf_path or not Path(pdf_path).exists():
+        return {"success": False, "error": f"PDF not found: {pdf_path}"}
+
+    try:
+        await asyncio.to_thread(run_pipeline, pdf_path, root, doc_id)
+        return {"success": True, "message": "reingest completed"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}

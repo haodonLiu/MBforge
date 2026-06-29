@@ -1,19 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('../_utils', () => ({
+  httpPost: vi.fn(),
+  httpGet: vi.fn(),
+  httpPut: vi.fn(),
+  httpDelete: vi.fn(),
+  invokeWithError: vi.fn((_fn: () => Promise<unknown>) => _fn()),
 }))
 
-vi.mock('@tauri-apps/api/event', () => ({
-  listen: vi.fn(),
+vi.mock('../sse', () => ({
+  connectSSE: vi.fn((_url: string, _onEvent: (event: { data: unknown }) => void) =>
+    Promise.resolve(() => {}),
+  ),
 }))
 
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { httpPost } from '../_utils'
+import { connectSSE } from '../sse'
 import { kbSearch, kbSearchStream, kbGetStructure, kbGetPages } from '../kb'
 
-const mockInvoke = vi.mocked(invoke)
-const mockListen = vi.mocked(listen)
+const mockHttpPost = vi.mocked(httpPost)
+const mockConnectSSE = vi.mocked(connectSSE)
 
 describe('kb API', () => {
   beforeEach(() => {
@@ -21,72 +27,63 @@ describe('kb API', () => {
   })
 
   describe('kbSearch', () => {
-    it('calls invoke with correct params', async () => {
+    it('calls httpPost with correct params', async () => {
       const results = [{ id: '1', text: 'test', metadata: {}, score: 0.9 }]
-      mockInvoke.mockResolvedValue(results)
+      mockHttpPost.mockResolvedValue({ success: true, results } as never)
 
       const result = await kbSearch('/project', 'query', 5)
 
-      expect(invoke).toHaveBeenCalledWith('kb_search', {
-        root: '/project',
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/kb/search', {
+        project_root: '/project',
         query: 'query',
-        topK: 5,
+        top_k: 5,
       })
       expect(result).toEqual(results)
     })
 
     it('uses default topK=5', async () => {
-      mockInvoke.mockResolvedValue([])
+      mockHttpPost.mockResolvedValue({ success: true, results: [] } as never)
 
       await kbSearch('/project', 'query')
 
-      expect(invoke).toHaveBeenCalledWith('kb_search', {
-        root: '/project',
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/kb/search', {
+        project_root: '/project',
         query: 'query',
-        topK: 5,
+        top_k: 5,
       })
     })
   })
 
   describe('kbSearchStream', () => {
-    it('invokes kb_search_stream and listens for events', async () => {
-      mockInvoke.mockResolvedValue(undefined)
-      mockListen.mockResolvedValue(() => {})
+    it('connects to SSE stream', async () => {
+      await kbSearchStream('/project', 'query', 10, vi.fn())
 
-      const onChunk = vi.fn()
-      await kbSearchStream('/project', 'query', 10, onChunk)
-
-      expect(invoke).toHaveBeenCalledWith('kb_search_stream', {
-        root: '/project',
-        query: 'query',
-        topK: 10,
-      })
-      expect(listen).toHaveBeenCalled()
+      expect(connectSSE).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/kb/search/stream?'),
+        expect.any(Function),
+      )
     })
 
     it('calls onChunk when event received', async () => {
-      mockInvoke.mockResolvedValue(undefined)
-      let eventHandler: Function = () => {}
-      mockListen.mockImplementation(async (_event: string, handler: any) => {
-        eventHandler = handler
+      let streamHandler: (event: { data: unknown }) => void = () => {}
+      mockConnectSSE.mockImplementation(async (_url: string, handler: any) => {
+        streamHandler = handler
         return () => {}
       })
 
       const onChunk = vi.fn()
       await kbSearchStream('/project', 'query', 10, onChunk)
 
-      // Simulate event
-      eventHandler({
-        payload: {
-          type: 'first',
+      streamHandler({
+        data: {
+          type: 'results',
           results: [{ id: '1', text: 'test', metadata: {}, score: 0.9 }],
           count: 1,
-          error: null,
         },
       })
 
       expect(onChunk).toHaveBeenCalledWith({
-        type: 'first',
+        type: 'incremental',
         results: [{ id: '1', text: 'test', metadata: {}, score: 0.9 }],
         count: 1,
         error: null,
@@ -95,21 +92,21 @@ describe('kb API', () => {
   })
 
   describe('kbGetStructure', () => {
-    it('calls invoke with correct params', async () => {
+    it('calls httpPost with correct params', async () => {
       const tree = [{ title: 'Intro', node_id: '1', line_num: 0, nodes: [] }]
-      mockInvoke.mockResolvedValue(tree)
+      mockHttpPost.mockResolvedValue({ success: true, structure: tree } as never)
 
       const result = await kbGetStructure('/project', 'doc1')
 
-      expect(invoke).toHaveBeenCalledWith('kb_get_structure', {
-        root: '/project',
-        docId: 'doc1',
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/kb/structure', {
+        project_root: '/project',
+        doc_id: 'doc1',
       })
       expect(result).toEqual(tree)
     })
 
     it('returns null when no structure', async () => {
-      mockInvoke.mockResolvedValue(null)
+      mockHttpPost.mockResolvedValue({ success: true, structure: null } as never)
 
       const result = await kbGetStructure('/project', 'doc1')
 
@@ -118,15 +115,15 @@ describe('kb API', () => {
   })
 
   describe('kbGetPages', () => {
-    it('calls invoke with correct params', async () => {
+    it('calls httpPost with correct params', async () => {
       const pages = [{ page: 1, content: 'text' }]
-      mockInvoke.mockResolvedValue(pages)
+      mockHttpPost.mockResolvedValue({ success: true, pages } as never)
 
       const result = await kbGetPages('/project', 'doc1', '1-3')
 
-      expect(invoke).toHaveBeenCalledWith('kb_get_pages', {
-        root: '/project',
-        docId: 'doc1',
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/kb/pages', {
+        project_root: '/project',
+        doc_id: 'doc1',
         pages: '1-3',
       })
       expect(result).toEqual(pages)

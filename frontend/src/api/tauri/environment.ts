@@ -1,7 +1,6 @@
-/** Resource manager — environment check, model paths, catalog. */
+/** Resource manager — environment check, model paths, catalog via HTTP. */
 
-import { invoke } from '@tauri-apps/api/core'
-import { invokeWithError } from './_utils'
+import { httpPost, httpGet, invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
 
 export interface ResourceStatusItem {
@@ -24,10 +23,10 @@ export interface EnvironmentReport {
   resources: ResourceStatusItem[]
 }
 
-/** 全量环境检查（Rust native，不依赖 Python sidecar） */
+/** 全量环境检查 */
 export async function resourcesCheck(): Promise<EnvironmentReport> {
   return invokeWithError(
-    () => invoke<EnvironmentReport>('resources_check'),
+    () => httpGet<EnvironmentReport>('/api/v1/environment/check'),
     ErrorCode.ApiError,
   )
 }
@@ -35,7 +34,7 @@ export async function resourcesCheck(): Promise<EnvironmentReport> {
 /** 检查单个资源状态 */
 export async function resourcesStatus(resourceId: string): Promise<ResourceStatusItem> {
   return invokeWithError(
-    () => invoke<ResourceStatusItem>('resources_status', { resourceId }),
+    () => httpPost<ResourceStatusItem>('/api/v1/resources/status', { resource_id: resourceId }),
     ErrorCode.ApiError,
   )
 }
@@ -43,14 +42,14 @@ export async function resourcesStatus(resourceId: string): Promise<ResourceStatu
 /** 获取已下载模型的本地路径 */
 export async function resourcesGetModelPath(resourceId: string): Promise<string | null> {
   return invokeWithError(
-    () => invoke<string | null>('resources_get_model_path', { resourceId }),
+    () => httpPost<string | null>('/api/v1/resources/model-path', { resource_id: resourceId }),
     ErrorCode.ApiError,
   )
 }
 
 /** 获取资源目录（纯元数据） */
 export async function resourcesCatalog(): Promise<Record<string, unknown>[]> {
-  return invoke<Record<string, unknown>[]>('resources_catalog')
+  return httpPost<Record<string, unknown>[]>('/api/v1/resources/catalog')
 }
 
 /** 获取模型缓存目录信息 */
@@ -59,16 +58,16 @@ export async function modelsCacheDirInfo(): Promise<{
   huggingface: { path: string; exists: boolean; size_mb: number; env_var: string }
   modelscope: { path: string; exists: boolean; size_mb: number; env_var: string }
 }> {
-  return invoke('models_cache_dir_info')
+  return httpPost('/api/v1/resource/cache-dir-info')
 }
 
-/** 刷新模型路径解析（Rust 重新扫描缓存目录并写入 resolved_paths.json） */
+/** 刷新模型路径解析（重新扫描缓存目录并写入 resolved_paths.json） */
 export async function refreshResolvedPaths(): Promise<{
   success: boolean
   resources: Record<string, string>
 }> {
   return invokeWithError(
-    () => invoke<{ success: boolean; resources: Record<string, string> }>('refresh_resolved_paths'),
+    () => httpPost<{ success: boolean; resources: Record<string, string> }>('/api/v1/resources/refresh-paths'),
     ErrorCode.ApiError,
   )
 }

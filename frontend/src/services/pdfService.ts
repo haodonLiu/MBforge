@@ -2,15 +2,15 @@
  * PDF 服务层 — 前端到后端的统一接口
  *
  * 分层架构：
- *   UI 组件 → pdfService (本文件) → Tauri IPC → Rust 命令 → Python Sidecar
+ *   UI 组件 → pdfService (本文件) → HTTP → Python Backend
  *
  * 设计原则：
- *   1. 所有 Tauri invoke 调用封装在此，UI 层不直接 import invoke
+ *   1. 所有 HTTP 调用封装在此，UI 层不直接 import httpPost
  *   2. 错误统一处理，返回 { success, data?, error? }
  *   3. 支持取消和超时
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { httpPost } from '../api/tauri/_utils'
 import type {
   ExtractionResult,
 } from '../types'
@@ -72,9 +72,6 @@ export interface CorefChain {
 // 分子检测 API
 // ============================================================================
 
-/**
- * 缓存感知的单页分子检测
- */
 export async function detectPageMolecules(params: {
   projectRoot: string
   docId: string
@@ -87,21 +84,21 @@ export async function detectPageMolecules(params: {
   force?: boolean
 }): Promise<ServiceResult<DetectionResponse>> {
   try {
-    const resp = await invoke<{
+    const resp = await httpPost<{
       results: unknown[]
       count: number
       source: string
       cache_path?: string
       error?: string
-    }>('cached_extract_page', {
-      projectRoot: params.projectRoot,
-      docId: params.docId,
+    }>('/api/v1/models/extract/cached-page', {
+      project_root: params.projectRoot,
+      doc_id: params.docId,
       page: params.page,
-      imageBase64: params.imageBase64,
-      pageWPts: params.pageWPts,
-      pageHPts: params.pageHPts,
-      imageW: params.imageW,
-      imageH: params.imageH,
+      image_base64: params.imageBase64,
+      page_w_pts: params.pageWPts,
+      page_h_pts: params.pageHPts,
+      image_w: params.imageW,
+      image_h: params.imageH,
       force: params.force ?? false,
     })
 
@@ -123,22 +120,19 @@ export async function detectPageMolecules(params: {
   }
 }
 
-/**
- * 仅读取缓存的检测结果
- */
 export async function getCachedDetections(params: {
   projectRoot: string
   docId: string
   page: number
 }): Promise<ServiceResult<DetectionResponse>> {
   try {
-    const resp = await invoke<{
+    const resp = await httpPost<{
       results: unknown[]
       count: number
       source: string
-    }>('get_cached_page_detections', {
-      projectRoot: params.projectRoot,
-      docId: params.docId,
+    }>('/api/v1/models/extract/cached-detections', {
+      project_root: params.projectRoot,
+      doc_id: params.docId,
       page: params.page,
     })
 
@@ -155,34 +149,28 @@ export async function getCachedDetections(params: {
   }
 }
 
-/**
- * 清除单文档检测缓存
- */
 export async function clearDocumentDetections(
   projectRoot: string,
   docId: string,
 ): Promise<ServiceResult<void>> {
   try {
-    await invoke('clear_detection_cache_doc', { projectRoot, docId })
+    await httpPost('/api/v1/models/extract/clear-cache-doc', { project_root: projectRoot, doc_id: docId })
     return { success: true }
   } catch (e) {
     return { success: false, error: String(e) }
   }
 }
 
-/**
- * 获取检测缓存统计
- */
 export async function getDetectionStats(
   projectRoot: string,
 ): Promise<ServiceResult<CacheStats>> {
   try {
-    const resp = await invoke<{
+    const resp = await httpPost<{
       disk_usage_bytes: number
       cached_page_count: number
       cached_doc_count: number
       schema_version: number
-    }>('get_detection_cache_stats', { projectRoot })
+    }>('/api/v1/models/extract/cache-stats', { project_root: projectRoot })
 
     return {
       success: true,
@@ -202,9 +190,6 @@ export async function getDetectionStats(
 // 页面解析 API
 // ============================================================================
 
-/**
- * 获取页面解析结果（结构化文本 + 分子 + 发现）
- */
 export async function getPageParseResult(params: {
   projectRoot: string
   docId: string
@@ -212,16 +197,16 @@ export async function getPageParseResult(params: {
   pageHPts: number
 }): Promise<ServiceResult<PageParseResult>> {
   try {
-    const resp = await invoke<{
+    const resp = await httpPost<{
       page: number
       structured_text: Array<{ kind: string; content: string; bbox: [number, number, number, number] }>
       molecules: unknown[]
       findings: Array<{ kind: string; text: string; bbox: [number, number, number, number] }>
-    }>('get_page_parse_result', {
-      projectRoot: params.projectRoot,
-      docId: params.docId,
+    }>('/api/v1/models/parse/page', {
+      project_root: params.projectRoot,
+      doc_id: params.docId,
       page: params.page,
-      pageHPts: params.pageHPts,
+      page_h_pts: params.pageHPts,
     })
 
     return {
@@ -242,15 +227,12 @@ export async function getPageParseResult(params: {
 // Coref 链 API
 // ============================================================================
 
-/**
- * 获取分子的跨页 coref 链
- */
 export async function getMoleculeCorefChain(
   projectRoot: string,
   molId: string,
 ): Promise<ServiceResult<CorefChain>> {
   try {
-    const resp = await invoke<{
+    const resp = await httpPost<{
       mol_id: string
       occurrences: Array<{
         doc_id: string
@@ -262,7 +244,7 @@ export async function getMoleculeCorefChain(
         esmiles: string
       }>
       aliases: string[]
-    }>('get_molecule_coref_chain', { projectRoot, molId })
+    }>('/api/v1/models/coref/chain', { project_root: projectRoot, mol_id: molId })
 
     return {
       success: true,
@@ -306,15 +288,12 @@ export interface OcrLayoutResult {
   fromCache: boolean
 }
 
-/**
- * 获取文档 OCR 布局
- */
 export async function getOcrLayout(
   path: string,
   docId?: string,
 ): Promise<ServiceResult<OcrLayoutResult>> {
   try {
-    const resp = await invoke<{
+    const resp = await httpPost<{
       path: string
       parser: string
       page_count: number
@@ -327,7 +306,7 @@ export async function getOcrLayout(
         angle: number
       }>
       from_cache: boolean
-    }>('get_document_ocr_layout', { path, doc_id: docId })
+    }>('/api/v1/models/ocr/layout', { path, doc_id: docId })
 
     return {
       success: true,
@@ -366,14 +345,11 @@ export interface PdfClassification {
   title: string | null
 }
 
-/**
- * 快速分类 PDF 类型
- */
 export async function classifyPdf(
   path: string,
 ): Promise<ServiceResult<PdfClassification>> {
   try {
-    const resp = await invoke<{
+    const resp = await httpPost<{
       pdf_type: string
       confidence: number
       page_count: number
@@ -382,7 +358,7 @@ export async function classifyPdf(
       has_complex_layout: boolean
       has_encoding_issues: boolean
       title: string | null
-    }>('classify_pdf', { path })
+    }>('/api/v1/models/pdf/classify', { path })
 
     return {
       success: true,
@@ -414,18 +390,15 @@ export interface SidecarHealth {
   lastError: string | null
 }
 
-/**
- * 获取 sidecar 状态
- */
 export async function getSidecarStatus(): Promise<ServiceResult<SidecarHealth>> {
   try {
-    const resp = await invoke<{
+    const resp = await httpPost<{
       healthy: boolean
       restart_count: number
       state: string
       uptime_secs: number
       last_error: string | null
-    }>('sidecar_status')
+    }>('/api/v1/sidecar/status')
 
     return {
       success: true,
@@ -442,12 +415,9 @@ export async function getSidecarStatus(): Promise<ServiceResult<SidecarHealth>> 
   }
 }
 
-/**
- * 重启 sidecar
- */
 export async function restartSidecar(): Promise<ServiceResult<void>> {
   try {
-    await invoke('sidecar_restart')
+    await httpPost('/api/v1/sidecar/restart')
     return { success: true }
   } catch (e) {
     return { success: false, error: String(e) }
@@ -465,15 +435,12 @@ export interface QuickScanResult {
   moldetStatus: string
 }
 
-/**
- * 批量快速 MoldDet 扫描
- */
 export async function batchQuickScan(
   projectRoot: string,
   docIds?: string[],
 ): Promise<ServiceResult<QuickScanResult[]>> {
   try {
-    const resp = await invoke<{
+    const resp = await httpPost<{
       results: Array<{
         doc_id: string
         page_count: number
@@ -483,8 +450,9 @@ export async function batchQuickScan(
       processed: number
       total: number
       errors: string[]
-    }>('batch_quick_moldet_scan', {
-      request: { project_root: projectRoot, doc_ids: docIds ?? [] },
+    }>('/api/v1/models/moldet/batch-scan', {
+      project_root: projectRoot,
+      doc_ids: docIds ?? [],
     })
 
     return {
@@ -514,9 +482,6 @@ export interface ImageRef {
   rel_path: string | null
 }
 
-/**
- * 提取 PDF 中的图片
- */
 export async function extractPdfImages(
   path: string,
   chunkSize?: number,
@@ -524,7 +489,7 @@ export async function extractPdfImages(
   parser?: string,
 ): Promise<ServiceResult<ImageRef[]>> {
   try {
-    const resp = await invoke<{
+    const resp = await httpPost<{
       images: Array<{
         filename: string
         page: number
@@ -533,9 +498,9 @@ export async function extractPdfImages(
         esmiles: string | null
         rel_path: string | null
       }>
-    }>('parse_pdf', {
+    }>('/api/v1/models/pdf/parse', {
       path,
-      chunkSize: chunkSize ?? 512,
+      chunk_size: chunkSize ?? 512,
       overlap: overlap ?? 128,
       parser: parser ?? 'pdf_inspector',
     })

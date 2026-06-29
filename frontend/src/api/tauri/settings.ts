@@ -1,9 +1,6 @@
-// 设置 Tauri 调用的前端封装。
-//
-// 字段命名与后端 `AppConfig` 保持一致（snake_case 节点），
-// 拍平/映射逻辑在 `components/settings/types.ts` 里。
+/** Settings HTTP API wrappers. */
 
-import { invoke } from '@tauri-apps/api/core'
+import { httpGet, httpPut } from './_utils'
 
 export interface LlmConfig {
   provider?: string
@@ -101,8 +98,8 @@ export interface SettingsResponse {
 
 export async function getSettings(): Promise<SettingsResponse> {
   try {
-    const settings = await invoke<AppSettings>('get_settings')
-    return { success: true, settings }
+    const resp = await httpGet<{ success: boolean; settings: AppSettings }>('/api/v1/settings')
+    return { success: true, settings: resp.settings }
   } catch (e) {
     return { success: false, error: String(e) }
   }
@@ -110,7 +107,7 @@ export async function getSettings(): Promise<SettingsResponse> {
 
 export async function saveSettings(settings: Record<string, unknown>): Promise<{ success: boolean; error?: string }> {
   try {
-    await invoke('save_settings', { settings })
+    await httpPut('/api/v1/settings', settings)
     return { success: true }
   } catch (e) {
     return { success: false, error: String(e) }
@@ -125,17 +122,27 @@ export interface BuildInfo {
 }
 
 export async function fetchBuildInfo(): Promise<BuildInfo> {
-  return invoke<BuildInfo>('app_build_info')
+  const resp = await httpGet<{ version?: string; platform?: string; config_path?: string }>('/api/v1/settings')
+  return { version: resp.version || '0.4.0', tauri: 'web', platform: resp.platform || navigator.platform, config_path: resp.config_path || '' }
 }
 
-export async function exportSettings(targetPath: string): Promise<void> {
-  await invoke('export_settings', { targetPath })
+export async function exportSettings(_targetPath: string): Promise<void> {
+  const settings = await getSettings()
+  if (settings.settings) {
+    const blob = new Blob([JSON.stringify(settings.settings, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'mbforge-settings.json'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 }
 
 export async function resetSettings(): Promise<void> {
-  await invoke('reset_settings')
+  await httpPut('/api/v1/settings', {})
 }
 
-export async function getConfigDir(): Promise<string> {
-  return invoke<string>('config_dir_path')
+export function getConfigDir(): Promise<string> {
+  return Promise.resolve('/config')
 }

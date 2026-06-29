@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
+vi.mock('../_utils', () => ({
+  httpPost: vi.fn(),
+  httpGet: vi.fn(),
+  httpPut: vi.fn(),
+  httpDelete: vi.fn(),
+  invokeWithError: vi.fn((_fn: () => Promise<unknown>) => _fn()),
+  ErrorCode: { ApiError: 'ApiError', Network: 'Network', Unknown: 'Unknown', MoleculeSearch: 'MoleculeSearch' },
 }))
 
-import { invoke } from '@tauri-apps/api/core'
+import { httpPost } from '../_utils'
 import {
   sarFindScaffold,
   sarDecompose,
@@ -17,7 +22,7 @@ import {
   type CompoundInput,
 } from '../sar'
 
-const mockInvoke = vi.mocked(invoke)
+const mockHttpPost = vi.mocked(httpPost)
 
 describe('sar API', () => {
   beforeEach(() => {
@@ -25,42 +30,42 @@ describe('sar API', () => {
   })
 
   describe('sarFindScaffold', () => {
-    it('calls sar_find_scaffold with the smiles list', async () => {
+    it('calls httpPost with the smiles list', async () => {
       const stub: ScaffoldResult = {
         scaffold_smarts: '[c]:0-[c]:1;[c]:1-[c]:2;[c]:2-[c]:3;[c]:3-[c]:4;[c]:4-[c]:5;[c]:5-[c]:0',
         atom_count: 6,
         bond_count: 6,
       }
-      mockInvoke.mockResolvedValue(stub)
+      mockHttpPost.mockResolvedValue(stub as never)
 
       const smilesList = ['c1ccc(CC(=O)O)cc1', 'c1ccc(CC(=O)N)cc1']
       const result = await sarFindScaffold(smilesList)
 
       expect(result).toEqual(stub)
-      expect(invoke).toHaveBeenCalledTimes(1)
-      expect(invoke).toHaveBeenCalledWith('sar_find_scaffold', { smilesList })
+      expect(httpPost).toHaveBeenCalledTimes(1)
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/sar/find-scaffold', { smilesList })
     })
 
     it('returns null when no common scaffold is found', async () => {
-      mockInvoke.mockResolvedValue(null)
+      mockHttpPost.mockResolvedValue(null as never)
 
       const result = await sarFindScaffold(['C', 'N'])
 
       expect(result).toBeNull()
-      expect(invoke).toHaveBeenCalledTimes(1)
-      expect(invoke).toHaveBeenCalledWith('sar_find_scaffold', { smilesList: ['C', 'N'] })
+      expect(httpPost).toHaveBeenCalledTimes(1)
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/sar/find-scaffold', { smilesList: ['C', 'N'] })
     })
 
-    it('propagates invoke rejection', async () => {
-      mockInvoke.mockRejectedValue(new Error('scaffold failed'))
+    it('propagates httpPost rejection', async () => {
+      mockHttpPost.mockRejectedValue(new Error('scaffold failed'))
 
       await expect(sarFindScaffold(['C'])).rejects.toThrow('scaffold failed')
-      expect(invoke).toHaveBeenCalledTimes(1)
+      expect(httpPost).toHaveBeenCalledTimes(1)
     })
   })
 
   describe('sarDecompose', () => {
-    it('calls sar_decompose with smiles and coreSmiles', async () => {
+    it('calls httpPost with smiles and coreSmiles', async () => {
       const stub: RGroupDecomposition = {
         compound_id: '',
         compound_name: '',
@@ -70,23 +75,23 @@ describe('sar API', () => {
           { position: 0, label: 'R1', substituent_smiles: '[R1]', substituent_atoms: 2 },
         ],
       }
-      mockInvoke.mockResolvedValue(stub)
+      mockHttpPost.mockResolvedValue(stub as never)
 
       const result = await sarDecompose('c1ccc(CC(=O)O)cc1', 'c1ccccc1')
 
       expect(result).toEqual(stub)
-      expect(invoke).toHaveBeenCalledTimes(1)
-      expect(invoke).toHaveBeenCalledWith('sar_decompose', {
+      expect(httpPost).toHaveBeenCalledTimes(1)
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/sar/decompose', {
         smiles: 'c1ccc(CC(=O)O)cc1',
         coreSmiles: 'c1ccccc1',
       })
     })
 
-    it('propagates invoke rejection', async () => {
-      mockInvoke.mockRejectedValue(new Error('decompose failed'))
+    it('propagates httpPost rejection', async () => {
+      mockHttpPost.mockRejectedValue(new Error('decompose failed'))
 
       await expect(sarDecompose('C', 'C')).rejects.toThrow('decompose failed')
-      expect(invoke).toHaveBeenCalledTimes(1)
+      expect(httpPost).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -96,7 +101,7 @@ describe('sar API', () => {
       { id: 'mol2', name: 'B', smiles: 'c1ccc(CC(=O)N)cc1', activity: 2.4 },
     ]
 
-    it('calls sar_build_matrix with compounds and explicit coreSmiles', async () => {
+    it('calls httpPost with compounds and explicit coreSmiles', async () => {
       const stub: RGroupMatrix = {
         core_smiles: 'c1ccccc1',
         r_labels: ['R1'],
@@ -107,13 +112,13 @@ describe('sar API', () => {
         ],
         unmatched_count: 0,
       }
-      mockInvoke.mockResolvedValue(stub)
+      mockHttpPost.mockResolvedValue(stub as never)
 
       const result = await sarBuildMatrix(compounds, 'c1ccccc1')
 
       expect(result).toEqual(stub)
-      expect(invoke).toHaveBeenCalledTimes(1)
-      expect(invoke).toHaveBeenCalledWith('sar_build_matrix', {
+      expect(httpPost).toHaveBeenCalledTimes(1)
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/sar/build-matrix', {
         compounds,
         coreSmiles: 'c1ccccc1',
       })
@@ -130,23 +135,23 @@ describe('sar API', () => {
         ],
         unmatched_count: 2,
       }
-      mockInvoke.mockResolvedValue(stub)
+      mockHttpPost.mockResolvedValue(stub as never)
 
       const result = await sarBuildMatrix(compounds)
 
       expect(result).toEqual(stub)
-      expect(invoke).toHaveBeenCalledTimes(1)
-      expect(invoke).toHaveBeenCalledWith('sar_build_matrix', {
+      expect(httpPost).toHaveBeenCalledTimes(1)
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/sar/build-matrix', {
         compounds,
         coreSmiles: null,
       })
     })
 
-    it('propagates invoke rejection', async () => {
-      mockInvoke.mockRejectedValue(new Error('matrix failed'))
+    it('propagates httpPost rejection', async () => {
+      mockHttpPost.mockRejectedValue(new Error('matrix failed'))
 
       await expect(sarBuildMatrix(compounds)).rejects.toThrow('matrix failed')
-      expect(invoke).toHaveBeenCalledTimes(1)
+      expect(httpPost).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -162,7 +167,7 @@ describe('sar API', () => {
       unmatched_count: 0,
     }
 
-    it('calls sar_heatmap with matrix and lowerIsBetter true by default', async () => {
+    it('calls httpPost with matrix and lowerIsBetter true by default', async () => {
       const stub: ActivityHeatmap[] = [
         {
           r_label: 'R1',
@@ -172,35 +177,35 @@ describe('sar API', () => {
           ],
         },
       ]
-      mockInvoke.mockResolvedValue(stub)
+      mockHttpPost.mockResolvedValue(stub as never)
 
       const result = await sarHeatmap(matrix)
 
       expect(result).toEqual(stub)
-      expect(invoke).toHaveBeenCalledTimes(1)
-      expect(invoke).toHaveBeenCalledWith('sar_heatmap', {
+      expect(httpPost).toHaveBeenCalledTimes(1)
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/sar/heatmap', {
         matrix,
         lowerIsBetter: true,
       })
     })
 
     it('passes explicit lowerIsBetter value', async () => {
-      mockInvoke.mockResolvedValue([])
+      mockHttpPost.mockResolvedValue([] as never)
 
       await sarHeatmap(matrix, false)
 
-      expect(invoke).toHaveBeenCalledTimes(1)
-      expect(invoke).toHaveBeenCalledWith('sar_heatmap', {
+      expect(httpPost).toHaveBeenCalledTimes(1)
+      expect(httpPost).toHaveBeenCalledWith('/api/v1/sar/heatmap', {
         matrix,
         lowerIsBetter: false,
       })
     })
 
-    it('propagates invoke rejection', async () => {
-      mockInvoke.mockRejectedValue(new Error('heatmap failed'))
+    it('propagates httpPost rejection', async () => {
+      mockHttpPost.mockRejectedValue(new Error('heatmap failed'))
 
       await expect(sarHeatmap(matrix)).rejects.toThrow('heatmap failed')
-      expect(invoke).toHaveBeenCalledTimes(1)
+      expect(httpPost).toHaveBeenCalledTimes(1)
     })
   })
 })

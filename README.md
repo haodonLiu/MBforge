@@ -6,29 +6,33 @@
 
 # English
 
-> **Bringing molecular literature to life.** MBForge is a desktop AI workbench that transforms PDF papers into searchable, reasoning-capable molecular knowledge bases with natural language query support.
+> **Bringing molecular literature to life.** MBForge is an AI workbench that
+> transforms PDF papers into searchable, reasoning-capable molecular knowledge
+> bases with natural language query support.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![React 19](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
-[![Tauri v2](https://img.shields.io/badge/Tauri-v2-orange.svg)](https://tauri.app/)
-[![Rust](https://img.shields.io/badge/Rust-2021_edition-red)](https://www.rust-lang.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.4+-1C3C3C.svg)](https://langchain-ai.github.io/langgraph/)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](LICENSE)
 
 ## What is MBForge?
 
-MBForge (Molecular Knowledge Base) is a desktop application for **drug discovery** and **molecular science** researchers. It solves a critical pain point:
+MBForge (Molecular Knowledge Base) is an application for **drug discovery**
+and **molecular science** researchers. It solves a critical pain point:
 
-> **Molecular structures and activity data scattered across PDFs are tedious to compile manually and difficult to query or reason about.**
+> **Molecular structures and activity data scattered across PDFs are tedious to
+> compile manually and difficult to query or reason about.**
 
 ### Core Workflow
 
 ```
 PDF Documents
-    ↓ Intelligent Parsing
+    ↓ Intelligent Parsing (5-stage pipeline)
 Structured Data (Compounds + Activity Data + Findings)
     ↓ Molecule Ingestion
-Local Knowledge Base (SQLite + Vector Index)
-    ↓ AI Conversation
+Local Knowledge Base (SQLite + Zvec vector + FTS5)
+    ↓ AI Conversation (LangGraph agent)
 Natural Language Query + Reasoning Analysis
 ```
 
@@ -36,97 +40,91 @@ Natural Language Query + Reasoning Analysis
 
 ### Smart PDF Parsing
 
-- **Multi-engine Support**: Rust native (lopdf) / PyMuPDF / MinerU / LlamaParse / UniParser
-- **Intent-driven**: Extract only what you need (e.g., "extract activity data from TABLE 1"), skip irrelevant sections
-- **Image Molecule Recognition**: YOLO detection + MolScribe (Swin Transformer) converts chemical structure images to SMILES
-- **Structured Output**: Compounds, activity data, key findings, uncertainties — auto-generated Markdown reports
+- **5-stage pipeline**: classify → extract → segment → chunk → index
+- **Pluggable backends**: pdfplumber for text, pypdfium2 for rendering, MinerU / LlamaParse / UniParser for difficult PDFs
+- **Image Molecule Recognition**: MolDetv2 (YOLO26n) detection + MolScribe (Swin Transformer) converts chemical structure images to SMILES
+- **Structured Output**: compounds, activity data, key findings, uncertainties — auto-generated Markdown reports
 
 ### AI Agent Conversation
 
-- **Local ReAct Agent**: 20+ tools for knowledge base retrieval, molecule queries, file operations
-- **Context Enhancement**: Auto-retrieves relevant literature and molecule data for precise answers
-- **Multi-turn Memory**: Persistent conversation history for complex reasoning tasks
-- **Multi-LLM Support**: OpenAI / Anthropic / Ollama (local models)
+- **LangGraph Agent**: 5 tools for knowledge base retrieval, molecule queries, document fetch, notes, and settings
+- **Multi-session**: persistent session store with history replay
+- **SSE Streaming**: token-by-token responses via Server-Sent Events
+- **Multi-LLM Support**: OpenAI / Anthropic / Ollama (local) / custom OpenAI-compatible
 
 ### Molecule Database
 
-- **Three-layer Representation**:
-  - **SMILES**: Source of truth, RDKit/chematic compatible
-  - **E-SMILES**: Semantic extension with Markush structures and R-group labels
-  - **MoleCode**: LLM-friendly Mermaid graph syntax with explicit topology
-- **Smart Deduplication**: Tanimoto similarity + auto-clustering
-- **Property Estimation**: Molecular weight, H-bond donors/acceptors, rotatable bonds
-- **Full-text Search**: FTS5 + vector semantic + Rerank re-ranking
+- **SMILES canonicalization**: RDKit-backed
+- **Smart deduplication**: Tanimoto similarity + auto-clustering
+- **Property estimation**: molecular weight, H-bond donors/acceptors, rotatable bonds
+- **Full-text search**: Zvec dense + FTS5 + RRF hybrid + Rerank re-ranking
 
-### SAR Analysis
+### Knowledge Base
 
-- **Structure-Activity Relationships**: Scaffold clustering, activity cliff detection
-- **R-group Analysis**: Visualize substituent positions vs. activity correlation
-- **Correction Workflow**: OCR result human review and correction
-
-### Project Management
-
-- **Vault Mode**: One folder = one project, Obsidian-style workflow
-- **Unified Storage**: molecules.db + vectors.db + semantic_cache.json
-- **Model Management**: Unified directory with download/view/delete, license info included
-- **Audit Log**: All operations are traceable
+- **Per-project vault**: one folder = one project, Obsidian-style workflow
+- **Unified storage**: SQLite business tables + Zvec vectors + semantic cache
+- **Model management**: download/view/delete with license info
+- **Audit log**: all operations traceable
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  React + Vite + TypeScript  (port 5173)                      │
+│  React + Vite + TypeScript  (port 5173)                     │
 │  ┌──────────┐ ┌──────────────┐ ┌─────────────────────────┐  │
 │  │  Chat    │ │  Molecule    │ │  Settings / Project     │  │
-│  │  Agent   │ │  Library     │ │  View / SAR Analysis    │  │
-│  └────┬─────┘ └──────┬───────┘ └───────────┬─────────────┘  │
-│       │              │                     │                │
+│  │  Agent   │ │  Library     │ │  View / KB / SAR        │  │
+│  └────┬─────┘ └──────┬───────┘ └───────────┬────────────┘  │
+│       │              │                     │               │
 │  ┌────┴──────────────┴─────────────────────┴─────────────┐  │
-│  │              api/tauri/index.ts                        │  │
-│  │    (window.__TAURI__.invoke → Rust commands)           │  │
-│  └───────────────────────┬───────────────────────────────┘  │
-└──────────────────────────┼──────────────────────────────────┘
-                           │
-┌──────────────────────────┼──────────────────────────────────┐
-│  Tauri Shell (Tauri v2 + Rust Core + Python Sidecar)        │
-│  ┌────────────────────┐  ┌──────────────────────────────┐  │
-│  │  src-tauri/crates/ │  │  FastAPI Sidecar             │  │
-│  │                    │  │  (port 18792)                 │  │
-│  │  mbforge-app/      │  │  ┌────────────────────────┐  │  │
-│  │    commands/ (~30) │  │  │ Qwen3-Embedding       │  │  │
-│  │  ────────────────  │  │  │ Qwen3-Reranker        │  │  │
-│  │  mbforge-domain/   │  │  │ MolDet (YOLO)         │  │  │
-│  │    document/       │  │  │ MolScribe (Swin+TR)   │  │  │
-│  │    molecule/       │  │  │ Zvec (dense+FTS)      │  │  │
-│  │    project/        │  │  └────────────────────────┘  │  │
-│  │    vector/         │  │                              │  │
-│  │  mbforge-pipeline/ │  │                              │  │
-│  │    pipeline/       │  │                              │  │
-│  │    structure/      │  │                              │  │
-│  │    pdf/, ocr/, chem/│  │                              │  │
-│  │  mbforge-infra/    │  │                              │  │
-│  │  mbforge-chem/     │  │                              │  │
-│  └────────────────────┘  └──────────────────────────────┘  │
+│  │       api/http/  +  api/sse.ts  (HTTP + SSE)         │  │
+│  └───────────────────────┬──────────────────────────────┘  │
+└──────────────────────────┼─────────────────────────────────┘
+                           │ HTTP / SSE
+┌──────────────────────────┼─────────────────────────────────┐
+│  FastAPI Backend  (127.0.0.1:18792)                         │
+│  ┌─────────────────────┐  ┌─────────────────────────────┐  │
+│  │  routers/  (12)     │  │  agent/  (LangGraph)        │  │
+│  │  ───────────────    │  │  graph + 5 tools + sessions │  │
+│  │  core/              │  │                             │  │
+│  │    database         │  │                             │  │
+│  │    knowledge_base   │  │                             │  │
+│  │    semantic_cache   │  │                             │  │
+│  │    project          │  │                             │  │
+│  │  pipeline/          │  │                             │  │
+│  │    classify         │  │                             │  │
+│  │    extract_text     │  │                             │  │
+│  │    segment          │  │                             │  │
+│  │    chunk            │  │                             │  │
+│  │    index            │  │                             │  │
+│  │    runner           │  │                             │  │
+│  └─────────────────────┘  └─────────────────────────────┘  │
+│                                                              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Local model backends  (lazy-loaded)                   │  │
+│  │  Qwen3-Embedding-0.6B   Qwen3-Reranker-0.6B           │  │
+│  │  MolDetv2 (YOLO26n)     MolScribe (Swin + TR)        │  │
+│  │  Zvec (dense + FTS5 + hybrid RRF)                     │  │
+│  └───────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Dual-language Architecture
+### Three-tier Architecture
 
 | Layer | Language | Responsibility |
-|-------|----------|----------------|
-| **Rust Core** | Rust | Agent loop, PDF native parsing, SQLite database, Tauri IPC command layer, API model calls |
-| **Python Service** | Python | Local model inference (Embedding, Rerank, MolDet, MolScribe, Zvec dense+FTS), FastAPI REST API |
-| **Frontend** | TypeScript | React components, page routing, state management, Tauri bridging |
+|---|---|---|
+| **Frontend** | TypeScript + React | Components, routing, state, HTTP bridge, SSE client |
+| **Backend** | Python (FastAPI) | Pipeline, KB, agent, model orchestration |
+| **Storage** | SQLite + Zvec + filesystem | Business data, vectors, project files |
 
 ### Performance Optimizations
 
-- **Rust Shared HTTP Client**: 4 timeout-categorized LazyLock singletons avoid connection pool creation per request
-- **Python Async Non-blocking**: All model inference routes wrapped with `run_in_executor`
-- **Startup Model Preheating**: FastAPI lifespan preloads Embedding/Rerank/MolDet/MolScribe in background threads
-- **requests.Session Reuse**: UniParser client uses persistent connections
+- **HTTP keep-alive**: `httpx.AsyncClient` reused per backend, configured timeouts
+- **Python async non-blocking**: model inference wrapped in `run_in_executor`
+- **Lazy model loading**: only `zvec` is prewarmed at startup; embed/rerank/moldet/molscribe load on first use to save startup time & VRAM
+- **Zvec hybrid search**: dense + FTS5 fused via RRF in a single call
 
 ## Quick Start
-
-> **Note:** The legacy one-click installer (`setup/index.sh` / `setup\index.bat`) was retired when the project moved to a 5-crate Rust workspace and a single Python sidecar. Use the **Manual Start** below — it is the supported path as of 2026-06-25.
 
 ### Manual Start
 
@@ -134,86 +132,91 @@ Natural Language Query + Reasoning Analysis
 # Install Python dependencies
 uv sync --dev
 
-# Start model server (Terminal 1)
-uv run uvicorn mbforge.server:app --host 127.0.0.1 --port 18792
+# Start backend (Terminal 1) — FastAPI on 127.0.0.1:18792
+uv run uvicorn mbforge.app:app --host 127.0.0.1 --port 18792
 
-# Start frontend (Terminal 2)
+# Start frontend (Terminal 2) — Vite dev server on :5173
 cd frontend && npm run dev
 ```
 
-Visit http://localhost:5173
+Open <http://localhost:5173>. The Vite dev server proxies `/api/*` to the
+Python backend, so the frontend uses relative URLs only.
 
 ### Production Build
 
 ```bash
-# Package desktop application
-cd src-tauri && cargo tauri build
+# Build frontend bundle
+cd frontend && npm run build
+
+# Serve frontend/dist behind any static file server
+# Run backend behind a reverse proxy (nginx, caddy) with SSE-aware timeouts
 ```
 
 ## Tech Stack
 
 | Category | Technology | Version | Purpose |
-|----------|-----------|---------|---------|
-| **Rust Core** | Tauri v2, lopdf, rusqlite, reqwest, tokio | 2 | Desktop shell, PDF parsing, database, HTTP, async |
-| **Python Service** | FastAPI, uvicorn, PyTorch (CUDA 12.8) | ≥0.115, ≥2.6 | REST API, model inference |
-| **Frontend** | React 19, TypeScript 6, Vite 8 | 19, 6, 8 | UI framework, type system, build tool |
-| **Cheminformatics** | chematic (Rust), RDKit (Python), MolScribe | — | Molecule parsing, fingerprints, image recognition |
+|---|---|---|---|
+| **Frontend** | React, TypeScript, Vite | 19, 6, 8 | UI framework, type system, build tool |
+| **Backend** | FastAPI, uvicorn, Pydantic | ≥0.115, ≥0.30, ≥2.6 | REST + SSE API, validation |
+| **Agent** | LangGraph, langchain | ≥0.4, ≥0.3 | Agent graph, LLM provider abstraction |
+| **Cheminformatics** | RDKit | — | SMILES canonicalization, fingerprints |
 | **AI/ML** | sentence-transformers, ultralytics (YOLO) | ≥2.5, ≥8.3 | Embedding, molecule detection |
-| **PDF Parsing** | lopdf (Rust), PyMuPDF, MinerU, LlamaParse, UniParser | — | Multi-engine document parsing |
-| **Package Manager** | uv (Python), Cargo (Rust), npm (frontend) | — | Dependency management |
+| **PDF Parsing** | pdfplumber, pypdfium2 | — | Text + image extraction |
+| **Storage** | SQLite (stdlib), Zvec | — | Business data + vector + FTS5 |
+| **Package Manager** | uv (Python), npm (frontend) | — | Dependency management |
 
 ## Testing
 
 ```bash
-# Rust tests
-cd src-tauri && cargo test
-
 # Python tests
 uv run pytest tests/ -v
 
-# Code check
+# Frontend tests
+cd frontend && npm run test
+
+# Lint + format
 uv run ruff check src/ && uv run ruff format src/ --check
+cd frontend && npm run lint
 ```
 
 ## Known Limitations
 
-> We believe in transparency. Here are the current limitations we're actively working on:
+> We believe in transparency. Here are the current limitations we're actively
+> working on. See `TODO/INDEX.md` for the full prioritized list.
 
-### Architecture Debt
+### Test Coverage Gap
 
-1. **chem_validate.rs / core/chem.rs Overlap**: Duplicate chemical validation logic needs consolidation
-2. **vector_store.rs Interface Redundancy**: Multiple vector store implementations with overlapping APIs
-3. **std::sync::Mutex in Async Context**: Blocking mutexes in async code paths causing potential deadlocks
+The Python backend has good code structure but sparse test coverage (only
+`tests/unit/parsers/test_coref_alt.py` is currently populated). Most of the 53
+routes and 12 routers have no automated test. Priority work in `TODO/INDEX.md`
+P1/P2 to bring coverage to the ≥70% target.
 
 ### Performance Bottlenecks
 
-1. **27-minute Pipeline**: LLM calls are serial, causing long processing times for complex documents
-2. **No Cost Tracking**: No budget enforcement or cost monitoring for LLM API usage
-3. **Python Sidecar Single-process**: No connection pool or graceful degradation for model server
+1. **Sequential pipeline stages**: a single PDF goes through classify →
+   extract → segment → chunk → index in series; LLM-heavy stages don't yet
+   fan out across pages.
+2. **First-call latency**: embed/rerank/moldet/molscribe are lazy-loaded, so
+   the first user request that touches them pays 5–30s of model load time.
+3. **No cost tracking**: no budget enforcement or cost monitoring for LLM API
+   usage.
 
 ### Feature Gaps
 
-1. **chematic Dependency**: Git-based dependency without stable release tags
-2. **tracing Coverage**: Incomplete observability across cross-boundary calls
-3. **constants.rs Generation**: Code generation mechanism partially broken
-
-### UI/UX Issues
-
-1. **Mobile Support**: No responsive design for tablet/mobile viewing
-2. **Collaboration**: No real-time multi-user collaboration features
-3. **Export Formats**: Limited export options beyond Markdown
+1. **Mobile support**: no responsive design for tablet/phone viewing.
+2. **Collaboration**: no real-time multi-user knowledge base.
+3. **Export formats**: limited to Markdown.
 
 ## Roadmap
 
-### Q3 2026 — Stability & Performance
+### 2026 Q3 — Stability & Performance
 
-- [ ] Merge overlapping chem validation modules
-- [ ] Implement parallel LLM calls in pipeline (target: <5 min)
-- [ ] Add BudgetEnforcer for cost tracking
-- [ ] Fix vector_store interface redundancy
-- [ ] Expand tracing to all cross-boundary calls
+- [ ] Bring Python test coverage to ≥70% (P1 items in `TODO/INDEX.md`)
+- [ ] Implement parallel LLM calls in pipeline (target: <5 min for typical paper)
+- [ ] Add budget enforcement for LLM API usage
+- [ ] Document SSE reconnect logic + first-call latency UX
 
-### Q4 2026 — Enhanced AI Capabilities
+### 2026 Q4 — Enhanced AI Capabilities
 
 - [ ] Multi-modal RAG (text + images + molecular structures)
 - [ ] Agent workflow automation (scheduled tasks, batch processing)
@@ -230,29 +233,33 @@ uv run ruff check src/ && uv run ruff format src/ --check
 
 ## Contributing
 
-Contributions are welcome! Please see [AGENTS.md](AGENTS.md) for development guidelines.
+Contributions are welcome! See [AGENTS.md](AGENTS.md) for development
+guidelines, [TODO/INDEX.md](TODO/INDEX.md) for prioritized work, and
+[CLAUDE.md](CLAUDE.md) for repository-level AI context.
 
 ### Commit Convention
 
 ```
 <type>(<scope>): <subject>
 
-Types: feat | fix | refactor | perf | test | docs | chore
-Scopes: frontend | rust | python | tauri | api | parser | agent | deps
+Types:  feat | fix | refactor | perf | test | docs | chore
+Scopes: frontend | python | api | router | pipeline | agent | backend | deps
 ```
 
 ## Documentation
 
 | Document | Location | Description |
-|----------|----------|-------------|
-| **Project Entry** | [README.md](README.md) | Human user quick start |
-| **Agent Spec + Architecture** | [AGENTS.md](AGENTS.md) | AI coding assistant manual |
-| **Coding Guide** | [CLAUDE.md](CLAUDE.md) | Claude context + architecture quick reference |
-| **E-SMILES Spec** | [docs/specs/esmiles-spec.md](docs/specs/esmiles-spec.md) | Molecular representation spec |
-| **MoleCode Spec** | [docs/specs/molecode-spec.md](docs/specs/molecode-spec.md) | Graph syntax spec |
-| **Tech Stack** | [docs/TECH_STACK.md](docs/TECH_STACK.md) | Dependency selection details |
-| **Pipeline Redesign** | [docs/pipeline-redesign.md](docs/pipeline-redesign.md) | Parsing pipeline incremental design |
-| **Architecture Conventions** | [docs/specs/architecture-conventions.md](docs/specs/architecture-conventions.md) | Module boundaries and layering constraints |
+|---|---|---|
+| **Project entry** | [README.md](README.md) | Human user quick start |
+| **Repository guidelines** | [AGENTS.md](AGENTS.md) | AI coding assistant manual |
+| **AI quick-ref** | [CLAUDE.md](CLAUDE.md) | Repository-level AI context |
+| **Task board** | [TODO/INDEX.md](TODO/INDEX.md) | Prioritized work (P0–P3) |
+| **Architecture conventions** | [docs/specs/architecture-conventions.md](docs/specs/architecture-conventions.md) | Module boundaries and layering |
+| **Molecule representation** | [docs/specs/molecular-representation.md](docs/specs/molecular-representation.md) | SMILES / E-SMILES / MoleCode |
+| **E-SMILES spec** | [docs/specs/esmiles-spec.md](docs/specs/esmiles-spec.md) | Extended SMILES format |
+| **MoleCode spec** | [docs/specs/molecode-spec.md](docs/specs/molecode-spec.md) | Graph syntax |
+| **Code style** | [docs/specs/code-style.md](docs/specs/code-style.md) | Python + TS conventions |
+| **References** | [docs/REFERENCES.md](docs/REFERENCES.md) | Open-source attribution |
 
 ## License
 
@@ -260,41 +267,43 @@ Scopes: frontend | rust | python | tauri | api | parser | agent | deps
 
 ## Contact
 
-- **GitHub Issues**: Report bugs or suggest features
-- **Email**: Contact MBForge Team
+- **GitHub Issues**: report bugs or suggest features
+- **Email**: contact MBForge Team
 
 ---
 
 **MBForge** — Bringing molecular literature to life.
 
 ---
----
 
 # 中文
 
-> **让分子科学文献活起来。** MBForge 是一个桌面端 AI 工作台，将 PDF 文献转化为可检索、可推理的分子知识库，支持自然语言对话查询。
+> **让分子科学文献活起来。** MBForge 是一个 AI 工作台，将 PDF 文献转化为可
+> 检索、可推理的分子知识库，支持自然语言对话查询。
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![React 19](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
-[![Tauri v2](https://img.shields.io/badge/Tauri-v2-orange.svg)](https://tauri.app/)
-[![Rust](https://img.shields.io/badge/Rust-2021_edition-red)](https://www.rust-lang.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.4+-1C3C3C.svg)](https://langchain-ai.github.io/langgraph/)
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](LICENSE)
 
 ## 什么是 MBForge？
 
-MBForge（Molecular Knowledge Base）是一个面向**药物发现**和**分子科学**研究者的桌面应用。它解决一个核心痛点：
+MBForge（Molecular Knowledge Base）是一个面向**药物发现**和**分子科学**
+研究者的应用。它解决一个核心痛点：
 
-> **文献中的分子结构和活性数据散落在 PDF 各处，手动整理费时费力，且难以检索和推理。**
+> **文献中的分子结构和活性数据散落在 PDF 各处，手动整理费时费力，且难
+> 以检索和推理。**
 
 ### 核心工作流
 
 ```
 PDF 文档
-    ↓ 智能解析
+    ↓ 智能解析（5 阶段管线）
 结构化数据（化合物 + 活性数据 + 发现）
     ↓ 分子入库
-本地知识库（SQLite + 向量索引）
-    ↓ AI 对话
+本地知识库（SQLite + Zvec 向量 + FTS5）
+    ↓ AI 对话（LangGraph agent）
 自然语言查询 + 推理分析
 ```
 
@@ -302,109 +311,96 @@ PDF 文档
 
 ### 智能 PDF 解析
 
-- **多引擎可选**：Rust 原生解析（lopdf）/ PyMuPDF / MinerU / LlamaParse / UniParser
-- **意图驱动**：只提取你需要的内容（如"提取 TABLE 1 中的活性数据"），跳过无关章节
-- **图像分子识别**：YOLO 检测 + MolScribe（Swin Transformer）将化学结构图转为 SMILES
-- **结构化输出**：化合物、活性数据、关键发现、不确定项，自动生成 Markdown 报告
+- **5 阶段管线**：classify → extract → segment → chunk → index
+- **可插拔后端**：pdfplumber 提取文本，pypdfium2 渲染页面，困难 PDF 走
+  MinerU / LlamaParse / UniParser
+- **图像分子识别**：MolDetv2（YOLO26n）检测 + MolScribe（Swin Transformer）
+  将化学结构图转为 SMILES
+- **结构化输出**：化合物、活性数据、关键发现、不确定项，自动生成 Markdown
+  报告
 
 ### AI Agent 对话
 
-- **本地 ReAct Agent**：20+ 工具，支持知识库检索、分子查询、文件操作
-- **上下文增强**：自动检索相关文献和分子数据，提供精准回答
-- **多轮记忆**：对话历史持久化，支持复杂推理任务
-- **多 LLM 支持**：OpenAI / Anthropic / Ollama（本地模型）
+- **LangGraph Agent**：5 个工具，覆盖知识库检索、分子查询、文档获取、笔记、
+  设置
+- **多会话**：持久化会话存储，支持历史回放
+- **SSE 流式响应**：逐 token 输出（Server-Sent Events）
+- **多 LLM 支持**：OpenAI / Anthropic / Ollama（本地）/ 自定义 OpenAI 兼容
 
 ### 分子数据库
 
-- **三层表示架构**：
-  - **SMILES**：事实来源，RDKit/chematic 兼容
-  - **E-SMILES**：语义扩展，支持 Markush 结构和 R-group 标记
-  - **MoleCode**：LLM 友好的 Mermaid 图语法，显式拓扑结构
+- **SMILES 规范化**：RDKit 后端
 - **智能去重**：Tanimoto 相似度 + 自动聚类
 - **属性估算**：分子量、氢键供体/受体、可旋转键数
-- **全量搜索**：FTS5 全文 + 向量语义 + Rerank 重排序
+- **全量搜索**：Zvec dense + FTS5 + RRF 混合 + Rerank 重排序
 
-### SAR 分析
-
-- **结构-活性关系**：Scaffold 聚类、活性悬崖检测
-- **R-group 分析**：可视化取代基位置与活性关联
-- **修正工作流**：OCR 结果人工审核与修正
-
-### 项目管理
+### 知识库
 
 - **Vault 模式**：一个文件夹即一个项目，类似 Obsidian
-- **统一存储**：molecules.db + vectors.db + semantic_cache.json
-- **模型管理**：统一目录，支持下载/查看/删除，含许可证信息
+- **统一存储**：SQLite 业务表 + Zvec 向量 + 语义缓存
+- **模型管理**：支持下载/查看/删除，含许可证信息
 - **审计日志**：所有操作可追溯
 
 ## 架构设计
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  React + Vite + TypeScript  (port 5173)                      │
+│  React + Vite + TypeScript  (port 5173)                     │
 │  ┌──────────┐ ┌──────────────┐ ┌─────────────────────────┐  │
 │  │  Chat    │ │  Molecule    │ │  Settings / Project     │  │
-│  │  Agent   │ │  Library     │ │  View / SAR Analysis    │  │
-│  └────┬─────┘ └──────┬───────┘ └───────────┬─────────────┘  │
-│       │              │                     │                │
+│  │  Agent   │ │  Library     │ │  View / KB / SAR        │  │
+│  └────┬─────┘ └──────┬───────┘ └───────────┬────────────┘  │
+│       │              │                     │               │
 │  ┌────┴──────────────┴─────────────────────┴─────────────┐  │
-│  │              api/tauri/index.ts                        │  │
-│  │    (window.__TAURI__.invoke → Rust commands)           │  │
-│  └───────────────────────┬───────────────────────────────┘  │
-└──────────────────────────┼──────────────────────────────────┘
-                           │
-┌──────────────────────────┼──────────────────────────────────┐
-│  Tauri Shell (Tauri v2 + Rust Core + Python Sidecar)        │
-│  ┌────────────────────┐  ┌──────────────────────────────┐  │
-│  │  src-tauri/src/    │  │  FastAPI Sidecar             │  │
-│  │                    │  │  (port 18792)                 │  │
-│  │  commands/ (18)    │  │  ┌────────────────────────┐  │  │
-│  │  core/     (74)    │  │  │ Qwen3-Embedding       │  │  │
-│  │    agent/          │  │  │ Qwen3-Reranker        │  │  │
-│  │    chem/           │  │  │ MolDet (YOLO)         │  │  │
-│  │    document/       │  │  │ MolScribe (Swin+TR)   │  │  │
-│  │    molecule/       │  │  └────────────────────────┘  │  │
-│  │  parsers/  (27)    │  │                              │  │
-│  └────────────────────┘  └──────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+│  │       api/http/  +  api/sse.ts  (HTTP + SSE)         │  │
+│  └───────────────────────┬──────────────────────────────┘  │
+└──────────────────────────┼─────────────────────────────────┘
+                           │ HTTP / SSE
+┌──────────────────────────┼─────────────────────────────────┐
+│  FastAPI Backend  (127.0.0.1:18792)                         │
+│  ┌─────────────────────┐  ┌─────────────────────────────┐  │
+│  │  routers/  (12 个)  │  │  agent/  (LangGraph)        │  │
+│  │  ───────────────    │  │  graph + 5 tools + sessions │  │
+│  │  core/              │  │                             │  │
+│  │    database         │  │                             │  │
+│  │    knowledge_base   │  │                             │  │
+│  │    semantic_cache   │  │                             │  │
+│  │    project          │  │                             │  │
+│  │  pipeline/          │  │                             │  │
+│  │    classify         │  │                             │  │
+│  │    extract_text     │  │                             │  │
+│  │    segment          │  │                             │  │
+│  │    chunk            │  │                             │  │
+│  │    index            │  │                             │  │
+│  │    runner           │  │                             │  │
+│  └─────────────────────┘  └─────────────────────────────┘  │
+│                                                              │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  本地模型后端  (懒加载)                                │  │
+│  │  Qwen3-Embedding-0.6B   Qwen3-Reranker-0.6B           │  │
+│  │  MolDetv2 (YOLO26n)     MolScribe (Swin + TR)        │  │
+│  │  Zvec (dense + FTS5 + hybrid RRF)                     │  │
+│  └───────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### 双语言架构
+### 三层架构
 
-| 层级 | 语言 | 职责 |
-|------|------|------|
-| **Rust 核心** | Rust | Agent 循环、PDF 原生解析、SQLite 数据库、Tauri IPC 命令层、API 模型调用 |
-| **Python 服务** | Python | 本地模型推理（Embedding、Rerank、MolDet、MolScribe）、FastAPI REST API |
-| **前端** | TypeScript | React 组件、页面路由、状态管理、Tauri 桥接 |
+| 层级 | 技术 | 职责 |
+|---|---|---|
+| **前端** | TypeScript + React | 组件、路由、状态、HTTP 桥、SSE 客户端 |
+| **后端** | Python (FastAPI) | 管线、知识库、agent、模型编排 |
+| **存储** | SQLite + Zvec + 文件系统 | 业务数据、向量、项目文件 |
 
 ### 性能优化
 
-- **Rust 共享 HTTP 客户端**：4 个按超时分类的 LazyLock 单例，避免每次请求新建连接池
-- **Python 异步非阻塞**：所有模型推理路由通过 `run_in_executor` 包装
-- **启动模型预热**：FastAPI lifespan 在后台线程预加载 Embedding/Rerank/MolDet/MolScribe
-- **requests.Session 复用**：UniParser 客户端使用持久连接
+- **HTTP keep-alive**：每个后端复用 `httpx.AsyncClient`，按超时分级
+- **Python 异步非阻塞**：模型推理通过 `run_in_executor` 包装
+- **模型懒加载**：启动时只预热 `zvec`；embed/rerank/moldet/molscribe 首次调用
+  时加载，节省启动时间与显存
+- **Zvec 混合检索**：dense + FTS5 通过 RRF 单次融合
 
 ## 快速开始
-
-### 一键配置
-
-```bash
-# Linux/macOS
-./setup/index.sh
-
-# Windows
-setup\index.bat
-```
-
-交互式脚本会引导你完成：
-1. 环境检查与依赖安装
-2. UniParser 服务配置
-3. Ollama 检测
-4. LLM 提供商选择（OpenAI/Anthropic/Ollama）
-5. Embedding/Rerank 模型配置
-6. ModelScope 模型下载
-7. 写入 `.env` 配置文件
-8. 验证安装
 
 ### 手动启动
 
@@ -412,84 +408,87 @@ setup\index.bat
 # 安装 Python 依赖
 uv sync --dev
 
-# 启动模型服务器（终端 1）
-uv run uvicorn mbforge.server:app --host 127.0.0.1 --port 18792
+# 启动后端（终端 1）— FastAPI on 127.0.0.1:18792
+uv run uvicorn mbforge.app:app --host 127.0.0.1 --port 18792
 
-# 启动前端（终端 2）
+# 启动前端（终端 2）— Vite dev server on :5173
 cd frontend && npm run dev
 ```
 
-访问 http://localhost:5173
+打开 <http://localhost:5173>。Vite 开发服务器将 `/api/*` 代理到 Python 后端，
+前端只使用相对路径。
 
 ### 生产构建
 
 ```bash
-# 打包桌面应用
-cd src-tauri && cargo tauri build
+# 构建前端
+cd frontend && npm run build
+
+# 用任意静态文件服务器部署 frontend/dist/
+# 用反向代理（nginx、caddy）部署后端，注意 SSE 超时配置
 ```
 
 ## 技术栈
 
 | 类别 | 技术 | 版本 | 用途 |
-|------|------|------|------|
-| **Rust 核心** | Tauri v2, lopdf, rusqlite, reqwest, tokio | 2 | 桌面壳、PDF 解析、数据库、HTTP、异步 |
-| **Python 服务** | FastAPI, uvicorn, PyTorch (CUDA 12.8) | ≥0.115, ≥2.6 | REST API、模型推理 |
-| **前端** | React 19, TypeScript, Vite 6 | 19, 6 | UI 框架、构建工具 |
-| **化学信息学** | chematic (Rust), RDKit (Python), MolScribe | — | 分子解析、指纹、图像识别 |
+|---|---|---|---|
+| **前端** | React, TypeScript, Vite | 19, 6, 8 | UI 框架、类型系统、构建工具 |
+| **后端** | FastAPI, uvicorn, Pydantic | ≥0.115, ≥0.30, ≥2.6 | REST + SSE API、参数校验 |
+| **Agent** | LangGraph, langchain | ≥0.4, ≥0.3 | Agent 图、LLM provider 抽象 |
+| **化学信息学** | RDKit | — | SMILES 规范化、指纹 |
 | **AI/ML** | sentence-transformers, ultralytics (YOLO) | ≥2.5, ≥8.3 | Embedding、分子检测 |
-| **PDF 解析** | lopdf (Rust), PyMuPDF, MinerU, LlamaParse, UniParser | — | 多引擎文档解析 |
-| **包管理** | uv (Python), Cargo (Rust), npm (前端) | — | 依赖管理 |
+| **PDF 解析** | pdfplumber, pypdfium2 | — | 文本 + 图像提取 |
+| **存储** | SQLite (stdlib), Zvec | — | 业务数据 + 向量 + FTS5 |
+| **包管理** | uv (Python), npm (前端) | — | 依赖管理 |
 
 ## 测试
 
 ```bash
-# Rust 测试
-cd src-tauri && cargo test
-
 # Python 测试
 uv run pytest tests/ -v
 
+# 前端测试
+cd frontend && npm run test
+
 # 代码检查
 uv run ruff check src/ && uv run ruff format src/ --check
+cd frontend && npm run lint
 ```
 
 ## 已知局限
 
-> 我们相信透明度。以下是目前正在积极解决的已知局限：
+> 我们相信透明度。以下是目前正在积极解决的已知局限，详见
+> [TODO/INDEX.md](TODO/INDEX.md)。
 
-### 架构债务
+### 测试覆盖缺口
 
-1. **chem_validate.rs / core/chem.rs 重叠**：重复的化学验证逻辑需要合并
-2. **vector_store.rs 接口冗余**：多个向量存储实现存在重叠 API
-3. **std::sync::Mutex 在异步上下文中使用**：阻塞互斥锁在异步代码路径中可能导致死锁
+Python 后端结构良好，但测试覆盖稀疏（目前仅有
+`tests/unit/parsers/test_coref_alt.py` 一个 unit test）。53 个 routes 和 12
+个 routers 中大多数没有自动化测试。`TODO/INDEX.md` P1/P2 中的优先级工作
+目标是把覆盖率提升到 ≥70%。
 
 ### 性能瓶颈
 
-1. **27 分钟管线**：LLM 调用是串行的，导致复杂文档处理时间过长
-2. **无成本追踪**：没有 LLM API 使用的预算执行或成本监控
-3. **Python Sidecar 单进程**：模型服务器无连接池或优雅降级
+1. **管线阶段串行**：单个 PDF 走 classify → extract → segment → chunk →
+   index；LLM 密集阶段尚未在页面间并行
+2. **首次调用延迟**：embed/rerank/moldet/molscribe 是懒加载，首次触发的
+   请求会付 5–30 秒模型加载成本
+3. **无成本追踪**：LLM API 使用无预算执行与成本监控
 
 ### 功能缺口
 
-1. **chematic 依赖**：基于 Git 的依赖没有稳定发布标签
-2. **tracing 覆盖不全**：跨边界调用的可观测性不完整
-3. **constants.rs 生成机制**：代码生成机制部分失效
-
-### UI/UX 问题
-
-1. **移动端支持**：无平板/手机查看的响应式设计
-2. **协作功能**：无实时多人协作功能
-3. **导出格式**：除 Markdown 外导出选项有限
+1. **移动端支持**：无平板/手机响应式设计
+2. **协作功能**：无实时多人知识库
+3. **导出格式**：除 Markdown 外选项有限
 
 ## 开发路线图
 
 ### 2026 Q3 — 稳定性与性能
 
-- [ ] 合并重叠的化学验证模块
-- [ ] 实现管线中 LLM 调用并行化（目标：<5 分钟）
-- [ ] 添加 BudgetEnforcer 用于成本追踪
-- [ ] 修复 vector_store 接口冗余
-- [ ] 扩展 tracing 到所有跨边界调用
+- [ ] Python 测试覆盖率提升到 ≥70%（`TODO/INDEX.md` P1 项）
+- [ ] 管线 LLM 调用并行化（目标：<5 分钟）
+- [ ] 添加 LLM API 预算执行
+- [ ] 完善 SSE 重连与首次调用延迟 UX
 
 ### 2026 Q4 — 增强 AI 能力
 
@@ -508,7 +507,9 @@ uv run ruff check src/ && uv run ruff format src/ --check
 
 ## 贡献
 
-欢迎贡献！请参阅 [AGENTS.md](AGENTS.md) 了解开发规范。
+欢迎贡献！请参阅 [AGENTS.md](AGENTS.md) 了解开发规范，
+[TODO/INDEX.md](TODO/INDEX.md) 了解优先级工作，
+[CLAUDE.md](CLAUDE.md) 了解仓库级 AI 上下文。
 
 ### 提交规范
 
@@ -516,21 +517,23 @@ uv run ruff check src/ && uv run ruff format src/ --check
 <type>(<scope>): <subject>
 
 类型: feat | fix | refactor | perf | test | docs | chore
-范围: frontend | rust | python | tauri | api | parser | agent | deps
+范围: frontend | python | api | router | pipeline | agent | backend | deps
 ```
 
 ## 文档索引
 
 | 文档 | 位置 | 说明 |
-|------|------|------|
+|---|---|---|
 | **项目入口** | [README.md](README.md) | 人类用户快速开始 |
-| **Agent 规范 + 架构** | [AGENTS.md](AGENTS.md) | AI 编码助手操作手册 |
-| **编码指南** | [CLAUDE.md](CLAUDE.md) | Claude 上下文 + 架构速查 |
-| **E-SMILES 规范** | [docs/specs/esmiles-spec.md](docs/specs/esmiles-spec.md) | 分子表示规范 |
-| **MoleCode 规范** | [docs/specs/molecode-spec.md](docs/specs/molecode-spec.md) | 图语法规范 |
-| **技术栈** | [docs/TECH_STACK.md](docs/TECH_STACK.md) | 依赖选型详情 |
-| **管线重设计** | [docs/pipeline-redesign.md](docs/pipeline-redesign.md) | 解析管线增量设计 |
+| **仓库指南** | [AGENTS.md](AGENTS.md) | AI 编码助手操作手册 |
+| **AI 速查** | [CLAUDE.md](CLAUDE.md) | 仓库级 AI 上下文 |
+| **任务表** | [TODO/INDEX.md](TODO/INDEX.md) | 优先级工作（P0–P3） |
 | **架构约定** | [docs/specs/architecture-conventions.md](docs/specs/architecture-conventions.md) | 模块边界与分层约束 |
+| **分子表示** | [docs/specs/molecular-representation.md](docs/specs/molecular-representation.md) | SMILES / E-SMILES / MoleCode |
+| **E-SMILES 规范** | [docs/specs/esmiles-spec.md](docs/specs/esmiles-spec.md) | 扩展 SMILES 格式 |
+| **MoleCode 规范** | [docs/specs/molecode-spec.md](docs/specs/molecode-spec.md) | 图语法 |
+| **代码风格** | [docs/specs/code-style.md](docs/specs/code-style.md) | Python + TS 规范 |
+| **致谢与引用** | [docs/REFERENCES.md](docs/REFERENCES.md) | 开源项目致谢 |
 
 ## 许可证
 

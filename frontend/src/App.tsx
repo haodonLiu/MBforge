@@ -15,7 +15,6 @@ import TabBar from './components/project/TabBar'
 import PdfViewer from './components/project/PdfViewer'
 import MarkdownViewer from './components/MarkdownViewer'
 import { AppProvider, useAppContext } from './context/AppContext'
-import { ask } from '@tauri-apps/plugin-dialog'
 import { showToast } from './hooks/useToast'
 import { useIsMobile, useIsTablet } from './styles/responsive'
 import { registerGlobalErrorHandlers } from './api/tauri/_utils'
@@ -196,10 +195,7 @@ function AppInner() {
         current={currentPage}
         onNavigate={setCurrentPage}
         onSwitchProject={async () => {
-          const ok = await ask(t('nav.confirmSwitchProject'), {
-            title: t('nav.switchProject') || t('nav.confirmSwitchProject'),
-            kind: 'warning',
-          })
+          const ok = window.confirm(t('nav.confirmSwitchProject'))
           if (ok) setProjectRoot('')
         }}
         projectScopeOpen={projectScopeOpen}

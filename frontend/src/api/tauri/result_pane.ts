@@ -1,8 +1,6 @@
-/** Tauri commands backing the PDF viewer right-hand result pane.
+/** HTTP-backed PDF viewer right-hand result pane.
  *
- * Wraps the Rust commands defined in
- * `src-tauri/src/commands/result_pane.rs` which back the spec in
- * `PDF_RESULT_PANE_API.md` §8.
+ * Replaces Tauri IPC with HTTP calls to the FastAPI backend.
  *
  * - `getMoleculeCorefChain` — list every cached occurrence of one molecule
  *   across the project, with bbox + text snippet per hit.
@@ -10,7 +8,7 @@
  *   detections + heuristic findings for a single page.
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { httpPost } from './_utils'
 
 // ---------------------------------------------------------------------------
 // §8.1 get_molecule_coref_chain
@@ -41,7 +39,7 @@ export async function getMoleculeCorefChain(
   projectRoot: string,
   molId: string,
 ): Promise<CorefChain> {
-  return invoke<CorefChain>('get_molecule_coref_chain', {
+  return httpPost<CorefChain>('/api/v1/coref/molecule-chain', {
     projectRoot,
     molId,
   })
@@ -85,7 +83,7 @@ export async function getPageParseResult(params: {
   page: number
   pageHPts: number
 }): Promise<PageParseResult> {
-  return invoke<PageParseResult>('get_page_parse_result', {
+  return httpPost<PageParseResult>('/api/v1/coref/page-parse-result', {
     projectRoot: params.projectRoot,
     docId: params.docId,
     page: params.page,
@@ -144,7 +142,7 @@ export async function getFigureLabels(
   docId: string,
   page: number,
 ): Promise<FigureLabel[]> {
-  return invoke<FigureLabel[]>('get_figure_labels', {
+  return httpPost<FigureLabel[]>('/api/v1/coref/figure-labels', {
     projectRoot,
     docId,
     page,
@@ -157,7 +155,7 @@ export async function getCorefPredictions(
   docId: string,
   page: number,
 ): Promise<CorefPrediction[]> {
-  return invoke<CorefPrediction[]>('get_coref_predictions', {
+  return httpPost<CorefPrediction[]>('/api/v1/coref/predictions', {
     projectRoot,
     docId,
     page,
@@ -171,7 +169,7 @@ export async function ensureCorefForImage(
   page: number,
   imagePath: string,
 ): Promise<EnsureCorefResult> {
-  return invoke<EnsureCorefResult>('ensure_coref_for_image', {
+  return httpPost<EnsureCorefResult>('/api/v1/coref/ensure-for-image', {
     projectRoot,
     docId,
     page,
@@ -185,7 +183,7 @@ export async function confirmCorefPrediction(
   predictionId: number,
   isConfirmed: boolean,
 ): Promise<void> {
-  await invoke('confirm_coref_prediction', {
+  await httpPost('/api/v1/coref/confirm-prediction', {
     projectRoot,
     predictionId,
     isConfirmed,
@@ -203,7 +201,7 @@ export async function updateCorefPair(
   molBbox: [number, number, number, number] | null,
   labelId: number,
 ): Promise<number> {
-  return invoke<number>('update_coref_pair', {
+  return httpPost<number>('/api/v1/coref/update-pair', {
     projectRoot,
     docId,
     page,

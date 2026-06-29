@@ -5,6 +5,7 @@ Supports: openai, anthropic, ollama, openai_compatible
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from ..utils.config import load_global_config
@@ -24,11 +25,12 @@ def create_llm(
 
     Priority: explicit args > AppConfig > defaults.
     """
-    cfg = load_global_config()
     provider = provider or "openai_compatible"
 
     if provider in ("openai_compatible", "openai", "deepseek", "ollama"):
-        api_key = api_key or "sk-placeholder"
+        api_key = api_key or os.environ.get("MBFORGE_LLM_API_KEY", "")
+        if not api_key:
+            raise ValueError("api_key required for OpenAI-compatible provider (set MBFORGE_LLM_API_KEY)")
         base_url = base_url or "https://api.openai.com/v1"
         model = model or "gpt-3.5-turbo"
         temperature = kwargs.get("temperature", 0.2)
@@ -45,7 +47,9 @@ def create_llm(
         )
 
     elif provider == "anthropic":
-        api_key = api_key or "sk-placeholder"
+        api_key = api_key or os.environ.get("MBFORGE_LLM_API_KEY", "")
+        if not api_key:
+            raise ValueError("api_key required for Anthropic provider (set MBFORGE_LLM_API_KEY)")
         model = model or "claude-3-sonnet-20240229"
         temperature = kwargs.get("temperature", 0.2)
         max_tokens = kwargs.get("max_tokens", 8192)

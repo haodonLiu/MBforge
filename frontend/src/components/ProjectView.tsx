@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import { listProjectDocuments, scanProjectFiles, enqueueUnresolvedDocuments, indexProject, type IndexResult, type ScanWarning } from '../api/tauri'
 import { batchQuickMoldetScan } from '../api/tauri/detection_cache'
 import { molAdminStoreStats } from '../api/tauri/molecule_admin'
-import { listen } from '@tauri-apps/api/event'
 import type { DocumentEntry } from '../types'
 import { useAppContext } from '../context/AppContext'
 import { showToast } from '../hooks/useToast'
@@ -69,25 +68,6 @@ export default function ProjectView({ onFileActive }: ProjectViewProps) {
 
   useEffect(() => {
     loadDocs()
-
-    // Listen for per-document parse completion and refresh the list
-    let unlistenResult: (() => void) | null = null
-    const setup = async () => {
-      unlistenResult = await listen<Record<string, unknown>>(EVT.DocResult, (event) => {
-        const report = event.payload
-        console.log('[doc-result] Parsed', report)
-        // Refresh document list so newly-parsed items appear
-        loadDocs()
-      })
-    }
-    setup().catch((e) => {
-      console.error(e)
-      showToast(t('project.listenFailed'), 'warning')
-    })
-
-    return () => {
-      unlistenResult?.()
-    }
   }, [])
 
   const handleSync = async () => {
@@ -114,19 +94,6 @@ export default function ProjectView({ onFileActive }: ProjectViewProps) {
       }
 
       setSyncStage('indexing')
-      let total = 0
-      const unlisten = await listen<{ stage: string; payload: Record<string, unknown> }>(EVT.DocProgress, (event) => {
-        const payload = event.payload.payload
-        const parser = (payload.parser as string) || ''
-        if (parser.startsWith('indexing')) {
-          const match = parser.match(/indexing\s+(\d+)\/(\d+)/)
-          if (match) {
-            const current = parseInt(match[1], 10)
-            total = parseInt(match[2], 10)
-            setIndexProgress({ file: parser, current, total })
-          }
-        }
-      })
 
       const INDEX_TIMEOUT_MS = 5 * 60 * 1000
       try {
@@ -151,7 +118,6 @@ export default function ProjectView({ onFileActive }: ProjectViewProps) {
           setError(msg)
         }
       } finally {
-        unlisten()
         setIndexProgress(null)
       }
     } catch (e) {

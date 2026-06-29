@@ -1,415 +1,266 @@
-# CLAUDE.md
+# CLAUDE.md — Repository-Level AI Context
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+> Per-repo quick-reference for AI coding assistants. Session-level personal rules
+> live in `~/.claude/CLAUDE.md` (loaded automatically). This file is the
+> **repository** mirror — it captures the live architecture and conventions so
+> agents can orient quickly.
 
-Tradeoff: These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+> **Last sync**: 2026-06-29, after the Rust→Python migration (commit 4b70ae8).
+> If you find drift between this file and the code, **the code wins**; fix this
+> file in the same PR.
 
-1. Think Before Coding
-Don't assume. Don't hide confusion. Surface tradeoffs.
+---
 
-Before implementing:
+## 1. What MBForge Is
 
-State your assumptions explicitly. If uncertain, ask.
-If multiple interpretations exist, present them - don't pick silently.
-If a simpler approach exists, say so. Push back when warranted.
-If something is unclear, stop. Name what's confusing. Ask.
-2. Simplicity First
-Minimum code that solves the problem. Nothing speculative.
+Desktop knowledge-work platform for molecular science / drug discovery.
+Ingests scientific PDFs, extracts molecules and activities, indexes them into a
+searchable knowledge base, and exposes an AI agent for cross-document reasoning.
 
-No features beyond what was asked.
-No abstractions for single-use code.
-No "flexibility" or "configurability" that wasn't requested.
-No error handling for impossible scenarios.
-If you write 200 lines and it could be 50, rewrite it.
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+```
+PDF → classify → extract → segment → chunk → index
+                                    ↓
+                              knowledge base (SQLite + Zvec)
+                                    ↓
+                        agent chat + molecule ops (FastAPI)
+```
 
-3. Surgical Changes
-Touch only what you must. Clean up only your own mess.
+---
 
-When editing existing code:
+## 2. Stack (post-migration, 2026-06-29)
 
-Don't "improve" adjacent code, comments, or formatting.
-Don't refactor things that aren't broken.
-Match existing style, even if you'd do it differently.
-If you notice unrelated dead code, mention it - don't delete it.
-When your changes create orphans:
+| Layer | Tech | Notes |
+|---|---|---|
+| Frontend | React 19 + Vite 8 + TypeScript 6 | Browser only. No Tauri shell. |
+| Backend | FastAPI on `127.0.0.1:18792` | Single Python process. `uvicorn mbforge.app:app` |
+| Agent | LangGraph (`>=0.4.0`) + langchain 0.3+ | 5 tools, multi-session, SSE streaming |
+| Embed / Rerank | Qwen3-0.6B (local sentence-transformers) | Lazy-loaded on first use |
+| MolDet | YOLO26n (`moldet_v2_yolo26n_960_doc.pt`) | conf_threshold = 0.5 |
+| MolScribe | Swin Transformer + Transformer decoder | image → SMILES |
+| Vector store | Zvec (`dense + FTS5 + hybrid RRF`) | per-project `.mbforge/search.zvec/` |
+| ORM / DB | sqlite3 stdlib | per-project `.mbforge/knowledge_base.db` |
+| Molecule | RDKit (Python) | SMILES canonicalization, fingerprints |
+| PDF | pdfplumber / pypdfium2 | text + image extraction |
+| Package manager | uv (Python) + npm (frontend) | `uv.lock` and `package-lock.json` are source of truth |
 
-Remove imports/variables/functions that YOUR changes made unused.
-Don't remove pre-existing dead code unless asked.
-The test: Every changed line should trace directly to the user's request.
+**Removed**: Tauri v2, Rust workspace (`src-tauri/`), chematic, lopdf, rusqlite,
+ChromaDB. Code is in git history if you need to reference it.
 
-4. Goal-Driven Execution
-Define success criteria. Loop until verified.
+---
 
-Transform tasks into verifiable goals:
+## 3. Top-Level Layout
 
-"Add validation" → "Write tests for invalid inputs, then make them pass"
-"Fix the bug" → "Write a test that reproduces it, then make it pass"
-"Refactor X" → "Ensure tests pass before and after"
-For multi-step tasks, state a brief plan:
+```
+MBForge/
+├── frontend/                       React + Vite app
+│   ├── src/
+│   │   ├── api/
+│   │   │   ├── http/               HTTP bridge (replaces api/tauri for invoke())
+│   │   │   └── sse.ts              SSE streaming client
+│   │   ├── components/             Page-level + ui/ atoms
+│   │   ├── context/AppContext.tsx  Global state
+│   │   ├── hooks/                  useTheme, useAnimations, useToast
+│   │   └── utils/errors.ts         AppError + ErrorCode (shared with API)
+│   └── index.html
+├── src/mbforge/                    Python FastAPI app
+│   ├── app.py                      App entry — 53 routes, 12 routers
+│   ├── server.py                   Dev server entry (uvicorn target)
+│   ├── __main__.py                 `python -m mbforge`
+│   ├── routers/                    12 FastAPI routers
+│   │   ├── agent.py                LangGraph chat (SSE)
+│   │   ├── pipeline.py             Document processing
+│   │   ├── knowledge_base.py       KB search/stream
+│   │   ├── molecule.py             SMILES / fingerprint ops
+│   │   ├── chem.py                 Cheminformatics
+│   │   ├── documents.py            CRUD
+│   │   ├── project.py              Project management
+│   │   ├── settings.py             Settings UI
+│   │   ├── notes.py                Notes
+│   │   ├── detection_cache.py      MolDet result cache
+│   │   ├── environment.py          Env info / model status
+│   │   └── events.py               Server-sent events hub
+│   ├── agent/                      LangGraph agent
+│   │   ├── graph.py                Graph definition
+│   │   ├── llm_factory.py          Multi-provider LLM factory
+│   │   ├── sessions.py             Session store
+│   │   └── tools.py                5 agent tools
+│   ├── core/                       Business core
+│   │   ├── database.py             SQLite business tables
+│   │   ├── project.py              Project lifecycle
+│   │   ├── knowledge_base.py       KB CRUD + RRF fusion
+│   │   ├── semantic_cache.py       Semantic cache
+│   │   └── resource_manager.py     Models / downloads
+│   ├── pipeline/                   5-stage PDF pipeline
+│   │   ├── classify.py             Document type detection
+│   │   ├── extract_text.py         Text + image extraction
+│   │   ├── segment.py              Section segmentation
+│   │   ├── chunk.py                Chunking for KB indexing
+│   │   ├── index.py                Zvec indexing
+│   │   └── runner.py               Pipeline orchestrator
+│   ├── backends/                   Local model backends
+│   │   ├── qwen3.py                EmbeddingProvider + OpenAI compatible
+│   │   ├── molscribe.py            Molecule OCR
+│   │   ├── moldet.py               MolDet (YOLO26)
+│   │   └── zvec_backend.py         Zvec wrapper
+│   ├── parsers/molecule/           Molecule-specific parsers
+│   │   ├── coords.py
+│   │   └── coref_alt.py            Cross-page coreference (tested)
+│   ├── chem/                       Cheminformatics utilities
+│   ├── models/                     Pydantic models (common, project)
+│   └── utils/                      logger, config, helpers, constants
+├── tests/
+│   ├── unit/
+│   │   └── parsers/test_coref_alt.py
+│   ├── integration/
+│   └── conftest.py
+├── configs/                        YAML configs (constants, OCR)
+├── docs/                           Specs, plans, references
+├── assets/icon/                    Icon sources (SVG + master PNG)
+├── assets/models/                  Dev model fixtures (gitignored)
+├── TODO/INDEX.md                   Master task board
+├── pyproject.toml                  uv + ruff + pytest
+├── uv.lock
+├── LICENSE                         CC BY-NC-SA 4.0
+└── README.md
+```
 
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+---
 
-These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-
-## What MBForge Is
-
-React+Vite+Tauri 桌面应用，用于分子科学/药物发现研究。双语言架构：
-- **Rust** (`src-tauri/src/`): Agent ReAct 循环、PDF 原生解析（lopdf）、分子 SQLite 数据库、Tauri 命令层、化学信息学（chematic crate）、LLM 调用网关
-- **Python** (`src/mbforge/`): FastAPI 模型服务器（port 18792）、Embedding、Rerank、MolDet（YOLO）、MolScribe
-
-核心流程：PDF 解析 → 分子提取 → 向量知识库构建 → AI Agent 对话查询。
-不允许任何基于假设或者推测的代码出现
-
-总目的（详见 AGENTS.md §第一性原理）：**将非结构化的科学文献转化为可计算、可推理的分子知识，加速药物发现中的决策过程。**
-
-## TODO
-任务看板记录在 `TODO/INDEX.md`（根 `TODO.md` 已废弃，统一指向 `TODO/INDEX.md`），
-
-## Build / Test / Lint Commands
+## 4. Run Commands
 
 ```bash
-# Rust 编译检查
-cd src-tauri && cargo check
+# Install
+uv sync --dev                  # Python deps
+npm --prefix frontend install   # Frontend deps
 
-# Rust 测试
-cd src-tauri && cargo test
-
-# 安装 Python 依赖
-uv sync --dev
-
-# 安装前端依赖
-cd frontend && npm install
-
-# 启动前端开发服务器（Vite, port 5173）
+# Run (2 terminals)
+uv run uvicorn mbforge.app:app --host 127.0.0.1 --port 18792
 cd frontend && npm run dev
 
-# 启动模型服务器（FastAPI, port 18792）
-uv run uvicorn mbforge.server:app --host 127.0.0.1 --port 18792
-
-# Python 测试
-uv run pytest tests/ -v
-
-# 格式化
-uv run ruff format src/
-
-# Lint
+# Lint / typecheck / format
 uv run ruff check src/
+uv run ruff format src/ --check
+cd frontend && npx tsc --noEmit
 
-# 前端构建
-cd frontend && npm run build
-
-# 打包 EXE（Tauri）
-cd src-tauri && cargo tauri build
+# Tests
+uv run pytest tests/ -v
+cd frontend && npm run test
 ```
 
-## Architecture
+Frontend dev server proxies `/api/*` → `127.0.0.1:18792`. No need to CORS.
 
-### System Architecture
+---
 
-```
-┌────────────────────────────────────────────────────────┐
-│  React + Vite + TypeScript  (port 5173)                 │
-│  ┌──────────┐ ┌──────────┐ ┌─────────────────────────┐ │
-│  │  Chat     │ │Molecule  │ │ Settings / Project View │ │
-│  │  UI       │ │ Library  │ │                         │ │
-│  └────┬─────┘ └────┬─────┘ └───────────┬─────────────┘ │
-│       │            │                    │               │
-│  ┌────┴────────────┴────────────────────┴──────────┐   │
-│  │   api/tauri/*.ts  (window.__TAURI__.invoke)      │   │
-│  └───────────────────────┬──────────────────────────┘   │
-└──────────────────────────┼──────────────────────────────┘
-                           │
-┌──────────────────────────┼──────────────────────────────┐
-│  Tauri v2 Shell          │                               │
-│  ┌───────────────────────┴─────────────────────────┐    │
-│  │  Rust (src-tauri/crates/)  — 5-crate workspace   │    │
-│  │  mbforge-app/      (commands/ IPC 层)            │    │
-│  │  mbforge-domain/   (document/, molecule/,       │    │
-│  │                     project/, vector/)          │    │
-│  │  mbforge-pipeline/ (PDF 解析管线 + ingest worker)│    │
-│  │  mbforge-infra/    (config, http, error, helpers)│    │
-│  │  mbforge-chem/     (smiles, molecode, markush)   │    │
-│  │  Agent ReAct 循环由 mbforge-app/commands/agent.rs│    │
-│  │  提供，LLM 调用走 mbforge-pipeline/structure/    │    │
-│  │  post_process.rs::call_llm_api[_async]。        │    │
-│  └──────────────────────┬──────────────────────────┘    │
-│  ┌──────────────────────┴──────────────────────────┐    │
-│  │  FastAPI Sidecar (port 18792, spawned by Tauri)  │    │
-│  │  5 个后端: Embed / Rerank / MolDet / MolScribe   │    │
-│  │  / Zvec  + 辅助端点: PDF render / health /      │    │
-│  │  environment                                     │    │
-│  └──────────────────────────────────────────────────┘    │
+## 5. Frontend → Backend Contract
+
+Frontend **never** uses Tauri IPC anymore. All calls go through `httpFetch()`
+(see `frontend/src/api/http/_utils.ts`). Streaming uses `sse.ts` for SSE.
+
+```ts
+// Old (deleted)
+import { invoke } from '@tauri-apps/api/core'
+await invoke('kb_search', { query, topK })
+
+// New
+import { httpFetch } from '@/api/http/_utils'
+const results = await httpFetch<KbSearchResult[]>('/api/v1/kb/search', {
+  method: 'POST',
+  body: { query, top_k: 10 }
+})
 ```
 
-**Dev mode**: Vite dev server proxies `/api/v1/*` to `localhost:18792` for sidecar health checks; all frontend business logic goes through `window.__TAURI__.invoke()`.
-**Production**: Tauri shell spawns uvicorn as sidecar. Frontend communicates exclusively via Tauri IPC (Rust commands + events).
+**Rules**:
 
-### Central Data Flow
+- `import type` for type-only imports.
+- Errors come back as `{ success: false, error, error_code }`. Use
+  `AppError.fromResponse()` from `@/utils/errors`.
+- SSE consumers must handle `event: error` frames and reconnect on disconnect.
 
-PDF 经 Rust `crates/mbforge-pipeline` 解析，流向两条路径：
+---
+
+## 6. Backend Conventions
+
+- **Logger**: every module `from ..utils.logger import get_logger; logger = get_logger(__name__)`. Never `print()`.
+- **Errors**: inherit from `MBForgeError` (`src/mbforge/utils/helpers.py`) with
+  `status_code` + `error_code`. No bare `except:`.
+- **Async I/O**: wrap blocking calls with `await loop.run_in_executor(None, lambda: ...)`.
+- **Type hints**: `from __future__ import annotations`. Public functions fully annotated.
+- **Routers**: prefix `/api/v1/{resource}`; if new resource, create `routers/{name}.py` and wire in `app.py`.
+- **State**: `app.state` for shared singletons; never module-level mutable globals.
+- **Pydantic models**: `src/mbforge/models/` for shared schemas; per-router
+  models live next to the router.
+
+---
+
+## 7. Common Tasks
+
+### Add a new REST endpoint
+
+1. Define Pydantic request/response in `src/mbforge/models/` (or inline if router-local).
+2. Add handler in the appropriate `routers/{name}.py`.
+3. Wire into `src/mbforge/app.py` router includes (the list at the top of
+   `app.py` is the single source of truth — keep it sorted).
+4. Add `httpFetch()` wrapper in `frontend/src/api/http/{name}.ts`.
+
+### Add an agent tool
+
+1. Implement `BaseTool` subclass in `src/mbforge/agent/tools.py`.
+2. Register in the tool list at the top of `tools.py`.
+3. Update the system prompt in `agent/graph.py` if the tool needs discovery hints.
+
+### Add a pipeline stage
+
+1. Create `src/mbforge/pipeline/{stage}.py` with a `run(context) -> StageResult` function.
+2. Wire into `pipeline/runner.py` stage list.
+3. Add a `pipelines_{stage}_run` event in `routers/events.py` if you need progress streaming.
+
+---
+
+## 8. Storage Layout (per project)
 
 ```
-PDF ─→ Rust crates/mbforge-pipeline
-  │
-  ├─ 文档解析流程（抽取文本+图像+结构）
-  │   ├─ classify:   pipeline/structure/intent.rs → PDF type / structure
-  │   ├─ extract:    pipeline/pdf/{mineru,llama_parse,uniparser}.rs → Markdown
-  │   ├─ images:     pipeline/pdf/images.rs (lopdf) → embedded images
-  │   ├─ ocr:        pipeline/ocr/{paddle,uniparser}.rs → OCR 文本补充
-  │   ├─ vlm:        pipeline/chem/vlm_chem.rs → 化学结构图 VLM 识别
-  │   ├─ associate:  pipeline/chem/association.rs → 分子-文本关联
-  │   ├─ validate:   pipeline/chem/chem_validate.rs → 化学结构验证
-  │   └─ report:     pipeline/structure/{report,post_process,sections}.rs
-  │
-  ├─ 数据持久化（crates/mbforge-domain/）
-  │   ├─ document/knowledge_base.rs   → SQLite 知识库
-  │   ├─ document/ingest_queue.rs      → 持久化处理队列
-  │   ├─ document/file_cache.rs        → 文件解析缓存
-  │   ├─ document/semantic_cache.rs    → 语义查询缓存
-  │   ├─ molecule/molecule_store.rs    → 分子入库
-  │   └─ molecule/molecule_db.rs       → 分子数据库 CRUD
-  │
-  └─ 查询路径
-      ├─ domain/vector/vector_store.rs → 向量搜索 + FTS5 (Zvec)
-      └─ app/commands/agent.rs → 会话管理；LLM 走 pipeline/structure/post_process.rs::call_llm_api[_async]
-```
-### Sidecar Backends（Python, port 18792）
-
-| 端点 | 后端模块 | 职责 |
-| `/api/v1/embed` | `backends/qwen3.py`（`qwen3_embed` 别名）| 文本 → 1024 维向量 |
-| `/api/v1/rerank` | `backends/qwen3.py`（`qwen3_rerank` 别名）| 搜索结果的语义重排序 |
-| `/api/v1/moldet/*` | `backends/moldet.py` | YOLO 分子检测；coref 走 `parsers/molecule/coref_alt.py` |
-| `/api/v1/molscribe` | `backends/molscribe.py` | 分子结构图 → SMILES |
-| `/api/v1/zvec/*` | `backends/zvec_backend.py` | 混合检索：dense + FTS5 |
-| `/api/v1/pdf/render-pages` | `server.py`（内联） | PDF 页面渲染（PyMuPDF） |
-
-### 分子三层表示
-
-MBForge 使用三层分子表示，逐层可逆。详见 AGENTS.md §分子三层表示：
-
-| 层级 | 格式 | 存储 | 用途 |
-|------|------|------|------|
-| Layer 1 | SMILES | `molecules.db` `smiles` 列 (NOT NULL) | RDKit 兼容、指纹计算、子结构搜索 |
-| Layer 2 | E-SMILES | `molecules.db` `esmiles` 列 (nullable) | 语义标签（`<a>N:GROUP</a>`），Markush 结构 |
-| Layer 3 | MoleCode | 运行时生成（不持久化） | LLM 推理用，Mermaid 图语法，显式拓扑 |
-
-转换通路（纯 Rust，`core/chem/{esmiles,molecode,abbreviation_map}.rs`）：
-- SMILES → E-SMILES：`smiles_to_esmiles(smiles, tags)` — 添加 `<sep>` + 标签
-- E-SMILES → SMILES：`parse_esmiles_tags(esmiles)` — 取 `<sep>` 前的内容
-- E-SMILES → MoleCode：`esmiles_to_molecode(esmiles, name)` — chematic 解析 → kekulize → Mermaid 文本
-
-化学信息学使用 `chematic` crate（git: `kent-tokyo/chematic`），提供 SMILES 解析、ECFP4 指纹、Tanimoto 相似度、VF2 子结构匹配。
-
-### Adding a new Rust Agent tool (rig-core)
-
-```rust
-// 1. 在 core/agent/executor_rig.rs 中声明 Tool + Args
-#[derive(Deserialize, JsonSchema)]
-pub struct MyToolArgs { pub arg: String }
-
-#[derive(Clone)]
-pub struct MyTool { pub project_root: String }
-
-impl Tool for MyTool {
-    const NAME: &'static str = "my_tool";
-    type Error = ToolError;
-    type Args = MyToolArgs;
-    type Output = String;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        let schema = serde_json::to_value(schemars::schema_for!(MyToolArgs)).unwrap();
-        ToolDefinition { name: Self::NAME.into(), description: "...".into(), parameters: schema }
-    }
-
-    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        // 调用 core/agent/{fs,kb,document,molecule}.rs 中的 native_* 自由函数
-        Ok(fs_src::native_my_tool(&self.project_root, &args.arg))
-    }
-}
-
-// 2. 在 core/agent/rig_adapter.rs::assemble_rig_tool_vec() 中注册
-tools.push(Box::new(MyTool::new(project_root)));
+{project_root}/
+├── index/                         Pipeline output
+├── .mbforge/
+│   ├── knowledge_base.db          SQLite business tables
+│   ├── search.zvec/               Zvec dense + FTS5 collection
+│   └── cache/semantic_cache.json
+└── assets/                        User-uploaded PDFs
 ```
 
-### Adding a new Tauri command
+Global config: `~/.config/MBForge/config.json` (Linux) /
+`%APPDATA%\MBForge\config\config.json` (Windows).
 
-1. Add the command function in the appropriate `commands/{module}.rs` file (or create a new one)
-2. Add `pub mod {module};` in `commands/mod.rs`
-3. Add the function to `generate_handler![]` macro in `commands/mod.rs::handler()`
-4. Register the frontend API wrapper in `frontend/src/api/tauri/{module}.ts`
+---
 
-### Adding a new API endpoint to Model Server
+## 9. Configuration Precedence
 
-1. Add route function in `src/mbforge/server.py`
-2. Register backend module in `src/mbforge/backends/` if new local model is needed
-3. Add to `_BACKENDS` list for lifespan prewarm
+`MBFORGE_*` env vars > `~/.config/MBForge/config.json` > defaults.
 
-### Adding a new PDF parser backend
+LLM providers: `MBFORGE_LLM_PROVIDER`, `MBFORGE_LLM_API_KEY`, `MBFORGE_LLM_BASE_URL`.
+Embeddings: `MBFORGE_EMBED_PROVIDER`, `MBFORGE_EMBED_MODEL`.
 
-1. Create client in `src-tauri/src/parsers/pdf/` (e.g., `myparser.rs`)
-2. Implement `async fn parse(&self, input: &str) -> Result<ParsedOutput, String>`
-3. Add variant in `parsers/pipeline.rs::extract` parser selection logic
-4. Register module in `parsers/pdf/mod.rs`
+See `.env.template` (root) for the full list.
 
-### 遇到报错时
+---
 
-停下来描述：(1) 错误现象 (2) 理解 (3) 解决方案，再行动。不要盲目穷举。
+## 10. Don't Do
 
-## Built-in Documentation
+- ❌ Add Tauri, Rust, or any new compiled-language dependency without an ADR.
+- ❌ Block the FastAPI event loop with sync I/O. Use `run_in_executor`.
+- ❌ Use `print()` anywhere in `src/`.
+- ❌ Catch `Exception:` without re-raising or logging the traceback.
+- ❌ Create tests that mock the real backend — use `tmp_path` + real SQLite.
+- ❌ Touch `pyproject.toml` dependency floors without bumping `uv.lock` in the same commit.
 
-| 文档 | 位置 | 范畴 |
-|------|------|------|
-| **总目的与缺失分析** | `AGENTS.md` | 第一性原理：我们在建什么、还缺什么 |
-| Agent 工作规范 + 架构 + 编码规范 | `AGENTS.md` | AI 编码助手完整操作手册 |
-| 本文件 | `CLAUDE.md` | Claude 上下文 + 架构速查 |
-| 项目入口 | `README.md` | 人类用户/贡献者 |
-| **文档治理规范** | `.claude/documentation-governance.md` | 描述文件分工与回刷机制 |
-| 任务看板 | `TODO/INDEX.md` | 当前任务状态 |
-| E-SMILES 规范 | `docs/specs/esmiles-spec.md` | 分子表示规范 |
-| MoleCode 规范 | `docs/specs/molecode-spec.md` | 图语法规范 |
-| 技术栈详情 | `docs/TECH_STACK.md` | 依赖选型详情 |
-| 第三方引用 | `docs/REFERENCES.md` | 外部库与论文 |
-| MoleCode 参考实现 | `ref/MoleCode/` | 参考代码 |
+---
 
-<!-- rtk-instructions v2 -->
-# RTK (Rust Token Killer) - Token-Optimized Commands
+## 11. Pointers
 
-## Golden Rule
-
-**Always prefix commands with `rtk`**. If RTK has a dedicated filter, it uses it. If not, it passes through unchanged. This means RTK is always safe to use.
-
-**Important**: Even in command chains with `&&`, use `rtk`:
-```bash
-# ❌ Wrong
-git add . && git commit -m "msg" && git push
-
-# ✅ Correct
-rtk git add . && rtk git commit -m "msg" && rtk git push
-```
-
-## RTK Commands by Workflow
-
-### Build & Compile (80-90% savings)
-```bash
-rtk cargo build         # Cargo build output
-rtk cargo check         # Cargo check output
-rtk cargo clippy        # Clippy warnings grouped by file (80%)
-rtk tsc                 # TypeScript errors grouped by file/code (83%)
-rtk lint                # ESLint/Biome violations grouped (84%)
-rtk prettier --check    # Files needing format only (70%)
-rtk next build          # Next.js build with route metrics (87%)
-```
-
-### Test (60-99% savings)
-```bash
-rtk cargo test          # Cargo test failures only (90%)
-rtk go test             # Go test failures only (90%)
-rtk jest                # Jest failures only (99.5%)
-rtk vitest              # Vitest failures only (99.5%)
-rtk playwright test     # Playwright failures only (94%)
-rtk pytest              # Python test failures only (90%)
-rtk rake test           # Ruby test failures only (90%)
-rtk rspec               # RSpec test failures only (60%)
-rtk test <cmd>          # Generic test wrapper - failures only
-```
-
-### Git (59-80% savings)
-```bash
-rtk git status          # Compact status
-rtk git log             # Compact log (works with all git flags)
-rtk git diff            # Compact diff (80%)
-rtk git show            # Compact show (80%)
-rtk git add             # Ultra-compact confirmations (59%)
-rtk git commit          # Ultra-compact confirmations (59%)
-rtk git push            # Ultra-compact confirmations
-rtk git pull            # Ultra-compact confirmations
-rtk git branch          # Compact branch list
-rtk git fetch           # Compact fetch
-rtk git stash           # Compact stash
-rtk git worktree        # Compact worktree
-```
-
-Note: Git passthrough works for ALL subcommands, even those not explicitly listed.
-
-### GitHub (26-87% savings)
-```bash
-rtk gh pr view <num>    # Compact PR view (87%)
-rtk gh pr checks        # Compact PR checks (79%)
-rtk gh run list         # Compact workflow runs (82%)
-rtk gh issue list       # Compact issue list (80%)
-rtk gh api              # Compact API responses (26%)
-```
-
-### JavaScript/TypeScript Tooling (70-90% savings)
-```bash
-rtk pnpm list           # Compact dependency tree (70%)
-rtk pnpm outdated       # Compact outdated packages (80%)
-rtk pnpm install        # Compact install output (90%)
-rtk npm run <script>    # Compact npm script output
-rtk npx <cmd>           # Compact npx command output
-rtk prisma              # Prisma without ASCII art (88%)
-```
-
-### Files & Search (60-75% savings)
-```bash
-rtk ls <path>           # Tree format, compact (65%)
-rtk read <file>         # Code reading with filtering (60%)
-rtk grep <pattern>      # Search grouped by file (75%). Format flags (-c, -l, -L, -o, -Z) run raw.
-rtk find <pattern>      # Find grouped by directory (70%)
-```
-
-### Analysis & Debug (70-90% savings)
-```bash
-rtk err <cmd>           # Filter errors only from any command
-rtk log <file>          # Deduplicated logs with counts
-rtk json <file>         # JSON structure without values
-rtk deps                # Dependency overview
-rtk env                 # Environment variables compact
-rtk summary <cmd>       # Smart summary of command output
-rtk diff                # Ultra-compact diffs
-```
-
-### Infrastructure (85% savings)
-```bash
-rtk docker ps           # Compact container list
-rtk docker images       # Compact image list
-rtk docker logs <c>     # Deduplicated logs
-rtk kubectl get         # Compact resource list
-rtk kubectl logs        # Deduplicated pod logs
-```
-
-### Network (65-70% savings)
-```bash
-rtk curl <url>          # Compact HTTP responses (70%)
-rtk wget <url>          # Compact download output (65%)
-```
-
-### Meta Commands
-```bash
-rtk gain                # View token savings statistics
-rtk gain --history      # View command history with savings
-rtk discover            # Analyze Claude Code sessions for missed RTK usage
-rtk proxy <cmd>         # Run command without filtering (for debugging)
-rtk init                # Add RTK instructions to CLAUDE.md
-rtk init --global       # Add RTK to ~/.claude/CLAUDE.md
-```
-
-## Token Savings Overview
-
-| Category | Commands | Typical Savings |
-|----------|----------|-----------------|
-| Tests | vitest, playwright, cargo test | 90-99% |
-| Build | next, tsc, lint, prettier | 70-87% |
-| Git | status, log, diff, add, commit | 59-80% |
-| GitHub | gh pr, gh run, gh issue | 26-87% |
-| Package Managers | pnpm, npm, npx | 70-90% |
-| Files | ls, read, grep, find | 60-75% |
-| Infrastructure | docker, kubectl | 85% |
-| Network | curl, wget | 65-70% |
-
-Overall average: **60-90% token reduction** on common development operations.
-<!-- /rtk-instructions -->
+- **Architecture**: this file + `docs/specs/architecture-conventions.md`
+- **Molecule representation**: `docs/specs/molecular-representation.md`
+- **E-SMILES spec**: `docs/specs/esmiles-spec.md`
+- **MoleCode spec**: `docs/specs/molecode-spec.md`
+- **Task board**: `TODO/INDEX.md` (P0–P3, status per item)
+- **Code style**: `docs/specs/code-style.md`
+- **LLM extraction reference**: `docs/specs/llm-chemical-extraction-reference.md`

@@ -63,7 +63,7 @@ PDF_CHUNK_OVERLAP = 128
 
 # sidecar
 DEFAULT_SIDECAR_PORT = 18792
-DEFAULT_SIDECAR_URL = 'http://127.0.0.1:18792'
+DEFAULT_SIDECAR_URL = os.environ.get("MBFORGE_SIDECAR_URL", f"http://127.0.0.1:{DEFAULT_SIDECAR_PORT}")
 
 # supported_doc_exts
 SUPPORTED_DOC_EXTS: set[str] = {".md", ".txt", ".pdf"}

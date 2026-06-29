@@ -68,7 +68,9 @@ MBForge/
 ├── pyproject.toml                  uv + ruff + pytest
 ├── uv.lock                         Python lock
 ├── LICENSE                         CC BY-NC-SA 4.0 (root + pyproject + Cargo.toml must agree)
-├── constants.yaml                  Cross-language constant source of truth
+├── configs/                        Cross-language source-of-truth configs (constants.yaml, rapidocr_*)
+├── assets/icon/                    Icon source files (SVG + master PNG, → src-tauri/icons)
+├── assets/models/                  Dev model fixtures (gitignored; canonical: ~/mbforge/models)
 ├── archived/                       Deprecated subsystems (e.g. legacy agent code)
 ├── ref/                            Third-party reference implementations (e.g. `ref/MoleCode/`)
 

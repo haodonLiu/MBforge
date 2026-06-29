@@ -24,7 +24,7 @@ fn main() {
         .expect("mbforge-infra should be at src-tauri/crates/mbforge-infra");
 
     let script = repo_root.join("scripts").join("generate_constants.py");
-    let yaml = repo_root.join("constants.yaml");
+    let yaml = repo_root.join("configs").join("constants.yaml");
     let out_dir = PathBuf::from(
         std::env::var("OUT_DIR").expect("cargo must set OUT_DIR for build scripts"),
     );

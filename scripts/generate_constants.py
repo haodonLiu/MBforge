@@ -39,7 +39,7 @@ except ImportError:  # transitive dep (e.g. via openai). Add to dev deps if miss
 # Paths
 # ---------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parent.parent
-YAML_PATH = REPO_ROOT / "constants.yaml"
+YAML_PATH = REPO_ROOT / "configs" / "constants.yaml"
 PY_OUT = REPO_ROOT / "src" / "mbforge" / "utils" / "constants.py"
 
 # Version-sync targets. Each path contains a version string managed by

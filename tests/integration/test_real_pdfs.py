@@ -201,29 +201,17 @@ class TestConfigWithRealPaths:
         cache_dir = Path(get_model_cache_dir())
         assert cache_dir.exists(), f"模型缓存目录不存在: {cache_dir}"
 
-    def test_embedding_model_resolves(self):
-        """Embedding 模型路径应可解析."""
-        from mbforge.models.embedding import _resolve_model_path
-        path = _resolve_model_path("Qwen/Qwen3-Embedding-0.6B", "Qwen/Qwen3-Embedding-0.6B")
-        assert Path(path).exists(), f"Embedding 模型路径不存在: {path}"
 
-    def test_reranker_model_resolves(self):
-        """Reranker 模型路径应可解析."""
-        from mbforge.models.embedding import _resolve_model_path
-        path = _resolve_model_path("Qwen/Qwen3-Reranker-0.6B", "Qwen/Qwen3-Reranker-0.6B")
-        assert Path(path).exists(), f"Reranker 模型路径不存在: {path}"
-
-# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # 配置系统与模型路径
 # ---------------------------------------------------------------------------
 
 class TestResourceManagerReadiness:
-    """ResourceManager 与已下载模型的集成（独立于 TestConfigWithRealPaths 避免类名冲突）."""
+    """ResourceManager 与已下载模型的集成."""
 
     def test_resource_manager_detects_models(self):
         """ResourceManager 应检测到已下载的模型."""
         from mbforge.core.resource_manager import ResourceManager
-        for model_id in ["embedding", "reranker"]:
+        for model_id in ["moldet", "molscribe"]:
             status = ResourceManager.check(model_id)
             assert status.status.value == "ready", f"{model_id} 应该是 ready，实际: {status.status.value}"

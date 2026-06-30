@@ -25,7 +25,6 @@ async def lifespan(app: FastAPI):
     logger.info("MBForge web application starting...")
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, _check_environment)
-    loop.run_in_executor(None, _prewarm_zvec)
     try:
         yield
     finally:
@@ -53,20 +52,10 @@ def _check_environment() -> None:
         logger.warning("Environment check failed: %s", e)
 
 
-def _prewarm_zvec() -> None:
-    try:
-        from .backends import zvec
-
-        zvec.load()
-        logger.info("Zvec prewarmed")
-    except Exception as e:
-        logger.warning("Zvec prewarm: %s", e)
-
-
 def _shutdown_backends() -> None:
-    from .backends import moldet, molscribe, qwen3_embed, qwen3_rerank, zvec
+    from .backends import moldet, molscribe
 
-    for mod in [qwen3_embed, qwen3_rerank, molscribe, moldet, zvec]:
+    for mod in [molscribe, moldet]:
         try:
             mod.unload()
         except Exception:

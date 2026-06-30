@@ -44,8 +44,6 @@ async def pipeline_process(body: dict) -> dict:
     root = body.get("project_root", "")
     file_path = body.get("file_path", "")
     doc_id = body.get("doc_id", "")
-    chunk_size = body.get("chunk_size", 512)
-    chunk_overlap = body.get("chunk_overlap", 128)
     if not root or not file_path:
         return {"success": False, "error": "project_root and file_path required"}
     try:
@@ -54,7 +52,7 @@ async def pipeline_process(body: dict) -> dict:
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
-            lambda: run_pipeline(file_path, root, doc_id=doc_id, chunk_size=chunk_size, chunk_overlap=chunk_overlap),
+            lambda: run_pipeline(file_path, root, doc_id=doc_id),
         )
         return {
             "success": True,

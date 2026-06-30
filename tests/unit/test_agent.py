@@ -19,11 +19,11 @@ class TestAgentTools:
     def test_tool_registry_has_native_tools(self):
         """验证核心工具已注册."""
         from mbforge.core.resource_manager import RESOURCE_CATALOG
-        # 至少有 embedding, reranker, moldet, molscribe 四个模型资源
+        # moldet, molscribe 模型资源
         model_ids = [k for k, v in RESOURCE_CATALOG.items() if v.type.value == "model"]
-        assert len(model_ids) >= 4
-        assert "embedding" in model_ids
-        assert "reranker" in model_ids
+        assert len(model_ids) >= 2
+        assert "moldet" in model_ids
+        assert "molscribe" in model_ids
 
     def test_tool_registry_has_python_packages(self):
         """验证 Python 包资源已注册."""

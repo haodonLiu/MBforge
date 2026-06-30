@@ -11,10 +11,10 @@ router = APIRouter()
 
 @router.get("/health")
 async def health() -> dict:
-    from ..backends import moldet, molscribe, qwen3_embed, zvec
+    from ..backends import moldet, molscribe
 
     statuses = {}
-    for name, mod in [("embedder", qwen3_embed), ("moldet", moldet), ("molscribe", molscribe), ("zvec", zvec)]:
+    for name, mod in [("moldet", moldet), ("molscribe", molscribe)]:
         try:
             h = mod.health()
             statuses[name] = h.get("status", "unknown")

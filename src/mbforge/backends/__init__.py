@@ -10,18 +10,10 @@ from . import (
     molscribe,  # noqa: F401
 )
 
-# qwen3_embed.py + qwen3_rerank.py 已合并到 qwen3.py
-# 保留旧模块名以兼容 server.py 中的 `from .backends import qwen3_embed, qwen3_rerank`
-from . import qwen3 as qwen3_embed  # noqa: F401
-from . import qwen3 as qwen3_rerank  # noqa: F401
-from . import zvec_backend as zvec  # noqa: F401
-
 logger = logging.getLogger("mbforge.backends")
 
 # 模型名 → Rust RESOURCE_CATALOG id 的映射
 _MODEL_NAME_TO_RESOURCE_ID = {
-    "Qwen/Qwen3-Embedding": "embedding",
-    "Qwen/Qwen3-Reranker": "reranker",
     "UniParser/MolDetv2": "moldet",
     "MolDetv2": "moldet",
     "moldetv2": "moldet",

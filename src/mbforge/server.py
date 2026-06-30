@@ -1,12 +1,11 @@
 """MBForge Model Server — FastAPI app with fixed local model backends.
 
-Python sidecar hosts only five fixed local models:
-    - Qwen3-Embedding   (backends.qwen3_embed)
-    - Qwen3-Reranker    (backends.qwen3_rerank)
+Python sidecar hosts local models:
     - MolScribe         (backends.molscribe)
     - MolDet            (backends.moldet)
 
-All API-based models (OpenAI, Anthropic, etc.) are called directly from Rust.
+All API-based models (OpenAI, Anthropic, etc.) are called directly.
+Knowledge base uses OpenKB + PageIndex (vectorless, reasoning-based).
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from .backends import moldet, molscribe, qwen3_embed, qwen3_rerank, zvec
+from .backends import moldet, molscribe
 from .core.resource_manager import ResourceManager
 from .parsers.molecule.coref_alt import (
     CorefResult as CorefResultData,
@@ -53,18 +52,11 @@ logger = get_logger("mbforge.server")
 # ---------------------------------------------------------------------------
 # Backend registry — add a new backend here to register it for lifespan
 # ---------------------------------------------------------------------------
-_BACKENDS = [qwen3_embed, qwen3_rerank, molscribe, moldet, zvec]
-# 启动时只 prewarm zvec；embed/rerank 在首次调用时懒加载，节省启动显存与时间
-_CORE_BACKENDS = [zvec]
+_BACKENDS = [molscribe, moldet]
 
 
 def _prewarm() -> None:
-    for mod in _CORE_BACKENDS:
-        try:
-            mod.load()
-            logger.info("%s prewarmed", mod.__name__)
-        except Exception as e:
-            logger.warning("%s prewarm failed: %s", mod.__name__, e)
+    pass  # MolDet/MolScribe are lazy-loaded on first use
 
 
 def _check_environment() -> None:
@@ -362,54 +354,6 @@ async def figure_bboxes(request: Request) -> dict[str, Any]:
     except Exception as e:
         logger.error("figure-bboxes failed for %s: %s", pdf_path, e, exc_info=True)
         raise ModelNotAvailableError(str(e)) from e
-
-
-# ---------------------------------------------------------------------------
-# Embed
-# ---------------------------------------------------------------------------
-@app.post("/api/v1/embed")
-@with_model_status("embedder")
-async def embed(request: Request, body: dict) -> dict[str, Any]:
-    # Rust 侧通过 X-Trace-Id / X-Span-Id header 传递 tracing 上下文
-    trace_id = request.headers.get("x-trace-id") or request.headers.get("X-Trace-Id")
-    span_id = request.headers.get("x-span-id") or request.headers.get("X-Span-Id")
-    texts = body.get("texts", [])
-    if isinstance(texts, str):
-        texts = [texts]
-    if not texts:
-        raise ValidationError("texts is required")
-    mrl_dim = body.get("mrl_dim")
-    if isinstance(mrl_dim, (int, float)) and mrl_dim > 0:
-        mrl_dim = int(mrl_dim)
-    else:
-        mrl_dim = None
-    if trace_id:
-        logger.info("[trace=%s span=%s] embed started", trace_id, span_id)
-    loop = asyncio.get_running_loop()
-    embeddings = await loop.run_in_executor(
-        None, lambda: qwen3_embed.embed(texts, mrl_dim=mrl_dim)
-    )
-    dim = len(embeddings[0]) if embeddings else 0
-    if trace_id:
-        logger.info("[trace=%s span=%s] embed done, dim=%d", trace_id, span_id, dim)
-    return {"embeddings": embeddings}
-
-
-# ---------------------------------------------------------------------------
-# Rerank
-# ---------------------------------------------------------------------------
-@app.post("/api/v1/rerank")
-@with_model_status("reranker")
-async def rerank(request: Request, body: dict) -> dict[str, Any]:
-    query = body.get("query", "")
-    passages = body.get("passages", [])
-    if not query or not passages:
-        raise ValidationError("query and passages are required")
-    loop = asyncio.get_running_loop()
-    results = await loop.run_in_executor(
-        None, lambda: qwen3_rerank.rerank(query, passages)
-    )
-    return {"results": [{"index": i, "score": s} for i, s in results]}
 
 
 # ---------------------------------------------------------------------------
@@ -916,107 +860,12 @@ async def molscribe_predict(request: Request) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Zvec (vector + FTS + hybrid search)
-# ---------------------------------------------------------------------------
-@app.post("/api/v1/zvec/collection/open")
-@with_model_status("zvec")
-async def zvec_collection_open(request: Request, body: dict) -> dict[str, Any]:
-    path = body.get("path", "")
-    dim = body.get("dim")
-    if not path or dim is None:
-        raise ValidationError("path and dim are required")
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, lambda: zvec.open_collection(path, int(dim)))
-    return {"success": True}
-
-
-@app.post("/api/v1/zvec/index")
-@with_model_status("zvec")
-async def zvec_index(request: Request, body: dict) -> dict[str, Any]:
-    doc_id = body.get("doc_id", "")
-    chunk_ids = body.get("chunk_ids", [])
-    texts = body.get("texts", [])
-    metadatas = body.get("metadatas", [])
-    embeddings = body.get("embeddings", [])
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        None,
-        lambda: zvec.index_document(doc_id, chunk_ids, texts, metadatas, embeddings),
-    )
-    return result
-
-
-@app.post("/api/v1/zvec/delete")
-@with_model_status("zvec")
-async def zvec_delete(request: Request, body: dict) -> dict[str, Any]:
-    doc_id = body.get("doc_id", "")
-    if not doc_id:
-        raise ValidationError("doc_id is required")
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, lambda: zvec.delete_document(doc_id))
-    return {"deleted": True}
-
-
-@app.post("/api/v1/zvec/search/vector")
-@with_model_status("zvec")
-async def zvec_search_vector(request: Request, body: dict) -> dict[str, Any]:
-    query_embedding = body.get("query_embedding", [])
-    top_k = body.get("top_k", 10)
-    doc_id_filter = body.get("doc_id_filter")
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        None,
-        lambda: zvec.vector_search(query_embedding, int(top_k), doc_id_filter),
-    )
-    return result
-
-
-@app.post("/api/v1/zvec/search/text")
-@with_model_status("zvec")
-async def zvec_search_text(request: Request, body: dict) -> dict[str, Any]:
-    query = body.get("query", "")
-    top_k = body.get("top_k", 10)
-    doc_id_filter = body.get("doc_id_filter")
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        None,
-        lambda: zvec.text_search(query, int(top_k), doc_id_filter),
-    )
-    return result
-
-
-@app.post("/api/v1/zvec/search/hybrid")
-@with_model_status("zvec")
-async def zvec_search_hybrid(request: Request, body: dict) -> dict[str, Any]:
-    query_vec = body.get("query_vec", [])
-    query_text = body.get("query_text", "")
-    top_k = body.get("top_k", 10)
-    doc_id_filter = body.get("doc_id_filter")
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        None,
-        lambda: zvec.hybrid_search(query_vec, query_text, int(top_k), doc_id_filter),
-    )
-    return result
-
-
-@app.post("/api/v1/zvec/count")
-@with_model_status("zvec")
-async def zvec_count(request: Request, body: dict) -> dict[str, Any]:
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, zvec.count)
-    return result
-
-
-# ---------------------------------------------------------------------------
 # 模型测试端点：实际加载模型到内存并做最小推理，验证文件路径 + 权重有效
 # ---------------------------------------------------------------------------
 def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
     """同步部分：在 executor 里跑。返回 ok/error + 错误详情。
 
     每个后端跑最小真实推理（不仅是 load()）：
-    - embedding  : encode 1 个字符串，检查输出是 (1, dim) 向量
-    - reranker   : rerank 1 query + 1 passage，检查返回 [(idx, score), ...]
     - molscribe  : 384x384 灰图预测，检查 esmiles 是 str
     - moldet     : 与 input_size 匹配的灰图检测，检查返回 list
     - moldet_coref: 480x480 灰图检测，检查返回 dict
@@ -1029,37 +878,7 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
     try:
         rid = resource_id
 
-        if rid == "embedding":
-            qwen3_embed.load()
-            if qwen3_embed.EmbedBackend._PROVIDER is None:
-                return {
-                    "ok": False,
-                    "error": qwen3_embed.EmbedBackend._ERROR or "未加载到内存",
-                }
-            vecs = qwen3_embed.embed(["test"])
-            if (
-                not isinstance(vecs, list)
-                or len(vecs) != 1
-                or not isinstance(vecs[0], list)
-                or len(vecs[0]) == 0
-            ):
-                return {
-                    "ok": False,
-                    "error": f"embed 输出异常: shape={getattr(vecs, 'shape', len(vecs) if hasattr(vecs, '__len__') else type(vecs).__name__)}",
-                }
-
-        elif rid == "reranker":
-            qwen3_rerank.load()
-            if qwen3_rerank.RerankBackend._MODEL is None:
-                return {
-                    "ok": False,
-                    "error": qwen3_rerank.RerankBackend._ERROR or "未加载到内存",
-                }
-            results = qwen3_rerank.rerank("test query", ["test passage"])
-            if not isinstance(results, list) or len(results) != 1:
-                return {"ok": False, "error": f"rerank 输出异常: {results}"}
-
-        elif rid == "molscribe":
+        if rid == "molscribe":
             molscribe.load()
             if not molscribe._AVAILABLE:
                 return {"ok": False, "error": molscribe._ERROR or "未就绪"}
@@ -1163,12 +982,9 @@ async def test_model(request: Request) -> dict[str, Any]:
 # Health + Circuit Breaker
 # ---------------------------------------------------------------------------
 _model_status = {
-    "embedder": "not_loaded",
-    "reranker": "not_loaded",
     "moldet": "loading",
     "moldet_coref": "loading",
     "molscribe": "loading",
-    "zvec": "loading",
 }
 _resource_cache: dict[str, str] = {}
 _resource_cache_time: float = 0.0
@@ -1200,12 +1016,6 @@ def set_model_status(name: str, status: str) -> None:
 
 @app.get("/api/v1/health")
 async def health_check() -> dict[str, Any]:
-    # Embedder: 懒加载。健康检查不触发加载；首次调用 /api/v1/embed 时由
-    # EmbedBackend.embed() 内部 cls.load() 触发。
-
-    # Reranker: 懒加载。健康检查不触发加载；首次调用 /api/v1/rerank 时由
-    # RerankBackend.rerank() 内部 cls.load() 触发。
-
     # MolDet
     if not _should_skip_due_to_cooldown("moldet"):
         try:
@@ -1241,21 +1051,6 @@ async def health_check() -> dict[str, Any]:
             _model_status["moldet_coref"] = "error"
             _mark_failure("moldet_coref")
             logger.debug("MolDet coref health check failed: %s", e)
-
-    # Zvec
-    if not _should_skip_due_to_cooldown("zvec"):
-        try:
-            zvec.load()
-            if zvec.health()["status"] == "ready":
-                _model_status["zvec"] = "ready"
-                _clear_failure("zvec")
-            else:
-                _model_status["zvec"] = "error"
-                _mark_failure("zvec")
-        except Exception as e:
-            _model_status["zvec"] = "error"
-            _mark_failure("zvec")
-            logger.debug("Zvec health check failed: %s", e)
 
     statuses = list(_model_status.values())
     if all(s == "ready" for s in statuses):

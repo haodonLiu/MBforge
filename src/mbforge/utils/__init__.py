@@ -2,8 +2,7 @@
 
 from .config import (
     AppConfig,
-    EmbedConfig,
-    RerankConfig,
+    LLMConfig,
     load_global_config,
     save_global_config,
 )
@@ -26,6 +25,5 @@ __all__ = [
     "load_global_config",
     "save_global_config",
     "AppConfig",
-    "EmbedConfig",
-    "RerankConfig",
+    "LLMConfig",
 ]

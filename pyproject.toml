@@ -9,6 +9,7 @@ pythonpath = ["src"]
 
 [tool.uv]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+prerelease = "allow"
 override-dependencies = [
     "numpy>=1.26.4,<2.0.0",
 ]
@@ -44,9 +45,7 @@ dependencies = [
     "pillow>=10.4.0",
     "rdkit>=2024.3.0",
     # AI / RAG
-    "sentence-transformers>=2.5.0",
     "transformers>=4.55.0",
-    "openai>=1.0.0",
     # PyTorch (CUDA 12.8)
     "torch>=2.6.0",
     "torchvision>=0.21.0",
@@ -56,7 +55,6 @@ dependencies = [
     "platformdirs>=4.0.0",
     "pydantic>=2.2.0",
     "pydantic-settings>=2.2.0",
-    "anthropic>=0.103.1",
     # Agent framework
     "langchain>=0.3.0",
     "langchain-openai>=0.3.0",
@@ -85,10 +83,13 @@ dependencies = [
     "rapidocr==3.9.0",
     "pandas>=2.2.0",
     "onnxruntime-directml>=1.24.4",
-    # Vector search (Zvec Python SDK)
-    "zvec>=0.5.1",
+    # Vector search — removed (replaced by OpenKB + PageIndex)
+    # "zvec>=0.5.1",
     "pypdfium2",
     "modelscope>=1.37.1",
+    # OpenKB + PageIndex (wiki compilation + vectorless tree indexing)
+    "openkb>=0.4.0",
+    "pageindex>=0.3.0.dev1",
 ]
 
 [project.optional-dependencies]

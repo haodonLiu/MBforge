@@ -24,7 +24,7 @@ async def mol_list(body: dict) -> dict:
         return {"success": False, "items": [], "total": 0}
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager(root)
+    db = DatabaseManager.get(root)
     with db.mol_conn() as conn:
         where = "WHERE 1=1"
         params: list = []
@@ -50,7 +50,7 @@ async def mol_search(body: dict) -> dict:
         return {"success": False, "results": []}
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager(root)
+    db = DatabaseManager.get(root)
     with db.mol_conn() as conn:
         rows = conn.execute(
             "SELECT m.* FROM mol_search ms JOIN molecules m ON ms.rowid = m.rowid "
@@ -69,7 +69,7 @@ async def mol_get(body: dict) -> dict:
         return {"success": False, "error": "mol_id and project_root required"}
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager(root)
+    db = DatabaseManager.get(root)
     with db.mol_conn() as conn:
         row = conn.execute("SELECT * FROM molecules WHERE mol_id = ?", (mol_id,)).fetchone()
         if not row:
@@ -86,7 +86,7 @@ async def mol_create(body: dict) -> dict:
     mol_id = body.get("mol_id", str(uuid.uuid4()))
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager(root)
+    db = DatabaseManager.get(root)
     with db.mol_conn() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO molecules (mol_id, smiles, esmiles, name, source_type, status) "
@@ -103,7 +103,7 @@ async def mol_update(mol_id: str, body: dict) -> dict:
         return {"success": False, "error": "project_root required"}
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager(root)
+    db = DatabaseManager.get(root)
     fields = []
     params = []
     for key in ["name", "esmiles", "activity", "activity_type", "units", "status", "notes", "labels", "properties"]:
@@ -128,7 +128,7 @@ async def mol_delete(mol_id: str, body: dict) -> dict:
         return {"success": False, "error": "project_root required"}
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager(root)
+    db = DatabaseManager.get(root)
     with db.mol_conn() as conn:
         conn.execute("DELETE FROM molecules WHERE mol_id = ?", (mol_id,))
     return {"success": True}
@@ -141,7 +141,7 @@ async def mol_stats(body: dict) -> dict:
         return {"success": False}
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager(root)
+    db = DatabaseManager.get(root)
     with db.mol_conn() as conn:
         total = conn.execute("SELECT COUNT(*) FROM molecules").fetchone()[0]
         by_status = conn.execute(

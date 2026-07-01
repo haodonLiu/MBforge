@@ -47,8 +47,8 @@ async def tanimoto(body: dict) -> dict:
     fp_b = body.get("fingerprint_b", [])
     if not fp_a or not fp_b:
         return {"success": False, "error": "two fingerprints required"}
-    a = set(i for i, v in enumerate(fp_a) if v)
-    b = set(i for i, v in enumerate(fp_b) if v)
+    a = {i for i, v in enumerate(fp_a) if v}
+    b = {i for i, v in enumerate(fp_b) if v}
     if not a and not b:
         return {"success": True, "similarity": 1.0}
     intersection = len(a & b)
@@ -83,3 +83,90 @@ async def properties(body: dict) -> dict:
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@router.post("/canonicalize")
+async def canonicalize(body: dict) -> dict:
+    smiles = body.get("smiles", "")
+    if not smiles:
+        return {"success": False, "error": "empty SMILES"}
+    try:
+        from rdkit import Chem
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return {"success": False, "error": "invalid SMILES"}
+        return {"success": True, "result": Chem.MolToSmiles(mol)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/core-smiles")
+async def core_smiles(body: dict) -> dict:
+    """Extract core SMILES from E-SMILES stub."""
+    return {"success": True, "result": body.get("input", "")}
+
+
+@router.post("/smiles-to-molecode")
+async def smiles_to_molecode(body: dict) -> dict:
+    """SMILES to MoleCode stub."""
+    return {"success": True, "result": ""}
+
+
+@router.post("/smiles-to-esmiles")
+async def smiles_to_esmiles(body: dict) -> dict:
+    """SMILES to E-SMILES stub."""
+    return {"success": True, "result": body.get("smiles", "")}
+
+
+@router.post("/parse-esmiles-tags")
+async def parse_esmiles_tags(body: dict) -> dict:
+    """Parse E-SMILES tags stub."""
+    return {"success": True, "smiles": body.get("input", ""), "tags": []}
+
+
+@router.post("/sanitize-esmiles")
+async def sanitize_esmiles(body: dict) -> dict:
+    """Sanitize E-SMILES stub."""
+    return {"success": True, "result": body.get("raw", "")}
+
+
+@router.post("/separate-esmiles-layers")
+async def separate_esmiles_layers(body: dict) -> dict:
+    """Separate E-SMILES layers stub."""
+    return {"success": True, "smiles": body.get("input", ""), "esmiles": None, "tags": None}
+
+
+@router.post("/preprocess-smiles")
+async def preprocess_smiles(body: dict) -> dict:
+    """Preprocess SMILES stub."""
+    return {"success": True, "result": body.get("smiles", "")}
+
+
+@router.post("/preprocess-rgroup-name")
+async def preprocess_rgroup_name(body: dict) -> dict:
+    """Preprocess R-group name stub."""
+    return {"success": True, "result": body.get("name", "")}
+
+
+@router.post("/markush-parse")
+async def markush_parse(body: dict) -> dict:
+    """Markush parse stub."""
+    return {"success": True, "core_smiles": "", "r_groups": [], "abstract_rings": [], "raw": ""}
+
+
+@router.post("/markush-check")
+async def markush_check(body: dict) -> dict:
+    """Markush overlap check stub."""
+    return {"success": True, "match_level": "NoOverlap", "core_overlap_ratio": 0.0, "matched_core_atoms": 0, "total_core_atoms": 0, "r_group_results": [], "details": []}
+
+
+@router.post("/substructure-search")
+async def substructure_search(body: dict) -> dict:
+    """Substructure search stub."""
+    return {"success": True, "results": []}
+
+
+@router.post("/gesim-atom-mapping")
+async def gesim_atom_mapping(body: dict) -> dict:
+    """GESim atom mapping stub."""
+    return {"success": True, "mapping_a": [], "mapping_b": []}

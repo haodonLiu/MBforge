@@ -1,4 +1,4 @@
-"""Environment and resource management endpoints."""
+"""Health check and sidecar status endpoints."""
 
 from __future__ import annotations
 
@@ -25,6 +25,24 @@ async def health() -> dict:
     return {"status": overall, "models": statuses, "resources": {}}
 
 
+@router.get("/sidecar/status")
+async def sidecar_status() -> dict:
+    report = ResourceManager.check_all()
+    return {
+        "healthy": all(r.status.value == "ready" for r in report.resources),
+        "state": "online",
+        "restart_count": 0,
+        "uptime_secs": 0,
+        "last_error": None,
+    }
+
+
+@router.post("/sidecar/restart")
+async def sidecar_restart() -> dict:
+    """Sidecar restart stub (not needed in pure web mode)."""
+    return {"success": True}
+
+
 @router.get("/environment/check")
 async def environment_check() -> dict:
     report = ResourceManager.check_all()
@@ -43,24 +61,4 @@ async def environment_check() -> dict:
             }
             for r in report.resources
         ],
-    }
-
-
-@router.post("/resource/download")
-async def resource_download(body: dict) -> dict:
-    resource_id = body.get("resource_id", "")
-    if not resource_id:
-        return {"success": False, "error": "resource_id required"}
-    result = ResourceManager.ensure(resource_id)
-    return {"success": result.status.value == "ready", "status": result.status.value}
-
-
-@router.post("/resources/check")
-async def resources_check() -> dict:
-    report = ResourceManager.check_all()
-    return {
-        "resources": [
-            {"id": r.id, "name": r.name, "status": r.status.value, "local_path": r.local_path}
-            for r in report.resources
-        ]
     }

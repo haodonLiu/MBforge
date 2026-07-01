@@ -68,7 +68,7 @@ export default function SettingsPage() {
         setSaveSuccess(true)
         setButtonSaved(true)
         setInitialSettings(settings)
-        setTheme(settings.theme === 'system' ? 'dark' : settings.theme)
+        setTheme(settings.theme)
         void i18n.changeLanguage(settings.language)
         timersRef.current.push(setTimeout(() => setSaveSuccess(false), 3000))
         timersRef.current.push(setTimeout(() => setButtonSaved(false), 1500))

@@ -3,8 +3,6 @@ export { default as ModelsTab } from './ModelsTab'
 export { default as SidecarCard } from './SidecarCard'
 export {
   LLM_MODELS,
-  EMBED_MODELS,
-  RERANK_MODELS,
   VLM_MODELS,
   OCR_MODELS,
   PROVIDER_META,

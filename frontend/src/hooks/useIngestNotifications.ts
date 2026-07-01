@@ -32,6 +32,7 @@ export function useIngestNotifications(projectRoot: string): void {
       try {
         const tasks = await ingestList(root)
         if (cancelled) return
+        if (!Array.isArray(tasks)) return
         const currentMap: Record<string, IngestTask['status']> = {}
         for (const task of tasks) {
           currentMap[task.id] = task.status

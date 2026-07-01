@@ -16,7 +16,7 @@ async def detection_get(body: dict) -> dict:
         return {"success": False, "detections": []}
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager(root)
+    db = DatabaseManager.get(root)
     with db.mol_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM molecule_detections WHERE doc_id = ? AND page = ?",
@@ -33,7 +33,7 @@ async def detection_save(body: dict) -> dict:
         return {"success": False, "error": "project_root and detections required"}
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager(root)
+    db = DatabaseManager.get(root)
     with db.mol_conn() as conn:
         for det in detections:
             conn.execute(
@@ -47,3 +47,33 @@ async def detection_save(body: dict) -> dict:
                 ),
             )
     return {"success": True}
+
+
+@router.post("/extract-page")
+async def detection_extract_page(body: dict) -> dict:
+    """Cache-aware single-page molecule detection stub."""
+    return {"results": [], "count": 0, "source": "cache_miss"}
+
+
+@router.post("/stats")
+async def detection_stats(body: dict) -> dict:
+    """Detection cache stats stub."""
+    return {"disk_usage_bytes": 0, "cached_page_count": 0, "cached_doc_count": 0, "schema_version": 1}
+
+
+@router.post("/clear")
+async def detection_clear(body: dict) -> dict:
+    """Clear all detection cache stub."""
+    return {"success": True, "cleared": 0}
+
+
+@router.post("/clear-doc")
+async def detection_clear_doc(body: dict) -> dict:
+    """Clear detection cache for a specific document stub."""
+    return {"success": True, "cleared": 0}
+
+
+@router.post("/batch-scan")
+async def detection_batch_scan(body: dict) -> dict:
+    """Batch quick MoldDet scan stub."""
+    return {"results": [], "processed": 0, "total": 0, "errors": []}

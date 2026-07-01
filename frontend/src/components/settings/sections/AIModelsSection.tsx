@@ -1,4 +1,4 @@
-// AI Models 栏目 — LLM / Embedding / Reranker / VLM / OCR 五个 tab。
+// AI Models 栏目 — LLM / VLM / OCR 三个 tab。
 // 所有子页共享 ModelConfigCard，风格统一且全部可编辑。
 
 import { useState } from 'react'
@@ -8,7 +8,7 @@ import ModelConfigCard from '../ModelConfigCard'
 import SectionTitle from '../../ui/SectionTitle'
 import type { SettingsState } from '../types'
 
-type Tab = 'llm' | 'embed' | 'rerank' | 'vlm' | 'ocr'
+type Tab = 'llm' | 'vlm' | 'ocr'
 
 interface TabConfig {
   key: Tab
@@ -24,8 +24,6 @@ interface Props {
 
 const TABS: TabConfig[] = [
   { key: 'llm', titleKey: 'settings.tabLlm', descKey: 'settings.tabLlmDesc', showTest: true },
-  { key: 'embed', titleKey: 'settings.tabEmbed', descKey: 'settings.tabEmbedDesc' },
-  { key: 'rerank', titleKey: 'settings.tabRerank', descKey: 'settings.tabRerankDesc' },
   { key: 'vlm', titleKey: 'settings.tabVlm', descKey: 'settings.tabVlmDesc' },
   { key: 'ocr', titleKey: 'settings.tabOcr', descKey: 'settings.tabOcrDesc' },
 ]

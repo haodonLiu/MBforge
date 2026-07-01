@@ -21,6 +21,7 @@ class LLMConfig(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    provider: str = "openai_compatible"
     model: str = DEFAULT_LLM_MODEL
     api_key: str = ""
     base_url: str = ""
@@ -40,6 +41,16 @@ class AppConfig(BaseSettings):
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
     model_cache_dir: str = ""
+    theme: str = "dark"
+    language: str = "zh-CN"
+    auto_open_project: bool = True
+    vlm: dict[str, Any] = Field(default_factory=dict)
+    ocr: dict[str, Any] = Field(default_factory=dict)
+    model_server: dict[str, Any] = Field(default_factory=dict)
+    recent_projects: list[str] = Field(default_factory=list)
+    pdf_parse: dict[str, Any] = Field(default_factory=dict)
+    moldet: dict[str, Any] = Field(default_factory=dict)
+    ingest: dict[str, Any] = Field(default_factory=dict)
 
 
 _CONFIG_PATH = GLOBAL_CONFIG_DIR / "config.json"
@@ -72,12 +83,6 @@ def load_global_config() -> AppConfig:
     if _CONFIG_PATH.exists():
         data = load_json(_CONFIG_PATH)
         if data is not None:
-            if "embed" in data or "rerank" in data:
-                import logging
-
-                logging.getLogger("mbforge.config").info(
-                    "Legacy embed/rerank config fields ignored (removed in OpenKB migration)"
-                )
             try:
                 return AppConfig.model_validate(data)
             except Exception:  # noqa: BLE001

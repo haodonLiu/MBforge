@@ -21,7 +21,7 @@ import { registerGlobalErrorHandlers } from './api/tauri/_utils'
 import { useSidecarEvents } from './hooks/useSidecarEvents'
 import { useIngestNotifications } from './hooks/useIngestNotifications'
 import OcrConfigModal from './components/OcrConfigModal'
-import { openProject, enqueueUnresolvedDocuments } from './api/tauri/project'
+import { openProject } from './api/tauri/project'
 
 function getContentColumn(showProjectScope: boolean): '2' | '3' {
   return showProjectScope ? '3' : '2'
@@ -116,7 +116,6 @@ function AppInner() {
         if (resp.success) {
           setProjectRoot(resp.project.root)
           setCurrentPage('workspace')
-          void enqueueUnresolvedDocuments(resp.project.root).catch((e) => console.warn('enqueueUnresolvedDocuments failed:', e))
         } else {
           localStorage.removeItem('mbforge_project_root')
         }

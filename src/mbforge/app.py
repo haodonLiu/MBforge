@@ -83,16 +83,22 @@ def create_app() -> FastAPI:
     from .routers import (
         agent,
         chem,
+        coref,
         detection_cache,
         documents,
-        environment,
         events,
+        health,
         knowledge_base,
         molecule,
         notes,
+        ocr,
+        pdf,
         pipeline,
         project,
+        resource,
+        sar,
         settings,
+        text,
     )
 
     app.include_router(project.router, prefix="/api/v1/project", tags=["project"])
@@ -105,8 +111,14 @@ def create_app() -> FastAPI:
     app.include_router(detection_cache.router, prefix="/api/v1/detection-cache", tags=["detection"])
     app.include_router(notes.router, prefix="/api/v1/notes", tags=["notes"])
     app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])
-    app.include_router(environment.router, prefix="/api/v1", tags=["environment"])
+    app.include_router(health.router, prefix="/api/v1", tags=["health"])
+    app.include_router(resource.router, prefix="/api/v1", tags=["resource"])
     app.include_router(events.router, prefix="/api/v1/events", tags=["events"])
+    app.include_router(pdf.router, prefix="/api/v1/pdf", tags=["pdf"])
+    app.include_router(coref.router, prefix="/api/v1/coref", tags=["coref"])
+    app.include_router(sar.router, prefix="/api/v1/sar", tags=["sar"])
+    app.include_router(text.router, prefix="/api/v1", tags=["text"])
+    app.include_router(ocr.router, prefix="/api/v1/ocr", tags=["ocr"])
 
     # Mount existing model server endpoints under /api/v1/models/*
     from .server import app as model_server

@@ -18,7 +18,7 @@ def check_cache(query: str, project_root: str) -> list[dict] | None:
     from .database import DatabaseManager
 
     qh = _query_hash(query)
-    db = DatabaseManager(project_root)
+    db = DatabaseManager.get(project_root)
     try:
         with db.kb_conn() as conn:
             row = conn.execute(
@@ -42,7 +42,7 @@ def store_cache(query: str, project_root: str, results: list[dict]) -> None:
     from .database import DatabaseManager
 
     qh = _query_hash(query)
-    db = DatabaseManager(project_root)
+    db = DatabaseManager.get(project_root)
     try:
         with db.kb_conn() as conn:
             conn.execute(
@@ -58,7 +58,7 @@ def invalidate_cache(project_root: str) -> None:
     """Clear all cached results for a project."""
     from .database import DatabaseManager
 
-    db = DatabaseManager(project_root)
+    db = DatabaseManager.get(project_root)
     try:
         with db.kb_conn() as conn:
             conn.execute("DELETE FROM semantic_cache")

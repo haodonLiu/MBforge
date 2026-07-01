@@ -23,21 +23,6 @@ export interface SettingsState {
   llm_top_p: number
   llm_request_timeout: number
 
-  // —— Embedding ——
-  embed_provider: string
-  embed_model: string
-  embed_base_url: string
-  embed_api_key: string
-  embed_device: 'cpu' | 'cuda' | 'auto'
-  embed_mrl_dim: number
-  embed_instruction: string
-
-  // —— Reranker ——
-  rerank_provider: string
-  rerank_model: string
-  rerank_device: 'cpu' | 'cuda' | 'auto'
-  rerank_max_length: number
-
   // —— VLM ——
   vlm_provider: string
   vlm_base_url: string
@@ -99,19 +84,6 @@ export const DEFAULT_SETTINGS: SettingsState = {
   llm_temperature: 0.7,
   llm_top_p: 0.9,
   llm_request_timeout: 120,
-
-  embed_provider: 'qwen3',
-  embed_model: 'Qwen/Qwen3-Embedding-0.6B',
-  embed_base_url: '',
-  embed_api_key: '',
-  embed_device: 'cpu',
-  embed_mrl_dim: 0,
-  embed_instruction: '',
-
-  rerank_provider: 'qwen3',
-  rerank_model: 'Qwen/Qwen3-Reranker-0.6B',
-  rerank_device: 'cpu',
-  rerank_max_length: 8192,
 
   vlm_provider: 'none',
   vlm_base_url: '',
@@ -189,8 +161,6 @@ export const SECTIONS: SectionDef[] = [
 export function flattenSettings(raw: AppSettings | null | undefined): SettingsState {
   const s: AppSettings = raw ?? {}
   const llm = s.llm ?? {}
-  const embed = s.embed ?? {}
-  const rerank = s.rerank ?? {}
   const vlm = s.vlm ?? {}
   const ocr = s.ocr ?? {}
   const ms = s.model_server ?? {}
@@ -202,34 +172,21 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
     llm_provider: llm.provider || DEFAULT_SETTINGS.llm_provider,
     llm_base_url: llm.base_url || DEFAULT_SETTINGS.llm_base_url,
     llm_api_key: llm.api_key || DEFAULT_SETTINGS.llm_api_key,
-    llm_model: llm.model_name || DEFAULT_SETTINGS.llm_model,
+    llm_model: llm.model || DEFAULT_SETTINGS.llm_model,
     llm_max_tokens: llm.max_tokens || DEFAULT_SETTINGS.llm_max_tokens,
     llm_temperature: typeof llm.temperature === 'number' ? llm.temperature : DEFAULT_SETTINGS.llm_temperature,
     llm_top_p: typeof llm.top_p === 'number' ? llm.top_p : DEFAULT_SETTINGS.llm_top_p,
     llm_request_timeout: llm.request_timeout || DEFAULT_SETTINGS.llm_request_timeout,
 
-    embed_provider: embed.provider || DEFAULT_SETTINGS.embed_provider,
-    embed_model: embed.model_name || DEFAULT_SETTINGS.embed_model,
-    embed_base_url: embed.base_url || DEFAULT_SETTINGS.embed_base_url,
-    embed_api_key: embed.api_key || DEFAULT_SETTINGS.embed_api_key,
-    embed_device: embed.device || DEFAULT_SETTINGS.embed_device,
-    embed_mrl_dim: embed.mrl_dim || DEFAULT_SETTINGS.embed_mrl_dim,
-    embed_instruction: embed.instruction || DEFAULT_SETTINGS.embed_instruction,
-
-    rerank_provider: rerank.provider || DEFAULT_SETTINGS.rerank_provider,
-    rerank_model: rerank.model_name || DEFAULT_SETTINGS.rerank_model,
-    rerank_device: rerank.device || DEFAULT_SETTINGS.rerank_device,
-    rerank_max_length: rerank.max_length || DEFAULT_SETTINGS.rerank_max_length,
-
     vlm_provider: vlm.provider || DEFAULT_SETTINGS.vlm_provider,
     vlm_base_url: vlm.base_url || DEFAULT_SETTINGS.vlm_base_url,
     vlm_api_key: vlm.api_key || DEFAULT_SETTINGS.vlm_api_key,
-    vlm_model: vlm.model_name || DEFAULT_SETTINGS.vlm_model,
+    vlm_model: vlm.model || DEFAULT_SETTINGS.vlm_model,
 
     ocr_provider: ocr.provider || DEFAULT_SETTINGS.ocr_provider,
     ocr_base_url: ocr.base_url || DEFAULT_SETTINGS.ocr_base_url,
     ocr_api_key: ocr.api_key || DEFAULT_SETTINGS.ocr_api_key,
-    ocr_model: ocr.model_name || DEFAULT_SETTINGS.ocr_model,
+    ocr_model: ocr.model || DEFAULT_SETTINGS.ocr_model,
     ocr_use_hf_mirror: ocr.use_hf_mirror !== false,
     ocr_use_pdf_inspector: ocr.use_pdf_inspector !== false,
     ocr_mineru_api_key: ocr.mineru_api_key || DEFAULT_SETTINGS.ocr_mineru_api_key,
@@ -274,38 +231,23 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
       provider: s.llm_provider,
       base_url: s.llm_base_url,
       api_key: s.llm_api_key,
-      model_name: s.llm_model,
+      model: s.llm_model,
       max_tokens: s.llm_max_tokens,
       temperature: s.llm_temperature,
       top_p: s.llm_top_p,
       request_timeout: s.llm_request_timeout,
     },
-    embed: {
-      provider: s.embed_provider,
-      model_name: s.embed_model,
-      base_url: s.embed_base_url,
-      api_key: s.embed_api_key,
-      device: s.embed_device,
-      mrl_dim: s.embed_mrl_dim || null,
-      instruction: s.embed_instruction,
-    },
-    rerank: {
-      provider: s.rerank_provider,
-      model_name: s.rerank_model,
-      device: s.rerank_device,
-      max_length: s.rerank_max_length,
-    },
     vlm: {
       provider: s.vlm_provider,
       base_url: s.vlm_base_url,
       api_key: s.vlm_api_key,
-      model_name: s.vlm_model,
+      model: s.vlm_model,
     },
     ocr: {
       provider: s.ocr_provider,
       base_url: s.ocr_base_url,
       api_key: s.ocr_api_key,
-      model_name: s.ocr_model,
+      model: s.ocr_model,
       use_hf_mirror: s.ocr_use_hf_mirror,
       use_pdf_inspector: s.ocr_use_pdf_inspector,
       mineru_api_key: s.ocr_mineru_api_key || null,

@@ -13,7 +13,6 @@
  * - download:    model download / delete / list
  * - settings:    app settings + build info
  * - notes:       notes CRUD + backlinks
- * - audit:       audit log
  * - sar:         SAR analysis
  * - detection_cache: per-PDF detection cache
  * - ingest_queue:    PDF 处理队列
@@ -35,7 +34,6 @@ export * from './sidecar'
 export * from './download'
 export * from './settings'
 export * from './notes'
-export * from './audit'
 export * from './sar'
 export * from './detection_cache'
 export * from './ingest_queue'

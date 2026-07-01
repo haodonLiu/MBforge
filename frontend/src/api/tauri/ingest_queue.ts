@@ -80,16 +80,27 @@ export interface IngestEmbedEvent {
 
 export async function ingestList(projectRoot: string): Promise<IngestTask[]> {
   return invokeWithError(
-    () => httpPost<IngestTask[]>('/api/v1/pipeline/queue', { project_root: projectRoot }),
+    () => httpPost('/api/v1/pipeline/queue', { project_root: projectRoot })
+      .then((r: any) => Array.isArray(r?.tasks) ? r.tasks : []),
     ErrorCode.TauriInvoke,
   )
 }
 
 export async function ingestStats(projectRoot: string): Promise<QueueStats> {
   return invokeWithError(
-    () => httpPost<QueueStats>('/api/v1/pipeline/queue/stats', { project_root: projectRoot }),
+    () => httpPost('/api/v1/pipeline/queue/stats', { project_root: projectRoot })
+      .then((r: any) => r?.stats ?? {}),
     ErrorCode.TauriInvoke,
   )
+}
+
+export async function ingestWorkerStatus(): Promise<{ status: string; ts: number }> {
+  try {
+    const resp = await httpGet<{ status: string; ts: number }>('/api/v1/pipeline/worker/status')
+    return resp ?? { status: 'offline', ts: 0 }
+  } catch {
+    return { status: 'offline', ts: 0 }
+  }
 }
 
 /** 获取某 doc_id 的最近 N 条 ingest 日志（DB 兜底通道）。

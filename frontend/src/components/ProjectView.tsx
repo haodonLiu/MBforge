@@ -83,7 +83,7 @@ export default function ProjectView({ onFileActive }: ProjectViewProps) {
     setIndexProgress(null)
 
     try {
-      const scanResp = await scanProjectFiles(projectRoot)
+      const scanResp = await scanProjectFiles(projectRoot, true)
       setDocs(scanResp.documents)
       setScanWarnings(scanResp.warnings ?? [])
       void enqueueUnresolvedDocuments(projectRoot).catch((e) => console.warn('enqueueUnresolvedDocuments failed:', e))

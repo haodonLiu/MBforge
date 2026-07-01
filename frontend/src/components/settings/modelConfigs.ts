@@ -30,26 +30,6 @@ export const LLM_MODELS: ModelMap = {
   ],
 }
 
-export const EMBED_MODELS: ModelMap = {
-  qwen3: [{ value: 'Qwen/Qwen3-Embedding-0.6B', label: 'Qwen3-Embedding-0.6B' }],
-  sentence_transformers: [
-    { value: 'BAAI/bge-base-zh-v1.5', label: 'BGE-Base-ZH-v1.5' },
-    { value: 'BAAI/bge-large-zh-v1.5', label: 'BGE-Large-ZH-v1.5' },
-  ],
-  openai: [
-    { value: 'text-embedding-3-small', label: 'text-embedding-3-small' },
-    { value: 'text-embedding-3-large', label: 'text-embedding-3-large' },
-  ],
-}
-
-export const RERANK_MODELS: ModelMap = {
-  qwen3: [{ value: 'Qwen/Qwen3-Reranker-0.6B', label: 'Qwen3-Reranker-0.6B' }],
-  sentence_transformers: [
-    { value: 'BAAI/bge-reranker-v2-m3', label: 'BGE-Reranker-v2-M3' },
-    { value: 'BAAI/bge-reranker-large', label: 'BGE-Reranker-Large' },
-  ],
-}
-
 export const VLM_MODELS: ModelMap = {
   openai_compatible: [
     { value: 'gpt-4o', label: 'GPT-4o' },
@@ -76,10 +56,6 @@ export const PROVIDER_META: Record<string, { label: string; defaultUrl: string; 
   openai_compatible: { label: 'OpenAI Compatible', defaultUrl: 'https://api.openai.com/v1', needsKey: true },
   anthropic: { label: 'Anthropic', defaultUrl: 'https://api.anthropic.com', needsKey: true },
   ollama: { label: 'Ollama (local)', defaultUrl: 'http://localhost:11434', needsKey: false },
-  // Embed
-  qwen3: { label: 'Qwen3 (local)', defaultUrl: '', needsKey: false },
-  sentence_transformers: { label: 'Sentence Transformers (local)', defaultUrl: '', needsKey: false },
-  openai: { label: 'OpenAI (API)', defaultUrl: 'https://api.openai.com/v1', needsKey: true },
   // VLM
   qwen_vl: { label: 'Qwen-VL (local)', defaultUrl: '', needsKey: false },
   // OCR

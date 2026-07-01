@@ -12,7 +12,6 @@ import { ChevronDownIcon, ChevronUpIcon, QueueIcon } from '../icons/ui'
 import { XIcon, PinIcon, UnpinIcon, TrashIcon, RefreshCwIcon } from '../icons/actions'
 import PdfPipelineFlow from './pdf/PdfPipelineFlow'
 import IngestLogPanel from './IngestLogPanel'
-import { EVT } from '../../api/tauri-events'
 import {
   ingestCancel,
   ingestCleanup,
@@ -23,9 +22,6 @@ import {
   ingestSetPriority,
   ingestStats,
   type IngestTask,
-  type IngestQueueUpdateEvent,
-  type IngestWorkerHeartbeatEvent,
-  type IngestLogEvent,
   type QueueStats,
 } from '../../api/tauri/ingest_queue'
 import { showToast } from '../../hooks/useToast'
@@ -125,7 +121,6 @@ export default function ProcessingQueue({ projectRoot }: Props) {
   const [filter, setFilter] = useState<FilterKey>('all')
   const [hideDone, setHideDone] = useState(true)
   const [workerStatus, setWorkerStatus] = useState<'online' | 'offline' | 'unknown'>('unknown')
-  const [lastHeartbeatTs, setLastHeartbeatTs] = useState<number | null>(null)
   const [logMap, setLogMap] = useState<Map<string, IngestLogEvent[]>>(new Map())
   const [expandedLogDocs, setExpandedLogDocs] = useState<Set<string>>(new Set())
 
@@ -156,83 +151,39 @@ export default function ProcessingQueue({ projectRoot }: Props) {
 
   useEffect(() => {
     void load()
-    let unlisten: (() => void) | null = null
-    const setup = async () => {
-      unlisten = await listen<IngestQueueUpdateEvent>(
-        EVT.IngestQueueUpdate,
-        () => {
-          void load()
-        },
-      )
-    }
-    void setup().catch((e: unknown) => {
-      console.error('[ProcessingQueue] listen failed:', e)
-    })
+    // Web mode: poll instead of Tauri IPC listen
+    const timer = setInterval(() => void load(), 10000)
     return () => {
-      unlisten?.()
+      clearInterval(timer)
     }
   }, [load])
 
-  // Worker heartbeat: update online status when a beat arrives.
+  // Worker status: poll backend API.
   useEffect(() => {
-    let unlisten: (() => void) | null = null
-    const setup = async () => {
-      unlisten = await listen<IngestWorkerHeartbeatEvent>(
-        EVT.IngestWorkerHeartbeat,
-        (event) => {
-          setLastHeartbeatTs(event.payload.ts)
+    const checkWorker = async () => {
+      try {
+        const resp = await fetch('http://127.0.0.1:18792/api/v1/pipeline/worker/status')
+        if (resp.ok) {
           setWorkerStatus('online')
-        },
-      )
+        } else {
+          setWorkerStatus('offline')
+        }
+      } catch {
+        setWorkerStatus('offline')
+      }
     }
-    void setup().catch((e: unknown) => {
-      console.error('[ProcessingQueue] heartbeat listen failed:', e)
-    })
-    return () => {
-      unlisten?.()
-    }
+    void checkWorker()
+    const timer = setInterval(checkWorker, 30000)
+    return () => clearInterval(timer)
   }, [])
 
-  // Mark worker offline if no heartbeat is received for a while.
-  useEffect(() => {
-    if (lastHeartbeatTs == null) return
-    const id = window.setInterval(() => {
-      const elapsedMs = Date.now() - lastHeartbeatTs * 1000
-      if (elapsedMs > 15_000) setWorkerStatus('offline')
-    }, 1000)
-    return () => window.clearInterval(id)
-  }, [lastHeartbeatTs])
+  // Subscribe to per-document ingest logs.
+  // Web mode: no Tauri IPC — logs are fetched on demand via fetchLogsForDoc.
 
   // Subscribe to per-document ingest logs.
+  // Web mode: no Tauri IPC — logs are fetched on demand via fetchLogsForDoc.
   useEffect(() => {
-    let unlisten: (() => void) | null = null
-    const setup = async () => {
-      unlisten = await listen<IngestLogEvent>(EVT.IngestLog, (event) => {
-        const payload = event.payload
-        setLogMap((prev) => {
-          const next = new Map(prev)
-          const list = next.get(payload.doc_id) ?? []
-          // 去重：DB 预填 + 事件通道可能带来同一条日志（ts_ms + message 判重）
-          if (
-            list.some(
-              (e) => e.ts_ms === payload.ts_ms && e.message === payload.message,
-            )
-          ) {
-            return prev
-          }
-          const updated = [...list, payload]
-          if (updated.length > 200) updated.shift()
-          next.set(payload.doc_id, updated)
-          return next
-        })
-      })
-    }
-    void setup().catch((e: unknown) => {
-      console.error('[ProcessingQueue] log listen failed:', e)
-    })
-    return () => {
-      unlisten?.()
-    }
+    // No-op in web mode
   }, [])
 
   /** DB 兜底通道：从 SQLite 拉取该 doc 的历史日志。 */
@@ -412,7 +363,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
     return c
   }, [tasks])
 
-  const avgTotalMs = stats ? stats.avg_stage_durations_ms.reduce((a, b) => a + b, 0) : 0
+  const avgTotalMs = stats?.avg_stage_durations_ms?.reduce((a: number, b: number) => a + b, 0) ?? 0
 
   return (
     <PageContainer>

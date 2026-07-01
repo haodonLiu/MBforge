@@ -1,9 +1,7 @@
-import { useState, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderOpenIcon } from '../icons'
-import Button from './Button'
-import { showToast } from '../../hooks/useToast'
 import { cleanWindowsPath } from '../../utils/path'
+import { getCommonDirs } from '../../api/tauri/project'
 
 
 interface FolderPickerProps {
@@ -22,44 +20,16 @@ export function FolderPicker({
   disabled = false
 }: FolderPickerProps) {
   const { t } = useTranslation()
-  const [loading, setLoading] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [commonDirs, setCommonDirs] = useState<{ name: string; path: string }[]>([])
 
   const effectivePlaceholder = placeholder ?? t('folder.select')
-  const effectiveTitle = title ?? t('folder.select')
 
-  const handleSelect = async () => {
-    setLoading(true)
-    try {
-      inputRef.current?.click()
-    } catch (e: unknown) {
-      const error = e as Error
-      const msg = error?.message || String(e)
-      showToast(t('folder.errorSelect', { msg }), 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (files && files.length > 0) {
-      const raw = files[0].webkitRelativePath || files[0].name
-      if (raw) {
-        onChange(cleanWindowsPath(raw))
-      }
-    }
-  }
+  useEffect(() => {
+    getCommonDirs().then(setCommonDirs)
+  }, [])
 
   return (
-    <div style={{ display: 'flex', gap: '8px' }}>
-      <input
-        ref={inputRef}
-        type="file"
-        webkitdirectory=""
-        onChange={handleInputChange}
-        style={{ display: 'none' }}
-      />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       <input
         type="text"
         value={value}
@@ -67,7 +37,7 @@ export function FolderPicker({
         placeholder={effectivePlaceholder}
         disabled={disabled}
         style={{
-          flex: 1,
+          width: '100%',
           height: '40px',
           padding: '0 12px',
           background: 'var(--bg-surface)',
@@ -79,15 +49,29 @@ export function FolderPicker({
           boxSizing: 'border-box',
         }}
       />
-      
-      <Button
-        variant="secondary"
-        onClick={handleSelect}
-        disabled={disabled || loading}
-        title={t('folder.browse')}
-      >
-        <FolderOpenIcon size={16} />
-      </Button>
+      {commonDirs.length > 0 && (
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          {commonDirs.map((dir) => (
+            <button
+              key={dir.path}
+              type="button"
+              onClick={() => onChange(dir.path)}
+              disabled={disabled}
+              style={{
+                padding: '4px 10px',
+                fontSize: '12px',
+                background: value === dir.path ? 'var(--accent)' : 'var(--bg-surface)',
+                color: value === dir.path ? 'white' : 'var(--text-secondary)',
+                border: '1px solid var(--border)',
+                borderRadius: '6px',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {dir.name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

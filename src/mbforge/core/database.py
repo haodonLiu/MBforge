@@ -18,6 +18,9 @@ logger = get_logger("mbforge.database")
 
 SCHEMA_VERSION = 2
 
+# 实例缓存：避免重复初始化日志
+_db_cache: dict[str, "DatabaseManager"] = {}
+
 _KB_SCHEMA = """
 CREATE TABLE IF NOT EXISTS figure_labels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,6 +175,14 @@ class DatabaseManager:
         self._mol_path = self._index_dir / "molecules.db"
         self._lock = threading.Lock()
         self._initialized = False
+
+    @classmethod
+    def get(cls, project_root: str | Path) -> "DatabaseManager":
+        """获取缓存的实例，避免重复初始化."""
+        key = str(Path(project_root).resolve())
+        if key not in _db_cache:
+            _db_cache[key] = cls(project_root)
+        return _db_cache[key]
 
     def initialize(self) -> None:
         if self._initialized:

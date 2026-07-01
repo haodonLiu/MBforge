@@ -40,8 +40,8 @@ async def doc_reingest(body: dict) -> dict:
     doc_id = body.get("doc_id", "")
     if not root or not doc_id:
         return {"success": False, "error": "root and doc_id required"}
+    import asyncio  # noqa: I001
     from ..pipeline.runner import run_pipeline
-    import asyncio
 
     idx_path = Path(root) / ".mbforge" / "index.json"
     data = load_json(idx_path, [])

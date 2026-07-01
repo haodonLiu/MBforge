@@ -37,24 +37,37 @@ def open_project(root: str) -> ProjectResponse:
     return ProjectResponse(root=str(p), name=name, doc_count=len(docs))
 
 
-def scan_project_files(root: str) -> list[str]:
-    """Scan project directory for supported document files."""
+def scan_project_files(root: str, recursive: bool = False) -> list[str]:
+    """Scan project directory for supported document files.
+
+    Args:
+        root: 项目根目录
+        recursive: 是否递归扫描子目录，默认 False（只扫描根目录）
+    """
     p = Path(root)
     supported = {".pdf", ".md", ".txt", ".sdf", ".mol", ".mol2", ".pdb", ".smi"}
-    skip_dirs = {
-        "node_modules", ".venv", "venv", "__pycache__", ".git", "target",
-        "dist", "build", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-        ".codex", ".claude", "archived", "ref", "tools",
-    }
     files: list[str] = []
-    for f in p.rglob("*"):
-        # Skip heavy/irrelevant directories
-        if any(part in skip_dirs or part.startswith(".") for part in f.relative_to(p).parts[:-1]):
-            continue
-        if f.is_file() and f.suffix.lower() in supported:
-            rel = str(f.relative_to(p))
-            if not rel.startswith(MBFORGE_DIR) and not rel.startswith("."):
-                files.append(rel)
+
+    if recursive:
+        skip_dirs = {
+            "node_modules", ".venv", "venv", "__pycache__", ".git", "target",
+            "dist", "build", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+            ".codex", ".claude", "archived", "ref", "tools",
+        }
+        for f in p.rglob("*"):
+            # Skip heavy/irrelevant directories
+            if any(part in skip_dirs or part.startswith(".") for part in f.relative_to(p).parts[:-1]):
+                continue
+            if f.is_file() and f.suffix.lower() in supported:
+                rel = str(f.relative_to(p))
+                if not rel.startswith(MBFORGE_DIR) and not rel.startswith("."):
+                    files.append(rel)
+    else:
+        # 只扫描根目录下的直接文件
+        for f in p.iterdir():
+            if f.is_file() and f.suffix.lower() in supported:
+                files.append(f.name)
+
     return sorted(files)
 
 

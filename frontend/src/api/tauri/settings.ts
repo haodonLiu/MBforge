@@ -6,42 +6,25 @@ export interface LlmConfig {
   provider?: string
   base_url?: string
   api_key?: string
-  model_name?: string
+  model?: string
   max_tokens?: number
   temperature?: number
   top_p?: number
   request_timeout?: number
 }
 
-export interface EmbedConfig {
-  provider?: string
-  model_name?: string
-  base_url?: string
-  api_key?: string
-  device?: 'cpu' | 'cuda' | 'auto'
-  mrl_dim?: number | null
-  instruction?: string
-}
-
-export interface RerankConfig {
-  provider?: string
-  model_name?: string
-  device?: 'cpu' | 'cuda' | 'auto'
-  max_length?: number
-}
-
 export interface VlmConfig {
   provider?: string
   base_url?: string
   api_key?: string
-  model_name?: string
+  model?: string
 }
 
 export interface OcrConfig {
   provider?: string
   base_url?: string
   api_key?: string
-  model_name?: string
+  model?: string
   use_hf_mirror?: boolean
   use_pdf_inspector?: boolean
   mineru_api_key?: string | null
@@ -64,8 +47,6 @@ export interface AppSettings {
   language?: string
   auto_open_project?: boolean
   llm?: LlmConfig
-  embed?: EmbedConfig
-  rerank?: RerankConfig
   vlm?: VlmConfig
   ocr?: OcrConfig
   model_server?: ModelServerConfig
@@ -122,8 +103,7 @@ export interface BuildInfo {
 }
 
 export async function fetchBuildInfo(): Promise<BuildInfo> {
-  const resp = await httpGet<{ version?: string; platform?: string; config_path?: string }>('/api/v1/settings')
-  return { version: resp.version || '0.4.0', tauri: 'web', platform: resp.platform || navigator.platform, config_path: resp.config_path || '' }
+  return { version: '0.4.0', tauri: 'web', platform: navigator.platform, config_path: '' }
 }
 
 export async function exportSettings(_targetPath: string): Promise<void> {

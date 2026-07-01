@@ -68,8 +68,8 @@ DEFAULT_PAGEINDEX_THRESHOLD = 20
 
 # ===== Path helpers =====
 
-GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))
-GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
+GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, appauthor=False))
+GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, appauthor=False))
 
 
 def get_model_cache_dir() -> str:

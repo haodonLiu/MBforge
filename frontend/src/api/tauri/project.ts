@@ -1,7 +1,17 @@
 /** Project management — open, scan, list, file tree, file operations. */
 
-import { httpPost, invokeWithError } from './_utils'
+import { httpGet, httpPost, invokeWithError } from './_utils'
 import { ErrorCode } from '../../utils/errors'
+
+/** 获取常用目录列表 */
+export async function getCommonDirs(): Promise<{ name: string; path: string }[]> {
+  try {
+    const resp = await httpGet<{ dirs: { name: string; path: string }[] }>('/api/v1/project/common-dirs')
+    return resp.dirs ?? []
+  } catch {
+    return []
+  }
+}
 
 export interface ProjectInfo {
   name: string
@@ -67,9 +77,9 @@ export interface ScanResponse {
 }
 
 /** 扫描项目文件 */
-export async function scanProjectFiles(root: string): Promise<ScanResponse> {
+export async function scanProjectFiles(root: string, recursive = false): Promise<ScanResponse> {
   return invokeWithError(
-    () => httpPost<ScanResponse>('/api/v1/project/scan', { root }),
+    () => httpPost<ScanResponse>('/api/v1/project/scan', { root, recursive }),
     ErrorCode.ProjectOpen,
   )
 }

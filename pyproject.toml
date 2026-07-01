@@ -31,6 +31,7 @@ name = "mbforge"
 version = "0.3.0"
 description = "MBForge - Molecular Knowledge Base & AI Workbench"
 requires-python = ">=3.11"
+scripts = { mbforge = "start:main" }
 readme = "README.md"
 license = { text = "CC BY-NC-SA 4.0" }
 authors = [

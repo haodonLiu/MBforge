@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter
 
 from ..core.project import (
@@ -10,9 +12,30 @@ from ..core.project import (
     open_project,
     scan_project_files,
 )
-from ..models.project import ProjectResponse, ScanResponse
+from ..models.project import ProjectResponse
 
 router = APIRouter()
+
+
+@router.get("/common-dirs")
+async def common_dirs() -> dict:
+    """返回常用目录列表（桌面、文档、下载等）."""
+    home = Path.home()
+    dirs = []
+    # 常用目录
+    common = [
+        ("Desktop", home / "Desktop"),
+        ("Documents", home / "Documents"),
+        ("Downloads", home / "Downloads"),
+    ]
+    for name, path in common:
+        if path.exists():
+            dirs.append({"name": name, "path": str(path).replace("\\", "/")})
+    # 工作区目录（如果存在）
+    workspace = home / "Projects"
+    if workspace.exists():
+        dirs.append({"name": "Projects", "path": str(workspace).replace("\\", "/")})
+    return {"dirs": dirs}
 
 
 @router.post("/open")
@@ -24,12 +47,24 @@ async def project_open(body: dict) -> ProjectResponse:
 
 
 @router.post("/scan")
-async def project_scan(body: dict) -> ScanResponse:
+async def project_scan(body: dict) -> dict:
     root = body.get("root", "")
+    recursive = body.get("recursive", False)
     if not root:
-        return ScanResponse(success=False)
-    files = scan_project_files(root)
-    return ScanResponse(files=files, count=len(files))
+        return {"success": False, "documents": [], "warnings": []}
+    files = scan_project_files(root, recursive=recursive)
+    # 转换为前端期望的 DocumentEntry 格式
+    documents = []
+    for f in files:
+        doc_type = "pdf" if f.lower().endswith(".pdf") else "markdown"
+        documents.append({
+            "doc_id": f,
+            "path": f,
+            "doc_type": doc_type,
+            "title": f.rsplit("/", 1)[-1].rsplit("\\", 1)[-1],
+            "indexed": False,
+        })
+    return {"success": True, "documents": documents, "warnings": []}
 
 
 @router.post("/documents")

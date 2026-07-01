@@ -14,17 +14,15 @@ import {
 import ApiKeyInput from './ApiKeyInput'
 import { ModelSelector } from './ModelComponents'
 import {
-  EMBED_MODELS,
   LLM_MODELS,
   OCR_MODELS,
   PROVIDER_META,
-  RERANK_MODELS,
   VLM_MODELS,
   type ModelMap,
 } from './modelConfigs'
 import type { SettingsState } from './types'
 
-type ModelType = 'llm' | 'embed' | 'rerank' | 'vlm' | 'ocr'
+type ModelType = 'llm' | 'vlm' | 'ocr'
 
 interface Props {
   modelType: ModelType
@@ -190,73 +188,6 @@ export default function ModelConfigCard({
             </>
           )}
 
-          {modelType === 'embed' && (
-            <>
-              <ProviderField
-                label={t('settings.embedProvider')}
-                description={t('settings.embedProviderDesc')}
-                provider={settings.embed_provider}
-                onProviderChange={v => { markDirty('embed_provider'); update('embed_provider', v) }}
-                baseUrl={settings.embed_base_url}
-                onBaseUrlChange={v => { markDirty('embed_base_url'); update('embed_base_url', v) }}
-                apiKey={settings.embed_api_key}
-                onApiKeyChange={v => { markDirty('embed_api_key'); update('embed_api_key', v) }}
-                providerOptions={providerOptions(EMBED_MODELS, t)}
-                needsKey={getProviderMeta(settings.embed_provider).needsKey}
-                baseUrlPlaceholder={getProviderMeta(settings.embed_provider).defaultUrl}
-                showBaseUrl={settings.embed_provider === 'openai'}
-                dirty={dirtyFields.embed_provider}
-                baseUrlDirty={dirtyFields.embed_base_url}
-                apiKeyDirty={dirtyFields.embed_api_key}
-              />
-              <SettingItem title={t('settings.model')} layout="stacked" dirty={dirtyFields.embed_model}>
-                <ModelSelector
-                  provider={settings.embed_provider}
-                  modelValue={settings.embed_model}
-                  models={EMBED_MODELS}
-                  onChange={v => { markDirty('embed_model'); update('embed_model', v) }}
-                />
-              </SettingItem>
-              <SettingItem title={t('settings.instruction')} layout="stacked" dirty={dirtyFields.embed_instruction}>
-                <input
-                  className="settings-input"
-                  type="text"
-                  value={settings.embed_instruction}
-                  onChange={e => { markDirty('embed_instruction'); update('embed_instruction', e.target.value) }}
-                  placeholder={t('settings.instructionPlaceholder')}
-                  style={{ width: '100%' }}
-                />
-              </SettingItem>
-            </>
-          )}
-
-          {modelType === 'rerank' && (
-            <>
-              <ProviderField
-                label={t('settings.rerankProvider')}
-                description={t('settings.rerankProviderDesc')}
-                provider={settings.rerank_provider}
-                onProviderChange={v => { markDirty('rerank_provider'); update('rerank_provider', v) }}
-                baseUrl=""
-                onBaseUrlChange={() => {}}
-                apiKey=""
-                onApiKeyChange={() => {}}
-                providerOptions={providerOptions(RERANK_MODELS, t)}
-                needsKey={false}
-                showBaseUrl={false}
-                dirty={dirtyFields.rerank_provider}
-              />
-              <SettingItem title={t('settings.model')} layout="stacked" dirty={dirtyFields.rerank_model}>
-                <ModelSelector
-                  provider={settings.rerank_provider}
-                  modelValue={settings.rerank_model}
-                  models={RERANK_MODELS}
-                  onChange={v => { markDirty('rerank_model'); update('rerank_model', v) }}
-                />
-              </SettingItem>
-            </>
-          )}
-
           {modelType === 'vlm' && (
             <>
               <ProviderField
@@ -361,76 +292,6 @@ export default function ModelConfigCard({
               step={10}
               width={120}
               dirty={dirtyFields.llm_request_timeout}
-            />
-          </SettingGroup>
-        )}
-
-        {modelType === 'embed' && (
-          <SettingGroup title={t('settings.embedRuntime')}>
-            <ProviderField
-              label={t('settings.device')}
-              description={t('settings.deviceDesc')}
-              provider={settings.embed_device}
-              onProviderChange={v => { markDirty('embed_device'); update('embed_device', v as SettingsState['embed_device']) }}
-              baseUrl=""
-              onBaseUrlChange={() => {}}
-              apiKey=""
-              onApiKeyChange={() => {}}
-              providerOptions={[
-                { value: 'cpu', label: 'CPU' },
-                { value: 'cuda', label: 'CUDA' },
-                { value: 'auto', label: 'Auto' },
-              ]}
-              needsKey={false}
-              showBaseUrl={false}
-              dirty={dirtyFields.embed_device}
-            />
-            <NumberField
-              label={t('settings.mrlDim')}
-              description={t('settings.mrlDimDesc')}
-              value={settings.embed_mrl_dim}
-              onChange={v => { markDirty('embed_mrl_dim'); update('embed_mrl_dim', v) }}
-              min={0}
-              max={4096}
-              step={64}
-              width={100}
-              placeholder="0"
-              dirty={dirtyFields.embed_mrl_dim}
-            />
-          </SettingGroup>
-        )}
-
-        {modelType === 'rerank' && (
-          <SettingGroup title={t('settings.rerankRuntime')}>
-            <ProviderField
-              label={t('settings.device')}
-              description={t('settings.deviceDesc')}
-              provider={settings.rerank_device}
-              onProviderChange={v => { markDirty('rerank_device'); update('rerank_device', v as SettingsState['rerank_device']) }}
-              baseUrl=""
-              onBaseUrlChange={() => {}}
-              apiKey=""
-              onApiKeyChange={() => {}}
-              providerOptions={[
-                { value: 'cpu', label: 'CPU' },
-                { value: 'cuda', label: 'CUDA' },
-                { value: 'auto', label: 'Auto' },
-              ]}
-              needsKey={false}
-              showBaseUrl={false}
-              dirty={dirtyFields.rerank_device}
-            />
-            <NumberField
-              label={t('settings.maxLength')}
-              description={t('settings.maxLengthDesc')}
-              value={settings.rerank_max_length}
-              onChange={v => { markDirty('rerank_max_length'); update('rerank_max_length', v) }}
-              min={128}
-              max={32768}
-              step={256}
-              width={120}
-              placeholder="8192"
-              dirty={dirtyFields.rerank_max_length}
             />
           </SettingGroup>
         )}

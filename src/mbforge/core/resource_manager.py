@@ -59,7 +59,7 @@ def _read_resolved_paths() -> dict[str, str] | None:
             data = json.load(f)
         _RESOLVED_PATHS_CACHE = data
         _RESOLVED_PATHS_MTIME = mtime
-        logger.info(f"Loaded resolved paths from {path}: {list(data.keys())}")
+        logger.debug(f"Loaded resolved paths from {path}: {list(data.keys())}")
         return data
     except Exception as e:
         logger.warning(f"Failed to read resolved_paths.json: {e}")
@@ -152,6 +152,9 @@ class EnvironmentReport:
     def summary(self) -> str:
         ready = sum(1 for r in self.resources if r.status == ResourceStatus.READY)
         total = len(self.resources)
+        missing = [r.name for r in self.resources if r.status != ResourceStatus.READY]
+        if missing:
+            return f"{ready}/{total} resources ready (missing: {', '.join(missing)})"
         return f"{ready}/{total} resources ready"
 
 
@@ -164,36 +167,6 @@ TSINGHUA_PIP = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 RESOURCE_CATALOG: dict[str, ResourceInfo] = {
     # ──── 模型（ModelScope 下载）────
-    "embedding": ResourceInfo(
-        id="embedding",
-        name="Qwen3-Embedding-0.6B",
-        type=ResourceType.MODEL,
-        description="通义千问3 嵌入模型 (0.6B) — 语义检索",
-        size_mb=1152,
-        license="Apache-2.0",
-        license_url="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B/blob/main/LICENSE",
-        ms_repo="Qwen/Qwen3-Embedding-0.6B",
-        hf_repo="Qwen/Qwen3-Embedding-0.6B",
-        download_type="snapshot",
-        local_name="Qwen3-Embedding-0.6B",
-        source_url="https://huggingface.co/Qwen/Qwen3-Embedding-0.6B",
-        allow_patterns=["*.safetensors", "*.json", "*.txt", "tokenizer*"],
-    ),
-    "reranker": ResourceInfo(
-        id="reranker",
-        name="Qwen3-Reranker-0.6B",
-        type=ResourceType.MODEL,
-        description="通义千问3 重排序模型 (0.6B) — 结果精排",
-        size_mb=1152,
-        license="Apache-2.0",
-        license_url="https://huggingface.co/Qwen/Qwen3-Reranker-0.6B/blob/main/LICENSE",
-        ms_repo="Qwen/Qwen3-Reranker-0.6B",
-        hf_repo="Qwen/Qwen3-Reranker-0.6B",
-        download_type="snapshot",
-        local_name="Qwen3-Reranker-0.6B",
-        source_url="https://huggingface.co/Qwen/Qwen3-Reranker-0.6B",
-        allow_patterns=["*.safetensors", "*.json", "*.txt", "tokenizer*"],
-    ),
     "moldet": ResourceInfo(
         id="moldet",
         name="MolDetv2",
@@ -252,15 +225,6 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         license="BSD-3",
         pip_name="torch",
         import_name="torch",
-        mirror=TSINGHUA_PIP,
-    ),
-    "sentence_transformers": ResourceInfo(
-        id="sentence_transformers",
-        name="Sentence Transformers",
-        type=ResourceType.PYTHON_PACKAGE,
-        description="文本嵌入 + CrossEncoder 框架",
-        pip_name="sentence-transformers",
-        import_name="sentence_transformers",
         mirror=TSINGHUA_PIP,
     ),
     "transformers": ResourceInfo(

@@ -12,7 +12,13 @@ from ..core.project import (
     open_project,
     scan_project_files,
 )
-from ..models.project import ProjectResponse
+from ..models.project import (
+    ProjectOpenRequest,
+    ProjectScanRequest,
+    ProjectDocumentsRequest,
+    ProjectFileTreeRequest,
+    ProjectResponse,
+)
 
 router = APIRouter()
 
@@ -22,7 +28,6 @@ async def common_dirs() -> dict:
     """返回常用目录列表（桌面、文档、下载等）."""
     home = Path.home()
     dirs = []
-    # 常用目录
     common = [
         ("Desktop", home / "Desktop"),
         ("Documents", home / "Documents"),
@@ -31,7 +36,6 @@ async def common_dirs() -> dict:
     for name, path in common:
         if path.exists():
             dirs.append({"name": name, "path": str(path).replace("\\", "/")})
-    # 工作区目录（如果存在）
     workspace = home / "Projects"
     if workspace.exists():
         dirs.append({"name": "Projects", "path": str(workspace).replace("\\", "/")})
@@ -39,21 +43,17 @@ async def common_dirs() -> dict:
 
 
 @router.post("/open")
-async def project_open(body: dict) -> ProjectResponse:
-    root = body.get("root", "")
-    if not root:
+async def project_open(body: ProjectOpenRequest) -> ProjectResponse:
+    if not body.root:
         return ProjectResponse(success=False, root="", name="")
-    return open_project(root)
+    return open_project(body.root)
 
 
 @router.post("/scan")
-async def project_scan(body: dict) -> dict:
-    root = body.get("root", "")
-    recursive = body.get("recursive", False)
-    if not root:
+async def project_scan(body: ProjectScanRequest) -> dict:
+    if not body.root:
         return {"success": False, "documents": [], "warnings": []}
-    files = scan_project_files(root, recursive=recursive)
-    # 转换为前端期望的 DocumentEntry 格式
+    files = scan_project_files(root=body.root, recursive=body.recursive)
     documents = []
     for f in files:
         doc_type = "pdf" if f.lower().endswith(".pdf") else "markdown"
@@ -68,18 +68,16 @@ async def project_scan(body: dict) -> dict:
 
 
 @router.post("/documents")
-async def project_documents(body: dict) -> dict:
-    root = body.get("root", "")
-    if not root:
+async def project_documents(body: ProjectDocumentsRequest) -> dict:
+    if not body.root:
         return {"success": False, "documents": []}
-    docs = list_documents(root)
+    docs = list_documents(body.root)
     return {"success": True, "documents": [d.model_dump() for d in docs]}
 
 
 @router.post("/file-tree")
-async def project_file_tree(body: dict) -> dict:
-    root = body.get("root", "")
-    if not root:
+async def project_file_tree(body: ProjectFileTreeRequest) -> dict:
+    if not body.root:
         return {"success": False, "tree": []}
-    tree = get_file_tree(root)
+    tree = get_file_tree(body.root)
     return {"success": True, "tree": [n.model_dump() for n in tree]}

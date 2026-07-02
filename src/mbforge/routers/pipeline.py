@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from concurrent.futures import Future
 
 from fastapi import APIRouter
 
@@ -12,6 +13,9 @@ from ..utils.logger import get_logger
 logger = get_logger("mbforge.pipeline_router")
 
 router = APIRouter()
+
+# Track background futures for error reporting
+_background_futures: dict[str, Future] = {}
 
 
 @router.post("/enqueue")
@@ -32,9 +36,13 @@ async def pipeline_enqueue(body: dict) -> dict:
     task_id = str(uuid.uuid4())
     doc_id = body.get("doc_id", "")
     # Run pipeline in background
-    asyncio.get_event_loop().run_in_executor(
+    loop = asyncio.get_running_loop()
+    future = loop.run_in_executor(
         None, _run_pipeline_sync, file_path, root, doc_id or task_id
     )
+    _background_futures[task_id] = future
+    # Clean up completed futures
+    future.add_done_callback(lambda f: _background_futures.pop(task_id, None))
     return {"success": True, "task_id": task_id}
 
 
@@ -66,9 +74,12 @@ def _enqueue_all_unresolved(root: str) -> int:
             )
             enqueued += 1
             # 后台运行 pipeline
-            asyncio.get_event_loop().run_in_executor(
+            loop = asyncio.get_running_loop()
+            future = loop.run_in_executor(
                 None, _run_pipeline_sync, full_path, root, task_id
             )
+            _background_futures[task_id] = future
+            future.add_done_callback(lambda f, tid=task_id: _background_futures.pop(tid, None))
     return enqueued
 
 
@@ -78,7 +89,18 @@ def _run_pipeline_sync(pdf_path: str, project_root: str, doc_id: str):
 
         run_pipeline(pdf_path, project_root, doc_id=doc_id)
     except Exception as e:
-        logger.error("Pipeline failed for %s: %s", pdf_path, e)
+        logger.error("Pipeline failed for %s: %s", pdf_path, e, exc_info=True)
+        # Update task status in database
+        try:
+            from ..core.database import DatabaseManager
+            db = DatabaseManager.get(project_root)
+            with db.kb_conn() as conn:
+                conn.execute(
+                    "UPDATE ingest_queue SET status = 'failed', error = ? WHERE id = ?",
+                    (str(e), doc_id),
+                )
+        except Exception:
+            logger.error("Failed to update task status for %s", doc_id)
 
 
 @router.post("/process")
@@ -126,7 +148,8 @@ async def pipeline_queue(body: dict) -> dict:
             rows = conn.execute("SELECT * FROM ingest_queue ORDER BY created_at DESC").fetchall()
             tasks = [dict(r) for r in rows]
         return {"success": True, "tasks": tasks}
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to fetch queue: %s", e)
         return {"success": True, "tasks": []}
 
 
@@ -152,7 +175,8 @@ async def pipeline_queue_stats(body: dict) -> dict:
                 "SELECT status, COUNT(*) as cnt FROM ingest_queue GROUP BY status"
             ).fetchall()
         return {"success": True, "stats": {"total": total, "by_status": {r["status"]: r["cnt"] for r in by_status}}}
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to fetch queue stats: %s", e)
         return {"success": True, "stats": {"total": 0, "by_status": {}}}
 
 

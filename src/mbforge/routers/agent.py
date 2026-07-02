@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass, field
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -14,34 +16,47 @@ logger = get_logger("mbforge.agent_router")
 
 router = APIRouter()
 
-# Lazy-initialized components
-_llm = None
-_agent = None
-_tools = None
 
+@dataclass
+class AgentState:
+    """Encapsulates agent components to avoid module-level mutable globals."""
+    llm: Any = None
+    agent: Any = None
+    tools: Any = None
 
-def _ensure_agent():
-    global _llm, _agent, _tools
-    if _agent is not None:
-        return
-    try:
-        import os
-
-        from ..agent.graph import create_agent
-        from ..agent.llm_factory import create_llm_from_settings
-        from ..agent.tools import get_all_tools
-        api_key = os.environ.get("MBFORGE_LLM_API_KEY", "")
-        if not api_key:
-            logger.info("No LLM API key configured — agent running in stub mode")
+    def ensure_initialized(self) -> None:
+        """Lazy-initialize agent components."""
+        if self.agent is not None:
             return
+        try:
+            import os
 
-        _llm = create_llm_from_settings()
-        _tools = get_all_tools()
-        _agent = create_agent(_llm, _tools)
-        logger.info("Agent initialized successfully")
-    except Exception as e:
-        logger.warning("Agent init failed (stub mode): %s", e)
-        _agent = None
+            from ..agent.graph import create_agent
+            from ..agent.llm_factory import create_llm_from_settings
+            from ..agent.tools import get_all_tools
+
+            api_key = os.environ.get("MBFORGE_LLM_API_KEY", "")
+            if not api_key:
+                logger.info("No LLM API key configured — agent running in stub mode")
+                return
+
+            self.llm = create_llm_from_settings()
+            self.tools = get_all_tools()
+            self.agent = create_agent(self.llm, self.tools)
+            logger.info("Agent initialized successfully")
+        except Exception as e:
+            logger.warning("Agent init failed (stub mode): %s", e)
+            self.agent = None
+
+    def reset(self) -> None:
+        """Reset agent state."""
+        self.llm = None
+        self.agent = None
+        self.tools = None
+
+
+# Single instance — replaces the three module-level globals
+_agent_state = AgentState()
 
 
 @router.post("/init")
@@ -50,12 +65,9 @@ async def agent_init() -> dict:
         from ..agent.sessions import session_store
 
         session_store.clear_all()
-        global _llm, _agent, _tools
-        _llm = None
-        _agent = None
-        _tools = None
-        _ensure_agent()
-        return {"success": True, "agent_ready": _agent is not None}
+        _agent_state.reset()
+        _agent_state.ensure_initialized()
+        return {"success": True, "agent_ready": _agent_state.agent is not None}
     except Exception as e:
         logger.error("Agent init error: %s", e)
         return {"success": True, "agent_ready": False, "warning": str(e)}
@@ -131,19 +143,18 @@ async def agent_chat(session_id: str, body: dict) -> dict:
 
         session.messages.append(ChatMessage(role="user", content=user_input))
 
-        _ensure_agent()
-        if _agent is not None:
+        _agent_state.ensure_initialized()
+        if _agent_state.agent is not None:
             try:
-                # Build LangChain messages
-                lc_messages = []
-                for m in session.messages:
-                    lc_messages.append({"role": m.role, "content": m.content})
-
-                response = await _agent.ainvoke({"messages": lc_messages})
+                lc_messages = [
+                    {"role": m.role, "content": m.content}
+                    for m in session.messages
+                ]
+                response = await _agent_state.agent.ainvoke({"messages": lc_messages})
                 reply = response["messages"][-1].content if response.get("messages") else ""
             except Exception as e:
                 logger.error("Agent invoke failed: %s", e)
-                reply = f"[Agent error: {e}]"
+                reply = "[Agent error]"
         else:
             reply = f"[Agent stub] Received: {user_input}"
 
@@ -166,18 +177,21 @@ async def agent_chat_stream(session_id: str, user_input: str = "") -> StreamingR
             media_type="text/event-stream",
         )
 
-    _ensure_agent()
+    _agent_state.ensure_initialized()
 
     async def event_stream():
         session.messages.append(ChatMessage(role="user", content=user_input))
 
-        if _agent is not None:
+        if _agent_state.agent is not None:
             try:
                 from ..agent.graph import stream_agent_response
 
-                lc_messages = [{"role": m.role, "content": m.content} for m in session.messages]
+                lc_messages = [
+                    {"role": m.role, "content": m.content}
+                    for m in session.messages
+                ]
                 full_reply = ""
-                async for event in stream_agent_response(_agent, lc_messages):
+                async for event in stream_agent_response(_agent_state.agent, lc_messages):
                     if event["type"] == "chunk":
                         content = event.get("content", "")
                         full_reply += content
@@ -192,11 +206,10 @@ async def agent_chat_stream(session_id: str, user_input: str = "") -> StreamingR
                 session.messages.append(ChatMessage(role="assistant", content=full_reply))
             except Exception as e:
                 logger.error("Agent streaming error: %s", e)
-                error_msg = f"[Agent error: {e}]"
+                error_msg = "[Agent error]"
                 session.messages.append(ChatMessage(role="assistant", content=error_msg))
                 yield f"data: {json.dumps({'session_id': session_id, 'delta': error_msg, 'event': 'chunk'})}\n\n"
         else:
-            # Stub mode
             reply = f"[Agent stub] {user_input}"
             for i in range(0, len(reply), 24):
                 chunk = reply[i : i + 24]

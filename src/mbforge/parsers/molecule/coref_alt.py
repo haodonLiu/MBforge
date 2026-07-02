@@ -407,3 +407,112 @@ def get_rapid_ocr() -> _RapidOCRAdapter:
     if _ocr_singleton is None:
         _ocr_singleton = _RapidOCRAdapter()
     return _ocr_singleton
+
+
+# ---- MolDetv2-FT 联合检测（分子 + coref 一次推理） ----
+
+_ft_detector_singleton: Any | None = None
+
+
+def get_moldet_ft() -> Any:
+    """获取全局 MolDetv2-FT 检测器单例。"""
+    global _ft_detector_singleton
+    if _ft_detector_singleton is None:
+        try:
+            from mbforge.backends.moldet_v2_ft import get_moldet_ft as _get
+            _ft_detector_singleton = _get()
+        except Exception as e:
+            logger.warning("MolDetv2-FT 加载失败: %s", e)
+            _ft_detector_singleton = None
+    return _ft_detector_singleton
+
+
+def detect_coref_via_ft_detector(
+    image: Image.Image,
+    ft_detector: Any = None,
+    page_width: float = 595.0,
+    page_height: float = 842.0,
+    mol_conf_threshold: float = 0.3,
+    idt_conf_threshold: float = 0.3,
+) -> CorefResult:
+    """使用 MolDetv2-FT 联合检测器实现 coref 配对。
+
+    该检测器一次推理同时输出分子和标识符 bbox，无需单独的 OCR 步骤。
+
+    Args:
+        image: PIL 图像
+        ft_detector: `MolDetv2FTDetector` 实例。None 时使用全局单例
+        page_width: PDF 页面宽度（点）
+        page_height: PDF 页面高度（点）
+        mol_conf_threshold: 分子检测置信度阈值
+        idt_conf_threshold: 标识符检测置信度阈值
+
+    Returns:
+        `CorefResult` — 与 `detect_coref_via_moldet_ocr` 输出格式一致。
+    """
+    from mbforge.backends.moldet_v2_ft import MolDetv2FTDetector
+
+    if ft_detector is None:
+        ft_detector = get_moldet_ft()
+    if ft_detector is None or not isinstance(ft_detector, MolDetv2FTDetector):
+        logger.warning("MolDetv2-FT 不可用，跳过联合检测")
+        return CorefResult(bboxes=[], corefs=[])
+
+    if not ft_detector.is_available():
+        logger.warning("MolDetv2-FT 模型未加载，跳过联合检测")
+        return CorefResult(bboxes=[], corefs=[])
+
+    W, H = image.size
+    inv_w = 1.0 / W if W > 0 else 0.0
+    inv_h = 1.0 / H if H > 0 else 0.0
+
+    def _to_norm(
+        box: tuple[float, float, float, float],
+    ) -> tuple[float, float, float, float]:
+        """Pixel bbox → 归一化 bbox [0,1]。"""
+        x1, y1, x2, y2 = box
+        nx1 = max(0.0, min(1.0, x1 * inv_w))
+        ny1 = max(0.0, min(1.0, y1 * inv_h))
+        nx2 = max(0.0, min(1.0, x2 * inv_w))
+        ny2 = max(0.0, min(1.0, y2 * inv_h))
+        return (nx1, ny1, nx2, ny2)
+
+    # 1. 联合检测（一次推理同时得到分子和标识符）
+    all_boxes = ft_detector.detect(image)
+
+    bboxes: list[CorefBbox] = []
+    mol_indices: list[int] = []
+    idt_indices: list[int] = []
+
+    # 2. 分离分子和标识符 bbox
+    for x1, y1, x2, y2, conf, category_id in all_boxes:
+        if category_id == 1 and conf >= mol_conf_threshold:
+            # 分子 bbox
+            bboxes.append(
+                CorefBbox(category_id=1, bbox=_to_norm((x1, y1, x2, y2)), score=conf)
+            )
+            mol_indices.append(len(bboxes) - 1)
+        elif category_id == 3 and conf >= idt_conf_threshold:
+            # 标识符 bbox
+            bboxes.append(
+                CorefBbox(
+                    category_id=3,
+                    bbox=_to_norm((x1, y1, x2, y2)),
+                    text="",  # FT 模型不输出文本，需要后续 OCR
+                    score=conf,
+                )
+            )
+            idt_indices.append(len(bboxes) - 1)
+
+    # 3. 几何配对
+    corefs = _pair_corefs(
+        bboxes, mol_indices, idt_indices, W, H, page_width, page_height
+    )
+
+    logger.info(
+        "coref_ft: mols=%d, idts=%d, pairs=%d",
+        len(mol_indices),
+        len(idt_indices),
+        len(corefs),
+    )
+    return CorefResult(bboxes=bboxes, corefs=corefs)

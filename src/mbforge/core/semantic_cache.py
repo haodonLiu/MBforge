@@ -8,6 +8,10 @@ from __future__ import annotations
 import hashlib
 import json
 
+from mbforge.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 
 def _query_hash(query: str) -> str:
     return hashlib.sha256(query.strip().lower().encode()).hexdigest()
@@ -33,7 +37,8 @@ def check_cache(query: str, project_root: str) -> list[dict] | None:
                 (row["hit_count"] + 1, qh),
             )
             return json.loads(row["results"])
-    except Exception:
+    except Exception as e:
+        logger.warning("semantic_cache check_cache failed: %s", e)
         return None
 
 
@@ -50,8 +55,8 @@ def store_cache(query: str, project_root: str, results: list[dict]) -> None:
                 "VALUES (?, ?, ?, ?, 0)",
                 (qh, query, json.dumps(results, ensure_ascii=False), project_root),
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("semantic_cache store_cache failed: %s", e)
 
 
 def invalidate_cache(project_root: str) -> None:
@@ -62,5 +67,5 @@ def invalidate_cache(project_root: str) -> None:
     try:
         with db.kb_conn() as conn:
             conn.execute("DELETE FROM semantic_cache")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("semantic_cache invalidate_cache failed: %s", e)

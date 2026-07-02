@@ -2,8 +2,30 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+
+# ---- Request models ----
+
+class ProjectOpenRequest(BaseModel):
+    root: str = Field(..., description="Project root directory path")
+    name: str | None = Field(None, description="Project name (optional)")
+
+
+class ProjectScanRequest(BaseModel):
+    root: str = Field(..., description="Project root directory path")
+    recursive: bool = Field(False, description="Scan recursively")
+
+
+class ProjectDocumentsRequest(BaseModel):
+    root: str = Field(..., description="Project root directory path")
+
+
+class ProjectFileTreeRequest(BaseModel):
+    root: str = Field(..., description="Project root directory path")
+
+
+# ---- Response models ----
 
 class ProjectResponse(BaseModel):
     success: bool = True

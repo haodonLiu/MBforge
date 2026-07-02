@@ -23,13 +23,15 @@ logger = get_logger("mbforge.app")
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
     logger.info("MBForge web application starting...")
+    from .utils.helpers import check_environment, shutdown_backends
+
     loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, _check_environment)
+    loop.run_in_executor(None, check_environment)
     try:
         yield
     finally:
         logger.info("MBForge shutting down...")
-        _shutdown_backends()
+        shutdown_backends()
         pending = [
             t
             for t in asyncio.all_tasks()
@@ -40,26 +42,6 @@ async def lifespan(app: FastAPI):
                 t.cancel()
             await asyncio.wait(pending, timeout=1.0)
         logger.info("Shutdown complete")
-
-
-def _check_environment() -> None:
-    try:
-        from .core.resource_manager import ResourceManager
-
-        report = ResourceManager.check_all()
-        logger.info("Environment: %s", report.summary)
-    except Exception as e:
-        logger.warning("Environment check failed: %s", e)
-
-
-def _shutdown_backends() -> None:
-    from .backends import moldet, molscribe
-
-    for mod in [molscribe, moldet]:
-        try:
-            mod.unload()
-        except Exception:
-            pass
 
 
 def create_app() -> FastAPI:
@@ -73,7 +55,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

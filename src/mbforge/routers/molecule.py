@@ -7,6 +7,16 @@ import uuid
 
 from fastapi import APIRouter
 
+from ..models.molecule import (
+    MoleculeListRequest,
+    MoleculeSearchRequest,
+    MoleculeGetRequest,
+    MoleculeCreateRequest,
+    MoleculeUpdateRequest,
+    MoleculeDeleteRequest,
+    MoleculeStatsRequest,
+)
+from ..utils.helpers import validate_project_root
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.molecule_router")
@@ -15,101 +25,87 @@ router = APIRouter()
 
 
 @router.post("/list")
-async def mol_list(body: dict) -> dict:
-    root = body.get("project_root", "")
-    page = body.get("page", 1)
-    page_size = body.get("page_size", 50)
-    status = body.get("status", "")
-    if not root:
-        return {"success": False, "items": [], "total": 0}
+async def mol_list(body: MoleculeListRequest) -> dict:
+    validate_project_root(body.project_root)
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager.get(root)
+    db = DatabaseManager.get(body.project_root)
     with db.mol_conn() as conn:
         where = "WHERE 1=1"
         params: list = []
-        if status:
+        if body.status:
             where += " AND status = ?"
-            params.append(status)
+            params.append(body.status)
         total = conn.execute(f"SELECT COUNT(*) FROM molecules {where}", params).fetchone()[0]
-        offset = (page - 1) * page_size
+        offset = (body.page - 1) * body.page_size
         rows = conn.execute(
             f"SELECT * FROM molecules {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            params + [page_size, offset],
+            params + [body.page_size, offset],
         ).fetchall()
         items = [dict(r) for r in rows]
     return {"success": True, "items": items, "total": total}
 
 
 @router.post("/search")
-async def mol_search(body: dict) -> dict:
-    query = body.get("query", "")
-    root = body.get("project_root", "")
-    top_k = body.get("top_k", 20)
-    if not query or not root:
-        return {"success": False, "results": []}
+async def mol_search(body: MoleculeSearchRequest) -> dict:
+    validate_project_root(body.project_root)
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager.get(root)
+    db = DatabaseManager.get(body.project_root)
     with db.mol_conn() as conn:
         rows = conn.execute(
             "SELECT m.* FROM mol_search ms JOIN molecules m ON ms.rowid = m.rowid "
             "WHERE mol_search MATCH ? LIMIT ?",
-            (query, top_k),
+            (body.query, body.top_k),
         ).fetchall()
         results = [dict(r) for r in rows]
     return {"success": True, "results": results}
 
 
 @router.post("/get")
-async def mol_get(body: dict) -> dict:
-    mol_id = body.get("mol_id", "")
-    root = body.get("project_root", "")
-    if not mol_id or not root:
-        return {"success": False, "error": "mol_id and project_root required"}
+async def mol_get(body: MoleculeGetRequest) -> dict:
+    validate_project_root(body.project_root)
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager.get(root)
+    db = DatabaseManager.get(body.project_root)
     with db.mol_conn() as conn:
-        row = conn.execute("SELECT * FROM molecules WHERE mol_id = ?", (mol_id,)).fetchone()
+        row = conn.execute("SELECT * FROM molecules WHERE mol_id = ?", (body.mol_id,)).fetchone()
         if not row:
             return {"success": False, "error": "not found"}
         return {"success": True, "molecule": dict(row)}
 
 
 @router.post("/create")
-async def mol_create(body: dict) -> dict:
-    root = body.get("project_root", "")
-    smiles = body.get("smiles", "")
-    if not root or not smiles:
-        return {"success": False, "error": "project_root and smiles required"}
-    mol_id = body.get("mol_id", str(uuid.uuid4()))
+async def mol_create(body: MoleculeCreateRequest) -> dict:
+    validate_project_root(body.project_root)
+    mol_id = body.mol_id or str(uuid.uuid4())
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager.get(root)
+    db = DatabaseManager.get(body.project_root)
     with db.mol_conn() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO molecules (mol_id, smiles, esmiles, name, source_type, status) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (mol_id, smiles, body.get("esmiles", ""), body.get("name", ""), body.get("source_type", "manual"), "active"),
+            (mol_id, body.smiles, body.esmiles, body.name, body.source_type, "active"),
         )
     return {"success": True, "mol_id": mol_id}
 
 
 @router.put("/{mol_id}")
-async def mol_update(mol_id: str, body: dict) -> dict:
-    root = body.get("project_root", "")
+async def mol_update(mol_id: str, body: MoleculeUpdateRequest) -> dict:
+    root = body.project_root
     if not root:
         return {"success": False, "error": "project_root required"}
+    validate_project_root(root)
     from ..core.database import DatabaseManager
 
     db = DatabaseManager.get(root)
     fields = []
     params = []
     for key in ["name", "esmiles", "activity", "activity_type", "units", "status", "notes", "labels", "properties"]:
-        if key in body:
+        val = getattr(body, key, None)
+        if val is not None:
             fields.append(f"{key} = ?")
-            val = body[key]
             if isinstance(val, (list, dict)):
                 val = json.dumps(val)
             params.append(val)
@@ -122,26 +118,22 @@ async def mol_update(mol_id: str, body: dict) -> dict:
 
 
 @router.delete("/{mol_id}")
-async def mol_delete(mol_id: str, body: dict) -> dict:
-    root = body.get("project_root", "")
-    if not root:
-        return {"success": False, "error": "project_root required"}
+async def mol_delete(mol_id: str, body: MoleculeDeleteRequest) -> dict:
+    validate_project_root(body.project_root)
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager.get(root)
+    db = DatabaseManager.get(body.project_root)
     with db.mol_conn() as conn:
         conn.execute("DELETE FROM molecules WHERE mol_id = ?", (mol_id,))
     return {"success": True}
 
 
 @router.post("/stats")
-async def mol_stats(body: dict) -> dict:
-    root = body.get("project_root", "")
-    if not root:
-        return {"success": False}
+async def mol_stats(body: MoleculeStatsRequest) -> dict:
+    validate_project_root(body.project_root)
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager.get(root)
+    db = DatabaseManager.get(body.project_root)
     with db.mol_conn() as conn:
         total = conn.execute("SELECT COUNT(*) FROM molecules").fetchone()[0]
         by_status = conn.execute(

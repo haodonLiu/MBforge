@@ -1,0 +1,103 @@
+"""Python dataclasses mirroring backend Pydantic models."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ProjectResponse:
+    success: bool = True
+    root: str = ""
+    name: str = ""
+    doc_count: int = 0
+
+
+@dataclass
+class DocumentEntry:
+    doc_id: str = ""
+    file_path: str = ""
+    file_name: str = ""
+    doc_type: str = ""
+    status: str = "pending"
+    page_count: int = 0
+    created_at: str = ""
+    ingest_status: str = ""
+    ingest_stage: str = ""
+    progress_pct: float = 0.0
+
+
+@dataclass
+class FileNode:
+    name: str = ""
+    path: str = ""
+    is_dir: bool = False
+    children: list[FileNode] = field(default_factory=list)
+    doc_id: str | None = None
+    file_type: str = ""
+
+
+@dataclass
+class MoleculeRecord:
+    mol_id: str = ""
+    smiles: str = ""
+    esmiles: str = ""
+    name: str = ""
+    activity: float | None = None
+    activity_type: str = ""
+    units: str = ""
+    source_type: str = ""
+    status: str = "active"
+    notes: str = ""
+    labels: list[str] = field(default_factory=list)
+    properties: dict = field(default_factory=dict)
+    created_at: str = ""
+
+
+@dataclass
+class MoleculeListResponse:
+    success: bool = True
+    items: list[MoleculeRecord] = field(default_factory=list)
+    total: int = 0
+
+
+@dataclass
+class SearchResult:
+    text: str = ""
+    score: float = 0.0
+    doc_id: str = ""
+    page: int = 0
+    section: str = ""
+    metadata: dict = field(default_factory=dict)
+
+
+@dataclass
+class NoteEntry:
+    id: str = ""
+    title: str = ""
+    content: str = ""
+    tags: list[str] = field(default_factory=list)
+    links: list[dict] = field(default_factory=list)
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass
+class IngestTask:
+    id: str = ""
+    file_path: str = ""
+    project_root: str = ""
+    status: str = "pending"
+    stage: str = ""
+    progress: float = 0.0
+    error: str = ""
+    created_at: str = ""
+
+
+@dataclass
+class PipelineStats:
+    total: int = 0
+    pending: int = 0
+    processing: int = 0
+    done: int = 0
+    failed: int = 0

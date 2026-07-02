@@ -208,6 +208,72 @@ class PathTraversalError(MBForgeError):
     error_code = "path_traversal"
 
 
+def validate_project_root(root: str) -> Path:
+    """验证 project_root 路径，防止路径遍历攻击。
+
+    Args:
+        root: 用户提供的项目根目录路径
+
+    Returns:
+        验证后的 Path 对象
+
+    Raises:
+        ValidationError: 路径为空或无效
+        PathTraversalError: 路径包含遍历攻击（..）
+    """
+    if not root or not root.strip():
+        raise ValidationError("project_root is required")
+
+    path = Path(root).resolve()
+
+    # 检测路径遍历
+    root_str = str(path)
+    if ".." in root_str:
+        raise PathTraversalError(f"Path traversal detected: {root}")
+
+    # 检查是否是绝对路径
+    if not path.is_absolute():
+        raise ValidationError(f"Path must be absolute: {root}")
+
+    return path
+
+
+def validate_file_path(root: str, file_path: str) -> Path:
+    """验证文件路径，确保在项目根目录内。
+
+    Args:
+        root: 项目根目录
+        file_path: 文件路径（相对或绝对）
+
+    Returns:
+        验证后的完整文件路径
+
+    Raises:
+        ValidationError: 路径无效
+        PathTraversalError: 路径遍历攻击
+        FileAccessError: 文件不在项目目录内
+    """
+    root_path = validate_project_root(root)
+
+    if not file_path or not file_path.strip():
+        raise ValidationError("file_path is required")
+
+    # 如果是相对路径，拼接到 root
+    file_path_obj = Path(file_path)
+    if file_path_obj.is_absolute():
+        full_path = file_path_obj.resolve()
+    else:
+        full_path = (root_path / file_path_obj).resolve()
+
+    # 确保文件在项目目录内
+    try:
+        full_path.relative_to(root_path)
+    except ValueError:
+        raise FileAccessError(f"File not within project root: {file_path}")
+
+    return full_path
+
+
 class ResourceNotAvailableError(MBForgeError):
     status_code = 503
     error_code = "resource_not_available"
@@ -255,3 +321,28 @@ def gpu_warning(feature: str) -> None:
         "or install NVIDIA drivers and CUDA toolkit to enable.",
         feature,
     )
+
+
+def check_environment() -> None:
+    """检查环境资源状态（共享逻辑，供 app.py 和 server.py 调用）。"""
+    try:
+        from ..core.resource_manager import ResourceManager
+
+        report = ResourceManager.check_all()
+        _gpu_logger.info("Environment: %s", report.summary)
+        for r in report.resources:
+            icon = "✓" if r.status.value == "ready" else "✗"
+            _gpu_logger.info("  %s %s: %s", icon, r.name, r.status.value)
+    except Exception as e:
+        _gpu_logger.warning("Environment check failed: %s", e)
+
+
+def shutdown_backends() -> None:
+    """卸载所有后端模型（共享逻辑）。"""
+    from ..backends import moldet, molscribe
+
+    for mod in [molscribe, moldet]:
+        try:
+            mod.unload()
+        except Exception:
+            pass

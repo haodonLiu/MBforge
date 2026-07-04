@@ -67,7 +67,7 @@ def _detection_from_result(r: ExtractionResult) -> DetectionSource:
         page=r.page_idx,
         bbox=r.bbox_pdf,
         image_path=str(r.mol_img_path) if r.mol_img_path else None,
-        confidence=r.composite_conf or r.moldet_conf or r.scribe_conf,
+        confidence=r.composite_conf,
     )
 
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
 import { openProject } from '../api/tauri'
@@ -19,7 +19,12 @@ import BodyText from '../components/ui/BodyText'
 import Caption from '../components/ui/Caption'
 import CreateProjectPage from './welcome/CreateProjectPage'
 import OpenProjectPage from './welcome/OpenProjectPage'
-import { loadRecent, persistRecent, removeRecentFromStorage } from './welcome/utils'
+import {
+  loadRecent,
+  persistRecent,
+  removeRecentFromStorage,
+  type RecentProject,
+} from './welcome/utils'
 
 interface Props {
   onProjectOpened?: (root: string) => void
@@ -35,13 +40,16 @@ export default function Welcome({ onProjectOpened }: Props) {
   const [loading, setLoading] = useState(false)
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
-  const [recentProjects, setRecentProjects] = useState(() => loadRecent())
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
 
-  const handleProjectSuccess = (root: string, name: string) => {
-    // localStorage persistence is handled by App.tsx via a useEffect on
-    // projectRoot, so we do not write it here. We only manage the
-    // recent-projects list (separate localStorage key).
-    persistRecent(root, name)
+  useEffect(() => {
+    void loadRecent().then(setRecentProjects)
+  }, [])
+
+  const handleProjectSuccess = async (root: string, name: string) => {
+    // 后端 PUT /api/v1/settings.recent_projects 持久化;不再用 localStorage
+    const updated = await persistRecent(root, name)
+    setRecentProjects(updated)
     onProjectOpened?.(root)
   }
 
@@ -190,17 +198,17 @@ export default function Welcome({ onProjectOpened }: Props) {
                 <StaggerContainer stagger={0.04}>
                   <div className="welcome-recent-list">
                     {recentProjects.map((p) => (
-                      <StaggerItem key={p.path}>
+                      <StaggerItem key={p.root}>
                         <motion.div
-                          className={`welcome-recent-item ${deleting === p.path ? 'welcome-recent-item--deleting' : ''}`}
+                          className={`welcome-recent-item ${deleting === p.root ? 'welcome-recent-item--deleting' : ''}`}
                           whileHover={projectCardHover}
                         >
                           {editing && (
                             <motion.button
                               onClick={() => {
-                                setDeleting(p.path)
-                                setTimeout(() => {
-                                  const updated = removeRecentFromStorage(p.path)
+                                setDeleting(p.root)
+                                setTimeout(async () => {
+                                  const updated = await removeRecentFromStorage(p.root)
                                   setRecentProjects(updated)
                                   setDeleting(null)
                                   if (updated.length === 0) setEditing(false)
@@ -213,15 +221,15 @@ export default function Welcome({ onProjectOpened }: Props) {
                             </motion.button>
                           )}
                           <button
-                            onClick={() => openByName(p.path)}
-                            disabled={loading || deleting === p.path}
+                            onClick={() => openByName(p.root)}
+                            disabled={loading || deleting === p.root}
                             className="welcome-recent-item-btn"
                           >
                             <Caption truncate className="welcome-recent-name">
                               {p.name}
                             </Caption>
                             <Caption truncate className="welcome-recent-path">
-                              {p.path}
+                              {p.root}
                             </Caption>
                           </button>
                         </motion.div>

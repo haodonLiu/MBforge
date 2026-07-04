@@ -1,7 +1,13 @@
 from pathlib import Path
+from unittest.mock import patch
+
+from rdkit import Chem
 
 from mbforge.parsers.molecule.extraction_result import ExtractionResult
 from mbforge.pipeline.normalize import normalize_molecules
+
+_REAL_MOL_FROM_SMILES = Chem.MolFromSmiles
+_REAL_MOL_TO_SMILES = Chem.MolToSmiles
 
 
 def test_normalize_rejects_invalid_smiles() -> None:
@@ -96,6 +102,17 @@ def test_normalize_detections_sorted_by_confidence() -> None:
     assert confidences == [0.9, 0.7, 0.5]
 
 
+def test_normalize_zero_confidence_preserved() -> None:
+    results = [
+        ExtractionResult(esmiles="CCO", source="text", composite_conf=0.0),
+        ExtractionResult(esmiles="CCO", source="image", composite_conf=0.9),
+    ]
+    normalized = normalize_molecules(results)
+    assert len(normalized) == 1
+    confidences = [d.confidence for d in normalized[0].detections]
+    assert confidences == [0.9, 0.0]
+
+
 def test_normalize_mixed_valid_and_invalid() -> None:
     results = [
         ExtractionResult(esmiles="CCO", source="image"),
@@ -108,20 +125,36 @@ def test_normalize_mixed_valid_and_invalid() -> None:
 
 
 def test_normalize_valid_invalid_same_string_do_not_collide() -> None:
-    results = [
-        ExtractionResult(esmiles="CCO", source="image"),
-        ExtractionResult(esmiles="CCO", source="text"),
-    ]
-    # Both are valid SMILES, so this is just a control; force one invalid by
-    # using a string that is not a valid SMILES alongside the same valid string.
-    results = [
-        ExtractionResult(esmiles="CCO", source="image"),
-        ExtractionResult(esmiles="not-a-smiles", source="text"),
-    ]
-    normalized = normalize_molecules(results)
-    assert len(normalized) == 2
-    assert any(n.status == "pending" for n in normalized)
-    assert any(n.status == "rejected" for n in normalized)
+    """Same raw string can yield both a rejected invalid record and a valid one."""
+    call_count = 0
+
+    def _mol_from_smiles(smiles: str):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return None
+        return _REAL_MOL_FROM_SMILES("CCO")
+
+    with patch(
+        "mbforge.pipeline.normalize.Chem.MolFromSmiles", side_effect=_mol_from_smiles
+    ):
+        results = [
+            ExtractionResult(esmiles="CCO", source="image"),
+            ExtractionResult(esmiles="CCO", source="text"),
+        ]
+        normalized = normalize_molecules(results)
+        assert len(normalized) == 2
+        assert call_count == 2
+
+        rejected = next(n for n in normalized if n.status == "rejected")
+        assert rejected.canonical_smiles == "CCO"
+        assert rejected.reject_reason == "invalid_smiles"
+
+        expected_canonical = _REAL_MOL_TO_SMILES(
+            _REAL_MOL_FROM_SMILES("CCO"), canonical=True
+        )
+        pending = next(n for n in normalized if n.status == "pending")
+        assert pending.canonical_smiles == expected_canonical
 
 
 def test_normalize_duplicate_invalid_smiles_merge_detections() -> None:
@@ -137,3 +170,25 @@ def test_normalize_duplicate_invalid_smiles_merge_detections() -> None:
     assert normalized[0].properties["context_texts"] == ["ctx A", "ctx B"]
     assert "image" in normalized[0].sources
     assert "text" in normalized[0].sources
+
+
+def test_normalize_canonicalization_failure_rejected() -> None:
+    """A result that parses but fails canonicalization is rejected and merges."""
+
+    def _mol_to_smiles(*args, **kwargs):
+        raise RuntimeError("forced canonicalization failure")
+
+    with patch(
+        "mbforge.pipeline.normalize.Chem.MolToSmiles", side_effect=_mol_to_smiles
+    ):
+        results = [
+            ExtractionResult(esmiles="CCO", source="image"),
+            ExtractionResult(esmiles="CCO", source="text"),
+        ]
+        normalized = normalize_molecules(results)
+        assert len(normalized) == 1
+        assert normalized[0].status == "rejected"
+        assert normalized[0].reject_reason == "canonicalization_failed"
+        assert len(normalized[0].detections) == 2
+        assert "image" in normalized[0].sources
+        assert "text" in normalized[0].sources

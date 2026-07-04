@@ -29,14 +29,6 @@ def _test_model_sync(model_id: str, subpath: str | None = None) -> dict[str, Any
         elif model_id == "molscribe":
             from ..backends.molscribe import load as load_molscribe
             load_molscribe()
-        elif model_id == "embedding":
-            from ..backends.qwen3 import EmbeddingProvider
-            provider = EmbeddingProvider()
-            _ = provider.embed(["test"])
-        elif model_id == "reranker":
-            from ..backends.qwen3 import RerankerProvider
-            provider = RerankerProvider()
-            _ = provider.rerank("test", ["test"])
         else:
             return {"ok": False, "error": f"Unknown model: {model_id}", "duration_ms": 0}
 
@@ -80,8 +72,8 @@ async def render_molecule(body: dict) -> dict:
             return {"success": False, "error": "Invalid SMILES"}
 
         img = Draw.MolToImage(mol, size=(width, height))
-        import io
         import base64
+        import io
 
         buffer = io.BytesIO()
         img.save(buffer, format="PNG")

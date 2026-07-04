@@ -1,12 +1,6 @@
 """Agent 对话集成测试 — 验证 ReAct 循环、工具执行、错误处理."""
 
-import json
-import sys
-import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from mbforge.utils.logger import get_logger
 
@@ -29,7 +23,7 @@ class TestAgentTools:
         """验证 Python 包资源已注册."""
         from mbforge.core.resource_manager import RESOURCE_CATALOG
         pkg_ids = [k for k, v in RESOURCE_CATALOG.items() if v.type.value == "python_package"]
-        assert len(pkg_ids) >= 5
+        assert len(pkg_ids) >= 4
         assert "torch" in pkg_ids
         assert "rdkit" in pkg_ids
 
@@ -74,9 +68,15 @@ class TestExceptionHierarchy:
     def test_all_exceptions_inherit_from_mbforge_error(self):
         """验证所有异常都继承 MBForgeError."""
         from mbforge.utils.helpers import (
-            MBForgeError, ProjectNotValidError, ModelNotAvailableError,
-            ConfigError, ValidationError, FileAccessError, PathTraversalError,
-            ResourceNotAvailableError, ToolExecutionError,
+            ConfigError,
+            FileAccessError,
+            MBForgeError,
+            ModelNotAvailableError,
+            PathTraversalError,
+            ProjectNotValidError,
+            ResourceNotAvailableError,
+            ToolExecutionError,
+            ValidationError,
         )
         for exc_cls in [
             ProjectNotValidError, ModelNotAvailableError, ConfigError,
@@ -88,8 +88,10 @@ class TestExceptionHierarchy:
     def test_exception_status_codes(self):
         """验证异常有正确的 HTTP 状态码."""
         from mbforge.utils.helpers import (
-            ProjectNotValidError, ModelNotAvailableError, ValidationError,
+            ModelNotAvailableError,
+            ProjectNotValidError,
             ResourceNotAvailableError,
+            ValidationError,
         )
         assert ProjectNotValidError.status_code == 400
         assert ModelNotAvailableError.status_code == 503
@@ -99,8 +101,10 @@ class TestExceptionHierarchy:
     def test_exception_error_codes(self):
         """验证异常有机器可读的错误码."""
         from mbforge.utils.helpers import (
-            ProjectNotValidError, ModelNotAvailableError, ValidationError,
+            ModelNotAvailableError,
+            ProjectNotValidError,
             ResourceNotAvailableError,
+            ValidationError,
         )
         assert ProjectNotValidError.error_code == "project_not_valid"
         assert ModelNotAvailableError.error_code == "model_not_available"

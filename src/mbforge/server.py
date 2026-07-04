@@ -22,7 +22,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .backends import moldet, molscribe
-from .server_state import set_model_status, should_skip_cooldown, mark_failure, clear_failure, get_model_status
+from .routers.health_router import router as health_router
+from .routers.models_router import router as models_router
+from .routers.moldet_api import router as moldet_router
+from .routers.molscribe_api import router as molscribe_router
+from .routers.pdf_render import router as pdf_render_router
+from .server_state import (
+    set_model_status,
+)
 from .utils.helpers import (
     ModelNotAvailableError,
     ValidationError,
@@ -133,12 +140,6 @@ async def _generic_error_handler(request: Request, exc: Exception) -> JSONRespon
 # Register routers
 # ---------------------------------------------------------------------------
 
-from .routers.moldet_api import router as moldet_router
-from .routers.molscribe_api import router as molscribe_router
-from .routers.pdf_render import router as pdf_render_router
-from .routers.models_router import router as models_router
-from .routers.health_router import router as health_router
-
 app.include_router(moldet_router, prefix="/api/v1/moldet", tags=["moldet"])
 app.include_router(molscribe_router, prefix="/api/v1/molscribe", tags=["molscribe"])
 app.include_router(pdf_render_router, prefix="/api/v1/pdf", tags=["pdf"])
@@ -152,8 +153,6 @@ app.include_router(health_router, prefix="/api/v1", tags=["health"])
 
 def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
     """Test model by loading and running minimal inference."""
-    import time
-
     start = time.perf_counter()
     try:
         if resource_id == "moldet":
@@ -166,14 +165,6 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
         elif resource_id == "molscribe":
             from .backends.molscribe import load as load_molscribe
             load_molscribe()
-        elif resource_id == "embedding":
-            from .backends.qwen3 import EmbeddingProvider
-            provider = EmbeddingProvider()
-            _ = provider.embed(["test"])
-        elif resource_id == "reranker":
-            from .backends.qwen3 import RerankerProvider
-            provider = RerankerProvider()
-            _ = provider.rerank("test", ["test"])
         else:
             return {"ok": False, "error": f"Unknown model: {resource_id}", "duration_ms": 0}
 
@@ -190,8 +181,8 @@ async def test_model(request: Request) -> dict[str, Any]:
     """Test a model by loading and running inference."""
     try:
         body = await request.json()
-    except Exception:
-        raise ValidationError("Invalid JSON body")
+    except Exception as e:
+        raise ValidationError("Invalid JSON body") from e
 
     model_id = body.get("model_id", "")
     subpath = body.get("subpath")

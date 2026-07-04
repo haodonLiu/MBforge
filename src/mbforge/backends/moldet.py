@@ -59,7 +59,7 @@ def _has_molscribe() -> bool:
 
 def default_model_dir() -> Path:
     """返回模型缓存目录（使用统一常量）."""
-    from mbforge.utils.constants import get_model_cache_dir
+    from mbforge.utils.paths import get_model_cache_dir
 
     cache_dir = Path(get_model_cache_dir())
     cache_dir.mkdir(parents=True, exist_ok=True)

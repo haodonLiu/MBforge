@@ -28,8 +28,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .constants import DEFAULT_LLM_MODEL, DEFAULT_PAGEINDEX_THRESHOLD, GLOBAL_CONFIG_DIR
 from .helpers import load_json, save_json
+from .paths import GLOBAL_CONFIG_DIR
 
 
 class RecentProject(BaseModel):
@@ -47,12 +47,12 @@ class LLMConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     provider: str = "openai_compatible"
-    model: str = DEFAULT_LLM_MODEL
+    model: str = "gpt-4o-mini"
     api_key: str = ""
     base_url: str = ""
     temperature: float = 0.7
     max_tokens: int = 4096
-    pageindex_threshold: int = DEFAULT_PAGEINDEX_THRESHOLD
+    pageindex_threshold: int = 20
     language: str = "en"
 
 

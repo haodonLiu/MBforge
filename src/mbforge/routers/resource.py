@@ -20,7 +20,7 @@ async def resource_download(body: dict) -> dict:
 
 @router.post("/resource/cache-dir-info")
 async def cache_dir_info() -> dict:
-    from ..utils.constants import get_model_cache_dir
+    from ..utils.paths import get_model_cache_dir
     cache_dir = get_model_cache_dir()
     return {
         "mbforge": {"path": cache_dir, "exists": True, "size_mb": 0},

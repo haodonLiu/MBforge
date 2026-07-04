@@ -35,7 +35,7 @@ def get_model_dir() -> Path:
 
     # 兜底：直接构造期望路径
     try:
-        from mbforge.utils.constants import get_model_cache_dir
+        from mbforge.utils.paths import get_model_cache_dir
         return Path(get_model_cache_dir()) / "MolScribe"
     except ImportError:
         return Path.home() / "mbforge" / "models" / "MolScribe"

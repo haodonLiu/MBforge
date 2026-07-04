@@ -1,9 +1,7 @@
 """Tests for core database manager."""
 
-import sqlite3
-from pathlib import Path
 
-from mbforge.core.database import DatabaseManager
+from mbforge.core.database import SCHEMA_VERSION, DatabaseManager
 
 
 class TestDatabaseManager:
@@ -76,4 +74,4 @@ class TestDatabaseManager:
         with db.mol_conn() as conn:
             row = conn.execute("SELECT version FROM schema_version").fetchone()
             assert row is not None
-            assert row["version"] == 2
+            assert row["version"] == SCHEMA_VERSION

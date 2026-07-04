@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from pathlib import Path
 
 from ..utils.logger import get_logger
@@ -253,12 +253,17 @@ class DatabaseManager:
             conn.close()
 
     def _migrate_molecules_v2_to_v3(self, conn: sqlite3.Connection) -> None:
+        existing_cols = {
+            r[0]
+            for r in conn.execute("SELECT name FROM pragma_table_info('molecules')")
+        }
         for column in (
             "canonical_smiles TEXT",
             "review_status TEXT DEFAULT 'pending'",
             "reviewed_at TEXT",
         ):
-            with suppress(sqlite3.OperationalError):
+            col_name = column.split()[0]
+            if col_name not in existing_cols:
                 conn.execute(f"ALTER TABLE molecules ADD COLUMN {column}")
 
     @property

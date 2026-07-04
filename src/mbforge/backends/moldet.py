@@ -751,7 +751,8 @@ def get_moldet() -> MolImagePipeline | None:
             return None
         from mbforge.utils.config import load_global_config
 
-        device = load_global_config().embed.device
+        cfg = load_global_config()
+        device = cfg.model_server.get("device") or cfg.moldet.get("device") or "auto"
         _moldet_instance = MolImagePipeline(device=device)
     return _moldet_instance
 
@@ -775,7 +776,10 @@ def load(device: str | None = None) -> None:
             return
         from mbforge.utils.config import load_global_config
 
-        dev = device or load_global_config().embed.device
+        dev = device
+        if not dev:
+            cfg = load_global_config()
+            dev = cfg.model_server.get("device") or cfg.moldet.get("device") or "auto"
         _moldet_instance = MolImagePipeline(device=dev)
 
 

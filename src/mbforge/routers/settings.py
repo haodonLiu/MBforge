@@ -2,48 +2,51 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
+from pydantic import ValidationError
+
+from ..utils.config import (
+    load_global_config,
+    reset_settings,
+    update_settings,
+)
 
 router = APIRouter()
 
 
 @router.get("")
 async def settings_get() -> dict:
-    from ..utils.config import load_global_config
-
     cfg = load_global_config()
     return {"success": True, "settings": cfg.model_dump()}
 
 
 @router.put("")
-async def settings_update(body: dict) -> dict:
-    from ..utils.config import load_global_config, save_global_config
-
-    cfg = load_global_config()
-    data = cfg.model_dump()
-
-    def deep_merge(base: dict, override: dict) -> dict:
-        for k, v in override.items():
-            if k in base and isinstance(base[k], dict) and isinstance(v, dict):
-                deep_merge(base[k], v)
-            else:
-                base[k] = v
-        return base
-
-    deep_merge(data, body)
-    from ..utils.config import AppConfig
-    new_cfg = AppConfig.model_validate(data)
-    save_global_config(new_cfg)
-    return {"success": True}
+async def settings_update(body: dict[str, Any]) -> dict:
+    """局部更新:deep-merge → 校验 → 持久化."""
+    try:
+        new_cfg = update_settings(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+    return {"success": True, "settings": new_cfg.model_dump()}
 
 
+@router.post("/reset")
+async def settings_reset() -> dict:
+    """重置全部设置为默认值."""
+    cfg = reset_settings()
+    return {"success": True, "settings": cfg.model_dump()}
+
+
+# TODO: cache-size / cache-clear 真正接到 core.semantic_cache
 @router.post("/cache-size")
 async def cache_size(body: dict) -> dict:
-    """返回缓存大小信息."""
+    """Stub — 真正实现待接入 core.semantic_cache."""
     return {"success": True, "size_mb": 0, "count": 0}
 
 
 @router.post("/cache-clear")
 async def cache_clear(body: dict) -> dict:
-    """清除缓存."""
+    """Stub — 真正实现待接入 core.semantic_cache."""
     return {"success": True, "cleared": 0}

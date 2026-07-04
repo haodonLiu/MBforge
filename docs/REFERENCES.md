@@ -58,12 +58,12 @@
 
 | Project | License | Used for |
 |---|---|---|
-| [Zvec](https://zvec.org/) | Apache-2.0 | Vector + FTS5 + hybrid (RRF) search |
+| [OpenKB](https://github.com/your-org/openkb) + [PageIndex](https://github.com/VectifyAI/PageIndex) | MIT | Vectorless tree reasoning + dense rerank (per-project KB index) |
 | [SQLite](https://www.sqlite.org/) | Public Domain | Business data persistence |
 | [sentence-transformers](https://www.sbert.net/) | Apache-2.0 | Embedding model framework |
 | [HuggingFace Transformers](https://huggingface.co/docs/transformers) | Apache-2.0 | Model loading & inference |
 
-> **Removed**: ChromaDB, rusqlite (replaced by Zvec + stdlib sqlite3).
+> **Removed**: ChromaDB, rusqlite (→ OpenKB / PageIndex), Zvec (→ OpenKB / PageIndex via commit `4fbde55`).
 
 ## ML Inference
 

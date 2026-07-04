@@ -3,6 +3,15 @@
 > 调研日期：2026-06-14
 > 调研人：MiMo Code Agent
 
+> **状态更新（2026-07-05）**：本文档调研的 PageIndex 集成已通过 commit `4fbde55`
+> （"feat: migrate KB from embed+rerank+Zvec to OpenKB + PageIndex"）落地在
+> `src/mbforge/openkb/`。调研文本中提及的 `src-tauri/` 路径（如
+> `document_tree.rs`、`pipeline.rs`、`src-tauri/src/parsers/`）是迁移前的
+> Rust 实现路径，**src-tauri/ 已于 2026-07-05 从工作树删除**；如需查阅历史
+> 代码可执行 `git log -- src-tauri/`。建议方案中关于"在 src-tauri/src/parsers/
+> 添加 PageIndex 树生成模块"的提议未被采纳（实际走 OpenKB + PageIndex 独立
+> 包路径，不嵌入业务后端）。
+
 ---
 
 ## 目录

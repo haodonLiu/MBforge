@@ -22,7 +22,7 @@ Stack:
 - **Frontend**: React 19 + Vite 8 + TypeScript 6. Runs in the browser only.
   No Tauri shell.
 - **Backend**: FastAPI on `127.0.0.1:18792`. Single Python process. `uvicorn
-  mbforge.app:app`. 53 routes across 12 routers.
+  mbforge.app:app`. 53 routes across 18 routers.
 - **Agent**: LangGraph (`>=0.4.0`) + langchain 0.3+. 5 tools, multi-session,
   SSE streaming.
 - **Models**: Qwen3-Embedding-0.6B, Qwen3-Reranker-0.6B, MolDetv2 (YOLO26n),
@@ -37,7 +37,7 @@ Five-layer split, top-down:
 | Frontend | `frontend/src/` | React components, routing, `AppContext` global state, `httpFetch` bridge |
 | HTTP routers | `src/mbforge/routers/` | FastAPI route handlers; one file per resource |
 | Core | `src/mbforge/core/` + `pipeline/` + `agent/` | Business logic, persistence, embeddings, pipeline stages |
-| Backends | `src/mbforge/backends/` | Local model wrappers (qwen3, moldet, molscribe) + OpenKB adapter |
+| Backends | `src/mbforge/backends/` | Local model wrappers (qwen3, moldet, molscribe) |
 | Utils | `src/mbforge/utils/` + `models/` | Logger, config, helpers, Pydantic schemas |
 
 **Data flow** (PDF in → query out):
@@ -66,10 +66,10 @@ MBForge/
 │   │   └── utils/errors.ts            AppError + ErrorCode
 │   └── index.html
 ├── src/mbforge/                       Python backend
-│   ├── app.py                         App entry — 53 routes, 12 routers
+│   ├── app.py                         App entry — 53 routes, 18 routers
 │   ├── server.py                      Dev uvicorn target
 │   ├── __main__.py                    `python -m mbforge`
-│   ├── routers/                       12 FastAPI routers
+│   ├── routers/                       18 FastAPI routers
 │   ├── agent/                         LangGraph agent
 │   ├── core/                          database, project, knowledge_base, semantic_cache, resource_manager
 │   ├── pipeline/                      classify, extract_text, segment, chunk, index, runner
@@ -163,15 +163,15 @@ proxy).
 
 | File | Role |
 |---|---|
-| `src/mbforge/app.py` | App entry — registers all 12 routers, exception handlers, lifespan |
+| `src/mbforge/app.py` | App entry — registers all 18 routers, exception handlers, lifespan |
 | `src/mbforge/server.py` | Dev uvicorn target (lazy prewarm) |
 | `src/mbforge/__main__.py` | `python -m mbforge` → uvicorn on 18792 |
 | `src/mbforge/agent/graph.py` | LangGraph agent graph definition |
 | `src/mbforge/agent/tools.py` | 5 agent tools (KB search, molecule search, doc fetch, notes, settings) |
-| `src/mbforge/pipeline/runner.py` | 5-stage pipeline orchestrator |
+| `src/mbforge/pipeline/runner.py` | 6-stage pipeline orchestrator (Phase 1: extract_molecules added) |
 | `src/mbforge/core/database.py` | SQLite business tables + connection pool |
 | `src/mbforge/core/knowledge_base.py` | KB CRUD + RRF fusion logic |
-| `src/mbforge/backends/zvec_backend.py` | Zvec wrapper (dense + FTS5 + hybrid) |
+| `src/mbforge/openkb/` | OpenKB + PageIndex adapter (vectorless tree reasoning + dense rerank) |
 | `src/mbforge/backends/qwen3.py` | EmbeddingProvider (local sentence-transformers + OpenAI-compatible) |
 | `src/mbforge/utils/helpers.py` | `MBForgeError` + 7 subclasses + `run_sync` |
 | `src/mbforge/utils/logger.py` | `get_logger` + `setup_logging` |
@@ -189,7 +189,7 @@ proxy).
 3. Built-in defaults
 
 **Storage locations** (per project): `{root}/.mbforge/knowledge_base.db` (SQLite),
-`{root}/.mbforge/search.zvec/` (Zvec collection for vectors + FTS), per-project
+OpenKB PageIndex collection managed under `openkb/`, per-project
 semantic cache. Global config: `~/.config/MBForge/config.json` (Linux) /
 `%APPDATA%\MBForge\config\config.json` (Windows).
 
@@ -239,7 +239,7 @@ cd frontend && npm run test -- --coverage       # v8 coverage
 
 - **Test names**: `test_{feature}_{scenario}` (e.g. `test_classify_pdf_returns_paper`).
 - **Test intent**: assertions express *why* the behavior matters, not just *what* it does. Tests that pass when business logic is wrong are design failures.
-- **No mocks of real systems**: use `tmp_path` for FS, real SQLite in `:memory:`, real Zvec test collection.
+- **No mocks of real systems**: use `tmp_path` for FS, real SQLite in `:memory:`, real OpenKB test collection.
 - **Coverage goal**: ≥70% on core logic per `TODO/INDEX.md` P1 items.
 
 ## Documentation

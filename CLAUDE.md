@@ -119,7 +119,7 @@ SQLite + OpenKB + filesystem   (per-project .mbforge/)
 **Lazy-loaded model backends** (no prewarm except OpenKB): `qwen3` (embed + rerank + OpenAI-compat LLM dispatch), `moldet` (YOLO26n), `molscribe` (Swin + TR). First request per backend pays 5–30 s load cost — see `TODO/INDEX.md` C-4.
 
 **Storage locations:**
-- Per-project: `{root}/.mbforge/knowledge_base.db` + `{root}/.mbforge/search.zvec/`-equivalent (OpenKB collection).
+- Per-project: `{root}/.mbforge/knowledge_base.db` + the OpenKB + PageIndex collection under `openkb/`.
 - Global config: `~/.config/MBForge/config.json` (Linux) / `%APPDATA%\MBForge\config\config.json` (Windows). Precedence: `MBFORGE_*` env vars > global config > defaults.
 
 ---

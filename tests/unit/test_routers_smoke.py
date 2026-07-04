@@ -31,19 +31,19 @@ class TestHealthEndpoints:
 class TestProjectEndpoints:
     def test_project_open(self, tmp_path):
         c = _client()
-        r = c.post("/api/v1/project/open", json={"path": str(tmp_path)})
+        r = c.post("/api/v1/project/open", json={"root": str(tmp_path)})
         assert r.status_code == 200
         assert "success" in r.json()
 
     def test_project_scan(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"path": str(tmp_path)})
+        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
         r = c.post("/api/v1/project/scan", json={"root": str(tmp_path)})
         assert r.status_code == 200
 
     def test_project_file_tree(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"path": str(tmp_path)})
+        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
         r = c.post("/api/v1/project/file-tree", json={"root": str(tmp_path)})
         assert r.status_code == 200
 
@@ -75,7 +75,7 @@ class TestAgentEndpoints:
 class TestPipelineEndpoints:
     def test_pipeline_queue_stats(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"path": str(tmp_path)})
+        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
         r = c.post("/api/v1/pipeline/queue/stats", json={"root": str(tmp_path)})
         assert r.status_code == 200
 
@@ -83,7 +83,7 @@ class TestPipelineEndpoints:
 class TestKBEndpoints:
     def test_kb_search_empty(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"path": str(tmp_path)})
+        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
         r = c.post("/api/v1/kb/search", json={"root": str(tmp_path), "query": "test"})
         assert r.status_code == 200
 
@@ -91,14 +91,14 @@ class TestKBEndpoints:
 class TestMoleculeEndpoints:
     def test_mol_list_empty(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"path": str(tmp_path)})
-        r = c.post("/api/v1/molecule/list", json={"root": str(tmp_path)})
+        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
+        r = c.post("/api/v1/molecule/list", json={"project_root": str(tmp_path)})
         assert r.status_code == 200
 
     def test_mol_stats(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"path": str(tmp_path)})
-        r = c.post("/api/v1/molecule/stats", json={"root": str(tmp_path)})
+        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
+        r = c.post("/api/v1/molecule/stats", json={"project_root": str(tmp_path)})
         assert r.status_code == 200
 
 
@@ -112,7 +112,7 @@ class TestChemEndpoints:
 class TestNotesEndpoints:
     def test_notes_get(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"path": str(tmp_path)})
+        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
         r = c.post("/api/v1/notes/get", json={
             "root": str(tmp_path),
             "doc_id": "test_doc",
@@ -123,7 +123,7 @@ class TestNotesEndpoints:
 class TestDetectionCacheEndpoints:
     def test_detection_cache_get(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"path": str(tmp_path)})
+        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
         r = c.post("/api/v1/detection-cache/get", json={
             "root": str(tmp_path),
             "doc_id": "test_doc",

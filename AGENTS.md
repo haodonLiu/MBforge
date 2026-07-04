@@ -4,9 +4,9 @@
 > conventions, and the day-to-day commands needed to add a feature, fix a bug,
 > or run tests.
 
-> **Snapshot**: 2026-06-29 — post-migration, Python-only backend.
-> Older versions described a Rust/Tauri workspace; that code is in git history
-> (`git log -- src-tauri/`). The current tree has no Rust.
+> **Snapshot**: 2026-07-05 — Python-only backend. The legacy `src-tauri/`
+> directory was removed this session; historical code remains accessible via
+> `git log -- src-tauri/`.
 
 ## Project Overview
 
@@ -37,15 +37,15 @@ Five-layer split, top-down:
 | Frontend | `frontend/src/` | React components, routing, `AppContext` global state, `httpFetch` bridge |
 | HTTP routers | `src/mbforge/routers/` | FastAPI route handlers; one file per resource |
 | Core | `src/mbforge/core/` + `pipeline/` + `agent/` | Business logic, persistence, embeddings, pipeline stages |
-| Backends | `src/mbforge/backends/` | Local model wrappers (qwen3, moldet, molscribe, zvec) |
+| Backends | `src/mbforge/backends/` | Local model wrappers (qwen3, moldet, molscribe) + OpenKB adapter |
 | Utils | `src/mbforge/utils/` + `models/` | Logger, config, helpers, Pydantic schemas |
 
 **Data flow** (PDF in → query out):
 
 1. Frontend uploads PDF via `POST /api/v1/documents/upload` → stored under `{project_root}/`.
-2. `pipeline/runner.py` orchestrates 5 stages: classify → extract_text → segment → chunk → index.
-3. Stage outputs feed `core/knowledge_base.py` (SQLite business tables) and `backends/zvec_backend.py` (dense + FTS5 + hybrid).
-4. Frontend queries via `GET /api/v1/kb/search` (RRF fusion of Zvec FTS + cosine).
+2. `pipeline/runner.py` orchestrates 6 stages: classify → extract_text → extract_molecules → normalize → persist_molecules → chunk/index.
+3. Stage outputs feed `core/knowledge_base.py` (SQLite business tables) and the OpenKB + PageIndex collection (vectorless tree reasoning + dense rerank).
+4. Frontend queries via `GET /api/v1/kb/search` (PageIndex tree reasoning).
 5. Agent chat streams via `GET /api/v1/agent/chat` (SSE, LangGraph nodes invoke `agent/tools.py`).
 
 **Cross-boundary types**: `Document`, `Chunk`, `Molecule`, `AgentMessage` — all

@@ -9,17 +9,17 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.database")
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # 实例缓存：避免重复初始化日志
-_db_cache: dict[str, "DatabaseManager"] = {}
+_db_cache: dict[str, DatabaseManager] = {}
 
 _KB_SCHEMA = """
 CREATE TABLE IF NOT EXISTS figure_labels (
@@ -107,6 +107,9 @@ CREATE TABLE IF NOT EXISTS molecules (
     semantic_tags TEXT DEFAULT '[]',
     notes TEXT DEFAULT '',
     fingerprint BLOB,
+    canonical_smiles TEXT,
+    review_status TEXT DEFAULT 'pending',
+    reviewed_at TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS molecule_images (
@@ -177,7 +180,7 @@ class DatabaseManager:
         self._initialized = False
 
     @classmethod
-    def get(cls, project_root: str | Path) -> "DatabaseManager":
+    def get(cls, project_root: str | Path) -> DatabaseManager:
         """获取缓存的实例，避免重复初始化."""
         key = str(Path(project_root).resolve())
         if key not in _db_cache:
@@ -204,7 +207,17 @@ class DatabaseManager:
             if versioned:
                 existing = conn.execute("SELECT version FROM schema_version").fetchone()
                 if existing is None:
-                    conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
+                    conn.execute(
+                        "INSERT INTO schema_version (version) VALUES (?)",
+                        (SCHEMA_VERSION,),
+                    )
+                elif existing[0] < SCHEMA_VERSION:
+                    if existing[0] < 3:
+                        self._migrate_molecules_v2_to_v3(conn)
+                    conn.execute(
+                        "UPDATE schema_version SET version = ?",
+                        (SCHEMA_VERSION,),
+                    )
             conn.commit()
         finally:
             conn.close()
@@ -238,6 +251,15 @@ class DatabaseManager:
             raise
         finally:
             conn.close()
+
+    def _migrate_molecules_v2_to_v3(self, conn: sqlite3.Connection) -> None:
+        for column in (
+            "canonical_smiles TEXT",
+            "review_status TEXT DEFAULT 'pending'",
+            "reviewed_at TEXT",
+        ):
+            with suppress(sqlite3.OperationalError):
+                conn.execute(f"ALTER TABLE molecules ADD COLUMN {column}")
 
     @property
     def kb_path(self) -> Path:

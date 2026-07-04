@@ -124,6 +124,6 @@ class TestConfigIntegration:
         assert "rerank" not in dumped
 
 
-# TestProjectIntegration 已迁移：Python `Project` 类已删除
-# (被 Rust `core::project::Project` 取代)。原 `TestProjectIntegration` 覆盖
-# 的逻辑由 Rust 侧单元测试 + 集成测试负责（`src-tauri/src/core/project/`）。
+# TestProjectIntegration 已迁移：Python `Project` 类已删除。原
+# `TestProjectIntegration` 覆盖的逻辑由 `tests/integration/test_real_pdfs.py`
+# 下的 `test_project_*` 用例负责。

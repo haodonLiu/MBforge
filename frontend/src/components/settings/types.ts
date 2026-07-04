@@ -2,7 +2,7 @@
 //
 // 单一事实来源：所有 section 共享同一个 `SettingsState`，确保保存时
 // 字段不会出现"漏存 / 写错路径"的问题。DEFAULT_SETTINGS 与后端
-// `AppConfig::default()` (src-tauri/src/core/config/settings.rs) 保持对齐。
+// `AppConfig` Pydantic schema 保持对齐（见 `src/mbforge/models/`）。
 
 import type { AppSettings } from '../../api/tauri/settings'
 

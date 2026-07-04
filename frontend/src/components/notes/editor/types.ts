@@ -1,7 +1,7 @@
 /**
  * 笔记实体.
  *
- * 由 src-tauri/src/core/notes.rs::Note 序列化而来.
+ * Field shape matches the Pydantic `Note` schema in `src/mbforge/models/`.
  */
 export interface Note {
   id: string

@@ -1,11 +1,10 @@
 # MBForge 共享常量 — 单一真相源
 #
 # 生成命令: python scripts/generate_constants.py
-# 生成目标: src-tauri/src/core/config/constants.rs + src/mbforge/utils/constants.py
+# 生成目标: src/mbforge/utils/constants.py
 #
-# 仅包含 Rust 和 Python 都需要的常量。
-# Rust 专有常量（Tauri 事件名、Agent 配置）直接写在 constants.rs 中。
-# Python 专有常量（Embedding 指令、ChromaDB 配置）直接写在 constants.py 中。
+# 仅包含 Python 端共享的常量。
+# Python 专有常量（Embedding 指令等）直接写在 constants.py 中。
 
 app:
   name: "MBForge"
@@ -31,8 +30,6 @@ directories:
   settings_file: "settings.json"
 
 models:
-  default_embed: "Qwen/Qwen3-Embedding-0.6B"
-  default_rerank: "Qwen/Qwen3-Reranker-0.6B"
   default_hf_endpoint: "https://hf-mirror.com"
   cache_dir: "mbforge/models"
 

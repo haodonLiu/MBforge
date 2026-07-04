@@ -18,41 +18,50 @@ except ImportError:
 # Python-only constants (not shared with Rust) live below the generated block.
 
 # app
-APP_NAME = "MBForge"
-APP_VERSION = "0.3.0"
-APP_AUTHOR = "MBForge"
+APP_NAME = 'MBForge'
+APP_VERSION = '0.3.0'
+APP_AUTHOR = 'MBForge'
 
 # project
 PROJECT_FORMAT_VERSION = 2
-PROJECT_META_DIR = ".mbforge"
+PROJECT_META_DIR = '.mbforge'
 
 # directories
-MEMORY_DIR = "memory"
-TRAJECTORY_DIR = "trajectory"
-TRAJECTORY_FILE = "trajectory.json"
-SUMMARY_DIR = "summaries"
-MOL_DB_FILENAME = "molecules.db"
-KB_COLLECTION_DOCS = "documents"
-INDEX_FILE = "index.json"
-SETTINGS_FILE = "settings.json"
+MEMORY_DIR = 'memory'
+TRAJECTORY_DIR = 'trajectory'
+TRAJECTORY_FILE = 'trajectory.json'
+SUMMARY_DIR = 'summaries'
+MOL_DB_FILENAME = 'molecules.db'
+KB_COLLECTION_DOCS = 'documents'
+INDEX_FILE = 'index.json'
+SETTINGS_FILE = 'settings.json'
 
 # models
-DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
-MODEL_CACHE_DIR = "mbforge/models"
+DEFAULT_HF_ENDPOINT = 'https://hf-mirror.com'
+MODEL_CACHE_DIR = 'mbforge/models'
 
 # providers
-PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
-PROVIDER_ANTHROPIC = "anthropic"
-PROVIDER_OLLAMA = "ollama"
-PROVIDER_API = "api"
-PROVIDER_LOCAL = "local"
-PROVIDER_OCR_NONE = "none"
+PROVIDER_OPENAI_COMPATIBLE = 'openai_compatible'
+PROVIDER_ANTHROPIC = 'anthropic'
+PROVIDER_QWEN3 = 'qwen3'
+PROVIDER_SENTENCE_TRANSFORMERS = 'sentence_transformers'
+PROVIDER_OLLAMA = 'ollama'
+PROVIDER_API = 'api'
+PROVIDER_LOCAL = 'local'
+PROVIDER_OCR_NONE = 'none'
+
+# llm
+LLM_MAX_TOKENS = 4096
+LLM_TEMPERATURE = 0.7
+LLM_TOP_P = 0.9
+
+# pdf
+PDF_CHUNK_SIZE = 512
+PDF_CHUNK_OVERLAP = 128
 
 # sidecar
 DEFAULT_SIDECAR_PORT = 18792
-DEFAULT_SIDECAR_URL = os.environ.get(
-    "MBFORGE_SIDECAR_URL", f"http://127.0.0.1:{DEFAULT_SIDECAR_PORT}"
-)
+DEFAULT_SIDECAR_URL = 'http://127.0.0.1:18792'
 
 # supported_doc_exts
 SUPPORTED_DOC_EXTS: set[str] = {".md", ".txt", ".pdf"}
@@ -62,21 +71,16 @@ SUPPORTED_MOL_EXTS: set[str] = {".sdf", ".mol", ".mol2", ".pdb", ".smi"}
 
 # ===== Python-only constants (not shared with Rust) =====
 
-# openkb
-DEFAULT_LLM_MODEL = "gpt-4o-mini"
-DEFAULT_PAGEINDEX_THRESHOLD = 20
-
 # ===== Path helpers =====
 
-GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, appauthor=False))
-GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, appauthor=False))
+GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))
+GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
 
 
 def get_model_cache_dir() -> str:
     """获取模型缓存目录（优先配置文件，其次默认路径）."""
     try:
         from .config import load_global_config
-
         cfg = load_global_config()
         if cfg.model_cache_dir:
             result = cfg.model_cache_dir

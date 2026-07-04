@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
-"""MBForge constants codegen — single source of truth → Rust + Python.
+"""MBForge constants codegen — single source of truth → Python.
 
-Reads ``constants.yaml`` (project root) and emits:
+Reads ``constants.yaml`` (project root) and writes:
 
-  - ``src/mbforge/utils/constants.py``                       (overwritten)
-  - ``<rust-out>/constants.rs``                              (YAML-derived only;
-                                                              consumed by build.rs
-                                                              via ``include!``)
-
-The Rust output is YAML-derived ONLY. Rust-only constants and helpers
-(Tauri event names, path helpers, project layout) live in
-``src-tauri/crates/mbforge-infra/src/config/constants.rs`` by hand.
+  - ``src/mbforge/utils/constants.py``      (overwritten)
 
 Usage:
     python scripts/generate_constants.py                 # write Python (default)
-    python scripts/generate_constants.py --rust-out DIR  # also write Rust to DIR
+    python scripts/generate_constants.py --rust-out DIR  # legacy: also write Rust to DIR (unused post-migration)
     python scripts/generate_constants.py --check         # CI: exit 1 on drift
 """
 
@@ -53,8 +46,6 @@ PY_OUT = REPO_ROOT / "src" / "mbforge" / "utils" / "constants.py"
 #   "json-top"         — required to match; updates top-level "version".
 #                        Drift = hard fail.
 VERSION_TARGETS: list[tuple[str, Path, str]] = [
-    ("Cargo workspace", REPO_ROOT / "src-tauri" / "Cargo.toml", "toml-section:[workspace.package]"),
-    ("Tauri config", REPO_ROOT / "src-tauri" / "crates" / "mbforge-app" / "tauri.conf.json", "json-top"),
     ("Frontend package", REPO_ROOT / "frontend" / "package.json", "json-top"),
     ("Python sidecar", REPO_ROOT / "pyproject.toml", "toml-section-opt:[project]"),
 ]
@@ -102,7 +93,8 @@ TYPE_MAP: dict[str, tuple[str, str]] = {
 
 # YAML key → final const identifier. Explicit because identifiers don't
 # follow a strict rule from YAML paths (some drop the section prefix, some
-# add suffix). Keep in sync with the 50+ call sites in src-tauri/crates/**.
+# add suffix). Keep in sync with the call sites throughout the Python
+# backend (see `rg "from ..utils.constants import" src/mbforge`).
 IDENTS: dict[str, str] = {
     "app.name": "APP_NAME",
     "app.version": "APP_VERSION",
@@ -117,8 +109,6 @@ IDENTS: dict[str, str] = {
     "directories.kb_collection_docs": "KB_COLLECTION_DOCS",
     "directories.index_file": "INDEX_FILE",
     "directories.settings_file": "SETTINGS_FILE",
-    "models.default_embed": "DEFAULT_EMBED_MODEL",
-    "models.default_rerank": "DEFAULT_RERANK_MODEL",
     "models.default_hf_endpoint": "DEFAULT_HF_ENDPOINT",
     "models.cache_dir": "MODEL_CACHE_DIR",
     "providers.openai_compatible": "PROVIDER_OPENAI_COMPATIBLE",
@@ -301,11 +291,6 @@ def emit_py_constants(items: list[tuple[str, Any, str, str]]) -> str:
 PY_PRESERVED = '''\
 # ===== Python-only constants (not shared with Rust) =====
 
-# Qwen3 Embedding/Reranker 指令前缀
-EMBED_INSTRUCTION_RETRIEVAL = "Given a web search query, retrieve relevant passages that answer the query"
-EMBED_INSTRUCTION_CLUSTER = "Given a document, retrieve relevant passages that are semantically similar"
-RERANK_DEFAULT_INSTRUCTION = "Given a web search query, retrieve relevant passages that answer the query"
-
 # ===== Path helpers =====
 
 GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))
@@ -409,8 +394,8 @@ def read_json_top_version(path: Path) -> str | None:
 
 def write_json_top_version(path: Path, version: str) -> bool:
     """Round-trip JSON, updating only the top-level `version`. Loses comments
-    (JSON has no comment syntax) and may reformat keys — acceptable for the
-    two targets (tauri.conf.json, package.json) which carry no comments."""
+    (JSON has no comment syntax) and may reformat keys — acceptable for
+    `package.json`, which carries no comments."""
     text = path.read_text(encoding="utf-8")
     data = json.loads(text)
     if "version" not in data:
@@ -572,7 +557,7 @@ def main() -> int:
         )
         print(f"wrote {label} ({len(new_rust)} bytes)")
 
-    # Version sync (Cargo workspace, tauri.conf, frontend, optional pyproject)
+    # Version sync (frontend, optional pyproject)
     for label, rel, current, status in sync_versions(
         yaml_version, sync_python, write=True
     ):

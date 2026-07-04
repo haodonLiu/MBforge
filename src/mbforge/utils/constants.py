@@ -71,6 +71,9 @@ SUPPORTED_MOL_EXTS: set[str] = {".sdf", ".mol", ".mol2", ".pdb", ".smi"}
 
 # ===== Python-only constants (not shared with Rust) =====
 
+DEFAULT_LLM_MODEL = "gpt-4o-mini"
+DEFAULT_PAGEINDEX_THRESHOLD = 20
+
 # ===== Path helpers =====
 
 GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))

@@ -3,7 +3,7 @@
 import sys
 
 if __name__ == "__main__":
-    from .utils.constants import DEFAULT_SIDECAR_PORT
+    from .utils.paths import DEFAULT_SIDECAR_PORT
 
     port = DEFAULT_SIDECAR_PORT
     gui_mode = False

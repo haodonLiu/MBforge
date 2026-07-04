@@ -197,7 +197,7 @@ class TestConfigWithRealPaths:
 
     def test_model_cache_dir_exists(self):
         """模型缓存目录应存在."""
-        from mbforge.utils.constants import get_model_cache_dir
+        from mbforge.utils.paths import get_model_cache_dir
         cache_dir = Path(get_model_cache_dir())
         assert cache_dir.exists(), f"模型缓存目录不存在: {cache_dir}"
 

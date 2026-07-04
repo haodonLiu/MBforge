@@ -256,7 +256,7 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
 
 def _get_model_cache_dir() -> Path:
     """获取模型缓存目录."""
-    from mbforge.utils.constants import get_model_cache_dir
+    from mbforge.utils.paths import get_model_cache_dir
 
     return Path(get_model_cache_dir())
 

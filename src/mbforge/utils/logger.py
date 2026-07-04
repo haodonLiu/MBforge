@@ -18,7 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
 
-from .constants import APP_NAME, GLOBAL_DATA_DIR
+from .paths import APP_NAME, GLOBAL_DATA_DIR
 
 # 日志格式 —— 增加进程ID、线程名，方便多线程/多进程诊断
 _CONSOLE_FORMAT = "%(asctime)s | %(levelname)-8s | %(process)d:%(threadName)s | %(name)s | %(message)s"

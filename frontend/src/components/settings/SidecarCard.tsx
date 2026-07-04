@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { sidecarStatus, sidecarRestart, type SidecarStatus } from '../../api/tauri/sidecar'
+import { sidecarStatus, sidecarRestart, type SidecarStatus } from '../../api/http/sidecar'
 import { showToast } from '../../hooks/useToast'
 import Button from '../ui/Button'
 import Caption from '../ui/Caption'

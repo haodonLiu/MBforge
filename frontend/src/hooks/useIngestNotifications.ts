@@ -5,7 +5,7 @@ import {
   isSelfTriggeredDoc,
   removeSelfTriggeredDoc,
   type IngestTask,
-} from '../api/tauri/ingest_queue'
+} from '../api/http/ingest_queue'
 import { toast } from '../components/ui/Toast'
 
 export function useIngestNotifications(projectRoot: string): void {

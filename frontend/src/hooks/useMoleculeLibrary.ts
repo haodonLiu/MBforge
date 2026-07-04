@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { molAdminList, molAdminSearchText } from '@/api/tauri/molecule_admin'
+import { molAdminList, molAdminSearchText } from '@/api/http/molecule_admin'
 import type { MoleculeRecord } from '@/types'
 
 export type MoleculeStatusFilter = 'all' | 'confirmed' | 'pending' | 'rejected' | 'corrected'

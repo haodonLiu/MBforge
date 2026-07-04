@@ -2,12 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
 import { useMoleculeLibrary } from '../useMoleculeLibrary'
 
-vi.mock('@/api/tauri/molecule_admin', () => ({
+vi.mock('@/api/http/molecule_admin', () => ({
   molAdminList: vi.fn(),
   molAdminSearchText: vi.fn(),
 }))
 
-import { molAdminList } from '@/api/tauri/molecule_admin'
+import { molAdminList } from '@/api/http/molecule_admin'
 
 const mockMolecule = {
   mol_id: 'm1',

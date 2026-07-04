@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
-import { esmilesToMolecode, chemDescriptors } from '@/api/tauri/molecule'
-import { molAdminUpdate } from '@/api/tauri/molecule_admin'
+import { esmilesToMolecode, chemDescriptors } from '@/api/http/molecule'
+import { molAdminUpdate } from '@/api/http/molecule_admin'
 import { toast } from '@/hooks/useToast'
 import type { ExtractionResult, MoleculeRecord } from '@/types'
 import MoleculeEditorDialog from './MoleculeEditorDialog'

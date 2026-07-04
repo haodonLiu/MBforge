@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { sidecarStatus } from '../../../api/tauri/sidecar'
+import { sidecarStatus } from '../../../api/http/sidecar'
 import SettingSection, { SettingGroup } from '../../ui/SettingSection'
 import {
   TextField,

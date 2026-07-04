@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import Button from '../ui/Button'
-import type { DownloadModel, SubfileStatus } from '../../api/tauri/download'
+import type { DownloadModel, SubfileStatus } from '../../api/http/download'
 import type { DownloadState } from './ModelsTab'
 import ProgressBar from './ProgressBar'
 

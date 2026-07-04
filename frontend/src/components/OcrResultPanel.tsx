@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { OcrBlock } from '../api/tauri/pdf'
+import type { OcrBlock } from '../api/http/pdf'
 
 interface Props {
   blocks: OcrBlock[]

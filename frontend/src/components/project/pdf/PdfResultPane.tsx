@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect, useCallback, useState } from 'react'
 import type { ExtractionResult } from '../../../types'
-import type { OcrBlock } from '../../../api/tauri/pdf'
+import type { OcrBlock } from '../../../api/http/pdf'
 
 interface TextItem {
   str: string

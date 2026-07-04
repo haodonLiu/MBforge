@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cleanWindowsPath } from '../../utils/path'
-import { getCommonDirs } from '../../api/tauri/project'
+import { getCommonDirs } from '../../api/http/project'
 
 
 interface FolderPickerProps {

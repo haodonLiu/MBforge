@@ -4,7 +4,7 @@ import Button from '../ui/Button'
 import BodyText from '../ui/BodyText'
 import Caption from '../ui/Caption'
 import { AlertIcon } from '../icons'
-import type { ScanWarning } from '../../api/tauri'
+import type { ScanWarning } from '../../api/http'
 import { PAPERS_DIR, NOTES_DIR } from '../../config/folderLayout'
 
 interface ScanWarningsPanelProps {

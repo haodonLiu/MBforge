@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { TrashIcon } from '../icons'
-import type { DownloadedModel } from '../../api/tauri/download'
+import type { DownloadedModel } from '../../api/http/download'
 
 interface DownloadedModelItemProps {
   model: DownloadedModel

@@ -1,7 +1,7 @@
 import Button from '../ui/Button'
 import CorrectionPanel, { type CorrectionItem } from './CorrectionPanel'
 import MoleculeDetailPanel from './MoleculeDetailPanel'
-import { molAdminUpdate } from '@/api/tauri/molecule_admin'
+import { molAdminUpdate } from '@/api/http/molecule_admin'
 import { showToast } from '@/hooks/useToast'
 import type { MoleculeRecord } from '../../types'
 

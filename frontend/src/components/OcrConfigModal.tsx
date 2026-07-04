@@ -20,9 +20,9 @@ import { useTranslation } from 'react-i18next'
 import Modal from './ui/Modal'
 import Button from './ui/Button'
 import ApiKeyInput from './settings/ApiKeyInput'
-import { getSettings, saveSettings } from '../api/tauri/settings'
-import { openExternalUrl } from '../api/tauri/_utils'
-import { testOcrMineru, testOcrUniparser, testOcrPaddleocr, type OcrTestResult } from '../api/tauri/text'
+import { getSettings, saveSettings } from '../api/http/settings'
+import { openExternalUrl } from '../api/http/_utils'
+import { testOcrMineru, testOcrUniparser, testOcrPaddleocr, type OcrTestResult } from '../api/http/text'
 
 type Backend = 'mineru' | 'uniparser' | 'paddleocr-online' | 'paddleocr-local'
 

@@ -4,7 +4,7 @@
 // 字段不会出现"漏存 / 写错路径"的问题。DEFAULT_SETTINGS 与后端
 // `AppConfig::default()` (src-tauri/src/core/config/settings.rs) 保持对齐。
 
-import type { AppSettings } from '../../api/tauri/settings'
+import type { AppSettings } from '../../api/http/settings'
 
 /** 编辑中的扁平状态。所有字段以字符串/数字/布尔承载。 */
 export interface SettingsState {

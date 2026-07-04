@@ -16,7 +16,7 @@
 
 import { useMemo } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
-import type { FigureLabel, CorefPrediction } from '../../../api/tauri/result_pane'
+import type { FigureLabel, CorefPrediction } from '../../../api/http/result_pane'
 import { pdfToCss } from '../../../utils/pdf'
 
 export interface CorefBboxOverlayProps {

@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getDetectionCacheStats, clearDetectionCache } from '../../api/tauri'
+import { getDetectionCacheStats, clearDetectionCache } from '../../api/http'
 import { useAppContext } from '../../context/AppContext'
 import { showToast } from '../../hooks/useToast'
 import Button from '../ui/Button'

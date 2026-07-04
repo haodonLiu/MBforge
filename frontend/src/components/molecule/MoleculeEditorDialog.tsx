@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { esmilesToMolecode } from '../../api/tauri/molecule'
+import { esmilesToMolecode } from '../../api/http/molecule'
 import { Editor } from 'ketcher-react'
 import { StandaloneStructServiceProvider } from 'ketcher-standalone'
 import 'ketcher-react/dist/index.css'

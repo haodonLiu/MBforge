@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { httpPost, httpPut } from '../../../api/tauri/_utils'
+import { httpPost, httpPut } from '../../../api/http/_utils'
 import SettingSection, { SettingGroup } from '../../ui/SettingSection'
 import Button from '../../ui/Button'
 import { showToast } from '../../../hooks/useToast'
-import { openProject } from '../../../api/tauri/project'
+import { openProject } from '../../../api/http/project'
 
 export default function RecentProjectsSection() {
   const { t } = useTranslation()

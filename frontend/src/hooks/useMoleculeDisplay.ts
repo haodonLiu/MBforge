@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { validateSmiles, esmilesToMolecode, type ValidationIssue } from '../api/tauri/molecule'
+import { validateSmiles, esmilesToMolecode, type ValidationIssue } from '../api/http/molecule'
 import { basicValidate, estimateFormula, estimateMW } from '../components/molecule/moleculeUtils'
 
 export interface UseMoleculeDisplayReturn {

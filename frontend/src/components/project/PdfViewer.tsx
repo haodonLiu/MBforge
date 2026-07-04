@@ -12,8 +12,8 @@ import PdfToolbar from './pdf/PdfToolbar'
 import PdfFloatingControls from './pdf/PdfFloatingControls'
 import PdfResultPane from './pdf/PdfResultPane'
 import PdfPipelineFlow from './pdf/PdfPipelineFlow'
-import { updateCorefPair, confirmCorefPrediction } from '../../api/tauri/result_pane'
-import type { FigureLabel, CorefPrediction } from '../../api/tauri/result_pane'
+import { updateCorefPair, confirmCorefPrediction } from '../../api/http/result_pane'
+import type { FigureLabel, CorefPrediction } from '../../api/http/result_pane'
 import { showToast } from '../../hooks/useToast'
 
 interface Props {

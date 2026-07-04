@@ -1,6 +1,6 @@
 import Button from '../ui/Button'
 import { CheckIcon, XIcon, AlertIcon } from '../icons'
-import type { ValidationIssue } from '../../api/tauri/molecule'
+import type { ValidationIssue } from '../../api/http/molecule'
 
 interface ValidationResultProps {
   validation: {

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import ProcessingQueue from '../ProcessingQueue'
-import { EVT } from '../../../api/tauri-events'
-import { ingestList, ingestDeleteTask } from '../../../api/tauri/ingest_queue'
+import { EVT } from '../../../api/http-events'
+import { ingestList, ingestDeleteTask } from '../../../api/http/ingest_queue'
 import i18n from '../../../i18n'
 
 const mockListen = vi.fn()

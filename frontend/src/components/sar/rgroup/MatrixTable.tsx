@@ -1,6 +1,6 @@
 import { Card } from '../../ui'
 import type { SARCompound } from '../../../types'
-import type { RGroupMatrix as RGroupMatrixData } from '../../../api/tauri/sar'
+import type { RGroupMatrix as RGroupMatrixData } from '../../../api/http/sar'
 import {
   activityColor,
   formatActivity,

@@ -9,7 +9,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 }))
 
 import { useDocResult } from '../useDocResult'
-import { EVT } from '../../api/tauri-events'
+import { EVT } from '../../api/http-events'
 import type { DocumentReport } from '../../types'
 
 describe('useDocResult', () => {

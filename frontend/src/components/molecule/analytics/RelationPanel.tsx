@@ -5,8 +5,8 @@ import {
   molFindByMolecule,
   molAddRelation,
   molDeleteRelation,
-} from '../../../api/tauri/molecule'
-import type { RelationStats, MoleculeRelation } from '../../../api/tauri/molecule'
+} from '../../../api/http/molecule'
+import type { RelationStats, MoleculeRelation } from '../../../api/http/molecule'
 import type { MoleculeRecord } from '../../../types'
 import { Card, Button, SectionTitle, Input, DataTable, Select, ResponsiveStatGrid, StatCard } from '../../ui'
 

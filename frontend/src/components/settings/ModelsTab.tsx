@@ -8,8 +8,8 @@ import {
   testModel,
   type DownloadModel,
   type DownloadProgress,
-} from '@/api/tauri/download'
-import { refreshResolvedPaths, modelsCacheDirInfo } from '@/api/tauri/environment'
+} from '@/api/http/download'
+import { refreshResolvedPaths, modelsCacheDirInfo } from '@/api/http/environment'
 import ModelCard from '@/components/settings/ModelCard'
 import { showToast } from '@/hooks/useToast'
 

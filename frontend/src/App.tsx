@@ -17,11 +17,11 @@ import MarkdownViewer from './components/MarkdownViewer'
 import { AppProvider, useAppContext } from './context/AppContext'
 import { showToast } from './hooks/useToast'
 import { useIsMobile, useIsTablet } from './styles/responsive'
-import { registerGlobalErrorHandlers } from './api/tauri/_utils'
+import { registerGlobalErrorHandlers } from './api/http/_utils'
 import { useSidecarEvents } from './hooks/useSidecarEvents'
 import { useIngestNotifications } from './hooks/useIngestNotifications'
 import OcrConfigModal from './components/OcrConfigModal'
-import { openProject } from './api/tauri/project'
+import { openProject } from './api/http/project'
 
 function getContentColumn(showProjectScope: boolean): '2' | '3' {
   return showProjectScope ? '3' : '2'

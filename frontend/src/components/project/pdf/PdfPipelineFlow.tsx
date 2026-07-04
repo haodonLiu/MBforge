@@ -3,7 +3,7 @@ import { TargetIcon } from '../../icons/science'
 import { FileTextIcon } from '../../icons/nav'
 import { EyeIcon, CheckIcon, XIcon } from '../../icons/actions'
 import { FlaskIcon, NetworkIcon, EmbedIcon } from '../../icons/science'
-import type { IngestTask } from '../../../api/tauri/ingest_queue'
+import type { IngestTask } from '../../../api/http/ingest_queue'
 import ProgressBar from '../../ui/ProgressBar'
 import '../../../styles/pdf-pipeline-flow.css'
 

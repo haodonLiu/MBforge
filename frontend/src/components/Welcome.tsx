@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { openProject } from '../api/tauri'
+import { openProject } from '../api/http'
 import { FolderIcon, MoleculeLogo, TrashIcon, XIcon } from './icons'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import { showToast } from '../hooks/useToast'

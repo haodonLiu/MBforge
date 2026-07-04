@@ -5,8 +5,7 @@ import {
   uploadFiles,
   enqueueUnresolvedDocuments,
   type DocumentEntry,
-} from '../api/tauri'
-import { EVT } from '../api/tauri-events'
+} from '../api/http'
 import { useAppContext } from '../context/AppContext'
 import { showToast } from '../hooks/useToast'
 import { FileTextIcon } from './icons/nav'

@@ -1,7 +1,7 @@
 /** Poll sidecar health status (replaces Tauri IPC listen). */
 
 import { useEffect } from 'react'
-import { httpGet } from '../api/tauri/_utils'
+import { httpGet } from '../api/http/_utils'
 
 export interface SidecarStatusEvent {
   healthy: boolean

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AlertBanner } from '../ui'
 import CorrectionPanel from '../molecule/CorrectionPanel'
 import { showToast } from '../../hooks/useToast'
-import { molStoreUpdateBatch } from '../../api/tauri/molecule'
+import { molStoreUpdateBatch } from '../../api/http/molecule'
 import type { MoleculeRecord } from '../../types'
 
 interface CorrectionItem {

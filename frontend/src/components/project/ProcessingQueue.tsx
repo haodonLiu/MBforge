@@ -23,7 +23,7 @@ import {
   ingestStats,
   type IngestTask,
   type QueueStats,
-} from '../../api/tauri/ingest_queue'
+} from '../../api/http/ingest_queue'
 import { showToast } from '../../hooks/useToast'
 
 interface Props {

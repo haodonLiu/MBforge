@@ -5,8 +5,8 @@ import {
   molGetClusterMembers,
   molAssignCluster,
   molRemoveFromCluster,
-} from '../../../api/tauri/molecule'
-import type { ClusterInfo } from '../../../api/tauri/molecule'
+} from '../../../api/http/molecule'
+import type { ClusterInfo } from '../../../api/http/molecule'
 import type { MoleculeRecord } from '../../../types'
 import { Card, Button, SectionTitle, Input, Select } from '../../ui'
 

@@ -1,6 +1,6 @@
 /** useDocResult — poll the latest DocumentReport for the current project. */
 import { useEffect, useState, useRef } from 'react'
-import { httpGet } from '../api/tauri/_utils'
+import { httpGet } from '../api/http/_utils'
 import type { DocumentReport } from '../types'
 
 export interface UseDocResult {

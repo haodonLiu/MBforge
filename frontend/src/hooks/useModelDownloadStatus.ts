@@ -1,7 +1,7 @@
 /** Global model download status + resources sync. */
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { httpGet } from '../api/tauri/_utils'
-import { resourcesCheck, type ResourceStatusItem } from '../api/tauri/environment'
+import { httpGet } from '../api/http/_utils'
+import { resourcesCheck, type ResourceStatusItem } from '../api/http/environment'
 
 export type ModelStatus = 'ready' | 'downloading' | 'missing' | 'failed' | 'unknown'
 

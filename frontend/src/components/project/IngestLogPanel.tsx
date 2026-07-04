@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { IngestLogEvent } from '../../api/tauri/ingest_queue'
+import type { IngestLogEvent } from '../../api/http/ingest_queue'
 
 interface IngestLogPanelProps {
   logs: IngestLogEvent[]

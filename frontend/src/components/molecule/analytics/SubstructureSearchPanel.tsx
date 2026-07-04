@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { showToast } from '../../../hooks/useToast'
-import { molSearchSubstructure } from '../../../api/tauri/molecule'
-import type { SubstructureMatch } from '../../../api/tauri/molecule'
+import { molSearchSubstructure } from '../../../api/http/molecule'
+import type { SubstructureMatch } from '../../../api/http/molecule'
 import { Card, Input, Slider, Button, DataTable } from '../../ui'
 
 export default function SubstructureSearchPanel() {

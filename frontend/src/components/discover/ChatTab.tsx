@@ -12,8 +12,8 @@ import {
   agentDestroySession,
   listDocumentsTauri,
   moleculeStatsTauri,
-} from '@/api/tauri'
-import { getSettings } from '@/api/tauri/settings'
+} from '@/api/http'
+import { getSettings } from '@/api/http/settings'
 
 import { useAppContext } from '@/context/AppContext'
 import ChatContextChip from '@/components/ChatContextChip'

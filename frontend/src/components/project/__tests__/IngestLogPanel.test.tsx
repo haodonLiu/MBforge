@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import IngestLogPanel from '../IngestLogPanel'
-import type { IngestLogEvent } from '../../../api/tauri/ingest_queue'
+import type { IngestLogEvent } from '../../../api/http/ingest_queue'
 
 const logs: IngestLogEvent[] = [
   { doc_id: 'd1', stage: 'inspector', level: 'info', message: '开始解析', ts_ms: 1718500000000 },

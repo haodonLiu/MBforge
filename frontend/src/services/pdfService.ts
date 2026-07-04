@@ -10,7 +10,7 @@
  *   3. 支持取消和超时
  */
 
-import { httpPost } from '../api/tauri/_utils'
+import { httpPost } from '../api/http/_utils'
 import type {
   ExtractionResult,
 } from '../types'

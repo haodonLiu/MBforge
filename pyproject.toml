@@ -107,6 +107,7 @@ dev = [
     "cairosvg>=2.9.0",
     "pytest>=9.0.3",
     "pyyaml>=6.0",
+    "ruff>=0.1.0",
 ]
 
 [tool.setuptools.packages.find]

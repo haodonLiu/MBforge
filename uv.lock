@@ -1444,6 +1444,7 @@ dev = [
     { name = "cairosvg" },
     { name = "pytest" },
     { name = "pyyaml" },
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -1496,6 +1497,7 @@ dev = [
     { name = "cairosvg", specifier = ">=2.9.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "ruff", specifier = ">=0.1.0" },
 ]
 
 [[package]]

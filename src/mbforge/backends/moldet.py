@@ -14,7 +14,6 @@ Week 1 (P0) 引擎接口层：
 
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 from typing import Any, Literal
@@ -24,10 +23,31 @@ from PIL import Image
 
 from mbforge.parsers.molecule.coords import image_to_pdf_bbox, scale_from_page_size
 from mbforge.parsers.molecule.extraction_result import ExtractionResult
+from mbforge.utils.config import load_global_config
 from mbforge.utils.helpers import is_gpu_available
 from mbforge.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _resolve_device(arg: str | None) -> str:
+    """Resolve MolDet/MolScribe device.
+
+    Priority: explicit ``arg`` > ``cfg.model_server.device`` > ``cfg.moldet.device`` > ``"auto"``.
+
+    Phase 1 deliberately drops the legacy ``MBFORGE_DEVICE`` env fallback
+    (now configured via Settings UI → ``settings.json``). ``MBFORGE_FORCE_CPU=1``
+    remains the canonical CPU escape hatch (see ``helpers.py``).
+    """
+    if arg:
+        return arg
+    cfg = load_global_config()
+    return (
+        cfg.model_server.get("device")
+        or cfg.moldet.get("device")
+        or "auto"
+    )
+
 
 # ---- 可选依赖探测（懒加载，避免启动时导入重型库） ----
 
@@ -104,7 +124,7 @@ class MolDetv2DocDetector:
                 "请运行：uv pip install 'mbforge[moldetv2_deps]'"
             )
 
-        self.device = device or os.getenv("MBFORGE_DEVICE", "auto")
+        self.device = _resolve_device(device)
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.min_area_ratio = min_area_ratio
@@ -346,7 +366,7 @@ class MolScribeRecognizer:
             device: 推理设备
             backend: 后端模式，auto 时优先 molscribe，其次 transformers
         """
-        self.device = device or os.getenv("MBFORGE_DEVICE", "auto")
+        self.device = _resolve_device(device)
         self.backend = backend
         self.model_path = model_path
         self._model: object | None = None
@@ -525,7 +545,7 @@ class MolImagePipeline:
             return
 
         self._gpu_disabled = False
-        self.device = device or os.getenv("MBFORGE_DEVICE", "auto")
+        self.device = _resolve_device(device)
         self.crop_cache_dir = crop_cache_dir
 
         self.doc_detector = doc_detector or MolDetv2DocDetector(device=self.device)

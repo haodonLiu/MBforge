@@ -7,6 +7,7 @@
 import os
 from pathlib import Path
 
+from mbforge.utils.config import load_global_config
 from mbforge.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -18,9 +19,18 @@ CHECKPOINT_NAME = "swin_base_char_aux_1m680k.pth"
 def get_model_dir() -> Path:
     """获取 MolScribe 模型目录.
 
-    1. 环境变量 `MBFORGE_MOLSCRIBE_DIR`（用户显式覆盖）
-    2. `ResourceManager.get_molscribe_path()`（读 Rust resolved_paths.json）
+    优先级:
+      1. ``cfg.moldet["molscribe_dir"]`` (Settings UI)
+      2. 环境变量 ``MBFORGE_MOLSCRIBE_DIR`` (legacy / 显式覆盖)
+      3. ``ResourceManager.get_molscribe_path()`` (读 Rust resolved_paths.json)
+      4. 缓存目录 ``<model_cache_dir>/MolScribe``
+      5. 兜底 ``~/mbforge/models/MolScribe``
     """
+    cfg = load_global_config()
+    cfg_dir = cfg.moldet.get("molscribe_dir")
+    if cfg_dir:
+        return Path(cfg_dir)
+
     env_dir = os.environ.get("MBFORGE_MOLSCRIBE_DIR")
     if env_dir:
         return Path(env_dir)

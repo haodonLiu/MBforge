@@ -1,2 +1,0 @@
-[permissions]
-allow = ["Bash(cd /c/Users/10954/Desktop/MBForge && uv add --dev vulture)", "Bash(cd /c/Users/10954/Desktop/MBForge && uv run vulture --version)", "Edit", "Bash(cd /c/Users/10954/Desktop/MBForge && head -20 TODO/INDEX.md && echo \"---\" && grep -E \"(DEPRECATED|OPEN)\" TODO/INDEX.md | head -30)", "Bash(cd /c/Users/10954/Desktop/MBForge && uv run vulture src/mbforge/ --min-confidence 60 2>&1)"]

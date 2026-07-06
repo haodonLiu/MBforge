@@ -179,7 +179,7 @@ class TestMoleculeExtraction:
 #   - test_project_scan_finds_pdfs
 #   - test_project_doc_types
 #   - test_project_document_metadata
-# 对应逻辑由 Rust 单元测试 + 集成测试覆盖（`src-tauri/src/core/project/`）。
+# 对应逻辑由 `tests/integration/test_real_pdfs.py` 下的 `test_project_*` 用例直接验证。
 #
 # 之前的 `test_embedding_model_resolves` / `test_reranker_model_resolves` 也已
 # 删除：它们从 `mbforge.models.embedding._resolve_model_path` 导入，而

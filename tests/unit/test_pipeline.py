@@ -1,9 +1,6 @@
 """PDF 管线集成测试 — 验证解析、分类、提取链路."""
 
-import tempfile
-from pathlib import Path
 
-import pytest
 
 from mbforge.utils.logger import get_logger
 

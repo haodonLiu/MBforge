@@ -2,10 +2,12 @@
 
 Stages:
 1. Extract: PDF text extraction (PyMuPDF + OCR fallback)
-2. PageIndex: Tree index via LLM reasoning
-3. Wiki: Compile summaries, concepts, entities
-4. Enrich: Molecule detection from figures (MolDet)
-5. Persist: Save page texts + report to filesystem
+2. Classify: Patent / paper / report heuristic classification
+3. PageIndex: Tree index via LLM reasoning
+4. Wiki: Compile summaries, concepts, entities
+5. Enrich: Molecule extraction from figures (MolDet + MolScribe) and text
+   SMILES, normalized via RDKit and persisted to molecules.db
+6. Persist: Save page texts + report to filesystem
 """
 
 from __future__ import annotations
@@ -91,7 +93,20 @@ def run_pipeline(
         stage="extract",
     )
 
-    # Stage 2: PageIndex tree indexing
+    # Stage 2: Classify
+    _emit("progress", "Classifying document...", stage="classify")
+    from .classify import classify_document
+
+    classification = classify_document(extracted.raw_text)
+    _emit(
+        "complete",
+        f"Document type: {classification.doc_type} ({classification.confidence:.2f})",
+        stage="classify",
+        doc_type=classification.doc_type,
+        confidence=classification.confidence,
+    )
+
+    # Stage 3: PageIndex tree indexing
     _emit("progress", "Building PageIndex tree...", stage="pageindex")
     from ..openkb.adapter import OpenKBAdapter
 
@@ -99,7 +114,7 @@ def run_pipeline(
     openkb_doc_id = adapter.index_document(pdf_path, doc_id)
     _emit("complete", f"PageIndex tree built: {openkb_doc_id}", stage="pageindex")
 
-    # Stage 3: Wiki compilation
+    # Stage 4: Wiki compilation
     _emit("progress", "Compiling wiki...", stage="wiki")
     doc_name = Path(pdf_path).stem
     import asyncio
@@ -107,20 +122,22 @@ def run_pipeline(
     asyncio.run(adapter.compile_wiki(doc_name, doc_id, extracted.page_count))
     _emit("complete", "Wiki compiled", stage="wiki")
 
-    # Stage 4: Enrich (molecule detection)
+    # Stage 5: Enrich (molecule extraction + normalization + persist)
     _emit("progress", "Detecting molecules...", stage="enrich")
-    enrich_result = _enrich_molecules(
-        pdf_path, project_root, doc_id, extracted.page_count
+    molecule_stats = _enrich_and_persist_molecules(
+        pdf_path, project_root, doc_id, extracted.raw_text
     )
     _emit(
         "complete",
-        f"Detected {enrich_result.get('molecule_count', 0)} molecules",
+        f"Detected {molecule_stats.get('molecule_count', 0)} molecules",
         stage="enrich",
+        molecule_count=molecule_stats.get("molecule_count", 0),
+        rejected_count=molecule_stats.get("rejected_count", 0),
     )
 
-    # Stage 5: Persist
+    # Stage 6: Persist
     _emit("progress", "Saving document...", stage="persist")
-    _persist_document(project_root, doc_id, extracted, enrich_result)
+    _persist_document(project_root, doc_id, extracted, classification, molecule_stats)
     _emit("complete", "Document saved", stage="persist")
 
     duration_ms = int((time.monotonic() - start_time) * 1000)
@@ -138,63 +155,85 @@ def run_pipeline(
     )
 
 
-def _enrich_molecules(
+def _enrich_and_persist_molecules(
     pdf_path: str,
     project_root: str,
     doc_id: str,
-    page_count: int,
+    raw_text: str,
 ) -> dict[str, Any]:
-    """Detect molecules in PDF figures using MolDet."""
+    """Extract molecules from PDF images and text, normalize, and persist.
+
+    Errors are logged and swallowed so that molecule extraction never aborts
+    the rest of the pipeline.
+    """
+    from .extract_molecules import (
+        extract_molecules_from_pdf,
+        extract_molecules_from_text,
+    )
+    from .normalize import normalize_molecules
+    from .persist_molecules import persist_molecule_candidates
+
     try:
-        from ..backends import moldet
-
-        pipeline = moldet.get_moldet()
-        if pipeline is None or not pipeline.is_available():
-            return {"molecule_count": 0, "skipped": True, "reason": "no GPU"}
-
-        import fitz
-
-        doc = fitz.open(pdf_path)
-        all_molecules: list[dict] = []
-        try:
-            for page_idx in range(min(page_count, 10)):
-                page = doc.load_page(page_idx)
-                zoom = 300 / 72.0
-                mat = fitz.Matrix(zoom, zoom)
-                pix = page.get_pixmap(matrix=mat, alpha=False)
-
-                import numpy as np
-                from PIL import Image
-
-                img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
-                    pix.height, pix.width, pix.n
-                )
-                image = Image.fromarray(img_array)
-
-                boxes = pipeline.doc_detector.detect(image)
-                for box in boxes:
-                    x1, y1, x2, y2, conf = box
-                    all_molecules.append(
-                        {
-                            "page": page_idx + 1,
-                            "bbox": [x1, y1, x2, y2],
-                            "confidence": conf,
-                        }
-                    )
-        finally:
-            doc.close()
-
-        return {"molecule_count": len(all_molecules), "molecules": all_molecules}
+        image_results = extract_molecules_from_pdf(pdf_path, project_root, doc_id)
     except Exception as e:
-        logger.warning("Molecule enrichment failed: %s", e)
-        return {"molecule_count": 0, "error": str(e)}
+        logger.warning("Molecule image extraction failed: %s", e)
+        image_results = []
+
+    try:
+        text_results = extract_molecules_from_text(raw_text, doc_id)
+    except Exception as e:
+        logger.warning("Molecule text extraction failed: %s", e)
+        text_results = []
+
+    combined = image_results + text_results
+    if not combined:
+        return {
+            "molecule_count": 0,
+            "rejected_count": 0,
+            "skipped": True,
+            "reason": "no candidates",
+        }
+
+    try:
+        normalized = normalize_molecules(combined)
+    except Exception as e:
+        logger.warning("Molecule normalization failed: %s", e)
+        return {
+            "molecule_count": 0,
+            "rejected_count": 0,
+            "error": f"normalization failed: {e}",
+        }
+
+    try:
+        persist_molecule_candidates(project_root, doc_id, normalized)
+    except Exception as e:
+        logger.warning("Molecule persistence failed: %s", e)
+        return {
+            "molecule_count": 0,
+            "rejected_count": 0,
+            "error": f"persistence failed: {e}",
+        }
+
+    pending = [n for n in normalized if n.status == "pending"]
+    rejected = [n for n in normalized if n.status == "rejected"]
+    sources: set[str] = set()
+    for n in normalized:
+        sources.update(n.sources)
+
+    return {
+        "molecule_count": len(pending),
+        "rejected_count": len(rejected),
+        "total_candidates": len(combined),
+        "sources": sorted(sources),
+    }
 
 
 def _persist_document(
     project_root: str,
     doc_id: str,
     extracted,
-    enrich_result: dict,
+    classification,
+    molecule_stats: dict[str, Any],
 ) -> None:
     """Save page texts and report to filesystem."""
     root = Path(project_root)
@@ -212,7 +251,11 @@ def _persist_document(
         "page_count": extracted.page_count,
         "parser": extracted.parser,
         "title": extracted.title,
-        "molecule_count": enrich_result.get("molecule_count", 0),
+        "doc_type": classification.doc_type,
+        "doc_type_confidence": classification.confidence,
+        "molecule_count": molecule_stats.get("molecule_count", 0),
+        "molecule_rejected_count": molecule_stats.get("rejected_count", 0),
+        "molecule_sources": molecule_stats.get("sources", []),
         "kb_backend": "openkb",
     }
     save_json(report_dir / "report.json", report)

@@ -1,8 +1,8 @@
 /**
  * Canonical project folder layout.
  *
- * MUST stay in sync with src-tauri/src/core/config/constants.rs.
- * Single source of truth for the UI; Rust enforces on the filesystem side.
+ * Single source of truth for the UI. The backend mirrors via
+ * `src/mbforge/utils/constants.py` (PROJECT_FORMAT_VERSION / *_FILE / *_DIR).
  */
 
 export const PROJECTS_DIR = 'projects' as const

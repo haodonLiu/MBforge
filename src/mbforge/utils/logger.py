@@ -68,9 +68,9 @@ def setup_logging(
     # 控制台输出
     if console:
         # Windows zh-CN locale 下 sys.stdout.encoding 可能是 gbk，无法编码 ✓/✗
-        # 这类 Unicode 字符。优先用环境变量注入的 UTF-8（见 src-tauri/src/sidecar.rs
-        # 的 PYTHONIOENCODING=utf-8），如果 stdout 实际不是 utf-8 就用
-        # backslashreplace 包一层兜底，保证 ✓ 不会让 StreamHandler 在 emit 时崩。
+        # 这类 Unicode 字符。优先用环境变量注入 UTF-8 (PYTHONIOENCODING=utf-8)，
+        # 如果 stdout 实际不是 utf-8 就用 backslashreplace 包一层兜底，保证 ✓
+        # 不会让 StreamHandler 在 emit 时崩。
         console_stream = sys.stdout
         stdout_encoding = getattr(console_stream, "encoding", None)
         if stdout_encoding and stdout_encoding.lower().replace("-", "") != "utf8":

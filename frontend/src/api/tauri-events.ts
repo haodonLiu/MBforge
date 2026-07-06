@@ -1,8 +1,10 @@
-/** Tauri IPC event names — must match `src-tauri/src/core/constants.rs`.
+/** Event-name constants used by the frontend SSE/HTTP bridges.
  *
- * Single source of truth for both Rust emitters and TS listeners.
- * Drift between the two silently breaks event delivery with no compile error,
- * so keep this file in sync with the Rust constants module.
+ * Names are kept as a frozen object so they can be referenced both as
+ * `EVT.X` and as `TauriEventName` (for `typeof` narrowing). The string
+ * values mirror what the FastAPI sidecar emits over SSE; any rename must
+ * be matched on the backend in `src/mbforge/utils/constants.py` (or the
+ * router that emits the event).
  */
 
 export const EVT = {

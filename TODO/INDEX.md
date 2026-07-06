@@ -17,11 +17,12 @@
 
 ## Snapshot
 
-- **Date**: 2026-06-29
-- **Codebase**: post-Rust-migration, Python-only backend
-- **Head**: `4b70ae8 refactor: migrate from Rust/Tauri to pure Python`
+- **Last drift-sync**: 2026-07-05
+- **Snapshot at**: 2026-06-29 (post-migration audit)
+- **Codebase**: Python-only backend, OpenKB + PageIndex (KB), 18 FastAPI routers
+- **Head at sync**: `371d6dc docs: add Phase 1 implementation plan and SAR pipeline design spec`
 - **Coverage**: Python ~5% (only `tests/unit/parsers/test_coref_alt.py` populated)
-- **Tech debt theme**: tests + frontend→backend contract drift
+- **Tech debt theme**: tests + frontend→backend contract drift; stale src-tauri/ refs and Zvec→OpenKB migration leftovers
 
 ---
 
@@ -32,7 +33,7 @@
 | C-1 | Repo | `ts_errors.txt` (36.6 KB) sits at repo root, not in `.gitignore`. Will be picked up by `git add .` and committed. | `ts_errors.txt` | **OPEN** |
 | C-2 | Config | `.gitignore` typo: `.mbforge/` was changed to `.mbccforge/`. Project runtime data would be tracked by git. | `.gitignore` | **OPEN** |
 | C-3 | Config | `frontend/tsconfig.json` has the key `"noCheck": true` listed twice (duplicate). TS compiler tolerates it but lint flags it. | `frontend/tsconfig.json` | **OPEN** |
-| C-4 | Backend | `app.py` lifespan only prewarms `zvec`. First request to embed / rerank / moldet / molscribe pays 5–30s model load. No UX handles this gracefully. | `src/mbforge/app.py`, `src/mbforge/server.py`, `src/mbforge/backends/{qwen3,moldet,molscribe}.py` | **OPEN** |
+| C-4 | Backend | `app.py` lifespan does not prewarm any backend — `server.py:_prewarm()` is a no-op. First request to embed / rerank / moldet / molscribe pays 5–30s model load. No UX handles this gracefully. (Previously referenced Zvec prewarm; Zvec removed in commit `4fbde55`.) | `src/mbforge/app.py`, `src/mbforge/server.py`, `src/mbforge/backends/{qwen3,moldet,molscribe}.py` | **OPEN** |
 | C-5 | Frontend | `frontend/src/api/tauri/_utils.ts` was rewritten to use HTTP, but the directory is still named `api/tauri/`. Confuses contributors searching for IPC code. | `frontend/src/api/tauri/` | **OPEN** |
 
 ## P1 — High (data loss, runtime crashes, doc drift)
@@ -47,7 +48,7 @@
 | R-6 | Frontend | `httpFetch` error mapping (`api/http/_utils.ts`) doesn't cover all FastAPI error shapes (e.g., `MBForgeError` 422 vs HTTP 422). Need spec test. | `frontend/src/api/http/_utils.ts` | **OPEN** |
 | R-7 | Backend | `backends/qwen3.py:1` header docstring still says "embed + rerank" but module now hosts `EmbeddingProvider`, `OpenAICompatibleProvider`, multi-LLM dispatch. Update header. | `src/mbforge/backends/qwen3.py` | **OPEN** |
 | R-8 | Backend | `core/resource_manager.py` adds 245 lines including `subprocess.run(['nvidia-smi'], timeout=5)` blocking calls on hot path. Need async wrapper + cached result. | `src/mbforge/core/resource_manager.py` | **OPEN** |
-| R-9 | Docs | `CLAUDE.md` (newly created) lists `archived/agent/` paths in error examples. `archived/` no longer exists. | `CLAUDE.md` | **OPEN** |
+| R-9 | Docs | `CLAUDE.md` (newly created) lists `archived/agent/` paths in error examples. `archived/` no longer exists. | `CLAUDE.md` | **RESOLVED 2026-07-05** |
 
 ## P2 — Medium (drift, type hints, docstring quality)
 
@@ -69,7 +70,7 @@
 
 | ID | Area | Finding | File | Status |
 |---|---|---|---|---|
-| S-1 | Python | `server.py` still uses legacy `_CORE_BACKENDS` prewarm comment referencing 5 backends (now reduced to 1: `zvec`). Update comment. | `src/mbforge/server.py:54` | **OPEN** |
+| S-1 | Python | `server.py` legacy `_CORE_BACKENDS` prewarm comment lists 5 backends; all are comment-only since the migration. Update to no-op prewarm or remove dead reference. (Zvec itself removed in `4fbde55`; only `molscribe` + `moldet` are still real sidecar backends.) | `src/mbforge/server.py:54` | **OPEN** |
 | S-2 | Python | `__main__.py` comment is English; `server.py` docstrings are mixed Chinese/English. Pick one convention. | `src/mbforge/__main__.py`, `src/mbforge/server.py` | **OPEN** |
 | S-3 | Frontend | `frontend/src/api/sse.ts` uses `EventSource` API; verify behaviour across browsers (Chromium OK, Safari has quirks). | `frontend/src/api/sse.ts` | **OPEN** |
 | S-4 | Repo | `assets/models/` referenced in `AGENTS.md` but directory may not exist or be gitignored. | `assets/models/` | **OPEN** |
@@ -87,7 +88,9 @@
 
 | ID | Description |
 |---|---|
-| X-3 | `docs/REFERENCES.md` updated: removed lopdf/PyMuPDF/ChromaDB/rusqlite, added pdfplumber/pypdfium2/Zvec/LangGraph. |
-| X-2 | `README.md` rewritten: removed all Tauri v2 / Rust mentions, added FastAPI + LangGraph stack table. |
+| X-3 | `docs/REFERENCES.md` updated: removed lopdf/PyMuPDF/ChromaDB/rusqlite, added pdfplumber/pypdfium2/Zvec/LangGraph. (Subsequently: Zvec itself removed in `4fbde55` and replaced by OpenKB + PageIndex — second pass applied 2026-07-05.) |
+| X-2 | `README.md` rewritten: removed all Tauri v2 / Rust mentions, added FastAPI + LangGraph stack table. (Subsequently: Zvec mentions replaced by OpenKB, 5-stage → 6-stage pipeline, src-tauri/ removed entirely — second pass 2026-07-05.) |
+| X-4 | `src-tauri/` directory deleted from working tree (~29 GB) — Rust workspace history preserved via `git log -- src-tauri/`. |
 | — | `CLAUDE.md` created at repo root (previously session-only at `~/.claude/CLAUDE.md`). |
-| — | `AGENTS.md` rewritten to reflect Python-only backend. |
+| — | `AGENTS.md` rewritten to reflect Python-only backend (subsequently: OpenKB + 18 routers + 6-stage pipeline corrected 2026-07-05). |
+| R-9 | `CLAUDE.md` no longer references `archived/agent/` — error examples rewritten during 2026-07-05 refresh. |

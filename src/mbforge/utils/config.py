@@ -74,6 +74,7 @@ class AppConfig(BaseSettings):
     model_server: dict[str, Any] = Field(default_factory=dict)
     recent_projects: list[RecentProject] = Field(default_factory=list)
     pdf_parse: dict[str, Any] = Field(default_factory=dict)
+    # moldet: 分子检测管线设置。已知 key: {"device", "molscribe_dir"}.
     moldet: dict[str, Any] = Field(default_factory=dict)
     ingest: dict[str, Any] = Field(default_factory=dict)
 

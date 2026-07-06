@@ -4,9 +4,9 @@
 > conventions, and the day-to-day commands needed to add a feature, fix a bug,
 > or run tests.
 
-> **Snapshot**: 2026-06-29 — post-migration, Python-only backend.
-> Older versions described a Rust/Tauri workspace; that code is in git history
-> (`git log -- src-tauri/`). The current tree has no Rust.
+> **Snapshot**: 2026-07-05 — Python-only backend. The legacy `src-tauri/`
+> directory was removed this session; historical code remains accessible via
+> `git log -- src-tauri/`.
 
 ## Project Overview
 
@@ -22,7 +22,7 @@ Stack:
 - **Frontend**: React 19 + Vite 8 + TypeScript 6. Runs in the browser only.
   No Tauri shell.
 - **Backend**: FastAPI on `127.0.0.1:18792`. Single Python process. `uvicorn
-  mbforge.app:app`. 53 routes across 12 routers.
+  mbforge.app:app`. 53 routes across 18 routers.
 - **Agent**: LangGraph (`>=0.4.0`) + langchain 0.3+. 5 tools, multi-session,
   SSE streaming.
 - **Models**: Qwen3-Embedding-0.6B, Qwen3-Reranker-0.6B, MolDetv2 (YOLO26n),
@@ -37,15 +37,15 @@ Five-layer split, top-down:
 | Frontend | `frontend/src/` | React components, routing, `AppContext` global state, `httpFetch` bridge |
 | HTTP routers | `src/mbforge/routers/` | FastAPI route handlers; one file per resource |
 | Core | `src/mbforge/core/` + `pipeline/` + `agent/` | Business logic, persistence, embeddings, pipeline stages |
-| Backends | `src/mbforge/backends/` | Local model wrappers (qwen3, moldet, molscribe, zvec) |
+| Backends | `src/mbforge/backends/` | Local model wrappers (qwen3, moldet, molscribe) |
 | Utils | `src/mbforge/utils/` + `models/` | Logger, config, helpers, Pydantic schemas |
 
 **Data flow** (PDF in → query out):
 
 1. Frontend uploads PDF via `POST /api/v1/documents/upload` → stored under `{project_root}/`.
-2. `pipeline/runner.py` orchestrates 5 stages: classify → extract_text → segment → chunk → index.
-3. Stage outputs feed `core/knowledge_base.py` (SQLite business tables) and `backends/zvec_backend.py` (dense + FTS5 + hybrid).
-4. Frontend queries via `GET /api/v1/kb/search` (RRF fusion of Zvec FTS + cosine).
+2. `pipeline/runner.py` orchestrates 6 stages: classify → extract_text → extract_molecules → normalize → persist_molecules → chunk/index.
+3. Stage outputs feed `core/knowledge_base.py` (SQLite business tables) and the OpenKB + PageIndex collection (vectorless tree reasoning + dense rerank).
+4. Frontend queries via `GET /api/v1/kb/search` (PageIndex tree reasoning).
 5. Agent chat streams via `GET /api/v1/agent/chat` (SSE, LangGraph nodes invoke `agent/tools.py`).
 
 **Cross-boundary types**: `Document`, `Chunk`, `Molecule`, `AgentMessage` — all
@@ -66,10 +66,10 @@ MBForge/
 │   │   └── utils/errors.ts            AppError + ErrorCode
 │   └── index.html
 ├── src/mbforge/                       Python backend
-│   ├── app.py                         App entry — 53 routes, 12 routers
+│   ├── app.py                         App entry — 53 routes, 18 routers
 │   ├── server.py                      Dev uvicorn target
 │   ├── __main__.py                    `python -m mbforge`
-│   ├── routers/                       12 FastAPI routers
+│   ├── routers/                       18 FastAPI routers
 │   ├── agent/                         LangGraph agent
 │   ├── core/                          database, project, knowledge_base, semantic_cache, resource_manager
 │   ├── pipeline/                      classify, extract_text, segment, chunk, index, runner
@@ -159,19 +159,86 @@ proxy).
 - **Adding a Pydantic model**: place in `src/mbforge/models/` if shared, or inline if router-local. Re-export from `models/__init__.py`.
 - **Adding an agent tool**: subclass `BaseTool` in `agent/tools.py` → register in tool list → update `agent/graph.py` system prompt if the tool needs discovery hints.
 
+## Settings & Configuration
+
+**Single source**: `mbforge.utils.config` exports the four allowed entry
+points. Any code that reads or writes global config without going through
+them is a bug.
+
+### Calling settings from Python
+
+```python
+from mbforge.utils.config import (
+    load_global_config,    # lru_cache, single read
+    save_global_config,    # single write
+    update_settings,       # partial update + validate + persist
+    reset_settings,        # back to defaults
+)
+```
+
+`load_global_config()` returns the cached `AppConfig`. Treat as read-only
+— mutations won't persist unless routed through `update_settings()`.
+`update_settings(partial)` does deep-merge → Pydantic validation →
+persist; on `ValidationError` the router maps it to HTTP 422.
+
+### Calling settings from a router
+
+```python
+from ..utils.config import update_settings, reset_settings
+
+@router.put("")
+async def settings_update(body: dict[str, Any]) -> dict:
+    try:
+        new_cfg = update_settings(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+    return {"success": True, "settings": new_cfg.model_dump()}
+```
+
+Never inline `deep_merge` + `model_validate` + `save_global_config` —
+the helpers handle cache invalidation and Pydantic error mapping.
+
+### Adding a new field
+
+1. Add to `AppConfig` (or a nested `BaseModel` like `LLMConfig`).
+2. Provide a default — Pydantic 2 with `extra="ignore"` tolerates
+   missing/extra fields, so existing `settings.json` files won't crash
+   on first load.
+3. If env-overridable, use `Field(..., validation_alias=...)` or rely on
+   the existing `env_prefix="MBFORGE_"` wiring on `AppConfig`.
+4. Add a test in `tests/unit/test_config.py`.
+
+### Adding a new endpoint
+
+`POST /api/v1/settings/reset` is the template: thin router, helper does
+the work. Never write to disk from a router.
+
+### Frontend
+
+`@/api/http/settings` exports `getSettings()` / `saveSettings(partial)`.
+The `RecentProject` type must match the backend Pydantic schema
+(`{root, name}`). Use `root`, never `path`.
+
+### Migration gotchas
+
+If you change a field name or type, existing `settings.json` files on
+disk may fail to deserialize. Either (a) keep a default that the old
+value maps onto, or (b) extend `_migrate_legacy_configs()` with a
+one-shot transform.
+
 ## Important Files
 
 | File | Role |
 |---|---|
-| `src/mbforge/app.py` | App entry — registers all 12 routers, exception handlers, lifespan |
+| `src/mbforge/app.py` | App entry — registers all 18 routers, exception handlers, lifespan |
 | `src/mbforge/server.py` | Dev uvicorn target (lazy prewarm) |
 | `src/mbforge/__main__.py` | `python -m mbforge` → uvicorn on 18792 |
 | `src/mbforge/agent/graph.py` | LangGraph agent graph definition |
 | `src/mbforge/agent/tools.py` | 5 agent tools (KB search, molecule search, doc fetch, notes, settings) |
-| `src/mbforge/pipeline/runner.py` | 5-stage pipeline orchestrator |
+| `src/mbforge/pipeline/runner.py` | 6-stage pipeline orchestrator (Phase 1: extract_molecules added) |
 | `src/mbforge/core/database.py` | SQLite business tables + connection pool |
 | `src/mbforge/core/knowledge_base.py` | KB CRUD + RRF fusion logic |
-| `src/mbforge/backends/zvec_backend.py` | Zvec wrapper (dense + FTS5 + hybrid) |
+| `src/mbforge/openkb/` | OpenKB + PageIndex adapter (vectorless tree reasoning + dense rerank) |
 | `src/mbforge/backends/qwen3.py` | EmbeddingProvider (local sentence-transformers + OpenAI-compatible) |
 | `src/mbforge/utils/helpers.py` | `MBForgeError` + 7 subclasses + `run_sync` |
 | `src/mbforge/utils/logger.py` | `get_logger` + `setup_logging` |
@@ -189,7 +256,7 @@ proxy).
 3. Built-in defaults
 
 **Storage locations** (per project): `{root}/.mbforge/knowledge_base.db` (SQLite),
-`{root}/.mbforge/search.zvec/` (Zvec collection for vectors + FTS), per-project
+OpenKB PageIndex collection managed under `openkb/`, per-project
 semantic cache. Global config: `~/.config/MBForge/config.json` (Linux) /
 `%APPDATA%\MBForge\config\config.json` (Windows).
 
@@ -239,7 +306,7 @@ cd frontend && npm run test -- --coverage       # v8 coverage
 
 - **Test names**: `test_{feature}_{scenario}` (e.g. `test_classify_pdf_returns_paper`).
 - **Test intent**: assertions express *why* the behavior matters, not just *what* it does. Tests that pass when business logic is wrong are design failures.
-- **No mocks of real systems**: use `tmp_path` for FS, real SQLite in `:memory:`, real Zvec test collection.
+- **No mocks of real systems**: use `tmp_path` for FS, real SQLite in `:memory:`, real OpenKB test collection.
 - **Coverage goal**: ≥70% on core logic per `TODO/INDEX.md` P1 items.
 
 ## Documentation

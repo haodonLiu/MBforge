@@ -117,6 +117,9 @@ class TestReset:
 
 class TestMigration:
     def test_migrates_legacy_config_json(self, tmp_settings: Path) -> None:
+        # The autouse fixture in conftest.py pre-writes settings.json with a
+        # library_root; migration requires it absent.
+        (tmp_settings / "settings.json").unlink(missing_ok=True)
         (tmp_settings / "config.json").write_text(
             '{"theme": "light", "language": "en", "llm": {"model": "legacy"}}',
             encoding="utf-8",
@@ -130,6 +133,7 @@ class TestMigration:
         assert (tmp_settings / "settings.json").exists()
 
     def test_migrates_gui_state_recent_projects(self, tmp_settings: Path) -> None:
+        (tmp_settings / "settings.json").unlink(missing_ok=True)
         (tmp_settings / "gui_state.json").write_text(
             '{"recent_projects": [{"root": "/from-gui", "name": "GUIProj"}]}',
             encoding="utf-8",

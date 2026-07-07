@@ -1,17 +1,24 @@
-/** Project management — open, scan, list, file tree, file operations. */
+/**
+ * Project→Library compat shim.
+ *
+ * After the project→library migration retired the legacy `/api/v1/project/*`
+ * router chain, this module exposes the same surface area as the old
+ * `project.ts` so existing importers keep compiling. Each function either
+ * delegates to the corresponding `library.ts` helper or returns a graceful
+ * "no equivalent" placeholder for endpoints that no longer exist
+ * (e.g. `getCommonDirs`, `reingestDocument`).
+ *
+ * New code should use `library.ts` directly.
+ */
 
 import { httpGet, httpPost, invokeWithError } from './_utils'
-import { ErrorCode } from '@/utils/errors'
+import {
+  configureLibrary,
+  deleteDocument as deleteLibraryDocument,
+  listDocuments as listLibraryDocuments,
+} from './library'
 
-/** 获取常用目录列表 */
-export async function getCommonDirs(): Promise<{ name: string; path: string }[]> {
-  try {
-    const resp = await httpGet<{ dirs: { name: string; path: string }[] }>('/api/v1/project/common-dirs')
-    return resp.dirs ?? []
-  } catch {
-    return []
-  }
-}
+// ── Compat: project/open → library/configure ────────────
 
 export interface ProjectInfo {
   name: string
@@ -23,24 +30,46 @@ export type ProjectResponse =
   | { success: true; project: ProjectInfo }
   | { success: false; error: string }
 
-/** 打开或创建项目 */
+/** Open project = configure library root (the only thing the legacy router
+ * actually persisted on the backend). Document count reflects the unified store.
+ */
 export async function openProject(
   root: string,
-  name?: string,
+  _name?: string,
 ): Promise<ProjectResponse> {
   try {
-    const resp = await httpPost<{ success: boolean; root: string; name: string; document_count: number }>(
-      '/api/v1/project/open',
-      { root, name: name ?? null },
-    )
-    if (resp.success) {
-      return { success: true, project: { name: resp.name, root: resp.root, document_count: resp.document_count } }
+    const resp = await configureLibrary(root)
+    if (!resp.success || !resp.root) {
+      return { success: false, error: resp.error ?? 'configure failed' }
     }
-    return { success: false, error: 'open project failed' }
+    const { doc_count } = await invokeWithError(() =>
+      httpGet<{ doc_count: number }>('/api/v1/library/status'),
+    )
+    const name = root.split(/[\\/]/).filter(Boolean).pop() ?? root
+    return {
+      success: true,
+      project: { name, root: resp.root, document_count: doc_count },
+    }
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e)
-    return { success: false, error: msg }
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+// ── Compat: project/common-dirs → returns empty (no backend equivalent) ──
+
+export async function getCommonDirs(): Promise<{ name: string; path: string }[]> {
+  // The library router does not expose common OS folders; the web frontend
+  // has no native shell API to enumerate them either. Return empty so
+  // FolderPicker falls back to manual entry.
+  return []
+}
+
+// ── Compat: project/scan → no equivalent; use listDocuments ──────
+
+export interface ScanWarning {
+  path: string
+  reason: string
+  folder: string
 }
 
 export interface DocumentEntry {
@@ -63,12 +92,6 @@ export interface DocumentEntry {
   index_status?: string
 }
 
-export interface ScanWarning {
-  path: string
-  reason: string
-  folder: string
-}
-
 export interface ScanResponse {
   success: boolean
   documents: DocumentEntry[]
@@ -76,26 +99,27 @@ export interface ScanResponse {
   warnings: ScanWarning[]
 }
 
-/** 扫描项目文件 */
-export async function scanProjectFiles(root: string, recursive = false): Promise<ScanResponse> {
-  return invokeWithError(
-    () => httpPost<ScanResponse>('/api/v1/project/scan', { root, recursive }),
-    ErrorCode.ProjectOpen,
-  )
+/** Legacy filesystem-walk endpoint — no equivalent in the library model.
+ * Returns the documents that the library already knows about. */
+export async function scanProjectFiles(
+  _root: string,
+  _recursive = false,
+): Promise<ScanResponse> {
+  const docs = await listDocumentsTauriWrapper()
+  return {
+    success: true,
+    documents: docs.documents,
+    warnings: [],
+  }
 }
 
-/** 列出项目文档 */
+// ── Compat: project/documents → listDocuments ────────────
+
 export async function listProjectDocuments(
-  root: string,
-  docType?: string,
+  _root: string,
+  _docType?: string,
 ): Promise<{ success: boolean; documents: DocumentEntry[] }> {
-  return invokeWithError(
-    () => httpPost<{ success: boolean; documents: DocumentEntry[] }>('/api/v1/project/documents', {
-      root,
-      doc_type: docType ?? null,
-    }),
-    ErrorCode.ProjectOpen,
-  )
+  return listDocumentsTauriWrapper()
 }
 
 export type IncompleteReason =
@@ -110,15 +134,17 @@ export interface DocumentEntryWithStatus extends DocumentEntry {
 }
 
 export async function listProjectDocumentsWithStatus(
-  root: string,
+  _root: string,
 ): Promise<{ success: boolean; documents: DocumentEntryWithStatus[] }> {
-  return invokeWithError(
-    () => httpPost<{ success: boolean; documents: DocumentEntryWithStatus[] }>(
-      '/api/v1/project/documents',
-      { root, with_status: true },
-    ),
-    ErrorCode.ProjectOpen,
-  )
+  const r = await listDocumentsTauriWrapper()
+  return {
+    success: r.success,
+    documents: r.documents.map(d => ({
+      ...d,
+      is_complete: false,
+      incomplete_reason: 'complete' as IncompleteReason,
+    })),
+  }
 }
 
 export interface DocumentOutputStatus {
@@ -133,116 +159,104 @@ export interface DocumentOutputStatus {
 }
 
 export async function getDocumentOutputStatus(
-  root: string,
+  _root: string,
   docId: string,
 ): Promise<DocumentOutputStatus> {
-  return invokeWithError(
-    () => httpPost<DocumentOutputStatus>('/api/v1/project/documents', {
-      root,
-      doc_id: docId,
-      output_status: true,
-    }),
-    ErrorCode.ProjectOpen,
-  )
+  return {
+    success: false,
+    doc_id: docId,
+    text_md_path: '',
+    text_md_exists: false,
+    report_md_path: '',
+    report_md_exists: false,
+    complete: false,
+    incomplete_reason: 'missing_both',
+  }
 }
 
-export interface FileNode {
-  name: string
-  path: string
-  is_dir: boolean
-  children: FileNode[]
-}
-
-/** 获取项目文件树 */
 export async function getFileTree(
-  root: string,
-): Promise<{ success: boolean; tree: FileNode[] }> {
-  return invokeWithError(
-    () => httpPost<{ success: boolean; tree: FileNode[] }>('/api/v1/project/file-tree', { root }),
-    ErrorCode.ProjectOpen,
-  )
+  _root: string,
+): Promise<{ success: boolean; tree: never[] }> {
+  // Tree building is a filesystem operation that the library router does
+  // not expose. Return empty tree; UI should fall back to listing-only view.
+  return { success: true, tree: [] }
 }
 
-/** 使用系统对话框导入文件到项目 */
-export async function uploadFiles(projectRoot: string): Promise<DocumentEntry[]> {
-  return invokeWithError(
-    () => httpPost<{ success: boolean; documents: DocumentEntry[] }>('/api/v1/project/documents', {
-      root: projectRoot,
-    }),
-    ErrorCode.ProjectOpen,
-  ).then((r) => r.documents)
+export async function uploadFiles(_projectRoot: string): Promise<DocumentEntry[]> {
+  // Web mode has no native file picker; the React UI uses its own uploader.
+  return []
 }
 
-/** 删除项目中的文件 */
-export async function deleteFile(projectRoot: string, docId: string): Promise<boolean> {
-  const resp = await invokeWithError(
-    () => httpPost<{ success: boolean }>('/api/v1/project/documents', {
-      root: projectRoot,
-      action: 'delete',
-      doc_id: docId,
-    }),
-    ErrorCode.ProjectOpen,
-  )
-  return resp.success
+export async function deleteFile(
+  _projectRoot: string,
+  docId: string,
+): Promise<boolean> {
+  return invokeWithError(() => deleteLibraryDocument(docId))
+    .then(() => true)
+    .catch(() => false)
 }
 
-/** 彻底删除 PDF 文档及其所有派生数据。 */
-export async function deleteDocument(projectRoot: string, docId: string): Promise<void> {
-  await invokeWithError(
-    () => httpPost('/api/v1/project/documents', {
-      root: projectRoot,
-      action: 'delete',
-      doc_id: docId,
-      deep: true,
-    }),
-    ErrorCode.ProjectOpen,
-  )
+export async function deleteDocument(
+  _projectRoot: string,
+  docId: string,
+): Promise<void> {
+  await invokeWithError(() => deleteLibraryDocument(docId))
 }
 
-/** 重新读取已有 PDF：清空派生数据后重新入队。 */
-export async function reingestDocument(projectRoot: string, docId: string): Promise<void> {
-  await invokeWithError(
-    () => httpPost('/api/v1/project/documents', {
-      root: projectRoot,
-      action: 'reingest',
-      doc_id: docId,
-    }),
-    ErrorCode.ProjectOpen,
-  )
+export async function reingestDocument(
+  _projectRoot: string,
+  _docId: string,
+): Promise<void> {
+  // No equivalent in library router; the pipeline trigger lives elsewhere.
+  // Intentionally a no-op so existing callers don't crash.
 }
 
-/** 读取文本文件内容 */
-export async function readTextFile(projectRoot: string, path: string): Promise<string> {
-  const resp = await invokeWithError(
-    () => httpPost<{ success: boolean; content: string }>('/api/v1/project/file-tree', {
-      root: projectRoot,
-      action: 'read',
-      path,
-    }),
-    ErrorCode.ProjectOpen,
-  )
-  return resp.content
+export async function readTextFile(
+  _projectRoot: string,
+  path: string,
+): Promise<string> {
+  // The legacy `/api/v1/project/file-tree?action=read` endpoint no longer
+  // exists. For paths under the dev server's public root we can still
+  // fetch them; otherwise this throws and the caller's error path runs.
+  const url = path.startsWith('/') || path.startsWith('http') ? path : `/${path}`
+  const r = await fetch(url)
+  if (!r.ok) throw new Error(`readTextFile ${path}: HTTP ${r.status}`)
+  return await r.text()
 }
 
-/** 将项目中所有未解析的 PDF 自动加入处理队列，返回实际入队数量。 */
-export async function enqueueUnresolvedDocuments(root: string): Promise<number> {
-  const resp = await invokeWithError(
-    () => httpPost<{ success: boolean; enqueued: number }>('/api/v1/pipeline/enqueue', {
-      project_root: root,
-      action: 'enqueue_unresolved',
-    }),
-    ErrorCode.ProjectOpen,
-  )
-  return resp.enqueued
+export async function enqueueUnresolvedDocuments(_root: string): Promise<number> {
+  // Library router does not expose this functionality yet. Returning 0 keeps
+  // existing buttons no-op and toast-safe.
+  return 0
 }
 
-/** 列出项目文档（与 client.ts listDocuments 兼容的包装） */
 export async function listDocumentsTauri(
-  root: string,
+  _root?: string,
 ): Promise<{ success: boolean; documents: DocumentEntry[]; error?: string }> {
+  return listDocumentsTauriWrapper()
+}
+
+// ── Internal: map library.ts DocumentInfo → project.ts DocumentEntry ──
+
+async function listDocumentsTauriWrapper(): Promise<{
+  success: boolean
+  documents: DocumentEntry[]
+  error?: string
+}> {
   try {
-    const resp = await listProjectDocuments(root)
-    return { success: true, documents: resp.documents }
+    const { documents } = await listLibraryDocuments()
+    return {
+      success: true,
+      documents: documents.map(d => ({
+        doc_id: d.doc_id,
+        path: d.file_name,
+        doc_type: '',
+        title: d.title,
+        indexed: d.status === 'indexed',
+        added_at: d.created_at,
+        hash: '',
+      })),
+    }
   } catch (e) {
     return { success: false, documents: [], error: String(e) }
   }

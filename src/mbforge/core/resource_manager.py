@@ -690,52 +690,52 @@ def _check_resource(resource_id: str) -> ResourceStatusResult:
     """检查单个资源的状态.
 
     优先读取 Rust 写入的 resolved_paths.json（单一真相源），
-    未命中时回退到本地文件系统扫描。
+    未命中时回退到本地文件系统扫描。单个资源异常不会影响其他资源。
     """
-    info = RESOURCE_CATALOG.get(resource_id)
-    if info is None:
-        return ResourceStatusResult(
-            id=resource_id,
-            name=resource_id,
-            type=ResourceType.MODEL,
-            status=ResourceStatus.ERROR,
-            error=f"未知资源: {resource_id}",
-        )
-
-    # 1. 优先读取 Rust 解析结果（snapshot/file 模型均适用）
-    if info.type == ResourceType.MODEL:
-        resolved = _read_resolved_paths()
-        if resolved and resource_id in resolved:
-            path = Path(resolved[resource_id])
-            if path.exists():
-                # 计算大小
-                try:
-                    if path.is_file():
-                        size_mb = round(path.stat().st_size / 1024 / 1024, 1)
-                    else:
-                        size_mb = round(
-                            sum(
-                                f.stat().st_size for f in path.rglob("*") if f.is_file()
-                            )
-                            / 1024
-                            / 1024,
-                            1,
-                        )
-                except Exception:
-                    size_mb = 0.0
-                return ResourceStatusResult(
-                    id=info.id,
-                    name=info.name,
-                    type=info.type,
-                    status=ResourceStatus.READY,
-                    local_path=str(path),
-                    size_mb=size_mb,
-                )
-            # 路径已失效（文件被删除），继续扫描
-            logger.warning(f"Resolved path for {resource_id} no longer exists: {path}")
-
-    # 2. 回退到本地扫描
     try:
+        info = RESOURCE_CATALOG.get(resource_id)
+        if info is None:
+            return ResourceStatusResult(
+                id=resource_id,
+                name=resource_id,
+                type=ResourceType.MODEL,
+                status=ResourceStatus.ERROR,
+                error=f"未知资源: {resource_id}",
+            )
+
+        # 1. 优先读取 Rust 解析结果（snapshot/file 模型均适用）
+        if info.type == ResourceType.MODEL:
+            resolved = _read_resolved_paths()
+            if resolved and resource_id in resolved:
+                path = Path(resolved[resource_id])
+                if path.exists():
+                    # 计算大小
+                    try:
+                        if path.is_file():
+                            size_mb = round(path.stat().st_size / 1024 / 1024, 1)
+                        else:
+                            size_mb = round(
+                                sum(
+                                    f.stat().st_size for f in path.rglob("*") if f.is_file()
+                                )
+                                / 1024
+                                / 1024,
+                                1,
+                            )
+                    except Exception:
+                        size_mb = 0.0
+                    return ResourceStatusResult(
+                        id=info.id,
+                        name=info.name,
+                        type=info.type,
+                        status=ResourceStatus.READY,
+                        local_path=str(path),
+                        size_mb=size_mb,
+                    )
+                # 路径已失效（文件被删除），继续扫描
+                logger.warning(f"Resolved path for {resource_id} no longer exists: {path}")
+
+        # 2. 回退到本地扫描
         if info.type == ResourceType.MODEL:
             if info.download_type == "file":
                 return _check_model_file(info)
@@ -760,8 +760,8 @@ def _check_resource(resource_id: str) -> ResourceStatusResult:
     except Exception as e:
         return ResourceStatusResult(
             id=resource_id,
-            name=info.name,
-            type=info.type,
+            name=resource_id,
+            type=ResourceType.MODEL,
             status=ResourceStatus.ERROR,
             error=str(e),
         )

@@ -89,7 +89,7 @@ async def resources_model_path(body: dict) -> dict:
 @router.post("/resources/catalog")
 async def resources_catalog() -> dict:
     report = ResourceManager.check_all()
-    return [
+    return {"resources": [
         {
             "id": r.id,
             "name": r.name,
@@ -100,7 +100,7 @@ async def resources_catalog() -> dict:
             "size_mb": r.size_mb,
         }
         for r in report.resources
-    ]
+    ]}
 
 
 @router.post("/resources/refresh-paths")

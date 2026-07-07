@@ -1,5 +1,5 @@
 import { Card } from '../../ui'
-import MoleculeDisplay from '../../molecule/MoleculeDisplay'
+import MoleculeDisplay from '@/components/molecule/MoleculeDisplay'
 
 export interface CoreScaffoldCardProps {
   coreSmiles: string

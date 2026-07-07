@@ -3,9 +3,9 @@
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import Tabs, { TabPanel } from '../ui/Tabs'
+import Tabs, { TabPanel } from '@/components/ui/Tabs'
 import ModelConfigCard from './ModelConfigCard'
-import SectionTitle from '../ui/SectionTitle'
+import SectionTitle from '@/components/ui/SectionTitle'
 import type { SettingsState } from './types'
 
 type Tab = 'llm' | 'vlm' | 'ocr'

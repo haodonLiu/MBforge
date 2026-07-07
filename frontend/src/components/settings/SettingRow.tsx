@@ -3,10 +3,10 @@
 // 让每个 section 写起来像表单而不是一堆 <div> 套娃。
 
 import type { ReactNode } from 'react'
-import Input from '../ui/Input'
-import Switch from '../ui/Switch'
-import { SettingItem } from '../ui/SettingSection'
-import Caption from '../ui/Caption'
+import Input from '@/components/ui/Input'
+import Switch from '@/components/ui/Switch'
+import { SettingItem } from '@/components/ui/SettingSection'
+import Caption from '@/components/ui/Caption'
 import ApiKeyInput from './ApiKeyInput'
 
 // ────────── 文本字段 ──────────

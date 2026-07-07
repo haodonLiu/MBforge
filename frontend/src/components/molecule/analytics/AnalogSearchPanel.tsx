@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { showToast } from '../../../hooks/useToast'
-import { molFindAnalogsWithActivity } from '../../../api/http/molecule'
-import type { AnalogWithActivity } from '../../../api/http/molecule'
-import type { MoleculeRecord } from '../../../types'
+import { showToast } from '@/hooks/useToast'
+import { molFindAnalogsWithActivity } from '@/api/http/molecule'
+import type { AnalogWithActivity } from '@/api/http/molecule'
+import type { MoleculeRecord } from '@/types'
 import { Card, Slider, Button, DataTable, Select } from '../../ui'
 
 export interface AnalogSearchPanelProps {

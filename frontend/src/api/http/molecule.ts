@@ -1,8 +1,8 @@
 /** Molecule store + analysis wrappers (compatible with client.ts). */
 
 import { httpPost, httpPut, httpDelete, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
-import type { MoleculeRecord } from '../../types'
+import { ErrorCode } from '@/utils/errors'
+import type { MoleculeRecord } from '@/types'
 import {
   molAdminStoreStats,
   molAdminList,

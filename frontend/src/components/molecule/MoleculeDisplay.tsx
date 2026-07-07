@@ -3,10 +3,10 @@ import { motion } from 'framer-motion'
 import { CheckIcon, AlertIcon, InfoIcon } from '../icons'
 import { smilesToImgUrl, basicValidate } from './moleculeUtils'
 import ConfidenceBadge from './ConfidenceBadge'
-import { useMoleculeDisplay } from '../../hooks/useMoleculeDisplay'
+import { useMoleculeDisplay } from '@/hooks/useMoleculeDisplay'
 
 const MermaidCode = lazy(() =>
-  import('../ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
+  import('@/components/ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
 )
 
 export interface MoleculeDisplayProps {

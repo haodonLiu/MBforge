@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { OcrBlock } from '../api/http/pdf'
-import { pdfToCss } from '../utils/pdf'
+import type { OcrBlock } from '@/api/http/pdf'
+import { pdfToCss } from '@/utils/pdf'
 
 interface Props {
   blocks: OcrBlock[]

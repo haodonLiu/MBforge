@@ -1,7 +1,7 @@
 /** Notes API — project-level note storage via HTTP. */
 
 import { httpPost, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { ErrorCode } from '@/utils/errors'
 
 export interface NoteLink {
   type: 'molecule' | 'document' | 'session' | 'note'

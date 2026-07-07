@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import Badge from '../ui/Badge'
+import Badge from '@/components/ui/Badge'
 import type { CorrectionItem } from './CorrectionPanel'
 
 interface StatusBadgeProps {

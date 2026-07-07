@@ -1,7 +1,7 @@
 /** 模型下载 — HTTP API (替代 Tauri IPC) */
 
 import { httpPost, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { ErrorCode } from '@/utils/errors'
 
 export interface SubfileStatus {
   label: string          // 友好标签，如 "doc" / "general"

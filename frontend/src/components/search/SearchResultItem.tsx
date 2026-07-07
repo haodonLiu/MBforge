@@ -1,9 +1,9 @@
 import { useTranslation } from 'react-i18next'
 import { FileTextIcon } from '../icons'
-import Card from '../ui/Card'
-import BodyText from '../ui/BodyText'
-import Badge from '../ui/Badge'
-import { showToast } from '../../hooks/useToast'
+import Card from '@/components/ui/Card'
+import BodyText from '@/components/ui/BodyText'
+import Badge from '@/components/ui/Badge'
+import { showToast } from '@/hooks/useToast'
 
 export interface SearchResultItemData {
   id: string

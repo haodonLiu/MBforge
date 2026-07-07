@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { showToast } from '../../../hooks/useToast'
-import { molDedupBatch } from '../../../api/http/molecule'
-import type { DedupResult } from '../../../api/http/molecule'
-import type { MoleculeRecord } from '../../../types'
+import { showToast } from '@/hooks/useToast'
+import { molDedupBatch } from '@/api/http/molecule'
+import type { DedupResult } from '@/api/http/molecule'
+import type { MoleculeRecord } from '@/types'
 import { Card, Button, Slider, SectionTitle, AlertBanner, ResponsiveStatGrid, StatCard, DataTable } from '../../ui'
 
 export interface DedupPanelProps {

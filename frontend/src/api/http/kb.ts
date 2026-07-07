@@ -1,7 +1,7 @@
 /** Knowledge base — indexing, semantic search, document structure & pages. */
 
 import { httpPost, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { ErrorCode } from '@/utils/errors'
 import { connectSSE } from './sse'
 
 export interface IndexResult {

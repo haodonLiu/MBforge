@@ -1,7 +1,7 @@
 /** Cheminformatics pure-computation HTTP API wrappers. */
 
 import { httpPost, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { ErrorCode } from '@/utils/errors'
 
 // ============================================================================
 // Types

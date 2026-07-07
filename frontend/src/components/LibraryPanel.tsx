@@ -2,15 +2,15 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileTextIcon, PlusIcon, SettingsIcon } from './icons'
 import GroupsPanel from './GroupsPanel'
-import { useAppContext } from '../context/AppContext'
+import { useAppContext } from '@/context/AppContext'
 import {
   getLibraryStatus,
   importDocument,
   listCollections,
   createCollection,
   type CollectionNode,
-} from '../api/http/library'
-import { showToast } from '../hooks/useToast'
+} from '@/api/http/library'
+import { showToast } from '@/hooks/useToast'
 
 export default function LibraryPanel() {
   const { t } = useTranslation()

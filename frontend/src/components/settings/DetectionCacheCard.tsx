@@ -6,8 +6,8 @@ import { useTranslation } from 'react-i18next'
 import { getDetectionCacheStats, clearDetectionCache } from '../../api/http'
 import { useAppContext } from '../../context/AppContext'
 import { showToast } from '../../hooks/useToast'
-import Button from '../ui/Button'
-import Caption from '../ui/Caption'
+import Button from '@/components/ui/Button'
+import Caption from '@/components/ui/Caption'
 
 function formatBytes(n: number) {
   if (n < 1024) return `${n} B`

@@ -1,10 +1,10 @@
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
-import Input from '../ui/Input'
-import Caption from '../ui/Caption'
-import Badge from '../ui/Badge'
-import Button from '../ui/Button'
-import Spinner from '../ui/Spinner'
+import Input from '@/components/ui/Input'
+import Caption from '@/components/ui/Caption'
+import Badge from '@/components/ui/Badge'
+import Button from '@/components/ui/Button'
+import Spinner from '@/components/ui/Spinner'
 import { TrashIcon } from '../icons'
 
 // ============ ModelSelector ============

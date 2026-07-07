@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import type { ExtractionResult, DetectionBox } from '../types'
-import { pdfToCss } from '../utils/pdf'
+import type { ExtractionResult, DetectionBox } from '@/types'
+import { pdfToCss } from '@/utils/pdf'
 
 interface Props {
   /** MolDet 检测结果列表 */

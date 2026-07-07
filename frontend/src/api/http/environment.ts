@@ -1,7 +1,7 @@
 /** Resource manager — environment check, model paths, catalog via HTTP. */
 
 import { httpPost, httpGet, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { ErrorCode } from '@/utils/errors'
 
 export interface ResourceStatusItem {
   id: string

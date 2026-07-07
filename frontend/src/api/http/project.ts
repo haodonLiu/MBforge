@@ -1,7 +1,7 @@
 /** Project management — open, scan, list, file tree, file operations. */
 
 import { httpGet, httpPost, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { ErrorCode } from '@/utils/errors'
 
 /** 获取常用目录列表 */
 export async function getCommonDirs(): Promise<{ name: string; path: string }[]> {

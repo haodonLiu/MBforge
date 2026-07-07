@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Card, ResponsiveGrid } from '../ui'
 import { FlaskIcon, BarChartIcon, SparklesIcon, TargetIcon } from '../icons'
-import type { SARSession, SARCompound } from '../../types'
+import type { SARSession, SARCompound } from '@/types'
 
 interface SessionOverviewProps {
   session: SARSession

@@ -3,7 +3,7 @@ import {
   ingestList,
   type IngestTask,
   type IngestEmbedEvent,
-} from '../../../api/http/ingest_queue'
+} from '@/api/http/ingest_queue'
 
 export type EmbedSubState = {
   action: 'start' | 'done' | 'failed' | 'skipped'

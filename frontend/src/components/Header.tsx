@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { HelpIcon } from './icons'
-import IconButton from './ui/IconButton'
+import IconButton from '@/components/ui/IconButton'
 import HelpPopover from './HelpPopover'
 
 interface HeaderProps {

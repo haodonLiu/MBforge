@@ -1,5 +1,5 @@
-import type { MoleculeRecord } from '../../types'
-import type { SARSession } from '../../types'
+import type { MoleculeRecord } from '@/types'
+import type { SARSession } from '@/types'
 
 export function moleculesToSession(molecules: MoleculeRecord[]): SARSession {
   return {

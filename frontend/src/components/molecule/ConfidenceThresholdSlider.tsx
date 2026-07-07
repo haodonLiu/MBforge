@@ -13,8 +13,8 @@
  *   "置信度阈值 ≥ 0.50 （仅高置信度自动确认）"
  */
 
-import Slider from '../ui/Slider'
-import { useConfidenceThreshold, MIN_THRESHOLD, MAX_THRESHOLD, STEP } from '../../hooks/useConfidenceThreshold'
+import Slider from '@/components/ui/Slider'
+import { useConfidenceThreshold, MIN_THRESHOLD, MAX_THRESHOLD, STEP } from '@/hooks/useConfidenceThreshold'
 
 export interface ConfidenceThresholdSliderProps {
   /** 紧凑模式：去掉 label，节省空间 */

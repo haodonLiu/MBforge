@@ -1,7 +1,7 @@
 /** Ingest queue — 文档处理队列操作 via HTTP. */
 
 import { httpPost, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { ErrorCode } from '@/utils/errors'
 
 export interface IngestTask {
   id: string

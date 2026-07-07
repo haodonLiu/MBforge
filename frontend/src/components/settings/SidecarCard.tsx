@@ -5,8 +5,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { sidecarStatus, sidecarRestart, type SidecarStatus } from '../../api/http/sidecar'
 import { showToast } from '../../hooks/useToast'
-import Button from '../ui/Button'
-import Caption from '../ui/Caption'
+import Button from '@/components/ui/Button'
+import Caption from '@/components/ui/Caption'
 
 function formatUptime(secs: number): string {
   if (secs < 60) return `${secs} s`

@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
-import { showToast } from '../../../hooks/useToast'
+import { showToast } from '@/hooks/useToast'
 import {
   molGetStats,
   molFindByMolecule,
   molAddRelation,
   molDeleteRelation,
-} from '../../../api/http/molecule'
-import type { RelationStats, MoleculeRelation } from '../../../api/http/molecule'
-import type { MoleculeRecord } from '../../../types'
+} from '@/api/http/molecule'
+import type { RelationStats, MoleculeRelation } from '@/api/http/molecule'
+import type { MoleculeRecord } from '@/types'
 import { Card, Button, SectionTitle, Input, DataTable, Select, ResponsiveStatGrid, StatCard } from '../../ui'
 
 export interface RelationPanelProps {

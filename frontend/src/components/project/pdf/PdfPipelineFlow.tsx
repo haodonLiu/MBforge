@@ -1,7 +1,7 @@
 import type { FC } from 'react'
 import { TargetIcon, FileTextIcon, EyeIcon, CheckIcon, XIcon, FlaskIcon, NetworkIcon, EmbedIcon } from '../../icons'
-import type { IngestTask } from '../../../api/http/ingest_queue'
-import ProgressBar from '../../ui/ProgressBar'
+import type { IngestTask } from '@/api/http/ingest_queue'
+import ProgressBar from '@/components/ui/ProgressBar'
 import '../../../styles/pdf-pipeline-flow.css'
 
 type PipelineVariant = 'compact' | 'full'

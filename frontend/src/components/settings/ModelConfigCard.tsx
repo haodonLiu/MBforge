@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getLlmEnvConfig, testLlmConnection, type LlmEnvStatus } from '../../api/http/agent'
 import { openExternalUrl } from '@/api/http/_utils'
-import SettingSection, { SettingGroup, SettingItem } from '../ui/SettingSection'
-import Button from '../ui/Button'
-import Badge, { type BadgeTone } from '../ui/Badge'
-import InlineAlert from '../ui/InlineAlert'
+import SettingSection, { SettingGroup, SettingItem } from '@/components/ui/SettingSection'
+import Button from '@/components/ui/Button'
+import Badge, { type BadgeTone } from '@/components/ui/Badge'
+import InlineAlert from '@/components/ui/InlineAlert'
 import {
   NumberField,
   ProviderField,

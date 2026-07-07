@@ -7,7 +7,7 @@
  */
 
 import { httpGet, httpPost, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { ErrorCode } from '@/utils/errors'
 
 export interface SidecarStatus {
   healthy: boolean

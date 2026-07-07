@@ -22,8 +22,8 @@ import {
   ingestStats,
   type IngestTask,
   type QueueStats,
-} from '../../api/http/ingest_queue'
-import { showToast } from '../../hooks/useToast'
+} from '@/api/http/ingest_queue'
+import { showToast } from '@/hooks/useToast'
 
 import { useAppContext } from '../../context/AppContext'
 

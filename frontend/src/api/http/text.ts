@@ -1,7 +1,7 @@
 /** Text utilities — chunking, page classification, structured extraction. */
 
 import { httpPost, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { ErrorCode } from '@/utils/errors'
 
 // ---- text_ops ----
 

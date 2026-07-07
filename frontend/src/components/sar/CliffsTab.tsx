@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { SectionTitle, Card, EmptyState, AlertBanner, Button } from '../ui'
-import { molFindActivityCliffs, molScaffoldProfile } from '../../api/http/molecule'
-import type { ActivityCliff, ScaffoldProfile } from '../../api/http/molecule'
-import type { SARSession } from '../../types'
+import { molFindActivityCliffs, molScaffoldProfile } from '@/api/http/molecule'
+import type { ActivityCliff, ScaffoldProfile } from '@/api/http/molecule'
+import type { SARSession } from '@/types'
 
 const DEFAULT_MIN_SIMILARITY = 0.7
 const DEFAULT_MIN_RATIO = 5

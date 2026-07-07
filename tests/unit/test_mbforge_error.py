@@ -23,9 +23,18 @@ class TestMBForgeError:
         assert exc.detail is None
 
     def test_default_category_is_class_module(self) -> None:
-        exc = MBForgeError("boom")
-        assert exc.category.endswith("test_mbforge_error")
-        assert "tests.unit" in exc.category
+        # Default category is the module where the *concrete subclass* was
+        # defined, not where the raise statement lives. Subclasses can
+        # always override via the `category=` keyword.
+        v = ValidationError("bad input")
+        assert v.category == "mbforge.utils.helpers"
+
+    def test_subclass_can_override_category(self) -> None:
+        v = ValidationError(
+            "bad input", category="routers.notes", context={"field": "root"}
+        )
+        assert v.category == "routers.notes"
+        assert v.context == {"field": "root"}
 
     def test_explicit_severity_override(self) -> None:
         exc = MBForgeError("warn", severity="warning", category="routers.test")

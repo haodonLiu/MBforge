@@ -1,5 +1,5 @@
 import RelationPanel from '../analytics/RelationPanel'
-import type { MoleculeRecord } from '../../../types'
+import type { MoleculeRecord } from '@/types'
 
 export interface RelationsTabProps {
   molecules: MoleculeRecord[]

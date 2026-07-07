@@ -1,7 +1,7 @@
 /** Agent session management + post-process PDF reporting via HTTP. */
 
 import { httpPost, httpGet, httpPut, httpDelete, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { ErrorCode } from '@/utils/errors'
 
 // ---- agent (session-based, per-conversation isolation) ----
 

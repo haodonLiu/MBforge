@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
-import { showToast } from '../../../hooks/useToast'
+import { showToast } from '@/hooks/useToast'
 import {
   molListClusters,
   molGetClusterMembers,
   molAssignCluster,
   molRemoveFromCluster,
-} from '../../../api/http/molecule'
-import type { ClusterInfo } from '../../../api/http/molecule'
-import type { MoleculeRecord } from '../../../types'
+} from '@/api/http/molecule'
+import type { ClusterInfo } from '@/api/http/molecule'
+import type { MoleculeRecord } from '@/types'
 import { Card, Button, SectionTitle, Input, Select } from '../../ui'
 
 export interface ClusterPanelProps {

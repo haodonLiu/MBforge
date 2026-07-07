@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import SettingSection, { SettingGroup } from '../ui/SettingSection'
+import SettingSection, { SettingGroup } from '@/components/ui/SettingSection'
 import { CustomField } from './SettingRow'
-import Button from '../ui/Button'
+import Button from '@/components/ui/Button'
 import { showToast } from '../../hooks/useToast'
 import { fetchBuildInfo, exportSettings, resetSettings } from '../../api/http/settings'
 

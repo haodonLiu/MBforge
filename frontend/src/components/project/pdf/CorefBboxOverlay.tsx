@@ -16,8 +16,8 @@
 
 import { useMemo } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
-import type { FigureLabel, CorefPrediction } from '../../../api/http/result_pane'
-import { pdfToCss } from '../../../utils/pdf'
+import type { FigureLabel, CorefPrediction } from '@/api/http/result_pane'
+import { pdfToCss } from '@/utils/pdf'
 
 export interface CorefBboxOverlayProps {
   /** OCR 检出的 label 标注（confidence 可用于过滤） */

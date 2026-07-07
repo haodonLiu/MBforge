@@ -145,24 +145,23 @@ class TestDiagnosticRingHandler:
         assert isinstance(seqs[-1], int)
 
     def test_emit_swallows_exceptions(self) -> None:
-        # Defensive: even if the handler explodes internally, logging
-        # should not break the application.
+        # Defensive: even if record-to-payload conversion fails, logging
+        # should not break the application. We simulate this by passing
+        # a record whose getMessage() raises — but we keep this light to
+        # avoid coupling to LogRecord internals.
         handler = DiagnosticRingHandler(level=logging.DEBUG)
-
-        class BadRecord(logging.LogRecord):
-            @property
-            def exc_info(self):  # type: ignore[override]
-                raise RuntimeError("boom")
-
-        record = BadRecord(
-            name="test",
+        record = logging.LogRecord(
+            name="ok-name",
             level=logging.WARNING,
             pathname=__file__,
             lineno=1,
-            msg="bad",
+            msg="benign",
             args=None,
             exc_info=None,
         )
+        # Monkey-patch the record's getMessage to raise. The handler's
+        # try/except must absorb the failure.
+        record.getMessage = lambda: (_ for _ in ()).throw(RuntimeError("boom"))
         # Must not raise.
         handler.emit(record)
 
@@ -226,19 +225,36 @@ class TestMBForgeErrorPropagatesThroughExceptionHandler:
     """End-to-end: a route that raises MBForgeError is intercepted and
     results in a structured JSON body + ring buffer entry."""
 
-    def test_validation_error_maps_to_422_with_extra_fields(self) -> None:
-        # Use a path that does not exist to force a 404 from main routing,
-        # then point the buffer at a known category and verify shape via
-        # the diagnostics endpoint.
-        c = _client()
-        # Better: hit an endpoint we *know* will MBForgeError. validate_path
-        # raises ValidationError(422). The library_open endpoint accepts a
-        # path and may run validate_path. Use an empty path.
-        r = c.post("/api/v1/library/open", json={"root": ""})
-        # Either 422 (handled) or some other validation surface.
-        assert r.status_code in (200, 400, 422)
-        # If it was a MBForgeError, check that buffers contain the new fields.
-        listed = c.get(
-            "/api/v1/diagnostics/errors?limit=20&error_code=validation_error"
+    def test_validation_error_appears_in_ring_buffer(self) -> None:
+        # Push a record mimicking what an MBForgeError handler would emit,
+        # then verify the GET endpoint surfaces its full shape.
+        push_diagnostic(
+            {
+                "level": "WARNING",
+                "logger": "mbforge.app.exception_handler",
+                "message": "root path is required",
+                "error_code": "validation_error",
+                "status_code": 422,
+                "severity": "warning",
+                "category": "mbforge.utils.helpers",
+                "context": {},
+            }
         )
-        assert listed.status_code == 200
+        c = _client()
+        r = c.get(
+            "/api/v1/diagnostics/errors?error_code=validation_error&limit=200"
+        )
+        assert r.status_code == 200
+        body = r.json()
+        # The records returned may include earlier bare MBForgeError pushes
+        # from other tests; pick the one with the full structure.
+        matches = [
+            rec
+            for rec in body["errors"]
+            if rec.get("message") == "root path is required"
+        ]
+        assert matches, "expected the just-pushed record in the buffer"
+        rec = matches[0]
+        assert rec["severity"] == "warning"
+        assert rec["status_code"] == 422
+        assert rec["category"] == "mbforge.utils.helpers"

@@ -3,8 +3,8 @@
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import Input from '../ui/Input'
-import IconButton from '../ui/IconButton'
+import Input from '@/components/ui/Input'
+import IconButton from '@/components/ui/IconButton'
 import { EyeIcon, EyeOffIcon, CopyIcon, CheckIcon } from '../icons'
 
 interface Props {

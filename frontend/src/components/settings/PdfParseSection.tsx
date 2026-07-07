@@ -1,7 +1,7 @@
 // PDF 解析栏目 — 文本切块。
 
 import { useTranslation } from 'react-i18next'
-import SettingSection, { SettingGroup } from '../ui/SettingSection'
+import SettingSection, { SettingGroup } from '@/components/ui/SettingSection'
 import { NumberField, ToggleField } from './SettingRow'
 import type { SettingsState } from './types'
 

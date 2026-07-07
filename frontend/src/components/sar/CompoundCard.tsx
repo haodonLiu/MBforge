@@ -1,5 +1,5 @@
-import type { SARCompound } from '../../types'
-import MoleculeDisplay from '../molecule/MoleculeDisplay'
+import type { SARCompound } from '@/types'
+import MoleculeDisplay from '@/components/molecule/MoleculeDisplay'
 import Badge from '../ui/Badge'
 
 interface Props {

@@ -5,7 +5,7 @@ import AnalogSearchPanel from '../analytics/AnalogSearchPanel'
 import ClusterPanel from '../analytics/ClusterPanel'
 import RelationPanel from '../analytics/RelationPanel'
 import DedupPanel from '../analytics/DedupPanel'
-import type { MoleculeRecord } from '../../../types'
+import type { MoleculeRecord } from '@/types'
 
 type AnalyticsInnerTab = 'substructure' | 'analogs' | 'clusters' | 'relations' | 'dedup'
 

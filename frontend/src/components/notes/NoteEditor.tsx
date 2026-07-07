@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, type ChangeEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Card } from '../ui'
-import EditorToolbar from './editor/EditorToolbar'
-import EditView from './editor/EditView'
-import MarkdownWithWikiLinks from './editor/MarkdownWithWikiLinks'
-import type { Note, NoteLink } from './editor/types'
+import EditorToolbar from '@/components/notes/editor/EditorToolbar'
+import EditView from '@/components/notes/editor/EditView'
+import MarkdownWithWikiLinks from '@/components/notes/editor/MarkdownWithWikiLinks'
+import type { Note, NoteLink } from '@/components/notes/editor/types'
 
 // ============================================================================
 // 主组件
@@ -257,4 +257,4 @@ export default function NoteEditor({
 }
 
 // 重导出类型供父组件 (Notes.tsx) 使用
-export type { Note, NoteLink } from './editor/types'
+export type { Note, NoteLink } from '@/components/notes/editor/types'

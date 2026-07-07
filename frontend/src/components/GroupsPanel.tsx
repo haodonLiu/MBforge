@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronRightIcon, ChevronDownIcon, FolderIcon, PlusIcon } from './icons'
-import type { CollectionNode } from '../api/http/library'
+import type { CollectionNode } from '@/api/http/library'
 
 interface Props {
   collections: CollectionNode[]

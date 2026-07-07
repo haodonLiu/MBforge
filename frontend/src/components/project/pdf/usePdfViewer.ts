@@ -6,14 +6,14 @@ import {
   extractPdfImages,
   type ImageRef,
 } from '../../../services/pdfService'
-import { getDocumentOcrLayout } from '../../../api/http/pdf'
-import { showToast } from '../../../hooks/useToast'
-import { extractRoiText } from '../../../utils/roiText'
-import type { DocumentEntry, ExtractionResult } from '../../../types'
-import type { OcrBlock } from '../../../api/http/pdf'
-import type { FigureLabel, CorefPrediction } from '../../../api/http/result_pane'
-import { getFigureLabels, getCorefPredictions } from '../../../api/http/result_pane'
-import { getFigureBboxes as fetchFigureBboxes } from '../../../api/http/pdf'
+import { getDocumentOcrLayout } from '@/api/http/pdf'
+import { showToast } from '@/hooks/useToast'
+import { extractRoiText } from '@/utils/roiText'
+import type { DocumentEntry, ExtractionResult } from '@/types'
+import type { OcrBlock } from '@/api/http/pdf'
+import type { FigureLabel, CorefPrediction } from '@/api/http/result_pane'
+import { getFigureLabels, getCorefPredictions } from '@/api/http/result_pane'
+import { getFigureBboxes as fetchFigureBboxes } from '@/api/http/pdf'
 
 export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
   // 置信度阈值（0-1）

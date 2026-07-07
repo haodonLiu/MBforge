@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { SectionTitle, Button, ResponsiveGrid } from '../ui'
 import { ExternalLinkIcon } from '../icons'
-import { showToast } from '../../hooks/useToast'
+import { showToast } from '@/hooks/useToast'
 import CompoundCard from './CompoundCard'
-import type { SARSession } from '../../types'
+import type { SARSession } from '@/types'
 
 interface OverviewTabProps {
   session: SARSession

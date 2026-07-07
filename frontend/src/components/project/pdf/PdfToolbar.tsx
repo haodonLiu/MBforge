@@ -1,7 +1,7 @@
 import { CheckIcon, ArrowLeftIcon } from '../../icons'
-import IconButton from '../../ui/IconButton'
-import Caption from '../../ui/Caption'
-import type { DocumentEntry } from '../../../types'
+import IconButton from '@/components/ui/IconButton'
+import Caption from '@/components/ui/Caption'
+import type { DocumentEntry } from '@/types'
 
 interface Props {
   doc: DocumentEntry

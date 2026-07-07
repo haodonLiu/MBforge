@@ -1,6 +1,6 @@
 import { AlertBanner } from '../ui'
 import RGroupMatrix from './RGroupMatrix'
-import type { SARSession, SARCompound } from '../../types'
+import type { SARSession, SARCompound } from '@/types'
 
 interface RGroupTabProps {
   session: SARSession

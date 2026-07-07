@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { esmilesToMolecode } from '../../api/http/molecule'
+import { esmilesToMolecode } from '@/api/http/molecule'
 import { Editor } from 'ketcher-react'
 import { StandaloneStructServiceProvider } from 'ketcher-standalone'
 import 'ketcher-react/dist/index.css'
 import { XIcon } from '../icons'
-import ScrollColumn from '../ui/ScrollColumn'
+import ScrollColumn from '@/components/ui/ScrollColumn'
 
 const structServiceProvider = new StandaloneStructServiceProvider()
 

@@ -1,11 +1,11 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Card, EmptyState, Spinner } from '../ui'
-import type { SARCompound } from '../../types'
+import type { SARCompound } from '@/types'
 import type {
   RGroupMatrix as RGroupMatrixData,
   ActivityHeatmapEntry,
-} from '../../api/http/sar'
-import { sarBuildMatrix, sarHeatmap } from '../../api/http/sar'
+} from '@/api/http/sar'
+import { sarBuildMatrix, sarHeatmap } from '@/api/http/sar'
 import CoreScaffoldCard from './rgroup/CoreScaffoldCard'
 import MatrixTable from './rgroup/MatrixTable'
 import HeatmapPanel from './rgroup/HeatmapPanel'

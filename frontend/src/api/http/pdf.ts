@@ -1,7 +1,7 @@
 /** PDF processing — classify, extract, parse, full pipeline. */
 
 import { httpPost, invokeWithError } from './_utils'
-import { ErrorCode } from '../../utils/errors'
+import { ErrorCode } from '@/utils/errors'
 import type { ActivityData, DocumentClassification } from './text'
 
 // ---- pdf-inspector ----

@@ -185,11 +185,11 @@ R-group 名称在存储和比较前归一化：
 
 | 文件 | 功能 |
 |------|------|
-| `src-tauri/src/core/esmiles.rs` | SMILES ↔ E-SMILES 转换 |
-| `src-tauri/src/parsers/chem_validate.rs` | `separate_esmiles_layers()` 三层分离 |
-| `src-tauri/src/core/markush.rs` | E-SMILES 解析 + Markush 匹配 |
-| `src-tauri/src/core/abbreviation_map.rs` | 名称归一化 |
-| `src-tauri/docs/esmiles/` | 原始规范文档 |
+| `src/mbforge/chem/esmiles.py` | SMILES ↔ E-SMILES 转换 |
+| `src/mbforge/parsers/molecule/chem_validate.py` | `separate_esmiles_layers()` 三层分离 |
+| `src/mbforge/chem/markush.py` | E-SMILES 解析 + Markush 匹配 |
+| `src/mbforge/chem/abbreviation_map.py` | 名称归一化 |
+| `docs/specs/esmiles-spec.md` | 当前规范文档 |
 
 ---
 

@@ -116,7 +116,7 @@ SQLite + OpenKB + filesystem   (per-project .mbforge/)
 3. Frontend queries via `GET /api/v1/kb/search` (PageIndex tree reasoning + dense rerank).
 4. Agent chat streams via `GET /api/v1/agent/chat` (SSE; LangGraph nodes invoke tools in `agent/tools.py`).
 
-**Lazy-loaded model backends** (no prewarm except OpenKB): `qwen3` (embed + rerank + OpenAI-compat LLM dispatch), `moldet` (YOLO26n), `molscribe` (Swin + TR). First request per backend pays 5–30 s load cost — see `TODO/INDEX.md` C-4.
+**Lazy-loaded model backends** (no prewarm except OpenKB): `moldet` (YOLO26n), `molscribe` (Swin + TR). First request per backend pays 5–30 s load cost — see `TODO/INDEX.md` C-4.
 
 **Storage locations:**
 - Per-project: `{root}/.mbforge/knowledge_base.db` + the OpenKB + PageIndex collection under `openkb/`.

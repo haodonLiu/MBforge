@@ -57,7 +57,7 @@ Natural Language Query + Reasoning Analysis
 - **SMILES canonicalization**: RDKit-backed
 - **Smart deduplication**: Tanimoto similarity + auto-clustering
 - **Property estimation**: molecular weight, H-bond donors/acceptors, rotatable bonds
-- **Tree-reasoned retrieval**: OpenKB + PageIndex generates a hierarchical index per document; results re-ranked by Qwen3-Reranker-0.6B
+- **Tree-reasoned retrieval**: OpenKB + PageIndex generates a hierarchical index per document; vectorless RRF retrieval + dense rerank via LLM
 
 ### Knowledge Base
 
@@ -102,7 +102,6 @@ Natural Language Query + Reasoning Analysis
 │                                                              │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │  Local model backends  (lazy-loaded)                   │  │
-│  │  Qwen3-Embedding-0.6B   Qwen3-Reranker-0.6B           │  │
 │  │  MolDetv2 (YOLO26n)     MolScribe (Swin + TR)        │  │
 │  │  OpenKB + PageIndex (tree reasoning + dense rerank)  │  │
 │  └───────────────────────────────────────────────────────┘  │
@@ -122,7 +121,7 @@ Natural Language Query + Reasoning Analysis
 - **HTTP keep-alive**: `httpx.AsyncClient` reused per backend, configured timeouts
 - **Python async non-blocking**: model inference wrapped in `run_in_executor`
 - **Lazy model loading**: no backend is prewarmed at startup; embed/rerank/moldet/molscribe load on first use to save startup time & VRAM
-- **PageIndex + Qwen3 hybrid search**: tree reasoning from PageIndex, then dense rerank for top-k finalization
+- **PageIndex hybrid search**: tree reasoning from PageIndex + OpenKB dense rerank for top-k finalization
 
 ## Quick Start
 
@@ -151,6 +150,45 @@ cd frontend && npm run build
 # Serve frontend/dist behind any static file server
 # Run backend behind a reverse proxy (nginx, caddy) with SSE-aware timeouts
 ```
+
+### Docker (Recommended for Deployment)
+
+Single GPU image with multi-stage build (frontend → python-deps → CUDA runtime).
+
+```bash
+# Build (first time 10-20 min; layer cache makes incremental ~30s)
+bash scripts/build_docker.sh        # Linux/macOS/Git Bash
+scripts\build_docker.bat            # Windows cmd
+
+# Run (GPU)
+docker run --rm --gpus all -p 18792:18792 mbforge:dev
+
+# Run with persistent config + model cache
+docker run --rm --gpus all \
+    -p 18792:18792 \
+    -v mbforge-config:/root/.config/MBForge \
+    -v mbforge-cache:/root/.cache \
+    mbforge:dev
+
+# Verify
+curl http://localhost:18792/api/v1/health
+# Browser: http://localhost:18792
+```
+
+**Requirements**:
+- Docker 20.10+ (Docker Desktop on Windows/macOS)
+- NVIDIA GPU + [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) for GPU passthrough
+- WSL2 backend (Windows Docker Desktop) with ≥8 GB RAM
+
+**What's inside** (`dist/mbforge` layers):
+- `nvidia/cuda:12.8.0-runtime-ubuntu22.04` base
+- Python 3.12 + uv-managed `.venv` (PyTorch CUDA + Ultralytics + RDKit + OpenKB + PageIndex + LangGraph)
+- React frontend `dist/` (mounted as `/` static)
+
+**Caveats**:
+- First launch downloads model weights (~500 MB) from ModelScope/HF
+- Not bundled: NVIDIA driver / CUDA toolkit (host-side install only)
+- No CPU-only image — use the manual start path instead
 
 ## Tech Stack
 
@@ -332,7 +370,7 @@ PDF 文档
 - **SMILES 规范化**：RDKit 后端
 - **智能去重**：Tanimoto 相似度 + 自动聚类
 - **属性估算**：分子量、氢键供体/受体、可旋转键数
-- **树推理检索**：OpenKB + PageIndex 为每篇文档生成层次化索引，结果由 Qwen3-Reranker-0.6B 重排序
+- **树推理检索**：OpenKB + PageIndex 为每篇文档生成层次化索引，结合向量检索与 LLM 重排序
 
 ### 知识库
 
@@ -377,7 +415,6 @@ PDF 文档
 │                                                              │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │  本地模型后端  (懒加载)                                │  │
-│  │  Qwen3-Embedding-0.6B   Qwen3-Reranker-0.6B           │  │
 │  │  MolDetv2 (YOLO26n)     MolScribe (Swin + TR)        │  │
 │  │  OpenKB + PageIndex (tree reasoning + dense rerank)  │  │
 │  └───────────────────────────────────────────────────────┘  │
@@ -398,7 +435,7 @@ PDF 文档
 - **Python 异步非阻塞**：模型推理通过 `run_in_executor` 包装
 - **模型懒加载**：启动时不预热任何后端；embed/rerank/moldet/molscribe 首次调用
   时加载，节省启动时间与显存
-- **PageIndex + Qwen3 混合**：先 PageIndex 树推理，再用 Qwen3 重排序取 top-k
+- **PageIndex 混合检索**：先 PageIndex 树推理，再 OpenKB 密集检索 + LLM 重排序取 top-k
 
 ## 快速开始
 

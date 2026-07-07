@@ -25,7 +25,7 @@ Stack:
   mbforge.app:app`. 53 routes across 18 routers.
 - **Agent**: LangGraph (`>=0.4.0`) + langchain 0.3+. 5 tools, multi-session,
   SSE streaming.
-- **Models**: Qwen3-Embedding-0.6B, Qwen3-Reranker-0.6B, MolDetv2 (YOLO26n),
+- **Models**: MolDetv2 (YOLO26n),
   MolScribe. Lazy-loaded on first call.
 
 ## Architecture & Data Flow
@@ -37,7 +37,7 @@ Five-layer split, top-down:
 | Frontend | `frontend/src/` | React components, routing, `AppContext` global state, `httpFetch` bridge |
 | HTTP routers | `src/mbforge/routers/` | FastAPI route handlers; one file per resource |
 | Core | `src/mbforge/core/` + `pipeline/` + `agent/` | Business logic, persistence, embeddings, pipeline stages |
-| Backends | `src/mbforge/backends/` | Local model wrappers (qwen3, moldet, molscribe) |
+| Backends | `src/mbforge/backends/` | Local model wrappers (moldet, molscribe) |
 | Utils | `src/mbforge/utils/` + `models/` | Logger, config, helpers, Pydantic schemas |
 
 **Data flow** (PDF in → query out):
@@ -73,7 +73,7 @@ MBForge/
 │   ├── agent/                         LangGraph agent
 │   ├── core/                          database, project, knowledge_base, semantic_cache, resource_manager
 │   ├── pipeline/                      classify, extract_text, segment, chunk, index, runner
-│   ├── backends/                      qwen3, moldet, molscribe, zvec_backend
+│   ├── backends/                      moldet, molscribe, moldet_v2_ft
 │   ├── parsers/molecule/              coords, coref_alt
 │   ├── chem/                          Cheminformatics utils
 │   ├── models/                        Pydantic models (common, project)
@@ -239,7 +239,7 @@ one-shot transform.
 | `src/mbforge/core/database.py` | SQLite business tables + connection pool |
 | `src/mbforge/core/knowledge_base.py` | KB CRUD + RRF fusion logic |
 | `src/mbforge/openkb/` | OpenKB + PageIndex adapter (vectorless tree reasoning + dense rerank) |
-| `src/mbforge/backends/qwen3.py` | EmbeddingProvider (local sentence-transformers + OpenAI-compatible) |
+| `src/mbforge/backends/moldet_v2_ft.py` | Fine-tuned YOLO26n MolDet backend (alternative to default). |
 | `src/mbforge/utils/helpers.py` | `MBForgeError` + 7 subclasses + `run_sync` |
 | `src/mbforge/utils/logger.py` | `get_logger` + `setup_logging` |
 | `frontend/src/api/http/_utils.ts` | `httpFetch` wrapper + error normalization |

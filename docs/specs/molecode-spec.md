@@ -283,8 +283,8 @@ SMILES ──esmiles_to_molecode()──→ MoleCode
 
 | 文件 | 功能 |
 |------|------|
-| `src-tauri/src/core/molecode.rs` | E-SMILES → MoleCode 转换器 |
-| `src-tauri/src/core/abbreviation_map.rs` | 缩写展开映射表 |
-| `src-tauri/src/commands/molecode.rs` | Tauri 命令 `esmiles_to_molecode_cmd` |
+| `src/mbforge/chem/molecode.py` | E-SMILES → MoleCode 转换器 |
+| `src/mbforge/chem/abbreviation_map.py` | 缩写展开映射表 |
+| `src/mbforge/routers/chem.py` | FastAPI 路由 `esmiles_to_molecode` |
 | `frontend/src/components/ui/MermaidCode.tsx` | Mermaid 渲染组件 |
 | `ref/MoleCode/` | 参考实现（Python） |

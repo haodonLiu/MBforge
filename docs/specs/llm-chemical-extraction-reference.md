@@ -124,12 +124,12 @@
 
 | 论文条目 | MBForge 实现 | 位置 |
 |---------|-------------|------|
-| §3.1.2 VDU 多 backend | `extract_pdf_workflow` 可切换 MinerU/OCR | `src-tauri/src/parsers/pipeline/extract.rs` |
-| §3.1.3 RAG | Qwen3 384d 向量 + SQLite + FTS5 | `src-tauri/src/core/vector/` |
+| §3.1.2 VDU 多 backend | `extract_pdf_workflow` 可切换 MinerU/OCR | `src/mbforge/pipeline/runner.py` |
+| §3.1.3 RAG | OpenKB + PageIndex 树推理 + dense rerank via LLM | `src/mbforge/openkb/` |
 | §3.2.4 专用图工具 | MolDet (YOLO) + MolScribe (图→SMILES) | `src/mbforge/backends/moldet.py`, `molscribe.py` |
-| §3.2.4 跨页关联 | moldet_coref | `src/mbforge/backends/moldet_coref.py` |
-| §3.2.5 ReAct agent | 16 工具 + 9 文献工具 | `src-tauri/src/core/agent/executor_rig.rs` |
-| §3.3.2 领域校验 | chematic (SMILES, ECFP4, Tanimoto, VF2) | `core/chem.rs`, `chematic` crate |
+| §3.2.4 跨页关联 | moldet_coref | `src/mbforge/parsers/molecule/coref_alt.py` |
+| §3.2.5 ReAct agent | 5 工具 + LangGraph | `src/mbforge/agent/` |
+| §3.3.2 领域校验 | RDKit (SMILES, ECFP4, Tanimoto, MCS) | `src/mbforge/chem/` |
 | 三层表示 | SMILES / E-SMILES / MoleCode | `docs/specs/esmiles-spec.md` |
 
 ### 4.2 缺口（✗ 论文强推，MBForge 缺失）
@@ -177,7 +177,7 @@
 | 能力 | 原因 | 决策 |
 |------|------|------|
 | 训练化学基模 (从零) | 论文 §3.2.3：Llama 3 用了 8M GPU-hours | **不做**，仅 fine-tune |
-| 自建 embedding 模型 | MBForge 规模 < 20K chunks | 用 Qwen3 即可 |
+| 自建 embedding 模型 | MBForge 规模 < 20K chunks | 用 OpenKB PageIndex + LLM rerank |
 | 自建 OCR | Nougat/Marker 论文强推 | 集成第三方 |
 | 自建 VLM | 商用 GPT-4V/Claude 3 已 SOTA | 集成第三方 |
 | 大规模科学文献挖掘 (跨出版商 TDM) | 论文 §3.1.1 详述版权陷阱 | 不做，由用户提供 PDF |

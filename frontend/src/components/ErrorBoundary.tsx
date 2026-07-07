@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from 'react'
 import i18n from '@/i18n'
 import { AlertIcon, CopyIcon, CheckIcon } from './icons'
+import { reportClientError } from '@/hooks/useErrorReport'
 
 interface Props {
   children: ReactNode
@@ -28,6 +29,9 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ErrorBoundary caught:', error, errorInfo)
+    // Surface the error to the backend diagnostics ring buffer alongside
+    // any server-side errors, so operators see the full chain from one place.
+    reportClientError(error, { componentStack: errorInfo.componentStack })
     this.props.onError?.(error, errorInfo)
   }
 

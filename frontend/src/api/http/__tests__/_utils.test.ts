@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 import { invokeWithError, registerGlobalErrorHandlers } from '../_utils'
-import { AppError, ErrorCode } from '@/utils/errors'
+import { AppError, ErrorCode, Severity } from '@/utils/errors'
 
 describe('invokeWithError', () => {
   it('returns resolved value on success', async () => {
@@ -73,5 +73,114 @@ describe('registerGlobalErrorHandlers', () => {
 
     addSpy.mockRestore()
     removeSpy.mockRestore()
+  })
+})
+
+/**
+ * httpFetch JSON error-body contract tests.
+ *
+ * The frontend now extracts `error_code` / `severity` / `category` / `context`
+ * / `timestamp` from the server JSON body and propagates them into AppError.
+ * Non-JSON bodies fall back to the legacy ErrorCode.Network.
+ */
+
+describe('httpFetch (JSON error body)', () => {
+  const originalFetch = globalThis.fetch
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('extracts error_code / severity / category / timestamp from a JSON body', async () => {
+    const payload = {
+      success: false,
+      error: 'root path is required',
+      error_code: 'validation_error',
+      severity: 'warning',
+      category: 'mbforge.utils.helpers',
+      context: { field: 'root' },
+      timestamp: 1717700000.5,
+    }
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify(payload), {
+        status: 422,
+        statusText: 'Unprocessable Entity',
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch
+
+    const { httpFetch } = await import('../_utils')
+    await expect(httpFetch('/api/v1/library/open', { method: 'POST' })).rejects.toMatchObject({
+      errorCode: ErrorCode.ApiError, // backendCodeToErrorCode maps validation_error → ApiError
+      message: 'root path is required',
+      severity: Severity.Warning,
+      category: 'mbforge.utils.helpers',
+      context: expect.objectContaining({
+        field: 'root',
+        http_status: 422,
+        backend_code: 'validation_error',
+      }),
+      timestamp: 1717700000.5,
+    })
+  })
+
+  it('falls back to ErrorCode.Network when the body is not JSON', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      new Response('<html>502 Bad Gateway</html>', {
+        status: 502,
+        statusText: 'Bad Gateway',
+        headers: { 'Content-Type': 'text/html' },
+      }),
+    ) as unknown as typeof fetch
+
+    const { httpFetch } = await import('../_utils')
+    await expect(httpFetch('/api/v1/moldet/something')).rejects.toMatchObject({
+      errorCode: ErrorCode.Network,
+      severity: Severity.Error,
+      context: expect.objectContaining({ http_status: 502 }),
+    })
+  })
+
+  it('maps HTTP 503 to ModelNotAvailable when the server says so', async () => {
+    const payload = {
+      success: false,
+      error: 'MolScribe 模型未找到',
+      error_code: 'model_not_available',
+      severity: 'error',
+      category: 'backends.molscribe',
+      timestamp: 1717700001.0,
+    }
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify(payload), {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch
+
+    const { httpFetch } = await import('../_utils')
+    await expect(httpFetch('/api/v1/models/molscribe/health')).rejects.toMatchObject({
+      errorCode: ErrorCode.ModelNotAvailable,
+      severity: Severity.Error,
+      category: 'backends.molscribe',
+    })
+  })
+
+  it('falls back to status-derived severity when the body omits it', async () => {
+    // Body has only `error_code`; severity defaults to severityFromHttpStatus(403) = Warning.
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, error: 'forbidden', error_code: 'path_traversal' }), {
+        status: 403,
+        statusText: 'Forbidden',
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ) as unknown as typeof fetch
+
+    const { httpFetch } = await import('../_utils')
+    await expect(httpFetch('/api/v1/library/foo')).rejects.toMatchObject({
+      severity: Severity.Warning,
+    })
   })
 })

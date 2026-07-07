@@ -1,8 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { CheckIcon, AlertIcon, InfoIcon, XIcon } from '../icons'
 import Button from './Button'
 import { PALETTE } from '../../styles/tokens'
+import { Severity } from '@/utils/errors'
 
 // ============================================================================
 // 类型
@@ -14,6 +15,10 @@ export interface ToastItem {
   id: string
   message: string
   type: ToastType
+  /** Optional severity — when present, overrides type-based styling for fatal
+   * errors and other cases where the categorical type ("error") doesn't convey
+   * urgency. Render code maps Severity → color/icon/emphasis. */
+  severity?: Severity
   /** 自动消失毫秒数（0 表示不自动消失）*/
   duration?: number
   /** 操作按钮（如"撤销"）*/
@@ -86,6 +91,9 @@ export const toast = {
     showToast({ message, type: 'info', ...opts }),
   warning: (message: string, opts?: Partial<ToastItem>) =>
     showToast({ message, type: 'warning', ...opts }),
+  /** Higher-urgency variant: deep red border, heavier shadow, longer dwell. */
+  fatal: (message: string, opts?: Partial<ToastItem>) =>
+    showToast({ message, type: 'error', severity: Severity.Fatal, ...opts }),
 }
 
 // ============================================================================
@@ -132,8 +140,14 @@ export function useToast() {
 // 渲染组件
 // ============================================================================
 
-function toastColor(type: ToastType): string {
-  switch (type) {
+/**
+ * Pick the icon/text accent color for a toast item.
+ * Severity takes precedence over the categorical ToastType so a `fatal`
+ * error shows the deeper-red treatment even when the type is `error`.
+ */
+function toastColor(item: Pick<ToastItem, 'type' | 'severity'>): string {
+  if (item.severity === Severity.Fatal) return PALETTE.dangerDeep ?? '#7f1d1d'
+  switch (item.type) {
     case 'success': return PALETTE.success
     case 'error': return PALETTE.danger
     case 'warning': return PALETTE.warning
@@ -185,7 +199,29 @@ export function ToastContainer({ position = 'top-right', maxCount = 5 }: ToastCo
       }}
     >
       <AnimatePresence>
-        {visible.map(toastItem => (
+        {visible.map(toastItem => {
+          const accent = toastColor(toastItem)
+          const isFatal = toastItem.severity === Severity.Fatal
+          const style: CSSProperties = {
+            pointerEvents: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '12px 16px',
+            background: 'var(--bg-surface)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            border: isFatal ? '2px solid #7f1d1d' : '1px solid var(--border)',
+            borderRadius: 12,
+            boxShadow: isFatal
+              ? '0 12px 40px rgba(127,29,29,0.28), 0 4px 12px rgba(127,29,29,0.18)'
+              : '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
+            fontSize: 13,
+            color: 'var(--text-primary)',
+            minWidth: 240,
+            maxWidth: 420,
+          }
+          return (
           <motion.div
             key={toastItem.id}
             layout
@@ -193,25 +229,9 @@ export function ToastContainer({ position = 'top-right', maxCount = 5 }: ToastCo
             animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
             exit={{ opacity: 0, x: position.includes('right') ? 50 : position.includes('left') ? -50 : 0, scale: 0.9 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
-            style={{
-              pointerEvents: 'auto',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '12px 16px',
-              background: 'var(--bg-surface)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              border: '1px solid var(--border)',
-              borderRadius: 12,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
-              fontSize: 13,
-              color: 'var(--text-primary)',
-              minWidth: 240,
-              maxWidth: 420,
-            }}
+            style={style}
           >
-            <span style={{ color: toastColor(toastItem.type), flexShrink: 0 }}>
+            <span style={{ color: accent, flexShrink: 0 }}>
               <ToastIcon type={toastItem.type} />
             </span>
             <span style={{ flex: 1 }}>{toastItem.message}</span>
@@ -246,7 +266,8 @@ export function ToastContainer({ position = 'top-right', maxCount = 5 }: ToastCo
               <XIcon size={12} />
             </button>
           </motion.div>
-        ))}
+          )
+        })}
       </AnimatePresence>
     </div>
   )

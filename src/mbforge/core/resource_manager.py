@@ -198,11 +198,6 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
         source_url="https://github.com/thomas0809/MolScribe",
         allow_patterns=[
             "*.pth",
-            "*.safetensors",
-            "*.json",
-            "*.txt",
-            "tokenizer*",
-            "vocab*",
         ],
         files=["swin_base_char_aux_1m680k.pth"],
     ),
@@ -526,19 +521,21 @@ def _download_model_from_modelscope(
             from modelscope import snapshot_download as ms_snapshot
 
             _emit({"status": "downloading", "progress": 0})
+            # 优先使用 `files` 字段(精确文件清单),否则用 `allow_patterns` (glob)
+            ms_filter = info.files or info.allow_patterns
             try:
                 ms_snapshot(
                     info.ms_repo,
                     local_dir=str(dest),
                     local_dir_use_symlinks=False,
-                    allow_patterns=info.allow_patterns or None,
+                    allow_patterns=ms_filter or None,
                 )
             except TypeError:
                 # 新版 modelscope 不支持 local_dir_use_symlinks
                 ms_snapshot(
                     info.ms_repo,
                     local_dir=str(dest),
-                    allow_patterns=info.allow_patterns or None,
+                    allow_patterns=ms_filter or None,
                 )
             _emit({"status": "completed", "source": "modelscope"})
             return True
@@ -562,11 +559,13 @@ def _download_model_from_modelscope(
         except Exception:  # noqa: BLE001 — listing request can fail (network, JSON); empty file list triggers the "failed" event below.
             files = []
 
-        if info.allow_patterns:
+        # 优先 `files` (精确清单) → `allow_patterns` (glob) → 不过滤
+        patterns = info.files or info.allow_patterns
+        if patterns:
             files = [
                 f
                 for f in files
-                if any(_fnmatch.fnmatch(f, p) for p in info.allow_patterns)
+                if any(_fnmatch.fnmatch(f, p) for p in patterns)
             ]
 
         if not files:

@@ -17,7 +17,7 @@ class MoleculeListRequest(BaseModel):
 class MoleculeSearchRequest(BaseModel):
     project_root: str = Field(..., description="Project root directory")
     query: str = Field(..., description="Search query")
-    top_k: int = Field(20, ge=1, le=100, description="Max results")
+    top_k: int = Field(20, ge=1, le=1000, description="Max results")
 
 
 class MoleculeGetRequest(BaseModel):

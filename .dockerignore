@@ -1,0 +1,57 @@
+# Python
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+htmlcov/
+*.egg-info/
+
+# Frontend
+frontend/node_modules
+frontend/dist
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Project artifacts
+.mbforge
+assets/models
+*.log
+*.tmp
+*.bak
+
+# Dev meta
+docs/superpowers
+.mimocode
+reasonix.toml
+skills-lock.json
+
+# Tests (built into image)
+tests
+
+# Markdown except README
+*.md
+!README.md
+
+# PyInstaller leftovers (replaced by Docker)
+scripts/build_exe.py
+dist
+build
+*.spec
+
+# Docker meta
+Dockerfile
+.dockerignore

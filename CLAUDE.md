@@ -147,3 +147,40 @@ Commit convention (from README, also used in CI scopes):
 types:   feat | fix | refactor | perf | test | docs | chore
 scopes:  frontend | python | api | router | pipeline | agent | backend | deps
 ```
+
+### Commit Granularity — 一主题 = 一 commit
+
+**不要按文件拆 commit，按主题拆。** 一个 feature / refactor / bug fix
+即使横跨 15 个文件，仍然作为**一个原子 commit** 提交；其内部的子
+步骤写在 commit body 中（用 Markdown `- [ ]` 清单），而不是拆成多个
+小 commit。
+
+提交 body 用 Markdown 详细描述：
+
+- **Why** — 背景、动机、影响范围
+- **What** — 文件分组 + 子任务清单（`- [ ]`）
+- **Breaking changes** — API/字段重命名、迁移步骤
+- **Verify** — 验证方法（命令、测试名）
+- **Rollback** — 回滚方法（revert commit hash、注意事项）
+
+**应该拆 commit**：不相关的 chore、独立 feature、版本 bump、独立 bug 修复。
+**应该合并 commit**：单个 refactor 涉及的所有文件、单个 feature 的
+前后端 + 文档、一次清理活动的所有步骤。
+
+反例：
+```
+chore: rename project_root → library_root in app.py
+chore: rename project_root → library_root in pipeline.py
+chore: rename project_root → library_root in knowledge_base.py
+```
+
+正例：
+```
+refactor(core): migrate project management to unified library
+
+- [ ] backend: app.py swap project router → library router
+- [ ] backend: rename project_root → library_root across callers
+- [ ] backend: replace index.json scan with LibraryStore queries
+- [ ] frontend: GroupsPanel + RecentProjectsSection update
+- [ ] delete dead project router / core.project / models.project
+```

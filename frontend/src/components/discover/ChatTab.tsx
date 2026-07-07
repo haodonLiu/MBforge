@@ -4,15 +4,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import 'katex/dist/katex.min.css'
 import { showToast } from '@/hooks/useToast'
 
-import {
-  agentInit,
-  agentCreateSession,
-  agentChatStream,
-  agentGetHistory,
-  agentDestroySession,
-  listDocumentsTauri,
-  moleculeStatsTauri,
-} from '@/api/http'
+import { agentInit, agentCreateSession, agentChatStream, agentGetHistory, agentDestroySession, moleculeStatsTauri } from '@/api/http'
+import { listDocumentsTauri } from '@/api/http/project'
 import { getSettings } from '@/api/http/settings'
 
 import { useAppContext } from '@/context/AppContext'

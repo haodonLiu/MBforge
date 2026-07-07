@@ -1,8 +1,5 @@
 import { useState } from 'react'
-import { ChevronRightIcon } from './icons/arrows'
-import { ChevronDownIcon } from './icons/ui'
-import { FolderIcon } from './icons/nav'
-import { PlusIcon } from './icons/actions'
+import { ChevronRightIcon, ChevronDownIcon, FolderIcon, PlusIcon } from './icons'
 import type { CollectionNode } from '../api/http/library'
 
 interface Props {

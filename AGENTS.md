@@ -322,5 +322,45 @@ cd frontend && npm run test -- --coverage       # v8 coverage
 
 ---
 
+**## Commit Granularity — 一主题 = 一 commit
+
+**Don't split commits by file — split by logical change.** A single
+feature/refactor/bug fix commits as one atomic unit even if it spans
+15 files; sub-tasks are described in the commit body, not broken into
+separate commits.
+
+Use the commit body (Markdown) to:
+
+- State the **why** (background, motivation, scope)
+- List **what changed** (file groups, sub-tasks as `- [ ]` checklists)
+- Note **breaking changes** and **migration steps**
+- Describe **how to verify** and **how to roll back**
+
+**Split into separate commits**: unrelated chores, distinct features,
+version bumps, independent bug fixes.
+**Merge into one commit**: every file involved in a single refactor,
+every layer (backend + frontend + docs) of one feature, every step of
+one cleanup campaign.
+
+Anti-pattern:
+```
+chore: rename project_root → library_root in app.py
+chore: rename project_root → library_root in pipeline.py
+chore: rename project_root → library_root in knowledge_base.py
+```
+
+Correct:
+```
+refactor(core): migrate project management to unified library
+
+- [ ] backend: app.py swap project router → library router
+- [ ] backend: rename project_root → library_root across callers
+- [ ] backend: replace index.json scan with LibraryStore queries
+- [ ] frontend: GroupsPanel + RecentProjectsSection update
+- [ ] delete dead project router / core.project / models.project
+```
+
+---
+
 **Don't see what you need?** Check `TODO/INDEX.md` for known gaps, or grep the
 codebase — it's a small, well-organized Python project.

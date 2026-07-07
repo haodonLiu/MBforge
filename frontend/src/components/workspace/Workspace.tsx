@@ -9,8 +9,7 @@ import {
 } from '@/api/http/library'
 import { showToast } from '@/hooks/useToast'
 import { useTranslation } from 'react-i18next'
-import { PdfIcon } from '@/components/icons/nav'
-import { PlusIcon } from '@/components/icons/actions'
+import { PdfIcon, PlusIcon } from '@/components/icons'
 import PageTitle from '@/components/ui/PageTitle'
 export default function Workspace() {
   const { t } = useTranslation()

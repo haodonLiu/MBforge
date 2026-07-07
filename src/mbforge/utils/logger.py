@@ -8,15 +8,20 @@
 
 from __future__ import annotations
 
+import collections
+import contextvars
 import functools
 import inspect
+import json
 import logging
 import os
 import sys
+import threading
 import traceback
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from .paths import APP_NAME, GLOBAL_DATA_DIR
 
@@ -32,12 +37,27 @@ _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _logger_initialized = False
 _log_level: int = logging.INFO
 
+# ---- 诊断环形缓冲 + 请求路径上下文 ----
+# 容量 500 条，覆盖典型会话的错误风暴;GET 端支持 ?since= 增量分页。
+_RING_CAPACITY = 500
+_diagnostic_buffer: collections.deque[dict[str, Any]] = collections.deque(
+    maxlen=_RING_CAPACITY
+)
+_diagnostic_lock = threading.Lock()
+_diagnostic_seq = 0
+# FastAPI 中间件在每个请求的 context 里 set; 日志格式化器读它。
+_request_path_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "mbforge_request_path", default="-"
+)
+
 
 def setup_logging(
     level: int = logging.INFO,
     log_dir: Path | None = None,
     console: bool = True,
     file: bool = True,
+    *,
+    json_mode: bool = False,
 ) -> None:
     """配置全局日志.
 
@@ -46,6 +66,7 @@ def setup_logging(
         log_dir: 日志文件目录，默认 ~/.local/share/MBForge/logs
         console: 是否输出到控制台
         file: 是否输出到文件
+        json_mode: 文件输出用 JSON 行格式 (结构化聚合; 默认关闭, 沿用人类可读)
     """
     global _logger_initialized, _log_level
     if _logger_initialized:
@@ -109,9 +130,12 @@ def setup_logging(
                 encoding="utf-8",
             )
             file_handler.setLevel(level)
-            file_handler.setFormatter(
-                logging.Formatter(_FILE_FORMAT, datefmt=_DATE_FORMAT)
-            )
+            if json_mode:
+                file_handler.setFormatter(JsonFormatter())
+            else:
+                file_handler.setFormatter(
+                    logging.Formatter(_FILE_FORMAT, datefmt=_DATE_FORMAT)
+                )
             root_logger.addHandler(file_handler)
         except Exception as e:
             # 文件日志初始化失败不影响运行，但要打一条控制台日志
@@ -122,9 +146,14 @@ def setup_logging(
             root_logger.addHandler(fallback)
             root_logger.error(f"文件日志初始化失败: {e}")
 
+    # 诊断环形缓冲始终挂到 root logger;记录所有 DEBUG+ 信息,
+    # 但只有被 mbforge_exception_handler 显式提升的 LogRecord 会带
+    # error_code/severity/category 字段。
+    root_logger.addHandler(DiagnosticRingHandler(level=logging.DEBUG))
+
     _logger_initialized = True
     root_logger.info(
-        f"日志系统初始化完成 | 级别={logging.getLevelName(level)} | 目录={log_dir}"
+        f"日志系统初始化完成 | 级别={logging.getLevelName(level)} | 目录={log_dir} | json={json_mode}"
     )
 
 
@@ -211,3 +240,207 @@ def log_exception(logger: logging.Logger, msg: str = "") -> None:
     exc_text = traceback.format_exc()
     prefix = f"{msg} | " if msg else ""
     logger.error(f"{prefix}异常详情:\n{exc_text}")
+
+
+# ---------- 诊断：JSON 格式化器 + 内存环形缓冲 ----------
+
+
+def set_request_path(path: str) -> contextvars.Token:
+    """由 FastAPI 中间件调用, 把当前请求路径写入 ContextVar.
+
+    返回 token 供 `reset()` 清理; 中间件 try/finally 用。
+    """
+    return _request_path_var.set(path)
+
+
+def reset_request_path(token: contextvars.Token) -> None:
+    _request_path_var.reset(token)
+
+
+class JsonFormatter(logging.Formatter):
+    """单行 JSON 格式 — 适合 Loki/ELK/grep 聚合.
+
+    输出字段:
+        ts: ISO8601 UTC 时间戳 (毫秒精度)
+        level: 大写级别字符串 (DEBUG/INFO/WARNING/ERROR/CRITICAL)
+        logger: logger 名 (通常即 __name__)
+        message: 格式化后的消息
+        exception: 完整堆栈文本, 没有异常时为 None
+        pid / tid: 进程与线程标识
+        mbforge_error_code / mbforge_status_code / mbforge_severity /
+        mbforge_category / mbforge_context: 由异常处理器显式设置,
+            普通日志记录时为 None
+        request_path: 当前请求路径, 由 request_path middleware 注入
+    """
+
+    def format(self, record: logging.LogRecord) -> str:  # noqa: A003 — stdlib API
+        ts = (
+            datetime.fromtimestamp(record.created, tz=timezone.utc)
+            .strftime("%Y-%m-%dT%H:%M:%S")
+            + f".{int(record.msecs):03d}Z"
+        )
+        payload: dict[str, Any] = {
+            "ts": ts,
+            "level": logging.getLevelName(record.levelno),
+            "logger": record.name,
+            "pid": record.process,
+            "tid": record.threadName,
+            "message": record.getMessage(),
+            "exception": self.formatException(record.exc_info)
+            if record.exc_info
+            else None,
+            "error_code": getattr(record, "mbforge_error_code", None),
+            "status_code": getattr(record, "mbforge_status_code", None),
+            "severity": getattr(record, "mbforge_severity", None),
+            "category": getattr(record, "mbforge_category", None),
+            "context": getattr(record, "mbforge_context", None),
+            "request_path": _request_path_var.get(),
+        }
+        return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def _record_to_diagnostic(record: logging.LogRecord) -> dict[str, Any]:
+    """把 LogRecord 转换为环形缓冲里存储的 dict."""
+    ts = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
+    return {
+        "ts": ts,
+        "level": logging.getLevelName(record.levelno),
+        "logger": record.name,
+        "message": record.getMessage(),
+        "exception": record.__dict__.get("mbforge_exception_text")
+        or (
+            "".join(traceback.format_exception(*record.exc_info))
+            if record.exc_info
+            else None
+        ),
+        "error_code": getattr(record, "mbforge_error_code", None),
+        "status_code": getattr(record, "mbforge_status_code", None),
+        "severity": getattr(record, "mbforge_severity", None),
+        "category": getattr(record, "mbforge_category", None),
+        "context": getattr(record, "mbforge_context", None),
+        "request_path": _request_path_var.get(),
+    }
+
+
+class DiagnosticRingHandler(logging.Handler):
+    """把每条 LogRecord 推入线程安全的内存环形缓冲.
+
+    由 setup_logging() 在初始化时挂到 root logger。被 MBForge 异常处理器
+    升级的 LogRecord 会带 mbforge_* 属性, 落进环形缓冲时即附加分类信息;
+    普通 logger.info/error 调用产生的记录不携带业务字段, 仅按 level/logger
+    落缓冲供调试。
+
+    emit() 中捕获所有异常避免打断日志链路 (logging.Handler.handleError 默认
+    调用 sys.stderr, 这里静默更稳妥)。
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:  # noqa: D401, A003
+        try:
+            global _diagnostic_seq
+            payload = _record_to_diagnostic(record)
+            with _diagnostic_lock:
+                _diagnostic_seq += 1
+                payload["seq"] = _diagnostic_seq
+                _diagnostic_buffer.append(payload)
+        except Exception:
+            # 永远不要让日志缓冲把日志链路打断
+            pass
+
+
+def push_diagnostic(payload: dict[str, Any]) -> int:
+    """外部 (例如前端 POST /api/v1/diagnostics/errors 处理器) 直接入环形缓冲.
+
+    返回分配的 seq; payload 中可被忽略的字段在写入前不会被改写 (允许调用方
+    自填 category='client' 等标签)。
+    """
+    global _diagnostic_seq
+    with _diagnostic_lock:
+        _diagnostic_seq += 1
+        record = dict(payload)
+        record.setdefault("ts", datetime.now(tz=timezone.utc).isoformat())
+        record["seq"] = _diagnostic_seq
+        seq = _diagnostic_seq
+        _diagnostic_buffer.append(record)
+    return seq
+
+
+def get_diagnostics(
+    *,
+    since: int | None = None,
+    level: str | None = None,
+    category: str | None = None,
+    error_code: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """读取环形缓冲快照 + 过滤.
+
+    Args:
+        since: 只返回 seq > since 的记录 (增量分页)
+        level: 严格匹配 (大写)
+        category: 严格匹配
+        error_code: 严格匹配
+        limit: 上限 (默认 200, 服务端硬上限 1000)
+    """
+    limit = min(max(limit, 1), 1000)
+    level_up = level.upper() if level else None
+
+    with _diagnostic_lock:
+        snapshot = list(_diagnostic_buffer)
+
+    out: list[dict[str, Any]] = []
+    for rec in snapshot:
+        if since is not None and rec.get("seq", 0) <= since:
+            continue
+        if level_up and rec.get("level") != level_up:
+            continue
+        if category and rec.get("category") != category:
+            continue
+        if error_code and rec.get("error_code") != error_code:
+            continue
+        out.append(rec)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def get_diagnostic_by_id(seq_id: int) -> dict[str, Any] | None:
+    with _diagnostic_lock:
+        snapshot = list(_diagnostic_buffer)
+    for rec in snapshot:
+        if rec.get("seq") == seq_id:
+            return rec
+    return None
+
+
+def get_diagnostic_stats() -> dict[str, Any]:
+    """聚合统计 — 供 /api/v1/diagnostics/stats 端点."""
+    with _diagnostic_lock:
+        snapshot = list(_diagnostic_buffer)
+
+    by_level: dict[str, int] = {}
+    by_category: dict[str, int] = {}
+    by_error_code: dict[str, int] = {}
+    last_seen: str | None = None
+    for rec in snapshot:
+        lvl = rec.get("level")
+        if lvl:
+            by_level[lvl] = by_level.get(lvl, 0) + 1
+        cat = rec.get("category")
+        if cat:
+            by_category[cat] = by_category.get(cat, 0) + 1
+        ec = rec.get("error_code")
+        if ec:
+            by_error_code[ec] = by_error_code.get(ec, 0) + 1
+        ts = rec.get("ts")
+        if ts and (last_seen is None or ts > last_seen):
+            last_seen = ts
+
+    return {
+        "total": len(snapshot),
+        "capacity": _RING_CAPACITY,
+        "by_level": by_level,
+        "by_category": by_category,
+        "by_error_code": by_error_code,
+        "last_seen": last_seen,
+        "now": datetime.now(tz=timezone.utc).isoformat(),
+    }

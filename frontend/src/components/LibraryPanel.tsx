@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FileTextIcon } from './icons/nav'
-import { PlusIcon } from './icons/actions'
-import { SettingsIcon } from './icons/ui'
+import { FileTextIcon, PlusIcon, SettingsIcon } from './icons'
 import GroupsPanel from './GroupsPanel'
 import { useAppContext } from '../context/AppContext'
 import {

@@ -49,7 +49,8 @@ export async function resourcesGetModelPath(resourceId: string): Promise<string 
 
 /** 获取资源目录（纯元数据） */
 export async function resourcesCatalog(): Promise<Record<string, unknown>[]> {
-  return httpPost<Record<string, unknown>[]>('/api/v1/resources/catalog')
+  const resp = await httpPost<{ resources: Record<string, unknown>[] }>('/api/v1/resources/catalog')
+  return resp.resources
 }
 
 /** 获取模型缓存目录信息 */

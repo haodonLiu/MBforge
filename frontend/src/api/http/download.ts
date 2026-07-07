@@ -2,6 +2,7 @@
 
 import { httpPost, invokeWithError } from './_utils'
 import { ErrorCode } from '@/utils/errors'
+import { resourcesCatalog } from './environment'
 
 export interface SubfileStatus {
   label: string          // 友好标签，如 "doc" / "general"
@@ -108,7 +109,7 @@ export async function listModels(): Promise<{ success: boolean; models: Download
  */
 export async function listDownloaded(): Promise<{ success: boolean; models: DownloadedModel[]; model_dir: string; error?: string }> {
   try {
-    const catalog = await httpPost<Record<string, unknown>[]>('/api/v1/resources/catalog')
+    const catalog = await resourcesCatalog()
     const models: DownloadedModel[] = []
     for (const item of catalog) {
       const id = String(item.id ?? '')

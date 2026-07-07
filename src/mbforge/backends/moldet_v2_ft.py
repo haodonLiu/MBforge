@@ -83,6 +83,7 @@ class MolDetv2FTDetector:
         self.idt_conf_threshold = idt_conf_threshold
 
         self.model_path = model_path or self._resolve_model_path()
+        self._load_model()
 
     def _resolve_model_path(self) -> Path:
         """通过 ResourceManager 解析模型路径。"""

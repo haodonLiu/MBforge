@@ -34,7 +34,7 @@ export default function Workspace() {
       const file = input.files?.[0]
       if (!file) return
       try {
-        const resp = await importDocument(file.name, file.name.replace(/\.pdf$/i, ''))
+        const resp = await importDocument(file)
         if (resp.success) {
           showToast(t('library.importSuccess'), 'success')
           const r = await listDocuments(activeCollectionId ?? undefined)

@@ -108,26 +108,90 @@ class LibraryStore:
     def add_document(
         self, file_path: str | Path, title: str = ""
     ) -> DocumentInfo:
-        """Copy file into library storage, compute md5, insert into documents table.
+        """Copy an existing on-disk file into library storage and register it.
 
-        Raises MBForgeError(409) if md5 already exists.
-        Raises MBForgeError(507) if file copy fails.
+        Raises MBForgeError(404) if file_path is missing,
+        MBForgeError(409) if md5 already exists,
+        MBForgeError(507) if file copy fails.
         """
         self._ensure_initialized()
         src = Path(file_path).resolve()
         if not src.is_file():
-            raise MBForgeError("File not found", detail=str(src))
+            raise MBForgeError("File not found", detail=str(src), )
+        return self._register(src, title)
 
+    def add_uploaded_file(
+        self, content: bytes, filename: str, title: str = ""
+    ) -> DocumentInfo:
+        """Persist a browser-uploaded file payload and register it as a document.
+
+        Computes md5 from the in-memory bytes; rejects empty content; raises
+        MBForgeError(409) on md5 collision, MBForgeError(507) if disk write fails.
+        """
+        self._ensure_initialized()
+        if not content:
+            raise MBForgeError("Empty file", detail=filename, )
+        if not filename:
+            raise MBForgeError("Missing filename", )
+
+        # Reject duplicate imports by content hash (computed before write)
+        md5 = hashlib.md5(content).hexdigest()
+        existing = self._get_doc_by_md5(md5)
+        if existing is not None:
+            raise MBForgeError(
+                "Document already imported",
+                detail=f"MD5 collision with doc_id={existing}",
+                            )
+
+        doc_id = str(uuid.uuid4())
+        safe_title = title.strip() if title else Path(filename).stem
+        storage_subdir = self._storage_dir / doc_id
+        try:
+            ensure_dir(storage_subdir)
+            dest = storage_subdir / filename
+            dest.write_bytes(content)
+        except (OSError, PermissionError) as e:
+            raise MBForgeError(
+                "Failed to store file", detail=str(e)
+            ) from e
+
+        storage_path = f"{doc_id}/{filename}"
+        conn = sqlite3.connect(str(self._db_path))
+        try:
+            conn.execute(
+                """INSERT INTO documents (doc_id, title, file_name, storage_path, md5)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (doc_id, safe_title, filename, storage_path, md5),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        logger.info("Uploaded document registered: %s (id=%s)", safe_title, doc_id)
+        return DocumentInfo(
+            doc_id=doc_id,
+            title=safe_title,
+            file_name=filename,
+            page_count=0,
+            status="pending",
+            created_at="",
+        )
+
+    def _register(self, src: Path, title: str) -> DocumentInfo:
+        """Shared helper used by add_document (existing path) and add_uploaded_file.
+
+        Performs md5 dedup, copy/move into storage, INSERT into documents table.
+        """
         md5 = self._compute_md5(src)
         existing = self._get_doc_by_md5(md5)
         if existing is not None:
             raise MBForgeError(
                 "Document already imported",
                 detail=f"MD5 collision with doc_id={existing}",
-            )
+                            )
 
         doc_id = str(uuid.uuid4())
-        title = title or src.stem
+        safe_title = title.strip() if title else src.stem
         storage_subdir = self._storage_dir / doc_id
         try:
             ensure_dir(storage_subdir)
@@ -146,16 +210,16 @@ class LibraryStore:
             conn.execute(
                 """INSERT INTO documents (doc_id, title, file_name, storage_path, md5)
                    VALUES (?, ?, ?, ?, ?)""",
-                (doc_id, title, src.name, storage_path, md5),
+                (doc_id, safe_title, src.name, storage_path, md5),
             )
             conn.commit()
         finally:
             conn.close()
 
-        logger.info("Document added: %s (id=%s)", title, doc_id)
+        logger.info("Document added: %s (id=%s)", safe_title, doc_id)
         return DocumentInfo(
             doc_id=doc_id,
-            title=title,
+            title=safe_title,
             file_name=src.name,
             page_count=0,
             status="pending",

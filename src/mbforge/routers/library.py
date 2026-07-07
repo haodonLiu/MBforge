@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, UploadFile
 
 from ..utils.config import load_global_config, update_settings
 from ..utils.helpers import MBForgeError
@@ -50,13 +50,17 @@ async def library_status() -> dict:
 
 
 @router.post("/import")
-async def library_import(body: dict) -> dict:
-    """Import a PDF into the library."""
-    file_path = body.get("file_path", "")
-    title = body.get("title", "")
-    root = _resolve_library_root(body)
-    if not file_path:
-        return {"success": False, "error": "file_path required"}
+async def library_import(
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    library_root: str | None = Form(None),
+) -> dict:
+    """Import a PDF (or other document) into the library via multipart upload.
+
+    Browser sends the raw bytes; backend streams to {library_root}/storage/
+    {doc_id}/{filename} and registers the document in the library DB.
+    """
+    root = _resolve_library_root({"library_root": library_root} if library_root else None)
 
     # Validate root is writable
     try:
@@ -72,9 +76,17 @@ async def library_import(body: dict) -> dict:
 
     store = LibraryStore.get(root)
     try:
-        doc = store.add_document(file_path, title=title)
+        content = await file.read()
+        doc = store.add_uploaded_file(
+            content=content,
+            filename=file.filename or "",
+            title=title,
+        )
     except MBForgeError as e:
         return {"success": False, "error": e.message, "detail": e.detail}
+    except Exception as e:
+        logger.exception("Unexpected import error: %s", e)
+        return {"success": False, "error": "Import failed", "detail": str(e)}
     return {"success": True, "document": doc.model_dump()}
 
 

@@ -39,12 +39,14 @@ export async function getLibraryStatus(): Promise<LibraryStatus> {
 // ── Documents ───────────────────────────────────────
 
 export async function importDocument(
-  filePath: string,
+  file: File,
   title?: string
 ): Promise<{ success: boolean; document?: DocumentInfo; error?: string; detail?: string }> {
-  return invokeWithError(() =>
-    httpPost('/api/v1/library/import', { file_path: filePath, title })
-  )
+  const fd = new FormData()
+  fd.append('file', file, file.name)
+  if (title) fd.append('title', title)
+  const resp = await fetch('/api/v1/library/import', { method: 'POST', body: fd })
+  return (await resp.json()) as { success: boolean; document?: DocumentInfo; error?: string; detail?: string }
 }
 
 export async function listDocuments(

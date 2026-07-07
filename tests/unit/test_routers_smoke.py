@@ -29,23 +29,40 @@ class TestHealthEndpoints:
 
 
 class TestProjectEndpoints:
-    def test_project_open(self, tmp_path):
-        c = _client()
-        r = c.post("/api/v1/project/open", json={"root": str(tmp_path)})
-        assert r.status_code == 200
-        assert "success" in r.json()
+    """The legacy /api/v1/project/* router has been retired in favour of
+    /api/v1/library/*. The smoke cases below exercise the library endpoints
+    that absorbed the corresponding responsibilities."""
 
-    def test_project_scan(self, tmp_path):
+    def test_library_status(self):
         c = _client()
-        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
-        r = c.post("/api/v1/project/scan", json={"root": str(tmp_path)})
+        r = c.get("/api/v1/library/status")
         assert r.status_code == 200
+        body = r.json()
+        assert "configured" in body
+        assert "root" in body
+        assert "doc_count" in body
 
-    def test_project_file_tree(self, tmp_path):
+    def test_library_configure_then_status(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
-        r = c.post("/api/v1/project/file-tree", json={"root": str(tmp_path)})
+        r = c.post("/api/v1/library/configure", json={"root": str(tmp_path)})
         assert r.status_code == 200
+        assert r.json().get("success") is True
+
+        r = c.get("/api/v1/library/status")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["configured"] is True
+        assert body["root"] == str(tmp_path)
+
+    def test_library_import_missing_file_returns_error(self):
+        c = _client()
+        r = c.post(
+            "/api/v1/library/import",
+            json={"file_path": "/nonexistent.pdf", "title": ""},
+        )
+        # The router returns 200 with success:false rather than 4xx, by design.
+        assert r.status_code == 200
+        assert r.json().get("success") is False
 
 
 class TestSettingsEndpoints:
@@ -75,29 +92,27 @@ class TestAgentEndpoints:
 class TestPipelineEndpoints:
     def test_pipeline_queue_stats(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
-        r = c.post("/api/v1/pipeline/queue/stats", json={"root": str(tmp_path)})
+        r = c.post("/api/v1/pipeline/queue/stats", json={"library_root": str(tmp_path)})
         assert r.status_code == 200
 
 
 class TestKBEndpoints:
     def test_kb_search_empty(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
-        r = c.post("/api/v1/kb/search", json={"root": str(tmp_path), "query": "test"})
+        r = c.post("/api/v1/kb/search", json={"library_root": str(tmp_path), "query": "test"})
         assert r.status_code == 200
 
 
 class TestMoleculeEndpoints:
     def test_mol_list_empty(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
+        # The molecule router still accepts `project_root` for backward compat;
+        # the migration to `library_root` is a separate contract change (TODO #36).
         r = c.post("/api/v1/molecule/list", json={"project_root": str(tmp_path)})
         assert r.status_code == 200
 
     def test_mol_stats(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
         r = c.post("/api/v1/molecule/stats", json={"project_root": str(tmp_path)})
         assert r.status_code == 200
 
@@ -112,9 +127,8 @@ class TestChemEndpoints:
 class TestNotesEndpoints:
     def test_notes_get(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
         r = c.post("/api/v1/notes/get", json={
-            "root": str(tmp_path),
+            "project_root": str(tmp_path),
             "doc_id": "test_doc",
         })
         assert r.status_code == 200
@@ -123,9 +137,8 @@ class TestNotesEndpoints:
 class TestDetectionCacheEndpoints:
     def test_detection_cache_get(self, tmp_path):
         c = _client()
-        c.post("/api/v1/project/open", json={"root": str(tmp_path)})
         r = c.post("/api/v1/detection-cache/get", json={
-            "root": str(tmp_path),
+            "project_root": str(tmp_path),
             "doc_id": "test_doc",
             "page": 1,
         })

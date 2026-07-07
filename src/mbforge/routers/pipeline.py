@@ -8,8 +8,8 @@ from concurrent.futures import Future
 
 from fastapi import APIRouter
 
-from ..utils.logger import get_logger
 from ..utils.helpers import resolve_root
+from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.pipeline_router")
 
@@ -49,10 +49,10 @@ def _enqueue_all_unresolved(root: str) -> int:
     from pathlib import Path
 
     from ..core.database import DatabaseManager
-    from ..core.project import scan_project_files
+    from ..core.file_scanner import scan_library_files
 
     db = DatabaseManager.get(root)
-    files = scan_project_files(root)
+    files = scan_library_files(root)
     pdf_files = [f for f in files if f.lower().endswith(".pdf")]
 
     enqueued = 0
@@ -91,7 +91,7 @@ def _run_pipeline_sync(pdf_path: str, library_root: str, doc_id: str):
         # Update task status in database
         try:
             from ..core.database import DatabaseManager
-            db = DatabaseManager.get(project_root)
+            db = DatabaseManager.get(library_root)
             with db.kb_conn() as conn:
                 conn.execute(
                     "UPDATE ingest_queue SET status = 'failed', error = ? WHERE id = ?",

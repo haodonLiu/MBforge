@@ -75,13 +75,13 @@ class QueueView(BaseView):
         self._render_tasks()
 
     def refresh(self) -> None:
-        if not self.state.project_root:
+        if not self.state.library_root:
             return
         self._load_data()
 
     def _load_data(self) -> None:
         try:
-            stats = self.api.get_queue_stats(self.state.project_root)
+            stats = self.api.get_queue_stats(self.state.library_root)
             self._stats = {
                 "pending": stats.pending,
                 "processing": stats.processing,
@@ -90,7 +90,7 @@ class QueueView(BaseView):
             }
             self._update_stats()
 
-            tasks = self.api.get_queue(self.state.project_root)
+            tasks = self.api.get_queue(self.state.library_root)
             self._tasks = [self._task_to_dict(task) for task in tasks]
             self._render_tasks()
         except Exception as e:
@@ -180,13 +180,13 @@ class QueueView(BaseView):
         dpg.add_spacer(height=4)
 
     def _on_cancel(self, sender: int, app_data: Any, user_data: str) -> None:
-        run_with_refresh(self.api.cancel_task, self.refresh, self.state.project_root, user_data)
+        run_with_refresh(self.api.cancel_task, self.refresh, self.state.library_root, user_data)
 
     def _on_retry(self, sender: int, app_data: Any, user_data: str) -> None:
-        run_with_refresh(self.api.retry_task, self.refresh, self.state.project_root, user_data)
+        run_with_refresh(self.api.retry_task, self.refresh, self.state.library_root, user_data)
 
     def _on_delete(self, sender: int, app_data: Any, user_data: str) -> None:
-        run_with_refresh(self.api.delete_task, self.refresh, self.state.project_root, user_data)
+        run_with_refresh(self.api.delete_task, self.refresh, self.state.library_root, user_data)
 
     def start_polling(self) -> None:
         """Start polling for queue updates."""

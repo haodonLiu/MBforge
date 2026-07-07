@@ -26,7 +26,7 @@ class SSEClient:
     def stream_search(
         self,
         query: str,
-        project_root: str,
+        library_root: str,
         on_results: Callable[[list[dict]], None],
         on_done: Callable[[int], None],
         on_error: Callable[[str], None],
@@ -38,7 +38,7 @@ class SSEClient:
         def _worker():
             try:
                 url = f"{self.base_url}/api/v1/kb/search/stream"
-                params = {"query": query, "project_root": project_root, "top_k": top_k}
+                params = {"query": query, "library_root": library_root, "top_k": top_k}
                 with httpx.stream("GET", url, params=params, timeout=60) as resp:
                     for line in resp.iter_lines():
                         if not self._active:

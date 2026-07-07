@@ -13,12 +13,12 @@ class AppState:
     port: int = 18792
     base_url: str = ""
 
-    # Project
-    project_root: str = ""
-    project_name: str = ""
+    # Library
+    library_root: str = ""
+    library_name: str = ""
     doc_count: int = 0
     mol_count: int = 0
-    recent_projects: list[dict] = field(default_factory=list)
+    recent_libraries: list[dict] = field(default_factory=list)
 
     # Navigation
     active_view: str = "welcome"

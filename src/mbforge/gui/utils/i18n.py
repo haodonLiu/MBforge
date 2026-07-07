@@ -19,8 +19,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "welcome.subtitle": "分子知识库与 AI 工作台",
         "welcome.create_project": "创建项目",
         "welcome.open_project": "打开项目",
-        "welcome.recent_projects": "最近项目",
-        "welcome.no_projects": "暂无项目",
+        "welcome.recent_libraries": "最近库",
+        "welcome.no_libraries": "暂无库",
         # Workspace
         "workspace.dashboard": "仪表盘",
         "workspace.documents": "文档",
@@ -105,8 +105,8 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
         "welcome.subtitle": "Molecular Knowledge Base & AI Workbench",
         "welcome.create_project": "Create Project",
         "welcome.open_project": "Open Project",
-        "welcome.recent_projects": "Recent Projects",
-        "welcome.no_projects": "No projects yet",
+        "welcome.recent_libraries": "Recent Libraries",
+        "welcome.no_libraries": "No libraries yet",
         # Workspace
         "workspace.dashboard": "Dashboard",
         "workspace.documents": "Documents",

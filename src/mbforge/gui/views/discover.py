@@ -118,7 +118,7 @@ class DiscoverView(BaseView):
 
     def _on_search(self, sender: int, app_data: Any, user_data: Any) -> None:
         query = dpg.get_value("discover_search_input")
-        if not query or not self.state.project_root:
+        if not query or not self.state.library_root:
             return
 
         self._results = []
@@ -133,7 +133,7 @@ class DiscoverView(BaseView):
 
         self.sse.stream_search(
             query=query,
-            project_root=self.state.project_root,
+            library_root=self.state.library_root,
             on_results=on_results,
             on_done=lambda total: None,
             on_error=on_error,
@@ -174,12 +174,12 @@ class DiscoverView(BaseView):
                 dpg.add_spacer(height=4)
 
     def _init_chat(self) -> None:
-        if not self.state.project_root:
+        if not self.state.library_root:
             return
 
         run_in_background(
             self.api.agent_create_session,
-            self.state.project_root,
+            self.state.library_root,
             on_success=lambda sid: setattr(self, "_session_id", sid),
             on_error=lambda e: logger.error("Failed to create agent session: %s", e),
         )

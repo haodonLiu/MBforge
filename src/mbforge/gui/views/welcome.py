@@ -56,8 +56,8 @@ class WelcomeView(BaseView):
 
         dpg.add_spacer(height=48)
 
-        # Recent projects
-        dpg.add_text(t("welcome.recent_projects"), color=(180, 180, 190))
+        # Recent libraries
+        dpg.add_text(t("welcome.recent_libraries"), color=(180, 180, 190))
         dpg.add_spacer(height=8)
         dpg.add_child_window(
             tag="welcome_recent_list",
@@ -83,21 +83,21 @@ class WelcomeView(BaseView):
             dpg.add_file_extension(".md", color=(150, 150, 255, 255))
 
     def refresh(self):
-        """Load recent projects."""
+        """Load recent libraries."""
         self._load_recent()
 
     def _load_recent(self):
-        """Display recent projects list."""
+        """Display recent libraries list."""
         container = "welcome_recent_list"
         # Clear existing children
         children = dpg.get_item_children(container, 1) or []
         for child in children:
             dpg.delete_item(child)
 
-        recent = self.state.recent_projects
+        recent = self.state.recent_libraries
         if not recent:
             dpg.add_text(
-                t("welcome.no_projects"),
+                t("welcome.no_libraries"),
                 parent=container,
                 color=(100, 100, 110),
             )

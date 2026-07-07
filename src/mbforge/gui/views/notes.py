@@ -112,14 +112,14 @@ class NotesView(BaseView):
             )
 
     def refresh(self) -> None:
-        if not self.state.project_root:
+        if not self.state.library_root:
             return
         self._load_notes()
 
     def _load_notes(self) -> None:
         def _worker():
             try:
-                notes = self.api.list_notes(self.state.project_root)
+                notes = self.api.list_notes(self.state.library_root)
                 self._notes = [self._note_to_dict(n) for n in notes]
                 self._render_list()
             except Exception as e:
@@ -159,7 +159,7 @@ class NotesView(BaseView):
 
         def _worker():
             try:
-                content = self.api.get_note(self.state.project_root, note_id)
+                content = self.api.get_note(self.state.library_root, note_id)
                 title = next((n["title"] for n in self._notes if n["id"] == note_id), "")
                 safe_set_value("note_title_input", title)
                 safe_set_value("note_content_input", content)
@@ -176,7 +176,7 @@ class NotesView(BaseView):
         def _worker():
             try:
                 entry = NoteEntry(id=note_id, title=title, content="", created_at=now, updated_at=now)
-                self.api.save_note(self.state.project_root, entry)
+                self.api.save_note(self.state.library_root, entry)
                 self.refresh()
                 self._on_select_note(None, 0, note_id)
             except Exception as e:
@@ -185,7 +185,7 @@ class NotesView(BaseView):
         run_in_background(_worker)
 
     def _on_save(self, sender: int, app_data: Any, user_data: Any) -> None:
-        if not self._current_note_id or not self.state.project_root:
+        if not self._current_note_id or not self.state.library_root:
             return
 
         title = dpg.get_value("note_title_input")
@@ -195,7 +195,7 @@ class NotesView(BaseView):
         def _worker():
             try:
                 entry = NoteEntry(id=self._current_note_id, title=title, content=content, created_at=now, updated_at=now)
-                self.api.save_note(self.state.project_root, entry)
+                self.api.save_note(self.state.library_root, entry)
                 self.refresh()
             except Exception as e:
                 logger.error("Failed to save note: %s", e)
@@ -203,12 +203,12 @@ class NotesView(BaseView):
         run_in_background(_worker)
 
     def _on_delete(self, sender: int, app_data: Any, user_data: Any) -> None:
-        if not self._current_note_id or not self.state.project_root:
+        if not self._current_note_id or not self.state.library_root:
             return
 
         def _worker():
             try:
-                self.api.delete_note(self.state.project_root, self._current_note_id)
+                self.api.delete_note(self.state.library_root, self._current_note_id)
                 self._current_note_id = None
                 safe_set_value("note_title_input", "")
                 safe_set_value("note_content_input", "")

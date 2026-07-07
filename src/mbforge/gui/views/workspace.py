@@ -99,9 +99,9 @@ class WorkspaceView(BaseView):
         )
 
     def refresh(self) -> None:
-        if not self.state.project_root:
+        if not self.state.library_root:
             return
-        run_with_refresh(self._load_docs, self._render_docs, self.state.project_root)
+        run_with_refresh(self._load_docs, self._render_docs, self.state.library_root)
 
     def _load_docs(self, root: str) -> None:
         docs = self.api.list_documents(root)
@@ -118,19 +118,19 @@ class WorkspaceView(BaseView):
                 dpg.add_text(doc.status, color=get_status_color(doc.status))
 
     def _on_sync(self, sender: int, app_data: Any, user_data: Any) -> None:
-        if not self.state.project_root:
+        if not self.state.library_root:
             return
         run_with_refresh(
             self.api.enqueue_documents,
             self.refresh,
-            self.state.project_root,
+            self.state.library_root,
         )
 
     def _on_scan(self, sender: int, app_data: Any, user_data: Any) -> None:
-        if not self.state.project_root:
+        if not self.state.library_root:
             return
         run_with_refresh(
             self.api.scan_files,
             self.refresh,
-            self.state.project_root,
+            self.state.library_root,
         )

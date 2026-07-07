@@ -87,7 +87,7 @@ class MBForgeApp:
                     )
 
         self._create_views()
-        self._load_recent_projects()
+        self._load_recent_libraries()
         self._show_view("welcome")
 
         # Register shutdown handler
@@ -166,49 +166,56 @@ class MBForgeApp:
         try:
             resp = self.api.open_project(root)
             if resp.success:
-                self.state.project_root = resp.root
-                self.state.project_name = resp.name or Path(root).name
+                self.state.library_root = resp.root
+                self.state.library_name = resp.name or Path(root).name
                 self.state.doc_count = resp.doc_count
 
                 if self.header:
-                    self.header.set_project(self.state.project_name)
+                    self.header.set_project(self.state.library_name)
 
-                self._save_to_recent(root, self.state.project_name)
+                self._save_to_recent(root, self.state.library_name)
                 self._show_view("workspace")
-                self.toast.show(f"Opened: {self.state.project_name}", "success")
+                self.toast.show(f"Opened: {self.state.library_name}", "success")
             else:
                 self.toast.show("Failed to open project", "error")
         except Exception as e:
             logger.error("Failed to open project: %s", e)
             self.toast.show(f"Error: {e}", "error")
 
-    def _load_recent_projects(self) -> None:
-        """Load recent projects from config."""
+    def _load_recent_libraries(self) -> None:
+        """Load recent libraries from config.
+
+        On disk the legacy key ``recent_projects`` is preserved so existing
+        ``gui_state.json`` files load without migration. The in-memory field
+        is renamed to ``recent_libraries`` to match the rest of the code.
+        """
         config_path = self._config_path()
         if config_path.exists():
             try:
                 data = json.loads(config_path.read_text(encoding="utf-8"))
-                self.state.recent_projects = data.get("recent_projects", [])
+                self.state.recent_libraries = data.get("recent_projects", [])
             except Exception as e:
-                logger.warning("Failed to load recent projects: %s", e)
-                self.state.recent_projects = []
+                logger.warning("Failed to load recent libraries: %s", e)
+                self.state.recent_libraries = []
 
     def _save_to_recent(self, root: str, name: str) -> None:
-        """Save project to recent list."""
-        recent = [p for p in self.state.recent_projects if p.get("root") != root]
+        """Save library to recent list."""
+        recent = [p for p in self.state.recent_libraries if p.get("root") != root]
         recent.insert(0, {"root": root, "name": name})
         recent = recent[:10]
-        self.state.recent_projects = recent
+        self.state.recent_libraries = recent
 
         config_path = self._config_path()
         config_path.parent.mkdir(parents=True, exist_ok=True)
         try:
+            # Persist under the legacy key for backward-compat with
+            # existing gui_state.json on disk.
             config_path.write_text(
                 json.dumps({"recent_projects": recent}, indent=2),
                 encoding="utf-8",
             )
         except Exception as e:
-            logger.warning("Failed to save recent projects: %s", e)
+            logger.warning("Failed to save recent libraries: %s", e)
 
     def _config_path(self) -> Path:
         """Get config file path."""

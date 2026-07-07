@@ -6,38 +6,6 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class ProjectResponse:
-    success: bool = True
-    root: str = ""
-    name: str = ""
-    doc_count: int = 0
-
-
-@dataclass
-class DocumentEntry:
-    doc_id: str = ""
-    file_path: str = ""
-    file_name: str = ""
-    doc_type: str = ""
-    status: str = "pending"
-    page_count: int = 0
-    created_at: str = ""
-    ingest_status: str = ""
-    ingest_stage: str = ""
-    progress_pct: float = 0.0
-
-
-@dataclass
-class FileNode:
-    name: str = ""
-    path: str = ""
-    is_dir: bool = False
-    children: list[FileNode] = field(default_factory=list)
-    doc_id: str | None = None
-    file_type: str = ""
-
-
-@dataclass
 class MoleculeRecord:
     mol_id: str = ""
     smiles: str = ""
@@ -86,7 +54,7 @@ class NoteEntry:
 class IngestTask:
     id: str = ""
     file_path: str = ""
-    project_root: str = ""
+    library_root: str = ""
     status: str = "pending"
     stage: str = ""
     progress: float = 0.0

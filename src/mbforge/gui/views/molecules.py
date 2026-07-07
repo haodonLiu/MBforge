@@ -125,7 +125,7 @@ class MoleculesView(BaseView):
         pass
 
     def refresh(self) -> None:
-        if not self.state.project_root:
+        if not self.state.library_root:
             return
         self._load_molecules()
 
@@ -133,7 +133,7 @@ class MoleculesView(BaseView):
         def _worker():
             try:
                 resp = self.api.list_molecules(
-                    self.state.project_root,
+                    self.state.library_root,
                     page=self._page,
                     page_size=self._page_size,
                 )
@@ -179,12 +179,12 @@ class MoleculesView(BaseView):
 
     def _on_search(self, sender: int, app_data: Any, user_data: Any) -> None:
         query = dpg.get_value("mol_search_input")
-        if not query or not self.state.project_root:
+        if not query or not self.state.library_root:
             return
 
         def _worker():
             try:
-                results = self.api.search_molecules(self.state.project_root, query)
+                results = self.api.search_molecules(self.state.library_root, query)
                 self._molecules = [self._mol_to_dict(m) for m in results]
                 self._total = len(results)
                 self._render_table()

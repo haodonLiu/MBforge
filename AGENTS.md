@@ -240,11 +240,14 @@ one-shot transform.
 | `src/mbforge/core/knowledge_base.py` | KB CRUD + RRF fusion logic |
 | `src/mbforge/openkb/` | OpenKB + PageIndex adapter (vectorless tree reasoning + dense rerank) |
 | `src/mbforge/backends/moldet_v2_ft.py` | Fine-tuned YOLO26n MolDet backend (alternative to default). |
-| `src/mbforge/utils/helpers.py` | `MBForgeError` + 7 subclasses + `run_sync` |
-| `src/mbforge/utils/logger.py` | `get_logger` + `setup_logging` |
-| `frontend/src/api/http/_utils.ts` | `httpFetch` wrapper + error normalization |
+| `src/mbforge/utils/helpers.py` | `MBForgeError` + 8 subclasses + `run_sync` + `http_status_to_severity` |
+| `src/mbforge/utils/logger.py` | `get_logger` + `setup_logging(json_mode=)` + `JsonFormatter` + `DiagnosticRingHandler` + ring-buffer helpers |
+| `src/mbforge/routers/diagnostics.py` | `/api/v1/diagnostics/{errors,stats}` — unified error ring buffer + front-end error ingestion |
+| `frontend/src/api/http/_utils.ts` | `httpFetch` (extracts `error_code`/`severity`/`category` from backend JSON body) + `invokeWithError` + `registerGlobalErrorHandlers` |
 | `frontend/src/api/sse.ts` | SSE streaming client |
-| `frontend/src/utils/errors.ts` | `AppError` + `ErrorCode` enum |
+| `frontend/src/utils/errors.ts` | `AppError` + `ErrorCode` + `Severity` enums + `severityFromHttpStatus` + `toAppError` |
+| `frontend/src/hooks/useErrorReport.ts` | Debounced (1.5 s) `keepalive` POST of `ErrorBoundary` caught errors to `/api/v1/diagnostics/errors` |
+| `frontend/src/components/ErrorBoundary.tsx` | Wraps `<AppRoutes />`; `componentDidCatch` reports to backend + retains copy/refesh UX |
 | `frontend/src/main.tsx` | React 19 root, BrowserRouter, App |
 | `frontend/src/context/AppContext.tsx` | Global state |
 | `pyproject.toml` | uv + ruff + pytest config, langchain/langgraph deps |

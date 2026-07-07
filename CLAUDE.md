@@ -134,6 +134,7 @@ SQLite + OpenKB + filesystem   (per-project .mbforge/)
 | Module boundaries, layering rules | [docs/specs/architecture-conventions.md](./docs/specs/architecture-conventions.md) |
 | SMILES / E-SMILES / MoleCode layering | [docs/specs/molecular-representation.md](./docs/specs/molecular-representation.md) |
 | Code style (full) | [docs/specs/code-style.md](./docs/specs/code-style.md) |
+| Error & logging architecture (severity ladder, diagnostics endpoint, JSON schema) | [docs/architecture/error-logging.md](./docs/architecture/error-logging.md) |
 
 **Before touching code, consult AGENTS.md.** It is the canonical manual for AI
 contributors and covers: dev commands, conventions, REST/agent-tool workflows,

@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, UploadFile
+from fastapi.responses import FileResponse
 
 from ..utils.config import load_global_config, update_settings
 from ..utils.helpers import MBForgeError
@@ -114,6 +115,33 @@ async def library_delete_document(body: dict) -> dict:
     store = LibraryStore.get(root)
     store.delete_document(doc_id)
     return {"success": True}
+
+
+@router.get("/documents/{doc_id}/file")
+async def library_get_document_file(doc_id: str, library_root: str | None = None) -> FileResponse:
+    """Stream the original PDF bytes for a library document.
+
+    Used by the PDF viewer iframe after import; URL is library-root agnostic
+    beyond a `library_root` query param if a non-default root is configured.
+    """
+    root = _resolve_library_root({"library_root": library_root} if library_root else None)
+    from ..core.library import LibraryStore
+
+    from ..utils.helpers import MBForgeError
+
+    class _DocumentNotFoundError(MBForgeError):
+        status_code = 404
+        error_code = "document_not_found"
+
+    store = LibraryStore.get(root)
+    pdf_path = store.resolve_file(doc_id)
+    if pdf_path is None:
+        raise _DocumentNotFoundError("Document file not found", detail=f"doc_id={doc_id}")
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename=Path(pdf_path).name,
+    )
 
 
 @router.post("/collections/create")

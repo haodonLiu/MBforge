@@ -91,7 +91,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
     let cancelled = false
     setPdfUrl('')
     setPdfLoading(true)
-    const url = `http://127.0.0.1:18792/api/v1/models/pdf/view?path=${encodeURIComponent(absDocPath)}`
+    const url = `http://127.0.0.1:18792/api/v1/library/documents/${encodeURIComponent(doc.doc_id)}/file?library_root=${encodeURIComponent(projectRoot)}`
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!cancelled) { setPdfUrl(url); setPdfLoading(false) }
     return () => { cancelled = true }

@@ -90,28 +90,6 @@ export default function Sidebar({ current, onNavigate }: Props) {
         zIndex: 10,
       }}
     >
-      {PRIMARY_ITEMS.map(item => (
-        <NavButton
-          key={item.id}
-          active={current === item.id}
-          onClick={() => handleClick(item)}
-          label={t(item.labelKey)}
-          icon={item.icon}
-        />
-      ))}
-
-      <div style={{ flex: 1 }} />
-
-      {SECONDARY_ITEMS.map(item => (
-        <NavButton
-          key={item.id}
-          active={current === item.id}
-          onClick={() => handleClick(item)}
-          label={t(item.labelKey)}
-          icon={item.icon}
-        />
-      ))}
-
       <Tooltip text={toggleLabel}>
         <motion.button
           onClick={() => setLibraryPanelCollapsed(!libraryPanelCollapsed)}
@@ -136,6 +114,29 @@ export default function Sidebar({ current, onNavigate }: Props) {
           {libraryPanelCollapsed ? <ChevronRightIcon size={16} /> : <ChevronLeftIcon size={16} />}
         </motion.button>
       </Tooltip>
+
+      {PRIMARY_ITEMS.map(item => (
+        <NavButton
+          key={item.id}
+          active={current === item.id}
+          onClick={() => handleClick(item)}
+          label={t(item.labelKey)}
+          icon={item.icon}
+        />
+      ))}
+
+      <div style={{ flex: 1 }} />
+
+      {SECONDARY_ITEMS.map(item => (
+        <NavButton
+          key={item.id}
+          active={current === item.id}
+          onClick={() => handleClick(item)}
+          label={t(item.labelKey)}
+          icon={item.icon}
+        />
+      ))}
+
 
       <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
         <NavButton

@@ -18,7 +18,7 @@ import { showToast } from '../../hooks/useToast'
 
 interface Props {
   doc: DocumentEntry
-  projectRoot: string
+  libraryRoot: string
   onClose: () => void
 }
 
@@ -59,9 +59,9 @@ function buildFigureBoxesForPage(
   return out
 }
 
-export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
-  const v = usePdfViewer(doc, projectRoot)
-  const pipeline = useIngestPipeline(doc.doc_id, projectRoot)
+export default function PdfViewer({ doc, libraryRoot, onClose }: Props) {
+  const v = usePdfViewer(doc, libraryRoot)
+  const pipeline = useIngestPipeline(doc.doc_id, libraryRoot)
   const [corefMenu, setCorefMenu] = useState<CorefContextMenu | null>(null)
 
   useEffect(() => {
@@ -101,7 +101,7 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
     setCorefMenu(null)
     try {
       await updateCorefPair(
-        projectRoot,
+        libraryRoot,
         doc.doc_id,
         v.currentPage,
         prediction.id,
@@ -115,18 +115,18 @@ export default function PdfViewer({ doc, projectRoot, onClose }: Props) {
     } catch (e) {
       showToast('重选 coref 失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     }
-  }, [corefMenu, projectRoot, doc.doc_id, v])
+  }, [libraryRoot, doc.doc_id, v])
 
   const handleConfirm = useCallback(async (p: CorefPrediction, confirmed: boolean) => {
     setCorefMenu(null)
     try {
-      await confirmCorefPrediction(projectRoot, p.id, confirmed)
+      await confirmCorefPrediction(libraryRoot, p.id, confirmed)
       showToast(confirmed ? '已确认' : '已撤销', 'success')
       void v.refreshCorefForPage()
     } catch (e) {
       showToast('操作失败：' + (e instanceof Error ? e.message : String(e)), 'error')
     }
-  }, [projectRoot, v])
+  }, [libraryRoot, v])
 
   return (
     <div className="pdf-viewer">

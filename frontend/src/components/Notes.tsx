@@ -13,21 +13,21 @@ import BacklinksPanel from './notes/BacklinksPanel'
 
 export default function Notes() {
   const { t } = useTranslation()
-  const { projectRoot } = useAppContext()
+  const { libraryRoot } = useAppContext()
   const [notes, setNotes] = useState<Note[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
 
   const loadNotes = useCallback(async () => {
-    if (!projectRoot) {
+    if (!libraryRoot) {
       setNotes([])
       setLoading(false)
       return
     }
     setLoading(true)
     try {
-      const list = await notesList(projectRoot)
+      const list = await notesList(libraryRoot)
       setNotes(list)
       if (list.length > 0 && !activeId) {
         setActiveId(list[0].id)
@@ -37,7 +37,7 @@ export default function Notes() {
     } finally {
       setLoading(false)
     }
-  }, [projectRoot, activeId])
+  }, [libraryRoot, activeId])
 
   useEffect(() => {
     loadNotes()
@@ -72,7 +72,7 @@ export default function Notes() {
   }, [filteredNotes, activeTag])
 
   const handleCreate = async () => {
-    if (!projectRoot) return
+    if (!libraryRoot) return
     const newNote: Note = {
       id: `note_${Date.now()}`,
       title: t('notes.create'),
@@ -83,7 +83,7 @@ export default function Notes() {
       updatedAt: new Date().toISOString(),
     }
     try {
-      const saved = await notesSave(projectRoot, newNote)
+      const saved = await notesSave(libraryRoot, newNote)
       setNotes(prev => [saved, ...prev])
       setActiveId(saved.id)
       showToast(t('notes.created'), 'success')
@@ -116,12 +116,12 @@ export default function Notes() {
 
   const [backlinks, setBacklinks] = useState<Note[]>([])
   useEffect(() => {
-    if (!projectRoot || !activeId) {
+    if (!libraryRoot || !activeId) {
       setBacklinks([])
       return
     }
     let cancelled = false
-    notesBacklinks(projectRoot, activeId)
+    notesBacklinks(libraryRoot, activeId)
       .then(list => {
         if (!cancelled) setBacklinks(list)
       })
@@ -131,13 +131,13 @@ export default function Notes() {
     return () => {
       cancelled = true
     }
-  }, [projectRoot, activeId, notes])
+  }, [libraryRoot, activeId, notes])
 
   const handleUpdate = async (updated: Note) => {
-    if (!projectRoot) return
+    if (!libraryRoot) return
     setNotes(prev => prev.map(n => n.id === updated.id ? updated : n))
     try {
-      await notesSave(projectRoot, updated)
+      await notesSave(libraryRoot, updated)
     } catch (e) {
       showToast(t('notes.saveFailed'), 'error')
     }
@@ -145,9 +145,9 @@ export default function Notes() {
 
   const handleDelete = async (id: string) => {
     if (!confirm(t('notes.confirmDelete'))) return
-    if (!projectRoot) return
+    if (!libraryRoot) return
     try {
-      await notesDelete(projectRoot, id)
+      await notesDelete(libraryRoot, id)
       setNotes(prev => prev.filter(n => n.id !== id))
       if (activeId === id) {
         setActiveId(notes.find(n => n.id !== id)?.id ?? null)
@@ -167,7 +167,7 @@ export default function Notes() {
             {t('notes.subtitle', { count: notes.length })}
           </div>
           {loading && <div className="notes-header-status">{t('notes.loading')}</div>}
-          {!projectRoot && (
+          {!libraryRoot && (
             <div className="notes-header-status notes-header-status--warn">
               {t('notes.noProject')}
             </div>

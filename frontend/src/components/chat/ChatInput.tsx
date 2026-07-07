@@ -7,10 +7,10 @@ interface ChatInputProps {
   onInputChange: (v: string) => void
   onSend: () => void
   isLoading: boolean
-  projectRoot: string | null
+  libraryRoot: string | null
 }
 
-export default function ChatInput({ input, onInputChange, onSend, isLoading, projectRoot }: ChatInputProps) {
+export default function ChatInput({ input, onInputChange, onSend, isLoading, libraryRoot }: ChatInputProps) {
   const { t } = useTranslation()
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -48,14 +48,14 @@ export default function ChatInput({ input, onInputChange, onSend, isLoading, pro
           value={input}
           onChange={e => onInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={projectRoot ? t('chat.placeholder') : t('chat.placeholderNoProject')}
+          placeholder={libraryRoot ? t('chat.placeholder') : t('chat.placeholderNoProject')}
           maxHeight="120px"
-          disabled={isLoading || !projectRoot}
+          disabled={isLoading || !libraryRoot}
           rows={1}
         />
         <IconButton
           size={36}
-          disabled={!input.trim() || isLoading || !projectRoot}
+          disabled={!input.trim() || isLoading || !libraryRoot}
           onClick={onSend}
         >
           <SendIcon size={16} />

@@ -1,14 +1,10 @@
-/** HTTP communication layer — replaces Tauri IPC for web mode. */
+/** HTTP communication layer for web mode. */
 
 const API_BASE = 'http://127.0.0.1:18792'
 
 export { AppError, ErrorCode, getErrorMessage } from '@/utils/errors'
 import { AppError, ErrorCode, getErrorMessage } from '@/utils/errors'
 import { showToast } from '@/hooks/useToast'
-
-export function isTauriAvailable(): boolean {
-  return false
-}
 
 const NETWORK_KEYWORDS = ['network', 'connection', 'timeout', 'refused'] as const
 

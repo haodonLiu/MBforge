@@ -22,7 +22,7 @@ interface ChemDescriptors {
 const VALID_STATUSES = ['confirmed', 'pending', 'corrected', 'rejected'] as const
 
 interface BaseProps {
-  projectRoot?: string | null
+  libraryRoot?: string | null
 }
 
 interface DetectionProps extends BaseProps {
@@ -53,7 +53,7 @@ type MoleculeDetailPanelProps = DetectionProps | MoleculeProps
  * 两种模式均显示 MoleCode、理化性质与 E-SMILES。
  */
 export default function MoleculeDetailPanel(props: MoleculeDetailPanelProps) {
-  const { detection, molecule, projectRoot } = props
+  const { detection, molecule, libraryRoot } = props
   const isMoleculeMode = Boolean(molecule)
 
   // Detection 模式：结构编辑器弹窗
@@ -109,14 +109,14 @@ export default function MoleculeDetailPanel(props: MoleculeDetailPanelProps) {
 
   // MoleculeRecord 模式：保存编辑后的记录
   const handleSaveRecord = async () => {
-    if (!projectRoot) {
+    if (!libraryRoot) {
       toast.error('未指定项目根目录，无法保存')
       return
     }
     if (!edited) return
     setSaving(true)
     try {
-      const success = await molAdminUpdate(projectRoot, edited)
+      const success = await molAdminUpdate(libraryRoot, edited)
       if (success) {
         toast.success('分子记录已更新')
         ;(props as MoleculeProps).onSaved?.()

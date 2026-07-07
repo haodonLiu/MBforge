@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
-import { invokeWithError, isTauriAvailable, registerGlobalErrorHandlers } from '../_utils'
+import { invokeWithError, registerGlobalErrorHandlers } from '../_utils'
 import { AppError, ErrorCode } from '@/utils/errors'
 
 describe('invokeWithError', () => {
@@ -20,10 +20,10 @@ describe('invokeWithError', () => {
       .toMatchObject({ message: 'boom' })
   })
 
-  it('uses default fallback error code TauriInvoke when no fallback provided', async () => {
+  it('uses default Unknown fallback when no fallback provided', async () => {
     await expect(invokeWithError(() => Promise.reject(new Error('boom'))))
       .rejects
-      .toMatchObject({ errorCode: ErrorCode.TauriInvoke, message: 'boom' })
+      .toMatchObject({ errorCode: ErrorCode.Unknown, message: 'boom' })
   })
 
   it('wraps non-AppError with the fallback error code', async () => {
@@ -53,27 +53,6 @@ describe('invokeWithError', () => {
     }, ErrorCode.ApiError))
       .rejects
       .toMatchObject({ errorCode: ErrorCode.ApiError, message: expected })
-  })
-})
-
-describe('isTauriAvailable', () => {
-  let originalTauri: unknown
-  let originalTauriInternals: unknown
-
-  beforeEach(() => {
-    originalTauri = (window as any).__TAURI__
-    originalTauriInternals = (window as any).__TAURI_INTERNALS__
-    delete (window as any).__TAURI__
-    delete (window as any).__TAURI_INTERNALS__
-  })
-
-  afterEach(() => {
-    ;(window as any).__TAURI__ = originalTauri
-    ;(window as any).__TAURI_INTERNALS__ = originalTauriInternals
-  })
-
-  it('returns false when neither __TAURI__ nor __TAURI_INTERNALS__ is present', () => {
-    expect(isTauriAvailable()).toBe(false)
   })
 })
 

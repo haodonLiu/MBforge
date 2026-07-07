@@ -690,5 +690,19 @@
   "ingest.logStarted": "Parsing started",
   "ingest.logLowConfidence": "Low confidence on some pages",
   "ingest.logCompleted": "OCR complete",
-  "ingest.logNoLogs": "No logs yet"
+  "ingest.logNoLogs": "No logs yet",
+  "library.title": "Library",
+  "library.importPdf": "Import PDF",
+  "library.importSuccess": "Document imported successfully",
+  "library.importFailed": "Failed to import document",
+  "library.importError": "Import error: {{error}}",
+  "library.allDocuments": "All Documents",
+  "library.collections": "Collections",
+  "library.newCollection": "New Collection",
+  "library.configureLibrary": "Configure Library",
+  "library.configureDescription": "Choose a directory for your document library data.",
+  "library.libraryRoot": "Data Directory",
+  "library.createLibrary": "Create Library",
+  "library.documents": "Documents",
+  "library.noDocuments": "No documents yet. Import a PDF to get started."
 }

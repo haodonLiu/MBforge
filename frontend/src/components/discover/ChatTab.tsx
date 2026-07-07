@@ -32,7 +32,7 @@ const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:18792'
 
 export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
   const { t } = useTranslation()
-  const { projectRoot } = useAppContext()
+  const { libraryRoot } = useAppContext()
   const sessionIdRef = useRef<string>('')
   const [messages, setMessages] = useState<LocalMessage[]>([
     { role: 'assistant', content: t('discover.chat.greeting') },
@@ -79,7 +79,7 @@ export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
 
       try {
         await agentInit(url)
-        await agentCreateSession(sid, projectRoot)
+        await agentCreateSession(sid, libraryRoot)
 
         const history = await agentGetHistory(sid)
         if (history.length > 0) {
@@ -101,20 +101,20 @@ export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
         agentDestroySession(sessionIdRef.current).catch((e) => console.warn('agentDestroySession failed:', e))
       }
     }
-  }, [projectRoot, t])
+  }, [libraryRoot, t])
 
   useEffect(() => {
-    if (!projectRoot) return
-    listDocumentsTauri(projectRoot).then(resp => {
+    if (!libraryRoot) return
+    listDocumentsTauri(libraryRoot).then(resp => {
       if (resp.success) setDocCount(resp.documents.length)
     }).catch((e) => console.warn('listDocumentsTauri failed:', e))
-    moleculeStatsTauri(projectRoot).then(resp => {
+    moleculeStatsTauri(libraryRoot).then(resp => {
       if (resp.success) setMolCount(resp.stats.total || 0)
     }).catch((e) => console.warn('moleculeStatsTauri failed:', e))
-  }, [projectRoot])
+  }, [libraryRoot])
 
   const sendMessage = useCallback(async () => {
-    if (!input.trim() || isLoading || !projectRoot) return
+    if (!input.trim() || isLoading || !libraryRoot) return
 
     const userMsg = input.trim()
     isSubmittingRef.current = true
@@ -166,12 +166,12 @@ export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
     } finally {
       setIsLoading(false)
     }
-  }, [input, isLoading, messages, onQueryChange, projectRoot, t])
+  }, [input, isLoading, messages, onQueryChange, libraryRoot, t])
 
   return (
     <div className="discover-chat-panel">
       <div className="discover-chat-context">
-        <ChatContextChip icon={<FolderIcon size={14} />} label={projectRoot ? projectRoot.split('/').pop() || projectRoot : t('discover.chat.noProject')} />
+        <ChatContextChip icon={<FolderIcon size={14} />} label={libraryRoot ? libraryRoot.split('/').pop() || libraryRoot : t('discover.chat.noProject')} />
         <ChatContextChip icon={<FileTextIcon size={14} />} label={t('discover.chat.documentsCount', { count: docCount })} />
         <ChatContextChip icon={<FlaskIcon size={14} />} label={t('discover.chat.moleculesCount', { count: molCount })} />
       </div>
@@ -201,7 +201,7 @@ export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
         onInputChange={setInput}
         onSend={sendMessage}
         isLoading={isLoading}
-        projectRoot={projectRoot}
+        libraryRoot={libraryRoot}
       />
     </div>
   )

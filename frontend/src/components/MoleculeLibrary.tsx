@@ -16,7 +16,7 @@ import type { MoleculeRecord } from '@/types'
 import type { MoleculeSortField } from '@/hooks/useMoleculeLibrary'
 
 export default function MoleculeLibrary() {
-  const { projectRoot } = useAppContext()
+  const { libraryRoot } = useAppContext()
   const { t } = useTranslation()
 
   const {
@@ -42,7 +42,7 @@ export default function MoleculeLibrary() {
     selectAll,
     clearSelection,
     refresh,
-  } = useMoleculeLibrary(projectRoot)
+  } = useMoleculeLibrary(libraryRoot)
 
   const {
     activeTab,
@@ -286,7 +286,7 @@ export default function MoleculeLibrary() {
               <Button variant="secondary" size="sm" onClick={clearSelection} disabled={selectedIds.size === 0}>
                 {t('mol.clearSelection')}
               </Button>
-              <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)} disabled={!projectRoot}>
+              <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)} disabled={!libraryRoot}>
                 {t('mol.add')}
               </Button>
             </div>
@@ -311,17 +311,17 @@ export default function MoleculeLibrary() {
             sarSession={sarSession}
             activeTab={activeTab}
             onTabChange={(tab) => setActiveTab(tab)}
-            projectRoot={projectRoot}
+            libraryRoot={libraryRoot}
             onRefresh={refresh}
           />
         </div>
       </div>
 
-      {projectRoot && (
+      {libraryRoot && (
         <AddMoleculeDialog
           open={showAddDialog}
           onClose={() => setShowAddDialog(false)}
-          projectRoot={projectRoot}
+          libraryRoot={libraryRoot}
           onAdded={handleSaved}
         />
       )}
@@ -330,7 +330,7 @@ export default function MoleculeLibrary() {
         molecule={selectedMolecule}
         open={drawerOpen}
         isCorrectionMode={isCorrectionMode}
-        projectRoot={projectRoot}
+        libraryRoot={libraryRoot}
         onClose={handleDrawerClose}
         onSaved={handleSaved}
       />

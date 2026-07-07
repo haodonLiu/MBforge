@@ -10,7 +10,7 @@ import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 // Welcome is above-the-fold and stays static for fast first paint.
 import Welcome from './components/Welcome'
-import ProjectScope from './components/ProjectScope'
+import LibraryPanel from './components/LibraryPanel'
 import TabBar from './components/project/TabBar'
 import PdfViewer from './components/project/PdfViewer'
 import MarkdownViewer from './components/MarkdownViewer'
@@ -21,11 +21,7 @@ import { registerGlobalErrorHandlers } from './api/http/_utils'
 import { useSidecarEvents } from './hooks/useSidecarEvents'
 import { useIngestNotifications } from './hooks/useIngestNotifications'
 import OcrConfigModal from './components/OcrConfigModal'
-import { openProject } from './api/http/project'
-
-function getContentColumn(showProjectScope: boolean): '2' | '3' {
-  return showProjectScope ? '3' : '2'
-}
+import { getLibraryStatus } from './api/http/library'
 
 // Route-level code splitting — each page becomes its own chunk.
 // Heavy bundles (Chat, MoleculeLibrary) only load when the user navigates
@@ -40,21 +36,16 @@ const SettingsPage = lazy(() => import('./components/settings/SettingsPage'))
 
 /** Lightweight fallback shown while a route chunk is being fetched. */
 function RouteFallback() {
-  const { t } = useTranslation()
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100%',
-        color: 'var(--text-muted)',
-        fontSize: '14px',
-      }}
-    >
-      {t('common.loading')}
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100%',
+      color: 'var(--text-muted)',
+      fontSize: '14px',
+    }}>
+      Loading...
     </div>
   )
 }
@@ -72,9 +63,8 @@ export default function App() {
 }
 
 function AppInner() {
-  const { projectRoot, setProjectRoot, setActiveFile, openTabs, activeTabId, closeTab } = useAppContext()
+  const { libraryRoot, setLibraryRoot, setActiveFile, openTabs, activeTabId, closeTab } = useAppContext()
   const [currentPage, setCurrentPage] = useState('workspace')
-  const [projectScopeOpen, setProjectScopeOpen] = useState(true)
   const isMobile = useIsMobile()
   const isTablet = useIsTablet()
   const { t } = useTranslation()
@@ -86,7 +76,7 @@ function AppInner() {
   )
 
   useSidecarEvents()
-  useIngestNotifications(projectRoot)
+  useIngestNotifications(libraryRoot)
 
   useEffect(() => {
     const cleanup = registerGlobalErrorHandlers()
@@ -103,56 +93,37 @@ function AppInner() {
     return () => window.removeEventListener('mbforge:navigate', handler)
   }, [])
 
-  // Restore the last-opened project on app start, so the user does not have
-  // to re-pick the folder every time. The path is re-validated by calling
-  // ``open_project``; if the folder was deleted or is no longer a valid
-  // project, the localStorage entry is cleared and Welcome re-appears.
+  // Restore library config from backend on mount
   useEffect(() => {
     void (async () => {
-      const saved = localStorage.getItem('mbforge_project_root')
-      if (!saved) return
       try {
-        const resp = await openProject(saved)
-        if (resp.success) {
-          setProjectRoot(resp.project.root)
-          setCurrentPage('workspace')
-        } else {
-          localStorage.removeItem('mbforge_project_root')
+        const status = await getLibraryStatus()
+        if (status.configured && status.root) {
+          setLibraryRoot(status.root)
         }
       } catch {
-        localStorage.removeItem('mbforge_project_root')
+        // Backend not reachable yet — keep current state
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Keep localStorage in sync with projectRoot so the "switch project" flow
-  // (Sidebar.onSwitchProject -> setProjectRoot('')) actually clears the
-  // saved path — otherwise the next app restart would auto-restore the
-  // old project, contradicting the user's intent. The useRef skip-on-first-run
-  // avoids racing with the restore useEffect above (both fire on mount;
-  // without the skip, the sync would clear localStorage before the restore
-  // could read it).
+  // Keep localStorage in sync with libraryRoot so the setting persists
   const hasMountedRef = useRef(false)
   useEffect(() => {
     if (!hasMountedRef.current) {
       hasMountedRef.current = true
       return
     }
-    if (projectRoot) {
-      localStorage.setItem('mbforge_project_root', projectRoot)
+    if (libraryRoot) {
+      localStorage.setItem('mbforge_library_root', libraryRoot)
     } else {
-      localStorage.removeItem('mbforge_project_root')
+      localStorage.removeItem('mbforge_library_root')
     }
-  }, [projectRoot])
+  }, [libraryRoot])
 
-  const handleProjectOpened = (root: string) => {
-    setProjectRoot(root)
-    setCurrentPage('workspace')
-  }
-
-  // No project open - show Welcome only
-  if (!projectRoot) {
+  // No library configured - show Welcome (library config)
+  if (!libraryRoot) {
     return (
       <div style={{
         display: 'grid',
@@ -167,79 +138,42 @@ function AppInner() {
           flexDirection: 'column',
           overflow: 'hidden',
         }}>
-          <Welcome onProjectOpened={handleProjectOpened} />
+          <Welcome />
         </main>
         <ToastContainer />
       </div>
     )
   }
 
-  // 移动端：文件树默认关闭，Sidebar 简化
-  const effectiveProjectScopeOpen = projectScopeOpen && !isMobile
-  const showProjectScope = effectiveProjectScopeOpen && !isTablet
-  const contentColumn = getContentColumn(showProjectScope)
-
-  // Project open - show full app with file tree
+  // Library configured - show full app with library panel
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: (() => {
-        if (showProjectScope) return '56px 220px 1fr'
-        return '56px 1fr'
-      })(),
+      gridTemplateColumns: '56px 220px 1fr',
       gridTemplateRows: 'auto auto 1fr auto',
       height: '100vh',
     }}>
       <Sidebar
         current={currentPage}
         onNavigate={setCurrentPage}
-        onSwitchProject={async () => {
-          const ok = window.confirm(t('nav.confirmSwitchProject'))
-          if (ok) setProjectRoot('')
-        }}
-        projectScopeOpen={projectScopeOpen}
-        onToggleProjectScope={() => setProjectScopeOpen(!projectScopeOpen)}
       />
-      {showProjectScope && (
-        <div style={{
-          gridColumn: '2',
-          gridRow: '1 / 5',
-          background: 'var(--bg-surface)',
-          borderRight: '1px solid var(--border)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}>
-          <div style={{
-            padding: '12px 14px',
-            borderBottom: '1px solid var(--border)',
-            fontSize: '12px',
-            fontWeight: 600,
-            color: 'var(--text-muted)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-          }}>
-            {t('nav.projectScope')}
-          </div>
-          <ProjectScope onFileClick={(path) => {
-            // 走 setActiveFile → ProjectView.useEffect → 应用内 PdfViewer/MarkdownViewer
-            const lower = path.toLowerCase()
-            if (lower.endsWith('.pdf')) {
-              setActiveFile({ path, type: 'pdf', mode: 'read' })
-            } else if (lower.endsWith('.md') || lower.endsWith('.markdown')) {
-              setActiveFile({ path, type: 'markdown' })
-            } else {
-              showToast(`${t('common.project')}: ${path}`, 'info')
-            }
-          }} />
-        </div>
-      )}
-      <Header gridColumn={contentColumn} />
-      <div style={{ gridColumn: contentColumn }}>
+      <div style={{
+        gridColumn: '2',
+        gridRow: '1 / 5',
+        background: 'var(--bg-surface)',
+        borderRight: '1px solid var(--border)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}>
+        <LibraryPanel />
+      </div>
+      <Header gridColumn="3" />
+      <div style={{ gridColumn: '3' }}>
         <TabBar />
       </div>
       <main style={{
-        gridColumn: contentColumn,
+        gridColumn: '3',
         gridRow: '3 / 5',
         display: 'flex',
         flexDirection: 'column',
@@ -249,16 +183,16 @@ function AppInner() {
         <ErrorBoundary>
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
             {activeTabId === null ? (
-              <AppRoutes projectRoot={projectRoot} />
+              <AppRoutes />
             ) : activeTab && activeTab.type === 'pdf' ? (
               <PdfViewer
                 doc={activeTab.doc}
-                projectRoot={activeTab.projectRoot}
+                libraryRoot={activeTab.libraryRoot}
                 onClose={() => closeTab(activeTab.id)}
               />
             ) : activeTab && activeTab.type === 'markdown' ? (
               <MarkdownViewer
-                projectRoot={activeTab.projectRoot}
+                libraryRoot={activeTab.libraryRoot}
                 filePath={activeTab.doc.path}
                 onClose={() => closeTab(activeTab.id)}
               />
@@ -272,7 +206,7 @@ function AppInner() {
   )
 }
 
-function AppRoutes({ projectRoot }: { projectRoot: string }) {
+function AppRoutes() {
   const location = useLocation()
   return (
     <AnimatePresence>
@@ -315,7 +249,7 @@ function AppRoutes({ projectRoot }: { projectRoot: string }) {
           path="/queue"
           element={
             <Suspense fallback={<RouteFallback />}>
-              <AnimatedPage><ProcessingQueue projectRoot={projectRoot} /></AnimatedPage>
+              <AnimatedPage><ProcessingQueue /></AnimatedPage>
             </Suspense>
           }
         />

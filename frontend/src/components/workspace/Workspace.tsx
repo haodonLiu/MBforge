@@ -1,17 +1,72 @@
-import { useCallback, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { fadeUp } from '@/hooks/useAnimations'
-import ProjectView from '@/components/ProjectView'
+import { useAppContext } from '@/context/AppContext'
+import {
+  listDocuments,
+  importDocument,
+  type DocumentInfo,
+} from '@/api/http/library'
+import { showToast } from '@/hooks/useToast'
+import { useTranslation } from 'react-i18next'
+import { PdfIcon } from '@/components/icons/nav'
+import { PlusIcon } from '@/components/icons/actions'
+import PageTitle from '@/components/ui/PageTitle'
+import BodyText from '@/components/ui/BodyText'
 
-/**
- * Workspace 页面。
- *
- * 当无文件打开时显示项目仪表盘，打开文件（PDF/Markdown）时隐藏标题，
- * 让文件查看器占据全部空间。
- */
 export default function Workspace() {
-  const [fileActive, setFileActive] = useState(false)
-  const handleFileActive = useCallback((active: boolean) => setFileActive(active), [])
+  const { t } = useTranslation()
+  const { libraryRoot, activeCollectionId, openTab } = useAppContext()
+  const [documents, setDocuments] = useState<DocumentInfo[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!libraryRoot) return
+    setLoading(true)
+    void listDocuments(activeCollectionId ?? undefined)
+      .then(r => setDocuments(r.documents))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [libraryRoot, activeCollectionId])
+
+  const handleImport = async () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.pdf'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      try {
+        const resp = await importDocument(file.name, file.name.replace(/\.pdf$/i, ''))
+        if (resp.success) {
+          showToast(t('library.importSuccess'), 'success')
+          const r = await listDocuments(activeCollectionId ?? undefined)
+          setDocuments(r.documents)
+        } else {
+          showToast(resp.error || t('library.importFailed'), 'error')
+        }
+      } catch (e) {
+        showToast(t('library.importError', { error: e instanceof Error ? e.message : String(e) }), 'error')
+      }
+    }
+    input.click()
+  }
+
+  const handleOpenDocument = (doc: DocumentInfo) => {
+    openTab({
+      type: 'pdf',
+      title: doc.title,
+      doc: { doc_id: doc.doc_id, path: doc.file_name },
+      libraryRoot,
+    })
+  }
+
+  const statusBadge = (status: string) => {
+    const cls = status === 'ready' ? 'badge-ready' :
+                status === 'indexing' ? 'badge-indexing' :
+                status === 'error' ? 'badge-error' : 'badge-pending'
+    return <span className={`doc-status-badge ${cls}`}>{status}</span>
+  }
 
   return (
     <motion.div
@@ -19,16 +74,49 @@ export default function Workspace() {
       variants={fadeUp}
       initial="hidden"
       animate="visible"
-      style={fileActive ? { padding: 0, gap: 0 } : undefined}
     >
-      {!fileActive && (
-        <div className="workspace-header">
-        </div>
-      )}
+      <div className="workspace-header">
+        <PageTitle>{t('library.documents')}</PageTitle>
+        <button className="workspace-import-btn" onClick={handleImport}>
+          <PlusIcon size={16} />
+          {t('library.importPdf')}
+        </button>
+      </div>
 
-      {/* Document browser */}
       <div className="workspace-content">
-        <ProjectView onFileActive={handleFileActive} />
+        {loading ? (
+          <div className="workspace-loading">Loading...</div>
+        ) : documents.length === 0 ? (
+          <div className="workspace-empty">
+            <BodyText>{t('library.noDocuments')}</BodyText>
+          </div>
+        ) : (
+          <div className="doc-grid">
+            {documents.map(doc => (
+              <div
+                key={doc.doc_id}
+                className="doc-card"
+                onClick={() => handleOpenDocument(doc)}
+              >
+                <div className="doc-card-icon">
+                  <PdfIcon size={32} />
+                </div>
+                <div className="doc-card-info">
+                  <div className="doc-card-title" title={doc.title}>
+                    {doc.title}
+                  </div>
+                  <div className="doc-card-meta">
+                    <span>{doc.file_name}</span>
+                    {doc.page_count > 0 && <span>{doc.page_count} pages</span>}
+                  </div>
+                </div>
+                <div className="doc-card-status">
+                  {statusBadge(doc.status)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </motion.div>
   )

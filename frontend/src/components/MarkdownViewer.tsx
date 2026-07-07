@@ -11,14 +11,14 @@ import { ArrowLeftIcon, HashIcon, NoteIcon } from './icons'
 
 interface Props {
   /** 项目根目录绝对路径 */
-  projectRoot: string
+  libraryRoot: string
   /** 文件绝对路径 */
   filePath: string
   /** 关闭回调 */
   onClose: () => void
 }
 
-export default function MarkdownViewer({ projectRoot, filePath, onClose }: Props) {
+export default function MarkdownViewer({ libraryRoot, filePath, onClose }: Props) {
   const { t } = useTranslation()
   const [content, setContent] = useState('')
   const [isLoading, setIsLoading] = useState(true)
@@ -34,7 +34,7 @@ export default function MarkdownViewer({ projectRoot, filePath, onClose }: Props
 
     const load = async () => {
       try {
-        const text = await readTextFile(projectRoot, filePath)
+        const text = await readTextFile(libraryRoot, filePath)
         if (!cancelled) setContent(text)
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e))

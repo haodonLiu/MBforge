@@ -690,5 +690,19 @@
   "ingest.logStarted": "开始解析",
   "ingest.logLowConfidence": "某页置信度低",
   "ingest.logCompleted": "OCR 完成",
-  "ingest.logNoLogs": "暂无日志"
+  "ingest.logNoLogs": "暂无日志",
+  "library.title": "文库",
+  "library.importPdf": "导入 PDF",
+  "library.importSuccess": "文档已成功导入",
+  "library.importFailed": "文档导入失败",
+  "library.importError": "导入错误：{{error}}",
+  "library.allDocuments": "所有文档",
+  "library.collections": "集合",
+  "library.newCollection": "新建集合",
+  "library.configureLibrary": "配置文库",
+  "library.configureDescription": "选择文库数据目录",
+  "library.libraryRoot": "数据目录",
+  "library.createLibrary": "创建文库",
+  "library.documents": "文档",
+  "library.noDocuments": "暂无文档，导入 PDF 开始使用"
 }

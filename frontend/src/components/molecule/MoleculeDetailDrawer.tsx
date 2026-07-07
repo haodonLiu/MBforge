@@ -9,7 +9,7 @@ interface MoleculeDetailDrawerProps {
   molecule: MoleculeRecord | null
   open: boolean
   isCorrectionMode: boolean
-  projectRoot: string | null
+  libraryRoot: string | null
   onClose: () => void
   onSaved?: () => void
 }
@@ -46,7 +46,7 @@ export default function MoleculeDetailDrawer({
   molecule,
   open,
   isCorrectionMode,
-  projectRoot,
+  libraryRoot,
   onClose,
   onSaved,
 }: MoleculeDetailDrawerProps) {
@@ -57,7 +57,7 @@ export default function MoleculeDetailDrawer({
   const handleCorrectionComplete = async (
     results: Array<{ id: string; finalSmiles: string; status: 'confirmed' | 'rejected' | 'corrected' }>,
   ) => {
-    if (!projectRoot) {
+    if (!libraryRoot) {
       showToast('未指定项目根目录，无法保存', 'error')
       return
     }
@@ -75,7 +75,7 @@ export default function MoleculeDetailDrawer({
     }
     try {
       const settled = await Promise.allSettled(
-        updates.map((record) => molAdminUpdate(projectRoot, record)),
+        updates.map((record) => molAdminUpdate(libraryRoot, record)),
       )
       const failures = settled.filter(
         (s) => s.status === 'rejected' || (s.status === 'fulfilled' && !s.value),
@@ -171,7 +171,7 @@ export default function MoleculeDetailDrawer({
           ) : (
             <MoleculeDetailPanel
               molecule={molecule}
-              projectRoot={projectRoot}
+              libraryRoot={libraryRoot}
               onSaved={onSaved}
             />
           )}

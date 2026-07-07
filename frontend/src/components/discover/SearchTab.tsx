@@ -32,7 +32,7 @@ const stagger = makeStaggerContainer(0.05)
 
 export default function SearchTab({ query, onQueryChange }: SearchTabProps) {
   const { t } = useTranslation()
-  const { projectRoot } = useAppContext()
+  const { libraryRoot } = useAppContext()
   const [results, setResults] = useState<ResultItem[]>([])
   const [hasSearched, setHasSearched] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -85,7 +85,7 @@ export default function SearchTab({ query, onQueryChange }: SearchTabProps) {
   }
 
   const doSearch = async (term: string) => {
-    if (!projectRoot) {
+    if (!libraryRoot) {
       setResults([])
       setHasSearched(true)
       return
@@ -100,7 +100,7 @@ export default function SearchTab({ query, onQueryChange }: SearchTabProps) {
 
     try {
       const unlisten = await kbSearchStream(
-        projectRoot,
+        libraryRoot,
         term,
         10,
         (chunk) => {
@@ -164,8 +164,8 @@ export default function SearchTab({ query, onQueryChange }: SearchTabProps) {
             onKeyDown={handleSearch}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder={projectRoot ? t('discover.search.placeholder') : t('discover.search.placeholderNoProject')}
-            disabled={!projectRoot}
+            placeholder={libraryRoot ? t('discover.search.placeholder') : t('discover.search.placeholderNoProject')}
+            disabled={!libraryRoot}
             className="discover-search-input"
           />
         </motion.div>
@@ -176,7 +176,7 @@ export default function SearchTab({ query, onQueryChange }: SearchTabProps) {
               type="button"
               onClick={() => quickSearch(hint)}
               whileTap={tapScale}
-              disabled={!projectRoot}
+              disabled={!libraryRoot}
               className="discover-search-hint"
             >
               {hint}

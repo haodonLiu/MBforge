@@ -14,11 +14,11 @@ function generateMolId(): string {
 interface AddMoleculeDialogProps {
   open: boolean
   onClose: () => void
-  projectRoot: string
+  libraryRoot: string
   onAdded?: () => void
 }
 
-export function AddMoleculeDialog({ open, onClose, projectRoot, onAdded }: AddMoleculeDialogProps) {
+export function AddMoleculeDialog({ open, onClose, libraryRoot, onAdded }: AddMoleculeDialogProps) {
   const [esmiles, setEsmiles] = useState('')
   const [name, setName] = useState('')
   const [activity, setActivity] = useState('')
@@ -68,7 +68,7 @@ export function AddMoleculeDialog({ open, onClose, projectRoot, onAdded }: AddMo
 
     if (trimmed.length > 5) {
       try {
-        const existing = await molAdminSearchBySmiles(projectRoot, trimmed)
+        const existing = await molAdminSearchBySmiles(libraryRoot, trimmed)
         if (existing) {
           setDuplicateWarning(`Molecule already exists as "${existing.name}" (${existing.mol_id})`)
         }
@@ -117,7 +117,7 @@ export function AddMoleculeDialog({ open, onClose, projectRoot, onAdded }: AddMo
         notes: '',
         created_at: new Date().toISOString(),
       }
-      await molAdminAdd(projectRoot, record)
+      await molAdminAdd(libraryRoot, record)
       onAdded?.()
       handleClose()
     } catch (err) {

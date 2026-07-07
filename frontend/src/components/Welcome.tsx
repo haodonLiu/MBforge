@@ -1,133 +1,42 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { openProject } from '../api/http'
-import { FolderIcon, MoleculeLogo, TrashIcon, XIcon } from './icons'
+import { FolderIcon, MoleculeLogo } from './icons'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import { showToast } from '../hooks/useToast'
-import {
-  fadeIn,
-  logoEntrance,
-  projectCardHover,
-  tapScale,
-} from '../hooks/useAnimations'
-import Button from '../components/ui/Button'
-import IconButton from '../components/ui/IconButton'
-import PageTitle from '../components/ui/PageTitle'
-import SectionTitle from '../components/ui/SectionTitle'
-import BodyText from '../components/ui/BodyText'
-import Caption from '../components/ui/Caption'
-import CreateProjectPage from './welcome/CreateProjectPage'
-import OpenProjectPage from './welcome/OpenProjectPage'
-import {
-  loadRecent,
-  persistRecent,
-  removeRecentFromStorage,
-  type RecentProject,
-} from './welcome/utils'
+import { fadeIn, logoEntrance, tapScale } from '../hooks/useAnimations'
+import Button from './ui/Button'
+import PageTitle from './ui/PageTitle'
+import BodyText from './ui/BodyText'
+import { configureLibrary, getLibraryStatus } from '../api/http/library'
+import { useAppContext } from '../context/AppContext'
 
-interface Props {
-  onProjectOpened?: (root: string) => void
-}
-
-type Page = 'home' | 'create' | 'open'
-
-export default function Welcome({ onProjectOpened }: Props) {
+export default function Welcome() {
   const { t } = useTranslation()
-  const [page, setPage] = useState<Page>('home')
-  const [selectedDir, setSelectedDir] = useState('')
-  const [projectName, setProjectName] = useState('')
+  const { setLibraryRoot } = useAppContext()
+  const [dir, setDir] = useState('')
   const [loading, setLoading] = useState(false)
-  const [editing, setEditing] = useState(false)
-  const [deleting, setDeleting] = useState<string | null>(null)
-  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
 
-  useEffect(() => {
-    void loadRecent().then(setRecentProjects)
-  }, [])
-
-  const handleProjectSuccess = async (root: string, name: string) => {
-    // 后端 PUT /api/v1/settings.recent_projects 持久化;不再用 localStorage
-    const updated = await persistRecent(root, name)
-    setRecentProjects(updated)
-    onProjectOpened?.(root)
-  }
-
-  const openByName = async (path: string) => {
+  const handleConfigure = async () => {
+    if (!dir.trim()) return
     setLoading(true)
     try {
-      const resp = await openProject(path)
-      if (resp.success) {
-        handleProjectSuccess(resp.project.root, resp.project.name)
+      const resp = await configureLibrary(dir.trim())
+      if (resp.success && resp.root) {
+        setLibraryRoot(resp.root)
       } else {
-        showToast(resp.error || t('welcome.openProject') + ' ' + t('common.noResults'), 'error')
+        showToast(resp.error || t('welcome.configureFailed'), 'error')
       }
     } catch (e) {
-      showToast(t('welcome.openFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
+      showToast(
+        t('welcome.configureError', {
+          error: e instanceof Error ? e.message : String(e),
+        }),
+        'error'
+      )
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleCreate = async () => {
-    if (!selectedDir.trim() || !projectName.trim()) return
-    const fullPath = `${selectedDir.trim()}/${projectName.trim()}`
-    setLoading(true)
-    try {
-      const resp = await openProject(fullPath, projectName.trim())
-      if (resp.success) {
-        handleProjectSuccess(resp.project.root, resp.project.name)
-      } else {
-        showToast(resp.error || t('common.save') + ' ' + t('common.noResults'), 'error')
-      }
-    } catch (e) {
-      showToast(t('welcome.createFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleOpenDir = async () => {
-    if (!selectedDir.trim()) return
-    setLoading(true)
-    try {
-      const resp = await openProject(selectedDir.trim())
-      if (resp.success) {
-        handleProjectSuccess(resp.project.root, resp.project.name)
-      } else {
-        showToast(resp.error || t('welcome.openProject') + ' ' + t('common.noResults'), 'error')
-      }
-    } catch (e) {
-      showToast(t('welcome.openFailed', { error: e instanceof Error ? e.message : String(e) }), 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (page === 'create') {
-    return (
-      <CreateProjectPage
-        selectedDir={selectedDir}
-        projectName={projectName}
-        loading={loading}
-        onDirChange={setSelectedDir}
-        onNameChange={setProjectName}
-        onCreate={handleCreate}
-        onCancel={() => { setPage('home'); setSelectedDir(''); setProjectName('') }}
-      />
-    )
-  }
-
-  if (page === 'open') {
-    return (
-      <OpenProjectPage
-        selectedDir={selectedDir}
-        loading={loading}
-        onDirChange={setSelectedDir}
-        onOpen={handleOpenDir}
-        onCancel={() => { setPage('home'); setSelectedDir('') }}
-      />
-    )
   }
 
   return (
@@ -156,90 +65,38 @@ export default function Welcome({ onProjectOpened }: Props) {
 
           <StaggerItem>
             <BodyText size="lg" className="welcome-subtitle">
-              {t('welcome.subtitle')}
+              {t('library.configureLibrary')}
             </BodyText>
           </StaggerItem>
 
           <StaggerItem>
-            <div className="welcome-actions">
+            <BodyText className="welcome-description">
+              {t('library.configureDescription')}
+            </BodyText>
+          </StaggerItem>
+
+          <StaggerItem>
+            <div className="welcome-config-form">
+              <div className="welcome-dir-input-wrapper">
+                <input
+                  type="text"
+                  className="welcome-dir-input"
+                  placeholder={t('library.libraryRoot')}
+                  value={dir}
+                  onChange={(e) => setDir(e.target.value)}
+                />
+              </div>
               <Button
                 variant="primary"
                 size="lg"
-                onClick={() => setPage('create')}
+                onClick={handleConfigure}
+                disabled={!dir.trim() || loading}
                 icon={<FolderIcon size={16} />}
               >
-                {t('welcome.createProject')}
-              </Button>
-              <Button
-                variant="secondary"
-                size="lg"
-                onClick={() => setPage('open')}
-                icon={<FolderIcon size={16} />}
-              >
-                {t('welcome.openProject')}
+                {t('library.createLibrary')}
               </Button>
             </div>
           </StaggerItem>
-
-          {recentProjects.length > 0 && (
-            <StaggerItem>
-              <div className="welcome-recent">
-                <div className="welcome-recent-header">
-                  <SectionTitle>{t('welcome.recentProjects')}</SectionTitle>
-                  <IconButton
-                    size={32}
-                    active={editing}
-                    title={editing ? t('common.close') : t('common.copy')}
-                    onClick={() => { setEditing(!editing); setDeleting(null) }}
-                  >
-                    <TrashIcon size={16} />
-                  </IconButton>
-                </div>
-                <StaggerContainer stagger={0.04}>
-                  <div className="welcome-recent-list">
-                    {recentProjects.map((p) => (
-                      <StaggerItem key={p.root}>
-                        <motion.div
-                          className={`welcome-recent-item ${deleting === p.root ? 'welcome-recent-item--deleting' : ''}`}
-                          whileHover={projectCardHover}
-                        >
-                          {editing && (
-                            <motion.button
-                              onClick={() => {
-                                setDeleting(p.root)
-                                setTimeout(async () => {
-                                  const updated = await removeRecentFromStorage(p.root)
-                                  setRecentProjects(updated)
-                                  setDeleting(null)
-                                  if (updated.length === 0) setEditing(false)
-                                }, 300)
-                              }}
-                              whileTap={tapScale}
-                              className="welcome-recent-delete-btn"
-                            >
-                              <XIcon size={14} />
-                            </motion.button>
-                          )}
-                          <button
-                            onClick={() => openByName(p.root)}
-                            disabled={loading || deleting === p.root}
-                            className="welcome-recent-item-btn"
-                          >
-                            <Caption truncate className="welcome-recent-name">
-                              {p.name}
-                            </Caption>
-                            <Caption truncate className="welcome-recent-path">
-                              {p.root}
-                            </Caption>
-                          </button>
-                        </motion.div>
-                      </StaggerItem>
-                    ))}
-                  </div>
-                </StaggerContainer>
-              </div>
-            </StaggerItem>
-          )}
         </StaggerContainer>
       </div>
     </motion.div>

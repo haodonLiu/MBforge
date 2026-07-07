@@ -1,8 +1,8 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import { cleanWindowsPath } from '../utils/path'
 import type { DocumentEntry } from '../types'
 
-const STORAGE_KEY = 'mbforge_project_root'
+const STORAGE_KEY = 'mbforge_library_root'
 
 // ============================================================================
 // ActiveFile — 跨组件文件导航请求（侧边栏文件树 → ProjectView）
@@ -23,8 +23,7 @@ export interface Tab {
   type: 'pdf' | 'markdown'
   title: string
   doc: DocumentEntry
-  projectRoot: string
-
+  libraryRoot: string
 }
 
 let _tabIdSeq = 0
@@ -38,10 +37,18 @@ function nextTabId(): string {
 // ============================================================================
 
 interface AppState {
-  /** 当前打开的项目根目录 */
+  /** Legacy project root (deprecated) */
   projectRoot: string
-  /** 设置项目根目录（同时持久化到 localStorage） */
+  /** Legacy setter (deprecated) */
   setProjectRoot: (root: string) => void
+  /** Unified library root directory */
+  libraryRoot: string
+  /** Set library root (persists to localStorage) */
+  setLibraryRoot: (root: string) => void
+  /** Active collection filter (null = show all) */
+  activeCollectionId: string | null
+  /** Set active collection filter */
+  setActiveCollectionId: (id: string | null) => void
   /** 通过全局文件树选中的待打开文件 */
   activeFile: ActiveFile | null
   /** 设置待打开文件（ProjectView 消费后应置空） */
@@ -68,6 +75,11 @@ const AppContext = createContext<AppState | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [projectRoot, setProjectRootState] = useState(() => {
+    const raw = localStorage.getItem('mbforge_project_root') || ''
+    return cleanWindowsPath(raw)
+  })
+
+  const [libraryRoot, setLibraryRootState] = useState(() => {
     const raw = localStorage.getItem(STORAGE_KEY) || ''
     return cleanWindowsPath(raw)
   })
@@ -75,22 +87,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activeFile, setActiveFile] = useState<ActiveFile | null>(null)
   const [openTabs, setOpenTabs] = useState<Tab[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null)
 
   const setProjectRoot = useCallback((root: string) => {
+    const cleaned = cleanWindowsPath(root)
+    try {
+      localStorage.setItem('mbforge_project_root', cleaned)
+    } catch (e) {
+      console.warn('[AppContext] localStorage quota exceeded:', e)
+    }
+    setProjectRootState(cleaned)
+    setOpenTabs([])
+    setActiveTabId(null)
+  }, [])
+
+  const setLibraryRoot = useCallback((root: string) => {
     const cleaned = cleanWindowsPath(root)
     try {
       localStorage.setItem(STORAGE_KEY, cleaned)
     } catch (e) {
       console.warn('[AppContext] localStorage quota exceeded:', e)
     }
-    setProjectRootState(cleaned)
-    // 切换项目时清空所有标签
+    setLibraryRootState(cleaned)
     setOpenTabs([])
     setActiveTabId(null)
   }, [])
 
   const openTab = useCallback((tab: Omit<Tab, 'id'>) => {
-    // 先读取当前状态，避免闭包捕获旧值
     const tabs = openTabs
     const existing = tabs.find(
       t => t.type === tab.type && t.doc.doc_id === tab.doc.doc_id
@@ -112,11 +135,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (idx === -1) return prev
       const next = prev.filter(t => t.id !== tabId)
 
-      // 用函数式更新读取最新 activeTabId
       setActiveTabId(current => {
         if (current !== tabId) return current
         if (next.length === 0) return null
-        // 激活右侧邻居，或左侧
         const newActive = next[Math.min(idx, next.length - 1)]
         return newActive.id
       })
@@ -127,7 +148,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   return (
     <AppContext.Provider value={{
-      projectRoot, setProjectRoot, activeFile, setActiveFile,
+      projectRoot, setProjectRoot,
+      libraryRoot, setLibraryRoot,
+      activeCollectionId, setActiveCollectionId,
+      activeFile, setActiveFile,
       openTabs, activeTabId, openTab, closeTab, setActiveTabId,
     }}>
       {children}

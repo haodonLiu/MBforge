@@ -1,16 +1,12 @@
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { FlaskIcon, SearchIcon, PlusIcon, FileTextIcon, LayoutIcon, SettingsIcon, NoteIcon, QueueIcon } from './icons'
-import IconButton from '@/components/ui/IconButton'
+import { FlaskIcon, SearchIcon, LayoutIcon, SettingsIcon, NoteIcon, QueueIcon } from './icons'
 import Tooltip from '@/components/ui/Tooltip'
 
 interface Props {
   current: string
   onNavigate: (page: string) => void
-  onSwitchProject: () => void
-  projectScopeOpen: boolean
-  onToggleProjectScope: () => void
 }
 
 const PRIMARY_ITEMS = [
@@ -31,107 +27,86 @@ interface NavButtonProps {
   icon: React.FC<{ size?: number }>
 }
 
-function NavButton({
-  active,
-  onClick,
-  label,
-  icon: Icon,
-}: NavButtonProps) {
+function NavButton({ active, onClick, label, icon: Icon }: NavButtonProps) {
   return (
     <Tooltip text={label}>
-      <div style={{ position: 'relative' }}>
-        {active && (
-          <motion.div
-            layoutId="sidebar-indicator"
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              width: '3px',
-              height: '20px',
-              background: 'var(--accent)',
-              borderRadius: '0 2px 2px 0',
-            }}
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-          />
-        )}
-        <IconButton active={active} onClick={onClick}>
-          <Icon size={20} />
-        </IconButton>
-      </div>
+      <motion.button
+        onClick={onClick}
+        whileTap={{ scale: 0.9 }}
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 10,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          border: 'none',
+          cursor: 'pointer',
+          background: active ? 'var(--accent)' : 'transparent',
+          color: active ? '#fff' : 'var(--text-secondary)',
+          transition: 'background 0.2s, color 0.2s',
+        }}
+      >
+        <Icon size={20} />
+      </motion.button>
     </Tooltip>
   )
 }
 
-export default function Sidebar({ current, onNavigate, onSwitchProject, projectScopeOpen, onToggleProjectScope }: Props) {
+export default function Sidebar({ current, onNavigate }: Props) {
   const navigate = useNavigate()
   const { t } = useTranslation()
 
   const handleClick = (item: typeof PRIMARY_ITEMS[0]) => {
     onNavigate(item.id)
-    void navigate(item.path)
+    navigate(item.path)
   }
 
   return (
     <aside style={{
       gridColumn: '1',
       gridRow: '1 / 5',
-      background: 'var(--bg-surface)',
-      borderRight: '1px solid var(--border)',
       display: 'flex',
       flexDirection: 'column',
-      overflow: 'hidden',
+      alignItems: 'center',
+      gap: '4px',
+      padding: '12px 0',
+      background: 'var(--bg-surface)',
+      borderRight: '1px solid var(--border)',
+      zIndex: 10,
     }}>
-      <div style={{ padding: '8px 6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-        {/* ProjectScope toggle at top */}
-        <Tooltip text={t('nav.projectScope')}>
-          <IconButton active={projectScopeOpen} onClick={onToggleProjectScope}>
-            <FileTextIcon size={20} />
-          </IconButton>
-        </Tooltip>
+      {PRIMARY_ITEMS.map(item => (
+        <NavButton
+          key={item.id}
+          active={current === item.id}
+          onClick={() => handleClick(item)}
+          label={t(item.labelKey)}
+          icon={item.icon}
+        />
+      ))}
 
-        {PRIMARY_ITEMS.map((item) => (
-          <NavButton
-            key={item.id}
-            active={current === item.id}
-            onClick={() => handleClick(item)}
-            label={t(item.labelKey)}
-            icon={item.icon}
-          />
-        ))}
+      <div style={{ flex: 1 }} />
 
-        <div style={{ margin: '8px 6px', borderTop: '1px solid var(--border)' }} />
+      {SECONDARY_ITEMS.map(item => (
+        <NavButton
+          key={item.id}
+          active={current === item.id}
+          onClick={() => handleClick(item)}
+          label={t(item.labelKey)}
+          icon={item.icon}
+        />
+      ))}
 
-        {SECONDARY_ITEMS.map((item) => (
-          <NavButton
-            key={item.id}
-            active={current === item.id}
-            onClick={() => handleClick(item)}
-            label={t(item.labelKey)}
-            icon={item.icon}
-          />
-        ))}
-      </div>
-
-      <div style={{
-        marginTop: 'auto',
-        padding: '8px 6px',
-        borderTop: '1px solid var(--border)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '2px',
-      }}>
-        <Tooltip text={t('nav.settings')}>
-          <IconButton onClick={() => { onNavigate('settings'); void navigate('/settings') }}>
-            <SettingsIcon size={20} />
-          </IconButton>
-        </Tooltip>
-        <Tooltip text={t('nav.switchProject')}>
-          <IconButton onClick={onSwitchProject}>
-            <PlusIcon size={20} />
-          </IconButton>
-        </Tooltip>
+      <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+        <NavButton
+          active={current === 'settings'}
+          onClick={() => {
+            onNavigate('settings')
+            navigate('/settings')
+          }}
+          label={t('nav.settings')}
+          icon={SettingsIcon}
+        />
       </div>
     </aside>
   )

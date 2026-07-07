@@ -26,9 +26,7 @@ import {
 } from '../../api/http/ingest_queue'
 import { showToast } from '../../hooks/useToast'
 
-interface Props {
-  projectRoot: string
-}
+import { useAppContext } from '../../context/AppContext'
 
 type StatusKey = IngestTask['status']
 type FilterKey = 'all' | StatusKey
@@ -103,8 +101,8 @@ function basename(p: string): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function ProcessingQueue({ projectRoot }: Props) {
-  const { t } = useTranslation()
+export default function ProcessingQueue() {
+  const { libraryRoot } = useAppContext()
   const [tasks, setTasks] = useState<IngestTask[]>([])
 
   const FILTERS: { key: FilterKey; label: string }[] = useMemo(() => [
@@ -136,18 +134,18 @@ export default function ProcessingQueue({ projectRoot }: Props) {
   }, [tasks])
 
   const load = useCallback(async () => {
-    if (!projectRoot) return
+    if (!libraryRoot) return
     try {
       const [list, s] = await Promise.all([
-        ingestList(projectRoot),
-        ingestStats(projectRoot),
+        ingestList(libraryRoot),
+        ingestStats(libraryRoot),
       ])
       setTasks(list)
       setStats(s)
     } catch (e) {
       console.error('[ProcessingQueue] load failed:', e)
     }
-  }, [projectRoot])
+  }, [libraryRoot])
 
   useEffect(() => {
     void load()
@@ -190,7 +188,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
   const fetchLogsForDoc = useCallback(
     async (docId: string) => {
       try {
-        const records = await ingestGetLogs(projectRoot, docId, 500)
+        const records = await ingestGetLogs(libraryRoot, docId, 500)
         if (records.length === 0) return
         setLogMap((prev) => {
           const list = prev.get(docId) ?? []
@@ -214,25 +212,25 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         console.error('[ProcessingQueue] fetchLogsForDoc failed:', e)
       }
     },
-    [projectRoot],
+    [libraryRoot],
   )
 
   /** 任务列表加载完后，对每个 doc 预拉一次历史日志（覆盖早期事件丢失场景）。 */
   useEffect(() => {
-    if (!projectRoot) return
+    if (!libraryRoot) return
     const docIds = new Set(tasks.map((t) => t.doc_id))
     for (const docId of docIds) {
       void fetchLogsForDoc(docId)
     }
     // 只在 tasks 变化时拉取（数量或成员变化）
-  }, [projectRoot, tasks, fetchLogsForDoc])
+  }, [libraryRoot, tasks, fetchLogsForDoc])
 
   const handleCancel = useCallback(
     async (task: IngestTask) => {
-      if (!projectRoot) return
+      if (!libraryRoot) return
       setActionId(task.id)
       try {
-        await ingestCancel(projectRoot, task.id)
+        await ingestCancel(libraryRoot, task.id)
         showToast(t('queue.taskCancelled'), 'success')
         await load()
       } catch (e) {
@@ -242,15 +240,15 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         setActionId(null)
       }
     },
-    [projectRoot, load, t],
+    [libraryRoot, load, t],
   )
 
   const handleRetry = useCallback(
     async (task: IngestTask) => {
-      if (!projectRoot) return
+      if (!libraryRoot) return
       setActionId(task.id)
       try {
-        const ok = await ingestRetry(projectRoot, task.id)
+        const ok = await ingestRetry(libraryRoot, task.id)
         if (ok) {
           showToast(t('queue.taskRetried'), 'success')
         } else {
@@ -264,28 +262,28 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         setActionId(null)
       }
     },
-    [projectRoot, load, t],
+    [libraryRoot, load, t],
   )
 
   const handleCleanup = useCallback(async () => {
-    if (!projectRoot) return
+    if (!libraryRoot) return
     try {
-      const removed = await ingestCleanup(projectRoot)
+      const removed = await ingestCleanup(libraryRoot)
       showToast(t('queue.cleanedUp', { count: removed }), 'success')
       await load()
     } catch (e) {
       console.error('[ProcessingQueue] cleanup failed:', e)
       showToast(t('queue.cleanupFailed', { error: String(e) }), 'error')
     }
-  }, [projectRoot, load, t])
+  }, [libraryRoot, load, t])
 
   const handleSetPriority = useCallback(
     async (task: IngestTask) => {
-      if (!projectRoot) return
+      if (!libraryRoot) return
       setActionId(task.id)
       try {
         const nextPriority = task.priority > 0 ? 0 : 1
-        await ingestSetPriority(projectRoot, task.id, nextPriority)
+        await ingestSetPriority(libraryRoot, task.id, nextPriority)
         showToast(nextPriority > 0 ? t('queue.taskPinned') : t('queue.taskUnpinned'), 'success')
         await load()
       } catch (e) {
@@ -295,15 +293,15 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         setActionId(null)
       }
     },
-    [projectRoot, load, t],
+    [libraryRoot, load, t],
   )
 
   const handleDelete = useCallback(
     async (task: IngestTask) => {
-      if (!projectRoot) return
+      if (!libraryRoot) return
       setActionId(task.id)
       try {
-        const ok = await ingestDeleteTask(projectRoot, task.id)
+        const ok = await ingestDeleteTask(libraryRoot, task.id)
         if (ok) {
           showToast(t('queue.taskDeleted'), 'success')
         } else {
@@ -317,7 +315,7 @@ export default function ProcessingQueue({ projectRoot }: Props) {
         setActionId(null)
       }
     },
-    [projectRoot, load, t],
+    [libraryRoot, load, t],
   )
 
   const toggleLogs = useCallback(

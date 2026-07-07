@@ -16,6 +16,7 @@ import './styles/analysis.css'
 import './styles/settings.css'
 import './styles/pdf-viewer.css'
 import './styles/notes.css'
+import './styles/library.css'
 import './styles/molecule-display.css'
 import { initTheme } from './hooks/useTheme'
 

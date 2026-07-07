@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { httpPost } from '../../../api/http/_utils'
-import SettingSection, { SettingGroup } from '../../ui/SettingSection'
-import Button from '../../ui/Button'
-import { showToast } from '../../../hooks/useToast'
+import { httpPost } from '../../api/http/_utils'
+import SettingSection, { SettingGroup } from '../ui/SettingSection'
+import Button from '../ui/Button'
+import { showToast } from '../../hooks/useToast'
 
 interface CacheSize {
   semantic_mb: number

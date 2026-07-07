@@ -3,8 +3,8 @@
  * PDF processing was carved out into its own tab; see PdfProcessingTab.
  */
 
-import GeneralSection from '@/components/settings/sections/GeneralSection'
-import RecentProjectsSection from '@/components/settings/sections/RecentProjectsSection'
+import GeneralSection from '@/components/settings/GeneralSection'
+import RecentProjectsSection from '@/components/settings/RecentProjectsSection'
 import type { SettingsState } from '@/components/settings/types'
 
 interface Props {

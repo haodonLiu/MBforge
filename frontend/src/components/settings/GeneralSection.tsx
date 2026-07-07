@@ -1,9 +1,9 @@
 // 常规栏目 — 语言、主题、启动行为。
 
 import { useTranslation } from 'react-i18next'
-import SettingSection, { SettingGroup } from '../../ui/SettingSection'
-import { SelectField, ToggleField } from '../SettingRow'
-import type { SettingsState } from '../types'
+import SettingSection, { SettingGroup } from '../ui/SettingSection'
+import { SelectField, ToggleField } from './SettingRow'
+import type { SettingsState } from './types'
 
 interface Props {
   settings: SettingsState

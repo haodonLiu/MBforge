@@ -7,16 +7,25 @@ Replaces the Tauri/Rust shell with a standard web application.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .utils.logger import get_logger
+from .utils.helpers import MBForgeError
+from .utils.logger import (
+    get_logger,
+    push_diagnostic,
+    reset_request_path,
+    set_request_path,
+)
 
 logger = get_logger("mbforge.app")
 
@@ -46,6 +55,133 @@ async def lifespan(app: FastAPI):
         logger.info("Shutdown complete")
 
 
+# ---------------------------------------------------------------------------
+# Request-path middleware + central exception handlers
+# ---------------------------------------------------------------------------
+#
+# Why these live in `app.py` rather than `server.py`:
+#   `server.py:117,127` registers handlers on the *mounted sub-app*
+#   (Starlette `Mount("/api/v1/models", model_server)`) — that sub-app is
+#   a separate routing graph with its own exception handlers. The handlers
+#   below cover every `include_router(...)` route on the main app, which
+#   is where 17 of the 18 production routers live.
+
+
+async def _request_path_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """Push the current request path into a ContextVar so JSON file logs
+    and the diagnostic ring buffer can attach it without API changes."""
+    token = set_request_path(request.url.path)
+    try:
+        return await call_next(request)
+    finally:
+        reset_request_path(token)
+
+
+def _severity_to_level(severity: str) -> int:
+    return {
+        "debug": logging.DEBUG,
+        "info": logging.INFO,
+        "warning": logging.WARNING,
+        "error": logging.ERROR,
+        "fatal": logging.CRITICAL,
+    }.get(severity, logging.ERROR)
+
+
+async def _mbforge_error_handler(
+    request: Request, exc: MBForgeError
+) -> JSONResponse:
+    """Central handler for MBForgeError + subclasses.
+
+    Logs at the level implied by `exc.severity`, pushes a record into the
+    diagnostic ring buffer, and returns a JSON body the front-end can
+    introspect via `AppError`.
+    """
+    level = _severity_to_level(exc.severity)
+    logger.log(
+        level,
+        "MBForgeError on %s: %s [%s/%s]",
+        request.url.path,
+        exc.message,
+        exc.error_code,
+        exc.category,
+        extra={
+            "mbforge_error_code": exc.error_code,
+            "mbforge_status_code": exc.status_code,
+            "mbforge_severity": exc.severity,
+            "mbforge_category": exc.category,
+            "mbforge_context": exc.context,
+        },
+        exc_info=isinstance(exc, Exception),
+    )
+    push_diagnostic(
+        {
+            "level": logging.getLevelName(level),
+            "logger": "mbforge.app.exception_handler",
+            "message": exc.message,
+            "error_code": exc.error_code,
+            "status_code": exc.status_code,
+            "severity": exc.severity,
+            "category": exc.category,
+            "context": exc.context,
+        }
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": exc.message,
+            "detail": exc.detail,
+            "error_code": exc.error_code,
+            "severity": exc.severity,
+            "category": exc.category,
+            "context": exc.context,
+            "timestamp": time.time(),
+        },
+    )
+
+
+async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all for non-MBForgeError exceptions. Always fatal, generic code."""
+    logger.error(
+        "Unhandled on %s: %s",
+        request.url.path,
+        exc,
+        exc_info=True,
+        extra={
+            "mbforge_error_code": "internal_error",
+            "mbforge_status_code": 500,
+            "mbforge_severity": "fatal",
+            "mbforge_category": "unhandled",
+            "mbforge_context": {"exception_type": type(exc).__name__},
+        },
+    )
+    push_diagnostic(
+        {
+            "level": "CRITICAL",
+            "logger": "mbforge.app.exception_handler",
+            "message": str(exc) or type(exc).__name__,
+            "error_code": "internal_error",
+            "status_code": 500,
+            "severity": "fatal",
+            "category": "unhandled",
+            "context": {"exception_type": type(exc).__name__},
+        }
+    )
+    # Operator-friendly default; do not leak stack frames to the client.
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": "Internal server error",
+            "error_code": "internal_error",
+            "severity": "fatal",
+            "category": "unhandled",
+            "context": {},
+            "timestamp": time.time(),
+        },
+    )
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
@@ -63,12 +199,22 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Exception handlers run before route resolution returns, capturing
+    # errors thrown anywhere in the main app graph.
+    app.add_exception_handler(MBForgeError, _mbforge_error_handler)
+    app.add_exception_handler(Exception, _unhandled_error_handler)
+
+    # Request-path ContextVar middleware (must be added before any
+    # router-level middleware to ensure it covers all routes).
+    app.middleware("http")(_request_path_middleware)
+
     # Register all routers
     from .routers import (
         agent,
         chem,
         coref,
         detection_cache,
+        diagnostics,
         documents,
         events,
         health,
@@ -79,7 +225,6 @@ def create_app() -> FastAPI:
         ocr,
         pdf,
         pipeline,
-        ocr,
         resource,
         sar,
         settings,
@@ -104,6 +249,7 @@ def create_app() -> FastAPI:
     app.include_router(sar.router, prefix="/api/v1/sar", tags=["sar"])
     app.include_router(text.router, prefix="/api/v1", tags=["text"])
     app.include_router(ocr.router, prefix="/api/v1/ocr", tags=["ocr"])
+    app.include_router(diagnostics.router, prefix="/api/v1/diagnostics", tags=["diagnostics"])
 
     # Mount existing model server endpoints under /api/v1/models/*
     from .server import app as model_server

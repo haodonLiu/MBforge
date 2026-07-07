@@ -1,4 +1,4 @@
-import AboutSection from '@/components/settings/sections/AboutSection'
+import AboutSection from '@/components/settings/AboutSection'
 
 interface Props {
   onReset: () => void

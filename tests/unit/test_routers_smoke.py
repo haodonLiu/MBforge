@@ -130,3 +130,32 @@ class TestDetectionCacheEndpoints:
             "page": 1,
         })
         assert r.status_code == 200
+
+
+class TestDiagnosticsEndpoints:
+    """Smoke tests for the unified error-logging surface."""
+
+    def test_diagnostics_errors_list(self):
+        c = _client()
+        r = c.get("/api/v1/diagnostics/errors?limit=20")
+        assert r.status_code == 200
+        body = r.json()
+        assert "errors" in body
+        assert "count" in body
+
+    def test_diagnostics_stats(self):
+        c = _client()
+        r = c.get("/api/v1/diagnostics/stats")
+        assert r.status_code == 200
+        body = r.json()
+        assert "by_level" in body
+        assert "by_category" in body
+        assert body["capacity"] == 500
+
+    def test_diagnostics_client_report(self):
+        c = _client()
+        r = c.post(
+            "/api/v1/diagnostics/errors",
+            json={"errors": [{"message": "smoke", "category": "client"}]},
+        )
+        assert r.status_code == 204

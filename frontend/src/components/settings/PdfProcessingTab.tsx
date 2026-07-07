@@ -5,7 +5,7 @@
  * workflow settings in one place.
  */
 
-import PdfParseSection from './sections/PdfParseSection'
+import PdfParseSection from './PdfParseSection'
 import type { SettingsState } from './types'
 
 interface Props {

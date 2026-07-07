@@ -1,4 +1,4 @@
-import AIModelsSection from '@/components/settings/sections/AIModelsSection'
+import AIModelsSection from '@/components/settings/AIModelsSection'
 import type { SettingsState } from '@/components/settings/types'
 
 interface Props {

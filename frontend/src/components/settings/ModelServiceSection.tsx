@@ -2,16 +2,16 @@
 
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { sidecarStatus } from '../../../api/http/sidecar'
-import SettingSection, { SettingGroup } from '../../ui/SettingSection'
+import { sidecarStatus } from '../../api/http/sidecar'
+import SettingSection, { SettingGroup } from '../ui/SettingSection'
 import {
   TextField,
   NumberField,
   ToggleField,
   CustomField,
-} from '../SettingRow'
-import Button from '../../ui/Button'
-import { showToast } from '../../../hooks/useToast'
+} from './SettingRow'
+import Button from '../ui/Button'
+import { showToast } from '../../hooks/useToast'
 import type { SettingsState } from '../types'
 
 interface Props {

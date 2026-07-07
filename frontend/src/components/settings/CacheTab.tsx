@@ -1,4 +1,4 @@
-import StorageSection from '@/components/settings/sections/StorageSection'
+import StorageSection from '@/components/settings/StorageSection'
 
 interface Props {
   projectRoot: string

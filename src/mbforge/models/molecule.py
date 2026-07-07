@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 class MoleculeListRequest(BaseModel):
     project_root: str = Field(..., description="Project root directory")
     page: int = Field(1, ge=1, description="Page number")
-    page_size: int = Field(50, ge=1, le=200, description="Items per page")
+    page_size: int = Field(50, ge=1, le=10000, description="Items per page")
     status: str = Field("", description="Filter by status")
 
 

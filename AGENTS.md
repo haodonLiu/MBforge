@@ -149,7 +149,7 @@ proxy).
 - **State**: local → `useState`; cross-component → props; global → `useAppContext()`. Persistent settings use `localStorage` with `mbforge_` prefix.
 - **HTTP**: every backend call goes through `api/http/*.ts`. Pattern: `await httpFetch<T>('/api/v1/...', { method, body })` wrapped in shared error handling (see `_utils.ts`). SSE via `api/sse.ts`.
 - **Animations**: import variants from `hooks/useAnimations.ts` (`fadeUp`, `scaleIn`, `staggerContainer`, …). Do not redefine `initial/animate/exit/transition` inline.
-- **Imports**: `@/` alias for `frontend/src/`; `import type` for type-only imports; three groups (std → third-party → project) separated by blank lines.
+- **Imports**: `@/` alias for `frontend/src/`. Cross-directory imports MUST use `@/` (e.g. `from '@/hooks/useToast'`, never `'../../hooks/useToast'`). Same-directory imports MAY use `./` (e.g. `from './_utils'`). This makes files position-independent — moving a file never breaks its imports. `import type` for type-only imports; three groups (std → third-party → project) separated by blank lines.
 - **Style**: prefer CSS variables (`var(--accent)`, `var(--bg-surface)`); inline `style` ≤ 3 props, otherwise extract. Verify dark mode for new styles.
 - **TS strict**: `strict`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch` all on.
 

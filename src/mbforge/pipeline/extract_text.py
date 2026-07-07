@@ -1,7 +1,11 @@
 """PDF text extraction.
 
-Uses PyMuPDF for native text extraction with OCR fallback for scanned pages.
-Produces a markdown-like output with page separators.
+Uses PyMuPDF for native text extraction. For pages with <50 chars
+(likely scanned), falls back to the OCR backend chain:
+
+    MinerU → PaddleOCR → GLM-OCR → RapidOCR (local last resort)
+
+OCR config is read from AppConfig.ocr (see backend ocr.chain.build_backends).
 """
 
 from __future__ import annotations
@@ -28,16 +32,16 @@ class ExtractedDocument:
     raw_text: str
     page_count: int
     parser: str = "pymupdf"
-    pages: list[PageContent] = field(default_factory=list)
     title: str | None = None
 
 
-def extract_pdf_text(pdf_path: str, ocr_fallback: bool = True) -> ExtractedDocument:
+def extract_pdf_text(pdf_path: str, ocr_fallback: bool = True, ocr_config: dict | None = None) -> ExtractedDocument:
     """Extract text from a PDF file.
 
     Strategy:
     1. PyMuPDF native text extraction (fast, works for most PDFs)
-    2. For pages with <50 chars, try OCR via RapidOCR (scanned documents)
+    2. For pages with <50 chars, run the OCR chain:
+       MinerU → PaddleOCR → GLM-OCR → RapidOCR (local last resort)
     """
     import fitz
 
@@ -60,7 +64,7 @@ def extract_pdf_text(pdf_path: str, ocr_fallback: bool = True) -> ExtractedDocum
 
         # OCR fallback for scanned pages
         if pages_needing_ocr:
-            ocr_texts = _ocr_pages(doc, pages_needing_ocr)
+            ocr_texts = _ocr_pages(doc, pages_needing_ocr, ocr_config)
             for idx, ocr_text in zip(pages_needing_ocr, ocr_texts):
                 pages[idx].text = ocr_text
                 pages[idx].has_text = bool(ocr_text.strip())
@@ -84,30 +88,27 @@ def extract_pdf_text(pdf_path: str, ocr_fallback: bool = True) -> ExtractedDocum
         doc.close()
 
 
-def _ocr_pages(doc, page_indices: list[int]) -> list[str]:
-    """OCR specific pages using RapidOCR."""
+def _ocr_pages(doc, page_indices: list[int], ocr_config: dict | None = None) -> list[str]:
+    """OCR scanned pages using the fallback chain.
+
+    Priority: MinerU → PaddleOCR → GLM-OCR → RapidOCR (local last resort).
+    Each page is OCR'd independently — the chain picks the first backend
+    that returns non-empty text for that page.
+    """
     try:
-        import numpy as np
+        from ..backends.ocr import extract_text_with_chain
 
-        from ..parsers.molecule.coref_alt import get_rapid_ocr
-
-        ocr = get_rapid_ocr()
-        results = []
+        results: list[str] = []
         for idx in page_indices:
             page = doc.load_page(idx)
             zoom = 2.0  # 144 DPI for OCR
             mat = fitz.Matrix(zoom, zoom)
             pix = page.get_pixmap(matrix=mat, alpha=False)
-            arr = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-
-            out = ocr._engine(arr)
-            if out and out.txts:
-                text = "\n".join(t for t in out.txts if t)
-                results.append(text)
-            else:
-                results.append("")
+            image_bytes = pix.tobytes("png")
+            result = extract_text_with_chain(image_bytes, ocr_config)
+            results.append(result.text)
         return results
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning("OCR fallback failed: %s", e)
         return [""] * len(page_indices)
 

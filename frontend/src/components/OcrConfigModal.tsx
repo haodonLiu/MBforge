@@ -22,7 +22,7 @@ import Button from '@/components/ui/Button'
 import ApiKeyInput from './settings/ApiKeyInput'
 import { getSettings, saveSettings } from '@/api/http/settings'
 import { openExternalUrl } from '@/api/http/_utils'
-import { testOcrMineru, testOcrUniparser, testOcrPaddleocr, type OcrTestResult } from '@/api/http/text'
+import { testOcrMineru, testOcrUniparser, testOcrPaddleocr, testOcrGlmocr, type OcrTestResult } from '@/api/http/text'
 
 type Backend = 'mineru' | 'uniparser' | 'paddleocr-online' | 'paddleocr-local'
 
@@ -38,6 +38,7 @@ interface FormState {
   paddleocr_api_key: string
   paddleocr_host: string
   paddleocr_model: string
+  glmocr_api_key: string
 }
 
 const EMPTY: FormState = {
@@ -46,6 +47,7 @@ const EMPTY: FormState = {
   paddleocr_api_key: '',
   paddleocr_host: '',
   paddleocr_model: '',
+  glmocr_api_key: '',
 }
 
 const ACQUISITION_URLS: Record<Backend, string> = {
@@ -76,12 +78,13 @@ export default function OcrConfigModal() {
   const [form, setForm] = useState<FormState>(EMPTY)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [testing, setTesting] = useState<null | 'mineru' | 'uniparser' | 'paddleocr'>(null)
+  const [testing, setTesting] = useState<null | 'mineru' | 'uniparser' | 'paddleocr' | 'glmocr'>(null)
   const [testResults, setTestResults] = useState<{
     mineru: OcrTestResult | null
     uniparser: OcrTestResult | null
     paddleocr: OcrTestResult | null
-  }>({ mineru: null, uniparser: null, paddleocr: null })
+    glmocr: OcrTestResult | null
+  }>({ mineru: null, uniparser: null, paddleocr: null, glmocr: null })
 
   // Listen for the missing-API event from the Rust ingest worker.
   useEffect(() => {
@@ -113,6 +116,7 @@ export default function OcrConfigModal() {
           paddleocr_api_key: form.paddleocr_api_key.trim() || null,
           paddleocr_host: form.paddleocr_host.trim() || null,
           paddleocr_model: form.paddleocr_model.trim() || null,
+          glmocr_api_key: form.glmocr_api_key.trim() || null,
         },
       })
       if (!resp.success) {
@@ -131,16 +135,18 @@ export default function OcrConfigModal() {
     ? '' // payload removed in event handler above; could pass through if needed
     : ''
 
-  const runTest = async (which: 'mineru' | 'uniparser' | 'paddleocr') => {
+  const runTest = async (which: 'mineru' | 'uniparser' | 'paddleocr' | 'glmocr') => {
     setTesting(which)
     try {
       const key =
         which === 'mineru' ? form.mineru_api_key.trim()
         : which === 'uniparser' ? form.uniparser_api_key.trim()
+        : which === 'glmocr' ? form.glmocr_api_key.trim()
         : form.paddleocr_api_key.trim()
       const result =
         which === 'mineru' ? await testOcrMineru(null, key)
         : which === 'uniparser' ? await testOcrUniparser(null, key)
+        : which === 'glmocr' ? await testOcrGlmocr(key)
         : await testOcrPaddleocr(form.paddleocr_host.trim() || null, key, form.paddleocr_model.trim() || null)
       setTestResults(prev => ({ ...prev, [which]: result }))
     } catch (e) {
@@ -232,6 +238,18 @@ export default function OcrConfigModal() {
             placeholder: 'PaddleOCR-VL-1.6',
           },
         ]}
+      />
+
+      <BackendRow
+        label={t('ocr.config.glmocr')}
+        placeholder="glm-..."
+        value={form.glmocr_api_key}
+        onChange={v => setForm(s => ({ ...s, glmocr_api_key: v }))}
+        onGetKey={() => openExternal('https://open.bigmodel.cn/usercenter/apikeys')}
+        getKeyLabel={t('ocr.config.getKey')}
+        onTest={() => runTest('glmocr')}
+        testing={testing === 'glmocr'}
+        testResult={testResults.glmocr}
       />
 
       {fileName && (

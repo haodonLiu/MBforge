@@ -41,6 +41,10 @@ export async function testOcrPaddleocr(
   return httpPost<OcrTestResult>('/api/v1/ocr/test-paddleocr', { host, apiKey, model })
 }
 
+export async function testOcrGlmocr(apiKey: string, model?: string): Promise<OcrTestResult> {
+  return httpPost<OcrTestResult>('/api/v1/ocr/test-glmocr', { apiKey, model: model ?? null })
+}
+
 // ---- classifier ----
 
 export interface PageClassification {

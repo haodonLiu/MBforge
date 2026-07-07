@@ -12,16 +12,29 @@ Stages:
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..utils.config import load_global_config
 from ..utils.helpers import ensure_dir, save_json
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.pipeline.runner")
+
+
+def _current_ocr_config() -> dict:
+    """Read current ocr config from AppConfig.ocr (settings.json)."""
+    try:
+        cfg = load_global_config()
+        return dict(cfg.ocr or {})
+    except Exception as exc:  # noqa: BLE001 — never block the pipeline on settings read failure
+        logger.warning("Could not read OCR config: %s", exc)
+        return {}
+
 
 
 @dataclass
@@ -83,9 +96,7 @@ def run_pipeline(
     def _emit(event: str, message: str = "", **data):
         if on_progress:
             on_progress(
-                PipelineEvent(
-                    stage="pipeline", event=event, message=message, data=data
-                )
+                PipelineEvent(stage="pipeline", event=event, message=message, data=data)
             )
         logger.info("[%s] %s", event, message)
 
@@ -95,7 +106,7 @@ def run_pipeline(
     _emit("progress", "Extracting text...", stage="extract")
     from .extract_text import extract_pdf_text
 
-    extracted = extract_pdf_text(pdf_path)
+    extracted = extract_pdf_text(pdf_path, ocr_config=_current_ocr_config())
     _emit(
         "complete",
         f"Extracted {extracted.page_count} pages ({len(extracted.raw_text)} chars)",
@@ -120,20 +131,30 @@ def run_pipeline(
     from ..openkb.adapter import OpenKBAdapter
 
     adapter = OpenKBAdapter(root)
-    openkb_doc_id = adapter.index_document(pdf_path, doc_id)
-    _emit(
-        "complete",
-        f"PageIndex tree built: {openkb_doc_id}",
-        stage="pageindex",
-    )
+    openkb_doc_id = ""
+    indexed_count = 0
+    try:
+        openkb_doc_id = adapter.index_document(pdf_path, doc_id)
+        indexed_count = 1
+        _emit(
+            "complete",
+            f"PageIndex tree built: {openkb_doc_id}",
+            stage="pageindex",
+        )
+    except Exception as e:
+        logger.warning("PageIndex indexing failed for %s: %s", pdf_path, e)
+        _emit("warning", f"PageIndex indexing skipped: {e}", stage="pageindex")
 
-    # Stage 4: Wiki compilation
-    _emit("progress", "Compiling wiki...", stage="wiki")
-    doc_name = Path(pdf_path).stem
-    import asyncio
-
-    asyncio.run(adapter.compile_wiki(doc_name, doc_id, extracted.page_count))
-    _emit("complete", "Wiki compiled", stage="wiki")
+    # Stage 4: Wiki compilation (only when indexing succeeded)
+    if openkb_doc_id:
+        _emit("progress", "Compiling wiki...", stage="wiki")
+        doc_name = Path(pdf_path).stem
+        try:
+            asyncio.run(adapter.compile_wiki(doc_name, doc_id, extracted.page_count))
+            _emit("complete", "Wiki compiled", stage="wiki")
+        except Exception as e:
+            logger.warning("Wiki compilation failed for %s: %s", doc_id, e)
+            _emit("warning", f"Wiki compilation skipped: {e}", stage="wiki")
 
     # Stage 5: Enrich (molecule extraction + normalization + persist)
     _emit("progress", "Detecting molecules...", stage="enrich")
@@ -161,7 +182,7 @@ def run_pipeline(
         page_count=extracted.page_count,
         section_count=0,
         chunk_count=0,
-        indexed_count=1,
+        indexed_count=indexed_count,
         parser=extracted.parser,
         title=extracted.title,
         duration_ms=duration_ms,

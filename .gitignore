@@ -144,3 +144,4 @@ setup/
 # ============================================================================
 .claude/worktrees/
 /.claude/settings.local.json
+.worktrees/

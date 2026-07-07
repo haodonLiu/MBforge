@@ -8,6 +8,7 @@ import {
   severityFromHttpStatus,
   type AppErrorOpts,
 } from '@/utils/errors'
+export { AppError, ErrorCode, getErrorMessage, Severity } from '@/utils/errors'
 import { showToast } from '@/hooks/useToast'
 
 const API_BASE = 'http://127.0.0.1:18792'

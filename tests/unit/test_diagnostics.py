@@ -7,7 +7,6 @@ slice locally rather than asserting on absolute size.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import sys
@@ -19,7 +18,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from fastapi.testclient import TestClient
 
 from mbforge.app import create_app
-from mbforge.utils.helpers import MBForgeError, ValidationError
 from mbforge.utils.logger import (
     DiagnosticRingHandler,
     JsonFormatter,
@@ -134,15 +132,18 @@ class TestDiagnosticRingHandler:
             level=logging.WARNING,
             pathname=__file__,
             lineno=1,
-            msg="observing",
+            msg="observing-unique-marker",
             args=None,
             exc_info=None,
         )
         handler.emit(record)
-        out = get_diagnostics(level="WARNING", limit=10)
-        seqs = [r["seq"] for r in out if r["message"] == "observing"]
-        assert len(seqs) >= 1
-        assert isinstance(seqs[-1], int)
+        # Cross-test pollution: deque holds up to 500 records across all
+        # tests in the process. Filter by message to find ours.
+        out = get_diagnostics(level="WARNING", limit=500)
+        seqs = [r["seq"] for r in out if r["message"] == "observing-unique-marker"]
+        assert len(seqs) == 1
+        assert isinstance(seqs[0], int)
+        assert seqs[0] > 0
 
     def test_emit_swallows_exceptions(self) -> None:
         # Defensive: even if record-to-payload conversion fails, logging
@@ -206,19 +207,18 @@ class TestDiagnosticsEndpoints:
         listed = c.get("/api/v1/diagnostics/errors?category=client&limit=10")
         # Some records (newest first by seq); just confirm at least one
         # with category=client exists.
-        ids = [rec for rec in listed.json()["errors"]]
-        assert any(rec["category"] == "client" for rec in ids)
+        assert any(
+            rec["category"] == "client" for rec in listed.json()["errors"]
+        )
 
     def test_unknown_error_404_route_handled_via_ring_buffer(self) -> None:
-        # Probe: a 404 from a non-existent route should NOT pollute the
-        # buffer with category='unhandled' (FastAPI handles 404 before our
-        # Exception handler, so the buffer should have 0 unhandled records
-        # from this call).
-        before = get_diagnostics(category="unhandled", limit=200)
+        # Probe: GET on a seq_id that does not exist returns a clean 200
+        # body rather than crashing the handler. The handler decides
+        # {"success": False, "error": "not found"} when seq is absent.
         c = _client()
         r = c.get("/api/v1/diagnostics/errors/9999999")
-        # Either way we just verify the API surfaces a clean response.
-        assert r.status_code in (200, 404)
+        assert r.status_code == 200
+        assert r.json().get("success") is False
 
 
 class TestMBForgeErrorPropagatesThroughExceptionHandler:

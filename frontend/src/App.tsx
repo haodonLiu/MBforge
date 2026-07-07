@@ -63,7 +63,7 @@ export default function App() {
 }
 
 function AppInner() {
-  const { libraryRoot, setLibraryRoot, setActiveFile, openTabs, activeTabId, closeTab } = useAppContext()
+  const { libraryRoot, setLibraryRoot, libraryPanelCollapsed, setLibraryPanelCollapsed, setActiveFile, openTabs, activeTabId, closeTab } = useAppContext()
   const [currentPage, setCurrentPage] = useState('workspace')
   const isMobile = useIsMobile()
   const isTablet = useIsTablet()
@@ -149,7 +149,7 @@ function AppInner() {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '56px 220px 1fr',
+      gridTemplateColumns: libraryPanelCollapsed ? '56px 0px 1fr' : '56px 220px 1fr',
       gridTemplateRows: 'auto auto 1fr auto',
       height: '100vh',
     }}>
@@ -157,17 +157,19 @@ function AppInner() {
         current={currentPage}
         onNavigate={setCurrentPage}
       />
-      <div style={{
-        gridColumn: '2',
-        gridRow: '1 / 5',
-        background: 'var(--bg-surface)',
-        borderRight: '1px solid var(--border)',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}>
-        <LibraryPanel />
-      </div>
+      {!libraryPanelCollapsed && (
+        <div style={{
+          gridColumn: '2',
+          gridRow: '1 / 5',
+          background: 'var(--bg-surface)',
+          borderRight: '1px solid var(--border)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}>
+          <LibraryPanel />
+        </div>
+      )}
       <Header gridColumn="3" currentPage={currentPage} />
       <div style={{ gridColumn: '3' }}>
         <TabBar />

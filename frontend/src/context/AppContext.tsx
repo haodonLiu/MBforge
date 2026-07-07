@@ -65,6 +65,11 @@ interface AppState {
   closeTab: (tabId: string) => void
   /** 激活指定标签。传 null 切回 Project tab */
   setActiveTabId: (tabId: string | null) => void
+
+  /** Files panel (Library + Groups) collapsed in left rail */
+  libraryPanelCollapsed: boolean
+  /** Toggle files panel visibility, persisted to localStorage */
+  setLibraryPanelCollapsed: (collapsed: boolean) => void
 }
 
 const AppContext = createContext<AppState | null>(null)
@@ -88,6 +93,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [openTabs, setOpenTabs] = useState<Tab[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null)
+
+  const [libraryPanelCollapsed, setLibraryPanelCollapsedState] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('mbforge_library_panel_collapsed') === 'true'
+    } catch {
+      return false
+    }
+  })
 
   const setProjectRoot = useCallback((root: string) => {
     const cleaned = cleanWindowsPath(root)
@@ -146,6 +159,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const setLibraryPanelCollapsed = useCallback((collapsed: boolean) => {
+    try {
+      localStorage.setItem('mbforge_library_panel_collapsed', String(collapsed))
+    } catch (e) {
+      console.warn('[AppContext] localStorage quota exceeded:', e)
+    }
+    setLibraryPanelCollapsedState(collapsed)
+  }, [])
+
   return (
     <AppContext.Provider value={{
       projectRoot, setProjectRoot,
@@ -153,6 +175,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeCollectionId, setActiveCollectionId,
       activeFile, setActiveFile,
       openTabs, activeTabId, openTab, closeTab, setActiveTabId,
+      libraryPanelCollapsed, setLibraryPanelCollapsed,
     }}>
       {children}
     </AppContext.Provider>

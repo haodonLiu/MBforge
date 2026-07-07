@@ -438,7 +438,12 @@
   "search.pdfJumpComingSoon": "PDF 跳转将在下个迭代实现",
   "discover.search.placeholder": "搜索分子、文献、概念...",
   "discover.search.placeholderNoProject": "请先打开或创建一个项目",
-  "discover.search.hints": ["阿司匹林", "分子对接", "SAR分析", "IC50"],
+  "discover.search.hints": [
+    "阿司匹林",
+    "分子对接",
+    "SAR分析",
+    "IC50"
+  ],
   "discover.search.searching": "搜索中...",
   "discover.search.error": "搜索出错：{{error}}",
   "discover.search.resultsCount": "找到 {{count}} 条结果",
@@ -706,5 +711,6 @@
   "library.documents": "文档",
   "library.noDocuments": "暂无文档，导入 PDF 开始使用",
   "library.emptyCollection": "将文档拖入此集合，或选择「所有文档」浏览",
-  "library.emptyImportHint": "导入 PDF 开始构建你的文库"
+  "library.emptyImportHint": "导入 PDF 开始构建你的文库",
+  "sidebar.toggleFiles": "切换文件面板"
 }

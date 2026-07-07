@@ -438,7 +438,12 @@
   "search.pdfJumpComingSoon": "PDF jump coming soon",
   "discover.search.placeholder": "Search molecules, documents, concepts...",
   "discover.search.placeholderNoProject": "Please open or create a project first",
-  "discover.search.hints": ["Aspirin", "Molecular docking", "SAR analysis", "IC50"],
+  "discover.search.hints": [
+    "Aspirin",
+    "Molecular docking",
+    "SAR analysis",
+    "IC50"
+  ],
   "discover.search.searching": "Searching...",
   "discover.search.error": "Search error: {{error}}",
   "discover.search.resultsCount": "Found {{count}} results",
@@ -706,5 +711,6 @@
   "library.documents": "Documents",
   "library.noDocuments": "No documents yet. Import a PDF to get started.",
   "library.emptyCollection": "Drag documents into this collection or select \"All Documents\" to browse.",
-  "library.emptyImportHint": "Import a PDF to start building your document library."
+  "library.emptyImportHint": "Import a PDF to start building your document library.",
+  "sidebar.toggleFiles": "Toggle files panel"
 }

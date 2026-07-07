@@ -1,8 +1,18 @@
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { FlaskIcon, SearchIcon, LayoutIcon, SettingsIcon, NoteIcon, QueueIcon } from './icons'
+import {
+  FlaskIcon,
+  SearchIcon,
+  LayoutIcon,
+  SettingsIcon,
+  NoteIcon,
+  QueueIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+} from './icons'
 import Tooltip from '@/components/ui/Tooltip'
+import { useAppContext } from '@/context/AppContext'
 
 interface Props {
   current: string
@@ -56,25 +66,30 @@ function NavButton({ active, onClick, label, icon: Icon }: NavButtonProps) {
 export default function Sidebar({ current, onNavigate }: Props) {
   const navigate = useNavigate()
   const { t } = useTranslation()
+  const { libraryPanelCollapsed, setLibraryPanelCollapsed } = useAppContext()
 
-  const handleClick = (item: typeof PRIMARY_ITEMS[0]) => {
+  const handleClick = (item: (typeof PRIMARY_ITEMS)[number]) => {
     onNavigate(item.id)
     navigate(item.path)
   }
 
+  const toggleLabel = t('sidebar.toggleFiles')
+
   return (
-    <aside style={{
-      gridColumn: '1',
-      gridRow: '1 / 5',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      gap: '4px',
-      padding: '12px 0',
-      background: 'var(--bg-surface)',
-      borderRight: '1px solid var(--border)',
-      zIndex: 10,
-    }}>
+    <aside
+      style={{
+        gridColumn: '1',
+        gridRow: '1 / 5',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 4,
+        padding: '12px 0',
+        background: 'var(--bg-surface)',
+        borderRight: '1px solid var(--border)',
+        zIndex: 10,
+      }}
+    >
       {PRIMARY_ITEMS.map(item => (
         <NavButton
           key={item.id}
@@ -96,6 +111,31 @@ export default function Sidebar({ current, onNavigate }: Props) {
           icon={item.icon}
         />
       ))}
+
+      <Tooltip text={toggleLabel}>
+        <motion.button
+          onClick={() => setLibraryPanelCollapsed(!libraryPanelCollapsed)}
+          aria-label={toggleLabel}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: 'none',
+            cursor: 'pointer',
+            background: 'transparent',
+            color: 'var(--text-muted)',
+            marginTop: 4,
+            marginBottom: 4,
+          }}
+        >
+          {libraryPanelCollapsed ? <ChevronRightIcon size={16} /> : <ChevronLeftIcon size={16} />}
+        </motion.button>
+      </Tooltip>
 
       <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
         <NavButton

@@ -1,6 +1,6 @@
 /** SSE (Server-Sent Events) client for real-time streaming from FastAPI backend. */
 
-const API_BASE = 'http://127.0.0.1:18792'
+const API_BASE = ''
 
 export interface SSEEvent {
   type: string

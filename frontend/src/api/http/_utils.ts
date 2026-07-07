@@ -11,7 +11,7 @@ import {
 export { AppError, ErrorCode, getErrorMessage, Severity } from '@/utils/errors'
 import { showToast } from '@/hooks/useToast'
 
-const API_BASE = 'http://127.0.0.1:18792'
+const API_BASE = ''
 
 const NETWORK_KEYWORDS = ['network', 'connection', 'timeout', 'refused'] as const
 

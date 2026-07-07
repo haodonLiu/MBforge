@@ -7,21 +7,89 @@ export interface SSEEvent {
   data: Record<string, unknown>
 }
 
+export interface ConnectSSEOptions {
+  /** Maximum consecutive reconnect attempts before giving up. Default: 5. */
+  maxRetries?: number
+  /** Initial backoff in milliseconds; doubled each subsequent retry. Default: 1000. */
+  baseDelayMs?: number
+  /** Optional hook fired on each reconnect attempt (useful for UI status). */
+  onRetry?: (attempt: number, delayMs: number) => void
+}
+
+/**
+ * Connect to a server-sent-events endpoint and stream events to `onEvent`.
+ *
+ * Built-in exponential reconnect: when the EventSource closes or hits an
+ * `onerror`, the client waits `baseDelayMs * 2^attempt` (capped at 30 s) and
+ * reopens. After `maxRetries` failed attempts the connection is reported to
+ * `onError` once and the returned cleanup function becomes a no-op.
+ *
+ * Why this exists: a flaky loopback mid-stream used to silently truncate
+ * agent chat answers (TODO R-5). The backoff keeps transient drops
+ * survivable while bounded so we don't thrash.
+ */
 export function connectSSE(
   path: string,
   onEvent: (event: SSEEvent) => void,
   onError?: (error: Event) => void,
+  options: ConnectSSEOptions = {},
 ): () => void {
-  const url = `${API_BASE}${path}`
-  const es = new EventSource(url)
-  es.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data)
-      onEvent({ type: data.event || data.type || 'message', data })
-    } catch { onEvent({ type: 'raw', data: { text: event.data } }) }
+  const maxRetries = options.maxRetries ?? 5
+  const baseDelayMs = options.baseDelayMs ?? 1000
+  const MAX_DELAY_MS = 30_000
+
+  let attempt = 0
+  let es: EventSource | null = null
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let disposed = false
+  let gaveUp = false
+
+  function open() {
+    if (disposed || gaveUp) return
+    const url = `${API_BASE}${path}`
+    es = new EventSource(url)
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        onEvent({ type: data.event || data.type || 'message', data })
+      } catch {
+        onEvent({ type: 'raw', data: { text: event.data } })
+      }
+    }
+    es.onerror = (err) => {
+      console.error('[SSE] Error:', err)
+      // EventSource auto-retries at the browser level, but we layer our own
+      // backoff + cap on top so an offline backend doesn't loop forever.
+      if (disposed) return
+      if (attempt >= maxRetries) {
+        gaveUp = true
+        es?.close()
+        onError?.(err)
+        return
+      }
+      const delay = Math.min(MAX_DELAY_MS, baseDelayMs * 2 ** attempt)
+      attempt += 1
+      options.onRetry?.(attempt, delay)
+      es?.close()
+      es = null
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        open()
+      }, delay)
+    }
   }
-  es.onerror = (err) => { console.error('[SSE] Error:', err); onError?.(err) }
-  return () => es.close()
+
+  open()
+
+  return () => {
+    disposed = true
+    if (reconnectTimer != null) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    es?.close()
+    es = null
+  }
 }
 
 export async function fetchSSE<T = unknown>(path: string, params?: Record<string, string>): Promise<T[]> {

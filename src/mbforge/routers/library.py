@@ -21,27 +21,38 @@ router = APIRouter()
 
 
 def _resolve_library_root(body: dict | None = None) -> str:
-    """Resolve library_root from body, config, or default."""
+    """Resolve library_root from body, config, or default (~\/mbforge).
+
+    Priority: explicit body param > stored settings.json value > ~/mbforge.
+    This default is intentionally under the user home (not the OS app-data
+    directory) so imported PDFs are easy to find and back up.
+    """
     cfg = load_global_config()
     explicit = (body or {}).get("library_root", "")
     if explicit:
         return explicit
     if cfg.library_root:
         return cfg.library_root
-    return str(GLOBAL_DATA_DIR / "library")
+    return str(Path.home() / "mbforge")
 
 
 @router.get("/status")
 async def library_status() -> dict:
-    """Get library configuration status."""
+    """Get library configuration status.
+
+    Reports `configured: true` whenever the resolved library root either was
+    explicitly configured OR can be auto-created from the default (~/mbforge).
+    """
     root = _resolve_library_root()
-    configured = bool(load_global_config().library_root)
     try:
+        Path(root).mkdir(parents=True, exist_ok=True)
         from ..core.library import LibraryStore
 
         store = LibraryStore.get(root)
         doc_count = store.doc_count()
-    except Exception:
+        configured = True
+    except (OSError, PermissionError):
+        configured = False
         doc_count = 0
     return {
         "configured": configured,

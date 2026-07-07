@@ -704,5 +704,7 @@
   "library.libraryRoot": "Data Directory",
   "library.createLibrary": "Create Library",
   "library.documents": "Documents",
-  "library.noDocuments": "No documents yet. Import a PDF to get started."
+  "library.noDocuments": "No documents yet. Import a PDF to get started.",
+  "library.emptyCollection": "Drag documents into this collection or select \"All Documents\" to browse.",
+  "library.emptyImportHint": "Import a PDF to start building your document library."
 }

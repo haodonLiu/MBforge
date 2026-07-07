@@ -27,7 +27,7 @@ logger = get_logger("mbforge.pipeline.runner")
 @dataclass
 class PipelineEvent:
     stage: str
-    event: str  # start, progress, complete, warning, failed
+    event: str | None = None
     message: str = ""
     data: dict = field(default_factory=dict)
 
@@ -35,12 +35,12 @@ class PipelineEvent:
 @dataclass
 class PipelineResult:
     doc_id: str
-    page_count: int
-    section_count: int
-    chunk_count: int
-    indexed_count: int
-    parser: str
-    title: str | None = None
+    page_count: int = 0
+    section_count: int = 0
+    chunk_count: int = 0
+    indexed_count: int = 0
+    parser: str = ""
+    title: str = ""
     duration_ms: int = 0
 
 
@@ -49,25 +49,32 @@ ProgressCallback = Callable[[PipelineEvent], None]
 
 def run_pipeline(
     pdf_path: str,
-    project_root: str,
+    library_root: str,
     doc_id: str = "",
     chunk_size: int = 512,
     chunk_overlap: int = 128,
+    project_root: str | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> PipelineResult:
     """Run the document processing pipeline via OpenKB.
 
     Args:
         pdf_path: Path to the PDF file
-        project_root: Project root directory
+        library_root: Library data directory
         doc_id: Document ID (auto-generated from filename if empty)
         chunk_size: Ignored (kept for API compat)
         chunk_overlap: Ignored (kept for API compat)
+        project_root: Deprecated, use library_root
         on_progress: Progress callback
 
     Returns:
         PipelineResult with processing statistics
     """
+    root = (
+        Path(library_root or project_root)
+        if library_root or project_root
+        else Path(".")
+    )
     if not doc_id:
         doc_id = Path(pdf_path).stem
 
@@ -76,7 +83,9 @@ def run_pipeline(
     def _emit(event: str, message: str = "", **data):
         if on_progress:
             on_progress(
-                PipelineEvent(stage="pipeline", event=event, message=message, data=data)
+                PipelineEvent(
+                    stage="pipeline", event=event, message=message, data=data
+                )
             )
         logger.info("[%s] %s", event, message)
 
@@ -110,9 +119,13 @@ def run_pipeline(
     _emit("progress", "Building PageIndex tree...", stage="pageindex")
     from ..openkb.adapter import OpenKBAdapter
 
-    adapter = OpenKBAdapter(project_root)
+    adapter = OpenKBAdapter(root)
     openkb_doc_id = adapter.index_document(pdf_path, doc_id)
-    _emit("complete", f"PageIndex tree built: {openkb_doc_id}", stage="pageindex")
+    _emit(
+        "complete",
+        f"PageIndex tree built: {openkb_doc_id}",
+        stage="pageindex",
+    )
 
     # Stage 4: Wiki compilation
     _emit("progress", "Compiling wiki...", stage="wiki")
@@ -125,7 +138,7 @@ def run_pipeline(
     # Stage 5: Enrich (molecule extraction + normalization + persist)
     _emit("progress", "Detecting molecules...", stage="enrich")
     molecule_stats = _enrich_and_persist_molecules(
-        pdf_path, project_root, doc_id, extracted.raw_text
+        pdf_path, root, doc_id, extracted.raw_text
     )
     _emit(
         "complete",
@@ -137,7 +150,7 @@ def run_pipeline(
 
     # Stage 6: Persist
     _emit("progress", "Saving document...", stage="persist")
-    _persist_document(project_root, doc_id, extracted, classification, molecule_stats)
+    _persist_document(root, doc_id, extracted, classification, molecule_stats)
     _emit("complete", "Document saved", stage="persist")
 
     duration_ms = int((time.monotonic() - start_time) * 1000)
@@ -157,7 +170,7 @@ def run_pipeline(
 
 def _enrich_and_persist_molecules(
     pdf_path: str,
-    project_root: str,
+    project_root: str | Path,
     doc_id: str,
     raw_text: str,
 ) -> dict[str, Any]:
@@ -173,8 +186,10 @@ def _enrich_and_persist_molecules(
     from .normalize import normalize_molecules
     from .persist_molecules import persist_molecule_candidates
 
+    root = Path(project_root) if isinstance(project_root, str) else project_root
+
     try:
-        image_results = extract_molecules_from_pdf(pdf_path, project_root, doc_id)
+        image_results = extract_molecules_from_pdf(pdf_path, str(root), doc_id)
     except Exception as e:
         logger.warning("Molecule image extraction failed: %s", e)
         image_results = []
@@ -205,7 +220,7 @@ def _enrich_and_persist_molecules(
         }
 
     try:
-        persist_molecule_candidates(project_root, doc_id, normalized)
+        persist_molecule_candidates(str(root), doc_id, normalized)
     except Exception as e:
         logger.warning("Molecule persistence failed: %s", e)
         return {
@@ -229,22 +244,22 @@ def _enrich_and_persist_molecules(
 
 
 def _persist_document(
-    project_root: str,
+    project_root: str | Path,
     doc_id: str,
     extracted,
     classification,
     molecule_stats: dict[str, Any],
 ) -> None:
     """Save page texts and report to filesystem."""
-    root = Path(project_root)
+    root = Path(project_root) if isinstance(project_root, str) else project_root
 
-    pages_dir = root / "index" / "pages" / doc_id
+    pages_dir = root / "storage" / doc_id / "pages"
     ensure_dir(pages_dir)
     for page in extracted.pages:
         page_file = pages_dir / f"page_{page.page_num:04d}.txt"
         page_file.write_text(page.text, encoding="utf-8")
 
-    report_dir = root / "projects" / doc_id
+    report_dir = root / "storage" / doc_id
     ensure_dir(report_dir)
     report = {
         "doc_id": doc_id,

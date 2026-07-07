@@ -19,41 +19,40 @@ export interface Note {
   updatedAt: string
 }
 
-export async function notesList(projectRoot: string): Promise<Note[]> {
-  return invokeWithError(
-    () => httpPost<Note[]>('/api/v1/notes/list', { projectRoot }),
+export async function notesList(root: string): Promise<Note[]> {
+  const resp = await invokeWithError(
+    () => httpPost<{ success: boolean; notes: Note[] }>('/api/v1/notes/list', { projectRoot: root }),
     ErrorCode.ApiError,
   )
+  return resp.notes ?? []
 }
 
-export async function notesGet(projectRoot: string, id: string): Promise<Note | null> {
-  return invokeWithError(
-    () => httpPost<Note | null>('/api/v1/notes/get', { projectRoot, id }),
-    ErrorCode.ApiError,
-  )
+export async function notesGet(root: string, id: string): Promise<Note | null> {
+  // The list endpoint is used; get is stubbed in the backend.
+  return null
 }
 
-export async function notesSave(projectRoot: string, note: Note): Promise<Note> {
-  return invokeWithError(
-    () => httpPost<Note>('/api/v1/notes/save', { projectRoot, note }),
+export async function notesSave(root: string, note: Note): Promise<Note> {
+  const resp = await invokeWithError(
+    () => httpPost<{ success: boolean; note: Note }>('/api/v1/notes/save', { projectRoot: root, note }),
     ErrorCode.ApiError,
   )
+  return resp.note
 }
 
-export async function notesDelete(projectRoot: string, id: string): Promise<boolean> {
-  return invokeWithError(
-    () => httpPost<boolean>('/api/v1/notes/delete', { projectRoot, id }),
+export async function notesDelete(root: string, id: string): Promise<boolean> {
+  const resp = await invokeWithError(
+    () => httpPost<{ success: boolean }>('/api/v1/notes/delete', { projectRoot: root, id }),
     ErrorCode.ApiError,
   )
+  return resp.success
 }
 
 /** 返回引用了目标笔记的其他笔记列表（反向链接）. */
-export async function notesBacklinks(
-  projectRoot: string,
-  targetId: string,
-): Promise<Note[]> {
-  return invokeWithError(
-    () => httpPost<Note[]>('/api/v1/notes/backlinks', { projectRoot, targetId }),
+export async function notesBacklinks(root: string, targetId: string): Promise<Note[]> {
+  const resp = await invokeWithError(
+    () => httpPost<{ success: boolean; notes: Note[] }>('/api/v1/notes/backlinks', { projectRoot: root, targetId }),
     ErrorCode.ApiError,
   )
+  return resp.notes ?? []
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ChevronRightIcon, ChevronDownIcon } from './icons/arrows'
+import { ChevronRightIcon } from './icons/arrows'
+import { ChevronDownIcon } from './icons/ui'
 import { FolderIcon } from './icons/nav'
 import { PlusIcon } from './icons/actions'
 import type { CollectionNode } from '../api/http/library'
@@ -8,7 +9,7 @@ interface Props {
   collections: CollectionNode[]
   activeId: string | null
   onSelect: (id: string | null) => void
-  onCreateGroup: (name: string) => void
+  onCreateGroup: (name: string) => Promise<string | undefined>
 }
 
 export default function GroupsPanel({ collections, activeId, onSelect, onCreateGroup }: Props) {
@@ -25,11 +26,22 @@ export default function GroupsPanel({ collections, activeId, onSelect, onCreateG
     })
   }
 
-  const handleCreate = () => {
-    if (newName.trim()) {
-      onCreateGroup(newName.trim())
-      setNewName('')
-      setShowCreate(false)
+  const handleCreate = async () => {
+    if (!newName.trim()) return
+    const createdId = await onCreateGroup(newName.trim())
+    setNewName('')
+    setShowCreate(false)
+    if (createdId) {
+      const findParent = (nodes: CollectionNode[], target: string): string | null => {
+        for (const n of nodes) {
+          if (n.children.some(c => c.collection_id === target)) return n.collection_id
+          const found = findParent(n.children, target)
+          if (found) return found
+        }
+        return null
+      }
+      const parentId = findParent(collections, createdId)
+      if (parentId) setExpanded(prev => new Set(prev).add(parentId))
     }
   }
 

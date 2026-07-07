@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { httpPost, httpPut } from '../../../api/http/_utils'
+import { httpGet, httpPut } from '../../../api/http/_utils'
 import SettingSection, { SettingGroup } from '../../ui/SettingSection'
 import Button from '../../ui/Button'
 import { showToast } from '../../../hooks/useToast'
@@ -16,7 +16,7 @@ export default function RecentProjectsSection() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const resp = await httpPost<{ settings?: { recent_projects?: string[] } }>('/api/v1/settings')
+      const resp = await httpGet<{ settings?: { recent_projects?: string[] } }>('/api/v1/settings')
       setProjects(resp.settings?.recent_projects ?? [])
     } catch (e) {
       console.error('load recent projects failed', e)
@@ -31,7 +31,7 @@ export default function RecentProjectsSection() {
     try {
       const resp = await openProject(path)
       if (resp.success) {
-        const current = await httpPost<{ settings?: { recent_projects?: string[] } }>('/api/v1/settings')
+        const current = await httpGet<{ settings?: { recent_projects?: string[] } }>('/api/v1/settings')
         const recent = current.settings?.recent_projects ?? []
         if (!recent.includes(path)) {
           await httpPut('/api/v1/settings', { recent_projects: [path, ...recent].slice(0, 20) })
@@ -47,7 +47,7 @@ export default function RecentProjectsSection() {
 
   const onRemove = async (path: string) => {
     try {
-      const current = await httpPost<{ settings?: { recent_projects?: string[] } }>('/api/v1/settings')
+      const current = await httpGet<{ settings?: { recent_projects?: string[] } }>('/api/v1/settings')
       const recent = (current.settings?.recent_projects ?? []).filter((p: string) => p !== path)
       await httpPut('/api/v1/settings', { recent_projects: recent })
       setProjects(recent)

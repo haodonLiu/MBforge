@@ -28,7 +28,7 @@ def kb_search(query: str, top_k: int = 5) -> str:
     try:
         from ..core.knowledge_base import search
 
-        result = search(query, project_root="", top_k=top_k, use_cache=False)
+        result = search(query, library_root="", top_k=top_k, use_cache=False)
         results = result.get("results", [])
         return json.dumps(results[:top_k], ensure_ascii=False, indent=2)
     except Exception as e:
@@ -74,7 +74,7 @@ def get_document_content(doc_id: str, pages: str = "") -> str:
         page_list = [int(p.strip()) for p in pages.split(",") if p.strip()] if pages else None
         from ..core.knowledge_base import get_document_pages
 
-        result = get_document_pages(project_root="", doc_id=doc_id, pages=page_list)
+        result = get_document_pages(library_root="", doc_id=doc_id, pages=page_list)
         return json.dumps(result, ensure_ascii=False, indent=2)
     except Exception as e:
         return json.dumps({"error": str(e)})

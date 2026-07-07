@@ -73,6 +73,10 @@ class AppConfig(BaseSettings):
     ocr: dict[str, Any] = Field(default_factory=dict)
     model_server: dict[str, Any] = Field(default_factory=dict)
     recent_projects: list[RecentProject] = Field(default_factory=list)
+    library_root: str | None = Field(
+        default=None,
+        description="Unified library data directory (Zotero-style)"
+    )
     pdf_parse: dict[str, Any] = Field(default_factory=dict)
     # moldet: 分子检测管线设置。已知 key: {"device", "molscribe_dir"}.
     moldet: dict[str, Any] = Field(default_factory=dict)

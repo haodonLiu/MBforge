@@ -104,14 +104,6 @@ async def agent_clear(session_id: str) -> dict:
     return {"success": True}
 
 
-@router.put("/session/{session_id}/project")
-async def agent_switch_project(session_id: str, body: dict) -> dict:
-    from ..agent.sessions import session_store
-
-    session = session_store.get(session_id)
-    if session:
-        session.project_root = body.get("project_root")
-    return {"success": True}
 
 
 @router.get("/session/{session_id}/history")

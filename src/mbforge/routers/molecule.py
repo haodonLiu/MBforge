@@ -1,4 +1,4 @@
-"""Molecule CRUD endpoints."""
+"""Molecule CRUD endpoints — supports both library_root and project_root."""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ import uuid
 from fastapi import APIRouter
 
 from ..models.molecule import (
+    MoleculeCreateRequest,
+    MoleculeDeleteRequest,
+    MoleculeGetRequest,
     MoleculeListRequest,
     MoleculeSearchRequest,
-    MoleculeGetRequest,
-    MoleculeCreateRequest,
-    MoleculeUpdateRequest,
-    MoleculeDeleteRequest,
     MoleculeStatsRequest,
+    MoleculeUpdateRequest,
 )
-from ..utils.helpers import validate_project_root
+from ..utils.helpers import resolve_root
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.molecule_router")
@@ -24,12 +24,22 @@ logger = get_logger("mbforge.molecule_router")
 router = APIRouter()
 
 
+def _get_db(body: dict | object) -> tuple:
+    """Resolve root from body and return (root_str, DatabaseManager)."""
+    b = body if isinstance(body, dict) else body.model_dump()
+    root = resolve_root(b)
+    if not root:
+        raise ValueError("No root path provided (library_root or project_root)")
+    from ..core.database import DatabaseManager
+    return root, DatabaseManager.get(root)
+
+
 @router.post("/list")
 async def mol_list(body: MoleculeListRequest) -> dict:
-    validate_project_root(body.project_root)
-    from ..core.database import DatabaseManager
-
-    db = DatabaseManager.get(body.project_root)
+    try:
+        root, db = _get_db(body)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
     with db.mol_conn() as conn:
         where = "WHERE 1=1"
         params: list = []
@@ -48,10 +58,10 @@ async def mol_list(body: MoleculeListRequest) -> dict:
 
 @router.post("/search")
 async def mol_search(body: MoleculeSearchRequest) -> dict:
-    validate_project_root(body.project_root)
-    from ..core.database import DatabaseManager
-
-    db = DatabaseManager.get(body.project_root)
+    try:
+        root, db = _get_db(body)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
     with db.mol_conn() as conn:
         rows = conn.execute(
             "SELECT m.* FROM mol_search ms JOIN molecules m ON ms.rowid = m.rowid "
@@ -64,10 +74,10 @@ async def mol_search(body: MoleculeSearchRequest) -> dict:
 
 @router.post("/get")
 async def mol_get(body: MoleculeGetRequest) -> dict:
-    validate_project_root(body.project_root)
-    from ..core.database import DatabaseManager
-
-    db = DatabaseManager.get(body.project_root)
+    try:
+        root, db = _get_db(body)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
     with db.mol_conn() as conn:
         row = conn.execute("SELECT * FROM molecules WHERE mol_id = ?", (body.mol_id,)).fetchone()
         if not row:
@@ -77,11 +87,11 @@ async def mol_get(body: MoleculeGetRequest) -> dict:
 
 @router.post("/create")
 async def mol_create(body: MoleculeCreateRequest) -> dict:
-    validate_project_root(body.project_root)
+    try:
+        root, db = _get_db(body)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
     mol_id = body.mol_id or str(uuid.uuid4())
-    from ..core.database import DatabaseManager
-
-    db = DatabaseManager.get(body.project_root)
     with db.mol_conn() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO molecules (mol_id, smiles, esmiles, name, source_type, status) "
@@ -93,13 +103,10 @@ async def mol_create(body: MoleculeCreateRequest) -> dict:
 
 @router.put("/{mol_id}")
 async def mol_update(mol_id: str, body: MoleculeUpdateRequest) -> dict:
-    root = body.project_root
-    if not root:
-        return {"success": False, "error": "project_root required"}
-    validate_project_root(root)
-    from ..core.database import DatabaseManager
-
-    db = DatabaseManager.get(root)
+    try:
+        root, db = _get_db(body)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
     fields = []
     params = []
     for key in ["name", "esmiles", "activity", "activity_type", "units", "status", "notes", "labels", "properties"]:
@@ -119,10 +126,10 @@ async def mol_update(mol_id: str, body: MoleculeUpdateRequest) -> dict:
 
 @router.delete("/{mol_id}")
 async def mol_delete(mol_id: str, body: MoleculeDeleteRequest) -> dict:
-    validate_project_root(body.project_root)
-    from ..core.database import DatabaseManager
-
-    db = DatabaseManager.get(body.project_root)
+    try:
+        root, db = _get_db(body)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
     with db.mol_conn() as conn:
         conn.execute("DELETE FROM molecules WHERE mol_id = ?", (mol_id,))
     return {"success": True}
@@ -130,10 +137,10 @@ async def mol_delete(mol_id: str, body: MoleculeDeleteRequest) -> dict:
 
 @router.post("/stats")
 async def mol_stats(body: MoleculeStatsRequest) -> dict:
-    validate_project_root(body.project_root)
-    from ..core.database import DatabaseManager
-
-    db = DatabaseManager.get(body.project_root)
+    try:
+        root, db = _get_db(body)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
     with db.mol_conn() as conn:
         total = conn.execute("SELECT COUNT(*) FROM molecules").fetchone()[0]
         by_status = conn.execute(

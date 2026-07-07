@@ -12,8 +12,6 @@ import { useTranslation } from 'react-i18next'
 import { PdfIcon } from '@/components/icons/nav'
 import { PlusIcon } from '@/components/icons/actions'
 import PageTitle from '@/components/ui/PageTitle'
-import BodyText from '@/components/ui/BodyText'
-
 export default function Workspace() {
   const { t } = useTranslation()
   const { libraryRoot, activeCollectionId, openTab } = useAppContext()
@@ -88,7 +86,19 @@ export default function Workspace() {
           <div className="workspace-loading">Loading...</div>
         ) : documents.length === 0 ? (
           <div className="workspace-empty">
-            <BodyText>{t('library.noDocuments')}</BodyText>
+            <PdfIcon size={48} className="workspace-empty-icon" />
+            <div className="workspace-empty-title">{t('library.noDocuments')}</div>
+            <div className="workspace-empty-desc">
+              {activeCollectionId
+                ? t('library.emptyCollection')
+                : t('library.emptyImportHint')}
+            </div>
+            {!activeCollectionId && (
+              <button className="workspace-import-btn" onClick={handleImport}>
+                <PlusIcon size={16} />
+                {t('library.importPdf')}
+              </button>
+            )}
           </div>
         ) : (
           <div className="doc-grid">

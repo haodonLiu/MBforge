@@ -168,7 +168,7 @@ function AppInner() {
       }}>
         <LibraryPanel />
       </div>
-      <Header gridColumn="3" />
+      <Header gridColumn="3" currentPage={currentPage} />
       <div style={{ gridColumn: '3' }}>
         <TabBar />
       </div>

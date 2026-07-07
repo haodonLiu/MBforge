@@ -9,6 +9,7 @@ from concurrent.futures import Future
 from fastapi import APIRouter
 
 from ..utils.logger import get_logger
+from ..utils.helpers import resolve_root
 
 logger = get_logger("mbforge.pipeline_router")
 
@@ -20,28 +21,25 @@ _background_futures: dict[str, Future] = {}
 
 @router.post("/enqueue")
 async def pipeline_enqueue(body: dict) -> dict:
-    root = body.get("project_root", "")
+    root = resolve_root(body)
     action = body.get("action", "")
 
-    # 批量入队：扫描项目中所有未处理的 PDF
     if action == "enqueue_unresolved":
         if not root:
-            return {"success": False, "error": "project_root required"}
+            return {"success": False, "error": "library_root required"}
         enqueued = _enqueue_all_unresolved(root)
         return {"success": True, "enqueued": enqueued}
 
     file_path = body.get("file_path", "")
     if not root or not file_path:
-        return {"success": False, "error": "project_root and file_path required"}
+        return {"success": False, "error": "library_root and file_path required"}
     task_id = str(uuid.uuid4())
     doc_id = body.get("doc_id", "")
-    # Run pipeline in background
     loop = asyncio.get_running_loop()
     future = loop.run_in_executor(
         None, _run_pipeline_sync, file_path, root, doc_id or task_id
     )
     _background_futures[task_id] = future
-    # Clean up completed futures
     future.add_done_callback(lambda f: _background_futures.pop(task_id, None))
     return {"success": True, "task_id": task_id}
 
@@ -83,11 +81,11 @@ def _enqueue_all_unresolved(root: str) -> int:
     return enqueued
 
 
-def _run_pipeline_sync(pdf_path: str, project_root: str, doc_id: str):
+def _run_pipeline_sync(pdf_path: str, library_root: str, doc_id: str):
     try:
         from ..pipeline.runner import run_pipeline
 
-        run_pipeline(pdf_path, project_root, doc_id=doc_id)
+        run_pipeline(pdf_path, library_root, doc_id=doc_id)
     except Exception as e:
         logger.error("Pipeline failed for %s: %s", pdf_path, e, exc_info=True)
         # Update task status in database
@@ -106,11 +104,11 @@ def _run_pipeline_sync(pdf_path: str, project_root: str, doc_id: str):
 @router.post("/process")
 async def pipeline_process(body: dict) -> dict:
     """Synchronous pipeline execution (blocks until complete)."""
-    root = body.get("project_root", "")
+    root = resolve_root(body)
     file_path = body.get("file_path", "")
     doc_id = body.get("doc_id", "")
     if not root or not file_path:
-        return {"success": False, "error": "project_root and file_path required"}
+        return {"success": False, "error": "library_root and file_path required"}
     try:
         from ..pipeline.runner import run_pipeline
 
@@ -137,7 +135,7 @@ async def pipeline_process(body: dict) -> dict:
 
 @router.post("/queue")
 async def pipeline_queue(body: dict) -> dict:
-    root = body.get("project_root", "")
+    root = resolve_root(body)
     if not root:
         return {"success": True, "tasks": []}
     from ..core.database import DatabaseManager

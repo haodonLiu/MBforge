@@ -7,6 +7,8 @@ Replaces the Tauri/Rust shell with a standard web application.
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -71,19 +73,20 @@ def create_app() -> FastAPI:
         events,
         health,
         knowledge_base,
+        library,
         molecule,
         notes,
         ocr,
         pdf,
         pipeline,
-        project,
+        ocr,
         resource,
         sar,
         settings,
         text,
     )
 
-    app.include_router(project.router, prefix="/api/v1/project", tags=["project"])
+    app.include_router(library.router, prefix="/api/v1/library", tags=["library"])
     app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
     app.include_router(pipeline.router, prefix="/api/v1/pipeline", tags=["pipeline"])
     app.include_router(knowledge_base.router, prefix="/api/v1/kb", tags=["kb"])
@@ -108,7 +111,14 @@ def create_app() -> FastAPI:
     app.mount("/api/v1/models", model_server)
 
     # Serve React frontend in production
-    frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
+    # Priority: FRONTEND_DIST env (Docker) > sys._MEIPASS (PyInstaller) > dev path
+    _env_dist = os.environ.get("FRONTEND_DIST")
+    if _env_dist:
+        frontend_dist = Path(_env_dist)
+    elif getattr(sys, "frozen", False):
+        frontend_dist = Path(sys._MEIPASS) / "frontend" / "dist"
+    else:
+        frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
     if frontend_dist.exists():
         app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
         logger.info("Frontend: %s", frontend_dist)

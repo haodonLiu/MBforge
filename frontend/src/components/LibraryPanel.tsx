@@ -49,17 +49,20 @@ export default function LibraryPanel() {
     input.click()
   }
 
-  const handleCreateGroup = async (name: string) => {
+  const handleCreateGroup = async (name: string): Promise<string | undefined> => {
     try {
       const resp = await createCollection(name)
-      if (resp.success) {
+      if (resp.success && resp.collection) {
         const r = await listCollections()
         setCollections(r.collections)
+        return resp.collection.collection_id
       } else {
         showToast(resp.error || 'Failed to create group', 'error')
+        return undefined
       }
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e), 'error')
+      return undefined
     }
   }
 

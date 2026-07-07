@@ -179,6 +179,11 @@ class DatabaseManager:
         self._lock = threading.Lock()
         self._initialized = False
 
+    @staticmethod
+    def molecule_schema() -> str:
+        """Return SQL for molecule tables + FTS5 index, reusable by LibraryStore."""
+        return _MOL_SCHEMA + _MOL_FTS
+
     @classmethod
     def get(cls, project_root: str | Path) -> DatabaseManager:
         """获取缓存的实例，避免重复初始化."""

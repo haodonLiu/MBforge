@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useTranslation } from 'react-i18next'
 import PageContainer from '../ui/PageContainer'
+import { useTranslation } from 'react-i18next'
 import Button from '../ui/Button'
 import IconButton from '../ui/IconButton'
 import Badge from '../ui/Badge'
@@ -103,6 +103,7 @@ function basename(p: string): string {
 
 export default function ProcessingQueue() {
   const { libraryRoot } = useAppContext()
+  const { t } = useTranslation()
   const [tasks, setTasks] = useState<IngestTask[]>([])
 
   const FILTERS: { key: FilterKey; label: string }[] = useMemo(() => [

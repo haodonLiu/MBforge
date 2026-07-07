@@ -704,5 +704,7 @@
   "library.libraryRoot": "数据目录",
   "library.createLibrary": "创建文库",
   "library.documents": "文档",
-  "library.noDocuments": "暂无文档，导入 PDF 开始使用"
+  "library.noDocuments": "暂无文档，导入 PDF 开始使用",
+  "library.emptyCollection": "将文档拖入此集合，或选择「所有文档」浏览",
+  "library.emptyImportHint": "导入 PDF 开始构建你的文库"
 }

@@ -26,6 +26,20 @@ logger = get_logger(__name__)
 _ultralytics: Any | None = None
 
 
+
+def default_model_dir() -> Path:
+    """返回模型缓存目录(使用统一常量).
+
+    与 ``backends/moldet.py`` 旧版同名函数语义一致,挪到此处是因为
+    moldet.py 已被瘦壳化(只保留兼容入口),新代码应直接走 FT 后端。
+    """
+    from mbforge.utils.paths import get_model_cache_dir
+
+    cache_dir = Path(get_model_cache_dir())
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
 def _has_ultralytics() -> bool:
     global _ultralytics
     if _ultralytics is None:
@@ -48,8 +62,8 @@ class MolDetv2FTDetector:
         - corefs: [(mol_idx, idt_idx), ...] 配对列表
     """
 
-    # 默认权重子路径（相对于模型目录）
-    DEFAULT_SUBPATH = "ft/best.pt"
+    # 默认权重文件名（相对于模型目录）
+    DEFAULT_SUBPATH = "last.pt"
 
     def __init__(
         self,
@@ -87,7 +101,6 @@ class MolDetv2FTDetector:
 
     def _resolve_model_path(self) -> Path:
         """通过 ResourceManager 解析模型路径。"""
-        from mbforge.backends.moldet import default_model_dir
         from mbforge.core.resource_manager import ResourceManager
 
         resolved = ResourceManager.resolve_model_for_backend(

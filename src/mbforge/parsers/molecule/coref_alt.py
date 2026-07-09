@@ -1,20 +1,19 @@
-"""coref via moldet + RapidOCR — 替代 pix2seq-based coref 的轻量实现。
+"""coref via MolDetv2-FT joint detector.
 
-复用 `mbforge.backends.moldet.MolDetv2DocDetector` + `_RapidOCRAdapter`，
-无新模型依赖，无 vendor 代码（thomas0809/RxnScribe）。
+Single-model inference: MolDetv2-FT outputs molecule bboxes and coref
+identifier bboxes in one pass. No OCR step needed (the FT model is
+trained on identifier detection directly). Outputs `CorefResult` which
+is consumed by `/api/v1/moldet/extract-pdf-page` and `coref_to_rust_dict`
+for the vlm_chem.rs Rust frontend bridge.
 
-输出 `CorefResult` 与 `MolDetectCorefBackend.detect_coref` 完全兼容，
-可直接平替上游调用方（`server.py:457` HTTP endpoint、`vlm_chem.rs`）。
-
-权衡：
-- 不再需要 `coref_best.ckpt`（412 MB）和 `molcoref/` 17 个 vendor 文件
-- 标识符检测从训练模型 → 启发式过滤（精度略降，速度显著提升）
-- 配对逻辑一致：归一化距离 + 水平权重 + 置信度优先
+Replaces the 2026-07-07 implementation: moldet (Doc detector) + RapidOCR
+with heuristic identifier filtering. The OCR path was slower and noisier
+on identifier text (e.g., "Ia" vs "1a"). The FT model is the canonical
+path; OCR-based code has been removed.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -54,71 +53,6 @@ class CorefResult:
     bboxes: list[CorefBbox]
     corefs: list[tuple[int, int]]  # [(mol_idx, idt_idx), ...]
 
-
-# 段落文本特征词（不应作为 identifier）
-_COMMON_WORDS: frozenset[str] = frozenset(
-    {
-        "the",
-        "of",
-        "and",
-        "or",
-        "a",
-        "an",
-        "to",
-        "in",
-        "for",
-        "is",
-        "are",
-        "with",
-        "by",
-        "as",
-        "on",
-        "at",
-        "from",
-        "this",
-        "that",
-        "be",
-        "formula",
-        "compound",
-        "salt",
-        "pharmaceutically",
-        "acceptable",
-        "some",
-        "embodiments",
-        "structure",
-        "has",
-    }
-)
-
-# identifier 字符约束：首字符为字母或左括号，后续字母/数字/常见化学符号
-_IDT_CHARS = re.compile(r"^[\(]?[A-Za-z][A-Za-z0-9¹²³⁴⁵⁶⁷⁸⁹⁰\-\)]*[\),]?$")
-
-
-def _is_identifier_candidate(text: str) -> bool:
-    """启发式：判断 OCR 文本是否像化学标识符（Ia/Ib/(Ia)/Y/NH/A1/A2 等）。"""
-    if not text:
-        return False
-    t = text.strip().strip(".,;:")
-    if not t or len(t) > 10:
-        return False
-    if " " in t:  # 含空格 → 段落文本
-        return False
-    if t.lower().rstrip("().,") in _COMMON_WORDS:
-        return False
-    if not re.search(r"[A-Za-z]", t):
-        return False
-    if not _IDT_CHARS.match(t):
-        return False
-    return True
-
-
-def _normalize_idt(text: str) -> str:
-    """清洗 OCR 误识：小写 l/I 互换，1/l/! 修正。"""
-    t = text.strip()
-    # 形似修正（保守）：首字符 I↔l 视上下文；这里只修末尾的常见误识
-    if t.endswith("1b)") or t.endswith("lb)"):
-        t = t[:-3] + "Ib)"
-    return t
 
 
 def _pair_corefs(
@@ -198,185 +132,14 @@ def _bbox_iou(a: tuple, b: tuple) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def _is_inside(inner: tuple, outer: tuple) -> bool:
-    """检查 inner bbox 是否完全在 outer bbox 内。"""
-    ix1, iy1, ix2, iy2 = inner
-    ox1, oy1, ox2, oy2 = outer
-    return ox1 <= ix1 and oy1 <= iy1 and ix2 <= ox2 and iy2 <= oy2
-
-
-def _contain_ratio(inner: tuple, outer: tuple) -> float:
-    """inner bbox 面积有多大比例在 outer 内。"""
-    ix1, iy1, ix2, iy2 = inner
-    ox1, oy1, ox2, oy2 = outer
-    # intersection
-    cx1, cy1 = max(ix1, ox1), max(iy1, oy1)
-    cx2, cy2 = min(ix2, ox2), min(iy2, oy2)
-    if cx2 <= cx1 or cy2 <= cy1:
-        return 0.0
-    inter = (cx2 - cx1) * (cy2 - cy1)
-    area_inner = max(0, ix2 - ix1) * max(0, iy2 - iy1)
-    return inter / area_inner if area_inner > 0 else 0.0
-
-
-def detect_coref_via_moldet_ocr(
-    image: Image.Image,
-    doc_detector: Any,
-    ocr_adapter: Any,
-    page_width: float = 595.0,
-    page_height: float = 842.0,
-    mol_conf_threshold: float = 0.25,
-) -> CorefResult:
-    """moldet + RapidOCR 实现 coref 配对。
-
-    Args:
-        image: PIL 图像
-        doc_detector: `MolDetv2DocDetector` 实例
-        ocr_adapter: `_RapidOCRAdapter` 实例
-        page_width: PDF 页面宽度（点）
-        page_height: PDF 页面高度（点）
-        mol_conf_threshold: moldet 置信度阈值（默认 0.25，比默认 0.4 宽松以提高召回）
-
-    Returns:
-        `CorefResult` — 与 `MolDetectCorefBackend.detect_coref` 输出一致。
-    """
-    W, H = image.size
-    inv_w = 1.0 / W if W > 0 else 0.0
-    inv_h = 1.0 / H if H > 0 else 0.0
-
-    def _to_norm(
-        box: tuple[float, float, float, float],
-    ) -> tuple[float, float, float, float]:
-        """Pixel bbox (top-left origin) → image-relative normalized bbox.
-
-        Clamps to [0, 1] so detector noise that returns slightly
-        out-of-bounds boxes (e.g. MolDet rounding) doesn't propagate
-        garbage into the frontend projector.
-        """
-        x1, y1, x2, y2 = box
-        nx1 = max(0.0, min(1.0, x1 * inv_w))
-        ny1 = max(0.0, min(1.0, y1 * inv_h))
-        nx2 = max(0.0, min(1.0, x2 * inv_w))
-        ny2 = max(0.0, min(1.0, y2 * inv_h))
-        return (nx1, ny1, nx2, ny2)
-
-    # 1. moldet 检测分子（像素坐标）
-    mol_results = doc_detector.detect(image)  # [(x1,y1,x2,y2,conf), ...]
-
-    # 2. RapidOCR 全图
-    ocr_results = ocr_adapter.readtext(
-        image, detail=1
-    )  # [(box_4pts, text, score), ...]
-
-    bboxes: list[CorefBbox] = []
-    mol_indices: list[int] = []
-
-    # 3. 加 Mol bbox
-    for x1, y1, x2, y2, conf in mol_results:
-        if conf < mol_conf_threshold:
-            continue
-        bboxes.append(
-            CorefBbox(category_id=1, bbox=_to_norm((x1, y1, x2, y2)), score=conf)
-        )
-        mol_indices.append(len(bboxes) - 1)
-
-    # 4. 加 Idt bbox（OCR 候选 + 启发式过滤）
-    idt_indices: list[int] = []
-    for box_pts, text, ocr_conf in ocr_results or []:
-        if not _is_identifier_candidate(text):
-            continue
-        xs = [p[0] for p in box_pts]
-        ys = [p[1] for p in box_pts]
-        idt_bbox_px = (min(xs), min(ys), max(xs), max(ys))
-        idt_bbox_norm = _to_norm(idt_bbox_px)
-        # 过滤：idt 50%+ 面积在某个 mol 内部 → 视为分子结构内部元素（非 label）。
-        # 必须用归一化坐标比（`bboxes[mi].bbox` 已是 [0,1]）—— 像素 vs 归一化
-        # 跨坐标系比，数值无意义，会让几乎所有 idt 被误判为"内部元素"。
-        if any(
-            _contain_ratio(idt_bbox_norm, bboxes[mi].bbox) > 0.5 for mi in mol_indices
-        ):
-            continue
-        bboxes.append(
-            CorefBbox(
-                category_id=3,
-                bbox=_to_norm(idt_bbox_px),
-                text=_normalize_idt(text),
-                score=ocr_conf,
-            )
-        )
-        idt_indices.append(len(bboxes) - 1)
-    # 5. 几何配对
-    corefs = _pair_corefs(
-        bboxes, mol_indices, idt_indices, W, H, page_width, page_height
-    )
-
-    logger.info(
-        "coref_alt: mols=%d, idts=%d, pairs=%d",
-        len(mol_indices),
-        len(idt_indices),
-        len(corefs),
-    )
-    return CorefResult(bboxes=bboxes, corefs=corefs)
-
-
-# ---- RapidOCR 适配器（独占：原 moldet_coref.py 内的 _RapidOCRAdapter） ----
-
-
-class _RapidOCRAdapter:
-    """适配 RapidOCR 3.x 输出到 EasyOCR 兼容的 `readtext(image, detail=0|1)` 接口。
-
-    RapidOCR 3.x API 是 `engine(image) -> RapidOCROutput`，属性 `.txts/.scores/.boxes`。
-    使用 PP-OCRv6 en medium（det+rec，~35MB），首启会从 venv 加载已下载的模型。
-    """
-
-    def __init__(self) -> None:
-        from rapidocr import (
-            EngineType,
-            LangDet,
-            LangRec,
-            ModelType,
-            OCRVersion,
-            RapidOCR,
-        )
-
-        self._engine = RapidOCR(
-            params={
-                "Det.engine_type": EngineType.ONNXRUNTIME,
-                "Det.lang_type": LangDet.EN,
-                "Det.model_type": ModelType.MEDIUM,
-                "Det.ocr_version": OCRVersion.PPOCRV6,
-                "Det.use_dml": True,
-                "Rec.engine_type": EngineType.ONNXRUNTIME,
-                "Rec.lang_type": LangRec.EN,
-                "Rec.model_type": ModelType.MEDIUM,
-                "Rec.ocr_version": OCRVersion.PPOCRV6,
-                "Rec.use_dml": True,
-            }
-        )
-
-    def readtext(self, image: Any, detail: int = 0) -> list:
-        import numpy as np
-
-        if hasattr(image, "convert"):
-            arr = np.array(image.convert("RGB"))
-        else:
-            arr = image
-        out = self._engine(arr)
-        if out is None or not getattr(out, "txts", None):
-            return []
-        txts = [t for t in out.txts if t]
-        if detail == 0:
-            return txts
-        return list(zip(out.boxes.tolist(), txts, list(out.scores)))
-
 
 # ---- Rust 侧 JSON 序列化（vlm_chem.rs 期望格式） ----
 
 
 def coref_to_rust_dict(result: CorefResult) -> dict[str, Any]:
-    """把 CorefResult 序列化为 vlm_chem.rs 期望的 JSON 结构。
+    """把 CorefResult 序列化为 vlm_chem.rs 期望的 JSON 结构.
 
-    Rust 侧（vlm_chem.rs:detect_coref）解析：
+    Rust 侧（vlm_chem.rs:detect_coref）解析:
       bboxes[*]: {category_id, bbox[4], smiles?, molfile?, text?, score}
       corefs[*]: [mol_idx, idt_idx]  (嵌套数组)
     """
@@ -394,19 +157,6 @@ def coref_to_rust_dict(result: CorefResult) -> dict[str, Any]:
         ],
         "corefs": [list(pair) for pair in result.corefs],
     }
-
-
-# ---- 单例便捷访问（从 server.py 调用） ----
-
-_ocr_singleton: _RapidOCRAdapter | None = None
-
-
-def get_rapid_ocr() -> _RapidOCRAdapter:
-    """获取全局 RapidOCR 适配器单例。"""
-    global _ocr_singleton
-    if _ocr_singleton is None:
-        _ocr_singleton = _RapidOCRAdapter()
-    return _ocr_singleton
 
 
 # ---- MolDetv2-FT 联合检测（分子 + coref 一次推理） ----

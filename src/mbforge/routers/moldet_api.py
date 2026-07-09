@@ -1,4 +1,19 @@
-"""MolDet detection and extraction endpoints."""
+"""MolDetv2-FT main pipeline endpoints.
+
+Rewritten 2026-07-08 to use the joint MolDetv2-FT detector (one model
+inference: molecule bboxes + coref identifier bboxes) and the MolScribe
+service for SMILES recognition. The legacy Doc/General detector pair
+plus RapidOCR-based coref pairing has been removed.
+
+Endpoints exposed (mounted by server.py under /api/v1/moldet):
+- POST /coref_ft        - FT joint detection + coref pairing, image_base64
+                          in, CorefResult dict out.
+- POST /extract-pdf-page - Full PDF page pipeline: render -> FT detect ->
+                          coref pair -> MolScribe -> SMILES+bbox+pairs.
+
+Removed endpoints (return 410 Gone with a migration pointer):
+- /detect-page, /detect-batch, /extract-page, /coref
+"""
 
 from __future__ import annotations
 
@@ -7,17 +22,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
-from ..backends import moldet
 from ..parsers.molecule.coref_alt import (
-    CorefResult as CorefResultData,
     coref_to_rust_dict,
-    detect_coref_via_moldet_ocr,
-    get_rapid_ocr,
+    detect_coref_via_ft_detector,
 )
-from ..server_state import set_model_status
 from ..utils.helpers import (
-    ModelNotAvailableError,
     ValidationError,
     decode_base64_image,
 )
@@ -29,292 +40,74 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Helper functions
+# Removed endpoints - return 410 Gone with migration pointer
 # ---------------------------------------------------------------------------
 
-def _detect_from_pdf_sync(
-    pdf_path: str, page_numbers: list[int], dpi: float
+_REMOVED_PATHS: dict[str, str] = {
+    "/detect-page": (
+        "Removed. Use POST /api/v1/moldet/extract-pdf-page "
+        "(full PDF pipeline with FT detector + MolScribe)."
+    ),
+    "/detect-batch": (
+        "Removed. Loop /api/v1/moldet/extract-pdf-page per page, or use "
+        "/api/v1/moldet/coref_ft per image."
+    ),
+    "/extract-page": (
+        "Removed. Use POST /api/v1/moldet/extract-pdf-page with pdf_path, "
+        "or /api/v1/moldet/coref_ft with image_base64."
+    ),
+    "/coref": (
+        "Removed. Coref pairing is unified through /api/v1/moldet/coref_ft "
+        "(FT model single-shot inference)."
+    ),
+}
+
+
+def _gone_response(path: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=410,
+        content={
+            "success": False,
+            "error": _REMOVED_PATHS[path],
+            "removed_at": "2026-07-08",
+        },
+    )
+
+
+for _removed_path in _REMOVED_PATHS:
+
+    @router.post(_removed_path, include_in_schema=False)
+    async def _gone(request: Request, _p: str = _removed_path) -> JSONResponse:
+        # include_in_schema=False keeps the 410 responses out of the OpenAPI
+        # doc but the endpoint still resolves so frontends in the middle of
+        # migration get a clear "this is gone" signal instead of 404.
+        return _gone_response(_p)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _render_pdf_page_sync(
+    pdf_path: str, page_num: int, dpi: float
 ) -> dict[str, Any]:
-    """Render PDF pages and detect molecule bboxes (single step)."""
+    """Render one PDF page to a PIL image and return its dims.
+
+    Returns dict with keys: image (PIL.Image), img_w, img_h,
+    page_w_pts, page_h_pts. Closes the fitz doc before returning.
+    """
     import fitz
     import numpy as np
     from PIL import Image
 
-    pipeline = moldet.get_moldet()
-    if pipeline is None or not pipeline.is_available():
-        raise ModelNotAvailableError("MolDet pipeline not available")
-
-    doc = fitz.open(pdf_path)
-    try:
-        all_results = []
-        for page_num in page_numbers:
-            page_index = int(page_num) - 1
-            if page_index < 0 or page_index >= doc.page_count:
-                continue
-            page = doc.load_page(page_index)
-            zoom = dpi / 72.0
-            mat = fitz.Matrix(zoom, zoom)
-            pix = page.get_pixmap(matrix=mat, alpha=False)
-
-            img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
-                pix.height, pix.width, pix.n
-            )
-            image = Image.fromarray(img_array)
-
-            boxes = pipeline.doc_detector.detect(image)
-            all_results.append(
-                {
-                    "page_num": int(page_num),
-                    "width": pix.width,
-                    "height": pix.height,
-                    "boxes": [
-                        {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "conf": conf}
-                        for x1, y1, x2, y2, conf in boxes
-                    ],
-                    "count": len(boxes),
-                }
-            )
-        return {"results": all_results, "total": len(all_results)}
-    finally:
-        doc.close()
-
-
-def _enrich_results_with_coref(
-    results: list,
-    coref_result: CorefResultData,
-) -> None:
-    """Enrich ExtractionResult with coref context_text."""
-    if not coref_result or not coref_result.corefs:
-        return
-
-    mol_idt_map: dict[int, list[str]] = {}
-    for mol_idx, idt_idx in coref_result.corefs:
-        if 0 <= idt_idx < len(coref_result.bboxes):
-            text = coref_result.bboxes[idt_idx].text
-            if text is None:
-                continue
-            mol_idt_map.setdefault(mol_idx, []).append(text)
-
-    for i, result in enumerate(results):
-        labels = mol_idt_map.get(i)
-        if not labels:
-            continue
-        if len(labels) == 1:
-            result.context_text = f"关联标号: {labels[0]}"
-        else:
-            result.context_text = f"关联 {len(labels)} 个标号: {', '.join(labels)}"
-
-
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
-
-@router.post("/detect-page")
-async def detect_page(body: dict) -> dict[str, Any]:
-    """Detect molecule bboxes. Supports image or PDF mode."""
-    pdf_path = body.get("pdf_path", "")
-    image_base64 = body.get("image_base64", "")
-
-    if pdf_path:
-        page_numbers = body.get("page_numbers", [1])
-        dpi = body.get("dpi", 300.0)
-        if not Path(pdf_path).exists():
-            raise ValidationError(f"PDF not found: {pdf_path}")
-        loop = asyncio.get_running_loop()
-        results = await loop.run_in_executor(
-            None, lambda: _detect_from_pdf_sync(pdf_path, page_numbers, dpi)
-        )
-        set_model_status("moldet", "ready")
-        return results
-    elif image_base64:
-        image = decode_base64_image(image_base64)
-        pipeline = moldet.get_moldet()
-        if pipeline is None or not pipeline.is_available():
-            raise ModelNotAvailableError("MolDet pipeline not available")
-        loop = asyncio.get_running_loop()
-        boxes = await loop.run_in_executor(
-            None, lambda: pipeline.doc_detector.detect(image)
-        )
-        set_model_status("moldet", "ready")
-        return {
-            "boxes": [
-                {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "conf": conf}
-                for x1, y1, x2, y2, conf in boxes
-            ],
-            "count": len(boxes),
-        }
-    else:
-        raise ValidationError("image_base64 or pdf_path is required")
-
-
-@router.post("/detect-batch")
-async def detect_batch(body: dict) -> dict[str, Any]:
-    """Batch detect molecule bboxes in multiple images."""
-    image_base64_list = body.get("image_base64_list", [])
-    if not isinstance(image_base64_list, list) or not image_base64_list:
-        raise ValidationError("image_base64_list must be a non-empty list")
-    images = [decode_base64_image(b64) for b64 in image_base64_list]
-    pipeline = moldet.get_moldet()
-    if pipeline is None or not pipeline.is_available():
-        raise ModelNotAvailableError("MolDet pipeline not available")
-    loop = asyncio.get_running_loop()
-    batch_boxes = await loop.run_in_executor(
-        None, lambda: pipeline.doc_detector.detect_batch(images)
-    )
-    set_model_status("moldet", "ready")
-    return {
-        "results": [
-            {
-                "page_index": i,
-                "boxes": [
-                    {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "conf": conf}
-                    for x1, y1, x2, y2, conf in boxes
-                ],
-                "count": len(boxes),
-            }
-            for i, boxes in enumerate(batch_boxes)
-        ],
-        "total": len(batch_boxes),
-    }
-
-
-@router.post("/extract-page")
-async def extract_page(request: Request) -> dict[str, Any]:
-    """Extract molecules from a page image with optional coref."""
-    try:
-        body = await request.json()
-        image_base64 = body.get("image_base64", "")
-        if not image_base64:
-            raise ValidationError("image_base64 is required")
-        page_idx = body.get("page_idx", 0)
-        page_w_pts = body.get("page_w_pts", 595.0)
-        page_h_pts = body.get("page_h_pts", 842.0)
-        image_w = body.get("image_w", 0)
-        image_h = body.get("image_h", 0)
-        dpi = body.get("dpi", 300.0)
-        use_coref = body.get("use_coref", True)
-
-        if image_w == 0 or image_h == 0:
-            raise ValidationError("image_w and image_h are required")
-
-        image = decode_base64_image(image_base64)
-        pipeline = moldet.get_moldet()
-        if pipeline is None or not pipeline.is_available():
-            raise ModelNotAvailableError("MolDet pipeline not available")
-
-        loop = asyncio.get_running_loop()
-
-        results = await loop.run_in_executor(
-            None,
-            lambda: pipeline.extract_page(
-                image, page_idx, page_w_pts, page_h_pts, image_w, image_h, dpi
-            ),
-        )
-
-        if use_coref and results:
-            try:
-                if (
-                    pipeline.doc_detector is not None
-                    and pipeline.doc_detector.is_available()
-                ):
-                    ocr_adapter = get_rapid_ocr()
-                    coref_result = await loop.run_in_executor(
-                        None,
-                        lambda: detect_coref_via_moldet_ocr(
-                            image,
-                            pipeline.doc_detector,
-                            ocr_adapter,
-                            page_w_pts,
-                            page_h_pts,
-                        ),
-                    )
-                    _enrich_results_with_coref(results, coref_result)
-            except Exception as e:
-                logger.warning("[extract-page] Coref enrichment failed: %s", e)
-
-        set_model_status("moldet", "ready")
-        return {"results": [r.to_dict() for r in results], "count": len(results)}
-    except (ValidationError, ModelNotAvailableError):
-        raise
-    except Exception as e:
-        set_model_status("moldet", "error")
-        raise ModelNotAvailableError(str(e)) from e
-
-
-@router.post("/coref")
-async def detect_coref(body: dict) -> dict[str, Any]:
-    """Detect molecule-identifier coreference pairs."""
-    image_base64 = body.get("image_base64", "")
-    if not image_base64:
-        raise ValidationError("image_base64 is required")
-
-    image = decode_base64_image(image_base64)
-    pipeline = moldet.get_moldet()
-    if (
-        pipeline is None
-        or pipeline.doc_detector is None
-        or not pipeline.doc_detector.is_available()
-    ):
-        raise ModelNotAvailableError("MolDet doc detector not available")
-
-    ocr_adapter = get_rapid_ocr()
-    loop = asyncio.get_running_loop()
-    coref_result = await loop.run_in_executor(
-        None,
-        lambda: detect_coref_via_moldet_ocr(
-            image,
-            pipeline.doc_detector,
-            ocr_adapter,
-        ),
-    )
-    set_model_status("moldet_coref", "ready")
-    return coref_to_rust_dict(coref_result)
-
-
-@router.post("/coref_ft")
-async def detect_coref_ft(body: dict) -> dict[str, Any]:
-    """Detect coreference using FT joint detector."""
-    from ..parsers.molecule.coref_alt import (
-        detect_coref_via_ft_detector,
-        coref_to_rust_dict as coref_to_rust_dict_ft,
-    )
-
-    image_base64 = body.get("image_base64", "")
-    if not image_base64:
-        raise ValidationError("image_base64 is required")
-
-    image = decode_base64_image(image_base64)
-
-    loop = asyncio.get_running_loop()
-    coref_result = await loop.run_in_executor(
-        None,
-        lambda: detect_coref_via_ft_detector(image),
-    )
-    return coref_to_rust_dict_ft(coref_result)
-
-
-@router.post("/extract-pdf-page")
-async def extract_pdf_page(body: dict) -> dict[str, Any]:
-    """Full pipeline: PDF render -> MolDet -> Coref -> MolScribe."""
-    import numpy as np
-    from PIL import Image
-
-    from ..backends import molscribe
-
-    pdf_path = body.get("pdf_path", "")
-    if not pdf_path or not Path(pdf_path).exists():
-        raise ValidationError("pdf_path is required and must exist")
-
-    page_num = body.get("page", 1)
-    dpi = body.get("dpi", 300.0)
-    use_coref = body.get("use_coref", True)
-
-    # 1. Render PDF page
     doc = fitz.open(pdf_path)
     try:
         page_index = int(page_num) - 1
         if page_index < 0 or page_index >= doc.page_count:
-            raise ValidationError(f"Page {page_num} out of range (1-{doc.page_count})")
+            raise ValidationError(
+                f"Page {page_num} out of range (1-{doc.page_count})"
+            )
         page = doc.load_page(page_index)
         page_w_pts = page.rect.width
         page_h_pts = page.rect.height
@@ -326,90 +119,204 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
             pix.height, pix.width, pix.n
         )
         image = Image.fromarray(img_array)
-        img_w, img_h = pix.width, pix.height
+        return {
+            "image": image,
+            "img_w": pix.width,
+            "img_h": pix.height,
+            "page_w_pts": page_w_pts,
+            "page_h_pts": page_h_pts,
+        }
     finally:
         doc.close()
 
-    # 2. MolDet detection
-    pipeline = moldet.get_moldet()
-    if pipeline is None or not pipeline.is_available():
-        raise ModelNotAvailableError("MolDet pipeline not available")
+
+def _molscribe_for_crop_sync(
+    image, x1: int, y1: int, x2: int, y2: int
+) -> str:
+    """Crop a bbox from image and run MolScribe to SMILES. Empty on failure.
+
+    Synchronous; intended to be wrapped in run_in_executor at the call site.
+    """
+    from ..backends import molscribe
+
+    px1, py1 = max(0, int(x1)), max(0, int(y1))
+    px2, py2 = min(image.width, int(x2)), min(image.height, int(y2))
+    if px2 <= px1 or py2 <= py1:
+        return ""
+    crop = image.crop((px1, py1, px2, py2)).convert("L")
+    try:
+        result = molscribe.predict(crop)
+        return result.esmiles if result.esmiles else ""
+    except Exception as e:  # noqa: BLE001 - MolScribe is best-effort
+        logger.warning(
+            "MolScribe failed on crop (%s,%s,%s,%s): %s",
+            px1, py1, px2, py2, e,
+        )
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/coref_ft")
+async def detect_coref_ft(body: dict) -> dict[str, Any]:
+    """FT model one-shot inference: joint detect molecules + coref ids, geometric pairing.
+
+    Input: {"image_base64": "..."} (PIL image, base64 encoded)
+    Output: coref_to_rust_dict standard format - bboxes (category_id,
+    normalized bbox, score) + corefs (mol_idx -> idt_idx pairs).
+    """
+    image_base64 = body.get("image_base64", "")
+    if not image_base64:
+        raise ValidationError("image_base64 is required")
+
+    image = decode_base64_image(image_base64)
+
+    loop = asyncio.get_running_loop()
+    coref_result = await loop.run_in_executor(
+        None,
+        lambda: detect_coref_via_ft_detector(image),
+    )
+    return coref_to_rust_dict(coref_result)
+
+
+@router.post("/extract-pdf-page")
+async def extract_pdf_page(body: dict) -> dict[str, Any]:
+    """Full PDF page pipeline: render -> FT detect -> coref pair -> MolScribe.
+
+    Input fields:
+        pdf_path (str, required): absolute path to PDF file
+        page (int, default 1): 1-based page number
+        dpi (float, default 300): render DPI
+        use_coref (bool, default True): whether to compute coref pairs
+        mol_conf_threshold (float, default 0.3): molecule confidence threshold
+        idt_conf_threshold (float, default 0.3): identifier confidence threshold
+
+    Output:
+        {
+            "page_num", "width", "height", "page_w_pts", "page_h_pts", "dpi",
+            "molecules": [
+                {"index", "bbox": {x1, y1, x2, y2 in PDF points, lower-left origin},
+                 "confidence", "smiles", "scribe_conf", "context_text"}
+            ],
+            "corefs": [[mol_idx, idt_idx], ...],  # raw int pairs
+            "bboxes": [CorefBbox dicts],          # category_id = 1 or 3
+            "count": N,
+        }
+    """
+    pdf_path = body.get("pdf_path", "")
+    if not pdf_path or not Path(pdf_path).exists():
+        raise ValidationError("pdf_path is required and must exist")
+
+    page_num = body.get("page", 1)
+    dpi = body.get("dpi", 300.0)
+    use_coref = body.get("use_coref", True)
+    mol_conf_threshold = body.get("mol_conf_threshold", 0.3)
+    idt_conf_threshold = body.get("idt_conf_threshold", 0.3)
 
     loop = asyncio.get_running_loop()
 
-    boxes = await loop.run_in_executor(
-        None,
-        lambda: pipeline.doc_detector.detect(image),
+    # 1. Render PDF page (sync fitz call)
+    page_info = await loop.run_in_executor(
+        None, lambda: _render_pdf_page_sync(pdf_path, page_num, dpi)
+    )
+    image = page_info["image"]
+    img_w = page_info["img_w"]
+    img_h = page_info["img_h"]
+    page_w_pts = page_info["page_w_pts"]
+    page_h_pts = page_info["page_h_pts"]
+
+    # 2. FT detection (always - needed for both mol detection and coref)
+    def _ft_detect():
+        return detect_coref_via_ft_detector(
+            image,
+            mol_conf_threshold=mol_conf_threshold,
+            idt_conf_threshold=idt_conf_threshold,
+        )
+
+    coref_result = await loop.run_in_executor(None, _ft_detect)
+
+    # Separate mol bboxes (pixel coords) from idt bboxes (text only)
+    mol_boxes_px: list[tuple[int, int, int, int, float]] = []
+    for cb in coref_result.bboxes:
+        if cb.category_id == 1:
+            x1 = int(round(cb.bbox[0] * img_w))
+            y1 = int(round(cb.bbox[1] * img_h))
+            x2 = int(round(cb.bbox[2] * img_w))
+            y2 = int(round(cb.bbox[3] * img_h))
+            mol_boxes_px.append((x1, y1, x2, y2, cb.score))
+
+    rust_dict = coref_to_rust_dict(coref_result)
+
+    if not mol_boxes_px:
+        logger.info(
+            "FT detector found no molecules on page %s of %s",
+            page_num, pdf_path,
+        )
+        return {
+            "page_num": int(page_num),
+            "width": img_w,
+            "height": img_h,
+            "page_w_pts": page_w_pts,
+            "page_h_pts": page_h_pts,
+            "dpi": dpi,
+            "molecules": [],
+            "corefs": rust_dict["corefs"],
+            "bboxes": rust_dict["bboxes"],
+            "count": 0,
+        }
+
+    # 3. MolScribe: one recognition per mol bbox
+    from ..backends import molscribe
+
+    await loop.run_in_executor(None, molscribe.load)
+
+    async def _recognize_one(args):
+        x1, y1, x2, y2 = args
+        return await loop.run_in_executor(
+            None, lambda: _molscribe_for_crop_sync(image, x1, y1, x2, y2)
+        )
+
+    smiles_list = await asyncio.gather(
+        *[_recognize_one(b[:4]) for b in mol_boxes_px]
     )
 
+    # 4. Build coref label map (mol_idx in coref_result.bboxes -> idt text)
+    coref_label_map: dict[int, str] = {}
+    if use_coref and coref_result.corefs:
+        # coref_result.corefs = [(mol_idx_in_bboxes, idt_idx_in_bboxes), ...]
+        # and the order of category_id=1 bboxes in coref_result.bboxes is
+        # the same as mol_boxes_px (detect_coref_via_ft_detector appends in
+        # detect() return order).
+        for mol_idx_in_bboxes, idt_idx in coref_result.corefs:
+            idt_text = coref_result.bboxes[idt_idx].text or ""
+            if idt_text:
+                coref_label_map[mol_idx_in_bboxes] = idt_text
+
+    # 5. Assemble results - convert pixel -> PDF points (lower-left origin)
     scale_x = page_w_pts / img_w if img_w > 0 else 0
     scale_y = page_h_pts / img_h if img_h > 0 else 0
 
-    # Coref pairing (optional)
-    coref_result = None
-    coref_dict: dict[str, Any] = {"bboxes": [], "corefs": []}
-    if use_coref and boxes:
-        try:
-            ocr_adapter = get_rapid_ocr()
-            coref_result = await loop.run_in_executor(
-                None,
-                lambda: detect_coref_via_moldet_ocr(
-                    image,
-                    pipeline.doc_detector,
-                    ocr_adapter,
-                    page_w_pts,
-                    page_h_pts,
-                ),
-            )
-            coref_dict = coref_to_rust_dict(coref_result)
-        except Exception as e:
-            logger.warning("[extract-pdf-page] Coref failed: %s", e)
-
-    # 3. MolScribe recognition for each molecule
-    await loop.run_in_executor(None, molscribe.load)
-
-    async def _recognize_one(x1, y1, x2, y2):
-        px1, py1 = max(0, int(x1)), max(0, int(y1))
-        px2, py2 = min(img_w, int(x2)), min(img_h, int(y2))
-        if px2 <= px1 or py2 <= py1:
-            return ""
-        crop = image.crop((px1, py1, px2, py2))
-        crop_gray = crop.convert("L")
-        sr = await loop.run_in_executor(None, lambda: molscribe.predict(crop_gray))
-        return sr.esmiles if sr.esmiles else ""
-
-    smiles_list = []
-    for b in boxes:
-        smi = await _recognize_one(*b[:4])
-        smiles_list.append(smi)
-
-    # 4. Coref label mapping
-    coref_label_map: dict[int, str] = {}
-    if coref_result:
-        for mol_idx, idt_idx in coref_result.corefs:
-            if 0 <= idt_idx < len(coref_result.bboxes):
-                text = coref_result.bboxes[idt_idx].text
-                if text:
-                    coref_label_map[mol_idx] = text
-
-    # 5. Assemble results
     molecules = []
-    for i, (b, smi) in enumerate(zip(boxes, smiles_list)):
-        x1, y1, x2, y2, conf = b
+    for i, ((px1, py1, px2, py2, conf), smi) in enumerate(
+        zip(mol_boxes_px, smiles_list, strict=True)
+    ):
         label = coref_label_map.get(i, "")
         molecules.append(
             {
                 "index": i,
                 "bbox": {
-                    "x1": round(x1 * scale_x, 2),
-                    "y1": round(page_h_pts - y2 * scale_y, 2),
-                    "x2": round(x2 * scale_x, 2),
-                    "y2": round(page_h_pts - y1 * scale_y, 2),
+                    "x1": round(px1 * scale_x, 2),
+                    "y1": round(page_h_pts - py2 * scale_y, 2),
+                    "x2": round(px2 * scale_x, 2),
+                    "y2": round(page_h_pts - py1 * scale_y, 2),
                 },
                 "confidence": round(conf, 4),
                 "smiles": smi,
                 "scribe_conf": 0.0,
-                "context_text": f"关联标号: {label}" if label else "",
+                "context_text": f"coref label: {label}" if label else "",
             }
         )
 
@@ -421,7 +328,34 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
         "page_h_pts": page_h_pts,
         "dpi": dpi,
         "molecules": molecules,
-        "corefs": coref_dict.get("corefs", []),
-        "bboxes": coref_dict.get("bboxes", []),
+        "corefs": rust_dict["corefs"],
+        "bboxes": rust_dict["bboxes"],
         "count": len(molecules),
     }
+
+
+@router.post("/extract-pdf")
+async def extract_pdf_by_doc(body: dict) -> dict[str, Any]:
+    """Same as /extract-pdf-page, but takes (project_root, doc_id, page)
+    and resolves the absolute PDF path on the server side.
+
+    Convenience for the frontend pdfService.ts (which works with the
+    library's docId, not absolute paths). Reuses the same path-resolution
+    logic as routers/coref.py::_resolve_pdf_path.
+    """
+    from .coref import _resolve_pdf_path
+
+    project_root = body.get("project_root") or body.get("projectRoot") or ""
+    doc_id = body.get("doc_id") or body.get("docId") or ""
+    if not project_root or not doc_id:
+        raise ValidationError("project_root and doc_id are required")
+
+    pdf_path = _resolve_pdf_path(project_root, doc_id)
+    if pdf_path is None:
+        raise ValidationError(
+            f"PDF not found for project_root={project_root} doc_id={doc_id}"
+        )
+
+    body_with_path = dict(body)
+    body_with_path["pdf_path"] = str(pdf_path)
+    return await extract_pdf_page(body_with_path)

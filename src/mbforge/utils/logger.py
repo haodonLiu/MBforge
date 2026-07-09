@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import collections
+import contextlib
 import contextvars
 import functools
 import inspect
@@ -34,6 +35,40 @@ _FILE_FORMAT = (
 
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
+
+
+class GuardedStreamHandler(logging.StreamHandler):
+    """StreamHandler that survives the stream being closed mid-session.
+
+    Background: ``sys.stdout`` (or any attached stream) can be closed
+    after ``setup_logging`` has already attached the handler — e.g.
+    when a third-party library inside ``mbforge.backends`` resets or
+    closes stdout during import, or under ``uv run`` on Windows where
+    child-process stdio teardown is non-deterministic. Without this
+    guard, the next ``log.info()`` raises
+    ``ValueError: I/O operation on closed file`` inside
+    ``StreamHandler.emit`` and bubbles through ``handleError`` →
+    ``sys.stderr.write`` (which itself fails when stderr is also
+    dead) → caller crash with a confusing "during handling of the
+    above exception" traceback.
+
+    Behavior on emit failure: silently discard. We deliberately do NOT
+    call ``self.handleError(record)`` because that path tries to write
+    a traceback to ``sys.stderr``, and in the failure mode we're
+    designed for stderr is often the *same* closed stream. The
+    observability trail (diagnostic ring buffer, file handler) is
+    unaffected. This is a log-output degradation, not a log-content
+    loss: ring-buffer + file handlers still capture every record.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            super().emit(record)
+        except (ValueError, OSError, AttributeError):
+            # Stream is closed / unwritable / torn down. Drop the
+            # record on the floor for THIS handler. Other handlers
+            # (file, diagnostic ring) are independent and unaffected.
+            pass
 _logger_initialized = False
 _log_level: int = logging.INFO
 
@@ -88,31 +123,34 @@ def setup_logging(
 
     # 控制台输出
     if console:
-        # Windows zh-CN locale 下 sys.stdout.encoding 可能是 gbk，无法编码 ✓/✗
-        # 这类 Unicode 字符。优先用环境变量注入 UTF-8 (PYTHONIOENCODING=utf-8)，
-        # 如果 stdout 实际不是 utf-8 就用 backslashreplace 包一层兜底，保证 ✓
-        # 不会让 StreamHandler 在 emit 时崩。
+        # sys.stdout 可能已关闭 (例如 uv run + Windows + Python 3.12 在
+        # 导入阶段就会触发此情况)。先把 stdout 不可用的情况关掉, 避免
+        # 后续 StreamHandler.emit 在首次 info() 调用时崩。
         console_stream = sys.stdout
-        stdout_encoding = getattr(console_stream, "encoding", None)
-        if stdout_encoding and stdout_encoding.lower().replace("-", "") != "utf8":
-            try:
-                import io
+        stdout_closed = getattr(console_stream, "closed", False) or not getattr(
+            console_stream, "writable", lambda: True
+        )()
+        if stdout_closed:
+            console = False  # 跳过 console handler;后续日志走 file/ring buffer
+        else:
+            # Windows zh-CN locale 下 sys.stdout.encoding 可能是 gbk，无法编码 ✓/✗
+            # 这类 Unicode 字符。早期实现是包一层 ``io.TextIOWrapper(
+            # sys.stdout.buffer, encoding='utf-8')``, 但 TextIOWrapper.__del__
+            # 会关掉借来的 buffer, 一旦 wrapper 被孤立 GC, sys.stdout 也跟着死
+            # (uv run / 子进程启动场景的非确定性崩溃)。改用 ``reconfigure``:
+            # 原地改 TextIOWrapper 的编码字段, 不创建新对象, 不接管 buffer,
+            # 因此不会引入 wrapper-GC 路径。副作用是用户进程的 sys.stdout
+            # 编码从此变 utf-8 — 但调用 setup_logging 本就是显式接管控制台
+            # 输出的入口, 改编码是预期行为。
 
-                console_stream = io.TextIOWrapper(
-                    console_stream.buffer,
-                    encoding="utf-8",
-                    errors="backslashreplace",
-                    line_buffering=True,
-                )
-            except (AttributeError, OSError):
-                # 已经是 wrapper 或没有 buffer 属性 —— 退回到原 stream
-                pass
-        console_handler = logging.StreamHandler(console_stream)
-        console_handler.setLevel(level)
-        console_handler.setFormatter(
-            logging.Formatter(_CONSOLE_FORMAT, datefmt=_DATE_FORMAT)
-        )
-        root_logger.addHandler(console_handler)
+            with contextlib.suppress(AttributeError, ValueError, OSError):
+                console_stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+            console_handler = GuardedStreamHandler(console_stream)
+            console_handler.setLevel(level)
+            console_handler.setFormatter(
+                logging.Formatter(_CONSOLE_FORMAT, datefmt=_DATE_FORMAT)
+            )
+            root_logger.addHandler(console_handler)
 
     # 文件输出
     if file:
@@ -139,7 +177,7 @@ def setup_logging(
             root_logger.addHandler(file_handler)
         except Exception as e:
             # 文件日志初始化失败不影响运行，但要打一条控制台日志
-            fallback = logging.StreamHandler(sys.stderr)
+            fallback = GuardedStreamHandler(sys.stderr)
             fallback.setFormatter(
                 logging.Formatter(_CONSOLE_FORMAT, datefmt=_DATE_FORMAT)
             )

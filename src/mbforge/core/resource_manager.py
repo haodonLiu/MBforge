@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import enum
 import importlib
 import json
 import logging
@@ -16,7 +17,6 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 
@@ -81,14 +81,14 @@ def _invalidate_resolved_paths_cache() -> None:
 # ---------------------------------------------------------------------------
 
 
-class ResourceType(str, Enum):
+class ResourceType(enum.StrEnum):
     MODEL = "model"
     PYTHON_PACKAGE = "python_package"
     BINARY = "binary"
     NODE_PACKAGE = "node_package"
 
 
-class ResourceStatus(str, Enum):
+class ResourceStatus(enum.StrEnum):
     READY = "ready"  # 已就绪
     NOT_FOUND = "not_found"  # 未下载/未安装
     PARTIAL = "partial"  # 部分就绪（如目录存在但缺文件）

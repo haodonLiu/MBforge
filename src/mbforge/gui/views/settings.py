@@ -7,11 +7,10 @@ from typing import Any
 
 import dearpygui.dearpygui as dpg
 
-from ..utils.i18n import t, set_language, get_language
+from ...utils.logger import get_logger
+from ..utils.i18n import get_language, set_language, t
 from ..utils.threading import clear_container
 from .base import BaseView
-
-from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 

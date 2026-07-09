@@ -1,6 +1,5 @@
 """Tests for settings secret redaction."""
-from unittest.mock import patch
-from mbforge.routers.settings import _redact_secrets, settings_get
+from mbforge.routers.settings import _redact_secrets
 
 
 def test_redact_api_keys():

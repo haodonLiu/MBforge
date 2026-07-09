@@ -1,14 +1,15 @@
-import os
-import random
-import numpy as np
-import torch
-import math
-import time
 import datetime
 import json
-from json import encoder
+import math
+import os
+import random
+import time
+
+import numpy as np
+import torch
 
 from mbforge.utils.logger import get_logger
+
 logger = get_logger(__name__)
 
 FORMAT_INFO = {
@@ -29,7 +30,7 @@ FORMAT_INFO = {
 
 
 def init_logger(log_file='train.log'):
-    from logging import getLogger, INFO, FileHandler,  Formatter,  StreamHandler
+    from logging import INFO, FileHandler, Formatter, StreamHandler, getLogger
     logger = getLogger(__name__)
     logger.setLevel(INFO)
     handler1 = StreamHandler()
@@ -65,7 +66,7 @@ def seed_torch(seed=42):
     torch.backends.cudnn.deterministic = True
 
 
-class AverageMeter(object):
+class AverageMeter:
     """Computes and stores the average and current value"""
     def __init__(self):
         self.reset()

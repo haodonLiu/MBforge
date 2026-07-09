@@ -1,5 +1,6 @@
 """Tests for server.py model prewarm."""
 from unittest.mock import patch
+
 from mbforge.server import _prewarm
 
 

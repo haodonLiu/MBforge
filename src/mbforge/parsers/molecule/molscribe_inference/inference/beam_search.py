@@ -1,4 +1,5 @@
 import torch
+
 from .decode_strategy import DecodeStrategy
 
 
@@ -8,7 +9,7 @@ class BeamSearch(DecodeStrategy):
 
     def __init__(self, pad, bos, eos, batch_size, beam_size, n_best, min_length,
                  return_attention, max_length):
-        super(BeamSearch, self).__init__(
+        super().__init__(
             pad, bos, eos, batch_size, beam_size, min_length, return_attention, max_length)
         self.beam_size = beam_size
         self.n_best = n_best

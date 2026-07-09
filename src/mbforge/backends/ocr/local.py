@@ -27,9 +27,9 @@ class RapidOCRBackend(OCRBackend):
 
     def __init__(self, config: dict | None = None) -> None:
         super().__init__(config)
-        self._adapter: "_RapidOCRAdapter | None" = None
+        self._adapter: _RapidOCRAdapter | None = None
 
-    def _ensure_adapter(self) -> "_RapidOCRAdapter":
+    def _ensure_adapter(self) -> _RapidOCRAdapter:
         if self._adapter is None:
             from mbforge.parsers.molecule.coref_alt import get_rapid_ocr
 
@@ -51,9 +51,10 @@ class RapidOCRBackend(OCRBackend):
         decode PNG → numpy array → engine.run() → concat txts.
         """
         try:
+            import io
+
             import numpy as np
             from PIL import Image
-            import io
 
             adapter = self._ensure_adapter()
             pil_img = Image.open(io.BytesIO(image)).convert("RGB")

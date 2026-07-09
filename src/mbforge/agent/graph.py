@@ -96,7 +96,7 @@ async def stream_agent_response(
     except (ToolExecutionError, LLMProviderError) as e:
         logger.warning("Agent streaming recoverable error: %s", e)
         yield {"type": "error", "error": str(e), "recoverable": True}
-    except Exception as e:
+    except Exception:
         logger.error("Agent streaming fatal error", exc_info=True)
         yield {"type": "error", "error": "Internal error", "recoverable": False}
         raise

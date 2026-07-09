@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import threading
-import time
-from typing import Callable
 
 import dearpygui.dearpygui as dpg
 
@@ -62,23 +60,24 @@ class ToastManager:
 
         # Create toast theme
         theme_tag = f"{tag}_theme"
-        with dpg.theme(tag=theme_tag):
-            with dpg.theme_component(dpg.mvAll):
-                dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (32, 32, 38, 230))
-                dpg.add_theme_color(dpg.mvThemeCol_Border, color)
-                dpg.add_theme_style(dpg.mvStyleVar_WindowRounding, 8)
-                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
+        with dpg.theme(tag=theme_tag), dpg.theme_component(dpg.mvAll):
+            dpg.add_theme_color(dpg.mvThemeCol_ChildBg, (32, 32, 38, 230))
+            dpg.add_theme_color(dpg.mvThemeCol_Border, color)
+            dpg.add_theme_style(dpg.mvStyleVar_WindowRounding, 8)
+            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
 
         # Create toast group
-        with dpg.group(parent="toast_container", tag=tag, pos=[12, y_pos]):
-            with dpg.child_window(
+        with (
+            dpg.group(parent="toast_container", tag=tag, pos=[12, y_pos]),
+            dpg.child_window(
                 width=340,
                 height=44,
                 border=True,
                 no_scrollbar=True,
-            ):
-                dpg.bind_item_theme(dpg.last_item(), theme_tag)
-                dpg.add_text(message, color=color, wrap=300)
+            ),
+        ):
+            dpg.bind_item_theme(dpg.last_item(), theme_tag)
+            dpg.add_text(message, color=color, wrap=300)
 
         dpg.show_item("toast_container")
 
@@ -104,9 +103,8 @@ class ToastManager:
 
         # Hide container if empty
         with self._lock:
-            if not self._active_toasts:
-                if dpg.does_item_exist("toast_container"):
-                    dpg.hide_item("toast_container")
+            if not self._active_toasts and dpg.does_item_exist("toast_container"):
+                dpg.hide_item("toast_container")
 
     def _reposition_toasts(self) -> None:
         """Reposition remaining toasts."""

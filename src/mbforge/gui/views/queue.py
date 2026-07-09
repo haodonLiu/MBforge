@@ -7,18 +7,17 @@ from typing import Any
 
 import dearpygui.dearpygui as dpg
 
-from ..components import stat_pill, filter_bar
+from ...utils.logger import get_logger
+from ..components import filter_bar, stat_pill
 from ..utils import (
-    t,
     QUEUE_POLL_INTERVAL,
+    clear_container,
     get_status_color,
     run_with_refresh,
     safe_set_value,
-    clear_container,
+    t,
 )
 from .base import BaseView
-
-from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 

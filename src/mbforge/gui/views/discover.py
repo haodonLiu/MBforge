@@ -6,21 +6,20 @@ from typing import Any
 
 import dearpygui.dearpygui as dpg
 
+from ...utils.logger import get_logger
 from ..api.sse import SSEClient
 from ..components import search_bar
 from ..utils import (
-    t,
-    COLOR_USER,
     COLOR_ASSISTANT,
+    COLOR_ERROR,
     COLOR_TEXT_DIM,
     COLOR_TEXT_MUTED,
-    COLOR_ERROR,
-    run_in_background,
+    COLOR_USER,
     clear_container,
+    run_in_background,
+    t,
 )
 from .base import BaseView
-
-from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -53,7 +52,7 @@ class DiscoverView(BaseView):
                 user_data="search",
             )
             dpg.bind_item_theme(search_btn, "accent_button")
-            chat_btn = dpg.add_button(
+            dpg.add_button(
                 label=t("discover.chat"),
                 tag="discover_tab_chat",
                 width=100,

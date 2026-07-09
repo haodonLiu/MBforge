@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, Form, UploadFile
 from fastapi.responses import FileResponse
 
 from ..utils.config import load_global_config, update_settings
@@ -60,9 +60,14 @@ async def library_status() -> dict:
     }
 
 
+class _MissingUploadError(MBForgeError):
+    status_code = 400
+    error_code = "missing_upload"
+
+
 @router.post("/import")
 async def library_import(
-    file: UploadFile = File(...),
+    file: UploadFile | None = None,
     title: str = Form(""),
     library_root: str | None = Form(None),
 ) -> dict:
@@ -71,6 +76,10 @@ async def library_import(
     Browser sends the raw bytes; backend streams to {library_root}/storage/
     {doc_id}/{filename} and registers the document in the library DB.
     """
+    if file is None:
+        raise _MissingUploadError(
+            "No file provided", detail="multipart file field is required"
+        )
     root = _resolve_library_root({"library_root": library_root} if library_root else None)
 
     # Validate root is writable

@@ -20,7 +20,7 @@ import sys
 import threading
 import traceback
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -62,13 +62,11 @@ class GuardedStreamHandler(logging.StreamHandler):
     """
 
     def emit(self, record: logging.LogRecord) -> None:
-        try:
+        with contextlib.suppress(ValueError, OSError, AttributeError):
             super().emit(record)
-        except (ValueError, OSError, AttributeError):
             # Stream is closed / unwritable / torn down. Drop the
             # record on the floor for THIS handler. Other handlers
             # (file, diagnostic ring) are independent and unaffected.
-            pass
 _logger_initialized = False
 _log_level: int = logging.INFO
 
@@ -313,7 +311,7 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:  # noqa: A003 — stdlib API
         ts = (
-            datetime.fromtimestamp(record.created, tz=timezone.utc)
+            datetime.fromtimestamp(record.created, tz=UTC)
             .strftime("%Y-%m-%dT%H:%M:%S")
             + f".{int(record.msecs):03d}Z"
         )
@@ -339,7 +337,7 @@ class JsonFormatter(logging.Formatter):
 
 def _record_to_diagnostic(record: logging.LogRecord) -> dict[str, Any]:
     """把 LogRecord 转换为环形缓冲里存储的 dict."""
-    ts = datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat()
+    ts = datetime.fromtimestamp(record.created, tz=UTC).isoformat()
     return {
         "ts": ts,
         "level": logging.getLevelName(record.levelno),
@@ -395,7 +393,7 @@ def push_diagnostic(payload: dict[str, Any]) -> int:
     with _diagnostic_lock:
         _diagnostic_seq += 1
         record = dict(payload)
-        record.setdefault("ts", datetime.now(tz=timezone.utc).isoformat())
+        record.setdefault("ts", datetime.now(tz=UTC).isoformat())
         record["seq"] = _diagnostic_seq
         seq = _diagnostic_seq
         _diagnostic_buffer.append(record)
@@ -480,5 +478,5 @@ def get_diagnostic_stats() -> dict[str, Any]:
         "by_category": by_category,
         "by_error_code": by_error_code,
         "last_seen": last_seen,
-        "now": datetime.now(tz=timezone.utc).isoformat(),
+        "now": datetime.now(tz=UTC).isoformat(),
     }

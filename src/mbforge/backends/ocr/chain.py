@@ -15,7 +15,7 @@ changes to settings.json take effect on the next call.
 from __future__ import annotations
 
 import logging
-from typing import Iterable
+from collections.abc import Iterable
 
 from .base import OCRBackend, OCRResult
 from .glmocr import GLMOCRBackend

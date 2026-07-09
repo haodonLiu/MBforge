@@ -3,22 +3,21 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import dearpygui.dearpygui as dpg
 
+from ...utils.logger import get_logger
 from ..api.models import NoteEntry
 from ..components import two_panel
 from ..utils import (
-    t,
+    clear_container,
     run_in_background,
     safe_set_value,
-    clear_container,
+    t,
 )
 from .base import BaseView
-
-from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -170,7 +169,7 @@ class NotesView(BaseView):
 
     def _on_new_note(self, sender: int, app_data: Any, user_data: Any) -> None:
         note_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         title = f"New Note {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
         def _worker():
@@ -190,7 +189,7 @@ class NotesView(BaseView):
 
         title = dpg.get_value("note_title_input")
         content = dpg.get_value("note_content_input")
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
 
         def _worker():
             try:

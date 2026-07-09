@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
@@ -46,7 +45,7 @@ class WelcomeView(BaseView):
             )
             dpg.bind_item_theme(create_btn, "accent_button")
             dpg.add_spacer(width=16)
-            open_btn = dpg.add_button(
+            dpg.add_button(
                 label=t("welcome.open_project"),
                 tag="welcome_open_btn",
                 width=160,
@@ -107,7 +106,7 @@ class WelcomeView(BaseView):
             name = proj.get("name", Path(proj.get("root", "")).name)
             root = proj.get("root", "")
             with dpg.group(parent=container, horizontal=True):
-                btn = dpg.add_button(
+                dpg.add_button(
                     label=name,
                     callback=self._on_recent_click,
                     user_data=root,

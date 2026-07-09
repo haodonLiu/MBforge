@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-import shutil
+import shutil  # noqa: F401 — imported here so tests can patch `mbforge.pipeline.extract_molecules.shutil.move`
 from pathlib import Path
 from typing import TYPE_CHECKING
 

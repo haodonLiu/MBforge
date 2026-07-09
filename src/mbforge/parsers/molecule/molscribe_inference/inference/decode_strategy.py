@@ -1,7 +1,7 @@
 import torch
 
 
-class DecodeStrategy(object):
+class DecodeStrategy:
     def __init__(self, pad, bos, eos, batch_size, parallel_paths, min_length, max_length,
                  return_attention=False, return_hidden=False):
         self.pad = pad

@@ -5,12 +5,9 @@ subsequent transformer based architectures
 
 import torch
 import torch.nn as nn
-
 from onmt.decoders.decoder import DecoderBase
-from onmt.modules import MultiHeadedAttention, AverageAttention
-from onmt.modules.position_ffn import PositionwiseFeedForward
-from onmt.modules.position_ffn import ActivationFunction
-from onmt.utils.misc import sequence_mask
+from onmt.modules import AverageAttention, MultiHeadedAttention
+from onmt.modules.position_ffn import ActivationFunction, PositionwiseFeedForward
 
 
 class TransformerDecoderLayerBase(nn.Module):
@@ -55,7 +52,7 @@ class TransformerDecoderLayerBase(nn.Module):
                 activation function choice for PositionwiseFeedForward layer
 
         """
-        super(TransformerDecoderLayerBase, self).__init__()
+        super().__init__()
 
         if self_attn_type == "scaled-dot":
             self.self_attn = MultiHeadedAttention(
@@ -197,7 +194,7 @@ class TransformerDecoderLayer(TransformerDecoderLayerBase):
         Args:
             See TransformerDecoderLayerBase
         """
-        super(TransformerDecoderLayer, self).__init__(
+        super().__init__(
             d_model,
             heads,
             d_ff,
@@ -216,7 +213,7 @@ class TransformerDecoderLayer(TransformerDecoderLayerBase):
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
     def update_dropout(self, dropout, attention_dropout):
-        super(TransformerDecoderLayer, self).update_dropout(
+        super().update_dropout(
             dropout, attention_dropout
         )
         self.context_attn.update_dropout(attention_dropout)
@@ -281,7 +278,7 @@ class TransformerDecoderLayer(TransformerDecoderLayerBase):
 
 class TransformerDecoderBase(DecoderBase):
     def __init__(self, d_model, copy_attn, alignment_layer):
-        super(TransformerDecoderBase, self).__init__()
+        super().__init__()
 
         # Decoder State
         self.state = {}
@@ -402,7 +399,7 @@ class TransformerDecoder(TransformerDecoderBase):
         alignment_heads,
         pos_ffn_activation_fn=ActivationFunction.relu,
     ):
-        super(TransformerDecoder, self).__init__(
+        super().__init__(
             d_model, copy_attn, alignment_layer
         )
 
@@ -449,7 +446,7 @@ class TransformerDecoder(TransformerDecoderBase):
 
         for i, layer in enumerate(self.transformer_layers):
             layer_cache = (
-                self.state["cache"]["layer_{}".format(i)]
+                self.state["cache"][f"layer_{i}"]
                 if step is not None
                 else None
             )
@@ -483,5 +480,5 @@ class TransformerDecoder(TransformerDecoderBase):
         self.state["cache"] = {}
         for i, layer in enumerate(self.transformer_layers):
             layer_cache = {"memory_keys": None, "memory_values": None, "self_keys": None, "self_values": None}
-            self.state["cache"]["layer_{}".format(i)] = layer_cache
+            self.state["cache"][f"layer_{i}"] = layer_cache
 

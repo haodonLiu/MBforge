@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 """  # fmt: skip
 
 # Instance cache: avoid re-initializing the same library root
-_store_cache: dict[str, "LibraryStore"] = {}
+_store_cache: dict[str, LibraryStore] = {}
 
 
 class LibraryStore:

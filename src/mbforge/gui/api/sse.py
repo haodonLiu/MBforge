@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from typing import Callable
+from collections.abc import Callable
 
 import httpx
 

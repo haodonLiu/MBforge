@@ -10,7 +10,11 @@ router = APIRouter()
 @router.post("/find-scaffold")
 async def find_scaffold(body: dict) -> dict:
     """Find common scaffold stub."""
-    return None
+    return {
+        "scaffold": "",
+        "smiles": body.get("smiles", ""),
+        "found": False,
+    }
 
 
 @router.post("/decompose")

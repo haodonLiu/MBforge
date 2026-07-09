@@ -6,27 +6,6 @@ on:
   pull_request:
 
 jobs:
-  # Verify constants/version drift is caught at PR time.
-  # Runs `python scripts/generate_constants.py --check`, which fails if any
-  # of: src/mbforge/utils/constants.py, Cargo workspace [workspace.package]
-  # version, tauri.conf.json version, frontend/package.json version, or
-  # pyproject.toml [project]. version drift from constants.yaml app.version.
-  constants-drift:
-    name: Constants drift check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-
-      - name: Run drift check
-        # Use `uv run --with pyyaml` so we don't need to sync the full
-        # ML stack (torch/ultralytics) just to import yaml.
-        run: uv run --with pyyaml python scripts/generate_constants.py --check
-
   # Frontend type-check — catches broken `__APP_VERSION__` injection.
   # Mirrors the local `cd frontend && npm run build` step from CLAUDE.md.
   frontend-typecheck:

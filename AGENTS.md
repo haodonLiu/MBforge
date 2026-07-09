@@ -4,9 +4,15 @@
 > conventions, and the day-to-day commands needed to add a feature, fix a bug,
 > or run tests.
 
-> **Snapshot**: 2026-07-05 — Python-only backend. The legacy `src-tauri/`
-> directory was removed this session; historical code remains accessible via
-> `git log -- src-tauri/`.
+> **Snapshot**: 2026-07-09 — Python-only backend. The legacy `src-tauri/`
+> directory was removed (see `git log -- src-tauri/`). Pipeline still
+> 9 stages; OCR cloud-first fallback chain (MinerU → PaddleOCR → GLMOCR
+> → RapidOCR). **2026-07-08 MolDetv2-FT migration**: legacy Doc+General
+> MolDet pair replaced by a single fine-tuned YOLO26n model that
+> jointly detects molecules and coref identifier bboxes in one
+> inference. See `docs/superpowers/plans/2026-07-08-text-reorg-molecode.md`
+> for the migration plan and `routers/coref.py` for the FT-driven
+> coref bridge.
 
 ## Project Overview
 
@@ -15,18 +21,22 @@ discovery. It ingests scientific PDFs, extracts molecules and activities,
 indexes them into a searchable knowledge base, and exposes an AI agent for
 cross-document reasoning.
 
-Pipeline: `PDF → classify → extract → segment → chunk → index → query`.
+Pipeline: `PDF → extract → density → rough_md → detect → insert_molecode → reorganize → pageindex → wiki → persist_mols → register_links → persist → query`.
 
 Stack:
 
 - **Frontend**: React 19 + Vite 8 + TypeScript 6. Runs in the browser only.
   No Tauri shell.
 - **Backend**: FastAPI on `127.0.0.1:18792`. Single Python process. `uvicorn
-  mbforge.app:app`. 53 routes across 18 routers.
-- **Agent**: LangGraph (`>=0.4.0`) + langchain 0.3+. 5 tools, multi-session,
-  SSE streaming.
-- **Models**: MolDetv2 (YOLO26n),
-  MolScribe. Lazy-loaded on first call.
+  mbforge.app:app`. 19 routers registered.
+- **Models**: MolDetv2-FT (YOLO26n, fine-tuned for joint molecule + coref
+  identifier detection in one inference), MolScribe, OCR fallback chain
+  (MinerU → PaddleOCR → GLMOCR → RapidOCR, cloud-first with local
+  fallback). All lazy-loaded on first call. The legacy Doc + General
+  MolDet pair (moldet.py) was removed in the 2026-07-08 migration; the
+  new main pipeline is `backends/moldet_v2_ft.py:MolDetv2FTDetector` +
+  `routers/moldet_api.py:/extract-pdf-page` (PDF → FT detect → coref pair
+  → MolScribe → SMILES + bbox + pairs).
 
 ## Architecture & Data Flow
 
@@ -37,13 +47,13 @@ Five-layer split, top-down:
 | Frontend | `frontend/src/` | React components, routing, `AppContext` global state, `httpFetch` bridge |
 | HTTP routers | `src/mbforge/routers/` | FastAPI route handlers; one file per resource |
 | Core | `src/mbforge/core/` + `pipeline/` + `agent/` | Business logic, persistence, embeddings, pipeline stages |
-| Backends | `src/mbforge/backends/` | Local model wrappers (moldet, molscribe) |
+| Backends | `src/mbforge/backends/` | Local model wrappers (moldet_v2_ft, molscribe, ocr) |
 | Utils | `src/mbforge/utils/` + `models/` | Logger, config, helpers, Pydantic schemas |
 
 **Data flow** (PDF in → query out):
 
-1. Frontend uploads PDF via `POST /api/v1/documents/upload` → stored under `{project_root}/`.
-2. `pipeline/runner.py` orchestrates 6 stages: classify → extract_text → extract_molecules → normalize → persist_molecules → chunk/index.
+1. Frontend uploads PDF via `POST /api/v1/documents/upload` → stored under `{library_root}/`.
+2. `pipeline/runner.py` orchestrates 9 stages: extract (PDF text + OCR fallback) → density → rough_md → detect (MolDetv2-FT joint detection + MolScribe) → insert_molecode → reorganize (LLM semantic reorg) → pageindex → wiki → persist_mols → register_links → persist. The `detect` stage uses `pipeline/extract_molecules.py:extract_molecules_from_pdf` which runs FT detection + coref pairing + MolScribe per-mol-bbox OCR (see `routers/moldet_api.py:/extract-pdf-page` for the equivalent HTTP endpoint).
 3. Stage outputs feed `core/knowledge_base.py` (SQLite business tables) and the OpenKB + PageIndex collection (vectorless tree reasoning + dense rerank).
 4. Frontend queries via `GET /api/v1/kb/search` (PageIndex tree reasoning).
 5. Agent chat streams via `GET /api/v1/agent/chat` (SSE, LangGraph nodes invoke `agent/tools.py`).
@@ -66,17 +76,17 @@ MBForge/
 │   │   └── utils/errors.ts            AppError + ErrorCode
 │   └── index.html
 ├── src/mbforge/                       Python backend
-│   ├── app.py                         App entry — 53 routes, 18 routers
+│   ├── app.py                         App entry — 19 routers
 │   ├── server.py                      Dev uvicorn target
 │   ├── __main__.py                    `python -m mbforge`
-│   ├── routers/                       18 FastAPI routers
+│   ├── routers/                       19 FastAPI routers
 │   ├── agent/                         LangGraph agent
-│   ├── core/                          database, project, knowledge_base, semantic_cache, resource_manager
-│   ├── pipeline/                      classify, extract_text, segment, chunk, index, runner
-│   ├── backends/                      moldet, molscribe, moldet_v2_ft
+│   ├── core/                          database, library, knowledge_base, semantic_cache, resource_manager
+│   ├── pipeline/                      classify, extract_text, segment, chunk, index, runner, organizer
+│   ├── backends/                      molscribe, moldet_v2_ft, ocr/ (chain, mineru, paddleocr, glmocr, rapidocr_adapter)
 │   ├── parsers/molecule/              coords, coref_alt
 │   ├── chem/                          Cheminformatics utils
-│   ├── models/                        Pydantic models (common, project)
+│   ├── models/                        Pydantic models (common, library, molecule)
 │   └── utils/                         logger, config, helpers, constants
 ├── tests/                             Python tests (unit/, integration/)
 ├── docs/                              Specs, plans, references (see § Documentation)
@@ -230,16 +240,25 @@ one-shot transform.
 
 | File | Role |
 |---|---|
-| `src/mbforge/app.py` | App entry — registers all 18 routers, exception handlers, lifespan |
+| `src/mbforge/app.py` | App entry — registers all 19 routers, exception handlers, lifespan |
 | `src/mbforge/server.py` | Dev uvicorn target (lazy prewarm) |
 | `src/mbforge/__main__.py` | `python -m mbforge` → uvicorn on 18792 |
 | `src/mbforge/agent/graph.py` | LangGraph agent graph definition |
 | `src/mbforge/agent/tools.py` | 5 agent tools (KB search, molecule search, doc fetch, notes, settings) |
-| `src/mbforge/pipeline/runner.py` | 6-stage pipeline orchestrator (Phase 1: extract_molecules added) |
+| `src/mbforge/pipeline/runner.py` | 9-stage pipeline orchestrator (extract → density → rough_md → detect → insert_molecode → reorganize → pageindex → wiki → persist_mols → register_links → persist) |
 | `src/mbforge/core/database.py` | SQLite business tables + connection pool |
 | `src/mbforge/core/knowledge_base.py` | KB CRUD + RRF fusion logic |
 | `src/mbforge/openkb/` | OpenKB + PageIndex adapter (vectorless tree reasoning + dense rerank) |
-| `src/mbforge/backends/moldet_v2_ft.py` | Fine-tuned YOLO26n MolDet backend (alternative to default). |
+| `src/mbforge/backends/moldet_v2_ft.py` | **The** MolDet backend (FT detector). YOLO26n fine-tuned for joint molecule + coref identifier detection in one inference. |
+| `src/mbforge/backends/ocr/rapidocr_adapter.py` | Crop-level RapidOCR adapter with `ThreadPoolExecutor` batch recognition. Used by `routers/coref.py` to OCR the FT-detected label bboxes. Uses `use_det=False` to skip detection (crops are pre-bounded by FT). |
+| `src/mbforge/parsers/molecule/coref_alt.py` | Coref KB-shape bridge: `CorefBbox` / `CorefResult` dataclasses, `_pair_corefs` (geometry-based pairing), `coref_to_rust_dict` (Rust vlm_chem bridge), `detect_coref_via_ft_detector` (single entry point for the FT pipeline). |
+| `src/mbforge/routers/coref.py` | Coref HTTP bridge: `POST /api/v1/coref/figure-labels` + `POST /api/v1/coref/predictions`. Renders the page, runs FT detect, batch-OCR's label bboxes, returns KB-shaped `FigureLabel[]` / `CorefPrediction[]` with real text (or synthetic fallback). 30s per-page cache. |
+| `src/mbforge/backends/ocr/__init__.py` | OCR backend registry — lazy import + factory |
+| `src/mbforge/backends/ocr/chain.py` | Fallback chain: MinerU → PaddleOCR → GLMOCR → RapidOCR |
+| `src/mbforge/backends/ocr/mineru.py` | MinerU OCR wrapper (cloud), tried first |
+| `src/mbforge/backends/ocr/paddleocr.py` | PaddleOCR wrapper |
+| `src/mbforge/backends/ocr/glmocr.py` | GLMOCR wrapper |
+| `src/mbforge/routers/ocr.py` | OCR config + status endpoints |
 | `src/mbforge/utils/helpers.py` | `MBForgeError` + 8 subclasses + `run_sync` + `http_status_to_severity` |
 | `src/mbforge/utils/logger.py` | `get_logger` + `setup_logging(json_mode=)` + `JsonFormatter` + `DiagnosticRingHandler` + ring-buffer helpers |
 | `src/mbforge/routers/diagnostics.py` | `/api/v1/diagnostics/{errors,stats}` — unified error ring buffer + front-end error ingestion |
@@ -284,7 +303,15 @@ semantic cache. Global config: `~/.config/MBForge/config.json` (Linux) /
 ### Frameworks
 
 - **Python**: pytest. `pyproject.toml` sets `testpaths = ["tests"]`. Layout:
-  `tests/unit/parsers/test_coref_alt.py` (only currently populated unit test),
+  `tests/unit/` for unit tests. After 2026-07-08 the active unit test
+  files include `tests/unit/test_rapidocr_adapter.py` (14 tests,
+  crop-level RapidOCR with ThreadPoolExecutor batch) and
+  `tests/unit/test_coref_ocr_integration.py` (7 tests, FT →
+  coref → OCR KB-shape bridge) for the coref path, plus the legacy
+  smoke tests under `tests/unit/test_routers_smoke.py` and friends.
+  Note: `tests/unit/parsers/test_coref_alt.py` and
+  `tests/unit/parsers/test_molecule_parsers.py` were removed in the
+  2026-07-08 FT migration (they tested removed MolDetv2DocDetector).
   `tests/integration/` for end-to-end.
 - **Frontend**: vitest 4 + jsdom + `@testing-library/jest-dom`
   (via `frontend/src/test/setup.ts`). Tests live alongside source as

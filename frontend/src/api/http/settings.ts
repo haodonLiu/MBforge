@@ -32,6 +32,7 @@ export interface OcrConfig {
   paddleocr_api_key?: string | null
   paddleocr_host?: string | null
   paddleocr_model?: string | null
+  upload_batch_size?: number
 }
 
 export interface ModelServerConfig {
@@ -65,6 +66,8 @@ export interface PdfParseConfig {
 export interface MoldetConfig {
   auto_moldet_on_import?: boolean
   moldet_batch_size?: number
+  detection_dpi?: number
+  detection_batch_size?: number
 }
 
 export interface IngestConfig {

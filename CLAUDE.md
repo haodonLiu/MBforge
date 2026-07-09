@@ -2,12 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Last sync**: 2026-07-05. Head migrated off the Rust/Tauri workspace
-> (`commit 4b70ae8`); KB backend swapped to OpenKB + PageIndex
-> (`4fbde55`); Phase 1 molecule extraction landed
-> (`extract_molecules.py` → `normalize.py` → `persist_molecules.py`); the
-> legacy `src-tauri/` directory was removed this session (history is
-> still in git via `git log -- src-tauri/`).
+> **Last sync**: 2026-07-08. Pipeline expanded to 9 stages (runner
+> now does extract → density → rough_md → detect → insert_molecode →
+> reorganize → pageindex → wiki → persist_mols → register_links →
+> persist); OCR cloud-first fallback chain landed (MinerU →
+> PaddleOCR → GLMOCR → RapidOCR); `routers/ocr.py` added (19
+> routers total); `start.py` single-command dev startup added.
 > If reality drifts from this file, **the code wins**; update this file in the
 > same PR. Detailed conventions live in [AGENTS.md](./AGENTS.md) — don't
 > duplicate them here.
@@ -21,11 +21,7 @@ PDFs in → structured molecules + activities → searchable knowledge base →
 LangGraph agent chat.
 
 ```
-PDF → classify → extract → segment → chunk → index → query
-                                ↓
-                       knowledge base (SQLite + OpenKB)
-                                ↓
-                       agent chat + molecule ops (FastAPI)
+PDF → pipeline (9 stages) → knowledge base (SQLite + OpenKB) → agent chat + molecule ops (FastAPI)
 ```
 
 Two frontends share the same backend:
@@ -97,7 +93,7 @@ For deeper module breakdown of `src/mbforge/`, see [AGENTS.md § Key Directories
 ```
 Frontend (React or Dear PyGui)
     ↓ HTTP / SSE          (httpFetch / sse.ts  or  gui/api/client.py)
-Routers (FastAPI, 18 files in src/mbforge/routers/)
+Routers (FastAPI, 19 files in src/mbforge/routers/)
     ↓
 Core + Agent + Pipeline  (src/mbforge/{core,agent,pipeline}/)
     ↓
@@ -109,14 +105,17 @@ SQLite + OpenKB + filesystem   (per-project .mbforge/)
 **Central data flow (PDF in → answer out):**
 
 1. Frontend uploads PDF via `POST /api/v1/documents/upload` → project-local storage.
-2. `pipeline/runner.py` runs **6 stages** now (Phase 1 added molecule extraction):
-   classify → `extract_text` → `extract_molecules` → `normalize` → `persist_molecules` → `chunk`/`index`.
+2. `pipeline/runner.py` runs **9 stages**:
+   extract (PDF text + OCR fallback) → density (classify text/mixed/image) →
+   rough_md (page text → .md) → detect (MolDet + MolScribe) → insert_molecode →
+   reorganize (LLM semantic reorg) → pageindex (tree index, zero LLM) →
+   wiki (summaries/concepts) → persist_mols → register_links → persist.
    Each stage writes intermediate state to the SQLite business tables
    (`core/database.py`) plus the OpenKB index.
 3. Frontend queries via `GET /api/v1/kb/search` (PageIndex tree reasoning + dense rerank).
 4. Agent chat streams via `GET /api/v1/agent/chat` (SSE; LangGraph nodes invoke tools in `agent/tools.py`).
 
-**Lazy-loaded model backends** (no prewarm except OpenKB): `moldet` (YOLO26n), `molscribe` (Swin + TR). First request per backend pays 5–30 s load cost — see `TODO/INDEX.md` C-4.
+**Lazy-loaded model backends** (no prewarm except OpenKB): `moldet` (YOLO26n), `molscribe` (Swin + TR), OCR cloud chain (MinerU → PaddleOCR → GLMOCR → RapidOCR). First request per backend pays 5–30 s load cost — see `TODO/INDEX.md` C-4.
 
 **Storage locations:**
 - Per-project: `{root}/.mbforge/knowledge_base.db` + the OpenKB + PageIndex collection under `openkb/`.

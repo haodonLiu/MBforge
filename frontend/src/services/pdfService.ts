@@ -83,36 +83,30 @@ export async function detectPageMolecules(params: {
   imageH: number
   force?: boolean
 }): Promise<ServiceResult<DetectionResponse>> {
+  // 2026-07-08: migrated from /api/v1/models/extract/cached-page (legacy
+  // stub returning 503) to the new FT-based main pipeline endpoint.
+  // No server-side cache: every call runs FT detector + MolScribe.
+  // The `force` parameter is kept for API compatibility but ignored.
   try {
     const resp = await httpPost<{
-      results: unknown[]
+      molecules: ExtractionResult[]
       count: number
-      source: string
-      cache_path?: string
-      error?: string
-    }>('/api/v1/models/extract/cached-page', {
+      page_num: number
+      width: number
+      height: number
+    }>('/api/v1/moldet/extract-pdf', {
       project_root: params.projectRoot,
       doc_id: params.docId,
       page: params.page,
-      image_base64: params.imageBase64,
-      page_w_pts: params.pageWPts,
-      page_h_pts: params.pageHPts,
-      image_w: params.imageW,
-      image_h: params.imageH,
-      force: params.force ?? false,
+      dpi: 300,
+      use_coref: false,
     })
-
-    if (resp.source === 'sidecar_error') {
-      return { success: false, error: resp.error || '检测失败' }
-    }
-
     return {
       success: true,
       data: {
-        results: resp.results as ExtractionResult[],
+        results: resp.molecules,
         count: resp.count,
-        source: resp.source as DetectionResponse['source'],
-        cachePath: resp.cache_path ?? undefined,
+        source: 'sidecar',
       },
     }
   } catch (e) {

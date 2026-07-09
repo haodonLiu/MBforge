@@ -13,6 +13,14 @@ from ..utils.logger import get_logger
 logger = get_logger("mbforge.agent.graph")
 
 
+class ToolExecutionError(Exception):
+    """Raised when an agent tool fails."""
+
+
+class LLMProviderError(Exception):
+    """Raised when the LLM provider call fails."""
+
+
 _SYSTEM_PROMPT = """You are MBForge Agent, an assistant for molecular science and drug discovery.
 
 You have access to the following tools:
@@ -85,8 +93,12 @@ async def stream_agent_response(
                 output = event.get("data", {}).get("output", "")
                 yield {"type": "tool_result", "output": str(output)[:500]}
 
+    except (ToolExecutionError, LLMProviderError) as e:
+        logger.warning("Agent streaming recoverable error: %s", e)
+        yield {"type": "error", "error": str(e), "recoverable": True}
     except Exception as e:
-        logger.error("Agent streaming error: %s", e)
-        yield {"type": "error", "error": str(e)}
+        logger.error("Agent streaming fatal error", exc_info=True)
+        yield {"type": "error", "error": "Internal error", "recoverable": False}
+        raise
 
     yield {"type": "done"}

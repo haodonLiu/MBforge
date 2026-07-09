@@ -1,20 +1,50 @@
+"""Tests for molecule extraction pipeline stage."""
+
+from __future__ import annotations
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import fitz
-import pytest
 
-from mbforge.parsers.molecule.extraction_result import ExtractionResult
+from mbforge.parsers.molecule.coref_alt import CorefBbox, CorefResult
 from mbforge.pipeline.extract_molecules import (
     extract_molecules_from_pdf,
     extract_molecules_from_text,
 )
 
 
-def test_extract_molecules_from_pdf_returns_empty_when_pipeline_unavailable(
+def _mock_fitz_doc() -> MagicMock:
+    """Return a mock fitz Document with one blank page."""
+    mock_page = MagicMock()
+    mock_page.rect.width = 595.0
+    mock_page.rect.height = 842.0
+    mock_page.get_text.return_value = ""
+    mock_page.get_images.return_value = []
+
+    mock_pix = MagicMock()
+    mock_pix.width = 100
+    mock_pix.height = 100
+    mock_pix.n = 3
+    mock_pix.samples = bytes([0] * 100 * 100 * 3)
+    mock_page.get_pixmap.return_value = mock_pix
+
+    mock_doc = MagicMock()
+    mock_doc.__len__ = lambda _: 1
+    mock_doc.load_page.return_value = mock_page
+    return mock_doc
+
+
+def test_extract_molecules_from_pdf_returns_empty_when_detector_unavailable(
     tmp_path: Path,
 ) -> None:
-    with patch("mbforge.backends.moldet.get_moldet", return_value=None):
+    with (
+        patch("mbforge.core.resource_manager.ResourceManager"),
+        patch(
+            "mbforge.backends.moldet_v2_ft.MolDetv2FTDetector"
+        ) as mock_detector_cls,
+    ):
+        mock_detector_cls.return_value.is_available.return_value = False
         results = extract_molecules_from_pdf("dummy.pdf", str(tmp_path), "doc1")
     assert results == []
 
@@ -22,56 +52,47 @@ def test_extract_molecules_from_pdf_returns_empty_when_pipeline_unavailable(
 def test_extract_molecules_from_pdf_returns_empty_on_open_failure(
     tmp_path: Path,
 ) -> None:
-    fake_pipeline = MagicMock()
-    fake_pipeline.is_available.return_value = True
-
     with (
-        patch("mbforge.backends.moldet.get_moldet", return_value=fake_pipeline),
-        patch.object(fitz, "open") as mock_fitz,
+        patch("mbforge.core.resource_manager.ResourceManager"),
+        patch(
+            "mbforge.backends.moldet_v2_ft.MolDetv2FTDetector"
+        ) as mock_detector_cls,
+        patch.object(fitz, "open") as mock_fitz_open,
     ):
-        mock_fitz.side_effect = RuntimeError("corrupted pdf")
+        mock_detector_cls.return_value.is_available.return_value = True
+        mock_fitz_open.side_effect = RuntimeError("corrupted pdf")
         results = extract_molecules_from_pdf("dummy.pdf", str(tmp_path), "doc1")
-
     assert results == []
 
 
 def test_extract_molecules_from_pdf_collects_results(tmp_path: Path) -> None:
-    fake_pipeline = MagicMock()
-    fake_pipeline.is_available.return_value = True
-    source_crop = tmp_path / "crop.png"
-    fake_result = ExtractionResult(
-        esmiles="CCO",
-        name="ethanol",
-        source="image",
-        moldet_conf=0.9,
-        scribe_conf=0.8,
-        bbox_pdf=(10.0, 20.0, 30.0, 40.0),
-        page_idx=0,
-        mol_img_path=source_crop,
-        status="pending",
+    coref_result = CorefResult(
+        bboxes=[
+            CorefBbox(
+                category_id=1,
+                bbox=(0.1, 0.1, 0.5, 0.5),
+                score=0.9,
+            )
+        ],
+        corefs=[],
     )
-    source_crop.touch()
-    fake_pipeline.extract_page.return_value = [fake_result]
 
     with (
-        patch("mbforge.backends.moldet.get_moldet", return_value=fake_pipeline),
-        patch.object(fitz, "open") as mock_fitz,
+        patch("mbforge.core.resource_manager.ResourceManager"),
+        patch(
+            "mbforge.backends.moldet_v2_ft.MolDetv2FTDetector"
+        ) as mock_detector_cls,
+        patch(
+            "mbforge.parsers.molecule.coref_alt.detect_coref_via_ft_detector",
+            return_value=coref_result,
+        ),
+        patch("mbforge.backends.molscribe.load"),
+        patch("mbforge.backends.molscribe.predict") as mock_predict,
+        patch.object(fitz, "open") as mock_fitz_open,
     ):
-        mock_page = MagicMock()
-        mock_page.rect.width = 595.0
-        mock_page.rect.height = 842.0
-        mock_pix = MagicMock()
-        mock_pix.width = 100
-        mock_pix.height = 100
-        mock_pix.n = 3
-        mock_pix.samples = bytes([0] * 100 * 100 * 3)
-        mock_page.get_pixmap.return_value = mock_pix
-        mock_doc = MagicMock()
-        mock_doc.__len__ = lambda _: 1
-        mock_doc.load_page.return_value = mock_page
-        mock_doc.__enter__ = MagicMock(return_value=mock_doc)
-        mock_doc.__exit__ = MagicMock(return_value=False)
-        mock_fitz.return_value = mock_doc
+        mock_detector_cls.return_value.is_available.return_value = True
+        mock_predict.return_value = MagicMock(esmiles="CCO", scribe_conf=0.8)
+        mock_fitz_open.return_value = _mock_fitz_doc()
 
         results = extract_molecules_from_pdf("dummy.pdf", str(tmp_path), "doc1")
 
@@ -81,10 +102,9 @@ def test_extract_molecules_from_pdf_collects_results(tmp_path: Path) -> None:
 
     crop_dir = tmp_path / ".mbforge" / "crops" / "doc1"
     assert crop_dir.exists()
-    expected_crop = crop_dir / "crop.png"
-    assert expected_crop.exists()
-    assert not source_crop.exists()
-    assert results[0].mol_img_path == expected_crop
+    saved_crops = list(crop_dir.glob("*.png"))
+    assert len(saved_crops) == 1
+    assert results[0].mol_img_path == saved_crops[0]
 
 
 def test_extract_molecules_from_text_returns_canonical_smiles() -> None:
@@ -108,54 +128,3 @@ def test_extract_molecules_from_text_deduplicates_smiles() -> None:
     results = extract_molecules_from_text("CCO appears twice: CCO", "doc1")
     assert len(results) == 1
     assert results[0].esmiles == "CCO"
-
-
-@pytest.mark.parametrize(
-    "side_effect", [OSError("permission denied"), RuntimeError("boom")]
-)
-def test_extract_molecules_from_pdf_keeps_original_path_on_move_failure(
-    tmp_path: Path,
-    side_effect: Exception,
-) -> None:
-    fake_pipeline = MagicMock()
-    fake_pipeline.is_available.return_value = True
-    source_crop = tmp_path / "crop.png"
-    fake_result = ExtractionResult(
-        esmiles="CCO",
-        source="image",
-        moldet_conf=0.9,
-        scribe_conf=0.8,
-        bbox_pdf=(10.0, 20.0, 30.0, 40.0),
-        page_idx=0,
-        mol_img_path=source_crop,
-        status="pending",
-    )
-    source_crop.touch()
-    fake_pipeline.extract_page.return_value = [fake_result]
-
-    with (
-        patch("mbforge.backends.moldet.get_moldet", return_value=fake_pipeline),
-        patch.object(fitz, "open") as mock_fitz,
-        patch("mbforge.pipeline.extract_molecules.shutil.move") as mock_move,
-    ):
-        mock_move.side_effect = side_effect
-        mock_page = MagicMock()
-        mock_page.rect.width = 595.0
-        mock_page.rect.height = 842.0
-        mock_pix = MagicMock()
-        mock_pix.width = 100
-        mock_pix.height = 100
-        mock_pix.n = 3
-        mock_pix.samples = bytes([0] * 100 * 100 * 3)
-        mock_page.get_pixmap.return_value = mock_pix
-        mock_doc = MagicMock()
-        mock_doc.__len__ = lambda _: 1
-        mock_doc.load_page.return_value = mock_page
-        mock_doc.__enter__ = MagicMock(return_value=mock_doc)
-        mock_doc.__exit__ = MagicMock(return_value=False)
-        mock_fitz.return_value = mock_doc
-
-        results = extract_molecules_from_pdf("dummy.pdf", str(tmp_path), "doc1")
-
-    assert len(results) == 1
-    assert results[0].mol_img_path == source_crop

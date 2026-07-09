@@ -4,8 +4,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import 'katex/dist/katex.min.css'
 import { showToast } from '@/hooks/useToast'
 
-import { agentInit, agentCreateSession, agentChatStream, agentGetHistory, agentDestroySession, moleculeStatsTauri } from '@/api/http'
-import { listDocumentsTauri } from '@/api/http/project'
+import { agentInit, agentCreateSession, agentChatStream, agentGetHistory, agentDestroySession, molStoreStats } from '@/api/http'
+import { listDocuments } from '@/api/http/library'
 import { getSettings } from '@/api/http/settings'
 
 import { useAppContext } from '@/context/AppContext'
@@ -98,12 +98,12 @@ export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
 
   useEffect(() => {
     if (!libraryRoot) return
-    listDocumentsTauri(libraryRoot).then(resp => {
-      if (resp.success) setDocCount(resp.documents.length)
-    }).catch((e) => console.warn('listDocumentsTauri failed:', e))
-    moleculeStatsTauri(libraryRoot).then(resp => {
-      if (resp.success) setMolCount(resp.stats.total || 0)
-    }).catch((e) => console.warn('moleculeStatsTauri failed:', e))
+    listDocuments().then(resp => {
+      setDocCount(resp.documents.length)
+    }).catch((e) => console.warn('listDocuments failed:', e))
+    molStoreStats(libraryRoot).then(stats => {
+      setMolCount(stats.total || 0)
+    }).catch((e) => console.warn('molStoreStats failed:', e))
   }, [libraryRoot])
 
   const sendMessage = useCallback(async () => {

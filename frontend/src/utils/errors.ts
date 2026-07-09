@@ -10,7 +10,6 @@
 export enum ErrorCode {
   Unknown = 'UNKNOWN',
   Network = 'NETWORK',
-  TauriInvoke = 'TAURI_INVOKE',
   ApiError = 'API_ERROR',
   SettingsLoad = 'SETTINGS_LOAD',
   SettingsSave = 'SETTINGS_SAVE',
@@ -98,7 +97,6 @@ export class AppError extends Error {
 const ERROR_MESSAGES: Record<ErrorCode, string> = {
   [ErrorCode.Unknown]: '发生了未知错误，请重试',
   [ErrorCode.Network]: '网络连接异常，请检查网络后重试',
-  [ErrorCode.TauriInvoke]: '桌面端通信异常，请确认 Tauri 环境正常',
   [ErrorCode.ApiError]: '服务端返回错误',
   [ErrorCode.SettingsLoad]: '加载设置失败',
   [ErrorCode.SettingsSave]: '保存设置失败',

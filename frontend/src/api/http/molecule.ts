@@ -222,75 +222,10 @@ export interface MoleculeStats {
   pending?: number
 }
 
-export async function moleculeStatsTauri(
-  projectRoot: string,
-): Promise<{ success: boolean; stats: MoleculeStats; error?: string }> {
-  try {
-    const stats = await molAdminStoreStats(projectRoot)
-    return { success: true, stats: stats as unknown as MoleculeStats }
-  } catch (e) {
-    return { success: false, stats: { total: 0 }, error: String(e) }
-  }
-}
-
-export async function listMoleculesTauri(
-  projectRoot: string,
-  limit = 100,
-  offset = 0,
-): Promise<{ success: boolean; molecules: MoleculeRecord[]; error?: string }> {
-  try {
-    const records = await molAdminList(projectRoot, limit, offset)
-    const molecules = records.map((r) => ({
-      mol_id: r.mol_id,
-      esmiles: r.esmiles,
-      name: r.name,
-      source_doc: r.source_doc,
-      source_type: r.source_type,
-      activity: r.activity,
-      activity_type: r.activity_type,
-      units: r.units,
-      status: r.status,
-      properties: r.properties,
-      tags: r.tags,
-      notes: r.notes,
-      created_at: r.created_at,
-    }))
-    return { success: true, molecules }
-  } catch (e) {
-    return { success: false, molecules: [], error: String(e) }
-  }
-}
-
-export async function searchMoleculesTauri(
-  projectRoot: string,
-  q: string,
-): Promise<{ success: boolean; molecules: MoleculeRecord[]; error?: string }> {
-  try {
-    const records = await molAdminSearchText(projectRoot, q)
-    const molecules = records.map((r) => ({
-      mol_id: r.mol_id,
-      esmiles: r.esmiles,
-      name: r.name,
-      source_doc: r.source_doc,
-      source_type: r.source_type,
-      activity: r.activity,
-      activity_type: r.activity_type,
-      units: r.units,
-      status: r.status,
-      properties: r.properties,
-      tags: r.tags,
-      notes: r.notes,
-      created_at: r.created_at,
-    }))
-    return { success: true, molecules }
-  } catch (e) {
-    return { success: false, molecules: [], error: String(e) }
-  }
-}
-
 // ============================================================================
-// 纯 Rust chematic 化学信息学（无 Python sidecar）
+// 化学信息学 (FastAPI 后端,通过 /api/v1/chem/* 路由访问 Python 侧 RDKit/chematic)
 // ============================================================================
+
 
 export interface SmilesValidation {
   valid: boolean

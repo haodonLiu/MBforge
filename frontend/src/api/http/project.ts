@@ -99,13 +99,38 @@ export interface ScanResponse {
   warnings: ScanWarning[]
 }
 
+/** Internal: library.ts DocumentInfo[] -> project.ts DocumentEntry[] */
+async function listDocumentsCompat(): Promise<{
+  success: boolean
+  documents: DocumentEntry[]
+  error?: string
+}> {
+  try {
+    const { documents } = await listLibraryDocuments()
+    return {
+      success: true,
+      documents: documents.map(d => ({
+        doc_id: d.doc_id,
+        path: d.file_name,
+        doc_type: '',
+        title: d.title,
+        indexed: d.status === 'indexed',
+        added_at: d.created_at,
+        hash: '',
+      })),
+    }
+  } catch (e) {
+    return { success: false, documents: [], error: String(e) }
+  }
+}
+
 /** Legacy filesystem-walk endpoint — no equivalent in the library model.
  * Returns the documents that the library already knows about. */
 export async function scanProjectFiles(
   _root: string,
   _recursive = false,
 ): Promise<ScanResponse> {
-  const docs = await listDocumentsTauriWrapper()
+  const docs = await listDocumentsCompat()
   return {
     success: true,
     documents: docs.documents,
@@ -119,7 +144,7 @@ export async function listProjectDocuments(
   _root: string,
   _docType?: string,
 ): Promise<{ success: boolean; documents: DocumentEntry[] }> {
-  return listDocumentsTauriWrapper()
+  return listDocumentsCompat()
 }
 
 export type IncompleteReason =
@@ -136,7 +161,7 @@ export interface DocumentEntryWithStatus extends DocumentEntry {
 export async function listProjectDocumentsWithStatus(
   _root: string,
 ): Promise<{ success: boolean; documents: DocumentEntryWithStatus[] }> {
-  const r = await listDocumentsTauriWrapper()
+  const r = await listDocumentsCompat()
   return {
     success: r.success,
     documents: r.documents.map(d => ({
@@ -230,34 +255,3 @@ export async function enqueueUnresolvedDocuments(_root: string): Promise<number>
   return 0
 }
 
-export async function listDocumentsTauri(
-  _root?: string,
-): Promise<{ success: boolean; documents: DocumentEntry[]; error?: string }> {
-  return listDocumentsTauriWrapper()
-}
-
-// ── Internal: map library.ts DocumentInfo → project.ts DocumentEntry ──
-
-async function listDocumentsTauriWrapper(): Promise<{
-  success: boolean
-  documents: DocumentEntry[]
-  error?: string
-}> {
-  try {
-    const { documents } = await listLibraryDocuments()
-    return {
-      success: true,
-      documents: documents.map(d => ({
-        doc_id: d.doc_id,
-        path: d.file_name,
-        doc_type: '',
-        title: d.title,
-        indexed: d.status === 'indexed',
-        added_at: d.created_at,
-        hash: '',
-      })),
-    }
-  } catch (e) {
-    return { success: false, documents: [], error: String(e) }
-  }
-}

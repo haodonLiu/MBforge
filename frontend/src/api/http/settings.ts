@@ -100,13 +100,12 @@ export async function saveSettings(settings: Record<string, unknown>): Promise<{
 
 export interface BuildInfo {
   version: string
-  tauri: string
   platform: string
   config_path: string
 }
 
 export async function fetchBuildInfo(): Promise<BuildInfo> {
-  return { version: '0.4.0', tauri: 'web', platform: navigator.platform, config_path: '' }
+  return { version: '0.4.0', platform: navigator.platform, config_path: '' }
 }
 
 export async function exportSettings(_targetPath: string): Promise<void> {

@@ -82,7 +82,7 @@ export async function ingestList(projectRoot: string): Promise<IngestTask[]> {
   return invokeWithError(
     () => httpPost('/api/v1/pipeline/queue', { project_root: projectRoot })
       .then((r: any) => Array.isArray(r?.tasks) ? r.tasks : []),
-    ErrorCode.TauriInvoke,
+    ErrorCode.ApiError,
   )
 }
 
@@ -90,7 +90,7 @@ export async function ingestStats(projectRoot: string): Promise<QueueStats> {
   return invokeWithError(
     () => httpPost('/api/v1/pipeline/queue/stats', { project_root: projectRoot })
       .then((r: any) => r?.stats ?? {}),
-    ErrorCode.TauriInvoke,
+    ErrorCode.ApiError,
   )
 }
 
@@ -116,7 +116,7 @@ export async function ingestGetLogs(
       doc_id: docId,
       limit,
     }),
-    ErrorCode.TauriInvoke,
+    ErrorCode.ApiError,
   )
 }
 
@@ -125,21 +125,21 @@ export async function ingestCancel(projectRoot: string, taskId: string): Promise
     async () => {
       await httpPost(`/api/v1/pipeline/queue/${taskId}/cancel`, { project_root: projectRoot })
     },
-    ErrorCode.TauriInvoke,
+    ErrorCode.ApiError,
   )
 }
 
 export async function ingestRetry(projectRoot: string, taskId: string): Promise<boolean> {
   return invokeWithError(
     () => httpPost<boolean>(`/api/v1/pipeline/queue/${taskId}/retry`, { project_root: projectRoot }),
-    ErrorCode.TauriInvoke,
+    ErrorCode.ApiError,
   )
 }
 
 export async function ingestCleanup(projectRoot: string): Promise<number> {
   return invokeWithError(
     () => httpPost<number>('/api/v1/pipeline/queue/cleanup', { project_root: projectRoot }),
-    ErrorCode.TauriInvoke,
+    ErrorCode.ApiError,
   )
 }
 
@@ -161,7 +161,7 @@ export async function ingestEnqueue(
       doc_id: docId,
       force: force ?? false,
     }),
-    ErrorCode.TauriInvoke,
+    ErrorCode.ApiError,
   )
 }
 
@@ -200,7 +200,7 @@ export async function ingestSetPriority(
         priority,
       })
     },
-    ErrorCode.TauriInvoke,
+    ErrorCode.ApiError,
   )
 }
 
@@ -212,6 +212,6 @@ export async function ingestDeleteTask(
     () => httpPost<boolean>(`/api/v1/pipeline/queue/${taskId}/delete`, {
       project_root: projectRoot,
     }),
-    ErrorCode.TauriInvoke,
+    ErrorCode.ApiError,
   )
 }

@@ -239,13 +239,16 @@ def run_pipeline(
 
     # -- Stage 3d: LLM reorganization --
     _emit("progress", "Reorganizing text...", stage="reorganize")
-    final_md_path = tempfile.mktemp(suffix=".md")
+    # 把重整后的 markdown 存到 storage/{doc_id}/reorganized.md（与原 PDF 同目录）
+    storage_dir = root / "storage" / doc_id
+    ensure_dir(storage_dir)
+    final_md_path = storage_dir / "reorganized.md"
     if density.doc_kind != "text_only" or candidates:
         from .organizer import reorganize_with_llm
 
         llm_cfg = load_global_config().llm
         reorganize_model = getattr(llm_cfg, "reorganize_model", None) or llm_cfg.model
-        reorganize_with_llm(enriched_md_path, final_md_path, model=reorganize_model)
+        reorganize_with_llm(enriched_md_path, str(final_md_path), model=reorganize_model)
     else:
         # text_only doc without molecules: reorganize maybe skipped
         _emit(
@@ -255,8 +258,18 @@ def run_pipeline(
         )
         import shutil
 
-        shutil.copy2(enriched_md_path, final_md_path)
+        shutil.copy2(enriched_md_path, str(final_md_path))
     _emit("complete", "Text reorganized", stage="reorganize")
+
+    # 把原始 PDF 复制到 storage/{doc_id}/source.pdf，方便前端直接预览/下载
+    try:
+        import shutil
+
+        source_pdf = storage_dir / "source.pdf"
+        if Path(pdf_path).resolve() != source_pdf.resolve():
+            shutil.copy2(pdf_path, str(source_pdf))
+    except Exception as pdf_copy_exc:
+        logger.debug("Failed to copy source PDF: %s", pdf_copy_exc)
 
     # -- Stage 3e: PageIndex tree indexing via markdown --
     _emit("progress", "Building PageIndex tree...", stage="pageindex")
@@ -314,9 +327,10 @@ def run_pipeline(
 
     import contextlib
 
-    for p in [rough_md_path, enriched_md_path, final_md_path]:
+    for p in [rough_md_path, enriched_md_path]:
         with contextlib.suppress(Exception):
             Path(p).unlink(missing_ok=True)
+    # final_md_path 已落到 storage/{doc_id}/reorganized.md，不再清理
 
     duration_ms = int((time.monotonic() - start_time) * 1000)
     _emit("complete", f"Pipeline finished in {duration_ms}ms", stage="pipeline")

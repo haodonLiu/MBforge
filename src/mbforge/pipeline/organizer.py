@@ -47,31 +47,46 @@ def _bbox_overlap(
     return inter / min(area_a, area_b)
 
 
+def _sanitize_mol_name(name: str) -> str:
+    """Strip markdown special chars from molecule names.
+
+    MolScribe sometimes returns fragments with wildcards (``**OC(=O)``)
+    which then get embedded into the name. Those characters break markdown
+    parsing (rendered as bold/italic) and clash with code-block fences.
+    """
+    if not name:
+        return "Unnamed"
+    # Replace any character that isn't a safe identifier char.
+    safe = re.sub(r"[^\w\-.]", "_", name)
+    return safe[:48] or "Unnamed"
+
+
 def _mol_to_molecode(smiles: str, name: str) -> str:
     """Convert SMILES to a MoleCode Mermaid block via RDKit + molecode.
 
-    Falls back to a plain ``# MoleCode not available for {name}`` block when
-    RDKit cannot parse the SMILES, and to ``# MoleCode error for {name}: ...``
-    when the molecode call itself raises.
+    Falls back to a plain text placeholder when RDKit/molecode is unavailable
+    or fails. Placeholders deliberately avoid ``#`` heading syntax and any
+    non-identifier characters that would clash with markdown structure.
     """
+    safe_name = _sanitize_mol_name(name)
     try:
         from molecode import mol_to_mermaid
         from rdkit import Chem
     except ImportError:
         logger.warning(
-            "rdkit/molecode not available; emitting placeholder for %s", name
+            "rdkit/molecode not available; emitting placeholder for %s", safe_name
         )
-        return f"```\n# MoleCode not available for {name}\n```\n"
+        return f"```\nMoleCode not available for {safe_name}\n```\n"
 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         logger.warning("MoleCode conversion failed for SMILES: %s", smiles)
-        return f"```\n# MoleCode not available for {name}\n```\n"
+        return f"```\nMoleCode not available for {safe_name}\n```\n"
     try:
-        mcode = mol_to_mermaid(mol, name=name, kekulize=True)
+        mcode = mol_to_mermaid(mol, name=safe_name, kekulize=True)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("MoleCode error for %s: %s", name, exc)
-        return f"```\n# MoleCode error for {name}: {exc}\n```\n"
+        logger.warning("MoleCode error for %s: %s", safe_name, exc)
+        return f"```\nMoleCode error for {safe_name}\n```\n"
     return f"```molecode\n{mcode}\n```\n"
 
 
@@ -156,8 +171,10 @@ def insert_molecode_blocks(
     page_ranges = _collect_page_ranges(lines)
 
     reverse_insertions: list[tuple[int, str]] = []
-    for page_idx, span_idx, mol in reversed(insertions):
-        name = mol.name or f"Mol_{mol.canonical_smiles[:8]}"
+    for idx, (page_idx, span_idx, mol) in enumerate(reversed(insertions)):
+        # 优先使用提取的化合物名称；否则按顺序生成 Mol_001, Mol_002 …
+        safe_smi = _sanitize_mol_name(mol.canonical_smiles[:8] or "")
+        name = mol.name or f"Mol_{len(insertions) - idx:03d}"
         block = _mol_to_molecode(mol.canonical_smiles, name)
         page_num = page_idx + 1  # 1-based page number, matches `<!-- PAGE N -->`
 

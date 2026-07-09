@@ -157,7 +157,11 @@ def _ocr_pages(
             try:
                 from ..backends.ocr.mineru import MinerUBackend
 
-                mineru_backend = MinerUBackend(ocr_config)
+                # MinerUBackend 期望 api_key；OCR config 用 mineru_api_key
+                mineru_cfg = dict(ocr_config or {})
+                if "api_key" not in mineru_cfg and "mineru_api_key" in mineru_cfg:
+                    mineru_cfg["api_key"] = mineru_cfg["mineru_api_key"]
+                mineru_backend = MinerUBackend(mineru_cfg)
                 if mineru_backend.is_configured():
                     for batch_start in range(0, len(page_indices), upload_batch_size):
                         batch_end = min(batch_start + upload_batch_size, len(page_indices))

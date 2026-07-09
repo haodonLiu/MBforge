@@ -129,7 +129,15 @@ def extract_molecules_from_pdf(
                 py2 = int(round(cb.bbox[3] * pix.height))
                 if px2 <= px1 or py2 <= py1:
                     continue
-                crop = image.crop((px1, py1, px2, py2)).convert("L")
+                raw_crop = image.crop((px1, py1, px2, py2)).convert("L")
+                # 预处理：白底黑线条 → 连通分量 → DBSCAN 取最大簇
+                try:
+                    from ..parsers.molecule.preprocess import preprocess_mol_image
+
+                    crop = preprocess_mol_image(raw_crop)
+                except Exception as pp_exc:
+                    logger.debug("preprocess_mol_image failed: %s, using raw crop", pp_exc)
+                    crop = raw_crop
                 try:
                     scribe = molscribe.predict(crop)
                     smi = scribe.esmiles or ""
@@ -157,8 +165,8 @@ def extract_molecules_from_pdf(
                         name="",
                         source="image",
                         moldet_conf=cb.score,
-                        scribe_conf=scribe.confidence if smi else 0.0,
-                        composite_conf=cb.score * (scribe.confidence if smi else 0.0),
+                        scribe_conf=scribe.scribe_conf if smi else 0.0,
+                        composite_conf=cb.score * (scribe.scribe_conf if smi else 0.0),
                         bbox_pdf=bbox_pdf,
                         page_idx=page_idx,
                         context_text="",

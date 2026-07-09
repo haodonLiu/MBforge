@@ -51,9 +51,12 @@ class WikiCompiler:
 
         if page_count >= threshold:
             logger.info("Compiling long doc: %s (%d pages)", doc_name, page_count)
+            # openkb 期望 summary_path 已存在；用 indexed markdown 内容预创建
+            if not summary_path.exists() and doc_md_path.exists():
+                summary_path.write_text(doc_md_path.read_text(encoding="utf-8"), encoding="utf-8")
             await compile_long_doc(
                 doc_name=doc_name,
-                summary_path=str(summary_path),
+                summary_path=summary_path,  # Path object (openkb expects Path)
                 doc_id=doc_id,
                 kb_dir=kb_path,
                 model=litellm_model,
@@ -62,7 +65,7 @@ class WikiCompiler:
             logger.info("Compiling short doc: %s (%d pages)", doc_name, page_count)
             await compile_short_doc(
                 doc_name=doc_name,
-                source_path=doc_md_path,
+                source_path=doc_md_path,  # Path object (openkb expects Path)
                 kb_dir=kb_path,
                 model=litellm_model,
             )

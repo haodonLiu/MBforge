@@ -107,7 +107,38 @@ def normalize_molecules(
     by_canonical: dict[str, NormalizedMolecule] = {}
     by_invalid: dict[str, NormalizedMolecule] = {}
 
+    # Reject candidates that are too short or contain SMILES wildcard atoms.
+    # MolScribe sometimes returns fragments like "**OC(=O)" or single chars
+    # when the crop is poor; these confuse downstream stages.
+    def _is_low_quality(esmiles: str) -> bool:
+        if len(esmiles) < 3:
+            return True
+        if "*" in esmiles:  # SMILES wildcard atoms
+            return True
+        if esmiles.isdigit():
+            return True
+        return False
+
     for r in results:
+        if _is_low_quality(r.esmiles):
+            logger.debug("Rejected low-quality SMILES: %s", r.esmiles)
+            if r.esmiles in by_invalid:
+                _merge_detection(by_invalid[r.esmiles], r)
+            else:
+                properties: dict[str, Any] = {}
+                _append_context(properties, r.context_text)
+                by_invalid[r.esmiles] = NormalizedMolecule(
+                    canonical_smiles=r.esmiles,
+                    esmiles=r.esmiles,
+                    name=r.name,
+                    sources=[r.source],
+                    detections=[_detection_from_result(r)],
+                    status="rejected",
+                    reject_reason="low_quality_smiles",
+                    properties=properties,
+                )
+            continue
+
         try:
             mol = Chem.MolFromSmiles(r.esmiles)
         except Exception as exc:

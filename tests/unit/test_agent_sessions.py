@@ -1,6 +1,6 @@
 """Tests for agent session management."""
 
-from mbforge.agent.sessions import AgentSession, ChatMessage, SessionStore, session_store
+from mbforge.agent.sessions import AgentSession, ChatMessage, session_store
 
 
 class TestChatMessage:

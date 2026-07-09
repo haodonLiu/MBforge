@@ -115,9 +115,7 @@ def normalize_molecules(
             return True
         if "*" in esmiles:  # SMILES wildcard atoms
             return True
-        if esmiles.isdigit():
-            return True
-        return False
+        return bool(esmiles.isdigit())
 
     for r in results:
         if _is_low_quality(r.esmiles):

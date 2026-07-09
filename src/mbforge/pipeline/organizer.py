@@ -173,7 +173,6 @@ def insert_molecode_blocks(
     reverse_insertions: list[tuple[int, str]] = []
     for idx, (page_idx, span_idx, mol) in enumerate(reversed(insertions)):
         # 优先使用提取的化合物名称；否则按顺序生成 Mol_001, Mol_002 …
-        safe_smi = _sanitize_mol_name(mol.canonical_smiles[:8] or "")
         name = mol.name or f"Mol_{len(insertions) - idx:03d}"
         block = _mol_to_molecode(mol.canonical_smiles, name)
         page_num = page_idx + 1  # 1-based page number, matches `<!-- PAGE N -->`
@@ -237,6 +236,7 @@ def _llm_complete(model: str, prompt: str) -> str:
     # The ?api_base= query-param approach causes TCP connection timeout on
     # some networks, so env vars are preferred.
     try:
+        from ..openkb.config import to_litellm_model
         from ..utils.config import load_global_config
 
         llm_cfg = load_global_config().llm
@@ -244,9 +244,10 @@ def _llm_complete(model: str, prompt: str) -> str:
             os.environ["OPENAI_API_KEY"] = llm_cfg.api_key
         if llm_cfg.base_url and not os.environ.get("OPENAI_API_BASE"):
             os.environ["OPENAI_API_BASE"] = llm_cfg.base_url
-        litellm_model = f"openai/{llm_cfg.model}"
+        # 路由到 ollama / openai / anthropic 等，自动透传 provider
+        litellm_model = to_litellm_model(llm_cfg)
     except Exception:  # noqa: BLE001 — never let config resolution crash the pipeline
-        litellm_model = f"openai/{model}"
+        litellm_model = model if "/" in model else f"openai/{model}"
 
     try:
         from litellm import completion

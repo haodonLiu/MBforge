@@ -99,7 +99,7 @@ def _dbscan_largest_cluster(
     largest_cluster = max(counts, key=counts.get)
     # Map DBSCAN cluster id back to the original component id at any
     # representative centroid. We pick the first centroid assigned to it.
-    member_idx = next(i for i, l in enumerate(labels) if l == largest_cluster)
+    member_idx = next(i for i, label in enumerate(labels) if label == largest_cluster)
     return int(unique_ids[member_idx])
 
 

@@ -27,6 +27,7 @@ fixture still runs after this one and wins the monkeypatch.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from collections.abc import Generator
@@ -70,7 +71,7 @@ def _isolate_global_state(
     test_library = tmp_path / "library"
     test_library.mkdir()
     fake_settings.write_text(
-        '{"library_root": "%s"}' % str(test_library).replace("\\", "\\\\"),
+        json.dumps({"library_root": str(test_library)}),
         encoding="utf-8",
     )
 

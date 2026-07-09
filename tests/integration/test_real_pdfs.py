@@ -10,10 +10,7 @@
 
 from __future__ import annotations
 
-import json
 import re
-import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -103,7 +100,6 @@ class TestHeadingExtraction:
 
     def test_extract_headings_from_cn(self, cn_text):
         """CN 专利文本应能提取到 heading."""
-        from mbforge.parsers.molecule.extraction_result import ExtractionResult
         # 使用 Rust 侧的 heading 提取（通过 Python 复现逻辑）
         headings = []
         for i, line in enumerate(cn_text.split("\n")):

@@ -149,7 +149,7 @@ export default function ProcessingQueue() {
 
   useEffect(() => {
     void load()
-    // Web mode: poll instead of Tauri IPC listen
+    // Poll for updates; backend doesn't push events.
     const timer = setInterval(() => void load(), 10000)
     return () => {
       clearInterval(timer)
@@ -175,14 +175,7 @@ export default function ProcessingQueue() {
     return () => clearInterval(timer)
   }, [])
 
-  // Subscribe to per-document ingest logs.
-  // Web mode: no Tauri IPC — logs are fetched on demand via fetchLogsForDoc.
-
-  // Subscribe to per-document ingest logs.
-  // Web mode: no Tauri IPC — logs are fetched on demand via fetchLogsForDoc.
-  useEffect(() => {
-    // No-op in web mode
-  }, [])
+  // Per-document logs are fetched on demand via fetchLogsForDoc (no event subscription needed).
 
   /** DB 兜底通道：从 SQLite 拉取该 doc 的历史日志。 */
   const fetchLogsForDoc = useCallback(

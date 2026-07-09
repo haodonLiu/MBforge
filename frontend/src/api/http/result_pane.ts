@@ -1,7 +1,5 @@
 /** HTTP-backed PDF viewer right-hand result pane.
  *
- * Replaces Tauri IPC with HTTP calls to the FastAPI backend.
- *
  * - `getMoleculeCorefChain` — list every cached occurrence of one molecule
  *   across the project, with bbox + text snippet per hit.
  * - `getPageParseResult` — structured text blocks + cached molecule

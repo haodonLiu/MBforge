@@ -1,4 +1,4 @@
-/** Poll sidecar health status (replaces Tauri IPC listen). */
+/** Poll sidecar health status. */
 
 import { useEffect } from 'react'
 import { httpGet } from '../api/http/_utils'

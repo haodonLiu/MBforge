@@ -1,4 +1,4 @@
-/** 模型下载 — HTTP API (替代 Tauri IPC) */
+/** 模型下载 — HTTP API (FastAPI backend) */
 
 import { httpPost, invokeWithError } from './_utils'
 import { ErrorCode } from '@/utils/errors'

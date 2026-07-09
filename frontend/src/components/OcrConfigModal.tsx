@@ -86,13 +86,7 @@ export default function OcrConfigModal() {
     glmocr: OcrTestResult | null
   }>({ mineru: null, uniparser: null, paddleocr: null, glmocr: null })
 
-  // Listen for the missing-API event from the Rust ingest worker.
-  useEffect(() => {
-    // No-op: Tauri events not available in web mode
-  }, [])
-
-  const close = useCallback(() => setOpen(false), [])
-
+  // Reserved for future event subscription (currently no-op).
   const dismissForever = useCallback(() => {
     if (missingBackend) {
       try {

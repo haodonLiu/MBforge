@@ -32,9 +32,9 @@ export interface RGroupMatrixProps {
 /**
  * R-Group 矩阵视图.
  *
- * 数据流（Tauri 原生命令，零 Python sidecar 依赖）：
- * 1. `sar_build_matrix` (Tauri) → 共同骨架 + 矩阵数据
- * 2. `sar_heatmap` (Tauri)     → 聚合热力图
+ * 数据流 (FastAPI 后端,通过 /api/v1/sar/* 路由):
+ * 1. `sar_build_matrix` → 共同骨架 + 矩阵数据
+ * 2. `sar_heatmap`     → 聚合热力图
  *
  * 子组件：
  * - <CoreScaffoldCard>  共同骨架展示
@@ -53,7 +53,7 @@ export default function RGroupMatrixView({
   const [error, setError] = useState<string | null>(null)
   const [showHeatmap, setShowHeatmap] = useState(true)
 
-  // 后端 matrix 调用（Rust Tauri 命令）
+  // 后端 matrix 调用 (POST /api/v1/sar/build-matrix)
   useEffect(() => {
     if (!compounds || compounds.length < 2) {
       setMatrix(null)
@@ -96,7 +96,7 @@ export default function RGroupMatrixView({
     }
   }, [compounds, coreSmiles])
 
-  // heatmap 调用（Rust Tauri 命令）
+  // heatmap 调用 (POST /api/v1/sar/heatmap)
   useEffect(() => {
     if (!matrix) {
       setHeatmaps([])

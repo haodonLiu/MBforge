@@ -25,7 +25,7 @@ export default function AboutSection({ onReset, onOpenConfig }: Props) {
   const handleFetchBuildInfo = async () => {
     try {
       const info = await fetchBuildInfo()
-      setTierInfo(`${info.version} (Tauri ${info.tauri}, ${info.platform})`)
+      setTierInfo(`${info.version} (${info.platform})`)
     } catch (e) {
       setTierInfo(`error: ${String(e)}`)
     }

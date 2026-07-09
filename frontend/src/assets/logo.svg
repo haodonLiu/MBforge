@@ -7,7 +7,7 @@
   整体几何中心为 (36, 36) — viewBox 中心 = 银灰大正六边形的中心。
   消费：① src/assets/logo.svg  自身
         ② brand.tsx::MoleculeLogo  内嵌同一份 SVG（首页 hero）
-        ③ src-tauri/icons/icon.*  通过 `cargo tauri icon logo.svg` 生成
+       ③ assets/icon/  通过 ImageMagick / rsvg-convert 从本 SVG 生成 32/128/512 PNG
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72" fill="none">
   <defs>

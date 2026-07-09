@@ -24,7 +24,7 @@ _MODEL_NAME_TO_RESOURCE_ID = {
 def resolve_model_path(model_name: str, cache_name: str | None = None) -> str:
     """解析模型路径 — 统一走 ResourceManager.
 
-    Rust resource_manager.rs 是路径解析的唯一真相源。
+    ResourceManager 是路径解析的唯一真相源（基于 constants.yaml + 用户 settings）。
     """
     p = Path(model_name)
     if p.is_absolute() or (p.exists() and p.is_dir()):

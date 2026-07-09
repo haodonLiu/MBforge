@@ -1,7 +1,8 @@
 """MolScribe 模型路径解析 — 仅读盘，不下载。
 
-由 Rust `core/models/resolve.rs` 解析到 `~/mbforge/models/MolScribe/` 后，
-本模块仅做 checkpoint 文件定位和可用性探测。
+模型路径由 `mbforge.utils.config` + `ResourceManager` 解析到
+`~/mbforge/models/MolScribe/` 后,本模块仅做 checkpoint 文件定位和
+可用性探测。
 """
 
 import os

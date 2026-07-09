@@ -7,7 +7,6 @@ import time
 # Model status tracking
 _model_status: dict[str, str] = {
     "moldet": "loading",
-    "moldet_coref": "loading",
     "molscribe": "loading",
 }
 

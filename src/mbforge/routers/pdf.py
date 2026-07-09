@@ -1,4 +1,10 @@
-"""PDF processing endpoints — stub implementations for Tauri-migrated routes."""
+"""PDF processing endpoints — classification + inspection stubs.
+
+Full PDF parsing is implemented by `pipeline/extract_text.py` and
+`routers/moldet_api.py:extract_pdf_page`. The endpoints here cover the
+frontend's lightweight probes (classify, ocr-layout, figure-bboxes) used
+by the queue UI before kicking off a full pipeline run.
+"""
 
 from __future__ import annotations
 

@@ -25,8 +25,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ..parsers.molecule.coref_alt import (
-    coref_to_rust_dict,
     detect_coref_via_ft_detector,
+    to_api_dict,
 )
 from ..utils.helpers import (
     ValidationError,
@@ -165,7 +165,7 @@ async def detect_coref_ft(body: dict) -> dict[str, Any]:
     """FT model one-shot inference: joint detect molecules + coref ids, geometric pairing.
 
     Input: {"image_base64": "..."} (PIL image, base64 encoded)
-    Output: coref_to_rust_dict standard format - bboxes (category_id,
+    Output: {bboxes, corefs} standard format - bboxes (category_id,
     normalized bbox, score) + corefs (mol_idx -> idt_idx pairs).
     """
     image_base64 = body.get("image_base64", "")
@@ -179,7 +179,7 @@ async def detect_coref_ft(body: dict) -> dict[str, Any]:
         None,
         lambda: detect_coref_via_ft_detector(image),
     )
-    return coref_to_rust_dict(coref_result)
+    return to_api_dict(coref_result)
 
 
 @router.post("/extract-pdf-page")
@@ -247,9 +247,7 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
             x2 = int(round(cb.bbox[2] * img_w))
             y2 = int(round(cb.bbox[3] * img_h))
             mol_boxes_px.append((x1, y1, x2, y2, cb.score))
-
-    rust_dict = coref_to_rust_dict(coref_result)
-
+    api_dict = to_api_dict(coref_result)
     if not mol_boxes_px:
         logger.info(
             "FT detector found no molecules on page %s of %s",
@@ -263,8 +261,8 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
             "page_h_pts": page_h_pts,
             "dpi": dpi,
             "molecules": [],
-            "corefs": rust_dict["corefs"],
-            "bboxes": rust_dict["bboxes"],
+            "corefs": api_dict["corefs"],
+            "bboxes": api_dict["bboxes"],
             "count": 0,
         }
 
@@ -328,8 +326,8 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
         "page_h_pts": page_h_pts,
         "dpi": dpi,
         "molecules": molecules,
-        "corefs": rust_dict["corefs"],
-        "bboxes": rust_dict["bboxes"],
+        "corefs": api_dict["corefs"],
+        "bboxes": api_dict["bboxes"],
         "count": len(molecules),
     }
 

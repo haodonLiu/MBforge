@@ -3,8 +3,8 @@
 Single-model inference: MolDetv2-FT outputs molecule bboxes and coref
 identifier bboxes in one pass. No OCR step needed (the FT model is
 trained on identifier detection directly). Outputs `CorefResult` which
-is consumed by `/api/v1/moldet/extract-pdf-page` and `coref_to_rust_dict`
-for the vlm_chem.rs Rust frontend bridge.
+is consumed by `routers/moldet_api.py:extract_pdf_page` and
+`routers/coref.py:_coref_to_kb_shapes`.
 
 Replaces the 2026-07-07 implementation: moldet (Doc detector) + RapidOCR
 with heuristic identifier filtering. The OCR path was slower and noisier
@@ -24,9 +24,6 @@ from mbforge.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
-# ---- 数据类型（moldet_coref 移除后唯一来源） ----
-
-
 @dataclass
 class CorefBbox:
     category_id: int  # 1=分子, 3=标识符
@@ -34,14 +31,12 @@ class CorefBbox:
     # `[x1, y1, x2, y2]` with values in `[0, 1]`, **top-left origin**
     # (y grows downward, image-processing convention).
     #
-    # This is the contract expected by:
-    # - `vlm_chem::coref_to_molecules` (Rust) — converts to PDF points
+    # Consumers:
     # - KB `figure_labels.label_bbox` / `coref_predictions.{mol,label}_bbox`
     #   — frontend `projectFigureBboxToPage` projects to PDF page coords
     #
-    # Internal pipeline (moldet + RapidOCR) returns pixel coords; the
-    # conversion to normalized happens in `detect_coref_via_moldet_ocr`
-    # at construction time.
+    # Conversion from pixel coords to normalized happens at FT-detection
+    # construction time (see `detect_coref_via_ft_detector`).
     bbox: tuple[float, float, float, float]
     smiles: str | None = None
     text: str | None = None
@@ -131,16 +126,14 @@ def _bbox_iou(a: tuple, b: tuple) -> float:
     union = area_a + area_b - inter
     return inter / union if union > 0 else 0.0
 
+# ---- API JSON 序列化（HTTP 端点 /api/v1/moldet/* 的响应载荷） ----
 
 
-# ---- Rust 侧 JSON 序列化（vlm_chem.rs 期望格式） ----
+def to_api_dict(result: CorefResult) -> dict[str, Any]:
+    """把 CorefResult 序列化为 API 响应 JSON 结构.
 
-
-def coref_to_rust_dict(result: CorefResult) -> dict[str, Any]:
-    """把 CorefResult 序列化为 vlm_chem.rs 期望的 JSON 结构.
-
-    Rust 侧（vlm_chem.rs:detect_coref）解析:
-      bboxes[*]: {category_id, bbox[4], smiles?, molfile?, text?, score}
+    响应形状:
+      bboxes[*]: {category_id, bbox[4], smiles?, text?, score}
       corefs[*]: [mol_idx, idt_idx]  (嵌套数组)
     """
     return {
@@ -149,7 +142,6 @@ def coref_to_rust_dict(result: CorefResult) -> dict[str, Any]:
                 "category_id": b.category_id,
                 "bbox": list(b.bbox),
                 "smiles": b.smiles,
-                "molfile": None,
                 "text": b.text,
                 "score": b.score,
             }

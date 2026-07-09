@@ -44,25 +44,30 @@ _BACKENDS = [molscribe]
 
 
 def _prewarm() -> None:
-    """Prewarm local model backends so first inference is fast.
+    """Prewarm local model backends in the background.
 
-    Failures are caught and logged as warnings; they must not block startup.
+    Runs inside lifespan via loop.run_in_executor so startup is not blocked.
+    Failures are logged as warnings and do not prevent the app from starting.
     """
     try:
+        logger.info("Prewarming MolDet...")
         from .backends.moldet_v2_ft import get_moldet_ft
 
         get_moldet_ft()
         logger.info("MolDetv2-FT prewarm complete")
     except Exception as exc:
-        logger.warning("MolDetv2-FT prewarm failed: %s", exc)
+        logger.warning("MolDetv2-FT prewarm failed (non-fatal): %s", exc)
 
     try:
+        logger.info("Prewarming MolScribe...")
         from .backends.molscribe import load as load_molscribe
 
         load_molscribe()
         logger.info("MolScribe prewarm complete")
     except Exception as exc:
-        logger.warning("MolScribe prewarm failed: %s", exc)
+        logger.warning("MolScribe prewarm failed (non-fatal): %s", exc)
+
+    logger.info("Model prewarm complete")
 
 
 @asynccontextmanager

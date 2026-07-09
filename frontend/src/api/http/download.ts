@@ -54,7 +54,7 @@ export interface DownloadProgress {
 function inferModelType(id: string): string {
   if (id === 'embedding') return 'embedding'
   if (id === 'reranker') return 'reranker'
-  if (id === 'moldet' || id === 'moldet_coref' || id === 'molscribe') return 'detection'
+  if (id === 'moldet' || id === 'molscribe') return 'detection'
   return 'model'
 }
 

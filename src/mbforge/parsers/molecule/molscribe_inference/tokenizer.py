@@ -1,9 +1,11 @@
-import os
 import json
+import os
 import random
+
 import numpy as np
 
 from mbforge.utils.logger import get_logger
+
 logger = get_logger(__name__)
 
 # Training-only: atomwise_tokenizer is not needed for inference
@@ -22,7 +24,7 @@ UNK_ID = 3
 MASK_ID = 4
 
 
-class Tokenizer(object):
+class Tokenizer:
 
     def __init__(self, path=None):
         self.stoi = {}
@@ -182,7 +184,7 @@ class NodeTokenizer(Tokenizer):
         if self.sep_xy:
             return (id - self.offset - self.maxx) / (self.maxy - 1)
         return (id - self.offset) / (self.maxy - 1)
-    
+
     def get_output_mask(self, id):
         mask = [False] * len(self)
         if self.continuous_coords:

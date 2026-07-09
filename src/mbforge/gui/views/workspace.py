@@ -6,18 +6,17 @@ from typing import Any
 
 import dearpygui.dearpygui as dpg
 
+from ...utils.logger import get_logger
 from ..components import stat_card
 from ..utils import (
-    t,
+    clear_container,
     get_status_color,
     run_with_refresh,
     safe_set_value,
-    clear_container,
+    t,
 )
 from ..utils.constants import FILE_TREE_WIDTH
 from .base import BaseView
-
-from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -80,7 +79,7 @@ class WorkspaceView(BaseView):
                 )
                 dpg.bind_item_theme(sync_btn, "accent_button")
                 dpg.add_spacer(width=8)
-                scan_btn = dpg.add_button(
+                dpg.add_button(
                     label=t("workspace.scan"),
                     tag="workspace_scan_btn",
                     width=100,

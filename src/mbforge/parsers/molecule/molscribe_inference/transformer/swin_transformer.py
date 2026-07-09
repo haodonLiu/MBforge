@@ -13,18 +13,16 @@ Code/weights from https://github.com/microsoft/Swin-Transformer, original copyri
 import logging
 import math
 from copy import deepcopy
-from typing import Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
-
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models.helpers import build_model_with_cfg, overlay_external_default_cfg
-from timm.models.layers import Mlp, DropPath, to_2tuple, trunc_normal_
+from timm.models.layers import DropPath, Mlp, to_2tuple, trunc_normal_
 from timm.models.registry import register_model
-from timm.models.vision_transformer import checkpoint_filter_fn, _init_vit_weights
+from timm.models.vision_transformer import _init_vit_weights, checkpoint_filter_fn
 
 _logger = logging.getLogger(__name__)
 
@@ -164,7 +162,7 @@ class WindowAttention(nn.Module):
         trunc_normal_(self.relative_position_bias_table, std=.02)
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, mask: Optional[torch.Tensor] = None):
+    def forward(self, x, mask: torch.Tensor | None = None):
         """
         Args:
             x: input features with shape of (num_windows*B, N, C)
@@ -256,7 +254,7 @@ class SwinTransformerBlock(nn.Module):
             mask_windows = window_partition(img_mask, self.window_size)  # nW, window_size, window_size, 1
             mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
             attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
-            attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
+            attn_mask = attn_mask.masked_fill(attn_mask != 0, (-100.0)).masked_fill(attn_mask == 0, 0.0)
         else:
             attn_mask = None
 
@@ -583,7 +581,7 @@ def _create_swin_transformer(variant, pretrained=False, default_cfg=None, **kwar
 
     num_classes = kwargs.pop('num_classes', default_num_classes)
     img_size = kwargs.pop('img_size', default_img_size)
-    if kwargs.get('features_only', None):
+    if kwargs.get('features_only'):
         raise RuntimeError('features_only not implemented for Vision Transformer models.')
 
     model = build_model_with_cfg(

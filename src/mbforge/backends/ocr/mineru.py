@@ -102,7 +102,7 @@ class MinerUBackend(OCRBackend):
                 return [OCRResult(text="", error="MinerU returned wrong URL count")] * len(images)
 
             # Step 2: Upload all images to OSS in parallel
-            for url, img_bytes in zip(upload_urls, images):
+            for url, img_bytes in zip(upload_urls, images, strict=True):
                 self._upload_to_oss(url, img_bytes)
 
             # Step 3: Poll batch results, extract text for each file

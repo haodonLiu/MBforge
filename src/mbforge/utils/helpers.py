@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import json as _json
 import logging as _logging
@@ -324,10 +325,8 @@ def shutdown_backends() -> None:
     from ..backends import molscribe
 
     for mod in [molscribe]:
-        try:
+        with contextlib.suppress(Exception):
             mod.unload()
-        except Exception:
-            pass
 
 
 def resolve_root(body: dict | None = None) -> str:

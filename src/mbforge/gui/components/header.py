@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import dearpygui.dearpygui as dpg
 
-from ..utils.i18n import t
-
 
 class Header:
     """Top header bar with the active library name and actions."""
@@ -36,7 +34,7 @@ class Header:
             dpg.add_spacer(width=12)
 
     def set_project(self, name: str):
-        """Update the displayed library name (legacy method name kept for
+        r"""Update the displayed library name (legacy method name kept for
         caller compatibility — see \`gui/app.py\`)."""
         self.library_name = name
         if dpg.does_item_exist("header_project"):

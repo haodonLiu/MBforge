@@ -134,7 +134,7 @@ async def test_uniparser(body: dict) -> dict:
     }
 
 
-@router.post("/chain-status")
+@router.get("/chain-status")
 async def chain_status() -> dict:
     """Inspect which OCR backends the chain would try for the current settings."""
     from ..backends.ocr import list_configured_backends

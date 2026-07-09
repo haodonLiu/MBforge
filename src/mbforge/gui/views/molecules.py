@@ -6,16 +6,15 @@ from typing import Any
 
 import dearpygui.dearpygui as dpg
 
+from ...utils.logger import get_logger
 from ..components import search_bar, two_panel
 from ..utils import (
-    t,
     get_status_color,
     run_in_background,
     safe_set_value,
+    t,
 )
 from .base import BaseView
-
-from ...utils.logger import get_logger
 
 logger = get_logger(__name__)
 

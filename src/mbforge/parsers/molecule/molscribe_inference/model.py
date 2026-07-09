@@ -1,15 +1,13 @@
 import numpy as np
-
+import timm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import timm
-
+from .inference import BeamSearch, GreedySearch
+from .tokenizer import EOS_ID, MASK_ID, PAD_ID, SOS_ID
+from .transformer import Embeddings, TransformerDecoder
 from .utils import FORMAT_INFO, to_device
-from .tokenizer import SOS_ID, EOS_ID, PAD_ID, MASK_ID
-from .inference import GreedySearch, BeamSearch
-from .transformer import TransformerDecoder, Embeddings
 
 
 class Encoder(nn.Module):
@@ -36,7 +34,7 @@ class Encoder(nn.Module):
             self.cnn.global_pool = nn.Identity()
             self.cnn.classifier = nn.Identity()
         else:
-            raise NotImplemented
+            raise NotImplementedError
 
     def swin_forward(self, transformer, x):
         x = transformer.patch_embed(x)
@@ -72,7 +70,7 @@ class Encoder(nn.Module):
             else:
                 features, hiddens = self.transformer(x)
         else:
-            raise NotImplemented
+            raise NotImplementedError
         return features, hiddens
 
 
@@ -252,7 +250,7 @@ class TransformerDecoderAR(TransformerDecoderBase):
 class GraphPredictor(nn.Module):
 
     def __init__(self, decoder_dim, coords=False):
-        super(GraphPredictor, self).__init__()
+        super().__init__()
         self.coords = coords
         self.mlp = nn.Sequential(
             nn.Linear(decoder_dim * 2, decoder_dim), nn.GELU(),
@@ -306,7 +304,7 @@ class Decoder(nn.Module):
     """This class is a wrapper for different decoder architectures, and support multiple decoders."""
 
     def __init__(self, args, tokenizer):
-        super(Decoder, self).__init__()
+        super().__init__()
         self.args = args
         self.formats = args.formats
         self.tokenizer = tokenizer
@@ -332,7 +330,7 @@ class Decoder(nn.Module):
                     dec_out = results['chartok_coords'][2]
                     predictions = self.decoder['edges'](dec_out, indices=refs['atom_indices'][0])
                 else:
-                    raise NotImplemented
+                    raise NotImplementedError
                 targets = {'edges': refs['edges']}
                 if 'coords' in predictions:
                     targets['coords'] = refs['coords']
@@ -375,7 +373,7 @@ class Decoder(nn.Module):
                 elif 'chartok_coords' in results:
                     atom_format = 'chartok_coords'
                 else:
-                    raise NotImplemented
+                    raise NotImplementedError
                 dec_out = results[atom_format][3]  # batch x n_best x len x dim
                 for i in range(len(dec_out)):
                     hidden = dec_out[i][0].unsqueeze(0)  # 1 * len * dim

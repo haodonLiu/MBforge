@@ -16,10 +16,22 @@ from ..utils.config import (
 router = APIRouter()
 
 
+def _redact_secrets(obj: Any) -> Any:
+    """Recursively replace secret-ish values with '***' for GET responses."""
+    if isinstance(obj, dict):
+        return {
+            k: "***" if isinstance(v, str) and ("api_key" in k.lower() or "secret" in k.lower()) else _redact_secrets(v)
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_redact_secrets(v) for v in obj]
+    return obj
+
+
 @router.get("")
 async def settings_get() -> dict:
     cfg = load_global_config()
-    return {"success": True, "settings": cfg.model_dump()}
+    return {"success": True, "settings": _redact_secrets(cfg.model_dump())}
 
 
 @router.put("")
@@ -29,14 +41,14 @@ async def settings_update(body: dict[str, Any]) -> dict:
         new_cfg = update_settings(body)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
-    return {"success": True, "settings": new_cfg.model_dump()}
+    return {"success": True, "settings": _redact_secrets(new_cfg.model_dump())}
 
 
 @router.post("/reset")
 async def settings_reset() -> dict:
     """重置全部设置为默认值."""
     cfg = reset_settings()
-    return {"success": True, "settings": cfg.model_dump()}
+    return {"success": True, "settings": _redact_secrets(cfg.model_dump())}
 
 
 # TODO: cache-size / cache-clear 真正接到 core.semantic_cache

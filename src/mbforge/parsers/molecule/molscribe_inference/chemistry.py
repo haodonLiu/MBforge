@@ -1,9 +1,9 @@
 import copy
-import traceback
-import numpy as np
-import multiprocessing
 import itertools
+import multiprocessing
+import traceback
 
+import numpy as np
 import rdkit
 import rdkit.Chem as Chem
 
@@ -12,6 +12,7 @@ rdkit.RDLogger.DisableLog('rdApp.*')
 import re as _re
 
 from mbforge.utils.logger import get_logger
+
 logger = get_logger(__name__)
 
 def atomwise_tokenizer(smiles):
@@ -20,7 +21,7 @@ def atomwise_tokenizer(smiles):
     tokens = _re.findall(pattern, smiles)
     return [t for t in tokens if t.strip()]
 
-from .constants import RGROUP_SYMBOLS, ABBREVIATIONS, VALENCES, FORMULA_REGEX
+from .constants import ABBREVIATIONS, FORMULA_REGEX, RGROUP_SYMBOLS, VALENCES
 
 
 def is_valid_mol(s, format_='atomtok'):
@@ -31,7 +32,7 @@ def is_valid_mol(s, format_='atomtok'):
             s = f"InChI=1S/{s}"
         mol = Chem.MolFromInchi(s)
     else:
-        raise NotImplemented
+        raise NotImplementedError
     return mol is not None
 
 
@@ -562,7 +563,7 @@ def _convert_graph_to_smiles(coords, symbols, edges, image=None, debug=False):
         pred_molblock = Chem.MolToMolBlock(mol)
         pred_smiles, mol = _expand_functional_group(mol, {}, debug)
         success = True
-    except Exception as e:  # noqa: BLE001 — RDKit graph→SMILES conversion is best-effort; traceback logged only when debug=True
+    except Exception:  # noqa: BLE001 — RDKit graph→SMILES conversion is best-effort; traceback logged only when debug=True
         if debug:
             logger.debug(traceback.format_exc())
         pred_molblock = ''
@@ -598,7 +599,7 @@ def _keep_main_molecule(smiles, debug=False):
             num_atoms = [m.GetNumAtoms() for m in frags]
             main_mol = frags[np.argmax(num_atoms)]
             smiles = Chem.MolToSmiles(main_mol)
-    except Exception as e:  # noqa: BLE001 — fragment picking is best-effort; traceback logged only when debug=True
+    except Exception:  # noqa: BLE001 — fragment picking is best-effort; traceback logged only when debug=True
         if debug:
             logger.debug(traceback.format_exc())
     return smiles

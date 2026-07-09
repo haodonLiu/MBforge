@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 # ── Translation dictionaries ────────────────────────────────
 
 _TRANSLATIONS: dict[str, dict[str, str]] = {
@@ -196,8 +198,6 @@ def t(key: str, **kwargs) -> str:
     translations = _TRANSLATIONS.get(_current_lang, _TRANSLATIONS["en"])
     text = translations.get(key, key)
     if kwargs:
-        try:
+        with contextlib.suppress(KeyError, IndexError):
             text = text.format(**kwargs)
-        except (KeyError, IndexError):
-            pass
     return text

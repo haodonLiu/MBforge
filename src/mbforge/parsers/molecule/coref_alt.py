@@ -59,8 +59,8 @@ def _pair_corefs(
     bboxes: list[CorefBbox],
     mol_indices: list[int],
     idt_indices: list[int],
-    W: int,
-    H: int,
+    width: int,
+    height: int,
     page_width: float = 595.0,
     page_height: float = 842.0,
 ) -> list[tuple[int, int]]:
@@ -212,9 +212,9 @@ def detect_coref_via_ft_detector(
         logger.warning("MolDetv2-FT 模型未加载，跳过联合检测")
         return CorefResult(bboxes=[], corefs=[])
 
-    W, H = image.size
-    inv_w = 1.0 / W if W > 0 else 0.0
-    inv_h = 1.0 / H if H > 0 else 0.0
+    width, height = image.size
+    inv_w = 1.0 / width if width > 0 else 0.0
+    inv_h = 1.0 / height if height > 0 else 0.0
 
     def _to_norm(
         box: tuple[float, float, float, float],
@@ -256,7 +256,7 @@ def detect_coref_via_ft_detector(
 
     # 3. 几何配对
     corefs = _pair_corefs(
-        bboxes, mol_indices, idt_indices, W, H, page_width, page_height
+        bboxes, mol_indices, idt_indices, width, height, page_width, page_height
     )
 
     logger.info(

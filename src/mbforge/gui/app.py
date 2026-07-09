@@ -4,35 +4,30 @@ from __future__ import annotations
 
 import json
 import os
-import signal
-import sys
 from pathlib import Path
 from threading import Thread
 
 import dearpygui.dearpygui as dpg
 
+from ..utils.logger import get_logger
 from .api.client import ApiClient
-from .components.sidebar import Sidebar
 from .components.header import Header
+from .components.sidebar import Sidebar
 from .components.toasts import ToastManager, set_toast_manager
 from .state import AppState
 from .utils.constants import (
+    WINDOW_HEIGHT,
     WINDOW_TITLE,
     WINDOW_WIDTH,
-    WINDOW_HEIGHT,
 )
 from .utils.themes import setup_themes
-from .utils.i18n import t
-from .utils.threading import safe_set_value, clear_container
-from .views.welcome import WelcomeView
-from .views.workspace import WorkspaceView
 from .views.discover import DiscoverView
 from .views.molecules import MoleculesView
-from .views.queue import QueueView
 from .views.notes import NotesView
+from .views.queue import QueueView
 from .views.settings import SettingsView
-
-from ..utils.logger import get_logger
+from .views.welcome import WelcomeView
+from .views.workspace import WorkspaceView
 
 logger = get_logger(__name__)
 
@@ -59,23 +54,24 @@ class MBForgeApp:
         set_toast_manager(self.toast)
 
         # Create main window with context manager
-        with dpg.window(
-            tag="main_window",
-            label=WINDOW_TITLE,
-            width=WINDOW_WIDTH,
-            height=WINDOW_HEIGHT,
-            no_title_bar=True,
-            no_move=True,
-            no_resize=True,
+        with (
+            dpg.window(
+                tag="main_window",
+                label=WINDOW_TITLE,
+                width=WINDOW_WIDTH,
+                height=WINDOW_HEIGHT,
+                no_title_bar=True,
+                no_move=True,
+                no_resize=True,
+            ),
+            dpg.group(horizontal=True),
         ):
-            # Main horizontal layout
-            with dpg.group(horizontal=True):
-                # Sidebar
-                self.sidebar = Sidebar(on_navigate=self._on_navigate)
-                self.sidebar.create("main_window")
+            # Sidebar
+            self.sidebar = Sidebar(on_navigate=self._on_navigate)
+            self.sidebar.create("main_window")
 
-                # Content area
-                with dpg.group():
+            # Content area
+            with dpg.group():
                     self.header = Header()
                     self.header.create("main_window")
                     dpg.add_separator()

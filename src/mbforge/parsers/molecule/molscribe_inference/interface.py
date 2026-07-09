@@ -5,8 +5,6 @@ No albumentations, no indigo. Uses PIL for image preprocessing.
 
 import argparse
 import logging
-import os
-from typing import List
 
 import numpy as np
 import torch
@@ -14,10 +12,9 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-from .model import Encoder, Decoder
-from .tokenizer import get_tokenizer
 from .chemistry import convert_graph_to_smiles
-
+from .model import Decoder, Encoder
+from .tokenizer import get_tokenizer
 
 BOND_TYPES = ["", "single", "double", "triple", "aromatic", "solid wedge", "dashed wedge"]
 
@@ -107,7 +104,7 @@ class MolScribe:
 
     def predict_images(
         self,
-        input_images: List,
+        input_images: list,
         return_atoms_bonds=False,
         return_confidence=False,
         batch_size=16,

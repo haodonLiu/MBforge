@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import functools
 import threading
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 import dearpygui.dearpygui as dpg
 

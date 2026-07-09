@@ -7,15 +7,17 @@
 
 from __future__ import annotations
 
+import enum
 import importlib
 import json
 import logging
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
+from functools import lru_cache
 from pathlib import Path
 
 from platformdirs import user_config_dir
@@ -79,14 +81,14 @@ def _invalidate_resolved_paths_cache() -> None:
 # ---------------------------------------------------------------------------
 
 
-class ResourceType(str, Enum):
+class ResourceType(enum.StrEnum):
     MODEL = "model"
     PYTHON_PACKAGE = "python_package"
     BINARY = "binary"
     NODE_PACKAGE = "node_package"
 
 
-class ResourceStatus(str, Enum):
+class ResourceStatus(enum.StrEnum):
     READY = "ready"  # 已就绪
     NOT_FOUND = "not_found"  # 未下载/未安装
     PARTIAL = "partial"  # 部分就绪（如目录存在但缺文件）
@@ -766,6 +768,39 @@ def _check_resource(resource_id: str) -> ResourceStatusResult:
 # ---------------------------------------------------------------------------
 
 
+@lru_cache(maxsize=1)
+def _cached_gpu_info(_cache_key: int) -> dict[str, str]:
+    """Probe GPU info via nvidia-smi, cached for 60 seconds.
+
+    The cache key is ``int(time.time() / 60)`` so the result is refreshed
+    once per minute. GPU availability does not change on a sub-second
+    timescale, and the probe can block for several seconds on hosts
+    without NVIDIA drivers.
+    """
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            parts = result.stdout.strip().split(",")
+            return {
+                "gpu_available": "true",
+                "gpu_name": parts[0].strip() if parts else "",
+                "cuda_version": parts[1].strip() if len(parts) > 1 else "",
+            }
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    return {"gpu_available": "false", "gpu_name": "", "cuda_version": ""}
+
+
+def _get_gpu_info() -> dict[str, str]:
+    cache_key = int(time.time() / 60)
+    return _cached_gpu_info(cache_key)
+
+
 class ResourceManager:
     """统一资源管理器."""
 
@@ -796,30 +831,11 @@ class ResourceManager:
             pass
 
         if not report.gpu_available:
-            # nvidia-smi probe — blocks up to 5s on host (no GPU present → 5s
-            # timeout fires). Caller must wrap in `loop.run_in_executor`; the
-            # 5s ceiling makes that mandatory, not optional. See server.py
-            # `check_environment` for the only production caller.
-            try:
-                result = subprocess.run(
-                    [
-                        "nvidia-smi",
-                        "--query-gpu=name,driver_version",
-                        "--format=csv,noheader",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                if result.returncode == 0:
-                    parts = result.stdout.strip().split(",")
-                    report.gpu_available = True
-                    report.gpu_name = parts[0].strip() if parts else ""
-                    if len(parts) > 1:
-                        report.cuda_version = parts[1].strip()
-            except (subprocess.SubprocessError, FileNotFoundError):
-                # nvidia-smi not installed or not on PATH — GPU stays unavailable.
-                pass
+            gpu_info = _get_gpu_info()
+            if gpu_info["gpu_available"] == "true":
+                report.gpu_available = True
+                report.gpu_name = gpu_info["gpu_name"]
+                report.cuda_version = gpu_info["cuda_version"]
 
         # 逐个检查资源
         for resource_id in RESOURCE_CATALOG:

@@ -60,84 +60,80 @@ def _light_palette() -> dict:
 
 def _build_base_theme(tag: str, c: dict) -> None:
     """Create the base application theme from a color palette."""
-    with dpg.theme(tag=tag):
-        with dpg.theme_component(dpg.mvAll):
-            # Backgrounds
-            dpg.add_theme_color(dpg.mvThemeCol_WindowBg, c["bg"])
-            dpg.add_theme_color(dpg.mvThemeCol_ChildBg, c["bg_surface"])
-            dpg.add_theme_color(dpg.mvThemeCol_PopupBg, c["bg_elevated"])
+    with dpg.theme(tag=tag), dpg.theme_component(dpg.mvAll):
+        # Backgrounds
+        dpg.add_theme_color(dpg.mvThemeCol_WindowBg, c["bg"])
+        dpg.add_theme_color(dpg.mvThemeCol_ChildBg, c["bg_surface"])
+        dpg.add_theme_color(dpg.mvThemeCol_PopupBg, c["bg_elevated"])
 
-            # Borders
-            dpg.add_theme_color(dpg.mvThemeCol_Border, c["border"])
-            dpg.add_theme_color(dpg.mvThemeCol_BorderShadow, (0, 0, 0, 0))
+        # Borders
+        dpg.add_theme_color(dpg.mvThemeCol_Border, c["border"])
+        dpg.add_theme_color(dpg.mvThemeCol_BorderShadow, (0, 0, 0, 0))
 
-            # Text
-            dpg.add_theme_color(dpg.mvThemeCol_Text, c["text"])
-            dpg.add_theme_color(dpg.mvThemeCol_TextDisabled, c["text_dim"])
+        # Text
+        dpg.add_theme_color(dpg.mvThemeCol_Text, c["text"])
+        dpg.add_theme_color(dpg.mvThemeCol_TextDisabled, c["text_dim"])
 
-            # Buttons
-            dpg.add_theme_color(dpg.mvThemeCol_Button, c["button"])
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, c["button_hover"])
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, c["button_active"])
+        # Buttons
+        dpg.add_theme_color(dpg.mvThemeCol_Button, c["button"])
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, c["button_hover"])
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, c["button_active"])
 
-            # Headers (collapsing, table)
-            dpg.add_theme_color(dpg.mvThemeCol_Header, c["header"])
-            dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, c["header_hover"])
-            dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, c["header_hover"])
+        # Headers (collapsing, table)
+        dpg.add_theme_color(dpg.mvThemeCol_Header, c["header"])
+        dpg.add_theme_color(dpg.mvThemeCol_HeaderHovered, c["header_hover"])
+        dpg.add_theme_color(dpg.mvThemeCol_HeaderActive, c["header_hover"])
 
-            # Frames (inputs, checkboxes)
-            dpg.add_theme_color(dpg.mvThemeCol_FrameBg, c["bg_elevated"])
-            dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, c["button_hover"])
-            dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, c["button_active"])
+        # Frames (inputs, checkboxes)
+        dpg.add_theme_color(dpg.mvThemeCol_FrameBg, c["bg_elevated"])
+        dpg.add_theme_color(dpg.mvThemeCol_FrameBgHovered, c["button_hover"])
+        dpg.add_theme_color(dpg.mvThemeCol_FrameBgActive, c["button_active"])
 
-            # Scrollbar
-            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarBg, c["scrollbar"])
-            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrab, c["scrollbar_grab"])
-            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrabHovered, c["scrollbar_grab"])
-            dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrabActive, c["scrollbar_grab"])
+        # Scrollbar
+        dpg.add_theme_color(dpg.mvThemeCol_ScrollbarBg, c["scrollbar"])
+        dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrab, c["scrollbar_grab"])
+        dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrabHovered, c["scrollbar_grab"])
+        dpg.add_theme_color(dpg.mvThemeCol_ScrollbarGrabActive, c["scrollbar_grab"])
 
-            # Title bar
-            dpg.add_theme_color(dpg.mvThemeCol_TitleBg, c["bg_surface"])
-            dpg.add_theme_color(dpg.mvThemeCol_TitleBgActive, c["bg_surface"])
+        # Title bar
+        dpg.add_theme_color(dpg.mvThemeCol_TitleBg, c["bg_surface"])
+        dpg.add_theme_color(dpg.mvThemeCol_TitleBgActive, c["bg_surface"])
 
-            # Tabs
-            dpg.add_theme_color(dpg.mvThemeCol_Tab, c["bg_elevated"])
-            dpg.add_theme_color(dpg.mvThemeCol_TabHovered, c["button_hover"])
-            dpg.add_theme_color(dpg.mvThemeCol_TabActive, c["accent"])
+        # Tabs
+        dpg.add_theme_color(dpg.mvThemeCol_Tab, c["bg_elevated"])
+        dpg.add_theme_color(dpg.mvThemeCol_TabHovered, c["button_hover"])
+        dpg.add_theme_color(dpg.mvThemeCol_TabActive, c["accent"])
 
-            # Spacing and rounding
-            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
-            dpg.add_theme_style(dpg.mvStyleVar_WindowRounding, 8)
-            dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 8, 6)
-            dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 8, 6)
-            dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 12, 12)
+        # Spacing and rounding
+        dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 6)
+        dpg.add_theme_style(dpg.mvStyleVar_WindowRounding, 8)
+        dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 8, 6)
+        dpg.add_theme_style(dpg.mvStyleVar_ItemSpacing, 8, 6)
+        dpg.add_theme_style(dpg.mvStyleVar_WindowPadding, 12, 12)
 
 
 def _build_button_theme(tag: str, bg: tuple, hover: tuple, active: tuple, text: tuple = (255, 255, 255)) -> None:
     """Create a button-specific theme."""
-    with dpg.theme(tag=tag):
-        with dpg.theme_component(dpg.mvButton):
-            dpg.add_theme_color(dpg.mvThemeCol_Button, bg)
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, hover)
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, active)
-            dpg.add_theme_color(dpg.mvThemeCol_Text, text)
+    with dpg.theme(tag=tag), dpg.theme_component(dpg.mvButton):
+        dpg.add_theme_color(dpg.mvThemeCol_Button, bg)
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, hover)
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, active)
+        dpg.add_theme_color(dpg.mvThemeCol_Text, text)
 
 
 def _build_sidebar_themes() -> None:
     """Create sidebar navigation button themes."""
     # Normal (transparent)
-    with dpg.theme(tag="sidebar_button"):
-        with dpg.theme_component(dpg.mvButton):
-            dpg.add_theme_color(dpg.mvThemeCol_Button, (0, 0, 0, 0))
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (0, 0, 0, 0))
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 255, 20))
+    with dpg.theme(tag="sidebar_button"), dpg.theme_component(dpg.mvButton):
+        dpg.add_theme_color(dpg.mvThemeCol_Button, (0, 0, 0, 0))
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (0, 0, 0, 0))
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (255, 255, 255, 20))
 
     # Active (accent highlight)
-    with dpg.theme(tag="sidebar_button_active"):
-        with dpg.theme_component(dpg.mvButton):
-            dpg.add_theme_color(dpg.mvThemeCol_Button, (88, 166, 255, 40))
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (88, 166, 255, 40))
-            dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (88, 166, 255, 50))
+    with dpg.theme(tag="sidebar_button_active"), dpg.theme_component(dpg.mvButton):
+        dpg.add_theme_color(dpg.mvThemeCol_Button, (88, 166, 255, 40))
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonActive, (88, 166, 255, 40))
+        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, (88, 166, 255, 50))
 
 
 def _build_badge_themes() -> None:
@@ -149,12 +145,11 @@ def _build_badge_themes() -> None:
         ("badge_failed", (240, 80, 80)),
     ]
     for name, color in badges:
-        with dpg.theme(tag=name):
-            with dpg.theme_component(dpg.mvButton):
-                dpg.add_theme_color(dpg.mvThemeCol_Button, color)
-                dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255))
-                dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 10)
-                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 8, 3)
+        with dpg.theme(tag=name), dpg.theme_component(dpg.mvButton):
+            dpg.add_theme_color(dpg.mvThemeCol_Button, color)
+            dpg.add_theme_color(dpg.mvThemeCol_Text, (255, 255, 255))
+            dpg.add_theme_style(dpg.mvStyleVar_FrameRounding, 10)
+            dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 8, 3)
 
 
 # ── Public API ──────────────────────────────────────────────

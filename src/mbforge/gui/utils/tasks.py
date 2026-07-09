@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import threading
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 from ...utils.logger import get_logger
 

@@ -42,22 +42,29 @@ class WikiCompiler:
 
         threshold = cfg.pageindex_threshold
 
+        openkb_dir = Path(self._wiki_dir).parent
+        kb_path = Path(self._wiki_dir)
+        doc_md_path = openkb_dir / "documents" / f"{doc_id}.md"
+
+        # openkb calls litellm internally — needs openai/ prefix for API key routing
+        litellm_model = f"openai/{cfg.model}"
+
         if page_count >= threshold:
             logger.info("Compiling long doc: %s (%d pages)", doc_name, page_count)
             await compile_long_doc(
                 doc_name=doc_name,
                 summary_path=str(summary_path),
                 doc_id=doc_id,
-                kb_dir=str(self._wiki_dir),
-                model=cfg.model,
+                kb_dir=kb_path,
+                model=litellm_model,
             )
         else:
             logger.info("Compiling short doc: %s (%d pages)", doc_name, page_count)
             await compile_short_doc(
                 doc_name=doc_name,
-                source_path=str(summary_path),
-                kb_dir=str(self._wiki_dir),
-                model=cfg.model,
+                source_path=doc_md_path,
+                kb_dir=kb_path,
+                model=litellm_model,
             )
 
         logger.info("Wiki compiled for %s", doc_id)

@@ -34,10 +34,12 @@ logger = get_logger("mbforge.app")
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
     logger.info("MBForge web application starting...")
+    from .server import _prewarm
     from .utils.helpers import check_environment, shutdown_backends
 
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, check_environment)
+    loop.run_in_executor(None, _prewarm)
     try:
         yield
     finally:
@@ -228,9 +230,7 @@ def create_app() -> FastAPI:
         resource,
         sar,
         settings,
-        text,
     )
-
     app.include_router(library.router, prefix="/api/v1/library", tags=["library"])
     app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
     app.include_router(pipeline.router, prefix="/api/v1/pipeline", tags=["pipeline"])
@@ -238,6 +238,7 @@ def create_app() -> FastAPI:
     app.include_router(molecule.router, prefix="/api/v1/molecule", tags=["molecule"])
     app.include_router(agent.router, prefix="/api/v1/agent", tags=["agent"])
     app.include_router(chem.router, prefix="/api/v1/chem", tags=["chem"])
+    app.include_router(coref.router, prefix="/api/v1/coref", tags=["coref"])
     app.include_router(detection_cache.router, prefix="/api/v1/detection-cache", tags=["detection"])
     app.include_router(notes.router, prefix="/api/v1/notes", tags=["notes"])
     app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])
@@ -245,11 +246,14 @@ def create_app() -> FastAPI:
     app.include_router(resource.router, prefix="/api/v1", tags=["resource"])
     app.include_router(events.router, prefix="/api/v1/events", tags=["events"])
     app.include_router(pdf.router, prefix="/api/v1/pdf", tags=["pdf"])
-    app.include_router(coref.router, prefix="/api/v1/coref", tags=["coref"])
     app.include_router(sar.router, prefix="/api/v1/sar", tags=["sar"])
-    app.include_router(text.router, prefix="/api/v1", tags=["text"])
     app.include_router(ocr.router, prefix="/api/v1/ocr", tags=["ocr"])
     app.include_router(diagnostics.router, prefix="/api/v1/diagnostics", tags=["diagnostics"])
+    # Moldet (FT detector) is mounted directly on the main app at /api/v1/moldet
+    # so its endpoints are reachable at the documented paths (not nested under
+    # the model_server mount at /api/v1/models).
+    from .routers.moldet_api import router as moldet_router
+    app.include_router(moldet_router, prefix="/api/v1/moldet", tags=["moldet"])
 
     # Mount existing model server endpoints under /api/v1/models/*
     from .server import app as model_server

@@ -169,19 +169,14 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
     # ──── 模型（ModelScope 下载）────
     "moldet": ResourceInfo(
         id="moldet",
-        name="MolDetv2",
+        name="MolDetv2-FT",
         type=ResourceType.MODEL,
-        description="MolDetv2 分子结构检测 (YOLO, doc + general)",
-        size_mb=11,
+        description="MolDetv2-FT 联合检测器（分子 + coref 标识符，单模型一次推理）",
+        size_mb=6,
         license="Apache-2.0",
-        ms_repo="UniParser/MolDetv2",
-        download_type="snapshot",
-        local_name="MolDetv2",
-        allow_patterns=["*.pt", "*.onnx", "*.json"],
-        files=[
-            "doc/moldet_v2_yolo11n_960_doc.pt",
-            "general/moldet_v2_yolo11n_640_general.pt",
-        ],
+        ms_repo="haodont/Moldetv2_FT_coref",
+        download_type="file",
+        local_name="last.pt",
     ),
     "molscribe": ResourceInfo(
         id="molscribe",

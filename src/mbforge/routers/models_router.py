@@ -20,12 +20,12 @@ def _test_model_sync(model_id: str, subpath: str | None = None) -> dict[str, Any
     start = time.perf_counter()
     try:
         if model_id == "moldet":
-            from ..backends.moldet import MolDetv2DocDetector
-            detector = MolDetv2DocDetector()
+            from ..backends.moldet_v2_ft import MolDetv2FTDetector
+            detector = MolDetv2FTDetector()
             if not detector.is_available():
                 return {"ok": False, "error": "Model not loaded", "duration_ms": 0}
             import numpy as np
-            _ = detector.detect(np.zeros((640, 640, 3), dtype=np.uint8))
+            _ = detector.detect(np.zeros((960, 960, 3), dtype=np.uint8))
         elif model_id == "molscribe":
             from ..backends.molscribe import load as load_molscribe
             load_molscribe()

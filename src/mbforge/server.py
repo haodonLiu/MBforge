@@ -21,10 +21,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .backends import moldet, molscribe
+from .backends import molscribe
 from .routers.health_router import router as health_router
 from .routers.models_router import router as models_router
-from .routers.moldet_api import router as moldet_router
 from .routers.molscribe_api import router as molscribe_router
 from .routers.pdf_render import router as pdf_render_router
 from .server_state import (
@@ -41,11 +40,29 @@ logger = get_logger("mbforge.server")
 # ---------------------------------------------------------------------------
 # Backend registry
 # ---------------------------------------------------------------------------
-_BACKENDS = [molscribe, moldet]
+_BACKENDS = [molscribe]
 
 
 def _prewarm() -> None:
-    pass  # MolDet/MolScribe are lazy-loaded on first use
+    """Prewarm local model backends so first inference is fast.
+
+    Failures are caught and logged as warnings; they must not block startup.
+    """
+    try:
+        from .backends.moldet_v2_ft import get_moldet_ft
+
+        get_moldet_ft()
+        logger.info("MolDetv2-FT prewarm complete")
+    except Exception as exc:
+        logger.warning("MolDetv2-FT prewarm failed: %s", exc)
+
+    try:
+        from .backends.molscribe import load as load_molscribe
+
+        load_molscribe()
+        logger.info("MolScribe prewarm complete")
+    except Exception as exc:
+        logger.warning("MolScribe prewarm failed: %s", exc)
 
 
 @asynccontextmanager
@@ -140,7 +157,6 @@ async def _generic_error_handler(request: Request, exc: Exception) -> JSONRespon
 # Register routers
 # ---------------------------------------------------------------------------
 
-app.include_router(moldet_router, prefix="/api/v1/moldet", tags=["moldet"])
 app.include_router(molscribe_router, prefix="/api/v1/molscribe", tags=["molscribe"])
 app.include_router(pdf_render_router, prefix="/api/v1/pdf", tags=["pdf"])
 app.include_router(models_router, prefix="/api/v1", tags=["models"])
@@ -156,12 +172,12 @@ def _test_loading_sync(resource_id: str, subpath: str | None) -> dict[str, Any]:
     start = time.perf_counter()
     try:
         if resource_id == "moldet":
-            from .backends.moldet import MolDetv2DocDetector
-            detector = MolDetv2DocDetector()
+            from .backends.moldet_v2_ft import MolDetv2FTDetector
+            detector = MolDetv2FTDetector()
             if not detector.is_available():
                 return {"ok": False, "error": "Model not loaded", "duration_ms": 0}
             import numpy as np
-            _ = detector.detect(np.zeros((640, 640, 3), dtype=np.uint8))
+            _ = detector.detect(np.zeros((960, 960, 3), dtype=np.uint8))
         elif resource_id == "molscribe":
             from .backends.molscribe import load as load_molscribe
             load_molscribe()

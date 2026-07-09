@@ -317,10 +317,13 @@ def check_environment() -> None:
 
 
 def shutdown_backends() -> None:
-    """卸载所有后端模型（共享逻辑）。"""
-    from ..backends import moldet, molscribe
+    """Unload all backend models (shared logic)."""
+    # moldet: no global module-level unload needed; FT detector is
+    # singleton-managed inside moldet_v2_ft.get_moldet_ft() and is GC'd
+    # at process exit.
+    from ..backends import molscribe
 
-    for mod in [molscribe, moldet]:
+    for mod in [molscribe]:
         try:
             mod.unload()
         except Exception:

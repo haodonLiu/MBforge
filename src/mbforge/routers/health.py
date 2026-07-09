@@ -11,15 +11,21 @@ router = APIRouter()
 
 @router.get("/health")
 async def health() -> dict:
-    from ..backends import moldet, molscribe
-
     statuses = {}
-    for name, mod in [("moldet", moldet), ("molscribe", molscribe)]:
-        try:
-            h = mod.health()
-            statuses[name] = h.get("status", "unknown")
-        except Exception:
-            statuses[name] = "error"
+    # moldet: status from ResourceManager (covers FT detector + download state)
+    try:
+        from ..core.resource_manager import ResourceManager
+        st = ResourceManager.check("moldet")
+        statuses["moldet"] = st.status.value
+    except Exception:
+        statuses["moldet"] = "error"
+    # molscribe: still uses legacy backend.health() (unchanged)
+    try:
+        from ..backends import molscribe
+        h = molscribe.health()
+        statuses["molscribe"] = h.get("status", "unknown")
+    except Exception:
+        statuses["molscribe"] = "error"
 
     overall = "online" if all(s == "ready" for s in statuses.values()) else "partial"
     return {"status": overall, "models": statuses, "resources": {}}

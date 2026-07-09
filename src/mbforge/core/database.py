@@ -88,6 +88,20 @@ CREATE INDEX IF NOT EXISTS idx_cp_smiles ON coref_predictions(mol_smiles);
 CREATE INDEX IF NOT EXISTS idx_cp_confirmed ON coref_predictions(is_confirmed);
 CREATE INDEX IF NOT EXISTS idx_iq_status ON ingest_queue(status);
 CREATE INDEX IF NOT EXISTS idx_il_doc ON ingest_logs(doc_id);
+CREATE TABLE IF NOT EXISTS sections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id TEXT NOT NULL,
+    section_index INTEGER NOT NULL,
+    title TEXT,
+    level INTEGER DEFAULT 1,
+    char_start INTEGER,
+    char_end INTEGER,
+    page_start INTEGER,
+    page_end INTEGER,
+    paragraph_count INTEGER DEFAULT 0,
+    molecule_count INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_sec_doc ON sections(doc_id, section_index);
 """
 
 _MOL_SCHEMA = """
@@ -156,6 +170,20 @@ CREATE INDEX IF NOT EXISTS idx_m_status ON molecules(status);
 CREATE INDEX IF NOT EXISTS idx_m_type ON molecules(source_type);
 CREATE INDEX IF NOT EXISTS idx_mi_mol ON molecule_images(mol_id);
 CREATE INDEX IF NOT EXISTS idx_mr_type ON molecule_relations(relation_type);
+CREATE TABLE IF NOT EXISTS text_molecule_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_id TEXT NOT NULL,
+    mol_id TEXT NOT NULL,
+    section_index INTEGER,
+    page INTEGER,
+    text_excerpt TEXT,
+    role TEXT DEFAULT 'mentioned',
+    code_text TEXT,
+    char_start INTEGER,
+    char_end INTEGER,
+    created_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_tml_doc_mol ON text_molecule_links(doc_id, mol_id);
 CREATE INDEX IF NOT EXISTS idx_md_doc_page ON molecule_detections(doc_id, page);
 CREATE INDEX IF NOT EXISTS idx_md_mol ON molecule_detections(mol_id);
 """

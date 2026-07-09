@@ -1,81 +1,57 @@
-"""Document type classification.
+"""Document density classification — replaces old doc-type classifier.
 
-Classifies documents as paper, patent, or report based on content heuristics.
+Determines whether a document is primarily text, mixed (text + figures), or
+image-only (scanned). This classification drives downstream stage branching:
+- ``text_only`` → skip molecule image extraction
+- ``mixed`` → run all stages including molecule image extraction
+- ``image_only`` → run molecule extraction with high-DPI OCR
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
+from typing import Literal
 
 from ..utils.logger import get_logger
+from .extract_text import PageContent
 
 logger = get_logger("mbforge.pipeline.classify")
 
 
 @dataclass
-class DocumentClassification:
-    doc_type: str  # paper, patent, report, unknown
-    confidence: float
-    title: str | None = None
+class DensityClassification:
+    """Per-document content density classification.
+
+    text_only:  native text covers >80% of pages, OCR ran on <10%.
+    mixed:    10–80% of pages needed OCR, OR a mixture of text and large figure blocks.
+    image_only: >90% of pages needed OCR AND total native text < 1000 chars.
+    """
+
+    doc_kind: Literal["text_only", "mixed", "image_only"]
+    page_count: int
+    pages_needing_ocr: int
+    avg_text_density: float
 
 
-_PATENT_SIGNALS = [
-    r"claims?\s*[:：]?\s*\d+",
-    r"claim\s+\d+",
-    r"patent\s+(application|number|no)",
-    r"United States Patent",
-    r"European Patent",
-    r"WO\s*\d{4}/\d+",
-    r"CN\s*\d+",
-    r"abstract\s*[:：]",
-    r"description\s*[:：]",
-    r"field\s+of\s+(the\s+)?invention",
-    r"background\s+(art|of\s+the\s+invention)",
-    r"technical\s+field",
-    r"B01|C07|A61|C12|G01",  # IPC class codes
-]
+def classify_density(pages: list[PageContent]) -> DensityClassification:
+    """Classify document content density based on per-page OCR metrics.
 
-_PAPER_SIGNALS = [
-    r"abstract\s*[:：]",
-    r"introduction\s*[:：]",
-    r"references?\s*[:：]",
-    r"bibliography",
-    r"doi\s*[:：]?\s*10\.",
-    r"journal\s+of",
-    r"proceedings\s+of",
-    r"et\s+al\.",
-    r"fig(ure)?\.?\s*\d+",
-    r"table\s+\d+",
-    r"supplementary\s+(material|information|data)",
-    r"acknowledgments?",
-    r"conflict[s]?\s+of\s+interest",
-]
+    Args:
+        pages: List of PageContent objects from pdf text extraction.
 
-
-def classify_document(text: str) -> DocumentClassification:
-    """Classify a document based on its text content."""
-    if not text or not text.strip():
-        return DocumentClassification(doc_type="unknown", confidence=0.0)
-
-    text_lower = text[:10000].lower()  # Only check first 10k chars
-
-    patent_score = sum(1 for p in _PATENT_SIGNALS if re.search(p, text_lower, re.IGNORECASE))
-    paper_score = sum(1 for p in _PAPER_SIGNALS if re.search(p, text_lower, re.IGNORECASE))
-
-    total = patent_score + paper_score
-    if total == 0:
-        return DocumentClassification(doc_type="report", confidence=0.3)
-
-    if patent_score > paper_score * 1.5:
-        conf = min(0.95, patent_score / max(len(_PATENT_SIGNALS), 1))
-        return DocumentClassification(doc_type="patent", confidence=conf)
-    elif paper_score > patent_score * 1.5:
-        conf = min(0.95, paper_score / max(len(_PAPER_SIGNALS), 1))
-        return DocumentClassification(doc_type="paper", confidence=conf)
+    Returns:
+        DensityClassification with doc_kind, counts, and average text density.
+    """
+    if not pages:
+        return DensityClassification("image_only", 0, 0, 0.0)
+    need_ocr = sum(1 for p in pages if p.needs_ocr)
+    total_text = sum(len(p.text) for p in pages)
+    if need_ocr / len(pages) > 0.9 and total_text < 1000:
+        kind: Literal["text_only", "mixed", "image_only"] = "image_only"
+    elif need_ocr / len(pages) > 0.1:
+        kind = "mixed"
     else:
-        # Mixed signals — pick the higher one with lower confidence
-        if patent_score >= paper_score:
-            return DocumentClassification(doc_type="patent", confidence=0.5)
-        else:
-            return DocumentClassification(doc_type="paper", confidence=0.5)
+        kind = "text_only"
+    total_density = max(sum(p.text_density for p in pages), 1e-9)
+    avg_density = total_text / total_density
+    return DensityClassification(kind, len(pages), need_ocr, avg_density)

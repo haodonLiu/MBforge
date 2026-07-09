@@ -54,6 +54,10 @@ class LLMConfig(BaseModel):
     max_tokens: int = 4096
     pageindex_threshold: int = 20
     language: str = "en"
+    reorganize_model: str | None = Field(
+        default=None,
+        description="Model for text reorganization. Falls back to ``model`` if unset.",
+    )
 
 
 class AppConfig(BaseSettings):
@@ -74,11 +78,13 @@ class AppConfig(BaseSettings):
     model_server: dict[str, Any] = Field(default_factory=dict)
     recent_projects: list[RecentProject] = Field(default_factory=list)
     library_root: str | None = Field(
-        default=None,
-        description="Unified library data directory (Zotero-style)"
+        default=None, description="Unified library data directory (Zotero-style)"
     )
     pdf_parse: dict[str, Any] = Field(default_factory=dict)
-    # moldet: 分子检测管线设置。已知 key: {"device", "molscribe_dir"}.
+    # moldet: 分子检测管线设置。
+    # 已知 key: {"device", "molscribe_dir", "detection_dpi", "detection_batch_size"}.
+    # detection_dpi: 分子检测渲染分辨率 (默认 200).
+    # detection_batch_size: YOLO batch 推理页数 (0=逐页, 仅在 GPU 有显存收益).
     moldet: dict[str, Any] = Field(default_factory=dict)
     ingest: dict[str, Any] = Field(default_factory=dict)
 

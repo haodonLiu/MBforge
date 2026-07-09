@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -19,13 +20,18 @@ class OpenKBAdapter:
     def __init__(self, project_root: str):
         self._project_root = Path(project_root)
         self._openkb_dir = self._project_root / ".mbforge" / "openkb"
+        # _global_openkb_dir is the storage dir for PageIndex documents.
+        # Today it is co-located with the wiki dir; the pipeline-redesign
+        # plan lifts it to a global config dir. Keep the alias here so
+        # callers (e.g. index_markdown) bind to a stable name.
+        self._global_openkb_dir = self._openkb_dir
         self._wiki_dir = self._openkb_dir / "wiki"
         self._indexer: PageIndexWrapper | None = None
         self._compiler: WikiCompiler | None = None
 
     def _get_indexer(self) -> PageIndexWrapper:
         if self._indexer is None:
-            self._indexer = PageIndexWrapper(str(self._openkb_dir))
+            self._indexer = PageIndexWrapper(str(self._global_openkb_dir))
         return self._indexer
 
     def _get_compiler(self) -> WikiCompiler:
@@ -37,6 +43,36 @@ class OpenKBAdapter:
         """Index a PDF via PageIndex tree. Returns the PageIndex doc ID."""
         indexer = self._get_indexer()
         return indexer.add_document(pdf_path, doc_id)
+
+    def index_markdown(self, md_path: str, doc_id: str = "") -> str:
+        """Index a markdown file via PageIndex (MarkdownParser, level_based).
+
+        Copies ``md_path`` into managed storage under the PageIndex documents
+        dir and registers it via ``PageIndexWrapper.add_document``. The ``.md``
+        extension triggers MarkdownParser → level_based strategy, which makes
+        zero LLM calls.
+
+        Args:
+            md_path: Path to the markdown file.
+            doc_id: Optional document ID. Defaults to the file stem.
+
+        Returns:
+            PageIndex document ID.
+        """
+        md_path_obj = Path(md_path)
+        if not md_path_obj.exists():
+            raise FileNotFoundError(f"Markdown file not found: {md_path}")
+
+        target_dir = self._global_openkb_dir / "documents"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        md_name = f"{doc_id or md_path_obj.stem}.md"
+        target_path = target_dir / md_name
+        shutil.copy2(str(md_path_obj), str(target_path))
+
+        # add_document resolves parser by extension (.md → MarkdownParser).
+        return self._get_indexer().add_document(
+            str(target_path), doc_id or md_path_obj.stem
+        )
 
     def get_document(self, openkb_doc_id: str) -> Any:
         """Fetch the PageIndex document tree."""

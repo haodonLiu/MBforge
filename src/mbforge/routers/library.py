@@ -13,7 +13,6 @@ from fastapi.responses import FileResponse
 from ..utils.config import load_global_config, update_settings
 from ..utils.helpers import MBForgeError
 from ..utils.logger import get_logger
-from ..utils.paths import GLOBAL_DATA_DIR
 
 logger = get_logger("mbforge.library_router")
 
@@ -21,7 +20,7 @@ router = APIRouter()
 
 
 def _resolve_library_root(body: dict | None = None) -> str:
-    """Resolve library_root from body, config, or default (~\/mbforge).
+    r"""Resolve library_root from body, config, or default (~\/mbforge).
 
     Priority: explicit body param > stored settings.json value > ~/mbforge.
     This default is intentionally under the user home (not the OS app-data
@@ -137,7 +136,6 @@ async def library_get_document_file(doc_id: str, library_root: str | None = None
     """
     root = _resolve_library_root({"library_root": library_root} if library_root else None)
     from ..core.library import LibraryStore
-
     from ..utils.helpers import MBForgeError
 
     class _DocumentNotFoundError(MBForgeError):

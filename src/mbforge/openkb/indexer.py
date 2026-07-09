@@ -33,14 +33,29 @@ class PageIndexWrapper:
                 "pageindex package not installed. Run: uv add pageindex"
             ) from err
 
+        # LLM calls use LiteLLM model string (includes api_base for non-OpenAI)
+        from .config import to_litellm_config
+
+        litellm_cfg = to_litellm_config(cfg)
+
         # PAGEINDEX_API_KEY is separate from LLM api_key.
         # Only use cloud backend when PAGEINDEX_API_KEY is explicitly set.
         pageindex_api_key = os.environ.get("PAGEINDEX_API_KEY")
 
+        # PageIndex internally calls litellm.completion() which reads
+        # OPENAI_API_KEY and OPENAI_API_BASE from env. Ensure both are set
+        # from our LLM config. The ?api_base= query-param approach causes
+        # TCP connection timeout on some networks, so env vars are preferred.
+        litellm_api_key = litellm_cfg.get("api_key", "")
+        if litellm_api_key and not os.environ.get("OPENAI_API_KEY"):
+            os.environ["OPENAI_API_KEY"] = litellm_api_key
+        if cfg.base_url and not os.environ.get("OPENAI_API_BASE"):
+            os.environ["OPENAI_API_BASE"] = cfg.base_url
+
         self._storage_path.mkdir(parents=True, exist_ok=True)
         self._client = PageIndexClient(
             api_key=pageindex_api_key,
-            model=cfg.model,
+            model=f"openai/{cfg.model}",
             storage_path=str(self._storage_path),
         )
         return self._client

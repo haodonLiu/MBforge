@@ -31,7 +31,7 @@ async def search_wiki(
 
     answer = await run_query(
         question=query,
-        kb_dir=wiki_dir,
+        kb_dir=Path(wiki_dir),
         model=cfg.model,
     )
 

@@ -31,7 +31,7 @@
 | # | 任务 | 文件 | 验证方式 |
 |---|---|---|---|
 | 1 | 修复 tsconfig 配置 | `frontend/tsconfig.json` | `cd frontend && npx tsc --noEmit` |
-| 2 | 实现模型预热 | `src/mbforge/server.py:_prewarm()` | `uv run pytest tests/unit/test_server_prewarm.py -v` |
+| 2 | 实现模型预热 | `src/mbforge/server.py:_prewarm()` + `src/mbforge/app.py:lifespan` | `uv run pytest tests/unit/test_server_prewarm.py -v` |
 | 3 | 路由冒烟测试 | `tests/unit/test_routers_smoke.py` | `uv run pytest tests/unit/test_routers_smoke.py -v` |
 
 ### 不执行（仅规划）
@@ -54,11 +54,12 @@ P1–P3 的问题见文末 roadmap，本次不改：Ruff lint、SSE 重连、API
 
 ### 2. 模型预热
 
-**位置**: `src/mbforge/server.py:_prewarm()`。
+**位置**: `src/mbforge/server.py:_prewarm()` 实现，并在 `src/mbforge/app.py:lifespan` 中调用。
 
 **策略**:
 
-- 在 `lifespan` 中通过 `loop.run_in_executor(None, _prewarm)` 后台执行，不阻塞事件循环。
+- `_prewarm()` 定义在 `server.py`，供独立启动 model server 时使用。
+- 由于 `server.py` 以 `Mount("/api/v1/models", model_server)` 挂载到主应用，Starlette 不会触发子应用 lifespan，因此主应用 `app.py:lifespan` 中也通过 `loop.run_in_executor(None, _prewarm)` 后台调用它。
 - 依次触发 MolDetv2FT 和 MolScribe 的懒加载，使它们在第一次真实请求前完成初始化。
 - 所有异常只记录 warning，不抛错，避免模型缺失时服务无法启动。
 
@@ -148,6 +149,6 @@ def _prewarm() -> None:
 ## Decision Log
 
 1. **范围**: 只执行 P0，P1–P3 出 roadmap 但不改代码。
-2. **预热位置**: 只在 `server.py` 后台 lifespan 预热，不改动 `app.py` 主应用启动路径。
+2. **预热位置**: `_prewarm()` 实现在 `server.py`；主应用 `app.py:lifespan` 也调用它，因为挂载的子应用 lifespan 不会自动执行。
 3. **冒烟测试范围**: 主应用 18 routers + model_server mount，每个 router 至少 1 条成功 + 1 条错误路径。
 4. **脏工作区**: 执行 P0 前先 commit 当前所有工作进度作为 checkpoint。

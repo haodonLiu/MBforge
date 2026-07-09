@@ -14,11 +14,19 @@ logger = get_logger("mbforge.agent.graph")
 
 
 class ToolExecutionError(Exception):
-    """Raised when an agent tool fails."""
+    """Raised when an agent tool fails.
+
+    TODO: wire tool wrappers to raise this so stream_agent_response can emit
+    recoverable error events instead of treating all tool failures as fatal.
+    """
 
 
 class LLMProviderError(Exception):
-    """Raised when the LLM provider call fails."""
+    """Raised when the LLM provider call fails.
+
+    TODO: wire LLM call sites to raise this so streaming errors from the
+    provider are surfaced to the frontend as recoverable.
+    """
 
 
 _SYSTEM_PROMPT = """You are MBForge Agent, an assistant for molecular science and drug discovery.

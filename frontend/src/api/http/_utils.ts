@@ -84,9 +84,25 @@ export async function httpFetch<T>(path: string, options: RequestInit = {}): Pro
       try {
         payload = body ? JSON.parse(body) : null
       } catch {
-        // Non-JSON body (e.g. an HTML 502 page from a proxy) — fall through
-        // to the legacy ErrorCode.Network fallback below.
+        // Non-JSON body — fall through to legacy fallback.
       }
+
+      // Pydantic ValidationError shape: { detail: [{loc, msg, type}, ...] }
+      if (
+        resp.status === 422 &&
+        payload &&
+        Array.isArray(payload.detail)
+      ) {
+        const detail = payload.detail as Array<{ loc?: string[]; msg?: string }>
+        const msg = detail
+          .map((e) => `${(e.loc ?? []).join('.')}: ${e.msg ?? 'invalid'}`)
+          .join('; ')
+        throw new AppError(ErrorCode.ApiError, msg || 'Validation failed', {
+          severity: severityFromHttpStatus(resp.status),
+          context: { http_status: resp.status, backend_code: 'validation_error' },
+        })
+      }
+
       const code = payload
         ? backendCodeToErrorCode(payload.error_code as string | undefined)
         : ErrorCode.Network

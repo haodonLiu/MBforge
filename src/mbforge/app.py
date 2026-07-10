@@ -230,6 +230,7 @@ def create_app() -> FastAPI:
         resource,
         sar,
         settings,
+        text,
     )
     app.include_router(library.router, prefix="/api/v1/library", tags=["library"])
     app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
@@ -242,6 +243,9 @@ def create_app() -> FastAPI:
     app.include_router(detection_cache.router, prefix="/api/v1/detection-cache", tags=["detection"])
     app.include_router(notes.router, prefix="/api/v1/notes", tags=["notes"])
     app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])
+    # routers/text.py declares full paths (/text/chunk, /extract/activities, …)
+    # so the include_router prefix is /api/v1 (mirrors health.router below).
+    app.include_router(text.router, prefix="/api/v1", tags=["text"])
     app.include_router(health.router, prefix="/api/v1", tags=["health"])
     app.include_router(resource.router, prefix="/api/v1", tags=["resource"])
     app.include_router(events.router, prefix="/api/v1/events", tags=["events"])

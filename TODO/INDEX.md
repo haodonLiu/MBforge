@@ -56,7 +56,7 @@
 
 | ID | Area | Finding | File | Roadmap Week |
 |---|---|---|---|---|
-| R-10 | Pipeline | 缺少 Activity Data Extraction（IC50/Ki/EC50）。SAR 分析的核心数据缺失，用户仍需手工补充。需新增 `extract_activities.py` + `activities` 表。 | `src/mbforge/pipeline/` | Week 3-4 |
+| R-10 | Pipeline | 缺少 Activity Data Extraction（IC50/Ki/EC50）。SAR 分析的核心数据缺失，用户仍需手工补充。需新增 `extract_activities.py` + `activities` 表。 | `src/mbforge/pipeline/` | **RESOLVED 2026-07-10** (Pipeline integration + persistence + `/extract/activities` endpoint; phase 0 uses page-proximity, phase 1 row-alignment) |
 | R-11 | Database | 分子 crop 图片路径（`mol_img_path`）未持久化到数据库，用户无法验证识别是否正确。需补齐 `molecules.crop_path` + 前端展示。 | `src/mbforge/core/database.py`, `frontend/src/components/workspace/MoleculeDetail.tsx` | **RESOLVED 2026-07-11** (Evidence table + ArtifactResolver + EvidencePanel 实现) |
 | R-12 | Frontend | Document Viewer 缺失（git status 显示未提交的 `DocumentViewer.tsx`）。用户无法对比 Raw Markdown vs Reorganized，无法验证 LLM 重整质量。 | `frontend/src/components/project/DocumentViewer.tsx` | Week 5 |
 

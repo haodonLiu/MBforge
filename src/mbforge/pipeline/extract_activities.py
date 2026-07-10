@@ -2,6 +2,12 @@
 
 Extracts IC50/Ki/EC50/Kd values from tables and text using LLM-based parsing.
 Phase 0 baseline: ~70% accuracy (requires human validation).
+
+Reorganized markdown uses ``<!-- PAGE N -->`` markers (inserted by
+``pipeline/organizer.py:insert_molecode_blocks`` before the LLM reorganize
+step or stripped by ``_rule_based_reorganize``). We use those markers to
+attribute each extracted table to a page so downstream persistence can
+do page-proximity linking to detected molecules.
 """
 
 from __future__ import annotations
@@ -14,6 +20,10 @@ from typing import Any
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.pipeline.extract_activities")
+
+
+_PAGE_MARKER_RE = re.compile(r"<!--\s*PAGE\s+(\d+)\s*-->")
+"""Regex matching the ``<!-- PAGE N -->`` markers in reorganized markdown."""
 
 
 @dataclass
@@ -55,54 +65,113 @@ def extract_activities_from_document(
 
     # Phase 0: 简化实现 — 只做表格抽取，不做 figure caption
     # Phase 1 可扩展到 caption/正文段落
-    tables = _extract_tables_from_markdown(md_text)
+    # Parse page boundaries from the markdown so each table can be attributed
+    # to the page it was extracted from. The reorganized markdown uses
+    # ``<!-- PAGE N -->`` markers (inserted by insert_molecode_blocks before
+    # the LLM reorganize step). When markers are missing (rule-based
+    # reorganize strips them) the page is recorded as ``None`` and the
+    # downstream persistence layer skips the activity.
+    page_boundaries = _collect_page_boundaries(md_text)
+    tables = _extract_tables_from_markdown(md_text, page_boundaries)
     if not tables:
         logger.info("No tables found in %s, skipping activity extraction", doc_id)
         return []
 
     # 使用 LLM 批量解析表格
     records: list[ActivityRecord] = []
-    for table_idx, table_md in enumerate(tables):
+    for table_idx, (table_md, page_num) in enumerate(tables):
         try:
-            activities = _parse_table_with_llm(table_md, table_idx, llm_model)
+            activities = _parse_table_with_llm(
+                table_md, table_idx, llm_model, page_num=page_num
+            )
             records.extend(activities)
         except Exception as exc:
-            logger.warning(
-                "Failed to parse table %d in %s: %s", table_idx, doc_id, exc
-            )
+            logger.warning("Failed to parse table %d in %s: %s", table_idx, doc_id, exc)
 
     logger.info("Extracted %d activity records from %s", len(records), doc_id)
     return records
 
 
-def _extract_tables_from_markdown(md_text: str) -> list[str]:
-    """Extract Markdown tables from text.
+def _collect_page_boundaries(md_text: str) -> list[tuple[int, int]]:
+    """Return ordered ``(page_num, line_index)`` for every ``<!-- PAGE N -->`` marker.
+
+    Used by :func:`_extract_tables_from_markdown` to attribute each
+    extracted table to the page it lives on.
+    """
+    boundaries: list[tuple[int, int]] = []
+    for lineno, line in enumerate(md_text.split("\n")):
+        m = _PAGE_MARKER_RE.match(line.strip())
+        if m:
+            boundaries.append((int(m.group(1)), lineno))
+    return boundaries
+
+
+def _extract_tables_from_markdown(
+    md_text: str,
+    page_boundaries: list[tuple[int, int]] | None = None,
+) -> list[tuple[str, int | None]]:
+    """Extract Markdown tables from text, attributing each to a page.
+
+    Args:
+        md_text: Reorganized markdown.
+        page_boundaries: Optional list of ``(page_num, line_index)`` from
+            :func:`_collect_page_boundaries`. When ``None`` or empty, every
+            table is recorded with ``page_num=None``.
 
     Returns:
-        List of table blocks (including header/separator/rows)
+        List of ``(table_text, page_num)`` tuples. ``page_num`` is the most
+        recent page-marker line index at or before the table's first row.
     """
     # Markdown table pattern: lines starting with '|'
     lines = md_text.split("\n")
-    tables: list[str] = []
+    tables: list[tuple[str, int | None]] = []
     current_table: list[str] = []
 
-    for line in lines:
+    # Build a (line_index -> page_num) map from the boundaries so we can
+    # look up the page for any line in O(log n) via bisect in larger docs;
+    # for Phase 0 (small markdown files) a linear scan is fine and clearer.
+    # Build a (line_index -> page_num) map from the boundaries so we can
+    # look up the page for any line. Phase 0 (small markdown files) uses
+    # a dict keyed by line index; for larger docs a bisect over a sorted
+    # list would be O(log n), but the linear scan below dominates only on
+    # multi-thousand-line docs that we don't currently produce.
+    boundary_by_line: dict[int, int] = {
+        line_idx: page for page, line_idx in (page_boundaries or [])
+    }
+
+    def _page_for_line(lineno: int) -> int | None:
+        if not boundary_by_line:
+            return None
+        # Latest page boundary at or before this line: pick the boundary
+        # whose line index is the largest one that is still <= lineno,
+        # and return that boundary's page number.
+        best_line: int | None = None
+        best_page: int | None = None
+        for line_idx, page in boundary_by_line.items():
+            if line_idx <= lineno and (best_line is None or line_idx > best_line):
+                best_line = line_idx
+                best_page = page
+        return best_page
+
+    for lineno, line in enumerate(lines):
         stripped = line.strip()
         if stripped.startswith("|") and stripped.endswith("|"):
             current_table.append(line)
         else:
             if current_table:
-                tables.append("\n".join(current_table))
+                page_num = _page_for_line(lineno - len(current_table))
+                tables.append(("\n".join(current_table), page_num))
                 current_table = []
 
     if current_table:
-        tables.append("\n".join(current_table))
+        page_num = _page_for_line(len(lines) - len(current_table))
+        tables.append(("\n".join(current_table), page_num))
 
     return tables
 
 
 def _parse_table_with_llm(
-    table_md: str, table_idx: int, model: str
+    table_md: str, table_idx: int, model: str, page_num: int | None = None
 ) -> list[ActivityRecord]:
     """Parse a Markdown table using LLM.
 
@@ -141,15 +210,15 @@ def _parse_table_with_llm(
 
     try:
         response = llm.invoke(prompt)
-        result_text = response.content if hasattr(response, "content") else str(response)
+        result_text = (
+            response.content if hasattr(response, "content") else str(response)
+        )
         activities_json = _extract_json_from_response(result_text)
 
         records: list[ActivityRecord] = []
         for item in activities_json:
             # Normalize unit to nM
-            value_nm = _normalize_to_nm(
-                item.get("value", 0), item.get("unit", "nM")
-            )
+            value_nm = _normalize_to_nm(item.get("value", 0), item.get("unit", "nM"))
             records.append(
                 ActivityRecord(
                     activity_type=item.get("activity_type", "IC50"),
@@ -161,7 +230,7 @@ def _parse_table_with_llm(
                     assay_type=item.get("assay_type"),
                     raw_text=item.get("raw_text", ""),
                     confidence=item.get("confidence", 0.5),
-                    page_num=None,  # TODO: 从 markdown 提取页码
+                    page_num=page_num,
                     evidence_kind="table",
                     evidence_bbox=None,  # TODO: 表格 bbox 需要从 PDF 解析
                 )

@@ -1,12 +1,13 @@
 """Pipeline runner — orchestrates document processing via OpenKB + PageIndex.
 
-Stages (9):
+Stages (10):
 1. Extract: PDF text extraction (PyMuPDF + OCR fallback)
 2. Density: Classify document as text_only / mixed / image_only
 3a. Rough Markdown: Write page text to temporary .md file
 3b. Detect: Molecule detection from PDF images (MolDet + MolScribe)
 3c. MoleCode: Insert MoleCode blocks into markdown at bbox positions
 3d. Reorganize: LLM-based semantic text reorganization
+3d-1. Extract Activities: Parse reorganized markdown tables for IC50/Ki/EC50
 3e. PageIndex: Tree index via markdown parser (level-based, zero LLM)
 4. Wiki: Compile summaries, concepts, entities
 5. Persist Molecules: Write to molecules.db
@@ -42,10 +43,11 @@ STAGE_PCT: dict[str, int] = {
     "insert_molecode": 40,
     "popo": 48,  # optional MinerU-Popo post-process
     "reorganize": 55,
-    "pageindex": 68,
-    "wiki": 78,
-    "persist_mols": 85,
-    "register_links": 92,
+    "extract_activities": 60,  # NEW — parse tables for IC50/Ki/EC50/Kd
+    "pageindex": 63,  # was 68
+    "wiki": 70,  # was 78
+    "persist_mols": 80,  # was 85
+    "register_links": 88,  # was 92
     "persist": 100,
     "pipeline": 100,
 }
@@ -145,6 +147,7 @@ def run_pipeline(
             # visible to the front-end diagnostics view, not just the log.
             try:
                 from ..utils.logger import push_diagnostic
+
                 push_diagnostic(
                     {
                         "level": "WARNING",
@@ -153,7 +156,9 @@ def run_pipeline(
                         "error_code": "ingest_log_write_failed",
                     }
                 )
-            except Exception:  # pragma: no cover - never let diagnostics compound the failure
+            except (
+                Exception
+            ):  # pragma: no cover - never let diagnostics compound the failure
                 pass
 
     def _emit(
@@ -317,16 +322,24 @@ def run_pipeline(
             from ..backends import popo as _popo
 
             if _popo.popo_installed():
-                _emit("progress", "Running MinerU-Popo post-processing...", stage="popo")
+                _emit(
+                    "progress", "Running MinerU-Popo post-processing...", stage="popo"
+                )
                 pre_md = Path(enriched_md_path).read_text(encoding="utf-8")
                 post_md = _popo.popo_postprocess_markdown(pre_md)
                 if post_md and post_md != pre_md:
                     Path(enriched_md_path).write_text(post_md, encoding="utf-8")
-                    _emit("complete", "MinerU-Popo post-processing applied", stage="popo")
+                    _emit(
+                        "complete", "MinerU-Popo post-processing applied", stage="popo"
+                    )
                 else:
                     _emit("warning", "MinerU-Popo returned no change", stage="popo")
             else:
-                _emit("warning", "popo.enabled=true but MinerU-Popo not installed", stage="popo")
+                _emit(
+                    "warning",
+                    "popo.enabled=true but MinerU-Popo not installed",
+                    stage="popo",
+                )
     except Exception as popo_exc:  # noqa: BLE001 — popo is optional, never crash the pipeline
         logger.warning("MinerU-Popo step failed: %s", popo_exc)
         _emit("warning", f"MinerU-Popo step failed: {popo_exc}", stage="popo")
@@ -348,8 +361,12 @@ def run_pipeline(
             from .organizer import reorganize_with_llm
 
             llm_cfg = load_global_config().llm
-            reorganize_model = getattr(llm_cfg, "reorganize_model", None) or llm_cfg.model
-            reorganize_with_llm(enriched_md_path, str(final_md_path), model=reorganize_model)
+            reorganize_model = (
+                getattr(llm_cfg, "reorganize_model", None) or llm_cfg.model
+            )
+            reorganize_with_llm(
+                enriched_md_path, str(final_md_path), model=reorganize_model
+            )
         else:
             _emit(
                 "complete",
@@ -368,6 +385,41 @@ def run_pipeline(
         error_message="LLM reorganization failed",
     )
     _emit("complete", "Text reorganized", stage="reorganize")
+
+    # -- Stage 3d-1: Extract activities from reorganized markdown --
+    # Phase 0: best-effort LLM table parser for IC50/Ki/EC50/Kd. Recoverable
+    # on failure — a missing/empty table set is a no-op, an LLM error
+    # logs a warning and the pipeline continues without activities.
+    activity_records: list[Any] = []
+    if final_md_path.exists():
+        _emit("progress", "Extracting activities...", stage="extract_activities")
+        from .extract_activities import extract_activities_from_document
+
+        def _run_extract_activities() -> None:
+            nonlocal activity_records
+            activity_records = extract_activities_from_document(
+                str(final_md_path), doc_id, llm_model="gpt-4o-mini"
+            )
+
+        _run_stage(
+            "extract_activities",
+            _run_extract_activities,
+            recoverable=True,
+            error_code=PipelineErrorCode.ACTIVITY_EXTRACTION_FAILED,
+            error_message="Activity extraction failed",
+        )
+        _emit(
+            "complete",
+            f"Extracted {len(activity_records)} activity records",
+            stage="extract_activities",
+            activity_count=len(activity_records),
+        )
+    else:
+        _emit(
+            "warning",
+            "Reorganized markdown missing; activity extraction skipped",
+            stage="extract_activities",
+        )
 
     # 把原始 PDF 复制到 storage/{doc_id}/source.pdf，方便前端直接预览/下载
     try:
@@ -446,7 +498,11 @@ def run_pipeline(
         from .organizer import register_molecules_from_text
 
         register_molecules_from_text(
-            str(final_md_path), candidates, doc_id, str(root), conn=mol_conn,
+            str(final_md_path),
+            candidates,
+            doc_id,
+            str(root),
+            conn=mol_conn,
         )
 
     _run_stage(
@@ -456,6 +512,7 @@ def run_pipeline(
             doc_id,
             molecule_stats,
             register_links=_register_links_in_txn,
+            activity_records=activity_records,
         ),
         recoverable=False,
         error_code=PipelineErrorCode.PERSIST_MOLECULES_FAILED,
@@ -583,6 +640,8 @@ def _persist_molecules(
     register_links: Callable[[Any], None] | None = None,
     final_md_path: str | Path | None = None,
     candidates: list[Any] | None = None,
+    activity_records: list[Any]
+    | None = None,  # NEW — passed into persist_molecule_candidates
 ) -> None:
     """Persist molecule candidates + (optionally) register text links.
 
@@ -598,7 +657,7 @@ def _persist_molecules(
     effective_candidates = (
         candidates if candidates is not None else molecule_stats.get("candidates", [])
     )
-    if not effective_candidates and register_links is None:
+    if not effective_candidates and register_links is None and not activity_records:
         return
     from .persist_molecules import persist_molecule_candidates
 
@@ -609,7 +668,11 @@ def _persist_molecules(
     with db.transaction() as (_kb_conn, mol_conn):
         if effective_candidates:
             persist_molecule_candidates(
-                str(root), doc_id, effective_candidates, conn=mol_conn
+                str(root),
+                doc_id,
+                effective_candidates,
+                conn=mol_conn,
+                activity_records=activity_records,
             )
         if register_links is not None:
             register_links(mol_conn)

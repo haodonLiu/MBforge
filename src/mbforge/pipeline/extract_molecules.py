@@ -50,6 +50,8 @@ def extract_molecules_from_pdf(
 
     # 确保模型已下载（首次运行从 ModelScope 自动拉取）
     ResourceManager.ensure("moldet")
+    # 确保 MoleCode 包已安装（生成 SMILES → Mermaid blocks）
+    ResourceManager.ensure("molecode")
 
     # 从 config 读取检测参数（回退到硬编码默认值）
     try:

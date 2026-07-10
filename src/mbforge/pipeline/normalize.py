@@ -107,18 +107,19 @@ def normalize_molecules(
     by_canonical: dict[str, NormalizedMolecule] = {}
     by_invalid: dict[str, NormalizedMolecule] = {}
 
-    # Reject candidates that are too short or contain SMILES wildcard atoms.
-    # MolScribe sometimes returns fragments like "**OC(=O)" or single chars
-    # when the crop is poor; these confuse downstream stages.
-    def _is_low_quality(esmiles: str) -> bool:
-        if len(esmiles) < 3:
+    # Pre-filter only for clearly unusable fragments. We do NOT reject SMILES
+    # containing ``*`` here — ``*`` is a valid Markush wildcard atom (used by
+    # patent R-group definitions) and is exactly what MolScribe emits for
+    # markush structures. RDKit can parse and round-trip Markush SMILES, so
+    # let it be the authoritative gate.
+    def _is_unusable_fragment(esmiles: str) -> bool:
+        if not esmiles or len(esmiles) < 3:
             return True
-        if "*" in esmiles:  # SMILES wildcard atoms
-            return True
+        # pure numeric (no atoms at all) — clearly garbage
         return bool(esmiles.isdigit())
 
     for r in results:
-        if _is_low_quality(r.esmiles):
+        if _is_unusable_fragment(r.esmiles):
             logger.debug("Rejected low-quality SMILES: %s", r.esmiles)
             if r.esmiles in by_invalid:
                 _merge_detection(by_invalid[r.esmiles], r)
@@ -158,6 +159,36 @@ def normalize_molecules(
                     detections=[_detection_from_result(r)],
                     status="rejected",
                     reject_reason="invalid_smiles",
+                    properties=properties,
+                )
+            continue
+
+        # Element whitelist — RDKit accepts some rare elements that have
+        # no place in a chemistry knowledge base (e.g. ``[Re]`` for Rhenium,
+        # ``[Rf]`` for Rutherfordium). These are almost always MolScribe
+        # mis-reading R-group subscripts (Rₑ / R_f). Treat as garbage.
+        allowed = {"C", "N", "O", "S", "F", "Cl", "Br", "I", "P", "B",
+                   "Si", "Se", "As", "H", "*"}
+        invalid_atoms = [a.GetSymbol() for a in mol.GetAtoms()
+                         if a.GetSymbol() not in allowed]
+        if invalid_atoms:
+            logger.debug(
+                "Rejected SMILES with non-chemistry elements %s: %s",
+                invalid_atoms, r.esmiles,
+            )
+            if r.esmiles in by_invalid:
+                _merge_detection(by_invalid[r.esmiles], r)
+            else:
+                properties = {}
+                _append_context(properties, r.context_text)
+                by_invalid[r.esmiles] = NormalizedMolecule(
+                    canonical_smiles=r.esmiles,
+                    esmiles=r.esmiles,
+                    name=r.name,
+                    sources=[r.source],
+                    detections=[_detection_from_result(r)],
+                    status="rejected",
+                    reject_reason="invalid_element",
                     properties=properties,
                 )
             continue

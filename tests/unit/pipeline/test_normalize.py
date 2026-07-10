@@ -192,3 +192,62 @@ def test_normalize_canonicalization_failure_rejected() -> None:
         assert len(normalized[0].detections) == 2
         assert "image" in normalized[0].sources
         assert "text" in normalized[0].sources
+
+
+def test_normalize_markush_wildcard_kept_as_pending() -> None:
+    """SMILES containing ``*`` (Markush wildcard) are NOT auto-rejected.
+
+    Patent R-group definitions routinely use ``*`` as a wildcard atom.
+    RDKit parses these as real atoms, so they should be kept pending and
+    canonicalized normally.
+    """
+    markush = "*c1ccccc1*"  # biphenyl with R-group wildcards at both ends
+    results = [ExtractionResult(esmiles=markush, source="image")]
+    normalized = normalize_molecules(results)
+    assert len(normalized) == 1
+    assert normalized[0].status == "pending"
+    assert normalized[0].reject_reason is None
+    # Canonical form should preserve wildcards
+    assert "*" in normalized[0].canonical_smiles
+
+
+def test_normalize_pure_numeric_short_string_rejected() -> None:
+    """Non-SMILES garbage (digits, single chars) still gets rejected."""
+    results = [
+        ExtractionResult(esmiles="123", source="image"),
+        ExtractionResult(esmiles="", source="image"),
+        ExtractionResult(esmiles="C", source="image"),  # 1 char
+    ]
+    normalized = normalize_molecules(results)
+    for n in normalized:
+        assert n.status == "rejected"
+
+
+def test_normalize_invalid_elements_rejected() -> None:
+    """SMILES with rare elements (Rhenium, Rutherfordium etc.) are rejected.
+
+    These show up when MolScribe mis-reads R-group subscripts. They parse
+    in RDKit but have no place in a chemistry knowledge base.
+    """
+    results = [
+        # [Re] = Rhenium — actually misread "R_e" subscript
+        ExtractionResult(esmiles="[Re]c1ccccc1", source="image"),
+        # [Rf] = Rutherfordium — actually misread "R_f" subscript
+        ExtractionResult(esmiles="[Rf]CCO", source="image"),
+    ]
+    normalized = normalize_molecules(results)
+    assert len(normalized) == 2
+    for n in normalized:
+        assert n.status == "rejected"
+        assert n.reject_reason == "invalid_element"
+
+
+def test_normalize_real_molecule_with_wildcards_kept() -> None:
+    """Genuine chemistry with some wildcards (not all-rare-elements) is kept."""
+    # 2-phenylpyridine with a Markush wildcard at the meta position
+    smi = "*c1ccc(-c2ccccn2)cc1"
+    results = [ExtractionResult(esmiles=smi, source="image")]
+    normalized = normalize_molecules(results)
+    assert len(normalized) == 1
+    assert normalized[0].status == "pending"
+    assert "*" in normalized[0].canonical_smiles

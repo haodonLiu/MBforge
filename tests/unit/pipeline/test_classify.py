@@ -20,6 +20,9 @@ class TestClassifyDensity:
         assert result.doc_kind == "text_only"
         assert result.page_count == 2
         assert result.pages_needing_ocr == 0
+        # avg_text_density = total chars / page_count, NOT chars / per-page-density
+        # ("Hello world"=11, "More text here"=14, total=25 over 2 pages => 12.5)
+        assert result.avg_text_density == 12.5
 
     def test_mixed(self):
         pages = [

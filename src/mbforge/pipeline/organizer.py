@@ -61,14 +61,19 @@ def _sanitize_mol_name(name: str) -> str:
     return safe[:48] or "Unnamed"
 
 
-def _mol_to_molecode(smiles: str, name: str) -> str:
+def _mol_to_molecode(smiles: str, name: str, page_num: int | None = None) -> str:
     """Convert SMILES to a MoleCode Mermaid block via RDKit + molecode.
 
     Falls back to a plain text placeholder when RDKit/molecode is unavailable
     or fails. Placeholders deliberately avoid ``#`` heading syntax and any
     non-identifier characters that would clash with markdown structure.
+
+    When ``page_num`` is provided, the first line of the mermaid block is a
+    ``%% page=N`` comment so the frontend can map MoleCode clicks back to
+    PDF pages.
     """
     safe_name = _sanitize_mol_name(name)
+    page_header = f"%% page={page_num}\n" if page_num else ""
     try:
         from molecode import mol_to_mermaid
         from rdkit import Chem
@@ -87,7 +92,7 @@ def _mol_to_molecode(smiles: str, name: str) -> str:
     except Exception as exc:  # noqa: BLE001
         logger.warning("MoleCode error for %s: %s", safe_name, exc)
         return f"```\nMoleCode error for {safe_name}\n```\n"
-    return f"```molecode\n{mcode}\n```\n"
+    return f"```molecode\n{page_header}{mcode}\n```\n"
 
 
 def _find_position_in_pages(
@@ -111,6 +116,38 @@ def _find_position_in_pages(
     return None
 
 
+def _map_span_idx_to_line(
+    span_idx: int,
+    page_idx: int,
+    pages: list[PageContent],
+    lines: list[str],
+) -> int | None:
+    """Return the markdown line index corresponding to ``pages[page_idx].text_spans[span_idx]``.
+
+    The span text may have been concatenated from multiple PDF spans, so we look
+    for a unique-ish substring (first 20 non-space chars) in the page's markdown
+    lines. Falls back to the page boundary line if no match is found.
+    """
+    if span_idx is None or page_idx < 0 or page_idx >= len(pages):
+        return None
+    spans = pages[page_idx].text_spans
+    if span_idx >= len(spans):
+        return None
+    span_text = spans[span_idx].text.strip()
+    needle = span_text[:20].strip()
+    if not needle:
+        return None
+    # Only search within this page's line range
+    boundaries = _collect_page_boundaries(lines)
+    page_num = page_idx + 1
+    start = boundaries.get(page_num, 0)
+    end = boundaries.get(page_num + 1, len(lines))
+    for lineno in range(start, min(end, len(lines))):
+        if needle in lines[lineno]:
+            return lineno
+    return None
+
+
 def _collect_page_boundaries(lines: list[str]) -> dict[int, int]:
     """Map ``page_num`` to the line index of its ``<!-- PAGE N -->`` marker."""
     boundaries: dict[int, int] = {}
@@ -119,21 +156,6 @@ def _collect_page_boundaries(lines: list[str]) -> dict[int, int]:
         if m:
             boundaries[int(m.group(1))] = lineno
     return boundaries
-
-
-def _collect_page_ranges(lines: list[str]) -> dict[int, list[int]]:
-    """Map ``page_num`` to its content line indices (excluding the marker itself)."""
-    ranges: dict[int, list[int]] = {}
-    current_page = 1
-    ranges[current_page] = []
-    for lineno, line in enumerate(lines):
-        m = _PAGE_MARKER_RE.match(line)
-        if m:
-            current_page = int(m.group(1))
-            ranges.setdefault(current_page, [])
-        else:
-            ranges[current_page].append(lineno)
-    return ranges
 
 
 def insert_molecode_blocks(
@@ -168,20 +190,20 @@ def insert_molecode_blocks(
     insertions.sort(key=lambda x: (x[0], x[1] if x[1] is not None else 9999))
 
     page_boundaries = _collect_page_boundaries(lines)
-    page_ranges = _collect_page_ranges(lines)
 
     reverse_insertions: list[tuple[int, str]] = []
     for idx, (page_idx, span_idx, mol) in enumerate(reversed(insertions)):
         # 优先使用提取的化合物名称；否则按顺序生成 Mol_001, Mol_002 …
         name = mol.name or f"Mol_{len(insertions) - idx:03d}"
-        block = _mol_to_molecode(mol.canonical_smiles, name)
         page_num = page_idx + 1  # 1-based page number, matches `<!-- PAGE N -->`
+        block = _mol_to_molecode(mol.canonical_smiles, name, page_num=page_num)
 
-        if span_idx is not None and page_num in page_ranges:
-            plines = page_ranges[page_num]
-            last_line = max(plines) if plines else page_boundaries.get(page_num, 0)
-            insert_at = max(last_line, page_boundaries.get(page_num, 0))
-            reverse_insertions.append((insert_at, block))
+        insert_line: int | None = None
+        if span_idx is not None:
+            insert_line = _map_span_idx_to_line(span_idx, page_idx, pages, lines)
+
+        if insert_line is not None:
+            reverse_insertions.append((insert_line, f"\n{block}"))
             continue
 
         # Strategy C — append to page-end (just before next page marker, if any).
@@ -220,17 +242,27 @@ Rules:
 7. Remove page markers (<!-- PAGE N -->).
 8. Output valid Markdown."""
 
+# 本地小模型专用 prompt — 任务宽度缩到最小（章节级摘要），
+# 不再要求保留原文（rule-based 已经做了），只用小模型生成摘要元数据。
+_LOCAL_PROMPT = """You are a 0.6B local model. Your only job: produce a 1-line
+summary (≤25 words) of the following text section.
 
-def _llm_complete(model: str, prompt: str) -> str:
+Section heading: {heading}
+Text:
+{section}
+
+Reply with ONLY the summary line. No preamble, no markdown fences, no quotes."""
+
+
+def _llm_complete(model: str, prompt: str) -> str | None:
     """Call an LLM via litellm and return its completion text.
 
     ``model`` is the raw model name from config (e.g. ``sensenova-6.7-flash-lite``).
     The full LiteLLM model string (including provider prefix and api_base) and
     api_key are resolved from ``load_global_config().llm`` via ``to_litellm_config``.
 
-    On any failure (import error, network error, API error, bad model), logs
-    and returns the *input prompt* verbatim so the caller can fall back to a
-    pass-through copy of the document.
+    Returns ``None`` on any failure (import error, network error, API error,
+    bad model, malformed response). Callers must provide their own fallback.
     """
     # Resolve api_key and base_url from config, set env vars for litellm.
     # The ?api_base= query-param approach causes TCP connection timeout on
@@ -252,8 +284,8 @@ def _llm_complete(model: str, prompt: str) -> str:
     try:
         from litellm import completion
     except ImportError:
-        logger.warning("litellm not available — reorganize skipped, copying input")
-        return prompt
+        logger.warning("litellm not available — reorganize skipped")
+        return None
     try:
         response = completion(
             model=litellm_model,
@@ -261,13 +293,13 @@ def _llm_complete(model: str, prompt: str) -> str:
             temperature=0.3,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.error("LLM call failed (%s) — falling back to input copy", exc)
-        return prompt
+        logger.error("LLM call failed (%s)", exc)
+        return None
     try:
-        return response.choices[0].message.content or prompt
+        return response.choices[0].message.content or None
     except (AttributeError, IndexError, KeyError) as exc:
-        logger.error("LLM response malformed (%s) — falling back to input copy", exc)
-        return prompt
+        logger.error("LLM response malformed (%s)", exc)
+        return None
 
 
 def reorganize_with_llm(
@@ -304,6 +336,22 @@ def reorganize_with_llm(
     if estimated_tokens < 4000:
         prompt = f"{_SYSTEM_PROMPT}\n\nDocument:\n{md_text}\n\nReorganized:"
         response = _llm_complete(model, prompt)
+        if response is None:
+            logger.warning("LLM unavailable — using rule-based reorganize")
+            response = _rule_based_reorganize(md_text)
+        elif len(response) < len(md_text) * 0.5:
+            logger.warning(
+                "LLM output (%d chars) is < 50%% of input (%d chars); "
+                "falling back to rule-based reorganize",
+                len(response), len(md_text),
+            )
+            response = _rule_based_reorganize(md_text)
+        elif _looks_degenerate(response, md_text):
+            logger.warning(
+                "LLM output looks degenerate (stripped MoleCode or high "
+                "repetition); using rule-based reorganize"
+            )
+            response = _rule_based_reorganize(md_text)
         Path(output_path).write_text(response, encoding="utf-8")
         return output_path
 
@@ -335,10 +383,203 @@ def reorganize_with_llm(
             f"Chunk text:\n{chunk}\n\n"
             f"Reorganized (chunk {i + 1} of {len(chunks)}):"
         )
-        reorganized_chunks.append(_llm_complete(model, chunk_prompt))
+        chunk_result = _llm_complete(model, chunk_prompt)
+        if chunk_result is None:
+            logger.warning("LLM chunk %d failed — using rule-based fallback", i + 1)
+            reorganized_chunks = [_rule_based_reorganize(md_text)]
+            break
+        reorganized_chunks.append(chunk_result)
+
+    # If ANY chunk collapsed to < 50% of its input, the model summarized —
+    # discard LLM output and use rule-based fallback for the whole doc.
+    total_input = sum(len(c) for c in chunks)
+    total_output = sum(len(c) for c in reorganized_chunks)
+    if total_output < total_input * 0.5:
+        logger.warning(
+            "LLM collapsed %d → %d chars (< 50%%); using rule-based fallback",
+            total_input, total_output,
+        )
+        response = _rule_based_reorganize(md_text)
+        Path(output_path).write_text(response, encoding="utf-8")
+        return output_path
+
+    # Degeneracy check: MoleCode blocks stripped or excessive repetition
+    joined_chunks = "\n\n".join(reorganized_chunks)
+    if _looks_degenerate(joined_chunks, md_text):
+        logger.warning(
+            "LLM output looks degenerate (stripped MoleCode or high "
+            "repetition); using rule-based fallback"
+        )
+        response = _rule_based_reorganize(md_text)
+        Path(output_path).write_text(response, encoding="utf-8")
+        return output_path
 
     Path(output_path).write_text("\n\n".join(reorganized_chunks), encoding="utf-8")
     return output_path
+
+
+def _looks_degenerate(text: str, original: str) -> bool:
+    """Heuristic: LLM output is degenerate if it strips MoleCode blocks
+    or fills space with repetition.
+
+    Two specific failure modes we have seen with tiny local models:
+      1. MoleCode → generic ``mermaid`` rewrite (the model rewrites chemical
+         blocks as plain atom-node graphs, losing all real chemistry).
+      2. Output length is preserved by repeating fragments like
+         "In some embodiments, A is." / "Feel free to adjust".
+
+    Both cases must trigger the rule-based fallback.
+    """
+    import re as _re
+
+    orig_molecode = len(_re.findall(r"```molecode\b", original))
+    out_molecode = len(_re.findall(r"```molecode\b", text))
+    if orig_molecode > 0 and out_molecode < orig_molecode:
+        return True
+
+    # Repetition: split into 8-char shingles, count duplicates
+    body = _re.sub(r"\s+", " ", text).strip()
+    if len(body) < 200:
+        return False  # too short to judge
+    shingles = [body[i : i + 8] for i in range(0, len(body) - 8, 4)]
+    if not shingles:
+        return False
+    unique_ratio = len(set(shingles)) / len(shingles)
+    return unique_ratio < 0.25  # >75% repeated shingles → degenerate
+
+
+_SECTION_PATTERNS = [
+    # 优先级从高到低；匹配后插入对应 heading
+    (re.compile(r"(?im)^#{0,3}\s*(abstract|摘要)\b.*$"), "## Abstract"),
+    (re.compile(r"(?im)^#{0,3}\s*cross[- ]references\s+to\s+related.*$"), "## Cross-References to Related Applications"),
+    (re.compile(r"(?im)^#{0,3}\s*background\b"), "## Background"),
+    (re.compile(r"(?im)^#{0,3}\s*summary\b"), "## Summary"),
+    (re.compile(r"(?im)^#{0,3}\s*brief\s+description\b"), "## Brief Description"),
+    (re.compile(r"(?im)^#{0,3}\s*detailed\s+description\b"), "## Detailed Description of the Disclosure"),
+    (re.compile(r"(?im)^#{0,3}\s*definitions?\b"), "### Definitions"),
+    (re.compile(r"(?im)^#{0,3}\s*examples?\b"), "### Examples"),
+    (re.compile(r"(?im)^#{0,3}\s*claims?\b"), "## Claims"),
+    (re.compile(r"(?im)^#{0,3}\s*references?\b"), "## References"),
+]
+
+# 识别专利段落标记 [0001], [0002] 等 — 用于在它们之前插入 heading 标记
+_PATENT_PARA_RE = re.compile(r"^\s*\[(\d{3,4})\]\s")
+
+# ALL-CAPS heading 的严格规则：
+#   - 纯字母+空格（不含数字、斜杠、竖线等）
+#   - 长度 5-60
+#   - 不在白名单外（按内容）
+#   - 不以特殊字符开头
+_ALL_CAPS_HEADING_RE = re.compile(
+    r"^[A-Z][A-Z\s&\-,]{3,59}$"
+)
+_BLOCKED_CAPS_PHRASES = frozenset(
+    {
+        "WIPO", "PCT", "WO", "IPC", "EPO", "USPTO",
+        "WO 2026/035726 A1",  # 专利号本身
+        "BACKGROUND OF THE DISCLOSURE",  # 重复：上面 pattern 已处理
+    }
+)
+
+
+def _rule_based_reorganize(md_text: str) -> str:
+    """Pure-Python reorganize — no LLM.
+
+    Strips PAGE markers, detects patent / chemistry section headings by regex,
+    promotes all-caps section lines to `## Heading`. Used when the LLM is
+    unavailable or its output is suspiciously short.
+    """
+    lines = md_text.split("\n")
+    lines = [line for line in lines if not _PAGE_MARKER_RE.match(line)]
+
+    out_lines: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            out_lines.append(line)
+            continue
+
+        promoted = False
+        for pattern, heading in _SECTION_PATTERNS:
+            if pattern.match(stripped):
+                out_lines.append(heading)
+                promoted = True
+                break
+        if promoted:
+            continue
+
+        if (
+            _ALL_CAPS_HEADING_RE.match(stripped)
+            and stripped not in _BLOCKED_CAPS_PHRASES
+        ):
+            word_count = len(stripped.split())
+            if word_count >= 2:
+                title = stripped.title()
+                out_lines.append(f"## {title}")
+                continue
+
+        out_lines.append(line)
+
+    return "\n".join(out_lines)
+
+
+def _summarize_sections_with_local_model(
+    md_text: str, model: str | None
+) -> str:
+    """Per-section 25-word summaries using the local small model.
+
+    Splits rule-based markdown into sections at ``##`` / ``###`` boundaries
+    and asks the small model to summarize each one. Output keeps the original
+    text and appends a ``> **TL;DR:** ...`` line under each heading.
+
+    This is the narrow task small models CAN do: short input, short output,
+    no rewriting of source text.
+    """
+    lines = md_text.split("\n")
+    section_starts: list[int] = [0]
+    for i, line in enumerate(lines):
+        if re.match(r"^#{2,3}\s", line):
+            section_starts.append(i)
+    section_starts.append(len(lines))
+
+    if len(section_starts) < 3:
+        # Need at least 2 sections + trailing marker to be useful
+        return md_text
+
+    out_lines: list[str] = []
+    for s, e in zip(section_starts, section_starts[1:], strict=False):
+        section_lines = lines[s:e]
+        heading = next(
+            (
+                line.strip("# ").strip()
+                for line in section_lines
+                if line.startswith("#")
+            ),
+            "",
+        )
+        body = "\n".join(section_lines[1:]) if section_lines else ""
+
+        out_lines.extend(section_lines)
+
+        # Skip very short sections (likely just a heading)
+        if len(body.strip()) < 100:
+            continue
+        # Cap body length to keep prompt small for the 0.6B model
+        body_for_prompt = body[:1500]
+        prompt = _LOCAL_PROMPT.format(heading=heading, section=body_for_prompt)
+        try:
+            summary = _llm_complete(model or "", prompt).strip()
+            # Strip any quotes / fences the model may emit
+            summary = summary.strip("`'\"").strip()
+            # Take only the first line of the response
+            summary = summary.split("\n")[0].strip()
+            if summary and len(summary) < 200:
+                out_lines.append(f"> **TL;DR:** {summary}")
+                out_lines.append("")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Local summary failed for %r: %s", heading, exc)
+
+    return "\n".join(out_lines)
 
 
 def _find_molecode_in_text(

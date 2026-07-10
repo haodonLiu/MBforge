@@ -52,6 +52,7 @@ def classify_density(pages: list[PageContent]) -> DensityClassification:
         kind = "mixed"
     else:
         kind = "text_only"
-    total_density = max(sum(p.text_density for p in pages), 1e-9)
-    avg_density = total_text / total_density
+    # avg_text_density = chars per page. Unit: characters/page.
+    # (Previously this divided by a never-set per-page density, yielding ~1e13.)
+    avg_density = total_text / max(len(pages), 1)
     return DensityClassification(kind, len(pages), need_ocr, avg_density)

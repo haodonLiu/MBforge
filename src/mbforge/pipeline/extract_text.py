@@ -11,6 +11,7 @@ OCR config is read from AppConfig.ocr (see backend ocr.chain.build_backends).
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -163,6 +164,7 @@ def _ocr_pages(
                     mineru_cfg["api_key"] = mineru_cfg["mineru_api_key"]
                 mineru_backend = MinerUBackend(mineru_cfg)
                 if mineru_backend.is_configured():
+                    empty_after_batch: list[int] = []
                     for batch_start in range(0, len(page_indices), upload_batch_size):
                         batch_end = min(batch_start + upload_batch_size, len(page_indices))
                         batch_indices = page_indices[batch_start:batch_end]
@@ -177,19 +179,48 @@ def _ocr_pages(
                         for offset, idx in enumerate(range(batch_start, batch_end)):
                             if offset < len(batch_results):
                                 results[idx] = batch_results[offset].text
-                    return results
+                            if not results[idx].strip():
+                                empty_after_batch.append(idx)
+                    if not empty_after_batch:
+                        return results
+                    # Fall through to single-page retry for empty pages only
+                    page_indices = empty_after_batch
             except Exception as batch_exc:  # noqa: BLE001
                 logger.warning("Batch OCR failed, falling back to single-page: %s", batch_exc)
 
-        # 单页 fallback
-        for idx, page_idx in enumerate(page_indices):
+        # 单页 fallback — per-page retry-with-backoff
+        # OCR backends frequently time out or return empty under load; without
+        # retries a single transient failure cascades into title=null,
+        # doc_kind=image_only, no section headings. We retry up to 3 times with
+        # exponential backoff (1s / 3s / 9s) and treat empty responses as a
+        # failure signal so the loop actually re-attempts instead of giving up.
+        max_attempts = 3
+        for _idx, page_idx in enumerate(page_indices):
             page = doc.load_page(page_idx)
             zoom = 2.0  # 144 DPI for OCR
             mat = fitz.Matrix(zoom, zoom)
             pix = page.get_pixmap(matrix=mat, alpha=False)
             image_bytes = pix.tobytes("png")
-            result = extract_text_with_chain(image_bytes, ocr_config)
-            results[idx] = result.text
+            text = ""
+            for attempt in range(max_attempts):
+                try:
+                    result = extract_text_with_chain(image_bytes, ocr_config)
+                    text = result.text or ""
+                    if text.strip():
+                        break
+                except Exception as ocr_exc:  # noqa: BLE001
+                    logger.warning(
+                        "OCR attempt %d/%d failed for page %d: %s",
+                        attempt + 1, max_attempts, page_idx + 1, ocr_exc,
+                    )
+                if attempt < max_attempts - 1:
+                    time.sleep(1 * (3 ** attempt))  # 1s, 3s, 9s
+            else:
+                logger.warning(
+                    "OCR gave up on page %d after %d attempts",
+                    page_idx + 1, max_attempts,
+                )
+            results[page_idx] = text
         return results
     except Exception as e:  # noqa: BLE001
         logger.warning("OCR fallback failed: %s", e)
@@ -197,19 +228,57 @@ def _ocr_pages(
 
 
 def _extract_title(text: str) -> str | None:
-    """Extract a title from the first page text."""
+    """Extract a title from the first page text.
+
+    Strategy:
+    1. If a line starts with ``Title:`` / ``标题：`` / ``题目：``, take the rest.
+    2. Otherwise pick the first substantive non-empty line, skipping:
+       - PCT/WIPO bibliographic headers (``(NN) ...``)
+       - Classification codes (``(51) ...``)
+       - Long ALL-CAPS lines
+    3. Cap at 200 chars.
+    """
     if not text:
         return None
-    # First non-empty line that looks like a title (short, not a number)
-    for line in text.split("\n")[:10]:
-        line = line.strip()
-        if line and len(line) > 3 and len(line) < 200 and not line.isdigit():
-            # Remove common prefixes
-            for prefix in ["Title:", "标题：", "题目："]:
-                if line.startswith(prefix):
-                    line = line[len(prefix) :].strip()
-            return line
-    return None
+
+    # 1. explicit prefix wins
+    for line in text.split("\n")[:30]:
+        for prefix in ["Title:", "标题：", "题目："]:
+            if line.strip().startswith(prefix):
+                rest = line.strip()[len(prefix):].strip()
+                if rest and 3 < len(rest) < 200:
+                    return rest
+
+    # 2. heuristic: skip bibliographic lines
+    _biblio = re.compile(r"^\(\d{1,3}\)\s+")
+    _all_caps = re.compile(r"^[A-Z][A-Z\s&\-,/]{4,}$")
+    # Skip known patent header phrases
+    _header_phrases = {
+        "INTERNATIONAL APPLICATION PUBLISHED UNDER THE PATENT COOPERATION TREATY (PCT)",
+        "INTERNATIONAL APPLICATION PUBLISHED UNDER THE PATENT COOPERATION TREATY",
+    }
+    candidate_with_caps = None  # remember the first ALL-CAPS line as fallback
+    for line in text.split("\n")[:30]:
+        s = line.strip()
+        if not s:
+            continue
+        if not (3 < len(s) < 200):
+            continue
+        if s.isdigit():
+            continue
+        if _biblio.match(s):
+            continue
+        if s in _header_phrases:
+            continue
+        if _all_caps.match(s):
+            # Patent titles are often ALL-CAPS — remember as fallback but keep
+            # scanning for a more specific line.
+            if candidate_with_caps is None:
+                candidate_with_caps = s
+            continue
+        # Looks like a real title — return it
+        return s
+    return candidate_with_caps
 
 
 HEADING_PATTERNS = re.compile(

@@ -174,7 +174,7 @@ def test_reorganize_signature() -> None:
 
 
 def test_reorganize_short_doc_no_llm_fallback(tmp_path: Path) -> None:
-    """When litellm fails or is unavailable, function must copy input → output and return output_path."""
+    """When litellm fails or is unavailable, function must fall back to rule-based reorganization, NOT write the prompt."""
     md = tmp_path / "in.md"
     md.write_text(
         "# Test\nThis is short text.\n```molecode\nsubgraph X\nend\n```\nEnd.\n"
@@ -184,11 +184,12 @@ def test_reorganize_short_doc_no_llm_fallback(tmp_path: Path) -> None:
     result = reorganize_with_llm(str(md), str(out), model="nonexistent/model-xyz-999")
     assert result == str(out)
     assert out.exists()
-    # The fallback writes the input verbatim (or near-verbatim) — the input itself
-    # (which contains the MoleCode block) must still appear in the output.
     content = out.read_text(encoding="utf-8")
     assert "This is short text." in content
     assert "```molecode" in content
+    # Critical: the LLM prompt must NOT be present
+    assert "Document:" not in content
+    assert "Reorganized:" not in content
 
 
 def test_register_molecules_signature() -> None:
@@ -301,3 +302,99 @@ def test_register_molecules_skips_rejected(tmp_path: Path) -> None:
             ("doc-3",),
         ).fetchone()
     assert rows[0] == 0
+
+
+def test_looks_degenerate_strips_molecode() -> None:
+    """LLM output that loses MoleCode blocks must trigger fallback."""
+    from mbforge.pipeline.organizer import _looks_degenerate
+
+    original = "intro\n```molecode\nsubgraph M\n  C --> N\nend\n```\nmore text"
+    stripped = "intro\n```mermaid\ngraph TD\n  A-->B\nend\n```\nmore text"
+    assert _looks_degenerate(stripped, original) is True
+
+
+def test_looks_degenerate_repetitive_output() -> None:
+    """LLM output filled with repeated fragments must trigger fallback."""
+    from mbforge.pipeline.organizer import _looks_degenerate
+
+    original = "real content with lots of varied text " * 20
+    repetitive = ("In some embodiments, A is. " * 80) + (
+        "Feel free to adjust the chunks further. " * 30
+    )
+    assert _looks_degenerate(repetitive, original) is True
+
+
+def test_looks_degenerate_accepts_clean_output() -> None:
+    """Clean reorganized output (MoleCode preserved, varied language) is OK."""
+    from mbforge.pipeline.organizer import _looks_degenerate
+
+    original = "intro\n```molecode\nsubgraph M\nend\n```\nmore text"
+    clean = "Intro\n```molecode\nsubgraph M\nend\n```\nMore text"
+    assert _looks_degenerate(clean, original) is False
+
+
+def test_looks_degenerate_short_output_not_flagged() -> None:
+    """Short outputs (<200 chars) bypass the repetition check entirely."""
+    from mbforge.pipeline.organizer import _looks_degenerate
+
+    # Short output without MoleCode but also without repetition
+    assert _looks_degenerate("ok", "anything") is False
+
+
+def test_insert_molecode_respects_bbox_line_position(tmp_path: Path) -> None:
+    """Two molecules on the same page must be inserted near their overlapping spans, not both at page end."""
+    rough_md = tmp_path / "rough.md"
+    rough_md.write_text(
+        "<!-- PAGE 1 -->\n"
+        "Paragraph one has molecule A.\n"
+        "Paragraph two has molecule B.\n"
+    )
+
+    pages = [
+        PageContent(
+            page_num=1,
+            text="Paragraph one has molecule A.\nParagraph two has molecule B.",
+            text_spans=[
+                TextSpan(text="Paragraph one has molecule A.", bbox=(0, 0, 300, 30), block_type=0),
+                TextSpan(text="Paragraph two has molecule B.", bbox=(0, 40, 300, 70), block_type=0),
+            ],
+        )
+    ]
+
+    mols = [
+        NormalizedMolecule(
+            canonical_smiles="CCO",
+            esmiles="CCO",
+            name="A",
+            status="pending",
+            detections=[DetectionSource(source="image", page=0, bbox=(10, 5, 50, 25))],
+        ),
+        NormalizedMolecule(
+            canonical_smiles="CCN",
+            esmiles="CCN",
+            name="B",
+            status="pending",
+            detections=[DetectionSource(source="image", page=0, bbox=(10, 45, 50, 65))],
+        ),
+    ]
+
+    out = tmp_path / "enriched.md"
+    insert_molecode_blocks(str(rough_md), pages, mols, str(out))
+    content = out.read_text(encoding="utf-8")
+    lines = content.split("\n")
+
+    molecode_indices = [i for i, line in enumerate(lines) if line.startswith("```molecode")]
+    assert len(molecode_indices) == 2
+    mol_a_idx, mol_b_idx = molecode_indices
+
+    # The block right after mol_a_idx should contain molecule A's name
+    block_a = "\n".join(lines[mol_a_idx:mol_a_idx + 10])
+    block_b = "\n".join(lines[mol_b_idx:mol_b_idx + 10])
+    assert "A" in block_a
+    assert "B" in block_b
+
+    # MoleCode A must appear after paragraph one but before paragraph two
+    para_one_idx = next(i for i, line in enumerate(lines) if "Paragraph one" in line)
+    para_two_idx = next(i for i, line in enumerate(lines) if "Paragraph two" in line)
+    assert para_one_idx < mol_a_idx < para_two_idx
+    assert para_two_idx < mol_b_idx

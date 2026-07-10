@@ -21,7 +21,7 @@ interface ClearResult {
 }
 
 interface Props {
-  projectRoot: string
+  libraryRoot: string
 }
 
 function fmtSize(mb: number): string {
@@ -31,27 +31,27 @@ function fmtSize(mb: number): string {
   return '0'
 }
 
-export default function StorageSection({ projectRoot }: Props) {
+export default function StorageSection({ libraryRoot }: Props) {
   const { t } = useTranslation()
   const [size, setSize] = useState<CacheSize | null>(null)
   const [clearing, setClearing] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
-    if (!projectRoot) return
+    if (!libraryRoot) return
     try {
-      const s = await httpPost<CacheSize>('/api/v1/settings/cache-size', { project_root: projectRoot })
+      const s = await httpPost<CacheSize>('/api/v1/settings/cache-size', { library_root: libraryRoot })
       setSize(s)
     } catch (e) {
       console.error('cache_size failed', e)
     }
-  }, [projectRoot])
+  }, [libraryRoot])
 
   useEffect(() => { void refresh() }, [refresh])
 
   const clear = async (kind: 'semantic' | 'detection' | 'molecules') => {
     setClearing(kind)
     try {
-      const res = await httpPost<ClearResult>('/api/v1/settings/cache-clear', { project_root: projectRoot, cache: kind })
+      const res = await httpPost<ClearResult>('/api/v1/settings/cache-clear', { library_root: libraryRoot, cache: kind })
       if (res.success) {
         showToast(`已释放 ${fmtSize(res.freed_mb)}`, 'success')
         void refresh()
@@ -65,7 +65,7 @@ export default function StorageSection({ projectRoot }: Props) {
     }
   }
 
-  if (!projectRoot) {
+  if (!libraryRoot) {
     return (
       <SettingSection>
         <SettingGroup title={t('settings.cache')}>

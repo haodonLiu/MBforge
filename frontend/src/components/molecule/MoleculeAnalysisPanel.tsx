@@ -16,7 +16,7 @@ export interface MoleculeAnalysisPanelProps {
   sarSession: SARSession | null
   activeTab: AnalysisTab
   onTabChange: (tab: AnalysisTab) => void
-  projectRoot: string | null
+  libraryRoot: string | null
   onRefresh: () => void
 }
 
@@ -27,7 +27,7 @@ export default function MoleculeAnalysisPanel({
   sarSession: _sarSession,
   activeTab,
   onTabChange,
-  projectRoot,
+  libraryRoot,
   onRefresh,
 }: MoleculeAnalysisPanelProps) {
   const { t } = useTranslation()
@@ -92,13 +92,13 @@ export default function MoleculeAnalysisPanel({
       </TabPanel>
 
       <TabPanel activeKey={activeTab} tabKey="cliffs">
-        {effectiveSession && projectRoot && (
-          <CliffsTab session={effectiveSession} projectRoot={projectRoot} />
+        {effectiveSession && libraryRoot && (
+          <CliffsTab session={effectiveSession} libraryRoot={libraryRoot} />
         )}
       </TabPanel>
 
       <TabPanel activeKey={activeTab} tabKey="analytics">
-        <AnalyticsTab molecules={effectiveInput} projectRoot={projectRoot} onRefresh={onRefresh} />
+        <AnalyticsTab molecules={effectiveInput} libraryRoot={libraryRoot} onRefresh={onRefresh} />
       </TabPanel>
 
       <TabPanel activeKey={activeTab} tabKey="relations">

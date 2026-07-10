@@ -23,7 +23,7 @@ type TabKey =
 interface Props {
   settings: SettingsState
   setSettings: React.Dispatch<React.SetStateAction<SettingsState>>
-  projectRoot: string
+  libraryRoot: string
   onReset: () => void
   onOpenConfig: () => void
 }
@@ -31,7 +31,7 @@ interface Props {
 export default function SettingsTabs({
   settings,
   setSettings,
-  projectRoot,
+  libraryRoot,
   onReset,
   onOpenConfig,
 }: Props) {
@@ -74,7 +74,7 @@ export default function SettingsTabs({
           {activeTab === 'system' && (
             <SystemTab settings={settings} setSettings={setSettings} />
           )}
-          {activeTab === 'cache' && <CacheTab projectRoot={projectRoot} />}
+          {activeTab === 'cache' && <CacheTab libraryRoot={libraryRoot} />}
           {activeTab === 'about' && (
             <AboutTab onReset={onReset} onOpenConfig={onOpenConfig} />
           )}

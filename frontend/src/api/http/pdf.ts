@@ -34,23 +34,23 @@ export async function classifyPdf(path: string): Promise<PdfClassification> {
 }
 
 export async function inspectPdf(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
 ): Promise<PdfClassification> {
   return invokeWithError(
-    () => httpPost<PdfClassification>('/api/v1/pdf/inspect', { projectRoot, docId }),
+    () => httpPost<PdfClassification>('/api/v1/pdf/inspect', { libraryRoot, docId }),
     ErrorCode.PdfParse,
   )
 }
 
 export async function confirmOcr(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
   confirm: boolean,
 ): Promise<{ success: boolean; doc_id: string; ocr_status: string; task_id: string }> {
   return invokeWithError(
     () => httpPost<{ success: boolean; doc_id: string; ocr_status: string; task_id: string }>('/api/v1/pdf/confirm-ocr', {
-      projectRoot,
+      libraryRoot,
       docId,
       confirm,
     }),
@@ -133,13 +133,13 @@ export interface DocProgressEvent {
 export async function processDocument(
   path: string,
   userRequest?: string,
-  projectRoot?: string,
+  libraryRoot?: string,
 ): Promise<void> {
   return invokeWithError(
     () => httpPost('/api/v1/pdf/process-document', {
       path,
       userRequest: userRequest ?? '',
-      projectRoot,
+      libraryRoot,
     }),
     ErrorCode.PdfParse,
   )

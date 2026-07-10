@@ -1,9 +1,9 @@
 import StorageSection from '@/components/settings/StorageSection'
 
 interface Props {
-  projectRoot: string
+  libraryRoot: string
 }
 
-export default function CacheTab({ projectRoot }: Props) {
-  return <StorageSection projectRoot={projectRoot} />
+export default function CacheTab({ libraryRoot }: Props) {
+  return <StorageSection libraryRoot={libraryRoot} />
 }

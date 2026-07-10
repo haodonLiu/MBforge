@@ -34,11 +34,11 @@ export interface CorefChain {
  * E-SMILES values are reduced to the SMILES portion (before `<sep>`).
  */
 export async function getMoleculeCorefChain(
-  projectRoot: string,
+  libraryRoot: string,
   molId: string,
 ): Promise<CorefChain> {
   return httpPost<CorefChain>('/api/v1/coref/molecule-chain', {
-    projectRoot,
+    libraryRoot,
     molId,
   })
 }
@@ -76,13 +76,13 @@ export interface PageParseResult {
  *  to flip the cached text-line coordinates.
  */
 export async function getPageParseResult(params: {
-  projectRoot: string
+  libraryRoot: string
   docId: string
   page: number
   pageHPts: number
 }): Promise<PageParseResult> {
   return httpPost<PageParseResult>('/api/v1/coref/page-parse-result', {
-    projectRoot: params.projectRoot,
+    libraryRoot: params.libraryRoot,
     docId: params.docId,
     page: params.page,
     pageHPts: params.pageHPts,
@@ -136,12 +136,12 @@ export interface EnsureCorefResult {
 
 /** 查 (doc, page) 所有 label 标注 */
 export async function getFigureLabels(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
   page: number,
 ): Promise<FigureLabel[]> {
   return httpPost<FigureLabel[]>('/api/v1/coref/figure-labels', {
-    projectRoot,
+    libraryRoot,
     docId,
     page,
   })
@@ -149,12 +149,12 @@ export async function getFigureLabels(
 
 /** 查 (doc, page) 所有 coref 配对预测 */
 export async function getCorefPredictions(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
   page: number,
 ): Promise<CorefPrediction[]> {
   return httpPost<CorefPrediction[]>('/api/v1/coref/predictions', {
-    projectRoot,
+    libraryRoot,
     docId,
     page,
   })
@@ -162,13 +162,13 @@ export async function getCorefPredictions(
 
 /** 确保 (doc, page) 的 coref 标注存在（懒迁移） */
 export async function ensureCorefForImage(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
   page: number,
   imagePath: string,
 ): Promise<EnsureCorefResult> {
   return httpPost<EnsureCorefResult>('/api/v1/coref/ensure-for-image', {
-    projectRoot,
+    libraryRoot,
     docId,
     page,
     imagePath,
@@ -177,12 +177,12 @@ export async function ensureCorefForImage(
 
 /** 标记某 coref 预测为人工确认（或撤销） */
 export async function confirmCorefPrediction(
-  projectRoot: string,
+  libraryRoot: string,
   predictionId: number,
   isConfirmed: boolean,
 ): Promise<void> {
   await httpPost('/api/v1/coref/confirm-prediction', {
-    projectRoot,
+    libraryRoot,
     predictionId,
     isConfirmed,
   })
@@ -190,7 +190,7 @@ export async function confirmCorefPrediction(
 
 /** 人工重选 coref pair：删旧 + 写新，返回新 id */
 export async function updateCorefPair(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
   page: number,
   oldPredictionId: number | null,
@@ -200,7 +200,7 @@ export async function updateCorefPair(
   labelId: number,
 ): Promise<number> {
   return httpPost<number>('/api/v1/coref/update-pair', {
-    projectRoot,
+    libraryRoot,
     docId,
     page,
     oldPredictionId,

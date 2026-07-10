@@ -12,7 +12,7 @@ export interface IndexResult {
 
 export async function indexProject(root: string): Promise<IndexResult> {
   return invokeWithError(
-    () => httpPost<IndexResult>('/api/v1/pipeline/process', { project_root: root, file_path: '' }),
+    () => httpPost<IndexResult>('/api/v1/pipeline/process', { library_root: root, file_path: '' }),
     ErrorCode.ApiError,
   )
 }
@@ -25,13 +25,13 @@ export interface KbSearchResult {
 }
 
 export async function kbSearch(
-  projectRoot: string,
+  libraryRoot: string,
   query: string,
   topK = 5,
 ): Promise<KbSearchResult[]> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; results: KbSearchResult[] }>('/api/v1/kb/search', {
-      project_root: projectRoot,
+      library_root: libraryRoot,
       query,
       top_k: topK,
     }),
@@ -48,7 +48,7 @@ export interface KbSearchChunk {
 }
 
 export function kbSearchStream(
-  projectRoot: string,
+  libraryRoot: string,
   query: string,
   topK: number,
   onChunk: (chunk: KbSearchChunk) => void,
@@ -56,7 +56,7 @@ export function kbSearchStream(
   const params = new URLSearchParams({
     query,
     top_k: String(topK),
-    project_root: projectRoot,
+    library_root: libraryRoot,
   })
   return connectSSE(`/api/v1/kb/search/stream?${params}`, (event) => {
     const d = event.data as {
@@ -89,12 +89,12 @@ export interface TreeNode {
 }
 
 export async function kbGetStructure(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
 ): Promise<TreeNode[] | null> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; structure: TreeNode[] | null }>('/api/v1/kb/structure', {
-      project_root: projectRoot,
+      library_root: libraryRoot,
       doc_id: docId,
     }),
     ErrorCode.ApiError,
@@ -108,13 +108,13 @@ export interface PageContent {
 }
 
 export async function kbGetPages(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
   pages: string,
 ): Promise<PageContent[]> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; pages: PageContent[] }>('/api/v1/kb/pages', {
-      project_root: projectRoot,
+      library_root: libraryRoot,
       doc_id: docId,
       pages,
     }),
@@ -141,8 +141,8 @@ async function fetchWikiText(url: string): Promise<string | null> {
   }
 }
 
-export async function kbListWiki(projectRoot: string): Promise<WikiList> {
-  const params = new URLSearchParams({ project_root: projectRoot })
+export async function kbListWiki(libraryRoot: string): Promise<WikiList> {
+  const params = new URLSearchParams({ library_root: libraryRoot })
   return invokeWithError(
     () => httpGet<WikiList>(`/api/v1/kb/wiki/list?${params}`),
     ErrorCode.ApiError,
@@ -151,24 +151,24 @@ export async function kbListWiki(projectRoot: string): Promise<WikiList> {
 
 export function kbGetWikiSummary(
   docId: string,
-  projectRoot: string
+  libraryRoot: string
 ): Promise<string | null> {
-  const params = new URLSearchParams({ project_root: projectRoot, doc_id: docId })
+  const params = new URLSearchParams({ library_root: libraryRoot, doc_id: docId })
   return fetchWikiText(`/api/v1/kb/wiki/summary?${params}`)
 }
 
 export function kbGetWikiConcept(
   name: string,
-  projectRoot: string
+  libraryRoot: string
 ): Promise<string | null> {
-  const params = new URLSearchParams({ project_root: projectRoot, name })
+  const params = new URLSearchParams({ library_root: libraryRoot, name })
   return fetchWikiText(`/api/v1/kb/wiki/concept?${params}`)
 }
 
 export function kbGetWikiEntity(
   name: string,
-  projectRoot: string
+  libraryRoot: string
 ): Promise<string | null> {
-  const params = new URLSearchParams({ project_root: projectRoot, name })
+  const params = new URLSearchParams({ library_root: libraryRoot, name })
   return fetchWikiText(`/api/v1/kb/wiki/entity?${params}`)
 }

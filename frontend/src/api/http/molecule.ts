@@ -26,16 +26,16 @@ export interface MolStoreStats {
   pending: number
 }
 
-export async function molStoreInit(projectRoot: string): Promise<void> {
+export async function molStoreInit(libraryRoot: string): Promise<void> {
   await invokeWithError(
-    () => httpPost('/api/v1/molecule/stats', { project_root: projectRoot }),
+    () => httpPost('/api/v1/molecule/stats', { library_root: libraryRoot }),
     ErrorCode.MoleculeSearch,
   )
 }
 
 /** @deprecated Use molAdminAdd from ./molecule_admin instead */
 export async function molStoreAdd(
-  projectRoot: string,
+  libraryRoot: string,
   molId: string,
   esmiles: string,
   name?: string,
@@ -47,7 +47,7 @@ export async function molStoreAdd(
 ): Promise<void> {
   await invokeWithError(
     () => httpPost('/api/v1/molecule/create', {
-      project_root: projectRoot,
+      library_root: libraryRoot,
       mol_id: molId,
       smiles: esmiles,
       esmiles,
@@ -60,7 +60,7 @@ export async function molStoreAdd(
 
 /** @deprecated Use molAdminList from ./molecule_admin instead */
 export async function molStoreList(
-  projectRoot: string,
+  libraryRoot: string,
   limit?: number,
   offset?: number,
   _sourceType?: string,
@@ -72,7 +72,7 @@ export async function molStoreList(
     () => httpPost<{ success: boolean; items: MoleculeRecord_[]; total: number }>(
       '/api/v1/molecule/list',
       {
-        project_root: projectRoot,
+        library_root: libraryRoot,
         page,
         page_size: pageSize,
         status: status ?? '',
@@ -85,13 +85,13 @@ export async function molStoreList(
 
 /** @deprecated Use molAdminGet from ./molecule_admin instead */
 export async function molStoreGet(
-  projectRoot: string,
+  libraryRoot: string,
   molId: string,
 ): Promise<MoleculeRecord_ | null> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; molecule?: MoleculeRecord_ }>(
       '/api/v1/molecule/get',
-      { project_root: projectRoot, mol_id: molId },
+      { library_root: libraryRoot, mol_id: molId },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -100,13 +100,13 @@ export async function molStoreGet(
 
 /** @deprecated Use molAdminSearchText from ./molecule_admin instead */
 export async function molStoreSearch(
-  projectRoot: string,
+  libraryRoot: string,
   query: string,
 ): Promise<MoleculeRecord_[]> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; results: MoleculeRecord_[] }>(
       '/api/v1/molecule/search',
-      { project_root: projectRoot, query },
+      { library_root: libraryRoot, query },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -115,13 +115,13 @@ export async function molStoreSearch(
 
 /** @deprecated Use molAdminDelete from ./molecule_admin instead */
 export async function molStoreDelete(
-  projectRoot: string,
+  libraryRoot: string,
   molId: string,
 ): Promise<boolean> {
   const resp = await invokeWithError(
     () => httpDelete<{ success: boolean }>(
       `/api/v1/molecule/${molId}`,
-      { project_root: projectRoot },
+      { library_root: libraryRoot },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -130,12 +130,12 @@ export async function molStoreDelete(
 
 /** @deprecated Use molAdminStoreStats from ./molecule_admin instead */
 export async function molStoreStats(
-  projectRoot: string,
+  libraryRoot: string,
 ): Promise<MolStoreStats> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; total: number; by_status: Record<string, number> }>(
       '/api/v1/molecule/stats',
-      { project_root: projectRoot },
+      { library_root: libraryRoot },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -148,13 +148,13 @@ export async function molStoreStats(
 
 /** @deprecated Use molAdminSearchBySmiles from ./molecule_admin instead */
 export async function molStoreSearchBySmiles(
-  projectRoot: string,
+  libraryRoot: string,
   esmiles: string,
 ): Promise<MoleculeRecord_ | null> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; results: MoleculeRecord_[] }>(
       '/api/v1/molecule/search',
-      { project_root: projectRoot, query: esmiles },
+      { library_root: libraryRoot, query: esmiles },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -162,13 +162,13 @@ export async function molStoreSearchBySmiles(
 }
 
 export async function molStoreListByDoc(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
 ): Promise<MoleculeRecord_[]> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; items: MoleculeRecord_[] }>(
       '/api/v1/molecule/list',
-      { project_root: projectRoot, page: 1, page_size: 1000, status: '' },
+      { library_root: libraryRoot, page: 1, page_size: 1000, status: '' },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -177,13 +177,13 @@ export async function molStoreListByDoc(
 
 /** @deprecated Use molAdminUpdate from ./molecule_admin instead */
 export async function molStoreUpdate(
-  projectRoot: string,
+  libraryRoot: string,
   record: MoleculeRecord_,
 ): Promise<boolean> {
   const resp = await invokeWithError(
     () => httpPut<{ success: boolean }>(
       `/api/v1/molecule/${record.mol_id}`,
-      { project_root: projectRoot, ...record },
+      { library_root: libraryRoot, ...record },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -191,7 +191,7 @@ export async function molStoreUpdate(
 }
 
 export async function molStoreUpdateBatch(
-  projectRoot: string,
+  libraryRoot: string,
   records: MoleculeRecord_[],
 ): Promise<{ updated: number; failed: string[] }> {
   let updated = 0
@@ -200,7 +200,7 @@ export async function molStoreUpdateBatch(
     try {
       await httpPut<{ success: boolean }>(
         `/api/v1/molecule/${record.mol_id}`,
-        { project_root: projectRoot, ...record },
+        { library_root: libraryRoot, ...record },
       )
       updated++
     } catch {
@@ -343,12 +343,12 @@ export interface ScaffoldProfile {
 }
 
 export async function molScaffoldProfile(
-  projectRoot: string,
+  libraryRoot: string,
   scaffoldEsmiles: string,
 ): Promise<ScaffoldProfile> {
   return invokeWithError(
     () => httpPost<ScaffoldProfile>('/api/v1/molecule/search', {
-      project_root: projectRoot,
+      library_root: libraryRoot,
       query: scaffoldEsmiles,
     }),
     ErrorCode.ApiError,
@@ -370,13 +370,13 @@ export interface ActivityCliff {
 }
 
 export async function molFindActivityCliffs(
-  projectRoot: string,
+  libraryRoot: string,
   minSimilarity: number,
   minActivityRatio: number,
 ): Promise<ActivityCliff[]> {
   return invokeWithError(
     () => httpPost<ActivityCliff[]>('/api/v1/molecule/search', {
-      project_root: projectRoot,
+      library_root: libraryRoot,
       min_similarity: minSimilarity,
       min_activity_ratio: minActivityRatio,
     }),

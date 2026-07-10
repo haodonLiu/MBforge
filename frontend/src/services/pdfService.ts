@@ -73,7 +73,7 @@ export interface CorefChain {
 // ============================================================================
 
 export async function detectPageMolecules(params: {
-  projectRoot: string
+  libraryRoot: string
   docId: string
   page: number
   imageBase64: string
@@ -95,7 +95,7 @@ export async function detectPageMolecules(params: {
       width: number
       height: number
     }>('/api/v1/moldet/extract-pdf', {
-      project_root: params.projectRoot,
+      library_root: params.libraryRoot,
       doc_id: params.docId,
       page: params.page,
       dpi: 300,
@@ -115,7 +115,7 @@ export async function detectPageMolecules(params: {
 }
 
 export async function getCachedDetections(params: {
-  projectRoot: string
+  libraryRoot: string
   docId: string
   page: number
 }): Promise<ServiceResult<DetectionResponse>> {
@@ -125,7 +125,7 @@ export async function getCachedDetections(params: {
       count: number
       source: string
     }>('/api/v1/models/extract/cached-detections', {
-      project_root: params.projectRoot,
+      library_root: params.libraryRoot,
       doc_id: params.docId,
       page: params.page,
     })
@@ -144,11 +144,11 @@ export async function getCachedDetections(params: {
 }
 
 export async function clearDocumentDetections(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
 ): Promise<ServiceResult<void>> {
   try {
-    await httpPost('/api/v1/models/extract/clear-cache-doc', { project_root: projectRoot, doc_id: docId })
+    await httpPost('/api/v1/models/extract/clear-cache-doc', { library_root: libraryRoot, doc_id: docId })
     return { success: true }
   } catch (e) {
     return { success: false, error: String(e) }
@@ -156,7 +156,7 @@ export async function clearDocumentDetections(
 }
 
 export async function getDetectionStats(
-  projectRoot: string,
+  libraryRoot: string,
 ): Promise<ServiceResult<CacheStats>> {
   try {
     const resp = await httpPost<{
@@ -164,7 +164,7 @@ export async function getDetectionStats(
       cached_page_count: number
       cached_doc_count: number
       schema_version: number
-    }>('/api/v1/models/extract/cache-stats', { project_root: projectRoot })
+    }>('/api/v1/models/extract/cache-stats', { library_root: libraryRoot })
 
     return {
       success: true,
@@ -185,7 +185,7 @@ export async function getDetectionStats(
 // ============================================================================
 
 export async function getPageParseResult(params: {
-  projectRoot: string
+  libraryRoot: string
   docId: string
   page: number
   pageHPts: number
@@ -197,7 +197,7 @@ export async function getPageParseResult(params: {
       molecules: unknown[]
       findings: Array<{ kind: string; text: string; bbox: [number, number, number, number] }>
     }>('/api/v1/models/parse/page', {
-      project_root: params.projectRoot,
+      library_root: params.libraryRoot,
       doc_id: params.docId,
       page: params.page,
       page_h_pts: params.pageHPts,
@@ -222,7 +222,7 @@ export async function getPageParseResult(params: {
 // ============================================================================
 
 export async function getMoleculeCorefChain(
-  projectRoot: string,
+  libraryRoot: string,
   molId: string,
 ): Promise<ServiceResult<CorefChain>> {
   try {
@@ -238,7 +238,7 @@ export async function getMoleculeCorefChain(
         esmiles: string
       }>
       aliases: string[]
-    }>('/api/v1/models/coref/chain', { project_root: projectRoot, mol_id: molId })
+    }>('/api/v1/models/coref/chain', { library_root: libraryRoot, mol_id: molId })
 
     return {
       success: true,
@@ -430,7 +430,7 @@ export interface QuickScanResult {
 }
 
 export async function batchQuickScan(
-  projectRoot: string,
+  libraryRoot: string,
   docIds?: string[],
 ): Promise<ServiceResult<QuickScanResult[]>> {
   try {
@@ -445,7 +445,7 @@ export async function batchQuickScan(
       total: number
       errors: string[]
     }>('/api/v1/models/moldet/batch-scan', {
-      project_root: projectRoot,
+      library_root: libraryRoot,
       doc_ids: docIds ?? [],
     })
 

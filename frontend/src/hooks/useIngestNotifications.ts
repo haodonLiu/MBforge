@@ -8,18 +8,18 @@ import {
 } from '../api/http/ingest_queue'
 import { toast } from '../components/ui/Toast'
 
-export function useIngestNotifications(projectRoot: string): void {
+export function useIngestNotifications(libraryRoot: string): void {
   const location = useLocation()
-  const projectRootRef = useRef(projectRoot)
+  const libraryRootRef = useRef(libraryRoot)
   const lastStatusRef = useRef<Record<string, IngestTask['status']>>({})
 
   useEffect(() => {
-    projectRootRef.current = projectRoot
-  }, [projectRoot])
+    libraryRootRef.current = libraryRoot
+  }, [libraryRoot])
 
   useEffect(() => {
     lastStatusRef.current = {}
-  }, [projectRoot])
+  }, [libraryRoot])
 
   useEffect(() => {
     let cancelled = false
@@ -27,7 +27,7 @@ export function useIngestNotifications(projectRoot: string): void {
 
     const poll = async () => {
       if (cancelled) return
-      const root = projectRootRef.current
+      const root = libraryRootRef.current
       if (!root) return
       try {
         const tasks = await ingestList(root)

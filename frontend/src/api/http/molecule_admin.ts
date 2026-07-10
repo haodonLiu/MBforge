@@ -11,13 +11,13 @@ import type { MarkushOverlap, MarkushPattern } from './chem'
 
 /** 按 mol_id 查询单条分子。 */
 export async function molAdminGet(
-  projectRoot: string,
+  libraryRoot: string,
   molId: string,
 ): Promise<MoleculeRecord | null> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; molecule?: MoleculeRecord }>(
       '/api/v1/molecule/get',
-      { project_root: projectRoot, mol_id: molId },
+      { library_root: libraryRoot, mol_id: molId },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -26,13 +26,13 @@ export async function molAdminGet(
 
 /** 按 SMILES 精确查询。 */
 export async function molAdminSearchBySmiles(
-  projectRoot: string,
+  libraryRoot: string,
   smiles: string,
 ): Promise<MoleculeRecord | null> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; results: MoleculeRecord[] }>(
       '/api/v1/molecule/search',
-      { project_root: projectRoot, query: smiles },
+      { library_root: libraryRoot, query: smiles },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -41,13 +41,13 @@ export async function molAdminSearchBySmiles(
 
 /** FTS 全文搜索（name / notes / source_doc）。 */
 export async function molAdminSearchText(
-  projectRoot: string,
+  libraryRoot: string,
   query: string,
 ): Promise<MoleculeRecord[]> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; results: MoleculeRecord[] }>(
       '/api/v1/molecule/search',
-      { project_root: projectRoot, query },
+      { library_root: libraryRoot, query },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -56,7 +56,7 @@ export async function molAdminSearchText(
 
 /** 分页列举（可选 source_type / status 过滤）。 */
 export async function molAdminList(
-  projectRoot: string,
+  libraryRoot: string,
   limit: number,
   offset: number,
   _sourceType?: string,
@@ -67,7 +67,7 @@ export async function molAdminList(
     () => httpPost<{ success: boolean; items: MoleculeRecord[]; total: number }>(
       '/api/v1/molecule/list',
       {
-        project_root: projectRoot,
+        library_root: libraryRoot,
         page,
         page_size: limit,
         status: status ?? '',
@@ -80,12 +80,12 @@ export async function molAdminList(
 
 /** 库统计。 */
 export async function molAdminStoreStats(
-  projectRoot: string,
+  libraryRoot: string,
 ): Promise<Record<string, unknown>> {
   return invokeWithError(
     () => httpPost<Record<string, unknown>>(
       '/api/v1/molecule/stats',
-      { project_root: projectRoot },
+      { library_root: libraryRoot },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -93,13 +93,13 @@ export async function molAdminStoreStats(
 
 /** Return the full evidence chain for a canonical molecule. */
 export async function molAdminEvidence(
-  projectRoot: string,
+  libraryRoot: string,
   canonicalSmiles: string,
 ): Promise<EvidenceItem[]> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; evidence: EvidenceItem[] }>(
       '/api/v1/molecule/evidence',
-      { project_root: projectRoot, canonical_smiles: canonicalSmiles },
+      { library_root: libraryRoot, canonical_smiles: canonicalSmiles },
     ),
     ErrorCode.MoleculeSearch,
   )
@@ -109,7 +109,7 @@ export async function molAdminEvidence(
 
 /** Markush 覆盖度检查。 */
 export async function molAdminCheckMarkush(
-  _projectRoot: string,
+  _libraryRoot: string,
   esmiles: string,
   query: string,
   ctx?: string,
@@ -126,7 +126,7 @@ export async function molAdminCheckMarkush(
 
 /** E-SMILES → MarkushPattern。 */
 export async function molAdminParseEsmiles(
-  _projectRoot: string,
+  _libraryRoot: string,
   input: string,
 ): Promise<MarkushPattern> {
   return invokeWithError(
@@ -141,12 +141,12 @@ export async function molAdminParseEsmiles(
 
 /** 插入单条分子。 */
 export async function molAdminAdd(
-  projectRoot: string,
+  libraryRoot: string,
   record: MoleculeRecord,
 ): Promise<void> {
   await invokeWithError(
     () => httpPost('/api/v1/molecule/create', {
-      project_root: projectRoot,
+      library_root: libraryRoot,
       mol_id: record.mol_id,
       smiles: record.esmiles,
       esmiles: record.esmiles,
@@ -159,13 +159,13 @@ export async function molAdminAdd(
 
 /** 更新整条分子。 */
 export async function molAdminUpdate(
-  projectRoot: string,
+  libraryRoot: string,
   record: MoleculeRecord,
 ): Promise<boolean> {
   const resp = await invokeWithError(
     () => httpPut<{ success: boolean }>(
       `/api/v1/molecule/${record.mol_id}`,
-      { project_root: projectRoot, ...record },
+      { library_root: libraryRoot, ...record },
     ),
     ErrorCode.ApiError,
   )
@@ -174,14 +174,14 @@ export async function molAdminUpdate(
 
 /** 仅更新 status 字段。 */
 export async function molAdminUpdateStatus(
-  projectRoot: string,
+  libraryRoot: string,
   molId: string,
   status: string,
 ): Promise<boolean> {
   const resp = await invokeWithError(
     () => httpPut<{ success: boolean }>(
       `/api/v1/molecule/${molId}`,
-      { project_root: projectRoot, status },
+      { library_root: libraryRoot, status },
     ),
     ErrorCode.ApiError,
   )
@@ -190,13 +190,13 @@ export async function molAdminUpdateStatus(
 
 /** 物理删除单条分子。 */
 export async function molAdminDelete(
-  projectRoot: string,
+  libraryRoot: string,
   molId: string,
 ): Promise<boolean> {
   const resp = await invokeWithError(
     () => httpDelete<{ success: boolean }>(
       `/api/v1/molecule/${molId}`,
-      { project_root: projectRoot },
+      { library_root: libraryRoot },
     ),
     ErrorCode.ApiError,
   )
@@ -205,7 +205,7 @@ export async function molAdminDelete(
 
 /** 添加相似度关系。 */
 export function molAdminAddSimilarity(
-  _projectRoot: string,
+  _libraryRoot: string,
   _molAId: string,
   _molBId: string,
   _score: number,

@@ -53,7 +53,7 @@ export interface UseMoleculeLibraryResult {
 
 const VIEW_MODE_KEY = 'mbforge_molecule_view_mode'
 
-export function useMoleculeLibrary(projectRoot: string | null): UseMoleculeLibraryResult {
+export function useMoleculeLibrary(libraryRoot: string | null): UseMoleculeLibraryResult {
   const [molecules, setMolecules] = useState<MoleculeRecord[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -111,7 +111,7 @@ export function useMoleculeLibrary(projectRoot: string | null): UseMoleculeLibra
   }, [])
 
   const load = useCallback(async () => {
-    if (!projectRoot) {
+    if (!libraryRoot) {
       setMolecules([])
       setTotalCount(0)
       return
@@ -121,11 +121,11 @@ export function useMoleculeLibrary(projectRoot: string | null): UseMoleculeLibra
     try {
       let records: MoleculeRecord[]
       if (debouncedQuery.trim()) {
-        records = await molAdminSearchText(projectRoot, debouncedQuery.trim())
+        records = await molAdminSearchText(libraryRoot, debouncedQuery.trim())
       } else {
         // Fetch the full dataset so client-side sorting/pagination work correctly.
         records = await molAdminList(
-          projectRoot,
+          libraryRoot,
           10000,
           0,
           filters.sourceType === 'all' ? undefined : filters.sourceType,
@@ -185,7 +185,7 @@ export function useMoleculeLibrary(projectRoot: string | null): UseMoleculeLibra
     } finally {
       setLoading(false)
     }
-  }, [projectRoot, debouncedQuery, filters, sort, pagination.page, pagination.pageSize])
+  }, [libraryRoot, debouncedQuery, filters, sort, pagination.page, pagination.pageSize])
 
   useEffect(() => {
     load()

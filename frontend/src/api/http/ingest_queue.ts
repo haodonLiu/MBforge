@@ -49,7 +49,7 @@ export interface IngestQueueUpdateEvent {
 }
 
 export interface IngestWorkerHeartbeatEvent {
-  project_root: string
+  library_root: string
   ts: number
   alive: boolean
 }
@@ -101,11 +101,11 @@ export interface IngestEventHandlers {
  * close the connection so the browser can auto-reconnect.
  */
 export function subscribeIngestEvents(
-  projectRoot: string,
+  libraryRoot: string,
   taskId: string,
   handlers: IngestEventHandlers,
 ): { close: () => void } {
-  const url = `/api/v1/pipeline/events/${encodeURIComponent(taskId)}?library_root=${encodeURIComponent(projectRoot)}`
+  const url = `/api/v1/pipeline/events/${encodeURIComponent(taskId)}?library_root=${encodeURIComponent(libraryRoot)}`
   const es = new EventSource(url)
 
   const handleNamedEvent = (level: string, raw: MessageEvent) => {
@@ -157,17 +157,17 @@ export function subscribeIngestEvents(
   }
 }
 
-export async function ingestList(projectRoot: string): Promise<IngestTask[]> {
+export async function ingestList(libraryRoot: string): Promise<IngestTask[]> {
   return invokeWithError(
-    () => httpPost('/api/v1/pipeline/queue', { project_root: projectRoot })
+    () => httpPost('/api/v1/pipeline/queue', { library_root: libraryRoot })
       .then((r: any) => Array.isArray(r?.tasks) ? r.tasks : []),
     ErrorCode.ApiError,
   )
 }
 
-export async function ingestStats(projectRoot: string): Promise<QueueStats> {
+export async function ingestStats(libraryRoot: string): Promise<QueueStats> {
   return invokeWithError(
-    () => httpPost('/api/v1/pipeline/queue/stats', { project_root: projectRoot })
+    () => httpPost('/api/v1/pipeline/queue/stats', { library_root: libraryRoot })
       .then((r: any) => r?.stats ?? {}),
     ErrorCode.ApiError,
   )
@@ -184,13 +184,13 @@ export async function ingestWorkerStatus(): Promise<{ status: string; ts: number
 /** 获取某 doc_id 的最近 N 条 ingest 日志（DB 兜底通道）。
  *  默认 limit=500；可按需调小。 */
 export async function ingestGetLogs(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
   limit?: number,
 ): Promise<IngestLogRecord[]> {
   return invokeWithError(
     () => httpPost<IngestLogRecord[]>('/api/v1/pipeline/queue/logs', {
-      project_root: projectRoot,
+      library_root: libraryRoot,
       doc_id: docId,
       limit,
     }),
@@ -198,25 +198,25 @@ export async function ingestGetLogs(
   )
 }
 
-export async function ingestCancel(projectRoot: string, taskId: string): Promise<void> {
+export async function ingestCancel(libraryRoot: string, taskId: string): Promise<void> {
   return invokeWithError(
     async () => {
-      await httpPost(`/api/v1/pipeline/queue/${taskId}/cancel`, { project_root: projectRoot })
+      await httpPost(`/api/v1/pipeline/queue/${taskId}/cancel`, { library_root: libraryRoot })
     },
     ErrorCode.ApiError,
   )
 }
 
-export async function ingestRetry(projectRoot: string, taskId: string): Promise<boolean> {
+export async function ingestRetry(libraryRoot: string, taskId: string): Promise<boolean> {
   return invokeWithError(
-    () => httpPost<boolean>(`/api/v1/pipeline/queue/${taskId}/retry`, { project_root: projectRoot }),
+    () => httpPost<boolean>(`/api/v1/pipeline/queue/${taskId}/retry`, { library_root: libraryRoot }),
     ErrorCode.ApiError,
   )
 }
 
-export async function ingestCleanup(projectRoot: string): Promise<number> {
+export async function ingestCleanup(libraryRoot: string): Promise<number> {
   return invokeWithError(
-    () => httpPost<number>('/api/v1/pipeline/queue/cleanup', { project_root: projectRoot }),
+    () => httpPost<number>('/api/v1/pipeline/queue/cleanup', { library_root: libraryRoot }),
     ErrorCode.ApiError,
   )
 }
@@ -227,14 +227,14 @@ export async function ingestCleanup(projectRoot: string): Promise<number> {
  * 新建任务而不复用现有 done 任务（保留历史记录）。
  */
 export async function ingestEnqueue(
-  projectRoot: string,
+  libraryRoot: string,
   filePath: string,
   docId: string,
   force?: boolean,
 ): Promise<string> {
   return invokeWithError(
     () => httpPost<string>('/api/v1/pipeline/enqueue', {
-      project_root: projectRoot,
+      library_root: libraryRoot,
       file_path: filePath,
       doc_id: docId,
       force: force ?? false,
@@ -267,14 +267,14 @@ export function removeSelfTriggeredDoc(docId: string): void {
 }
 
 export async function ingestSetPriority(
-  projectRoot: string,
+  libraryRoot: string,
   taskId: string,
   priority: number,
 ): Promise<void> {
   return invokeWithError(
     async () => {
       await httpPost(`/api/v1/pipeline/queue/${taskId}/priority`, {
-        project_root: projectRoot,
+        library_root: libraryRoot,
         priority,
       })
     },
@@ -283,12 +283,12 @@ export async function ingestSetPriority(
 }
 
 export async function ingestDeleteTask(
-  projectRoot: string,
+  libraryRoot: string,
   taskId: string,
 ): Promise<boolean> {
   return invokeWithError(
     () => httpPost<boolean>(`/api/v1/pipeline/queue/${taskId}/delete`, {
-      project_root: projectRoot,
+      library_root: libraryRoot,
     }),
     ErrorCode.ApiError,
   )

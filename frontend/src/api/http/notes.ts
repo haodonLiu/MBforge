@@ -21,7 +21,7 @@ export interface Note {
 
 export async function notesList(root: string): Promise<Note[]> {
   const resp = await invokeWithError(
-    () => httpPost<{ success: boolean; notes: Note[] }>('/api/v1/notes/list', { projectRoot: root }),
+    () => httpPost<{ success: boolean; notes: Note[] }>('/api/v1/notes/list', { libraryRoot: root }),
     ErrorCode.ApiError,
   )
   return resp.notes ?? []
@@ -34,7 +34,7 @@ export async function notesGet(_root: string, _id: string): Promise<Note | null>
 
 export async function notesSave(root: string, note: Note): Promise<Note> {
   const resp = await invokeWithError(
-    () => httpPost<{ success: boolean; note: Note }>('/api/v1/notes/save', { projectRoot: root, note }),
+    () => httpPost<{ success: boolean; note: Note }>('/api/v1/notes/save', { libraryRoot: root, note }),
     ErrorCode.ApiError,
   )
   return resp.note
@@ -42,7 +42,7 @@ export async function notesSave(root: string, note: Note): Promise<Note> {
 
 export async function notesDelete(root: string, id: string): Promise<boolean> {
   const resp = await invokeWithError(
-    () => httpPost<{ success: boolean }>('/api/v1/notes/delete', { projectRoot: root, id }),
+    () => httpPost<{ success: boolean }>('/api/v1/notes/delete', { libraryRoot: root, id }),
     ErrorCode.ApiError,
   )
   return resp.success
@@ -51,7 +51,7 @@ export async function notesDelete(root: string, id: string): Promise<boolean> {
 /** 返回引用了目标笔记的其他笔记列表（反向链接）. */
 export async function notesBacklinks(root: string, targetId: string): Promise<Note[]> {
   const resp = await invokeWithError(
-    () => httpPost<{ success: boolean; notes: Note[] }>('/api/v1/notes/backlinks', { projectRoot: root, targetId }),
+    () => httpPost<{ success: boolean; notes: Note[] }>('/api/v1/notes/backlinks', { libraryRoot: root, targetId }),
     ErrorCode.ApiError,
   )
   return resp.notes ?? []

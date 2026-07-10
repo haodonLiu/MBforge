@@ -76,9 +76,9 @@ export async function testLlmConnection(): Promise<LlmEnvStatus> {
   }
 }
 
-export async function agentCreateSession(sessionId: string, projectRoot?: string): Promise<void> {
+export async function agentCreateSession(sessionId: string, libraryRoot?: string): Promise<void> {
   await invokeWithError(
-    () => httpPost('/api/v1/agent/session', { session_id: sessionId, project_root: projectRoot ?? null }),
+    () => httpPost('/api/v1/agent/session', { session_id: sessionId, library_root: libraryRoot ?? null }),
     ErrorCode.Network,
   )
 }
@@ -139,9 +139,9 @@ export function agentChatStream(
   return Promise.resolve(() => es.close())
 }
 
-export async function agentSwitchProject(sessionId: string, projectRoot: string, _projectName: string): Promise<void> {
+export async function agentSwitchProject(sessionId: string, libraryRoot: string, _projectName: string): Promise<void> {
   await invokeWithError(
-    () => httpPut(`/api/v1/agent/session/${sessionId}/project`, { project_root: projectRoot }),
+    () => httpPut(`/api/v1/agent/session/${sessionId}/project`, { library_root: libraryRoot }),
     ErrorCode.Network,
   )
 }

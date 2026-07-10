@@ -110,7 +110,7 @@ def main() -> int:
 
         # 5. List endpoint - each row should have evidence
         body = MoleculeListRequest(
-            project_root=str(td), page=1, page_size=10, status=""
+            library_root=str(td), page=1, page_size=10, status=""
         )
         r = asyncio.run(mol_list(body))
         assert r["success"], r
@@ -126,7 +126,7 @@ def main() -> int:
         )
 
         # 6. Evidence endpoint - full chain
-        r2 = asyncio.run(mol_evidence({"project_root": str(td), "canonical_smiles": "CCO"}))
+        r2 = asyncio.run(mol_evidence({"library_root": str(td), "canonical_smiles": "CCO"}))
         assert r2["success"], r2
         assert len(r2["evidence"]) == 2
         print(f"[6] evidence CCO count={len(r2['evidence'])}")

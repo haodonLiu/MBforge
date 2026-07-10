@@ -11,11 +11,11 @@ type AnalyticsInnerTab = 'substructure' | 'analogs' | 'clusters' | 'relations' |
 
 export interface AnalyticsTabProps {
   molecules: MoleculeRecord[]
-  projectRoot: string | null
+  libraryRoot: string | null
   onRefresh: () => void
 }
 
-export default function AnalyticsTab({ molecules, projectRoot: _projectRoot, onRefresh }: AnalyticsTabProps) {
+export default function AnalyticsTab({ molecules, libraryRoot: _libraryRoot, onRefresh }: AnalyticsTabProps) {
   const [activeTab, setActiveTab] = useState<AnalyticsInnerTab>('substructure')
 
   const items = [

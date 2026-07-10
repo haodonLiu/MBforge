@@ -15,7 +15,7 @@ import type { FigureLabel, CorefPrediction } from '@/api/http/result_pane'
 import { getFigureLabels, getCorefPredictions } from '@/api/http/result_pane'
 import { getFigureBboxes as fetchFigureBboxes } from '@/api/http/pdf'
 
-export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
+export function usePdfViewer(doc: DocumentEntry, libraryRoot: string) {
   // 置信度阈值（0-1）
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.3)
 
@@ -79,19 +79,19 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
 
   const normalizePath = useCallback((p: string) => p.replace(/^\\\\\?\\/, '').replace(/^\?\//, '').replace(/\\/g, '/'), [])
   const absDocPath = useMemo(() => {
-    const root = projectRoot
+    const root = libraryRoot
     if (!root) return doc.path
     const pdfPath = doc.source_path || doc.path
     return pdfPath.includes(':') || pdfPath.startsWith('/')
       ? normalizePath(pdfPath)
       : `${normalizePath(root).replace(/\/$/, '')}/${pdfPath.replace(/\\/g, '/')}`
-  }, [doc.path, doc.source_path, projectRoot, normalizePath])
+  }, [doc.path, doc.source_path, libraryRoot, normalizePath])
 
   useEffect(() => {
     let cancelled = false
     setPdfUrl('')
     setPdfLoading(true)
-    const url = `http://127.0.0.1:18792/api/v1/library/documents/${encodeURIComponent(doc.doc_id)}/file?library_root=${encodeURIComponent(projectRoot)}`
+    const url = `http://127.0.0.1:18792/api/v1/library/documents/${encodeURIComponent(doc.doc_id)}/file?library_root=${encodeURIComponent(libraryRoot)}`
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!cancelled) { setPdfUrl(url); setPdfLoading(false) }
     return () => { cancelled = true }
@@ -133,10 +133,10 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
   }, [pageTextItems])
 
   const loadCachedDetections = useCallback(async (pageNum: number): Promise<boolean> => {
-    if (!projectRoot) return false
+    if (!libraryRoot) return false
     try {
       const result = await getCachedDetections({
-        projectRoot,
+        libraryRoot,
         docId: doc.doc_id,
         page: pageNum,
       })
@@ -149,7 +149,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
       console.warn('Failed to load cached detections:', e)
     }
     return false
-  }, [projectRoot, doc.doc_id, enrichResults])
+  }, [libraryRoot, doc.doc_id, enrichResults])
 
   const handleDetectPage = useCallback(async (force = false) => {
     if (!currentPageDataUrl || !pageInfo) { showToast('页面尚未渲染完成，请稍候', 'info'); return }
@@ -173,7 +173,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
         throw new Error('无法获取页面图像数据')
       }
       const result = await detectPageMolecules({
-        projectRoot,
+        libraryRoot,
         docId: doc.doc_id,
         page: currentPage,
         imageBase64: base64,
@@ -206,7 +206,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
       console.error('Detection failed:', e)
       showToast('检测失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally { setIsDetecting(false) }
-  }, [currentPageDataUrl, pageInfo, currentPage, pageDetections, projectRoot, doc.doc_id, enrichResults, loadCachedDetections])
+  }, [currentPageDataUrl, pageInfo, currentPage, pageDetections, libraryRoot, doc.doc_id, enrichResults, loadCachedDetections])
 
   const handleRecognizePage = useCallback(async () => {
     if (!currentPageDataUrl || !pageInfo) { showToast('页面尚未渲染完成，请稍候', 'info'); return }
@@ -215,7 +215,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
     try {
       const base64 = currentPageDataUrl.split(',')[1] || ''
       const result = await detectPageMolecules({
-        projectRoot,
+        libraryRoot,
         docId: doc.doc_id,
         page: currentPage,
         imageBase64: base64,
@@ -237,13 +237,13 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
       console.error('Recognition failed:', e)
       showToast('识别失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally { setIsDetecting(false) }
-  }, [currentPageDataUrl, pageInfo, currentPage, projectRoot, doc.doc_id, enrichResults])
+  }, [currentPageDataUrl, pageInfo, currentPage, libraryRoot, doc.doc_id, enrichResults])
 
   const handleClearDetectionCache = useCallback(async () => {
-    if (!projectRoot) return
+    if (!libraryRoot) return
     setIsDetecting(true)
     try {
-      const result = await clearDocumentDetections(projectRoot, doc.doc_id)
+      const result = await clearDocumentDetections(libraryRoot, doc.doc_id)
       if (!result.success) {
         throw new Error(result.error || '清除缓存失败')
       }
@@ -254,7 +254,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
       console.error('Failed to clear detection cache:', e)
       showToast('清除缓存失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally { setIsDetecting(false) }
-  }, [projectRoot, doc.doc_id])
+  }, [libraryRoot, doc.doc_id])
 
   const handlePageRendered = useCallback((info: { pageNumber: number; width: number; height: number; originalWidth: number; originalHeight: number; scale: number }) => {
     // 只接受当前页的渲染结果，防止旧页面的数据污染
@@ -331,13 +331,13 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
   }, [currentPage])
 
   const loadCorefForPage = useCallback(async (pageNum: number) => {
-    if (!projectRoot || !doc.doc_id) return
+    if (!libraryRoot || !doc.doc_id) return
     if (corefLabelsByPage.has(pageNum) && corefPredictionsByPage.has(pageNum)) return
     setIsLoadingCoref(true)
     try {
       const [labels, preds] = await Promise.all([
-        getFigureLabels(projectRoot, doc.doc_id, pageNum),
-        getCorefPredictions(projectRoot, doc.doc_id, pageNum),
+        getFigureLabels(libraryRoot, doc.doc_id, pageNum),
+        getCorefPredictions(libraryRoot, doc.doc_id, pageNum),
       ])
       setCorefLabelsByPage(prev => { const next = new Map(prev); next.set(pageNum, labels); return next })
       setCorefPredictionsByPage(prev => { const next = new Map(prev); next.set(pageNum, preds); return next })
@@ -347,7 +347,7 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
     } finally {
       setIsLoadingCoref(false)
     }
-  }, [projectRoot, doc.doc_id, corefLabelsByPage, corefPredictionsByPage])
+  }, [libraryRoot, doc.doc_id, corefLabelsByPage, corefPredictionsByPage])
 
   // 切页时拉取 coref 数据
   useEffect(() => {
@@ -461,15 +461,15 @@ export function usePdfViewer(doc: DocumentEntry, projectRoot: string) {
 
   const [imageBlobUrls, setImageBlobUrls] = useState<Map<string, string>>(new Map())
   useEffect(() => {
-    if (!projectRoot || extractedImages.length === 0) { setImageBlobUrls(new Map()); return }
-    const cleanRoot = projectRoot.replace(/^\\\\\?\\/, '').replace(/^\?\//, '').replace(/\\/g, '/').replace(/\/$/, '')
+    if (!libraryRoot || extractedImages.length === 0) { setImageBlobUrls(new Map()); return }
+    const cleanRoot = libraryRoot.replace(/^\\\\\?\\/, '').replace(/^\?\//, '').replace(/\\/g, '/').replace(/\/$/, '')
     const newMap = new Map<string, string>()
     for (const img of extractedImages) {
       if (!img.rel_path) continue
       newMap.set(img.rel_path, `http://127.0.0.1:18792/api/v1/models/pdf/image?path=${encodeURIComponent(`${cleanRoot}/${img.rel_path.replace(/\\/g, '/')}`)}`)
     }
     setImageBlobUrls(newMap)
-  }, [extractedImages, projectRoot])
+  }, [extractedImages, libraryRoot])
 
   const handleJumpToPage = useCallback(() => {
     const n = parseInt(pageJumpInput, 10)

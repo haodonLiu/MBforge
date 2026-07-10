@@ -20,7 +20,7 @@ import {
 
 export default function SettingsPage() {
   const { t } = useTranslation()
-  const { projectRoot } = useAppContext()
+  const { libraryRoot } = useAppContext()
   const { setTheme } = useTheme()
 
   const [settings, setSettings] = useState<SettingsState>(DEFAULT_SETTINGS)
@@ -160,7 +160,7 @@ export default function SettingsPage() {
       <SettingsTabs
         settings={settings}
         setSettings={setSettings}
-        projectRoot={projectRoot}
+        libraryRoot={libraryRoot}
         onReset={handleReset}
         onOpenConfig={handleOpenConfigDir}
       />

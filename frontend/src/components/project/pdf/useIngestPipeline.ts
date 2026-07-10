@@ -18,7 +18,7 @@ interface IngestPipelineState {
   embedState: EmbedSubState | null
 }
 
-export function useIngestPipeline(docId: string, projectRoot: string): IngestPipelineState {
+export function useIngestPipeline(docId: string, libraryRoot: string): IngestPipelineState {
   const [task, setTask] = useState<IngestTask | null>(null)
   const [progressPct, setProgressPct] = useState(0)
   const [details, setDetails] = useState('')
@@ -30,9 +30,9 @@ export function useIngestPipeline(docId: string, projectRoot: string): IngestPip
   }, [docId])
 
   const findTask = useCallback(async () => {
-    if (!projectRoot) return
+    if (!libraryRoot) return
     try {
-      const tasks = await ingestList(projectRoot)
+      const tasks = await ingestList(libraryRoot)
       const sorted = tasks
         .filter((t) => t.doc_id === docIdRef.current)
         .sort((a, b) => b.created_at - a.created_at)
@@ -49,7 +49,7 @@ export function useIngestPipeline(docId: string, projectRoot: string): IngestPip
     } catch (e: unknown) {
       console.error('[useIngestPipeline] findTask failed:', e)
     }
-  }, [projectRoot])
+  }, [libraryRoot])
 
   useEffect(() => {
     void findTask()
@@ -61,7 +61,7 @@ export function useIngestPipeline(docId: string, projectRoot: string): IngestPip
     const poll = async () => {
       if (cancelled) return
       try {
-        const tasks = await ingestList(projectRoot)
+        const tasks = await ingestList(libraryRoot)
         // Guard against state updates after the component unmounts.
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (cancelled) return
@@ -88,13 +88,13 @@ export function useIngestPipeline(docId: string, projectRoot: string): IngestPip
       cancelled = true
       clearInterval(timer)
     }
-  }, [projectRoot])
+  }, [libraryRoot])
 
   // Incremental SSE subscription for real-time error/warning events.
   useEffect(() => {
-    if (!projectRoot || !task || task.status !== 'processing') return
+    if (!libraryRoot || !task || task.status !== 'processing') return
 
-    const sub = subscribeIngestEvents(projectRoot, task.id, {
+    const sub = subscribeIngestEvents(libraryRoot, task.id, {
       onEvent: (ev) => {
         if ('progress_pct' in ev) {
           setProgressPct(ev.progress_pct)
@@ -126,7 +126,7 @@ export function useIngestPipeline(docId: string, projectRoot: string): IngestPip
     // Intentionally use id/status primitives to avoid re-subscribing on every
     // poll update while still closing the connection when the task is done/failed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectRoot, task?.id, task?.status])
+  }, [libraryRoot, task?.id, task?.status])
 
   return {
     task,

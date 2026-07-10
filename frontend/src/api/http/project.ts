@@ -207,13 +207,13 @@ export async function getFileTree(
   return { success: true, tree: [] }
 }
 
-export async function uploadFiles(_projectRoot: string): Promise<DocumentEntry[]> {
+export async function uploadFiles(_libraryRoot: string): Promise<DocumentEntry[]> {
   // Web mode has no native file picker; the React UI uses its own uploader.
   return []
 }
 
 export async function deleteFile(
-  _projectRoot: string,
+  _libraryRoot: string,
   docId: string,
 ): Promise<boolean> {
   return invokeWithError(() => deleteLibraryDocument(docId))
@@ -222,14 +222,14 @@ export async function deleteFile(
 }
 
 export async function deleteDocument(
-  _projectRoot: string,
+  _libraryRoot: string,
   docId: string,
 ): Promise<void> {
   await invokeWithError(() => deleteLibraryDocument(docId))
 }
 
 export async function reingestDocument(
-  _projectRoot: string,
+  _libraryRoot: string,
   _docId: string,
 ): Promise<void> {
   // No equivalent in library router; the pipeline trigger lives elsewhere.
@@ -237,7 +237,7 @@ export async function reingestDocument(
 }
 
 export async function readTextFile(
-  _projectRoot: string,
+  _libraryRoot: string,
   path: string,
 ): Promise<string> {
   // The legacy `/api/v1/project/file-tree?action=read` endpoint no longer

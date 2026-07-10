@@ -38,11 +38,7 @@ function nextTabId(): string {
 // ============================================================================
 
 interface AppState {
-  /** Legacy project root (deprecated) */
-  projectRoot: string
-  /** Legacy setter (deprecated) */
-  setProjectRoot: (root: string) => void
-  /** Unified library root directory */
+  /** Library root directory (canonical) */
   libraryRoot: string
   /** Set library root (persists to localStorage) */
   setLibraryRoot: (root: string) => void
@@ -80,11 +76,6 @@ const AppContext = createContext<AppState | null>(null)
 // ============================================================================
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [projectRoot, setProjectRootState] = useState(() => {
-    const raw = localStorage.getItem('mbforge_project_root') || ''
-    return cleanWindowsPath(raw)
-  })
-
   const [libraryRoot, setLibraryRootState] = useState(() => {
     const raw = localStorage.getItem(STORAGE_KEY) || ''
     return cleanWindowsPath(raw)
@@ -102,18 +93,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return false
     }
   })
-
-  const setProjectRoot = useCallback((root: string) => {
-    const cleaned = cleanWindowsPath(root)
-    try {
-      localStorage.setItem('mbforge_project_root', cleaned)
-    } catch (e) {
-      console.warn('[AppContext] localStorage quota exceeded:', e)
-    }
-    setProjectRootState(cleaned)
-    setOpenTabs([])
-    setActiveTabId(null)
-  }, [])
 
   const setLibraryRoot = useCallback((root: string) => {
     const cleaned = cleanWindowsPath(root)
@@ -170,14 +149,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AppContext.Provider value={{
-      projectRoot, setProjectRoot,
-      libraryRoot, setLibraryRoot,
-      activeCollectionId, setActiveCollectionId,
-      activeFile, setActiveFile,
-      openTabs, activeTabId, openTab, closeTab, setActiveTabId,
-      libraryPanelCollapsed, setLibraryPanelCollapsed,
-    }}>
+    <AppContext.Provider
+      value={{
+        libraryRoot,
+        setLibraryRoot,
+        activeCollectionId,
+        setActiveCollectionId,
+        activeFile,
+        setActiveFile,
+        openTabs,
+        activeTabId,
+        openTab,
+        closeTab,
+        setActiveTabId,
+        libraryPanelCollapsed,
+        setLibraryPanelCollapsed,
+      }}
+    >
       {children}
     </AppContext.Provider>
   )

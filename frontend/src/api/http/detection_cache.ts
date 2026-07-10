@@ -28,7 +28,7 @@ export interface DetectionCacheStats {
  * the actual PDF source path from the project index.
  */
 export async function cachedExtractPage(params: {
-  projectRoot: string
+  libraryRoot: string
   docId: string
   page: number
   imageBase64: string
@@ -39,7 +39,7 @@ export async function cachedExtractPage(params: {
   force?: boolean
 }): Promise<CachedExtractPageResponse> {
   return httpPost<CachedExtractPageResponse>('/api/v1/detection-cache/extract-page', {
-    project_root: params.projectRoot,
+    library_root: params.libraryRoot,
     doc_id: params.docId,
     page: params.page,
     image_base64: params.imageBase64,
@@ -58,32 +58,32 @@ export async function cachedExtractPage(params: {
  * `docId` is the document UUID (`DocumentEntry.doc_id`).
  */
 export async function getCachedPageDetections(params: {
-  projectRoot: string
+  libraryRoot: string
   docId: string
   page: number
 }): Promise<CachedExtractPageResponse> {
   return httpPost<CachedExtractPageResponse>('/api/v1/detection-cache/get', {
-    project_root: params.projectRoot,
+    library_root: params.libraryRoot,
     doc_id: params.docId,
     page: params.page,
   })
 }
 
 export async function getDetectionCacheStats(
-  projectRoot: string,
+  libraryRoot: string,
 ): Promise<DetectionCacheStats> {
-  return httpPost<DetectionCacheStats>('/api/v1/detection-cache/stats', { project_root: projectRoot })
+  return httpPost<DetectionCacheStats>('/api/v1/detection-cache/stats', { library_root: libraryRoot })
 }
 
-export async function clearDetectionCache(projectRoot: string): Promise<void> {
-  return httpPost<void>('/api/v1/detection-cache/clear', { project_root: projectRoot })
+export async function clearDetectionCache(libraryRoot: string): Promise<void> {
+  return httpPost<void>('/api/v1/detection-cache/clear', { library_root: libraryRoot })
 }
 
 export async function clearDetectionCacheForDoc(
-  projectRoot: string,
+  libraryRoot: string,
   docId: string,
 ): Promise<void> {
-  return httpPost<void>('/api/v1/detection-cache/clear-doc', { project_root: projectRoot, doc_id: docId })
+  return httpPost<void>('/api/v1/detection-cache/clear-doc', { library_root: libraryRoot, doc_id: docId })
 }
 
 // ---------------------------------------------------------------------------
@@ -116,11 +116,11 @@ export interface BatchQuickMoldetResponse {
 
 /** 批量快速 MoldDet 扫描：只检测 bbox，不识别 SMILES。 */
 export async function batchQuickMoldetScan(
-  projectRoot: string,
+  libraryRoot: string,
   docIds?: string[],
 ): Promise<BatchQuickMoldetResponse> {
   return httpPost<BatchQuickMoldetResponse>('/api/v1/detection-cache/batch-scan', {
-    project_root: projectRoot,
+    library_root: libraryRoot,
     doc_ids: docIds ?? [],
   })
 }

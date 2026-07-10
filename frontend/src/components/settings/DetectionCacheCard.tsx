@@ -17,7 +17,7 @@ function formatBytes(n: number) {
 
 export default function DetectionCacheCard() {
   const { t } = useTranslation()
-  const { projectRoot } = useAppContext()
+  const { libraryRoot } = useAppContext()
   const [stats, setStats] = useState<{
     disk_usage_bytes: number
     cached_page_count: number
@@ -28,13 +28,13 @@ export default function DetectionCacheCard() {
   const [clearing, setClearing] = useState(false)
 
   const refresh = useCallback(async () => {
-    if (!projectRoot) {
+    if (!libraryRoot) {
       setStats(null)
       return
     }
     setLoading(true)
     try {
-      const s = await getDetectionCacheStats(projectRoot)
+      const s = await getDetectionCacheStats(libraryRoot)
       setStats(s)
     } catch (e) {
       console.warn('[DetectionCacheCard] stats failed:', e)
@@ -42,17 +42,17 @@ export default function DetectionCacheCard() {
     } finally {
       setLoading(false)
     }
-  }, [projectRoot])
+  }, [libraryRoot])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
 
   const handleClear = async () => {
-    if (!projectRoot) return
+    if (!libraryRoot) return
     setClearing(true)
     try {
-      await clearDetectionCache(projectRoot)
+      await clearDetectionCache(libraryRoot)
       showToast(t('settings.cacheCleared'), 'success')
       await refresh()
     } catch (e) {

@@ -269,6 +269,70 @@ class TestMoldetApiEndpoints:
         assert r.status_code == 410
 
 
+class TestKBWikiPathHardening:
+    def test_wiki_list_rejects_arbitrary_project_root(self, tmp_path):
+        c = _client()
+        # Use a path outside any configured library
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / ".mbforge" / "openkb" / "wiki" / "summaries").mkdir(parents=True)
+        (outside / ".mbforge" / "openkb" / "wiki" / "summaries" / "x.md").write_text("x")
+
+        r = c.get("/api/v1/kb/wiki/list", params={"project_root": str(outside)})
+        assert r.status_code == 400
+
+    def test_wiki_summary_rejects_traversal_name(self, tmp_path):
+        c = _client()
+        # Configure as library root so it would otherwise be accepted
+        c.post("/api/v1/library/configure", json={"root": str(tmp_path)})
+        (tmp_path / ".mbforge" / "openkb" / "wiki" / "summaries").mkdir(parents=True)
+        (tmp_path / ".mbforge" / "openkb" / "wiki" / "summaries" / "allowed.md").write_text("ok")
+
+        r = c.get(
+            "/api/v1/kb/wiki/summary",
+            params={"project_root": str(tmp_path), "doc_id": "../allowed"},
+        )
+        assert r.status_code == 400
+
+
+class TestLibraryArtifactPathHardening:
+    def test_reorganized_rejects_path_traversal_doc_id(self, tmp_path):
+        c = _client()
+        # Create a victim doc so the file exists
+        victim = tmp_path / "storage" / "victim_doc" / "reorganized.md"
+        victim.parent.mkdir(parents=True)
+        victim.write_text("victim content", encoding="utf-8")
+
+        r = c.get(
+            "/api/v1/library/documents/..%5Cvictim_doc/reorganized",
+            params={"library_root": str(tmp_path)},
+        )
+        assert r.status_code == 400
+
+    def test_crop_rejects_same_prefix_sibling(self, tmp_path):
+        c = _client()
+        (tmp_path / ".mbforge" / "crops" / "doc_evil" / "x.png").parent.mkdir(parents=True)
+        (tmp_path / ".mbforge" / "crops" / "doc_evil" / "x.png").write_bytes(b"evil")
+
+        r = c.get(
+            "/api/v1/library/documents/doc/crop",
+            params={"rel_path": "../doc_evil/x.png", "library_root": str(tmp_path)},
+        )
+        assert r.status_code == 400
+
+    def test_page_text_rejects_path_traversal_doc_id(self, tmp_path):
+        c = _client()
+        victim = tmp_path / "storage" / "victim_doc" / "pages" / "page_0001.txt"
+        victim.parent.mkdir(parents=True)
+        victim.write_text("victim page", encoding="utf-8")
+
+        r = c.get(
+            "/api/v1/library/documents/..%5Cvictim_doc/pages/1",
+            params={"library_root": str(tmp_path)},
+        )
+        assert r.status_code == 400
+
+
 @pytest.mark.xfail(
     reason="model_server mount prefixes produce /api/v1/models/api/v1/* paths; needs structural fix",
     strict=False,

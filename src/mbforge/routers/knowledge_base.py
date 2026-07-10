@@ -4,15 +4,34 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
-from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.kb_router")
 
 router = APIRouter()
+
+
+def _resolve_wiki_root(project_root: str) -> Path:
+    if not project_root:
+        raise HTTPException(400, "project_root required")
+    root = Path(project_root).resolve()
+    try:
+        from ..utils.config import load_global_config
+
+        configured_root = load_global_config().library_root or str(Path.home() / "mbforge")
+        configured = Path(configured_root).resolve()
+        root.relative_to(configured)
+    except ValueError as exc:
+        raise HTTPException(400, "project_root not within configured library") from exc
+    except Exception:
+        if not root.is_absolute():
+            raise HTTPException(400, "project_root must be absolute") from None
+    return root
 
 
 @router.post("/search")
@@ -101,3 +120,74 @@ async def kb_get_structure(body: dict) -> dict:
         return {"success": True, "structure": tree}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+# ---------------------------------------------------------------------------
+# Wiki artifact endpoints — serve summaries/concepts/entities produced
+# by the OpenKB wiki compilation step. Used by the frontend WikiDrawer.
+# ---------------------------------------------------------------------------
+
+
+def _safe_wiki_basename(value: str) -> str:
+    safe = Path(value).name
+    if not safe or safe != value:
+        raise HTTPException(400, f"invalid wiki identifier: {value}")
+    return safe
+
+
+@router.get("/wiki/summary")
+async def kb_get_wiki_summary(doc_id: str = "", project_root: str = "") -> PlainTextResponse:
+    """Return wiki summary markdown for a document."""
+    if not doc_id:
+        raise HTTPException(400, "doc_id required")
+    root = _resolve_wiki_root(project_root)
+    safe_doc_id = _safe_wiki_basename(doc_id)
+    p = root / ".mbforge" / "openkb" / "wiki" / "summaries" / f"{safe_doc_id}.md"
+    if not p.is_file():
+        raise HTTPException(404, f"wiki summary not found for {doc_id}")
+    return PlainTextResponse(p.read_text(encoding="utf-8"))
+
+
+@router.get("/wiki/concept")
+async def kb_get_wiki_concept(name: str = "", project_root: str = "") -> PlainTextResponse:
+    """Return a single concept page markdown by concept name."""
+    if not name:
+        raise HTTPException(400, "name required")
+    root = _resolve_wiki_root(project_root)
+    safe_name = _safe_wiki_basename(name)
+    p = root / ".mbforge" / "openkb" / "wiki" / "concepts" / f"{safe_name}.md"
+    if not p.is_file():
+        raise HTTPException(404, f"concept not found: {name}")
+    return PlainTextResponse(p.read_text(encoding="utf-8"))
+
+
+@router.get("/wiki/entity")
+async def kb_get_wiki_entity(name: str = "", project_root: str = "") -> PlainTextResponse:
+    """Return a single entity page markdown by entity name."""
+    if not name:
+        raise HTTPException(400, "name required")
+    root = _resolve_wiki_root(project_root)
+    safe_name = _safe_wiki_basename(name)
+    p = root / ".mbforge" / "openkb" / "wiki" / "entities" / f"{safe_name}.md"
+    if not p.is_file():
+        raise HTTPException(404, f"entity not found: {name}")
+    return PlainTextResponse(p.read_text(encoding="utf-8"))
+
+
+@router.get("/wiki/list")
+async def kb_list_wiki(project_root: str = "") -> dict:
+    """List all wiki artifacts (summaries/concepts/entities) for the drawer."""
+    root = _resolve_wiki_root(project_root)
+    wiki = root / ".mbforge" / "openkb" / "wiki"
+
+    def _list(sub: str) -> list[str]:
+        d = wiki / sub
+        if not d.exists():
+            return []
+        return sorted(p.stem for p in d.glob("*.md") if p.is_file())
+
+    return {
+        "summaries": _list("summaries"),
+        "concepts": _list("concepts"),
+        "entities": _list("entities"),
+    }

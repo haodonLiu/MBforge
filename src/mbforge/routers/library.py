@@ -5,10 +5,11 @@ Prefix: /api/v1/library
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-from fastapi import APIRouter, Form, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from ..utils.config import load_global_config, update_settings
 from ..utils.helpers import MBForgeError
@@ -17,6 +18,35 @@ from ..utils.logger import get_logger
 logger = get_logger("mbforge.library_router")
 
 router = APIRouter()
+
+_SAFE_DOC_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+
+def _validate_doc_id(doc_id: str) -> None:
+    if not doc_id or not _SAFE_DOC_ID_RE.match(doc_id):
+        raise HTTPException(400, f"invalid doc_id: {doc_id}")
+
+
+def _resolve_doc_artifact(root: str, doc_id: str, *parts: str) -> Path:
+    _validate_doc_id(doc_id)
+    base = (Path(root) / "storage" / doc_id).resolve()
+    target = (base.joinpath(*parts)).resolve()
+    try:
+        target.relative_to(base)
+    except ValueError as exc:
+        raise HTTPException(400, f"path traversal detected: {doc_id}/{parts}") from exc
+    return target
+
+
+def _resolve_crop_artifact(root: str, doc_id: str, rel_path: str) -> Path:
+    _validate_doc_id(doc_id)
+    crop_root = (Path(root) / ".mbforge" / "crops" / doc_id).resolve()
+    target = (crop_root / rel_path).resolve()
+    try:
+        target.relative_to(crop_root)
+    except ValueError as exc:
+        raise HTTPException(400, f"invalid rel_path: {rel_path}") from exc
+    return target
 
 
 def _resolve_library_root(body: dict | None = None) -> str:
@@ -160,6 +190,74 @@ async def library_get_document_file(doc_id: str, library_root: str | None = None
         media_type="application/pdf",
         filename=Path(pdf_path).name,
     )
+
+
+# ---------------------------------------------------------------------------
+# Pipeline artifact endpoints — reorganized md, per-page text, crops,
+# report.json, PageIndex indexed markdown. The frontend DocumentViewer
+# fetches all of these.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/documents/{doc_id}/reorganized")
+async def library_get_reorganized(doc_id: str, library_root: str | None = None) -> PlainTextResponse:
+    """Return the LLM-reorganized markdown for a document."""
+    root = _resolve_library_root({"library_root": library_root} if library_root else None)
+    p = _resolve_doc_artifact(root, doc_id, "reorganized.md")
+    if not p.is_file():
+        raise HTTPException(404, f"reorganized.md not found for {doc_id}")
+    return PlainTextResponse(p.read_text(encoding="utf-8"))
+
+
+@router.get("/documents/{doc_id}/report")
+async def library_get_report(doc_id: str, library_root: str | None = None) -> Response:
+    """Return the pipeline report.json for a document."""
+    root = _resolve_library_root({"library_root": library_root} if library_root else None)
+    p = _resolve_doc_artifact(root, doc_id, "report.json")
+    if not p.is_file():
+        raise HTTPException(404, f"report.json not found for {doc_id}")
+    return Response(content=p.read_bytes(), media_type="application/json")
+
+
+@router.get("/documents/{doc_id}/crop")
+async def library_get_crop(
+    doc_id: str, rel_path: str, library_root: str | None = None
+) -> FileResponse:
+    """Serve a single cropped molecule image.
+
+    `rel_path` is the filename relative to `.mbforge/crops/{doc_id}/`
+    (e.g. ``WO2026035726A1_20pg_page_0003_mol_0002.png``).
+    """
+    root = _resolve_library_root({"library_root": library_root} if library_root else None)
+    target = _resolve_crop_artifact(root, doc_id, rel_path)
+    if not target.is_file():
+        raise HTTPException(404, f"crop not found: {rel_path}")
+    return FileResponse(str(target), media_type="image/png")
+
+
+@router.get("/documents/{doc_id}/indexed-md")
+async def library_get_indexed_md(
+    doc_id: str, library_root: str | None = None
+) -> PlainTextResponse:
+    """Return the PageIndex-indexed markdown for a document."""
+    root = _resolve_library_root({"library_root": library_root} if library_root else None)
+    _validate_doc_id(doc_id)
+    p = Path(root) / ".mbforge" / "openkb" / "documents" / f"{doc_id}.md"
+    if not p.is_file():
+        raise HTTPException(404, f"indexed md not found for {doc_id}")
+    return PlainTextResponse(p.read_text(encoding="utf-8"))
+
+
+@router.get("/documents/{doc_id}/pages/{page}")
+async def library_get_page_text(
+    doc_id: str, page: int, library_root: str | None = None
+) -> PlainTextResponse:
+    """Return the per-page OCR text for a single page (1-based)."""
+    root = _resolve_library_root({"library_root": library_root} if library_root else None)
+    p = _resolve_doc_artifact(root, doc_id, "pages", f"page_{page:04d}.txt")
+    if not p.is_file():
+        raise HTTPException(404, f"page {page} text not found for {doc_id}")
+    return PlainTextResponse(p.read_text(encoding="utf-8"))
 
 
 @router.post("/collections/create")

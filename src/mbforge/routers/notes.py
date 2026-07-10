@@ -1,4 +1,4 @@
-"""Notes endpoints — supports both library_root and project_root."""
+"""Notes endpoints — supports both library_root and library_root."""
 
 from __future__ import annotations
 

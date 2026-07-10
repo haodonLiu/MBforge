@@ -69,7 +69,7 @@ def _enqueue_all_unresolved(root: str) -> int:
                 continue
             task_id = str(uuid.uuid4())
             conn.execute(
-                "INSERT INTO ingest_queue (id, file_path, project_root, status, created_at) VALUES (?, ?, ?, 'pending', datetime('now'))",
+                "INSERT INTO ingest_queue (id, file_path, library_root, status, created_at) VALUES (?, ?, ?, 'pending', datetime('now'))",
                 (task_id, full_path, root),
             )
             enqueued += 1
@@ -168,7 +168,7 @@ async def worker_status() -> dict:
 
 @router.post("/queue/stats")
 async def pipeline_queue_stats(body: dict) -> dict:
-    root = body.get("project_root", "")
+    root = body.get("library_root", "")
     if not root:
         return {"success": True, "stats": {}}
     from ..core.database import DatabaseManager

@@ -9,7 +9,7 @@ router = APIRouter()
 
 @router.post("/get")
 async def detection_get(body: dict) -> dict:
-    root = body.get("project_root", "")
+    root = body.get("library_root", "")
     doc_id = body.get("doc_id", "")
     page = body.get("page", 0)
     if not root or not doc_id:
@@ -27,10 +27,10 @@ async def detection_get(body: dict) -> dict:
 
 @router.post("/save")
 async def detection_save(body: dict) -> dict:
-    root = body.get("project_root", "")
+    root = body.get("library_root", "")
     detections = body.get("detections", [])
     if not root or not detections:
-        return {"success": False, "error": "project_root and detections required"}
+        return {"success": False, "error": "library_root and detections required"}
     from ..core.database import DatabaseManager
 
     db = DatabaseManager.get(root)

@@ -6,16 +6,16 @@ CorefPrediction[] that the frontend's CorefBboxOverlay expects.
 
 Input contract (matches frontend result_pane.ts):
     POST /api/v1/coref/figure-labels
-        body: {projectRoot, docId, page}
+        body: {libraryRoot, docId, page}
         -> {labels: FigureLabel[]}
 
     POST /api/v1/coref/predictions
-        body: {projectRoot, docId, page}
+        body: {libraryRoot, docId, page}
         -> {predictions: CorefPrediction[]}
 
 The two calls share the same FT detection result internally; the frontend
 makes both calls on the same page so the second call is cheap (we cache
-per (projectRoot, docId, page) for 30s).
+per (libraryRoot, docId, page) for 30s).
 
 OCR pass (added 2026-07-09): label bboxes from FT are cropped and run
 through RapidOCRCropAdapter (concurrent batch via ThreadPoolExecutor) to
@@ -47,7 +47,7 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
-# Per-page FT detection cache: 30s TTL keyed on (projectRoot, docId, page).
+# Per-page FT detection cache: 30s TTL keyed on (libraryRoot, docId, page).
 # Avoids re-running YOLO on the second call (figure-labels + predictions
 # share the same detection result).
 # ---------------------------------------------------------------------------
@@ -62,23 +62,23 @@ OCR_MAX_WORKERS: int = 4
 
 
 def _cached_detect(
-    project_root: str, doc_id: str, page: int
+    library_root: str, doc_id: str, page: int
 ) -> dict[str, Any] | None:
     """Run FT detection on a PDF page with a 30s per-page cache.
 
     Returns a dict with keys "labels" and "predictions" in KB shape, or
     None if FT detection is unavailable.
     """
-    key = (project_root, doc_id, page)
+    key = (library_root, doc_id, page)
     now = time.monotonic()
     cached = _detect_cache.get(key)
     if cached is not None and (now - cached[0]) < _DETECT_TTL_SEC:
         return cached[1]
 
-    doc_path = _resolve_pdf_path(project_root, doc_id)
+    doc_path = _resolve_pdf_path(library_root, doc_id)
     if doc_path is None or not doc_path.exists():
         logger.warning(
-            "PDF not found for project=%s doc=%s", project_root, doc_id
+            "PDF not found for project=%s doc=%s", library_root, doc_id
         )
         return None
 
@@ -138,14 +138,14 @@ def _cached_detect(
     return result
 
 
-def _resolve_pdf_path(project_root: str, doc_id: str) -> Path | None:
-    """Resolve the absolute PDF path for a (projectRoot, docId) pair.
+def _resolve_pdf_path(library_root: str, doc_id: str) -> Path | None:
+    """Resolve the absolute PDF path for a (libraryRoot, docId) pair.
 
     Best-effort: checks the project root for any file matching the doc_id
     or the canonical library_storage conventions. Returns None on miss
     so the caller can return an empty result gracefully.
     """
-    root = Path(project_root)
+    root = Path(library_root)
     if not root.exists():
         return None
     candidates = [
@@ -334,17 +334,17 @@ def _coref_to_kb_shapes(
 @router.post("/figure-labels")
 async def get_figure_labels(body: dict) -> dict:
     """Return FigureLabel[] for a (project, doc, page) via FT detector."""
-    project_root = body.get("projectRoot") or body.get("project_root") or ""
+    library_root = body.get("libraryRoot") or body.get("library_root") or ""
     doc_id = body.get("docId") or body.get("doc_id") or ""
     page = body.get("page")
-    if not project_root or not doc_id or not isinstance(page, int):
+    if not library_root or not doc_id or not isinstance(page, int):
         raise ValidationError(
-            "projectRoot, docId, and integer page are required"
+            "libraryRoot, docId, and integer page are required"
         )
 
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
-        None, lambda: _cached_detect(project_root, doc_id, page)
+        None, lambda: _cached_detect(library_root, doc_id, page)
     )
     if result is None:
         return {"labels": []}
@@ -354,17 +354,17 @@ async def get_figure_labels(body: dict) -> dict:
 @router.post("/predictions")
 async def get_coref_predictions(body: dict) -> dict:
     """Return CorefPrediction[] for a (project, doc, page) via FT detector."""
-    project_root = body.get("projectRoot") or body.get("project_root") or ""
+    library_root = body.get("libraryRoot") or body.get("library_root") or ""
     doc_id = body.get("docId") or body.get("doc_id") or ""
     page = body.get("page")
-    if not project_root or not doc_id or not isinstance(page, int):
+    if not library_root or not doc_id or not isinstance(page, int):
         raise ValidationError(
-            "projectRoot, docId, and integer page are required"
+            "libraryRoot, docId, and integer page are required"
         )
 
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
-        None, lambda: _cached_detect(project_root, doc_id, page)
+        None, lambda: _cached_detect(library_root, doc_id, page)
     )
     if result is None:
         return {"predictions": []}

@@ -334,7 +334,7 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
 
 @router.post("/extract-pdf")
 async def extract_pdf_by_doc(body: dict) -> dict[str, Any]:
-    """Same as /extract-pdf-page, but takes (project_root, doc_id, page)
+    """Same as /extract-pdf-page, but takes (library_root, doc_id, page)
     and resolves the absolute PDF path on the server side.
 
     Convenience for the frontend pdfService.ts (which works with the
@@ -343,15 +343,15 @@ async def extract_pdf_by_doc(body: dict) -> dict[str, Any]:
     """
     from .coref import _resolve_pdf_path
 
-    project_root = body.get("project_root") or body.get("projectRoot") or ""
+    library_root = body.get("library_root") or body.get("libraryRoot") or ""
     doc_id = body.get("doc_id") or body.get("docId") or ""
-    if not project_root or not doc_id:
-        raise ValidationError("project_root and doc_id are required")
+    if not library_root or not doc_id:
+        raise ValidationError("library_root and doc_id are required")
 
-    pdf_path = _resolve_pdf_path(project_root, doc_id)
+    pdf_path = _resolve_pdf_path(library_root, doc_id)
     if pdf_path is None:
         raise ValidationError(
-            f"PDF not found for project_root={project_root} doc_id={doc_id}"
+            f"PDF not found for library_root={library_root} doc_id={doc_id}"
         )
 
     body_with_path = dict(body)

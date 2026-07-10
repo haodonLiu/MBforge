@@ -27,10 +27,10 @@ router = APIRouter()
 
 
 def _load_cached_detections(
-    project_root: str, doc_id: str, page: int
+    library_root: str, doc_id: str, page: int
 ) -> dict[str, Any]:
     """Read molecule_detections rows and map them to ExtractionResult-shaped dicts."""
-    db = DatabaseManager.get(project_root)
+    db = DatabaseManager.get(library_root)
     rows = []
     try:
         with db.mol_conn() as conn:
@@ -79,12 +79,12 @@ def _load_cached_detections(
 @router.post("/extract/cached-detections")
 async def extract_cached_detections(body: dict) -> dict[str, Any]:
     """Return cached detections for a single page without running inference."""
-    project_root = body.get("project_root", "")
+    library_root = body.get("library_root", "")
     doc_id = body.get("doc_id", "")
     page = body.get("page", 0)
-    if not project_root or not doc_id:
-        raise ValidationError("project_root and doc_id are required")
-    return _load_cached_detections(project_root, doc_id, page)
+    if not library_root or not doc_id:
+        raise ValidationError("library_root and doc_id are required")
+    return _load_cached_detections(library_root, doc_id, page)
 
 
 @router.post("/extract/cached-page")
@@ -116,13 +116,13 @@ async def extract_cached_page(body: dict) -> dict[str, Any]:
 @router.post("/extract/clear-cache-doc")
 async def extract_clear_cache_doc(body: dict) -> dict[str, Any]:
     """Clear detection cache for a single document."""
-    project_root = body.get("project_root", "")
+    library_root = body.get("library_root", "")
     doc_id = body.get("doc_id", "")
-    if not project_root or not doc_id:
-        raise ValidationError("project_root and doc_id are required")
+    if not library_root or not doc_id:
+        raise ValidationError("library_root and doc_id are required")
 
     try:
-        db = DatabaseManager.get(project_root)
+        db = DatabaseManager.get(library_root)
         with db.mol_conn() as conn:
             conn.execute("DELETE FROM molecule_detections WHERE doc_id = ?", (doc_id,))
             conn.commit()
@@ -135,12 +135,12 @@ async def extract_clear_cache_doc(body: dict) -> dict[str, Any]:
 @router.post("/extract/cache-stats")
 async def extract_cache_stats(body: dict) -> dict[str, Any]:
     """Return detection cache stats."""
-    project_root = body.get("project_root", "")
-    if not project_root:
-        raise ValidationError("project_root is required")
+    library_root = body.get("library_root", "")
+    if not library_root:
+        raise ValidationError("library_root is required")
 
     try:
-        db = DatabaseManager.get(project_root)
+        db = DatabaseManager.get(library_root)
         with db.mol_conn() as conn:
             row = conn.execute(
                 "SELECT COUNT(*) AS page_count, COUNT(DISTINCT doc_id) AS doc_count FROM molecule_detections"

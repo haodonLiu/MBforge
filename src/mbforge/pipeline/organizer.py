@@ -617,7 +617,7 @@ def register_molecules_from_text(
     fine_md_path: str,
     molecules: list[NormalizedMolecule],
     doc_id: str,
-    project_root: str,
+    library_root: str,
     *,
     conn: sqlite3.Connection | None = None,
 ) -> None:
@@ -727,7 +727,7 @@ def register_molecules_from_text(
         return
 
     # Legacy path: own the transaction.
-    db = DatabaseManager.get(project_root)
+    db = DatabaseManager.get(library_root)
     db.initialize()
     with db.mol_conn() as local_conn:
         local_conn.execute("BEGIN")

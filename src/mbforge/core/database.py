@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS semantic_cache (
     query_hash TEXT PRIMARY KEY,
     query_text TEXT NOT NULL,
     results TEXT NOT NULL,
-    project_root TEXT,
+    library_root TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     hit_count INTEGER DEFAULT 0,
     last_hit TEXT
@@ -232,8 +232,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS mol_search USING fts5(
 class DatabaseManager:
     """Manages SQLite connections for a project's two databases."""
 
-    def __init__(self, project_root: str | Path) -> None:
-        self._root = Path(project_root)
+    def __init__(self, library_root: str | Path) -> None:
+        self._root = Path(library_root)
         self._index_dir = self._root / "index"
         self._index_dir.mkdir(parents=True, exist_ok=True)
         self._kb_path = self._index_dir / "knowledge_base.db"
@@ -247,11 +247,11 @@ class DatabaseManager:
         return _MOL_SCHEMA + _EVIDENCE_SCHEMA + _MOL_FTS
 
     @classmethod
-    def get(cls, project_root: str | Path) -> DatabaseManager:
+    def get(cls, library_root: str | Path) -> DatabaseManager:
         """获取缓存的实例，避免重复初始化."""
-        key = str(Path(project_root).resolve())
+        key = str(Path(library_root).resolve())
         if key not in _db_cache:
-            _db_cache[key] = cls(project_root)
+            _db_cache[key] = cls(library_root)
         return _db_cache[key]
 
     def initialize(self) -> None:

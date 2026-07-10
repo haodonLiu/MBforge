@@ -88,7 +88,6 @@ def run_pipeline(
     doc_id: str = "",
     *,
     task_id: str | None = None,
-    project_root: str | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> PipelineResult:
     """Run the document processing pipeline via OpenKB + PageIndex.
@@ -100,17 +99,12 @@ def run_pipeline(
         task_id: Optional queue task ID. When set, stage progress is also
             written to ``ingest_queue`` (current_stage + progress_pct) and
             ``ingest_events`` via ``record_ingest_event``.
-        project_root: Deprecated, use library_root
         on_progress: Progress callback
 
     Returns:
         PipelineResult with processing statistics
     """
-    root = (
-        Path(library_root or project_root)
-        if library_root or project_root
-        else Path(".")
-    )
+    root = Path(library_root) if library_root else Path(".")
     if not doc_id:
         doc_id = Path(pdf_path).stem
     effective_task_id = task_id
@@ -505,7 +499,7 @@ def run_pipeline(
 
 def _enrich_molecules(
     pdf_path: str,
-    project_root: str | Path,
+    library_root: str | Path,
     doc_id: str,
     density: Any,  # DensityClassification
 ) -> dict[str, Any]:
@@ -518,7 +512,7 @@ def _enrich_molecules(
     from .extract_molecules import extract_molecules_from_pdf
     from .normalize import normalize_molecules
 
-    root = Path(project_root) if isinstance(project_root, str) else project_root
+    root = Path(library_root) if isinstance(library_root, str) else library_root
 
     # text_only docs: no figures expected, skip entirely
     if density.doc_kind == "text_only":
@@ -582,7 +576,7 @@ def _enrich_molecules(
 
 
 def _persist_molecules(
-    project_root: str | Path,
+    library_root: str | Path,
     doc_id: str,
     molecule_stats: dict[str, Any],
     *,
@@ -608,7 +602,7 @@ def _persist_molecules(
         return
     from .persist_molecules import persist_molecule_candidates
 
-    root = Path(project_root) if isinstance(project_root, str) else project_root
+    root = Path(library_root) if isinstance(library_root, str) else library_root
     db = DatabaseManager.get(str(root))
     # Run inside the cross-database transaction so a failure does not leave
     # orphan molecule rows, evidence rows, or text_molecule_links rows.
@@ -622,7 +616,7 @@ def _persist_molecules(
 
 
 def _persist_document(
-    project_root: str | Path,
+    library_root: str | Path,
     doc_id: str,
     extracted: Any,
     density: Any,  # DensityClassification
@@ -640,7 +634,7 @@ def _persist_document(
     before re-raising — so the storage dir never contains partial artifacts
     from a failed pipeline run.
     """
-    root = Path(project_root) if isinstance(project_root, str) else project_root
+    root = Path(library_root) if isinstance(library_root, str) else library_root
     from ..core.artifact import ArtifactResolver
 
     resolver = ArtifactResolver(root)

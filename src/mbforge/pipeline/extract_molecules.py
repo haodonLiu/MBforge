@@ -29,7 +29,7 @@ _SMILES_LIKE_PATTERN = re.compile(r"[A-Za-z0-9\(\)\[\]\=\#\+\-\\\\/@\.]{3,}")
 
 def extract_molecules_from_pdf(
     pdf_path: str,
-    project_root: str,
+    library_root: str,
     doc_id: str,
     max_pages: int | None = None,
 ) -> list[ExtractionResult]:
@@ -39,7 +39,7 @@ def extract_molecules_from_pdf(
     was replaced by the joint MolDetv2-FT detector on 2026-07-08. This
     function now mirrors /api/v1/moldet/extract-pdf-page but is driven by
     the in-process pipeline runner (no HTTP round-trip) and writes crop
-    images to {project_root}/.mbforge/crops/{doc_id}/ for downstream
+    images to {library_root}/.mbforge/crops/{doc_id}/ for downstream
     pipeline stages.
     """
     from ..backends import molscribe
@@ -81,7 +81,7 @@ def extract_molecules_from_pdf(
 
     from ..core.artifact import ArtifactResolver
 
-    crop_dir = ArtifactResolver(project_root).crops_dir(doc_id)
+    crop_dir = ArtifactResolver(library_root).crops_dir(doc_id)
     crop_dir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -147,7 +147,7 @@ def extract_molecules_from_pdf(
                 except Exception as scribe_exc:
                     logger.warning("MolScribe failed on page %d: %s", page_idx, scribe_exc)
                     smi = ""
-                # Save crop file under {project_root}/.mbforge/crops/{doc_id}/
+                # Save crop file under {library_root}/.mbforge/crops/{doc_id}/
                 crop_filename = f"{doc_id}_page_{page_idx:04d}_mol_{mol_idx:04d}.png"
                 crop_path = crop_dir / crop_filename
                 try:

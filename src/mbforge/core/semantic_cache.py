@@ -17,12 +17,12 @@ def _query_hash(query: str) -> str:
     return hashlib.sha256(query.strip().lower().encode()).hexdigest()
 
 
-def check_cache(query: str, project_root: str) -> list[dict] | None:
+def check_cache(query: str, library_root: str) -> list[dict] | None:
     """Check if query results are cached. Returns None on miss."""
     from .database import DatabaseManager
 
     qh = _query_hash(query)
-    db = DatabaseManager.get(project_root)
+    db = DatabaseManager.get(library_root)
     try:
         with db.kb_conn() as conn:
             row = conn.execute(
@@ -42,28 +42,28 @@ def check_cache(query: str, project_root: str) -> list[dict] | None:
         return None
 
 
-def store_cache(query: str, project_root: str, results: list[dict]) -> None:
+def store_cache(query: str, library_root: str, results: list[dict]) -> None:
     """Store search results in cache."""
     from .database import DatabaseManager
 
     qh = _query_hash(query)
-    db = DatabaseManager.get(project_root)
+    db = DatabaseManager.get(library_root)
     try:
         with db.kb_conn() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO semantic_cache (query_hash, query_text, results, project_root, hit_count) "
+                "INSERT OR REPLACE INTO semantic_cache (query_hash, query_text, results, library_root, hit_count) "
                 "VALUES (?, ?, ?, ?, 0)",
-                (qh, query, json.dumps(results, ensure_ascii=False), project_root),
+                (qh, query, json.dumps(results, ensure_ascii=False), library_root),
             )
     except Exception as e:
         logger.warning("semantic_cache store_cache failed: %s", e)
 
 
-def invalidate_cache(project_root: str) -> None:
+def invalidate_cache(library_root: str) -> None:
     """Clear all cached results for a project."""
     from .database import DatabaseManager
 
-    db = DatabaseManager.get(project_root)
+    db = DatabaseManager.get(library_root)
     try:
         with db.kb_conn() as conn:
             conn.execute("DELETE FROM semantic_cache")

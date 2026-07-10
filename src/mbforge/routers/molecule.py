@@ -1,4 +1,4 @@
-"""Molecule CRUD endpoints — supports both library_root and project_root."""
+"""Molecule CRUD endpoints — supports both library_root and library_root."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def _get_db(body: dict | object) -> tuple:
     b = body if isinstance(body, dict) else body.model_dump()
     root = resolve_root(b)
     if not root:
-        raise ValueError("No root path provided (library_root or project_root)")
+        raise ValueError("No root path provided (library_root or library_root)")
     from ..core.database import DatabaseManager
     return root, DatabaseManager.get(root)
 
@@ -142,7 +142,7 @@ async def mol_get(body: MoleculeGetRequest) -> dict:
 async def mol_evidence(body: dict) -> dict:
     """Return the full evidence chain for a canonical molecule.
 
-    Body: ``{"library_root": str, "project_root": str (compat), "canonical_smiles": str}``.
+    Body: ``{"library_root": str, "library_root": str (compat), "canonical_smiles": str}``.
     Joins ``molecules`` for metadata; returns the molecule record plus
     the full ``evidence`` list (untruncated).
     """

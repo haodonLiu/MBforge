@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 
 
 def persist_molecule_candidates(
-    project_root: str,
+    library_root: str,
     doc_id: str,
     candidates: list[NormalizedMolecule],
     conn: sqlite3.Connection | None = None,
@@ -32,7 +32,7 @@ def persist_molecule_candidates(
     """Upsert canonical molecule rows + insert detection / evidence rows.
 
     Args:
-        project_root: Project root directory.
+        library_root: Project root directory.
         doc_id: Source document ID.
         candidates: Normalized molecule candidates produced by
             :mod:`mbforge.pipeline.normalize`.
@@ -40,7 +40,7 @@ def persist_molecule_candidates(
             performed on this connection and the caller is responsible for
             commit/rollback (used by the pipeline transaction wrapper).
     """
-    db = DatabaseManager.get(project_root)
+    db = DatabaseManager.get(library_root)
     db.initialize()
 
     conn_manager = nullcontext(conn) if conn is not None else db.mol_conn()

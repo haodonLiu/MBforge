@@ -1,4 +1,4 @@
-"""Document CRUD endpoints — supports both library_root and project_root."""
+"""Document CRUD endpoints — supports both library_root and library_root."""
 
 from __future__ import annotations
 

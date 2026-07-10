@@ -81,7 +81,7 @@ async def agent_create_session(body: dict) -> dict:
         from ..agent.sessions import session_store
 
         sid = body.get("session_id", str(uuid.uuid4()))
-        session_store.create(sid, body.get("project_root"))
+        session_store.create(sid, body.get("library_root"))
         return {"success": True, "session_id": sid}
     except Exception as e:
         logger.error("Session create error: %s", e)

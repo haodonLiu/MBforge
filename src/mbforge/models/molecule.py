@@ -7,25 +7,25 @@ from pydantic import BaseModel, Field
 # ---- Request models ----
 
 class MoleculeListRequest(BaseModel):
-    project_root: str = Field(..., description="Project root directory")
+    library_root: str = Field(..., description="Project root directory")
     page: int = Field(1, ge=1, description="Page number")
     page_size: int = Field(50, ge=1, le=10000, description="Items per page")
     status: str = Field("", description="Filter by status")
 
 
 class MoleculeSearchRequest(BaseModel):
-    project_root: str = Field(..., description="Project root directory")
+    library_root: str = Field(..., description="Project root directory")
     query: str = Field(..., description="Search query")
     top_k: int = Field(20, ge=1, le=1000, description="Max results")
 
 
 class MoleculeGetRequest(BaseModel):
-    project_root: str = Field(..., description="Project root directory")
+    library_root: str = Field(..., description="Project root directory")
     mol_id: str = Field(..., description="Molecule ID")
 
 
 class MoleculeCreateRequest(BaseModel):
-    project_root: str = Field(..., description="Project root directory")
+    library_root: str = Field(..., description="Project root directory")
     smiles: str = Field(..., description="SMILES string")
     mol_id: str | None = Field(None, description="Molecule ID (auto-generated if omitted)")
     esmiles: str = Field("", description="Extended SMILES")
@@ -34,7 +34,7 @@ class MoleculeCreateRequest(BaseModel):
 
 
 class MoleculeUpdateRequest(BaseModel):
-    project_root: str = Field(..., description="Project root directory")
+    library_root: str = Field(..., description="Project root directory")
     name: str | None = None
     esmiles: str | None = None
     activity: float | None = None
@@ -47,11 +47,11 @@ class MoleculeUpdateRequest(BaseModel):
 
 
 class MoleculeDeleteRequest(BaseModel):
-    project_root: str = Field(..., description="Project root directory")
+    library_root: str = Field(..., description="Project root directory")
 
 
 class MoleculeStatsRequest(BaseModel):
-    project_root: str = Field(..., description="Project root directory")
+    library_root: str = Field(..., description="Project root directory")
 
 
 # ---- Response models ----

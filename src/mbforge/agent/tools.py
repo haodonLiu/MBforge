@@ -52,7 +52,7 @@ def molecule_search(query: str) -> str:
         from ..routers.molecule import mol_search
 
         loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(mol_search({"query": query, "project_root": "", "top_k": 10}))
+        result = loop.run_until_complete(mol_search({"query": query, "library_root": "", "top_k": 10}))
         loop.close()
         return json.dumps(result, ensure_ascii=False, indent=2)
     except Exception as e:
@@ -119,8 +119,8 @@ def list_project_documents() -> str:
     """
     try:
 
-        # This needs project_root from session — will be injected
-        return json.dumps({"message": "Use the session's project_root to list documents"})
+        # This needs library_root from session — will be injected
+        return json.dumps({"message": "Use the session's library_root to list documents"})
     except Exception as e:
         return json.dumps({"error": str(e)})
 

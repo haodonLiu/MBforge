@@ -329,10 +329,17 @@ def shutdown_backends() -> None:
             mod.unload()
 
 
+_DEPRECATED_ROOT_ALIASES = ("libraryRoot", "project_root", "projectRoot")
+
+
 def resolve_root(body: dict | None = None) -> str:
     """从请求 body（或全局配置）解析 root 目录，兼容新旧字段名。
 
     优先级: library_root > libraryRoot > project_root > projectRoot > 全局配置
+
+    每次命中 libraryRoot / project_root / projectRoot 都记录一次
+    DeprecationWarning，调用方应改用 library_root。该告警会在 Phase 6
+    移除兼容字段时一并下线。
     """
     from .config import load_global_config
 
@@ -344,6 +351,13 @@ def resolve_root(body: dict | None = None) -> str:
         or b.get("projectRoot", "")
     )
     if root:
+        for alias in _DEPRECATED_ROOT_ALIASES:
+            if b.get(alias):
+                _logging.getLogger(__name__).warning(
+                    "resolve_root: deprecated alias %r in request body; use 'library_root' instead",
+                    alias,
+                )
+                break
         return validate_path(root)
     cfg = load_global_config()
     if cfg.library_root:

@@ -4,13 +4,20 @@
 > conventions, and the day-to-day commands needed to add a feature, fix a bug,
 > or run tests.
 
-> **Snapshot**: 2026-07-09 — Python-only backend. The legacy `src-tauri/`
-> directory was removed (see `git log -- src-tauri/`). Pipeline still
-> 9 stages; OCR cloud-first fallback chain (MinerU → PaddleOCR → GLMOCR
-> → RapidOCR). **2026-07-08 MolDetv2-FT migration**: legacy Doc+General
-> MolDet pair replaced by a single fine-tuned YOLO26n model that
-> jointly detects molecules and coref identifier bboxes in one
-> inference. See `docs/superpowers/plans/2026-07-08-text-reorg-molecode.md`
+> **Snapshot**: 2026-07-09 → refreshed 2026-07-10 — Python-only backend
+> (no Tauri / Rust shell; the legacy `src-tauri/` directory was removed,
+> see `git log -- src-tauri/`). The legacy `src/mbforge/gui/` module
+> (Dear PyGui desktop shell) is **dead code with zero importers**
+> and is kept only for reference — `grep -r "mbforge.gui" src/`
+> returns nothing. Pipeline is 9 stages; OCR cloud-first fallback
+> chain (MinerU → PaddleOCR → GLMOCR → RapidOCR). **2026-07-08
+> MolDetv2-FT migration**: legacy Doc+General MolDet pair replaced by
+> a single fine-tuned YOLO26n model that jointly detects molecules
+> and coref identifier bboxes in one inference. `backends/moldet.py`
+> survives as a **compat shim** (raises `AttributeError` with a
+> friendly pointer to `moldet_v2_ft` for all removed symbols; only
+> `default_model_dir()` is still functional, used by
+> `legacy_models.py`). See `docs/superpowers/plans/2026-07-08-text-reorg-molecode.md`
 > for the migration plan and `routers/coref.py` for the FT-driven
 > coref bridge.
 
@@ -33,14 +40,12 @@ Stack:
   identifier detection in one inference), MolScribe, OCR fallback chain
   (MinerU → PaddleOCR → GLMOCR → RapidOCR, cloud-first with local
   fallback). All lazy-loaded on first call. The legacy Doc + General
-  MolDet pair (moldet.py) was removed in the 2026-07-08 migration; the
-  new main pipeline is `backends/moldet_v2_ft.py:MolDetv2FTDetector` +
-  `routers/moldet_api.py:/extract-pdf-page` (PDF → FT detect → coref pair
-  → MolScribe → SMILES + bbox + pairs).
-
-## Architecture & Data Flow
-
-Five-layer split, top-down:
+  MolDet pair is **no longer used in the pipeline**; the active detector
+  is `backends/moldet_v2_ft.py:MolDetv2FTDetector` + `routers/moldet_api.py:/extract-pdf-page`
+  (PDF → FT detect → coref pair → MolScribe → SMILES + bbox + pairs).
+  `backends/moldet.py` is a **compat shim only** — every removed symbol
+  raises `AttributeError` pointing at the FT replacement; do not import
+  from it in new code.
 
 | Layer | Path | Responsibility |
 |---|---|---|
@@ -81,9 +86,9 @@ MBForge/
 │   ├── __main__.py                    `python -m mbforge`
 │   ├── routers/                       19 FastAPI routers
 │   ├── agent/                         LangGraph agent
-│   ├── core/                          database, library, knowledge_base, semantic_cache, resource_manager
-│   ├── pipeline/                      classify, extract_text, segment, chunk, index, runner, organizer
-│   ├── backends/                      molscribe, moldet_v2_ft, ocr/ (chain, mineru, paddleocr, glmocr, rapidocr_adapter)
+│   ├── core/                          database, library, knowledge_base, semantic_cache, resource_manager, artifact (ArtifactResolver)
+│   ├── pipeline/                      classify, extract_text, extract_molecules, segment, chunk, index, runner, organizer, normalize, persist_molecules
+│   ├── backends/                      molscribe, moldet_v2_ft, ocr/ (chain, mineru, paddleocr, glmocr, rapidocr_adapter), popo
 │   ├── parsers/molecule/              coords, coref_alt
 │   ├── chem/                          Cheminformatics utils
 │   ├── models/                        Pydantic models (common, library, molecule)
@@ -236,6 +241,26 @@ disk may fail to deserialize. Either (a) keep a default that the old
 value maps onto, or (b) extend `_migrate_legacy_configs()` with a
 one-shot transform.
 
+## Field name deprecations (still in flight, 2026-07-10)
+
+The library-root field rename is **partially migrated**. Backend accepts
+all four spellings; frontend still uses the legacy ones in many places.
+Treat the leftmost name in each row as canonical, the rest as
+deprecated:
+
+| Canonical (use this) | Deprecated aliases | Where it lives |
+|---|---|---|
+| `library_root` | `libraryRoot`, `project_root`, `projectRoot` | `src/mbforge/utils/helpers.py:resolve_root` (priority order) |
+| `libraryRoot` (TS) | `projectRoot`, `project_root` | `frontend/src/context/AppContext.tsx` (canonical) and ~300 legacy call sites in `frontend/src/` |
+| `mol_id` (canonical SMILES = id) | `mol_id` was previously a per-detection local id; the 2026-07-10 evidence-link work collapsed it onto `canonical_smiles` | `src/mbforge/core/database.py:_MOL_SCHEMA`; `frontend/src/types/index.ts:MoleculeRecord.mol_id` |
+
+**Do not introduce new `projectRoot` / `project_root` call sites in
+frontend or backend.** Use `libraryRoot` / `library_root` respectively.
+Migration is a sweep-the-callsites job; the backend compat is provided
+by `resolve_root()` so the wire contract still works. The actual
+rename + removal of deprecated aliases is tracked in
+`TODO/INDEX.md` (search for "projectRoot" / "project_root").
+
 ## Important Files
 
 | File | Role |
@@ -277,10 +302,40 @@ one-shot transform.
 2. `~/.config/MBForge/config.json` (Settings UI writes here)
 3. Built-in defaults
 
-**Storage locations** (per project): `{root}/.mbforge/knowledge_base.db` (SQLite),
-OpenKB PageIndex collection managed under `openkb/`, per-project
-semantic cache. Global config: `~/.config/MBForge/config.json` (Linux) /
-`%APPDATA%\MBForge\config\config.json` (Windows).
+**Storage locations** (per `library_root`):
+- `{root}/index/knowledge_base.db` — figure labels, coref predictions, ingest
+  queue, semantic cache. Path is computed as `self._index_dir / "knowledge_base.db"`
+  where `_index_dir = self._root / "index"` (see
+  `src/mbforge/core/database.py:DatabaseManager.__init__`).
+- `{root}/index/molecules.db` — molecules, molecule_images, relations,
+  detections, **evidence** (the first-class evidence chain table added in
+  schema v3 → v4), text_molecule_links, FTS5 search index.
+- `{root}/storage/{doc_id}/` — canonical artifact location, managed by
+  `src/mbforge/core/artifact.py:ArtifactResolver`:
+  - `source.pdf` — original uploaded PDF
+  - `reorganized.md` — LLM-reorganized markdown
+  - `indexed.md` — PageIndex input
+  - `report.json` — pipeline summary
+  - `crops/{filename}.png` — molecule crop images (figure kind)
+  - `pages/{n:04d}.txt` — per-page text extracts
+- `{root}/openkb/` — OpenKB + PageIndex collection (vectorless tree reasoning
+  + dense rerank; storage backend is part of the OpenKB package, not
+  this project)
+- Per-project semantic cache lives in the `semantic_cache` table of
+  `{root}/index/knowledge_base.db`
+
+> **Historical layout (pre-2026-07-10)**: an older version wrote
+> databases under `{root}/.mbforge/` and crops under
+> `{root}/.mbforge/crops/{doc_id}/`. The migration script
+> `scripts/migrate_artifact_paths.py {library_root}` moves crops to the
+> canonical location and updates the SQLite `crop_relpath` columns. The
+> `.mbforge/` location is no longer written to by any code path; the
+> library router's `ArtifactResolver.legacy_crop` is a read-only fallback
+> for pre-migration libraries.
+
+Global config: `~/.config/MBForge/config.json` (Linux) / `%APPDATA%\MBForge\config\config.json` (Windows).
+
+**Artifact path management**: All file I/O under `{root}/storage/` MUST go through `ArtifactResolver` (imported from `core.artifact`). Direct path construction is prohibited (path traversal risk). See `routers/library.py` for usage examples.
 
 ## Runtime & Tooling Preferences
 

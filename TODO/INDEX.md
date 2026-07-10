@@ -8,49 +8,84 @@
 
 ## Legend
 
-| Priority | Meaning |
-|---|---|
-| P0 | Critical: blocks startup / production runs / data loss |
-| P1 | High: data loss, panic paths, doc drift that misleads new contributors |
-| P2 | Medium: code quality, doc/comment drift, lint violations |
-| P3 | Low: stylistic, anchors, type-hint polish |
+| Priority | Meaning | Phase 0 Focus |
+|---|---|---|
+| P0 | Critical: blocks Phase 0 validation / data trust / user confidence | 工程质量+数据一致性 |
+| P1 | High: data quality / extraction accuracy / user experience blockers | 结构化数据准确性 |
+| P2 | Medium: code quality, UX polish, doc completeness | 体验优化+文档 |
+| P3 | Low: stylistic, future features, nice-to-haves | 暂缓（Phase 1） |
+
+**Phase 0 Roadmap**: 详见 `TODO/PHASE0-ROADMAP.md`（6周计划，2026-07-10 ~ 08-21）
 
 ## Snapshot
 
-- **Last drift-sync**: 2026-07-07
-- **Snapshot at**: 2026-06-29 (post-migration audit)
-- **Codebase**: Python-only backend, OpenKB + PageIndex (KB), 18 FastAPI routers, Tauri fully removed
-- **Head at sync**: `619bada merge: resolve conflicts with origin/main`
+- **Last drift-sync**: 2026-07-11
+- **Phase**: Phase 0 (Research Baseline) — see `TODO/PHASE0-ROADMAP.md`
+- **Codebase**: Python-only backend, OpenKB + PageIndex (KB), 19 FastAPI routers, Tauri fully removed
 - **Coverage**: Python ~5% (only `tests/unit/parsers/test_coref_alt.py` populated)
-- **Tech debt theme**: tests + frontend→backend contract drift; stale src-tauri/ refs and Zvec→OpenKB migration leftovers
+- **Tech debt theme**: tests + frontend→backend contract drift; need structured data quality improvements (Activity Extraction, confidence transparency)
+- **Priority shift (2026-07-10)**: Evidence Links降级P0→P2; 测试覆盖+数据质量提升为P0
+- **Recent work (2026-07-11)**: Evidence-Linked Molecular Infrastructure Phase 1 complete — `evidence` table, `ArtifactResolver`, migration script, frontend `EvidencePanel`
 
 ---
 
-## P0 — Critical (run-blockers)
+## P0 — Critical (Phase 0 Blockers)
+
+**新增（2026-07-10 Phase 0 启动）**:
+
+| ID | Area | Finding | File | Roadmap Week |
+|---|---|---|---|---|
+| C-6 | Tests | 测试覆盖率 ~5%，pipeline/core/agent 核心模块零测试。阻碍代码重构和功能迭代。目标：≥40% (critical path ≥60%)。 | `tests/` | Week 1-2 |
+| C-7 | Pipeline | 阶段失败静默，前端只显示"Unknown error"。需要 StageResult + SSE error events。 | `src/mbforge/pipeline/runner.py`, `frontend/src/components/project/pdf/useIngestPipeline.ts` | Week 1-2 |
+| C-8 | Database | Pipeline 中途失败产生脏数据（documents 表有记录但 molecules 表为空）。需要事务边界。 | `src/mbforge/core/database.py`, `src/mbforge/pipeline/runner.py` | Week 1-2 |
+| C-9 | Frontend | 分子识别置信度不透明，用户无法判断哪些需要人工校验。需要在 Molecule Library 显示置信度 + 筛选。 | `frontend/src/components/workspace/MoleculeLibrary.tsx` | Week 3 |
+
+**已有（2026-07-07 遗留）**:
 
 | ID | Area | Finding | File | Status |
 |---|---|---|---|---|
-| C-1 | Repo | `ts_errors.txt` (36.6 KB) sits at repo root, not in `.gitignore`. Will be picked up by `git add .` and committed. | `ts_errors.txt` | **RESOLVED 2026-07-07** (file not present in tree; verified via `find`) |
-| C-2 | Config | `.gitignore` typo: `.mbforge/` was changed to `.mbccforge/`. Project runtime data would be tracked by git. | `.gitignore` | **RESOLVED 2026-07-07** (`.gitignore:55` confirmed `.mbforge/`, not typo) |
-| C-3 | Config | `frontend/tsconfig.json` has the key `"noCheck": true` listed twice (duplicate). TS compiler tolerates it but lint flags it. | `frontend/tsconfig.json` | **OPEN** |
-| C-4 | Backend | `app.py` lifespan does not prewarm any backend — `server.py:_prewarm()` is a no-op. First request to embed / rerank / moldet / molscribe pays 5–30s model load. No UX handles this gracefully. (Previously referenced Zvec prewarm; Zvec removed in commit `4fbde55`. Note: `backends/qwen3.py` and `backends/zvec_backend.py` deleted in subsequent cleanup.) | `src/mbforge/app.py`, `src/mbforge/server.py`, `src/mbforge/backends/{moldet,molscribe}.py` | **OPEN** |
-| C-5 | Frontend | `frontend/src/api/tauri/_utils.ts` was rewritten to use HTTP, but the directory is still named `api/tauri/`. Confuses contributors searching for IPC code. | `frontend/src/api/tauri/` | **RESOLVED 2026-07-07** (entire `api/tauri/` directory removed; HTTP layer at `api/http/`) |
+| C-1 | Repo | `ts_errors.txt` (36.6 KB) sits at repo root, not in `.gitignore`. Will be picked up by `git add .` and committed. | `ts_errors.txt` | **RESOLVED 2026-07-07** |
+| C-2 | Config | `.gitignore` typo: `.mbforge/` was changed to `.mbccforge/`. Project runtime data would be tracked by git. | `.gitignore` | **RESOLVED 2026-07-07** |
+| C-3 | Config | `frontend/tsconfig.json` has the key `"noCheck": true` listed twice (duplicate). TS compiler tolerates it but lint flags it. | `frontend/tsconfig.json` | **OPEN** → Week 6 |
+| C-4 | Backend | 首次请求 MolDet/MolScribe 付 5-30s 模型加载成本，无 UX 提示。需要可选预热 + SSE model_loading 事件。 | `src/mbforge/app.py`, `src/mbforge/backends/{moldet,molscribe}.py` | **OPEN** → Week 5 (P2降级) |
+| C-5 | Frontend | `frontend/src/api/tauri/_utils.ts` was rewritten to use HTTP, but the directory is still named `api/tauri/`. | `frontend/src/api/tauri/` | **RESOLVED 2026-07-07** |
 
-## P1 — High (data loss, runtime crashes, doc drift)
+## P1 — High (Data Quality & Extraction Accuracy)
+
+**新增（2026-07-10 Phase 0 数据质量提升）**:
+
+| ID | Area | Finding | File | Roadmap Week |
+|---|---|---|---|---|
+| R-10 | Pipeline | 缺少 Activity Data Extraction（IC50/Ki/EC50）。SAR 分析的核心数据缺失，用户仍需手工补充。需新增 `extract_activities.py` + `activities` 表。 | `src/mbforge/pipeline/` | Week 3-4 |
+| R-11 | Database | 分子 crop 图片路径（`mol_img_path`）未持久化到数据库，用户无法验证识别是否正确。需补齐 `molecules.crop_path` + 前端展示。 | `src/mbforge/core/database.py`, `frontend/src/components/workspace/MoleculeDetail.tsx` | **RESOLVED 2026-07-11** (Evidence table + ArtifactResolver + EvidencePanel 实现) |
+| R-12 | Frontend | Document Viewer 缺失（git status 显示未提交的 `DocumentViewer.tsx`）。用户无法对比 Raw Markdown vs Reorganized，无法验证 LLM 重整质量。 | `frontend/src/components/project/DocumentViewer.tsx` | Week 5 |
+
+**已有（2026-07-07 遗留，合并到 C-6）**:
 
 | ID | Area | Finding | File | Status |
 |---|---|---|---|---|
-| R-1 | Tests | No Python test covers any of the 53 routes in `app.py`. A single regression in router wiring goes undetected. | `src/mbforge/app.py`, `src/mbforge/routers/*.py` | **OPEN** |
-| R-2 | Tests | `pipeline/{classify,extract_text,segment,chunk,index,runner}.py` (~900 lines new) has zero unit tests. Stage failures are silent. | `src/mbforge/pipeline/` | **OPEN** |
-| R-3 | Tests | `core/{database,knowledge_base,semantic_cache,project}.py` (~600 lines new) has zero unit tests. RRF fusion logic untested. | `src/mbforge/core/` | **OPEN** |
-| R-4 | Tests | `agent/{graph,tools,sessions,llm_factory}.py` (~375 lines new) has zero tests. LangGraph tool wiring could regress. | `src/mbforge/agent/` | **OPEN** |
-| R-5 | Frontend | SSE client (`api/sse.ts`) has no reconnect/backoff logic documented. A flaky network mid-stream produces truncated agent answers. | `frontend/src/api/sse.ts` | **OPEN** |
-| R-6 | Frontend | `httpFetch` error mapping (`api/http/_utils.ts`) doesn't cover all FastAPI error shapes (e.g., `MBForgeError` 422 vs HTTP 422). Need spec test. | `frontend/src/api/http/_utils.ts` | **OPEN** |
-| R-7 | Backend | `backends/qwen3.py:1` header docstring still says "embed + rerank" but module now hosts `EmbeddingProvider`, `OpenAICompatibleProvider`, multi-LLM dispatch. Update header. | `src/mbforge/backends/qwen3.py` | **RESOLVED 2026-07-07** (`backends/qwen3.py` deleted; LLM dispatch moved to `agent/llm_factory.py`) |
-| R-8 | Backend | `core/resource_manager.py` adds 245 lines including `subprocess.run(['nvidia-smi'], timeout=5)` blocking calls on hot path. Need async wrapper + cached result. | `src/mbforge/core/resource_manager.py` | **OPEN** |
-| R-9 | Docs | `CLAUDE.md` (newly created) lists `archived/agent/` paths in error examples. `archived/` no longer exists. | `CLAUDE.md` | **RESOLVED 2026-07-05** |
+| R-1 | Tests | 19 个 routers 无测试覆盖。 | `src/mbforge/routers/*.py` | **合并到 C-6** (Week 1-2 smoke tests) |
+| R-2 | Tests | `pipeline/` 模块零测试。 | `src/mbforge/pipeline/` | **合并到 C-6** (Week 1-2) |
+| R-3 | Tests | `core/` 模块零测试。 | `src/mbforge/core/` | **合并到 C-6** (Week 1-2) |
+| R-4 | Tests | `agent/` 模块零测试。 | `src/mbforge/agent/` | **降级到 P2** (Phase 0 暂不扩展 agent) |
+| R-5 | Frontend | SSE 客户端无重连逻辑。 | `frontend/src/api/sse.ts` | **降级到 P2** (需前端架构改造) |
+| R-6 | Frontend | `httpFetch` 错误映射不完整。 | `frontend/src/api/http/_utils.ts` | **合并到 C-7** (Week 1-2 错误处理) |
+| R-7 | Backend | `backends/qwen3.py` docstring 过时。 | `src/mbforge/backends/qwen3.py` | **RESOLVED 2026-07-07** |
+| R-8 | Backend | `resource_manager.py` 的 `nvidia-smi` 阻塞调用。 | `src/mbforge/core/resource_manager.py` | **降级到 P3** (非 Phase 0 性能瓶颈) |
+| R-9 | Docs | `CLAUDE.md` 引用 `archived/` 路径。 | `CLAUDE.md` | **RESOLVED 2026-07-05** |
 
-## P2 — Medium (drift, type hints, docstring quality)
+## P2 — Medium (UX Polish & Documentation)
+
+**新增（2026-07-10 Phase 0 体验优化）**:
+
+| ID | Area | Finding | File | Roadmap Week |
+|---|---|---|---|---|
+| D-9 | Frontend | Pipeline 执行 5-10 分钟，前端只有 spinner，不知道卡在哪个阶段。需要进度可视化（9 阶段进度条 + 预估剩余时间）。 | `frontend/src/components/project/pdf/PdfPipelineFlow.tsx` | Week 5 |
+| D-10 | Frontend | Settings 页面的 OCR 配置和 Model Management 不完整。需要 Provider 优先级排序 + Clear Cache 功能。 | `frontend/src/components/settings/PdfParseSection.tsx`, `src/mbforge/routers/settings.py` | Week 6 |
+| D-11 | Docs | README.md 过度承诺"AI co-pilot"能力，与 Phase 0 定位（research baseline）不符。需要大幅修订，明确 85-90% 准确率 + 需人工校验。 | `README.md` | Week 6 |
+| D-12 | Docs | 缺少 CONTRIBUTING.md 和 Issue 模板，外部贡献者无法快速上手。需补齐开发环境指南 + bug/accuracy report 模板。 | `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/` | Week 6 |
+
+**已有（2026-07-07 遗留）**:
 
 | ID | Area | Finding | File | Status |
 |---|---|---|---|---|
@@ -66,7 +101,19 @@
 | X-2 | Docs | `README.md` "Tech Stack" still mentions Tauri v2 / Rust in some lines — verify after rewrite. | `README.md` | **OPEN** |
 | X-3 | Docs | `docs/REFERENCES.md` lists PyMuPDF, lopdf, ChromaDB, rusqlite — all removed. Updated 2026-06-29. | `docs/REFERENCES.md` | **RESOLVED** |
 
-## P3 — Low (style, anchors, type hints)
+## P3 — Low (Future Features & Style Polish)
+
+**Phase 0 明确不做（推迟到 Phase 1-3）**:
+
+| ID | Area | Feature | Rationale |
+|---|---|---|---|
+| F-1 | Architecture | Evidence Links（点击分子跳转 PDF bbox 高亮）| 低频场景，不是开源科研工具的核心价值。Phase 0 只做 Figure-Molecule Linking（查看 crop）。 |
+| F-2 | Agent | Drug-Design Workflows（SAR 对比、multi-target 分析、反向合成建议）| 需要高准确率数据（95%+）+ 领域知识图谱，Phase 0 模型能力不支持。 |
+| F-3 | Database | 跨文献分子去重聚合（同一 SMILES 在多篇文献 → 单条记录 + 多条 evidence）| 需要全局索引 + 中心化服务，Phase 0 是 per-project vault。 |
+| F-4 | Platform | 数据网络效应（用户校正 → 模型改进飞轮）| 需要中心化服务 + 隐私方案，Phase 0 是本地单用户工具。 |
+| F-5 | Model | SMILES 识别准确率 95%+（fine-tune MolScribe）| 需要 1000+ 篇标注文献 + GPU 集群，单独立项。Phase 0 接受 85-90% baseline。 |
+
+**已有（样式和类型标注优化）**:
 
 | ID | Area | Finding | File | Status |
 |---|---|---|---|---|

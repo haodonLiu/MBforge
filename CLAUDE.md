@@ -2,12 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Last sync**: 2026-07-08. Pipeline expanded to 9 stages (runner
-> now does extract → density → rough_md → detect → insert_molecode →
-> reorganize → pageindex → wiki → persist_mols → register_links →
-> persist); OCR cloud-first fallback chain landed (MinerU →
-> PaddleOCR → GLMOCR → RapidOCR); `routers/ocr.py` added (19
-> routers total); `start.py` single-command dev startup added.
+> **Last sync**: 2026-07-11. Evidence-Linked Molecular Infrastructure Phase 1
+> complete: `evidence` table added (schema v3→v4 migration), `ArtifactResolver`
+> for unified path management (`storage/{doc_id}/crops/` replaces legacy
+> `.mbforge/crops/`), frontend `EvidencePanel` shows molecule provenance with
+> "打开原文" button. Migration script `scripts/migrate_artifact_paths.py` moves
+> legacy crops to canonical location. Pipeline still 9 stages; 19 routers total.
 > If reality drifts from this file, **the code wins**; update this file in the
 > same PR. Detailed conventions live in [AGENTS.md](./AGENTS.md) — don't
 > duplicate them here.
@@ -72,7 +72,8 @@ Tooling pins (see `pyproject.toml`): **uv** (not pip), **npm** (not pnpm/yarn/bu
 | Path | Purpose |
 |---|---|
 | `src/mbforge/` | Python backend package (FastAPI app, routers, agent, pipeline, core, backends, parsers, chem, models, utils, gui, openkb) |
-| `src/mbforge/app.py` | FastAPI factory — registers **18 routers** under `/api/v1/*`, mounts `frontend/dist/` if present |
+| `src/mbforge/app.py` | FastAPI factory — registers **19 routers** under `/api/v1/*`, mounts `frontend/dist/` if present |
+| `src/mbforge/core/artifact.py` | `ArtifactResolver` — single authority for paths under `{library_root}/storage/` (prevents path traversal) |
 | `src/mbforge/server.py` | Dev uvicorn target for the local-model sidecar (mounted at `/api/v1/models`) |
 | `src/mbforge/gui/` | Dear PyGui native frontend (alternative to `frontend/`) |
 | `frontend/` | React + Vite web frontend |
@@ -118,7 +119,9 @@ SQLite + OpenKB + filesystem   (per-project .mbforge/)
 **Lazy-loaded model backends** (no prewarm except OpenKB): `moldet` (YOLO26n), `molscribe` (Swin + TR), OCR cloud chain (MinerU → PaddleOCR → GLMOCR → RapidOCR). First request per backend pays 5–30 s load cost — see `TODO/INDEX.md` C-4.
 
 **Storage locations:**
-- Per-project: `{root}/.mbforge/knowledge_base.db` + the OpenKB + PageIndex collection under `openkb/`.
+- Per-project canonical: `{root}/storage/{doc_id}/` (source.pdf, reorganized.md, crops/, pages/) — managed by `core/artifact.py:ArtifactResolver`
+- Per-project legacy: `{root}/.mbforge/crops/{doc_id}/` (read-only fallback until `scripts/migrate_artifact_paths.py` runs)
+- Per-project DB: `{root}/.mbforge/knowledge_base.db` + OpenKB + PageIndex collection under `openkb/`
 - Global config: `~/.config/MBForge/config.json` (Linux) / `%APPDATA%\MBForge\config\config.json` (Windows). Precedence: `MBFORGE_*` env vars > global config > defaults.
 
 ---

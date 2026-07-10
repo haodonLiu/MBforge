@@ -27,7 +27,7 @@ export async function notesList(root: string): Promise<Note[]> {
   return resp.notes ?? []
 }
 
-export async function notesGet(root: string, id: string): Promise<Note | null> {
+export async function notesGet(_root: string, _id: string): Promise<Note | null> {
   // The list endpoint is used; get is stubbed in the backend.
   return null
 }

@@ -15,22 +15,18 @@
  * process env vars so the existing `is_available()` checks pick them up.
  */
 
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from '@/components/ui/Modal'
 import Button from '@/components/ui/Button'
 import ApiKeyInput from './settings/ApiKeyInput'
-import { getSettings, saveSettings } from '@/api/http/settings'
+import { saveSettings } from '@/api/http/settings'
 import { openExternalUrl } from '@/api/http/_utils'
 import { testOcrMineru, testOcrUniparser, testOcrPaddleocr, testOcrGlmocr, type OcrTestResult } from '@/api/http/text'
 
 type Backend = 'mineru' | 'uniparser' | 'paddleocr-online' | 'paddleocr-local'
 
-interface OcrApiMissingPayload {
-  backend: Backend
-  doc_id: string
-  file_path: string
-}
+
 
 interface FormState {
   mineru_api_key: string
@@ -56,15 +52,9 @@ const ACQUISITION_URLS: Record<Backend, string> = {
   'paddleocr-online': 'https://aistudio.baidu.com/paddleocr',
   'paddleocr-local': '',
 }
-
 const DISMISS_KEY_PREFIX = 'mbforge.ocr.dismissForever.'
-function isDismissedForever(backend: string): boolean {
-  try {
-    return localStorage.getItem(`${DISMISS_KEY_PREFIX}${backend}`) === '1'
-  } catch {
-    return false
-  }
-}
+
+
 
 function openExternal(url: string) {
   if (!url) return
@@ -74,7 +64,8 @@ function openExternal(url: string) {
 export default function OcrConfigModal() {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const [missingBackend, setMissingBackend] = useState<Backend | null>(null)
+  const [missingBackend] = useState<Backend | null>(null)
+
   const [form, setForm] = useState<FormState>(EMPTY)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -346,21 +337,4 @@ function BackendRow({ label, placeholder, value, onChange, onGetKey, getKeyLabel
       )}
     </div>
   )
-}
-
-async function loadSaved(setForm: (s: FormState) => void) {
-  try {
-    const resp = await getSettings()
-    if (!resp.success || !resp.settings?.ocr) return
-    const o = resp.settings.ocr as unknown as Partial<FormState>
-    setForm({
-      mineru_api_key: o.mineru_api_key ?? '',
-      uniparser_api_key: o.uniparser_api_key ?? '',
-      paddleocr_api_key: o.paddleocr_api_key ?? '',
-      paddleocr_host: o.paddleocr_host ?? '',
-      paddleocr_model: o.paddleocr_model ?? '',
-    })
-  } catch {
-    // ignore — empty form
-  }
 }

@@ -2,12 +2,7 @@
 
 import { httpPost, httpPut, httpDelete, invokeWithError } from './_utils'
 import { ErrorCode } from '@/utils/errors'
-import type { MoleculeRecord } from '@/types'
-import {
-  molAdminStoreStats,
-  molAdminList,
-  molAdminSearchText,
-} from './molecule_admin'
+
 
 export interface MoleculeRecord_ {
   mol_id: string

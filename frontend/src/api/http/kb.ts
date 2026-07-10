@@ -52,14 +52,20 @@ export function kbSearchStream(
   query: string,
   topK: number,
   onChunk: (chunk: KbSearchChunk) => void,
-): Promise<() => void> {
+): () => void {
   const params = new URLSearchParams({
     query,
     top_k: String(topK),
     project_root: projectRoot,
   })
   return connectSSE(`/api/v1/kb/search/stream?${params}`, (event) => {
-    const d = event.data
+    const d = event.data as {
+      type?: string
+      error?: string
+      total?: number
+      count?: number
+      results?: KbSearchResult[]
+    }
     if (d.type === 'error') {
       onChunk({ type: 'complete', results: [], count: 0, error: d.error ?? 'search error' })
     } else if (d.type === 'done') {

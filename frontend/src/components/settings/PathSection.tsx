@@ -1,7 +1,8 @@
 import { PageContainer, Skeleton, Card, SectionTitle } from '@/components/ui'
 import ResponsiveStatGrid from '@/components/ui/ResponsiveStatGrid'
 import PathCard from './PathCard'
-import type { ModelPaths } from './types'
+import type { ModelPaths } from './envTypes'
+export type { ModelPaths }
 
 // ============================================================================
 // 加载占位（首屏骨架）

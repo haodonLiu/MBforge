@@ -146,7 +146,7 @@ export function useToast() {
  * error shows the deeper-red treatment even when the type is `error`.
  */
 function toastColor(item: Pick<ToastItem, 'type' | 'severity'>): string {
-  if (item.severity === Severity.Fatal) return PALETTE.dangerDeep ?? '#7f1d1d'
+  if (item.severity === Severity.Fatal) return '#7f1d1d'
   switch (item.type) {
     case 'success': return PALETTE.success
     case 'error': return PALETTE.danger

@@ -5,7 +5,7 @@ import Caption from '@/components/ui/Caption'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Spinner from '@/components/ui/Spinner'
-import { TrashIcon } from '../icons'
+
 
 // ============ ModelSelector ============
 // 自由文本输入 + <datalist> 建议：用户可以键入任意模型名，

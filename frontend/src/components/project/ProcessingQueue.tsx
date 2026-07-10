@@ -20,6 +20,7 @@ import {
   ingestRetry,
   ingestSetPriority,
   ingestStats,
+  type IngestLogEvent,
   type IngestTask,
   type QueueStats,
 } from '@/api/http/ingest_queue'

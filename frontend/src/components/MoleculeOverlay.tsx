@@ -38,7 +38,7 @@ export default function MoleculeOverlay({
   renderHeight,
   originalHeight,
   scale,
-  currentPage,
+
   selectedIndex,
   onSelect,
   onRecognize,

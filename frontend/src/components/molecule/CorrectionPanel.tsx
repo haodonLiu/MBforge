@@ -49,7 +49,7 @@ export default function CorrectionPanel({
 
   const [validation, setValidation] = useState<{
     smiles: string
-    issues: import('../api/http/molecule').ValidationIssue[]
+    issues: import('../../api/http/molecule').ValidationIssue[]
     canonical: string | null
     loading: boolean
   } | null>(null)

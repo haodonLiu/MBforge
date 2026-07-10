@@ -76,7 +76,7 @@ export class AppError extends Error {
         this.context = opts.context as Record<string, unknown> | undefined
         this.timestamp = opts.timestamp as number | undefined
       } else {
-        this.context = opts
+        this.context = opts as Record<string, unknown>
       }
     }
   }

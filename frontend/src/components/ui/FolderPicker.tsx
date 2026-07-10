@@ -16,7 +16,7 @@ export function FolderPicker({
   value,
   onChange,
   placeholder,
-  title,
+
   disabled = false
 }: FolderPickerProps) {
   const { t } = useTranslation()

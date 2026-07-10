@@ -4,11 +4,11 @@ import { useTranslation } from 'react-i18next'
 import { FolderIcon, MoleculeLogo } from './icons'
 import { StaggerContainer, StaggerItem } from './animations/StaggerContainer'
 import { showToast } from '@/hooks/useToast'
-import { fadeIn, logoEntrance, tapScale } from '@/hooks/useAnimations'
+import { fadeIn, logoEntrance } from '@/hooks/useAnimations'
 import Button from '@/components/ui/Button'
 import PageTitle from '@/components/ui/PageTitle'
 import BodyText from '@/components/ui/BodyText'
-import { configureLibrary, getLibraryStatus } from '@/api/http/library'
+import { configureLibrary } from '@/api/http/library'
 import { useAppContext } from '@/context/AppContext'
 
 export default function Welcome() {

@@ -290,7 +290,7 @@ export default function MoleculeDetailPanel(props: MoleculeDetailPanelProps) {
           <EvidencePanel
             items={molecule.evidence}
             libraryRoot={libraryRoot ?? null}
-            onOpenPdf={(docId, page, bbox) => onOpenPdf?.(docId, page, bbox)}
+            onOpenPdf={(docId, page, bbox) => props.onOpenPdf?.(docId, page, bbox)}
           />
         )}
 

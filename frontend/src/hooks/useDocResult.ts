@@ -29,7 +29,7 @@ export function useDocResult(): UseDocResult {
       try {
         const report = await httpGet<DocumentReport>('/api/v1/documents/latest-report')
         if (cancelled) return
-        const etag = report?.id ?? null
+        const etag = report ? String(JSON.stringify(report).length) : null
         if (etag === lastEtagRef.current) return
         lastEtagRef.current = etag
         setState({

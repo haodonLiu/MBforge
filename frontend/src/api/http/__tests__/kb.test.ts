@@ -10,7 +10,7 @@ vi.mock('../_utils', () => ({
 
 vi.mock('../sse', () => ({
   connectSSE: vi.fn((_url: string, _onEvent: (event: { data: unknown }) => void) =>
-    Promise.resolve(() => {}),
+    () => {},
   ),
 }))
 
@@ -66,7 +66,7 @@ describe('kb API', () => {
 
     it('calls onChunk when event received', async () => {
       let streamHandler: (event: { data: unknown }) => void = () => {}
-      mockConnectSSE.mockImplementation(async (_url: string, handler: any) => {
+      mockConnectSSE.mockImplementation((_url: string, handler: any) => {
         streamHandler = handler
         return () => {}
       })

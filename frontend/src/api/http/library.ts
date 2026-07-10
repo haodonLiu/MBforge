@@ -1,6 +1,6 @@
 /** Library API — unified document library (Zotero-style). */
 
-import { httpGet, httpGetText, httpPost, invokeWithError, getErrorMessage } from './_utils'
+import { httpGet, httpGetText, httpPost, invokeWithError } from './_utils'
 
 // ── Types ───────────────────────────────────────────
 
@@ -144,7 +144,7 @@ export async function fetchReorganizedMarkdown(
     const text = await httpGetText(artifactUrl(`/documents/${encodeURIComponent(docId)}/reorganized`, libraryRoot))
     return { ok: true, text }
   } catch (e) {
-    return { ok: false, error: getErrorMessage(e) }
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
@@ -156,7 +156,7 @@ export async function fetchReportJson<T = unknown>(
     const data = await httpGet<T>(artifactUrl(`/documents/${encodeURIComponent(docId)}/report`, libraryRoot))
     return { ok: true, data }
   } catch (e) {
-    return { ok: false, error: getErrorMessage(e) }
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
@@ -176,7 +176,7 @@ export async function fetchIndexedMarkdown(
     const text = await httpGetText(artifactUrl(`/documents/${encodeURIComponent(docId)}/indexed-md`, libraryRoot))
     return { ok: true, text }
   } catch (e) {
-    return { ok: false, error: getErrorMessage(e) }
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
@@ -189,6 +189,6 @@ export async function fetchPageText(
     const text = await httpGetText(artifactUrl(`/documents/${encodeURIComponent(docId)}/pages/${page}`, libraryRoot))
     return { ok: true, text }
   } catch (e) {
-    return { ok: false, error: getErrorMessage(e) }
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }

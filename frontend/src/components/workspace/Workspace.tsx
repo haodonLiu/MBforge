@@ -53,7 +53,13 @@ export default function Workspace() {
     openTab({
       type: 'document',
       title: doc.title,
-      doc: { doc_id: doc.doc_id, path: doc.file_name },
+      doc: {
+        doc_id: doc.doc_id,
+        path: doc.file_name,
+        doc_type: 'pdf',
+        title: doc.title,
+        indexed: false,
+      },
       libraryRoot,
     })
   }

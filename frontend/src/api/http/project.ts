@@ -11,7 +11,7 @@
  * New code should use `library.ts` directly.
  */
 
-import { httpGet, httpPost, invokeWithError } from './_utils'
+import { httpGet, invokeWithError } from './_utils'
 import {
   configureLibrary,
   deleteDocument as deleteLibraryDocument,

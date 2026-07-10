@@ -311,7 +311,7 @@ export default function MoleculeLibrary() {
             sarSession={sarSession}
             activeTab={activeTab}
             onTabChange={(tab) => setActiveTab(tab)}
-            libraryRoot={libraryRoot}
+            projectRoot={libraryRoot}
             onRefresh={refresh}
           />
         </div>

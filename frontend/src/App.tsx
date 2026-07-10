@@ -1,7 +1,7 @@
 import { Suspense, useState, lazy, useEffect, useRef, useMemo } from 'react'
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
-import { useTranslation, I18nextProvider } from 'react-i18next'
+import { I18nextProvider } from 'react-i18next'
 import i18n from './i18n'
 import AnimatedPage from './components/animations/AnimatedPage'
 import { ToastContainer, ToastProvider } from './components/ui'
@@ -16,8 +16,8 @@ import PdfViewer from './components/project/PdfViewer'
 import DocumentViewer from './components/project/DocumentViewer'
 import MarkdownViewer from './components/MarkdownViewer'
 import { AppProvider, useAppContext } from './context/AppContext'
-import { showToast } from './hooks/useToast'
-import { useIsMobile, useIsTablet } from './styles/responsive'
+
+import { useIsMobile } from './styles/responsive'
 import { registerGlobalErrorHandlers } from './api/http/_utils'
 import { useSidecarEvents } from './hooks/useSidecarEvents'
 import { useIngestNotifications } from './hooks/useIngestNotifications'
@@ -64,11 +64,10 @@ export default function App() {
 }
 
 function AppInner() {
-  const { libraryRoot, setLibraryRoot, libraryPanelCollapsed, setLibraryPanelCollapsed, setActiveFile, openTabs, activeTabId, closeTab } = useAppContext()
+  const { libraryRoot, setLibraryRoot, libraryPanelCollapsed, openTabs, activeTabId, closeTab } = useAppContext()
   const [currentPage, setCurrentPage] = useState('workspace')
   const isMobile = useIsMobile()
-  const isTablet = useIsTablet()
-  const { t } = useTranslation()
+
 
   // 当前激活的标签
   const activeTab = useMemo(

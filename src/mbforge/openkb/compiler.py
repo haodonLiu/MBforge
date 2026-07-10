@@ -46,8 +46,10 @@ class WikiCompiler:
         kb_path = Path(self._wiki_dir)
         doc_md_path = openkb_dir / "documents" / f"{doc_id}.md"
 
-        # openkb calls litellm internally — needs openai/ prefix for API key routing
-        litellm_model = f"openai/{cfg.model}"
+        # openkb calls litellm internally — route to provider (ollama/openai/etc)
+        from .config import to_litellm_model
+
+        litellm_model = to_litellm_model(cfg)
 
         if page_count >= threshold:
             logger.info("Compiling long doc: %s (%d pages)", doc_name, page_count)

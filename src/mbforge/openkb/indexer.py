@@ -55,7 +55,7 @@ class PageIndexWrapper:
         self._storage_path.mkdir(parents=True, exist_ok=True)
         self._client = PageIndexClient(
             api_key=pageindex_api_key,
-            model=f"openai/{cfg.model}",
+            model=litellm_cfg["model"],  # 透传 provider (ollama/openai/...)
             storage_path=str(self._storage_path),
         )
         return self._client

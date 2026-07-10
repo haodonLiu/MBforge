@@ -17,6 +17,8 @@ Stages (9):
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -27,6 +29,7 @@ from ..core.database import DatabaseManager
 from ..utils.config import load_global_config
 from ..utils.helpers import ensure_dir, save_json
 from ..utils.logger import get_logger
+from .stage_result import PipelineErrorCode, StageResult
 
 logger = get_logger("mbforge.pipeline.runner")
 
@@ -142,11 +145,29 @@ def run_pipeline(
                 progress_pct=progress_pct,
                 status=status,
             )
-        except Exception as exc:  # noqa: BLE001 — never let DB writes crash the pipeline
-            logger.debug("record_ingest_event skipped: %s", exc)
+        except Exception as exc:  # noqa: BLE001 — surface the failure, never silently drop
+            logger.warning("record_ingest_event failed: %s", exc)
+            # Also push to the diagnostics ring buffer so the failure is
+            # visible to the front-end diagnostics view, not just the log.
+            try:
+                from ..utils.logger import push_diagnostic
+                push_diagnostic(
+                    {
+                        "level": "WARNING",
+                        "message": f"record_ingest_event failed: {exc}",
+                        "category": "pipeline.runner",
+                        "error_code": "ingest_log_write_failed",
+                    }
+                )
+            except Exception:  # pragma: no cover - never let diagnostics compound the failure
+                pass
 
     def _emit(
-        event: str, message: str = "", *, stage: str | None = None, **data: Any
+        event: str,
+        message: str = "",
+        *,
+        stage: str | None = None,
+        **data: Any,
     ) -> None:
         if on_progress:
             on_progress(
@@ -156,6 +177,63 @@ def run_pipeline(
             )
         logger.info("[%s] %s", event, message)
         _maybe_record(event, message, stage=stage, **data)
+
+    def _emit_stage_result(result: StageResult) -> None:
+        """Emit a pipeline event from a StageResult.
+
+        Recoverable failures are surfaced as ``warning`` events so the front-end
+        knows the pipeline is continuing; fatal failures use ``error``.
+        """
+        data: dict[str, Any] = dict(result.context)
+        if result.error_code:
+            data["error_code"] = result.error_code
+        data["recoverable"] = result.recoverable
+        event_name = "warning" if result.recoverable else result.status
+        _emit(
+            event_name,
+            result.message,
+            stage=result.stage,
+            **data,
+        )
+
+    def _run_stage(
+        stage: str,
+        fn: Callable[[], Any],
+        *,
+        recoverable: bool = False,
+        error_code: str = PipelineErrorCode.UNKNOWN_ERROR,
+        error_message: str | None = None,
+    ) -> StageResult:
+        """Execute one pipeline stage and return a structured StageResult.
+
+        Non-recoverable errors emit an ``error`` event and raise the exception
+        so the caller can abort the pipeline. Recoverable errors emit a
+        ``warning`` event and return a StageResult without raising.
+        """
+        try:
+            fn()
+            return StageResult(
+                stage=stage,
+                status="success",
+                message="OK",
+            )
+        except Exception as exc:
+            msg = error_message or f"{stage} failed: {exc}"
+            context = {"exception_type": type(exc).__name__, "detail": str(exc)}
+            result = StageResult(
+                stage=stage,
+                status="error",
+                message=msg,
+                error_code=error_code,
+                recoverable=recoverable,
+                context=context,
+            )
+            _emit_stage_result(result)
+            if recoverable:
+                logger.warning("%s (recoverable): %s", msg, exc)
+                return result
+            logger.error("%s (fatal): %s", msg, exc)
+            raise
 
     _emit("start", f"Processing {Path(pdf_path).name}")
 
@@ -185,8 +263,6 @@ def run_pipeline(
 
     # -- Stage 3a: Write rough markdown --
     _emit("progress", "Writing rough markdown...", stage="rough_md")
-    import tempfile
-
     from .extract_text import write_rough_markdown
 
     rough_md_path = tempfile.mktemp(suffix=".md")
@@ -264,36 +340,59 @@ def run_pipeline(
     # -- Stage 3d: LLM reorganization --
     _emit("progress", "Reorganizing text...", stage="reorganize")
     # 把重整后的 markdown 存到 storage/{doc_id}/reorganized.md（与原 PDF 同目录）
-    storage_dir = root / "storage" / doc_id
+    # Paths go through ArtifactResolver so doc_id is validated against
+    # _SAFE_DOC_ID_RE and any traversal attempt is rejected at the chokepoint.
+    from ..core.artifact import ArtifactResolver
+
+    resolver = ArtifactResolver(root)
+    storage_dir = resolver.storage_dir(doc_id)
     ensure_dir(storage_dir)
-    final_md_path = storage_dir / "reorganized.md"
-    if density.doc_kind != "text_only" or candidates:
-        from .organizer import reorganize_with_llm
+    final_md_path = resolver.reorganized_md(doc_id)
 
-        llm_cfg = load_global_config().llm
-        reorganize_model = getattr(llm_cfg, "reorganize_model", None) or llm_cfg.model
-        reorganize_with_llm(enriched_md_path, str(final_md_path), model=reorganize_model)
-    else:
-        # text_only doc without molecules: reorganize maybe skipped
-        _emit(
-            "complete",
-            "Reorganization skipped (text_only, no molecules)",
-            stage="reorganize",
-        )
-        import shutil
+    def _run_reorganize() -> None:
+        if density.doc_kind != "text_only" or candidates:
+            from .organizer import reorganize_with_llm
 
-        shutil.copy2(enriched_md_path, str(final_md_path))
+            llm_cfg = load_global_config().llm
+            reorganize_model = getattr(llm_cfg, "reorganize_model", None) or llm_cfg.model
+            reorganize_with_llm(enriched_md_path, str(final_md_path), model=reorganize_model)
+        else:
+            _emit(
+                "complete",
+                "Reorganization skipped (text_only, no molecules)",
+                stage="reorganize",
+            )
+            import shutil
+
+            shutil.copy2(enriched_md_path, str(final_md_path))
+
+    _run_stage(
+        "reorganize",
+        _run_reorganize,
+        recoverable=True,
+        error_code=PipelineErrorCode.LLM_REORGANIZE_FAILED,
+        error_message="LLM reorganization failed",
+    )
     _emit("complete", "Text reorganized", stage="reorganize")
 
     # 把原始 PDF 复制到 storage/{doc_id}/source.pdf，方便前端直接预览/下载
     try:
         import shutil
 
-        source_pdf = storage_dir / "source.pdf"
+        source_pdf = resolver.source_pdf(doc_id)
         if Path(pdf_path).resolve() != source_pdf.resolve():
             shutil.copy2(pdf_path, str(source_pdf))
     except Exception as pdf_copy_exc:
-        logger.debug("Failed to copy source PDF: %s", pdf_copy_exc)
+        # The pipeline can still proceed without source.pdf in the storage
+        # dir (the original PDF is still in library_root), but the failure
+        # is no longer hidden. Surface it as a warning + diagnostics event
+        # so the front-end diagnostics view + logs both see it.
+        logger.warning("Failed to copy source PDF: %s", pdf_copy_exc)
+        _emit(
+            "warning",
+            f"Failed to copy source PDF: {pdf_copy_exc}",
+            stage="reorganize",
+        )
 
     # -- Stage 3e: PageIndex tree indexing via markdown --
     _emit("progress", "Building PageIndex tree...", stage="pageindex")
@@ -308,7 +407,14 @@ def run_pipeline(
         _emit("complete", f"PageIndex tree built: {openkb_doc_id}", stage="pageindex")
     except Exception as e:
         logger.warning("PageIndex indexing failed for %s: %s", pdf_path, e)
-        _emit("warning", f"PageIndex indexing skipped: {e}", stage="pageindex")
+        _emit(
+            "warning",
+            f"PageIndex indexing skipped: {e}",
+            stage="pageindex",
+            error_code=PipelineErrorCode.OPENKB_INDEX_FAILED,
+            recoverable=True,
+            exception_type=type(e).__name__,
+        )
 
     # -- Stage 4: Wiki compilation --
     if openkb_doc_id:
@@ -319,7 +425,14 @@ def run_pipeline(
             _emit("complete", "Wiki compiled", stage="wiki")
         except Exception as e:
             logger.warning("Wiki compilation failed for %s: %s", doc_id, e)
-            _emit("warning", f"Wiki compilation skipped: {e}", stage="wiki")
+            _emit(
+                "warning",
+                f"Wiki compilation skipped: {e}",
+                stage="wiki",
+                error_code=PipelineErrorCode.OPENKB_WIKI_FAILED,
+                recoverable=True,
+                exception_type=type(e).__name__,
+            )
     elif density.doc_kind == "image_only":
         _emit(
             "warning",
@@ -327,17 +440,34 @@ def run_pipeline(
             stage="wiki",
         )
 
-    # -- Stage 5: Persist molecules --
+    # -- Stages 5+6: Persist molecules + register text links (single txn) --
+    # Both stages share one cross-database transaction so a failure in
+    # either rolls back the other — preventing orphan rows in molecules,
+    # evidence, or text_molecule_links.
     _emit("progress", "Persisting molecules...", stage="persist_mols")
-    _persist_molecules(root, doc_id, molecule_stats)
-    _emit("complete", f"Persisted {molecule_count} molecules", stage="persist_mols")
 
-    # -- Stage 6: Register molecule links from reorganized text --
-    _emit("progress", "Registering molecule links...", stage="register_links")
-    if candidates:
+    def _register_links_in_txn(mol_conn: Any) -> None:
+        if not candidates or not final_md_path:
+            return
         from .organizer import register_molecules_from_text
 
-        register_molecules_from_text(final_md_path, candidates, doc_id, str(root))
+        register_molecules_from_text(
+            str(final_md_path), candidates, doc_id, str(root), conn=mol_conn,
+        )
+
+    _run_stage(
+        "persist_mols",
+        lambda: _persist_molecules(
+            root,
+            doc_id,
+            molecule_stats,
+            register_links=_register_links_in_txn,
+        ),
+        recoverable=False,
+        error_code=PipelineErrorCode.PERSIST_MOLECULES_FAILED,
+        error_message="Molecule persistence or link registration failed",
+    )
+    _emit("complete", f"Persisted {molecule_count} molecules", stage="persist_mols")
     _emit(
         "complete",
         f"Registered {len(candidates)} molecule links",
@@ -346,10 +476,14 @@ def run_pipeline(
 
     # -- Stage 7: Persist document --
     _emit("progress", "Saving document...", stage="persist")
-    _persist_document(root, doc_id, extracted, density, molecule_stats)
+    _run_stage(
+        "persist",
+        lambda: _persist_document(root, doc_id, extracted, density, molecule_stats),
+        recoverable=False,
+        error_code=PipelineErrorCode.PERSIST_DOCUMENT_FAILED,
+        error_message="Document persistence failed",
+    )
     _emit("complete", "Document saved", stage="persist")
-
-    import contextlib
 
     for p in [rough_md_path, enriched_md_path]:
         with contextlib.suppress(Exception):
@@ -400,7 +534,14 @@ def _enrich_molecules(
         image_results = extract_molecules_from_pdf(pdf_path, str(root), doc_id)
     except Exception as e:
         logger.warning("Molecule image extraction failed: %s", e)
-        image_results = []
+        return {
+            "molecule_count": 0,
+            "rejected_count": 0,
+            "skipped": True,
+            "reason": f"extraction_failed: {e}",
+            "error_code": PipelineErrorCode.MOLDET_UNAVAILABLE,
+            "candidates": [],
+        }
 
     if not image_results:
         return {
@@ -419,6 +560,7 @@ def _enrich_molecules(
             "molecule_count": 0,
             "rejected_count": 0,
             "error": f"normalization failed: {e}",
+            "error_code": PipelineErrorCode.MOLECULE_NORMALIZATION_FAILED,
             "candidates": [],
         }
 
@@ -443,18 +585,40 @@ def _persist_molecules(
     project_root: str | Path,
     doc_id: str,
     molecule_stats: dict[str, Any],
+    *,
+    register_links: Callable[[Any], None] | None = None,
+    final_md_path: str | Path | None = None,
+    candidates: list[Any] | None = None,
 ) -> None:
-    """Persist molecule candidates produced by _enrich_molecules."""
-    candidates = molecule_stats.get("candidates", [])
-    if not candidates:
+    """Persist molecule candidates + (optionally) register text links.
+
+    Both writes share one cross-database transaction so a failure in
+    either stage rolls back the other. The register_links callback (if
+    provided) is called with the shared ``mol_conn`` so it can run
+    ``register_molecules_from_text(..., conn=mol_conn)`` inside the same
+    transaction.
+    """
+    # If the caller is supplying register_links, the candidates list lives
+    # outside molecule_stats (it was already extracted earlier in
+    # run_pipeline). Fall back to molecule_stats when not.
+    effective_candidates = (
+        candidates if candidates is not None else molecule_stats.get("candidates", [])
+    )
+    if not effective_candidates and register_links is None:
         return
     from .persist_molecules import persist_molecule_candidates
 
     root = Path(project_root) if isinstance(project_root, str) else project_root
-    try:
-        persist_molecule_candidates(str(root), doc_id, candidates)
-    except Exception as e:
-        logger.warning("Molecule persistence failed: %s", e)
+    db = DatabaseManager.get(str(root))
+    # Run inside the cross-database transaction so a failure does not leave
+    # orphan molecule rows, evidence rows, or text_molecule_links rows.
+    with db.transaction() as (_kb_conn, mol_conn):
+        if effective_candidates:
+            persist_molecule_candidates(
+                str(root), doc_id, effective_candidates, conn=mol_conn
+            )
+        if register_links is not None:
+            register_links(mol_conn)
 
 
 def _persist_document(
@@ -464,29 +628,63 @@ def _persist_document(
     density: Any,  # DensityClassification
     molecule_stats: dict[str, Any],
 ) -> None:
-    """Save page texts and report to filesystem."""
+    """Save page texts and report to filesystem.
+
+    All paths are produced by :class:`ArtifactResolver` so ``doc_id`` is
+    validated against the safe-id regex and a path-traversal attempt is
+    rejected at the chokepoint (raises ``InvalidDocIdError`` /
+    ``PathTraversalError`` instead of writing outside the storage root).
+
+    Rollback: every file written to disk is recorded in ``written_files``.
+    If any write fails, the function deletes all previously written files
+    before re-raising — so the storage dir never contains partial artifacts
+    from a failed pipeline run.
+    """
     root = Path(project_root) if isinstance(project_root, str) else project_root
+    from ..core.artifact import ArtifactResolver
 
-    pages_dir = root / "storage" / doc_id / "pages"
-    ensure_dir(pages_dir)
-    for page in extracted.pages:
-        page_file = pages_dir / f"page_{page.page_num:04d}.txt"
-        page_file.write_text(page.text, encoding="utf-8")
+    resolver = ArtifactResolver(root)
+    written_files: list[Path] = []
+    try:
+        pages_dir = resolver.pages_dir(doc_id)
+        ensure_dir(pages_dir)
+        for page in extracted.pages:
+            page_file = resolver.page_text(doc_id, page.page_num)
+            page_file.write_text(page.text, encoding="utf-8")
+            written_files.append(page_file)
 
-    report_dir = root / "storage" / doc_id
-    ensure_dir(report_dir)
-    report = {
-        "doc_id": doc_id,
-        "page_count": extracted.page_count,
-        "parser": extracted.parser,
-        "title": extracted.title,
-        "doc_kind": density.doc_kind,
-        "avg_text_density": density.avg_text_density,
-        "pages_needing_ocr": density.pages_needing_ocr,
-        "molecule_count": molecule_stats.get("molecule_count", 0),
-        "molecule_pending_review_count": molecule_stats.get("pending_review_count", 0),
-        "molecule_rejected_count": molecule_stats.get("rejected_count", 0),
-        "molecule_sources": molecule_stats.get("sources", []),
-        "kb_backend": "openkb",
-    }
-    save_json(report_dir / "report.json", report)
+        report_dir = resolver.storage_dir(doc_id)
+        ensure_dir(report_dir)
+        report = {
+            "doc_id": doc_id,
+            "page_count": extracted.page_count,
+            "parser": extracted.parser,
+            "title": extracted.title,
+            "doc_kind": density.doc_kind,
+            "avg_text_density": density.avg_text_density,
+            "pages_needing_ocr": density.pages_needing_ocr,
+            "molecule_count": molecule_stats.get("molecule_count", 0),
+            "molecule_pending_review_count": molecule_stats.get(
+                "pending_review_count", 0
+            ),
+            "molecule_rejected_count": molecule_stats.get("rejected_count", 0),
+            "molecule_sources": molecule_stats.get("sources", []),
+            "kb_backend": "openkb",
+        }
+        report_path = resolver.report_json(doc_id)
+        save_json(report_path, report)
+        written_files.append(report_path)
+    except Exception:
+        # Roll back any files we already wrote so the storage dir doesn't
+        # contain partial artifacts from a failed run. We log + remove;
+        # the caller (run_pipeline) decides whether the exception is fatal.
+        for path in written_files:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception as cleanup_exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "Failed to remove partial artifact %s during rollback: %s",
+                    path,
+                    cleanup_exc,
+                )
+        raise

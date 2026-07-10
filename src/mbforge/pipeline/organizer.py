@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import sqlite3
 import time
 from pathlib import Path
 
@@ -617,65 +618,127 @@ def register_molecules_from_text(
     molecules: list[NormalizedMolecule],
     doc_id: str,
     project_root: str,
+    *,
+    conn: sqlite3.Connection | None = None,
 ) -> None:
     """Find each molecule's text context in the reorganized markdown and persist links.
 
     Searches the fine markdown for each molecule's MoleCode block (by name or
     SMILES prefix), extracts a ~200-char context window, identifies the nearest
     preceding Markdown heading, and inserts one row per molecule into
-    ``text_molecule_links``. The full set of inserts runs in a single
-    transaction; any error rolls back the whole batch.
+    ``text_molecule_links`` (plus the canonical ``molecules`` upsert and a
+    ``text``-kind ``evidence`` row).
+
+    Transaction handling:
+
+    * When ``conn`` is ``None`` (default), the function opens its own
+      ``molecules.db`` connection, begins a transaction, commits on
+      success, and rolls back on failure. This is the legacy call
+      pattern.
+    * When ``conn`` is provided, the caller owns the transaction — the
+      function only executes the inserts. The pipeline uses this to
+      share one cross-database transaction with
+      ``persist_molecule_candidates`` so a failure in either stage
+      rolls back the other.
 
     Molecules with ``status == "rejected"`` are skipped.
     """
     from ..core.database import DatabaseManager
 
     md_text = Path(fine_md_path).read_text(encoding="utf-8")
+
+    def _do_inserts(active_conn: sqlite3.Connection) -> None:
+        now_ms = int(time.time() * 1000)
+        for mol in molecules:
+            if mol.status == "rejected":
+                continue
+            name = mol.name or f"Mol_{mol.canonical_smiles[:8]}"
+            position = _find_molecode_in_text(md_text, name, mol.canonical_smiles)
+            if position is not None:
+                block_start, block_end, _section_title = position
+                excerpt_start = max(0, block_start - 200)
+                excerpt_end = min(len(md_text), block_end + 200)
+                text_excerpt = md_text[excerpt_start:excerpt_end].replace("\n", " ")
+                code_text = md_text[block_start:block_end]
+                char_start, char_end = block_start, block_end
+            else:
+                text_excerpt = "position unresolved"
+                code_text = ""
+                char_start, char_end = 0, 0
+            # Ensure molecules row exists (canonical aggregate).
+            active_conn.execute(
+                """
+                INSERT INTO molecules
+                    (mol_id, smiles, esmiles, name, source_type, status,
+                     canonical_smiles)
+                VALUES (?, ?, ?, ?, 'text', 'pending', ?)
+                ON CONFLICT(mol_id) DO UPDATE SET
+                    canonical_smiles = COALESCE(molecules.canonical_smiles, excluded.canonical_smiles)
+                """,
+                (
+                    mol.canonical_smiles,
+                    mol.canonical_smiles,
+                    mol.esmiles,
+                    name,
+                    mol.canonical_smiles,
+                ),
+            )
+            active_conn.execute(
+                """INSERT INTO text_molecule_links
+                   (doc_id, mol_id, text_excerpt, role,
+                    code_text, char_start, char_end, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    doc_id,
+                    mol.canonical_smiles,
+                    text_excerpt[:500],
+                    "mentioned",
+                    code_text[:1000],
+                    char_start,
+                    char_end,
+                    now_ms,
+                ),
+            )
+            # First-class evidence row (text kind).
+            active_conn.execute(
+                """
+                INSERT INTO evidence
+                    (canonical_smiles, mol_id, doc_id, page,
+                     context_text, code_text, role, kind, source_type)
+                VALUES (?, ?, ?, NULL, ?, ?, 'mentioned', 'text', 'text')
+                """,
+                (
+                    mol.canonical_smiles,
+                    mol.canonical_smiles,
+                    doc_id,
+                    text_excerpt[:500],
+                    code_text[:1000],
+                ),
+            )
+
+    if conn is not None:
+        # Caller owns the transaction; just do the inserts.
+        _do_inserts(conn)
+        logger.info(
+            "register_molecules_from_text: %d rows inserted (shared txn) for doc_id=%s",
+            len(molecules),
+            doc_id,
+        )
+        return
+
+    # Legacy path: own the transaction.
     db = DatabaseManager.get(project_root)
     db.initialize()
-
-    now_ms = int(time.time() * 1000)
-    with db.mol_conn() as conn:
-        conn.execute("BEGIN")
+    with db.mol_conn() as local_conn:
+        local_conn.execute("BEGIN")
         try:
-            for mol in molecules:
-                if mol.status == "rejected":
-                    continue
-                name = mol.name or f"Mol_{mol.canonical_smiles[:8]}"
-                position = _find_molecode_in_text(md_text, name, mol.canonical_smiles)
-                if position is not None:
-                    block_start, block_end, _section_title = position
-                    excerpt_start = max(0, block_start - 200)
-                    excerpt_end = min(len(md_text), block_end + 200)
-                    text_excerpt = md_text[excerpt_start:excerpt_end].replace("\n", " ")
-                    code_text = md_text[block_start:block_end]
-                    char_start, char_end = block_start, block_end
-                else:
-                    text_excerpt = "position unresolved"
-                    code_text = ""
-                    char_start, char_end = 0, 0
-                conn.execute(
-                    """INSERT INTO text_molecule_links
-                       (doc_id, mol_id, text_excerpt, role,
-                        code_text, char_start, char_end, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        doc_id,
-                        mol.canonical_smiles,
-                        text_excerpt[:500],
-                        "mentioned",
-                        code_text[:1000],
-                        char_start,
-                        char_end,
-                        now_ms,
-                    ),
-                )
-            conn.commit()
+            _do_inserts(local_conn)
+            local_conn.commit()
             logger.info(
                 "register_molecules_from_text: %d rows inserted for doc_id=%s",
                 len(molecules),
                 doc_id,
             )
         except Exception:
-            conn.rollback()
+            local_conn.rollback()
             raise

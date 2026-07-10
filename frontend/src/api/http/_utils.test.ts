@@ -14,7 +14,7 @@ describe('httpFetch Pydantic 422 handling', () => {
             { loc: ['body', 'page'], msg: 'value is not a valid integer', type: 'type_error' },
           ],
         }),
-    } as Response)
+    })
 
     await expect(httpFetch('/api/v1/test', { method: 'POST', body: '{}' })).rejects.toThrow(
       AppError,
@@ -37,7 +37,7 @@ describe('httpFetch Pydantic 422 handling', () => {
           error_code: 'validation_error',
           severity: 'warning',
         }),
-    } as Response)
+    })
 
     await expect(httpFetch('/api/v1/test')).rejects.toSatisfy(
       (err: AppError) =>

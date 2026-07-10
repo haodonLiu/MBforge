@@ -109,7 +109,7 @@ describe('httpFetch (JSON error body)', () => {
         statusText: 'Unprocessable Entity',
         headers: { 'Content-Type': 'application/json' },
       }),
-    ) as unknown as typeof fetch
+    )
 
     const { httpFetch } = await import('../_utils')
     await expect(httpFetch('/api/v1/library/open', { method: 'POST' })).rejects.toMatchObject({
@@ -133,7 +133,7 @@ describe('httpFetch (JSON error body)', () => {
         statusText: 'Bad Gateway',
         headers: { 'Content-Type': 'text/html' },
       }),
-    ) as unknown as typeof fetch
+    )
 
     const { httpFetch } = await import('../_utils')
     await expect(httpFetch('/api/v1/moldet/something')).rejects.toMatchObject({
@@ -158,7 +158,7 @@ describe('httpFetch (JSON error body)', () => {
         statusText: 'Service Unavailable',
         headers: { 'Content-Type': 'application/json' },
       }),
-    ) as unknown as typeof fetch
+    )
 
     const { httpFetch } = await import('../_utils')
     await expect(httpFetch('/api/v1/models/molscribe/health')).rejects.toMatchObject({
@@ -176,7 +176,7 @@ describe('httpFetch (JSON error body)', () => {
         statusText: 'Forbidden',
         headers: { 'Content-Type': 'application/json' },
       }),
-    ) as unknown as typeof fetch
+    )
 
     const { httpFetch } = await import('../_utils')
     await expect(httpFetch('/api/v1/library/foo')).rejects.toMatchObject({

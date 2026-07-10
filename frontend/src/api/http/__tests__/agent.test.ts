@@ -43,7 +43,7 @@ describe('agent API', () => {
 
   describe('agentInit', () => {
     it('calls httpPost with sidecar_url', async () => {
-      mockHttpPost.mockResolvedValue(undefined as never)
+      mockHttpPost.mockResolvedValue(undefined)
 
       await agentInit('http://localhost:18792')
 
@@ -66,7 +66,7 @@ describe('agent API', () => {
           },
         },
       }
-      mockHttpGet.mockResolvedValue(settingsResp as never)
+      mockHttpGet.mockResolvedValue(settingsResp)
 
       const result = await getLlmEnvConfig()
 
@@ -89,7 +89,7 @@ describe('agent API', () => {
           },
         },
       }
-      mockHttpGet.mockResolvedValue(settingsResp as never)
+      mockHttpGet.mockResolvedValue(settingsResp)
 
       const result = await testLlmConnection()
 
@@ -101,31 +101,31 @@ describe('agent API', () => {
 
   describe('agentCreateSession', () => {
     it('creates session with project root', async () => {
-      mockHttpPost.mockResolvedValue(undefined as never)
+      mockHttpPost.mockResolvedValue(undefined)
 
       await agentCreateSession('session-1', '/project')
 
       expect(httpPost).toHaveBeenCalledWith('/api/v1/agent/session', {
         session_id: 'session-1',
-        project_root: '/project',
+        library_root: '/project',
       })
     })
 
     it('creates session without project root', async () => {
-      mockHttpPost.mockResolvedValue(undefined as never)
+      mockHttpPost.mockResolvedValue(undefined)
 
       await agentCreateSession('session-1')
 
       expect(httpPost).toHaveBeenCalledWith('/api/v1/agent/session', {
         session_id: 'session-1',
-        project_root: null,
+        library_root: null,
       })
     })
   })
 
   describe('agentChat', () => {
     it('returns chat reply', async () => {
-      mockHttpPost.mockResolvedValue({ success: true, reply: 'Hello!' } as never)
+      mockHttpPost.mockResolvedValue({ success: true, reply: 'Hello!' })
 
       const result = await agentChat('session-1', 'Hi')
 
@@ -145,19 +145,19 @@ describe('agent API', () => {
 
   describe('agentSwitchProject', () => {
     it('calls httpPut with project info', async () => {
-      mockHttpPut.mockResolvedValue(undefined as never)
+      mockHttpPut.mockResolvedValue(undefined)
 
       await agentSwitchProject('session-1', '/project', 'MyProject')
 
       expect(httpPut).toHaveBeenCalledWith('/api/v1/agent/session/session-1/project', {
-        project_root: '/project',
+        library_root: '/project',
       })
     })
   })
 
   describe('agentClear', () => {
     it('clears session', async () => {
-      mockHttpPost.mockResolvedValue(undefined as never)
+      mockHttpPost.mockResolvedValue(undefined)
 
       await agentClear('session-1')
 
@@ -167,7 +167,7 @@ describe('agent API', () => {
 
   describe('agentDestroySession', () => {
     it('destroys session', async () => {
-      mockHttpDelete.mockResolvedValue(undefined as never)
+      mockHttpDelete.mockResolvedValue(undefined)
 
       await agentDestroySession('session-1')
 
@@ -181,7 +181,7 @@ describe('agent API', () => {
         { role: 'user', content: 'Hi' },
         { role: 'assistant', content: 'Hello!' },
       ]
-      mockHttpGet.mockResolvedValue({ success: true, messages } as never)
+      mockHttpGet.mockResolvedValue({ success: true, messages })
 
       const result = await agentGetHistory('session-1')
 

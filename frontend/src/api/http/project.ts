@@ -167,7 +167,7 @@ export async function listProjectDocumentsWithStatus(
     documents: r.documents.map(d => ({
       ...d,
       is_complete: false,
-      incomplete_reason: 'complete' as IncompleteReason,
+      incomplete_reason: 'complete',
     })),
   }
 }

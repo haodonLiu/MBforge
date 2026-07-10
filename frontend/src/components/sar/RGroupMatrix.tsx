@@ -106,7 +106,7 @@ export default function RGroupMatrixView({
     sarHeatmap(matrix, lowerIsBetter)
       .then(resp => {
         if (cancelled) return
-        setHeatmaps(resp as unknown as ActivityHeatmapEntry[])
+        setHeatmaps(resp)
       })
       .catch(() => {
         // 热力图失败不阻塞矩阵展示

@@ -166,7 +166,7 @@ export default function ModelsTab() {
         if (event.status === 'failed') {
           return { ...prev, [key]: { ...current, status: 'failed', error: event.error } }
         }
-        return { ...prev, [key]: { ...current, status: event.status as DownloadState[string] extends infer T ? T extends { status: infer S } ? S : never : never } }
+        return { ...prev, [key]: { ...current, status: event.status } }
       })
     })
     setAbortMap(prev => {

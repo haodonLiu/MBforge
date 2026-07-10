@@ -50,8 +50,8 @@ export function connectSSE(
     es = new EventSource(url)
     es.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data)
-        onEvent({ type: data.event || data.type || 'message', data })
+        const data: Record<string, unknown> = JSON.parse(event.data)
+        onEvent({ type: String(data.event ?? data.type ?? 'message'), data })
       } catch {
         onEvent({ type: 'raw', data: { text: event.data } })
       }
@@ -111,10 +111,12 @@ export async function fetchSSE<T = unknown>(path: string, params?: Record<string
     for (const line of lines) {
       if (line.startsWith('data: ')) {
         try {
-          const data = JSON.parse(line.slice(6))
+          const data: Record<string, unknown> = JSON.parse(line.slice(6))
           if (data.type === 'done' || data.event === 'done') break
           events.push(data as T)
-        } catch {}
+        } catch {
+          // malformed JSON line — skip
+        }
       }
     }
   }

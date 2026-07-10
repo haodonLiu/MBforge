@@ -157,18 +157,26 @@ export function subscribeIngestEvents(
   }
 }
 
+interface IngestListResponse {
+  tasks: IngestTask[]
+}
+
 export async function ingestList(libraryRoot: string): Promise<IngestTask[]> {
   return invokeWithError(
-    () => httpPost('/api/v1/pipeline/queue', { library_root: libraryRoot })
-      .then((r: any) => Array.isArray(r?.tasks) ? r.tasks : []),
+    () => httpPost<IngestListResponse>('/api/v1/pipeline/queue', { library_root: libraryRoot })
+      .then((r) => Array.isArray(r?.tasks) ? r.tasks : []),
     ErrorCode.ApiError,
   )
 }
 
+interface IngestStatsResponse {
+  stats: QueueStats
+}
+
 export async function ingestStats(libraryRoot: string): Promise<QueueStats> {
   return invokeWithError(
-    () => httpPost('/api/v1/pipeline/queue/stats', { library_root: libraryRoot })
-      .then((r: any) => r?.stats ?? {}),
+    () => httpPost<IngestStatsResponse>('/api/v1/pipeline/queue/stats', { library_root: libraryRoot })
+      .then((r) => r?.stats ?? ({} as QueueStats)),
     ErrorCode.ApiError,
   )
 }

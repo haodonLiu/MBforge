@@ -36,7 +36,7 @@ describe('sar API', () => {
         atom_count: 6,
         bond_count: 6,
       }
-      mockHttpPost.mockResolvedValue(stub as never)
+      mockHttpPost.mockResolvedValue(stub)
 
       const smilesList = ['c1ccc(CC(=O)O)cc1', 'c1ccc(CC(=O)N)cc1']
       const result = await sarFindScaffold(smilesList)
@@ -47,7 +47,7 @@ describe('sar API', () => {
     })
 
     it('returns null when no common scaffold is found', async () => {
-      mockHttpPost.mockResolvedValue(null as never)
+      mockHttpPost.mockResolvedValue(null)
 
       const result = await sarFindScaffold(['C', 'N'])
 
@@ -75,7 +75,7 @@ describe('sar API', () => {
           { position: 0, label: 'R1', substituent_smiles: '[R1]', substituent_atoms: 2 },
         ],
       }
-      mockHttpPost.mockResolvedValue(stub as never)
+      mockHttpPost.mockResolvedValue(stub)
 
       const result = await sarDecompose('c1ccc(CC(=O)O)cc1', 'c1ccccc1')
 
@@ -112,7 +112,7 @@ describe('sar API', () => {
         ],
         unmatched_count: 0,
       }
-      mockHttpPost.mockResolvedValue(stub as never)
+      mockHttpPost.mockResolvedValue(stub)
 
       const result = await sarBuildMatrix(compounds, 'c1ccccc1')
 
@@ -135,7 +135,7 @@ describe('sar API', () => {
         ],
         unmatched_count: 2,
       }
-      mockHttpPost.mockResolvedValue(stub as never)
+      mockHttpPost.mockResolvedValue(stub)
 
       const result = await sarBuildMatrix(compounds)
 
@@ -177,7 +177,7 @@ describe('sar API', () => {
           ],
         },
       ]
-      mockHttpPost.mockResolvedValue(stub as never)
+      mockHttpPost.mockResolvedValue(stub)
 
       const result = await sarHeatmap(matrix)
 

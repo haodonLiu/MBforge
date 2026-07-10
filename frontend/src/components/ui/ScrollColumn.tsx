@@ -38,7 +38,7 @@ const ScrollColumn = forwardRef<HTMLDivElement, ScrollColumnProps>(
   function ScrollColumn({ children, className, style, padding, as: Tag = 'div', ...rest }, ref) {
     return (
       <Tag
-        ref={ref as React.Ref<HTMLDivElement>}
+        ref={ref}
         className={className}
         style={{
           flex: 1,

@@ -71,8 +71,8 @@ export default function MatrixTable({ matrix, onCompoundClick }: MatrixTableProp
           </thead>
           <tbody>
             {matrix.compounds.map((c, rowIdx) => {
-              const activity = c.activity as number | undefined
-              const units = (c.units as string | undefined) ?? ''
+              const activity = c.activity
+              const units = (c.units) ?? ''
               const matches = c.matches
               const pAct = pActScale(activity, units)
               return (
@@ -86,7 +86,7 @@ export default function MatrixTable({ matrix, onCompoundClick }: MatrixTableProp
                         name: c.name,
                         rGroups: {},
                         activity,
-                        activityType: c.activity_type as string | undefined,
+                        activityType: c.activity_type,
                         units,
                       })
                     }

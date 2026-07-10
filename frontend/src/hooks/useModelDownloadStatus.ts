@@ -153,9 +153,9 @@ export function useModelDownloadStatus(): {
   const download = aggregateDownload(downloads)
 
   const effective: ModelStatusSnapshot = download.status === 'downloading' || download.status === 'connecting'
-    ? { ...snapshot, status: 'downloading' as ModelStatus }
+    ? { ...snapshot, status: 'downloading' }
     : download.status === 'failed' && snapshot.status === 'ready'
-      ? { ...snapshot, status: 'failed' as ModelStatus }
+      ? { ...snapshot, status: 'failed' }
       : snapshot
 
   return { snapshot: effective, download, downloads, refresh }

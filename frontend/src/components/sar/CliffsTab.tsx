@@ -21,7 +21,7 @@ export default function CliffsTab({ session, libraryRoot }: CliffsTabProps) {
   const [error, setError] = useState<string | null>(null)
 
   const inferredScaffold = useMemo(() => {
-    const smilesList = session.compounds.map(c => c.smiles).filter(Boolean) as string[]
+    const smilesList = session.compounds.map(c => c.smiles).filter(Boolean)
     if (smilesList.length < 2) return null
     const counts = new Map<string, number>()
     for (const smi of smilesList) {

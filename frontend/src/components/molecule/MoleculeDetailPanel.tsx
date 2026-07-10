@@ -102,7 +102,7 @@ export default function MoleculeDetailPanel(props: MoleculeDetailPanelProps) {
   // Detection 模式：结构编辑器保存回调
   const handleEditorSave = useCallback((newSmiles: string) => {
     if (detection) {
-      ;(props as DetectionProps).onSave(newSmiles)
+      ;(props).onSave(newSmiles)
       setShowEditor(false)
     }
   }, [detection, props])
@@ -161,7 +161,7 @@ export default function MoleculeDetailPanel(props: MoleculeDetailPanelProps) {
         ) : detection ? (
           <DetectionHeader
             detection={detection}
-            index={(props as DetectionProps).index}
+            index={(props).index}
             onEdit={() => setShowEditor(true)}
           />
         ) : null}

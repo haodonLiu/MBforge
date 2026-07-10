@@ -30,7 +30,7 @@ describe('chem API (HTTP chematic)', () => {
         canonical_smiles: 'CCO',
         error: null,
       }
-      mockHttpPost.mockResolvedValue(stub as never)
+      mockHttpPost.mockResolvedValue(stub)
 
       const result = await chemValidateSmiles('CCO')
 
@@ -45,7 +45,7 @@ describe('chem API (HTTP chematic)', () => {
         canonical_smiles: null,
         error: 'SMILES parse failed: UnexpectedEnd',
       }
-      mockHttpPost.mockResolvedValue(stub as never)
+      mockHttpPost.mockResolvedValue(stub)
 
       const result = await chemValidateSmiles('XYZ[')
 
@@ -57,7 +57,7 @@ describe('chem API (HTTP chematic)', () => {
 
   describe('chemTanimotoSimilarity', () => {
     it('passes both SMILES and returns f64 in [0, 1]', async () => {
-      mockHttpPost.mockResolvedValue({ similarity: 1.0 } as never)
+      mockHttpPost.mockResolvedValue({ similarity: 1.0 })
 
       const result = await chemTanimotoSimilarity('CCO', 'CCO')
 
@@ -69,7 +69,7 @@ describe('chem API (HTTP chematic)', () => {
     })
 
     it('returns low similarity for distinct molecules', async () => {
-      mockHttpPost.mockResolvedValue({ similarity: 0.05 } as never)
+      mockHttpPost.mockResolvedValue({ similarity: 0.05 })
 
       const result = await chemTanimotoSimilarity('CCO', 'c1ccccc1')
 
@@ -83,7 +83,7 @@ describe('chem API (HTTP chematic)', () => {
         ['mol1', 'CCN', 0.9],
         ['mol2', 'c1ccccc1', 0.2],
       ]
-      mockHttpPost.mockResolvedValue(stub as never)
+      mockHttpPost.mockResolvedValue(stub)
 
       const result = await chemTanimotoBatchFilter('CCO', [
         ['mol1', 'CCN'],

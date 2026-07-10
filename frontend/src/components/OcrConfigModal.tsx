@@ -58,7 +58,7 @@ const DISMISS_KEY_PREFIX = 'mbforge.ocr.dismissForever.'
 
 function openExternal(url: string) {
   if (!url) return
-  void openExternalUrl(url)
+  openExternalUrl(url)
 }
 
 export default function OcrConfigModal() {

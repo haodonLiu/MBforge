@@ -75,7 +75,7 @@ describe('environment API', () => {
       const catalog = [
         { id: 'embedding', name: 'Qwen3-Embedding', type: 'model', description: 'test', size_mb: 1152, license: 'Apache-2.0', ms_repo: 'Qwen/Qwen3-Embedding-0.6B', pip_name: '' },
       ]
-      mockHttpPost.mockResolvedValue(catalog)
+      mockHttpPost.mockResolvedValue({ resources: catalog })
 
       const result = await resourcesCatalog()
 

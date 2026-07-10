@@ -74,9 +74,10 @@ function backendCodeToErrorCode(backendCode?: string): ErrorCode {
 export async function httpFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE}${path}`
   try {
+    const { headers: extraHeaders, ...rest } = options
     const resp = await fetch(url, {
-      headers: { 'Content-Type': 'application/json', ...options.headers },
-      ...options,
+      headers: { 'Content-Type': 'application/json', ...extraHeaders },
+      ...rest,
     })
     if (!resp.ok) {
       const body = await resp.text().catch(() => '')
@@ -104,22 +105,22 @@ export async function httpFetch<T>(path: string, options: RequestInit = {}): Pro
       }
 
       const code = payload
-        ? backendCodeToErrorCode(payload.error_code as string | undefined)
+        ? backendCodeToErrorCode(typeof payload.error_code === 'string' ? payload.error_code : undefined)
         : ErrorCode.Network
-      const message = payload?.error
+      const message = payload?.error != null
         ? String(payload.error)
         : `HTTP ${resp.status}: ${body.slice(0, 200)}`
       const opts: AppErrorOpts = {
         severity: normalizeSeverity(payload?.severity) ?? severityFromHttpStatus(resp.status),
-        category: payload?.category as string | undefined,
+        category: typeof payload?.category === 'string' ? payload.category : undefined,
         context: {
           ...(payload?.context as Record<string, unknown> | undefined),
           http_status: resp.status,
-          ...(payload?.error_code
+          ...(payload?.error_code != null
             ? { backend_code: String(payload.error_code) }
             : {}),
         },
-        timestamp: payload?.timestamp as number | undefined,
+        timestamp: typeof payload?.timestamp === 'number' ? payload.timestamp : undefined,
       }
       throw new AppError(code, message, opts)
     }
@@ -195,7 +196,7 @@ export function registerGlobalErrorHandlers(): () => void {
   }
 }
 
-export async function openExternalUrl(url: string): Promise<void> {
+export function openExternalUrl(url: string): void {
   if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
     showToast(`无效的链接: ${url}`, 'error')
     return

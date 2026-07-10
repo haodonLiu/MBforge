@@ -51,7 +51,7 @@ export default function Workspace() {
 
   const handleOpenDocument = (doc: DocumentInfo) => {
     openTab({
-      type: 'pdf',
+      type: 'document',
       title: doc.title,
       doc: { doc_id: doc.doc_id, path: doc.file_name },
       libraryRoot,

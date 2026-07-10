@@ -1,6 +1,6 @@
 /** Knowledge base — indexing, semantic search, document structure & pages. */
 
-import { httpPost, invokeWithError } from './_utils'
+import { httpGet, httpGetText, httpPost, invokeWithError, AppError } from './_utils'
 import { ErrorCode } from '@/utils/errors'
 import { connectSSE } from './sse'
 
@@ -115,4 +115,54 @@ export async function kbGetPages(
     ErrorCode.ApiError,
   )
   return resp.pages
+}
+
+// ── Wiki artifacts (used by DocumentViewer's WikiDrawer) ───────────
+
+export interface WikiList {
+  summaries: string[]
+  concepts: string[]
+  entities: string[]
+}
+
+async function fetchWikiText(url: string): Promise<string | null> {
+  try {
+    return await httpGetText(url)
+  } catch (e) {
+    const appErr = e instanceof AppError ? e : new AppError(ErrorCode.ApiError, String(e))
+    if (appErr.context?.http_status === 404) return null
+    throw appErr
+  }
+}
+
+export async function kbListWiki(projectRoot: string): Promise<WikiList> {
+  const params = new URLSearchParams({ project_root: projectRoot })
+  return invokeWithError(
+    () => httpGet<WikiList>(`/api/v1/kb/wiki/list?${params}`),
+    ErrorCode.ApiError,
+  )
+}
+
+export function kbGetWikiSummary(
+  docId: string,
+  projectRoot: string
+): Promise<string | null> {
+  const params = new URLSearchParams({ project_root: projectRoot, doc_id: docId })
+  return fetchWikiText(`/api/v1/kb/wiki/summary?${params}`)
+}
+
+export function kbGetWikiConcept(
+  name: string,
+  projectRoot: string
+): Promise<string | null> {
+  const params = new URLSearchParams({ project_root: projectRoot, name })
+  return fetchWikiText(`/api/v1/kb/wiki/concept?${params}`)
+}
+
+export function kbGetWikiEntity(
+  name: string,
+  projectRoot: string
+): Promise<string | null> {
+  const params = new URLSearchParams({ project_root: projectRoot, name })
+  return fetchWikiText(`/api/v1/kb/wiki/entity?${params}`)
 }

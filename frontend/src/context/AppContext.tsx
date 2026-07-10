@@ -20,7 +20,8 @@ export interface ActiveFile {
 
 export interface Tab {
   id: string
-  type: 'pdf' | 'markdown'
+  /** 'document' = composite PDF + reorganized md + wiki drawer (default for new docs) */
+  type: 'pdf' | 'markdown' | 'document'
   title: string
   doc: DocumentEntry
   libraryRoot: string

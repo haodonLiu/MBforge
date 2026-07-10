@@ -1,6 +1,6 @@
 /** Library API — unified document library (Zotero-style). */
 
-import { httpGet, httpPost, invokeWithError } from './_utils'
+import { httpGet, httpGetText, httpPost, invokeWithError, getErrorMessage } from './_utils'
 
 // ── Types ───────────────────────────────────────────
 
@@ -122,4 +122,73 @@ export async function configureLibrary(
   return invokeWithError(() =>
     httpPost('/api/v1/library/configure', { root })
   )
+}
+
+// ── Pipeline artifacts (used by DocumentViewer) ───────────
+
+function artifactUrl(path: string, libraryRoot: string, extraParams?: Record<string, string>): string {
+  const params = new URLSearchParams({ library_root: libraryRoot })
+  if (extraParams) {
+    for (const [k, v] of Object.entries(extraParams)) {
+      params.set(k, v)
+    }
+  }
+  return `/api/v1/library${path}?${params.toString()}`
+}
+
+export async function fetchReorganizedMarkdown(
+  docId: string,
+  libraryRoot: string
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  try {
+    const text = await httpGetText(artifactUrl(`/documents/${encodeURIComponent(docId)}/reorganized`, libraryRoot))
+    return { ok: true, text }
+  } catch (e) {
+    return { ok: false, error: getErrorMessage(e) }
+  }
+}
+
+export async function fetchReportJson<T = unknown>(
+  docId: string,
+  libraryRoot: string
+): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+  try {
+    const data = await httpGet<T>(artifactUrl(`/documents/${encodeURIComponent(docId)}/report`, libraryRoot))
+    return { ok: true, data }
+  } catch (e) {
+    return { ok: false, error: getErrorMessage(e) }
+  }
+}
+
+export function cropImageUrl(docId: string, relPath: string, libraryRoot: string): string {
+  return artifactUrl(
+    `/documents/${encodeURIComponent(docId)}/crop`,
+    libraryRoot,
+    { rel_path: relPath }
+  )
+}
+
+export async function fetchIndexedMarkdown(
+  docId: string,
+  libraryRoot: string
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  try {
+    const text = await httpGetText(artifactUrl(`/documents/${encodeURIComponent(docId)}/indexed-md`, libraryRoot))
+    return { ok: true, text }
+  } catch (e) {
+    return { ok: false, error: getErrorMessage(e) }
+  }
+}
+
+export async function fetchPageText(
+  docId: string,
+  page: number,
+  libraryRoot: string
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  try {
+    const text = await httpGetText(artifactUrl(`/documents/${encodeURIComponent(docId)}/pages/${page}`, libraryRoot))
+    return { ok: true, text }
+  } catch (e) {
+    return { ok: false, error: getErrorMessage(e) }
+  }
 }

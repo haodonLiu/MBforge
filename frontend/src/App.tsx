@@ -13,6 +13,7 @@ import Welcome from './components/Welcome'
 import LibraryPanel from './components/LibraryPanel'
 import TabBar from './components/project/TabBar'
 import PdfViewer from './components/project/PdfViewer'
+import DocumentViewer from './components/project/DocumentViewer'
 import MarkdownViewer from './components/MarkdownViewer'
 import { AppProvider, useAppContext } from './context/AppContext'
 import { showToast } from './hooks/useToast'
@@ -196,6 +197,12 @@ function AppInner() {
               <MarkdownViewer
                 libraryRoot={activeTab.libraryRoot}
                 filePath={activeTab.doc.path}
+                onClose={() => closeTab(activeTab.id)}
+              />
+            ) : activeTab && activeTab.type === 'document' ? (
+              <DocumentViewer
+                doc={activeTab.doc}
+                libraryRoot={activeTab.libraryRoot}
                 onClose={() => closeTab(activeTab.id)}
               />
             ) : null}

@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react'
 import PdfCanvas from '@/components/PdfCanvas'
 import MoleculeOverlay from '@/components/MoleculeOverlay'
 import OcrOverlay from '@/components/OcrOverlay'
 import CorefBboxOverlay, { type MolClickInfo } from './pdf/CorefBboxOverlay'
 import ScrollColumn from '../ui/ScrollColumn'
 import Spinner from '../ui/Spinner'
-import type { DocumentEntry } from '@/types'
+import type { DocumentEntry, ExtractionResult } from '@/types'
 import { usePdfViewer } from './pdf/usePdfViewer'
 import { useIngestPipeline } from './pdf/useIngestPipeline'
 import PdfToolbar from './pdf/PdfToolbar'
@@ -15,6 +15,12 @@ import PdfPipelineFlow from './pdf/PdfPipelineFlow'
 import { updateCorefPair, confirmCorefPrediction } from '@/api/http/result_pane'
 import type { FigureLabel, CorefPrediction } from '@/api/http/result_pane'
 import { showToast } from '@/hooks/useToast'
+
+/** Imperative handle exposed to a parent (DocumentViewer). */
+export interface PdfViewerHandle {
+  setCurrentPage: (page: number) => void
+  scrollToDetection: (detection: ExtractionResult) => void
+}
 
 interface Props {
   doc: DocumentEntry
@@ -59,10 +65,18 @@ function buildFigureBoxesForPage(
   return out
 }
 
-export default function PdfViewer({ doc, libraryRoot, onClose }: Props) {
+const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
+  { doc, libraryRoot, onClose },
+  ref,
+) {
   const v = usePdfViewer(doc, libraryRoot)
   const pipeline = useIngestPipeline(doc.doc_id, libraryRoot)
   const [corefMenu, setCorefMenu] = useState<CorefContextMenu | null>(null)
+
+  useImperativeHandle(ref, () => ({
+    setCurrentPage: (page: number) => v.setCurrentPage(page),
+    scrollToDetection: (detection: ExtractionResult) => v.scrollToDetection(detection),
+  }), [v])
 
   useEffect(() => {
     if (!corefMenu) return
@@ -338,4 +352,6 @@ export default function PdfViewer({ doc, libraryRoot, onClose }: Props) {
       )}
     </div>
   )
-}
+})
+
+export default PdfViewer

@@ -139,6 +139,20 @@ export async function httpGet<T>(path: string): Promise<T> {
   return httpFetch<T>(path, { method: 'GET' })
 }
 
+export async function httpGetText(path: string): Promise<string> {
+  const url = `${API_BASE}${path}`
+  const resp = await fetch(url, { method: 'GET' })
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '')
+    throw new AppError(
+      ErrorCode.ApiError,
+      `HTTP ${resp.status}: ${body.slice(0, 200)}`,
+      { severity: severityFromHttpStatus(resp.status), context: { http_status: resp.status } }
+    )
+  }
+  return resp.text()
+}
+
 export async function httpPut<T>(path: string, body: Record<string, unknown> = {}): Promise<T> {
   return httpFetch<T>(path, { method: 'PUT', body: JSON.stringify(body) })
 }

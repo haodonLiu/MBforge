@@ -42,6 +42,12 @@ class ActivityRecord:
     page_num: int | None
     evidence_kind: str  # table, text, figure_caption
     evidence_bbox: dict[str, float] | None
+    # Phase 1: row-alignment fields. All None by default → Phase 0 back-compat.
+    table_idx: int | None = None   # 文档内表格序号（0-based）
+    row_idx: int | None = None     # 表格内行序号（1-based，跳过分隔行）
+    col_idx: int | None = None     # 表格内列序号
+    row_label: str | None = None   # 第一列的原始文本（如 "1a"、"1b"）
+    row_smiles: str | None = None  # 第一列的 SMILES（如有 SMILES 列）
 
 
 def extract_activities_from_document(
@@ -87,6 +93,10 @@ def extract_activities_from_document(
             records.extend(activities)
         except Exception as exc:
             logger.warning("Failed to parse table %d in %s: %s", table_idx, doc_id, exc)
+
+    # Phase 1: enrich each record with table row/col coordinates from the
+    # raw markdown text, enabling row-alignment persistence downstream.
+    records = _enrich_records_with_row_positions(tables, records)
 
     logger.info("Extracted %d activity records from %s", len(records), doc_id)
     return records
@@ -167,8 +177,74 @@ def _extract_tables_from_markdown(
         page_num = _page_for_line(len(lines) - len(current_table))
         tables.append(("\n".join(current_table), page_num))
 
-    return tables
 
+def _enrich_records_with_row_positions(
+    tables: list[tuple[str, int | None]],
+    records: list[ActivityRecord],
+) -> list[ActivityRecord]:
+    """Fill in row_idx / col_idx for each record by parsing the markdown table.
+
+    For each record that has a ``row_label``, we locate the corresponding
+    row in the original table text, assign a 1-based ``row_idx`` (skipping
+    the header and separator rows), and determine ``col_idx`` by searching
+    which column cell contains the activity value.
+
+    Records without a ``row_label`` or without a matching row retain
+    ``row_idx=None`` / ``col_idx=None`` and fall back to page-proximity
+    in the persistence layer.
+    """
+    # Build a (table_idx → raw_table_text) map for fast lookup.
+    table_text_by_idx: dict[int, str] = {
+        i: md for i, (md, _page) in enumerate(tables)
+    }
+
+    separator_re = re.compile(r"^\|[-| ]+\|$")
+
+    for rec in records:
+        if rec.table_idx is None or rec.row_label is None:
+            continue
+
+        raw_table = table_text_by_idx.get(rec.table_idx)
+        if raw_table is None:
+            continue
+
+        lines = raw_table.split("\n")
+        row_idx = 0
+        found = False
+        for line in lines:
+            stripped = line.strip()
+            # Skip separator rows (e.g. |---|---|)
+            if separator_re.match(stripped):
+                continue
+            # Skip header row (first data-bearing row after separator is
+            # row 1). Actually, header is the first row, separator is second,
+            # data starts at third line. We count data rows only.
+            if not stripped.startswith("|") or not stripped.endswith("|"):
+                continue
+            row_idx += 1
+            # First column content
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if cells and (
+                cells[0].strip().lower() == rec.row_label.strip().lower()
+                or (rec.row_smiles and cells[0].strip() == rec.row_smiles.strip())
+            ):
+                rec.row_idx = row_idx
+                # Determine col_idx: search each cell for the numeric
+                # activity value string to find the target column.
+                for ci, cell in enumerate(cells):
+                    if str(rec.value_original) in cell:
+                        rec.col_idx = ci
+                        break
+                found = True
+                break
+
+        if not found:
+            logger.debug(
+                "Row label %r not found in table %d; keeping row_idx=None",
+                rec.row_label, rec.table_idx,
+            )
+
+    return records
 
 def _parse_table_with_llm(
     table_md: str, table_idx: int, model: str, page_num: int | None = None
@@ -233,16 +309,15 @@ def _parse_table_with_llm(
                     page_num=page_num,
                     evidence_kind="table",
                     evidence_bbox=None,  # TODO: 表格 bbox 需要从 PDF 解析
+                    table_idx=table_idx,
+                    row_label=item.get("row_label"),
+                    row_smiles=item.get("row_smiles"),
                 )
             )
         return records
     except Exception as exc:
         logger.warning("LLM parsing failed for table %d: %s", table_idx, exc)
         return []
-
-
-def _build_extraction_prompt(table_md: str) -> str:
-    """Build few-shot prompt for activity extraction."""
     return f"""Extract bioactivity data from the following SAR table.
 
 Output a JSON array where each element has:
@@ -254,6 +329,9 @@ Output a JSON array where each element has:
 - assay_type: enzymatic | cellular | binding (if mentioned)
 - raw_text: exact text from the table
 - confidence: 0.0-1.0 (your confidence in this extraction)
+- row_label: the first-column cell content of the row this entry came from
+  (e.g. "1a", "1b", "Compound 12"). Critical for row-alignment — DO NOT omit.
+- row_smiles: the SMILES string if the table has a SMILES column; omit if absent.
 
 Example input:
 | Compound | IC50 (nM) EGFR | IC50 (nM) HER2 |
@@ -264,10 +342,10 @@ Example input:
 Example output:
 ```json
 [
-  {{"activity_type": "IC50", "value": 10.2, "unit": "nM", "operator": "=", "target": "EGFR", "assay_type": "enzymatic", "raw_text": "IC50 (nM) EGFR: 10.2", "confidence": 0.9}},
-  {{"activity_type": "IC50", "value": 1000, "unit": "nM", "operator": ">", "target": "HER2", "assay_type": "enzymatic", "raw_text": "IC50 (nM) HER2: >1000", "confidence": 0.8}},
-  {{"activity_type": "IC50", "value": 5.3, "unit": "nM", "operator": "=", "target": "EGFR", "assay_type": "enzymatic", "raw_text": "IC50 (nM) EGFR: 5.3", "confidence": 0.95}},
-  {{"activity_type": "IC50", "value": 450, "unit": "nM", "operator": "=", "target": "HER2", "assay_type": "enzymatic", "raw_text": "IC50 (nM) HER2: 450", "confidence": 0.9}}
+  {{"activity_type": "IC50", "value": 10.2, "unit": "nM", "operator": "=", "target": "EGFR", "assay_type": "enzymatic", "raw_text": "IC50 (nM) EGFR: 10.2", "confidence": 0.9, "row_label": "1a"}},
+  {{"activity_type": "IC50", "value": 1000, "unit": "nM", "operator": ">", "target": "HER2", "assay_type": "enzymatic", "raw_text": "IC50 (nM) HER2: >1000", "confidence": 0.8, "row_label": "1a"}},
+  {{"activity_type": "IC50", "value": 5.3, "unit": "nM", "operator": "=", "target": "EGFR", "assay_type": "enzymatic", "raw_text": "IC50 (nM) EGFR: 5.3", "confidence": 0.95, "row_label": "1b"}},
+  {{"activity_type": "IC50", "value": 450, "unit": "nM", "operator": "=", "target": "HER2", "assay_type": "enzymatic", "raw_text": "IC50 (nM) HER2: 450", "confidence": 0.9, "row_label": "1b"}}
 ]
 ```
 

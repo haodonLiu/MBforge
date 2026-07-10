@@ -240,25 +240,34 @@ disk may fail to deserialize. Either (a) keep a default that the old
 value maps onto, or (b) extend `_migrate_legacy_configs()` with a
 one-shot transform.
 
-## Field name deprecations (still in flight, 2026-07-10)
+## Field name deprecations (Phase 6: backend cleanup landed 2026-07-10)
 
-The library-root field rename is **partially migrated**. Backend accepts
-all four spellings; frontend still uses the legacy ones in many places.
-Treat the leftmost name in each row as canonical, the rest as
-deprecated:
+The library-root field rename is **complete** on the backend. The
+compat layer in ``resolve_root()`` is gone: only ``library_root`` is
+accepted in the request body. Any legacy client sending
+``libraryRoot`` / ``project_root`` / ``projectRoot`` will silently
+fall through to the global config (an operational signal: the
+request lands on the wrong library).
 
-| Canonical (use this) | Deprecated aliases | Where it lives |
+| Canonical (use this) | Deprecated aliases | Status |
 |---|---|---|
-| `library_root` | `libraryRoot`, `project_root`, `projectRoot` | `src/mbforge/utils/helpers.py:resolve_root` (priority order) |
-| `libraryRoot` (TS) | `projectRoot`, `project_root` | `frontend/src/context/AppContext.tsx` (canonical) and ~300 legacy call sites in `frontend/src/` |
-| `mol_id` (canonical SMILES = id) | `mol_id` was previously a per-detection local id; the 2026-07-10 evidence-link work collapsed it onto `canonical_smiles` | `src/mbforge/core/database.py:_MOL_SCHEMA`; `frontend/src/types/index.ts:MoleculeRecord.mol_id` |
+| ``library_root`` (Py) | ``libraryRoot``, ``project_root``, ``projectRoot`` | Aliases removed in Phase 6 (commit 27a3a39). Frontend tests under ``__tests__/`` still use the legacy names; they verify the (now-removed) compat shim and need to be updated to ``libraryRoot``. |
+| ``libraryRoot`` (TS) | ``projectRoot``, ``project_root`` | Frontend sweep completed in Phase 1.2 (commit 1578854). |
 
-**Do not introduce new `projectRoot` / `project_root` call sites in
-frontend or backend.** Use `libraryRoot` / `library_root` respectively.
-Migration is a sweep-the-callsites job; the backend compat is provided
-by `resolve_root()` so the wire contract still works. The actual
-rename + removal of deprecated aliases is tracked in
-`TODO/INDEX.md` (search for "projectRoot" / "project_root").
+**Do not introduce new ``projectRoot`` / ``project_root`` call sites
+in frontend or backend.** They are gone from the runtime; the
+compat-shim tests are the only place that still uses them.
+
+Gated on 'one release cycle of no migration failures' (per the plan):
+- Remove ``.mbforge/crops/`` read fallback in
+  ``ArtifactResolver.legacy_crop`` (still used by libraries that
+  haven't run ``scripts/migrate_artifact_paths.py``).
+- Remove ``index/*.db`` runtime fallback in ``DatabaseManager``
+  (the unified ``.mbforge/library.db`` path is the only target
+  after ``python -m mbforge.migrate-library`` has run; 14+ pipeline
+  tests still create legacy v3 data and need a sweep before
+  the fallback is safe to remove).
+
 
 ## Important Files
 

@@ -25,7 +25,7 @@ export function FolderPicker({
   const effectivePlaceholder = placeholder ?? t('folder.select')
 
   useEffect(() => {
-    getCommonDirs().then(setCommonDirs)
+    setCommonDirs(getCommonDirs())
   }, [])
 
   return (

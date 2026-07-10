@@ -29,7 +29,7 @@ export interface CapabilityStatus {
 
 export function LibRow({ lib }: { lib: CapabilityStatus }) {
   const { t } = useTranslation()
-  const info = LIBRARY_INFO[lib.name] || { name: lib.name }
+  const info = LIBRARY_INFO[lib.name]
   return (
     <div
       style={{

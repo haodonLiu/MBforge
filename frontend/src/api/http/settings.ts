@@ -109,7 +109,7 @@ export interface BuildInfo {
   config_path: string
 }
 
-export async function fetchBuildInfo(): Promise<BuildInfo> {
+export function fetchBuildInfo(): BuildInfo {
   return { version: '0.4.0', platform: navigator.platform, config_path: '' }
 }
 

@@ -57,36 +57,14 @@ export default function CorrectionPanel({
 
   const total = items.length
   const current = items[currentIndex]
-  const currentDecision = decisions[current?.id ?? '']
+  const currentDecision = (current.id in decisions ? decisions[current.id] : undefined) as { status: CorrectionItem['status']; finalSmiles: string } | undefined
   const isLast = currentIndex === total - 1
   const isFirst = currentIndex === 0
 
-  if (!current) {
-    return (
-      <div className={`${className ?? ''} mol-correction-empty`} style={style}>
-        没有待矫正的分子
-      </div>
-    )
-  }
   const currentFinalSmiles = currentDecision?.finalSmiles ?? current.correctedSmiles ?? current.ocrSmiles
-  const currentStatus: CorrectionItem['status'] = currentDecision?.status ?? current.status ?? 'pending'
-  const isOcrConfident = current.ocrConfidence >= autoConfirmThreshold
-
-  const updateDecision = (status: 'confirmed' | 'rejected' | 'corrected', smiles?: string) => {
-    const finalSmiles = smiles ?? currentFinalSmiles
-    setDecisions(prev => ({
-      ...prev,
-      [current.id]: { status, finalSmiles },
-    }))
-    onItemChange?.(current.id, finalSmiles, status)
-  }
-
-  const handleSmilesEdit = (newSmiles: string) => {
-    updateDecision('corrected', newSmiles)
-  }
 
   useEffect(() => {
-    if (!currentFinalSmiles || currentFinalSmiles === current?.ocrSmiles) {
+    if (!currentFinalSmiles || currentFinalSmiles === current.ocrSmiles) {
       setValidation(null)
       return
     }
@@ -114,7 +92,31 @@ export default function CorrectionPanel({
     return () => {
       if (validationTimerRef.current) clearTimeout(validationTimerRef.current)
     }
-  }, [currentFinalSmiles, current?.ocrSmiles])
+  }, [currentFinalSmiles, current.ocrSmiles])
+
+  if (total === 0) {
+    return (
+      <div className={`${className ?? ''} mol-correction-empty`} style={style}>
+        没有待矫正的分子
+      </div>
+    )
+  }
+  const isOcrConfident = current.ocrConfidence >= autoConfirmThreshold
+
+  const updateDecision = (status: 'confirmed' | 'rejected' | 'corrected', smiles?: string) => {
+    const finalSmiles = smiles ?? currentFinalSmiles
+    setDecisions(prev => ({
+      ...prev,
+      [current.id]: { status, finalSmiles },
+    }))
+    onItemChange?.(current.id, finalSmiles, status)
+  }
+
+  const handleSmilesEdit = (newSmiles: string) => {
+    updateDecision('corrected', newSmiles)
+  }
+
+  const currentStatus: CorrectionItem['status'] = currentDecision?.status ?? current.status ?? 'pending'
 
   const handleConfirm = () => updateDecision('confirmed', currentFinalSmiles)
   const handleReject = () => updateDecision('rejected', currentFinalSmiles)
@@ -123,8 +125,8 @@ export default function CorrectionPanel({
 
   const handleFinish = () => {
     const results = items.map(item => {
-      const d = decisions[item.id]
-      if (d) {
+      if (item.id in decisions) {
+        const d = decisions[item.id]
         return { id: item.id, finalSmiles: d.finalSmiles, status: d.status }
       }
       return {

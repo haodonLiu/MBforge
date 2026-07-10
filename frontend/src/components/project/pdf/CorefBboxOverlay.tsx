@@ -131,8 +131,6 @@ export function CorefBboxOverlay(props: CorefBboxOverlayProps): React.ReactEleme
     return pdfToCss(pageBbox, originalHeight, scale)
   }
 
-  if (containerWidth <= 0 || containerHeight <= 0) return null
-
   // 渲染前先预计算（避免在 JSX 中重复计算）
   const labelBoxes = useMemo(() => {
     return labels.map(l => ({
@@ -150,6 +148,8 @@ export function CorefBboxOverlay(props: CorefBboxOverlayProps): React.ReactEleme
     })).filter(e => e.molBox !== null || e.labelBox !== null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visiblePreds, figureBoxes, labelById, originalHeight, scale])
+
+  if (containerWidth <= 0 || containerHeight <= 0) return null
 
   // 统计不可投影的预测数（用于 UI 提示）
   const unprojected = predictions.length - predictionBoxes.length

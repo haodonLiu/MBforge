@@ -42,7 +42,7 @@ export default function Sparkline({
       y: padding + h - ((v - min) / range) * h,
     }))
 
-    let linePath = ''
+    let linePath: string
     if (smooth && pts.length > 1) {
       // 平滑曲线（贝塞尔）
       linePath = `M ${pts[0].x} ${pts[0].y}`

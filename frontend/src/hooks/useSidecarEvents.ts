@@ -36,7 +36,7 @@ export function useSidecarEvents() {
 
     return () => {
       cancelled = true
-      if (timer !== null) clearInterval(timer)
+      clearInterval(timer)
     }
   }, [])
 }

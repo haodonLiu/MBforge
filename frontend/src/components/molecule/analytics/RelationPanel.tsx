@@ -30,13 +30,13 @@ export default function RelationPanel({ molecules }: RelationPanelProps) {
     try {
       const s = await molGetStats()
       setStats(s)
-    } catch (e) {
+    } catch {
       showToast('加载关系统计失败', 'error')
     }
   }
 
   useEffect(() => {
-    loadStats()
+    void loadStats()
   }, [])
 
   const handleSearchRelations = async () => {
@@ -57,7 +57,7 @@ export default function RelationPanel({ molecules }: RelationPanelProps) {
     try {
       await molAddRelation(newRelA, newRelB, newRelType, newRelScore ? parseFloat(newRelScore) : undefined)
       showToast('关系添加成功', 'success')
-      loadStats()
+      void loadStats()
       setNewRelA('')
       setNewRelB('')
       setNewRelScore('')
@@ -71,7 +71,7 @@ export default function RelationPanel({ molecules }: RelationPanelProps) {
       await molDeleteRelation(id)
       showToast('关系已删除', 'success')
       setRelations((prev) => prev.filter((r) => r.id !== id))
-      loadStats()
+      void loadStats()
     } catch (e) {
       showToast(`删除失败: ${e instanceof Error ? e.message : String(e)}`, 'error')
     }

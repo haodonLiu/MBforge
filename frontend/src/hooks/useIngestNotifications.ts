@@ -31,8 +31,6 @@ export function useIngestNotifications(libraryRoot: string): void {
       if (!root) return
       try {
         const tasks = await ingestList(root)
-        if (cancelled) return
-        if (!Array.isArray(tasks)) return
         const currentMap: Record<string, IngestTask['status']> = {}
         for (const task of tasks) {
           currentMap[task.id] = task.status
@@ -53,14 +51,14 @@ export function useIngestNotifications(libraryRoot: string): void {
         }
         lastStatusRef.current = currentMap
       } catch (e: unknown) {
-        if (!cancelled) console.error('[useIngestNotifications] poll failed:', e)
+        console.error('[useIngestNotifications] poll failed:', e)
       }
     }
 
     timer = setInterval(poll, 5000)
     return () => {
       cancelled = true
-      if (timer !== null) clearInterval(timer)
+      clearInterval(timer)
     }
   }, [location.pathname])
 }

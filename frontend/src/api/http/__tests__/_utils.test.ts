@@ -103,12 +103,12 @@ describe('httpFetch (JSON error body)', () => {
       context: { field: 'root' },
       timestamp: 1717700000.5,
     }
-    globalThis.fetch = vi.fn(async () =>
-      new Response(JSON.stringify(payload), {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify(payload), {
         status: 422,
         statusText: 'Unprocessable Entity',
         headers: { 'Content-Type': 'application/json' },
-      }),
+      })),
     )
 
     const { httpFetch } = await import('../_utils')
@@ -127,12 +127,12 @@ describe('httpFetch (JSON error body)', () => {
   })
 
   it('falls back to ErrorCode.Network when the body is not JSON', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response('<html>502 Bad Gateway</html>', {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(new Response('<html>502 Bad Gateway</html>', {
         status: 502,
         statusText: 'Bad Gateway',
         headers: { 'Content-Type': 'text/html' },
-      }),
+      })),
     )
 
     const { httpFetch } = await import('../_utils')
@@ -152,12 +152,12 @@ describe('httpFetch (JSON error body)', () => {
       category: 'backends.molscribe',
       timestamp: 1717700001.0,
     }
-    globalThis.fetch = vi.fn(async () =>
-      new Response(JSON.stringify(payload), {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify(payload), {
         status: 503,
         statusText: 'Service Unavailable',
         headers: { 'Content-Type': 'application/json' },
-      }),
+      })),
     )
 
     const { httpFetch } = await import('../_utils')
@@ -170,12 +170,12 @@ describe('httpFetch (JSON error body)', () => {
 
   it('falls back to status-derived severity when the body omits it', async () => {
     // Body has only `error_code`; severity defaults to severityFromHttpStatus(403) = Warning.
-    globalThis.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ success: false, error: 'forbidden', error_code: 'path_traversal' }), {
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ success: false, error: 'forbidden', error_code: 'path_traversal' }), {
         status: 403,
         statusText: 'Forbidden',
         headers: { 'Content-Type': 'application/json' },
-      }),
+      })),
     )
 
     const { httpFetch } = await import('../_utils')

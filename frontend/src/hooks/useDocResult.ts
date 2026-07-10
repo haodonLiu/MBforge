@@ -28,25 +28,24 @@ export function useDocResult(): UseDocResult {
       if (cancelled) return
       try {
         const report = await httpGet<DocumentReport>('/api/v1/documents/latest-report')
-        if (cancelled) return
-        const etag = report ? String(JSON.stringify(report).length) : null
+        const etag = String(JSON.stringify(report).length)
         if (etag === lastEtagRef.current) return
         lastEtagRef.current = etag
         setState({
           report,
-          litReviewed: report?.lit_reviewed ?? false,
-          litDecision: report?.lit_decision_summary ?? null,
+          litReviewed: report.lit_reviewed,
+          litDecision: report.lit_decision_summary ?? null,
           lastEventAt: Date.now(),
         })
       } catch {
-        if (!cancelled) console.warn('[useDocResult] poll failed')
+        console.warn('[useDocResult] poll failed')
       }
     }
 
     timer = setInterval(poll, 3000)
     return () => {
       cancelled = true
-      if (timer !== null) clearInterval(timer)
+      clearInterval(timer)
     }
   }, [])
 

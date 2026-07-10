@@ -41,7 +41,7 @@ export default function ModelsTab() {
     try {
       // 先让 Rust 重新扫描 ~/mbforge/ 并刷新 resolved_paths.json，
       // 这样 Python 侧下一次读取也能立刻看到新放置的文件。
-      await refreshResolvedPaths().catch((e) => console.warn('refreshResolvedPaths failed:', e))
+      await refreshResolvedPaths().catch((_: unknown) => console.warn('refreshResolvedPaths failed'))
       const resp = await listModels()
       if (resp.success) {
         setModels(resp.models)
@@ -265,7 +265,7 @@ export default function ModelsTab() {
                   {group.map(model => {
                     // 多文件资源：把子级状态从 downloadState 抽出来
                     const subfileStates: Record<string, DownloadState[string]> = {}
-                    if (model.subfiles && model.subfiles.length > 0) {
+                    if (model.subfiles.length > 0) {
                       for (const sf of model.subfiles) {
                         const key = `${model.id}::${sf.relpath}`
                         if (downloadState[key]) subfileStates[sf.relpath] = downloadState[key]

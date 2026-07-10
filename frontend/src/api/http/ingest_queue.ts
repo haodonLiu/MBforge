@@ -164,7 +164,7 @@ interface IngestListResponse {
 export async function ingestList(libraryRoot: string): Promise<IngestTask[]> {
   return invokeWithError(
     () => httpPost<IngestListResponse>('/api/v1/pipeline/queue', { library_root: libraryRoot })
-      .then((r) => Array.isArray(r?.tasks) ? r.tasks : []),
+      .then((r) => Array.isArray(r.tasks) ? r.tasks : []),
     ErrorCode.ApiError,
   )
 }
@@ -176,7 +176,7 @@ interface IngestStatsResponse {
 export async function ingestStats(libraryRoot: string): Promise<QueueStats> {
   return invokeWithError(
     () => httpPost<IngestStatsResponse>('/api/v1/pipeline/queue/stats', { library_root: libraryRoot })
-      .then((r) => r?.stats ?? ({} as QueueStats)),
+      .then((r) => r.stats),
     ErrorCode.ApiError,
   )
 }

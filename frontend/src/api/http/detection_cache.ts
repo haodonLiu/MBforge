@@ -76,14 +76,14 @@ export async function getDetectionCacheStats(
 }
 
 export async function clearDetectionCache(libraryRoot: string): Promise<void> {
-  return httpPost<void>('/api/v1/detection-cache/clear', { library_root: libraryRoot })
+  await httpPost('/api/v1/detection-cache/clear', { library_root: libraryRoot })
 }
 
 export async function clearDetectionCacheForDoc(
   libraryRoot: string,
   docId: string,
 ): Promise<void> {
-  return httpPost<void>('/api/v1/detection-cache/clear-doc', { library_root: libraryRoot, doc_id: docId })
+  await httpPost('/api/v1/detection-cache/clear-doc', { library_root: libraryRoot, doc_id: docId })
 }
 
 // ---------------------------------------------------------------------------

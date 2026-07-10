@@ -57,7 +57,7 @@ export async function openProject(
 
 // ── Compat: project/common-dirs → returns empty (no backend equivalent) ──
 
-export async function getCommonDirs(): Promise<{ name: string; path: string }[]> {
+export function getCommonDirs(): { name: string; path: string }[] {
   // The library router does not expose common OS folders; the web frontend
   // has no native shell API to enumerate them either. Return empty so
   // FolderPicker falls back to manual entry.
@@ -183,10 +183,10 @@ export interface DocumentOutputStatus {
   incomplete_reason: IncompleteReason
 }
 
-export async function getDocumentOutputStatus(
+export function getDocumentOutputStatus(
   _root: string,
   docId: string,
-): Promise<DocumentOutputStatus> {
+): DocumentOutputStatus {
   return {
     success: false,
     doc_id: docId,
@@ -199,15 +199,15 @@ export async function getDocumentOutputStatus(
   }
 }
 
-export async function getFileTree(
+export function getFileTree(
   _root: string,
-): Promise<{ success: boolean; tree: never[] }> {
+): { success: boolean; tree: never[] } {
   // Tree building is a filesystem operation that the library router does
   // not expose. Return empty tree; UI should fall back to listing-only view.
   return { success: true, tree: [] }
 }
 
-export async function uploadFiles(_libraryRoot: string): Promise<DocumentEntry[]> {
+export function uploadFiles(_libraryRoot: string): DocumentEntry[] {
   // Web mode has no native file picker; the React UI uses its own uploader.
   return []
 }
@@ -249,7 +249,7 @@ export async function readTextFile(
   return await r.text()
 }
 
-export async function enqueueUnresolvedDocuments(_root: string): Promise<number> {
+export function enqueueUnresolvedDocuments(_root: string): number {
   // Library router does not expose this functionality yet. Returning 0 keeps
   // existing buttons no-op and toast-safe.
   return 0

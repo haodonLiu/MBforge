@@ -72,7 +72,7 @@ export default function MoleculeFilters({
           type="text"
           value={localQuery}
           onChange={(e) => setLocalQuery(e.target.value)}
-          placeholder={t('mol.search') ?? 'Search molecules'}
+          placeholder={t('mol.search')}
           disabled={disabled}
           style={{
             flex: 1,
@@ -85,7 +85,7 @@ export default function MoleculeFilters({
           }}
         />
         <Button variant="primary" size="sm" onClick={onSearch} disabled={disabled}>
-          {t('mol.searchBtn') ?? 'Search'}
+          {t('mol.searchBtn')}
         </Button>
       </div>
 
@@ -104,11 +104,11 @@ export default function MoleculeFilters({
             color: 'var(--text-primary)',
           }}
         >
-          <option value="all">{t('mol.status.all') ?? 'All statuses'}</option>
-          <option value="confirmed">{t('mol.status.confirmed') ?? 'Confirmed'}</option>
-          <option value="pending">{t('mol.status.pending') ?? 'Pending'}</option>
-          <option value="corrected">{t('mol.status.corrected') ?? 'Corrected'}</option>
-          <option value="rejected">{t('mol.status.rejected') ?? 'Rejected'}</option>
+          <option value="all">{t('mol.status.all')}</option>
+          <option value="confirmed">{t('mol.status.confirmed')}</option>
+          <option value="pending">{t('mol.status.pending')}</option>
+          <option value="corrected">{t('mol.status.corrected')}</option>
+          <option value="rejected">{t('mol.status.rejected')}</option>
         </select>
 
         <select
@@ -126,7 +126,7 @@ export default function MoleculeFilters({
             color: 'var(--text-primary)',
           }}
         >
-          <option value="all">{t('mol.sourceType.all') ?? 'All source types'}</option>
+          <option value="all">{t('mol.sourceType.all')}</option>
           {sourceTypeOptions.map((st) => (
             <option key={st} value={st}>{st}</option>
           ))}
@@ -147,7 +147,7 @@ export default function MoleculeFilters({
             color: 'var(--text-primary)',
           }}
         >
-          <option value="all">{t('mol.sourceDoc.all') ?? 'All source docs'}</option>
+          <option value="all">{t('mol.sourceDoc.all')}</option>
           {sourceDocOptions.map((doc) => (
             <option key={doc} value={doc}>{doc}</option>
           ))}
@@ -249,7 +249,7 @@ export default function MoleculeFilters({
           }}
         >
           <SparklesIcon size={14} />
-          {t('mol.correctionMode') ?? 'OCR correction mode: click a row to open the correction panel'}
+          {t('mol.correctionMode')}
         </div>
       )}
     </div>

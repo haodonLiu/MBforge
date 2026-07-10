@@ -42,7 +42,7 @@ export default function MarkdownViewer({ libraryRoot, filePath, onClose }: Props
         if (!cancelled) setIsLoading(false)
       }
     }
-    load()
+    void load()
 
     return () => { cancelled = true }
   }, [filePath])

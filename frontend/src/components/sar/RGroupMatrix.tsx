@@ -55,7 +55,7 @@ export default function RGroupMatrixView({
 
   // 后端 matrix 调用 (POST /api/v1/sar/build-matrix)
   useEffect(() => {
-    if (!compounds || compounds.length < 2) {
+    if (compounds.length < 2) {
       setMatrix(null)
       setHeatmaps([])
       return
@@ -83,9 +83,9 @@ export default function RGroupMatrixView({
         }
         setMatrix(resp)
       })
-      .catch(e => {
+      .catch((_: unknown) => {
         if (cancelled) return
-        setError(String(e))
+        setError('请求失败')
         setMatrix(null)
       })
       .finally(() => {

@@ -19,7 +19,7 @@ export default function SessionOverview({ session }: SessionOverviewProps) {
 
     const best = compounds.reduce<SARCompound | null>((min, c) => {
       if (c.activity == null) return min
-      if (!min || (c.activity < min.activity!)) return c
+      if (min == null || min.activity == null || c.activity < min.activity) return c
       return min
     }, null)
 

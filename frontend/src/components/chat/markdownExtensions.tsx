@@ -53,7 +53,8 @@ export function MermaidAwareCodeBlock({
   children,
   onMoleculeClick,
 }: CodeBlockProps) {
-  const text = String(children ?? '').trim()
+  const raw = children ?? ''
+  const text = (typeof raw === 'string' ? raw : typeof raw === 'number' ? String(raw) : '').trim()
 
   // Inline SMILES (chat only)
   if (!className && isSmiles(text)) {

@@ -47,7 +47,7 @@ export default function MoleculeCardGrid({
   }
 
   if (molecules.length === 0) {
-    return <EmptyState message={t('mol.empty') ?? '暂无分子'} />
+    return <EmptyState message={t('mol.empty')} />
   }
 
   return (
@@ -101,7 +101,7 @@ export default function MoleculeCardGrid({
                 {mol.source_doc || '-'}
               </div>
               <div className="molecule-card__activity">
-                {mol.activity !== null && mol.activity !== undefined
+                {mol.activity != null
                   ? `${mol.activity.toFixed(2)} ${mol.units || 'nM'}`
                   : '-'}
               </div>

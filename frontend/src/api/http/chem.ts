@@ -31,7 +31,7 @@ export interface ValidateResult {
 
 /** PreprocessError DTO */
 export interface PreprocessErrorDto {
-  kind: 'empty' | 'too_long' | 'contains_spaces' | string
+  kind: 'empty' | 'too_long' | 'contains_spaces'
   message: string
 }
 
@@ -49,7 +49,7 @@ export interface MarkushPattern {
 
 /** Markush 覆盖度结果（来自 markush.rs::MarkushOverlap） */
 export interface MarkushOverlap {
-  match_level: 'FullOverlap' | 'PartialOverlap' | 'ScaffoldOverlap' | 'NoOverlap' | string
+  match_level: 'FullOverlap' | 'PartialOverlap' | 'ScaffoldOverlap' | 'NoOverlap'
   core_overlap_ratio: number
   matched_core_atoms: number
   total_core_atoms: number

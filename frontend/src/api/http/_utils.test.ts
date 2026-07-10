@@ -7,13 +7,13 @@ describe('httpFetch Pydantic 422 handling', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 422,
-      text: async () =>
-        JSON.stringify({
+      text: () =>
+        Promise.resolve(JSON.stringify({
           detail: [
             { loc: ['body', 'title'], msg: 'field required', type: 'missing' },
             { loc: ['body', 'page'], msg: 'value is not a valid integer', type: 'type_error' },
           ],
-        }),
+        })),
     })
 
     await expect(httpFetch('/api/v1/test', { method: 'POST', body: '{}' })).rejects.toThrow(
@@ -31,12 +31,12 @@ describe('httpFetch Pydantic 422 handling', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 422,
-      text: async () =>
-        JSON.stringify({
+      text: () =>
+        Promise.resolve(JSON.stringify({
           error: 'invalid root',
           error_code: 'validation_error',
           severity: 'warning',
-        }),
+        })),
     })
 
     await expect(httpFetch('/api/v1/test')).rejects.toSatisfy(

@@ -17,7 +17,7 @@ export default function ChatMarkdown({ content }: ChatMarkdownProps) {
             const processed = renderInlineLatex(children)
             return <p>{processed}</p>
           },
-          img: ({ node, ...props }) => (
+          img: ({ node: _node, ...props }) => (
             <img
               {...props}
               alt={props.alt || ''}

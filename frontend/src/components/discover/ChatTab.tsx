@@ -4,7 +4,8 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import 'katex/dist/katex.min.css'
 import { showToast } from '@/hooks/useToast'
 
-import { agentInit, agentCreateSession, agentChatStream, agentGetHistory, agentDestroySession, molStoreStats } from '@/api/http'
+import { agentInit, agentCreateSession, agentChatStream, agentGetHistory, agentDestroySession } from '@/api/http'
+import { molAdminStoreStats } from '@/api/http/molecule_admin'
 import { listDocuments } from '@/api/http/library'
 import { getSettings } from '@/api/http/settings'
 
@@ -91,7 +92,7 @@ export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
 
     return () => {
       if (sessionIdRef.current) {
-        agentDestroySession(sessionIdRef.current).catch((e) => console.warn('agentDestroySession failed:', e))
+        agentDestroySession(sessionIdRef.current).catch((_: unknown) => console.warn('agentDestroySession failed'))
       }
     }
   }, [libraryRoot, t])
@@ -100,10 +101,10 @@ export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
     if (!libraryRoot) return
     listDocuments().then(resp => {
       setDocCount(resp.documents.length)
-    }).catch((e) => console.warn('listDocuments failed:', e))
-    molStoreStats(libraryRoot).then(stats => {
-      setMolCount(stats.total || 0)
-    }).catch((e) => console.warn('molStoreStats failed:', e))
+    }).catch((_: unknown) => console.warn('listDocuments failed'))
+    molAdminStoreStats(libraryRoot).then(stats => {
+      setMolCount(Number(stats.total) || 0)
+    }).catch((_: unknown) => console.warn('molStoreStats failed'))
   }, [libraryRoot])
 
   const sendMessage = useCallback(async () => {

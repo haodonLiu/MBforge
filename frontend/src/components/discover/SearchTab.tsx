@@ -84,7 +84,7 @@ export default function SearchTab({ query, onQueryChange }: SearchTabProps) {
     })
   }
 
-  const doSearch = async (term: string) => {
+  const doSearch = (term: string) => {
     if (!libraryRoot) {
       setResults([])
       setHasSearched(true)
@@ -99,7 +99,7 @@ export default function SearchTab({ query, onQueryChange }: SearchTabProps) {
     let resultIndex = 0
 
     try {
-      const unlisten = await kbSearchStream(
+      const unlisten = kbSearchStream(
         libraryRoot,
         term,
         10,
@@ -129,13 +129,13 @@ export default function SearchTab({ query, onQueryChange }: SearchTabProps) {
 
   const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && query.trim()) {
-      void doSearch(query.trim())
+      doSearch(query.trim())
     }
   }
 
   const quickSearch = (term: string) => {
     onQueryChange(term)
-    void doSearch(term)
+    doSearch(term)
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

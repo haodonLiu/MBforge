@@ -50,6 +50,10 @@ export interface DownloadProgress {
   error: string
 }
 
+function str(val: unknown, fallback = ''): string {
+  return typeof val === 'string' ? val : fallback
+}
+
 /** 根据资源 ID 推断前端展示用的模型类别（与 ModelsTab typeLabels 对齐）。 */
 function inferModelType(id: string): string {
   if (id === 'embedding') return 'embedding'
@@ -67,9 +71,9 @@ export async function listModels(): Promise<{ success: boolean; models: Download
     const catalog = await httpPost<Record<string, unknown>[]>('/api/v1/resources/catalog')
     const models: DownloadModel[] = []
     for (const item of catalog) {
-      const id = String(item.id ?? '')
+      const id = str(item.id)
       if (!id) continue
-      if (String(item.type ?? '') !== 'model') continue
+      if (str(item.type) !== 'model') continue
       const status = await invokeWithError(
         () => httpPost<{
           status: string
@@ -82,19 +86,19 @@ export async function listModels(): Promise<{ success: boolean; models: Download
       )
       models.push({
         id,
-        name: String(item.name ?? id),
+        name: str(item.name, id),
         type: inferModelType(id),
-        description: String(item.description ?? ''),
-        ms_repo: String(item.ms_repo ?? ''),
+        description: str(item.description),
+        ms_repo: str(item.ms_repo),
         downloaded: status.status === 'ready',
         downloading: false,
-        local_path: status.local_path ?? '',
-        expected_path: status.expected_path ?? '',
-        license: String(item.license ?? ''),
+        local_path: status.local_path,
+        expected_path: status.expected_path,
+        license: str(item.license),
         license_url: '',
         size_mb: Number(item.size_mb ?? 0),
         source_url: '',
-        subfiles: status.subfiles ?? [],
+        subfiles: status.subfiles,
       })
     }
     return { success: true, models }
@@ -112,7 +116,7 @@ export async function listDownloaded(): Promise<{ success: boolean; models: Down
     const catalog = await resourcesCatalog()
     const models: DownloadedModel[] = []
     for (const item of catalog) {
-      const id = String(item.id ?? '')
+      const id = str(item.id)
       if (!id) continue
       const status = await invokeWithError(
         () => httpPost<{ status: string; local_path: string; size_mb: number }>('/api/v1/resources/status', { resource_id: id }),
@@ -121,16 +125,16 @@ export async function listDownloaded(): Promise<{ success: boolean; models: Down
       if (status.status === 'ready') {
         models.push({
           id,
-          name: String(item.name ?? id),
-          path: status.local_path ?? '',
-          size_mb: status.size_mb ?? 0,
+          name: str(item.name, id),
+          path: status.local_path,
+          size_mb: status.size_mb,
           type: inferModelType(id),
           in_catalog: true,
         })
       }
     }
     const dirInfo = await httpPost<{ mbforge: { path: string } }>('/api/v1/resource/cache-dir-info')
-    return { success: true, models, model_dir: dirInfo.mbforge?.path ?? '' }
+    return { success: true, models, model_dir: dirInfo.mbforge.path }
   } catch (e) {
     return { success: false, models: [], model_dir: '', error: String(e) }
   }
@@ -195,7 +199,7 @@ export function downloadModel(
 /** 删除已下载的模型 */
 export async function deleteModel(resourceId: string): Promise<void> {
   await invokeWithError(
-    () => httpPost<void>('/api/v1/resource/delete', { resource_id: resourceId }),
+    () => httpPost<unknown>('/api/v1/resource/delete', { resource_id: resourceId }),
     ErrorCode.ApiError,
   )
 }
@@ -248,7 +252,7 @@ export function downloadModelSubfile(
 /** 删除多文件资源中的单个子文件 */
 export async function deleteModelSubfile(resourceId: string, subpath: string): Promise<void> {
   await invokeWithError(
-    () => httpPost<void>('/api/v1/resource/delete-subfile', { resource_id: resourceId, subpath }),
+    () => httpPost<unknown>('/api/v1/resource/delete-subfile', { resource_id: resourceId, subpath }),
     ErrorCode.ApiError,
   )
 }

@@ -46,7 +46,7 @@ export function MermaidCode({ code, className }: MermaidCodeProps) {
       }
     }
 
-    renderMermaid()
+    void renderMermaid()
   }, [code, uniqueId])
 
   if (error) {

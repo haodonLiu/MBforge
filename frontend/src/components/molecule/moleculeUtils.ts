@@ -12,7 +12,7 @@ export function basicValidate(smiles: string): { valid: boolean; message?: strin
   if (smiles.length > 200) {
     return { valid: false, message: 'SMILES 过长（>200字符）' }
   }
-  if (!/^[A-Za-z0-9@+\-\[\]()\\/#%=.:]+$/.test(smiles.trim())) {
+  if (!/^[A-Za-z0-9@+\-[\]()\\/#%=.:]+$/.test(smiles.trim())) {
     return { valid: false, message: '包含非法字符' }
   }
   return { valid: true }
@@ -36,7 +36,7 @@ export function estimateFormula(smiles: string): string {
       if (b === 'C') return 1
       return a.localeCompare(b)
     })
-    .map(([atom, count]) => atom + (count > 1 ? count : ''))
+    .map(([atom, count]) => `${atom}${count > 1 ? count : ''}`)
     .join('')
 }
 

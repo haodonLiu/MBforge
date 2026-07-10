@@ -34,7 +34,7 @@ export default function ClusterPanel({ molecules }: ClusterPanelProps) {
   }
 
   useEffect(() => {
-    loadClusters()
+    void loadClusters()
   }, [])
 
   const handleAssign = async () => {
@@ -42,7 +42,7 @@ export default function ClusterPanel({ molecules }: ClusterPanelProps) {
     try {
       await molAssignCluster(assignMolId, assignClusterId)
       showToast('聚类分配成功', 'success')
-      loadClusters()
+      void loadClusters()
       setAssignMolId('')
       setAssignClusterId('')
     } catch (e) {
@@ -54,7 +54,7 @@ export default function ClusterPanel({ molecules }: ClusterPanelProps) {
     try {
       await molRemoveFromCluster(molId, clusterId)
       showToast('移除成功', 'success')
-      loadClusters()
+      void loadClusters()
       if (selectedCluster?.cluster_id === clusterId) {
         const updated = await molGetClusterMembers(clusterId)
         setSelectedCluster(updated)
@@ -108,7 +108,7 @@ export default function ClusterPanel({ molecules }: ClusterPanelProps) {
               try {
                 const info = await molGetClusterMembers(c.cluster_id)
                 setSelectedCluster(info)
-              } catch (e) {
+              } catch {
                 showToast('获取聚类成员失败', 'error')
               }
             }}

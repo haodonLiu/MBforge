@@ -240,7 +240,7 @@ export function ToastContainer({ position = 'top-right', maxCount = 5 }: ToastCo
                 size="sm"
                 variant="ghost"
                 onClick={() => {
-                  toastItem.action!.onClick()
+                  toastItem.action?.onClick()
                   dismiss(toastItem.id)
                 }}
                 style={{ flexShrink: 0, padding: '4px 8px', fontSize: 12 }}

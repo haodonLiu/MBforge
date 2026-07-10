@@ -18,7 +18,7 @@ export interface ModelInfo {
 
 export interface ModelLocation {
   path: string
-  source: 'huggingface' | 'modelscope' | 'local' | string
+  source: 'huggingface' | 'modelscope' | 'local'
 }
 
 export interface ModelPaths {

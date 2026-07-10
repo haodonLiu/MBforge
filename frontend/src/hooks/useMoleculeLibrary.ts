@@ -9,8 +9,8 @@ export type MoleculeSortDirection = 'asc' | 'desc'
 
 export interface MoleculeFilters {
   status: MoleculeStatusFilter
-  sourceType: string | 'all'
-  sourceDoc: string | 'all'
+  sourceType: string
+  sourceDoc: string
   activityMin: number | null
   activityMax: number | null
 }
@@ -150,10 +150,10 @@ export function useMoleculeLibrary(libraryRoot: string | null): UseMoleculeLibra
         filtered = filtered.filter((m) => m.source_doc === filters.sourceDoc)
       }
       if (filters.activityMin !== null) {
-        filtered = filtered.filter((m) => m.activity !== null && m.activity >= filters.activityMin!)
+        filtered = filtered.filter((m) => m.activity !== null && filters.activityMin !== null && m.activity >= filters.activityMin)
       }
       if (filters.activityMax !== null) {
-        filtered = filtered.filter((m) => m.activity !== null && m.activity <= filters.activityMax!)
+        filtered = filtered.filter((m) => m.activity !== null && filters.activityMax !== null && m.activity <= filters.activityMax)
       }
 
       filtered.sort((a, b) => {
@@ -188,7 +188,7 @@ export function useMoleculeLibrary(libraryRoot: string | null): UseMoleculeLibra
   }, [libraryRoot, debouncedQuery, filters, sort, pagination.page, pagination.pageSize])
 
   useEffect(() => {
-    load()
+    void load()
   }, [load])
 
   const toggleSelection = useCallback((molId: string) => {

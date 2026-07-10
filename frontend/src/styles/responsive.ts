@@ -54,7 +54,6 @@ export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(false)
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return
     const mq = window.matchMedia(query)
     setMatches(mq.matches)
     const handler = (e: MediaQueryListEvent) => setMatches(e.matches)
@@ -101,7 +100,6 @@ export function useContainerWidth(ref: React.RefObject<HTMLElement>): number {
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setWidth(entry.contentRect.width)

@@ -120,7 +120,7 @@ export default function AvatarGroup({
                 width: size * 0.28,
                 height: size * 0.28,
                 borderRadius: '50%',
-                background: statusColors[(item as AvatarItem).status!],
+                background: statusColors[(item as AvatarItem).status as keyof typeof statusColors],
                 border: `2px solid var(--bg-base)`,
               }} />
             )}

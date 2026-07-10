@@ -32,7 +32,7 @@ export default function Notes() {
       if (list.length > 0 && !activeId) {
         setActiveId(list[0].id)
       }
-    } catch (e) {
+    } catch {
       showToast(t('notes.loadFailed'), 'error')
     } finally {
       setLoading(false)
@@ -40,7 +40,7 @@ export default function Notes() {
   }, [libraryRoot, activeId])
 
   useEffect(() => {
-    loadNotes()
+    void loadNotes()
   }, [loadNotes])
 
   const activeNote = useMemo(
@@ -87,7 +87,7 @@ export default function Notes() {
       setNotes(prev => [saved, ...prev])
       setActiveId(saved.id)
       showToast(t('notes.created'), 'success')
-    } catch (e) {
+    } catch {
       showToast(t('notes.saveFailed'), 'error')
     }
   }
@@ -138,7 +138,7 @@ export default function Notes() {
     setNotes(prev => prev.map(n => n.id === updated.id ? updated : n))
     try {
       await notesSave(libraryRoot, updated)
-    } catch (e) {
+    } catch {
       showToast(t('notes.saveFailed'), 'error')
     }
   }
@@ -153,7 +153,7 @@ export default function Notes() {
         setActiveId(notes.find(n => n.id !== id)?.id ?? null)
       }
       showToast(t('notes.deleted'), 'success')
-    } catch (e) {
+    } catch {
       showToast(t('notes.deleteFailed'), 'error')
     }
   }

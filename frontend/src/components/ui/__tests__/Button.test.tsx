@@ -20,7 +20,8 @@ describe('Button', () => {
     render(<Button disabled onClick={onClick}>Click</Button>)
     const btn = screen.getByText('Click').closest('button')
     expect(btn).toBeDisabled()
-    fireEvent.click(btn!)
+    expect(btn).not.toBeNull()
+    fireEvent.click(btn as HTMLElement)
     expect(onClick).not.toHaveBeenCalled()
   })
 
@@ -31,7 +32,8 @@ describe('Button', () => {
     expect(btn).toBeDisabled()
     const spinner = btn?.querySelector('span')
     expect(spinner).toBeInTheDocument()
-    fireEvent.click(btn!)
+    expect(btn).not.toBeNull()
+    fireEvent.click(btn as HTMLElement)
     expect(onClick).not.toHaveBeenCalled()
   })
 

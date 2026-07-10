@@ -22,9 +22,9 @@ export default function AboutSection({ onReset, onOpenConfig }: Props) {
   const [tierInfo, setTierInfo] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
 
-  const handleFetchBuildInfo = async () => {
+  const handleFetchBuildInfo = () => {
     try {
-      const info = await fetchBuildInfo()
+      const info = fetchBuildInfo()
       setTierInfo(`${info.version} (${info.platform})`)
     } catch (e) {
       setTierInfo(`error: ${String(e)}`)

@@ -36,7 +36,7 @@ export default function ModelCard({
   const { t } = useTranslation()
   const isDownloading = state && (state.status === 'connecting' || state.status === 'downloading')
   const isConfirmingDelete = deleteConfirm === model.id
-  const hasSubfiles = model.subfiles && model.subfiles.length > 0
+  const hasSubfiles = model.subfiles.length > 0
   const readySubCount = hasSubfiles ? model.subfiles.filter(s => s.ready).length : 0
   const allReady = hasSubfiles ? readySubCount === model.subfiles.length : model.downloaded
   // 卡片级 Test 在跑：单文件看 testingSubfiles 是否包含 `${id}::`；多文件也按同样 key

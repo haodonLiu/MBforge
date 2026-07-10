@@ -37,7 +37,7 @@ function buildCorrectionItem(molecule: MoleculeRecord): CorrectionItem {
     name: molecule.name || undefined,
     sourceDoc: molecule.source_doc || undefined,
     context: molecule.notes || undefined,
-    sourceImage: typeof molecule.properties?.mol_img_path === 'string'
+    sourceImage: typeof molecule.properties.mol_img_path === 'string'
       ? molecule.properties.mol_img_path
       : undefined,
     status,
@@ -111,7 +111,7 @@ export default function MoleculeDetailDrawer({
         updates.map((record) => molAdminUpdate(libraryRoot, record)),
       )
       const failures = settled.filter(
-        (s) => s.status === 'rejected' || (s.status === 'fulfilled' && !s.value),
+        (s) => s.status === 'rejected' || !s.value,
       )
       if (failures.length > 0) {
         showToast(`保存失败：${failures.length} 条记录未更新`, 'error')

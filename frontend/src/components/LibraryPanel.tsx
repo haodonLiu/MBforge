@@ -24,7 +24,7 @@ export default function LibraryPanel() {
     void listCollections().then(r => setCollections(r.collections)).catch(() => {})
   }, [libraryRoot])
 
-  const handleImport = async () => {
+  const handleImport = () => {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.pdf'

@@ -30,7 +30,7 @@ export function renderInlineLatex(children: React.ReactNode): React.ReactNode {
     return parts.length > 0 ? <>{parts}</> : children
   }
   if (Array.isArray(children)) {
-    return children.map((child, i) => (
+    return children.map((child: React.ReactNode, i: number) => (
       <span key={i}>{renderInlineLatex(child)}</span>
     ))
   }
@@ -40,7 +40,7 @@ export function renderInlineLatex(children: React.ReactNode): React.ReactNode {
 /** 判断字符串是否为合法 SMILES */
 export function isSmiles(s: string): boolean {
   if (!s || s.length < 2 || s.length > 200) return false
-  return /^[A-Za-z0-9@+\-\[\]()\\/#%=.:]+$/.test(s.trim())
+  return /^[A-Za-z0-9@+\-[\]()\\/#%=.:]+$/.test(s.trim())
 }
 
 /** SMILES → PubChem 图片 URL */

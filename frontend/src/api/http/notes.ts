@@ -24,10 +24,10 @@ export async function notesList(root: string): Promise<Note[]> {
     () => httpPost<{ success: boolean; notes: Note[] }>('/api/v1/notes/list', { libraryRoot: root }),
     ErrorCode.ApiError,
   )
-  return resp.notes ?? []
+  return resp.notes
 }
 
-export async function notesGet(_root: string, _id: string): Promise<Note | null> {
+export function notesGet(_root: string, _id: string): Note | null {
   // The list endpoint is used; get is stubbed in the backend.
   return null
 }
@@ -54,5 +54,5 @@ export async function notesBacklinks(root: string, targetId: string): Promise<No
     () => httpPost<{ success: boolean; notes: Note[] }>('/api/v1/notes/backlinks', { libraryRoot: root, targetId }),
     ErrorCode.ApiError,
   )
-  return resp.notes ?? []
+  return resp.notes
 }

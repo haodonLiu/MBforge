@@ -88,6 +88,17 @@ export default function NoteEditor({
 
   // ---------- 事件处理 ----------
 
+  const handleSave = useCallback(() => {
+    if (!note) return
+    onChange({
+      ...note,
+      title: draftTitle,
+      content: draftContent,
+      updatedAt: new Date().toISOString(),
+    })
+    setIsEditing(false)
+  }, [note, onChange, draftTitle, draftContent])
+
   const handleContentChange = useCallback(
     (e: ChangeEvent<HTMLTextAreaElement>) => {
       const value = e.target.value
@@ -113,8 +124,7 @@ export default function NoteEditor({
         handleSave()
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [draftTitle, draftContent, note],
+    [handleSave],
   )
 
   const insertWikilink = useCallback(
@@ -128,17 +138,6 @@ export default function NoteEditor({
     },
     [draftContent, linkStartPos],
   )
-
-  const handleSave = useCallback(() => {
-    if (!note) return
-    onChange({
-      ...note,
-      title: draftTitle,
-      content: draftContent,
-      updatedAt: new Date().toISOString(),
-    })
-    setIsEditing(false)
-  }, [note, onChange, draftTitle, draftContent])
 
   // 自动保存：内容变化后 1.5 秒自动保存（防抖）
   useEffect(() => {

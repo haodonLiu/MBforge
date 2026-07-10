@@ -16,7 +16,7 @@ interface EvidencePanelProps {
  * to 50 items.
  */
 export default function EvidencePanel({ items, libraryRoot, onOpenPdf }: EvidencePanelProps) {
-  if (!items || items.length === 0) {
+  if (items.length === 0) {
     return null
   }
   return (

@@ -15,6 +15,12 @@ const API_BASE = ''
 
 const NETWORK_KEYWORDS = ['network', 'connection', 'timeout', 'refused'] as const
 
+function safeString(val: unknown, fallback = ''): string {
+  if (typeof val === 'string') return val
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val)
+  return fallback
+}
+
 /**
  * Coerce arbitrary case `severity` strings from the backend JSON into the
  * canonical `Severity` enum value. Unknown values fall through as `undefined`,
@@ -76,14 +82,14 @@ export async function httpFetch<T>(path: string, options: RequestInit = {}): Pro
   try {
     const { headers: extraHeaders, ...rest } = options
     const resp = await fetch(url, {
-      headers: { 'Content-Type': 'application/json', ...extraHeaders },
+      headers: { 'Content-Type': 'application/json', ...extraHeaders as Record<string, string> },
       ...rest,
     })
     if (!resp.ok) {
       const body = await resp.text().catch(() => '')
       let payload: Record<string, unknown> | null = null
       try {
-        payload = body ? JSON.parse(body) : null
+        payload = body ? JSON.parse(body) as Record<string, unknown> : null
       } catch {
         // Non-JSON body — fall through to legacy fallback.
       }
@@ -108,16 +114,16 @@ export async function httpFetch<T>(path: string, options: RequestInit = {}): Pro
         ? backendCodeToErrorCode(typeof payload.error_code === 'string' ? payload.error_code : undefined)
         : ErrorCode.Network
       const message = payload?.error != null
-        ? String(payload.error)
+        ? safeString(payload.error, `HTTP ${resp.status}: ${body.slice(0, 200)}`)
         : `HTTP ${resp.status}: ${body.slice(0, 200)}`
       const opts: AppErrorOpts = {
         severity: normalizeSeverity(payload?.severity) ?? severityFromHttpStatus(resp.status),
         category: typeof payload?.category === 'string' ? payload.category : undefined,
         context: {
-          ...(payload?.context as Record<string, unknown> | undefined),
+          ...((payload?.context ?? {}) as Record<string, unknown>),
           http_status: resp.status,
           ...(payload?.error_code != null
-            ? { backend_code: String(payload.error_code) }
+            ? { backend_code: safeString(payload.error_code) }
             : {}),
         },
         timestamp: typeof payload?.timestamp === 'number' ? payload.timestamp : undefined,

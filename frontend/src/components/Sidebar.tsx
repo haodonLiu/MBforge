@@ -70,7 +70,7 @@ export default function Sidebar({ current, onNavigate }: Props) {
 
   const handleClick = (item: (typeof PRIMARY_ITEMS)[number]) => {
     onNavigate(item.id)
-    navigate(item.path)
+    void navigate(item.path)
   }
 
   const toggleLabel = t('sidebar.toggleFiles')
@@ -143,7 +143,7 @@ export default function Sidebar({ current, onNavigate }: Props) {
           active={current === 'settings'}
           onClick={() => {
             onNavigate('settings')
-            navigate('/settings')
+            void navigate('/settings')
           }}
           label={t('nav.settings')}
           icon={SettingsIcon}

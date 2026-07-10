@@ -110,7 +110,7 @@ export function useMoleculeDisplay(
   }, [smiles, name, moleCodeText])
 
   const toggleMoleCode = useCallback(() => {
-    if (!showMoleCode) fetchMoleCode()
+    if (!showMoleCode) void fetchMoleCode()
     setShowMoleCode(v => !v)
   }, [showMoleCode, fetchMoleCode])
 

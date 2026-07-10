@@ -96,7 +96,7 @@ export default function GroupsPanel({ collections, activeId, onSelect, onCreateG
             placeholder="Group name..."
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') { setShowCreate(false); setNewName('') } }}
+            onKeyDown={(e) => { if (e.key === 'Enter') void handleCreate(); if (e.key === 'Escape') { setShowCreate(false); setNewName('') } }}
             autoFocus
           />
           <button className="library-groups-create-btn" onClick={handleCreate}>

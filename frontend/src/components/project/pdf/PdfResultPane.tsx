@@ -202,6 +202,19 @@ export default function PdfResultPane({
   const containerRef = useRef<HTMLDivElement>(null)
   const prevPageRef = useRef(currentPage)
   const [scrollTop, setScrollTop] = useState(0)
+  const [containerHeight, setContainerHeight] = useState(600)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0]
+      setContainerHeight(entry.contentRect.height)
+    })
+    observer.observe(el)
+    setContainerHeight(el.clientHeight)
+    return () => observer.disconnect()
+  }, [])
 
   const filteredDetections = useMemo(() => {
     if (detections.length === 0) return []
@@ -248,7 +261,6 @@ export default function PdfResultPane({
   }, [])
 
   // 虚拟滚动：计算可见范围
-  const containerHeight = containerRef.current?.clientHeight || 600
   const startIdx = Math.max(0,
     blockOffsets.offsets.findIndex(o => o + estimateBlockHeight(contentBlocks[blockOffsets.offsets.indexOf(o)]) > scrollTop) - OVERSCAN
   )

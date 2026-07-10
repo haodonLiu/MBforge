@@ -21,7 +21,7 @@ export default function MarkdownWithWikiLinks({
   t,
 }: MarkdownWithWikiLinksProps) {
   // 先把 [[X]] 转成自定义语法，markdown 不支持
-  const preprocessed = content.replace(/\[\[([^\]]+)\]\]/g, (_match, title) => {
+  const preprocessed = content.replace(/\[\[([^\]]+)\]\]/g, (_match: string, title: string) => {
     return `[${title}](#wiki/${encodeURIComponent(title)})`
   })
 
@@ -31,7 +31,7 @@ export default function MarkdownWithWikiLinks({
         remarkPlugins={[remarkGfm]}
         components={{
           // 自定义链接：检测 wiki 链接
-          a: ({ node, ...props }) => {
+          a: ({ node: _node, ...props }) => {
             const href = props.href ?? ''
             if (href.startsWith('#wiki/')) {
               const title = decodeURIComponent(href.slice(6))

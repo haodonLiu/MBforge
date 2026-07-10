@@ -60,7 +60,7 @@ export default function ReorganizedPane({
               onMoleculeClick={onMoleculeClick}
             />
           ),
-          img: ({ node, ...props }) => (
+          img: ({ node: _node, ...props }) => (
             <img
               {...props}
               alt={props.alt || ''}

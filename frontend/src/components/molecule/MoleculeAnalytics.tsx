@@ -6,6 +6,6 @@ import { useNavigate } from 'react-router-dom'
  */
 export default function MoleculeAnalytics() {
   const navigate = useNavigate()
-  useEffect(() => { navigate('/molecules', { replace: true }) }, [navigate])
+  useEffect(() => { void navigate('/molecules', { replace: true }) }, [navigate])
   return null
 }

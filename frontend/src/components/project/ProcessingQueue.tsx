@@ -314,16 +314,14 @@ export default function ProcessingQueue() {
 
   const toggleLogs = useCallback(
     (docId: string) => {
-      let willExpand = false
       setExpandedLogDocs((prev) => {
-        willExpand = !prev.has(docId)
         const next = new Set(prev)
-        if (willExpand) next.add(docId)
-        else next.delete(docId)
+        if (next.has(docId)) next.delete(docId)
+        else next.add(docId)
         return next
       })
-      // 展开时重拉一次（fetchLogsForDoc 内部会去重，重复调用开销低）
-      if (willExpand) void fetchLogsForDoc(docId)
+      // fetchLogsForDoc 内部会去重，重复调用开销低
+      void fetchLogsForDoc(docId)
     },
     [fetchLogsForDoc],
   )
@@ -355,7 +353,7 @@ export default function ProcessingQueue() {
     return c
   }, [tasks])
 
-  const avgTotalMs = stats?.avg_stage_durations_ms?.reduce((a: number, b: number) => a + b, 0) ?? 0
+  const avgTotalMs = stats?.avg_stage_durations_ms.reduce((a: number, b: number) => a + b, 0) ?? 0
 
   return (
     <PageContainer>

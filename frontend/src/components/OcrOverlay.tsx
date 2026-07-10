@@ -60,7 +60,6 @@ export default function OcrOverlay({
   const boxes = useMemo(() => {
     return blocks
       .map((block, i) => ({ block, originalIndex: i }))
-      .filter(({ block }) => block.bbox != null && block.bbox.length === 4)
       .filter(({ block }) => page == null || block.page === page)
       .map(({ block, originalIndex }) => {
         const bbox = pdfToCss(block.bbox, originalHeight, scale)

@@ -1,3 +1,5 @@
+import { useMemo } from 'react'
+
 export interface DonutChartProps {
   data: Array<{ label: string; value: number; color: string }>
   size?: number
@@ -16,7 +18,14 @@ export default function DonutChart({
   const circumference = 2 * Math.PI * radius
   const center = size / 2
 
-  let offset = 0
+  const segments = useMemo(() => {
+    return data.map((d, i) => {
+      const len = (d.value / total) * circumference
+      const dashArray = `${len} ${circumference - len}`
+      const dashOffset = -data.slice(0, i).reduce((s, prev) => s + (prev.value / total) * circumference, 0)
+      return { len, dashArray, dashOffset }
+    })
+  }, [data, total, circumference])
 
   if (total === 0) {
     return (
@@ -34,9 +43,8 @@ export default function DonutChart({
     <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }}>
         {data.map((d, i) => {
-          const len = (d.value / total) * circumference
-          const dashArray = `${len} ${circumference - len}`
-          const segment = (
+          const { dashArray, dashOffset } = segments[i]
+          return (
             <circle
               key={i}
               cx={center}
@@ -46,11 +54,9 @@ export default function DonutChart({
               stroke={d.color}
               strokeWidth={thickness}
               strokeDasharray={dashArray}
-              strokeDashoffset={-offset}
+              strokeDashoffset={dashOffset}
             />
           )
-          offset += len
-          return segment
         })}
       </svg>
       {showLegend && (

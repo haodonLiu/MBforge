@@ -126,9 +126,7 @@ export function useModelDownloadStatus(): {
           total_files: number
           error: string
         }>('/api/v1/models/download-status')
-        if (cancelled) return
         const resourceId = data.resource_id
-        if (!resourceId) return
 
         const next = toDownloadState(resourceId, data)
         setDownloads(prev => ({ ...prev, [resourceId]: next }))
@@ -146,7 +144,7 @@ export function useModelDownloadStatus(): {
     timer = setInterval(poll, 2000)
     return () => {
       cancelled = true
-      if (timer !== null) clearInterval(timer)
+      clearInterval(timer)
     }
   }, [refresh])
 

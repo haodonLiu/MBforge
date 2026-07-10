@@ -77,7 +77,6 @@ export default function OcrConfigModal() {
     glmocr: OcrTestResult | null
   }>({ mineru: null, uniparser: null, paddleocr: null, glmocr: null })
 
-  // Reserved for future event subscription (currently no-op).
   const dismissForever = useCallback(() => {
     if (missingBackend) {
       try {
@@ -115,10 +114,6 @@ export default function OcrConfigModal() {
       setSaving(false)
     }
   }, [form])
-
-  const fileName = missingBackend
-    ? '' // payload removed in event handler above; could pass through if needed
-    : ''
 
   const runTest = async (which: 'mineru' | 'uniparser' | 'paddleocr' | 'glmocr') => {
     setTesting(which)
@@ -237,11 +232,6 @@ export default function OcrConfigModal() {
         testResult={testResults.glmocr}
       />
 
-      {fileName && (
-        <p style={{ marginTop: 16, fontSize: 11, color: 'var(--text-muted)' }}>
-          {fileName}
-        </p>
-      )}
     </Modal>
   )
 }

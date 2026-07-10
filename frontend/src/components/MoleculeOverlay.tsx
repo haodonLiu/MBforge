@@ -53,7 +53,8 @@ export default function MoleculeOverlay({
     return validDetections
       .filter(d => d.bbox_pdf != null && d.bbox_pdf[2] > d.bbox_pdf[0] && d.bbox_pdf[3] > d.bbox_pdf[1])
       .map((d) => {
-        const bbox = pdfToCss(d.bbox_pdf!, originalHeight, scale)
+        const bboxPdf = d.bbox_pdf as [number, number, number, number]
+        const bbox = pdfToCss(bboxPdf, originalHeight, scale)
         return {
           x1: bbox.x,
           y1: bbox.y,
@@ -88,7 +89,7 @@ export default function MoleculeOverlay({
         const boxW = box.x2 - box.x1
         const boxH = box.y2 - box.y1
         const smi = box.result?.esmiles || ''
-        const isQuickScan = (box.result as unknown as { is_quick_scan?: boolean })?.is_quick_scan
+        const isQuickScan = (box.result as unknown as { is_quick_scan?: boolean }).is_quick_scan
         const confPct = Math.round(box.conf * 100)
         const ctx = box.result?.context_text || ''
 

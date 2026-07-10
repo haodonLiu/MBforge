@@ -148,12 +148,12 @@ export async function fetchReorganizedMarkdown(
   }
 }
 
-export async function fetchReportJson<T = unknown>(
+export async function fetchReportJson(
   docId: string,
   libraryRoot: string
-): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: unknown } | { ok: false; error: string }> {
   try {
-    const data = await httpGet<T>(artifactUrl(`/documents/${encodeURIComponent(docId)}/report`, libraryRoot))
+    const data = await httpGet<unknown>(artifactUrl(`/documents/${encodeURIComponent(docId)}/report`, libraryRoot))
     return { ok: true, data }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }

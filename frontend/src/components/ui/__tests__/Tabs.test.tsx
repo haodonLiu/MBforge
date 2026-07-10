@@ -24,8 +24,10 @@ describe('Tabs', () => {
 
   it('activates first tab by default in uncontrolled mode', () => {
     render(<Tabs items={defaultItems} />)
-    const tab1 = screen.getByText('Tab One').closest('button')!
-    const tab2 = screen.getByText('Tab Two').closest('button')!
+    const tab1 = screen.getByText('Tab One').closest('button')
+    const tab2 = screen.getByText('Tab Two').closest('button')
+    expect(tab1).not.toBeNull()
+    expect(tab2).not.toBeNull()
     expect(tab1).toHaveStyle({ fontWeight: '600' })
     expect(tab2).not.toHaveStyle({ fontWeight: '600' })
   })
@@ -39,13 +41,15 @@ describe('Tabs', () => {
 
   it('respects defaultActiveKey', () => {
     render(<Tabs items={defaultItems} defaultActiveKey="tab2" />)
-    const tab2 = screen.getByText('Tab Two').closest('button')!
+    const tab2 = screen.getByText('Tab Two').closest('button')
+    expect(tab2).not.toBeNull()
     expect(tab2).toHaveStyle({ fontWeight: '600' })
   })
 
   it('works in controlled mode with activeKey', () => {
     render(<Tabs items={defaultItems} activeKey="tab2" />)
-    const tab2 = screen.getByText('Tab Two').closest('button')!
+    const tab2 = screen.getByText('Tab Two').closest('button')
+    expect(tab2).not.toBeNull()
     expect(tab2).toHaveStyle({ fontWeight: '600' })
   })
 
@@ -59,9 +63,10 @@ describe('Tabs', () => {
   it('does not switch on disabled tab click', () => {
     const onChange = vi.fn()
     render(<Tabs items={defaultItems} onChange={onChange} />)
-    const tab3 = screen.getByText('Tab Three').closest('button')!
+    const tab3 = screen.getByText('Tab Three').closest('button')
+    expect(tab3).not.toBeNull()
     expect(tab3).toBeDisabled()
-    fireEvent.click(tab3)
+    fireEvent.click(tab3 as Element)
     expect(onChange).not.toHaveBeenCalled()
   })
 
@@ -137,8 +142,10 @@ describe('Tabs', () => {
 
   it('wires ARIA ids when id prop is provided', () => {
     render(<Tabs items={defaultItems} id="settings" />)
-    const tab1 = screen.getByText('Tab One').closest('button')!
-    const tab2 = screen.getByText('Tab Two').closest('button')!
+    const tab1 = screen.getByText('Tab One').closest('button')
+    const tab2 = screen.getByText('Tab Two').closest('button')
+    expect(tab1).not.toBeNull()
+    expect(tab2).not.toBeNull()
     expect(tab1).toHaveAttribute('id', 'settings-tab1-tab')
     expect(tab1).toHaveAttribute('aria-controls', 'settings-tab1-panel')
     expect(tab2).toHaveAttribute('id', 'settings-tab2-tab')

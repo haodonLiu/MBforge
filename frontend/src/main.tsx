@@ -33,7 +33,7 @@ onLCP((metric) => {
   if (import.meta.env.DEV) console.log('[vitals] LCP:', metric.value)
 })
 
-createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById('root') ?? document.body).render(
   <StrictMode>
     <BrowserRouter>
       <App />

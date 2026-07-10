@@ -83,11 +83,14 @@ export default function PdfCanvas({
   const onTextContentRef = useRef(onTextContent)
   const onPageCountRef = useRef(onPageCount)
   const generateImageRef = useRef(generateImage)
-  onPageRenderedRef.current = onPageRendered
-  onImageReadyRef.current = onImageReady
-  onTextContentRef.current = onTextContent
-  onPageCountRef.current = onPageCount
-  generateImageRef.current = generateImage
+
+  useEffect(() => {
+    onPageRenderedRef.current = onPageRendered
+    onImageReadyRef.current = onImageReady
+    onTextContentRef.current = onTextContent
+    onPageCountRef.current = onPageCount
+    generateImageRef.current = generateImage
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -102,8 +105,8 @@ export default function PdfCanvas({
         setTotalPages(doc.numPages)
         onPageCountRef.current?.(doc.numPages)
       })
-      .catch(e => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load PDF')
+      .catch((_: unknown) => {
+        if (!cancelled) setError('Failed to load PDF')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -171,7 +174,7 @@ export default function PdfCanvas({
         await task.promise
       } catch (e) {
         // 取消会抛 RenderCancelledException — 静默吞掉
-        if ((e as Error)?.message?.includes('cancelled')) return
+        if ((e as Error).message.includes('cancelled')) return
         throw e
       } finally {
         if (renderTaskRef.current === task) renderTaskRef.current = null
@@ -193,7 +196,7 @@ export default function PdfCanvas({
       }
 
       if (textLayerEl) {
-        renderTextLayerImpl(page)
+        void renderTextLayerImpl(page)
       }
     } catch (e) {
       console.error('PDF render error:', e)
@@ -201,7 +204,7 @@ export default function PdfCanvas({
   }, [pageNumber, scale, renderTextLayerImpl])
 
   useEffect(() => {
-    if (!loading && !error) renderPage()
+    if (!loading && !error) void renderPage()
   }, [loading, error, renderPage])
 
   return (

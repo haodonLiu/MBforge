@@ -26,7 +26,7 @@ export default function Workspace() {
       .finally(() => setLoading(false))
   }, [libraryRoot, activeCollectionId])
 
-  const handleImport = async () => {
+  const handleImport = () => {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.pdf'

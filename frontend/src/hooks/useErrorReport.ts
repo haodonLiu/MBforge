@@ -31,7 +31,7 @@ export function reportClientError(
   err: Error | string,
   context: Record<string, unknown> = {},
 ): void {
-  const message = err instanceof Error ? err.message : String(err)
+  const message = err instanceof Error ? err.message : err
   const stack = err instanceof Error ? (err.stack ?? undefined) : undefined
   const name = err instanceof Error ? err.name : undefined
   QUEUE.push({

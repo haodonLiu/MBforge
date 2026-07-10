@@ -50,10 +50,11 @@ export function connectSSE(
     es = new EventSource(url)
     es.onmessage = (event) => {
       try {
-        const data: Record<string, unknown> = JSON.parse(event.data)
-        onEvent({ type: String(data.event ?? data.type ?? 'message'), data })
+        const data = JSON.parse(String(event.data)) as Record<string, unknown>
+        const rawType = data.event ?? data.type
+        onEvent({ type: typeof rawType === 'string' ? rawType : 'message', data })
       } catch {
-        onEvent({ type: 'raw', data: { text: event.data } })
+        onEvent({ type: 'raw', data: { text: String(event.data) } })
       }
     }
     es.onerror = (err) => {
@@ -102,7 +103,7 @@ export async function fetchSSE<T = unknown>(path: string, params?: Record<string
   const decoder = new TextDecoder()
   const events: T[] = []
   let buffer = ''
-  while (true) {
+  for (;;) {
     const { done, value } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })
@@ -111,7 +112,7 @@ export async function fetchSSE<T = unknown>(path: string, params?: Record<string
     for (const line of lines) {
       if (line.startsWith('data: ')) {
         try {
-          const data: Record<string, unknown> = JSON.parse(line.slice(6))
+          const data = JSON.parse(line.slice(6)) as Record<string, unknown>
           if (data.type === 'done' || data.event === 'done') break
           events.push(data as T)
         } catch {

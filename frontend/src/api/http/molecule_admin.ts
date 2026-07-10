@@ -103,7 +103,7 @@ export async function molAdminEvidence(
     ),
     ErrorCode.MoleculeSearch,
   )
-  return resp.evidence ?? []
+  return resp.evidence
 }
 
 

@@ -42,8 +42,6 @@ authors = [
 dependencies = [
     # 现有子包依赖
     "requests>=2.32.0",
-    # Native GUI (Dear PyGui for desktop mode)
-    "dearpygui>=2.0.0",
     "numpy>=1.26.4,<2.0.0",
     "pillow>=10.4.0",
     "rdkit>=2024.3.0",

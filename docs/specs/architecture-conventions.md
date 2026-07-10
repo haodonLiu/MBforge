@@ -2,9 +2,12 @@
 
 > 版本: 0.3.0 | 日期: 2026-07-10
 > 规定模块边界、分层职责和新增代码的约束。
-> 适用代码库：Python-only（无 Rust / Tauri）。
-> 备注：`src/mbforge/gui/` 是历史 Dear PyGui 桌面壳，零调用方，作为参考保留；
-> `backends/moldet.py` 是 2026-07-08 MolDetv2-FT 迁移的兼容 shim，所有移除符号抛
+> 适用代码库：Python-only（无 Rust / Tauri / Dear PyGui）。
+> 唯一官方用户界面是 `frontend/`（React 19 + Vite 8）；`python -m mbforge` 启动
+> FastAPI 并在默认浏览器中打开 React 页面（除非 `--no-browser` 或
+> `MBFORGE_NO_BROWSER=1`）。见 `docs/adr/0001-canonical-library-layout.md`
+> 决策 §4。
+> 备注：`backends/moldet.py` 是 2026-07-08 MolDetv2-FT 迁移的兼容 shim，所有移除符号抛
 > `AttributeError` 并指向新位置，仅 `default_model_dir()` 仍可用（被
 > `legacy_models.py` 调用）。
 

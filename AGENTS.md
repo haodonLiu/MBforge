@@ -6,12 +6,11 @@
 
 > **Snapshot**: 2026-07-09 → refreshed 2026-07-10 — Python-only backend
 > (no Tauri / Rust shell; the legacy `src-tauri/` directory was removed,
-> see `git log -- src-tauri/`). The legacy `src/mbforge/gui/` module
-> (Dear PyGui desktop shell) is **dead code with zero importers**
-> and is kept only for reference — `grep -r "mbforge.gui" src/`
-> returns nothing. Pipeline is 9 stages; OCR cloud-first fallback
-> chain (MinerU → PaddleOCR → GLMOCR → RapidOCR). **2026-07-08
-> MolDetv2-FT migration**: legacy Doc+General MolDet pair replaced by
+> see `git log -- src-tauri/`). The legacy Dear PyGui shell
+> (`src/mbforge/gui/`) was **removed on 2026-07-10** — `frontend/`
+> (React 19 + Vite 8) is the only official UI. Pipeline is 9 stages;
+> OCR cloud-first fallback chain (MinerU → PaddleOCR → GLMOCR → RapidOCR).
+> **2026-07-08 MolDetv2-FT migration**: legacy Doc+General MolDet pair replaced by
 > a single fine-tuned YOLO26n model that jointly detects molecules
 > and coref identifier bboxes in one inference. `backends/moldet.py`
 > survives as a **compat shim** (raises `AttributeError` with a

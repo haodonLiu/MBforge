@@ -329,35 +329,22 @@ def shutdown_backends() -> None:
             mod.unload()
 
 
-_DEPRECATED_ROOT_ALIASES = ("libraryRoot", "project_root", "projectRoot")
-
-
 def resolve_root(body: dict | None = None) -> str:
-    """从请求 body（或全局配置）解析 root 目录，兼容新旧字段名。
+    """从请求 body（或全局配置）解析 library root。
 
-    优先级: library_root > libraryRoot > project_root > projectRoot > 全局配置
-
-    每次命中 libraryRoot / project_root / projectRoot 都记录一次
-    DeprecationWarning，调用方应改用 library_root。该告警会在 Phase 6
-    移除兼容字段时一并下线。
+    Phase 6: only ``library_root`` is accepted. The legacy
+    ``libraryRoot`` / ``project_root`` / ``projectRoot`` aliases have
+    been removed — the field rename (Phase 1) and the deprecation
+    window (Phase 1-5) are now closed. Any request body using a
+    legacy field will silently fall through to the global config,
+    which the operator can see as a request landing on the wrong
+    library; that's the explicit contract.
     """
     from .config import load_global_config
 
     b = body or {}
-    root = (
-        b.get("library_root", "")
-        or b.get("libraryRoot", "")
-        or b.get("project_root", "")
-        or b.get("projectRoot", "")
-    )
+    root = b.get("library_root", "")
     if root:
-        for alias in _DEPRECATED_ROOT_ALIASES:
-            if b.get(alias):
-                _logging.getLogger(__name__).warning(
-                    "resolve_root: deprecated alias %r in request body; use 'library_root' instead",
-                    alias,
-                )
-                break
         return validate_path(root)
     cfg = load_global_config()
     if cfg.library_root:

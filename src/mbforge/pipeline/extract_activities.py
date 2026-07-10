@@ -43,10 +43,10 @@ class ActivityRecord:
     evidence_kind: str  # table, text, figure_caption
     evidence_bbox: dict[str, float] | None
     # Phase 1: row-alignment fields. All None by default → Phase 0 back-compat.
-    table_idx: int | None = None   # 文档内表格序号（0-based）
-    row_idx: int | None = None     # 表格内行序号（1-based，跳过分隔行）
-    col_idx: int | None = None     # 表格内列序号
-    row_label: str | None = None   # 第一列的原始文本（如 "1a"、"1b"）
+    table_idx: int | None = None  # 文档内表格序号（0-based）
+    row_idx: int | None = None  # 表格内行序号（1-based，跳过分隔行）
+    col_idx: int | None = None  # 表格内列序号
+    row_label: str | None = None  # 第一列的原始文本（如 "1a"、"1b"）
     row_smiles: str | None = None  # 第一列的 SMILES（如有 SMILES 列）
 
 
@@ -176,6 +176,7 @@ def _extract_tables_from_markdown(
     if current_table:
         page_num = _page_for_line(len(lines) - len(current_table))
         tables.append(("\n".join(current_table), page_num))
+    return tables
 
 
 def _enrich_records_with_row_positions(
@@ -194,9 +195,7 @@ def _enrich_records_with_row_positions(
     in the persistence layer.
     """
     # Build a (table_idx → raw_table_text) map for fast lookup.
-    table_text_by_idx: dict[int, str] = {
-        i: md for i, (md, _page) in enumerate(tables)
-    }
+    table_text_by_idx: dict[int, str] = {i: md for i, (md, _page) in enumerate(tables)}
 
     separator_re = re.compile(r"^\|[-| ]+\|$")
 
@@ -241,10 +240,12 @@ def _enrich_records_with_row_positions(
         if not found:
             logger.debug(
                 "Row label %r not found in table %d; keeping row_idx=None",
-                rec.row_label, rec.table_idx,
+                rec.row_label,
+                rec.table_idx,
             )
 
     return records
+
 
 def _parse_table_with_llm(
     table_md: str, table_idx: int, model: str, page_num: int | None = None
@@ -318,6 +319,10 @@ def _parse_table_with_llm(
     except Exception as exc:
         logger.warning("LLM parsing failed for table %d: %s", table_idx, exc)
         return []
+
+
+def _build_extraction_prompt(table_md: str) -> str:
+    """Build few-shot prompt for activity extraction."""
     return f"""Extract bioactivity data from the following SAR table.
 
 Output a JSON array where each element has:

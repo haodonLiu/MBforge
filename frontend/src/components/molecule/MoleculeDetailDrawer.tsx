@@ -3,7 +3,9 @@ import CorrectionPanel, { type CorrectionItem } from './CorrectionPanel'
 import MoleculeDetailPanel from './MoleculeDetailPanel'
 import { molAdminUpdate } from '@/api/http/molecule_admin'
 import { showToast } from '@/hooks/useToast'
-import type { MoleculeRecord } from '@/types'
+import { useAppContext } from '@/context/AppContext'
+import type { EvidenceItem, MoleculeRecord } from '@/types'
+import type { DocumentEntry } from '@/types'
 
 interface MoleculeDetailDrawerProps {
   molecule: MoleculeRecord | null
@@ -50,7 +52,38 @@ export default function MoleculeDetailDrawer({
   onClose,
   onSaved,
 }: MoleculeDetailDrawerProps) {
-  if (!open || !molecule) return null
+  const { openTab } = useAppContext()
+
+  const handleOpenPdf = (
+    docId: string,
+    _page: number | null,
+    _bbox: EvidenceItem['bbox'],
+  ) => {
+    if (!libraryRoot) {
+      showToast('未指定 library_root', 'error')
+      return
+    }
+    // Build a minimal DocumentEntry so openTab accepts it. The PDF viewer
+    // resolves the doc by doc_id; title is best-effort.
+    const stub: DocumentEntry = {
+      doc_id: docId,
+      path: '',
+      doc_type: 'pdf',
+      title: docId,
+      indexed: true,
+      added_at: new Date().toISOString(),
+      hash: '',
+    }
+    openTab({
+      type: 'pdf',
+      title: docId,
+      doc: stub,
+      libraryRoot,
+    })
+    onClose()
+  }
+
+   if (!open || !molecule) return null
 
   const title = isCorrectionMode ? 'OCR 矫正' : (molecule.name || molecule.mol_id)
 
@@ -173,6 +206,7 @@ export default function MoleculeDetailDrawer({
               molecule={molecule}
               libraryRoot={libraryRoot}
               onSaved={onSaved}
+              onOpenPdf={handleOpenPdf}
             />
           )}
         </div>

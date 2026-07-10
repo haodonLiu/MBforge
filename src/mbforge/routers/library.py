@@ -27,10 +27,19 @@ def _validate_doc_id(doc_id: str) -> None:
         raise HTTPException(400, f"invalid doc_id: {doc_id}")
 
 
+# Path resolution delegates to ArtifactResolver (core/artifact.py). The
+# router keeps thin wrappers for back-compat with existing callers; the
+# ArtifactResolver is the single source of truth.
 def _resolve_doc_artifact(root: str, doc_id: str, *parts: str) -> Path:
-    _validate_doc_id(doc_id)
-    base = (Path(root) / "storage" / doc_id).resolve()
-    target = (base.joinpath(*parts)).resolve()
+    """Resolve a path under ``storage/{doc_id}/`` via ArtifactResolver."""
+    from ..core.artifact import ArtifactResolver, InvalidDocIdError
+
+    resolver = ArtifactResolver(root)
+    try:
+        base = resolver.storage_dir(doc_id).resolve()
+    except InvalidDocIdError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    target = base.joinpath(*parts).resolve()
     try:
         target.relative_to(base)
     except ValueError as exc:
@@ -39,14 +48,26 @@ def _resolve_doc_artifact(root: str, doc_id: str, *parts: str) -> Path:
 
 
 def _resolve_crop_artifact(root: str, doc_id: str, rel_path: str) -> Path:
-    _validate_doc_id(doc_id)
-    crop_root = (Path(root) / ".mbforge" / "crops" / doc_id).resolve()
-    target = (crop_root / rel_path).resolve()
+    """Resolve a crop under the canonical storage layout via ArtifactResolver.
+
+    Falls back to the legacy ``.mbforge/crops/{doc_id}/`` location if the
+    canonical path does not exist; this preserves reads for libraries
+    created before the 2026-07-10 storage unification. The migration
+    script (``scripts/migrate_artifact_paths.py``) moves the files.
+    """
+    from ..core.artifact import ArtifactResolver
+
+    resolver = ArtifactResolver(root)
     try:
-        target.relative_to(crop_root)
-    except ValueError as exc:
+        canonical = resolver.crop(doc_id, rel_path)
+    except Exception as exc:
         raise HTTPException(400, f"invalid rel_path: {rel_path}") from exc
-    return target
+    if canonical.is_file():
+        return canonical
+    legacy = resolver.legacy_crop(doc_id, rel_path)
+    if legacy.is_file():
+        return legacy
+    return canonical  # surface canonical for the 404 path
 
 
 def _resolve_library_root(body: dict | None = None) -> str:

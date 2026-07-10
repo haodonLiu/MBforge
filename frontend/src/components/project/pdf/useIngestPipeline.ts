@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   ingestList,
+  subscribeIngestEvents,
   type IngestTask,
-  type IngestEmbedEvent,
 } from '@/api/http/ingest_queue'
 
 export type EmbedSubState = {
@@ -22,7 +22,7 @@ export function useIngestPipeline(docId: string, projectRoot: string): IngestPip
   const [task, setTask] = useState<IngestTask | null>(null)
   const [progressPct, setProgressPct] = useState(0)
   const [details, setDetails] = useState('')
-  const [embedState, setEmbedState] = useState<EmbedSubState | null>(null)
+  const [embedState] = useState<EmbedSubState | null>(null)
   const docIdRef = useRef(docId)
 
   useEffect(() => {
@@ -57,16 +57,18 @@ export function useIngestPipeline(docId: string, projectRoot: string): IngestPip
 
   useEffect(() => {
     let cancelled = false
-    let timer: ReturnType<typeof setInterval> | null = null
 
     const poll = async () => {
       if (cancelled) return
       try {
         const tasks = await ingestList(projectRoot)
+        // Guard against state updates after the component unmounts.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (cancelled) return
-        const match = tasks
+        const sorted = tasks
           .filter((t) => t.doc_id === docIdRef.current)
-          .sort((a, b) => b.created_at - a.created_at)[0]
+          .sort((a, b) => b.created_at - a.created_at)
+        const match = sorted.length > 0 ? sorted[0] : undefined
         if (match) {
           setTask(match)
           setProgressPct(match.progress_pct)
@@ -81,12 +83,50 @@ export function useIngestPipeline(docId: string, projectRoot: string): IngestPip
       }
     }
 
-    timer = setInterval(poll, 2000)
+    const timer = setInterval(poll, 2000)
     return () => {
       cancelled = true
-      if (timer !== null) clearInterval(timer)
+      clearInterval(timer)
     }
   }, [projectRoot])
+
+  // Incremental SSE subscription for real-time error/warning events.
+  useEffect(() => {
+    if (!projectRoot || !task || task.status !== 'processing') return
+
+    const sub = subscribeIngestEvents(projectRoot, task.id, {
+      onEvent: (ev) => {
+        if ('progress_pct' in ev) {
+          setProgressPct(ev.progress_pct)
+          setDetails(ev.details)
+          return
+        }
+
+        const { stage, event, message, data } = ev
+        if (event === 'error') {
+          // Runtime defensive guard: backend may send a string or nullish payload.
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+          const errorCode = typeof data === 'object' && data !== null && 'error_code' in data ? String(data.error_code) : 'error'
+          setDetails(`[${stage}] ${errorCode}: ${message}`)
+          setTask((prev) => (prev ? { ...prev, status: 'failed', error: message } : prev))
+        } else if (event === 'warning') {
+          setDetails(`[${stage}] warning: ${message}`)
+        } else {
+          setDetails(message)
+        }
+      },
+      onError: (err) => {
+        console.error('[useIngestPipeline] SSE error:', err)
+      },
+    })
+
+    return () => {
+      sub.close()
+    }
+    // Intentionally use id/status primitives to avoid re-subscribing on every
+    // poll update while still closing the connection when the task is done/failed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectRoot, task?.id, task?.status])
 
   return {
     task,

@@ -1,6 +1,6 @@
 /** Ingest queue — 文档处理队列操作 via HTTP. */
 
-import { httpPost, invokeWithError } from './_utils'
+import { httpPost, httpGet, invokeWithError } from './_utils'
 import { ErrorCode } from '@/utils/errors'
 
 export interface IngestTask {
@@ -78,6 +78,85 @@ export interface IngestEmbedEvent {
   error?: string
 }
 
+/** Pipeline SSE event payload (error/warning/info etc.). */
+export interface IngestPipelineEvent {
+  stage: string
+  event: string
+  message: string
+  ts_ms: number
+  data?: Record<string, unknown>
+}
+
+export interface IngestEventHandlers {
+  onEvent?: (event: IngestProgressEvent | IngestPipelineEvent) => void
+  onError?: (error: Event) => void
+  onClose?: () => void
+}
+
+/**
+ * Subscribe to real-time pipeline events for a single task via SSE.
+ *
+ * The SSE event name is the level (error/warning/info). The returned `close()`
+ * must be called on unmount to release the EventSource. On `onerror` we do not
+ * close the connection so the browser can auto-reconnect.
+ */
+export function subscribeIngestEvents(
+  projectRoot: string,
+  taskId: string,
+  handlers: IngestEventHandlers,
+): { close: () => void } {
+  const url = `/api/v1/pipeline/events/${encodeURIComponent(taskId)}?library_root=${encodeURIComponent(projectRoot)}`
+  const es = new EventSource(url)
+
+  const handleNamedEvent = (level: string, raw: MessageEvent) => {
+    try {
+      const parsed = JSON.parse(String(raw.data)) as IngestPipelineEvent
+      handlers.onEvent?.(parsed)
+    } catch {
+      handlers.onEvent?.({
+        stage: '',
+        event: level,
+        message: String(raw.data),
+        ts_ms: Date.now(),
+      })
+    }
+  }
+
+  // SSE event names are the level values emitted by the backend.
+  const levels = ['warning', 'info', 'debug'] as const
+  levels.forEach((level) => {
+    es.addEventListener(level, (raw) => handleNamedEvent(level, raw))
+  })
+
+  // `error` named events must be distinguished from native EventSource errors.
+  // A backend `event: error` message arrives as a MessageEvent with data,
+  // whereas a native connection error is a plain Event with no data.
+  es.addEventListener('error', (raw) => {
+    if (raw instanceof MessageEvent && raw.data !== '') {
+      handleNamedEvent('error', raw)
+      return
+    }
+    console.error('[subscribeIngestEvents] SSE error:', raw)
+    handlers.onError?.(raw)
+  })
+
+  // Fallback for unnamed/default messages.
+  es.onmessage = (raw) => handleNamedEvent(raw.type || 'message', raw)
+
+  es.onerror = (err) => {
+    console.error('[subscribeIngestEvents] SSE error:', err)
+    handlers.onError?.(err)
+    // Intentionally do not close; allow browser-level auto-reconnect.
+  }
+
+  return {
+    close: () => {
+      es.close()
+      handlers.onClose?.()
+    },
+  }
+}
+
 export async function ingestList(projectRoot: string): Promise<IngestTask[]> {
   return invokeWithError(
     () => httpPost('/api/v1/pipeline/queue', { project_root: projectRoot })
@@ -96,8 +175,7 @@ export async function ingestStats(projectRoot: string): Promise<QueueStats> {
 
 export async function ingestWorkerStatus(): Promise<{ status: string; ts: number }> {
   try {
-    const resp = await httpGet<{ status: string; ts: number }>('/api/v1/pipeline/worker/status')
-    return resp ?? { status: 'offline', ts: 0 }
+    return await httpGet<{ status: string; ts: number }>('/api/v1/pipeline/worker/status')
   } catch {
     return { status: 'offline', ts: 0 }
   }

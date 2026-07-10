@@ -52,7 +52,30 @@ export interface MoleculeRecord {
   tags: string[]
   notes: string
   created_at: string
+  /** Evidence chain populated by the /api/v1/molecule/list and /evidence endpoints. */
+  evidence?: EvidenceItem[]
+  /** Total evidence count (when list view truncates). */
+  evidence_total?: number
 }
+
+/** One entry in a molecule's evidence chain (figure / text / table kind). */
+export interface EvidenceItem {
+  id: number
+  doc_id: string
+  page: number | null
+  /** Bounding box in PDF point units; null for text/table kind. */
+  bbox: { x0: number; y0: number; x1: number; y1: number } | null
+  /** Server-built URL the frontend can use as <img src>. */
+  crop_url: string | null
+  context_text: string | null
+  code_text: string | null
+  role: string
+  kind: 'figure' | 'text' | 'table'
+  confidence: number | null
+  source_type: string | null
+  created_at: string | null
+}
+
 
 export interface ModelStatus {
   status: 'ready' | 'loading' | 'error' | 'offline'

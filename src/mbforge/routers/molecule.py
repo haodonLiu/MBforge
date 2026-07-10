@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import uuid
+from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..models.molecule import (
     MoleculeCreateRequest,
@@ -53,7 +54,60 @@ async def mol_list(body: MoleculeListRequest) -> dict:
             params + [body.page_size, offset],
         ).fetchall()
         items = [dict(r) for r in rows]
+        # Attach evidence chain (truncated to 50 per molecule for list view).
+        items = _attach_evidence_batch(conn, root, items, limit=50)
     return {"success": True, "items": items, "total": total}
+
+
+def _attach_evidence_batch(
+    conn, library_root: str, items: list[dict], limit: int = 50
+) -> list[dict]:
+    """Attach ``evidence`` list to each item by canonical_smiles.
+
+    Sort order: kind, doc_id, page, id. Limit per molecule to keep the
+    list response bounded. Use the dedicated ``/evidence`` endpoint for
+    the full chain.
+    """
+    if not items:
+        return items
+    canonicals = sorted(
+        {i.get("canonical_smiles") or i.get("mol_id") for i in items if i.get("mol_id")}
+    )
+    placeholders = ",".join("?" for _ in canonicals)
+    rows = conn.execute(
+        f"""
+        SELECT id, canonical_smiles, doc_id, page,
+               bbox_x0, bbox_y0, bbox_x1, bbox_y1, crop_relpath,
+               context_text, code_text, role, kind, confidence, source_type,
+               created_at
+        FROM evidence
+        WHERE canonical_smiles IN ({placeholders})
+        ORDER BY canonical_smiles, kind, doc_id, page, id
+        """,
+        canonicals,
+    ).fetchall()
+    grouped: dict[str, list[dict]] = {cs: [] for cs in canonicals}
+    for r in rows:
+        d = dict(r)
+        d["crop_url"] = _build_crop_url(library_root, d)
+        grouped[d["canonical_smiles"]].append(d)
+    for item in items:
+        cs = item.get("canonical_smiles") or item.get("mol_id")
+        ev = grouped.get(cs, [])
+        item["evidence"] = ev[:limit]
+        item["evidence_total"] = len(ev)
+    return items
+
+
+def _build_crop_url(library_root: str, ev_row: dict) -> str | None:
+    """Return the crop image URL for an evidence row, or None if no crop."""
+    if not ev_row.get("crop_relpath") or not ev_row.get("doc_id"):
+        return None
+    rel = Path(ev_row["crop_relpath"]).name
+    return (
+        f"/api/v1/library/documents/{ev_row['doc_id']}/crop"
+        f"?rel_path={rel}&library_root={library_root}"
+    )
 
 
 @router.post("/search")
@@ -83,6 +137,33 @@ async def mol_get(body: MoleculeGetRequest) -> dict:
         if not row:
             return {"success": False, "error": "not found"}
         return {"success": True, "molecule": dict(row)}
+
+@router.post("/evidence")
+async def mol_evidence(body: dict) -> dict:
+    """Return the full evidence chain for a canonical molecule.
+
+    Body: ``{"library_root": str, "project_root": str (compat), "canonical_smiles": str}``.
+    Joins ``molecules`` for metadata; returns the molecule record plus
+    the full ``evidence`` list (untruncated).
+    """
+    try:
+        root, db = _get_db(body)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+    canonical_smiles = body.get("canonical_smiles") or body.get("mol_id")
+    if not canonical_smiles:
+        raise HTTPException(422, "canonical_smiles is required")
+    with db.mol_conn() as conn:
+        mol_row = conn.execute(
+            "SELECT * FROM molecules WHERE mol_id = ? OR canonical_smiles = ?",
+            (canonical_smiles, canonical_smiles),
+        ).fetchone()
+        if not mol_row:
+            return {"success": False, "error": "not found", "canonical_smiles": canonical_smiles}
+        items = _attach_evidence_batch(conn, root, [dict(mol_row)], limit=100000)
+        mol = items[0]
+    return {"success": True, "molecule": mol, "evidence": mol.get("evidence", [])}
+
 
 
 @router.post("/create")

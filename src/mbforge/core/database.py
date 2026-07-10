@@ -2,7 +2,7 @@
 
 Two databases per project:
 - knowledge_base.db: figure labels, coref predictions, ingest queue, semantic cache
-- molecules.db: molecules, images, relations, detections, FTS5 search
+- molecules.db: molecules, images, relations, detections, evidence, FTS5 search
 """
 
 from __future__ import annotations
@@ -11,12 +11,13 @@ import sqlite3
 import threading
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.database")
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # 实例缓存：避免重复初始化日志
 _db_cache: dict[str, DatabaseManager] = {}
@@ -69,7 +70,8 @@ CREATE TABLE IF NOT EXISTS ingest_logs (
     level TEXT DEFAULT 'info',
     message TEXT,
     ts_ms INTEGER,
-    task_id TEXT
+    task_id TEXT,
+    data TEXT
 );
 CREATE TABLE IF NOT EXISTS semantic_cache (
     query_hash TEXT PRIMARY KEY,
@@ -163,13 +165,6 @@ CREATE TABLE IF NOT EXISTS molecule_detections (
     UNIQUE(mol_id, doc_id, page),
     FOREIGN KEY (mol_id) REFERENCES molecules(mol_id)
 );
-CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
-CREATE INDEX IF NOT EXISTS idx_m_smiles ON molecules(smiles);
-CREATE INDEX IF NOT EXISTS idx_m_source ON molecules(source_doc);
-CREATE INDEX IF NOT EXISTS idx_m_status ON molecules(status);
-CREATE INDEX IF NOT EXISTS idx_m_type ON molecules(source_type);
-CREATE INDEX IF NOT EXISTS idx_mi_mol ON molecule_images(mol_id);
-CREATE INDEX IF NOT EXISTS idx_mr_type ON molecule_relations(relation_type);
 CREATE TABLE IF NOT EXISTS text_molecule_links (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     doc_id TEXT NOT NULL,
@@ -183,9 +178,48 @@ CREATE TABLE IF NOT EXISTS text_molecule_links (
     char_end INTEGER,
     created_at INTEGER
 );
+CREATE INDEX IF NOT EXISTS idx_m_smiles ON molecules(smiles);
+CREATE INDEX IF NOT EXISTS idx_m_source ON molecules(source_doc);
+CREATE INDEX IF NOT EXISTS idx_m_status ON molecules(status);
+CREATE INDEX IF NOT EXISTS idx_m_type ON molecules(source_type);
+CREATE INDEX IF NOT EXISTS idx_m_canonical ON molecules(canonical_smiles);
+CREATE INDEX IF NOT EXISTS idx_mi_mol ON molecule_images(mol_id);
+CREATE INDEX IF NOT EXISTS idx_mr_type ON molecule_relations(relation_type);
 CREATE INDEX IF NOT EXISTS idx_tml_doc_mol ON text_molecule_links(doc_id, mol_id);
 CREATE INDEX IF NOT EXISTS idx_md_doc_page ON molecule_detections(doc_id, page);
 CREATE INDEX IF NOT EXISTS idx_md_mol ON molecule_detections(mol_id);
+CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
+"""
+
+# First-class evidence chain: every (molecule, document, page) combination where
+# the molecule was observed — figure kind (with bbox + crop), text kind (with
+# context excerpt + MoleCode block), or future table kind.
+#
+# `canonical_smiles` is the natural join key into `molecules.canonical_smiles`.
+# We do NOT add a FOREIGN KEY because the pipeline writes evidence rows first
+# (during detect / register) and only the admin router creates `molecules`
+# rows on demand. Adding a FK would block the detect path. The join is
+# enforced by application logic in routers/molecule.py.
+_EVIDENCE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS evidence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    canonical_smiles TEXT NOT NULL,
+    mol_id TEXT,
+    doc_id TEXT NOT NULL,
+    page INTEGER,
+    bbox_x0 REAL, bbox_y0 REAL, bbox_x1 REAL, bbox_y1 REAL,
+    crop_relpath TEXT,
+    context_text TEXT,
+    code_text TEXT,
+    role TEXT DEFAULT 'detected',
+    kind TEXT NOT NULL,
+    confidence REAL,
+    source_type TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ev_cs ON evidence(canonical_smiles);
+CREATE INDEX IF NOT EXISTS idx_ev_doc_page ON evidence(doc_id, page);
+CREATE INDEX IF NOT EXISTS idx_ev_kind ON evidence(kind);
 """
 
 _MOL_FTS = """
@@ -209,8 +243,8 @@ class DatabaseManager:
 
     @staticmethod
     def molecule_schema() -> str:
-        """Return SQL for molecule tables + FTS5 index, reusable by LibraryStore."""
-        return _MOL_SCHEMA + _MOL_FTS
+        """Return SQL for molecule tables + evidence + FTS5 index."""
+        return _MOL_SCHEMA + _EVIDENCE_SCHEMA + _MOL_FTS
 
     @classmethod
     def get(cls, project_root: str | Path) -> DatabaseManager:
@@ -227,7 +261,11 @@ class DatabaseManager:
             if self._initialized:
                 return
             self._init_db(self._kb_path, _KB_SCHEMA)
-            self._init_db(self._mol_path, _MOL_SCHEMA + _MOL_FTS, versioned=True)
+            self._init_db(
+                self._mol_path,
+                _MOL_SCHEMA + _EVIDENCE_SCHEMA + _MOL_FTS,
+                versioned=True,
+            )
             self._initialized = True
             logger.info("DB initialized: %s", self._index_dir)
 
@@ -247,13 +285,29 @@ class DatabaseManager:
                 elif existing[0] < SCHEMA_VERSION:
                     if existing[0] < 3:
                         self._migrate_molecules_v2_to_v3(conn)
+                    if existing[0] < 4:
+                        self._migrate_molecules_v3_to_v4(conn)
                     conn.execute(
                         "UPDATE schema_version SET version = ?",
                         (SCHEMA_VERSION,),
                     )
+            else:
+                self._migrate_kb_columns(conn)
             conn.commit()
         finally:
             conn.close()
+
+    def _migrate_kb_columns(self, conn: sqlite3.Connection) -> None:
+        """Idempotent KB schema migrations for unversioned databases.
+
+        Adds columns introduced after the initial KB schema was deployed.
+        """
+        existing_cols = {
+            r[0]
+            for r in conn.execute("SELECT name FROM pragma_table_info('ingest_logs')")
+        }
+        if "data" not in existing_cols:
+            conn.execute("ALTER TABLE ingest_logs ADD COLUMN data TEXT")
 
     @contextmanager
     def kb_conn(self):
@@ -285,6 +339,64 @@ class DatabaseManager:
         finally:
             conn.close()
 
+    @contextmanager
+    def transaction(self):
+        """Best-effort transaction across both project databases.
+
+        Yields a tuple ``(kb_conn, mol_conn)``. If either connection raises an
+        exception, both are rolled back. This prevents the pipeline from leaving
+        orphan records in one database when a later write to the other fails.
+
+        Note: SQLite does not support true two-phase commit across separate
+        database files, so this is best-effort within a single process. It is
+        sufficient for Phase 0 pipeline consistency.
+        """
+        self.initialize()
+        kb_conn = sqlite3.connect(str(self._kb_path))
+        kb_conn.row_factory = sqlite3.Row
+        kb_conn.execute("PRAGMA foreign_keys=ON")
+        mol_conn = sqlite3.connect(str(self._mol_path))
+        mol_conn.row_factory = sqlite3.Row
+        mol_conn.execute("PRAGMA foreign_keys=ON")
+        try:
+            yield kb_conn, mol_conn
+            kb_conn.commit()
+            mol_conn.commit()
+        except Exception:
+            kb_conn.rollback()
+            mol_conn.rollback()
+            raise
+        finally:
+            kb_conn.close()
+            mol_conn.close()
+
+    def execute(
+        self,
+        sql: str,
+        parameters: tuple | list | dict | None = None,
+        *,
+        db: str = "kb",
+    ) -> list[sqlite3.Row]:
+        """Execute a single statement and return all rows.
+
+        Convenience helper for simple CRUD operations. For multi-statement
+        transactions prefer ``transaction()``.
+        """
+        parameters = parameters or ()
+        conn_manager = self.kb_conn if db == "kb" else self.mol_conn
+        with conn_manager() as conn:
+            return conn.execute(sql, parameters).fetchall()
+
+    def count_documents(self) -> int:
+        """Return the number of documents currently tracked in the KB queue."""
+        rows = self.execute("SELECT COUNT(*) as cnt FROM ingest_queue", db="kb")
+        return rows[0]["cnt"] if rows else 0
+
+    def count_molecules(self) -> int:
+        """Return the number of molecules currently persisted."""
+        rows = self.execute("SELECT COUNT(*) as cnt FROM molecules", db="mol")
+        return rows[0]["cnt"] if rows else 0
+
     def _migrate_molecules_v2_to_v3(self, conn: sqlite3.Connection) -> None:
         existing_cols = {
             r[0]
@@ -299,6 +411,75 @@ class DatabaseManager:
             if col_name not in existing_cols:
                 conn.execute(f"ALTER TABLE molecules ADD COLUMN {column}")
 
+    def _migrate_molecules_v3_to_v4(self, conn: sqlite3.Connection) -> None:
+        """v3 -> v4: add evidence table; backfill molecules.canonical_smiles.
+
+        Idempotent: re-running on a v4 schema is a no-op.
+        """
+        # 1. Backfill canonical_smiles where NULL. At v3 the pipeline already
+        #    stored RDKit-canonical SMILES in `smiles`, so the backfill is
+        #    just a copy. No RDKit required at migration time.
+        conn.execute(
+            "UPDATE molecules SET canonical_smiles = smiles "
+            "WHERE canonical_smiles IS NULL OR canonical_smiles = ''"
+        )
+        # 2. Create the evidence table (CREATE IF NOT EXISTS is a no-op if the
+        #    schema was just created at v4 — `_EVIDENCE_SCHEMA` is also part
+        #    of the molecule_schema() used on greenfield init).
+        conn.executescript(_EVIDENCE_SCHEMA)
+        # 3. Mirror existing molecule_detections rows into evidence with
+        #    kind='figure'. The legacy mol_id is currently NULL on every
+        #    pipeline-produced row; we keep it as evidence.mol_id for
+        #    back-compat reads and use COALESCE to derive canonical_smiles
+        #    from either the parent molecules row or vlm_verified_esmiles.
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO evidence
+                (canonical_smiles, mol_id, doc_id, page,
+                 bbox_x0, bbox_y0, bbox_x1, bbox_y1,
+                 crop_relpath, role, kind, confidence, source_type, created_at)
+            SELECT
+                COALESCE(NULLIF(m.canonical_smiles, ''), md.vlm_verified_esmiles, ''),
+                md.mol_id,
+                md.doc_id,
+                md.page,
+                md.bbox_x0, md.bbox_y0, md.bbox_x1, md.bbox_y1,
+                md.crop_relpath,
+                'detected',
+                'figure',
+                md.conf_moldet,
+                'image',
+                datetime('now')
+            FROM molecule_detections md
+            LEFT JOIN molecules m ON m.mol_id = md.mol_id
+            WHERE md.doc_id IS NOT NULL
+              AND COALESCE(NULLIF(m.canonical_smiles, ''), md.vlm_verified_esmiles, '') != ''
+            """
+        )
+        # 4. Mirror existing text_molecule_links rows into evidence with
+        #    kind='text'. text_molecule_links.mol_id stores the canonical
+        #    SMILES directly (per organizer.py:664 — see
+        #    register_molecules_from_text).
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO evidence
+                (canonical_smiles, mol_id, doc_id, page,
+                 context_text, code_text, role, kind, created_at)
+            SELECT
+                tml.mol_id,
+                tml.mol_id,
+                tml.doc_id,
+                tml.page,
+                tml.text_excerpt,
+                tml.code_text,
+                COALESCE(tml.role, 'mentioned'),
+                'text',
+                datetime('now')
+            FROM text_molecule_links tml
+            WHERE tml.mol_id IS NOT NULL AND tml.mol_id != ''
+            """
+        )
+
     @property
     def kb_path(self) -> Path:
         return self._kb_path
@@ -306,3 +487,60 @@ class DatabaseManager:
     @property
     def mol_path(self) -> Path:
         return self._mol_path
+
+
+def record_ingest_event(
+    db: DatabaseManager,
+    *,
+    task_id: str,
+    doc_id: str | None,
+    stage: str,
+    level: str,
+    message: str,
+    data: dict[str, Any] | None = None,
+    progress_pct: int | None = None,
+    status: str | None = None,
+) -> None:
+    """Write a pipeline event to the KB ``ingest_logs`` table.
+
+    This is the persistence target for ``runner._maybe_record``. Failures are
+    swallowed by the caller so a logging problem never crashes the pipeline.
+    """
+    import json
+    import time
+
+    db.initialize()
+    try:
+        with db.kb_conn() as conn:
+            data_json = json.dumps(data, ensure_ascii=False) if data else None
+            conn.execute(
+                """
+                INSERT INTO ingest_logs
+                    (doc_id, stage, level, message, ts_ms, task_id, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    doc_id or "",
+                    stage,
+                    level,
+                    message,
+                    int(time.time() * 1000),
+                    task_id,
+                    data_json,
+                ),
+            )
+            if status or progress_pct is not None:
+                conn.execute(
+                    """
+                    UPDATE ingest_queue
+                    SET status = COALESCE(?, status),
+                        stage = ?,
+                        progress_pct = COALESCE(?, progress_pct),
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    (status, stage, progress_pct, task_id),
+                )
+        logger.debug("Recorded ingest event for %s: %s", task_id, message)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to record ingest event for %s: %s", task_id, exc)

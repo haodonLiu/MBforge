@@ -2,7 +2,7 @@
 
 import { httpPost, httpPut, httpDelete, invokeWithError } from './_utils'
 import { ErrorCode } from '@/utils/errors'
-import type { MoleculeRecord } from '@/types'
+import type { MoleculeRecord, EvidenceItem } from '@/types'
 import type { MarkushOverlap, MarkushPattern } from './chem'
 
 // ============================================================================
@@ -90,6 +90,22 @@ export async function molAdminStoreStats(
     ErrorCode.MoleculeSearch,
   )
 }
+
+/** Return the full evidence chain for a canonical molecule. */
+export async function molAdminEvidence(
+  projectRoot: string,
+  canonicalSmiles: string,
+): Promise<EvidenceItem[]> {
+  const resp = await invokeWithError(
+    () => httpPost<{ success: boolean; evidence: EvidenceItem[] }>(
+      '/api/v1/molecule/evidence',
+      { project_root: projectRoot, canonical_smiles: canonicalSmiles },
+    ),
+    ErrorCode.MoleculeSearch,
+  )
+  return resp.evidence ?? []
+}
+
 
 /** Markush 覆盖度检查。 */
 export async function molAdminCheckMarkush(

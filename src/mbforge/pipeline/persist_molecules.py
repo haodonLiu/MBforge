@@ -1,6 +1,20 @@
-"""Persist normalized molecule candidates to the database."""
+"""Persist normalized molecule candidates to the database.
 
+For each candidate (a single canonical SMILES, possibly with multiple
+detections), the persist step:
+
+1. Upserts a `molecules` row keyed by `canonical_smiles` so the same
+   molecule observed in different documents collapses to a single record.
+2. Inserts one `molecule_detections` row per primary detection (legacy table
+   still maintained for back-compat readers).
+3. Inserts one first-class `evidence` row (kind='figure') per primary
+   detection. The evidence table is the new aggregate store and is the
+   primary surface the molecule router reads.
+"""
 from __future__ import annotations
+
+import sqlite3
+from contextlib import nullcontext
 
 from ..core.database import DatabaseManager
 from ..utils.logger import get_logger
@@ -13,19 +27,27 @@ def persist_molecule_candidates(
     project_root: str,
     doc_id: str,
     candidates: list[NormalizedMolecule],
+    conn: sqlite3.Connection | None = None,
 ) -> None:
-    """Write pending molecule candidates to molecule_detections table.
+    """Upsert canonical molecule rows + insert detection / evidence rows.
 
     Args:
         project_root: Project root directory.
         doc_id: Source document ID.
-        candidates: Normalized molecule candidates.
+        candidates: Normalized molecule candidates produced by
+            :mod:`mbforge.pipeline.normalize`.
+        conn: Optional open molecules DB connection. When provided, writes are
+            performed on this connection and the caller is responsible for
+            commit/rollback (used by the pipeline transaction wrapper).
     """
     db = DatabaseManager.get(project_root)
     db.initialize()
 
+    conn_manager = nullcontext(conn) if conn is not None else db.mol_conn()
     persisted = 0
-    with db.mol_conn() as conn:
+    with conn_manager as active_conn:
+        if active_conn is None:
+            raise RuntimeError("No database connection available")
         for c in candidates:
             if c.status == "rejected":
                 continue
@@ -42,15 +64,43 @@ def persist_molecule_candidates(
             bbox = primary.bbox
             conf_moldet = primary.confidence
 
-            conn.execute(
+            # 1. Upsert molecules row keyed by canonical_smiles (canonical
+            #    aggregate). The mol_id IS the canonical_smiles.
+            canonical_smiles = c.canonical_smiles or c.esmiles
+            if not canonical_smiles:
+                logger.warning(
+                    "Skipping candidate with no canonical_smiles for %s",
+                    doc_id,
+                )
+                continue
+            active_conn.execute(
                 """
-                INSERT INTO molecule_detections (
-                    doc_id, page, bbox_x0, bbox_y0, bbox_x1, bbox_y1,
-                    crop_relpath, conf_moldet, conf_molscribe,
-                    vlm_verified_esmiles
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO molecules
+                    (mol_id, smiles, esmiles, name, source_type, status,
+                     canonical_smiles)
+                VALUES (?, ?, ?, ?, 'image', 'pending', ?)
+                ON CONFLICT(mol_id) DO UPDATE SET
+                    canonical_smiles = COALESCE(molecules.canonical_smiles, excluded.canonical_smiles)
                 """,
                 (
+                    canonical_smiles,
+                    canonical_smiles,
+                    c.esmiles,
+                    c.name or "",
+                    canonical_smiles,
+                ),
+            )
+            # 2. Insert molecule_detections row (mol_id now non-null).
+            active_conn.execute(
+                """
+                INSERT INTO molecule_detections (
+                    mol_id, doc_id, page, bbox_x0, bbox_y0, bbox_x1, bbox_y1,
+                    crop_relpath, conf_moldet, conf_molscribe,
+                    vlm_verified_esmiles
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    canonical_smiles,
                     doc_id,
                     primary.page,
                     bbox[0] if bbox else None,
@@ -61,6 +111,28 @@ def persist_molecule_candidates(
                     conf_moldet,
                     None,
                     c.esmiles,
+                ),
+            )
+            # 3. Insert first-class evidence row (figure kind).
+            active_conn.execute(
+                """
+                INSERT INTO evidence
+                    (canonical_smiles, mol_id, doc_id, page,
+                     bbox_x0, bbox_y0, bbox_x1, bbox_y1,
+                     crop_relpath, role, kind, confidence, source_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'detected', 'figure', ?, 'image')
+                """,
+                (
+                    canonical_smiles,
+                    canonical_smiles,
+                    doc_id,
+                    primary.page,
+                    bbox[0] if bbox else None,
+                    bbox[1] if bbox else None,
+                    bbox[2] if bbox else None,
+                    bbox[3] if bbox else None,
+                    primary.image_path,
+                    conf_moldet,
                 ),
             )
             persisted += 1

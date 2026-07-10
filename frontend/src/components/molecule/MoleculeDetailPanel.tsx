@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { esmilesToMolecode, chemDescriptors } from '@/api/http/molecule'
 import { molAdminUpdate } from '@/api/http/molecule_admin'
 import { toast } from '@/hooks/useToast'
-import type { ExtractionResult, MoleculeRecord } from '@/types'
+import type { EvidenceItem, ExtractionResult, MoleculeRecord } from '@/types'
 import MoleculeEditorDialog from './MoleculeEditorDialog'
-
+import EvidencePanel from './EvidencePanel'
 const MermaidCode = lazy(() =>
   import('@/components/ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
 )
@@ -23,8 +23,8 @@ const VALID_STATUSES = ['confirmed', 'pending', 'corrected', 'rejected'] as cons
 
 interface BaseProps {
   libraryRoot?: string | null
+  onOpenPdf?: (docId: string, page: number | null, bbox: EvidenceItem['bbox']) => void
 }
-
 interface DetectionProps extends BaseProps {
   detection: ExtractionResult
   index: number
@@ -283,6 +283,15 @@ export default function MoleculeDetailPanel(props: MoleculeDetailPanelProps) {
         {/* MoleculeRecord 模式下的只读元信息 */}
         {isMoleculeMode && molecule && (
           <ReadOnlyMeta record={molecule} />
+        )}
+
+        {/* Evidence chain — 列出该分子出现的所有文档/页面位置 */}
+        {isMoleculeMode && molecule?.evidence && molecule.evidence.length > 0 && (
+          <EvidencePanel
+            items={molecule.evidence}
+            libraryRoot={libraryRoot ?? null}
+            onOpenPdf={(docId, page, bbox) => onOpenPdf?.(docId, page, bbox)}
+          />
         )}
 
         {/* Detection 模式下的文献上下文 */}

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import shutil  # noqa: F401 — imported here so tests can patch `mbforge.pipeline.extract_molecules.shutil.move`
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -80,7 +79,9 @@ def extract_molecules_from_pdf(
     if hasattr(fitz, "FileDataError"):
         _open_errors = _open_errors + (fitz.FileDataError,)
 
-    crop_dir = Path(project_root) / ".mbforge" / "crops" / doc_id
+    from ..core.artifact import ArtifactResolver
+
+    crop_dir = ArtifactResolver(project_root).crops_dir(doc_id)
     crop_dir.mkdir(parents=True, exist_ok=True)
 
     try:

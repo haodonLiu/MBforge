@@ -17,7 +17,7 @@ from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.database")
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # 实例缓存：避免重复初始化日志
 _db_cache: dict[str, DatabaseManager] = {}
@@ -215,7 +215,12 @@ CREATE TABLE IF NOT EXISTS evidence (
     kind TEXT NOT NULL,
     confidence REAL,
     source_type TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    -- Phase 1 (2026-07-10): row-alignment metadata (NULL for pre-migration rows)
+    row_label TEXT,
+    table_idx INTEGER,
+    row_idx INTEGER,
+    col_idx INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_ev_cs ON evidence(canonical_smiles);
 CREATE INDEX IF NOT EXISTS idx_ev_doc_page ON evidence(doc_id, page);
@@ -285,6 +290,7 @@ class DatabaseManager:
             if versioned:
                 existing = conn.execute("SELECT version FROM schema_version").fetchone()
                 if existing is None:
+                    # Greenfield — current schema is already at SCHEMA_VERSION.
                     conn.execute(
                         "INSERT INTO schema_version (version) VALUES (?)",
                         (SCHEMA_VERSION,),
@@ -294,6 +300,8 @@ class DatabaseManager:
                         self._migrate_molecules_v2_to_v3(conn)
                     if existing[0] < 4:
                         self._migrate_molecules_v3_to_v4(conn)
+                    if existing[0] < 5:
+                        self._migrate_molecules_v4_to_v5(conn)
                     conn.execute(
                         "UPDATE schema_version SET version = ?",
                         (SCHEMA_VERSION,),
@@ -486,6 +494,27 @@ class DatabaseManager:
             WHERE tml.mol_id IS NOT NULL AND tml.mol_id != ''
             """
         )
+
+    def _migrate_molecules_v4_to_v5(self, conn: sqlite3.Connection) -> None:
+        """v4 -> v5: add row-alignment columns to the evidence table.
+
+        Each new column has a default NULL so existing rows (inserted by
+        Phase 0 page-proximity) are not invalidated. Uses ``PRAGMA
+        table_info`` to ensure idempotency — re-running on a v5 schema is
+        a no-op.
+        """
+        existing_cols = {
+            r[0] for r in conn.execute("SELECT name FROM pragma_table_info('evidence')")
+        }
+        for col_def in (
+            "row_label TEXT",
+            "table_idx INTEGER",
+            "row_idx INTEGER",
+            "col_idx INTEGER",
+        ):
+            col_name = col_def.split()[0]
+            if col_name not in existing_cols:
+                conn.execute(f"ALTER TABLE evidence ADD COLUMN {col_def}")
 
     @property
     def kb_path(self) -> Path:

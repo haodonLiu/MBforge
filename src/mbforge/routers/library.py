@@ -261,9 +261,11 @@ async def library_get_indexed_md(
     doc_id: str, library_root: str | None = None
 ) -> PlainTextResponse:
     """Return the PageIndex-indexed markdown for a document."""
+    from ..core.layout import LibraryLayout
+
     root = _resolve_library_root({"library_root": library_root} if library_root else None)
     _validate_doc_id(doc_id)
-    p = Path(root) / ".mbforge" / "openkb" / "documents" / f"{doc_id}.md"
+    p = LibraryLayout(root).openkb_dir / "documents" / f"{doc_id}.md"
     if not p.is_file():
         raise HTTPException(404, f"indexed md not found for {doc_id}")
     return PlainTextResponse(p.read_text(encoding="utf-8"))

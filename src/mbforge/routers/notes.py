@@ -18,10 +18,12 @@ NOTES_INDEX = "notes_index.json"
 
 
 def _notes_root(body: dict) -> Path:
+    from ..core.layout import LibraryLayout
+
     root = resolve_root(body)
     if not root:
         raise ValueError("No root path provided")
-    return Path(root) / ".mbforge" / "notes"
+    return LibraryLayout(root).notes_dir
 
 
 def _index_path(body: dict) -> Path:

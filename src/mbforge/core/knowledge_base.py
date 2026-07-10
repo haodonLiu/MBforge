@@ -6,7 +6,6 @@ OpenKB wiki-based search via PageIndex tree indexing.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 from ..utils.logger import get_logger
@@ -78,7 +77,9 @@ def get_document_pages(
     library_root: str, doc_id: str, pages: list[int] | None = None
 ) -> list[dict]:
     """Get page text content for a document."""
-    pages_dir = Path(library_root) / "storage" / doc_id / "pages"
+    from .artifact import ArtifactResolver
+
+    pages_dir = ArtifactResolver(library_root).pages_dir(doc_id)
     if not pages_dir.exists():
         return []
 
@@ -95,15 +96,18 @@ def get_document_pages(
 
 def get_document_tree(library_root: str, doc_id: str) -> list[dict] | None:
     """Get the document structure tree (from OpenKB wiki if available)."""
+    from .layout import LibraryLayout
+
+    layout = LibraryLayout(library_root)
     # Try OpenKB wiki source files first
-    wiki_dir = Path(library_root) / ".mbforge" / "openkb" / "wiki"
+    wiki_dir = layout.openkb_wiki_dir()
     if wiki_dir.exists():
         summary = wiki_dir / "summaries" / f"{doc_id}.md"
         if summary.exists():
             return [{"title": doc_id, "source": "openkb_wiki"}]
 
     # Fallback to legacy doc_trees.json
-    tree_path = Path(library_root) / "index" / "doc_trees.json"
+    tree_path = layout.openkb_doc_trees_path()
     if not tree_path.exists():
         return None
     try:

@@ -17,15 +17,18 @@ logger = get_logger("mbforge.openkb.adapter")
 class OpenKBAdapter:
     """Facade for OpenKB operations: index, compile, search."""
 
-    def __init__(self, library_root: str):
+    def __init__(self, library_root: str) -> None:
+        from ..core.layout import LibraryLayout
+
         self._library_root = Path(library_root)
-        self._openkb_dir = self._library_root / ".mbforge" / "openkb"
+        layout = LibraryLayout(library_root)
+        self._openkb_dir = layout.openkb_dir
         # _global_openkb_dir is the storage dir for PageIndex documents.
         # Today it is co-located with the wiki dir; the pipeline-redesign
         # plan lifts it to a global config dir. Keep the alias here so
         # callers (e.g. index_markdown) bind to a stable name.
         self._global_openkb_dir = self._openkb_dir
-        self._wiki_dir = self._openkb_dir / "wiki"
+        self._wiki_dir = layout.openkb_wiki_dir()
         self._indexer: PageIndexWrapper | None = None
         self._compiler: WikiCompiler | None = None
 

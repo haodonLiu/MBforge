@@ -233,8 +233,15 @@ class DatabaseManager:
     """Manages SQLite connections for a project's two databases."""
 
     def __init__(self, library_root: str | Path) -> None:
+        from .layout import LibraryLayout
+
         self._root = Path(library_root)
-        self._index_dir = self._root / "index"
+        # Pre-Phase-4: two databases under {root}/index/. The Phase 4
+        # single-DB migration consolidates them to {root}/.mbforge/library.db
+        # (see LibraryLayout.database_path). Until that migration runs,
+        # this class still writes to the legacy index/ path; new code
+        # should call LibraryLayout(library_root).database_path instead.
+        self._index_dir = LibraryLayout(library_root).legacy_index_dir
         self._index_dir.mkdir(parents=True, exist_ok=True)
         self._kb_path = self._index_dir / "knowledge_base.db"
         self._mol_path = self._index_dir / "molecules.db"

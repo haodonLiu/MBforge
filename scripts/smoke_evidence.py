@@ -33,7 +33,7 @@ def main() -> int:
         db.initialize()
         with db.mol_conn() as conn:
             sv = conn.execute("SELECT version FROM schema_version").fetchone()[0]
-            assert sv == 4, f"expected schema_version=4, got {sv}"
+            assert sv == 5, f"expected schema_version=5, got {sv}"
             print(f"[1] DB initialized, schema_version={sv}")
 
         # 2. Create storage layout for doc1, doc2

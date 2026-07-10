@@ -115,6 +115,27 @@ class TestReset:
         assert cfg.llm.model == AppConfig().llm.model
 
 
+class TestPopoConfig:
+    def test_popo_defaults_to_empty_dict(self, tmp_settings: Path) -> None:
+        cfg = load_global_config()
+        assert cfg.popo == {}
+
+    def test_popo_round_trip(self, tmp_settings: Path) -> None:
+        load_global_config()
+        new_cfg = update_settings({"popo": {"enabled": True}})
+        assert new_cfg.popo.get("enabled") is True
+
+        cfg_again = load_global_config()
+        assert cfg_again.popo.get("enabled") is True
+
+    def test_popo_merge_preserves_other_keys(self, tmp_settings: Path) -> None:
+        load_global_config()
+        update_settings({"popo": {"enabled": True, "timeout": 120}})
+        new_cfg = update_settings({"popo": {"enabled": False}})
+        assert new_cfg.popo.get("enabled") is False
+        assert new_cfg.popo.get("timeout") == 120
+
+
 class TestMigration:
     def test_migrates_legacy_config_json(self, tmp_settings: Path) -> None:
         # The autouse fixture in conftest.py pre-writes settings.json with a

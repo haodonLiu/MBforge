@@ -65,6 +65,9 @@ export interface SettingsState {
   // —— Ingest ——
   auto_enqueue_on_import: boolean
 
+  // —— Popo (MinerU-Popo OCR 后处理，可选) ——
+  popo_enabled: boolean
+
   // —— 缓存大小（只读，由后端报告）——
   cache_size_semantic_mb: number
   cache_size_detection_mb: number
@@ -118,6 +121,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   moldet_batch_size: 10,
 
   auto_enqueue_on_import: false,
+
+  popo_enabled: false,
 
   cache_size_semantic_mb: 0,
   cache_size_detection_mb: 0,
@@ -211,6 +216,8 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
 
     auto_enqueue_on_import: s.ingest?.auto_enqueue_on_import === true,
 
+    popo_enabled: s.popo?.enabled === true,
+
     cache_size_semantic_mb: 0,  // 启动时由后端 refresh 填充
     cache_size_detection_mb: 0,
     cache_size_molecules_mb: 0,
@@ -274,6 +281,9 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
     },
     ingest: {
       auto_enqueue_on_import: s.auto_enqueue_on_import,
+    },
+    popo: {
+      enabled: s.popo_enabled,
     },
   }
 }

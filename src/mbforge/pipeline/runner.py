@@ -37,6 +37,7 @@ STAGE_PCT: dict[str, int] = {
     "rough_md": 22,
     "detect": 32,
     "insert_molecode": 40,
+    "popo": 48,  # optional MinerU-Popo post-process
     "reorganize": 55,
     "pageindex": 68,
     "wiki": 78,
@@ -236,6 +237,29 @@ def run_pipeline(
         f"MoleCode blocks inserted: {len(candidates)} molecules",
         stage="insert_molecode",
     )
+
+    # -- Stage 3d-0: optional MinerU-Popo post-processing --
+    # 当 config popo.enabled=true 且 MinerU-Popo 已安装时，对 OCR 后的 markdown
+    # 做章节层级/表格续接/图说关联增强。失败或未安装则跳过。
+    try:
+        _cfg = load_global_config()
+        if (_cfg.popo or {}).get("enabled", False):
+            from ..backends import popo as _popo
+
+            if _popo.popo_installed():
+                _emit("progress", "Running MinerU-Popo post-processing...", stage="popo")
+                pre_md = Path(enriched_md_path).read_text(encoding="utf-8")
+                post_md = _popo.popo_postprocess_markdown(pre_md)
+                if post_md and post_md != pre_md:
+                    Path(enriched_md_path).write_text(post_md, encoding="utf-8")
+                    _emit("complete", "MinerU-Popo post-processing applied", stage="popo")
+                else:
+                    _emit("warning", "MinerU-Popo returned no change", stage="popo")
+            else:
+                _emit("warning", "popo.enabled=true but MinerU-Popo not installed", stage="popo")
+    except Exception as popo_exc:  # noqa: BLE001 — popo is optional, never crash the pipeline
+        logger.warning("MinerU-Popo step failed: %s", popo_exc)
+        _emit("warning", f"MinerU-Popo step failed: {popo_exc}", stage="popo")
 
     # -- Stage 3d: LLM reorganization --
     _emit("progress", "Reorganizing text...", stage="reorganize")

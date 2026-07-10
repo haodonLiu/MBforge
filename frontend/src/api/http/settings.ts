@@ -56,11 +56,16 @@ export interface AppSettings {
   pdf_parse?: PdfParseConfig
   moldet?: MoldetConfig
   ingest?: IngestConfig
+  popo?: PopoConfig
 }
 
 export interface PdfParseConfig {
   chunk_size?: number
   chunk_overlap?: number
+}
+
+export interface PopoConfig {
+  enabled?: boolean
 }
 
 export interface MoldetConfig {

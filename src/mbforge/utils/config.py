@@ -87,6 +87,10 @@ class AppConfig(BaseSettings):
     # detection_batch_size: YOLO batch 推理页数 (0=逐页, 仅在 GPU 有显存收益).
     moldet: dict[str, Any] = Field(default_factory=dict)
     ingest: dict[str, Any] = Field(default_factory=dict)
+    # popo: MinerU-Popo OCR 后处理可选配置 (4B Qwen3-VL, 本地推理).
+    # 已知 key: {"enabled"}.
+    # enabled: 是否在 pipeline 中启用 (默认 false).
+    popo: dict[str, Any] = Field(default_factory=dict)
 
 
 # 历史文件名（用于一次性迁移）

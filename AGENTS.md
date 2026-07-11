@@ -8,7 +8,8 @@
 > (no Tauri / Rust shell; the legacy `src-tauri/` directory was removed,
 > see `git log -- src-tauri/`). The legacy Dear PyGui shell
 > (`src/mbforge/gui/`) was **removed on 2026-07-10** — `frontend/`
-> (React 19 + Vite 8) is the only official UI. Pipeline is 9 stages;
+> (React 19 + Vite 8) is the only official UI. **Pipeline is 7 modular stages**
+> (`pipeline/context.py` + `pipeline/stages/*.py` + `StageExecutor` protocol);
 > OCR cloud-first fallback chain (MinerU → PaddleOCR → GLMOCR → RapidOCR).
 > **2026-07-08 MolDetv2-FT migration**: legacy Doc+General MolDet pair replaced by
 > a single fine-tuned YOLO26n model that jointly detects molecules
@@ -27,7 +28,7 @@ discovery. It ingests scientific PDFs, extracts molecules and activities,
 indexes them into a searchable knowledge base, and exposes an AI agent for
 cross-document reasoning.
 
-Pipeline: `PDF → extract → density → rough_md → detect → insert_molecode → reorganize → pageindex → wiki → persist_mols → register_links → persist → query`.
+Pipeline: `PDF → extract → density → markdown → reorganize → activity → index → persist → query` (7 logical stages; `markdown` = rough_md + detect + insert_molecode, `index` = pageindex + wiki, `persist` = persist_mols + register_links + persist_doc).
 
 Stack:
 
@@ -57,7 +58,7 @@ Stack:
 **Data flow** (PDF in → query out):
 
 1. Frontend uploads PDF via `POST /api/v1/documents/upload` → stored under `{library_root}/`.
-2. `pipeline/runner.py` orchestrates 9 stages: extract (PDF text + OCR fallback) → density → rough_md → detect (MolDetv2-FT joint detection + MolScribe) → insert_molecode → reorganize (LLM semantic reorg) → pageindex → wiki → persist_mols → register_links → persist. The `detect` stage uses `pipeline/extract_molecules.py:extract_molecules_from_pdf` which runs FT detection + coref pairing + MolScribe per-mol-bbox OCR (see `routers/moldet_api.py:/extract-pdf-page` for the equivalent HTTP endpoint).
+2. `pipeline/runner.py` orchestrates 7 modular stages sharing state via `pipeline/context.py:PipelineContext` and implementing the `pipeline/stages/base.py:StageExecutor` protocol: Extract (PDF text + OCR fallback) → Density → Markdown (rough_md + MolDetv2-FT/MolScribe detection + insert_molecode) → Reorganize (LLM semantic reorg + optional MinerU-Popo) → Activity (IC50/Ki/EC50/Kd table extraction) → Index (PageIndex tree + Wiki) → Persist (persist_mols + register_links + persist_doc in one cross-database transaction). The molecule-detection part of Markdown uses `pipeline/extract_molecules.py:extract_molecules_from_pdf` which runs FT detection + coref pairing + MolScribe per-mol-bbox OCR (see `routers/moldet_api.py:/extract-pdf-page` for the equivalent HTTP endpoint).
 3. Stage outputs feed `core/knowledge_base.py` (SQLite business tables) and the OpenKB + PageIndex collection (vectorless tree reasoning + dense rerank).
 4. Frontend queries via `GET /api/v1/kb/search` (PageIndex tree reasoning).
 5. Agent chat streams via `GET /api/v1/agent/chat` (SSE, LangGraph nodes invoke `agent/tools.py`).
@@ -86,7 +87,7 @@ MBForge/
 │   ├── routers/                       19 FastAPI routers
 │   ├── agent/                         LangGraph agent
 │   ├── core/                          database, library, knowledge_base, semantic_cache, resource_manager, artifact (ArtifactResolver)
-│   ├── pipeline/                      classify, extract_text, extract_molecules, segment, chunk, index, runner, organizer, normalize, persist_molecules
+│   ├── pipeline/                      runner (orchestrator), context (shared state), stage_result, stages/ (Extract/Density/Markdown/Reorganize/Activity/Index/Persist), plus extract_text, extract_molecules, extract_activities, organizer, normalize, persist_molecules
 │   ├── backends/                      molscribe, moldet_v2_ft, ocr/ (chain, mineru, paddleocr, glmocr, rapidocr_adapter), popo
 │   ├── parsers/molecule/              coords, coref_alt
 │   ├── chem/                          Cheminformatics utils
@@ -278,7 +279,10 @@ Gated on 'one release cycle of no migration failures' (per the plan):
 | `src/mbforge/__main__.py` | `python -m mbforge` → uvicorn on 18792 |
 | `src/mbforge/agent/graph.py` | LangGraph agent graph definition |
 | `src/mbforge/agent/tools.py` | 5 agent tools (KB search, molecule search, doc fetch, notes, settings) |
-| `src/mbforge/pipeline/runner.py` | 9-stage pipeline orchestrator (extract → density → rough_md → detect → insert_molecode → reorganize → pageindex → wiki → persist_mols → register_links → persist) |
+| `src/mbforge/pipeline/runner.py` | 7-stage pipeline orchestrator (extract → density → markdown → reorganize → activity → index → persist). Dispatches `pipeline/stages/*.py` executors against `pipeline/context.py:PipelineContext` |
+| `src/mbforge/pipeline/context.py` | `PipelineContext` — shared state container passed between stage executors |
+| `src/mbforge/pipeline/stage_result.py` | `StageResult` + `PipelineErrorCode` — structured per-stage outcomes |
+| `src/mbforge/pipeline/stages/base.py` | `StageExecutor` protocol — every stage implements `execute(ctx) -> StageResult` |
 | `src/mbforge/core/database.py` | SQLite business tables + connection pool |
 | `src/mbforge/core/knowledge_base.py` | KB CRUD + RRF fusion logic |
 | `src/mbforge/openkb/` | OpenKB + PageIndex adapter (vectorless tree reasoning + dense rerank) |

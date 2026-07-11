@@ -7,10 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > for unified path management (`storage/{doc_id}/crops/` replaces legacy
 > `.mbforge/crops/`), frontend `EvidencePanel` shows molecule provenance with
 > "打开原文" button. Migration script `scripts/migrate_artifact_paths.py` moves
-> legacy crops to canonical location. Pipeline still 9 stages; 19 routers total.
-> If reality drifts from this file, **the code wins**; update this file in the
-> same PR. Detailed conventions live in [AGENTS.md](./AGENTS.md) — don't
-> duplicate them here.
+> legacy crops to canonical location. **Pipeline refactored to 7 modular stages**
+> (`pipeline/context.py` + `pipeline/stages/*.py` + `StageExecutor` protocol);
+> `pipeline/runner.py` now only orchestrates. 19 routers total. If reality
+> drifts from this file, **the code wins**; update this file in the same PR.
+> Detailed conventions live in [AGENTS.md](./AGENTS.md) — don't duplicate them
+> here.
 
 ---
 
@@ -21,13 +23,12 @@ PDFs in → structured molecules + activities → searchable knowledge base →
 LangGraph agent chat.
 
 ```
-PDF → pipeline (9 stages) → knowledge base (SQLite + OpenKB) → agent chat + molecule ops (FastAPI)
+PDF → pipeline (7 modular stages) → knowledge base (SQLite + OpenKB) → agent chat + molecule ops (FastAPI)
 ```
 
-Two frontends share the same backend:
+Frontend:
 
-- **Web** (`frontend/`) — React 19 + Vite 8 + TS 6, dev server `:5173`, proxies `/api/*` → `127.0.0.1:18792`.
-- **Native** (`src/mbforge/gui/`) — Dear PyGui 2.0 desktop shell, talks to the same FastAPI over loopback.
+- **Web** (`frontend/`) — React 19 + Vite 8 + TS 6, dev server `:5173`, proxies `/api/*` → `127.0.0.1:18792`. This is the only official UI; the legacy Dear PyGui shell was removed on 2026-07-10.
 
 ---
 
@@ -71,12 +72,11 @@ Tooling pins (see `pyproject.toml`): **uv** (not pip), **npm** (not pnpm/yarn/bu
 
 | Path | Purpose |
 |---|---|
-| `src/mbforge/` | Python backend package (FastAPI app, routers, agent, pipeline, core, backends, parsers, chem, models, utils, gui, openkb) |
+| `src/mbforge/` | Python backend package (FastAPI app, routers, agent, pipeline, core, backends, parsers, chem, models, utils, openkb) |
 | `src/mbforge/app.py` | FastAPI factory — registers **19 routers** under `/api/v1/*`, mounts `frontend/dist/` if present |
 | `src/mbforge/core/artifact.py` | `ArtifactResolver` — single authority for paths under `{library_root}/storage/` (prevents path traversal) |
 | `src/mbforge/server.py` | Dev uvicorn target for the local-model sidecar (mounted at `/api/v1/models`) |
-| `src/mbforge/gui/` | Dear PyGui native frontend (alternative to `frontend/`) |
-| `frontend/` | React + Vite web frontend |
+| `frontend/` | React 19 + Vite 8 web frontend — the only official UI |
 | `tests/` | pytest (`tests/unit/`, `tests/integration/`) + vitest (`frontend/src/**/*.test.ts*`) |
 | `docs/specs/` | Architecture conventions, code style, E-SMILES, MoleCode, molecule representation |
 | `configs/` | YAML configs (constants, OCR) |
@@ -92,8 +92,8 @@ For deeper module breakdown of `src/mbforge/`, see [AGENTS.md § Key Directories
 **Five-layer split** (top → bottom):
 
 ```
-Frontend (React or Dear PyGui)
-    ↓ HTTP / SSE          (httpFetch / sse.ts  or  gui/api/client.py)
+Frontend (React 19 + Vite)
+    ↓ HTTP / SSE          (httpFetch / sse.ts)
 Routers (FastAPI, 19 files in src/mbforge/routers/)
     ↓
 Core + Agent + Pipeline  (src/mbforge/{core,agent,pipeline}/)
@@ -105,14 +105,20 @@ SQLite + OpenKB + filesystem   (per-project .mbforge/)
 
 **Central data flow (PDF in → answer out):**
 
-1. Frontend uploads PDF via `POST /api/v1/documents/upload` → project-local storage.
-2. `pipeline/runner.py` runs **9 stages**:
-   extract (PDF text + OCR fallback) → density (classify text/mixed/image) →
-   rough_md (page text → .md) → detect (MolDet + MolScribe) → insert_molecode →
-   reorganize (LLM semantic reorg) → pageindex (tree index, zero LLM) →
-   wiki (summaries/concepts) → persist_mols → register_links → persist.
-   Each stage writes intermediate state to the SQLite business tables
-   (`core/database.py`) plus the OpenKB index.
+1. Frontend uploads PDF via `POST /api/v1/documents/upload` → library-local storage.
+2. `pipeline/runner.py` orchestrates **7 modular stages** defined in
+   `pipeline/stages/*.py` and sharing state through `pipeline/context.py:PipelineContext`:
+   - **Extract** (`ExtractStage`) — PDF text + OCR fallback
+   - **Density** (`DensityStage`) — classify text/mixed/image
+   - **Markdown** (`MarkdownStage`) — rough_md + detect molecules (MolDetv2-FT +
+     MolScribe) + insert MoleCode blocks
+   - **Reorganize** (`ReorganizeStage`) — LLM semantic reorg + optional MinerU-Popo
+   - **Activity** (`ActivityStage`) — extract IC50/Ki/EC50/Kd from tables
+   - **Index** (`IndexStage`) — PageIndex tree + Wiki compilation
+   - **Persist** (`PersistStage`) — persist_mols + register_links + persist_doc in one
+     cross-database transaction
+   Each stage implements the `StageExecutor` protocol and writes intermediate state
+   to the SQLite business tables (`core/database.py`) plus the OpenKB index.
 3. Frontend queries via `GET /api/v1/kb/search` (PageIndex tree reasoning + dense rerank).
 4. Agent chat streams via `GET /api/v1/agent/chat` (SSE; LangGraph nodes invoke tools in `agent/tools.py`).
 

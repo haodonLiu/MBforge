@@ -147,6 +147,62 @@ No desktop bundle step — the app is a web frontend + Python backend. Deploy
 `frontend/dist/` and `src/mbforge/` together (or run both behind a reverse
 proxy).
 
+## Worktree & Branch Hygiene
+
+Worktrees keep long-running or experimental work isolated, but stale worktrees
+and abandoned branches quickly become a maintenance burden. Follow these rules
+to avoid the "dozens of divergent worktrees" trap.
+
+### Creating a worktree
+
+- Use worktrees only for **short-lived, focused work** (a single feature or
+  refactor).
+- Prefer a descriptive name: `.worktrees/<feature-or-refactor>`.
+- Before creating one, check for existing worktrees and clean up dead ones:
+  ```bash
+  git worktree list
+  git worktree prune
+  ```
+
+### While the worktree is alive
+
+- Keep the branch rebased on `main` at least daily if `main` is moving.
+- Run tests in the worktree before declaring the branch ready.
+- Do **not** let a branch diverge by hundreds of commits or tens of thousands of
+  lines — that is a signal the work should be split, merged, or abandoned.
+
+### Finishing a worktree
+
+1. Decide the fate of the branch **before** removing the worktree:
+   - **Merge back**: open/merge a PR, then delete the branch.
+   - **Abandon**: if the branch is fully superseded by `main`, delete it.
+   - **Preserve**: only keep branches that represent genuinely unfinished work
+     you intend to resume soon.
+2. Remove the worktree from the main repo directory (Windows long paths may
+   require `cmd /c rmdir /s /q .worktrees/<name>`):
+   ```bash
+   git worktree remove .worktrees/<name> --force   # if dirty
+   git worktree prune
+   ```
+3. Delete the branch:
+   ```bash
+   git branch -D <branch-name>
+   ```
+4. Verify cleanup:
+   ```bash
+   git worktree list
+   git branch -a
+   ```
+
+### What to avoid
+
+- Leaving a worktree around after the branch is merged or abandoned.
+- Creating a new worktree for every experimental idea and never deleting them.
+- Letting a feature branch live so long that it deletes or rewrites files that
+  have since moved forward on `main`.
+- Force-pushing a rewritten `main` without first confirming all worktrees and
+  local branches are accounted for.
+
 ## Code Conventions & Common Patterns
 
 ### Python

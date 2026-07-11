@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 
 POPO_REPO_URL = "https://github.com/opendatalab/MinerU-Popo.git"
 # Local clone location (separate from MBForge source)
-POPO_INSTALL_DIR = Path.home() / "mbforge" / "third_party" / "MinerU-Popo"
+POPO_INSTALL_DIR = Path.home() / "MBForge" / "third_party" / "MinerU-Popo"
 
 
 def popo_installed() -> bool:

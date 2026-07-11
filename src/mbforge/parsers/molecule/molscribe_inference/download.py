@@ -1,7 +1,7 @@
 """MolScribe 模型路径解析 — 仅读盘，不下载。
 
 模型路径由 `mbforge.utils.config` + `ResourceManager` 解析到
-`~/mbforge/models/MolScribe/` 后,本模块仅做 checkpoint 文件定位和
+`~/MBForge/models/MolScribe/` 后,本模块仅做 checkpoint 文件定位和
 可用性探测。
 """
 
@@ -25,7 +25,7 @@ def get_model_dir() -> Path:
       2. 环境变量 ``MBFORGE_MOLSCRIBE_DIR`` (legacy / 显式覆盖)
       3. ``ResourceManager.get_molscribe_path()`` (读 Rust resolved_paths.json)
       4. 缓存目录 ``<model_cache_dir>/MolScribe``
-      5. 兜底 ``~/mbforge/models/MolScribe``
+      5. 兜底 ``~/MBForge/models/MolScribe``
     """
     cfg = load_global_config()
     cfg_dir = cfg.moldet.get("molscribe_dir")
@@ -49,7 +49,7 @@ def get_model_dir() -> Path:
         from mbforge.utils.paths import get_model_cache_dir
         return Path(get_model_cache_dir()) / "MolScribe"
     except ImportError:
-        return Path.home() / "mbforge" / "models" / "MolScribe"
+        return Path.home() / "MBForge" / "models" / "MolScribe"
 
 
 def is_model_available(model_dir: Path | None = None) -> bool:

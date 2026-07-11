@@ -46,7 +46,8 @@ def build_backends(ocr_config: dict | None) -> list[OCRBackend]:
         "model": cfg.get("paddleocr_model", "PaddleOCR-VL-1.6"),
     }
     glm_cfg = {
-        "api_key": cfg.get("glmocr_api_key", ""),
+        "api_key": cfg.get("glmocr_api_key") or cfg.get("api_key") or "",
+        "base_url": cfg.get("glmocr_base_url") or cfg.get("base_url") or "",
         "model": cfg.get("glmocr_model", "glm-ocr"),
     }
 

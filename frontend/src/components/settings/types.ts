@@ -39,10 +39,11 @@ export interface SettingsState {
 
   // —— OCR 云端后端 (per-backend keys) ——
   ocr_mineru_api_key: string
-  ocr_uniparser_api_key: string
   ocr_paddleocr_api_key: string
   ocr_paddleocr_host: string
   ocr_paddleocr_model: string
+  ocr_glmocr_api_key: string
+  ocr_glmocr_model: string
 
   // —— Model Service ——
   server_host: string
@@ -101,10 +102,11 @@ export const DEFAULT_SETTINGS: SettingsState = {
   ocr_use_pdf_inspector: true,
 
   ocr_mineru_api_key: '',
-  ocr_uniparser_api_key: '',
   ocr_paddleocr_api_key: '',
   ocr_paddleocr_host: '',
   ocr_paddleocr_model: 'PaddleOCR-VL-1.6',
+  ocr_glmocr_api_key: '',
+  ocr_glmocr_model: 'glm-ocr',
 
   server_host: '127.0.0.1',
   server_port: 18792,
@@ -195,10 +197,11 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
     ocr_use_hf_mirror: ocr.use_hf_mirror !== false,
     ocr_use_pdf_inspector: ocr.use_pdf_inspector !== false,
     ocr_mineru_api_key: ocr.mineru_api_key || DEFAULT_SETTINGS.ocr_mineru_api_key,
-    ocr_uniparser_api_key: ocr.uniparser_api_key || DEFAULT_SETTINGS.ocr_uniparser_api_key,
     ocr_paddleocr_api_key: ocr.paddleocr_api_key || DEFAULT_SETTINGS.ocr_paddleocr_api_key,
     ocr_paddleocr_host: ocr.paddleocr_host || DEFAULT_SETTINGS.ocr_paddleocr_host,
     ocr_paddleocr_model: ocr.paddleocr_model || DEFAULT_SETTINGS.ocr_paddleocr_model,
+    ocr_glmocr_api_key: ocr.glmocr_api_key || DEFAULT_SETTINGS.ocr_glmocr_api_key,
+    ocr_glmocr_model: ocr.glmocr_model || DEFAULT_SETTINGS.ocr_glmocr_model,
 
     server_host: ms.host || DEFAULT_SETTINGS.server_host,
     server_port: ms.port || DEFAULT_SETTINGS.server_port,
@@ -258,10 +261,11 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
       use_hf_mirror: s.ocr_use_hf_mirror,
       use_pdf_inspector: s.ocr_use_pdf_inspector,
       mineru_api_key: s.ocr_mineru_api_key || null,
-      uniparser_api_key: s.ocr_uniparser_api_key || null,
       paddleocr_api_key: s.ocr_paddleocr_api_key || null,
       paddleocr_host: s.ocr_paddleocr_host || null,
       paddleocr_model: s.ocr_paddleocr_model || null,
+      glmocr_api_key: s.ocr_glmocr_api_key || null,
+      glmocr_model: s.ocr_glmocr_model || null,
     },
     model_server: {
       host: s.server_host,

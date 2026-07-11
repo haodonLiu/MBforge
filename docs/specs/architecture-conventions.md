@@ -80,11 +80,11 @@ HTTP 层        frontend/src/api/http/     httpFetch / SSE 流式客户端
 | 前端 | 持久 | `localStorage`，键名 `mbforge_` 前缀 |
 | 后端 | 进程内 | `app.state` 单例 |
 | 后端 | 持久 | SQLite + OpenKB PageIndex |
-| 后端 | 用户配置 | `%APPDATA%\MBForge\settings.json` |
+| 后端 | 用户配置 | `%LOCALAPPDATA%\MBForge\settings.json` (Windows) / `~/.config/MBForge/settings.json` (Linux/macOS) |
 
 ## 配置优先级
 
-`MBFORGE_*` 环境变量 > `~/.config/MBForge/config.json` > 代码默认值。
+`MBFORGE_*` 环境变量 > `~/.config/MBForge/settings.json` > 代码默认值。
 
 ## 迁移历史
 

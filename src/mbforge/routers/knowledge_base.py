@@ -22,8 +22,9 @@ def _resolve_wiki_root(library_root: str) -> Path:
     root = Path(library_root).resolve()
     try:
         from ..utils.config import load_global_config
+        from ..utils.paths import GLOBAL_APP_DIR
 
-        configured_root = load_global_config().library_root or str(Path.home() / "mbforge")
+        configured_root = load_global_config().library_root or str(GLOBAL_APP_DIR)
         configured = Path(configured_root).resolve()
         root.relative_to(configured)
     except ValueError as exc:

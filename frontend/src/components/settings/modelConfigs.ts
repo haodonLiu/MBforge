@@ -45,7 +45,6 @@ export const VLM_MODELS: ModelMap = {
 export const OCR_MODELS: ModelMap = {
   none: [{ value: '', label: 'Off' }],
   mineru: [{ value: 'pipeline', label: 'pipeline (default)' }, { value: 'vlm', label: 'vlm (recommended)' }],
-  uniparser: [{ value: 'default', label: 'default (high quality)' }],
   paddle_ocr: [{ value: 'PaddleOCR-VL-1.6', label: 'PaddleOCR-VL-1.6 (local)' }],
   paddleocr_online: [{ value: 'PaddleOCR-VL-1.6', label: 'PaddleOCR-VL-1.6 (AIStudio Cloud)' }],
 }
@@ -61,7 +60,6 @@ export const PROVIDER_META: Record<string, { label: string; defaultUrl: string; 
   // OCR
   none: { label: 'Off', defaultUrl: '', needsKey: false },
   mineru: { label: 'MinerU (Cloud)', defaultUrl: 'https://mineru.net/', needsKey: true },
-  uniparser: { label: 'Uniparser (Cloud)', defaultUrl: 'https://uniparser.dp.tech/api', needsKey: true },
   paddle_ocr: { label: 'PaddleOCR (local)', defaultUrl: '', needsKey: false },
   paddleocr_online: { label: 'PaddleOCR AIStudio (Cloud)', defaultUrl: 'https://aistudio.baidu.com/paddleocr', needsKey: true },
 }

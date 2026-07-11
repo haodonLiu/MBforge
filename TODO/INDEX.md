@@ -84,7 +84,7 @@
 | D-9 | Frontend | Pipeline 执行 5-10 分钟，前端只有 spinner，不知道卡在哪个阶段。需要进度可视化（9 阶段进度条 + 预估剩余时间）。 | `frontend/src/components/project/pdf/PdfPipelineFlow.tsx` | Week 5 |
 | D-10 | Frontend | Settings 页面的 OCR 配置和 Model Management 不完整。需要 Provider 优先级排序 + Clear Cache 功能。 | `frontend/src/components/settings/PdfParseSection.tsx`, `src/mbforge/routers/settings.py` | Week 6 |
 | D-11 | Docs | README.md 过度承诺"AI co-pilot"能力，与 Phase 0 定位（research baseline）不符。需要大幅修订，明确 85-90% 准确率 + 需人工校验。 | `README.md` | Week 6 |
-| D-12 | Docs | 缺少 CONTRIBUTING.md 和 Issue 模板，外部贡献者无法快速上手。需补齐开发环境指南 + bug/accuracy report 模板。 | `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/` | Week 6 |
+| D-12 | Docs | 缺少 CONTRIBUTING.md 和 Issue 模板，外部贡献者无法快速上手。需补齐开发环境指南 + bug/accuracy report 模板。 | `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/` | **RESOLVED 2026-07-11**（补充贡献指南、项目管理/版本控制规范、PR 与 bug/feature/accuracy 模板） |
 
 **已有（2026-07-07 遗留）**:
 

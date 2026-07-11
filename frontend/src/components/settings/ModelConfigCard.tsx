@@ -367,15 +367,6 @@ function OcrBackendKeys({
         dirty={dirtyFields.ocr_mineru_api_key}
       />
       <BackendKeyRow
-        label={t('ocr.config.uniparser')}
-        placeholder="up_..."
-        value={settings.ocr_uniparser_api_key}
-        onChange={v => { markDirty('ocr_uniparser_api_key'); update('ocr_uniparser_api_key', v) }}
-        getKeyUrl="https://uniparser.dp.tech/"
-        getKeyLabel={t('ocr.config.getKey')}
-        dirty={dirtyFields.ocr_uniparser_api_key}
-      />
-      <BackendKeyRow
         label={t('ocr.config.paddleocr')}
         placeholder="bearer token"
         value={settings.ocr_paddleocr_api_key}
@@ -397,6 +388,24 @@ function OcrBackendKeys({
             onChange: v => { markDirty('ocr_paddleocr_model'); update('ocr_paddleocr_model', v) },
             placeholder: 'PaddleOCR-VL-1.6',
             dirty: dirtyFields.ocr_paddleocr_model,
+          },
+        ]}
+      />
+      <BackendKeyRow
+        label={t('ocr.config.glmocr')}
+        placeholder="glm-..."
+        value={settings.ocr_glmocr_api_key}
+        onChange={v => { markDirty('ocr_glmocr_api_key'); update('ocr_glmocr_api_key', v) }}
+        getKeyUrl="https://open.bigmodel.cn/usercenter/apikeys"
+        getKeyLabel={t('ocr.config.getKey')}
+        dirty={dirtyFields.ocr_glmocr_api_key}
+        extra={[
+          {
+            label: t('ocr.config.glmocrModel'),
+            value: settings.ocr_glmocr_model,
+            onChange: v => { markDirty('ocr_glmocr_model'); update('ocr_glmocr_model', v) },
+            placeholder: 'glm-ocr',
+            dirty: dirtyFields.ocr_glmocr_model,
           },
         ]}
       />

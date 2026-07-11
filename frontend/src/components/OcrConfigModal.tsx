@@ -2,7 +2,7 @@
  * OCR backend configuration modal.
  *
  * Shown when a scanned PDF is detected but no cloud OCR backend is
- * configured. User fills API keys for MinerU / Uniparser / PaddleOCR
+ * configured. User fills API keys for MinerU / PaddleOCR / GLM-OCR
  * (all optional; first one wins per the OCR fallback chain), saves
  * via the existing settings store, and the backend picks them up on
  * next document load.
@@ -10,9 +10,8 @@
  * Each row links to the provider's API-key acquisition page so the
  * user can get a key without leaving the workflow to search docs.
  *
- * Persistence: keys saved to AppConfig.ocr.{mineru,uniparser,paddleocr}_api_key
- * via `saveSettings`. Backend `AppConfig::load` mirrors them into
- * process env vars so the existing `is_available()` checks pick them up.
+ * Persistence: keys saved to AppConfig.ocr.{mineru,paddleocr,glmocr}_api_key
+ * via `saveSettings`.
  */
 
 import { useState, useCallback } from 'react'
@@ -22,15 +21,14 @@ import Button from '@/components/ui/Button'
 import ApiKeyInput from './settings/ApiKeyInput'
 import { saveSettings } from '@/api/http/settings'
 import { openExternalUrl } from '@/api/http/_utils'
-import { testOcrMineru, testOcrUniparser, testOcrPaddleocr, testOcrGlmocr, type OcrTestResult } from '@/api/http/text'
+import { testOcrMineru, testOcrPaddleocr, testOcrGlmocr, type OcrTestResult } from '@/api/http/text'
 
-type Backend = 'mineru' | 'uniparser' | 'paddleocr-online' | 'paddleocr-local'
+type Backend = 'mineru' | 'paddleocr-online' | 'paddleocr-local'
 
 
 
 interface FormState {
   mineru_api_key: string
-  uniparser_api_key: string
   paddleocr_api_key: string
   paddleocr_host: string
   paddleocr_model: string
@@ -39,7 +37,6 @@ interface FormState {
 
 const EMPTY: FormState = {
   mineru_api_key: '',
-  uniparser_api_key: '',
   paddleocr_api_key: '',
   paddleocr_host: '',
   paddleocr_model: '',
@@ -48,7 +45,6 @@ const EMPTY: FormState = {
 
 const ACQUISITION_URLS: Record<Backend, string> = {
   mineru: 'https://mineru.net/',
-  uniparser: 'https://uniparser.dp.tech/',
   'paddleocr-online': 'https://aistudio.baidu.com/paddleocr',
   'paddleocr-local': '',
 }
@@ -69,13 +65,12 @@ export default function OcrConfigModal() {
   const [form, setForm] = useState<FormState>(EMPTY)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [testing, setTesting] = useState<null | 'mineru' | 'uniparser' | 'paddleocr' | 'glmocr'>(null)
+  const [testing, setTesting] = useState<null | 'mineru' | 'paddleocr' | 'glmocr'>(null)
   const [testResults, setTestResults] = useState<{
     mineru: OcrTestResult | null
-    uniparser: OcrTestResult | null
     paddleocr: OcrTestResult | null
     glmocr: OcrTestResult | null
-  }>({ mineru: null, uniparser: null, paddleocr: null, glmocr: null })
+  }>({ mineru: null, paddleocr: null, glmocr: null })
 
   const dismissForever = useCallback(() => {
     if (missingBackend) {
@@ -96,7 +91,6 @@ export default function OcrConfigModal() {
         ocr: {
           provider: 'cloud',
           mineru_api_key: form.mineru_api_key.trim() || null,
-          uniparser_api_key: form.uniparser_api_key.trim() || null,
           paddleocr_api_key: form.paddleocr_api_key.trim() || null,
           paddleocr_host: form.paddleocr_host.trim() || null,
           paddleocr_model: form.paddleocr_model.trim() || null,
@@ -115,17 +109,15 @@ export default function OcrConfigModal() {
     }
   }, [form])
 
-  const runTest = async (which: 'mineru' | 'uniparser' | 'paddleocr' | 'glmocr') => {
+  const runTest = async (which: 'mineru' | 'paddleocr' | 'glmocr') => {
     setTesting(which)
     try {
       const key =
         which === 'mineru' ? form.mineru_api_key.trim()
-        : which === 'uniparser' ? form.uniparser_api_key.trim()
         : which === 'glmocr' ? form.glmocr_api_key.trim()
         : form.paddleocr_api_key.trim()
       const result =
         which === 'mineru' ? await testOcrMineru(null, key)
-        : which === 'uniparser' ? await testOcrUniparser(null, key)
         : which === 'glmocr' ? await testOcrGlmocr(key)
         : await testOcrPaddleocr(form.paddleocr_host.trim() || null, key, form.paddleocr_model.trim() || null)
       setTestResults(prev => ({ ...prev, [which]: result }))
@@ -180,18 +172,6 @@ export default function OcrConfigModal() {
         onTest={() => runTest('mineru')}
         testing={testing === 'mineru'}
         testResult={testResults.mineru}
-      />
-
-      <BackendRow
-        label={t('ocr.config.uniparser')}
-        placeholder="up_..."
-        value={form.uniparser_api_key}
-        onChange={v => setForm(s => ({ ...s, uniparser_api_key: v }))}
-        onGetKey={() => openExternal(ACQUISITION_URLS.uniparser)}
-        getKeyLabel={t('ocr.config.getKey')}
-        onTest={() => runTest('uniparser')}
-        testing={testing === 'uniparser'}
-        testResult={testResults.uniparser}
       />
 
       <BackendRow

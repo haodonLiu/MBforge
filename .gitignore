@@ -156,4 +156,10 @@ setup/
 .opencode/
 .kimi-code/
 .agents/skills/caveman/
+.codegraph/
+.rtk/
+.superpowers/
 .worktrees/
+
+# Windows temp-prefixed logs
+%TEMP%*.log

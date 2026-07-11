@@ -28,10 +28,11 @@ export interface OcrConfig {
   use_hf_mirror?: boolean
   use_pdf_inspector?: boolean
   mineru_api_key?: string | null
-  uniparser_api_key?: string | null
   paddleocr_api_key?: string | null
   paddleocr_host?: string | null
   paddleocr_model?: string | null
+  glmocr_api_key?: string | null
+  glmocr_model?: string | null
   upload_batch_size?: number
 }
 

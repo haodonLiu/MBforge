@@ -544,9 +544,11 @@ Python 后端结构良好，但测试覆盖稀疏（目前仅有
 
 ## 贡献
 
-欢迎贡献！请参阅 [AGENTS.md](AGENTS.md) 了解开发规范，
-[TODO/INDEX.md](TODO/INDEX.md) 了解优先级工作，
-[CLAUDE.md](CLAUDE.md) 了解仓库级 AI 上下文。
+欢迎贡献！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解开发、测试和审查流程，
+[TODO/INDEX.md](TODO/INDEX.md) 了解优先级工作。项目治理和发布规则分别见
+[docs/PROJECT_MANAGEMENT.md](docs/PROJECT_MANAGEMENT.md) 与
+[docs/VERSION_CONTROL.md](docs/VERSION_CONTROL.md)。AI 编码助手还应遵守
+[AGENTS.md](AGENTS.md)。
 
 ### 提交规范
 
@@ -562,6 +564,10 @@ Python 后端结构良好，但测试覆盖稀疏（目前仅有
 | 文档 | 位置 | 说明 |
 |---|---|---|
 | **项目入口** | [README.md](README.md) | 人类用户快速开始 |
+| **贡献指南** | [CONTRIBUTING.md](CONTRIBUTING.md) | 开发、测试、审查与完成定义 |
+| **项目管理** | [docs/PROJECT_MANAGEMENT.md](docs/PROJECT_MANAGEMENT.md) | 任务、优先级、里程碑与决策治理 |
+| **版本控制** | [docs/VERSION_CONTROL.md](docs/VERSION_CONTROL.md) | 分支、提交、SemVer 与发布流程 |
+| **变更日志** | [CHANGELOG.md](CHANGELOG.md) | 用户可见版本变更 |
 | **仓库指南** | [AGENTS.md](AGENTS.md) | AI 编码助手操作手册 |
 | **AI 速查** | [CLAUDE.md](CLAUDE.md) | 仓库级 AI 上下文 |
 | **任务表** | [TODO/INDEX.md](TODO/INDEX.md) | 优先级工作（P0–P3） |

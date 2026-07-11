@@ -119,21 +119,6 @@ async def test_glmocr(body: dict) -> dict:
         return {"ok": False, "status": None, "message": str(exc)}
 
 
-@router.post("/test-uniparser")
-async def test_uniparser(body: dict) -> dict:
-    """Uniparser — kept as a stub for backward compatibility.
-
-    Uniparser is no longer in the default priority chain (MinerU →
-    PaddleOCR → GLM-OCR → RapidOCR), but the endpoint stays registered
-    so the frontend doesn't 404 if a user has old settings pointing at it.
-    """
-    return {
-        "ok": False,
-        "status": None,
-        "message": "Uniparser 已下线，不再参与 OCR 链路",
-    }
-
-
 @router.get("/chain-status")
 async def chain_status() -> dict:
     """Inspect which OCR backends the chain would try for the current settings."""

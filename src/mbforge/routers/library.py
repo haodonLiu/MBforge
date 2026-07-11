@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from ..utils.config import load_global_config, update_settings
 from ..utils.helpers import MBForgeError
 from ..utils.logger import get_logger
+from ..utils.paths import GLOBAL_APP_DIR
 
 logger = get_logger("mbforge.library_router")
 
@@ -71,11 +72,12 @@ def _resolve_crop_artifact(root: str, doc_id: str, rel_path: str) -> Path:
 
 
 def _resolve_library_root(body: dict | None = None) -> str:
-    r"""Resolve library_root from body, config, or default (~\/mbforge).
+    r"""Resolve library_root from body, config, or default (~\/MBForge).
 
-    Priority: explicit body param > stored settings.json value > ~/mbforge.
-    This default is intentionally under the user home (not the OS app-data
-    directory) so imported PDFs are easy to find and back up.
+    Priority: explicit body param > stored settings.json value > ~/MBForge.
+    The default lives inside the unified application directory so settings,
+    logs and library data are co-located by default. Advanced users may set a
+    separate library_root via the Settings UI.
     """
     cfg = load_global_config()
     explicit = (body or {}).get("library_root", "")
@@ -83,7 +85,7 @@ def _resolve_library_root(body: dict | None = None) -> str:
         return explicit
     if cfg.library_root:
         return cfg.library_root
-    return str(Path.home() / "mbforge")
+    return str(GLOBAL_APP_DIR)
 
 
 @router.get("/status")
@@ -91,7 +93,7 @@ async def library_status() -> dict:
     """Get library configuration status.
 
     Reports `configured: true` whenever the resolved library root either was
-    explicitly configured OR can be auto-created from the default (~/mbforge).
+    explicitly configured OR can be auto-created from the default (~/MBForge).
     """
     root = _resolve_library_root()
     try:

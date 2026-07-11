@@ -368,50 +368,62 @@ Gated on 'one release cycle of no migration failures' (per the plan):
 
 **Configuration precedence** (highest → lowest):
 1. `MBFORGE_*` env vars
-2. `~/.config/MBForge/settings.json` (Linux) / `%LOCALAPPDATA%\MBForge\settings.json` (Windows)
+2. `~/MBForge/settings.json` (Settings UI writes here)
 3. Built-in defaults
 
-> The global config directory is reserved for **settings, logs and caches** — never for
-> library data. The active library root is configured separately via the UI or
-> `library_root` in `settings.json` and defaults to `~/mbforge`.
+**Unified application directory** (`~/MBForge`):
+
+All runtime state — global config, logs, and the default library — lives under
+one directory:
+
+```
+~/MBForge/
+├── settings.json              global app config
+├── logs/                      application logs
+├── .mbforge/
+│   ├── library.db             unified business + molecule database
+│   ├── openkb/                OpenKB / PageIndex + dense-rerank cache
+│   └── migrations/            archived legacy layouts
+├── notes/                     user-editable notes
+├── storage/{doc_id}/          document artifacts
+└── models/                    default model cache
+```
+
+`library_root` defaults to `~/MBForge`. Advanced users may set a separate
+library root via the Settings UI; in that case only the library-level paths
+(`.mbforge/`, `storage/`, `notes/`) move, while `settings.json` and `logs/`
+stay in `~/MBForge`.
 
 **Storage locations** (per `library_root`):
-- `{root}/library.db` — LibraryStore business tables: documents, collections,
-  tasks, plus mirrored molecule tables.
-- `{root}/index/knowledge_base.db` — pre-Phase-4 KB/cache: figure labels, coref
-  predictions, ingest queue, semantic cache.
-- `{root}/index/molecules.db` — pre-Phase-4 molecule tables: molecules,
-  molecule_images, relations, detections, **evidence**, text_molecule_links,
-  FTS5 search index.
-- `{root}/.mbforge/library.db` — canonical unified DB after the Phase 4
-  single-DB migration (consolidates the two `index/*.db` files).
-- `{root}/.mbforge/openkb/` — OpenKB + PageIndex collection (vectorless tree
-  reasoning + dense rerank; storage backend is part of the OpenKB package,
-  not this project).
-- `{root}/storage/{doc_id}/` — canonical artifact location, managed by
+- `{root}/.mbforge/library.db` — unified SQLite database. Contains documents,
+  collections, tasks (LibraryStore), plus figure labels, coref predictions,
+  ingest queue/logs, semantic cache, sections, molecules, molecule images,
+  relations, detections, text-molecule links, evidence, and FTS5 index.
+- `{root}/storage/{doc_id}/` — canonical document artifacts, managed by
   `src/mbforge/core/artifact.py:ArtifactResolver`:
   - `source.pdf` — original uploaded PDF
   - `reorganized.md` — LLM-reorganized markdown
   - `indexed.md` — PageIndex input
   - `report.json` — pipeline summary
-  - `crops/{filename}.png` — molecule crop images (figure kind)
+  - `crops/{filename}.png` — molecule crop images
   - `pages/{n:04d}.txt` — per-page text extracts
-- `{root}/notes/` — user-editable notes (Phase 5).
-- Per-project semantic cache lives in the `semantic_cache` table of
-  `{root}/index/knowledge_base.db` until migration.
+- `{root}/.mbforge/openkb/` — OpenKB + PageIndex collection (vectorless tree
+  reasoning + dense rerank).
+- `{root}/notes/` — user-editable notes.
 
-> **Historical layout (pre-2026-07-10)**: an older version wrote
-> databases under `{root}/.mbforge/` and crops under
-> `{root}/.mbforge/crops/{doc_id}/`. The migration script
-> `scripts/migrate_artifact_paths.py {library_root}` moves crops to the
-> canonical location and updates the SQLite `crop_relpath` columns. The
-> `.mbforge/` location is no longer written to by any code path; the
-> library router's `ArtifactResolver.legacy_crop` is a read-only fallback
-> for pre-migration libraries.
+> **Historical layouts**:
+> - Pre-2026-07-10: databases under `{root}/.mbforge/` and crops under
+>   `{root}/.mbforge/crops/{doc_id}/`.
+> - 2026-07-10 → 2026-07-11: databases split into `{root}/index/knowledge_base.db`
+>   + `{root}/index/molecules.db`, root `{root}/library.db` for LibraryStore.
+> - Current: everything unified into `{root}/.mbforge/library.db`. Run
+>   `uv run python -m mbforge.migrate-library <library_root>` to migrate old
+>   libraries.
 
-Global config: `~/.config/MBForge/settings.json` (Linux) / `%LOCALAPPDATA%\MBForge\settings.json` (Windows).
-
-**Artifact path management**: All file I/O under `{root}/storage/` MUST go through `ArtifactResolver` (imported from `core.artifact`). Direct path construction is prohibited (path traversal risk). See `routers/library.py` for usage examples.
+**Artifact path management**: All file I/O under `{root}/storage/` MUST go
+through `ArtifactResolver` (imported from `core.artifact`). Library-level paths
+MUST go through `LibraryLayout`. Direct path construction is prohibited. See
+`routers/library.py` and `core/layout.py` for usage examples.
 
 ## Runtime & Tooling Preferences
 
@@ -475,6 +487,10 @@ cd frontend && npm run test -- --coverage       # v8 coverage
 | Doc | Location | Audience |
 |---|---|---|
 | Project entry | [README.md](README.md) | Human users — quick start, features, architecture |
+| Contribution guide | [CONTRIBUTING.md](CONTRIBUTING.md) | Development, tests, review, definition of done |
+| Project governance | [docs/PROJECT_MANAGEMENT.md](docs/PROJECT_MANAGEMENT.md) | Work items, priorities, milestones, decisions |
+| Version control | [docs/VERSION_CONTROL.md](docs/VERSION_CONTROL.md) | Branches, commits, SemVer, releases |
+| Changelog | [CHANGELOG.md](CHANGELOG.md) | User-visible changes by release |
 | Repo guidelines | [AGENTS.md](AGENTS.md) | AI coding assistants |
 | AI quick-ref | [CLAUDE.md](CLAUDE.md) | Repository-level AI context |
 | Task board | [TODO/INDEX.md](TODO/INDEX.md) | Prioritized work (P0–P3) |
@@ -483,7 +499,11 @@ cd frontend && npm run test -- --coverage       # v8 coverage
 
 ---
 
-**## Commit Granularity — 一主题 = 一 commit
+## Commit Granularity — 一主题 = 一 commit
+
+The canonical branch, commit, merge, version, and release rules live in
+[`docs/VERSION_CONTROL.md`](docs/VERSION_CONTROL.md). The following rule is the
+repository-specific summary.
 
 **Don't split commits by file — split by logical change.** A single
 feature/refactor/bug fix commits as one atomic unit even if it spans

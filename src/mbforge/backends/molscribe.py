@@ -19,7 +19,7 @@ _ERROR: str = ""
 def load(device: str | None = None) -> None:
     """Lazy-load MolScribe model.
 
-    只读盘：若 `~/mbforge/models/MolScribe/` 下没有 checkpoint 或 safetensors，
+    只读盘：若 `~/MBForge/models/MolScribe/` 下没有 checkpoint 或 safetensors，
     标记为不可用，**不触发任何下载**。
     """
     global _MODEL, _AVAILABLE, _ERROR
@@ -34,7 +34,7 @@ def load(device: str | None = None) -> None:
         path = ResourceManager.get_molscribe_path()
         if path is None:
             _AVAILABLE = False
-            _ERROR = "MolScribe 模型未找到（请在 ~/mbforge/models/MolScribe/ 放置模型文件，或在设置中下载）"
+            _ERROR = "MolScribe 模型未找到（请在 ~/MBForge/models/MolScribe/ 放置模型文件，或在设置中下载）"
             logger.warning(_ERROR)
             return
 

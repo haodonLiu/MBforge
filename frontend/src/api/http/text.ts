@@ -29,10 +29,6 @@ export async function testOcrMineru(host: string | null, apiKey: string): Promis
   return httpPost<OcrTestResult>('/api/v1/ocr/test-mineru', { host, apiKey })
 }
 
-export async function testOcrUniparser(host: string | null, apiKey: string): Promise<OcrTestResult> {
-  return httpPost<OcrTestResult>('/api/v1/ocr/test-uniparser', { host, apiKey })
-}
-
 export async function testOcrPaddleocr(
   host: string | null,
   apiKey: string,

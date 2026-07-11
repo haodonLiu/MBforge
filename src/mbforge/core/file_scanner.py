@@ -90,7 +90,7 @@ def scan_library_files(
             if any(part in _SKIP_DIRS or part.startswith(".") for part in parts[:-1]):
                 continue
             if f.is_file() and f.suffix.lower() in SUPPORTED_EXTS:
-                rel = str(f.relative_to(p))
+                rel = f.relative_to(p).as_posix()
                 if rel.startswith(MBFORGE_DIR) or rel.startswith("."):
                     continue
                 files.append(rel)

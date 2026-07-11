@@ -48,7 +48,9 @@ Desktop.ini
 # ============================================================================
 # Sensitive config
 .env
+.env.*
 !.env.template
+!.env.example
 
 # Runtime data
 .obsidian/
@@ -110,6 +112,9 @@ setup/
 # ============================================================================
 /tools/
 /runs/
+/graphify-out/
+/e2e_test/
+/test_pipeline_lib/
 /assets/models/
 /*.pt
 /*.onnx
@@ -144,4 +149,8 @@ setup/
 # ============================================================================
 .claude/worktrees/
 /.claude/settings.local.json
+.claude/memory/
+.claude/plans/
+.claude/reports/
+.mimocode/
 .worktrees/

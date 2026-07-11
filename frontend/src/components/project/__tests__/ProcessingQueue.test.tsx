@@ -15,6 +15,13 @@ vi.mock('@/context/AppContext', () => ({
   useAppContext: vi.fn().mockReturnValue({ libraryRoot: '/tmp/lib' }),
 }))
 
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { language: 'en' },
+  }),
+}))
+
 import { useIngestQueue, useIngestStats, useWorkerStatus } from '@/api/query/hooks'
 import ProcessingQueue from '../ProcessingQueue'
 
@@ -43,16 +50,16 @@ function mockQueue(tasks: { id: string; status: string; doc_id: string }[]) {
     isLoading: false,
     isError: false,
     error: null,
-  } as ReturnType<typeof useIngestQueue>)
+  } as unknown as ReturnType<typeof useIngestQueue>)
 
   vi.mocked(useIngestStats).mockReturnValue({
     data: { total: tasks.length, pending: 0, processing: 0, done: 0, failed: 0, cancelled: 0, avg_stage_durations_ms: [] },
     isLoading: false,
-  } as ReturnType<typeof useIngestStats>)
+  } as unknown as ReturnType<typeof useIngestStats>)
 
   vi.mocked(useWorkerStatus).mockReturnValue({
     data: { status: 'online', ts: now },
-  } as ReturnType<typeof useWorkerStatus>)
+  } as unknown as ReturnType<typeof useWorkerStatus>)
 }
 
 describe('ProcessingQueue', () => {
@@ -62,14 +69,14 @@ describe('ProcessingQueue', () => {
       data: [],
       isLoading: true,
       isError: false,
-    } as ReturnType<typeof useIngestQueue>)
+    } as unknown as ReturnType<typeof useIngestQueue>)
     vi.mocked(useIngestStats).mockReturnValue({
       data: null,
       isLoading: true,
-    } as ReturnType<typeof useIngestStats>)
+    } as unknown as ReturnType<typeof useIngestStats>)
     vi.mocked(useWorkerStatus).mockReturnValue({
       data: undefined,
-    } as ReturnType<typeof useWorkerStatus>)
+    } as unknown as ReturnType<typeof useWorkerStatus>)
   })
 
   it('shows loading state', () => {
@@ -80,7 +87,8 @@ describe('ProcessingQueue', () => {
   it('shows empty state when queue is empty', () => {
     mockQueue([])
     render(<ProcessingQueue />)
-    expect(screen.getByText(/no tasks/i)).toBeInTheDocument()
+    // i18n returns key as-is.
+    expect(screen.getByText('queue.emptyHint')).toBeInTheDocument()
   })
 
   it('renders tasks when present', () => {

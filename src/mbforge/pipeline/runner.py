@@ -63,18 +63,23 @@ def _current_ocr_config() -> dict:
         return {}
 
 
-def _is_temp_path(path: Path | None) -> bool:
-    """Return True if `path` looks like a transient scratch file.
+def _is_temp_path(path: Path | None, library_root: Path | None = None) -> bool:
+    """Return True if `path` is a transient scratch file outside the library.
 
-    Heuristic: any path component contains 'temp' or 'tmp'. Used to decide
-    whether `final_md_path` is safe to delete during cleanup — when it lives
-    under the user's storage/ directory, the heuristic returns False and the
-    persistent file is preserved.
+    A path is considered persistent only when it lives under
+    ``{library_root}/storage/``; everything else is treated as scratch and
+    safe to delete during cleanup. This avoids mis-classifying persistent
+    artifacts as transient when the library root happens to be located under
+    a directory whose name contains ``temp`` or ``tmp`` (e.g. pytest tmp_path).
     """
-    if path is None:
+    if path is None or library_root is None:
         return False
-    parts_lower = [p.lower() for p in path.parts]
-    return any("temp" in p or "tmp" in p for p in parts_lower)
+    storage_root = (library_root / "storage").resolve()
+    try:
+        path.resolve().relative_to(storage_root)
+    except ValueError:
+        return True
+    return False
 
 
 @dataclass
@@ -263,7 +268,7 @@ def run_pipeline(
     _candidate_paths = [
         ctx.rough_md_path,
         ctx.enriched_md_path,
-        ctx.final_md_path if _is_temp_path(ctx.final_md_path) else None,
+        ctx.final_md_path if _is_temp_path(ctx.final_md_path, ctx.library_root) else None,
     ]
     for temp_path in _candidate_paths:
         if temp_path is None:

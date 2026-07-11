@@ -126,26 +126,33 @@ class TestRunPipelineMissingRoot:
 
 
 class TestIsTempPath:
-    """Step 2: cleanup helper heuristic for transient paths."""
+    """Step 2: cleanup helper for transient vs persistent paths."""
 
     def test_none_is_not_temp(self):
         assert not _is_temp_path(None)
 
     def test_persistent_storage_path_is_not_temp(self):
-        p = Path(r"C:\Users\admin\library\storage\doc_001\reorganized.md")
-        assert not _is_temp_path(p)
+        lib = Path(r"C:\Users\admin\library")
+        p = lib / "storage" / "doc_001" / "reorganized.md"
+        assert not _is_temp_path(p, library_root=lib)
 
     def test_temp_path_detected(self):
         p = Path(r"C:\Users\admin\AppData\Local\Temp\tmp_xyz.md")
-        assert _is_temp_path(p)
+        assert _is_temp_path(p, library_root=Path(r"C:\Users\admin\library"))
 
-    def test_path_with_temp_component_detected(self):
+    def test_path_with_temp_component_outside_storage_detected(self):
         p = Path(r"C:\some\dir\temp_xyz\reorganized.md")
-        assert _is_temp_path(p)
+        assert _is_temp_path(p, library_root=Path(r"C:\Users\admin\library"))
 
-    def test_path_with_tmp_component_detected(self):
+    def test_path_with_tmp_component_outside_storage_detected(self):
         p = Path(r"C:\some\dir\tmp_xyz\reorganized.md")
-        assert _is_temp_path(p)
+        assert _is_temp_path(p, library_root=Path(r"C:\Users\admin\library"))
+
+    def test_path_under_temp_but_inside_library_storage_is_persistent(self):
+        r"""Regression guard: pytest tmp_path lives under ``AppData\Temp``."""
+        lib = Path(r"C:\Users\admin\AppData\Local\Temp\pytest-123\library")
+        p = lib / "storage" / "doc_001" / "reorganized.md"
+        assert not _is_temp_path(p, library_root=lib)
 
 
 class TestAsyncSafety:

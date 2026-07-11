@@ -12,6 +12,14 @@ vi.mock('@/context/AppContext', () => ({
   AppProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }))
 
+// i18n mock — return key as-is when t() is called.
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { language: 'en' },
+  }),
+}))
+
 import { useDocuments, useImportDocument } from '@/api/query/hooks'
 import { useAppContext } from '@/context/AppContext'
 import Workspace from '../Workspace'
@@ -22,7 +30,7 @@ function mockAppContext(overrides?: Record<string, unknown>) {
     activeCollectionId: null,
     openTab: vi.fn(),
     ...overrides,
-  } as ReturnType<typeof useAppContext>)
+  } as unknown as ReturnType<typeof useAppContext>)
 }
 
 function mockDocuments(docs: { doc_id: string; title: string; status: string }[]) {
@@ -32,7 +40,7 @@ function mockDocuments(docs: { doc_id: string; title: string; status: string }[]
     isError: false,
     error: null,
     dataUpdatedAt: Date.now(),
-  } as ReturnType<typeof useDocuments>)
+  } as unknown as ReturnType<typeof useDocuments>)
 }
 
 function renderWorkspace() {
@@ -49,7 +57,7 @@ describe('Workspace', () => {
       isLoading: true,
       isError: false,
       error: null,
-    } as ReturnType<typeof useDocuments>)
+    } as unknown as ReturnType<typeof useDocuments>)
     vi.mocked(useImportDocument).mockReturnValue({
       mutateAsync: vi.fn(),
     } as unknown as ReturnType<typeof useImportDocument>)
@@ -63,7 +71,8 @@ describe('Workspace', () => {
   it('shows empty state when no documents', () => {
     mockDocuments([])
     renderWorkspace()
-    expect(screen.getByText(/no documents/i)).toBeInTheDocument()
+    // i18n t() returns key "library.noDocuments" in test.
+    expect(screen.getByText('library.noDocuments')).toBeInTheDocument()
   })
 
   it('renders document list', () => {

@@ -71,6 +71,10 @@ def is_within_global_app_dir(path: str | Path) -> bool:
         return False
 
 
+# Backward-compatible alias used by older routers.
+is_within_global_config_dir = is_within_global_app_dir
+
+
 def ensure_hf_mirror() -> None:
     """设置 HuggingFace 镜像环境变量(若未设置)."""
     if not os.environ.get("HF_ENDPOINT"):

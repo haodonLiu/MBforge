@@ -102,8 +102,8 @@ def in_memory_semantic_cache(tmp_library: Path) -> Any:
 def _clear_singleton_caches() -> None:
     """Clear module-level singleton caches after every test for isolation."""
     yield
-    from mbforge.core.database import DatabaseManager
-    from mbforge.core.library import LibraryStore
+    from mbforge.core import database as database_module
+    from mbforge.core import library as library_module
 
-    DatabaseManager._db_cache.clear()
-    LibraryStore._store_cache.clear()
+    database_module._db_cache.clear()
+    library_module._store_cache.clear()

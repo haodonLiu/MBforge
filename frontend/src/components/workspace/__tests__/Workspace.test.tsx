@@ -84,4 +84,34 @@ describe('Workspace', () => {
     expect(screen.getByText('Test Paper 1')).toBeInTheDocument()
     expect(screen.getByText('Test Paper 2')).toBeInTheDocument()
   })
+
+  it('shows error state when query fails', () => {
+    vi.mocked(useDocuments).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('Network error'),
+    } as unknown as ReturnType<typeof useDocuments>)
+    renderWorkspace()
+    expect(screen.getByText('Failed to load documents. Please try again.')).toBeInTheDocument()
+    expect(screen.getByText('Retry')).toBeInTheDocument()
+  })
+
+  it('shows import button in empty state when no collection filter', () => {
+    mockDocuments([])
+    renderWorkspace()
+    const importBtns = screen.getAllByText('library.importPdf')
+    expect(importBtns.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('calls openTab when document card is clicked', () => {
+    const openTab = vi.fn()
+    mockAppContext({ openTab })
+    mockDocuments([{ doc_id: 'doc1', title: 'Clickable Doc', status: 'ready' }])
+    renderWorkspace()
+    screen.getByText('Clickable Doc').click()
+    expect(openTab).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'document', title: 'Clickable Doc' }),
+    )
+  })
 })

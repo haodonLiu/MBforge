@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import enum
 import importlib
-import json
 import logging
 import os
 import subprocess
@@ -20,60 +19,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-from platformdirs import user_config_dir
-
 logger = logging.getLogger("mbforge.resource_manager")
-
-
-# ---------------------------------------------------------------------------
-# 读取 Rust 写入的 resolved_paths.json（单一真相源）
-# ---------------------------------------------------------------------------
-
-_RESOLVED_PATHS_CACHE: dict[str, str] | None = None
-_RESOLVED_PATHS_MTIME: float = 0.0
-
-
-def _read_resolved_paths() -> dict[str, str] | None:
-    """读取 Rust 写入的 resolved_paths.json（按 mtime 失效的轻量缓存）.
-
-    路径必须与 Rust 端 `ProjectDirs::from("", "", "MBForge").config_dir()` 一致，
-    否则 Python 永远读不到 Rust 写入的内容（曾因 `.config/MBForge` vs `%APPDATA%/MBForge/config` 不匹配踩坑）。
-    """
-    global _RESOLVED_PATHS_CACHE, _RESOLVED_PATHS_MTIME
-
-    # 与 Rust 端 `directories::ProjectDirs::from("", "", "MBForge")` 的 config_dir 对齐：
-    #   Windows : %APPDATA%\MBForge\config
-    #   Linux   : ~/.config/MBForge
-    #   macOS   : ~/Library/Application Support/MBForge
-    config_dir = (
-        Path(user_config_dir(appname="MBForge", appauthor=False, roaming=True))
-        / "config"
-    )
-    path = config_dir / "resolved_paths.json"
-    if not path.exists():
-        return None
-
-    try:
-        mtime = path.stat().st_mtime
-        if _RESOLVED_PATHS_CACHE is not None and mtime == _RESOLVED_PATHS_MTIME:
-            return _RESOLVED_PATHS_CACHE
-        with open(path) as f:
-            data = json.load(f)
-        _RESOLVED_PATHS_CACHE = data
-        _RESOLVED_PATHS_MTIME = mtime
-        logger.debug(f"Loaded resolved paths from {path}: {list(data.keys())}")
-        return data
-    except Exception as e:
-        logger.warning(f"Failed to read resolved_paths.json: {e}")
-        return None
-
-
-def _invalidate_resolved_paths_cache() -> None:
-    """使 resolved_paths 缓存强制失效（Rust 刷新后调用）."""
-    global _RESOLVED_PATHS_CACHE, _RESOLVED_PATHS_MTIME
-    _RESOLVED_PATHS_CACHE = None
-    _RESOLVED_PATHS_MTIME = 0.0
-    logger.info("Invalidated resolved_paths cache")
 
 
 # ---------------------------------------------------------------------------
@@ -734,8 +680,7 @@ def _install_python_package(
 def _check_resource(resource_id: str) -> ResourceStatusResult:
     """检查单个资源的状态.
 
-    优先读取 Rust 写入的 resolved_paths.json（单一真相源），
-    未命中时回退到本地文件系统扫描。单个资源异常不会影响其他资源。
+    通过本地文件系统扫描判断资源是否就绪。单个资源异常不会影响其他资源。
     """
     try:
         info = RESOURCE_CATALOG.get(resource_id)
@@ -748,39 +693,7 @@ def _check_resource(resource_id: str) -> ResourceStatusResult:
                 error=f"未知资源: {resource_id}",
             )
 
-        # 1. 优先读取 Rust 解析结果（snapshot/file 模型均适用）
-        if info.type == ResourceType.MODEL:
-            resolved = _read_resolved_paths()
-            if resolved and resource_id in resolved:
-                path = Path(resolved[resource_id])
-                if path.exists():
-                    # 计算大小
-                    try:
-                        if path.is_file():
-                            size_mb = round(path.stat().st_size / 1024 / 1024, 1)
-                        else:
-                            size_mb = round(
-                                sum(
-                                    f.stat().st_size for f in path.rglob("*") if f.is_file()
-                                )
-                                / 1024
-                                / 1024,
-                                1,
-                            )
-                    except Exception:
-                        size_mb = 0.0
-                    return ResourceStatusResult(
-                        id=info.id,
-                        name=info.name,
-                        type=info.type,
-                        status=ResourceStatus.READY,
-                        local_path=str(path),
-                        size_mb=size_mb,
-                    )
-                # 路径已失效（文件被删除），继续扫描
-                logger.warning(f"Resolved path for {resource_id} no longer exists: {path}")
-
-        # 2. 回退到本地扫描
+        # 本地扫描
         if info.type == ResourceType.MODEL:
             if info.download_type == "file":
                 return _check_model_file(info)
@@ -926,16 +839,7 @@ class ResourceManager:
 
     @classmethod
     def get_model_path(cls, resource_id: str) -> Path | None:
-        """获取已下载模型的本地路径（供模型加载使用）.
-
-        优先读取 Rust 写入的 resolved_paths.json，未命中时回退到扫描。
-        """
-        resolved = _read_resolved_paths()
-        if resolved and resource_id in resolved:
-            path = Path(resolved[resource_id])
-            if path.exists():
-                return path
-        # 回退
+        """获取已下载模型的本地路径（供模型加载使用）."""
         status = cls.check(resource_id)
         if status.status == ResourceStatus.READY and status.local_path:
             return Path(status.local_path)
@@ -944,16 +848,6 @@ class ResourceManager:
     @classmethod
     def get_molscribe_path(cls) -> Path | None:
         """获取 MolScribe 模型路径（兼容旧接口）."""
-        resolved = _read_resolved_paths()
-        if resolved and "molscribe" in resolved:
-            path = Path(resolved["molscribe"])
-            if path.exists():
-                ckpt = path / "swin_base_char_aux_1m680k.pth"
-                if ckpt.exists():
-                    return ckpt
-                if any(path.glob("*.safetensors")):
-                    return path
-        # 回退
         path = cls.get_model_path("molscribe")
         if path and path.exists():
             ckpt = path / "swin_base_char_aux_1m680k.pth"
@@ -976,16 +870,7 @@ class ResourceManager:
         - file 类型：返回具体权重文件路径
         - subpath 指定时：返回 `<resolved_dir>/<subpath>`（用于多文件资源的子文件定位）
         """
-        # 1. Rust resolved_paths（最快）
-        resolved = _read_resolved_paths()
-        if resolved and resource_id in resolved:
-            path = Path(resolved[resource_id])
-            if path.exists():
-                if subpath:
-                    full = path / subpath
-                    return full if full.exists() else None
-                return path
-        # 2. Python 侧扫描
+        # Python 侧扫描
         info = RESOURCE_CATALOG.get(resource_id)
         status = cls.check(resource_id)
         if status.status == ResourceStatus.READY and status.local_path:

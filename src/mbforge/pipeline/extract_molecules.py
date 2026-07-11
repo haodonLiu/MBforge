@@ -57,12 +57,16 @@ def extract_molecules_from_pdf(
         from ..utils.config import load_global_config
 
         _cfg = load_global_config()
-        _moldet_cfg = _cfg.moldet or {}
-        _render_dpi = float(_moldet_cfg.get("detection_dpi", DEFAULT_RENDER_DPI))
-        _detection_batch_size = int(_moldet_cfg.get("detection_batch_size", 0))
+        _moldet_cfg = _cfg.moldet
+        _render_dpi = float(_moldet_cfg.detection_dpi)
+        _detection_batch_size = int(_moldet_cfg.detection_batch_size)
+        _text_page_char_threshold = int(_moldet_cfg.text_page_char_threshold)
+        _cfg_max_pages = _moldet_cfg.max_pages_per_doc
     except Exception:
         _render_dpi = DEFAULT_RENDER_DPI
         _detection_batch_size = 0
+        _text_page_char_threshold = _TEXT_PAGE_CHAR_THRESHOLD
+        _cfg_max_pages = None
 
     detector = MolDetv2FTDetector()
     if not detector.is_available():
@@ -93,7 +97,10 @@ def extract_molecules_from_pdf(
     results: list[ExtractionResult] = []
 
     try:
-        pages_to_process = range(min(max_pages or len(doc), len(doc)))
+        _effective_max_pages = max_pages if max_pages is not None else _cfg_max_pages
+        pages_to_process = range(
+            min(_effective_max_pages if _effective_max_pages is not None else len(doc), len(doc))
+        )
         skipped_pure_text = 0
         for page_idx in pages_to_process:
             page = doc.load_page(page_idx)
@@ -101,7 +108,7 @@ def extract_molecules_from_pdf(
             # 跳过纯文本页：有大量原生文本且无嵌入图 → 不可能有分子结构
             native_text = page.get_text("text").strip()
             has_images = len(page.get_images()) > 0
-            if len(native_text) > _TEXT_PAGE_CHAR_THRESHOLD and not has_images:
+            if len(native_text) > _text_page_char_threshold and not has_images:
                 skipped_pure_text += 1
                 continue
 

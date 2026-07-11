@@ -27,7 +27,7 @@ _TIMEOUT = 10
 def _ocr_settings() -> dict:
     """Read current ocr config from AppConfig."""
     cfg = load_global_config()
-    return dict(cfg.ocr or {})
+    return cfg.ocr.model_dump()
 
 
 @router.post("/test-mineru")

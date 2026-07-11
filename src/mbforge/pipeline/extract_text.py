@@ -142,14 +142,12 @@ def _ocr_pages(
         from ..backends.ocr import extract_text_with_chain
 
         # 从 config 读取 OCR 上传 batch 大小（默认 1 = 逐页）
-        upload_batch_size = 1
         try:
             from ..utils.config import load_global_config
 
-            _ocr_cfg = (load_global_config().ocr or {})
-            upload_batch_size = int(_ocr_cfg.get("upload_batch_size", 1))
+            upload_batch_size = int(load_global_config().ocr.upload_batch_size)
         except Exception:
-            pass
+            upload_batch_size = 1
 
         results: list[str] = [""] * len(page_indices)
 

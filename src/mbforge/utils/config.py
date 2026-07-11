@@ -51,12 +51,99 @@ class LLMConfig(BaseModel):
     base_url: str = ""
     temperature: float = 0.7
     max_tokens: int = 4096
+    top_p: float = 1.0
+    request_timeout: int = 60
     pageindex_threshold: int = 20
     language: str = "en"
     reorganize_model: str | None = Field(
         default=None,
         description="Model for text reorganization. Falls back to ``model`` if unset.",
     )
+
+    @property
+    def effective_model(self) -> str:
+        """Return the model to use for reorganization, falling back to ``model``."""
+        return self.reorganize_model or self.model
+
+
+class OCRConfig(BaseModel):
+    """OCR fallback chain configuration (MinerU → PaddleOCR → GLM-OCR → RapidOCR)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    mineru_api_key: str = ""
+    paddleocr_api_key: str = ""
+    paddleocr_host: str = "https://aistudio.baidu.com"
+    paddleocr_model: str = "PaddleOCR-VL-1.6"
+    glmocr_api_key: str = ""
+    glmocr_model: str = "glm-ocr"
+    glmocr_base_url: str = ""
+    upload_batch_size: int = 1
+
+
+class MoldetConfig(BaseModel):
+    """Molecule detection (MolDetv2-FT + MolScribe) settings."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    device: str = "auto"
+    molscribe_dir: str = ""
+    auto_moldet_on_import: bool = True
+    detection_dpi: float = 200.0
+    detection_batch_size: int = 0
+    text_page_char_threshold: int = 500
+    max_pages_per_doc: int | None = None
+
+
+class IngestConfig(BaseModel):
+    """Document ingestion queue / pipeline behavior settings."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    auto_enqueue_on_import: bool = True
+    default_priority: int = 0
+    stage_timeout_seconds: dict[str, int] = Field(default_factory=dict)
+    max_retries: int = 1
+
+
+class PdfParseConfig(BaseModel):
+    """PDF text parsing / chunking settings."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    chunk_size: int = 1000
+    chunk_overlap: int = 200
+
+
+class PopoConfig(BaseModel):
+    """MinerU-Popo OCR post-processing optional configuration."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+
+
+class VLMConfig(BaseModel):
+    """Visual LLM settings (reserved for future Popo / visual pipeline use)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    provider: str = "openai_compatible"
+    model: str = ""
+    api_key: str = ""
+    base_url: str = ""
+
+
+class ModelServerConfig(BaseModel):
+    """Local model server settings (reserved for future model-server process)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    host: str = "127.0.0.1"
+    port: int = 18793
+    auto_start: bool = False
+    startup_timeout: int = 30
+    health_check_interval: int = 5
 
 
 class AppConfig(BaseSettings):
@@ -72,24 +159,17 @@ class AppConfig(BaseSettings):
     theme: str = "dark"
     language: str = "zh-CN"
     auto_open_project: bool = True
-    vlm: dict[str, Any] = Field(default_factory=dict)
-    ocr: dict[str, Any] = Field(default_factory=dict)
-    model_server: dict[str, Any] = Field(default_factory=dict)
+    vlm: VLMConfig = Field(default_factory=VLMConfig)
+    ocr: OCRConfig = Field(default_factory=OCRConfig)
+    model_server: ModelServerConfig = Field(default_factory=ModelServerConfig)
     recent_projects: list[RecentProject] = Field(default_factory=list)
     library_root: str | None = Field(
         default=None, description="Unified library data directory (Zotero-style)"
     )
-    pdf_parse: dict[str, Any] = Field(default_factory=dict)
-    # moldet: 分子检测管线设置。
-    # 已知 key: {"device", "molscribe_dir", "detection_dpi", "detection_batch_size"}.
-    # detection_dpi: 分子检测渲染分辨率 (默认 200).
-    # detection_batch_size: YOLO batch 推理页数 (0=逐页, 仅在 GPU 有显存收益).
-    moldet: dict[str, Any] = Field(default_factory=dict)
-    ingest: dict[str, Any] = Field(default_factory=dict)
-    # popo: MinerU-Popo OCR 后处理可选配置 (4B Qwen3-VL, 本地推理).
-    # 已知 key: {"enabled"}.
-    # enabled: 是否在 pipeline 中启用 (默认 false).
-    popo: dict[str, Any] = Field(default_factory=dict)
+    pdf_parse: PdfParseConfig = Field(default_factory=PdfParseConfig)
+    moldet: MoldetConfig = Field(default_factory=MoldetConfig)
+    ingest: IngestConfig = Field(default_factory=IngestConfig)
+    popo: PopoConfig = Field(default_factory=PopoConfig)
 
 
 # 历史文件名（用于一次性迁移）

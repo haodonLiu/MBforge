@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from typing import Any
 
 from .base import OCRBackend, OCRResult
 from .glmocr import GLMOCRBackend
@@ -28,13 +29,24 @@ logger = logging.getLogger(__name__)
 DEFAULT_PRIORITY: tuple[str, ...] = ("mineru", "paddleocr", "glmocr", "rapidocr")
 
 
-def build_backends(ocr_config: dict | None) -> list[OCRBackend]:
+def _ocr_config_to_dict(ocr_config: dict | Any | None) -> dict[str, Any]:
+    """Normalize ``OCRConfig`` model or plain dict into a dict."""
+    if ocr_config is None:
+        return {}
+    if isinstance(ocr_config, dict):
+        return ocr_config
+    if hasattr(ocr_config, "model_dump"):
+        return ocr_config.model_dump()
+    return {}
+
+
+def build_backends(ocr_config: dict | Any | None) -> list[OCRBackend]:
     """Build backends in priority order from config.
 
     Backends that aren't configured (no api_key etc.) are silently
     dropped so the chain doesn't try them.
     """
-    cfg = ocr_config or {}
+    cfg = _ocr_config_to_dict(ocr_config)
     minersu_cfg = {
         "api_key": cfg.get("mineru_api_key") or cfg.get("api_key") or "",
         "base_url": cfg.get("base_url", ""),
@@ -60,7 +72,7 @@ def build_backends(ocr_config: dict | None) -> list[OCRBackend]:
     return [b for b in candidates if b.is_configured()]
 
 
-def extract_text_with_chain(image: bytes, ocr_config: dict | None) -> OCRResult:
+def extract_text_with_chain(image: bytes, ocr_config: dict | Any | None) -> OCRResult:
     """Run OCR through the fallback chain. Returns the first non-empty result."""
     backends = build_backends(ocr_config)
     if not backends:
@@ -80,6 +92,6 @@ def extract_text_with_chain(image: bytes, ocr_config: dict | None) -> OCRResult:
     return OCRResult(text="", error=last_error or "all backends returned empty")
 
 
-def list_configured_backends(ocr_config: dict | None) -> Iterable[str]:
+def list_configured_backends(ocr_config: dict | Any | None) -> Iterable[str]:
     """Names of backends that would participate in the chain."""
     return [b.name for b in build_backends(ocr_config)]

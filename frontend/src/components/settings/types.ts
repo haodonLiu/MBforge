@@ -61,7 +61,7 @@ export interface SettingsState {
 
   // —— MoldDet ——
   auto_moldet_on_import: boolean
-  moldet_batch_size: number
+  detection_batch_size: number
 
   // —— Ingest ——
   auto_enqueue_on_import: boolean
@@ -120,7 +120,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   pdf_chunk_overlap: 50,
 
   auto_moldet_on_import: true,
-  moldet_batch_size: 10,
+  detection_batch_size: 0,
 
   auto_enqueue_on_import: false,
 
@@ -215,7 +215,10 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
     pdf_chunk_overlap: s.pdf_parse?.chunk_overlap || DEFAULT_SETTINGS.pdf_chunk_overlap,
 
     auto_moldet_on_import: s.moldet?.auto_moldet_on_import !== false,
-    moldet_batch_size: s.moldet?.moldet_batch_size || DEFAULT_SETTINGS.moldet_batch_size,
+    detection_batch_size:
+      typeof s.moldet?.detection_batch_size === 'number'
+        ? s.moldet.detection_batch_size
+        : DEFAULT_SETTINGS.detection_batch_size,
 
     auto_enqueue_on_import: s.ingest?.auto_enqueue_on_import === true,
 
@@ -281,7 +284,7 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
     },
     moldet: {
       auto_moldet_on_import: s.auto_moldet_on_import,
-      moldet_batch_size: s.moldet_batch_size,
+      detection_batch_size: s.detection_batch_size,
     },
     ingest: {
       auto_enqueue_on_import: s.auto_enqueue_on_import,

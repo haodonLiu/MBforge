@@ -57,7 +57,7 @@ def _current_ocr_config() -> dict:
     """Read current ocr config from AppConfig.ocr (settings.json)."""
     try:
         cfg = load_global_config()
-        return dict(cfg.ocr or {})
+        return cfg.ocr.model_dump()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not read OCR config: %s", exc)
         return {}

@@ -44,9 +44,9 @@ export default function PdfParseSection({ settings, setSettings }: Props) {
         <NumberField
           label={t('settings.moldetBatchSize')}
           description={t('settings.moldetBatchSizeDesc')}
-          value={settings.moldet_batch_size}
-          onChange={v => setSettings(s => ({ ...s, moldet_batch_size: v }))}
-          min={1}
+          value={settings.detection_batch_size}
+          onChange={v => setSettings(s => ({ ...s, detection_batch_size: v }))}
+          min={0}
           max={100}
           step={1}
         />

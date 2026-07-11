@@ -16,11 +16,20 @@ from ..utils.config import (
 router = APIRouter()
 
 
+def _is_secret_key(key: str) -> bool:
+    """Return True if ``key`` looks like it holds a credential."""
+    lower = key.lower()
+    return any(
+        suffix in lower
+        for suffix in ("api_key", "secret", "token", "password", "_key")
+    )
+
+
 def _redact_secrets(obj: Any) -> Any:
     """Recursively replace secret-ish values with '***' for GET responses."""
     if isinstance(obj, dict):
         return {
-            k: "***" if isinstance(v, str) and ("api_key" in k.lower() or "secret" in k.lower()) else _redact_secrets(v)
+            k: "***" if isinstance(v, str) and _is_secret_key(k) else _redact_secrets(v)
             for k, v in obj.items()
         }
     if isinstance(obj, list):

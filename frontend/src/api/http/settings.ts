@@ -11,6 +11,9 @@ export interface LlmConfig {
   temperature?: number
   top_p?: number
   request_timeout?: number
+  pageindex_threshold?: number
+  language?: string
+  reorganize_model?: string | null
 }
 
 export interface VlmConfig {
@@ -33,6 +36,7 @@ export interface OcrConfig {
   paddleocr_model?: string | null
   glmocr_api_key?: string | null
   glmocr_model?: string | null
+  glmocr_base_url?: string | null
   upload_batch_size?: number
 }
 
@@ -70,14 +74,20 @@ export interface PopoConfig {
 }
 
 export interface MoldetConfig {
+  device?: string
+  molscribe_dir?: string
   auto_moldet_on_import?: boolean
-  moldet_batch_size?: number
   detection_dpi?: number
   detection_batch_size?: number
+  text_page_char_threshold?: number
+  max_pages_per_doc?: number | null
 }
 
 export interface IngestConfig {
   auto_enqueue_on_import?: boolean
+  default_priority?: number
+  stage_timeout_seconds?: Record<string, number>
+  max_retries?: number
 }
 
 export interface SettingsResponse {
@@ -111,7 +121,7 @@ export interface BuildInfo {
 }
 
 export function fetchBuildInfo(): BuildInfo {
-  return { version: '0.4.0', platform: navigator.platform, config_path: '' }
+  return { version: __APP_VERSION__, platform: navigator.platform, config_path: '' }
 }
 
 export async function exportSettings(_targetPath: string): Promise<void> {

@@ -329,7 +329,7 @@ def reorganize_with_llm(
         from ..utils.config import load_global_config
 
         cfg = load_global_config()
-        model = getattr(cfg.llm, "reorganize_model", None) or cfg.llm.model
+        model = cfg.llm.effective_model
 
     md_text = Path(md_path).read_text(encoding="utf-8")
     estimated_tokens = len(md_text) // 4

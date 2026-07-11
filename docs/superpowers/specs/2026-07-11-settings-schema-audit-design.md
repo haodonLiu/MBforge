@@ -90,6 +90,7 @@ Replaces `moldet: dict[str, Any]`.
 |-------|------|---------|----------|
 | `device` | `str` | `"auto"` | `parsers/molecule/molscribe_inference/download.py` |
 | `molscribe_dir` | `str` | `""` | `parsers/molecule/molscribe_inference/download.py` |
+| `auto_moldet_on_import` | `bool` | `True` | Settings UI control for automatic molecule detection on import. |
 | `detection_dpi` | `float` | `200.0` | `pipeline/extract_molecules.py` |
 | `detection_batch_size` | `int` | `0` | `pipeline/extract_molecules.py` |
 | `text_page_char_threshold` | `int` | `500` | `pipeline/extract_molecules.py` (currently hard-coded) |
@@ -196,8 +197,10 @@ This is a small, safe improvement that prevents leaking credentials in `GET /api
 ## 5. Frontend Alignment
 
 1. Update `frontend/src/api/http/settings.ts` interfaces to match the backend schema exactly.
-2. For fields marked `reserved` above, keep them in the type but do not add UI controls until a consumer exists.
-3. If a field is declared on the frontend but never consumed on the backend (`pdf_parse.chunk_size`, `pdf_parse.chunk_overlap`, `ingest.auto_enqueue_on_import`, `model_server.*`), decide whether to:
+2. Rename the frontend internal `moldet_batch_size` setting to `detection_batch_size` to align with the backend schema; update `PdfParseSection.tsx` accordingly.
+3. Add `auto_moldet_on_import` to both backend `MoldetConfig` and the frontend type to preserve the existing Settings UI toggle.
+4. For fields marked `reserved` above, keep them in the type but do not add UI controls until a consumer exists.
+5. If a field is declared on the frontend but never consumed on the backend (`pdf_parse.chunk_size`, `pdf_parse.chunk_overlap`, `ingest.auto_enqueue_on_import`, `model_server.*`), decide whether to:
    - Implement the consumer, or
    - Remove the field from both sides.
 

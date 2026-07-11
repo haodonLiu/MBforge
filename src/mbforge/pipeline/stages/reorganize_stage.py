@@ -44,7 +44,7 @@ class ReorganizeStage:
                 from ..organizer import reorganize_with_llm
 
                 llm_cfg = load_global_config().llm
-                reorganize_model = getattr(llm_cfg, "reorganize_model", None) or llm_cfg.model
+                reorganize_model = llm_cfg.effective_model
                 reorganize_with_llm(
                     str(ctx.enriched_md_path),
                     str(ctx.final_md_path),
@@ -81,7 +81,7 @@ class ReorganizeStage:
         """Optional: Enhance markdown with MinerU-Popo if enabled."""
         try:
             cfg = load_global_config()
-            if not (cfg.popo or {}).get("enabled", False):
+            if not cfg.popo.enabled:
                 return
 
             from ...backends import popo as _popo

@@ -241,15 +241,15 @@ class DatabaseManager:
         from .layout import LibraryLayout
 
         self._root = Path(library_root)
-        # Pre-Phase-4: two databases under {root}/index/. The Phase 4
-        # single-DB migration consolidates them to {root}/.mbforge/library.db
-        # (see LibraryLayout.database_path). Until that migration runs,
-        # this class still writes to the legacy index/ path; new code
-        # should call LibraryLayout(library_root).database_path instead.
-        self._index_dir = LibraryLayout(library_root).legacy_index_dir
-        self._index_dir.mkdir(parents=True, exist_ok=True)
-        self._kb_path = self._index_dir / "knowledge_base.db"
-        self._mol_path = self._index_dir / "molecules.db"
+        # Phase 4+: unified single database under {root}/.mbforge/library.db.
+        # The legacy {root}/index/*.db layout is migrated by
+        # `mbforge.migrate-library`; new code should call
+        # LibraryLayout(library_root).database_path directly.
+        self._layout = LibraryLayout(library_root)
+        self._layout.ensure_metadata_dir()
+        self._db_path = self._layout.database_path
+        self._kb_path = self._db_path
+        self._mol_path = self._db_path
         self._lock = threading.Lock()
         self._initialized = False
 
@@ -279,7 +279,7 @@ class DatabaseManager:
                 versioned=True,
             )
             self._initialized = True
-            logger.info("DB initialized: %s", self._index_dir)
+            logger.info("DB initialized: %s", self._db_path)
 
     def _init_db(self, path: Path, schema: str, versioned: bool = False) -> None:
         conn = sqlite3.connect(str(path))
@@ -362,28 +362,37 @@ class DatabaseManager:
         exception, both are rolled back. This prevents the pipeline from leaving
         orphan records in one database when a later write to the other fails.
 
+        In the unified single-DB layout (Phase 4+), ``kb_conn`` and
+        ``mol_conn`` are the same physical connection to avoid SQLite locking
+        the file against itself.
+
         Note: SQLite does not support true two-phase commit across separate
         database files, so this is best-effort within a single process. It is
         sufficient for Phase 0 pipeline consistency.
         """
         self.initialize()
+        unified = self._kb_path == self._mol_path
         kb_conn = sqlite3.connect(str(self._kb_path))
         kb_conn.row_factory = sqlite3.Row
         kb_conn.execute("PRAGMA foreign_keys=ON")
-        mol_conn = sqlite3.connect(str(self._mol_path))
-        mol_conn.row_factory = sqlite3.Row
-        mol_conn.execute("PRAGMA foreign_keys=ON")
+        mol_conn = kb_conn if unified else sqlite3.connect(str(self._mol_path))
+        if not unified:
+            mol_conn.row_factory = sqlite3.Row
+            mol_conn.execute("PRAGMA foreign_keys=ON")
         try:
             yield kb_conn, mol_conn
             kb_conn.commit()
-            mol_conn.commit()
+            if not unified:
+                mol_conn.commit()
         except Exception:
             kb_conn.rollback()
-            mol_conn.rollback()
+            if not unified:
+                mol_conn.rollback()
             raise
         finally:
             kb_conn.close()
-            mol_conn.close()
+            if not unified:
+                mol_conn.close()
 
     def execute(
         self,

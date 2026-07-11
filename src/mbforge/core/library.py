@@ -1,7 +1,8 @@
 """LibraryStore — unified data store for the Zotero-style library.
 
-Manages a single `library.db` in `{library_root}/` and a storage directory
-per imported PDF under `{library_root}/storage/{doc_id}/`.
+Manages a single `library.db` in `{library_root}/.mbforge/` and a storage
+directory per imported PDF under `{library_root}/storage/{doc_id}/`. All
+paths go through ``LibraryLayout`` and ``ArtifactResolver``.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from pathlib import Path
 from ..models.library import CollectionInfo, CollectionNode, DocumentInfo
 from ..utils.helpers import MBForgeError, ensure_dir
 from ..utils.logger import get_logger
+from .artifact import ArtifactResolver
+from .layout import LibraryLayout
 
 logger = get_logger("mbforge.core.library")
 
@@ -70,8 +73,9 @@ class LibraryStore:
 
     def __init__(self, library_root: str | Path) -> None:
         self._root = Path(library_root).resolve()
-        self._db_path = self._root / "library.db"
-        self._storage_dir = self._root / "storage"
+        self._layout = LibraryLayout(self._root)
+        self._resolver = ArtifactResolver(self._root)
+        self._db_path = self._layout.database_path
         self._initialized = False
 
     @classmethod
@@ -86,7 +90,7 @@ class LibraryStore:
         if self._initialized:
             return
         ensure_dir(self._root)
-        ensure_dir(self._storage_dir)
+        self._layout.ensure_metadata_dir()
         self._init_db()
         self._initialized = True
 
@@ -145,7 +149,7 @@ class LibraryStore:
 
         doc_id = str(uuid.uuid4())
         safe_title = title.strip() if title else Path(filename).stem
-        storage_subdir = self._storage_dir / doc_id
+        storage_subdir = self._resolver.storage_dir(doc_id)
         try:
             ensure_dir(storage_subdir)
             dest = storage_subdir / filename
@@ -192,7 +196,7 @@ class LibraryStore:
 
         doc_id = str(uuid.uuid4())
         safe_title = title.strip() if title else src.stem
-        storage_subdir = self._storage_dir / doc_id
+        storage_subdir = self._resolver.storage_dir(doc_id)
         try:
             ensure_dir(storage_subdir)
             dest = storage_subdir / src.name
@@ -261,7 +265,7 @@ class LibraryStore:
         finally:
             conn.close()
 
-        storage_subdir = self._storage_dir / doc_id
+        storage_subdir = self._resolver.storage_dir(doc_id)
         if storage_subdir.exists():
             import shutil
 
@@ -479,7 +483,7 @@ class LibraryStore:
         return str(self._db_path)
 
     def storage_path(self, doc_id: str) -> str:
-        return str(self._storage_dir / doc_id)
+        return str(self._resolver.storage_dir(doc_id))
 
     def resolve_file(self, doc_id: str) -> str | None:
         """Resolve the original PDF file path for a document."""
@@ -491,7 +495,7 @@ class LibraryStore:
             ).fetchone()
             if row is None:
                 return None
-            pdf_path = self._storage_dir / doc_id / row[0]
+            pdf_path = self._resolver.storage_dir(doc_id) / row[0]
             return str(pdf_path) if pdf_path.exists() else None
         finally:
             conn.close()

@@ -96,3 +96,14 @@ def in_memory_semantic_cache(tmp_library: Path) -> Any:
     db = DatabaseManager.get(str(tmp_library))
     db.initialize()
     return str(tmp_library)
+
+
+@pytest.fixture(autouse=True)
+def _clear_singleton_caches() -> None:
+    """Clear module-level singleton caches after every test for isolation."""
+    yield
+    from mbforge.core.database import DatabaseManager
+    from mbforge.core.library import LibraryStore
+
+    DatabaseManager._db_cache.clear()
+    LibraryStore._store_cache.clear()

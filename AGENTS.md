@@ -74,6 +74,7 @@ MBForge/
 │   ├── src/
 │   │   ├── api/
 │   │   │   ├── http/                  HTTP bridge (httpFetch, isOnline)
+│   │   │   ├── query/                 @tanstack/react-query hooks (keys, client, useDocuments, useIngestQueue, …)
 │   │   │   └── sse.ts                 SSE streaming client
 │   │   ├── components/                Page-level + ui/ atoms
 │   │   ├── context/AppContext.tsx     Global state
@@ -161,8 +162,8 @@ proxy).
 ### TypeScript / React
 
 - **Components**: `export default function ComponentName()` for page-level; `function SubComponent()` for local UI. Hooks prefixed `use`.
-- **State**: local → `useState`; cross-component → props; global → `useAppContext()`. Persistent settings use `localStorage` with `mbforge_` prefix.
-- **HTTP**: every backend call goes through `api/http/*.ts`. Pattern: `await httpFetch<T>('/api/v1/...', { method, body })` wrapped in shared error handling (see `_utils.ts`). SSE via `api/sse.ts`.
+- **State**: local → `useState`; cross-component → props; server state (REST) → `@tanstack/react-query` hooks (see `api/query/hooks/`); global → `useAppContext()`. Persistent settings use `localStorage` with `mbforge_` prefix.
+- **HTTP**: every backend call goes through `api/http/*.ts`. Pattern: `await httpFetch<T>('/api/v1/...', { method, body })` wrapped in shared error handling (see `_utils.ts`). Server-state consumers SHOULD use the React Query hooks in `api/query/hooks/` instead of calling `api/http/*` directly. SSE via `api/sse.ts`; real-time pipeline updates are bridged into the query cache via `useIngestSSE`.
 - **Animations**: import variants from `hooks/useAnimations.ts` (`fadeUp`, `scaleIn`, `staggerContainer`, …). Do not redefine `initial/animate/exit/transition` inline.
 - **Imports**: `@/` alias for `frontend/src/`. Cross-directory imports MUST use `@/` (e.g. `from '@/hooks/useToast'`, never `'../../hooks/useToast'`). Same-directory imports MAY use `./` (e.g. `from './_utils'`). This makes files position-independent — moving a file never breaks its imports. `import type` for type-only imports; three groups (std → third-party → project) separated by blank lines.
 - **Style**: prefer CSS variables (`var(--accent)`, `var(--bg-surface)`); inline `style` ≤ 3 props, otherwise extract. Verify dark mode for new styles.

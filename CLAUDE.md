@@ -9,10 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > "打开原文" button. Migration script `scripts/migrate_artifact_paths.py` moves
 > legacy crops to canonical location. **Pipeline refactored to 7 modular stages**
 > (`pipeline/context.py` + `pipeline/stages/*.py` + `StageExecutor` protocol);
-> `pipeline/runner.py` now only orchestrates. 19 routers total. If reality
-> drifts from this file, **the code wins**; update this file in the same PR.
-> Detailed conventions live in [AGENTS.md](./AGENTS.md) — don't duplicate them
-> here.
+> `pipeline/runner.py` now only orchestrates. 19 routers total.
+> **Frontend Phases 2–6 complete**: @tanstack/react-query for server state,
+> AppShell/LibraryBootstrap split from App.tsx, Workspace/ProcessingQueue/
+> DocumentViewer optimized, Panel/LoadingState/ErrorState UI primitives,
+> 202 tests (31 files). If reality drifts from this file, **the code wins**;
+> update this file in the same PR. Detailed conventions live in
+> [AGENTS.md](./AGENTS.md) — don't duplicate them here.
 
 ---
 
@@ -76,7 +79,7 @@ Tooling pins (see `pyproject.toml`): **uv** (not pip), **npm** (not pnpm/yarn/bu
 | `src/mbforge/app.py` | FastAPI factory — registers **19 routers** under `/api/v1/*`, mounts `frontend/dist/` if present |
 | `src/mbforge/core/artifact.py` | `ArtifactResolver` — single authority for paths under `{library_root}/storage/` (prevents path traversal) |
 | `src/mbforge/server.py` | Dev uvicorn target for the local-model sidecar (mounted at `/api/v1/models`) |
-| `frontend/` | React 19 + Vite 8 web frontend — the only official UI |
+| `frontend/` | React 19 + Vite 8 web frontend — the only official UI. Server state via @tanstack/react-query (`api/query/`); `AppShell`/`LibraryBootstrap` layout; `Panel`/`LoadingState`/`ErrorState` UI primitives; 202 tests (31 files). |
 | `tests/` | pytest (`tests/unit/`, `tests/integration/`) + vitest (`frontend/src/**/*.test.ts*`) |
 | `docs/specs/` | Architecture conventions, code style, E-SMILES, MoleCode, molecule representation |
 | `configs/` | YAML configs (constants, OCR) |

@@ -1,5 +1,15 @@
 /* layout.css - Workspace page merged layout + TabBar */
 
+/** Fallback shown while a route chunk is being lazy-loaded. */
+.route-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
 .workspace-page {
   display: flex;
   flex-direction: column;

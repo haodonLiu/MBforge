@@ -1,4 +1,34 @@
 /* ===== PDF Viewer ===== */
+.document-viewer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  height: 44px;
+}
+
+.document-viewer-title {
+  font-size: 13px;
+  font-weight: 500;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-viewer-pane {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 767px) {
+  .document-viewer-body {
+    grid-template-columns: 1fr;
+  }
+}
+
 .pdf-viewer {
   flex: 1;
   display: flex;

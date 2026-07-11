@@ -1,32 +1,22 @@
-import { useState, useEffect } from 'react'
+import { useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { fadeUp } from '@/hooks/useAnimations'
 import { useAppContext } from '@/context/AppContext'
-import {
-  listDocuments,
-  importDocument,
-  type DocumentInfo,
-} from '@/api/http/library'
+import { useDocuments, useImportDocument } from '@/api/query/hooks'
 import { showToast } from '@/hooks/useToast'
 import { useTranslation } from 'react-i18next'
 import { PdfIcon, PlusIcon } from '@/components/icons'
 import PageTitle from '@/components/ui/PageTitle'
+import type { DocumentInfo } from '@/api/http/library'
+
 export default function Workspace() {
   const { t } = useTranslation()
   const { libraryRoot, activeCollectionId, openTab } = useAppContext()
-  const [documents, setDocuments] = useState<DocumentInfo[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data, isLoading, isError } = useDocuments(activeCollectionId ?? undefined)
+  const importMutation = useImportDocument()
+  const documents = data?.documents ?? []
 
-  useEffect(() => {
-    if (!libraryRoot) return
-    setLoading(true)
-    void listDocuments(activeCollectionId ?? undefined)
-      .then(r => setDocuments(r.documents))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [libraryRoot, activeCollectionId])
-
-  const handleImport = () => {
+  const handleImport = useCallback(() => {
     const input = document.createElement('input')
     input.type = 'file'
     input.accept = '.pdf'
@@ -34,20 +24,14 @@ export default function Workspace() {
       const file = input.files?.[0]
       if (!file) return
       try {
-        const resp = await importDocument(file)
-        if (resp.success) {
-          showToast(t('library.importSuccess'), 'success')
-          const r = await listDocuments(activeCollectionId ?? undefined)
-          setDocuments(r.documents)
-        } else {
-          showToast(resp.error || t('library.importFailed'), 'error')
-        }
+        await importMutation.mutateAsync({ file })
+        showToast(t('library.importSuccess'), 'success')
       } catch (e) {
         showToast(t('library.importError', { error: e instanceof Error ? e.message : String(e) }), 'error')
       }
     }
     input.click()
-  }
+  }, [importMutation, t])
 
   const handleOpenDocument = (doc: DocumentInfo) => {
     openTab({
@@ -87,8 +71,16 @@ export default function Workspace() {
       </div>
 
       <div className="workspace-content">
-        {loading ? (
+        {isLoading ? (
           <div className="workspace-loading">Loading...</div>
+        ) : isError ? (
+          <div className="workspace-empty">
+            <div className="workspace-empty-title">Error</div>
+            <div className="workspace-empty-desc">Failed to load documents. Please try again.</div>
+            <button className="workspace-import-btn" onClick={() => window.location.reload()}>
+              Retry
+            </button>
+          </div>
         ) : documents.length === 0 ? (
           <div className="workspace-empty">
             <PdfIcon size={48} className="workspace-empty-icon" />

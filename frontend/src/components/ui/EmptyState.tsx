@@ -4,11 +4,12 @@ export interface EmptyStateProps {
   message: string
   icon?: ReactNode
   error?: boolean
+  action?: { label: string; onClick: () => void }
   style?: React.CSSProperties
   className?: string
 }
 
-export default function EmptyState({ message, icon, error = false, style, className }: EmptyStateProps) {
+export default function EmptyState({ message, icon, error = false, action, style, className }: EmptyStateProps) {
   return (
     <div
       className={className}
@@ -28,6 +29,16 @@ export default function EmptyState({ message, icon, error = false, style, classN
     >
       {icon}
       <span style={{ fontSize: '13px' }}>{message}</span>
+      {action && (
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ marginTop: '8px' }}
+          onClick={action.onClick}
+        >
+          {action.label}
+        </button>
+      )}
     </div>
   )
 }

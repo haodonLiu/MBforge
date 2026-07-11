@@ -51,7 +51,7 @@ export default function MarkdownViewer({ libraryRoot, filePath, onClose }: Props
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* 工具栏 */}
       <Toolbar style={{ justifyContent: 'flex-start', gap: '12px', height: '48px', padding: '0 16px' }}>
-        <IconButton size={32} onClick={onClose}>
+        <IconButton size={40} onClick={onClose}>
           <ArrowLeftIcon size={18} />
         </IconButton>
         <Caption truncate style={{ fontSize: '13px', fontWeight: 500, flex: 1 }}>

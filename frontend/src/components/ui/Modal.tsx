@@ -104,7 +104,7 @@ export default function Modal({
                 flexShrink: 0,
               }}>
                 <h2 style={{ fontSize: '16px', fontWeight: 600, margin: 0 }}>{title}</h2>
-                <IconButton size={32} onClick={onClose} title="关闭">
+                <IconButton size={40} onClick={onClose} title="关闭">
                   <XIcon size={18} />
                 </IconButton>
               </div>

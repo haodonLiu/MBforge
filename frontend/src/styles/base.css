@@ -161,3 +161,113 @@ body {
   border: 1px solid var(--border);
   border-radius: 12px;
 }
+
+/* Panel component */
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+.panel--elevated {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.panel-collapse-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+}
+.panel-collapse-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.panel-body {
+  padding: 16px;
+}
+.panel-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-base);
+}
+
+/* LoadingState component */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  gap: 12px;
+}
+.loading-state--skeleton {
+  align-items: stretch;
+  gap: 8px;
+}
+.loading-state-message {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.loading-state-message--sub {
+  font-size: 12px;
+  margin-top: -4px;
+}
+
+/* ErrorState component */
+.error-state {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--danger-muted, #fecaca);
+  border-radius: 8px;
+  background: var(--danger-bg, #fef2f2);
+}
+.error-state--compact {
+  padding: 8px 12px;
+  gap: 8px;
+}
+.error-state-icon {
+  flex-shrink: 0;
+  color: var(--danger, #ef4444);
+  margin-top: 2px;
+}
+.error-state-body {
+  flex: 1;
+  min-width: 0;
+}
+.error-state-message {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  word-break: break-word;
+}
+.error-state--compact .error-state-message {
+  margin-bottom: 0;
+}
+.error-state-actions {
+  display: flex;
+  gap: 8px;
+}
+

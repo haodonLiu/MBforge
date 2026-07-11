@@ -271,9 +271,12 @@ routes across 18 routers have no automated test. Priority work in
 
 ## Contributing
 
-Contributions are welcome! See [AGENTS.md](AGENTS.md) for development
-guidelines, [TODO/INDEX.md](TODO/INDEX.md) for prioritized work, and
-[CLAUDE.md](CLAUDE.md) for repository-level AI context.
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for
+the development, testing, and review workflow, and [TODO/INDEX.md](TODO/INDEX.md)
+for prioritized work. Governance and release rules live in
+[docs/PROJECT_MANAGEMENT.md](docs/PROJECT_MANAGEMENT.md) and
+[docs/VERSION_CONTROL.md](docs/VERSION_CONTROL.md). AI coding assistants must
+also follow [AGENTS.md](AGENTS.md).
 
 ### Commit Convention
 
@@ -289,6 +292,10 @@ Scopes: frontend | python | api | router | pipeline | agent | backend | deps
 | Document | Location | Description |
 |---|---|---|
 | **Project entry** | [README.md](README.md) | Human user quick start |
+| **Contribution guide** | [CONTRIBUTING.md](CONTRIBUTING.md) | Development, testing, review, and definition of done |
+| **Project management** | [docs/PROJECT_MANAGEMENT.md](docs/PROJECT_MANAGEMENT.md) | Work items, priorities, milestones, and decisions |
+| **Version control** | [docs/VERSION_CONTROL.md](docs/VERSION_CONTROL.md) | Branches, commits, SemVer, and releases |
+| **Changelog** | [CHANGELOG.md](CHANGELOG.md) | User-visible release changes |
 | **Repository guidelines** | [AGENTS.md](AGENTS.md) | AI coding assistant manual |
 | **AI quick-ref** | [CLAUDE.md](CLAUDE.md) | Repository-level AI context |
 | **Task board** | [TODO/INDEX.md](TODO/INDEX.md) | Prioritized work (P0–P3) |

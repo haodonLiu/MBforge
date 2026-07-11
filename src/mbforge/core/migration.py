@@ -64,6 +64,7 @@ from typing import Any
 from ..utils.logger import get_logger
 from .database import DatabaseManager
 from .layout import LibraryLayout
+from .library import _LIBRARY_SCHEMA
 
 logger = get_logger("mbforge.core.migration")
 
@@ -119,12 +120,14 @@ class MigrationReport:
 def _unified_schema() -> str:
     """Return the SQL DDL for the unified library.db.
 
-    The molecule schema (molecules + evidence + FTS) and the KB schema
-    (figure_labels + coref_predictions + ingest + semantic_cache +
-    sections) are concatenated. The two legacy databases had no
-    cross-schema FKs, so concatenation order is informational only.
+    Combines LibraryStore schema (documents, collections,
+    collection_members, tasks), molecule schema (molecules + evidence +
+    FTS) and KB schema (figure_labels + coref_predictions + ingest +
+    semantic_cache + sections).
     """
-    return DatabaseManager.molecule_schema() + "\n" + _KB_SCHEMA_DDL
+    return (
+        _LIBRARY_SCHEMA + "\n" + DatabaseManager.molecule_schema() + "\n" + _KB_SCHEMA_DDL
+    )
 
 
 # Re-declare the KB DDL here (in addition to ``database._KB_SCHEMA``)
@@ -216,22 +219,26 @@ CREATE INDEX IF NOT EXISTS idx_sec_doc ON sections(doc_id, section_index);
 """
 
 
-# Map of table -> legacy source database file. Tables not present in a
-# source file are simply skipped (the unified schema already created
-# them empty).
-_LEGACY_TABLE_SOURCES: dict[str, tuple[Path, Path]] = {}
+# Map of table -> legacy source database files. Tables not present in any
+# source file are simply skipped (the unified schema already created them
+# empty).
+_LEGACY_TABLE_SOURCES: dict[str, tuple[Path | None, Path | None, Path | None]] = {}
 
 
-def _build_legacy_table_sources(layout: LibraryLayout) -> dict[str, tuple[Path, Path]]:
-    """Map of table name -> (legacy_kb_path, legacy_mol_path).
+def _build_legacy_table_sources(
+    layout: LibraryLayout,
+) -> dict[str, tuple[Path | None, Path | None, Path | None]]:
+    """Map of table name -> (legacy_kb_path, legacy_mol_path, legacy_lib_path).
 
-    Both legacy files may be missing (we return only the existing
-    ones). The migration only copies a table if its source database
-    exists and the table is present in that source.
+    Any legacy file may be missing. The migration only copies a table if
+    its source database exists and the table is present in that source.
+    Pre-Phase-4 libraries may also keep LibraryStore tables in the root
+    ``library.db`` file, so that is included as a third source.
     """
     # Hand-curated: the molecule-side tables live in molecules.db; the
-    # KB-side tables live in knowledge_base.db. Adding a new table to
-    # either schema means updating this map.
+    # KB-side tables live in knowledge_base.db; LibraryStore tables live
+    # in the root library.db. Adding a new table to any schema means
+    # updating this map.
     mol_tables = {
         "molecules",
         "molecule_images",
@@ -250,11 +257,20 @@ def _build_legacy_table_sources(layout: LibraryLayout) -> dict[str, tuple[Path, 
         "semantic_cache",
         "sections",
     }
-    sources: dict[str, tuple[Path, Path]] = {}
+    lib_tables = {
+        "documents",
+        "collections",
+        "collection_members",
+        "tasks",
+    }
+    legacy_lib_db = layout.library_root / "library.db"
+    sources: dict[str, tuple[Path | None, Path | None, Path | None]] = {}
     for t in mol_tables:
-        sources[t] = (None, layout.legacy_index_dir / "molecules.db")
+        sources[t] = (None, layout.legacy_index_dir / "molecules.db", None)
     for t in kb_tables:
-        sources[t] = (layout.legacy_index_dir / "knowledge_base.db", None)
+        sources[t] = (layout.legacy_index_dir / "knowledge_base.db", None, None)
+    for t in lib_tables:
+        sources[t] = (None, None, legacy_lib_db)
     return sources
 
 
@@ -346,15 +362,17 @@ def migrate_library(
 
     # 2. Plan -----------------------------------------------------------
     plan: list[tuple[str, Path]] = []
-    for table, (kb, mol) in sources.items():
-        # Prefer the source that actually exists; if both, prefer the
-        # one whose schema is the table's home (see
+    for table, (kb, mol, lib) in sources.items():
+        # Prefer the source that actually exists; if multiple exist,
+        # prefer the one whose schema is the table's home (see
         # ``_build_legacy_table_sources``). Sources may be missing
         # (None) for cross-schema tables we never migrate.
         if kb is not None and kb.exists():
             plan.append((table, kb))
         elif mol is not None and mol.exists():
             plan.append((table, mol))
+        elif lib is not None and lib.exists():
+            plan.append((table, lib))
     if not plan:
         report.skipped = True
         report.skip_reason = "no tables to migrate"
@@ -442,6 +460,14 @@ def migrate_library(
             sibling = Path(sibling_name)
             if sibling.exists():
                 shutil.move(str(sibling), str(archived_index / sibling.name))
+    # Archive the legacy root library.db if it exists.
+    legacy_lib_db = layout.library_root / "library.db"
+    if legacy_lib_db.exists():
+        shutil.move(str(legacy_lib_db), str(archive_dir / "library.db"))
+        for suffix in ("-wal", "-shm"):
+            sibling = Path(str(legacy_lib_db) + suffix)
+            if sibling.exists():
+                shutil.move(str(sibling), str(archive_dir / (legacy_lib_db.name + suffix)))
     # Move the temp db into place.
     shutil.move(str(tmp_path), str(final_path))
     # Write a migration marker.
@@ -481,8 +507,12 @@ def _write_migration_marker(
         lines.append(f"- **{table}**: {rows} rows (from `{src.name}`)")
     lines += [
         "",
-        "Recovery: move `index/` back to the library root and delete the",
-        "unified `.mbforge/library.db`. The legacy two-database layout",
+        "Archived files:",
+        "- `index/knowledge_base.db` and `index/molecules.db`",
+        "- `library.db` (root LibraryStore + molecule tables, if present)",
+        "",
+        "Recovery: move `index/` and `library.db` back to the library root",
+        "and delete the unified `.mbforge/library.db`. The legacy layout",
         "will be functional again.",
     ]
     marker.write_text("\n".join(lines), encoding="utf-8")
@@ -493,9 +523,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m mbforge.migrate-library",
         description=(
-            "Migrate a library from the legacy two-database layout "
-            "({root}/index/*.db) to the unified single-database layout "
-            "({root}/.mbforge/library.db)."
+            "Migrate a library from the legacy layout "
+            "({root}/library.db + {root}/index/*.db) to the unified "
+            "single-database layout ({root}/.mbforge/library.db)."
         ),
     )
     parser.add_argument(

@@ -78,6 +78,25 @@ def _create_legacy_mol_db(path: Path) -> None:
         conn.close()
 
 
+def _create_legacy_library_db(path: Path) -> None:
+    """Create a synthetic root library.db with LibraryStore tables."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.executescript(mig._LIBRARY_SCHEMA)
+        conn.executemany(
+            "INSERT INTO documents (doc_id, title, file_name, storage_path, md5) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [
+                ("doc-1", "Paper One", "one.pdf", "storage/doc-1/source.pdf", "a"),
+                ("doc-2", "Paper Two", "two.pdf", "storage/doc-2/source.pdf", "b"),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_detect_state_already_migrated(tmp_path: Path) -> None:
     """If unified library.db already exists, detect_state says so."""
     layout = mig.LibraryLayout(tmp_path)
@@ -166,6 +185,29 @@ def test_migrate_handles_partial_legacy(tmp_path: Path) -> None:
     assert not report.skipped
     assert "molecules" not in report.tables  # table missing in source
     assert "figure_labels" in report.tables
+
+
+def test_migrate_includes_root_library_db(tmp_path: Path) -> None:
+    """A legacy root library.db is merged into the unified db."""
+    _create_legacy_kb_db(tmp_path / "index" / "knowledge_base.db")
+    _create_legacy_mol_db(tmp_path / "index" / "molecules.db")
+    _create_legacy_library_db(tmp_path / "library.db")
+    report = mig.migrate_library(tmp_path)
+    assert not report.skipped
+    assert report.archive_dir is not None
+    assert (report.archive_dir / "library.db").exists()
+    # Unified db has both KB/molecule rows and LibraryStore rows.
+    unified = report.unified_db
+    conn = sqlite3.connect(str(unified))
+    try:
+        n_docs = conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+        n_mol = conn.execute("SELECT COUNT(*) FROM molecules").fetchone()[0]
+        n_fl = conn.execute("SELECT COUNT(*) FROM figure_labels").fetchone()[0]
+    finally:
+        conn.close()
+    assert n_docs == 2
+    assert n_mol == 2
+    assert n_fl == 3
 
 
 def test_migrate_validation_failsafe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -9,31 +9,23 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-try:
-    from platformdirs import user_config_dir, user_data_dir
-except ImportError:  # pragma: no cover — fallback for env without platformdirs
-    _home = Path.home()
-
-    def user_config_dir(name: str, **_kw: object) -> str:
-        return str(_home / ".config" / name)
-
-    def user_data_dir(name: str, **_kw: object) -> str:
-        return str(_home / ".local" / "share" / name)
-
-
 # 应用元信息 — 编译期固定,不改
 APP_NAME = "MBForge"
 APP_VERSION = "0.3.0"
 
-# 跨平台配置 / 数据目录 — 仅在 settings.json 缺失时作 fallback 解析
-GLOBAL_CONFIG_DIR = Path(user_config_dir(APP_NAME, appauthor=False))
-GLOBAL_DATA_DIR = Path(user_data_dir(APP_NAME, appauthor=False))
+# 统一应用根目录.所有全局状态(config/logs)和默认库数据都落在同一个目录下,
+# 避免 Windows 上 %APPDATA% 与 %LOCALAPPDATA% 分裂导致的混乱.
+GLOBAL_APP_DIR = Path.home() / "MBForge"
+
+# 向后兼容别名.新代码应直接使用 GLOBAL_APP_DIR;旧导入会逐步清理.
+GLOBAL_CONFIG_DIR = GLOBAL_APP_DIR
+GLOBAL_DATA_DIR = GLOBAL_APP_DIR
 
 # 后端 sidecar 端口 — __main__ 启动参数 fallback
 DEFAULT_SIDECAR_PORT = 18792
 
 # 模型缓存默认路径 — get_model_cache_dir() 在 settings.json 未配置时使用
-DEFAULT_MODEL_CACHE_DIR = "mbforge/models"
+DEFAULT_MODEL_CACHE_DIR = "MBForge/models"
 
 # HF 镜像 endpoint — ensure_hf_mirror() 在 HF_ENDPOINT 未设置时使用
 DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
@@ -58,6 +50,25 @@ def get_model_cache_dir() -> str:
     except Exception:
         pass
     return str(Path.home() / DEFAULT_MODEL_CACHE_DIR)
+
+
+def is_within_global_app_dir(path: str | Path) -> bool:
+    """Return True if ``path`` is the global app dir or inside it.
+
+    Library data must never live inside the application global directory
+    when the user has explicitly set a separate ``library_root``; however,
+    when ``library_root`` defaults to ``GLOBAL_APP_DIR`` this check returns
+    True by design.
+    """
+    try:
+        resolved = Path(path).resolve()
+    except (OSError, ValueError):
+        return False
+    try:
+        resolved.relative_to(GLOBAL_APP_DIR.resolve())
+        return True
+    except ValueError:
+        return False
 
 
 def ensure_hf_mirror() -> None:

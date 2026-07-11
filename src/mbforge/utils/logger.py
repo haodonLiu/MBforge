@@ -24,7 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
-from .paths import APP_NAME, GLOBAL_DATA_DIR
+from .paths import APP_NAME, GLOBAL_APP_DIR
 
 # 日志格式 —— 增加进程ID、线程名，方便多线程/多进程诊断
 _CONSOLE_FORMAT = "%(asctime)s | %(levelname)-8s | %(process)d:%(threadName)s | %(name)s | %(message)s"
@@ -96,7 +96,7 @@ def setup_logging(
 
     Args:
         level: 日志级别 (logging.DEBUG/INFO/WARNING/ERROR)
-        log_dir: 日志文件目录，默认 ~/.local/share/MBForge/logs
+        log_dir: 日志文件目录，默认 ~/MBForge/logs
         console: 是否输出到控制台
         file: 是否输出到文件
         json_mode: 文件输出用 JSON 行格式 (结构化聚合; 默认关闭, 沿用人类可读)
@@ -152,7 +152,7 @@ def setup_logging(
 
     # 文件输出
     if file:
-        log_dir = log_dir or (GLOBAL_DATA_DIR / "logs")
+        log_dir = log_dir or (GLOBAL_APP_DIR / "logs")
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / f"{APP_NAME.lower()}.log"
 

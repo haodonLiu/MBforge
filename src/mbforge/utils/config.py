@@ -1,11 +1,11 @@
 r"""配置加载与管理 — 单一 JSON + 单一 Pydantic schema.
 
-物理文件: `{GLOBAL_CONFIG_DIR}/settings.json`
-  - Windows: `%APPDATA%\MBForge\settings.json`
-  - Linux/macOS: `~/.config/MBForge/settings.json`
+物理文件: `{GLOBAL_APP_DIR}/settings.json`
+  - Windows: `C:\Users\<user>\MBForge\settings.json`
+  - Linux/macOS: `~/MBForge/settings.json`
 
-历史 `config.json` / `gui_state.json` 在首次启动时自动迁移到 `settings.json`，
-然后删除旧文件。
+历史文件（`%APPDATA%/%LOCALAPPDATA%/MBForge/settings.json` 以及旧版
+`config.json` / `gui_state.json`）在首次启动时自动迁移到新位置。
 
 唯一访问入口（任何模块必须仅通过这些入口访问配置）:
   - load_global_config() -> AppConfig    单读 + lru_cache
@@ -20,7 +20,6 @@ LLM/OCR/cache 等业务配置统一走 AppConfig。
 
 from __future__ import annotations
 
-import contextlib
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -29,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .helpers import load_json, save_json
-from .paths import GLOBAL_CONFIG_DIR
+from .paths import GLOBAL_APP_DIR
 
 
 class RecentProject(BaseModel):
@@ -95,22 +94,48 @@ class AppConfig(BaseSettings):
 
 # 历史文件名（用于一次性迁移）
 _LEGACY_PATHS: tuple[Path, ...] = (
-    GLOBAL_CONFIG_DIR / "config.json",
-    GLOBAL_CONFIG_DIR / "gui_state.json",
+    GLOBAL_APP_DIR / "config.json",
+    GLOBAL_APP_DIR / "gui_state.json",
 )
-_SETTINGS_PATH = GLOBAL_CONFIG_DIR / "settings.json"
+_SETTINGS_PATH = GLOBAL_APP_DIR / "settings.json"
+
+
+def _legacy_platformdirs_settings_paths() -> list[Path]:
+    """Return legacy platformdirs settings.json locations for migration."""
+    try:
+        from platformdirs import user_config_dir, user_data_dir
+    except ImportError:  # pragma: no cover
+        return []
+    return [
+        Path(user_config_dir("MBForge", appauthor=False)) / "settings.json",
+        Path(user_data_dir("MBForge", appauthor=False)) / "settings.json",
+    ]
 
 
 def _migrate_legacy_configs() -> None:
-    """一次性合并 config.json + gui_state.json 到 settings.json,然后删除旧文件.
+    """一次性迁移旧配置到新的统一目录.
 
-    - config.json 内容整体作为 settings.json 的起点
-    - gui_state.json 的 recent_projects: list[{root,name}] 并入(去重,新者在前)
+    迁移来源按优先级:
+    1. 旧 platformdirs 位置的 settings.json (%APPDATA%/%LOCALAPPDATA%/MBForge/)
+    2. 同一目录下的 config.json / gui_state.json
+
+    迁移后旧文件保留(不删除),避免数据丢失;用户可手动清理旧 %APPDATA% 目录。
     """
     if _SETTINGS_PATH.exists():
         return
 
     merged: dict[str, Any] = {}
+
+    # 1. 尝试从旧 platformdirs 位置读取 settings.json
+    for legacy_settings in _legacy_platformdirs_settings_paths():
+        if not legacy_settings.exists():
+            continue
+        data = load_json(legacy_settings)
+        if isinstance(data, dict):
+            merged.update(data)
+            break
+
+    # 2. 合并旧 config.json / gui_state.json(如果存在)
     for legacy in _LEGACY_PATHS:
         if not legacy.exists():
             continue
@@ -134,8 +159,6 @@ def _migrate_legacy_configs() -> None:
             # config.json: 浅合并顶层
             for k, v in data.items():
                 merged.setdefault(k, v)
-        with contextlib.suppress(OSError):
-            legacy.unlink()
 
     if merged:
         try:
@@ -154,10 +177,16 @@ def load_global_config() -> AppConfig:
         data = load_json(_SETTINGS_PATH)
         if data is not None:
             try:
-                return AppConfig.model_validate(data)
+                cfg = AppConfig.model_validate(data)
+                # 未设置 library_root 时默认指向统一应用目录
+                if cfg.library_root is None or cfg.library_root == "":
+                    cfg.library_root = str(GLOBAL_APP_DIR)
+                    save_global_config(cfg)
+                return cfg
             except Exception:  # noqa: BLE001 — corrupt file, fall through to defaults
                 pass
     cfg = AppConfig()
+    cfg.library_root = str(GLOBAL_APP_DIR)
     save_global_config(cfg)
     return cfg
 

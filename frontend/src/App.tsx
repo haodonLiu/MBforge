@@ -1,36 +1,25 @@
-import { Suspense, useState, lazy, useEffect, useRef, useMemo } from 'react'
+import { Suspense, lazy, useState, useRef, useEffect } from 'react'
 import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { I18nextProvider } from 'react-i18next'
 import i18n from './i18n'
 import AnimatedPage from './components/animations/AnimatedPage'
-import { ToastContainer, ToastProvider } from './components/ui'
-import ErrorBoundary from './components/ErrorBoundary'
-import Sidebar from './components/Sidebar'
-import Header from './components/Header'
-// Welcome is above-the-fold and stays static for fast first paint.
-import Welcome from './components/Welcome'
-import LibraryPanel from './components/LibraryPanel'
-import TabBar from './components/project/TabBar'
+import { ToastProvider } from './components/ui'
+import { LibraryBootstrap } from './components/app/LibraryBootstrap'
+import { AppShell } from './components/app/AppShell'
+import { AppProvider, useAppContext } from './context/AppContext'
 import PdfViewer from './components/project/PdfViewer'
 import DocumentViewer from './components/project/DocumentViewer'
 import MarkdownViewer from './components/MarkdownViewer'
-import { AppProvider, useAppContext } from './context/AppContext'
-
-import { useIsMobile } from './styles/responsive'
 import { registerGlobalErrorHandlers } from './api/http/_utils'
 import { useSidecarEvents } from './hooks/useSidecarEvents'
 import { useIngestNotifications } from './hooks/useIngestNotifications'
-import OcrConfigModal from './components/OcrConfigModal'
 import { getLibraryStatus } from './api/http/library'
-
-// Route-level code splitting — each page becomes its own chunk.
-// Heavy bundles (Chat, MoleculeLibrary) only load when the user navigates
-// to them, slashing initial TTI.
+import type { Tab } from './context/AppContext'
 import Workspace from './components/workspace/Workspace'
+
 const Discover = lazy(() => import('./components/discover/Discover'))
 const MoleculeLibrary = lazy(() => import('./components/MoleculeLibrary'))
-
 const Notes = lazy(() => import('./components/Notes'))
 const ProcessingQueue = lazy(() => import('./components/project/ProcessingQueue'))
 const SettingsPage = lazy(() => import('./components/settings/SettingsPage'))
@@ -38,14 +27,7 @@ const SettingsPage = lazy(() => import('./components/settings/SettingsPage'))
 /** Lightweight fallback shown while a route chunk is being fetched. */
 function RouteFallback() {
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: '100%',
-      color: 'var(--text-muted)',
-      fontSize: '14px',
-    }}>
+    <div className="route-fallback">
       Loading...
     </div>
   )
@@ -56,34 +38,38 @@ export default function App() {
     <I18nextProvider i18n={i18n}>
       <AppProvider>
         <ToastProvider>
-          <AppInner />
+          <AppShellOrBootstrap />
         </ToastProvider>
       </AppProvider>
     </I18nextProvider>
   )
 }
 
-function AppInner() {
-  const { libraryRoot, setLibraryRoot, libraryPanelCollapsed, openTabs, activeTabId, closeTab } = useAppContext()
+/**
+ * Thin orchestrator — holds lifecycle hooks and chooses between the
+ * bootstrap (no library) or the full app shell (library configured).
+ */
+function AppShellOrBootstrap() {
+  const {
+    libraryRoot,
+    setLibraryRoot,
+    libraryPanelCollapsed,
+    openTabs,
+    activeTabId,
+    closeTab,
+  } = useAppContext()
   const [currentPage, setCurrentPage] = useState('workspace')
-  const isMobile = useIsMobile()
-
-
-  // 当前激活的标签
-  const activeTab = useMemo(
-    () => (activeTabId ? openTabs.find(t => t.id === activeTabId) ?? null : null),
-    [activeTabId, openTabs],
-  )
 
   useSidecarEvents()
   useIngestNotifications(libraryRoot)
 
+  // Register global error handlers once on mount.
   useEffect(() => {
     const cleanup = registerGlobalErrorHandlers()
     return cleanup
   }, [])
 
-  // Listen for cross-component navigation requests (e.g. OcrApiMissingModal).
+  // Listen for cross-component navigation requests.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<string>).detail
@@ -93,7 +79,7 @@ function AppInner() {
     return () => window.removeEventListener('mbforge:navigate', handler)
   }, [])
 
-  // Restore library config from backend on mount
+  // Restore library config from backend on mount.
   useEffect(() => {
     void (async () => {
       try {
@@ -108,7 +94,7 @@ function AppInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Keep localStorage in sync with libraryRoot so the setting persists
+  // Keep localStorage in sync with libraryRoot.
   const hasMountedRef = useRef(false)
   useEffect(() => {
     if (!hasMountedRef.current) {
@@ -122,96 +108,70 @@ function AppInner() {
     }
   }, [libraryRoot])
 
-  // No library configured - show Welcome (library config)
   if (!libraryRoot) {
-    return (
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr',
-        gridTemplateRows: '1fr',
-        height: '100vh',
-      }}>
-        <main style={{
-          gridColumn: '1',
-          gridRow: '1',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}>
-          <Welcome />
-        </main>
-        <ToastContainer />
-      </div>
-    )
+    return <LibraryBootstrap />
   }
 
-  // Library configured - show full app with library panel
   return (
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: libraryPanelCollapsed ? '56px 0px 1fr' : '56px 220px 1fr',
-      gridTemplateRows: 'auto auto 1fr auto',
-      height: '100vh',
-    }}>
-      <Sidebar
-        current={currentPage}
-        onNavigate={setCurrentPage}
-      />
-      {!libraryPanelCollapsed && (
-        <div style={{
-          gridColumn: '2',
-          gridRow: '1 / 5',
-          background: 'var(--bg-surface)',
-          borderRight: '1px solid var(--border)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}>
-          <LibraryPanel />
-        </div>
+    <AppShell
+      currentPage={currentPage}
+      onNavigate={setCurrentPage}
+      libraryPanelCollapsed={libraryPanelCollapsed}
+    >
+      {activeTabId === null ? (
+        <AppRoutes />
+      ) : (
+        <TabContent
+          activeTabId={activeTabId}
+          openTabs={openTabs}
+          closeTab={closeTab}
+        />
       )}
-      <Header gridColumn="3" currentPage={currentPage} />
-      <div style={{ gridColumn: '3' }}>
-        <TabBar />
-      </div>
-      <main style={{
-        gridColumn: '3',
-        gridRow: '3 / 5',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        paddingBottom: isMobile ? 'env(safe-area-inset-bottom)' : 0,
-      }}>
-        <ErrorBoundary>
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            {activeTabId === null ? (
-              <AppRoutes />
-            ) : activeTab && activeTab.type === 'pdf' ? (
-              <PdfViewer
-                doc={activeTab.doc}
-                libraryRoot={activeTab.libraryRoot}
-                onClose={() => closeTab(activeTab.id)}
-              />
-            ) : activeTab && activeTab.type === 'markdown' ? (
-              <MarkdownViewer
-                libraryRoot={activeTab.libraryRoot}
-                filePath={activeTab.doc.path}
-                onClose={() => closeTab(activeTab.id)}
-              />
-            ) : activeTab && activeTab.type === 'document' ? (
-              <DocumentViewer
-                doc={activeTab.doc}
-                libraryRoot={activeTab.libraryRoot}
-                onClose={() => closeTab(activeTab.id)}
-              />
-            ) : null}
-          </div>
-        </ErrorBoundary>
-      </main>
-      <ToastContainer />
-      <OcrConfigModal />
-    </div>
+    </AppShell>
   )
+}
+
+/** Switch on active tab type: pdf / markdown / document viewer. */
+function TabContent({
+  activeTabId,
+  openTabs,
+  closeTab,
+}: {
+  activeTabId: string
+  openTabs: Tab[]
+  closeTab: (id: string) => void
+}) {
+  const activeTab = openTabs.find(t => t.id === activeTabId) ?? null
+  if (!activeTab) return null
+
+  switch (activeTab.type) {
+    case 'pdf':
+      return (
+        <PdfViewer
+          doc={activeTab.doc}
+          libraryRoot={activeTab.libraryRoot}
+          onClose={() => closeTab(activeTab.id)}
+        />
+      )
+    case 'markdown':
+      return (
+        <MarkdownViewer
+          libraryRoot={activeTab.libraryRoot}
+          filePath={activeTab.doc.path}
+          onClose={() => closeTab(activeTab.id)}
+        />
+      )
+    case 'document':
+      return (
+        <DocumentViewer
+          doc={activeTab.doc}
+          libraryRoot={activeTab.libraryRoot}
+          onClose={() => closeTab(activeTab.id)}
+        />
+      )
+    default:
+      return null
+  }
 }
 
 function AppRoutes() {

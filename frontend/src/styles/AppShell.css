@@ -1,0 +1,56 @@
+/* AppShell grid layout — replaces inline grid styles from App.tsx */
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 56px 220px 1fr;
+  grid-template-rows: auto auto 1fr auto;
+  height: 100vh;
+}
+
+.app-shell--collapsed {
+  grid-template-columns: 56px 0px 1fr;
+}
+
+.app-shell--no-library {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+  height: 100vh;
+}
+
+.app-shell--no-library .app-shell__main {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-shell__library-panel {
+  grid-column: 2;
+  grid-row: 1 / 5;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-shell__header {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.app-shell__tab-bar {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.app-shell__content {
+  grid-column: 3;
+  grid-row: 3 / 5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}

@@ -107,20 +107,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const openTab = useCallback((tab: Omit<Tab, 'id'>) => {
-    const tabs = openTabs
-    const existing = tabs.find(
-      t => t.type === tab.type && t.doc.doc_id === tab.doc.doc_id
-    )
-    const newId = nextTabId()
-
-    if (existing) {
-      setActiveTabId(existing.id)
-    } else {
+    setOpenTabs((prev) => {
+      const existing = prev.find(
+        (t) => t.type === tab.type && t.doc.doc_id === tab.doc.doc_id,
+      )
+      if (existing) {
+        setActiveTabId(existing.id)
+        return prev
+      }
+      const newId = nextTabId()
       const newTab: Tab = { ...tab, id: newId }
-      setOpenTabs([...tabs, newTab])
       setActiveTabId(newId)
-    }
-  }, [openTabs])
+      return [...prev, newTab]
+    })
+  }, [])
 
   const closeTab = useCallback((tabId: string) => {
     setOpenTabs(prev => {

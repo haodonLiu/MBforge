@@ -1,7 +1,10 @@
-import { StrictMode } from 'react'
+import { StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { onCLS, onINP, onLCP } from 'web-vitals'
+import { queryClient } from './api/query/client'
 import App from './App'
 import './styles/base.css'
 import './styles/theme.css'
@@ -33,10 +36,21 @@ onLCP((metric) => {
   if (import.meta.env.DEV) console.log('[vitals] LCP:', metric.value)
 })
 
+function Providers({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+      {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
+    </QueryClientProvider>
+  )
+}
+
 createRoot(document.getElementById('root') ?? document.body).render(
   <StrictMode>
     <BrowserRouter>
-      <App />
+      <Providers>
+        <App />
+      </Providers>
     </BrowserRouter>
   </StrictMode>,
 )

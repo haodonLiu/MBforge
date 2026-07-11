@@ -145,7 +145,7 @@ setup/
 /docs/pdf-pipeline-test/
 
 # ============================================================================
-# Tooling worktrees (ephemeral)
+# Tooling worktrees and ephemeral skill/config dirs
 # ============================================================================
 .claude/worktrees/
 /.claude/settings.local.json
@@ -154,4 +154,6 @@ setup/
 .claude/reports/
 .mimocode/
 .opencode/
+.kimi-code/
+.agents/skills/caveman/
 .worktrees/

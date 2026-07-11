@@ -10,6 +10,7 @@ import pytest
 
 from mbforge.pipeline.runner import run_pipeline
 from mbforge.pipeline.stage_result import PipelineErrorCode
+from mbforge.pipeline.stages.markdown_stage import MarkdownStage
 
 
 def _mixed_density() -> MagicMock:
@@ -64,8 +65,9 @@ def test_pipeline_aborts_on_fatal_persist_error(
             "mbforge.pipeline.extract_molecules.extract_molecules_from_pdf",
             return_value=[],
         ),
-        patch(
-            "mbforge.pipeline.runner._enrich_molecules",
+        patch.object(
+            MarkdownStage,
+            "_detect_molecules",
             return_value={
                 "molecule_count": 1,
                 "rejected_count": 0,
@@ -104,7 +106,7 @@ def test_pipeline_aborts_on_fatal_persist_error(
 
     error_events = [e for e in events if e["event"] == "error"]
     assert len(error_events) >= 1
-    assert error_events[0]["stage"] == "persist_mols"
+    assert error_events[0]["stage"] == "persist"
     assert (
         error_events[0]["data"].get("error_code")
         == PipelineErrorCode.PERSIST_MOLECULES_FAILED
@@ -131,8 +133,9 @@ def test_pipeline_continues_on_recoverable_reorganize_error(
             "mbforge.pipeline.extract_molecules.extract_molecules_from_pdf",
             return_value=[],
         ),
-        patch(
-            "mbforge.pipeline.runner._enrich_molecules",
+        patch.object(
+            MarkdownStage,
+            "_detect_molecules",
             return_value={
                 "molecule_count": 0,
                 "rejected_count": 0,
@@ -195,8 +198,9 @@ def test_pipeline_emits_stage_result_context_on_error(
             "mbforge.pipeline.extract_molecules.extract_molecules_from_pdf",
             return_value=[],
         ),
-        patch(
-            "mbforge.pipeline.runner._enrich_molecules",
+        patch.object(
+            MarkdownStage,
+            "_detect_molecules",
             return_value={
                 "molecule_count": 0,
                 "rejected_count": 0,

@@ -1,10 +1,9 @@
 """Document density classification — replaces old doc-type classifier.
 
 Determines whether a document is primarily text, mixed (text + figures), or
-image-only (scanned). This classification drives downstream stage branching:
-- ``text_only`` → skip molecule image extraction
-- ``mixed`` → run all stages including molecule image extraction
-- ``image_only`` → run molecule extraction with high-DPI OCR
+image-only (scanned). This classification is used for progress reporting and
+OCR tuning; molecule image extraction now runs for all three kinds so that
+structures embedded in otherwise text-heavy documents are not missed.
 """
 
 from __future__ import annotations

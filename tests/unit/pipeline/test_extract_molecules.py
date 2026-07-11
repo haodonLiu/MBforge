@@ -44,8 +44,6 @@ def _patch_pdf_dependencies(monkeypatch: pytest.MonkeyPatch) -> dict:
     fake_molscribe.predict.return_value = fake_scribe
 
     monkeypatch.setitem(sys.modules, "fitz", fake_fitz)
-    monkeypatch.setitem(sys.modules, "mbforge.backends.molscribe", fake_molscribe)
-
     fake_bbox = MagicMock()
     fake_bbox.category_id = 1
     fake_bbox.bbox = [0.1, 0.1, 0.9, 0.9]
@@ -91,6 +89,7 @@ def test_extract_molecules_from_pdf_mocked_backends(
     mocks["fitz"].open.return_value = fake_doc
 
     with (
+        patch("mbforge.backends.molscribe", new=mocks["molscribe"]),
         patch("mbforge.backends.moldet_v2_ft.MolDetv2FTDetector") as mock_detector_cls,
         patch("mbforge.core.resource_manager.ResourceManager"),
         patch(

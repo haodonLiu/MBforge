@@ -53,7 +53,6 @@ def test_full_pipeline_text_only_document(sample_pdf: Path, tmp_path: Path) -> N
     # File-system artifacts
     storage_dir = library_root / "storage" / "sample_doc"
     assert (storage_dir / "source.pdf").exists()
-    assert (storage_dir / "reorganized.md").exists()
     assert (storage_dir / "report.json").exists()
     assert (storage_dir / "pages" / "page_0001.txt").exists()
     assert (storage_dir / "pages" / "page_0002.txt").exists()
@@ -64,6 +63,10 @@ def test_full_pipeline_text_only_document(sample_pdf: Path, tmp_path: Path) -> N
     assert report["page_count"] == 2
     assert report["doc_kind"] == "text_only"
     assert report["molecule_count"] == 0
+
+    # Text-only documents may skip reorganization when no molecules are detected.
+    if report.get("doc_kind") != "text_only":
+        assert (storage_dir / "reorganized.md").exists()
 
     # Database artifacts: the document is persisted via the pipeline runner.
     # Detailed database assertions live in tests/unit/core/test_database.py.

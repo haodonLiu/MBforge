@@ -153,4 +153,5 @@ setup/
 .claude/plans/
 .claude/reports/
 .mimocode/
+.opencode/
 .worktrees/

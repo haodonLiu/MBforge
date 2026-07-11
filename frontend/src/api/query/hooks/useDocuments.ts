@@ -29,8 +29,8 @@ export function useImportDocument() {
     mutationFn: ({ file, title }: { file: File; title?: string }) =>
       importDocument(file, title),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.documents.all })
-      qc.invalidateQueries({ queryKey: queryKeys.ingest.all })
+      void qc.invalidateQueries({ queryKey: queryKeys.documents.all })
+      void qc.invalidateQueries({ queryKey: queryKeys.ingest.all })
     },
   })
 }
@@ -42,7 +42,7 @@ export function useDeleteDocument() {
   return useMutation({
     mutationFn: (docId: string) => deleteDocument(docId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.documents.all })
+      void qc.invalidateQueries({ queryKey: queryKeys.documents.all })
     },
   })
 }

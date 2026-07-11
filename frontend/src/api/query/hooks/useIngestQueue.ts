@@ -58,7 +58,7 @@ export function useCancelTask() {
       taskId: string
     }) => ingestCancel(libraryRoot, taskId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.ingest.all })
+      void qc.invalidateQueries({ queryKey: queryKeys.ingest.all })
     },
   })
 }
@@ -76,7 +76,7 @@ export function useRetryTask() {
       taskId: string
     }) => ingestRetry(libraryRoot, taskId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.ingest.all })
+      void qc.invalidateQueries({ queryKey: queryKeys.ingest.all })
     },
   })
 }
@@ -94,7 +94,7 @@ export function useDeleteTask() {
       taskId: string
     }) => ingestDeleteTask(libraryRoot, taskId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: queryKeys.ingest.all })
+      void qc.invalidateQueries({ queryKey: queryKeys.ingest.all })
     },
   })
 }

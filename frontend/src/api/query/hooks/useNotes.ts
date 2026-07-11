@@ -26,7 +26,7 @@ export function useSaveNote() {
       note: Note
     }) => notesSave(libraryRoot, note),
     onSuccess: (_data, variables) => {
-      qc.invalidateQueries({
+      void qc.invalidateQueries({
         queryKey: queryKeys.notes.list(variables.libraryRoot),
       })
     },
@@ -46,7 +46,7 @@ export function useDeleteNote() {
       noteId: string
     }) => notesDelete(libraryRoot, noteId),
     onSuccess: (_data, variables) => {
-      qc.invalidateQueries({
+      void qc.invalidateQueries({
         queryKey: queryKeys.notes.list(variables.libraryRoot),
       })
     },

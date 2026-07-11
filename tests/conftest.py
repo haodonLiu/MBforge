@@ -54,16 +54,27 @@ def mock_llm_client() -> Any:
 def app_client(tmp_library: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """FastAPI TestClient with global config pointing to a temp library."""
     from mbforge.app import app
+    from mbforge.routers import library as library_router
     from mbforge.utils import config
 
     original_load = config.load_global_config
 
-    def _load_temp():
-        cfg = original_load()
-        cfg.library_root = str(tmp_library)
-        return cfg
+    class _PatchedLoad:
+        def __call__(self):
+            cfg = original_load()
+            cfg.library_root = str(tmp_library)
+            return cfg
 
-    monkeypatch.setattr(config, "load_global_config", _load_temp)
+        def cache_clear(self):
+            original_load.cache_clear()
+
+    patched = _PatchedLoad()
+
+    # Routers that imported ``load_global_config`` directly must be patched
+    # in their own module namespace; patching ``config.load_global_config``
+    # only affects runtime lookups inside ``mbforge.utils.config``.
+    monkeypatch.setattr(config, "load_global_config", patched)
+    monkeypatch.setattr(library_router, "load_global_config", patched)
     return TestClient(app)
 
 

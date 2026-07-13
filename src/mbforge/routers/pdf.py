@@ -9,8 +9,25 @@ by the queue UI before kicking off a full pipeline run.
 from __future__ import annotations
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 router = APIRouter()
+
+
+class FigureBbox(BaseModel):
+    """Single embedded figure bbox in PDF point units."""
+
+    xref: int
+    bbox_pdf: tuple[float, float, float, float]
+    width: float | None = None
+    height: float | None = None
+
+
+class PageFigureBboxes(BaseModel):
+    """Per-page figure bbox collection returned by ``/figure-bboxes``."""
+
+    page_num: int
+    figures: list[FigureBbox]
 
 
 @router.post("/classify")

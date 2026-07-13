@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from types import SimpleNamespace
 
@@ -44,5 +45,5 @@ def test_pageindex_client_ignores_legacy_environment_configuration(
         "model": "openai/settings-model",
         "storage_path": str(tmp_path),
     }
-    assert __import__("os").environ["OPENAI_API_KEY"] == "settings-key"
-    assert __import__("os").environ["OPENAI_API_BASE"] == "https://settings.example/v1"
+    assert os.environ["OPENAI_API_KEY"] == "settings-key"
+    assert os.environ["OPENAI_API_BASE"] == "https://settings.example/v1"

@@ -34,6 +34,11 @@ class PersistStage:
         Writes:
             Database: molecules, evidence, text_molecule_links
             Filesystem: storage/{doc_id}/pages/, report.json
+
+        Consistency rule: database writes are committed before filesystem
+        artifacts are exposed. If the filesystem write fails, the molecule rows
+        written for this document are compensated (deleted) so the DB does not
+        reference a document that was not fully persisted.
         """
         # Stage 5+6: Persist molecules + register links (single txn)
         try:
@@ -49,11 +54,14 @@ class PersistStage:
                 context={"exception_type": type(e).__name__, "detail": str(e)},
             )
 
-        # Stage 7: Persist document to filesystem
+        # Stage 7: Persist document to filesystem.
         try:
             self._persist_document(ctx)
         except Exception as e:
             logger.error("Document persistence failed for %s: %s", ctx.doc_id, e)
+            # Compensate the molecule rows already committed for this document so
+            # we do not leave DB records for a failed document persist.
+            self._compensate_molecule_persistence(ctx)
             return StageResult(
                 stage="persist",
                 status="error",
@@ -166,3 +174,36 @@ class PersistStage:
                         cleanup_exc,
                     )
             raise
+
+    def _compensate_molecule_persistence(self, ctx: PipelineContext) -> None:
+        """Remove doc-specific molecule rows written during a failed persist.
+
+        The shared ``molecules`` table is intentionally left untouched because
+        the same canonical SMILES may be referenced by other documents.
+        """
+        try:
+            db = DatabaseManager.get(str(ctx.library_root))
+            db.execute(
+                "DELETE FROM molecule_detections WHERE doc_id = ?",
+                (ctx.doc_id,),
+                db="mol",
+            )
+            db.execute(
+                "DELETE FROM evidence WHERE doc_id = ?",
+                (ctx.doc_id,),
+                db="mol",
+            )
+            db.execute(
+                "DELETE FROM text_molecule_links WHERE doc_id = ?",
+                (ctx.doc_id,),
+                db="mol",
+            )
+            logger.info(
+                "Compensated molecule persistence for document %s", ctx.doc_id
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to compensate molecule persistence for %s: %s",
+                ctx.doc_id,
+                exc,
+            )

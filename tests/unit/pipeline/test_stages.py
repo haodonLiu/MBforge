@@ -9,9 +9,10 @@ from unittest.mock import patch
 
 import pytest
 
+from mbforge.core.database import DatabaseManager
 from mbforge.pipeline.context import PipelineContext
 from mbforge.pipeline.runner import STAGES, _is_temp_path, run_pipeline
-from mbforge.pipeline.stage_result import StageResult
+from mbforge.pipeline.stage_result import PipelineErrorCode, StageResult
 from mbforge.pipeline.stages import (
     DensityStage,
     ExtractStage,
@@ -327,3 +328,76 @@ class TestMarkdownStageTypedResult:
         assert "candidates" in required
         assert "molecule_count" in required
         assert "rejected_count" in required
+
+
+class TestPersistStageCompensation:
+    """Failure mid-persist must be compensated to keep DB/filesystem consistent."""
+
+    def test_compensates_molecule_rows_when_document_write_fails(
+        self, tmp_path: Path
+    ) -> None:
+        db = DatabaseManager.get(str(tmp_path))
+        db.initialize()
+        doc_id = "doc-123"
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id=doc_id,
+        )
+        stage = PersistStage()
+
+        def _fake_persist_molecules(_ctx: PipelineContext) -> None:
+            # Simulate a successful molecule persist by inserting doc-specific rows.
+            with db.mol_conn() as conn:
+                conn.execute(
+                    "INSERT INTO molecules (mol_id, smiles) VALUES (?, ?)",
+                    ("M1", "C"),
+                )
+                conn.execute(
+                    "INSERT INTO molecule_detections (mol_id, doc_id, page) VALUES (?, ?, ?)",
+                    ("M1", doc_id, 1),
+                )
+                conn.execute(
+                    "INSERT INTO evidence (canonical_smiles, doc_id, kind) VALUES (?, ?, ?)",
+                    ("C", doc_id, "figure"),
+                )
+                conn.execute(
+                    "INSERT INTO text_molecule_links (doc_id, mol_id, created_at) VALUES (?, ?, ?)",
+                    (doc_id, "M1", 0),
+                )
+
+        def _fail_document_persist(_ctx: PipelineContext) -> None:
+            raise OSError("disk full")
+
+        stage._persist_molecules_and_links = _fake_persist_molecules
+        stage._persist_document = _fail_document_persist
+
+        result = stage.execute(ctx)
+
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.PERSIST_DOCUMENT_FAILED
+        assert (
+            db.execute(
+                "SELECT COUNT(*) AS cnt FROM molecule_detections WHERE doc_id = ?",
+                (doc_id,),
+                db="mol",
+            )[0]["cnt"]
+            == 0
+        )
+        assert (
+            db.execute(
+                "SELECT COUNT(*) AS cnt FROM evidence WHERE doc_id = ?",
+                (doc_id,),
+                db="mol",
+            )[0]["cnt"]
+            == 0
+        )
+        assert (
+            db.execute(
+                "SELECT COUNT(*) AS cnt FROM text_molecule_links WHERE doc_id = ?",
+                (doc_id,),
+                db="mol",
+            )[0]["cnt"]
+            == 0
+        )
+

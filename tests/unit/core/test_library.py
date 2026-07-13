@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -77,3 +78,43 @@ def test_add_to_collection(tmp_path: Path) -> None:
     store.add_to_collection(col.collection_id, doc.doc_id)
     docs = store.list_documents(collection_id=col.collection_id)
     assert len(docs) == 1
+
+
+def test_add_uploaded_file_rolls_back_db_on_write_failure(tmp_path: Path) -> None:
+    store = LibraryStore.get(tmp_path)
+    with (
+        patch.object(Path, "write_bytes", side_effect=OSError("disk full")),
+        pytest.raises(MBForgeError, match="Failed to store file"),
+    ):
+        store.add_uploaded_file(b"content", "file.pdf")
+    assert store.doc_count() == 0
+
+
+def test_add_document_rolls_back_db_on_copy_failure(tmp_path: Path) -> None:
+    store = LibraryStore.get(tmp_path)
+    src = tmp_path / "input.pdf"
+    src.write_bytes(b"pdf")
+    with (
+        patch(
+            "mbforge.core.library.shutil.copy2", side_effect=PermissionError("denied")
+        ),
+        pytest.raises(MBForgeError, match="Failed to store file"),
+    ):
+        store.add_document(src)
+    assert store.doc_count() == 0
+
+
+def test_delete_document_keeps_db_row_when_storage_move_fails(tmp_path: Path) -> None:
+    store = LibraryStore.get(tmp_path)
+    src = tmp_path / "input.pdf"
+    src.write_bytes(b"pdf")
+    doc = store.add_document(src)
+    with (
+        patch(
+            "mbforge.core.library.shutil.move", side_effect=OSError("locked")
+        ),
+        pytest.raises(MBForgeError, match="Failed to remove document storage"),
+    ):
+        store.delete_document(doc.doc_id)
+    assert store.get_document(doc.doc_id) is not None
+    assert Path(store.storage_path(doc.doc_id)).exists()

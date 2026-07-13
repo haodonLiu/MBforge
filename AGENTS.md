@@ -447,6 +447,22 @@ MUST go through `LibraryLayout`. Direct path construction is prohibited. See
 `MODELSCOPE_CACHE`, and `TORCH_HOME`. LLM, OCR, PageIndex, model-cache, and
 MolDet settings must be written through the Settings UI to `settings.json`.
 
+
+### Port hygiene for AI assistants
+
+AI assistants must not leave long-running background servers on the project's
+default dev ports (`18792` for the Python backend, `5173` for the Vite frontend)
+after verification is complete. These ports belong to the user's normal dev
+workflow.
+
+- Before starting any server, check whether the target port is already in use.
+- Prefer ephemeral or non-default ports (e.g. `18793`, `5174`) for temporary
+  test instances.
+- Stop every background server/task as soon as the test or fix is verified;
+  do not assume the user will clean it up.
+- If a port conflict is discovered, stop the assistant-owned process rather
+  than asking the user to stop theirs.
+
 ## Testing & QA
 
 ### Frameworks

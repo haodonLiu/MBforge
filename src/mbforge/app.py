@@ -26,6 +26,7 @@ from .utils.logger import (
     reset_request_path,
     set_request_path,
 )
+from .utils.paths import APP_VERSION
 
 logger = get_logger("mbforge.app")
 
@@ -189,7 +190,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="MBForge",
         description="Molecular Knowledge Base & AI Workbench",
-        version="0.4.0",
+        version=APP_VERSION,
         lifespan=lifespan,
     )
 

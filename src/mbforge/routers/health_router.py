@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from ..utils.logger import get_logger
+from ..utils.paths import APP_VERSION
 
 logger = get_logger("mbforge.health_router")
 
@@ -20,7 +21,7 @@ async def health_check() -> dict[str, Any]:
     return {
         "status": "ok",
         "timestamp": int(time.time()),
-        "version": "0.4.0",
+        "version": APP_VERSION,
     }
 
 

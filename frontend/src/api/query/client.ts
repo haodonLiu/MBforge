@@ -4,11 +4,11 @@ import { QueryClient } from '@tanstack/react-query'
 
 /** Default stale time: 30 s.  Knowledge-base data changes infrequently,
  *  so there is no need to refetch on every mount. */
-const DEFAULT_STALE_TIME = 30_000
+const DEFAULT_STALE_TIME = 5 * 60_000
 
 /** Garbage-collection time: 5 min.  After all observers unmount, the
  *  cached data survives for GC-time before being evicted. */
-const DEFAULT_GC_TIME = 5 * 60_000
+const DEFAULT_GC_TIME = 30 * 60_000
 
 /**
  * Shared query client for the MBForge application.

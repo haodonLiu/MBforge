@@ -51,26 +51,31 @@ export function useIngestSSE({
         const ev = event as unknown as Record<string, unknown>
         qc.setQueryData<IngestTask[]>(
           queryKeys.ingest.queue(libraryRoot),
-          (prev) =>
-            prev?.map((t) =>
-              t.id === taskId
-                ? {
-                    ...t,
-                    progress_pct:
-                      'progress_pct' in ev
-                        ? (ev.progress_pct as number)
-                        : t.progress_pct,
-                    stage:
-                      'stage' in ev
-                        ? (ev.stage as string)
-                        : t.stage,
-                    details:
-                      'details' in ev
-                        ? (ev.details as string)
-                        : t.details,
-                  }
-                : t,
-            ),
+          (prev) => {
+            if (!prev) return prev
+            const eventTimestamp = typeof ev.ts_ms === 'number' ? ev.ts_ms : null
+
+            return prev.map((t) => {
+              if (t.id !== taskId) return t
+              if (eventTimestamp !== null && eventTimestamp < t.updated_at * 1000) {
+                return t
+              }
+
+              return {
+                ...t,
+                progress_pct:
+                  'progress_pct' in ev
+                    ? (ev.progress_pct as number)
+                    : t.progress_pct,
+                stage: 'stage' in ev ? (ev.stage as string) : t.stage,
+                details: 'details' in ev ? (ev.details as string) : t.details,
+                updated_at:
+                  eventTimestamp !== null
+                    ? Math.floor(eventTimestamp / 1000)
+                    : t.updated_at,
+              }
+            })
+          },
         )
       },
       onError: () => {

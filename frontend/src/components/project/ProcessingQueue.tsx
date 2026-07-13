@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import PageContainer from '../ui/PageContainer'
 import { useTranslation } from 'react-i18next'
 import Button from '../ui/Button'
@@ -386,33 +387,110 @@ export default function ProcessingQueue() {
             }
           />
         ) : (
-          <motion.div
-            className="queue-list"
-            initial="hidden"
-            animate="visible"
-            variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.03 } } }}
-          >
-            <AnimatePresence initial={false}>
-              {visibleTasks.map((task) => (
-                <TaskRow
-                  key={task.id}
-                  task={task}
-                  now={now}
-                  isLogsExpanded={expandedLogDocs.has(task.doc_id)}
-                  logs={logMap.get(task.doc_id) ?? []}
-                  isActioning={actionId === task.id}
-                  onToggleLogs={() => toggleLogs(task.doc_id)}
-                  onCancel={() => handleCancel(task)}
-                  onRetry={() => handleRetry(task)}
-                  onDelete={() => handleDelete(task)}
-                  onTogglePin={() => handleSetPriority(task)}
-                />
-              ))}
-            </AnimatePresence>
-          </motion.div>
+          <QueueTaskList
+            tasks={visibleTasks}
+            now={now}
+            expandedLogDocs={expandedLogDocs}
+            logMap={logMap}
+            actionId={actionId}
+            onToggleLogs={toggleLogs}
+            onCancel={handleCancel}
+            onRetry={handleRetry}
+            onDelete={handleDelete}
+            onTogglePin={handleSetPriority}
+          />
         )}
       </div>
     </PageContainer>
+  )
+}
+
+interface QueueTaskListProps {
+  tasks: IngestTask[]
+  now: number
+  expandedLogDocs: Set<string>
+  logMap: Map<string, IngestLogEvent[]>
+  actionId: string | null
+  onToggleLogs: (docId: string) => void
+  onCancel: (task: IngestTask) => void
+  onRetry: (task: IngestTask) => void
+  onDelete: (task: IngestTask) => void
+  onTogglePin: (task: IngestTask) => void
+}
+
+/** Keep the common queue small and animated; virtualize only genuinely long queues. */
+function QueueTaskList({
+  tasks,
+  now,
+  expandedLogDocs,
+  logMap,
+  actionId,
+  onToggleLogs,
+  onCancel,
+  onRetry,
+  onDelete,
+  onTogglePin,
+}: QueueTaskListProps) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  const shouldVirtualize = tasks.length > 80
+  const virtualizer = useVirtualizer({
+    count: shouldVirtualize ? tasks.length : 0,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 220,
+    measureElement: (element) => element.getBoundingClientRect().height,
+    overscan: 6,
+  })
+
+  const renderTask = (task: IngestTask) => (
+    <TaskRow
+      key={task.id}
+      task={task}
+      now={now}
+      isLogsExpanded={expandedLogDocs.has(task.doc_id)}
+      logs={logMap.get(task.doc_id) ?? []}
+      isActioning={actionId === task.id}
+      onToggleLogs={() => onToggleLogs(task.doc_id)}
+      onCancel={() => onCancel(task)}
+      onRetry={() => onRetry(task)}
+      onDelete={() => onDelete(task)}
+      onTogglePin={() => onTogglePin(task)}
+    />
+  )
+
+  if (!shouldVirtualize) {
+    return (
+      <motion.div
+        className="queue-list"
+        initial="hidden"
+        animate="visible"
+        variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.03 } } }}
+      >
+        <AnimatePresence initial={false}>
+          {tasks.map(renderTask)}
+        </AnimatePresence>
+      </motion.div>
+    )
+  }
+
+  return (
+    <div ref={parentRef} className="queue-list queue-list-virtual">
+      <div
+        className="queue-list-virtual-inner"
+        style={{ height: `${virtualizer.getTotalSize()}px` }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => (
+          <div
+            key={tasks[virtualItem.index].id}
+            ref={virtualizer.measureElement}
+            data-index={virtualItem.index}
+            className="queue-list-virtual-item"
+            style={{ transform: `translateY(${virtualItem.start}px)` }}
+          >
+            {renderTask(tasks[virtualItem.index])}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 

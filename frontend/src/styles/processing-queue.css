@@ -303,6 +303,29 @@
   padding-bottom: 16px;
 }
 
+.queue-list-virtual {
+  position: relative;
+  display: block;
+  height: min(640px, calc(100vh - 320px));
+  min-height: 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.queue-list-virtual-inner {
+  position: relative;
+  width: 100%;
+}
+
+.queue-list-virtual-item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding-bottom: 10px;
+  box-sizing: border-box;
+}
+
 /* ---------------------------------------------------------------------------
  * Task card
  * ------------------------------------------------------------------------- */

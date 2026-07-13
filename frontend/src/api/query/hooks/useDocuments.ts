@@ -6,6 +6,7 @@ import {
   importDocument,
   deleteDocument,
 } from '../../http/library'
+import type { DocumentInfo } from '../../http/library'
 import { queryKeys } from '../keys'
 
 /**
@@ -41,7 +42,32 @@ export function useDeleteDocument() {
 
   return useMutation({
     mutationFn: (docId: string) => deleteDocument(docId),
-    onSuccess: () => {
+    onMutate: async (docId) => {
+      await qc.cancelQueries({ queryKey: queryKeys.documents.all })
+
+      const previous = qc.getQueriesData<{ documents: DocumentInfo[] }>({
+        queryKey: queryKeys.documents.all,
+      })
+
+      qc.setQueriesData<{ documents: DocumentInfo[] }>(
+        { queryKey: queryKeys.documents.all },
+        (current) => {
+          if (!current) return current
+          return {
+            ...current,
+            documents: current.documents.filter((document) => document.doc_id !== docId),
+          }
+        },
+      )
+
+      return { previous }
+    },
+    onError: (_error, _docId, context) => {
+      context?.previous.forEach(([queryKey, data]) => {
+        qc.setQueryData(queryKey, data)
+      })
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.documents.all })
     },
   })

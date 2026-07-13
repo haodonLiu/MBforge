@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import APIRouter
@@ -25,28 +25,32 @@ class AgentState:
     llm: Any = None
     agent: Any = None
     tools: Any = None
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
-    def ensure_initialized(self) -> None:
-        """Lazy-initialize agent components."""
+    async def ensure_initialized(self) -> None:
+        """Lazy-initialize agent components (async-safe)."""
         if self.agent is not None:
             return
-        try:
-            llm_config = load_global_config().llm
-            if not llm_config.api_key:
-                logger.info("No LLM API key configured — agent running in stub mode")
+        async with self.lock:
+            if self.agent is not None:
                 return
+            try:
+                llm_config = load_global_config().llm
+                if not llm_config.api_key:
+                    logger.info("No LLM API key configured — agent running in stub mode")
+                    return
 
-            from ..agent.graph import create_agent
-            from ..agent.llm_factory import create_llm_from_settings
-            from ..agent.tools import get_all_tools
+                from ..agent.graph import create_agent
+                from ..agent.llm_factory import create_llm_from_settings
+                from ..agent.tools import get_all_tools
 
-            self.llm = create_llm_from_settings()
-            self.tools = get_all_tools()
-            self.agent = create_agent(self.llm, self.tools)
-            logger.info("Agent initialized successfully")
-        except Exception as e:
-            logger.warning("Agent init failed (stub mode): %s", e)
-            self.agent = None
+                self.llm = create_llm_from_settings()
+                self.tools = get_all_tools()
+                self.agent = create_agent(self.llm, self.tools)
+                logger.info("Agent initialized successfully")
+            except Exception as e:
+                logger.warning("Agent init failed (stub mode): %s", e)
+                self.agent = None
 
     def reset(self) -> None:
         """Reset agent state."""
@@ -66,7 +70,7 @@ async def agent_init() -> dict:
 
         session_store.clear_all()
         _agent_state.reset()
-        _agent_state.ensure_initialized()
+        await _agent_state.ensure_initialized()
         return {"success": True, "agent_ready": _agent_state.agent is not None}
     except Exception as e:
         logger.error("Agent init error: %s", e)
@@ -133,7 +137,7 @@ async def agent_chat(session_id: str, body: dict) -> dict:
 
         session.messages.append(ChatMessage(role="user", content=user_input))
 
-        _agent_state.ensure_initialized()
+        await _agent_state.ensure_initialized()
         if _agent_state.agent is not None:
             try:
                 lc_messages = [
@@ -168,7 +172,7 @@ async def agent_chat_stream(session_id: str, user_input: str = "") -> StreamingR
             media_type="text/event-stream",
         )
 
-    _agent_state.ensure_initialized()
+    await _agent_state.ensure_initialized()
 
     async def event_stream():
         session.messages.append(ChatMessage(role="user", content=user_input))

@@ -15,6 +15,7 @@ crops produced by the FT model.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -160,18 +161,21 @@ def to_api_dict(result: CorefResult) -> dict[str, Any]:
 # ---- MolDetv2-FT 联合检测（分子 + coref 一次推理） ----
 
 _ft_detector_singleton: Any | None = None
+_ft_detector_lock = threading.Lock()
 
 
 def get_moldet_ft() -> Any:
-    """获取全局 MolDetv2-FT 检测器单例。"""
+    """获取全局 MolDetv2-FT 检测器单例（线程安全）。"""
     global _ft_detector_singleton
     if _ft_detector_singleton is None:
-        try:
-            from mbforge.backends.moldet_v2_ft import get_moldet_ft as _get
-            _ft_detector_singleton = _get()
-        except Exception as e:
-            logger.warning("MolDetv2-FT 加载失败: %s", e)
-            _ft_detector_singleton = None
+        with _ft_detector_lock:
+            if _ft_detector_singleton is None:
+                try:
+                    from mbforge.backends.moldet_v2_ft import get_moldet_ft as _get
+                    _ft_detector_singleton = _get()
+                except Exception as e:
+                    logger.warning("MolDetv2-FT 加载失败: %s", e)
+                    _ft_detector_singleton = None
     return _ft_detector_singleton
 
 

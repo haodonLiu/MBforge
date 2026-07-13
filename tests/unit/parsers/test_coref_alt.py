@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import threading
 from unittest.mock import patch
 
 from PIL import Image
 
 from mbforge.backends.moldet_v2_ft import MolDetv2FTDetector
+from mbforge.parsers.molecule import coref_alt as coref_module
 from mbforge.parsers.molecule.coref_alt import (
     CorefBbox,
     CorefResult,
     _ocr_identifier_crops,
     detect_coref_via_ft_detector,
+    get_moldet_ft,
 )
 
 
@@ -90,3 +93,42 @@ def test_detect_coref_via_ft_detector_skips_ocr_when_disabled() -> None:
 
     assert result.bboxes[0].text == ""
     mock_adapter.instance.assert_not_called()
+
+
+def test_get_moldet_ft_concurrent_first_call_creates_single_instance(monkeypatch):
+    """Concurrent first calls to coref_alt.get_moldet_ft create one instance."""
+    # Reset singleton so this test observes first-call behavior.
+    coref_module._ft_detector_singleton = None
+
+    call_count = {"n": 0}
+    count_lock = threading.Lock()
+
+    class _FakeDetector:
+        def is_available(self):
+            return True
+
+    def _fake_backend_get():
+        with count_lock:
+            call_count["n"] += 1
+        return _FakeDetector()
+
+    monkeypatch.setattr(
+        "mbforge.backends.moldet_v2_ft.get_moldet_ft", _fake_backend_get
+    )
+
+    detectors = []
+    result_lock = threading.Lock()
+
+    def _target():
+        detector = get_moldet_ft()
+        with result_lock:
+            detectors.append(detector)
+
+    threads = [threading.Thread(target=_target) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len({id(d) for d in detectors}) == 1
+    assert call_count["n"] == 1

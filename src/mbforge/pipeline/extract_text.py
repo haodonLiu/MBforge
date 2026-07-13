@@ -150,6 +150,11 @@ def _ocr_pages(
             upload_batch_size = 1
 
         results: list[str] = [""] * len(page_indices)
+        # Positions within ``page_indices`` that still need single-page OCR.
+        # Starts as every position; the MinerU batch path narrows it to the
+        # pages that came back empty, and a total batch failure falls through
+        # to retrying all positions.
+        pending_positions: list[int] = list(range(len(page_indices)))
 
         # batch_size > 1 时尝试 MinerU 批量路径
         if upload_batch_size > 1:
@@ -165,24 +170,24 @@ def _ocr_pages(
                     empty_after_batch: list[int] = []
                     for batch_start in range(0, len(page_indices), upload_batch_size):
                         batch_end = min(batch_start + upload_batch_size, len(page_indices))
-                        batch_indices = page_indices[batch_start:batch_end]
+                        batch_positions = list(range(batch_start, batch_end))
                         batch_images: list[bytes] = []
-                        for idx in batch_indices:
-                            page = doc.load_page(idx)
+                        for pos in batch_positions:
+                            page = doc.load_page(page_indices[pos])
                             zoom = 2.0
                             mat = fitz.Matrix(zoom, zoom)
                             pix = page.get_pixmap(matrix=mat, alpha=False)
                             batch_images.append(pix.tobytes("png"))
                         batch_results = mineru_backend.extract_text_batch(batch_images)
-                        for offset, idx in enumerate(range(batch_start, batch_end)):
+                        for offset, pos in enumerate(batch_positions):
                             if offset < len(batch_results):
-                                results[idx] = batch_results[offset].text
-                            if not results[idx].strip():
-                                empty_after_batch.append(idx)
+                                results[pos] = batch_results[offset].text
+                            if not results[pos].strip():
+                                empty_after_batch.append(pos)
                     if not empty_after_batch:
                         return results
                     # Fall through to single-page retry for empty pages only
-                    page_indices = empty_after_batch
+                    pending_positions = empty_after_batch
             except Exception as batch_exc:  # noqa: BLE001
                 logger.warning("Batch OCR failed, falling back to single-page: %s", batch_exc)
 
@@ -193,7 +198,8 @@ def _ocr_pages(
         # exponential backoff (1s / 3s / 9s) and treat empty responses as a
         # failure signal so the loop actually re-attempts instead of giving up.
         max_attempts = 3
-        for _idx, page_idx in enumerate(page_indices):
+        for pos in pending_positions:
+            page_idx = page_indices[pos]
             page = doc.load_page(page_idx)
             zoom = 2.0  # 144 DPI for OCR
             mat = fitz.Matrix(zoom, zoom)
@@ -218,7 +224,7 @@ def _ocr_pages(
                     "OCR gave up on page %d after %d attempts",
                     page_idx + 1, max_attempts,
                 )
-            results[page_idx] = text
+            results[pos] = text
         return results
     except Exception as e:  # noqa: BLE001
         logger.warning("OCR fallback failed: %s", e)

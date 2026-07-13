@@ -1,9 +1,10 @@
-"""RapidOCR crop-level adapter (not page-level — use OCRBackend for that).
+"""Shared RapidOCR adapter for crop-level and page-level OCR.
 
 Restored 2026-07-09 to support the coref bridge (routers/coref.py).
-Provides single-crop and batch (concurrent) recognition by running the
-underlying RapidOCR engine with ``use_det=False`` to skip the detector
-(crops are pre-bounded by the FT detector).
+Provides single-crop and batch (concurrent) recognition for coref
+identifier crops (``use_det=False`` — crops are pre-bounded by the FT
+detector) and a full-page entry point for the OCR fallback chain
+(``use_det=True``).
 
 The previous home for this class was ``parsers/molecule/coref_alt.py``
 (``_RapidOCRAdapter``), but it was deleted in the 2026-07-08 FT
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -102,20 +104,43 @@ class RapidOCRCropAdapter:
             RapidOCR,
         )
 
+        use_dml = self._detect_use_dml()
+        logger.info("RapidOCRCropAdapter initializing with use_dml=%s", use_dml)
         self._engine = RapidOCR(
             params={
                 "Det.engine_type": EngineType.ONNXRUNTIME,
                 "Det.lang_type": LangDet.EN,
                 "Det.model_type": ModelType.MEDIUM,
                 "Det.ocr_version": OCRVersion.PPOCRV6,
-                "Det.use_dml": True,
+                "Det.use_dml": use_dml,
                 "Rec.engine_type": EngineType.ONNXRUNTIME,
                 "Rec.lang_type": LangRec.EN,
                 "Rec.model_type": ModelType.MEDIUM,
                 "Rec.ocr_version": OCRVersion.PPOCRV6,
-                "Rec.use_dml": True,
+                "Rec.use_dml": use_dml,
             }
         )
+
+    @staticmethod
+    def _detect_use_dml() -> bool:
+        """Auto-detect DirectML availability with optional env override.
+
+        Order of precedence:
+        1. ``MBFORGE_RAPIDOCR_USE_DML`` env var (``1/true/yes`` or ``0/false/no``).
+        2. ``DmlExecutionProvider`` in onnxruntime available providers.
+        3. Default to ``False`` (CPU) when onnxruntime cannot be inspected.
+        """
+        env = os.environ.get("MBFORGE_RAPIDOCR_USE_DML", "").strip().lower()
+        if env in ("1", "true", "yes"):
+            return True
+        if env in ("0", "false", "no"):
+            return False
+        try:
+            import onnxruntime as ort
+
+            return "DmlExecutionProvider" in ort.get_available_providers()
+        except Exception:  # noqa: BLE001 - onnxruntime may not be installed
+            return False
 
     # ---- single-crop worker (used by both sync and async paths) ----
 
@@ -147,6 +172,28 @@ class RapidOCRCropAdapter:
             idx = max(range(len(txts)), key=lambda i: scores[i])
             return txts[idx]
         return txts[0]
+
+    def readtext_page(self, image: Image.Image) -> str:
+        """Run full-page OCR (detection + recognition) and return plain text.
+
+        This is the page-level entry point used by the OCR fallback chain
+        (`RapidOCRBackend.extract_text`). Unlike `_read_one_sync`, it runs
+        both detection and recognition so it can locate text lines anywhere
+        on the page.
+        """
+        try:
+            arr = np.array(image.convert("RGB"))
+        except Exception as e:  # noqa: BLE001 - bad input image
+            logger.debug("RapidOCR page convert failed: %s", e)
+            return ""
+        try:
+            out = self._engine(arr, use_det=True, use_rec=True)
+        except Exception as e:  # noqa: BLE001 - inference can fail
+            logger.debug("RapidOCR page inference failed: %s", e)
+            return ""
+        if not out or not getattr(out, "txts", None):
+            return ""
+        return "\n".join(t for t in out.txts if t)
 
     # ---- public batch API ----
 

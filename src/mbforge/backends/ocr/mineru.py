@@ -35,6 +35,11 @@ BATCH_RESULT_PATH_TMPL = "/api/v4/extract-results/batch/{batch_id}"
 POLL_INTERVAL_S = 2
 TIMEOUT_S = 120
 
+# Guardrails for MinerU result ZIP downloads.
+ZIP_MAX_TOTAL_BYTES = 256 * 1024 * 1024  # 256 MiB
+ZIP_MAX_ENTRIES = 10_000
+ZIP_READ_CHUNK = 1024 * 1024  # 1 MiB
+
 
 class MinerUBackend(OCRBackend):
     """MinerU OCR backend using batch upload + poll."""
@@ -49,11 +54,14 @@ class MinerUBackend(OCRBackend):
         self.base_url = base_url.rstrip("/")
         self.model_version: str = (cfg.get("model_version") or "vlm").strip()
 
-        # Windows cert store missing intermediate CAs → force certifi bundle
+        # Windows cert store missing intermediate CAs → force certifi bundle.
+        # Passed per-client instead of mutating the global SSL_CERT_FILE env var.
+        self._verify: str | bool = True
         if not os.environ.get("SSL_CERT_FILE"):
             try:
                 import certifi
-                os.environ["SSL_CERT_FILE"] = certifi.where()
+
+                self._verify = certifi.where()
             except ImportError:
                 pass
 
@@ -146,7 +154,7 @@ class MinerUBackend(OCRBackend):
             "files": [{"name": fn} for fn in file_names],
             "model_version": self.model_version,
         }
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=30, verify=self._verify) as client:
             r = client.post(
                 f"{self.base_url}{BATCH_URL_PATH}",
                 headers=headers,
@@ -173,13 +181,12 @@ class MinerUBackend(OCRBackend):
 
         return batch_id, file_urls
 
-    @staticmethod
-    def _upload_to_oss(upload_url: str, data: bytes) -> None:
+    def _upload_to_oss(self, upload_url: str, data: bytes) -> None:
         """PUT file binary to OSS signed URL.
 
         MinerU docs say: no Content-Type header needed.
         """
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=60, verify=self._verify) as client:
             r = client.put(upload_url, content=data)
             r.raise_for_status()
 
@@ -188,7 +195,7 @@ class MinerUBackend(OCRBackend):
         headers = {"Authorization": f"Bearer {self.api_key}"}
         deadline = time.monotonic() + TIMEOUT_S
 
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=30, verify=self._verify) as client:
             while True:
                 if time.monotonic() > deadline:
                     raise TimeoutError(
@@ -241,7 +248,7 @@ class MinerUBackend(OCRBackend):
         remaining = set(file_names)
         entries: dict[str, dict[str, Any]] = {}
 
-        with httpx.Client(timeout=30) as client:
+        with httpx.Client(timeout=30, verify=self._verify) as client:
             while remaining and time.monotonic() < deadline:
                 r = client.get(
                     f"{self.base_url}{BATCH_RESULT_PATH_TMPL.format(batch_id=batch_id)}",
@@ -288,18 +295,44 @@ class MinerUBackend(OCRBackend):
             return ""
 
         try:
-            with httpx.Client(timeout=60) as client:
-                r = client.get(zip_url)
-                r.raise_for_status()
-                with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
-                    # Find the markdown file inside the ZIP
-                    md_files = [n for n in zf.namelist() if n.endswith(".md")]
-                    if md_files:
-                        return zf.read(md_files[0]).decode("utf-8")
-                    # Fall back to any text file
-                    txt_files = [n for n in zf.namelist() if n.endswith(".txt")]
-                    if txt_files:
-                        return zf.read(txt_files[0]).decode("utf-8")
+            with httpx.Client(timeout=60, verify=self._verify) as client:
+                with client.stream("GET", zip_url) as r:
+                    r.raise_for_status()
+                    chunks: list[bytes] = []
+                    total = 0
+                    for chunk in r.iter_bytes(chunk_size=ZIP_READ_CHUNK):
+                        total += len(chunk)
+                        if total > ZIP_MAX_TOTAL_BYTES:
+                            raise RuntimeError(
+                                f"MinerU ZIP exceeds {ZIP_MAX_TOTAL_BYTES} bytes"
+                            )
+                        chunks.append(chunk)
+                zip_bytes = b"".join(chunks)
+            with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+                infos = zf.infolist()
+                if len(infos) > ZIP_MAX_ENTRIES:
+                    raise RuntimeError(
+                        f"MinerU ZIP contains {len(infos)} entries "
+                        f"(max {ZIP_MAX_ENTRIES})"
+                    )
+                # Find the markdown file inside the ZIP
+                md_files = [n for n in zf.namelist() if n.endswith(".md")]
+                if md_files:
+                    info = zf.getinfo(md_files[0])
+                    if info.file_size > ZIP_MAX_TOTAL_BYTES:
+                        raise RuntimeError(
+                            f"MinerU ZIP markdown entry too large: {info.file_size}"
+                        )
+                    return zf.read(md_files[0]).decode("utf-8")
+                # Fall back to any text file
+                txt_files = [n for n in zf.namelist() if n.endswith(".txt")]
+                if txt_files:
+                    info = zf.getinfo(txt_files[0])
+                    if info.file_size > ZIP_MAX_TOTAL_BYTES:
+                        raise RuntimeError(
+                            f"MinerU ZIP text entry too large: {info.file_size}"
+                        )
+                    return zf.read(txt_files[0]).decode("utf-8")
         except Exception as exc:
             logger.warning("MinerU ZIP download/extract failed: %s", exc)
 

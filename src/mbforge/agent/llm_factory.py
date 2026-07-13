@@ -48,7 +48,11 @@ def create_llm(
     llm_cfg = load_global_config().llm
     provider = _resolve_provider(provider, llm_cfg.provider)
 
-    if provider in ("openai_compatible", "openai", "deepseek", "ollama"):
+    temperature = kwargs.get("temperature", llm_cfg.temperature)
+    max_tokens = kwargs.get("max_tokens", llm_cfg.max_tokens)
+    request_timeout = kwargs.get("request_timeout", llm_cfg.request_timeout)
+
+    if provider in ("openai_compatible", "openai", "deepseek"):
         api_key = _resolve_api_key(api_key, llm_cfg.api_key)
         if not api_key:
             raise ValueError(
@@ -56,8 +60,6 @@ def create_llm(
             )
         base_url = _resolve_base_url(base_url, llm_cfg.base_url)
         model = _resolve_model(model, llm_cfg.model, "gpt-3.5-turbo")
-        temperature = kwargs.get("temperature", llm_cfg.temperature)
-        max_tokens = kwargs.get("max_tokens", llm_cfg.max_tokens)
 
         from langchain_openai import ChatOpenAI
 
@@ -67,6 +69,26 @@ def create_llm(
             base_url=base_url,
             temperature=temperature,
             max_tokens=max_tokens,
+            timeout=request_timeout,
+        )
+
+    elif provider == "ollama":
+        # Ollama uses an OpenAI-compatible endpoint and does not require a real
+        # API key. A non-empty placeholder avoids validation errors in the
+        # LangChain OpenAI client while keeping the local provider keyless.
+        base_url = base_url or llm_cfg.base_url or "http://localhost:11434/v1"
+        model = _resolve_model(model, llm_cfg.model, "llama3")
+        api_key = _resolve_api_key(api_key, llm_cfg.api_key) or "ollama"
+
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=request_timeout,
         )
 
     elif provider == "anthropic":
@@ -76,8 +98,6 @@ def create_llm(
                 "api_key required for Anthropic provider (set via Settings UI)"
             )
         model = _resolve_model(model, llm_cfg.model, "claude-3-sonnet-20240229")
-        temperature = kwargs.get("temperature", llm_cfg.temperature)
-        max_tokens = kwargs.get("max_tokens", llm_cfg.max_tokens)
 
         from langchain_anthropic import ChatAnthropic
 
@@ -86,6 +106,7 @@ def create_llm(
             api_key=api_key,
             temperature=temperature,
             max_tokens=max_tokens,
+            timeout=request_timeout,
         )
 
     else:

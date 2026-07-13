@@ -17,6 +17,9 @@ logger = get_logger("mbforge.agent_router")
 
 router = APIRouter()
 
+# Cap session history to avoid unbounded memory growth in long conversations.
+_MAX_HISTORY_MESSAGES = 50
+
 
 @dataclass
 class AgentState:
@@ -61,6 +64,17 @@ class AgentState:
 
 # Single instance — replaces the three module-level globals
 _agent_state = AgentState()
+
+
+def _make_agent_config(library_root: str | None) -> dict[str, Any]:
+    """Build the LangGraph config that carries ``library_root`` into tools."""
+    return {"configurable": {"library_root": library_root or ""}}
+
+
+def _trim_history(messages: list) -> None:
+    """Trim the in-place message list to the most recent history cap."""
+    while len(messages) > _MAX_HISTORY_MESSAGES:
+        messages.pop(0)
 
 
 @router.post("/init")
@@ -136,6 +150,7 @@ async def agent_chat(session_id: str, body: dict) -> dict:
             return {"success": False, "error": "empty input"}
 
         session.messages.append(ChatMessage(role="user", content=user_input))
+        _trim_history(session.messages)
 
         await _agent_state.ensure_initialized()
         if _agent_state.agent is not None:
@@ -143,7 +158,10 @@ async def agent_chat(session_id: str, body: dict) -> dict:
                 lc_messages = [
                     {"role": m.role, "content": m.content} for m in session.messages
                 ]
-                response = await _agent_state.agent.ainvoke({"messages": lc_messages})
+                response = await _agent_state.agent.ainvoke(
+                    {"messages": lc_messages},
+                    config=_make_agent_config(session.library_root),
+                )
                 reply = (
                     response["messages"][-1].content if response.get("messages") else ""
                 )
@@ -154,6 +172,7 @@ async def agent_chat(session_id: str, body: dict) -> dict:
             reply = f"[Agent stub] Received: {user_input}"
 
         session.messages.append(ChatMessage(role="assistant", content=reply))
+        _trim_history(session.messages)
         return {"success": True, "reply": reply}
     except Exception as e:
         logger.error("Agent chat error: %s", e)
@@ -176,6 +195,7 @@ async def agent_chat_stream(session_id: str, user_input: str = "") -> StreamingR
 
     async def event_stream():
         session.messages.append(ChatMessage(role="user", content=user_input))
+        _trim_history(session.messages)
 
         if _agent_state.agent is not None:
             try:
@@ -186,7 +206,9 @@ async def agent_chat_stream(session_id: str, user_input: str = "") -> StreamingR
                 ]
                 full_reply = ""
                 async for event in stream_agent_response(
-                    _agent_state.agent, lc_messages
+                    _agent_state.agent,
+                    lc_messages,
+                    config=_make_agent_config(session.library_root),
                 ):
                     if event["type"] == "chunk":
                         content = event.get("content", "")
@@ -196,12 +218,17 @@ async def agent_chat_stream(session_id: str, user_input: str = "") -> StreamingR
                         yield f"data: {json.dumps({'session_id': session_id, 'event': 'tool_call', 'tool': event.get('tool', '')})}\n\n"
                     elif event["type"] == "tool_result":
                         yield f"data: {json.dumps({'session_id': session_id, 'event': 'tool_result', 'output': event.get('output', '')[:200]})}\n\n"
+                    elif event["type"] == "error":
+                        error_msg = event.get("error", "[Agent error]")
+                        recoverable = event.get("recoverable", False)
+                        yield f"data: {json.dumps({'session_id': session_id, 'event': 'error', 'error': error_msg, 'recoverable': recoverable})}\n\n"
 
                 if not full_reply:
                     full_reply = "[No response from agent]"
                 session.messages.append(
                     ChatMessage(role="assistant", content=full_reply)
                 )
+                _trim_history(session.messages)
             except Exception as e:
                 logger.error("Agent streaming error: %s", e)
                 error_msg = "[Agent error]"

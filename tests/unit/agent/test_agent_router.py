@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from mbforge.routers import agent as agent_module
-from mbforge.routers.agent import _agent_state
+from mbforge.routers.agent import _agent_state, _make_agent_config, _trim_history
 
 
 @pytest.fixture(autouse=True)
@@ -44,3 +44,70 @@ async def test_agent_state_concurrent_init_creates_single_agent(monkeypatch):
     assert len(set(agents)) == 1
     assert all(a == "agent-1" for a in agents)
     assert call_count == 1
+
+
+def test_make_agent_config_carries_library_root() -> None:
+    """The router builds a LangGraph config with the session's library_root."""
+    assert _make_agent_config("/tmp/lib") == {
+        "configurable": {"library_root": "/tmp/lib"}
+    }
+    assert _make_agent_config(None) == {"configurable": {"library_root": ""}}
+
+
+def test_trim_history_keeps_recent_messages() -> None:
+    """History trimming drops the oldest messages once the cap is exceeded."""
+    messages = [{"role": "user", "content": f"msg-{i}"} for i in range(60)]
+    _trim_history(messages)
+    assert len(messages) == 50
+    assert messages[0]["content"] == "msg-10"
+    assert messages[-1]["content"] == "msg-59"
+
+
+@pytest.mark.asyncio
+async def test_agent_chat_passes_library_root_config(monkeypatch) -> None:
+    """The chat endpoint invokes the agent with the session's library_root config."""
+    from mbforge.agent.sessions import session_store
+
+    session_store.create("s1", library_root="/tmp/chat-lib")
+
+    captured: dict = {}
+
+    class _FakeAgent:
+        async def ainvoke(self, input, config=None):
+            captured["config"] = config
+            return {"messages": [MagicMock(content="hi")]}
+
+    _agent_state.agent = _FakeAgent()
+
+    response = await agent_module.agent_chat(
+        "s1", {"user_input": "hello"}
+    )
+
+    assert response["success"] is True
+    assert captured["config"] == {
+        "configurable": {"library_root": "/tmp/chat-lib"}
+    }
+    session = session_store.get("s1")
+    assert session.messages[-1].content == "hi"
+
+
+@pytest.mark.asyncio
+async def test_agent_chat_stream_emits_error_event(monkeypatch) -> None:
+    """The streaming endpoint forwards agent error events as SSE error events."""
+    from mbforge.agent.sessions import session_store
+
+    session_store.create("s2", library_root="/tmp/stream-lib")
+
+    async def _fake_stream(*args, **kwargs):
+        yield {"type": "error", "error": "model timeout", "recoverable": True}
+        yield {"type": "done"}
+
+    _agent_state.agent = MagicMock()
+    monkeypatch.setattr("mbforge.agent.graph.stream_agent_response", _fake_stream)
+
+    response = await agent_module.agent_chat_stream("s2", user_input="hello")
+    body = "".join([chunk async for chunk in response.body_iterator])
+
+    assert '"event": "error"' in body
+    assert '"error": "model timeout"' in body
+    assert '"recoverable": true' in body

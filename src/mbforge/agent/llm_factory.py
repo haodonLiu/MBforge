@@ -1,22 +1,14 @@
-"""LLM factory — creates LangChain chat models from config.
+"""LLM factory — creates LangChain chat models from global settings.
 
 Supports: openai, anthropic, ollama, openai_compatible.
 
-优先级（自上而下）：
-  1. 显式参数
-  2. ``AppConfig.llm`` (Settings UI 写入 → ``settings.json``)
-  3. 环境变量 ``MBFORGE_LLM_*`` (向后兼容 .env 用户)
-  4. 硬编码默认值
-
-Pydantic 的 ``env_prefix="MBFORGE_"`` **不会** 自动吸收 ``LLMConfig``
-nested 字段的 env var（需要 ``env_nested_delimiter``，本项目未配置），
-所以本模块直接保留 ``os.environ.get`` 作为 cfg 之后的兜底 —— Settings UI
-的改动仍然胜出，但只设了 ``.env`` 的老用户路径不被打断。
+Business LLM settings come from ``AppConfig.llm`` (the Settings UI persists it
+to ``settings.json``). Explicit function arguments remain available for
+callers that intentionally need a one-off override.
 """
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from ..utils.config import load_global_config
@@ -30,8 +22,8 @@ def _resolve_provider(arg: str, cfg_provider: str) -> str:
 
 
 def _resolve_api_key(arg: str, cfg_key: str) -> str:
-    """arg > cfg > env (cfg 优先)."""
-    return arg or cfg_key or os.environ.get("MBFORGE_LLM_API_KEY", "")
+    """Resolve an explicit API key or the persisted LLM setting."""
+    return arg or cfg_key
 
 
 def _resolve_base_url(arg: str, cfg_url: str) -> str:
@@ -51,7 +43,7 @@ def create_llm(
 ) -> Any:
     """Create a LangChain chat model.
 
-    Priority: explicit args > AppConfig.llm > MBFORGE_LLM_* env > defaults.
+    Priority: explicit args > AppConfig.llm > defaults.
     """
     llm_cfg = load_global_config().llm
     provider = _resolve_provider(provider, llm_cfg.provider)
@@ -60,13 +52,12 @@ def create_llm(
         api_key = _resolve_api_key(api_key, llm_cfg.api_key)
         if not api_key:
             raise ValueError(
-                "api_key required for OpenAI-compatible provider "
-                "(set via Settings UI or env MBFORGE_LLM_API_KEY)"
+                "api_key required for OpenAI-compatible provider (set via Settings UI)"
             )
         base_url = _resolve_base_url(base_url, llm_cfg.base_url)
         model = _resolve_model(model, llm_cfg.model, "gpt-3.5-turbo")
-        temperature = kwargs.get("temperature", 0.2)
-        max_tokens = kwargs.get("max_tokens", 8192)
+        temperature = kwargs.get("temperature", llm_cfg.temperature)
+        max_tokens = kwargs.get("max_tokens", llm_cfg.max_tokens)
 
         from langchain_openai import ChatOpenAI
 
@@ -82,12 +73,11 @@ def create_llm(
         api_key = _resolve_api_key(api_key, llm_cfg.api_key)
         if not api_key:
             raise ValueError(
-                "api_key required for Anthropic provider "
-                "(set via Settings UI or env MBFORGE_LLM_API_KEY)"
+                "api_key required for Anthropic provider (set via Settings UI)"
             )
         model = _resolve_model(model, llm_cfg.model, "claude-3-sonnet-20240229")
-        temperature = kwargs.get("temperature", 0.2)
-        max_tokens = kwargs.get("max_tokens", 8192)
+        temperature = kwargs.get("temperature", llm_cfg.temperature)
+        max_tokens = kwargs.get("max_tokens", llm_cfg.max_tokens)
 
         from langchain_anthropic import ChatAnthropic
 
@@ -103,9 +93,8 @@ def create_llm(
 
 
 def create_llm_from_settings() -> Any:
-    """Create LLM from global settings (Settings UI preferred, env as fallback).
+    """Create an LLM from the persisted global settings.
 
-    Used by ``routers/agent.py`` lazy init. Settings UI 改动胜出,但 .env
-    用户路径不被打断.
+    Used by ``routers/agent.py`` lazy initialization.
     """
-    return create_llm()  # 让 create_llm 自己跑优先级链
+    return create_llm()

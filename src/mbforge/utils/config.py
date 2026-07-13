@@ -73,7 +73,7 @@ class OCRConfig(BaseModel):
 
     mineru_api_key: str = ""
     paddleocr_api_key: str = ""
-    paddleocr_host: str = "https://aistudio.baidu.com"
+    paddleocr_host: str = "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
     paddleocr_model: str = "PaddleOCR-VL-1.6"
     glmocr_api_key: str = ""
     glmocr_model: str = "glm-ocr"

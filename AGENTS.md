@@ -366,10 +366,14 @@ Gated on 'one release cycle of no migration failures' (per the plan):
 | `pyproject.toml` | uv + ruff + pytest config, langchain/langgraph deps |
 | `uv.lock` | Python lock |
 
-**Configuration precedence** (highest → lowest):
-1. `MBFORGE_*` env vars
-2. `~/MBForge/settings.json` (Settings UI writes here)
-3. Built-in defaults
+**Business configuration precedence** (highest → lowest):
+1. `~/MBForge/settings.json` (Settings UI writes here)
+2. Built-in defaults
+
+`MBFORGE_HOST`, `MBFORGE_LOG_LEVEL`, `MBFORGE_FORCE_CPU`, Docker/browser
+switches, and third-party cache variables (`HF_HOME`, `MODELSCOPE_CACHE`,
+`TORCH_HOME`, `HF_ENDPOINT`) remain runtime or infrastructure settings; they
+do not override `AppConfig` fields.
 
 **Unified application directory** (`~/MBForge`):
 
@@ -438,8 +442,10 @@ MUST go through `LibraryLayout`. Direct path construction is prohibited. See
 | GPU | CUDA 12.8 (PyTorch wheel index `pytorch-cu128`) | Required only for `moldet`/`molscribe`; LLM/embed run on CPU |
 | HTTP timeouts | `httpx.AsyncClient` per backend, configured in `backends/*.py` | No shared singleton needed |
 
-**.env template**: see `.env.template` (root). Variables:
-`MBFORGE_LLM_*`, `MBFORGE_EMBED_*`, `MBFORGE_RERANK_*`, `HF_HOME`, `MODELSCOPE_CACHE`, `TORCH_HOME`.
+**Runtime environment variables**: use only for infrastructure concerns:
+`MBFORGE_HOST`, `MBFORGE_LOG_LEVEL`, `MBFORGE_FORCE_CPU`, `HF_HOME`,
+`MODELSCOPE_CACHE`, and `TORCH_HOME`. LLM, OCR, PageIndex, model-cache, and
+MolDet settings must be written through the Settings UI to `settings.json`.
 
 ## Testing & QA
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import time
 import zipfile
 from typing import Any
@@ -47,6 +48,14 @@ class MinerUBackend(OCRBackend):
         base_url = (cfg.get("base_url") or "").strip() or DEFAULT_BASE_URL
         self.base_url = base_url.rstrip("/")
         self.model_version: str = (cfg.get("model_version") or "vlm").strip()
+
+        # Windows cert store missing intermediate CAs → force certifi bundle
+        if not os.environ.get("SSL_CERT_FILE"):
+            try:
+                import certifi
+                os.environ["SSL_CERT_FILE"] = certifi.where()
+            except ImportError:
+                pass
 
     def is_configured(self) -> bool:
         return bool(self.api_key)

@@ -69,6 +69,13 @@ export interface SettingsState {
   // —— Popo (MinerU-Popo OCR 后处理，可选) ——
   popo_enabled: boolean
 
+  // —— PageIndex ——
+  pageindex_provider: string
+  pageindex_base_url: string
+  pageindex_api_key: string
+  pageindex_model: string
+  pageindex_threshold: number
+
   // —— 缓存大小（只读，由后端报告）——
   cache_size_semantic_mb: number
   cache_size_detection_mb: number
@@ -126,6 +133,12 @@ export const DEFAULT_SETTINGS: SettingsState = {
 
   popo_enabled: false,
 
+  pageindex_provider: 'openai_compatible',
+  pageindex_base_url: 'https://token.sensenova.cn/v1',
+  pageindex_api_key: '',
+  pageindex_model: 'deepseek-v4-flash',
+  pageindex_threshold: 20,
+
   cache_size_semantic_mb: 0,
   cache_size_detection_mb: 0,
   cache_size_molecules_mb: 0,
@@ -170,6 +183,7 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
   const llm = s.llm ?? {}
   const vlm = s.vlm ?? {}
   const ocr = s.ocr ?? {}
+  const pi = s.pageindex ?? {}
   const ms = s.model_server ?? {}
   return {
     theme: (s.theme as SettingsState['theme'] | undefined) || DEFAULT_SETTINGS.theme,
@@ -223,6 +237,13 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
     auto_enqueue_on_import: s.ingest?.auto_enqueue_on_import === true,
 
     popo_enabled: s.popo?.enabled === true,
+
+    pageindex_provider: pi.provider || DEFAULT_SETTINGS.pageindex_provider,
+    pageindex_base_url: pi.base_url || DEFAULT_SETTINGS.pageindex_base_url,
+    pageindex_api_key: pi.api_key || DEFAULT_SETTINGS.pageindex_api_key,
+    pageindex_model: pi.model || DEFAULT_SETTINGS.pageindex_model,
+    pageindex_threshold:
+      typeof pi.threshold === 'number' ? pi.threshold : DEFAULT_SETTINGS.pageindex_threshold,
 
     cache_size_semantic_mb: 0,  // 启动时由后端 refresh 填充
     cache_size_detection_mb: 0,
@@ -291,6 +312,13 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
     },
     popo: {
       enabled: s.popo_enabled,
+    },
+    pageindex: {
+      provider: s.pageindex_provider,
+      base_url: s.pageindex_base_url,
+      api_key: s.pageindex_api_key,
+      model: s.pageindex_model,
+      threshold: s.pageindex_threshold,
     },
   }
 }

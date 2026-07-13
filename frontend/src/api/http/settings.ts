@@ -11,9 +11,16 @@ export interface LlmConfig {
   temperature?: number
   top_p?: number
   request_timeout?: number
-  pageindex_threshold?: number
   language?: string
   reorganize_model?: string | null
+}
+
+export interface PageIndexConfig {
+  provider?: string
+  base_url?: string
+  api_key?: string
+  model?: string
+  threshold?: number
 }
 
 export interface VlmConfig {
@@ -55,6 +62,7 @@ export interface AppSettings {
   llm?: LlmConfig
   vlm?: VlmConfig
   ocr?: OcrConfig
+  pageindex?: PageIndexConfig
   model_server?: ModelServerConfig
   model_cache_dir?: string
   recent_projects?: string[]

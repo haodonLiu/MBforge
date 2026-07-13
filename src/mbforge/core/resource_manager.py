@@ -270,8 +270,8 @@ def _dir_size(path: Path) -> float:
 def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
     """检查 snapshot 类型模型是否已下载.
 
-    按 ENV 优先级顺序搜索:
-    1. MBFORGE_MODEL_CACHE_DIR (通过 _get_model_cache_dir)
+    按配置与缓存目录优先级顺序搜索:
+    1. settings.json 的 model_cache_dir (通过 _get_model_cache_dir)
     2. HF_HOME
     3. MODELSCOPE_CACHE (env + 默认)
     4. TORCH_HOME

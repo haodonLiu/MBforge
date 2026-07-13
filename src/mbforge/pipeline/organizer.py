@@ -273,10 +273,10 @@ def _llm_complete(model: str, prompt: str) -> str | None:
         from ..utils.config import load_global_config
 
         llm_cfg = load_global_config().llm
-        if llm_cfg.api_key and not os.environ.get("OPENAI_API_KEY"):
-            os.environ["OPENAI_API_KEY"] = llm_cfg.api_key
-        if llm_cfg.base_url and not os.environ.get("OPENAI_API_BASE"):
-            os.environ["OPENAI_API_BASE"] = llm_cfg.base_url
+        # LiteLLM consumes these process variables. They are outputs derived
+        # from settings.json, never a source that can override it.
+        os.environ["OPENAI_API_KEY"] = llm_cfg.api_key
+        os.environ["OPENAI_API_BASE"] = llm_cfg.base_url
         # 路由到 ollama / openai / anthropic 等，自动透传 provider
         litellm_model = to_litellm_model(llm_cfg)
     except Exception:  # noqa: BLE001 — never let config resolution crash the pipeline

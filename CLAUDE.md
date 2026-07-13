@@ -131,7 +131,7 @@ SQLite + OpenKB + filesystem   (per-project .mbforge/)
 - Per-project canonical: `{root}/storage/{doc_id}/` (source.pdf, reorganized.md, crops/, pages/) — managed by `core/artifact.py:ArtifactResolver`
 - Per-project legacy: `{root}/.mbforge/crops/{doc_id}/` (read-only fallback until `scripts/migrate_artifact_paths.py` runs)
 - Per-project DB: `{root}/.mbforge/knowledge_base.db` + OpenKB + PageIndex collection under `openkb/`
-- Global config: `~/.config/MBForge/settings.json` (Linux) / `%LOCALAPPDATA%\MBForge\settings.json` (Windows). Precedence: `MBFORGE_*` env vars > global config > defaults. This directory is for settings/logs/cache only; library data belongs under a separate `library_root` (default `~/mbforge`).
+- Global business config: `~/MBForge/settings.json` on every platform. Precedence: `settings.json` > defaults. `MBFORGE_*` is reserved for infrastructure controls such as host, logging, and force-CPU; it does not override business settings. This directory holds settings, logs, and the default library.
 
 ---
 

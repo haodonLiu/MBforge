@@ -5,7 +5,6 @@
 可用性探测。
 """
 
-import os
 from pathlib import Path
 
 from mbforge.utils.config import load_global_config
@@ -22,22 +21,18 @@ def get_model_dir() -> Path:
 
     优先级:
       1. ``cfg.moldet.molscribe_dir`` (Settings UI)
-      2. 环境变量 ``MBFORGE_MOLSCRIBE_DIR`` (legacy / 显式覆盖)
-      3. ``ResourceManager.get_molscribe_path()`` (读 Rust resolved_paths.json)
-      4. 缓存目录 ``<model_cache_dir>/MolScribe``
-      5. 兜底 ``~/MBForge/models/MolScribe``
+      2. ``ResourceManager.get_molscribe_path()`` (读 Rust resolved_paths.json)
+      3. 缓存目录 ``<model_cache_dir>/MolScribe``
+      4. 兜底 ``~/MBForge/models/MolScribe``
     """
     cfg = load_global_config()
     cfg_dir = cfg.moldet.molscribe_dir
     if cfg_dir:
         return Path(cfg_dir)
 
-    env_dir = os.environ.get("MBFORGE_MOLSCRIBE_DIR")
-    if env_dir:
-        return Path(env_dir)
-
     try:
         from mbforge.core.resource_manager import ResourceManager
+
         path = ResourceManager.get_molscribe_path()
         if path is not None:
             return path.parent if path.is_file() else path
@@ -47,6 +42,7 @@ def get_model_dir() -> Path:
     # 兜底：直接构造期望路径
     try:
         from mbforge.utils.paths import get_model_cache_dir
+
         return Path(get_model_cache_dir()) / "MolScribe"
     except ImportError:
         return Path.home() / "MBForge" / "models" / "MolScribe"

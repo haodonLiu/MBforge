@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
@@ -13,6 +14,21 @@ from ..context import PipelineContext
 from ..stage_result import PipelineErrorCode, StageResult
 
 logger = get_logger("mbforge.pipeline.stages.reorganize")
+
+
+def _ensure_heading_exists(md_path: Path, doc_id: str) -> None:
+    """Ensure ``md_path`` has at least one markdown heading.
+
+    PageIndex's ``MarkdownParser`` requires ``#`` headings to build a tree
+    structure; files without headings cause ``build_index()`` to raise
+    ``Processing failed``. Prepends a root heading when needed.
+    """
+    content = md_path.read_text(encoding="utf-8")
+    if not re.search(r"^#{1,6}\s", content, re.MULTILINE):
+        title = doc_id or "Document Extracted Content"
+        heading = f"# {title}\n\n"
+        md_path.write_text(heading + content, encoding="utf-8")
+        logger.info("Prepended # heading %r for PageIndex compatibility", title)
 
 
 class ReorganizeStage:
@@ -56,6 +72,9 @@ class ReorganizeStage:
 
                 shutil.copy2(str(ctx.enriched_md_path), str(ctx.final_md_path))
                 logger.info("Reorganization skipped for %s (text_only, no molecules)", ctx.doc_id)
+
+            # Ensure at least one # heading exists for PageIndex compatibility
+            _ensure_heading_exists(ctx.final_md_path, ctx.doc_id)
 
             # Copy source PDF to storage
             self._copy_source_pdf(ctx, resolver)

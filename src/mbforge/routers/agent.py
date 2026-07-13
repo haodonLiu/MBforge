@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
+from ..utils.config import load_global_config
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.agent_router")
@@ -20,6 +21,7 @@ router = APIRouter()
 @dataclass
 class AgentState:
     """Encapsulates agent components to avoid module-level mutable globals."""
+
     llm: Any = None
     agent: Any = None
     tools: Any = None
@@ -29,16 +31,14 @@ class AgentState:
         if self.agent is not None:
             return
         try:
-            import os
+            llm_config = load_global_config().llm
+            if not llm_config.api_key:
+                logger.info("No LLM API key configured — agent running in stub mode")
+                return
 
             from ..agent.graph import create_agent
             from ..agent.llm_factory import create_llm_from_settings
             from ..agent.tools import get_all_tools
-
-            api_key = os.environ.get("MBFORGE_LLM_API_KEY", "")
-            if not api_key:
-                logger.info("No LLM API key configured — agent running in stub mode")
-                return
 
             self.llm = create_llm_from_settings()
             self.tools = get_all_tools()
@@ -104,8 +104,6 @@ async def agent_clear(session_id: str) -> dict:
     return {"success": True}
 
 
-
-
 @router.get("/session/{session_id}/history")
 async def agent_get_history(session_id: str) -> dict:
     try:
@@ -139,11 +137,12 @@ async def agent_chat(session_id: str, body: dict) -> dict:
         if _agent_state.agent is not None:
             try:
                 lc_messages = [
-                    {"role": m.role, "content": m.content}
-                    for m in session.messages
+                    {"role": m.role, "content": m.content} for m in session.messages
                 ]
                 response = await _agent_state.agent.ainvoke({"messages": lc_messages})
-                reply = response["messages"][-1].content if response.get("messages") else ""
+                reply = (
+                    response["messages"][-1].content if response.get("messages") else ""
+                )
             except Exception as e:
                 logger.error("Agent invoke failed: %s", e)
                 reply = "[Agent error]"
@@ -179,11 +178,12 @@ async def agent_chat_stream(session_id: str, user_input: str = "") -> StreamingR
                 from ..agent.graph import stream_agent_response
 
                 lc_messages = [
-                    {"role": m.role, "content": m.content}
-                    for m in session.messages
+                    {"role": m.role, "content": m.content} for m in session.messages
                 ]
                 full_reply = ""
-                async for event in stream_agent_response(_agent_state.agent, lc_messages):
+                async for event in stream_agent_response(
+                    _agent_state.agent, lc_messages
+                ):
                     if event["type"] == "chunk":
                         content = event.get("content", "")
                         full_reply += content
@@ -195,11 +195,15 @@ async def agent_chat_stream(session_id: str, user_input: str = "") -> StreamingR
 
                 if not full_reply:
                     full_reply = "[No response from agent]"
-                session.messages.append(ChatMessage(role="assistant", content=full_reply))
+                session.messages.append(
+                    ChatMessage(role="assistant", content=full_reply)
+                )
             except Exception as e:
                 logger.error("Agent streaming error: %s", e)
                 error_msg = "[Agent error]"
-                session.messages.append(ChatMessage(role="assistant", content=error_msg))
+                session.messages.append(
+                    ChatMessage(role="assistant", content=error_msg)
+                )
                 yield f"data: {json.dumps({'session_id': session_id, 'delta': error_msg, 'event': 'chunk'})}\n\n"
         else:
             reply = f"[Agent stub] {user_input}"

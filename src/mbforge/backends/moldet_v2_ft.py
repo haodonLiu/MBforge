@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 from typing import Any
@@ -18,13 +17,13 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from mbforge.utils.config import load_global_config
 from mbforge.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 # 延迟导入 ultralytics（避免未安装时报错）
 _ultralytics: Any | None = None
-
 
 
 def default_model_dir() -> Path:
@@ -90,7 +89,7 @@ class MolDetv2FTDetector:
                 "请运行：uv pip install ultralytics"
             )
 
-        self.device = device or os.getenv("MBFORGE_DEVICE", "auto")
+        self.device = device or load_global_config().moldet.device
         self.conf_threshold = conf_threshold
         self.iou_threshold = iou_threshold
         self.mol_conf_threshold = mol_conf_threshold

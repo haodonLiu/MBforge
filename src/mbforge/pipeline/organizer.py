@@ -344,7 +344,8 @@ def reorganize_with_llm(
             logger.warning(
                 "LLM output (%d chars) is < 50%% of input (%d chars); "
                 "falling back to rule-based reorganize",
-                len(response), len(md_text),
+                len(response),
+                len(md_text),
             )
             response = _rule_based_reorganize(md_text)
         elif _looks_degenerate(response, md_text):
@@ -398,7 +399,8 @@ def reorganize_with_llm(
     if total_output < total_input * 0.5:
         logger.warning(
             "LLM collapsed %d → %d chars (< 50%%); using rule-based fallback",
-            total_input, total_output,
+            total_input,
+            total_output,
         )
         response = _rule_based_reorganize(md_text)
         Path(output_path).write_text(response, encoding="utf-8")
@@ -452,11 +454,17 @@ def _looks_degenerate(text: str, original: str) -> bool:
 _SECTION_PATTERNS = [
     # 优先级从高到低；匹配后插入对应 heading
     (re.compile(r"(?im)^#{0,3}\s*(abstract|摘要)\b.*$"), "## Abstract"),
-    (re.compile(r"(?im)^#{0,3}\s*cross[- ]references\s+to\s+related.*$"), "## Cross-References to Related Applications"),
+    (
+        re.compile(r"(?im)^#{0,3}\s*cross[- ]references\s+to\s+related.*$"),
+        "## Cross-References to Related Applications",
+    ),
     (re.compile(r"(?im)^#{0,3}\s*background\b"), "## Background"),
     (re.compile(r"(?im)^#{0,3}\s*summary\b"), "## Summary"),
     (re.compile(r"(?im)^#{0,3}\s*brief\s+description\b"), "## Brief Description"),
-    (re.compile(r"(?im)^#{0,3}\s*detailed\s+description\b"), "## Detailed Description of the Disclosure"),
+    (
+        re.compile(r"(?im)^#{0,3}\s*detailed\s+description\b"),
+        "## Detailed Description of the Disclosure",
+    ),
     (re.compile(r"(?im)^#{0,3}\s*definitions?\b"), "### Definitions"),
     (re.compile(r"(?im)^#{0,3}\s*examples?\b"), "### Examples"),
     (re.compile(r"(?im)^#{0,3}\s*claims?\b"), "## Claims"),
@@ -471,12 +479,15 @@ _PATENT_PARA_RE = re.compile(r"^\s*\[(\d{3,4})\]\s")
 #   - 长度 5-60
 #   - 不在白名单外（按内容）
 #   - 不以特殊字符开头
-_ALL_CAPS_HEADING_RE = re.compile(
-    r"^[A-Z][A-Z\s&\-,]{3,59}$"
-)
+_ALL_CAPS_HEADING_RE = re.compile(r"^[A-Z][A-Z\s&\-,]{3,59}$")
 _BLOCKED_CAPS_PHRASES = frozenset(
     {
-        "WIPO", "PCT", "WO", "IPC", "EPO", "USPTO",
+        "WIPO",
+        "PCT",
+        "WO",
+        "IPC",
+        "EPO",
+        "USPTO",
         "WO 2026/035726 A1",  # 专利号本身
         "BACKGROUND OF THE DISCLOSURE",  # 重复：上面 pattern 已处理
     }
@@ -524,9 +535,7 @@ def _rule_based_reorganize(md_text: str) -> str:
     return "\n".join(out_lines)
 
 
-def _summarize_sections_with_local_model(
-    md_text: str, model: str | None
-) -> str:
+def _summarize_sections_with_local_model(md_text: str, model: str | None) -> str:
     """Per-section 25-word summaries using the local small model.
 
     Splits rule-based markdown into sections at ``##`` / ``###`` boundaries

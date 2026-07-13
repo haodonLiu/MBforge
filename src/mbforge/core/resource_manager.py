@@ -554,11 +554,7 @@ def _download_model_from_modelscope(
         # 优先 `files` (精确清单) → `allow_patterns` (glob) → 不过滤
         patterns = info.files or info.allow_patterns
         if patterns:
-            files = [
-                f
-                for f in files
-                if any(_fnmatch.fnmatch(f, p) for p in patterns)
-            ]
+            files = [f for f in files if any(_fnmatch.fnmatch(f, p) for p in patterns)]
 
         if not files:
             _emit({"status": "failed", "error": "无法获取 ModelScope 文件列表"})

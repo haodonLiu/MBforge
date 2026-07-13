@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,10 @@ async def search_wiki(
         {"results": [...], "answer": str, "count": int}
     """
     cfg = load_global_config().llm
+    # OpenKB reads LiteLLM credentials from environment variables. Derive them
+    # from the persisted settings instead of accepting ambient overrides.
+    os.environ["OPENAI_API_KEY"] = cfg.api_key
+    os.environ["OPENAI_API_BASE"] = cfg.base_url
 
     try:
         from openkb.agent.query import run_query

@@ -78,7 +78,9 @@ dependencies = [
     "python-multipart>=0.0.29",
     # MolScribe dependencies (timm 版本通过 uv.sources 锁定)
     "timm",
-    "OpenNMT-py==2.2.0",
+    # OpenNMT-py removed: molscribe_inference/_onmt_stub.py now provides the
+    # 4 decoder symbols in-tree (DecoderBase, AverageAttention,
+    # MultiHeadedAttention, ActivationFunction, PositionwiseFeedForward, Elementwise).
     "pycocotools>=2.0.11",
     # OCR (MolDetect coref identifier recognition, ONNX runtime — Windows CUDA 12 兼容)
     "rapidocr==3.9.0",

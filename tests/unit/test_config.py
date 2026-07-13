@@ -52,7 +52,9 @@ class TestDefaultValues:
     def test_ocr_defaults(self) -> None:
         cfg = OCRConfig()
         assert cfg.mineru_api_key == ""
-        assert cfg.paddleocr_host == "https://aistudio.baidu.com"
+        assert (
+            cfg.paddleocr_host == "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
+        )
         assert cfg.paddleocr_model == "PaddleOCR-VL-1.6"
         assert cfg.glmocr_model == "glm-ocr"
         assert cfg.upload_batch_size == 1
@@ -113,6 +115,12 @@ class TestValidation:
         # extra="ignore" means unknown top-level keys are silently dropped
         cfg = AppConfig(unknown_field="value")
         assert "unknown_field" not in cfg.model_dump()
+
+    def test_app_config_ignores_environment_variables(self, monkeypatch) -> None:
+        """Business settings must come from settings.json, never MBFORGE_* env vars."""
+        monkeypatch.setenv("MBFORGE_THEME", "light")
+
+        assert AppConfig().theme == "dark"
 
 
 class TestDictDeserialization:

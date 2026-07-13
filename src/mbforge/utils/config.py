@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .helpers import load_json, save_json
 from .paths import GLOBAL_APP_DIR
@@ -53,7 +52,6 @@ class LLMConfig(BaseModel):
     max_tokens: int = 4096
     top_p: float = 1.0
     request_timeout: int = 60
-    pageindex_threshold: int = 20
     language: str = "en"
     reorganize_model: str | None = Field(
         default=None,
@@ -123,6 +121,18 @@ class PopoConfig(BaseModel):
     enabled: bool = False
 
 
+class PageIndexConfig(BaseModel):
+    """PageIndex indexing and Wiki compilation settings."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    provider: str = "openai_compatible"
+    model: str = "deepseek-v4-flash"
+    api_key: str = ""
+    base_url: str = "https://token.sensenova.cn/v1"
+    threshold: int = 20
+
+
 class VLMConfig(BaseModel):
     """Visual LLM settings (reserved for future Popo / visual pipeline use)."""
 
@@ -146,13 +156,10 @@ class ModelServerConfig(BaseModel):
     health_check_interval: int = 5
 
 
-class AppConfig(BaseSettings):
+class AppConfig(BaseModel):
     """全局应用配置 — 唯一 schema."""
 
-    model_config = SettingsConfigDict(
-        env_prefix="MBFORGE_",
-        extra="ignore",
-    )
+    model_config = ConfigDict(extra="ignore")
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
     model_cache_dir: str = ""
@@ -161,6 +168,7 @@ class AppConfig(BaseSettings):
     auto_open_project: bool = True
     vlm: VLMConfig = Field(default_factory=VLMConfig)
     ocr: OCRConfig = Field(default_factory=OCRConfig)
+    pageindex: PageIndexConfig = Field(default_factory=PageIndexConfig)
     model_server: ModelServerConfig = Field(default_factory=ModelServerConfig)
     recent_projects: list[RecentProject] = Field(default_factory=list)
     library_root: str | None = Field(
@@ -251,7 +259,7 @@ def _migrate_legacy_configs() -> None:
 
 @lru_cache(maxsize=1)
 def load_global_config() -> AppConfig:
-    """读取 settings.json;缺失/损坏 → 默认值(env + BaseSettings 驱动)."""
+    """读取 settings.json;缺失/损坏时使用并持久化 schema 默认值."""
     _migrate_legacy_configs()
     if _SETTINGS_PATH.exists():
         data = load_json(_SETTINGS_PATH)

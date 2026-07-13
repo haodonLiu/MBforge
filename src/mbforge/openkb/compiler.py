@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ..utils.config import load_global_config
@@ -27,7 +28,7 @@ class WikiCompiler:
         Long docs (page_count >= threshold) use compile_long_doc;
         short docs use compile_short_doc.
         """
-        cfg = load_global_config().llm
+        cfg = load_global_config().pageindex
 
         try:
             from openkb.agent.compiler import compile_long_doc, compile_short_doc
@@ -40,22 +41,25 @@ class WikiCompiler:
         summary_path = self._wiki_dir / "summaries" / f"{doc_id}.md"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
 
-        threshold = cfg.pageindex_threshold
+        threshold = cfg.threshold
 
         openkb_dir = Path(self._wiki_dir).parent
         kb_path = Path(self._wiki_dir)
         doc_md_path = openkb_dir / "documents" / f"{doc_id}.md"
 
-        # openkb calls litellm internally — route to provider (ollama/openai/etc)
-        from .config import to_litellm_model
-
-        litellm_model = to_litellm_model(cfg)
+        # OpenKB calls LiteLLM internally. Its environment receives only the
+        # persisted PageIndex configuration, never a caller-provided override.
+        os.environ["OPENAI_API_KEY"] = cfg.api_key
+        os.environ["OPENAI_API_BASE"] = cfg.base_url
+        litellm_model = f"openai/{cfg.model}"
 
         if page_count >= threshold:
             logger.info("Compiling long doc: %s (%d pages)", doc_name, page_count)
             # openkb 期望 summary_path 已存在；用 indexed markdown 内容预创建
             if not summary_path.exists() and doc_md_path.exists():
-                summary_path.write_text(doc_md_path.read_text(encoding="utf-8"), encoding="utf-8")
+                summary_path.write_text(
+                    doc_md_path.read_text(encoding="utf-8"), encoding="utf-8"
+                )
             await compile_long_doc(
                 doc_name=doc_name,
                 summary_path=summary_path,  # Path object (openkb expects Path)

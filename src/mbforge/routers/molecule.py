@@ -1,4 +1,4 @@
-"""Molecule CRUD endpoints — supports both library_root and library_root."""
+"""Molecule CRUD endpoints."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from ..models.molecule import (
     MoleculeCreateRequest,
@@ -17,7 +17,7 @@ from ..models.molecule import (
     MoleculeStatsRequest,
     MoleculeUpdateRequest,
 )
-from ..utils.helpers import resolve_root
+from ..utils.helpers import NotFoundError, ValidationError, resolve_root
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.molecule_router")
@@ -30,17 +30,14 @@ def _get_db(body: dict | object) -> tuple:
     b = body if isinstance(body, dict) else body.model_dump()
     root = resolve_root(b)
     if not root:
-        raise ValueError("No root path provided (library_root or library_root)")
+        raise ValidationError("library_root is required")
     from ..core.database import DatabaseManager
     return root, DatabaseManager.get(root)
 
 
 @router.post("/list")
 async def mol_list(body: MoleculeListRequest) -> dict:
-    try:
-        root, db = _get_db(body)
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
+    root, db = _get_db(body)
     with db.mol_conn() as conn:
         where = "WHERE 1=1"
         params: list = []
@@ -112,10 +109,7 @@ def _build_crop_url(library_root: str, ev_row: dict) -> str | None:
 
 @router.post("/search")
 async def mol_search(body: MoleculeSearchRequest) -> dict:
-    try:
-        root, db = _get_db(body)
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
+    root, db = _get_db(body)
     with db.mol_conn() as conn:
         rows = conn.execute(
             "SELECT m.* FROM mol_search ms JOIN molecules m ON ms.rowid = m.rowid "
@@ -128,38 +122,34 @@ async def mol_search(body: MoleculeSearchRequest) -> dict:
 
 @router.post("/get")
 async def mol_get(body: MoleculeGetRequest) -> dict:
-    try:
-        root, db = _get_db(body)
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
+    root, db = _get_db(body)
     with db.mol_conn() as conn:
         row = conn.execute("SELECT * FROM molecules WHERE mol_id = ?", (body.mol_id,)).fetchone()
         if not row:
-            return {"success": False, "error": "not found"}
+            raise NotFoundError("molecule not found", detail=f"mol_id={body.mol_id}")
         return {"success": True, "molecule": dict(row)}
 
 @router.post("/evidence")
 async def mol_evidence(body: dict) -> dict:
     """Return the full evidence chain for a canonical molecule.
 
-    Body: ``{"library_root": str, "library_root": str (compat), "canonical_smiles": str}``.
+    Body: ``{"library_root": str, "canonical_smiles": str}``.
     Joins ``molecules`` for metadata; returns the molecule record plus
     the full ``evidence`` list (untruncated).
     """
-    try:
-        root, db = _get_db(body)
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
+    root, db = _get_db(body)
     canonical_smiles = body.get("canonical_smiles") or body.get("mol_id")
     if not canonical_smiles:
-        raise HTTPException(422, "canonical_smiles is required")
+        raise ValidationError("canonical_smiles is required")
     with db.mol_conn() as conn:
         mol_row = conn.execute(
             "SELECT * FROM molecules WHERE mol_id = ? OR canonical_smiles = ?",
             (canonical_smiles, canonical_smiles),
         ).fetchone()
         if not mol_row:
-            return {"success": False, "error": "not found", "canonical_smiles": canonical_smiles}
+            raise NotFoundError(
+                "molecule not found", detail=f"canonical_smiles={canonical_smiles}"
+            )
         items = _attach_evidence_batch(conn, root, [dict(mol_row)], limit=100000)
         mol = items[0]
     return {"success": True, "molecule": mol, "evidence": mol.get("evidence", [])}
@@ -168,10 +158,7 @@ async def mol_evidence(body: dict) -> dict:
 
 @router.post("/create")
 async def mol_create(body: MoleculeCreateRequest) -> dict:
-    try:
-        root, db = _get_db(body)
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
+    root, db = _get_db(body)
     mol_id = body.mol_id or str(uuid.uuid4())
     with db.mol_conn() as conn:
         conn.execute(
@@ -184,10 +171,7 @@ async def mol_create(body: MoleculeCreateRequest) -> dict:
 
 @router.put("/{mol_id}")
 async def mol_update(mol_id: str, body: MoleculeUpdateRequest) -> dict:
-    try:
-        root, db = _get_db(body)
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
+    root, db = _get_db(body)
     fields = []
     params = []
     for key in ["name", "esmiles", "activity", "activity_type", "units", "status", "notes", "labels", "properties"]:
@@ -198,7 +182,7 @@ async def mol_update(mol_id: str, body: MoleculeUpdateRequest) -> dict:
                 val = json.dumps(val)
             params.append(val)
     if not fields:
-        return {"success": False, "error": "no fields to update"}
+        raise ValidationError("no fields to update")
     params.append(mol_id)
     with db.mol_conn() as conn:
         conn.execute(f"UPDATE molecules SET {', '.join(fields)} WHERE mol_id = ?", params)
@@ -207,10 +191,7 @@ async def mol_update(mol_id: str, body: MoleculeUpdateRequest) -> dict:
 
 @router.delete("/{mol_id}")
 async def mol_delete(mol_id: str, body: MoleculeDeleteRequest) -> dict:
-    try:
-        root, db = _get_db(body)
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
+    root, db = _get_db(body)
     with db.mol_conn() as conn:
         conn.execute("DELETE FROM molecules WHERE mol_id = ?", (mol_id,))
     return {"success": True}
@@ -218,10 +199,7 @@ async def mol_delete(mol_id: str, body: MoleculeDeleteRequest) -> dict:
 
 @router.post("/stats")
 async def mol_stats(body: MoleculeStatsRequest) -> dict:
-    try:
-        root, db = _get_db(body)
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
+    root, db = _get_db(body)
     with db.mol_conn() as conn:
         total = conn.execute("SELECT COUNT(*) FROM molecules").fetchone()[0]
         by_status = conn.execute(

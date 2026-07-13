@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 
 from ..models.library import CollectionInfo, CollectionNode, DocumentInfo
-from ..utils.helpers import MBForgeError, ensure_dir
+from ..utils.helpers import ConflictError, MBForgeError, NotFoundError, ensure_dir
 from ..utils.logger import get_logger
 from .artifact import ArtifactResolver
 from .layout import LibraryLayout
@@ -122,7 +122,7 @@ class LibraryStore:
         self._ensure_initialized()
         src = Path(file_path).resolve()
         if not src.is_file():
-            raise MBForgeError("File not found", detail=str(src), )
+            raise NotFoundError("File not found", detail=str(src))
         return self._register(src, title)
 
     def add_uploaded_file(
@@ -145,10 +145,10 @@ class LibraryStore:
         md5 = hashlib.md5(content).hexdigest()
         existing = self._get_doc_by_md5(md5)
         if existing is not None:
-            raise MBForgeError(
+            raise ConflictError(
                 "Document already imported",
                 detail=f"MD5 collision with doc_id={existing}",
-                            )
+            )
 
         doc_id = str(uuid.uuid4())
         safe_title = title.strip() if title else Path(safe_filename).stem
@@ -192,10 +192,10 @@ class LibraryStore:
         md5 = self._compute_md5(src)
         existing = self._get_doc_by_md5(md5)
         if existing is not None:
-            raise MBForgeError(
+            raise ConflictError(
                 "Document already imported",
                 detail=f"MD5 collision with doc_id={existing}",
-                            )
+            )
 
         doc_id = str(uuid.uuid4())
         safe_title = title.strip() if title else src.stem
@@ -490,6 +490,7 @@ class LibraryStore:
 
     def resolve_file(self, doc_id: str) -> str | None:
         """Resolve the original PDF file path for a document."""
+        self._ensure_initialized()
         conn = sqlite3.connect(str(self._db_path))
         try:
             row = conn.execute(
@@ -540,7 +541,7 @@ class LibraryStore:
                 (collection_id,),
             ).fetchone()
             if row is None:
-                raise MBForgeError(
+                raise NotFoundError(
                     "Collection not found",
                     detail=f"collection_id={collection_id}",
                 )
@@ -555,7 +556,7 @@ class LibraryStore:
                 (doc_id,),
             ).fetchone()
             if row is None:
-                raise MBForgeError(
+                raise NotFoundError(
                     "Document not found",
                     detail=f"doc_id={doc_id}",
                 )

@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from ..core.path_utils import sanitize_upload_filename
 from ..utils.config import load_global_config, update_settings
-from ..utils.helpers import MBForgeError
+from ..utils.helpers import FileAccessError, MBForgeError, ValidationError
 from ..utils.logger import get_logger
 from ..utils.paths import GLOBAL_APP_DIR
 from ._path_utils import InvalidPathError, resolve_library_root, validate_doc_id
@@ -146,31 +146,23 @@ async def library_import(
     try:
         Path(root).mkdir(parents=True, exist_ok=True)
     except OSError as e:
-        return {
-            "success": False,
-            "error": "Cannot access library directory",
-            "detail": str(e),
-        }
+        raise FileAccessError(
+            "Cannot access library directory", detail=str(e)
+        ) from e
 
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
-    try:
-        content = await file.read()
-        if len(content) > _MAX_UPLOAD_BYTES:
-            raise _UploadTooLargeError(
-                f"Upload exceeds {_MAX_UPLOAD_BYTES} bytes", detail=safe_name
-            )
-        doc = store.add_uploaded_file(
-            content=content,
-            filename=safe_name,
-            title=title,
+    content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise _UploadTooLargeError(
+            f"Upload exceeds {_MAX_UPLOAD_BYTES} bytes", detail=safe_name
         )
-    except MBForgeError as e:
-        return {"success": False, "error": e.message, "detail": e.detail}
-    except Exception as e:
-        logger.exception("Unexpected import error: %s", e)
-        return {"success": False, "error": "Import failed", "detail": str(e)}
+    doc = store.add_uploaded_file(
+        content=content,
+        filename=safe_name,
+        title=title,
+    )
     return {"success": True, "document": doc.model_dump()}
 
 
@@ -192,7 +184,7 @@ async def library_delete_document(body: dict) -> dict:
     doc_id = body.get("doc_id", "")
     root = _resolve_library_root(body)
     if not doc_id:
-        return {"success": False, "error": "doc_id required"}
+        raise ValidationError("doc_id is required")
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
@@ -312,14 +304,11 @@ async def library_create_collection(body: dict) -> dict:
     parent_id = body.get("parent_id")
     root = _resolve_library_root(body)
     if not name:
-        return {"success": False, "error": "name required"}
+        raise ValidationError("name is required")
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
-    try:
-        col = store.create_collection(name, parent_id)
-    except MBForgeError as e:
-        return {"success": False, "error": e.message, "detail": e.detail}
+    col = store.create_collection(name, parent_id)
     return {"success": True, "collection": col.model_dump()}
 
 
@@ -340,14 +329,11 @@ async def library_delete_collection(body: dict) -> dict:
     collection_id = body.get("collection_id", "")
     root = _resolve_library_root(body)
     if not collection_id:
-        return {"success": False, "error": "collection_id required"}
+        raise ValidationError("collection_id is required")
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
-    try:
-        store.delete_collection(collection_id)
-    except MBForgeError as e:
-        return {"success": False, "error": e.message, "detail": e.detail}
+    store.delete_collection(collection_id)
     return {"success": True}
 
 
@@ -357,15 +343,14 @@ async def library_collection_add_document(body: dict) -> dict:
     collection_id = body.get("collection_id", "")
     doc_id = body.get("doc_id", "")
     root = _resolve_library_root(body)
-    if not collection_id or not doc_id:
-        return {"success": False, "error": "collection_id and doc_id required"}
+    if not collection_id:
+        raise ValidationError("collection_id is required")
+    if not doc_id:
+        raise ValidationError("doc_id is required")
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
-    try:
-        store.add_to_collection(collection_id, doc_id)
-    except MBForgeError as e:
-        return {"success": False, "error": e.message, "detail": e.detail}
+    store.add_to_collection(collection_id, doc_id)
     return {"success": True}
 
 
@@ -375,8 +360,10 @@ async def library_collection_remove_document(body: dict) -> dict:
     collection_id = body.get("collection_id", "")
     doc_id = body.get("doc_id", "")
     root = _resolve_library_root(body)
-    if not collection_id or not doc_id:
-        return {"success": False, "error": "collection_id and doc_id required"}
+    if not collection_id:
+        raise ValidationError("collection_id is required")
+    if not doc_id:
+        raise ValidationError("doc_id is required")
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
@@ -389,17 +376,13 @@ async def library_configure(body: dict) -> dict:
     """Configure the library root directory."""
     root = body.get("root", "")
     if not root:
-        return {"success": False, "error": "root required"}
+        raise ValidationError("root is required")
     try:
         Path(root).mkdir(parents=True, exist_ok=True)
         test_file = Path(root) / ".mbforge_write_test"
         test_file.write_text("ok")
         test_file.unlink()
     except OSError as e:
-        return {
-            "success": False,
-            "error": "Directory not writable",
-            "detail": str(e),
-        }
+        raise FileAccessError("Directory not writable", detail=str(e)) from e
     update_settings({"library_root": root})
     return {"success": True, "root": root}

@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-
 _TRAVERSAL_DOC_IDS = [
     "../etc/passwd",
     "..\\Windows\\System32",
@@ -35,7 +34,9 @@ def test_coref_figure_labels_rejects_traversal_doc_id(
     )
 
     assert response.status_code == 400
-    assert response.json()["success"] is False
+    data = response.json()
+    assert data["success"] is False
+    assert data["error_code"] == "invalid_path"
 
 
 @pytest.mark.parametrize("doc_id", _TRAVERSAL_DOC_IDS)
@@ -48,7 +49,9 @@ def test_coref_predictions_rejects_traversal_doc_id(
     )
 
     assert response.status_code == 400
-    assert response.json()["success"] is False
+    data = response.json()
+    assert data["success"] is False
+    assert data["error_code"] == "invalid_path"
 
 
 @pytest.mark.parametrize("doc_id", _TRAVERSAL_DOC_IDS)
@@ -61,7 +64,9 @@ def test_moldet_extract_pdf_rejects_traversal_doc_id(
     )
 
     assert response.status_code == 400
-    assert response.json()["success"] is False
+    data = response.json()
+    assert data["success"] is False
+    assert data["error_code"] == "invalid_path"
 
 
 @pytest.mark.parametrize("doc_id", _TRAVERSAL_DOC_IDS)
@@ -74,7 +79,9 @@ def test_detection_cache_get_rejects_traversal_doc_id(
     )
 
     assert response.status_code == 400
-    assert response.json()["success"] is False
+    data = response.json()
+    assert data["success"] is False
+    assert data["error_code"] == "invalid_path"
 
 
 def test_detection_cache_save_rejects_malicious_doc_id(
@@ -102,7 +109,9 @@ def test_detection_cache_save_rejects_malicious_doc_id(
     )
 
     assert response.status_code == 400
-    assert response.json()["success"] is False
+    data = response.json()
+    assert data["success"] is False
+    assert data["error_code"] == "invalid_path"
 
 
 @pytest.mark.parametrize(
@@ -124,7 +133,9 @@ def test_library_import_rejects_traversal_filename(
         )
 
     assert response.status_code == 400
-    assert response.json()["success"] is False
+    data = response.json()
+    assert data["success"] is False
+    assert data["error_code"] == "invalid_path"
 
 
 def test_library_import_accepts_dotted_filename(
@@ -153,7 +164,9 @@ def test_moldet_extract_pdf_page_rejects_direct_pdf_path(
     )
 
     assert response.status_code == 400
-    assert response.json()["success"] is False
+    data = response.json()
+    assert data["success"] is False
+    assert data["error_code"] == "invalid_path"
 
 
 @pytest.mark.parametrize("library_root", _MALICIOUS_LIBRARY_ROOTS)
@@ -194,7 +207,9 @@ def test_endpoints_reject_mismatched_library_root(
     )
 
     assert response.status_code == 400
-    assert response.json()["success"] is False
+    data = response.json()
+    assert data["success"] is False
+    assert data["error_code"] == "invalid_path"
 
 
 @pytest.mark.parametrize("library_root", _MALICIOUS_LIBRARY_ROOTS)
@@ -209,7 +224,9 @@ def test_library_import_rejects_mismatched_library_root(
         )
 
     assert response.status_code == 400
-    assert response.json()["success"] is False
+    data = response.json()
+    assert data["success"] is False
+    assert data["error_code"] == "invalid_path"
 
 
 _TRAVERSAL_CROP_PATHS = [
@@ -236,4 +253,6 @@ def test_library_crop_rejects_traversal_rel_path(
             params={"rel_path": rel_path, "library_root": str(tmp_library)},
         )
         assert response.status_code == 400, f"rel_path={rel_path!r}"
-        assert response.json()["success"] is False
+        data = response.json()
+        assert data["success"] is False
+        assert data["error_code"] == "invalid_path"

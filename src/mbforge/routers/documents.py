@@ -1,4 +1,4 @@
-"""Document CRUD endpoints — supports both library_root and library_root."""
+"""Document CRUD endpoints."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from fastapi import APIRouter
 
 from ..core.library import LibraryStore
 from ..pipeline.runner import run_pipeline
-from ..utils.helpers import resolve_root
+from ..utils.helpers import ValidationError, resolve_root
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.documents_router")
@@ -20,7 +20,7 @@ router = APIRouter()
 async def doc_list(body: dict) -> dict:
     root = resolve_root(body)
     if not root:
-        return {"success": False, "documents": []}
+        raise ValidationError("library_root is required")
     store = LibraryStore.get(root)
     docs = store.list_documents()
     return {"success": True, "documents": [d.model_dump() for d in docs]}
@@ -30,8 +30,10 @@ async def doc_list(body: dict) -> dict:
 async def doc_delete(body: dict) -> dict:
     root = resolve_root(body)
     doc_id = body.get("doc_id", "")
-    if not root or not doc_id:
-        return {"success": False, "error": "root and doc_id required"}
+    if not root:
+        raise ValidationError("library_root is required")
+    if not doc_id:
+        raise ValidationError("doc_id is required")
     store = LibraryStore.get(root)
     store.delete_document(doc_id)
     return {"success": True}
@@ -41,14 +43,15 @@ async def doc_delete(body: dict) -> dict:
 async def doc_reingest(body: dict) -> dict:
     root = resolve_root(body)
     doc_id = body.get("doc_id", "")
-    if not root or not doc_id:
-        return {"success": False, "error": "root and doc_id required"}
+    if not root:
+        raise ValidationError("library_root is required")
+    if not doc_id:
+        raise ValidationError("doc_id is required")
     store = LibraryStore.get(root)
     file_path = store.resolve_file(doc_id)
     if not file_path:
-        return {"success": False, "error": f"document {doc_id} not found"}
-    try:
-        await asyncio.to_thread(run_pipeline, file_path, root, doc_id)
-        return {"success": True, "message": "reingest completed"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+        from ..utils.helpers import NotFoundError
+
+        raise NotFoundError("document not found", detail=f"doc_id={doc_id}")
+    await asyncio.to_thread(run_pipeline, file_path, root, doc_id)
+    return {"success": True, "message": "reingest completed"}

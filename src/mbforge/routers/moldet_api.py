@@ -18,7 +18,6 @@ Removed endpoints (return 410 Gone with a migration pointer):
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -33,6 +32,7 @@ from ..utils.helpers import (
     decode_base64_image,
 )
 from ..utils.logger import get_logger
+from ._path_utils import InvalidPathError, resolve_pdf_path
 
 logger = get_logger("mbforge.moldet_api_router")
 
@@ -206,9 +206,19 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
             "count": N,
         }
     """
+    library_root = body.get("library_root") or body.get("libraryRoot") or ""
+    doc_id = body.get("doc_id") or body.get("docId") or ""
     pdf_path = body.get("pdf_path", "")
-    if not pdf_path or not Path(pdf_path).exists():
-        raise ValidationError("pdf_path is required and must exist")
+
+    if library_root and doc_id:
+        pdf_path = str(resolve_pdf_path(library_root, doc_id))
+    elif pdf_path:
+        # Direct absolute paths from the client are no longer trusted.
+        raise InvalidPathError(
+            "direct pdf_path is not allowed; provide library_root and doc_id"
+        )
+    else:
+        raise ValidationError("library_root and doc_id are required")
 
     page_num = body.get("page", 1)
     dpi = body.get("dpi", 300.0)
@@ -341,19 +351,15 @@ async def extract_pdf_by_doc(body: dict) -> dict[str, Any]:
     library's docId, not absolute paths). Reuses the same path-resolution
     logic as routers/coref.py::_resolve_pdf_path.
     """
-    from .coref import _resolve_pdf_path
-
     library_root = body.get("library_root") or body.get("libraryRoot") or ""
     doc_id = body.get("doc_id") or body.get("docId") or ""
     if not library_root or not doc_id:
         raise ValidationError("library_root and doc_id are required")
 
-    pdf_path = _resolve_pdf_path(library_root, doc_id)
-    if pdf_path is None:
-        raise ValidationError(
-            f"PDF not found for library_root={library_root} doc_id={doc_id}"
-        )
+    pdf_path = resolve_pdf_path(library_root, doc_id)
 
     body_with_path = dict(body)
     body_with_path["pdf_path"] = str(pdf_path)
+    body_with_path["library_root"] = library_root
+    body_with_path["doc_id"] = doc_id
     return await extract_pdf_page(body_with_path)

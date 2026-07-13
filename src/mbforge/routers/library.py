@@ -15,6 +15,10 @@ from ..utils.config import load_global_config, update_settings
 from ..utils.helpers import MBForgeError
 from ..utils.logger import get_logger
 from ..utils.paths import GLOBAL_APP_DIR
+from ._path_utils import (
+    resolve_library_root,
+    sanitize_upload_filename,
+)
 
 logger = get_logger("mbforge.library_router")
 
@@ -78,14 +82,14 @@ def _resolve_library_root(body: dict | None = None) -> str:
     The default lives inside the unified application directory so settings,
     logs and library data are co-located by default. Advanced users may set a
     separate library_root via the Settings UI.
+
+    The returned path is validated through ``resolve_library_root`` so callers
+    never receive an empty or relative root.
     """
     cfg = load_global_config()
     explicit = (body or {}).get("library_root", "")
-    if explicit:
-        return explicit
-    if cfg.library_root:
-        return cfg.library_root
-    return str(GLOBAL_APP_DIR)
+    root = explicit or cfg.library_root or str(GLOBAL_APP_DIR)
+    return str(resolve_library_root(root))
 
 
 @router.get("/status")
@@ -118,6 +122,16 @@ class _MissingUploadError(MBForgeError):
     error_code = "missing_upload"
 
 
+class _UploadTooLargeError(MBForgeError):
+    status_code = 413
+    error_code = "upload_too_large"
+
+
+# 200 MB cap on browser uploads. Large PDFs should be imported from the
+# filesystem or streamed; keeping the cap prevents OOM on malicious clients.
+_MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
+
 @router.post("/import")
 async def library_import(
     file: UploadFile | None = None,
@@ -135,6 +149,9 @@ async def library_import(
         )
     root = _resolve_library_root({"library_root": library_root} if library_root else None)
 
+    # Validate filename before reading potentially malicious payloads.
+    safe_name = sanitize_upload_filename(file.filename or "")
+
     # Validate root is writable
     try:
         Path(root).mkdir(parents=True, exist_ok=True)
@@ -150,9 +167,13 @@ async def library_import(
     store = LibraryStore.get(root)
     try:
         content = await file.read()
+        if len(content) > _MAX_UPLOAD_BYTES:
+            raise _UploadTooLargeError(
+                f"Upload exceeds {_MAX_UPLOAD_BYTES} bytes", detail=safe_name
+            )
         doc = store.add_uploaded_file(
             content=content,
-            filename=file.filename or "",
+            filename=safe_name,
             title=title,
         )
     except MBForgeError as e:

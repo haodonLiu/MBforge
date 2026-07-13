@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from ._path_utils import resolve_library_root, validate_doc_id
+
 router = APIRouter()
 
 
@@ -14,9 +16,14 @@ async def detection_get(body: dict) -> dict:
     page = body.get("page", 0)
     if not root or not doc_id:
         return {"success": False, "detections": []}
+
+    # Reject traversal in both the library root and the document id.
+    root_path = resolve_library_root(root)
+    validate_doc_id(doc_id)
+
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager.get(root)
+    db = DatabaseManager.get(str(root_path))
     with db.mol_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM molecule_detections WHERE doc_id = ? AND page = ?",
@@ -31,9 +38,14 @@ async def detection_save(body: dict) -> dict:
     detections = body.get("detections", [])
     if not root or not detections:
         return {"success": False, "error": "library_root and detections required"}
+
+    root_path = resolve_library_root(root)
+    for det in detections:
+        validate_doc_id(det.get("doc_id", ""))
+
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager.get(root)
+    db = DatabaseManager.get(str(root_path))
     with db.mol_conn() as conn:
         for det in detections:
             conn.execute(

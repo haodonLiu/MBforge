@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -24,6 +23,22 @@ def _make_fake_coref_result() -> MagicMock:
     return result
 
 
+def _import_sample(
+    client: TestClient, library_root: Path, sample_pdf: Path
+) -> str:
+    """Import ``sample_pdf`` into ``library_root`` and return its ``doc_id``."""
+    with sample_pdf.open("rb") as f:
+        resp = client.post(
+            "/api/v1/library/import",
+            files={"file": ("sample.pdf", f, "application/pdf")},
+            data={"library_root": str(library_root)},
+        )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["success"] is True
+    return data["document"]["doc_id"]
+
+
 def test_coref_figure_labels_validation(app_client: TestClient) -> None:
     resp = app_client.post("/api/v1/coref/figure-labels", json={})
     assert resp.status_code == 422
@@ -34,7 +49,7 @@ def test_coref_figure_labels_with_mock(
 ) -> None:
     lib = tmp_path / "lib"
     lib.mkdir()
-    shutil.copy(sample_pdf, lib / "doc1.pdf")
+    doc_id = _import_sample(app_client, lib, sample_pdf)
     fake = _make_fake_coref_result()
     with (
         patch(
@@ -45,7 +60,7 @@ def test_coref_figure_labels_with_mock(
         mock_adapter.return_value.readtext_batch.return_value = ["Fig 1"]
         resp = app_client.post(
             "/api/v1/coref/figure-labels",
-            json={"library_root": str(lib), "docId": "doc1", "page": 1},
+            json={"library_root": str(lib), "docId": doc_id, "page": 1},
         )
     assert resp.status_code == 200
     labels = resp.json()["labels"]
@@ -58,7 +73,7 @@ def test_coref_predictions_with_mock(
 ) -> None:
     lib = tmp_path / "lib"
     lib.mkdir()
-    shutil.copy(sample_pdf, lib / "doc1.pdf")
+    doc_id = _import_sample(app_client, lib, sample_pdf)
     fake = _make_fake_coref_result()
     with (
         patch(
@@ -69,7 +84,7 @@ def test_coref_predictions_with_mock(
         mock_adapter.return_value.readtext_batch.return_value = ["Fig 1"]
         resp = app_client.post(
             "/api/v1/coref/predictions",
-            json={"library_root": str(lib), "docId": "doc1", "page": 1},
+            json={"library_root": str(lib), "docId": doc_id, "page": 1},
         )
     assert resp.status_code == 200
     preds = resp.json()["predictions"]

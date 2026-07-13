@@ -32,6 +32,7 @@ def client() -> TestClient:
     _server._prewarm = _noop
     _helpers.check_environment = _noop
 
+    c = None
     try:
         from mbforge.app import create_app
 
@@ -39,8 +40,9 @@ def client() -> TestClient:
         c = TestClient(app)
         yield c
     finally:
-        with suppress(CancelledError, RuntimeError):
-            c.close()
+        if c is not None:
+            with suppress(CancelledError, RuntimeError):
+                c.close()
         _server._prewarm = _orig_prewarm
         _helpers.check_environment = _orig_check_environment
 

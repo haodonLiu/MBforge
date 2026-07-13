@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter
@@ -40,6 +39,7 @@ from ..backends.ocr.rapidocr_adapter import RapidOCRCropAdapter
 from ..parsers.molecule.coref_alt import detect_coref_via_ft_detector
 from ..utils.helpers import ValidationError
 from ..utils.logger import get_logger
+from ._path_utils import DocumentNotFoundError, resolve_pdf_path
 
 logger = get_logger("mbforge.coref_router")
 
@@ -75,11 +75,12 @@ def _cached_detect(
     if cached is not None and (now - cached[0]) < _DETECT_TTL_SEC:
         return cached[1]
 
-    doc_path = _resolve_pdf_path(library_root, doc_id)
-    if doc_path is None or not doc_path.exists():
-        logger.warning(
-            "PDF not found for project=%s doc=%s", library_root, doc_id
-        )
+    try:
+        doc_path = resolve_pdf_path(library_root, doc_id)
+    except DocumentNotFoundError:
+        # Missing documents surface as empty results; traversal/validation
+        # errors are left to propagate to the central MBForgeError handler.
+        logger.warning("PDF not found for library=%s doc=%s", library_root, doc_id)
         return None
 
     import fitz
@@ -137,37 +138,6 @@ def _cached_detect(
                 _detect_cache.pop(k, None)
     return result
 
-
-def _resolve_pdf_path(library_root: str, doc_id: str) -> Path | None:
-    """Resolve the absolute PDF path for a (libraryRoot, docId) pair.
-
-    Best-effort: checks the project root for any file matching the doc_id
-    or the canonical library_storage conventions. Returns None on miss
-    so the caller can return an empty result gracefully.
-    """
-    root = Path(library_root)
-    if not root.exists():
-        return None
-    candidates = [
-        root / f"{doc_id}.pdf",
-        root / "docs" / f"{doc_id}.pdf",
-        root / doc_id / "source.pdf",
-        root / doc_id / f"{doc_id}.pdf",
-    ]
-    for c in candidates:
-        if c.exists() and c.is_file():
-            return c
-    try:
-        for child in root.iterdir():
-            if (
-                child.is_file()
-                and child.suffix.lower() == ".pdf"
-                and doc_id in child.name
-            ):
-                return child
-    except (PermissionError, OSError):
-        pass
-    return None
 
 def _crop_label_boxes(
     image: Any,

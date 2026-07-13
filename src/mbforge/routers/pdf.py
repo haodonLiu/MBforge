@@ -11,6 +11,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from ._path_utils import DocumentNotFoundError, InvalidPathError, resolve_pdf_path
+
 router = APIRouter()
 
 
@@ -134,9 +136,25 @@ async def figure_bboxes(body: dict) -> list[PageFigureBboxes]:
     """
     import fitz  # local import keeps the router importable without PyMuPDF
 
+    library_root = body.get("library_root") or body.get("libraryRoot") or ""
+    doc_id = body.get("doc_id") or body.get("docId") or ""
     pdf_path = body.get("pdf_path") or body.get("pdfPath") or ""
-    if not pdf_path:
-        return []
+
+    if library_root and doc_id:
+        try:
+            pdf_path = str(resolve_pdf_path(library_root, doc_id))
+        except DocumentNotFoundError:
+            # Missing but safely-resolved documents keep the existing
+            # "empty result" contract so the frontend can fall back.
+            return []
+    elif pdf_path:
+        # Direct absolute paths from the client are no longer trusted.
+        raise InvalidPathError(
+            "direct pdf_path is not allowed; provide library_root and doc_id"
+        )
+    else:
+        raise InvalidPathError("library_root and doc_id are required")
+
     try:
         with fitz.open(pdf_path) as doc:
             return [

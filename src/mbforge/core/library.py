@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 
 from ..models.library import CollectionInfo, CollectionNode, DocumentInfo
+from ..routers._path_utils import sanitize_upload_filename
 from ..utils.helpers import MBForgeError, ensure_dir
 from ..utils.logger import get_logger
 from .artifact import ArtifactResolver
@@ -138,6 +139,8 @@ class LibraryStore:
         if not filename:
             raise MBForgeError("Missing filename", )
 
+        safe_filename = sanitize_upload_filename(filename)
+
         # Reject duplicate imports by content hash (computed before write)
         md5 = hashlib.md5(content).hexdigest()
         existing = self._get_doc_by_md5(md5)
@@ -148,18 +151,18 @@ class LibraryStore:
                             )
 
         doc_id = str(uuid.uuid4())
-        safe_title = title.strip() if title else Path(filename).stem
+        safe_title = title.strip() if title else Path(safe_filename).stem
         storage_subdir = self._resolver.storage_dir(doc_id)
         try:
             ensure_dir(storage_subdir)
-            dest = storage_subdir / filename
+            dest = storage_subdir / safe_filename
             dest.write_bytes(content)
         except (OSError, PermissionError) as e:
             raise MBForgeError(
                 "Failed to store file", detail=str(e)
             ) from e
 
-        storage_path = f"{doc_id}/{filename}"
+        storage_path = f"{doc_id}/{safe_filename}"
         conn = sqlite3.connect(str(self._db_path))
         try:
             conn.execute(
@@ -175,7 +178,7 @@ class LibraryStore:
         return DocumentInfo(
             doc_id=doc_id,
             title=safe_title,
-            file_name=filename,
+            file_name=safe_filename,
             page_count=0,
             status="pending",
             created_at="",

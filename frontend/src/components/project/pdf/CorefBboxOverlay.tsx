@@ -118,6 +118,23 @@ export function CorefBboxOverlay(props: CorefBboxOverlayProps): React.ReactEleme
     return m
   }, [labels])
 
+  /** 用 mol bbox（优先）或 mol_smiles 把 prediction 分组。
+   *  避免不同分子因 SMILES 字符串表示不同而被误判为同一组。 */
+  const molGroups = useMemo(() => {
+    const groups = new Map<string, CorefPrediction[]>()
+    for (const p of visiblePreds) {
+      const key = p.mol_bbox
+        ? `bbox:${p.mol_bbox.join(',')}`
+        : p.mol_smiles
+          ? `smi:${p.mol_smiles}`
+          : `pred:${p.id}`
+      const list = groups.get(key) ?? []
+      list.push(p)
+      groups.set(key, list)
+    }
+    return groups
+  }, [visiblePreds])
+
   /** 把 record 的 bbox (figure 0-1) 转成 CSS {x,y,w,h} — 走 pdfToCss */
   const projectToCss = (
     imgBbox: [number, number, number, number] | null | undefined,
@@ -225,16 +242,21 @@ export function CorefBboxOverlay(props: CorefBboxOverlayProps): React.ReactEleme
         {predictionBoxes.map(({ pred: p, molBox }) => {
           if (!molBox) return null
           const color = predColor(p)
-          const pairedLabels = visiblePreds
-            .filter(q => q.mol_smiles === p.mol_smiles)
-            .map(q => q.label_id)
-            .filter((id): id is number => id !== null)
-            .map(id => labelById.get(id))
+          const molGroupKey = p.mol_bbox
+            ? `bbox:${p.mol_bbox.join(',')}`
+            : p.mol_smiles
+              ? `smi:${p.mol_smiles}`
+              : `pred:${p.id}`
+          const group = molGroups.get(molGroupKey) ?? []
+          const pairedLabels = group
+            .filter(q => q.label_id !== null)
+            .map(q => labelById.get(q.label_id as number))
             .filter((l): l is FigureLabel => l !== undefined)
           const clickInfo: MolClickInfo = { prediction: p, pairedLabels }
           return (
             <rect
               key={`mol-${p.id}`}
+              data-testid={`mol-rect-${p.id}`}
               x={molBox.x}
               y={molBox.y}
               width={molBox.w}

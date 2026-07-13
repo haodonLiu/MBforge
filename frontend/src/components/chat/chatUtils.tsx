@@ -1,4 +1,5 @@
 import katex from 'katex'
+import DOMPurify from 'dompurify'
 
 /** Render inline LaTeX ($...$) within React children */
 export function renderInlineLatex(children: React.ReactNode): React.ReactNode {
@@ -15,8 +16,9 @@ export function renderInlineLatex(children: React.ReactNode): React.ReactNode {
       if (formula) {
         try {
           const html = katex.renderToString(formula, { throwOnError: false, trust: false })
+          const safeHtml = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
           parts.push(
-            <span key={match.index} dangerouslySetInnerHTML={{ __html: html }} />
+            <span key={match.index} dangerouslySetInnerHTML={{ __html: safeHtml }} />
           )
         } catch {
           parts.push(<code key={match.index}>{formula}</code>)

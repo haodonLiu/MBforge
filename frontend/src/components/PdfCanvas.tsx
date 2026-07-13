@@ -94,12 +94,20 @@ export default function PdfCanvas({
 
   useEffect(() => {
     let cancelled = false
+    let loadedDoc: PDFDocumentProxy | null = null
     setLoading(true)
     setError(null)
 
     getCachedDoc(url)
       .then(doc => {
-        if (cancelled) return
+        if (cancelled) {
+          // Component unmounted or URL changed before the document loaded:
+          // destroy the now-unreferenced document so PDF.js releases its resources.
+          doc.destroy().catch(() => { /* ignore */ })
+          docCache.delete(url)
+          return
+        }
+        loadedDoc = doc
         pdfDocRef.current = doc
         totalPagesRef.current = doc.numPages
         setTotalPages(doc.numPages)
@@ -112,7 +120,20 @@ export default function PdfCanvas({
         if (!cancelled) setLoading(false)
       })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      // Cancel any in-flight render before destroying the document.
+      if (renderTaskRef.current) {
+        try { renderTaskRef.current.cancel() } catch { /* ignore */ }
+        renderTaskRef.current = null
+      }
+      const docToDestroy = loadedDoc ?? pdfDocRef.current
+      if (docToDestroy) {
+        docToDestroy.destroy().catch(() => { /* ignore */ })
+        docCache.delete(url)
+      }
+      pdfDocRef.current = null
+    }
   }, [url])
 
   const renderTextLayerImpl = useCallback(async (page: pdfjsLib.PDFPageProxy) => {

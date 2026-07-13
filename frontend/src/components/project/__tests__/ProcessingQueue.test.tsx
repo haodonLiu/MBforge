@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, act } from '@testing-library/react'
 
 vi.mock('@/api/query/hooks', () => ({
   useIngestQueue: vi.fn(),
@@ -22,7 +22,16 @@ vi.mock('react-i18next', () => ({
   }),
 }))
 
+vi.mock('@/api/http/ingest_queue', async () => {
+  const actual = await vi.importActual<typeof import('@/api/http/ingest_queue')>('@/api/http/ingest_queue')
+  return {
+    ...actual,
+    ingestGetLogs: vi.fn().mockResolvedValue([]),
+  }
+})
+
 import { useIngestQueue, useIngestStats, useWorkerStatus } from '@/api/query/hooks'
+import { ingestGetLogs } from '@/api/http/ingest_queue'
 import ProcessingQueue from '../ProcessingQueue'
 
 function mockQueue(tasks: { id: string; status: string; doc_id: string }[]) {
@@ -99,5 +108,28 @@ describe('ProcessingQueue', () => {
     render(<ProcessingQueue />)
     expect(screen.getByText('doc1.pdf')).toBeInTheDocument()
     expect(screen.getByText('doc2.pdf')).toBeInTheDocument()
+  })
+
+  it('does not prefetch logs on mount', () => {
+    mockQueue([
+      { id: 't1', status: 'processing', doc_id: 'doc1' },
+      { id: 't2', status: 'pending', doc_id: 'doc2' },
+    ])
+    render(<ProcessingQueue />)
+    expect(ingestGetLogs).not.toHaveBeenCalled()
+  })
+
+  it('fetches logs on demand when a task row toggles logs', async () => {
+    const mockGetLogs = vi.mocked(ingestGetLogs)
+    mockGetLogs.mockResolvedValue([
+      { doc_id: 'doc1', stage: 'moldet', level: 'info', message: 'hello', ts_ms: 1_000 },
+    ])
+    mockQueue([
+      { id: 't1', status: 'processing', doc_id: 'doc1' },
+    ])
+    render(<ProcessingQueue />)
+    const toggle = screen.getByText('queue.showLogs')
+    act(() => toggle.click())
+    await waitFor(() => expect(mockGetLogs).toHaveBeenCalledWith('/tmp/lib', 'doc1', 200))
   })
 })

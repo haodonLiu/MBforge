@@ -150,7 +150,6 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
           task={pipeline.task}
           progressPct={pipeline.progressPct}
           details={pipeline.details}
-          embedState={pipeline.embedState}
         />
       )}
       <PdfToolbar

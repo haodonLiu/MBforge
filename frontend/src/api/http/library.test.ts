@@ -15,14 +15,12 @@ describe('importDocument', () => {
   const originalFetch = globalThis.fetch
   const fetchMock = vi.fn<typeof globalThis.fetch>()
 
-  function mockFetchResponse(body: unknown, status = 200) {
-    return Promise.resolve(
-      new Response(JSON.stringify(body), {
-        status,
-        statusText: status === 200 ? 'OK' : 'Error',
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+  function mockFetchResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      statusText: status === 200 ? 'OK' : 'Error',
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 
   beforeEach(() => {

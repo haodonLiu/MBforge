@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import mermaid from 'mermaid'
+import DOMPurify from 'dompurify'
 
 // 初始化 mermaid（只执行一次）
 let mermaidInitialized = false
@@ -38,7 +39,7 @@ export function MermaidCode({ code, className }: MermaidCodeProps) {
       try {
         const id = `mermaid-${uniqueId.replace(/:/g, '')}`
         const { svg: renderedSvg } = await mermaid.render(id, code.trim())
-        setSvg(renderedSvg)
+        setSvg(DOMPurify.sanitize(renderedSvg, { USE_PROFILES: { svg: true } }))
         setError(null)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Mermaid render failed')

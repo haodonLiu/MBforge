@@ -2,18 +2,27 @@ import { useState, useEffect, useCallback } from 'react'
 
 const THEME_KEY = 'mbforge_theme'
 
-type Theme = 'light' | 'dark'
+export type Theme = 'light' | 'dark' | 'system'
+
+function getSystemTheme(): 'light' | 'dark' {
+  if (typeof window === 'undefined') return 'dark'
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+function resolveTheme(theme: Theme): 'light' | 'dark' {
+  return theme === 'system' ? getSystemTheme() : theme
+}
 
 function getStoredTheme(): Theme {
   try {
     const stored = localStorage.getItem(THEME_KEY)
-    if (stored === 'dark' || stored === 'light') return stored
+    if (stored === 'dark' || stored === 'light' || stored === 'system') return stored
   } catch { /* ignore */ }
-  return 'dark'
+  return 'system'
 }
 
 function applyTheme(theme: Theme) {
-  document.documentElement.setAttribute('data-theme', theme)
+  document.documentElement.setAttribute('data-theme', resolveTheme(theme))
 }
 
 export function useTheme() {
@@ -24,12 +33,14 @@ export function useTheme() {
   }, [theme])
 
   const setTheme = useCallback((t: Theme) => {
-    localStorage.setItem(THEME_KEY, t)
+    try {
+      localStorage.setItem(THEME_KEY, t)
+    } catch { /* ignore */ }
     setThemeState(t)
     applyTheme(t)
   }, [])
 
-  return { theme, setTheme }
+  return { theme, setTheme, resolveTheme }
 }
 
 export function initTheme() {

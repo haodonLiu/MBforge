@@ -43,6 +43,10 @@ const STATUS_RANK: Record<StatusKey, number> = {
   done: 4,
 }
 
+const LOG_FETCH_LIMIT = 200
+const LOGS_PER_DOC_CAP = 200
+const MAX_LOG_DOCS = 50
+
 export default function ProcessingQueue() {
   const { libraryRoot } = useAppContext()
   const { t } = useTranslation()
@@ -92,7 +96,7 @@ export default function ProcessingQueue() {
   const fetchLogsForDoc = useCallback(
     async (docId: string) => {
       try {
-        const records = await ingestGetLogs(libraryRoot, docId, 500)
+        const records = await ingestGetLogs(libraryRoot, docId, LOG_FETCH_LIMIT)
         if (records.length === 0) return
         setLogMap((prev) => {
           const list = prev.get(docId) ?? []
@@ -106,9 +110,15 @@ export default function ProcessingQueue() {
             }
           }
           merged.sort((a, b) => a.ts_ms - b.ts_ms)
-          const trimmed = merged.length > 200 ? merged.slice(-200) : merged
+          const trimmed = merged.length > LOGS_PER_DOC_CAP ? merged.slice(-LOGS_PER_DOC_CAP) : merged
           const next = new Map(prev)
           next.set(docId, trimmed)
+          // Bound the total number of docs we keep logs for.
+          while (next.size > MAX_LOG_DOCS) {
+            const first = next.keys().next().value
+            if (first === undefined) break
+            next.delete(first)
+          }
           return next
         })
       } catch (e) {
@@ -118,14 +128,21 @@ export default function ProcessingQueue() {
     [libraryRoot],
   )
 
-  // Pre-fetch logs for all tasks on first load.
+  // Prune logMap when tasks change so we don't retain logs for removed docs.
   useEffect(() => {
-    if (!libraryRoot) return
     const docIds = new Set(tasks.map((t) => t.doc_id))
-    for (const docId of docIds) {
-      void fetchLogsForDoc(docId)
-    }
-  }, [libraryRoot, tasks, fetchLogsForDoc])
+    setLogMap((prev) => {
+      let changed = false
+      const next = new Map(prev)
+      for (const k of next.keys()) {
+        if (!docIds.has(k)) {
+          next.delete(k)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [tasks])
 
   // ── Action handlers ───────────────────────────────────────────
   const handleCancel = useCallback(
@@ -506,4 +523,3 @@ function formatElapsed(ms: number): string {
   const m = min % 60
   return `${hr}h ${m}m`
 }
-

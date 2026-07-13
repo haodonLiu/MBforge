@@ -12,6 +12,7 @@ do page-proximity linking to detected molecules.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass
@@ -391,3 +392,14 @@ def _normalize_to_nm(value: float, unit: str) -> float:
         return value * 1_000_000_000
     logger.warning("Unknown unit %s, assuming nM", unit)
     return value
+
+
+async def extract_activities_from_document_async(
+    reorganized_md_path: str,
+    doc_id: str,
+    llm_model: str = "gpt-4o-mini",
+) -> list[ActivityRecord]:
+    """Async wrapper that runs activity extraction off the event loop."""
+    return await asyncio.to_thread(
+        extract_activities_from_document, reorganized_md_path, doc_id, llm_model
+    )

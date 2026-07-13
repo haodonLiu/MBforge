@@ -9,6 +9,7 @@ Three entry points:
 
 from __future__ import annotations
 
+import asyncio
 import re
 import sqlite3
 import time
@@ -747,3 +748,41 @@ def register_molecules_from_text(
         except Exception:
             local_conn.rollback()
             raise
+
+
+async def insert_molecode_blocks_async(
+    md_path: str,
+    pages: list[PageContent],
+    molecules: list[NormalizedMolecule],
+    output_path: str,
+) -> str:
+    """Async wrapper that runs molecode insertion off the event loop."""
+    return await asyncio.to_thread(
+        insert_molecode_blocks, md_path, pages, molecules, output_path
+    )
+
+
+async def reorganize_with_llm_async(
+    md_path: str, output_path: str, model: str | None = None
+) -> str:
+    """Async wrapper that runs LLM reorganization off the event loop."""
+    return await asyncio.to_thread(reorganize_with_llm, md_path, output_path, model)
+
+
+async def register_molecules_from_text_async(
+    fine_md_path: str,
+    molecules: list[NormalizedMolecule],
+    doc_id: str,
+    library_root: str,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> None:
+    """Async wrapper that runs molecule registration off the event loop."""
+    return await asyncio.to_thread(
+        register_molecules_from_text,
+        fine_md_path,
+        molecules,
+        doc_id,
+        library_root,
+        conn=conn,
+    )

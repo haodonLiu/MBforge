@@ -9,7 +9,11 @@ import fitz
 import pytest
 
 from mbforge.backends.ocr.base import OCRResult
-from mbforge.pipeline.extract_text import _ocr_pages
+from mbforge.pipeline.extract_text import (
+    _ocr_pages,
+    extract_pdf_text,
+    extract_pdf_text_async,
+)
 
 
 def _make_pdf_with_pages(tmp_path: Path, page_texts: list[str]) -> Path:
@@ -114,3 +118,23 @@ def test_ocr_pages_preserves_empty_results_for_missing_pages(
     assert results[0] == "page-1"
     assert results[1] == ""
     assert results[2] == "page-5"
+
+
+def test_extract_pdf_text_async_offloads_to_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The async wrapper runs the sync extractor in asyncio.to_thread."""
+    import asyncio
+
+    calls: list[tuple[object, ...]] = []
+
+    async def _fake_to_thread(func, *args, **kwargs):
+        calls.append((func, args, kwargs))
+        return None
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread)
+
+    result = asyncio.run(extract_pdf_text_async("/tmp/fake.pdf"))
+    assert result is None
+    assert len(calls) == 1
+    assert calls[0][0] is extract_pdf_text

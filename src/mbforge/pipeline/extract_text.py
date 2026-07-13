@@ -10,6 +10,7 @@ OCR config is read from AppConfig.ocr (see backend ocr.chain.build_backends).
 
 from __future__ import annotations
 
+import asyncio
 import re
 import time
 from dataclasses import dataclass, field
@@ -309,3 +310,10 @@ def write_rough_markdown(pages: list[PageContent], output_path: str) -> None:
                 lines.append(stripped)
         lines.append("")
     Path(output_path).write_text("\n".join(lines), encoding="utf-8")
+
+
+async def extract_pdf_text_async(
+    pdf_path: str, ocr_fallback: bool = True, ocr_config: dict | None = None
+) -> ExtractedDocument:
+    """Async wrapper that runs PyMuPDF/OCR extraction off the event loop."""
+    return await asyncio.to_thread(extract_pdf_text, pdf_path, ocr_fallback, ocr_config)

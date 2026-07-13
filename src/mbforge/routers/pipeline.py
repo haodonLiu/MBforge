@@ -29,7 +29,7 @@ async def pipeline_enqueue(body: dict) -> dict:
     if action == "enqueue_unresolved":
         if not root:
             return {"success": False, "error": "library_root required"}
-        enqueued = _enqueue_all_unresolved(root)
+        enqueued = await _enqueue_all_unresolved(root)
         return {"success": True, "enqueued": enqueued}
 
     file_path = body.get("file_path", "")
@@ -37,8 +37,7 @@ async def pipeline_enqueue(body: dict) -> dict:
         return {"success": False, "error": "library_root and file_path required"}
     task_id = str(uuid.uuid4())
     doc_id = body.get("doc_id", "")
-    loop = asyncio.get_running_loop()
-    future = loop.run_in_executor(
+    future = asyncio.get_running_loop().run_in_executor(
         None, _run_pipeline_sync, file_path, root, doc_id, task_id
     )
     _background_futures[task_id] = future
@@ -46,19 +45,26 @@ async def pipeline_enqueue(body: dict) -> dict:
     return {"success": True, "task_id": task_id}
 
 
-def _enqueue_all_unresolved(root: str) -> int:
-    """扫描项目中所有未处理的 PDF 并入队，返回入队数量."""
+async def _enqueue_all_unresolved(root: str) -> int:
+    """扫描项目中所有未处理的 PDF 并入队，返回入队数量.
+
+    File scanning and SQLite queue reads/writes run in the shared thread pool
+    so they do not block the event loop. Pipeline tasks themselves are still
+    launched via ``run_in_executor``.
+    """
     from pathlib import Path
 
     from ..core.database import DatabaseManager
     from ..core.file_scanner import scan_library_files
 
     db = DatabaseManager.get(root)
-    files = scan_library_files(root)
+    files = await asyncio.to_thread(scan_library_files, root)
     pdf_files = [f for f in files if f.lower().endswith(".pdf")]
 
-    enqueued = 0
-    with db.kb_conn() as conn:
+    loop = asyncio.get_running_loop()
+
+    def _enqueue_all(conn) -> int:
+        count = 0
         for rel_path in pdf_files:
             full_path = str(Path(root) / rel_path)
             # 检查是否已在队列中
@@ -72,14 +78,17 @@ def _enqueue_all_unresolved(root: str) -> int:
                 "INSERT INTO ingest_queue (id, file_path, library_root, status, created_at) VALUES (?, ?, ?, 'pending', datetime('now'))",
                 (task_id, full_path, root),
             )
-            enqueued += 1
+            count += 1
             # 后台运行 pipeline
-            loop = asyncio.get_running_loop()
             future = loop.run_in_executor(
                 None, _run_pipeline_sync, full_path, root, "", task_id
             )
             _background_futures[task_id] = future
             future.add_done_callback(lambda f, tid=task_id: _background_futures.pop(tid, None))
+        return count
+
+    with db.kb_conn() as conn:
+        enqueued = await asyncio.to_thread(_enqueue_all, conn)
     return enqueued
 
 
@@ -149,10 +158,14 @@ async def pipeline_queue(body: dict) -> dict:
     from ..core.database import DatabaseManager
 
     db = DatabaseManager.get(root)
-    try:
+
+    def _fetch() -> list[dict]:
         with db.kb_conn() as conn:
             rows = conn.execute("SELECT * FROM ingest_queue ORDER BY created_at DESC").fetchall()
-            tasks = [dict(r) for r in rows]
+            return [dict(r) for r in rows]
+
+    try:
+        tasks = await asyncio.to_thread(_fetch)
         return {"success": True, "tasks": tasks}
     except Exception as e:
         logger.warning("Failed to fetch queue: %s", e)
@@ -174,13 +187,18 @@ async def pipeline_queue_stats(body: dict) -> dict:
     from ..core.database import DatabaseManager
 
     db = DatabaseManager.get(root)
-    try:
+
+    def _fetch() -> dict:
         with db.kb_conn() as conn:
             total = conn.execute("SELECT COUNT(*) FROM ingest_queue").fetchone()[0]
             by_status = conn.execute(
                 "SELECT status, COUNT(*) as cnt FROM ingest_queue GROUP BY status"
             ).fetchall()
-        return {"success": True, "stats": {"total": total, "by_status": {r["status"]: r["cnt"] for r in by_status}}}
+        return {"total": total, "by_status": {r["status"]: r["cnt"] for r in by_status}}
+
+    try:
+        stats = await asyncio.to_thread(_fetch)
+        return {"success": True, "stats": stats}
     except Exception as e:
         logger.warning("Failed to fetch queue stats: %s", e)
         return {"success": True, "stats": {"total": 0, "by_status": {}}}

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import time
 from typing import Any
 
@@ -48,21 +50,12 @@ async def test_model(body: dict) -> dict:
     if not model_id:
         return {"success": False, "error": "model_id required"}
 
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, _test_model_sync, model_id, subpath)
+    result = await asyncio.to_thread(_test_model_sync, model_id, subpath)
     return {"success": True, **result}
 
 
-@router.post("/mol/render")
-async def render_molecule(body: dict) -> dict:
-    """Render a molecule to SVG/PNG."""
-    smiles = body.get("smiles", "")
-    width = body.get("width", 300)
-    height = body.get("height", 200)
-
-    if not smiles:
-        return {"success": False, "error": "smiles required"}
-
+def _render_molecule_sync(smiles: str, width: int, height: int) -> dict:
+    """Render a molecule to SVG/PNG (sync)."""
     try:
         from rdkit import Chem
         from rdkit.Chem import Draw
@@ -72,9 +65,6 @@ async def render_molecule(body: dict) -> dict:
             return {"success": False, "error": "Invalid SMILES"}
 
         img = Draw.MolToImage(mol, size=(width, height))
-        import base64
-        import io
-
         buffer = io.BytesIO()
         img.save(buffer, format="PNG")
         img_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
@@ -82,3 +72,16 @@ async def render_molecule(body: dict) -> dict:
     except Exception as e:
         logger.error("Molecule render failed: %s", e)
         return {"success": False, "error": str(e)}
+
+
+@router.post("/mol/render")
+async def render_molecule(body: dict) -> dict:
+    """Render a molecule to SVG/PNG."""
+    smiles = body.get("smiles", "")
+    width = int(body.get("width", 300) or 300)
+    height = int(body.get("height", 200) or 200)
+
+    if not smiles:
+        return {"success": False, "error": "smiles required"}
+
+    return await asyncio.to_thread(_render_molecule_sync, smiles, width, height)

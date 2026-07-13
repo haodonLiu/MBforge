@@ -13,6 +13,7 @@ through the mount.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import logging
@@ -24,16 +25,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/mol/render")
-async def render_molecule(body: dict) -> dict:
-    """Render a SMILES string to a base64 PNG via RDKit."""
-    smiles = body.get("smiles", "")
-    width = int(body.get("width", 300) or 300)
-    height = int(body.get("height", width) or width)
-
-    if not smiles:
-        return {"success": False, "error": "smiles required"}
-
+def _render_molecule_sync(smiles: str, width: int, height: int) -> dict:
+    """Render a SMILES string to a base64 PNG via RDKit (sync)."""
     try:
         from rdkit import Chem
         from rdkit.Chem import Draw
@@ -50,3 +43,16 @@ async def render_molecule(body: dict) -> dict:
     except Exception as exc:  # noqa: BLE001
         logger.error("Molecule render failed for smiles=%r: %s", smiles, exc)
         return {"success": False, "error": str(exc)}
+
+
+@router.post("/mol/render")
+async def render_molecule(body: dict) -> dict:
+    """Render a SMILES string to a base64 PNG via RDKit."""
+    smiles = body.get("smiles", "")
+    width = int(body.get("width", 300) or 300)
+    height = int(body.get("height", width) or width)
+
+    if not smiles:
+        return {"success": False, "error": "smiles required"}
+
+    return await asyncio.to_thread(_render_molecule_sync, smiles, width, height)

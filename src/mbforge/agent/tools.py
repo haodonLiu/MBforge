@@ -5,6 +5,7 @@ Each tool wraps an MBForge capability as a callable function.
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from langchain_core.tools import tool
@@ -80,16 +81,8 @@ def get_document_content(doc_id: str, pages: str = "") -> str:
         return json.dumps({"error": str(e)})
 
 
-@tool
-def compute_molecule_properties(smiles: str) -> str:
-    """Compute molecular properties from a SMILES string.
-
-    Args:
-        smiles: SMILES notation of the molecule
-
-    Returns:
-        JSON string with computed properties (MW, LogP, HBD, HBA, TPSA, etc.).
-    """
+def _compute_molecule_properties_sync(smiles: str) -> str:
+    """Compute molecular properties from a SMILES string (sync)."""
     try:
         from rdkit import Chem
         from rdkit.Chem import Descriptors, rdMolDescriptors
@@ -108,6 +101,19 @@ def compute_molecule_properties(smiles: str) -> str:
         })
     except Exception as e:
         return json.dumps({"error": str(e)})
+
+
+@tool
+async def compute_molecule_properties(smiles: str) -> str:
+    """Compute molecular properties from a SMILES string.
+
+    Args:
+        smiles: SMILES notation of the molecule
+
+    Returns:
+        JSON string with computed properties (MW, LogP, HBD, HBA, TPSA, etc.).
+    """
+    return await asyncio.to_thread(_compute_molecule_properties_sync, smiles)
 
 
 @tool

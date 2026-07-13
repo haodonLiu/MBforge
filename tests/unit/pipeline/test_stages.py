@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 from pathlib import Path
 from unittest.mock import patch
 
@@ -180,6 +181,29 @@ class TestAsyncSafety:
 
         with pytest.raises(RuntimeError, match="boom"):
             _run_async_in_sync(coro())
+
+    def test_no_per_call_thread_pool_executor(self, monkeypatch):
+        """_run_async_in_sync must not create a ThreadPoolExecutor on each call."""
+        created_count = {"n": 0}
+        real_executor = concurrent.futures.ThreadPoolExecutor
+
+        def _counting_executor(*args, **kwargs):
+            created_count["n"] += 1
+            return real_executor(*args, **kwargs)
+
+        monkeypatch.setattr(
+            concurrent.futures, "ThreadPoolExecutor", _counting_executor
+        )
+
+        async def outer():
+            async def inner():
+                await asyncio.sleep(0)
+                return "ok"
+
+            return _run_async_in_sync(inner())
+
+        assert asyncio.run(outer()) == "ok"
+        assert created_count["n"] == 0
 
 
 class TestExtractStage:

@@ -12,13 +12,17 @@ Covers:
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
 
 from mbforge.core.database import DatabaseManager
 from mbforge.pipeline.extract_activities import (
     ActivityRecord,
     extract_activities_from_document,
+    extract_activities_from_document_async,
 )
 from mbforge.pipeline.persist_molecules import persist_molecule_candidates
 
@@ -151,3 +155,23 @@ def test_persist_molecule_candidates_back_compat_no_activity(tmp_path: Path) -> 
         ).fetchone()
     assert row is not None
     assert row["activity"] is None
+
+
+def test_extract_activities_from_document_async_offloads_to_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The async wrapper runs the sync extractor in asyncio.to_thread."""
+    calls: list[tuple[object, ...]] = []
+
+    async def _fake_to_thread(func, *args, **kwargs):
+        calls.append((func, args, kwargs))
+        return []
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread)
+
+    result = asyncio.run(
+        extract_activities_from_document_async(str(tmp_path / "in.md"), "doc-x")
+    )
+    assert result == []
+    assert len(calls) == 1
+    assert calls[0][0] is extract_activities_from_document

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -15,7 +16,9 @@ from mbforge.pipeline.organizer import (
     _looks_degenerate,
     _rule_based_reorganize,
     insert_molecode_blocks,
+    insert_molecode_blocks_async,
     reorganize_with_llm,
+    reorganize_with_llm_async,
 )
 from mbforge.utils.config import AppConfig, LLMConfig
 
@@ -121,3 +124,43 @@ def test_llm_complete_passes_credentials_and_preserves_environ(
     assert captured["messages"] == [{"role": "user", "content": "prompt text"}]
     assert os.environ["OPENAI_API_KEY"] == "legacy-key"
     assert os.environ["OPENAI_API_BASE"] == "https://legacy.example/v1"
+
+
+def test_insert_molecode_blocks_async_offloads_to_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The async wrapper runs the sync organizer in asyncio.to_thread."""
+    calls: list[tuple[object, ...]] = []
+
+    async def _fake_to_thread(func, *args, **kwargs):
+        calls.append((func, args, kwargs))
+        return str(tmp_path / "out.md")
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread)
+
+    result = asyncio.run(
+        insert_molecode_blocks_async(str(tmp_path / "in.md"), [], [], str(tmp_path / "out.md"))
+    )
+    assert result == str(tmp_path / "out.md")
+    assert len(calls) == 1
+    assert calls[0][0] is insert_molecode_blocks
+
+
+def test_reorganize_with_llm_async_offloads_to_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The async wrapper runs the LLM reorganization in asyncio.to_thread."""
+    calls: list[tuple[object, ...]] = []
+
+    async def _fake_to_thread(func, *args, **kwargs):
+        calls.append((func, args, kwargs))
+        return str(tmp_path / "out.md")
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread)
+
+    result = asyncio.run(
+        reorganize_with_llm_async(str(tmp_path / "in.md"), str(tmp_path / "out.md"))
+    )
+    assert result == str(tmp_path / "out.md")
+    assert len(calls) == 1
+    assert calls[0][0] is reorganize_with_llm

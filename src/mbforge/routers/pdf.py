@@ -100,6 +100,33 @@ async def ocr_layout(body: dict) -> dict:
 
 
 @router.post("/figure-bboxes")
-async def figure_bboxes(body: dict) -> dict:
-    """Figure bounding boxes stub."""
-    return []
+async def figure_bboxes(body: dict) -> list[dict]:
+    """Return per-page figure bbox arrays for coref overlay projection.
+
+    Real implementation lives in the pipeline layer (calls the figure-bbox
+    detector). This stub preserves the API contract expected by the
+    frontend (``usePdfViewer.ts`` → ``getFigureBboxes`` → ``PageFigureBboxes[]``)
+    so the endpoint always parses against its declared return type even when
+    the underlying detector is unavailable.
+
+    Contract:
+      - ``{"pdf_path": "<abs path>"}`` → list of ``{page_num, figures}``
+        entries, one per PDF page. ``figures`` is the bbox array (empty when
+        the page has no extractable figures).
+      - Missing/unreadable PDF → ``[]``.
+    """
+    import fitz  # local import keeps the router importable without PyMuPDF
+
+    pdf_path = body.get("pdf_path") or body.get("pdfPath") or ""
+    if not pdf_path:
+        return []
+    try:
+        with fitz.open(pdf_path) as doc:
+            return [
+                {"page_num": idx + 1, "figures": []}
+                for idx in range(doc.page_count)
+            ]
+    except Exception:
+        # File missing, encrypted, or unreadable — surface as empty result
+        # rather than 500, so the frontend can fall back gracefully.
+        return []

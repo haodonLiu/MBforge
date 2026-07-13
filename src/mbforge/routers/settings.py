@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -16,13 +17,17 @@ from ..utils.config import (
 router = APIRouter()
 
 
+# Match secret-ish keys at word/end boundaries so "keyword" and "monkey"
+# are preserved while "api_key", "hf_key", "secret", "token" and "password"
+# are redacted. Underscores are treated as separators to catch "secret_token".
+_SECRET_KEY_RE = re.compile(
+    r"api_key|(?:^|_)(secret|token|password|key)$", re.IGNORECASE
+)
+
+
 def _is_secret_key(key: str) -> bool:
     """Return True if ``key`` looks like it holds a credential."""
-    lower = key.lower()
-    return any(
-        suffix in lower
-        for suffix in ("api_key", "secret", "token", "password", "_key")
-    )
+    return bool(_SECRET_KEY_RE.search(key))
 
 
 def _redact_secrets(obj: Any) -> Any:

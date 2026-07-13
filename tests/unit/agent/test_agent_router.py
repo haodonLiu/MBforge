@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from mbforge.models.agent import AgentChatRequest
 from mbforge.routers import agent as agent_module
 from mbforge.routers.agent import _agent_state, _make_agent_config, _trim_history
 
@@ -80,10 +81,10 @@ async def test_agent_chat_passes_library_root_config(monkeypatch) -> None:
     _agent_state.agent = _FakeAgent()
 
     response = await agent_module.agent_chat(
-        "s1", {"user_input": "hello"}
+        "s1", AgentChatRequest(user_input="hello")
     )
 
-    assert response["success"] is True
+    assert response.success is True
     assert captured["config"] == {
         "configurable": {"library_root": "/tmp/chat-lib"}
     }

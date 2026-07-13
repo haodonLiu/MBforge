@@ -10,6 +10,16 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
+from ..models.agent import (
+    AgentChatRequest,
+    AgentChatResponse,
+    AgentErrorResponse,
+    AgentHistoryResponse,
+    AgentInitResponse,
+    AgentSessionOkResponse,
+    AgentSessionRequest,
+    AgentSessionResponse,
+)
 from ..utils.config import load_global_config
 from ..utils.logger import get_logger
 
@@ -19,6 +29,10 @@ router = APIRouter()
 
 # Cap session history to avoid unbounded memory growth in long conversations.
 _MAX_HISTORY_MESSAGES = 50
+
+# Streaming stub chunk size / delay for the no-agent fallback path.
+_STUB_CHUNK_SIZE = 24
+_STUB_CHUNK_DELAY_SECS = 0.02
 
 
 @dataclass
@@ -78,76 +92,76 @@ def _trim_history(messages: list) -> None:
 
 
 @router.post("/init")
-async def agent_init() -> dict:
+async def agent_init() -> AgentInitResponse:
     try:
         from ..agent.sessions import session_store
 
         session_store.clear_all()
         _agent_state.reset()
         await _agent_state.ensure_initialized()
-        return {"success": True, "agent_ready": _agent_state.agent is not None}
+        return AgentInitResponse(agent_ready=_agent_state.agent is not None)
     except Exception as e:
         logger.error("Agent init error: %s", e)
-        return {"success": True, "agent_ready": False, "warning": str(e)}
+        return AgentInitResponse(agent_ready=False, warning=str(e))
 
 
 @router.post("/session")
-async def agent_create_session(body: dict) -> dict:
+async def agent_create_session(body: AgentSessionRequest) -> AgentSessionResponse | AgentErrorResponse:
     try:
         import uuid
 
         from ..agent.sessions import session_store
 
-        sid = body.get("session_id", str(uuid.uuid4()))
-        session_store.create(sid, body.get("library_root"))
-        return {"success": True, "session_id": sid}
+        sid = body.session_id or str(uuid.uuid4())
+        session_store.create(sid, body.library_root)
+        return AgentSessionResponse(session_id=sid)
     except Exception as e:
         logger.error("Session create error: %s", e)
-        return {"success": False, "error": str(e)}
+        return AgentErrorResponse(error=str(e))
 
 
 @router.delete("/session/{session_id}")
-async def agent_destroy_session(session_id: str) -> dict:
+async def agent_destroy_session(session_id: str) -> AgentSessionOkResponse:
     from ..agent.sessions import session_store
 
     session_store.delete(session_id)
-    return {"success": True}
+    return AgentSessionOkResponse()
 
 
 @router.post("/session/{session_id}/clear")
-async def agent_clear(session_id: str) -> dict:
+async def agent_clear(session_id: str) -> AgentSessionOkResponse:
     from ..agent.sessions import session_store
 
     session_store.clear(session_id)
-    return {"success": True}
+    return AgentSessionOkResponse()
 
 
 @router.get("/session/{session_id}/history")
-async def agent_get_history(session_id: str) -> dict:
+async def agent_get_history(session_id: str) -> AgentHistoryResponse | AgentErrorResponse:
     try:
         from ..agent.sessions import session_store
 
         session = session_store.get(session_id)
         if not session:
-            return {"success": False, "messages": []}
+            return AgentHistoryResponse(success=False, messages=[])
         messages = [{"role": m.role, "content": m.content} for m in session.messages]
-        return {"success": True, "messages": messages}
+        return AgentHistoryResponse(messages=messages)
     except Exception as e:
         logger.error("History error: %s", e)
-        return {"success": False, "error": str(e)}
+        return AgentErrorResponse(error=str(e))
 
 
 @router.post("/session/{session_id}/chat")
-async def agent_chat(session_id: str, body: dict) -> dict:
+async def agent_chat(session_id: str, body: AgentChatRequest) -> AgentChatResponse | AgentErrorResponse:
     try:
         from ..agent.sessions import ChatMessage, session_store
 
         session = session_store.get(session_id)
         if not session:
-            return {"success": False, "error": "session not found"}
-        user_input = body.get("user_input", "")
+            return AgentErrorResponse(error="session not found")
+        user_input = body.user_input
         if not user_input.strip():
-            return {"success": False, "error": "empty input"}
+            return AgentErrorResponse(error="empty input")
 
         session.messages.append(ChatMessage(role="user", content=user_input))
         _trim_history(session.messages)
@@ -173,10 +187,10 @@ async def agent_chat(session_id: str, body: dict) -> dict:
 
         session.messages.append(ChatMessage(role="assistant", content=reply))
         _trim_history(session.messages)
-        return {"success": True, "reply": reply}
+        return AgentChatResponse(reply=reply)
     except Exception as e:
         logger.error("Agent chat error: %s", e)
-        return {"success": False, "error": str(e)}
+        return AgentErrorResponse(error=str(e))
 
 
 @router.get("/session/{session_id}/chat/stream")
@@ -238,10 +252,10 @@ async def agent_chat_stream(session_id: str, user_input: str = "") -> StreamingR
                 yield f"data: {json.dumps({'session_id': session_id, 'delta': error_msg, 'event': 'chunk'})}\n\n"
         else:
             reply = f"[Agent stub] {user_input}"
-            for i in range(0, len(reply), 24):
-                chunk = reply[i : i + 24]
+            for i in range(0, len(reply), _STUB_CHUNK_SIZE):
+                chunk = reply[i : i + _STUB_CHUNK_SIZE]
                 yield f"data: {json.dumps({'session_id': session_id, 'delta': chunk, 'event': 'chunk'})}\n\n"
-                await asyncio.sleep(0.02)
+                await asyncio.sleep(_STUB_CHUNK_DELAY_SECS)
             session.messages.append(ChatMessage(role="assistant", content=reply))
 
         yield f"data: {json.dumps({'session_id': session_id, 'event': 'done'})}\n\n"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -37,3 +39,65 @@ class LibraryStatus(BaseModel):
     configured: bool
     root: str
     doc_count: int
+
+
+# ---- Request models ----
+
+class LibraryListDocumentsRequest(BaseModel):
+    library_root: str | None = None
+    collection_id: str | None = None
+
+
+class LibraryDeleteDocumentRequest(BaseModel):
+    library_root: str | None = None
+    doc_id: str = ""
+
+
+class LibraryCreateCollectionRequest(BaseModel):
+    library_root: str | None = None
+    name: str = ""
+    parent_id: str | None = None
+
+
+class LibraryCollectionIdRequest(BaseModel):
+    library_root: str | None = None
+    collection_id: str = ""
+
+
+class LibraryCollectionDocumentRequest(BaseModel):
+    library_root: str | None = None
+    collection_id: str
+    doc_id: str
+
+
+class LibraryConfigureRequest(BaseModel):
+    root: str = ""
+
+
+# ---- Response models ----
+
+class LibraryImportResponse(BaseModel):
+    success: bool = True
+    document: dict[str, Any]
+
+
+class LibraryDocumentsResponse(BaseModel):
+    documents: list[dict[str, Any]] = []
+
+
+class LibraryCollectionResponse(BaseModel):
+    success: bool = True
+    collection: dict[str, Any]
+
+
+class LibraryCollectionsResponse(BaseModel):
+    collections: list[dict[str, Any]] = []
+
+
+class LibraryConfigureResponse(BaseModel):
+    success: bool = True
+    root: str
+
+
+class LibrarySuccessResponse(BaseModel):
+    success: bool = True

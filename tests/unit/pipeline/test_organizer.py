@@ -14,6 +14,7 @@ from mbforge.pipeline.normalize import DetectionSource, NormalizedMolecule
 from mbforge.pipeline.organizer import (
     _llm_complete,
     _looks_degenerate,
+    _map_span_idx_to_line,
     _rule_based_reorganize,
     insert_molecode_blocks,
     insert_molecode_blocks_async,
@@ -164,3 +165,50 @@ def test_reorganize_with_llm_async_offloads_to_thread(
     assert result == str(tmp_path / "out.md")
     assert len(calls) == 1
     assert calls[0][0] is reorganize_with_llm
+
+
+def test_map_span_idx_to_line_restricts_to_page_boundaries() -> None:
+    """The anchor helper searches only within the target page's line range."""
+    lines = [
+        "<!-- PAGE 1 -->",
+        "Page one text.",
+        "<!-- PAGE 2 -->",
+        "Page two text.",
+    ]
+    pages = [
+        PageContent(
+            page_num=1,
+            text="Page one text.",
+            text_spans=[TextSpan(text="Page one text.", bbox=(0, 0, 100, 20))],
+        ),
+        PageContent(
+            page_num=2,
+            text="Page two text.",
+            text_spans=[TextSpan(text="Page two text.", bbox=(0, 0, 100, 20))],
+        ),
+    ]
+
+    assert _map_span_idx_to_line(0, 0, pages, lines) == 1
+    assert _map_span_idx_to_line(0, 1, pages, lines) == 3
+
+
+def test_map_span_idx_to_line_disambiguates_repeated_text() -> None:
+    """When the same text occurs multiple times on a page, pick the span-closest line."""
+    lines = [
+        "<!-- PAGE 1 -->",
+        "Repeated text first.",
+        "Repeated text second.",
+    ]
+    pages = [
+        PageContent(
+            page_num=1,
+            text="Repeated text first.\nRepeated text second.",
+            text_spans=[
+                TextSpan(text="Repeated text first.", bbox=(0, 0, 100, 20)),
+                TextSpan(text="Repeated text second.", bbox=(0, 30, 100, 50)),
+            ],
+        )
+    ]
+
+    assert _map_span_idx_to_line(0, 0, pages, lines) == 1
+    assert _map_span_idx_to_line(1, 0, pages, lines) == 2

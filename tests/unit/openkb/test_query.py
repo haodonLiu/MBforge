@@ -28,6 +28,32 @@ def test_extract_relevant_sources_scores(tmp_path: Path) -> None:
     assert result[0]["score"] > 0
 
 
+def test_extract_relevant_sources_skips_oversized_files(tmp_path: Path) -> None:
+    """Oversized wiki files are skipped instead of being read into memory."""
+    wiki = tmp_path / "wiki"
+    summaries = wiki / "summaries"
+    summaries.mkdir(parents=True)
+    normal = summaries / "doc1.md"
+    normal.write_text("# Title\nThis document mentions aspirin.")
+    huge = summaries / "doc2.md"
+    huge.write_bytes(b"x" * (openkb_query._MAX_WIKI_FILE_BYTES + 1))
+    result = openkb_query._extract_relevant_sources("aspirin", str(wiki), 5)
+    assert len(result) == 1
+    assert result[0]["id"] == "doc1"
+
+
+def test_extract_relevant_sources_skips_non_files(tmp_path: Path) -> None:
+    """Directories matching the glob pattern are ignored."""
+    wiki = tmp_path / "wiki"
+    summaries = wiki / "summaries"
+    summaries.mkdir(parents=True)
+    (summaries / "doc1.md").write_text("# Title\nThis document mentions aspirin.")
+    (summaries / "subdir.md").mkdir()
+    result = openkb_query._extract_relevant_sources("aspirin", str(wiki), 5)
+    assert len(result) == 1
+    assert result[0]["id"] == "doc1"
+
+
 def test_extract_title() -> None:
     assert openkb_query._extract_title("# Hello\nWorld") == "Hello"
     assert openkb_query._extract_title("No heading") == ""

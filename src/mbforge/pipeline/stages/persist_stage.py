@@ -40,6 +40,27 @@ class PersistStage:
         written for this document are compensated (deleted) so the DB does not
         reference a document that was not fully persisted.
         """
+        missing: list[str] = []
+        if ctx.extracted is None:
+            missing.append("extracted")
+        if ctx.density is None:
+            missing.append("density")
+        if not ctx.final_md_path:
+            missing.append("final_md_path")
+        if missing:
+            logger.error(
+                "Persist stage run without required context for %s: %s",
+                ctx.doc_id,
+                ", ".join(missing),
+            )
+            return StageResult(
+                stage="persist",
+                status="error",
+                message=f"Missing required context: {', '.join(missing)}",
+                error_code=PipelineErrorCode.MISSING_CONTEXT,
+                recoverable=False,
+            )
+
         # Stage 5+6: Persist molecules + register links (single txn)
         try:
             self._persist_molecules_and_links(ctx)

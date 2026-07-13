@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from mbforge.core import semantic_cache as cache
 
 
@@ -10,7 +12,9 @@ def test_store_and_check_cache(in_memory_semantic_cache: str) -> None:
     assert cache.check_cache("hello", root) == [{"id": 1}]
 
 
-def test_cache_is_case_and_whitespace_insensitive(in_memory_semantic_cache: str) -> None:
+def test_cache_is_case_and_whitespace_insensitive(
+    in_memory_semantic_cache: str,
+) -> None:
     root = in_memory_semantic_cache
     cache.store_cache("Hello World", root, [{"id": 2}])
     assert cache.check_cache("  hello world  ", root) == [{"id": 2}]
@@ -37,3 +41,25 @@ def test_invalidate_cache(in_memory_semantic_cache: str) -> None:
     cache.store_cache("q", root, [{"id": 4}])
     cache.invalidate_cache(root)
     assert cache.check_cache("q", root) is None
+
+
+def test_check_cache_logs_exception_type(in_memory_semantic_cache: str) -> None:
+    """On failure the exception class name must be logged, not just the message."""
+    from mbforge.core.database import DatabaseManager
+
+    root = in_memory_semantic_cache
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    db = DatabaseManager.get(root)
+    with (
+        patch.object(cache.logger, "warning") as mock_warning,
+        patch.object(db, "kb_conn", side_effect=_boom),
+    ):
+        result = cache.check_cache("q", root)
+
+    assert result is None
+    mock_warning.assert_called_once()
+    message = mock_warning.call_args[0][0] % mock_warning.call_args[0][1:]
+    assert "RuntimeError" in message

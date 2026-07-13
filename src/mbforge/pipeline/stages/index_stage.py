@@ -5,13 +5,11 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 from collections.abc import Coroutine
-from typing import TypeVar
 
 from ...utils.logger import get_logger
 from ..context import PipelineContext
 from ..stage_result import PipelineErrorCode, StageResult
 
-T = TypeVar("T")
 logger = get_logger("mbforge.pipeline.stages.index")
 
 # Shared executor for the rare case where _run_async_in_sync is called while
@@ -23,7 +21,7 @@ _RUN_ASYNC_POOL = concurrent.futures.ThreadPoolExecutor(
 )
 
 
-def _run_async_in_sync(coro: Coroutine[..., None, T]) -> T:
+def _run_async_in_sync[T](coro: Coroutine[..., None, T]) -> T:
     """Run an async coroutine from sync code without breaking event loops.
 
     - No running loop: call asyncio.run() directly.
@@ -54,6 +52,34 @@ class IndexStage:
             ctx.openkb_doc_id: str
             ctx.indexed_count: int
         """
+        if not ctx.final_md_path:
+            logger.error("Index stage run without reorganized markdown for %s", ctx.doc_id)
+            return StageResult(
+                stage="index",
+                status="error",
+                message="Missing reorganized markdown",
+                error_code=PipelineErrorCode.MISSING_CONTEXT,
+                recoverable=False,
+            )
+        if ctx.extracted is None:
+            logger.error("Index stage run without extracted document for %s", ctx.doc_id)
+            return StageResult(
+                stage="index",
+                status="error",
+                message="Missing extracted document",
+                error_code=PipelineErrorCode.MISSING_CONTEXT,
+                recoverable=False,
+            )
+        if ctx.density is None:
+            logger.error("Index stage run without density classification for %s", ctx.doc_id)
+            return StageResult(
+                stage="index",
+                status="error",
+                message="Missing density classification",
+                error_code=PipelineErrorCode.MISSING_CONTEXT,
+                recoverable=False,
+            )
+
         # Stage 3e: PageIndex tree indexing
         logger.info("Building PageIndex tree for %s", ctx.doc_id)
 

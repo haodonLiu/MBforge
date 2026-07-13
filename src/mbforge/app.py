@@ -38,9 +38,13 @@ async def lifespan(app: FastAPI):
     from .server import _prewarm
     from .utils.helpers import check_environment, shutdown_backends
 
+    # Await prewarm before yielding so the app is actually ready to serve
+    # requests that touch local models. Failures inside the helpers are
+    # already logged as non-fatal warnings.
     loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, check_environment)
-    loop.run_in_executor(None, _prewarm)
+    env_future = loop.run_in_executor(None, check_environment)
+    prewarm_future = loop.run_in_executor(None, _prewarm)
+    await asyncio.gather(env_future, prewarm_future)
     try:
         yield
     finally:
@@ -90,9 +94,7 @@ def _severity_to_level(severity: str) -> int:
     }.get(severity, logging.ERROR)
 
 
-async def _mbforge_error_handler(
-    request: Request, exc: MBForgeError
-) -> JSONResponse:
+async def _mbforge_error_handler(request: Request, exc: MBForgeError) -> JSONResponse:
     """Central handler for MBForgeError + subclasses.
 
     Logs at the level implied by `exc.severity`, pushes a record into the
@@ -233,6 +235,7 @@ def create_app() -> FastAPI:
         settings,
         text,
     )
+
     app.include_router(library.router, prefix="/api/v1/library", tags=["library"])
     app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
     app.include_router(pipeline.router, prefix="/api/v1/pipeline", tags=["pipeline"])
@@ -241,7 +244,9 @@ def create_app() -> FastAPI:
     app.include_router(agent.router, prefix="/api/v1/agent", tags=["agent"])
     app.include_router(chem.router, prefix="/api/v1/chem", tags=["chem"])
     app.include_router(coref.router, prefix="/api/v1/coref", tags=["coref"])
-    app.include_router(detection_cache.router, prefix="/api/v1/detection-cache", tags=["detection"])
+    app.include_router(
+        detection_cache.router, prefix="/api/v1/detection-cache", tags=["detection"]
+    )
     app.include_router(notes.router, prefix="/api/v1/notes", tags=["notes"])
     app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])
     # routers/text.py declares full paths (/text/chunk, /extract/activities, …)
@@ -253,11 +258,14 @@ def create_app() -> FastAPI:
     app.include_router(pdf.router, prefix="/api/v1/pdf", tags=["pdf"])
     app.include_router(sar.router, prefix="/api/v1/sar", tags=["sar"])
     app.include_router(ocr.router, prefix="/api/v1/ocr", tags=["ocr"])
-    app.include_router(diagnostics.router, prefix="/api/v1/diagnostics", tags=["diagnostics"])
+    app.include_router(
+        diagnostics.router, prefix="/api/v1/diagnostics", tags=["diagnostics"]
+    )
     # Moldet (FT detector) is mounted directly on the main app at /api/v1/moldet
     # so its endpoints are reachable at the documented paths (not nested under
     # the model_server mount at /api/v1/models).
     from .routers.moldet_api import router as moldet_router
+
     app.include_router(moldet_router, prefix="/api/v1/moldet", tags=["moldet"])
 
     # Mount existing model server endpoints under /api/v1/models/*
@@ -275,7 +283,9 @@ def create_app() -> FastAPI:
     else:
         frontend_dist = Path(__file__).parent.parent.parent / "frontend" / "dist"
     if frontend_dist.exists():
-        app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+        app.mount(
+            "/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend"
+        )
         logger.info("Frontend: %s", frontend_dist)
 
     return app

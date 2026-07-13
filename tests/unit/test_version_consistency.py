@@ -6,6 +6,8 @@ import json
 import tomllib
 from pathlib import Path
 
+from mbforge import __version__
+from mbforge.app import create_app
 
 ROOT = Path(__file__).parents[2]
 
@@ -16,9 +18,6 @@ def test_version_sources_are_consistent() -> None:
         backend_version = tomllib.load(handle)["project"]["version"]
     with (ROOT / "frontend" / "package.json").open(encoding="utf-8") as handle:
         frontend_version = json.load(handle)["version"]
-
-    from mbforge import __version__
-    from mbforge.app import create_app
 
     assert frontend_version == backend_version
     assert __version__ == backend_version

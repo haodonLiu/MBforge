@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -38,3 +39,22 @@ def test_kb_wiki_list_empty(app_client: TestClient, tmp_library) -> None:
     resp = app_client.get(f"/api/v1/kb/wiki/list?library_root={tmp_library}")
     assert resp.status_code == 200
     assert resp.json()["summaries"] == []
+
+
+def test_kb_wiki_summary_uses_resolved_root(
+    app_client: TestClient, tmp_library: Path
+) -> None:
+    """The wiki endpoint must resolve library_root before building paths."""
+    summary = tmp_library / ".mbforge" / "openkb" / "wiki" / "summaries" / "doc1.md"
+    summary.parent.mkdir(parents=True, exist_ok=True)
+    summary.write_text("# Summary", encoding="utf-8")
+
+    resp = app_client.get(
+        "/api/v1/kb/wiki/summary",
+        params={
+            "doc_id": "doc1",
+            "library_root": str(tmp_library / ".." / tmp_library.name),
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.text == "# Summary"

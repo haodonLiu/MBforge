@@ -126,26 +126,55 @@ def _map_span_idx_to_line(
     """Return the markdown line index corresponding to ``pages[page_idx].text_spans[span_idx]``.
 
     The span text may have been concatenated from multiple PDF spans, so we look
-    for a unique-ish substring (first 20 non-space chars) in the page's markdown
-    lines. Falls back to the page boundary line if no match is found.
+    for a unique-ish substring in the page's markdown lines. To avoid inserting
+    MoleCode blocks at the wrong occurrence of repeated text, we restrict the
+    search to the page's line range and disambiguate multiple matches by picking
+    the one closest to the expected line for this span index.
     """
-    if span_idx is None or page_idx < 0 or page_idx >= len(pages):
+    if page_idx < 0 or page_idx >= len(pages):
         return None
     spans = pages[page_idx].text_spans
-    if span_idx >= len(spans):
+    if span_idx is None or span_idx < 0 or span_idx >= len(spans):
         return None
-    span_text = spans[span_idx].text.strip()
-    needle = span_text[:20].strip()
-    if not needle:
+    span_text = spans[span_idx].text.strip().replace("\n", " ")
+    if not span_text:
         return None
-    # Only search within this page's line range
+
+    # Only search within this page's line range.
     boundaries = _collect_page_boundaries(lines)
     page_num = page_idx + 1
     start = boundaries.get(page_num, 0)
     end = boundaries.get(page_num + 1, len(lines))
-    for lineno in range(start, min(end, len(lines))):
-        if needle in lines[lineno]:
-            return lineno
+    if start >= end or start >= len(lines):
+        return None
+
+    # Try progressively shorter needles; longer needles are less likely to
+    # repeat, while shorter needles give us a fallback for truncated text.
+    span_len = len(span_text)
+    needle_lengths = sorted({min(n, span_len) for n in (80, 60, 40, 20, 10)}, reverse=True)
+
+    # Expected line for this span, used to break ties when text repeats.
+    page_line_count = end - start
+    expected_line = start + int(
+        (span_idx / max(1, len(spans) - 1)) * max(0, page_line_count - 1)
+    )
+
+    for length in needle_lengths:
+        needle = span_text[:length].strip()
+        if not needle:
+            continue
+        matches = [
+            lineno
+            for lineno in range(start, min(end, len(lines)))
+            if needle in lines[lineno]
+        ]
+        if not matches:
+            continue
+        if len(matches) == 1:
+            return matches[0]
+        # Disambiguate by proximity to the expected line for this span.
+        return min(matches, key=lambda lineno: abs(lineno - expected_line))
+
     return None
 
 

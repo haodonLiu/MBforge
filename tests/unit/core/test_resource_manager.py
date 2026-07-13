@@ -172,3 +172,22 @@ def test_molscribe_catalog_hash_present() -> None:
     info = RESOURCE_CATALOG["molscribe"]
     assert len(info.sha256) == 64
     assert info.expected_size > 0
+
+
+def test_check_model_file_handles_none_info(tmp_path: Path) -> None:
+    """_check_model_file must not crash when given a None ResourceInfo."""
+    result = _check_model_file(None)  # type: ignore[arg-type]
+    assert result.status == ResourceStatus.ERROR
+
+
+def test_check_model_snapshot_handles_none_info(tmp_path: Path) -> None:
+    """_check_model_snapshot must not crash when given a None ResourceInfo."""
+    result = _check_model_snapshot(None)  # type: ignore[arg-type]
+    assert result.status == ResourceStatus.ERROR
+
+
+def test_verify_model_path_handles_none_info(tmp_path: Path) -> None:
+    """_verify_model_path must return False when given a None ResourceInfo."""
+    f = tmp_path / "x.pth"
+    f.write_bytes(b"x")
+    assert _verify_model_path(f, None) is False  # type: ignore[arg-type]

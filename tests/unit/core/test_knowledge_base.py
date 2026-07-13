@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from mbforge.core import knowledge_base as kb
 from mbforge.core.semantic_cache import store_cache
 
@@ -44,6 +46,23 @@ def test_search_adapter_error(in_memory_semantic_cache: str) -> None:
         result = kb.search("q", library_root)
     assert result["results"] == []
     assert "error" in result
+    assert result.get("error_code") == "openkb_search_failed"
+
+
+def test_search_adapter_unexpected_exception_propagates(
+    in_memory_semantic_cache: str,
+) -> None:
+    """Unexpected exceptions (e.g. TypeError) must not be swallowed."""
+    library_root = in_memory_semantic_cache
+
+    def _broken(*args, **kwargs):
+        raise TypeError("programming error")
+
+    with (
+        pytest.raises(TypeError),
+        patch("mbforge.openkb.adapter.OpenKBAdapter.search", _broken),
+    ):
+        kb.search("q", library_root)
 
 
 def test_get_document_pages(tmp_path: Path) -> None:

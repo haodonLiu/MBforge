@@ -62,11 +62,40 @@ from pathlib import Path
 from typing import Any
 
 from ..utils.logger import get_logger
-from .database import DatabaseManager
+from .database import _KB_SCHEMA, DatabaseManager
 from .layout import LibraryLayout
 from .library import _LIBRARY_SCHEMA
 
 logger = get_logger("mbforge.core.migration")
+
+# Single source of truth for the KB schema. Keeping this alias preserves
+# backward compatibility for tests that build synthetic legacy databases.
+_KB_SCHEMA_DDL = _KB_SCHEMA
+
+# Tables the migration is allowed to copy. Used to prevent accidental
+# SQL injection via the table-name placeholders in ``_copy_table``.
+_VALID_TABLES: frozenset[str] = frozenset(
+    {
+        "figure_labels",
+        "coref_predictions",
+        "ingest_queue",
+        "ingest_logs",
+        "semantic_cache",
+        "sections",
+        "molecules",
+        "molecule_images",
+        "molecule_relations",
+        "molecule_detections",
+        "text_molecule_links",
+        "evidence",
+        "mol_search",
+        "schema_version",
+        "documents",
+        "collections",
+        "collection_members",
+        "tasks",
+    }
+)
 
 
 class MigrationError(RuntimeError):
@@ -126,97 +155,12 @@ def _unified_schema() -> str:
     semantic_cache + sections).
     """
     return (
-        _LIBRARY_SCHEMA + "\n" + DatabaseManager.molecule_schema() + "\n" + _KB_SCHEMA_DDL
+        _LIBRARY_SCHEMA
+        + "\n"
+        + DatabaseManager.molecule_schema()
+        + "\n"
+        + _KB_SCHEMA_DDL
     )
-
-
-# Re-declare the KB DDL here (in addition to ``database._KB_SCHEMA``)
-# so this module can build a unified DB without first calling
-# ``DatabaseManager.initialize()`` on either legacy DB. The strings
-# must stay in sync with ``database._KB_SCHEMA``.
-_KB_SCHEMA_DDL = """
-CREATE TABLE IF NOT EXISTS figure_labels (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    doc_id TEXT NOT NULL,
-    page INTEGER NOT NULL,
-    label_bbox TEXT,
-    label_text TEXT,
-    ocr_conf REAL,
-    image_path TEXT,
-    UNIQUE(doc_id, page, label_bbox, label_text)
-);
-CREATE TABLE IF NOT EXISTS coref_predictions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    doc_id TEXT NOT NULL,
-    page INTEGER NOT NULL,
-    mol_smiles TEXT,
-    mol_bbox TEXT,
-    mol_conf REAL,
-    label_id INTEGER,
-    label_text TEXT,
-    label_bbox TEXT,
-    confidence REAL,
-    source TEXT DEFAULT 'geometric',
-    is_confirmed INTEGER DEFAULT 0,
-    image_path TEXT,
-    UNIQUE(doc_id, page, mol_smiles, label_text)
-);
-CREATE TABLE IF NOT EXISTS ingest_queue (
-    id TEXT PRIMARY KEY,
-    file_path TEXT NOT NULL,
-    doc_id TEXT,
-    status TEXT DEFAULT 'pending',
-    stage TEXT,
-    progress_pct REAL DEFAULT 0,
-    pages_total INTEGER DEFAULT 0,
-    pages_done INTEGER DEFAULT 0,
-    retry_count INTEGER DEFAULT 0,
-    error TEXT,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
-);
-CREATE TABLE IF NOT EXISTS ingest_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    doc_id TEXT NOT NULL,
-    stage TEXT,
-    level TEXT DEFAULT 'info',
-    message TEXT,
-    ts_ms INTEGER,
-    task_id TEXT,
-    data TEXT
-);
-CREATE TABLE IF NOT EXISTS semantic_cache (
-    query_hash TEXT PRIMARY KEY,
-    query_text TEXT NOT NULL,
-    results TEXT NOT NULL,
-    library_root TEXT,
-    created_at TEXT DEFAULT (datetime('now')),
-    hit_count INTEGER DEFAULT 0,
-    last_hit TEXT
-);
-CREATE TABLE IF NOT EXISTS sections (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    doc_id TEXT NOT NULL,
-    section_index INTEGER NOT NULL,
-    title TEXT,
-    level INTEGER DEFAULT 1,
-    char_start INTEGER,
-    char_end INTEGER,
-    page_start INTEGER,
-    page_end INTEGER,
-    paragraph_count INTEGER DEFAULT 0,
-    molecule_count INTEGER DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_fl_doc_page ON figure_labels(doc_id, page);
-CREATE INDEX IF NOT EXISTS idx_fl_text ON figure_labels(label_text);
-CREATE INDEX IF NOT EXISTS idx_cp_doc_page ON coref_predictions(doc_id, page);
-CREATE INDEX IF NOT EXISTS idx_cp_text ON coref_predictions(label_text);
-CREATE INDEX IF NOT EXISTS idx_cp_smiles ON coref_predictions(mol_smiles);
-CREATE INDEX IF NOT EXISTS idx_cp_confirmed ON coref_predictions(is_confirmed);
-CREATE INDEX IF NOT EXISTS idx_iq_status ON ingest_queue(status);
-CREATE INDEX IF NOT EXISTS idx_il_doc ON ingest_logs(doc_id);
-CREATE INDEX IF NOT EXISTS idx_sec_doc ON sections(doc_id, section_index);
-"""
 
 
 # Map of table -> legacy source database files. Tables not present in any
@@ -274,8 +218,6 @@ def _build_legacy_table_sources(
     return sources
 
 
-
-
 def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
     cur = conn.execute(
         "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name=?",
@@ -292,7 +234,11 @@ def _copy_table(
     """Copy all rows from ``src_conn[table]`` to ``dst_conn[table]``.
 
     Returns the number of rows copied. Raises on the first SQL error.
+    The table name is validated against a whitelist before interpolation
+    to avoid SQL injection from user-controlled legacy database layouts.
     """
+    if table not in _VALID_TABLES:
+        raise ValueError(f"Refusing to copy unrecognised table: {table}")
     rows = src_conn.execute(f"SELECT * FROM {table}").fetchall()
     if not rows:
         return 0
@@ -354,9 +300,7 @@ def migrate_library(
         return report
     if state["status"] == "nothing_to_migrate":
         report.skipped = True
-        report.skip_reason = (
-            f"no legacy databases under {layout.legacy_index_dir}"
-        )
+        report.skip_reason = f"no legacy databases under {layout.legacy_index_dir}"
         logger.info("Skip: %s", report.skip_reason)
         return report
 
@@ -467,7 +411,9 @@ def migrate_library(
         for suffix in ("-wal", "-shm"):
             sibling = Path(str(legacy_lib_db) + suffix)
             if sibling.exists():
-                shutil.move(str(sibling), str(archive_dir / (legacy_lib_db.name + suffix)))
+                shutil.move(
+                    str(sibling), str(archive_dir / (legacy_lib_db.name + suffix))
+                )
     # Move the temp db into place.
     shutil.move(str(tmp_path), str(final_path))
     # Write a migration marker.

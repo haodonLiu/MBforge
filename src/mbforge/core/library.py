@@ -8,6 +8,7 @@ paths go through ``LibraryLayout`` and ``ArtifactResolver``.
 from __future__ import annotations
 
 import contextlib
+import functools
 import hashlib
 import shutil
 import sqlite3
@@ -67,9 +68,6 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 """  # fmt: skip
 
-# Instance cache: avoid re-initializing the same library root
-_store_cache: dict[str, LibraryStore] = {}
-
 
 class LibraryStore:
     """Single-library data store — documents, collections, tasks, and molecules."""
@@ -82,12 +80,10 @@ class LibraryStore:
         self._initialized = False
 
     @classmethod
+    @functools.lru_cache(maxsize=128)
     def get(cls, library_root: str | Path) -> LibraryStore:
-        """Get cached LibraryStore singleton for the given root."""
-        key = str(Path(library_root).resolve())
-        if key not in _store_cache:
-            _store_cache[key] = cls(library_root)
-        return _store_cache[key]
+        """Return a cached LibraryStore instance keyed by resolved absolute path."""
+        return cls(library_root)
 
     def _ensure_initialized(self) -> None:
         if self._initialized:
@@ -112,9 +108,7 @@ class LibraryStore:
 
     # ── Documents ────────────────────────────────────────────────
 
-    def add_document(
-        self, file_path: str | Path, title: str = ""
-    ) -> DocumentInfo:
+    def add_document(self, file_path: str | Path, title: str = "") -> DocumentInfo:
         """Copy an existing on-disk file into library storage and register it.
 
         Raises MBForgeError(404) if file_path is missing,
@@ -317,9 +311,7 @@ class LibraryStore:
         conn = sqlite3.connect(str(self._db_path))
         try:
             conn.execute("DELETE FROM documents WHERE doc_id = ?", (doc_id,))
-            conn.execute(
-                "DELETE FROM collection_members WHERE doc_id = ?", (doc_id,)
-            )
+            conn.execute("DELETE FROM collection_members WHERE doc_id = ?", (doc_id,))
             conn.commit()
         except Exception:
             # DB delete failed: restore storage from trash so we do not lose
@@ -349,9 +341,7 @@ class LibraryStore:
                 )
         logger.info("Document deleted: %s", doc_id)
 
-    def list_documents(
-        self, collection_id: str | None = None
-    ) -> list[DocumentInfo]:
+    def list_documents(self, collection_id: str | None = None) -> list[DocumentInfo]:
         self._ensure_initialized()
         conn = sqlite3.connect(str(self._db_path))
         try:
@@ -388,10 +378,13 @@ class LibraryStore:
         self._ensure_initialized()
         conn = sqlite3.connect(str(self._db_path))
         try:
-            like = f"%{query}%"
+            # Escape SQLite LIKE wildcards so a query like "100%" does not
+            # match every title containing "100".
+            escaped = query.replace("%", "\\%").replace("_", "\\_")
+            like = f"%{escaped}%"
             rows = conn.execute(
                 "SELECT doc_id, title, file_name, page_count, status, created_at "
-                "FROM documents WHERE title LIKE ? OR file_name LIKE ? "
+                "FROM documents WHERE title LIKE ? ESCAPE '\\' OR file_name LIKE ? ESCAPE '\\' "
                 "ORDER BY created_at DESC",
                 (like, like),
             ).fetchall()
@@ -538,14 +531,11 @@ class LibraryStore:
         finally:
             conn.close()
 
-    def remove_from_collection(
-        self, collection_id: str, doc_id: str
-    ) -> None:
+    def remove_from_collection(self, collection_id: str, doc_id: str) -> None:
         conn = sqlite3.connect(str(self._db_path))
         try:
             conn.execute(
-                "DELETE FROM collection_members "
-                "WHERE collection_id = ? AND doc_id = ?",
+                "DELETE FROM collection_members WHERE collection_id = ? AND doc_id = ?",
                 (collection_id, doc_id),
             )
             conn.commit()

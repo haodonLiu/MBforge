@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 from mbforge.core.file_scanner import (
     build_file_tree,
@@ -16,7 +17,9 @@ def test_scan_library_files_non_recursive(tmp_path: Path) -> None:
     assert result == ["a.pdf", "b.md"]
 
 
-def test_scan_library_files_recursive_skips_hidden_and_skip_dirs(tmp_path: Path) -> None:
+def test_scan_library_files_recursive_skips_hidden_and_skip_dirs(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "doc.pdf").write_text("pdf")
     nested = tmp_path / "subdir"
     nested.mkdir()
@@ -55,3 +58,18 @@ def test_build_file_tree(tmp_path: Path) -> None:
 def test_build_file_tree_empty(tmp_path: Path) -> None:
     assert build_file_tree(tmp_path) == []
     assert build_file_tree(tmp_path / "missing") == []
+
+
+def test_build_file_tree_logs_permission_warning(tmp_path: Path) -> None:
+    """Permission errors during tree walk must be logged, not swallowed silently."""
+    from mbforge.core import file_scanner
+
+    with (
+        patch.object(file_scanner, "logger") as mock_logger,
+        patch.object(Path, "iterdir", side_effect=PermissionError("denied")),
+    ):
+        result = build_file_tree(tmp_path)
+
+    assert result == []
+    mock_logger.warning.assert_called_once()
+    assert "Permission denied" in mock_logger.warning.call_args[0][0]

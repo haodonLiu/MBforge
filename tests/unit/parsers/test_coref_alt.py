@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from unittest.mock import patch
 
+import pytest
 from PIL import Image
 
 from mbforge.backends.moldet_v2_ft import MolDetv2FTDetector
@@ -132,3 +133,33 @@ def test_get_moldet_ft_concurrent_first_call_creates_single_instance(monkeypatch
 
     assert len({id(d) for d in detectors}) == 1
     assert call_count["n"] == 1
+
+
+@pytest.mark.parametrize("exc_cls", [ImportError, RuntimeError, OSError])
+def test_get_moldet_ft_catches_expected_load_errors(exc_cls, monkeypatch):
+    """Expected model-load errors return None instead of crashing the pipeline."""
+    coref_module._ft_detector_singleton = None
+
+    def _failing_backend_get():
+        raise exc_cls("model load failed")
+
+    monkeypatch.setattr(
+        "mbforge.backends.moldet_v2_ft.get_moldet_ft", _failing_backend_get
+    )
+
+    assert get_moldet_ft() is None
+
+
+def test_get_moldet_ft_propagates_unexpected_errors(monkeypatch):
+    """Unexpected exceptions (e.g. AttributeError) must not be swallowed."""
+    coref_module._ft_detector_singleton = None
+
+    def _broken_backend_get():
+        raise AttributeError("programming error")
+
+    monkeypatch.setattr(
+        "mbforge.backends.moldet_v2_ft.get_moldet_ft", _broken_backend_get
+    )
+
+    with pytest.raises(AttributeError):
+        get_moldet_ft()

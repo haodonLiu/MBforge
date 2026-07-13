@@ -185,7 +185,19 @@ class TestSecretRedaction:
     def test_secret_keys_redacted(self, key: str, value: str) -> None:
         assert _redact_secrets({key: value}) == {key: "***"}
 
-    def test_non_secret_keys_preserved(self) -> None:
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("keyword", "secret"),
+            ("monkey", "secret"),
+            ("secretly", "secret"),
+            ("tokens", "secret"),
+        ],
+    )
+    def test_non_secret_keys_preserved(self, key: str, value: str) -> None:
+        assert _redact_secrets({key: value}) == {key: value}
+
+    def test_plain_non_secret_keys_preserved(self) -> None:
         assert _redact_secrets({"model": "gpt-4o", "host": "localhost"}) == {
             "model": "gpt-4o",
             "host": "localhost",

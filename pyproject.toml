@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 testpaths = ["tests"]
 addopts = "--import-mode=importlib"
 pythonpath = ["src"]
+asyncio_mode = "auto"
 
 [tool.uv]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
@@ -120,7 +121,7 @@ where = ["src"]
 # ============================================================================
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = [
@@ -148,7 +149,6 @@ ignore = [
     "SIM102", "SIM105", "SIM108", "SIM109",
     "UP031",
 ]
-"src/mbforge/gui/utils/__init__.py" = ["F401", "F403"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

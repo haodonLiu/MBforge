@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -100,17 +100,17 @@ class TestStageExecutors:
 
 
 class TestRunPipelineMissingRoot:
-    """Step 3: run_pipeline must reject empty library_root / project_root."""
+    """Step 3: run_pipeline must reject empty library_root."""
 
-    def test_both_none_raises_value_error(self, tmp_path):
+    def test_none_library_root_raises_value_error(self, tmp_path):
         with pytest.raises(ValueError) as exc_info:
-            run_pipeline("dummy.pdf", library_root=None, project_root=None)
+            run_pipeline("dummy.pdf", library_root=None)
         msg = str(exc_info.value)
-        assert "library_root" in msg or "project_root" in msg, msg
+        assert "library_root" in msg, msg
 
-    def test_both_empty_strings_raises_value_error(self, tmp_path):
+    def test_empty_library_root_raises_value_error(self, tmp_path):
         with pytest.raises(ValueError):
-            run_pipeline("dummy.pdf", library_root="", project_root="")
+            run_pipeline("dummy.pdf", library_root="")
 
     def test_library_root_accepted(self, tmp_path):
         """When a valid library_root is given, run_pipeline must not raise ValueError."""
@@ -123,7 +123,6 @@ class TestRunPipelineMissingRoot:
         # Must NOT be the root-rejection ValueError
         assert not isinstance(exc_info.value, ValueError) or (
             "library_root" not in str(exc_info.value)
-            and "project_root" not in str(exc_info.value)
         )
 
 
@@ -155,6 +154,61 @@ class TestIsTempPath:
         lib = Path(r"C:\Users\admin\AppData\Local\Temp\pytest-123\library")
         p = lib / "storage" / "doc_001" / "reorganized.md"
         assert not _is_temp_path(p, library_root=lib)
+
+
+class TestStageNullChecks:
+    """Stage executors must guard against missing upstream context."""
+
+    def test_density_stage_requires_extracted(self, tmp_path):
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id="t-missing",
+        )
+        result = DensityStage().execute(ctx)
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.MISSING_CONTEXT
+
+    def test_markdown_stage_requires_extracted(self, tmp_path):
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id="t-missing",
+        )
+        result = MarkdownStage().execute(ctx)
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.MISSING_CONTEXT
+
+    def test_reorganize_stage_requires_density(self, tmp_path):
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id="t-missing",
+            enriched_md_path=tmp_path / "enriched.md",
+        )
+        result = ReorganizeStage().execute(ctx)
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.MISSING_CONTEXT
+
+    def test_index_stage_requires_final_md(self, tmp_path):
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id="t-missing",
+        )
+        result = IndexStage().execute(ctx)
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.MISSING_CONTEXT
+
+    def test_persist_stage_requires_context(self, tmp_path):
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id="t-missing",
+        )
+        result = PersistStage().execute(ctx)
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.MISSING_CONTEXT
 
 
 class TestAsyncSafety:
@@ -339,10 +393,15 @@ class TestPersistStageCompensation:
         db = DatabaseManager.get(str(tmp_path))
         db.initialize()
         doc_id = "doc-123"
+        final_md = tmp_path / "reorganized.md"
+        final_md.write_text("# Doc", encoding="utf-8")
         ctx = PipelineContext(
             pdf_path=tmp_path / "x.pdf",
             library_root=tmp_path,
             doc_id=doc_id,
+            extracted=MagicMock(page_count=1, pages=[]),
+            density=MagicMock(doc_kind="text_only", avg_text_density=100.0),
+            final_md_path=final_md,
         )
         stage = PersistStage()
 

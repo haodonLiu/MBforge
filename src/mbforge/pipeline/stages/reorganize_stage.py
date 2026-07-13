@@ -45,6 +45,25 @@ class ReorganizeStage:
         Writes:
             ctx.final_md_path: Path (storage/{doc_id}/reorganized.md)
         """
+        if ctx.density is None:
+            logger.error("Reorganize stage run without density classification for %s", ctx.doc_id)
+            return StageResult(
+                stage="reorganize",
+                status="error",
+                message="Missing density classification",
+                error_code=PipelineErrorCode.MISSING_CONTEXT,
+                recoverable=False,
+            )
+        if not ctx.enriched_md_path:
+            logger.error("Reorganize stage run without enriched markdown for %s", ctx.doc_id)
+            return StageResult(
+                stage="reorganize",
+                status="error",
+                message="Missing enriched markdown",
+                error_code=PipelineErrorCode.MISSING_CONTEXT,
+                recoverable=False,
+            )
+
         # Prepare final output path
         resolver = ArtifactResolver(ctx.library_root)
         storage_dir = resolver.storage_dir(ctx.doc_id)

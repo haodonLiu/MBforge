@@ -10,12 +10,21 @@ from fastapi import APIRouter
 
 from ..models.molecule import (
     MoleculeCreateRequest,
+    MoleculeCreateResponse,
     MoleculeDeleteRequest,
+    MoleculeDeleteResponse,
+    MoleculeEvidenceRequest,
+    MoleculeEvidenceResponse,
     MoleculeGetRequest,
+    MoleculeGetResponse,
     MoleculeListRequest,
+    MoleculeListResponse,
     MoleculeSearchRequest,
+    MoleculeSearchResponse,
     MoleculeStatsRequest,
+    MoleculeStatsResponse,
     MoleculeUpdateRequest,
+    MoleculeUpdateResponse,
 )
 from ..utils.helpers import NotFoundError, ValidationError, resolve_root
 from ..utils.logger import get_logger
@@ -35,8 +44,13 @@ def _get_db(body: dict | object) -> tuple:
     return root, DatabaseManager.get(root)
 
 
+# Truncation limits for evidence lists returned per molecule.
+_EVIDENCE_LIST_LIMIT = 50
+_EVIDENCE_FULL_LIMIT = 100_000
+
+
 @router.post("/list")
-async def mol_list(body: MoleculeListRequest) -> dict:
+async def mol_list(body: MoleculeListRequest) -> MoleculeListResponse:
     root, db = _get_db(body)
     with db.mol_conn() as conn:
         where = "WHERE 1=1"
@@ -51,9 +65,9 @@ async def mol_list(body: MoleculeListRequest) -> dict:
             params + [body.page_size, offset],
         ).fetchall()
         items = [dict(r) for r in rows]
-        # Attach evidence chain (truncated to 50 per molecule for list view).
-        items = _attach_evidence_batch(conn, root, items, limit=50)
-    return {"success": True, "items": items, "total": total}
+        # Attach evidence chain (truncated for list view).
+        items = _attach_evidence_batch(conn, root, items, limit=_EVIDENCE_LIST_LIMIT)
+    return MoleculeListResponse(items=items, total=total)
 
 
 def _attach_evidence_batch(
@@ -108,7 +122,7 @@ def _build_crop_url(library_root: str, ev_row: dict) -> str | None:
 
 
 @router.post("/search")
-async def mol_search(body: MoleculeSearchRequest) -> dict:
+async def mol_search(body: MoleculeSearchRequest) -> MoleculeSearchResponse:
     root, db = _get_db(body)
     with db.mol_conn() as conn:
         rows = conn.execute(
@@ -117,30 +131,28 @@ async def mol_search(body: MoleculeSearchRequest) -> dict:
             (body.query, body.top_k),
         ).fetchall()
         results = [dict(r) for r in rows]
-    return {"success": True, "results": results}
+    return MoleculeSearchResponse(results=results)
 
 
 @router.post("/get")
-async def mol_get(body: MoleculeGetRequest) -> dict:
+async def mol_get(body: MoleculeGetRequest) -> MoleculeGetResponse:
     root, db = _get_db(body)
     with db.mol_conn() as conn:
         row = conn.execute("SELECT * FROM molecules WHERE mol_id = ?", (body.mol_id,)).fetchone()
         if not row:
             raise NotFoundError("molecule not found", detail=f"mol_id={body.mol_id}")
-        return {"success": True, "molecule": dict(row)}
+        return MoleculeGetResponse(molecule=dict(row))
+
 
 @router.post("/evidence")
-async def mol_evidence(body: dict) -> dict:
+async def mol_evidence(body: MoleculeEvidenceRequest) -> MoleculeEvidenceResponse:
     """Return the full evidence chain for a canonical molecule.
 
-    Body: ``{"library_root": str, "canonical_smiles": str}``.
     Joins ``molecules`` for metadata; returns the molecule record plus
     the full ``evidence`` list (untruncated).
     """
     root, db = _get_db(body)
-    canonical_smiles = body.get("canonical_smiles") or body.get("mol_id")
-    if not canonical_smiles:
-        raise ValidationError("canonical_smiles is required")
+    canonical_smiles = body.canonical_smiles
     with db.mol_conn() as conn:
         mol_row = conn.execute(
             "SELECT * FROM molecules WHERE mol_id = ? OR canonical_smiles = ?",
@@ -150,14 +162,14 @@ async def mol_evidence(body: dict) -> dict:
             raise NotFoundError(
                 "molecule not found", detail=f"canonical_smiles={canonical_smiles}"
             )
-        items = _attach_evidence_batch(conn, root, [dict(mol_row)], limit=100000)
+        items = _attach_evidence_batch(conn, root, [dict(mol_row)], limit=_EVIDENCE_FULL_LIMIT)
         mol = items[0]
-    return {"success": True, "molecule": mol, "evidence": mol.get("evidence", [])}
+    return MoleculeEvidenceResponse(molecule=mol, evidence=mol.get("evidence", []))
 
 
 
 @router.post("/create")
-async def mol_create(body: MoleculeCreateRequest) -> dict:
+async def mol_create(body: MoleculeCreateRequest) -> MoleculeCreateResponse:
     root, db = _get_db(body)
     mol_id = body.mol_id or str(uuid.uuid4())
     with db.mol_conn() as conn:
@@ -166,11 +178,11 @@ async def mol_create(body: MoleculeCreateRequest) -> dict:
             "VALUES (?, ?, ?, ?, ?, ?)",
             (mol_id, body.smiles, body.esmiles, body.name, body.source_type, "active"),
         )
-    return {"success": True, "mol_id": mol_id}
+    return MoleculeCreateResponse(mol_id=mol_id)
 
 
 @router.put("/{mol_id}")
-async def mol_update(mol_id: str, body: MoleculeUpdateRequest) -> dict:
+async def mol_update(mol_id: str, body: MoleculeUpdateRequest) -> MoleculeUpdateResponse:
     root, db = _get_db(body)
     fields = []
     params = []
@@ -186,19 +198,19 @@ async def mol_update(mol_id: str, body: MoleculeUpdateRequest) -> dict:
     params.append(mol_id)
     with db.mol_conn() as conn:
         conn.execute(f"UPDATE molecules SET {', '.join(fields)} WHERE mol_id = ?", params)
-    return {"success": True}
+    return MoleculeUpdateResponse()
 
 
 @router.delete("/{mol_id}")
-async def mol_delete(mol_id: str, body: MoleculeDeleteRequest) -> dict:
+async def mol_delete(mol_id: str, body: MoleculeDeleteRequest) -> MoleculeDeleteResponse:
     root, db = _get_db(body)
     with db.mol_conn() as conn:
         conn.execute("DELETE FROM molecules WHERE mol_id = ?", (mol_id,))
-    return {"success": True}
+    return MoleculeDeleteResponse()
 
 
 @router.post("/stats")
-async def mol_stats(body: MoleculeStatsRequest) -> dict:
+async def mol_stats(body: MoleculeStatsRequest) -> MoleculeStatsResponse:
     root, db = _get_db(body)
     with db.mol_conn() as conn:
         total = conn.execute("SELECT COUNT(*) FROM molecules").fetchone()[0]
@@ -208,9 +220,8 @@ async def mol_stats(body: MoleculeStatsRequest) -> dict:
         by_source = conn.execute(
             "SELECT source_type, COUNT(*) as cnt FROM molecules GROUP BY source_type"
         ).fetchall()
-    return {
-        "success": True,
-        "total": total,
-        "by_status": {r["status"]: r["cnt"] for r in by_status},
-        "by_source": {r["source_type"]: r["cnt"] for r in by_source},
-    }
+    return MoleculeStatsResponse(
+        total=total,
+        by_status={r["status"]: r["cnt"] for r in by_status},
+        by_source={r["source_type"]: r["cnt"] for r in by_source},
+    )

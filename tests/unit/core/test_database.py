@@ -239,3 +239,19 @@ def test_record_ingest_event_swallows_exception(tmp_path: Path) -> None:
 
     # No exception raised; function returns None on failure.
     assert True
+
+
+def test_kb_and_mol_conn_share_connection_in_unified_layout(tmp_path: Path) -> None:
+    """In the unified single-DB layout, kb_conn and mol_conn use one connection."""
+    db = DatabaseManager(str(tmp_path))
+    db.initialize()
+    with db.kb_conn() as kb, db.mol_conn() as mol:
+        assert kb is mol
+
+
+def test_transaction_uses_shared_connection_in_unified_layout(tmp_path: Path) -> None:
+    """transaction() reuses the shared connection when kb_path == mol_path."""
+    db = DatabaseManager(str(tmp_path))
+    db.initialize()
+    with db.transaction() as (kb, mol):
+        assert kb is mol

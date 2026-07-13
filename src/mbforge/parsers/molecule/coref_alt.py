@@ -56,20 +56,12 @@ def _pair_corefs(
     bboxes: list[CorefBbox],
     mol_indices: list[int],
     idt_indices: list[int],
-    width: int,
-    height: int,
-    page_width: float = 595.0,
-    page_height: float = 842.0,
 ) -> list[tuple[int, int]]:
     """Geometric pairing: normalized distance + horizontal bias + score priority.
 
     All bboxes are image-relative normalized [0, 1] coordinates (top-left
-    origin). Center distances are computed directly in normalized units;
-    ``page_width`` and ``page_height`` are kept for API compatibility but
-    are no longer used as divisors.
-
-    Thresholds (0.3 page fraction, horizontal weight 3, vertical weight 2)
-    are interpreted as normalized page fractions.
+    origin). Center distances and thresholds (0.3 page fraction, horizontal
+    weight 3, vertical weight 2) are interpreted directly in normalized units.
 
     Additional constraint: identifier bboxes must not overlap molecule
     bboxes (IoU must be 0) so element symbols inside a structure are not
@@ -165,7 +157,12 @@ _ft_detector_lock = threading.Lock()
 
 
 def get_moldet_ft() -> Any:
-    """获取全局 MolDetv2-FT 检测器单例（线程安全）。"""
+    """获取全局 MolDetv2-FT 检测器单例（线程安全）。
+
+    Catches only the expected failure modes (missing backend, model load
+    error, I/O failure). Unexpected exceptions are allowed to propagate so
+    that programming errors or corrupted environments are not silently masked.
+    """
     global _ft_detector_singleton
     if _ft_detector_singleton is None:
         with _ft_detector_lock:
@@ -173,7 +170,7 @@ def get_moldet_ft() -> Any:
                 try:
                     from mbforge.backends.moldet_v2_ft import get_moldet_ft as _get
                     _ft_detector_singleton = _get()
-                except Exception as e:
+                except (ImportError, RuntimeError, OSError) as e:
                     logger.warning("MolDetv2-FT 加载失败: %s", e)
                     _ft_detector_singleton = None
     return _ft_detector_singleton
@@ -324,9 +321,7 @@ def detect_coref_via_ft_detector(
             bboxes[idt_i].text = ocr_texts[idx]
 
     # 4. Geometric pairing.
-    corefs = _pair_corefs(
-        bboxes, mol_indices, idt_indices, width, height, page_width, page_height
-    )
+    corefs = _pair_corefs(bboxes, mol_indices, idt_indices)
 
     logger.info(
         "coref_ft: mols=%d, idts=%d, pairs=%d",

@@ -10,6 +10,12 @@ from typing import Any
 
 from fastapi import APIRouter
 
+from ..models.common import (
+    ModelTestRequest,
+    ModelTestResponse,
+    MoleculeRenderRequest,
+    MoleculeRenderResponse,
+)
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.models_router")
@@ -43,15 +49,10 @@ def _test_model_sync(model_id: str, subpath: str | None = None) -> dict[str, Any
 
 
 @router.post("/test")
-async def test_model(body: dict) -> dict:
+async def test_model(body: ModelTestRequest) -> ModelTestResponse:
     """Test a model by loading and running inference."""
-    model_id = body.get("model_id", "")
-    subpath = body.get("subpath")
-    if not model_id:
-        return {"success": False, "error": "model_id required"}
-
-    result = await asyncio.to_thread(_test_model_sync, model_id, subpath)
-    return {"success": True, **result}
+    result = await asyncio.to_thread(_test_model_sync, body.model_id, body.subpath)
+    return ModelTestResponse(**result)
 
 
 def _render_molecule_sync(smiles: str, width: int, height: int) -> dict:
@@ -75,13 +76,12 @@ def _render_molecule_sync(smiles: str, width: int, height: int) -> dict:
 
 
 @router.post("/mol/render")
-async def render_molecule(body: dict) -> dict:
+async def render_molecule(body: MoleculeRenderRequest) -> MoleculeRenderResponse:
     """Render a molecule to SVG/PNG."""
-    smiles = body.get("smiles", "")
-    width = int(body.get("width", 300) or 300)
-    height = int(body.get("height", 200) or 200)
+    if not body.smiles:
+        return MoleculeRenderResponse(error="smiles required")
 
-    if not smiles:
-        return {"success": False, "error": "smiles required"}
-
-    return await asyncio.to_thread(_render_molecule_sync, smiles, width, height)
+    result = await asyncio.to_thread(
+        _render_molecule_sync, body.smiles, body.width or 300, body.height or 200
+    )
+    return MoleculeRenderResponse(**result)

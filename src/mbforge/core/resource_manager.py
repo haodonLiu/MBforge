@@ -296,6 +296,8 @@ def _verify_model_path(path: Path, info: ResourceInfo) -> bool:
     - snapshot 类型：若 ``info.files`` 仅含一个文件且提供 ``sha256``，
       则校验该子文件；否则仅校验目录总大小（如提供）。
     """
+    if info is None:
+        return False
     if not path.exists():
         return False
 
@@ -352,6 +354,14 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
     3. MODELSCOPE_CACHE (env + 默认)
     4. TORCH_HOME
     """
+    if info is None:
+        return ResourceStatusResult(
+            id="unknown",
+            name="unknown",
+            type=ResourceType.MODEL,
+            status=ResourceStatus.ERROR,
+            error="ResourceInfo is None",
+        )
     repo_name = info.ms_repo.split("/")[-1]
     ms_repo_name_encoded = repo_name.replace(".", "___")
     ms_org = info.ms_repo.split("/")[0]  # e.g. "Qwen"
@@ -415,7 +425,10 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
             for name in [repo_name, ms_repo_name_encoded]:
                 ms_dir = ms_root / subdir / ms_org / name
                 if _has_weights(ms_dir):
-                    if info.expected_size > 0 and _dir_size_bytes(ms_dir) != info.expected_size:
+                    if (
+                        info.expected_size > 0
+                        and _dir_size_bytes(ms_dir) != info.expected_size
+                    ):
                         return ResourceStatusResult(
                             id=info.id,
                             name=info.name,
@@ -439,7 +452,10 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
     if torch_home:
         torch_dir = Path(torch_home) / repo_name
         if _has_weights(torch_dir):
-            if info.expected_size > 0 and _dir_size_bytes(torch_dir) != info.expected_size:
+            if (
+                info.expected_size > 0
+                and _dir_size_bytes(torch_dir) != info.expected_size
+            ):
                 return ResourceStatusResult(
                     id=info.id,
                     name=info.name,
@@ -472,6 +488,14 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
     搜索顺序: MBForge cache → HF_HOME → MODELSCOPE_CACHE → TORCH_HOME
     每个目录下同时搜索直接文件、子目录和 ModelScope 新旧 SDK 布局。
     """
+    if info is None:
+        return ResourceStatusResult(
+            id="unknown",
+            name="unknown",
+            type=ResourceType.MODEL,
+            status=ResourceStatus.ERROR,
+            error="ResourceInfo is None",
+        )
     repo_name = info.ms_repo.split("/")[-1]
     ms_org = info.ms_repo.split("/")[0]
 
@@ -511,7 +535,10 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
                         ".bin",
                         ".safetensors",
                     ):
-                        if info.expected_size > 0 and f.stat().st_size != info.expected_size:
+                        if (
+                            info.expected_size > 0
+                            and f.stat().st_size != info.expected_size
+                        ):
                             return ResourceStatusResult(
                                 id=info.id,
                                 name=info.name,
@@ -639,6 +666,8 @@ def _download_model_from_modelscope(
     info: ResourceInfo, callback: Callable[[dict], None] | None = None
 ) -> bool:
     """从 ModelScope 下载模型. 返回是否成功."""
+    if info is None:
+        return False
     cache_dir = _get_model_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
     ms_base = "https://modelscope.cn/api/v1/models"
@@ -790,6 +819,8 @@ def _install_python_package(
     info: ResourceInfo, callback: Callable[[dict], None] | None = None
 ) -> bool:
     """通过 pip 安装 Python 包. 返回是否成功."""
+    if info is None:
+        return False
 
     def _emit(event: dict):
         if callback:

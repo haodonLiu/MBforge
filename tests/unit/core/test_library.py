@@ -110,11 +110,23 @@ def test_delete_document_keeps_db_row_when_storage_move_fails(tmp_path: Path) ->
     src.write_bytes(b"pdf")
     doc = store.add_document(src)
     with (
-        patch(
-            "mbforge.core.library.shutil.move", side_effect=OSError("locked")
-        ),
+        patch("mbforge.core.library.shutil.move", side_effect=OSError("locked")),
         pytest.raises(MBForgeError, match="Failed to remove document storage"),
     ):
         store.delete_document(doc.doc_id)
     assert store.get_document(doc.doc_id) is not None
     assert Path(store.storage_path(doc.doc_id)).exists()
+
+
+def test_search_documents_escapes_like_wildcards(tmp_path: Path) -> None:
+    """Queries containing % or _ should not be treated as LIKE wildcards."""
+    store = LibraryStore.get(tmp_path)
+    store.add_uploaded_file(b"a", "a.pdf", title="100% solution")
+    store.add_uploaded_file(b"b", "b.pdf", title="100 percent solution")
+
+    matches = store.search_documents("100%")
+    assert len(matches) == 1
+    assert matches[0].title == "100% solution"
+
+    matches = store.search_documents("100_")
+    assert len(matches) == 0

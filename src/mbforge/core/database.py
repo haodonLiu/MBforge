@@ -7,8 +7,10 @@ Two databases per project:
 
 from __future__ import annotations
 
+import functools
 import sqlite3
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -18,9 +20,6 @@ from ..utils.logger import get_logger
 logger = get_logger("mbforge.database")
 
 SCHEMA_VERSION = 5
-
-# 实例缓存：避免重复初始化日志
-_db_cache: dict[str, DatabaseManager] = {}
 
 _KB_SCHEMA = """
 CREATE TABLE IF NOT EXISTS figure_labels (
@@ -251,7 +250,16 @@ class DatabaseManager:
         self._kb_path = self._db_path
         self._mol_path = self._db_path
         self._lock = threading.Lock()
-        self._initialized = False
+        # threading.Event gives a clearer double-checked-locking pattern than
+        # a plain bool and avoids the (theoretical) re-ordering issues of a
+        # naked flag across threads.
+        self._initialized = threading.Event()
+        # Single shared physical connection for the unified layout. Refcounted
+        # so ``kb_conn()`` and ``mol_conn()`` do not open redundant connections
+        # to the same file. Callers do not nest these context managers, so
+        # simple refcounting is sufficient.
+        self._shared_conn: sqlite3.Connection | None = None
+        self._shared_refcount = 0
 
     @staticmethod
     def molecule_schema() -> str:
@@ -259,18 +267,16 @@ class DatabaseManager:
         return _MOL_SCHEMA + _EVIDENCE_SCHEMA + _MOL_FTS
 
     @classmethod
+    @functools.lru_cache(maxsize=128)
     def get(cls, library_root: str | Path) -> DatabaseManager:
-        """获取缓存的实例，避免重复初始化."""
-        key = str(Path(library_root).resolve())
-        if key not in _db_cache:
-            _db_cache[key] = cls(library_root)
-        return _db_cache[key]
+        """Return a cached instance keyed by resolved absolute path."""
+        return cls(library_root)
 
     def initialize(self) -> None:
-        if self._initialized:
+        if self._initialized.is_set():
             return
         with self._lock:
-            if self._initialized:
+            if self._initialized.is_set():
                 return
             self._init_db(self._kb_path, _KB_SCHEMA)
             self._init_db(
@@ -278,7 +284,7 @@ class DatabaseManager:
                 _MOL_SCHEMA + _EVIDENCE_SCHEMA + _MOL_FTS,
                 versioned=True,
             )
-            self._initialized = True
+            self._initialized.set()
             logger.info("DB initialized: %s", self._db_path)
 
     def _init_db(self, path: Path, schema: str, versioned: bool = False) -> None:
@@ -325,8 +331,40 @@ class DatabaseManager:
             conn.execute("ALTER TABLE ingest_logs ADD COLUMN data TEXT")
 
     @contextmanager
+    def _shared_connection(self) -> Iterator[sqlite3.Connection]:
+        """Yield the single shared connection for the unified database.
+
+        Refcounted so sequential ``kb_conn()`` / ``mol_conn()`` calls reuse
+        the same physical SQLite connection instead of opening two separate
+        ones to ``{root}/.mbforge/library.db``.
+        """
+        with self._lock:
+            if self._shared_conn is None:
+                self._shared_conn = sqlite3.connect(str(self._db_path))
+                self._shared_conn.row_factory = sqlite3.Row
+                self._shared_conn.execute("PRAGMA foreign_keys=ON")
+            self._shared_refcount += 1
+            conn = self._shared_conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            with self._lock:
+                self._shared_refcount -= 1
+                if self._shared_refcount <= 0:
+                    self._shared_conn.close()
+                    self._shared_conn = None
+
+    @contextmanager
     def kb_conn(self):
         self.initialize()
+        if self._kb_path == self._mol_path:
+            with self._shared_connection() as conn:
+                yield conn
+            return
         conn = sqlite3.connect(str(self._kb_path))
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
@@ -342,6 +380,10 @@ class DatabaseManager:
     @contextmanager
     def mol_conn(self):
         self.initialize()
+        if self._kb_path == self._mol_path:
+            with self._shared_connection() as conn:
+                yield conn
+            return
         conn = sqlite3.connect(str(self._mol_path))
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys=ON")
@@ -372,27 +414,27 @@ class DatabaseManager:
         """
         self.initialize()
         unified = self._kb_path == self._mol_path
+        if unified:
+            with self._shared_connection() as kb_conn:
+                yield kb_conn, kb_conn
+            return
         kb_conn = sqlite3.connect(str(self._kb_path))
         kb_conn.row_factory = sqlite3.Row
         kb_conn.execute("PRAGMA foreign_keys=ON")
-        mol_conn = kb_conn if unified else sqlite3.connect(str(self._mol_path))
-        if not unified:
-            mol_conn.row_factory = sqlite3.Row
-            mol_conn.execute("PRAGMA foreign_keys=ON")
+        mol_conn = sqlite3.connect(str(self._mol_path))
+        mol_conn.row_factory = sqlite3.Row
+        mol_conn.execute("PRAGMA foreign_keys=ON")
         try:
             yield kb_conn, mol_conn
             kb_conn.commit()
-            if not unified:
-                mol_conn.commit()
+            mol_conn.commit()
         except Exception:
             kb_conn.rollback()
-            if not unified:
-                mol_conn.rollback()
+            mol_conn.rollback()
             raise
         finally:
             kb_conn.close()
-            if not unified:
-                mol_conn.close()
+            mol_conn.close()
 
     def execute(
         self,

@@ -54,6 +54,11 @@ class MoleculeStatsRequest(BaseModel):
     library_root: str = Field(..., description="Project root directory")
 
 
+class MoleculeEvidenceRequest(BaseModel):
+    library_root: str = Field(..., description="Project root directory")
+    canonical_smiles: str = Field(..., description="Canonical SMILES or mol_id")
+
+
 # ---- Response models ----
 
 class MoleculeListResponse(BaseModel):
@@ -62,14 +67,33 @@ class MoleculeListResponse(BaseModel):
     total: int = 0
 
 
+class MoleculeSearchResponse(BaseModel):
+    success: bool = True
+    results: list[dict] = []
+
+
 class MoleculeGetResponse(BaseModel):
     success: bool = True
     molecule: dict | None = None
 
 
+class MoleculeEvidenceResponse(BaseModel):
+    success: bool = True
+    molecule: dict | None = None
+    evidence: list[dict] = []
+
+
 class MoleculeCreateResponse(BaseModel):
     success: bool = True
     mol_id: str = ""
+
+
+class MoleculeUpdateResponse(BaseModel):
+    success: bool = True
+
+
+class MoleculeDeleteResponse(BaseModel):
+    success: bool = True
 
 
 class MoleculeStatsResponse(BaseModel):

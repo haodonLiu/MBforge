@@ -11,6 +11,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..utils.logger import get_logger
+
+logger = get_logger("mbforge.core.file_scanner")
+
 MBFORGE_DIR = ".mbforge"
 
 SUPPORTED_EXTS: frozenset[str] = frozenset(
@@ -21,9 +25,22 @@ SUPPORTED_EXTS: frozenset[str] = frozenset(
 # large build artefacts, dependency caches, or sensitive areas.
 _SKIP_DIRS: frozenset[str] = frozenset(
     {
-        "node_modules", ".venv", "venv", "__pycache__", ".git", "target",
-        "dist", "build", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-        ".codex", ".claude", "archived", "ref", "tools",
+        "node_modules",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".git",
+        "target",
+        "dist",
+        "build",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".codex",
+        ".claude",
+        "archived",
+        "ref",
+        "tools",
     }
 )
 
@@ -122,6 +139,7 @@ def build_file_tree(root: str | Path) -> list[FileNode]:
                 key=lambda e: (not e.is_dir(), e.name.lower()),
             )
         except PermissionError:
+            logger.warning("Permission denied scanning %s", dir_path)
             return []
 
         nodes: list[FileNode] = []
@@ -132,7 +150,11 @@ def build_file_tree(root: str | Path) -> list[FileNode]:
             if entry.is_dir():
                 children = _walk(entry)
                 if children:
-                    nodes.append(FileNode(name=entry.name, path=rel, is_dir=True, children=children))
+                    nodes.append(
+                        FileNode(
+                            name=entry.name, path=rel, is_dir=True, children=children
+                        )
+                    )
             elif entry.suffix.lower() in SUPPORTED_EXTS:
                 nodes.append(
                     FileNode(

@@ -13,11 +13,11 @@ import uuid
 from pathlib import Path
 
 from ..models.library import CollectionInfo, CollectionNode, DocumentInfo
-from ..routers._path_utils import sanitize_upload_filename
 from ..utils.helpers import MBForgeError, ensure_dir
 from ..utils.logger import get_logger
 from .artifact import ArtifactResolver
 from .layout import LibraryLayout
+from .path_utils import sanitize_upload_filename
 
 logger = get_logger("mbforge.core.library")
 
@@ -168,7 +168,7 @@ class LibraryStore:
             conn.execute(
                 """INSERT INTO documents (doc_id, title, file_name, storage_path, md5)
                    VALUES (?, ?, ?, ?, ?)""",
-                (doc_id, safe_title, filename, storage_path, md5),
+                (doc_id, safe_title, safe_filename, storage_path, md5),
             )
             conn.commit()
         finally:

@@ -45,11 +45,9 @@ def test_coref_figure_labels_validation(app_client: TestClient) -> None:
 
 
 def test_coref_figure_labels_with_mock(
-    app_client: TestClient, tmp_path: Path, sample_pdf: Path
+    app_client: TestClient, tmp_library: Path, sample_pdf: Path
 ) -> None:
-    lib = tmp_path / "lib"
-    lib.mkdir()
-    doc_id = _import_sample(app_client, lib, sample_pdf)
+    doc_id = _import_sample(app_client, tmp_library, sample_pdf)
     fake = _make_fake_coref_result()
     with (
         patch(
@@ -60,7 +58,7 @@ def test_coref_figure_labels_with_mock(
         mock_adapter.return_value.readtext_batch.return_value = ["Fig 1"]
         resp = app_client.post(
             "/api/v1/coref/figure-labels",
-            json={"library_root": str(lib), "docId": doc_id, "page": 1},
+            json={"library_root": str(tmp_library), "docId": doc_id, "page": 1},
         )
     assert resp.status_code == 200
     labels = resp.json()["labels"]
@@ -69,11 +67,9 @@ def test_coref_figure_labels_with_mock(
 
 
 def test_coref_predictions_with_mock(
-    app_client: TestClient, tmp_path: Path, sample_pdf: Path
+    app_client: TestClient, tmp_library: Path, sample_pdf: Path
 ) -> None:
-    lib = tmp_path / "lib"
-    lib.mkdir()
-    doc_id = _import_sample(app_client, lib, sample_pdf)
+    doc_id = _import_sample(app_client, tmp_library, sample_pdf)
     fake = _make_fake_coref_result()
     with (
         patch(
@@ -84,7 +80,7 @@ def test_coref_predictions_with_mock(
         mock_adapter.return_value.readtext_batch.return_value = ["Fig 1"]
         resp = app_client.post(
             "/api/v1/coref/predictions",
-            json={"library_root": str(lib), "docId": doc_id, "page": 1},
+            json={"library_root": str(tmp_library), "docId": doc_id, "page": 1},
         )
     assert resp.status_code == 200
     preds = resp.json()["predictions"]

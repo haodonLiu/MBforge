@@ -55,7 +55,7 @@ def test_figure_bboxes_direct_absolute_path_rejected(
         json={"pdf_path": str(sample_pdf)},
     )
 
-    assert response.status_code in (400, 403, 422, 404)
+    assert response.status_code == 400
     assert response.json()["success"] is False
 
 
@@ -67,5 +67,5 @@ def test_figure_bboxes_traversal_doc_id_rejected(
         json={"library_root": str(tmp_library), "doc_id": "../etc/passwd"},
     )
 
-    assert response.status_code in (400, 403, 422, 404)
+    assert response.status_code == 400
     assert response.json()["success"] is False

@@ -11,14 +11,8 @@ import re
 from pathlib import Path
 
 from ..core.artifact import ArtifactResolver, InvalidDocIdError
+from ..core.path_utils import InvalidPathError
 from ..utils.helpers import MBForgeError
-
-
-class InvalidPathError(MBForgeError):
-    """Raised when a request path is empty, malformed, or escapes the library."""
-
-    status_code = 400
-    error_code = "invalid_path"
 
 
 class DocumentNotFoundError(MBForgeError):
@@ -48,19 +42,35 @@ def resolve_library_root(library_root: str | None = None) -> Path:
     """Resolve and validate a library root, falling back to global config.
 
     Returns an absolute, resolved ``Path``. Raises ``InvalidPathError`` if the
-    value is missing or not absolute.
+    value is missing, relative, contains traversal segments, or does not match
+    the configured library root. Only the active configured root (or a fallback
+    to it) is accepted so requests cannot target arbitrary directories.
     """
-    if not library_root:
-        from ..utils.config import load_global_config
+    from ..utils.config import load_global_config
 
-        library_root = load_global_config().library_root
+    cfg_root = load_global_config().library_root or ""
+    if not library_root:
+        library_root = cfg_root
     if not library_root:
         raise InvalidPathError("library_root is required")
 
-    root = Path(library_root).resolve()
-    if not root.is_absolute():
+    input_path = Path(library_root)
+    if not input_path.is_absolute():
         raise InvalidPathError(f"library_root must be absolute: {library_root}")
-    return root
+
+    for seg in re.split(r"[/\\]", library_root):
+        if seg in (".", ".."):
+            raise InvalidPathError(
+                f"path traversal detected in library_root: {library_root}"
+            )
+
+    resolved = input_path.resolve()
+    cfg_resolved = Path(cfg_root).resolve() if cfg_root else resolved
+    if resolved != cfg_resolved:
+        raise InvalidPathError(
+            f"library_root does not match configured root: {library_root}"
+        )
+    return resolved
 
 
 def validate_doc_id(doc_id: str) -> None:
@@ -133,17 +143,3 @@ def _resolve_stored_pdf(root: Path, doc_id: str) -> Path | None:
     return stored_path
 
 
-def sanitize_upload_filename(filename: str) -> str:
-    """Return a safe upload filename.
-
-    Rejects empty names and any name containing path separators or parent
-    directory references. Returns the basename (``Path(filename).name``).
-    """
-    if not filename:
-        raise InvalidPathError("filename is required")
-    if "/" in filename or "\\" in filename or ".." in filename:
-        raise InvalidPathError(f"filename contains path separators: {filename!r}")
-    safe = Path(filename).name
-    if not safe or safe in (".", ".."):
-        raise InvalidPathError(f"invalid filename: {filename!r}")
-    return safe

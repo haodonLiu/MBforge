@@ -5,31 +5,21 @@ Prefix: /api/v1/library
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
+from ..core.path_utils import sanitize_upload_filename
 from ..utils.config import load_global_config, update_settings
 from ..utils.helpers import MBForgeError
 from ..utils.logger import get_logger
 from ..utils.paths import GLOBAL_APP_DIR
-from ._path_utils import (
-    resolve_library_root,
-    sanitize_upload_filename,
-)
+from ._path_utils import InvalidPathError, resolve_library_root, validate_doc_id
 
 logger = get_logger("mbforge.library_router")
 
 router = APIRouter()
-
-_SAFE_DOC_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
-
-
-def _validate_doc_id(doc_id: str) -> None:
-    if not doc_id or not _SAFE_DOC_ID_RE.match(doc_id):
-        raise HTTPException(400, f"invalid doc_id: {doc_id}")
 
 
 # Path resolution delegates to ArtifactResolver (core/artifact.py). The
@@ -60,13 +50,13 @@ def _resolve_crop_artifact(root: str, doc_id: str, rel_path: str) -> Path:
     created before the 2026-07-10 storage unification. The migration
     script (``scripts/migrate_artifact_paths.py``) moves the files.
     """
-    from ..core.artifact import ArtifactResolver
+    from ..core.artifact import ArtifactResolver, PathTraversalError
 
     resolver = ArtifactResolver(root)
     try:
         canonical = resolver.crop(doc_id, rel_path)
-    except Exception as exc:
-        raise HTTPException(400, f"invalid rel_path: {rel_path}") from exc
+    except PathTraversalError as exc:
+        raise InvalidPathError(f"invalid crop rel_path: {rel_path}") from exc
     if canonical.is_file():
         return canonical
     legacy = resolver.legacy_crop(doc_id, rel_path)
@@ -296,7 +286,7 @@ async def library_get_indexed_md(
     from ..core.layout import LibraryLayout
 
     root = _resolve_library_root({"library_root": library_root} if library_root else None)
-    _validate_doc_id(doc_id)
+    validate_doc_id(doc_id)
     p = LibraryLayout(root).openkb_dir / "documents" / f"{doc_id}.md"
     if not p.is_file():
         raise HTTPException(404, f"indexed md not found for {doc_id}")

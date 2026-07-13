@@ -30,11 +30,9 @@ def test_extract_pdf_page_validation(app_client: TestClient) -> None:
 
 
 def test_extract_pdf_page_with_mock(
-    app_client: TestClient, tmp_path: Path, sample_pdf: Path
+    app_client: TestClient, tmp_library: Path, sample_pdf: Path
 ) -> None:
-    lib = tmp_path / "lib"
-    lib.mkdir()
-    doc_id = _import_sample(app_client, lib, sample_pdf)
+    doc_id = _import_sample(app_client, tmp_library, sample_pdf)
 
     coref_result = CorefResult(
         bboxes=[
@@ -55,7 +53,7 @@ def test_extract_pdf_page_with_mock(
         resp = app_client.post(
             "/api/v1/moldet/extract-pdf-page",
             json={
-                "library_root": str(lib),
+                "library_root": str(tmp_library),
                 "doc_id": doc_id,
                 "page": 1,
             },

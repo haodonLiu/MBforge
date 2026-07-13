@@ -1,15 +1,16 @@
 """coref via MolDetv2-FT joint detector.
 
 Single-model inference: MolDetv2-FT outputs molecule bboxes and coref
-identifier bboxes in one pass. No OCR step needed (the FT model is
-trained on identifier detection directly). Outputs `CorefResult` which
-is consumed by `routers/moldet_api.py:extract_pdf_page` and
+identifier bboxes in one pass. Identifier crops are then OCR'd by
+`RapidOCRCropAdapter` so downstream consumers receive real label text.
+Outputs `CorefResult` which is consumed by
+`routers/moldet_api.py:extract_pdf_page` and
 `routers/coref.py:_coref_to_kb_shapes`.
 
 Replaces the 2026-07-07 implementation: moldet (Doc detector) + RapidOCR
-with heuristic identifier filtering. The OCR path was slower and noisier
-on identifier text (e.g., "Ia" vs "1a"). The FT model is the canonical
-path; OCR-based code has been removed.
+with heuristic identifier filtering. The FT model is the canonical
+detection path; the OCR step is now limited to the small identifier
+crops produced by the FT model.
 """
 
 from __future__ import annotations
@@ -59,14 +60,19 @@ def _pair_corefs(
     page_width: float = 595.0,
     page_height: float = 842.0,
 ) -> list[tuple[int, int]]:
-    """几何配对：归一化距离 + 水平权重 + 置信度优先。
+    """Geometric pairing: normalized distance + horizontal bias + score priority.
 
-    所有 bbox 都是 image-relative 归一化 [0,1] 坐标（top-left origin），
-    中心点距离直接用归一化单位计算，不再除以 page_width/page_height。
-    阈值（0.3 页面比例、水平权重 3、垂直权重 2）按"归一化页面比例"理解。
+    All bboxes are image-relative normalized [0, 1] coordinates (top-left
+    origin). Center distances are computed directly in normalized units;
+    ``page_width`` and ``page_height`` are kept for API compatibility but
+    are no longer used as divisors.
 
-    额外约束：idt bbox 必须**不与 mol bbox 重叠**（IoU 必须为 0），
-    过滤掉分子结构内部的元素符号。
+    Thresholds (0.3 page fraction, horizontal weight 3, vertical weight 2)
+    are interpreted as normalized page fractions.
+
+    Additional constraint: identifier bboxes must not overlap molecule
+    bboxes (IoU must be 0) so element symbols inside a structure are not
+    mistaken for labels.
     """
     if not mol_indices or not idt_indices:
         return []
@@ -113,7 +119,7 @@ def _pair_corefs(
 
 
 def _bbox_iou(a: tuple, b: tuple) -> float:
-    """两个像素 bbox 的 IoU。"""
+    """IoU of two image-relative normalized bboxes."""
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
     ix1, iy1 = max(ax1, bx1), max(ay1, by1)
@@ -169,6 +175,55 @@ def get_moldet_ft() -> Any:
     return _ft_detector_singleton
 
 
+def _ocr_identifier_crops(
+    image: Image.Image,
+    idt_indices: list[int],
+    bboxes: list[CorefBbox],
+    padding: float = 0.1,
+) -> list[str]:
+    """OCR identifier crops and return one text string per identifier bbox.
+
+    The returned list is aligned with ``idt_indices``: ``result[i]`` is the
+    OCR text for the identifier at ``bboxes[idt_indices[i]]``. If OCR is
+    unavailable or fails, the corresponding entry is an empty string.
+    """
+    if not idt_indices:
+        return []
+
+    try:
+        from mbforge.backends.ocr.rapidocr_adapter import RapidOCRCropAdapter
+    except Exception as exc:  # noqa: BLE001 - optional dependency
+        logger.debug("RapidOCRCropAdapter import failed: %s", exc)
+        return [""] * len(idt_indices)
+
+    try:
+        adapter = RapidOCRCropAdapter.instance()
+    except Exception as exc:  # noqa: BLE001 - adapter init may fail
+        logger.debug("RapidOCRCropAdapter unavailable: %s", exc)
+        return [""] * len(idt_indices)
+
+    width, height = image.size
+    crops: list[Image.Image] = []
+    for idx in idt_indices:
+        x1, y1, x2, y2 = bboxes[idx].bbox
+        bw, bh = x2 - x1, y2 - y1
+        pad_w, pad_h = bw * padding, bh * padding
+        px1 = max(0, int((x1 - pad_w) * width))
+        py1 = max(0, int((y1 - pad_h) * height))
+        px2 = min(width, int((x2 + pad_w) * width))
+        py2 = min(height, int((y2 + pad_h) * height))
+        if px2 <= px1 or py2 <= py1:
+            crops.append(Image.new("RGB", (1, 1), (255, 255, 255)))
+            continue
+        crops.append(image.crop((px1, py1, px2, py2)).convert("RGB"))
+
+    try:
+        return adapter.readtext_batch(crops, max_workers=4)
+    except Exception as exc:  # noqa: BLE001 - inference can fail on weird crops
+        logger.warning("Identifier batch OCR failed: %s", exc)
+        return [""] * len(idt_indices)
+
+
 def detect_coref_via_ft_detector(
     image: Image.Image,
     ft_detector: Any = None,
@@ -176,32 +231,46 @@ def detect_coref_via_ft_detector(
     page_height: float = 842.0,
     mol_conf_threshold: float = 0.3,
     idt_conf_threshold: float = 0.3,
+    use_ocr: bool = True,
 ) -> CorefResult:
-    """使用 MolDetv2-FT 联合检测器实现 coref 配对。
+    """Detect molecules + coref identifiers and pair them geometrically.
 
-    该检测器一次推理同时输出分子和标识符 bbox，无需单独的 OCR 步骤。
+    The FT detector emits molecule bboxes (category_id=1) and identifier
+    bboxes (category_id=3) in a single inference. Identifier crops are then
+    OCR'd so that ``CorefBbox.text`` contains real label text when possible.
 
     Args:
-        image: PIL 图像
-        ft_detector: `MolDetv2FTDetector` 实例。None 时使用全局单例
-        page_width: PDF 页面宽度（点）
-        page_height: PDF 页面高度（点）
-        mol_conf_threshold: 分子检测置信度阈值
-        idt_conf_threshold: 标识符检测置信度阈值
+        image: PIL image.
+        ft_detector: ``MolDetv2FTDetector`` instance, or ``None`` to use the
+            global singleton.
+        page_width: PDF page width in points. Kept for API compatibility;
+            ``_pair_corefs`` works in image-relative normalized units.
+        page_height: PDF page height in points. Kept for API compatibility.
+        mol_conf_threshold: Molecule confidence threshold applied after model
+            inference. Note that the detector's own ``conf_threshold``
+            (default 0.5) gates boxes before they reach this filter, so
+            thresholds below 0.5 only take effect if the detector was created
+            with a lower ``conf_threshold``.
+        idt_conf_threshold: Identifier confidence threshold. Same note as
+            ``mol_conf_threshold`` applies.
+        use_ocr: If ``True`` (default), run RapidOCR on identifier crops to
+            fill ``CorefBbox.text``. Disable in tests or when the caller will
+            OCR labels itself.
 
     Returns:
-        `CorefResult` — 与 `detect_coref_via_moldet_ocr` 输出格式一致。
+        ``CorefResult`` matching the shape consumed by ``moldet_api.py`` and
+        ``routers/coref.py``.
     """
     from mbforge.backends.moldet_v2_ft import MolDetv2FTDetector
 
     if ft_detector is None:
         ft_detector = get_moldet_ft()
     if ft_detector is None or not isinstance(ft_detector, MolDetv2FTDetector):
-        logger.warning("MolDetv2-FT 不可用，跳过联合检测")
+        logger.warning("MolDetv2-FT unavailable, skipping joint detection")
         return CorefResult(bboxes=[], corefs=[])
 
     if not ft_detector.is_available():
-        logger.warning("MolDetv2-FT 模型未加载，跳过联合检测")
+        logger.warning("MolDetv2-FT model not loaded, skipping joint detection")
         return CorefResult(bboxes=[], corefs=[])
 
     width, height = image.size
@@ -211,7 +280,7 @@ def detect_coref_via_ft_detector(
     def _to_norm(
         box: tuple[float, float, float, float],
     ) -> tuple[float, float, float, float]:
-        """Pixel bbox → 归一化 bbox [0,1]。"""
+        """Pixel bbox -> normalized bbox [0, 1]."""
         x1, y1, x2, y2 = box
         nx1 = max(0.0, min(1.0, x1 * inv_w))
         ny1 = max(0.0, min(1.0, y1 * inv_h))
@@ -219,34 +288,38 @@ def detect_coref_via_ft_detector(
         ny2 = max(0.0, min(1.0, y2 * inv_h))
         return (nx1, ny1, nx2, ny2)
 
-    # 1. 联合检测（一次推理同时得到分子和标识符）
+    # 1. Joint detection: one inference returns both molecules and identifiers.
     all_boxes = ft_detector.detect(image)
 
     bboxes: list[CorefBbox] = []
     mol_indices: list[int] = []
     idt_indices: list[int] = []
 
-    # 2. 分离分子和标识符 bbox
+    # 2. Separate molecule and identifier bboxes.
     for x1, y1, x2, y2, conf, category_id in all_boxes:
         if category_id == 1 and conf >= mol_conf_threshold:
-            # 分子 bbox
             bboxes.append(
                 CorefBbox(category_id=1, bbox=_to_norm((x1, y1, x2, y2)), score=conf)
             )
             mol_indices.append(len(bboxes) - 1)
         elif category_id == 3 and conf >= idt_conf_threshold:
-            # 标识符 bbox
             bboxes.append(
                 CorefBbox(
                     category_id=3,
                     bbox=_to_norm((x1, y1, x2, y2)),
-                    text="",  # FT 模型不输出文本，需要后续 OCR
+                    text="",  # Filled by OCR below.
                     score=conf,
                 )
             )
             idt_indices.append(len(bboxes) - 1)
 
-    # 3. 几何配对
+    # 3. OCR identifier crops to obtain real label text.
+    if use_ocr and idt_indices:
+        ocr_texts = _ocr_identifier_crops(image, idt_indices, bboxes)
+        for idx, idt_i in enumerate(idt_indices):
+            bboxes[idt_i].text = ocr_texts[idx]
+
+    # 4. Geometric pairing.
     corefs = _pair_corefs(
         bboxes, mol_indices, idt_indices, width, height, page_width, page_height
     )

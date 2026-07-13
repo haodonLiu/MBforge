@@ -4,19 +4,101 @@ No albumentations, no indigo. Uses PIL for image preprocessing.
 """
 
 import argparse
-import logging
+import hashlib
+from pathlib import Path
 
 import numpy as np
 import torch
 from PIL import Image
 
-logger = logging.getLogger(__name__)
+from mbforge.utils.logger import get_logger
 
 from .chemistry import convert_graph_to_smiles
 from .model import Decoder, Encoder
 from .tokenizer import get_tokenizer
 
+logger = get_logger(__name__)
+
 BOND_TYPES = ["", "single", "double", "triple", "aromatic", "solid wedge", "dashed wedge"]
+
+
+def _compute_file_sha256(path: Path) -> str:
+    """Return the SHA-256 hex digest of ``path``."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _resource_info_for_checkpoint(model_path: str | Path) -> tuple[str, int] | None:
+    """Look up expected SHA-256/size for a MolScribe checkpoint path.
+
+    Returns ``(sha256, expected_size)`` when the path matches the catalogued
+    MolScribe checkpoint, otherwise ``None``.
+    """
+    try:
+        from mbforge.core.resource_manager import (
+            RESOURCE_CATALOG,
+            ResourceManager,
+        )
+
+        mol_path = ResourceManager.get_molscribe_path()
+        if mol_path is None:
+            return None
+        if Path(model_path).resolve() != mol_path.resolve():
+            return None
+        info = RESOURCE_CATALOG.get("molscribe")
+        if info is None or not info.sha256:
+            return None
+        return info.sha256, info.expected_size
+    except Exception:
+        return None
+
+
+def _load_checkpoint(model_path: str | Path) -> dict:
+    """Load a MolScribe checkpoint with safe defaults and integrity checks.
+
+    PyTorch 2.6+ warns about untrusted checkpoints; we therefore prefer
+    ``weights_only=True``. If the checkpoint was produced with an older PyTorch
+    version that serialises unsupported globals, we fall back to
+    ``weights_only=False`` only after the file has passed SHA-256 verification.
+    """
+    path = Path(model_path)
+    expected = _resource_info_for_checkpoint(path)
+    if expected is not None:
+        expected_sha256, expected_size = expected
+        if expected_size > 0 and path.stat().st_size != expected_size:
+            raise RuntimeError(
+                f"Checkpoint size mismatch for {path}: "
+                f"expected {expected_size} bytes, got {path.stat().st_size}"
+            )
+        actual_sha256 = _compute_file_sha256(path)
+        if actual_sha256 != expected_sha256:
+            raise RuntimeError(
+                f"Checkpoint SHA-256 mismatch for {path}: "
+                f"expected {expected_sha256}, got {actual_sha256}"
+            )
+        logger.debug("Checkpoint SHA-256 verified for %s", path)
+
+    try:
+        return torch.load(path, map_location=torch.device("cpu"), weights_only=True)
+    except (ValueError, RuntimeError, TypeError) as exc:
+        if expected is not None:
+            logger.warning(
+                "weights_only=True failed for %s (%s); "
+                "falling back to weights_only=False (SHA-256 already verified)",
+                path,
+                exc,
+            )
+        else:
+            logger.warning(
+                "weights_only=True failed for %s (%s); "
+                "falling back to weights_only=False without integrity check",
+                path,
+                exc,
+            )
+        return torch.load(path, map_location=torch.device("cpu"), weights_only=False)
 
 
 def safe_load(module, module_states):
@@ -50,7 +132,7 @@ class MolScribe:
     """MolScribe inference — chemical structure image → SMILES."""
 
     def __init__(self, model_path, device=None, num_workers=1):
-        model_states = torch.load(model_path, map_location=torch.device("cpu"), weights_only=False)
+        model_states = _load_checkpoint(model_path)
         args = self._get_args(model_states["args"])
         if device is None:
             device = torch.device("cpu")

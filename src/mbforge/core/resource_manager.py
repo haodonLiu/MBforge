@@ -8,9 +8,10 @@
 from __future__ import annotations
 
 import enum
+import hashlib
 import importlib
-import logging
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -19,7 +20,9 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-logger = logging.getLogger("mbforge.resource_manager")
+from mbforge.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +69,9 @@ class ResourceInfo:
     files: list[str] = field(
         default_factory=list
     )  # 资源包含的具体文件列表（与 Rust 端保持一致）
+    # 完整性校验（模型专用）
+    sha256: str = ""  # 主文件的期望 SHA-256 摘要
+    expected_size: int = 0  # 主文件/目录的期望字节数
     # Python 包专用
     pip_name: str = ""  # pip 包名
     import_name: str = ""  # import 名（与 pip 名不同时）
@@ -143,6 +149,8 @@ RESOURCE_CATALOG: dict[str, ResourceInfo] = {
             "*.pth",
         ],
         files=["swin_base_char_aux_1m680k.pth"],
+        sha256="32821fa4ba8d17f9a92e374601438c5e757947dbf1141e9ad0ef51cccfa1c501",
+        expected_size=1134173494,
     ),
     "mineru-popo": ResourceInfo(
         id="mineru-popo",
@@ -267,6 +275,74 @@ def _dir_size(path: Path) -> float:
     )
 
 
+def _compute_sha256(path: Path) -> str:
+    """计算文件的 SHA-256 摘要."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _dir_size_bytes(path: Path) -> int:
+    """计算目录中所有文件的总大小（字节）."""
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def _verify_model_path(path: Path, info: ResourceInfo) -> bool:
+    """校验已下载模型文件的哈希与尺寸.
+
+    - 文件类型：直接校验 ``path``。
+    - snapshot 类型：若 ``info.files`` 仅含一个文件且提供 ``sha256``，
+      则校验该子文件；否则仅校验目录总大小（如提供）。
+    """
+    if not path.exists():
+        return False
+
+    if path.is_file():
+        target = path
+    elif path.is_dir() and info.sha256 and info.files and len(info.files) == 1:
+        target = path / info.files[0]
+        if not target.is_file():
+            logger.error("校验文件不存在: %s", target)
+            return False
+    else:
+        target = None
+
+    if target is not None:
+        if info.expected_size > 0 and target.stat().st_size != info.expected_size:
+            logger.error(
+                "%s 大小不匹配: expected=%d, got=%d",
+                info.id,
+                info.expected_size,
+                target.stat().st_size,
+            )
+            return False
+        if info.sha256:
+            actual = _compute_sha256(target)
+            if actual != info.sha256:
+                logger.error(
+                    "%s SHA-256 不匹配: expected=%s, got=%s",
+                    info.id,
+                    info.sha256,
+                    actual,
+                )
+                return False
+        return True
+
+    if info.expected_size > 0:
+        actual = _dir_size_bytes(path)
+        if actual != info.expected_size:
+            logger.error(
+                "%s 目录大小不匹配: expected=%d, got=%d",
+                info.id,
+                info.expected_size,
+                actual,
+            )
+            return False
+    return True
+
+
 def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
     """检查 snapshot 类型模型是否已下载.
 
@@ -284,6 +360,16 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
     cache_dir = _get_model_cache_dir()
     local_dir = cache_dir / repo_name
     if _has_weights(local_dir):
+        if info.expected_size > 0 and _dir_size_bytes(local_dir) != info.expected_size:
+            return ResourceStatusResult(
+                id=info.id,
+                name=info.name,
+                type=info.type,
+                status=ResourceStatus.PARTIAL,
+                local_path=str(local_dir),
+                size_mb=_dir_size(local_dir),
+                error="模型文件大小与期望不符，建议重新下载",
+            )
         return ResourceStatusResult(
             id=info.id,
             name=info.name,
@@ -298,6 +384,16 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
     if hf_home:
         hf_dir = Path(hf_home) / repo_name
         if _has_weights(hf_dir):
+            if info.expected_size > 0 and _dir_size_bytes(hf_dir) != info.expected_size:
+                return ResourceStatusResult(
+                    id=info.id,
+                    name=info.name,
+                    type=info.type,
+                    status=ResourceStatus.PARTIAL,
+                    local_path=str(hf_dir),
+                    size_mb=_dir_size(hf_dir),
+                    error="模型文件大小与期望不符，建议重新下载",
+                )
             return ResourceStatusResult(
                 id=info.id,
                 name=info.name,
@@ -319,6 +415,16 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
             for name in [repo_name, ms_repo_name_encoded]:
                 ms_dir = ms_root / subdir / ms_org / name
                 if _has_weights(ms_dir):
+                    if info.expected_size > 0 and _dir_size_bytes(ms_dir) != info.expected_size:
+                        return ResourceStatusResult(
+                            id=info.id,
+                            name=info.name,
+                            type=info.type,
+                            status=ResourceStatus.PARTIAL,
+                            local_path=str(ms_dir),
+                            size_mb=_dir_size(ms_dir),
+                            error="模型文件大小与期望不符，建议重新下载",
+                        )
                     return ResourceStatusResult(
                         id=info.id,
                         name=info.name,
@@ -333,6 +439,16 @@ def _check_model_snapshot(info: ResourceInfo) -> ResourceStatusResult:
     if torch_home:
         torch_dir = Path(torch_home) / repo_name
         if _has_weights(torch_dir):
+            if info.expected_size > 0 and _dir_size_bytes(torch_dir) != info.expected_size:
+                return ResourceStatusResult(
+                    id=info.id,
+                    name=info.name,
+                    type=info.type,
+                    status=ResourceStatus.PARTIAL,
+                    local_path=str(torch_dir),
+                    size_mb=_dir_size(torch_dir),
+                    error="模型文件大小与期望不符，建议重新下载",
+                )
             return ResourceStatusResult(
                 id=info.id,
                 name=info.name,
@@ -366,6 +482,16 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
         local_name = info.local_name or f"{info.id}.pt"
         path = base / local_name
         if path.is_file() and path.stat().st_size > 0:
+            if info.expected_size > 0 and path.stat().st_size != info.expected_size:
+                return ResourceStatusResult(
+                    id=info.id,
+                    name=info.name,
+                    type=info.type,
+                    status=ResourceStatus.PARTIAL,
+                    local_path=str(path),
+                    size_mb=round(path.stat().st_size / 1024 / 1024, 1),
+                    error="模型文件大小与期望不符，建议重新下载",
+                )
             return ResourceStatusResult(
                 id=info.id,
                 name=info.name,
@@ -385,6 +511,16 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
                         ".bin",
                         ".safetensors",
                     ):
+                        if info.expected_size > 0 and f.stat().st_size != info.expected_size:
+                            return ResourceStatusResult(
+                                id=info.id,
+                                name=info.name,
+                                type=info.type,
+                                status=ResourceStatus.PARTIAL,
+                                local_path=str(f),
+                                size_mb=round(f.stat().st_size / 1024 / 1024, 1),
+                                error="模型文件大小与期望不符，建议重新下载",
+                            )
                         return ResourceStatusResult(
                             id=info.id,
                             name=info.name,
@@ -396,6 +532,16 @@ def _check_model_file(info: ResourceInfo) -> ResourceStatusResult:
         # 3. base/ 下直接找权重文件（兜底，限定 1 层）
         for f in base.iterdir():
             if f.is_file() and f.suffix in (".pt", ".pth", ".bin", ".safetensors"):
+                if info.expected_size > 0 and f.stat().st_size != info.expected_size:
+                    return ResourceStatusResult(
+                        id=info.id,
+                        name=info.name,
+                        type=info.type,
+                        status=ResourceStatus.PARTIAL,
+                        local_path=str(f),
+                        size_mb=round(f.stat().st_size / 1024 / 1024, 1),
+                        error="模型文件大小与期望不符，建议重新下载",
+                    )
                 return ResourceStatusResult(
                     id=info.id,
                     name=info.name,
@@ -529,6 +675,10 @@ def _download_model_from_modelscope(
                     local_dir=str(dest),
                     allow_patterns=ms_filter or None,
                 )
+            if not _verify_model_path(dest, info):
+                shutil.rmtree(dest, ignore_errors=True)
+                _emit({"status": "failed", "error": "下载完整性校验失败"})
+                return False
             _emit({"status": "completed", "source": "modelscope"})
             return True
         except ImportError:
@@ -591,6 +741,10 @@ def _download_model_from_modelscope(
                 _emit({"status": "failed", "error": f"下载 {fpath} 失败: {e}"})
                 return False
 
+        if not _verify_model_path(dest, info):
+            shutil.rmtree(dest, ignore_errors=True)
+            _emit({"status": "failed", "error": "下载完整性校验失败"})
+            return False
         _emit({"status": "completed", "source": "modelscope"})
         return True
 
@@ -621,6 +775,10 @@ def _download_model_from_modelscope(
                                 "progress": int(downloaded * 100 / total),
                             }
                         )
+            if not _verify_model_path(dest, info):
+                dest.unlink(missing_ok=True)
+                _emit({"status": "failed", "error": "下载完整性校验失败"})
+                return False
             _emit({"status": "completed", "source": "modelscope"})
             return True
         except Exception as e:

@@ -116,8 +116,8 @@ async def ocr_layout(body: dict) -> dict:
     return {"path": body.get("path", ""), "parser": "stub", "page_count": 0, "blocks": [], "from_cache": False}
 
 
-@router.post("/figure-bboxes")
-async def figure_bboxes(body: dict) -> list[dict]:
+@router.post("/figure-bboxes", response_model=list[PageFigureBboxes])
+async def figure_bboxes(body: dict) -> list[PageFigureBboxes]:
     """Return per-page figure bbox arrays for coref overlay projection.
 
     Real implementation lives in the pipeline layer (calls the figure-bbox
@@ -140,7 +140,7 @@ async def figure_bboxes(body: dict) -> list[dict]:
     try:
         with fitz.open(pdf_path) as doc:
             return [
-                {"page_num": idx + 1, "figures": []}
+                PageFigureBboxes(page_num=idx + 1, figures=[])
                 for idx in range(doc.page_count)
             ]
     except Exception:

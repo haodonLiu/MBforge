@@ -207,7 +207,16 @@ async def library_get_document_file(doc_id: str, library_root: str | None = None
     store = LibraryStore.get(root)
     pdf_path = store.resolve_file(doc_id)
     if pdf_path is None:
-        raise _DocumentNotFoundError("Document file not found", detail=f"doc_id={doc_id}")
+        # Fallback for legacy/project documents stored under ``storage/{doc_id}/source.pdf``
+        # but not yet registered in the unified LibraryStore DB (e.g. pre-migration
+        # patents referenced by their publication number).
+        from ..core.artifact import ArtifactResolver
+
+        legacy_pdf = ArtifactResolver(root).source_pdf(doc_id)
+        if legacy_pdf.is_file():
+            pdf_path = str(legacy_pdf)
+        else:
+            raise _DocumentNotFoundError("Document file not found", detail=f"doc_id={doc_id}")
     return FileResponse(
         pdf_path,
         media_type="application/pdf",

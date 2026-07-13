@@ -22,7 +22,7 @@ interface ChatTabProps {
   onQueryChange: (query: string) => void
 }
 
-const DEFAULT_SIDECAR_URL = 'http://127.0.0.1:18792'
+const DEFAULT_SIDECAR_URL = '/api/v1'
 
 export default function ChatTab({ query, onQueryChange }: ChatTabProps) {
   const { t } = useTranslation()

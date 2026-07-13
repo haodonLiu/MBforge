@@ -1,6 +1,6 @@
 /** Agent session management + post-process PDF reporting via HTTP. */
 
-import { httpPost, httpGet, httpPut, httpDelete, invokeWithError } from './_utils'
+import { httpPost, httpGet, httpPut, httpDelete, invokeWithError, API_BASE } from './_utils'
 import { ErrorCode } from '@/utils/errors'
 
 // ---- agent (session-based, per-conversation isolation) ----
@@ -102,7 +102,7 @@ export type AgentStreamEvent = {
 
 function buildStreamUrl(sessionId: string, userInput: string): string {
   const params = new URLSearchParams({ user_input: userInput })
-  return `http://127.0.0.1:18792/api/v1/agent/session/${sessionId}/chat/stream?${params}`
+  return `${API_BASE}/agent/session/${sessionId}/chat/stream?${params}`
 }
 
 export function agentChatStream(

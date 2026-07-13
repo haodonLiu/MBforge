@@ -6,14 +6,20 @@ vi.mock('../_utils', () => ({
   httpPut: vi.fn(),
   httpDelete: vi.fn(),
   invokeWithError: vi.fn((_fn: () => Promise<unknown>) => _fn()),
+  API_BASE: '/api/v1',
 }))
 
 class MockEventSource {
+  static instances: MockEventSource[] = []
   url: string
+  onopen: (() => void) | null = null
   onmessage: ((event: MessageEvent) => void) | null = null
   onerror: (() => void) | null = null
   close = vi.fn()
-  constructor(url: string) { this.url = url }
+  constructor(url: string) {
+    this.url = url
+    MockEventSource.instances.push(this)
+  }
 }
 Object.defineProperty(globalThis, 'EventSource', { value: MockEventSource, writable: true })
 
@@ -39,6 +45,7 @@ const mockHttpDelete = vi.mocked(httpDelete)
 describe('agent API', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    MockEventSource.instances = []
   })
 
   describe('agentInit', () => {
@@ -140,6 +147,14 @@ describe('agent API', () => {
     it('returns a cleanup function', async () => {
       const cleanup = await agentChatStream('session-1', 'Hi', vi.fn(), vi.fn(), vi.fn())
       expect(typeof cleanup).toBe('function')
+    })
+
+    it('opens a relative EventSource URL instead of a hardcoded host', async () => {
+      await agentChatStream('session-1', 'Hi there', vi.fn(), vi.fn(), vi.fn())
+      expect(MockEventSource.instances).toHaveLength(1)
+      expect(MockEventSource.instances[0].url).toBe(
+        '/api/v1/agent/session/session-1/chat/stream?user_input=Hi+there',
+      )
     })
   })
 

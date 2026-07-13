@@ -1,6 +1,6 @@
 /** 模型下载 — HTTP API (FastAPI backend) */
 
-import { httpPost, invokeWithError } from './_utils'
+import { httpPost, httpFetch, invokeWithError } from './_utils'
 import { ErrorCode } from '@/utils/errors'
 import { resourcesCatalog } from './environment'
 
@@ -151,6 +151,7 @@ export function downloadModel(
   resourceId: string,
   onProgress: (event: DownloadProgress) => void,
 ): () => void {
+  const controller = new AbortController()
   let aborted = false
   const logPrefix = `[downloadModel ${resourceId}]`
   console.log(`${logPrefix} starting...`)
@@ -159,11 +160,15 @@ export function downloadModel(
     try {
       console.log(`${logPrefix} invoking resource/download...`)
       const path = await invokeWithError(
-        () => httpPost<string>('/api/v1/resource/download', { resource_id: resourceId }),
+        () => httpFetch<string>('/api/v1/resource/download', {
+          method: 'POST',
+          body: JSON.stringify({ resource_id: resourceId }),
+          signal: controller.signal,
+        }),
         ErrorCode.ApiError,
       )
       console.log(`${logPrefix} download returned:`, path)
-      if (!aborted) {
+      if (!aborted && !controller.signal.aborted) {
         onProgress({
           resource_id: resourceId,
           status: 'completed',
@@ -175,7 +180,7 @@ export function downloadModel(
         })
       }
     } catch (err) {
-      if (aborted) return
+      if (aborted || controller.signal.aborted) return
       console.error(`${logPrefix} failed:`, err)
       onProgress({
         resource_id: resourceId,
@@ -193,6 +198,7 @@ export function downloadModel(
   return () => {
     console.log(`${logPrefix} cleanup called`)
     aborted = true
+    controller.abort()
   }
 }
 
@@ -210,15 +216,20 @@ export function downloadModelSubfile(
   subpath: string,
   onProgress: (event: DownloadProgress) => void,
 ): () => void {
+  const controller = new AbortController()
   let aborted = false
 
   const start = async () => {
     try {
       await invokeWithError(
-        () => httpPost<string>('/api/v1/resource/download-subfile', { resource_id: resourceId, subpath }),
+        () => httpFetch<string>('/api/v1/resource/download-subfile', {
+          method: 'POST',
+          body: JSON.stringify({ resource_id: resourceId, subpath }),
+          signal: controller.signal,
+        }),
         ErrorCode.ApiError,
       )
-      if (!aborted) {
+      if (!aborted && !controller.signal.aborted) {
         onProgress({
           resource_id: resourceId,
           status: 'completed',
@@ -230,7 +241,7 @@ export function downloadModelSubfile(
         })
       }
     } catch (err) {
-      if (aborted) return
+      if (aborted || controller.signal.aborted) return
       onProgress({
         resource_id: resourceId,
         status: 'failed',
@@ -246,6 +257,7 @@ export function downloadModelSubfile(
 
   return () => {
     aborted = true
+    controller.abort()
   }
 }
 

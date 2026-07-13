@@ -7,6 +7,7 @@ import {
   type ImageRef,
 } from '../../../services/pdfService'
 import { getDocumentOcrLayout } from '@/api/http/pdf'
+import { API_BASE } from '@/api/http/_utils'
 import { showToast } from '@/hooks/useToast'
 import { extractRoiText } from '@/utils/roiText'
 import type { DocumentEntry, ExtractionResult } from '@/types'
@@ -91,11 +92,11 @@ export function usePdfViewer(doc: DocumentEntry, libraryRoot: string) {
     let cancelled = false
     setPdfUrl('')
     setPdfLoading(true)
-    const url = `http://127.0.0.1:18792/api/v1/library/documents/${encodeURIComponent(doc.doc_id)}/file?library_root=${encodeURIComponent(libraryRoot)}`
+    const url = `${API_BASE}/library/documents/${encodeURIComponent(doc.doc_id)}/file?library_root=${encodeURIComponent(libraryRoot)}`
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!cancelled) { setPdfUrl(url); setPdfLoading(false) }
     return () => { cancelled = true }
-  }, [absDocPath])
+  }, [doc.doc_id, libraryRoot])
 
   // 自动加载 OCR 布局数据
   useEffect(() => {
@@ -466,7 +467,7 @@ export function usePdfViewer(doc: DocumentEntry, libraryRoot: string) {
     const newMap = new Map<string, string>()
     for (const img of extractedImages) {
       if (!img.rel_path) continue
-      newMap.set(img.rel_path, `http://127.0.0.1:18792/api/v1/models/pdf/image?path=${encodeURIComponent(`${cleanRoot}/${img.rel_path.replace(/\\/g, '/')}`)}`)
+      newMap.set(img.rel_path, `${API_BASE}/models/pdf/image?path=${encodeURIComponent(`${cleanRoot}/${img.rel_path.replace(/\\/g, '/')}`)}`)
     }
     setImageBlobUrls(newMap)
   }, [extractedImages, libraryRoot])

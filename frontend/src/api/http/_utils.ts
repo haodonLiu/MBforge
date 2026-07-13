@@ -11,7 +11,11 @@ import {
 export { AppError, ErrorCode, getErrorMessage, Severity } from '@/utils/errors'
 import { showToast } from '@/hooks/useToast'
 
-const API_BASE = ''
+const _env = (typeof import.meta !== 'undefined' ? import.meta.env : undefined) as
+  | { VITE_API_BASE?: string }
+  | undefined
+
+export const API_BASE = _env?.VITE_API_BASE ?? '/api/v1'
 
 const NETWORK_KEYWORDS = ['network', 'connection', 'timeout', 'refused'] as const
 
@@ -81,10 +85,11 @@ export async function httpFetch<T>(path: string, options: RequestInit = {}): Pro
   const url = `${API_BASE}${path}`
   try {
     const { headers: extraHeaders, ...rest } = options
-    const resp = await fetch(url, {
-      headers: { 'Content-Type': 'application/json', ...extraHeaders as Record<string, string> },
-      ...rest,
-    })
+    const headers = new Headers(extraHeaders)
+    if (!headers.has('Content-Type') && typeof rest.body === 'string') {
+      headers.set('Content-Type', 'application/json')
+    }
+    const resp = await fetch(url, { headers, ...rest })
     if (!resp.ok) {
       const body = await resp.text().catch(() => '')
       let payload: Record<string, unknown> | null = null

@@ -9,6 +9,8 @@ import InlineAlert from '@/components/ui/InlineAlert'
 import {
   NumberField,
   ProviderField,
+  SelectField,
+  TextField,
   ToggleField,
 } from './SettingRow'
 import ApiKeyInput from './ApiKeyInput'
@@ -247,7 +249,7 @@ export default function ModelConfigCard({
           )}
         </SettingGroup>
 
-        {modelType === 'llm' && (
+        {modelType === 'llm' && (<>
           <SettingGroup title={t('settings.llmSampling')}>
             <NumberField
               label={t('settings.maxTokens')}
@@ -294,7 +296,29 @@ export default function ModelConfigCard({
               dirty={dirtyFields.llm_request_timeout}
             />
           </SettingGroup>
-        )}
+          <SettingGroup title={t('settings.llmAdvanced')}>
+            <SelectField
+              label={t('settings.llmLanguage')}
+              description={t('settings.llmLanguageDesc')}
+              value={settings.llm_language}
+              onChange={v => { markDirty('llm_language'); update('llm_language', v) }}
+              options={[
+                { value: 'en', label: 'English' },
+                { value: 'zh', label: '中文' },
+              ]}
+              dirty={dirtyFields.llm_language}
+            />
+            <TextField
+              label={t('settings.llmReorganizeModel')}
+              description={t('settings.llmReorganizeModelDesc')}
+              value={settings.llm_reorganize_model}
+              onChange={v => { markDirty('llm_reorganize_model'); update('llm_reorganize_model', v) }}
+              placeholder={settings.llm_model || 'gpt-4o-mini'}
+              monospace
+              dirty={dirtyFields.llm_reorganize_model}
+            />
+          </SettingGroup>
+        </>)}
 
         {modelType === 'ocr' && (
           <>
@@ -312,6 +336,28 @@ export default function ModelConfigCard({
                 value={settings.ocr_use_pdf_inspector}
                 onChange={v => { markDirty('ocr_use_pdf_inspector'); update('ocr_use_pdf_inspector', v) }}
                 dirty={dirtyFields.ocr_use_pdf_inspector}
+              />
+            </SettingGroup>
+            <SettingGroup title={t('settings.ocrAdvanced')}>
+              <TextField
+                label={t('settings.ocrGlmocrBaseUrl')}
+                description={t('settings.ocrGlmocrBaseUrlDesc')}
+                value={settings.ocr_glmocr_base_url}
+                onChange={v => { markDirty('ocr_glmocr_base_url'); update('ocr_glmocr_base_url', v) }}
+                placeholder="https://your-glmocr-host/v1"
+                monospace
+                dirty={dirtyFields.ocr_glmocr_base_url}
+              />
+              <NumberField
+                label={t('settings.ocrUploadBatchSize')}
+                description={t('settings.ocrUploadBatchSizeDesc')}
+                value={settings.ocr_upload_batch_size}
+                onChange={v => { markDirty('ocr_upload_batch_size'); update('ocr_upload_batch_size', v) }}
+                min={1}
+                max={16}
+                step={1}
+                width={100}
+                dirty={dirtyFields.ocr_upload_batch_size}
               />
             </SettingGroup>
             <OcrBackendKeys

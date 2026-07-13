@@ -2,9 +2,8 @@
 
 import { useTranslation } from 'react-i18next'
 import SettingSection, { SettingGroup } from '@/components/ui/SettingSection'
-import { NumberField, ToggleField } from './SettingRow'
+import { NumberField, SelectField, TextField, ToggleField } from './SettingRow'
 import type { SettingsState } from './types'
-
 interface Props {
   settings: SettingsState
   setSettings: React.Dispatch<React.SetStateAction<SettingsState>>
@@ -65,6 +64,80 @@ export default function PdfParseSection({ settings, setSettings }: Props) {
           description={t('settings.popoEnabledDesc')}
           value={settings.popo_enabled}
           onChange={v => setSettings(s => ({ ...s, popo_enabled: v }))}
+        />
+      </SettingGroup>
+      <SettingGroup title={t('settings.moldetAdvanced')}>
+        <SelectField
+          label={t('settings.moldetDevice')}
+          description={t('settings.moldetDeviceDesc')}
+          value={settings.moldet_device}
+          onChange={v => setSettings(s => ({ ...s, moldet_device: v }))}
+          options={[
+            { value: 'auto', label: 'Auto' },
+            { value: 'cpu', label: 'CPU' },
+            { value: 'cuda', label: 'CUDA' },
+            { value: 'mps', label: 'MPS' },
+          ]}
+        />
+        <TextField
+          label={t('settings.moldetMolscribeDir')}
+          description={t('settings.moldetMolscribeDirDesc')}
+          value={settings.moldet_molscribe_dir}
+          onChange={v => setSettings(s => ({ ...s, moldet_molscribe_dir: v }))}
+          placeholder="/path/to/MolScribe"
+          monospace
+        />
+        <NumberField
+          label={t('settings.moldetDetectionDpi')}
+          description={t('settings.moldetDetectionDpiDesc')}
+          value={settings.moldet_detection_dpi}
+          onChange={v => setSettings(s => ({ ...s, moldet_detection_dpi: v }))}
+          min={72}
+          max={600}
+          step={10}
+          width={120}
+        />
+        <NumberField
+          label={t('settings.moldetTextPageCharThreshold')}
+          description={t('settings.moldetTextPageCharThresholdDesc')}
+          value={settings.moldet_text_page_char_threshold}
+          onChange={v => setSettings(s => ({ ...s, moldet_text_page_char_threshold: v }))}
+          min={50}
+          max={5000}
+          step={50}
+          width={120}
+        />
+        <NumberField
+          label={t('settings.moldetMaxPagesPerDoc')}
+          description={t('settings.moldetMaxPagesPerDocDesc')}
+          value={settings.moldet_max_pages_per_doc}
+          onChange={v => setSettings(s => ({ ...s, moldet_max_pages_per_doc: v }))}
+          min={0}
+          max={5000}
+          step={1}
+          width={120}
+        />
+      </SettingGroup>
+      <SettingGroup title={t('settings.ingestAdvanced')}>
+        <NumberField
+          label={t('settings.ingestDefaultPriority')}
+          description={t('settings.ingestDefaultPriorityDesc')}
+          value={settings.ingest_default_priority}
+          onChange={v => setSettings(s => ({ ...s, ingest_default_priority: v }))}
+          min={0}
+          max={10}
+          step={1}
+          width={100}
+        />
+        <NumberField
+          label={t('settings.ingestMaxRetries')}
+          description={t('settings.ingestMaxRetriesDesc')}
+          value={settings.ingest_max_retries}
+          onChange={v => setSettings(s => ({ ...s, ingest_max_retries: v }))}
+          min={0}
+          max={10}
+          step={1}
+          width={100}
         />
       </SettingGroup>
     </SettingSection>

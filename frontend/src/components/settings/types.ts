@@ -2,7 +2,7 @@
 //
 // 单一事实来源：所有 section 共享同一个 `SettingsState`，确保保存时
 // 字段不会出现"漏存 / 写错路径"的问题。DEFAULT_SETTINGS 与后端
-// `AppConfig` Pydantic schema 保持对齐（见 `src/mbforge/models/`）。
+// `AppConfig` Pydantic schema 保持对齐（见 `src/mbforge/utils/config.py`）。
 
 import type { AppSettings } from '../../api/http/settings'
 
@@ -11,7 +11,6 @@ export interface SettingsState {
   // —— 常规 ——
   theme: 'dark' | 'light' | 'system'
   language: 'zh' | 'en'
-  auto_open_project: boolean
 
   // —— LLM ——
   llm_provider: string
@@ -22,6 +21,10 @@ export interface SettingsState {
   llm_temperature: number
   llm_top_p: number
   llm_request_timeout: number
+  /** Advanced: language passed to provider (default 'en'). */
+  llm_language: string
+  /** Advanced: reorganization model; empty = fall back to llm_model. */
+  llm_reorganize_model: string
 
   // —— VLM ——
   vlm_provider: string
@@ -44,6 +47,10 @@ export interface SettingsState {
   ocr_paddleocr_model: string
   ocr_glmocr_api_key: string
   ocr_glmocr_model: string
+  /** Advanced: GLM-OCR self-deployed endpoint. Empty = provider default. */
+  ocr_glmocr_base_url: string
+  /** Advanced: PDF batch upload size for cloud OCR. */
+  ocr_upload_batch_size: number
 
   // —— Model Service ——
   server_host: string
@@ -62,9 +69,23 @@ export interface SettingsState {
   // —— MoldDet ——
   auto_moldet_on_import: boolean
   detection_batch_size: number
+  /** Advanced: 'auto' lets MBForge pick (default); 'cpu' / 'cuda' override. */
+  moldet_device: string
+  /** Advanced: explicit MolScribe checkpoint dir (empty = use default). */
+  moldet_molscribe_dir: string
+  /** Advanced: PDF render DPI for detection (higher = slower + sharper). */
+  moldet_detection_dpi: number
+  /** Advanced: page char threshold for selecting text-only vs detection. */
+  moldet_text_page_char_threshold: number
+  /** Advanced: per-doc page cap; 0 = unlimited. */
+  moldet_max_pages_per_doc: number
 
   // —— Ingest ——
   auto_enqueue_on_import: boolean
+  /** Advanced: default queue priority for newly-imported PDFs. */
+  ingest_default_priority: number
+  /** Advanced: max retries when a stage fails. */
+  ingest_max_retries: number
 
   // —— Popo (MinerU-Popo OCR 后处理，可选) ——
   popo_enabled: boolean
@@ -85,7 +106,6 @@ export interface SettingsState {
 export const DEFAULT_SETTINGS: SettingsState = {
   theme: 'dark',
   language: 'zh',
-  auto_open_project: false,
 
   llm_provider: 'openai_compatible',
   llm_base_url: '',
@@ -93,8 +113,10 @@ export const DEFAULT_SETTINGS: SettingsState = {
   llm_model: '',
   llm_max_tokens: 4096,
   llm_temperature: 0.7,
-  llm_top_p: 0.9,
-  llm_request_timeout: 120,
+  llm_top_p: 1.0,
+  llm_request_timeout: 60,
+  llm_language: 'en',
+  llm_reorganize_model: '',
 
   vlm_provider: 'none',
   vlm_base_url: '',
@@ -114,6 +136,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   ocr_paddleocr_model: 'PaddleOCR-VL-1.6',
   ocr_glmocr_api_key: '',
   ocr_glmocr_model: 'glm-ocr',
+  ocr_glmocr_base_url: '',
+  ocr_upload_batch_size: 1,
 
   server_host: '127.0.0.1',
   server_port: 18792,
@@ -128,8 +152,15 @@ export const DEFAULT_SETTINGS: SettingsState = {
 
   auto_moldet_on_import: true,
   detection_batch_size: 0,
+  moldet_device: 'auto',
+  moldet_molscribe_dir: '',
+  moldet_detection_dpi: 200,
+  moldet_text_page_char_threshold: 500,
+  moldet_max_pages_per_doc: 0,
 
-  auto_enqueue_on_import: false,
+  auto_enqueue_on_import: true,
+  ingest_default_priority: 0,
+  ingest_max_retries: 1,
 
   popo_enabled: false,
 
@@ -152,7 +183,6 @@ export type SectionId =
   | 'model_downloads'
   | 'pdf_parse'
   | 'storage'
-  | 'recent_projects'
   | 'about'
 
 export interface SectionDef {
@@ -168,15 +198,18 @@ export const SECTIONS: SectionDef[] = [
   { id: 'model_downloads', labelKey: 'settings.modelDownloads', icon: 'download' },
   { id: 'pdf_parse', labelKey: 'settings.pdfParse', icon: 'cpu' },
   { id: 'storage', labelKey: 'settings.cache', icon: 'refresh' },
-  { id: 'recent_projects', labelKey: 'settings.recentProjects', icon: 'folder' },
   { id: 'about', labelKey: 'settings.about', icon: 'info' },
 ]
 
 /**
  * 把后端返回的 JSON 拍平到 SettingsState。缺失字段使用默认值。
  *
- * 注意：后端 `AppConfig` 的字段名是 camelCase（serde rename_all 不开），
- * 而我们内部字段是 snake_case — 显式写一层映射比依赖 serde rename 更安全。
+ * 注意：后端 `AppConfig` 的字段名是 snake_case，与我们 SettingsState 的
+ * snake_case 对齐；显式写一层映射比依赖 serde rename 更安全。
+ *
+ * 注意：auto_* 布尔字段（auto_moldet_on_import / auto_enqueue_on_import）
+ * 默认是 True（与后端 `IngestConfig` / `MoldetConfig` 默认值一致），
+ * 用 `!== false` 而非 `=== true` 表达"未设时返回默认 true"。
  */
 export function flattenSettings(raw: AppSettings | null | undefined): SettingsState {
   const s: AppSettings = raw ?? {}
@@ -188,16 +221,18 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
   return {
     theme: (s.theme as SettingsState['theme'] | undefined) || DEFAULT_SETTINGS.theme,
     language: (s.language as SettingsState['language'] | undefined) || DEFAULT_SETTINGS.language,
-    auto_open_project: s.auto_open_project === true,
 
     llm_provider: llm.provider || DEFAULT_SETTINGS.llm_provider,
     llm_base_url: llm.base_url || DEFAULT_SETTINGS.llm_base_url,
     llm_api_key: llm.api_key || DEFAULT_SETTINGS.llm_api_key,
     llm_model: llm.model || DEFAULT_SETTINGS.llm_model,
     llm_max_tokens: llm.max_tokens || DEFAULT_SETTINGS.llm_max_tokens,
-    llm_temperature: typeof llm.temperature === 'number' ? llm.temperature : DEFAULT_SETTINGS.llm_temperature,
+    llm_temperature:
+      typeof llm.temperature === 'number' ? llm.temperature : DEFAULT_SETTINGS.llm_temperature,
     llm_top_p: typeof llm.top_p === 'number' ? llm.top_p : DEFAULT_SETTINGS.llm_top_p,
     llm_request_timeout: llm.request_timeout || DEFAULT_SETTINGS.llm_request_timeout,
+    llm_language: llm.language || DEFAULT_SETTINGS.llm_language,
+    llm_reorganize_model: llm.reorganize_model || DEFAULT_SETTINGS.llm_reorganize_model,
 
     vlm_provider: vlm.provider || DEFAULT_SETTINGS.vlm_provider,
     vlm_base_url: vlm.base_url || DEFAULT_SETTINGS.vlm_base_url,
@@ -216,12 +251,18 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
     ocr_paddleocr_model: ocr.paddleocr_model || DEFAULT_SETTINGS.ocr_paddleocr_model,
     ocr_glmocr_api_key: ocr.glmocr_api_key || DEFAULT_SETTINGS.ocr_glmocr_api_key,
     ocr_glmocr_model: ocr.glmocr_model || DEFAULT_SETTINGS.ocr_glmocr_model,
+    ocr_glmocr_base_url: ocr.glmocr_base_url || DEFAULT_SETTINGS.ocr_glmocr_base_url,
+    ocr_upload_batch_size:
+      typeof ocr.upload_batch_size === 'number'
+        ? ocr.upload_batch_size
+        : DEFAULT_SETTINGS.ocr_upload_batch_size,
 
     server_host: ms.host || DEFAULT_SETTINGS.server_host,
     server_port: ms.port || DEFAULT_SETTINGS.server_port,
     server_auto_start: ms.auto_start !== false,
     server_startup_timeout: ms.startup_timeout || DEFAULT_SETTINGS.server_startup_timeout,
-    server_health_check_interval: ms.health_check_interval || DEFAULT_SETTINGS.server_health_check_interval,
+    server_health_check_interval:
+      ms.health_check_interval || DEFAULT_SETTINGS.server_health_check_interval,
 
     model_cache_dir: s.model_cache_dir || DEFAULT_SETTINGS.model_cache_dir,
 
@@ -233,8 +274,30 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
       typeof s.moldet?.detection_batch_size === 'number'
         ? s.moldet.detection_batch_size
         : DEFAULT_SETTINGS.detection_batch_size,
+    moldet_device: s.moldet?.device || DEFAULT_SETTINGS.moldet_device,
+    moldet_molscribe_dir: s.moldet?.molscribe_dir || DEFAULT_SETTINGS.moldet_molscribe_dir,
+    moldet_detection_dpi:
+      typeof s.moldet?.detection_dpi === 'number'
+        ? s.moldet.detection_dpi
+        : DEFAULT_SETTINGS.moldet_detection_dpi,
+    moldet_text_page_char_threshold:
+      typeof s.moldet?.text_page_char_threshold === 'number'
+        ? s.moldet.text_page_char_threshold
+        : DEFAULT_SETTINGS.moldet_text_page_char_threshold,
+    moldet_max_pages_per_doc:
+      typeof s.moldet?.max_pages_per_doc === 'number'
+        ? s.moldet.max_pages_per_doc
+        : DEFAULT_SETTINGS.moldet_max_pages_per_doc,
 
-    auto_enqueue_on_import: s.ingest?.auto_enqueue_on_import === true,
+    auto_enqueue_on_import: s.ingest?.auto_enqueue_on_import !== false,
+    ingest_default_priority:
+      typeof s.ingest?.default_priority === 'number'
+        ? s.ingest.default_priority
+        : DEFAULT_SETTINGS.ingest_default_priority,
+    ingest_max_retries:
+      typeof s.ingest?.max_retries === 'number'
+        ? s.ingest.max_retries
+        : DEFAULT_SETTINGS.ingest_max_retries,
 
     popo_enabled: s.popo?.enabled === true,
 
@@ -245,7 +308,7 @@ export function flattenSettings(raw: AppSettings | null | undefined): SettingsSt
     pageindex_threshold:
       typeof pi.threshold === 'number' ? pi.threshold : DEFAULT_SETTINGS.pageindex_threshold,
 
-    cache_size_semantic_mb: 0,  // 启动时由后端 refresh 填充
+    cache_size_semantic_mb: 0, // 启动时由后端 refresh 填充
     cache_size_detection_mb: 0,
     cache_size_molecules_mb: 0,
   }
@@ -260,7 +323,6 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
   return {
     theme: s.theme,
     language: s.language,
-    auto_open_project: s.auto_open_project,
     llm: {
       provider: s.llm_provider,
       base_url: s.llm_base_url,
@@ -270,6 +332,8 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
       temperature: s.llm_temperature,
       top_p: s.llm_top_p,
       request_timeout: s.llm_request_timeout,
+      language: s.llm_language,
+      reorganize_model: s.llm_reorganize_model || null,
     },
     vlm: {
       provider: s.vlm_provider,
@@ -290,6 +354,8 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
       paddleocr_model: s.ocr_paddleocr_model || null,
       glmocr_api_key: s.ocr_glmocr_api_key || null,
       glmocr_model: s.ocr_glmocr_model || null,
+      glmocr_base_url: s.ocr_glmocr_base_url || '',
+      upload_batch_size: s.ocr_upload_batch_size,
     },
     model_server: {
       host: s.server_host,
@@ -306,9 +372,16 @@ export function toBackendPayload(s: SettingsState): Record<string, unknown> {
     moldet: {
       auto_moldet_on_import: s.auto_moldet_on_import,
       detection_batch_size: s.detection_batch_size,
+      device: s.moldet_device,
+      molscribe_dir: s.moldet_molscribe_dir,
+      detection_dpi: s.moldet_detection_dpi,
+      text_page_char_threshold: s.moldet_text_page_char_threshold,
+      max_pages_per_doc: s.moldet_max_pages_per_doc > 0 ? s.moldet_max_pages_per_doc : null,
     },
     ingest: {
       auto_enqueue_on_import: s.auto_enqueue_on_import,
+      default_priority: s.ingest_default_priority,
+      max_retries: s.ingest_max_retries,
     },
     popo: {
       enabled: s.popo_enabled,

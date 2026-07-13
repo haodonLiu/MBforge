@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
 
 from mbforge.pipeline.extract_text import PageContent, TextSpan
 from mbforge.pipeline.normalize import DetectionSource, NormalizedMolecule
 from mbforge.pipeline.organizer import (
+    _llm_complete,
     _looks_degenerate,
     _rule_based_reorganize,
     insert_molecode_blocks,
     reorganize_with_llm,
 )
+from mbforge.utils.config import AppConfig, LLMConfig
 
 
 def test_rule_based_reorganize_strips_page_markers() -> None:
@@ -76,3 +83,41 @@ def test_insert_molecode_blocks_appends_block(tmp_path: Path) -> None:
     text = out_path.read_text(encoding="utf-8")
     assert "Ethanol" in text
     assert "```" in text
+
+
+def test_llm_complete_passes_credentials_and_preserves_environ(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_llm_complete must pass api_key/api_base explicitly and not mutate os.environ."""
+    from mbforge.utils import config as config_mod
+
+    config = AppConfig(
+        llm=LLMConfig(
+            model="reorg-model",
+            api_key="reorg-key",
+            base_url="https://reorg.example/v1",
+        )
+    )
+    monkeypatch.setattr(config_mod, "load_global_config", lambda: config)
+    monkeypatch.setenv("OPENAI_API_KEY", "legacy-key")
+    monkeypatch.setenv("OPENAI_API_BASE", "https://legacy.example/v1")
+
+    captured: dict[str, object] = {}
+
+    def _fake_completion(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="reorganized"))]
+        )
+
+    monkeypatch.setitem(sys.modules, "litellm", SimpleNamespace(completion=_fake_completion))
+
+    result = _llm_complete("reorg-model", "prompt text")
+
+    assert result == "reorganized"
+    assert captured["api_key"] == "reorg-key"
+    assert captured["api_base"] == "https://reorg.example/v1"
+    assert captured["temperature"] == 0.3
+    assert captured["messages"] == [{"role": "user", "content": "prompt text"}]
+    assert os.environ["OPENAI_API_KEY"] == "legacy-key"
+    assert os.environ["OPENAI_API_BASE"] == "https://legacy.example/v1"

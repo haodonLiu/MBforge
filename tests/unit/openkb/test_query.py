@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -8,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from mbforge.openkb import query as openkb_query
+from mbforge.utils.config import AppConfig, LLMConfig
 
 
 def test_extract_relevant_sources_empty(tmp_path: Path) -> None:
@@ -53,3 +55,41 @@ async def test_search_wiki_openkb_missing(tmp_path: Path) -> None:
         pytest.raises(RuntimeError),
     ):
         await openkb_query.search_wiki("q", str(tmp_path))
+
+
+@pytest.mark.asyncio
+async def test_search_wiki_passes_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """search_wiki must pass credentials explicitly and not mutate os.environ."""
+    config = AppConfig(
+        llm=LLMConfig(
+            model="q-model",
+            api_key="q-key",
+            base_url="https://q.example/v1",
+        )
+    )
+    monkeypatch.setattr(openkb_query, "load_global_config", lambda: config)
+    monkeypatch.setenv("OPENAI_API_KEY", "legacy-key")
+    monkeypatch.setenv("OPENAI_API_BASE", "https://legacy.example/v1")
+
+    captured: dict[str, object] = {}
+
+    async def _fake_run_query(**kwargs):
+        captured.update(kwargs)
+        return "answer"
+
+    fake_module = ModuleType("openkb.agent.query")
+    fake_module.run_query = _fake_run_query
+
+    with patch.dict(sys.modules, {"openkb.agent.query": fake_module}):
+        result = await openkb_query.search_wiki("question", str(tmp_path))
+
+    assert result["answer"] == "answer"
+    assert captured["model"] == "q-model"
+    assert captured["api_key"] == "q-key"
+    assert captured["api_base"] == "https://q.example/v1"
+    assert captured["kb_dir"] == tmp_path
+    # The global environment must remain untouched.
+    assert os.environ["OPENAI_API_KEY"] == "legacy-key"
+    assert os.environ["OPENAI_API_BASE"] == "https://legacy.example/v1"

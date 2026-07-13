@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -9,6 +10,7 @@ import pytest
 
 from mbforge.backends.ocr import build_backends, extract_text_with_chain
 from mbforge.backends.ocr.local import RapidOCRBackend
+from mbforge.backends.ocr.mineru import MinerUBackend
 from mbforge.backends.ocr.rapidocr_adapter import RapidOCRCropAdapter
 
 
@@ -127,3 +129,28 @@ def test_rapidocr_adapter_detect_use_dml_defaults_to_false(monkeypatch: pytest.M
         else __builtins__.__import__(name, *args, **kwargs),
     )
     assert RapidOCRCropAdapter._detect_use_dml() is False
+
+
+def test_mineru_backend_init_and_extract_preserves_environ(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """MinerU must not write OPENAI_API_KEY, OPENAI_API_BASE, or SSL_CERT_FILE."""
+    monkeypatch.setenv("OPENAI_API_KEY", "legacy-key")
+    monkeypatch.setenv("OPENAI_API_BASE", "https://legacy.example/v1")
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+
+    backend = MinerUBackend({"api_key": "mineru-key"})
+
+    # __init__ must not mutate env.
+    assert os.environ.get("OPENAI_API_KEY") == "legacy-key"
+    assert os.environ.get("OPENAI_API_BASE") == "https://legacy.example/v1"
+    assert "SSL_CERT_FILE" not in os.environ
+
+    # extract_text currently requires network; we only assert no env writes.
+    # Patch the internal helpers so the method exits early.
+    monkeypatch.setattr(backend, "_request_batch_urls", lambda _fn: ("", []))
+    backend.extract_text(b"png")
+
+    assert os.environ.get("OPENAI_API_KEY") == "legacy-key"
+    assert os.environ.get("OPENAI_API_BASE") == "https://legacy.example/v1"
+    assert "SSL_CERT_FILE" not in os.environ

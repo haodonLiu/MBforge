@@ -9,7 +9,6 @@ Three entry points:
 
 from __future__ import annotations
 
-import os
 import re
 import sqlite3
 import time
@@ -260,27 +259,22 @@ def _llm_complete(model: str, prompt: str) -> str | None:
 
     ``model`` is the raw model name from config (e.g. ``sensenova-6.7-flash-lite``).
     The full LiteLLM model string (including provider prefix and api_base) and
-    api_key are resolved from ``load_global_config().llm`` via ``to_litellm_config``.
+    api_key are resolved from ``load_global_config().llm`` via ``to_litellm_model``.
+    Credentials are passed as explicit ``api_key``/``api_base`` kwargs so the
+    global process environment is never mutated.
 
     Returns ``None`` on any failure (import error, network error, API error,
     bad model, malformed response). Callers must provide their own fallback.
     """
-    # Resolve api_key and base_url from config, set env vars for litellm.
-    # The ?api_base= query-param approach causes TCP connection timeout on
-    # some networks, so env vars are preferred.
     try:
         from ..openkb.config import to_litellm_model
         from ..utils.config import load_global_config
 
         llm_cfg = load_global_config().llm
-        # LiteLLM consumes these process variables. They are outputs derived
-        # from settings.json, never a source that can override it.
-        os.environ["OPENAI_API_KEY"] = llm_cfg.api_key
-        os.environ["OPENAI_API_BASE"] = llm_cfg.base_url
-        # 路由到 ollama / openai / anthropic 等，自动透传 provider
         litellm_model = to_litellm_model(llm_cfg)
     except Exception:  # noqa: BLE001 — never let config resolution crash the pipeline
         litellm_model = model if "/" in model else f"openai/{model}"
+        llm_cfg = None
 
     try:
         from litellm import completion
@@ -292,6 +286,8 @@ def _llm_complete(model: str, prompt: str) -> str | None:
             model=litellm_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
+            api_key=llm_cfg.api_key if llm_cfg and llm_cfg.api_key else None,
+            api_base=llm_cfg.base_url if llm_cfg and llm_cfg.base_url else None,
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("LLM call failed (%s)", exc)

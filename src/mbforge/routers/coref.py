@@ -37,6 +37,7 @@ from fastapi import APIRouter
 from PIL import Image
 
 from ..backends.ocr.rapidocr_adapter import RapidOCRCropAdapter
+from ..core.artifact import ArtifactResolver, InvalidDocIdError
 from ..parsers.molecule.coref_alt import detect_coref_via_ft_detector
 from ..utils.helpers import ValidationError
 from ..utils.logger import get_logger
@@ -148,7 +149,12 @@ def _resolve_pdf_path(library_root: str, doc_id: str) -> Path | None:
     root = Path(library_root)
     if not root.exists():
         return None
+    try:
+        canonical_source = ArtifactResolver(root).source_pdf(doc_id)
+    except InvalidDocIdError:
+        return None
     candidates = [
+        canonical_source,
         root / f"{doc_id}.pdf",
         root / "docs" / f"{doc_id}.pdf",
         root / doc_id / "source.pdf",

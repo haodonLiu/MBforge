@@ -6,6 +6,9 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
+from mbforge.core.artifact import ArtifactResolver
+from mbforge.routers.coref import _resolve_pdf_path
+
 
 def _make_fake_coref_result() -> MagicMock:
     mol = MagicMock()
@@ -22,6 +25,17 @@ def _make_fake_coref_result() -> MagicMock:
     result.bboxes = [mol, label]
     result.corefs = [(0, 1)]
     return result
+
+
+def test_resolve_pdf_path_uses_canonical_storage_source(tmp_path: Path) -> None:
+    """Detection must find PDFs imported into the unified artifact layout."""
+    doc_id = "US20260027089A1"
+    resolver = ArtifactResolver(tmp_path)
+    source_pdf = resolver.source_pdf(doc_id)
+    source_pdf.parent.mkdir(parents=True)
+    source_pdf.touch()
+
+    assert _resolve_pdf_path(str(tmp_path), doc_id) == source_pdf
 
 
 def test_coref_figure_labels_validation(app_client: TestClient) -> None:

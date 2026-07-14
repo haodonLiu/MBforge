@@ -112,3 +112,9 @@ def test_events_router_is_registered(client: TestClient) -> None:
     """The SSE stream endpoint is registered; we avoid opening the infinite stream."""
     paths = {r.path for r in client.app.routes if hasattr(r, "path")}
     assert "/api/v1/events/stream" in paths
+
+
+def test_legacy_detection_cache_routes_are_registered(client: TestClient) -> None:
+    """The current PDF viewer still reads its detection cache through this path."""
+    paths = {r.path for r in client.app.routes if hasattr(r, "path")}
+    assert "/api/v1/models/extract/cached-detections" in paths

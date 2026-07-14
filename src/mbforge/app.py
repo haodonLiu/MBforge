@@ -222,6 +222,7 @@ def create_app() -> FastAPI:
         events,
         health,
         knowledge_base,
+        legacy_models,
         library,
         molecule,
         notes,
@@ -254,6 +255,9 @@ def create_app() -> FastAPI:
     app.include_router(sar.router, prefix="/api/v1/sar", tags=["sar"])
     app.include_router(ocr.router, prefix="/api/v1/ocr", tags=["ocr"])
     app.include_router(diagnostics.router, prefix="/api/v1/diagnostics", tags=["diagnostics"])
+    # Keep the cache-only endpoints available while pdfService still calls
+    # the legacy /api/v1/models/extract/* contract.
+    app.include_router(legacy_models.router, prefix="/api/v1/models", tags=["legacy-models"])
     # Moldet (FT detector) is mounted directly on the main app at /api/v1/moldet
     # so its endpoints are reachable at the documented paths (not nested under
     # the model_server mount at /api/v1/models).

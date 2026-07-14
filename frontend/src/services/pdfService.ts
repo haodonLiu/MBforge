@@ -129,7 +129,7 @@ export async function detectPageMolecules(params: {
   // The `force` parameter is kept for API compatibility but ignored.
   try {
     const resp = await httpPost<{
-      molecules: ExtractionResult[]
+      molecules: unknown[]
       count: number
       page_num: number
       width: number

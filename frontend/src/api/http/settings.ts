@@ -132,14 +132,19 @@ export function fetchBuildInfo(): BuildInfo {
 
 export async function exportSettings(_targetPath: string): Promise<void> {
   const settings = await getSettings()
-  if (settings.settings) {
-    const blob = new Blob([JSON.stringify(settings.settings, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'mbforge-settings.json'
+  if (!settings.settings) return
+  const blob = new Blob([JSON.stringify(settings.settings, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'mbforge-settings.json'
+  document.body.appendChild(a)
+  try {
     a.click()
-    URL.revokeObjectURL(url)
+  } finally {
+    document.body.removeChild(a)
+    // Defer revoking the object URL until the browser has started the download.
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
   }
 }
 

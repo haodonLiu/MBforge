@@ -1,6 +1,6 @@
 /** SSE (Server-Sent Events) client for real-time streaming from FastAPI backend. */
 
-const API_BASE = ''
+import { API_BASE } from './_utils'
 
 export interface SSEEvent {
   type: string
@@ -48,6 +48,9 @@ export function connectSSE(
     if (disposed || gaveUp) return
     const url = `${API_BASE}${path}`
     es = new EventSource(url)
+    es.onopen = () => {
+      attempt = 0
+    }
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(String(event.data)) as Record<string, unknown>
@@ -93,33 +96,60 @@ export function connectSSE(
   }
 }
 
-export async function fetchSSE<T = unknown>(path: string, params?: Record<string, string>): Promise<T[]> {
-  const url = new URL(`${API_BASE}${path}`)
+export async function fetchSSE<T = unknown>(
+  path: string,
+  params?: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<T[]> {
+  if (signal?.aborted) {
+    throw new Error('SSE fetch aborted')
+  }
+  const base = typeof window !== 'undefined' ? window.location.href : 'http://localhost'
+  const url = new URL(`${API_BASE}${path}`, base)
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
-  const resp = await fetch(url.toString())
+  const resp = await fetch(url.toString(), { signal })
   if (!resp.ok) throw new Error(`SSE fetch failed: ${resp.status}`)
   const reader = resp.body?.getReader()
   if (!reader) return []
+  if (signal?.aborted) {
+    reader.cancel().catch(() => {})
+    throw new Error('SSE fetch aborted')
+  }
+
+  const abortReader = () => {
+    reader.cancel().catch(() => {})
+  }
+  signal?.addEventListener('abort', abortReader)
+
   const decoder = new TextDecoder()
   const events: T[] = []
   let buffer = ''
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        try {
-          const data = JSON.parse(line.slice(6)) as Record<string, unknown>
-          if (data.type === 'done' || data.event === 'done') break
-          events.push(data as T)
-        } catch {
-          // malformed JSON line — skip
+  let finished = false
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done || finished) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6)) as Record<string, unknown>
+            if (data.type === 'done' || data.event === 'done') {
+              finished = true
+              break
+            }
+            events.push(data as T)
+          } catch {
+            // malformed JSON line — skip
+          }
         }
       }
     }
+  } finally {
+    signal?.removeEventListener('abort', abortReader)
+    reader.cancel().catch(() => {})
   }
   return events
 }

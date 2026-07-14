@@ -11,7 +11,9 @@
  *   the queued flush is already on the wire.
  */
 
-const DIAGNOSTICS_URL = 'http://127.0.0.1:18792/api/v1/diagnostics/errors'
+import { API_BASE } from '@/api/http/_utils'
+
+const DIAGNOSTICS_URL = `${API_BASE}/diagnostics/errors`
 const FLUSH_DELAY_MS = 1500
 
 interface QueuedError {

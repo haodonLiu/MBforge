@@ -18,7 +18,6 @@ Removed endpoints (return 410 Gone with a migration pointer):
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -33,6 +32,7 @@ from ..utils.helpers import (
     decode_base64_image,
 )
 from ..utils.logger import get_logger
+from ._path_utils import InvalidPathError, resolve_pdf_path
 
 logger = get_logger("mbforge.moldet_api_router")
 
@@ -132,9 +132,10 @@ def _render_pdf_page_sync(
 
 def _molscribe_for_crop_sync(
     image, x1: int, y1: int, x2: int, y2: int
-) -> str:
-    """Crop a bbox from image and run MolScribe to SMILES. Empty on failure.
+) -> tuple[str, float]:
+    """Crop a bbox from image and run MolScribe to SMILES + confidence.
 
+    Returns ``(smiles, scribe_conf)``. Empty string + 0.0 on failure.
     Synchronous; intended to be wrapped in run_in_executor at the call site.
     """
     from ..backends import molscribe
@@ -142,17 +143,18 @@ def _molscribe_for_crop_sync(
     px1, py1 = max(0, int(x1)), max(0, int(y1))
     px2, py2 = min(image.width, int(x2)), min(image.height, int(y2))
     if px2 <= px1 or py2 <= py1:
-        return ""
+        return "", 0.0
     crop = image.crop((px1, py1, px2, py2)).convert("L")
     try:
         result = molscribe.predict(crop)
-        return result.esmiles if result.esmiles else ""
+        smiles = result.esmiles if result.esmiles else ""
+        return smiles, float(result.scribe_conf)
     except Exception as e:  # noqa: BLE001 - MolScribe is best-effort
         logger.warning(
             "MolScribe failed on crop (%s,%s,%s,%s): %s",
             px1, py1, px2, py2, e,
         )
-        return ""
+        return "", 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +196,12 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
         mol_conf_threshold (float, default 0.3): molecule confidence threshold
         idt_conf_threshold (float, default 0.3): identifier confidence threshold
 
+    Threshold note:
+        The FT detector's own ``conf_threshold`` (default 0.5) gates boxes
+        before the router thresholds are applied. To receive boxes in the
+        0.3-0.5 range, configure the detector with a lower ``conf_threshold``;
+        otherwise ``mol_conf_threshold`` values below 0.5 have no effect.
+
     Output:
         {
             "page_num", "width", "height", "page_w_pts", "page_h_pts", "dpi",
@@ -206,9 +214,19 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
             "count": N,
         }
     """
+    library_root = body.get("library_root") or body.get("libraryRoot") or ""
+    doc_id = body.get("doc_id") or body.get("docId") or ""
     pdf_path = body.get("pdf_path", "")
-    if not pdf_path or not Path(pdf_path).exists():
-        raise ValidationError("pdf_path is required and must exist")
+
+    if library_root and doc_id:
+        pdf_path = str(resolve_pdf_path(library_root, doc_id))
+    elif pdf_path:
+        # Direct absolute paths from the client are no longer trusted.
+        raise InvalidPathError(
+            "direct pdf_path is not allowed; provide library_root and doc_id"
+        )
+    else:
+        raise ValidationError("library_root and doc_id are required")
 
     page_num = body.get("page", 1)
     dpi = body.get("dpi", 300.0)
@@ -238,15 +256,17 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
 
     coref_result = await loop.run_in_executor(None, _ft_detect)
 
-    # Separate mol bboxes (pixel coords) from idt bboxes (text only)
-    mol_boxes_px: list[tuple[int, int, int, int, float]] = []
-    for cb in coref_result.bboxes:
+    # Separate mol bboxes (pixel coords) from idt bboxes (text only).
+    # Keep the original index into coref_result.bboxes so coref label lookup
+    # uses the same key that coref_result.corefs references.
+    mol_boxes_px: list[tuple[int, int, int, int, int, float]] = []
+    for orig_idx, cb in enumerate(coref_result.bboxes):
         if cb.category_id == 1:
             x1 = int(round(cb.bbox[0] * img_w))
             y1 = int(round(cb.bbox[1] * img_h))
             x2 = int(round(cb.bbox[2] * img_w))
             y2 = int(round(cb.bbox[3] * img_h))
-            mol_boxes_px.append((x1, y1, x2, y2, cb.score))
+            mol_boxes_px.append((orig_idx, x1, y1, x2, y2, cb.score))
     api_dict = to_api_dict(coref_result)
     if not mol_boxes_px:
         logger.info(
@@ -277,17 +297,16 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
             None, lambda: _molscribe_for_crop_sync(image, x1, y1, x2, y2)
         )
 
-    smiles_list = await asyncio.gather(
-        *[_recognize_one(b[:4]) for b in mol_boxes_px]
+    smiles_confs = await asyncio.gather(
+        *[_recognize_one(b[1:5]) for b in mol_boxes_px]
     )
 
     # 4. Build coref label map (mol_idx in coref_result.bboxes -> idt text)
     coref_label_map: dict[int, str] = {}
     if use_coref and coref_result.corefs:
-        # coref_result.corefs = [(mol_idx_in_bboxes, idt_idx_in_bboxes), ...]
-        # and the order of category_id=1 bboxes in coref_result.bboxes is
-        # the same as mol_boxes_px (detect_coref_via_ft_detector appends in
-        # detect() return order).
+        # coref_result.corefs uses ORIGINAL indices into coref_result.bboxes,
+        # not the filtered molecule list index. The original index is tracked
+        # in mol_boxes_px above so the lookup key stays consistent.
         for mol_idx_in_bboxes, idt_idx in coref_result.corefs:
             idt_text = coref_result.bboxes[idt_idx].text or ""
             if idt_text:
@@ -298,10 +317,9 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
     scale_y = page_h_pts / img_h if img_h > 0 else 0
 
     molecules = []
-    for i, ((px1, py1, px2, py2, conf), smi) in enumerate(
-        zip(mol_boxes_px, smiles_list, strict=True)
-    ):
-        label = coref_label_map.get(i, "")
+    for i, (orig_idx, px1, py1, px2, py2, conf) in enumerate(mol_boxes_px):
+        smi, scribe_conf = smiles_confs[i]
+        label = coref_label_map.get(orig_idx, "")
         molecules.append(
             {
                 "index": i,
@@ -313,7 +331,7 @@ async def extract_pdf_page(body: dict) -> dict[str, Any]:
                 },
                 "confidence": round(conf, 4),
                 "smiles": smi,
-                "scribe_conf": 0.0,
+                "scribe_conf": round(scribe_conf, 4),
                 "context_text": f"coref label: {label}" if label else "",
             }
         )
@@ -341,19 +359,15 @@ async def extract_pdf_by_doc(body: dict) -> dict[str, Any]:
     library's docId, not absolute paths). Reuses the same path-resolution
     logic as routers/coref.py::_resolve_pdf_path.
     """
-    from .coref import _resolve_pdf_path
-
     library_root = body.get("library_root") or body.get("libraryRoot") or ""
     doc_id = body.get("doc_id") or body.get("docId") or ""
     if not library_root or not doc_id:
         raise ValidationError("library_root and doc_id are required")
 
-    pdf_path = _resolve_pdf_path(library_root, doc_id)
-    if pdf_path is None:
-        raise ValidationError(
-            f"PDF not found for library_root={library_root} doc_id={doc_id}"
-        )
+    pdf_path = resolve_pdf_path(library_root, doc_id)
 
     body_with_path = dict(body)
     body_with_path["pdf_path"] = str(pdf_path)
+    body_with_path["library_root"] = library_root
+    body_with_path["doc_id"] = doc_id
     return await extract_pdf_page(body_with_path)

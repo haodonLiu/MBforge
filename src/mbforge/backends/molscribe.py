@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 import numpy as np
 from PIL import Image
 
@@ -14,10 +16,11 @@ logger = get_logger(__name__)
 _MODEL = None
 _AVAILABLE: bool = False
 _ERROR: str = ""
+_LOAD_LOCK = threading.Lock()
 
 
 def load(device: str | None = None) -> None:
-    """Lazy-load MolScribe model.
+    """Lazy-load MolScribe model (thread-safe).
 
     只读盘：若 `~/MBForge/models/MolScribe/` 下没有 checkpoint 或 safetensors，
     标记为不可用，**不触发任何下载**。
@@ -25,27 +28,30 @@ def load(device: str | None = None) -> None:
     global _MODEL, _AVAILABLE, _ERROR
     if _MODEL is not None:
         return
-    try:
-        from ..core.resource_manager import ResourceManager
-        from ..parsers.molecule.molscribe_inference import (
-            MolScribe as _MolScribeBackend,
-        )
-
-        path = ResourceManager.get_molscribe_path()
-        if path is None:
-            _AVAILABLE = False
-            _ERROR = "MolScribe 模型未找到（请在 ~/MBForge/models/MolScribe/ 放置模型文件，或在设置中下载）"
-            logger.warning(_ERROR)
+    with _LOAD_LOCK:
+        if _MODEL is not None:
             return
+        try:
+            from ..core.resource_manager import ResourceManager
+            from ..parsers.molecule.molscribe_inference import (
+                MolScribe as _MolScribeBackend,
+            )
 
-        dev = device or ("cuda" if is_gpu_available() else "cpu")
-        _MODEL = _MolScribeBackend(str(path), device=dev, num_workers=1)
-        _AVAILABLE = True
-        logger.info("MolScribe loaded successfully")
-    except Exception as exc:
-        _ERROR = str(exc)
-        _AVAILABLE = False
-        logger.error("MolScribe load failed: %s", exc)
+            path = ResourceManager.get_molscribe_path()
+            if path is None:
+                _AVAILABLE = False
+                _ERROR = "MolScribe 模型未找到（请在 ~/MBForge/models/MolScribe/ 放置模型文件，或在设置中下载）"
+                logger.warning(_ERROR)
+                return
+
+            dev = device or ("cuda" if is_gpu_available() else "cpu")
+            _MODEL = _MolScribeBackend(str(path), device=dev, num_workers=1)
+            _AVAILABLE = True
+            logger.info("MolScribe loaded successfully")
+        except Exception as exc:
+            _ERROR = str(exc)
+            _AVAILABLE = False
+            logger.error("MolScribe load failed: %s", exc)
 
 
 def unload() -> None:
@@ -92,10 +98,51 @@ def predict(image: Image.Image | np.ndarray) -> ExtractionResult:
 
 
 def predict_batch(images: list[Image.Image | np.ndarray]) -> list[ExtractionResult]:
-    """Predict batch of images.
+    """Predict a batch of images in a single backend call.
 
     Accepts a mix of PIL `Image.Image` and `numpy.ndarray` (uint8 HxWxC or HxW).
-    Each entry is forwarded to `predict` after the array→PIL normalization
-    performed there, so callers do not need to pre-convert.
+    All images are normalized to PIL and passed to `_MODEL.predict_images` once,
+    which lets the backend batch inference instead of running one forward pass
+    per crop.
     """
-    return [predict(img) for img in images]
+    if not _AVAILABLE or _MODEL is None:
+        error = _ERROR or "model not available"
+        return [
+            ExtractionResult(
+                esmiles="",
+                scribe_conf=0.0,
+                properties={"error": error},
+            )
+            for _ in images
+        ]
+
+    try:
+        pil_images: list[Image.Image] = []
+        for image in images:
+            if isinstance(image, np.ndarray):
+                image = Image.fromarray(image)
+            pil_images.append(image)
+
+        raw_results = _MODEL.predict_images(pil_images)
+        results: list[ExtractionResult] = []
+        for raw in raw_results:
+            smiles = raw.get("smiles", "") or ""
+            conf = float(raw.get("confidence", 0.0))
+            results.append(
+                ExtractionResult(
+                    esmiles=smiles,
+                    scribe_conf=conf,
+                    properties={"molfile": raw.get("molfile", "")},
+                )
+            )
+        return results
+    except Exception as exc:
+        logger.warning("MolScribe predict_batch failed: %s", exc)
+        return [
+            ExtractionResult(
+                esmiles="",
+                scribe_conf=0.0,
+                properties={"error": str(exc)},
+            )
+            for _ in images
+        ]

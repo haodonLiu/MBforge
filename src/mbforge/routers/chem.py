@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter
 
 router = APIRouter()
 
 
-@router.post("/validate-smiles")
-async def validate_smiles(body: dict) -> dict:
-    smiles = body.get("smiles", "")
-    if not smiles:
-        return {"valid": False, "error": "empty SMILES"}
+def _validate_smiles_sync(smiles: str) -> dict:
     try:
         from rdkit import Chem
 
@@ -21,11 +19,15 @@ async def validate_smiles(body: dict) -> dict:
         return {"valid": False, "error": str(e)}
 
 
-@router.post("/fingerprint")
-async def fingerprint(body: dict) -> dict:
+@router.post("/validate-smiles")
+async def validate_smiles(body: dict) -> dict:
     smiles = body.get("smiles", "")
     if not smiles:
-        return {"success": False, "error": "empty SMILES"}
+        return {"valid": False, "error": "empty SMILES"}
+    return await asyncio.to_thread(_validate_smiles_sync, smiles)
+
+
+def _fingerprint_sync(smiles: str) -> dict:
     try:
         import numpy as np
         from rdkit import Chem
@@ -41,12 +43,15 @@ async def fingerprint(body: dict) -> dict:
         return {"success": False, "error": str(e)}
 
 
-@router.post("/tanimoto")
-async def tanimoto(body: dict) -> dict:
-    fp_a = body.get("fingerprint_a", [])
-    fp_b = body.get("fingerprint_b", [])
-    if not fp_a or not fp_b:
-        return {"success": False, "error": "two fingerprints required"}
+@router.post("/fingerprint")
+async def fingerprint(body: dict) -> dict:
+    smiles = body.get("smiles", "")
+    if not smiles:
+        return {"success": False, "error": "empty SMILES"}
+    return await asyncio.to_thread(_fingerprint_sync, smiles)
+
+
+def _tanimoto_sync(fp_a: list, fp_b: list) -> dict:
     a = {i for i, v in enumerate(fp_a) if v}
     b = {i for i, v in enumerate(fp_b) if v}
     if not a and not b:
@@ -56,11 +61,16 @@ async def tanimoto(body: dict) -> dict:
     return {"success": True, "similarity": intersection / union if union else 0.0}
 
 
-@router.post("/properties")
-async def properties(body: dict) -> dict:
-    smiles = body.get("smiles", "")
-    if not smiles:
-        return {"success": False, "error": "empty SMILES"}
+@router.post("/tanimoto")
+async def tanimoto(body: dict) -> dict:
+    fp_a = body.get("fingerprint_a", [])
+    fp_b = body.get("fingerprint_b", [])
+    if not fp_a or not fp_b:
+        return {"success": False, "error": "two fingerprints required"}
+    return await asyncio.to_thread(_tanimoto_sync, fp_a, fp_b)
+
+
+def _properties_sync(smiles: str) -> dict:
     try:
         from rdkit import Chem
         from rdkit.Chem import Descriptors, rdMolDescriptors
@@ -85,11 +95,15 @@ async def properties(body: dict) -> dict:
         return {"success": False, "error": str(e)}
 
 
-@router.post("/canonicalize")
-async def canonicalize(body: dict) -> dict:
+@router.post("/properties")
+async def properties(body: dict) -> dict:
     smiles = body.get("smiles", "")
     if not smiles:
         return {"success": False, "error": "empty SMILES"}
+    return await asyncio.to_thread(_properties_sync, smiles)
+
+
+def _canonicalize_sync(smiles: str) -> dict:
     try:
         from rdkit import Chem
         mol = Chem.MolFromSmiles(smiles)
@@ -98,6 +112,14 @@ async def canonicalize(body: dict) -> dict:
         return {"success": True, "result": Chem.MolToSmiles(mol)}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+@router.post("/canonicalize")
+async def canonicalize(body: dict) -> dict:
+    smiles = body.get("smiles", "")
+    if not smiles:
+        return {"success": False, "error": "empty SMILES"}
+    return await asyncio.to_thread(_canonicalize_sync, smiles)
 
 
 @router.post("/core-smiles")

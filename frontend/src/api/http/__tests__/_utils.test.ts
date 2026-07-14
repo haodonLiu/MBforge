@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-import { invokeWithError, registerGlobalErrorHandlers } from '../_utils'
+import { httpFetch, API_BASE, invokeWithError, registerGlobalErrorHandlers } from '../_utils'
 import { AppError, ErrorCode, Severity } from '@/utils/errors'
 
 describe('invokeWithError', () => {
@@ -111,7 +111,6 @@ describe('httpFetch (JSON error body)', () => {
       })),
     )
 
-    const { httpFetch } = await import('../_utils')
     await expect(httpFetch('/api/v1/library/open', { method: 'POST' })).rejects.toMatchObject({
       errorCode: ErrorCode.ApiError, // backendCodeToErrorCode maps validation_error → ApiError
       message: 'root path is required',
@@ -135,7 +134,6 @@ describe('httpFetch (JSON error body)', () => {
       })),
     )
 
-    const { httpFetch } = await import('../_utils')
     await expect(httpFetch('/api/v1/moldet/something')).rejects.toMatchObject({
       errorCode: ErrorCode.Network,
       severity: Severity.Error,
@@ -160,7 +158,6 @@ describe('httpFetch (JSON error body)', () => {
       })),
     )
 
-    const { httpFetch } = await import('../_utils')
     await expect(httpFetch('/api/v1/models/molscribe/health')).rejects.toMatchObject({
       errorCode: ErrorCode.ModelNotAvailable,
       severity: Severity.Error,
@@ -178,9 +175,100 @@ describe('httpFetch (JSON error body)', () => {
       })),
     )
 
-    const { httpFetch } = await import('../_utils')
     await expect(httpFetch('/api/v1/library/foo')).rejects.toMatchObject({
       severity: Severity.Warning,
     })
+  })
+})
+
+describe('httpFetch request construction', () => {
+  const originalFetch = globalThis.fetch
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(new Response('{}', { status: 200, statusText: 'OK' })),
+    )
+  })
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+  })
+
+  it('defaults API_BASE to /api/v1', () => {
+    expect(API_BASE).toBe('/api/v1')
+  })
+
+  it('uses VITE_API_BASE from import.meta.env when present', async () => {
+    const previous = import.meta.env.VITE_API_BASE
+    import.meta.env.VITE_API_BASE = '/custom/api'
+    // Force a fresh module evaluation so API_BASE is recomputed.
+    vi.resetModules()
+    const { API_BASE: dynamicBase, httpFetch: dynamicFetch } = await import('../_utils')
+    globalThis.fetch = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })))
+    await dynamicFetch('/ping')
+    expect(dynamicBase).toBe('/custom/api')
+    expect(globalThis.fetch).toHaveBeenCalledWith('/custom/api/ping', expect.any(Object))
+    import.meta.env.VITE_API_BASE = previous
+  })
+
+  it('does not set Content-Type for requests without a body', async () => {
+    await httpFetch('/api/v1/test', { method: 'GET' })
+    const init = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
+    expect(new Headers(init.headers).get('Content-Type')).toBeNull()
+  })
+
+  it('sets Content-Type to application/json for string bodies', async () => {
+    await httpFetch('/api/v1/test', { method: 'POST', body: '{"foo":1}' })
+    const init = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
+    expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
+  })
+
+  it('preserves an explicitly provided Content-Type header', async () => {
+    await httpFetch('/api/v1/test', {
+      method: 'POST',
+      body: '{"foo":1}',
+      headers: { 'Content-Type': 'application/vnd.mbforge+json' },
+    })
+    const init = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
+    expect(new Headers(init.headers).get('Content-Type')).toBe('application/vnd.mbforge+json')
+  })
+
+  it('does not set Content-Type for FormData bodies', async () => {
+    const fd = new FormData()
+    await httpFetch('/api/v1/upload', { method: 'POST', body: fd })
+    const init = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
+    expect(new Headers(init.headers).get('Content-Type')).toBeNull()
+  })
+
+  it('passes an AbortSignal to fetch', async () => {
+    const controller = new AbortController()
+    await httpFetch('/api/v1/test', { signal: controller.signal })
+    const init = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as RequestInit
+    expect(init.signal).toBe(controller.signal)
+  })
+})
+
+describe('httpFetch Pydantic 422 handling', () => {
+  it('throws ApiError with joined detail messages for Pydantic validation errors', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      text: () =>
+        Promise.resolve(JSON.stringify({
+          detail: [
+            { loc: ['body', 'title'], msg: 'field required', type: 'missing' },
+            { loc: ['body', 'page'], msg: 'value is not a valid integer', type: 'type_error' },
+          ],
+        })),
+    })
+
+    await expect(httpFetch('/api/v1/test', { method: 'POST', body: '{}' })).rejects.toThrow(
+      AppError,
+    )
+    await expect(httpFetch('/api/v1/test', { method: 'POST', body: '{}' })).rejects.toSatisfy(
+      (err: AppError) =>
+        err.errorCode === ErrorCode.ApiError &&
+        err.message.includes('body.title: field required') &&
+        err.message.includes('body.page: value is not a valid integer'),
+    )
   })
 })

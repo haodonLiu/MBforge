@@ -38,8 +38,8 @@ async def test_mineru(body: dict) -> dict:
     if not api_key:
         return {"ok": False, "status": None, "message": "MinerU api_key 未设置"}
     try:
-        with httpx.Client(timeout=_TIMEOUT) as client:
-            r = client.get(
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(
                 "https://mineru.net/api/v4/extract/task",
                 headers={"Authorization": f"Bearer {api_key}"},
             )
@@ -66,14 +66,14 @@ async def test_paddleocr(body: dict) -> dict:
         return {"ok": False, "status": None, "message": "PaddleOCR api_key 未设置"}
     endpoint = f"{host.rstrip('/')}/paddleocr/api/ocr/{model}"
     try:
-        with httpx.Client(timeout=_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             # 1x1 PNG as a probe payload.
             tiny_png = (
                 b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
                 b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00"
                 b"\x00\x00\x0cIDAT\x08\x99c\xf8\xff\xff?\x00\x05\xfe\x02\xfe\xa3\x9c\x1d\x00\x00\x00\x00IEND\xaeB`\x82"
             )
-            r = client.post(
+            r = await client.post(
                 endpoint,
                 headers={"Authorization": f"Bearer {api_key}"},
                 files={"file": ("probe.png", tiny_png, "image/png")},
@@ -95,8 +95,8 @@ async def test_glmocr(body: dict) -> dict:
     if not api_key:
         return {"ok": False, "status": None, "message": "GLM-OCR api_key 未设置"}
     try:
-        with httpx.Client(timeout=_TIMEOUT) as client:
-            r = client.post(
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.post(
                 "https://open.bigmodel.cn/api/paas/v4/layout_parsing",
                 headers={
                     "Authorization": f"Bearer {api_key}",

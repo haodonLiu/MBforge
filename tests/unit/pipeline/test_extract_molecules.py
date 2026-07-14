@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -10,7 +11,9 @@ import pytest
 
 from mbforge.pipeline.extract_molecules import (
     extract_molecules_from_pdf,
+    extract_molecules_from_pdf_async,
     extract_molecules_from_text,
+    extract_molecules_from_text_async,
 )
 
 
@@ -41,7 +44,7 @@ def _patch_pdf_dependencies(monkeypatch: pytest.MonkeyPatch) -> dict:
     fake_scribe = MagicMock()
     fake_scribe.esmiles = "CCO"
     fake_scribe.scribe_conf = 0.88
-    fake_molscribe.predict.return_value = fake_scribe
+    fake_molscribe.predict_batch.return_value = [fake_scribe]
 
     monkeypatch.setitem(sys.modules, "fitz", fake_fitz)
     fake_bbox = MagicMock()
@@ -115,6 +118,9 @@ def test_extract_molecules_from_pdf_mocked_backends(
     assert result.scribe_conf == 0.88
     assert result.composite_conf == pytest.approx(0.95 * 0.88)
     assert result.page_idx == 0
+    # Batch path: all crops for the page/doc are passed to predict_batch once.
+    mocks["molscribe"].predict_batch.assert_called_once()
+    assert len(mocks["molscribe"].predict_batch.call_args[0][0]) == 1
 
 
 def test_extract_molecules_from_pdf_skips_pure_text_pages(
@@ -172,3 +178,39 @@ def test_extract_molecules_from_pdf_returns_empty_when_detector_unavailable(
         results = extract_molecules_from_pdf(pdf_path, project_root, "doc-1")
 
     assert results == []
+def test_extract_molecules_from_pdf_async_offloads_to_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The async wrapper runs the sync extractor in asyncio.to_thread."""
+    calls: list[tuple[object, ...]] = []
+
+    async def _fake_to_thread(func, *args, **kwargs):
+        calls.append((func, args, kwargs))
+        return []
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread)
+
+    result = asyncio.run(
+        extract_molecules_from_pdf_async(str(tmp_path / "x.pdf"), str(tmp_path), "doc")
+    )
+    assert result == []
+    assert len(calls) == 1
+    assert calls[0][0] is extract_molecules_from_pdf
+
+
+def test_extract_molecules_from_text_async_offloads_to_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The async wrapper runs the text extractor in asyncio.to_thread."""
+    calls: list[tuple[object, ...]] = []
+
+    async def _fake_to_thread(func, *args, **kwargs):
+        calls.append((func, args, kwargs))
+        return []
+
+    monkeypatch.setattr(asyncio, "to_thread", _fake_to_thread)
+
+    result = asyncio.run(extract_molecules_from_text_async("some text", "doc"))
+    assert result == []
+    assert len(calls) == 1
+    assert calls[0][0] is extract_molecules_from_text

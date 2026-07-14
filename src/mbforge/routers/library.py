@@ -5,27 +5,36 @@ Prefix: /api/v1/library
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
+from ..core.path_utils import sanitize_upload_filename
+from ..models.library import (
+    LibraryCollectionDocumentRequest,
+    LibraryCollectionIdRequest,
+    LibraryCollectionResponse,
+    LibraryCollectionsResponse,
+    LibraryConfigureRequest,
+    LibraryConfigureResponse,
+    LibraryCreateCollectionRequest,
+    LibraryDeleteDocumentRequest,
+    LibraryDocumentsResponse,
+    LibraryImportResponse,
+    LibraryListDocumentsRequest,
+    LibraryStatus,
+    LibrarySuccessResponse,
+)
 from ..utils.config import load_global_config, update_settings
-from ..utils.helpers import MBForgeError
+from ..utils.helpers import FileAccessError, MBForgeError, ValidationError
 from ..utils.logger import get_logger
 from ..utils.paths import GLOBAL_APP_DIR
+from ._path_utils import InvalidPathError, resolve_library_root, validate_doc_id
 
 logger = get_logger("mbforge.library_router")
 
 router = APIRouter()
-
-_SAFE_DOC_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
-
-
-def _validate_doc_id(doc_id: str) -> None:
-    if not doc_id or not _SAFE_DOC_ID_RE.match(doc_id):
-        raise HTTPException(400, f"invalid doc_id: {doc_id}")
 
 
 # Path resolution delegates to ArtifactResolver (core/artifact.py). The
@@ -56,13 +65,13 @@ def _resolve_crop_artifact(root: str, doc_id: str, rel_path: str) -> Path:
     created before the 2026-07-10 storage unification. The migration
     script (``scripts/migrate_artifact_paths.py``) moves the files.
     """
-    from ..core.artifact import ArtifactResolver
+    from ..core.artifact import ArtifactResolver, PathTraversalError
 
     resolver = ArtifactResolver(root)
     try:
         canonical = resolver.crop(doc_id, rel_path)
-    except Exception as exc:
-        raise HTTPException(400, f"invalid rel_path: {rel_path}") from exc
+    except PathTraversalError as exc:
+        raise InvalidPathError(f"invalid crop rel_path: {rel_path}") from exc
     if canonical.is_file():
         return canonical
     legacy = resolver.legacy_crop(doc_id, rel_path)
@@ -78,18 +87,18 @@ def _resolve_library_root(body: dict | None = None) -> str:
     The default lives inside the unified application directory so settings,
     logs and library data are co-located by default. Advanced users may set a
     separate library_root via the Settings UI.
+
+    The returned path is validated through ``resolve_library_root`` so callers
+    never receive an empty or relative root.
     """
     cfg = load_global_config()
     explicit = (body or {}).get("library_root", "")
-    if explicit:
-        return explicit
-    if cfg.library_root:
-        return cfg.library_root
-    return str(GLOBAL_APP_DIR)
+    root = explicit or cfg.library_root or str(GLOBAL_APP_DIR)
+    return str(resolve_library_root(root))
 
 
 @router.get("/status")
-async def library_status() -> dict:
+async def library_status() -> LibraryStatus:
     """Get library configuration status.
 
     Reports `configured: true` whenever the resolved library root either was
@@ -106,11 +115,7 @@ async def library_status() -> dict:
     except (OSError, PermissionError):
         configured = False
         doc_count = 0
-    return {
-        "configured": configured,
-        "root": root,
-        "doc_count": doc_count,
-    }
+    return LibraryStatus(configured=configured, root=root, doc_count=doc_count)
 
 
 class _MissingUploadError(MBForgeError):
@@ -118,12 +123,22 @@ class _MissingUploadError(MBForgeError):
     error_code = "missing_upload"
 
 
+class _UploadTooLargeError(MBForgeError):
+    status_code = 413
+    error_code = "upload_too_large"
+
+
+# 200 MB cap on browser uploads. Large PDFs should be imported from the
+# filesystem or streamed; keeping the cap prevents OOM on malicious clients.
+_MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
+
 @router.post("/import")
 async def library_import(
     file: UploadFile | None = None,
     title: str = Form(""),
     library_root: str | None = Form(None),
-) -> dict:
+) -> LibraryImportResponse:
     """Import a PDF (or other document) into the library via multipart upload.
 
     Browser sends the raw bytes; backend streams to {library_root}/storage/
@@ -135,58 +150,55 @@ async def library_import(
         )
     root = _resolve_library_root({"library_root": library_root} if library_root else None)
 
+    # Validate filename before reading potentially malicious payloads.
+    safe_name = sanitize_upload_filename(file.filename or "")
+
     # Validate root is writable
     try:
         Path(root).mkdir(parents=True, exist_ok=True)
     except OSError as e:
-        return {
-            "success": False,
-            "error": "Cannot access library directory",
-            "detail": str(e),
-        }
+        raise FileAccessError(
+            "Cannot access library directory", detail=str(e)
+        ) from e
 
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
-    try:
-        content = await file.read()
-        doc = store.add_uploaded_file(
-            content=content,
-            filename=file.filename or "",
-            title=title,
+    content = await file.read()
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise _UploadTooLargeError(
+            f"Upload exceeds {_MAX_UPLOAD_BYTES} bytes", detail=safe_name
         )
-    except MBForgeError as e:
-        return {"success": False, "error": e.message, "detail": e.detail}
-    except Exception as e:
-        logger.exception("Unexpected import error: %s", e)
-        return {"success": False, "error": "Import failed", "detail": str(e)}
-    return {"success": True, "document": doc.model_dump()}
+    doc = store.add_uploaded_file(
+        content=content,
+        filename=safe_name,
+        title=title,
+    )
+    return LibraryImportResponse(document=doc.model_dump())
 
 
 @router.post("/documents")
-async def library_list_documents(body: dict) -> dict:
+async def library_list_documents(body: LibraryListDocumentsRequest) -> LibraryDocumentsResponse:
     """List documents, optionally filtered by collection."""
-    collection_id = body.get("collection_id")
-    root = _resolve_library_root(body)
+    root = _resolve_library_root(body.model_dump() if body.library_root else None)
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
-    docs = store.list_documents(collection_id)
-    return {"documents": [d.model_dump() for d in docs]}
+    docs = store.list_documents(body.collection_id)
+    return LibraryDocumentsResponse(documents=[d.model_dump() for d in docs])
 
 
 @router.post("/documents/delete")
-async def library_delete_document(body: dict) -> dict:
+async def library_delete_document(body: LibraryDeleteDocumentRequest) -> LibrarySuccessResponse:
     """Delete a document by doc_id."""
-    doc_id = body.get("doc_id", "")
-    root = _resolve_library_root(body)
-    if not doc_id:
-        return {"success": False, "error": "doc_id required"}
+    root = _resolve_library_root(body.model_dump() if body.library_root else None)
+    if not body.doc_id:
+        raise ValidationError("doc_id is required")
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
-    store.delete_document(doc_id)
-    return {"success": True}
+    store.delete_document(body.doc_id)
+    return LibrarySuccessResponse()
 
 
 @router.get("/documents/{doc_id}/file")
@@ -275,7 +287,7 @@ async def library_get_indexed_md(
     from ..core.layout import LibraryLayout
 
     root = _resolve_library_root({"library_root": library_root} if library_root else None)
-    _validate_doc_id(doc_id)
+    validate_doc_id(doc_id)
     p = LibraryLayout(root).openkb_dir / "documents" / f"{doc_id}.md"
     if not p.is_file():
         raise HTTPException(404, f"indexed md not found for {doc_id}")
@@ -295,100 +307,90 @@ async def library_get_page_text(
 
 
 @router.post("/collections/create")
-async def library_create_collection(body: dict) -> dict:
+async def library_create_collection(
+    body: LibraryCreateCollectionRequest,
+) -> LibraryCollectionResponse:
     """Create a new collection (group)."""
-    name = body.get("name", "")
-    parent_id = body.get("parent_id")
-    root = _resolve_library_root(body)
-    if not name:
-        return {"success": False, "error": "name required"}
+    root = _resolve_library_root(body.model_dump() if body.library_root else None)
+    if not body.name:
+        raise ValidationError("name is required")
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
-    try:
-        col = store.create_collection(name, parent_id)
-    except MBForgeError as e:
-        return {"success": False, "error": e.message, "detail": e.detail}
-    return {"success": True, "collection": col.model_dump()}
+    col = store.create_collection(body.name, body.parent_id)
+    return LibraryCollectionResponse(collection=col.model_dump())
 
 
 @router.post("/collections/list")
-async def library_list_collections(body: dict) -> dict:
+async def library_list_collections(body: LibraryListDocumentsRequest) -> LibraryCollectionsResponse:
     """List collections as a tree."""
-    root = _resolve_library_root(body)
+    root = _resolve_library_root(body.model_dump() if body.library_root else None)
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
     tree = store.get_collection_tree()
-    return {"collections": [n.model_dump() for n in tree]}
+    return LibraryCollectionsResponse(collections=[n.model_dump() for n in tree])
 
 
 @router.post("/collections/delete")
-async def library_delete_collection(body: dict) -> dict:
+async def library_delete_collection(body: LibraryCollectionIdRequest) -> LibrarySuccessResponse:
     """Delete a collection by collection_id."""
-    collection_id = body.get("collection_id", "")
-    root = _resolve_library_root(body)
-    if not collection_id:
-        return {"success": False, "error": "collection_id required"}
+    root = _resolve_library_root(body.model_dump() if body.library_root else None)
+    if not body.collection_id:
+        raise ValidationError("collection_id is required")
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
-    try:
-        store.delete_collection(collection_id)
-    except MBForgeError as e:
-        return {"success": False, "error": e.message, "detail": e.detail}
-    return {"success": True}
+    store.delete_collection(body.collection_id)
+    return LibrarySuccessResponse()
 
 
 @router.post("/collections/add-document")
-async def library_collection_add_document(body: dict) -> dict:
+async def library_collection_add_document(
+    body: LibraryCollectionDocumentRequest,
+) -> LibrarySuccessResponse:
     """Add a document to a collection."""
-    collection_id = body.get("collection_id", "")
-    doc_id = body.get("doc_id", "")
-    root = _resolve_library_root(body)
-    if not collection_id or not doc_id:
-        return {"success": False, "error": "collection_id and doc_id required"}
+    root = _resolve_library_root(body.model_dump() if body.library_root else None)
+    if not body.collection_id:
+        raise ValidationError("collection_id is required")
+    if not body.doc_id:
+        raise ValidationError("doc_id is required")
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
-    try:
-        store.add_to_collection(collection_id, doc_id)
-    except MBForgeError as e:
-        return {"success": False, "error": e.message, "detail": e.detail}
-    return {"success": True}
+    store.add_to_collection(body.collection_id, body.doc_id)
+    return LibrarySuccessResponse()
 
 
 @router.post("/collections/remove-document")
-async def library_collection_remove_document(body: dict) -> dict:
+async def library_collection_remove_document(
+    body: LibraryCollectionDocumentRequest,
+) -> LibrarySuccessResponse:
     """Remove a document from a collection."""
-    collection_id = body.get("collection_id", "")
-    doc_id = body.get("doc_id", "")
-    root = _resolve_library_root(body)
-    if not collection_id or not doc_id:
-        return {"success": False, "error": "collection_id and doc_id required"}
+    root = _resolve_library_root(body.model_dump() if body.library_root else None)
+    if not body.collection_id:
+        raise ValidationError("collection_id is required")
+    if not body.doc_id:
+        raise ValidationError("doc_id is required")
     from ..core.library import LibraryStore
 
     store = LibraryStore.get(root)
-    store.remove_from_collection(collection_id, doc_id)
-    return {"success": True}
+    store.remove_from_collection(body.collection_id, body.doc_id)
+    return LibrarySuccessResponse()
 
 
 @router.post("/configure")
-async def library_configure(body: dict) -> dict:
+async def library_configure(body: LibraryConfigureRequest) -> LibraryConfigureResponse:
     """Configure the library root directory."""
-    root = body.get("root", "")
+    root = body.root
     if not root:
-        return {"success": False, "error": "root required"}
+        raise ValidationError("root is required")
     try:
         Path(root).mkdir(parents=True, exist_ok=True)
         test_file = Path(root) / ".mbforge_write_test"
         test_file.write_text("ok")
         test_file.unlink()
     except OSError as e:
-        return {
-            "success": False,
-            "error": "Directory not writable",
-            "detail": str(e),
-        }
+        raise FileAccessError("Directory not writable", detail=str(e)) from e
     update_settings({"library_root": root})
-    return {"success": True, "root": root}
+    return LibraryConfigureResponse(root=root)

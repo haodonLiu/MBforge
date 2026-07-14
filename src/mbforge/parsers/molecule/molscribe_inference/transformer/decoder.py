@@ -5,6 +5,7 @@ subsequent transformer based architectures
 
 import torch
 import torch.nn as nn
+
 from .._onmt_stub import (
     ActivationFunction,
     AverageAttention,

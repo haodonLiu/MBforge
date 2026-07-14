@@ -12,6 +12,19 @@ from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.pipeline.normalize")
 
+# Default set of allowed chemical elements for normalized molecules.
+#
+# This whitelist intentionally excludes most metals and heavy/main-group elements
+# because the current pipeline (MolScribe + knowledge base) is tuned for small
+# organic / drug-like molecules. Organometallic or inorganic structures that
+# contain Re, Rf, Pb, Hg, etc. are rejected rather than silently imported with
+# likely misread R-group labels. Callers can override this behavior by passing
+# a custom ``allowed_elements`` set to :func:`normalize_molecules`.
+DEFAULT_ALLOWED_ELEMENTS = {
+    "C", "N", "O", "S", "F", "Cl", "Br", "I", "P", "B",
+    "Si", "Se", "As", "H", "*",
+}
+
 
 @dataclass
 class DetectionSource:
@@ -98,11 +111,20 @@ def _merge_detection(existing: NormalizedMolecule, r: ExtractionResult) -> None:
 
 def normalize_molecules(
     results: list[ExtractionResult],
+    *,
+    allowed_elements: set[str] | None = None,
 ) -> list[NormalizedMolecule]:
     """Validate SMILES, canonicalize, and deduplicate candidates.
 
     Valid molecules are keyed by canonical SMILES; invalid molecules are keyed
     by their raw extracted string so the two key spaces never collide.
+
+    Args:
+        results: Extraction results from MolScribe / text extraction.
+        allowed_elements: Optional override for the element whitelist. When
+            ``None``, :data:`DEFAULT_ALLOWED_ELEMENTS` is used. Pass a broader
+            set (e.g. including ``"Fe"``, ``"Pt"``) to accept organometallic
+            or inorganic structures.
     """
     by_canonical: dict[str, NormalizedMolecule] = {}
     by_invalid: dict[str, NormalizedMolecule] = {}
@@ -167,8 +189,9 @@ def normalize_molecules(
         # no place in a chemistry knowledge base (e.g. ``[Re]`` for Rhenium,
         # ``[Rf]`` for Rutherfordium). These are almost always MolScribe
         # mis-reading R-group subscripts (Rₑ / R_f). Treat as garbage.
-        allowed = {"C", "N", "O", "S", "F", "Cl", "Br", "I", "P", "B",
-                   "Si", "Se", "As", "H", "*"}
+        # The whitelist is configurable via ``allowed_elements`` so callers
+        # can opt-in to organometallic/inorganic structures.
+        allowed = allowed_elements if allowed_elements is not None else DEFAULT_ALLOWED_ELEMENTS
         invalid_atoms = [a.GetSymbol() for a in mol.GetAtoms()
                          if a.GetSymbol() not in allowed]
         if invalid_atoms:

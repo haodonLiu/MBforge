@@ -9,7 +9,7 @@ Three entry points:
 
 from __future__ import annotations
 
-import os
+import asyncio
 import re
 import sqlite3
 import time
@@ -126,26 +126,55 @@ def _map_span_idx_to_line(
     """Return the markdown line index corresponding to ``pages[page_idx].text_spans[span_idx]``.
 
     The span text may have been concatenated from multiple PDF spans, so we look
-    for a unique-ish substring (first 20 non-space chars) in the page's markdown
-    lines. Falls back to the page boundary line if no match is found.
+    for a unique-ish substring in the page's markdown lines. To avoid inserting
+    MoleCode blocks at the wrong occurrence of repeated text, we restrict the
+    search to the page's line range and disambiguate multiple matches by picking
+    the one closest to the expected line for this span index.
     """
-    if span_idx is None or page_idx < 0 or page_idx >= len(pages):
+    if page_idx < 0 or page_idx >= len(pages):
         return None
     spans = pages[page_idx].text_spans
-    if span_idx >= len(spans):
+    if span_idx is None or span_idx < 0 or span_idx >= len(spans):
         return None
-    span_text = spans[span_idx].text.strip()
-    needle = span_text[:20].strip()
-    if not needle:
+    span_text = spans[span_idx].text.strip().replace("\n", " ")
+    if not span_text:
         return None
-    # Only search within this page's line range
+
+    # Only search within this page's line range.
     boundaries = _collect_page_boundaries(lines)
     page_num = page_idx + 1
     start = boundaries.get(page_num, 0)
     end = boundaries.get(page_num + 1, len(lines))
-    for lineno in range(start, min(end, len(lines))):
-        if needle in lines[lineno]:
-            return lineno
+    if start >= end or start >= len(lines):
+        return None
+
+    # Try progressively shorter needles; longer needles are less likely to
+    # repeat, while shorter needles give us a fallback for truncated text.
+    span_len = len(span_text)
+    needle_lengths = sorted({min(n, span_len) for n in (80, 60, 40, 20, 10)}, reverse=True)
+
+    # Expected line for this span, used to break ties when text repeats.
+    page_line_count = end - start
+    expected_line = start + int(
+        (span_idx / max(1, len(spans) - 1)) * max(0, page_line_count - 1)
+    )
+
+    for length in needle_lengths:
+        needle = span_text[:length].strip()
+        if not needle:
+            continue
+        matches = [
+            lineno
+            for lineno in range(start, min(end, len(lines)))
+            if needle in lines[lineno]
+        ]
+        if not matches:
+            continue
+        if len(matches) == 1:
+            return matches[0]
+        # Disambiguate by proximity to the expected line for this span.
+        return min(matches, key=lambda lineno: abs(lineno - expected_line))
+
     return None
 
 
@@ -260,27 +289,22 @@ def _llm_complete(model: str, prompt: str) -> str | None:
 
     ``model`` is the raw model name from config (e.g. ``sensenova-6.7-flash-lite``).
     The full LiteLLM model string (including provider prefix and api_base) and
-    api_key are resolved from ``load_global_config().llm`` via ``to_litellm_config``.
+    api_key are resolved from ``load_global_config().llm`` via ``to_litellm_model``.
+    Credentials are passed as explicit ``api_key``/``api_base`` kwargs so the
+    global process environment is never mutated.
 
     Returns ``None`` on any failure (import error, network error, API error,
     bad model, malformed response). Callers must provide their own fallback.
     """
-    # Resolve api_key and base_url from config, set env vars for litellm.
-    # The ?api_base= query-param approach causes TCP connection timeout on
-    # some networks, so env vars are preferred.
     try:
         from ..openkb.config import to_litellm_model
         from ..utils.config import load_global_config
 
         llm_cfg = load_global_config().llm
-        # LiteLLM consumes these process variables. They are outputs derived
-        # from settings.json, never a source that can override it.
-        os.environ["OPENAI_API_KEY"] = llm_cfg.api_key
-        os.environ["OPENAI_API_BASE"] = llm_cfg.base_url
-        # 路由到 ollama / openai / anthropic 等，自动透传 provider
         litellm_model = to_litellm_model(llm_cfg)
     except Exception:  # noqa: BLE001 — never let config resolution crash the pipeline
         litellm_model = model if "/" in model else f"openai/{model}"
+        llm_cfg = None
 
     try:
         from litellm import completion
@@ -292,6 +316,8 @@ def _llm_complete(model: str, prompt: str) -> str | None:
             model=litellm_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
+            api_key=llm_cfg.api_key if llm_cfg and llm_cfg.api_key else None,
+            api_base=llm_cfg.base_url if llm_cfg and llm_cfg.base_url else None,
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("LLM call failed (%s)", exc)
@@ -751,3 +777,41 @@ def register_molecules_from_text(
         except Exception:
             local_conn.rollback()
             raise
+
+
+async def insert_molecode_blocks_async(
+    md_path: str,
+    pages: list[PageContent],
+    molecules: list[NormalizedMolecule],
+    output_path: str,
+) -> str:
+    """Async wrapper that runs molecode insertion off the event loop."""
+    return await asyncio.to_thread(
+        insert_molecode_blocks, md_path, pages, molecules, output_path
+    )
+
+
+async def reorganize_with_llm_async(
+    md_path: str, output_path: str, model: str | None = None
+) -> str:
+    """Async wrapper that runs LLM reorganization off the event loop."""
+    return await asyncio.to_thread(reorganize_with_llm, md_path, output_path, model)
+
+
+async def register_molecules_from_text_async(
+    fine_md_path: str,
+    molecules: list[NormalizedMolecule],
+    doc_id: str,
+    library_root: str,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> None:
+    """Async wrapper that runs molecule registration off the event loop."""
+    return await asyncio.to_thread(
+        register_molecules_from_text,
+        fine_md_path,
+        molecules,
+        doc_id,
+        library_root,
+        conn=conn,
+    )

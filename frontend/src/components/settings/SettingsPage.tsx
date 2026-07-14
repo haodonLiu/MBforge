@@ -68,8 +68,7 @@ export default function SettingsPage() {
         setSaveSuccess(true)
         setButtonSaved(true)
         setInitialSettings(settings)
-        const effectiveTheme = settings.theme === 'system' ? 'dark' : settings.theme
-        setTheme(effectiveTheme)
+        setTheme(settings.theme)
         void i18n.changeLanguage(settings.language)
         timersRef.current.push(setTimeout(() => setSaveSuccess(false), 3000))
         timersRef.current.push(setTimeout(() => setButtonSaved(false), 1500))
@@ -95,6 +94,12 @@ export default function SettingsPage() {
     setSettings(DEFAULT_SETTINGS)
     showToast(t('settings.resetHint'), 'info')
   }, [t])
+
+  const handleCancel = useCallback(() => {
+    setSettings(initialSettings)
+    setError('')
+    setSaveSuccess(false)
+  }, [initialSettings])
 
   const handleOpenConfigDir = useCallback(async () => {
     try {
@@ -126,7 +131,7 @@ export default function SettingsPage() {
           >
             {isDirty ? '● ' + t('settings.unsavedChangesTitle') : ''}
           </span>
-          <Button variant="secondary" onClick={loadSettings} disabled={isLoading}>
+          <Button variant="secondary" onClick={handleCancel} disabled={isLoading}>
             {t('common.cancel')}
           </Button>
           <Button

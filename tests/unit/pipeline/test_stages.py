@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from mbforge.core.database import DatabaseManager
 from mbforge.pipeline.context import PipelineContext
 from mbforge.pipeline.runner import STAGES, _is_temp_path, run_pipeline
-from mbforge.pipeline.stage_result import StageResult
+from mbforge.pipeline.stage_result import PipelineErrorCode, StageResult
 from mbforge.pipeline.stages import (
     DensityStage,
     ExtractStage,
@@ -98,17 +100,17 @@ class TestStageExecutors:
 
 
 class TestRunPipelineMissingRoot:
-    """Step 3: run_pipeline must reject empty library_root / project_root."""
+    """Step 3: run_pipeline must reject empty library_root."""
 
-    def test_both_none_raises_value_error(self, tmp_path):
+    def test_none_library_root_raises_value_error(self, tmp_path):
         with pytest.raises(ValueError) as exc_info:
-            run_pipeline("dummy.pdf", library_root=None, project_root=None)
+            run_pipeline("dummy.pdf", library_root=None)
         msg = str(exc_info.value)
-        assert "library_root" in msg or "project_root" in msg, msg
+        assert "library_root" in msg, msg
 
-    def test_both_empty_strings_raises_value_error(self, tmp_path):
+    def test_empty_library_root_raises_value_error(self, tmp_path):
         with pytest.raises(ValueError):
-            run_pipeline("dummy.pdf", library_root="", project_root="")
+            run_pipeline("dummy.pdf", library_root="")
 
     def test_library_root_accepted(self, tmp_path):
         """When a valid library_root is given, run_pipeline must not raise ValueError."""
@@ -121,7 +123,6 @@ class TestRunPipelineMissingRoot:
         # Must NOT be the root-rejection ValueError
         assert not isinstance(exc_info.value, ValueError) or (
             "library_root" not in str(exc_info.value)
-            and "project_root" not in str(exc_info.value)
         )
 
 
@@ -155,6 +156,61 @@ class TestIsTempPath:
         assert not _is_temp_path(p, library_root=lib)
 
 
+class TestStageNullChecks:
+    """Stage executors must guard against missing upstream context."""
+
+    def test_density_stage_requires_extracted(self, tmp_path):
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id="t-missing",
+        )
+        result = DensityStage().execute(ctx)
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.MISSING_CONTEXT
+
+    def test_markdown_stage_requires_extracted(self, tmp_path):
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id="t-missing",
+        )
+        result = MarkdownStage().execute(ctx)
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.MISSING_CONTEXT
+
+    def test_reorganize_stage_requires_density(self, tmp_path):
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id="t-missing",
+            enriched_md_path=tmp_path / "enriched.md",
+        )
+        result = ReorganizeStage().execute(ctx)
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.MISSING_CONTEXT
+
+    def test_index_stage_requires_final_md(self, tmp_path):
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id="t-missing",
+        )
+        result = IndexStage().execute(ctx)
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.MISSING_CONTEXT
+
+    def test_persist_stage_requires_context(self, tmp_path):
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id="t-missing",
+        )
+        result = PersistStage().execute(ctx)
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.MISSING_CONTEXT
+
+
 class TestAsyncSafety:
     """Step 1: _run_async_in_sync must work both with and without a running loop."""
 
@@ -180,6 +236,29 @@ class TestAsyncSafety:
 
         with pytest.raises(RuntimeError, match="boom"):
             _run_async_in_sync(coro())
+
+    def test_no_per_call_thread_pool_executor(self, monkeypatch):
+        """_run_async_in_sync must not create a ThreadPoolExecutor on each call."""
+        created_count = {"n": 0}
+        real_executor = concurrent.futures.ThreadPoolExecutor
+
+        def _counting_executor(*args, **kwargs):
+            created_count["n"] += 1
+            return real_executor(*args, **kwargs)
+
+        monkeypatch.setattr(
+            concurrent.futures, "ThreadPoolExecutor", _counting_executor
+        )
+
+        async def outer():
+            async def inner():
+                await asyncio.sleep(0)
+                return "ok"
+
+            return _run_async_in_sync(inner())
+
+        assert asyncio.run(outer()) == "ok"
+        assert created_count["n"] == 0
 
 
 class TestExtractStage:
@@ -303,3 +382,81 @@ class TestMarkdownStageTypedResult:
         assert "candidates" in required
         assert "molecule_count" in required
         assert "rejected_count" in required
+
+
+class TestPersistStageCompensation:
+    """Failure mid-persist must be compensated to keep DB/filesystem consistent."""
+
+    def test_compensates_molecule_rows_when_document_write_fails(
+        self, tmp_path: Path
+    ) -> None:
+        db = DatabaseManager.get(str(tmp_path))
+        db.initialize()
+        doc_id = "doc-123"
+        final_md = tmp_path / "reorganized.md"
+        final_md.write_text("# Doc", encoding="utf-8")
+        ctx = PipelineContext(
+            pdf_path=tmp_path / "x.pdf",
+            library_root=tmp_path,
+            doc_id=doc_id,
+            extracted=MagicMock(page_count=1, pages=[]),
+            density=MagicMock(doc_kind="text_only", avg_text_density=100.0),
+            final_md_path=final_md,
+        )
+        stage = PersistStage()
+
+        def _fake_persist_molecules(_ctx: PipelineContext) -> None:
+            # Simulate a successful molecule persist by inserting doc-specific rows.
+            with db.mol_conn() as conn:
+                conn.execute(
+                    "INSERT INTO molecules (mol_id, smiles) VALUES (?, ?)",
+                    ("M1", "C"),
+                )
+                conn.execute(
+                    "INSERT INTO molecule_detections (mol_id, doc_id, page) VALUES (?, ?, ?)",
+                    ("M1", doc_id, 1),
+                )
+                conn.execute(
+                    "INSERT INTO evidence (canonical_smiles, doc_id, kind) VALUES (?, ?, ?)",
+                    ("C", doc_id, "figure"),
+                )
+                conn.execute(
+                    "INSERT INTO text_molecule_links (doc_id, mol_id, created_at) VALUES (?, ?, ?)",
+                    (doc_id, "M1", 0),
+                )
+
+        def _fail_document_persist(_ctx: PipelineContext) -> None:
+            raise OSError("disk full")
+
+        stage._persist_molecules_and_links = _fake_persist_molecules
+        stage._persist_document = _fail_document_persist
+
+        result = stage.execute(ctx)
+
+        assert result.status == "error"
+        assert result.error_code == PipelineErrorCode.PERSIST_DOCUMENT_FAILED
+        assert (
+            db.execute(
+                "SELECT COUNT(*) AS cnt FROM molecule_detections WHERE doc_id = ?",
+                (doc_id,),
+                db="mol",
+            )[0]["cnt"]
+            == 0
+        )
+        assert (
+            db.execute(
+                "SELECT COUNT(*) AS cnt FROM evidence WHERE doc_id = ?",
+                (doc_id,),
+                db="mol",
+            )[0]["cnt"]
+            == 0
+        )
+        assert (
+            db.execute(
+                "SELECT COUNT(*) AS cnt FROM text_molecule_links WHERE doc_id = ?",
+                (doc_id,),
+                db="mol",
+            )[0]["cnt"]
+            == 0
+        )
+

@@ -125,7 +125,6 @@ def run_pipeline(
     doc_id: str = "",
     *,
     task_id: str | None = None,
-    project_root: str | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> PipelineResult:
     """Run the document processing pipeline via modular stages.
@@ -135,21 +134,17 @@ def run_pipeline(
         library_root: Library data directory
         doc_id: Document ID (auto-generated from filename if empty)
         task_id: Optional queue task ID for progress tracking
-        project_root: Deprecated, use library_root
         on_progress: Progress callback
 
     Returns:
         PipelineResult with processing statistics
+
+    Raises:
+        ValueError: If ``library_root`` is empty or missing.
     """
-    if library_root:
-        root = Path(library_root)
-    elif project_root:
-        root = Path(project_root)
-    else:
-        raise ValueError(
-            "run_pipeline requires either `library_root` or `project_root`; "
-            "both were None/empty"
-        )
+    if not library_root:
+        raise ValueError("run_pipeline requires a non-empty `library_root`")
+    root = Path(library_root)
     if not doc_id:
         doc_id = Path(pdf_path).stem
 

@@ -7,11 +7,16 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from ..utils.helpers import FileAccessError, ValidationError
 from ..utils.logger import get_logger
 from .compiler import WikiCompiler
 from .indexer import PageIndexWrapper
+from .query import search_wiki
 
 logger = get_logger("mbforge.openkb.adapter")
+
+# Maximum markdown file size accepted for indexing (50 MB).
+_MAX_MD_INDEX_BYTES = 50 * 1024 * 1024
 
 
 class OpenKBAdapter:
@@ -65,6 +70,13 @@ class OpenKBAdapter:
         md_path_obj = Path(md_path)
         if not md_path_obj.exists():
             raise FileNotFoundError(f"Markdown file not found: {md_path}")
+        if not md_path_obj.is_file():
+            raise FileAccessError(f"Not a regular file: {md_path}")
+        size = md_path_obj.stat().st_size
+        if size > _MAX_MD_INDEX_BYTES:
+            raise ValidationError(
+                f"Markdown file too large ({size} bytes); max {_MAX_MD_INDEX_BYTES} bytes"
+            )
 
         target_dir = self._global_openkb_dir / "documents"
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -94,6 +106,4 @@ class OpenKBAdapter:
 
     def search(self, query: str, top_k: int = 10) -> dict[str, Any]:
         """Search the wiki. Always called from sync context (via run_in_executor)."""
-        from .query import search_wiki
-
         return asyncio.run(search_wiki(query, str(self._wiki_dir), top_k))

@@ -53,7 +53,12 @@ def to_litellm_model(cfg: LLMConfig) -> str:
 
 
 def to_litellm_config(cfg: LLMConfig) -> dict[str, Any]:
-    """Build a full LiteLLM call config dict from LLMConfig."""
+    """Build a full LiteLLM call config dict from LLMConfig.
+
+    Credentials are passed explicitly so callers never need to mutate
+    ``os.environ``. LiteLLM accepts both ``api_key`` and ``api_base`` as
+    completion kwargs.
+    """
     model_str = to_litellm_model(cfg)
     config: dict[str, Any] = {
         "model": model_str,
@@ -62,4 +67,6 @@ def to_litellm_config(cfg: LLMConfig) -> dict[str, Any]:
     }
     if cfg.api_key:
         config["api_key"] = cfg.api_key
+    if cfg.base_url:
+        config["api_base"] = cfg.base_url
     return config

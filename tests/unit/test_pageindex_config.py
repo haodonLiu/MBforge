@@ -14,7 +14,11 @@ def test_pageindex_client_ignores_legacy_environment_configuration(
     monkeypatch,
     tmp_path,
 ) -> None:
-    """The PageIndex client must receive only persisted business settings."""
+    """The PageIndex client must receive only persisted business settings.
+
+    The wrapper must pass ``api_key`` and ``api_base`` explicitly to
+    ``PageIndexClient`` and must not mutate the global ``os.environ``.
+    """
     created: dict[str, object] = {}
 
     class FakePageIndexClient:
@@ -42,8 +46,10 @@ def test_pageindex_client_ignores_legacy_environment_configuration(
 
     assert created == {
         "api_key": "settings-key",
+        "api_base": "https://settings.example/v1",
         "model": "openai/settings-model",
         "storage_path": str(tmp_path),
     }
-    assert os.environ["OPENAI_API_KEY"] == "settings-key"
-    assert os.environ["OPENAI_API_BASE"] == "https://settings.example/v1"
+    # The global environment must remain untouched.
+    assert os.environ["OPENAI_API_KEY"] == "legacy-openai-key"
+    assert os.environ["OPENAI_API_BASE"] == "https://legacy.example/v1"

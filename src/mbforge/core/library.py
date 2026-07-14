@@ -7,16 +7,20 @@ paths go through ``LibraryLayout`` and ``ArtifactResolver``.
 
 from __future__ import annotations
 
+import contextlib
+import functools
 import hashlib
+import shutil
 import sqlite3
 import uuid
 from pathlib import Path
 
 from ..models.library import CollectionInfo, CollectionNode, DocumentInfo
-from ..utils.helpers import MBForgeError, ensure_dir
+from ..utils.helpers import ConflictError, MBForgeError, NotFoundError, ensure_dir
 from ..utils.logger import get_logger
 from .artifact import ArtifactResolver
 from .layout import LibraryLayout
+from .path_utils import sanitize_upload_filename
 
 logger = get_logger("mbforge.core.library")
 
@@ -64,9 +68,6 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 """  # fmt: skip
 
-# Instance cache: avoid re-initializing the same library root
-_store_cache: dict[str, LibraryStore] = {}
-
 
 class LibraryStore:
     """Single-library data store — documents, collections, tasks, and molecules."""
@@ -79,12 +80,10 @@ class LibraryStore:
         self._initialized = False
 
     @classmethod
+    @functools.lru_cache(maxsize=128)
     def get(cls, library_root: str | Path) -> LibraryStore:
-        """Get cached LibraryStore singleton for the given root."""
-        key = str(Path(library_root).resolve())
-        if key not in _store_cache:
-            _store_cache[key] = cls(library_root)
-        return _store_cache[key]
+        """Return a cached LibraryStore instance keyed by resolved absolute path."""
+        return cls(library_root)
 
     def _ensure_initialized(self) -> None:
         if self._initialized:
@@ -109,9 +108,7 @@ class LibraryStore:
 
     # ── Documents ────────────────────────────────────────────────
 
-    def add_document(
-        self, file_path: str | Path, title: str = ""
-    ) -> DocumentInfo:
+    def add_document(self, file_path: str | Path, title: str = "") -> DocumentInfo:
         """Copy an existing on-disk file into library storage and register it.
 
         Raises MBForgeError(404) if file_path is missing,
@@ -121,7 +118,7 @@ class LibraryStore:
         self._ensure_initialized()
         src = Path(file_path).resolve()
         if not src.is_file():
-            raise MBForgeError("File not found", detail=str(src), )
+            raise NotFoundError("File not found", detail=str(src))
         return self._register(src, title)
 
     def add_uploaded_file(
@@ -129,53 +126,60 @@ class LibraryStore:
     ) -> DocumentInfo:
         """Persist a browser-uploaded file payload and register it as a document.
 
+        The DB record is committed *before* the file is exposed on disk. If the
+        disk write fails, the DB row is removed so the library never references
+        a missing file.
+
         Computes md5 from the in-memory bytes; rejects empty content; raises
         MBForgeError(409) on md5 collision, MBForgeError(507) if disk write fails.
         """
         self._ensure_initialized()
         if not content:
-            raise MBForgeError("Empty file", detail=filename, )
+            raise MBForgeError("Empty file", detail=filename)
         if not filename:
-            raise MBForgeError("Missing filename", )
+            raise MBForgeError("Missing filename")
+
+        safe_filename = sanitize_upload_filename(filename)
 
         # Reject duplicate imports by content hash (computed before write)
         md5 = hashlib.md5(content).hexdigest()
         existing = self._get_doc_by_md5(md5)
         if existing is not None:
-            raise MBForgeError(
+            raise ConflictError(
                 "Document already imported",
                 detail=f"MD5 collision with doc_id={existing}",
-                            )
+            )
 
         doc_id = str(uuid.uuid4())
-        safe_title = title.strip() if title else Path(filename).stem
+        safe_title = title.strip() if title else Path(safe_filename).stem
+        storage_path = f"{doc_id}/{safe_filename}"
         storage_subdir = self._resolver.storage_dir(doc_id)
+        dest = storage_subdir / safe_filename
+
+        # 1. Commit the DB record first so the library never references a file
+        #    that has not been successfully written.
+        self._insert_document_row(doc_id, safe_title, safe_filename, storage_path, md5)
+
+        # 2. Write the file. On failure, roll back the DB record and remove any
+        #    partial artifacts so we do not leave an orphan reference.
         try:
             ensure_dir(storage_subdir)
-            dest = storage_subdir / filename
             dest.write_bytes(content)
         except (OSError, PermissionError) as e:
-            raise MBForgeError(
-                "Failed to store file", detail=str(e)
-            ) from e
-
-        storage_path = f"{doc_id}/{filename}"
-        conn = sqlite3.connect(str(self._db_path))
-        try:
-            conn.execute(
-                """INSERT INTO documents (doc_id, title, file_name, storage_path, md5)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (doc_id, safe_title, filename, storage_path, md5),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+            self._delete_document_row(doc_id)
+            if dest.exists():
+                with contextlib.suppress(OSError):
+                    dest.unlink()
+            if storage_subdir.exists() and not any(storage_subdir.iterdir()):
+                with contextlib.suppress(OSError):
+                    storage_subdir.rmdir()
+            raise MBForgeError("Failed to store file", detail=str(e)) from e
 
         logger.info("Uploaded document registered: %s (id=%s)", safe_title, doc_id)
         return DocumentInfo(
             doc_id=doc_id,
             title=safe_title,
-            file_name=filename,
+            file_name=safe_filename,
             page_count=0,
             status="pending",
             created_at="",
@@ -184,41 +188,39 @@ class LibraryStore:
     def _register(self, src: Path, title: str) -> DocumentInfo:
         """Shared helper used by add_document (existing path) and add_uploaded_file.
 
-        Performs md5 dedup, copy/move into storage, INSERT into documents table.
+        Performs md5 dedup, commits the documents row, then copies the file into
+        storage. If the copy fails, the DB row is removed.
         """
         md5 = self._compute_md5(src)
         existing = self._get_doc_by_md5(md5)
         if existing is not None:
-            raise MBForgeError(
+            raise ConflictError(
                 "Document already imported",
                 detail=f"MD5 collision with doc_id={existing}",
-                            )
+            )
 
         doc_id = str(uuid.uuid4())
         safe_title = title.strip() if title else src.stem
+        storage_path = f"{doc_id}/{src.name}"
         storage_subdir = self._resolver.storage_dir(doc_id)
+        dest = storage_subdir / src.name
+
+        # 1. Commit the DB record first.
+        self._insert_document_row(doc_id, safe_title, src.name, storage_path, md5)
+
+        # 2. Copy the file; roll back the DB record on failure.
         try:
             ensure_dir(storage_subdir)
-            dest = storage_subdir / src.name
-            import shutil
-
             shutil.copy2(str(src), str(dest))
         except (OSError, PermissionError) as e:
-            raise MBForgeError(
-                "Failed to store file", detail=str(e)
-            ) from e
-
-        storage_path = f"{doc_id}/{src.name}"
-        conn = sqlite3.connect(str(self._db_path))
-        try:
-            conn.execute(
-                """INSERT INTO documents (doc_id, title, file_name, storage_path, md5)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (doc_id, safe_title, src.name, storage_path, md5),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+            self._delete_document_row(doc_id)
+            if dest.exists():
+                with contextlib.suppress(OSError):
+                    dest.unlink()
+            if storage_subdir.exists() and not any(storage_subdir.iterdir()):
+                with contextlib.suppress(OSError):
+                    storage_subdir.rmdir()
+            raise MBForgeError("Failed to store file", detail=str(e)) from e
 
         logger.info("Document added: %s (id=%s)", safe_title, doc_id)
         return DocumentInfo(
@@ -229,6 +231,36 @@ class LibraryStore:
             status="pending",
             created_at="",
         )
+
+    def _insert_document_row(
+        self,
+        doc_id: str,
+        title: str,
+        file_name: str,
+        storage_path: str,
+        md5: str,
+    ) -> None:
+        """Insert a documents row and commit the transaction."""
+        conn = sqlite3.connect(str(self._db_path))
+        try:
+            conn.execute(
+                """INSERT INTO documents (doc_id, title, file_name, storage_path, md5)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (doc_id, title, file_name, storage_path, md5),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _delete_document_row(self, doc_id: str) -> None:
+        """Remove a documents row and any collection membership."""
+        conn = sqlite3.connect(str(self._db_path))
+        try:
+            conn.execute("DELETE FROM documents WHERE doc_id = ?", (doc_id,))
+            conn.execute("DELETE FROM collection_members WHERE doc_id = ?", (doc_id,))
+            conn.commit()
+        finally:
+            conn.close()
 
     def get_document(self, doc_id: str) -> DocumentInfo | None:
         self._ensure_initialized()
@@ -253,30 +285,63 @@ class LibraryStore:
             conn.close()
 
     def delete_document(self, doc_id: str) -> None:
-        """Remove DB row + storage dir."""
+        """Remove storage dir + DB row atomically (best-effort).
+
+        The storage directory is moved to a temporary trash location before the
+        DB transaction is committed. If the DB delete fails, the storage is
+        restored to its original location so the library remains consistent.
+        """
         self._ensure_initialized()
+        storage_subdir = self._resolver.storage_dir(doc_id)
+        trash_path: Path | None = None
+
+        # 1. Move storage out of the live tree before committing the DB delete.
+        if storage_subdir.exists():
+            trash_dir = self._layout.metadata_dir / "trash"
+            ensure_dir(trash_dir)
+            trash_path = trash_dir / f"{doc_id}_{uuid.uuid4().hex}"
+            try:
+                shutil.move(str(storage_subdir), str(trash_path))
+            except (OSError, PermissionError) as e:
+                raise MBForgeError(
+                    "Failed to remove document storage", detail=str(e)
+                ) from e
+
+        # 2. Commit the DB delete.
         conn = sqlite3.connect(str(self._db_path))
         try:
             conn.execute("DELETE FROM documents WHERE doc_id = ?", (doc_id,))
-            conn.execute(
-                "DELETE FROM collection_members WHERE doc_id = ?", (doc_id,)
-            )
+            conn.execute("DELETE FROM collection_members WHERE doc_id = ?", (doc_id,))
             conn.commit()
+        except Exception:
+            # DB delete failed: restore storage from trash so we do not lose
+            # files while the row still exists.
+            if trash_path is not None and trash_path.exists():
+                try:
+                    shutil.move(str(trash_path), str(storage_subdir))
+                except OSError as restore_exc:
+                    logger.error(
+                        "Failed to restore storage for %s after DB delete failure: %s",
+                        doc_id,
+                        restore_exc,
+                    )
+            raise
         finally:
             conn.close()
 
-        storage_subdir = self._resolver.storage_dir(doc_id)
-        if storage_subdir.exists():
-            import shutil
+        # 3. Storage is no longer referenced; delete the trash copy.
+        if trash_path is not None and trash_path.exists():
+            try:
+                shutil.rmtree(trash_path, ignore_errors=True)
+            except OSError as cleanup_exc:
+                logger.warning(
+                    "Failed to remove trashed storage for %s: %s",
+                    doc_id,
+                    cleanup_exc,
+                )
+        logger.info("Document deleted: %s", doc_id)
 
-            shutil.rmtree(storage_subdir, ignore_errors=True)
-            logger.info("Removed storage for %s", doc_id)
-        else:
-            logger.warning("Storage dir for %s already missing", doc_id)
-
-    def list_documents(
-        self, collection_id: str | None = None
-    ) -> list[DocumentInfo]:
+    def list_documents(self, collection_id: str | None = None) -> list[DocumentInfo]:
         self._ensure_initialized()
         conn = sqlite3.connect(str(self._db_path))
         try:
@@ -313,10 +378,13 @@ class LibraryStore:
         self._ensure_initialized()
         conn = sqlite3.connect(str(self._db_path))
         try:
-            like = f"%{query}%"
+            # Escape SQLite LIKE wildcards so a query like "100%" does not
+            # match every title containing "100".
+            escaped = query.replace("%", "\\%").replace("_", "\\_")
+            like = f"%{escaped}%"
             rows = conn.execute(
                 "SELECT doc_id, title, file_name, page_count, status, created_at "
-                "FROM documents WHERE title LIKE ? OR file_name LIKE ? "
+                "FROM documents WHERE title LIKE ? ESCAPE '\\' OR file_name LIKE ? ESCAPE '\\' "
                 "ORDER BY created_at DESC",
                 (like, like),
             ).fetchall()
@@ -463,14 +531,11 @@ class LibraryStore:
         finally:
             conn.close()
 
-    def remove_from_collection(
-        self, collection_id: str, doc_id: str
-    ) -> None:
+    def remove_from_collection(self, collection_id: str, doc_id: str) -> None:
         conn = sqlite3.connect(str(self._db_path))
         try:
             conn.execute(
-                "DELETE FROM collection_members "
-                "WHERE collection_id = ? AND doc_id = ?",
+                "DELETE FROM collection_members WHERE collection_id = ? AND doc_id = ?",
                 (collection_id, doc_id),
             )
             conn.commit()
@@ -487,6 +552,7 @@ class LibraryStore:
 
     def resolve_file(self, doc_id: str) -> str | None:
         """Resolve the original PDF file path for a document."""
+        self._ensure_initialized()
         conn = sqlite3.connect(str(self._db_path))
         try:
             row = conn.execute(
@@ -537,7 +603,7 @@ class LibraryStore:
                 (collection_id,),
             ).fetchone()
             if row is None:
-                raise MBForgeError(
+                raise NotFoundError(
                     "Collection not found",
                     detail=f"collection_id={collection_id}",
                 )
@@ -552,7 +618,7 @@ class LibraryStore:
                 (doc_id,),
             ).fetchone()
             if row is None:
-                raise MBForgeError(
+                raise NotFoundError(
                     "Document not found",
                     detail=f"doc_id={doc_id}",
                 )

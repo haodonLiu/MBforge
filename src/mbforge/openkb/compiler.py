@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from ..utils.config import load_global_config
@@ -47,11 +46,13 @@ class WikiCompiler:
         kb_path = Path(self._wiki_dir)
         doc_md_path = openkb_dir / "documents" / f"{doc_id}.md"
 
-        # OpenKB calls LiteLLM internally. Its environment receives only the
-        # persisted PageIndex configuration, never a caller-provided override.
-        os.environ["OPENAI_API_KEY"] = cfg.api_key
-        os.environ["OPENAI_API_BASE"] = cfg.base_url
+        # OpenKB calls LiteLLM internally. Pass credentials explicitly so the
+        # global process environment is never mutated.
         litellm_model = f"openai/{cfg.model}"
+        llm_kwargs = {
+            "api_key": cfg.api_key or None,
+            "api_base": cfg.base_url or None,
+        }
 
         if page_count >= threshold:
             logger.info("Compiling long doc: %s (%d pages)", doc_name, page_count)
@@ -66,6 +67,7 @@ class WikiCompiler:
                 doc_id=doc_id,
                 kb_dir=kb_path,
                 model=litellm_model,
+                **llm_kwargs,
             )
         else:
             logger.info("Compiling short doc: %s (%d pages)", doc_name, page_count)
@@ -74,6 +76,7 @@ class WikiCompiler:
                 source_path=doc_md_path,  # Path object (openkb expects Path)
                 kb_dir=kb_path,
                 model=litellm_model,
+                **llm_kwargs,
             )
 
         logger.info("Wiki compiled for %s", doc_id)

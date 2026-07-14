@@ -1,40 +1,27 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import {
   ingestList,
   subscribeIngestEvents,
   type IngestTask,
 } from '@/api/http/ingest_queue'
 
-export type EmbedSubState = {
-  action: 'start' | 'done' | 'failed' | 'skipped'
-  model: string
-  progress: number
-}
-
 interface IngestPipelineState {
   task: IngestTask | null
   progressPct: number
   details: string
-  embedState: EmbedSubState | null
 }
 
 export function useIngestPipeline(docId: string, libraryRoot: string): IngestPipelineState {
   const [task, setTask] = useState<IngestTask | null>(null)
   const [progressPct, setProgressPct] = useState(0)
   const [details, setDetails] = useState('')
-  const [embedState] = useState<EmbedSubState | null>(null)
-  const docIdRef = useRef(docId)
-
-  useEffect(() => {
-    docIdRef.current = docId
-  }, [docId])
 
   const findTask = useCallback(async () => {
-    if (!libraryRoot) return
+    if (!libraryRoot || !docId) return
     try {
       const tasks = await ingestList(libraryRoot)
       const sorted = tasks
-        .filter((t) => t.doc_id === docIdRef.current)
+        .filter((t) => t.doc_id === docId)
         .sort((a, b) => b.created_at - a.created_at)
       const match = sorted.length > 0 ? sorted[0] : undefined
       if (match) {
@@ -49,7 +36,7 @@ export function useIngestPipeline(docId: string, libraryRoot: string): IngestPip
     } catch (e: unknown) {
       console.error('[useIngestPipeline] findTask failed:', e)
     }
-  }, [libraryRoot])
+  }, [libraryRoot, docId])
 
   useEffect(() => {
     void findTask()
@@ -66,7 +53,7 @@ export function useIngestPipeline(docId: string, libraryRoot: string): IngestPip
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (cancelled) return
         const sorted = tasks
-          .filter((t) => t.doc_id === docIdRef.current)
+          .filter((t) => t.doc_id === docId)
           .sort((a, b) => b.created_at - a.created_at)
         const match = sorted.length > 0 ? sorted[0] : undefined
         if (match) {
@@ -88,7 +75,7 @@ export function useIngestPipeline(docId: string, libraryRoot: string): IngestPip
       cancelled = true
       clearInterval(timer)
     }
-  }, [libraryRoot])
+  }, [libraryRoot, docId])
 
   // Incremental SSE subscription for real-time error/warning events.
   useEffect(() => {
@@ -132,6 +119,5 @@ export function useIngestPipeline(docId: string, libraryRoot: string): IngestPip
     task,
     progressPct,
     details,
-    embedState,
   }
 }

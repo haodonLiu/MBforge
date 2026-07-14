@@ -6,12 +6,13 @@ The legacy detection stack (``MolDetv2DocDetector`` / ``MolDetv2GeneralDetector`
 
 This module is kept ONLY to provide:
 
-* ``default_model_dir()`` — still imported by ``legacy_models.py`` and a few
-  helpers; new code should import from ``moldet_v2_ft``.
+* ``default_model_dir()`` — re-exported from ``moldet_v2_ft`` for historical
+  callers; new code should import from ``moldet_v2_ft`` directly.
 * ``__getattr__`` shim — older imports of ``MolDetv2DocDetector`` /
   ``MolDetv2GeneralDetector`` / ``MolImagePipeline`` / ``get_moldet`` /
-  ``reset_moldet`` / ``health`` raise a clear ``AttributeError`` pointing at
-  the FT replacement. Callers should be migrated, not papered over.
+  ``reset_moldet`` / ``unload`` / ``health`` / ``MolScribeRecognizer`` raise a
+  clear ``AttributeError`` pointing at the FT replacement. Callers should be
+  migrated, not papered over.
 
 The internal ``_BACKENDS`` registry and prewarm hooks in ``server.py`` no
 longer reference this module.
@@ -19,22 +20,9 @@ longer reference this module.
 
 from __future__ import annotations
 
-from pathlib import Path
+from .moldet_v2_ft import default_model_dir
 
 __all__ = ["default_model_dir"]
-
-
-def default_model_dir() -> Path:
-    """返回模型缓存目录(使用统一常量).
-
-    新代码应直接从 ``mbforge.backends.moldet_v2_ft`` 导入同名函数;
-    此处保留仅为 legacy_models.py 与其他历史调用方。
-    """
-    from mbforge.utils.paths import get_model_cache_dir
-
-    cache_dir = Path(get_model_cache_dir())
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir
 
 
 # Names removed in the 2026-07-08 FT migration. They are listed here so an

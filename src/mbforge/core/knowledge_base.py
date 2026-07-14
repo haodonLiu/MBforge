@@ -33,13 +33,14 @@ def search(
 
         adapter = OpenKBAdapter(library_root)
         result = adapter.search(query, top_k=top_k)
-    except Exception as e:
-        logger.warning("OpenKB search failed: %s", e)
+    except (ImportError, FileNotFoundError, RuntimeError, ValueError, OSError) as e:
+        logger.warning("OpenKB search failed (%s): %s", type(e).__name__, e)
         return {
             "results": [],
             "answer": "",
             "count": 0,
             "error": str(e),
+            "error_code": "openkb_search_failed",
             "from_cache": False,
         }
 

@@ -89,13 +89,13 @@ export default function MoleculeOverlay({
         const boxW = box.x2 - box.x1
         const boxH = box.y2 - box.y1
         const smi = box.result?.esmiles || ''
-        const isQuickScan = (box.result as unknown as { is_quick_scan?: boolean }).is_quick_scan
+        const isQuickScan = box.result?.is_quick_scan ?? false
         const confPct = Math.round(box.conf * 100)
         const ctx = box.result?.context_text || ''
 
         return (
           <div
-            key={i}
+            key={`mol-${box.result?.esmiles || 'none'}-${i}`}
             style={{
               position: 'absolute',
               left: box.x1,

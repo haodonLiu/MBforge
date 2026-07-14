@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -33,16 +32,12 @@ class PageIndexWrapper:
                 "pageindex package not installed. Run: uv add pageindex"
             ) from err
 
-        # PageIndex internally calls litellm.completion() which reads
-        # OPENAI_API_KEY and OPENAI_API_BASE from the process environment.
-        # Set them from the persisted PageIndex config so external environment
-        # values cannot override business settings.
-        os.environ["OPENAI_API_KEY"] = cfg.api_key
-        os.environ["OPENAI_API_BASE"] = cfg.base_url
-
+        # PageIndex internally calls litellm.completion(). Pass credentials
+        # explicitly so the global process environment is never mutated.
         self._storage_path.mkdir(parents=True, exist_ok=True)
         self._client = PageIndexClient(
             api_key=cfg.api_key or None,
+            api_base=cfg.base_url or None,
             model=f"openai/{cfg.model}",
             storage_path=str(self._storage_path),
         )

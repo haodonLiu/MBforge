@@ -49,7 +49,9 @@ async def kb_search(body: dict) -> dict:
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
-            lambda: search(query, library_root, top_k=top_k, doc_id_filter=doc_id_filter),
+            lambda: search(
+                query, library_root, top_k=top_k, doc_id_filter=doc_id_filter
+            ),
         )
         return {"success": True, **result}
     except Exception as e:
@@ -137,7 +139,9 @@ def _safe_wiki_basename(value: str) -> str:
 
 
 @router.get("/wiki/summary")
-async def kb_get_wiki_summary(doc_id: str = "", library_root: str = "") -> PlainTextResponse:
+async def kb_get_wiki_summary(
+    doc_id: str = "", library_root: str = ""
+) -> PlainTextResponse:
     """Return wiki summary markdown for a document."""
     from ..core.layout import LibraryLayout
 
@@ -145,14 +149,16 @@ async def kb_get_wiki_summary(doc_id: str = "", library_root: str = "") -> Plain
         raise HTTPException(400, "doc_id required")
     _root = _resolve_wiki_root(library_root)
     safe_doc_id = _safe_wiki_basename(doc_id)
-    p = LibraryLayout(library_root).openkb_wiki_dir() / "summaries" / f"{safe_doc_id}.md"
+    p = LibraryLayout(_root).openkb_wiki_dir() / "summaries" / f"{safe_doc_id}.md"
     if not p.is_file():
         raise HTTPException(404, f"wiki summary not found for {doc_id}")
     return PlainTextResponse(p.read_text(encoding="utf-8"))
 
 
 @router.get("/wiki/concept")
-async def kb_get_wiki_concept(name: str = "", library_root: str = "") -> PlainTextResponse:
+async def kb_get_wiki_concept(
+    name: str = "", library_root: str = ""
+) -> PlainTextResponse:
     """Return a single concept page markdown by concept name."""
     from ..core.layout import LibraryLayout
 
@@ -160,14 +166,16 @@ async def kb_get_wiki_concept(name: str = "", library_root: str = "") -> PlainTe
         raise HTTPException(400, "name required")
     _root = _resolve_wiki_root(library_root)
     safe_name = _safe_wiki_basename(name)
-    p = LibraryLayout(library_root).openkb_wiki_dir() / "concepts" / f"{safe_name}.md"
+    p = LibraryLayout(_root).openkb_wiki_dir() / "concepts" / f"{safe_name}.md"
     if not p.is_file():
         raise HTTPException(404, f"concept not found: {name}")
     return PlainTextResponse(p.read_text(encoding="utf-8"))
 
 
 @router.get("/wiki/entity")
-async def kb_get_wiki_entity(name: str = "", library_root: str = "") -> PlainTextResponse:
+async def kb_get_wiki_entity(
+    name: str = "", library_root: str = ""
+) -> PlainTextResponse:
     """Return a single entity page markdown by entity name."""
     from ..core.layout import LibraryLayout
 
@@ -175,7 +183,7 @@ async def kb_get_wiki_entity(name: str = "", library_root: str = "") -> PlainTex
         raise HTTPException(400, "name required")
     _root = _resolve_wiki_root(library_root)
     safe_name = _safe_wiki_basename(name)
-    p = LibraryLayout(library_root).openkb_wiki_dir() / "entities" / f"{safe_name}.md"
+    p = LibraryLayout(_root).openkb_wiki_dir() / "entities" / f"{safe_name}.md"
     if not p.is_file():
         raise HTTPException(404, f"entity not found: {name}")
     return PlainTextResponse(p.read_text(encoding="utf-8"))
@@ -187,7 +195,7 @@ async def kb_list_wiki(library_root: str = "") -> dict:
     from ..core.layout import LibraryLayout
 
     _root = _resolve_wiki_root(library_root)
-    wiki = LibraryLayout(library_root).openkb_wiki_dir()
+    wiki = LibraryLayout(_root).openkb_wiki_dir()
 
     def _list(sub: str) -> list[str]:
         d = wiki / sub

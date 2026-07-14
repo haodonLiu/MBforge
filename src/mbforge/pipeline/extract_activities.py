@@ -12,10 +12,13 @@ do page-proximity linking to detected molecules.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 from ..utils.logger import get_logger
 
@@ -23,6 +26,63 @@ logger = get_logger("mbforge.pipeline.extract_activities")
 
 
 _PAGE_MARKER_RE = re.compile(r"<!--\s*PAGE\s+(\d+)\s*-->")
+_NUMERIC_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
+
+
+def _cell_matches_value(cell: str, value_original: Any, *, rel_tol: float = 1e-6, abs_tol: float = 1e-9) -> bool:
+    """Return True when ``cell`` contains the exact numeric value.
+
+    Prevents loose substring matches like ``"12.5" in "112.5"`` by parsing the
+    first number in the cell and comparing it numerically to the original value.
+    """
+    if value_original is None:
+        return False
+    try:
+        expected = float(value_original)
+    except (TypeError, ValueError):
+        return False
+    match = _NUMERIC_RE.search(cell)
+    if not match:
+        return False
+    try:
+        actual = float(match.group(0))
+    except ValueError:
+        return False
+    return math.isclose(actual, expected, rel_tol=rel_tol, abs_tol=abs_tol)
+
+
+def _is_local_endpoint(base_url: str, provider: str = "") -> bool:
+    """Return True when ``base_url`` points to a local/self-hosted LLM endpoint.
+
+    Real API keys must not be sent to endpoints under local control (e.g.
+    Ollama, vLLM, LM Studio) because the key has no meaning there and leaks
+    credentials if the local service is not fully trusted.
+    """
+    provider_lower = provider.lower()
+    if provider_lower in {"ollama", "lmstudio", "llamacpp", "local"}:
+        return True
+    if not base_url:
+        return False
+    try:
+        parsed = urlparse(base_url)
+    except Exception:  # noqa: BLE001
+        return False
+    host = (parsed.hostname or "").lower()
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    return host.startswith("127.")
+
+
+def _activity_api_key_for_endpoint(api_key: str, base_url: str, provider: str) -> str:
+    """Choose the API key to send for activity extraction.
+
+    Local/self-hosted endpoints receive a dummy key; remote endpoints receive
+    the configured key (falling back to ``"dummy"`` only when no key is set).
+    """
+    if _is_local_endpoint(base_url, provider):
+        logger.debug("Using dummy API key for local endpoint %s", base_url)
+        return "dummy"
+    return api_key or "dummy"
 """Regex matching the ``<!-- PAGE N -->`` markers in reorganized markdown."""
 
 
@@ -228,10 +288,10 @@ def _enrich_records_with_row_positions(
                 or (rec.row_smiles and cells[0].strip() == rec.row_smiles.strip())
             ):
                 rec.row_idx = row_idx
-                # Determine col_idx: search each cell for the numeric
-                # activity value string to find the target column.
+                # Determine col_idx: search each cell for the exact numeric
+                # activity value to find the target column.
                 for ci, cell in enumerate(cells):
-                    if str(rec.value_original) in cell:
+                    if _cell_matches_value(cell, rec.value_original):
                         rec.col_idx = ci
                         break
                 found = True
@@ -276,10 +336,15 @@ def _parse_table_with_llm(
         logger.warning("LangChain not available, skipping activity extraction")
         return []
 
+    base_url = cfg.llm.base_url or None
+    api_key = _activity_api_key_for_endpoint(
+        cfg.llm.api_key or "", base_url or "", cfg.llm.provider
+    )
+
     llm = ChatOpenAI(
         model=model,
-        api_key=cfg.llm.api_key or "dummy",
-        base_url=cfg.llm.base_url or None,
+        api_key=api_key,
+        base_url=base_url,
         temperature=0.0,  # Deterministic extraction
     )
 
@@ -391,3 +456,14 @@ def _normalize_to_nm(value: float, unit: str) -> float:
         return value * 1_000_000_000
     logger.warning("Unknown unit %s, assuming nM", unit)
     return value
+
+
+async def extract_activities_from_document_async(
+    reorganized_md_path: str,
+    doc_id: str,
+    llm_model: str = "gpt-4o-mini",
+) -> list[ActivityRecord]:
+    """Async wrapper that runs activity extraction off the event loop."""
+    return await asyncio.to_thread(
+        extract_activities_from_document, reorganized_md_path, doc_id, llm_model
+    )

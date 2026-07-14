@@ -83,7 +83,7 @@ def _build_decoder_and_logits(ckpt: Path) -> torch.Tensor:
     args.encoder_dim = encoder.n_features
     decoder = Decoder(args, ms.tokenizer)
 
-    state = torch.load(str(ckpt), map_location="cpu", weights_only=False)
+    state = torch.load(str(ckpt), map_location="cpu", weights_only=True)
     decoder_sd = {k.replace("module.", ""): v for k, v in state["decoder"].items()}
     missing, _unexpected = decoder.load_state_dict(decoder_sd, strict=False)
     chartok_missing = [k for k in missing if "chartok_coords" in k]
@@ -107,6 +107,25 @@ def _build_decoder_and_logits(ckpt: Path) -> torch.Tensor:
         label_lengths = torch.tensor([63])
         logits, _, _ = branch(encoder_out, labels, label_lengths)
     return logits.detach().cpu()
+
+
+def test_checkpoint_hash_matches_catalog(molscribe_ckpt: Path) -> None:
+    """The catalogued MolScribe hash/size must match the local checkpoint."""
+    import hashlib
+
+    from mbforge.core.resource_manager import RESOURCE_CATALOG
+
+    info = RESOURCE_CATALOG["molscribe"]
+    assert info.sha256, "molscribe ResourceInfo is missing expected sha256"
+    digest = hashlib.sha256(molscribe_ckpt.read_bytes()).hexdigest()
+    assert digest == info.sha256, (
+        f"Checkpoint hash mismatch: catalog {info.sha256}, actual {digest}"
+    )
+    if info.expected_size > 0:
+        assert molscribe_ckpt.stat().st_size == info.expected_size, (
+            f"Checkpoint size mismatch: catalog {info.expected_size}, "
+            f"actual {molscribe_ckpt.stat().st_size}"
+        )
 
 
 def test_decoder_replay_matches_baseline(molscribe_ckpt: Path) -> None:
@@ -142,7 +161,7 @@ def test_decoder_load_state_dict_is_complete(molscribe_ckpt: Path) -> None:
     from mbforge.parsers.molecule.molscribe_inference.interface import MolScribe
     from mbforge.parsers.molecule.molscribe_inference.model import Decoder, Encoder
 
-    state = torch.load(str(molscribe_ckpt), map_location="cpu", weights_only=False)
+    state = torch.load(str(molscribe_ckpt), map_location="cpu", weights_only=True)
     ms = MolScribe(str(molscribe_ckpt), device="cpu")
     args = ms._get_args()  # noqa: SLF001
     args.formats = ["chartok_coords"]

@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from typing import Any
 
 from ..utils.config import load_global_config
+from ..utils.helpers import FileAccessError
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.openkb.query")
+
+# Maximum wiki source file size read into memory during search (50 MB).
+_MAX_WIKI_FILE_BYTES = 50 * 1024 * 1024
+
+# Truncation length for source snippets in search results.
+_SOURCE_SNIPPET_LENGTH = 2000
 
 
 async def search_wiki(
@@ -24,10 +30,8 @@ async def search_wiki(
         {"results": [...], "answer": str, "count": int}
     """
     cfg = load_global_config().llm
-    # OpenKB reads LiteLLM credentials from environment variables. Derive them
-    # from the persisted settings instead of accepting ambient overrides.
-    os.environ["OPENAI_API_KEY"] = cfg.api_key
-    os.environ["OPENAI_API_BASE"] = cfg.base_url
+    # OpenKB reads LiteLLM credentials from environment variables. Pass them
+    # explicitly so the global process environment is never mutated.
 
     try:
         from openkb.agent.query import run_query
@@ -38,6 +42,8 @@ async def search_wiki(
         question=query,
         kb_dir=Path(wiki_dir),
         model=cfg.model,
+        api_key=cfg.api_key or None,
+        api_base=cfg.base_url or None,
     )
 
     sources = _extract_relevant_sources(query, wiki_dir, top_k)
@@ -106,7 +112,15 @@ def _score_files(query: str, directory: Path, pattern: str) -> list[dict]:
 
     for f in directory.glob(pattern):
         try:
+            if not f.is_file():
+                continue
+            size = f.stat().st_size
+            if size > _MAX_WIKI_FILE_BYTES:
+                logger.warning("Skipping oversized wiki file %s (%s bytes)", f, size)
+                raise FileAccessError(f"Wiki file too large: {f.name}")
             content = f.read_text(encoding="utf-8")
+        except FileAccessError:
+            continue
         except Exception as e:
             logger.debug("Failed to read %s: %s", f, e)
             continue
@@ -122,7 +136,7 @@ def _score_files(query: str, directory: Path, pattern: str) -> list[dict]:
         scored.append(
             {
                 "id": f.stem,
-                "text": content[:2000],
+                "text": content[:_SOURCE_SNIPPET_LENGTH],
                 "doc_id": f.stem,
                 "title": title,
                 "page_start": page_start,

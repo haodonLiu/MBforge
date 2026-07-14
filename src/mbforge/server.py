@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .backends import molscribe
-from .routers.health_router import router as health_router
+from .routers.health import router as health_router
 from .routers.models_router import router as models_router
 from .routers.molscribe_api import router as molscribe_router
 from .routers.pdf_render import router as pdf_render_router

@@ -1,8 +1,5 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
-import { cleanWindowsPath } from '../utils/path'
 import type { DocumentEntry } from '../types'
-
-const STORAGE_KEY = 'mbforge_library_root'
 
 // ============================================================================
 // ActiveFile — 跨组件文件导航请求（侧边栏文件树 → ProjectView）
@@ -76,10 +73,10 @@ const AppContext = createContext<AppState | null>(null)
 // ============================================================================
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [libraryRoot, setLibraryRootState] = useState(() => {
-    const raw = localStorage.getItem(STORAGE_KEY) || ''
-    return cleanWindowsPath(raw)
-  })
+  // The backend is the single source of truth for the library root.
+  // App.tsx reconciles any persisted localStorage value by calling
+  // getLibraryStatus() on mount and setting the root from the server.
+  const [libraryRoot, setLibraryRootState] = useState('')
 
   const [activeFile, setActiveFile] = useState<ActiveFile | null>(null)
   const [openTabs, setOpenTabs] = useState<Tab[]>([])
@@ -95,13 +92,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   })
 
   const setLibraryRoot = useCallback((root: string) => {
-    const cleaned = cleanWindowsPath(root)
-    try {
-      localStorage.setItem(STORAGE_KEY, cleaned)
-    } catch (e) {
-      console.warn('[AppContext] localStorage quota exceeded:', e)
-    }
-    setLibraryRootState(cleaned)
+    setLibraryRootState(root)
     setOpenTabs([])
     setActiveTabId(null)
   }, [])

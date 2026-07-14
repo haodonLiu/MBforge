@@ -38,7 +38,9 @@ def check_cache(query: str, library_root: str) -> list[dict] | None:
             )
             return json.loads(row["results"])
     except Exception as e:
-        logger.warning("semantic_cache check_cache failed: %s", e)
+        logger.warning(
+            "semantic_cache check_cache failed: %s (%s)", type(e).__name__, e
+        )
         return None
 
 
@@ -56,7 +58,9 @@ def store_cache(query: str, library_root: str, results: list[dict]) -> None:
                 (qh, query, json.dumps(results, ensure_ascii=False), library_root),
             )
     except Exception as e:
-        logger.warning("semantic_cache store_cache failed: %s", e)
+        logger.warning(
+            "semantic_cache store_cache failed: %s (%s)", type(e).__name__, e
+        )
 
 
 def invalidate_cache(library_root: str) -> None:
@@ -68,4 +72,6 @@ def invalidate_cache(library_root: str) -> None:
         with db.kb_conn() as conn:
             conn.execute("DELETE FROM semantic_cache")
     except Exception as e:
-        logger.warning("semantic_cache invalidate_cache failed: %s", e)
+        logger.warning(
+            "semantic_cache invalidate_cache failed: %s (%s)", type(e).__name__, e
+        )

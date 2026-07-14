@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import shutil  # noqa: F401 — imported here so tests can patch `mbforge.pipeline.extract_molecules.shutil.move`
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -41,7 +43,13 @@ def extract_molecules_from_pdf(
     the in-process pipeline runner (no HTTP round-trip) and writes crop
     images to {library_root}/storage/{doc_id}/crops/ for downstream
     pipeline stages.
+
+    All molecule crops across all pages are collected and passed to
+    ``molscribe.predict_batch`` in one call, avoiding repeated model forward
+    passes.
     """
+    from itertools import zip_longest
+
     from ..backends import molscribe
     from ..backends.moldet_v2_ft import MolDetv2FTDetector
     from ..core.resource_manager import ResourceManager
@@ -95,6 +103,8 @@ def extract_molecules_from_pdf(
         return []
 
     results: list[ExtractionResult] = []
+    # Each entry: (page_idx, mol_idx, bbox, coref_score, crop, crop_path)
+    crop_entries: list[tuple[int, int, list[float], float, Image.Image, Path]] = []
 
     try:
         _effective_max_pages = max_pages if max_pages is not None else _cfg_max_pages
@@ -126,7 +136,7 @@ def extract_molecules_from_pdf(
             # 1. FT joint detection
             coref_result = detect_coref_via_ft_detector(image)
 
-            # 2. For each mol bbox: crop, run MolScribe, save crop file
+            # 2. For each mol bbox: crop, preprocess, stage for batch MolScribe
             scale_x = page_w_pts / pix.width if pix.width > 0 else 0
             scale_y = page_h_pts / pix.height if pix.height > 0 else 0
             for mol_idx, cb in enumerate(coref_result.bboxes):
@@ -148,20 +158,6 @@ def extract_molecules_from_pdf(
                 except Exception as pp_exc:
                     logger.debug("preprocess_mol_image failed: %s, using raw crop", pp_exc)
                     crop = raw_crop
-                try:
-                    scribe = molscribe.predict(crop)
-                    smi = scribe.esmiles or ""
-                except Exception as scribe_exc:
-                    logger.warning("MolScribe failed on page %d: %s", page_idx, scribe_exc)
-                    smi = ""
-                # Save crop file under {library_root}/storage/{doc_id}/crops/
-                crop_filename = f"{doc_id}_page_{page_idx:04d}_mol_{mol_idx:04d}.png"
-                crop_path = crop_dir / crop_filename
-                try:
-                    crop.save(crop_path)
-                except Exception as save_exc:
-                    logger.warning("Failed to save crop %s: %s", crop_path, save_exc)
-                    crop_path = None
                 # PDF-space bbox (lower-left origin)
                 bbox_pdf = [
                     round(px1 * scale_x, 2),
@@ -169,14 +165,45 @@ def extract_molecules_from_pdf(
                     round(px2 * scale_x, 2),
                     round(page_h_pts - py1 * scale_y, 2),
                 ]
+                crop_filename = f"{doc_id}_page_{page_idx:04d}_mol_{mol_idx:04d}.png"
+                crop_path = crop_dir / crop_filename
+                crop_entries.append((page_idx, mol_idx, bbox_pdf, cb.score, crop, crop_path))
+
+        # 3. Batch MolScribe inference across all collected crops
+        if crop_entries:
+            crops = [entry[4] for entry in crop_entries]
+            try:
+                scribe_results = molscribe.predict_batch(crops)
+            except Exception as scribe_exc:
+                logger.warning(
+                    "MolScribe batch predict failed for %s: %s", doc_id, scribe_exc
+                )
+                scribe_results = []
+
+            for entry, scribe in zip_longest(crop_entries, scribe_results):
+                if entry is None:
+                    continue
+                page_idx, mol_idx, bbox_pdf, score, crop, crop_path = entry
+                if scribe is None:
+                    smi = ""
+                    scribe_conf = 0.0
+                else:
+                    smi = scribe.esmiles or ""
+                    scribe_conf = scribe.scribe_conf if smi else 0.0
+                # Save crop file under {library_root}/storage/{doc_id}/crops/
+                try:
+                    crop.save(crop_path)
+                except Exception as save_exc:
+                    logger.warning("Failed to save crop %s: %s", crop_path, save_exc)
+                    crop_path = None
                 results.append(
                     ExtractionResult(
                         esmiles=smi,
                         name="",
                         source="image",
-                        moldet_conf=cb.score,
-                        scribe_conf=scribe.scribe_conf if smi else 0.0,
-                        composite_conf=cb.score * (scribe.scribe_conf if smi else 0.0),
+                        moldet_conf=score,
+                        scribe_conf=scribe_conf,
+                        composite_conf=score * scribe_conf,
                         bbox_pdf=bbox_pdf,
                         page_idx=page_idx,
                         context_text="",
@@ -193,6 +220,18 @@ def extract_molecules_from_pdf(
         len(results), doc_id, skipped_pure_text, _render_dpi, _detection_batch_size,
     )
     return results
+
+
+async def extract_molecules_from_pdf_async(
+    pdf_path: str,
+    library_root: str,
+    doc_id: str,
+    max_pages: int | None = None,
+) -> list[ExtractionResult]:
+    """Async wrapper that runs the PDF molecule extractor off the event loop."""
+    return await asyncio.to_thread(
+        extract_molecules_from_pdf, pdf_path, library_root, doc_id, max_pages
+    )
 
 
 def extract_molecules_from_text(text: str, doc_id: str) -> list[ExtractionResult]:
@@ -232,3 +271,10 @@ def extract_molecules_from_text(text: str, doc_id: str) -> list[ExtractionResult
 
     logger.info("Extracted %d text SMILES candidates from %s", len(results), doc_id)
     return results
+
+
+async def extract_molecules_from_text_async(
+    text: str, doc_id: str
+) -> list[ExtractionResult]:
+    """Async wrapper that runs text SMILES extraction off the event loop."""
+    return await asyncio.to_thread(extract_molecules_from_text, text, doc_id)

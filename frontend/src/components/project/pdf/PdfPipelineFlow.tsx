@@ -1,24 +1,16 @@
 import type { FC } from 'react'
-import { TargetIcon, FileTextIcon, EyeIcon, CheckIcon, XIcon, FlaskIcon, NetworkIcon, EmbedIcon } from '../../icons'
+import { TargetIcon, FileTextIcon, EyeIcon, CheckIcon, XIcon, FlaskIcon, NetworkIcon } from '../../icons'
 import type { IngestTask } from '@/api/http/ingest_queue'
 import ProgressBar from '@/components/ui/ProgressBar'
 import '../../../styles/pdf-pipeline-flow.css'
 
 type PipelineVariant = 'compact' | 'full'
 
-export type EmbedSubState = {
-  action: 'start' | 'done' | 'failed' | 'skipped'
-  model: string
-  progress: number
-}
-
 interface PdfPipelineFlowProps {
   variant: PipelineVariant
   task: IngestTask | null
   progressPct?: number
   details?: string
-  /** Track C: 嵌入子阶段状态（index 阶段内） */
-  embedState?: EmbedSubState | null
 }
 
 const STAGES: { key: string; label: string; Icon: FC<{ size?: number }> }[] = [
@@ -26,44 +18,24 @@ const STAGES: { key: string; label: string; Icon: FC<{ size?: number }> }[] = [
   { key: 'text_extract', label: '文本提取', Icon: FileTextIcon },
   { key: 'ocr', label: 'OCR', Icon: EyeIcon },
   { key: 'moldet', label: '分子扫描', Icon: FlaskIcon },
-  { key: 'embed', label: '嵌入', Icon: EmbedIcon },
   { key: 'index', label: '索引构建', Icon: NetworkIcon },
 ]
 
 type NodeState = 'idle' | 'running' | 'done' | 'failed' | 'skipped'
 
-function getNodeStates(
-  task: IngestTask,
-  embedState?: EmbedSubState | null,
-): NodeState[] {
-  // Track C: 嵌入在 index 阶段内串行；用 embedState 决定"嵌入"节点 vs "索引"节点
-  // - index 阶段 + embed.start → 嵌入 running, 索引 idle
-  // - index 阶段 + embed.done/failed → 嵌入 done/failed, 索引 running
-  // - 其他 stage → 按 task.stage 定位
-  const inIndexStage = task.stage === 'index'
-  const embedRunning = inIndexStage && embedState?.action === 'start'
-
+function getNodeStates(task: IngestTask): NodeState[] {
   const currentIndex = STAGES.findIndex((s) => s.key === task.stage)
   const effectiveIndex = currentIndex === -1 ? STAGES.length - 1 : currentIndex
   const isTerminal = task.status === 'done' || task.status === 'cancelled'
   const isFailed = task.status === 'failed'
 
-  return STAGES.map((stage, idx) => {
+  return STAGES.map((_stage, idx) => {
     if (task.status === 'done') return 'done'
     if (idx < effectiveIndex) return 'done'
     if (idx > effectiveIndex) {
       if (isTerminal) return 'skipped'
       if (isFailed) return 'skipped'
       return 'idle'
-    }
-    // idx === effectiveIndex
-    if (stage.key === 'embed' && inIndexStage) {
-      if (embedState?.action === 'start') return 'running'
-      if (embedState?.action === 'failed') return 'failed'
-      if (embedState?.action === 'done' || embedState?.action === 'skipped') return 'done'
-    }
-    if (stage.key === 'index' && inIndexStage && embedRunning) {
-      return 'idle' // 等嵌入完成
     }
     if (task.status === 'processing') return 'running'
     if (task.status === 'failed') return 'failed'
@@ -83,11 +55,10 @@ export default function PdfPipelineFlow({
   task,
   progressPct,
   details,
-  embedState,
 }: PdfPipelineFlowProps) {
   if (!task) return null
 
-  const states = getNodeStates(task, embedState)
+  const states = getNodeStates(task)
   const currentIndex = states.findIndex((s) => s === 'running' || s === 'failed')
   const activeIndex = currentIndex === -1 ? STAGES.findIndex((s) => s.key === task.stage) : currentIndex
   const currentStage = STAGES[activeIndex] ?? STAGES[0]
@@ -139,11 +110,6 @@ export default function PdfPipelineFlow({
       <div className="pdf-pipeline-full-meta">
         <span className="pdf-pipeline-full-stage">{currentStage.label}</span>
         {details && <span className="pdf-pipeline-full-details">{details}</span>}
-        {embedState && embedState.action === 'start' && (
-          <span className="pdf-pipeline-full-details" style={{ color: 'var(--info)' }}>
-            嵌入中 ({embedState.model})
-          </span>
-        )}
       </div>
 
       {task.status === 'processing' && (

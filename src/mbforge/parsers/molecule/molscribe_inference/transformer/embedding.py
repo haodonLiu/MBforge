@@ -4,6 +4,7 @@ import warnings
 
 import torch
 import torch.nn as nn
+
 from .._onmt_stub import Elementwise
 
 

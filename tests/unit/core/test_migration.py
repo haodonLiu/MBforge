@@ -50,6 +50,7 @@ def _create_legacy_kb_db(path: Path) -> None:
     finally:
         conn.close()
 
+
 def _create_legacy_mol_db(path: Path) -> None:
     """Create a synthetic molecules.db at ``path``."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -210,7 +211,9 @@ def test_migrate_includes_root_library_db(tmp_path: Path) -> None:
     assert n_fl == 3
 
 
-def test_migrate_validation_failsafe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_migrate_validation_failsafe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """If row count validation fails, the temp db is deleted and legacy is kept.
 
     This is tested by monkeypatching ``_copy_table`` to mis-report the
@@ -234,7 +237,9 @@ def test_migrate_validation_failsafe(tmp_path: Path, monkeypatch: pytest.MonkeyP
         mig.migrate_library(tmp_path)
 
     # Temp db must be deleted; legacy dbs must still be present.
-    assert not (mig.LibraryLayout(tmp_path).database_path.with_suffix(".db.tmp")).exists()
+    assert not (
+        mig.LibraryLayout(tmp_path).database_path.with_suffix(".db.tmp")
+    ).exists()
     assert not (mig.LibraryLayout(tmp_path).database_path).exists()
     assert (tmp_path / "index" / "knowledge_base.db").exists()
     assert (tmp_path / "index" / "molecules.db").exists()
@@ -244,10 +249,15 @@ def test_migrate_nothing_to_migrate(tmp_path: Path) -> None:
     """Empty library: skip with informative reason."""
     report = mig.migrate_library(tmp_path)
     assert report.skipped is True
-    assert "no legacy" in report.skip_reason.lower() or "nothing" in report.skip_reason.lower()
+    assert (
+        "no legacy" in report.skip_reason.lower()
+        or "nothing" in report.skip_reason.lower()
+    )
 
 
-def test_main_dry_run_via_argv(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+def test_main_dry_run_via_argv(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
     """CLI: ``python -m mbforge.migrate-library <root> --dry-run`` exits 0."""
     _create_legacy_kb_db(tmp_path / "index" / "knowledge_base.db")
     rc = mig.main([str(tmp_path), "--dry-run"])
@@ -256,7 +266,9 @@ def test_main_dry_run_via_argv(capsys: pytest.CaptureFixture[str], tmp_path: Pat
     assert "figure_labels" in captured.out
 
 
-def test_main_already_migrated_via_argv(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+def test_main_already_migrated_via_argv(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
     """CLI: already-migrated exit 0 with SKIPPED message."""
     layout = mig.LibraryLayout(tmp_path)
     layout.ensure_metadata_dir()
@@ -265,3 +277,25 @@ def test_main_already_migrated_via_argv(capsys: pytest.CaptureFixture[str], tmp_
     assert rc == 0
     captured = capsys.readouterr()
     assert "SKIPPED" in captured.out
+
+
+def test_copy_table_rejects_unrecognised_table(tmp_path: Path) -> None:
+    """_copy_table must refuse to interpolate arbitrary table names."""
+    src = tmp_path / "src.db"
+    dst = tmp_path / "dst.db"
+    src_conn = sqlite3.connect(str(src))
+    dst_conn = sqlite3.connect(str(dst))
+    try:
+        src_conn.execute("CREATE TABLE bad (id INTEGER)")
+        with pytest.raises(ValueError, match="Refusing to copy"):
+            mig._copy_table(src_conn, dst_conn, "bad; DROP TABLE documents")
+    finally:
+        src_conn.close()
+        dst_conn.close()
+
+
+def test_kb_schema_ddl_matches_database_source() -> None:
+    """The migration module must reuse the DatabaseManager KB schema."""
+    from mbforge.core.database import _KB_SCHEMA as DB_KB_SCHEMA
+
+    assert mig._KB_SCHEMA_DDL is DB_KB_SCHEMA

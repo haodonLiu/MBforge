@@ -248,10 +248,20 @@ class FileAccessError(MBForgeError):
     error_code = "file_access_error"
 
 
+class NotFoundError(MBForgeError):
+    status_code = 404
+    error_code = "not_found"
+
+
 class PathTraversalError(MBForgeError):
     status_code = 403
     error_code = "path_traversal"
 
+
+
+class ConflictError(MBForgeError):
+    status_code = 409
+    error_code = "conflict"
 
 
 class ResourceNotAvailableError(MBForgeError):

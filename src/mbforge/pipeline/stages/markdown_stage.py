@@ -56,6 +56,16 @@ class MarkdownStage:
             ctx.molecule_stats: dict
             ctx.candidates: list[NormalizedMolecule]
         """
+        if ctx.extracted is None:
+            logger.error("Markdown stage run without extracted document for %s", ctx.doc_id)
+            return StageResult(
+                stage="markdown",
+                status="error",
+                message="Missing extracted document",
+                error_code=PipelineErrorCode.MISSING_CONTEXT,
+                recoverable=False,
+            )
+
         # 3a: Write rough markdown
         logger.info("Writing rough markdown for %s", ctx.doc_id)
         from ..extract_text import write_rough_markdown

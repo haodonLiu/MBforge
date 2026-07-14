@@ -52,9 +52,14 @@ describe('App', () => {
     expect(await screen.findByText('library.configureLibrary')).toBeInTheDocument()
   })
 
-  it('renders AppShell when library is configured', async () => {
-    // Simulate: library root is already in localStorage (pre-configured).
-    localStorage.setItem('mbforge_library_root', '/tmp/test-lib')
+  it('renders AppShell when backend reports a configured library', async () => {
+    // The backend is the single source of truth for the library root.
+    const { getLibraryStatus } = await import('@/api/http/library')
+    vi.mocked(getLibraryStatus).mockResolvedValueOnce({
+      configured: true,
+      root: '/tmp/test-lib',
+      doc_count: 0,
+    })
 
     renderApp()
     // AppShell renders sidebar with navigation items.

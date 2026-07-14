@@ -76,7 +76,7 @@ async def stream_agent_response(
     """Stream agent response events.
 
     Yields:
-        Dicts with 'type' field: 'chunk', 'tool_call', 'tool_result', 'done'
+        Dicts with 'type' field: 'chunk', 'tool_call', 'tool_result', 'error', 'done'
     """
     try:
         async for event in agent.astream_events(
@@ -95,7 +95,11 @@ async def stream_agent_response(
 
             elif kind == "on_tool_start":
                 tool_name = event.get("name", "")
-                yield {"type": "tool_call", "tool": tool_name, "args": event.get("data", {}).get("input", {})}
+                yield {
+                    "type": "tool_call",
+                    "tool": tool_name,
+                    "args": event.get("data", {}).get("input", {}),
+                }
 
             elif kind == "on_tool_end":
                 output = event.get("data", {}).get("output", "")
@@ -107,6 +111,5 @@ async def stream_agent_response(
     except Exception:
         logger.error("Agent streaming fatal error", exc_info=True)
         yield {"type": "error", "error": "Internal error", "recoverable": False}
-        raise
 
     yield {"type": "done"}

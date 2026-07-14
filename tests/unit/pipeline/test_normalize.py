@@ -86,3 +86,21 @@ def test_normalize_merges_detections_sorted_by_confidence() -> None:
     assert len(normalized[0].detections) == 2
     assert normalized[0].detections[0].confidence == 0.9
     assert normalized[0].detections[1].confidence == 0.5
+
+
+def test_normalize_allowed_elements_is_configurable() -> None:
+    """Passing a custom allowed_elements set accepts otherwise-rejected atoms."""
+    candidates = [
+        ExtractionResult(esmiles="[Fe]C", source="image", status="pending"),
+    ]
+
+    # Default whitelist rejects Fe.
+    default_normalized = normalize_molecules(candidates)
+    assert default_normalized[0].status == "rejected"
+    assert default_normalized[0].reject_reason == "invalid_element"
+
+    # Custom whitelist accepts Fe.
+    custom_normalized = normalize_molecules(
+        candidates, allowed_elements={"C", "Fe", "H"}
+    )
+    assert custom_normalized[0].status == "pending"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ...utils.logger import get_logger
 from ..context import PipelineContext
-from ..stage_result import StageResult
+from ..stage_result import PipelineErrorCode, StageResult
 
 logger = get_logger("mbforge.pipeline.stages.density")
 
@@ -21,6 +21,16 @@ class DensityStage:
         Writes:
             ctx.density: DensityClassification
         """
+        if ctx.extracted is None:
+            logger.error("Density stage run without extracted document for %s", ctx.doc_id)
+            return StageResult(
+                stage="density",
+                status="error",
+                message="Missing extracted document",
+                error_code=PipelineErrorCode.MISSING_CONTEXT,
+                recoverable=False,
+            )
+
         try:
             from ..classify import classify_density
 

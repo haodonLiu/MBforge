@@ -1,6 +1,6 @@
 /** Library API — unified document library (Zotero-style). */
 
-import { httpGet, httpGetText, httpPost, invokeWithError } from './_utils'
+import { httpGet, httpGetText, httpPost, httpFetch, invokeWithError } from './_utils'
 
 // ── Types ───────────────────────────────────────────
 
@@ -45,8 +45,14 @@ export async function importDocument(
   const fd = new FormData()
   fd.append('file', file, file.name)
   if (title) fd.append('title', title)
-  const resp = await fetch('/api/v1/library/import', { method: 'POST', body: fd })
-  return (await resp.json()) as { success: boolean; document?: DocumentInfo; error?: string; detail?: string }
+  try {
+    return await httpFetch<{ success: boolean; document?: DocumentInfo; error?: string; detail?: string }>(
+      '/library/import',
+      { method: 'POST', body: fd },
+    )
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 export async function listDocuments(

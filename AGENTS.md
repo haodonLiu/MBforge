@@ -82,17 +82,17 @@ MBForge/
 │   │   └── utils/errors.ts            AppError + ErrorCode
 │   └── index.html
 ├── src/mbforge/                       Python backend
-│   ├── app.py                         App entry — 19 routers
+│   ├── app.py                         App entry — 18 routers
 │   ├── server.py                      Dev uvicorn target
 │   ├── __main__.py                    `python -m mbforge`
-│   ├── routers/                       19 FastAPI routers
+│   ├── routers/                       18 FastAPI routers
 │   ├── agent/                         LangGraph agent
 │   ├── core/                          database, library, knowledge_base, semantic_cache, resource_manager, artifact (ArtifactResolver)
 │   ├── pipeline/                      runner (orchestrator), context (shared state), stage_result, stages/ (Extract/Density/Markdown/Reorganize/Activity/Index/Persist), plus extract_text, extract_molecules, extract_activities, organizer, normalize, persist_molecules
 │   ├── backends/                      molscribe, moldet_v2_ft, ocr/ (chain, mineru, paddleocr, glmocr, rapidocr_adapter), popo
 │   ├── parsers/molecule/              coords, coref_alt
 │   ├── chem/                          Cheminformatics utils
-│   ├── models/                        Pydantic models (common, library, molecule)
+│   ├── models/                        Pydantic models (common, library, molecule, agent, documents, pipeline)
 │   └── utils/                         logger, config, helpers, constants
 ├── tests/                             Python tests (unit/, integration/)
 ├── docs/                              Specs, plans, references (see § Documentation)
@@ -309,7 +309,7 @@ request lands on the wrong library).
 
 | Canonical (use this) | Deprecated aliases | Status |
 |---|---|---|
-| ``library_root`` (Py) | ``libraryRoot``, ``project_root``, ``projectRoot`` | Aliases removed in Phase 6 (commit 27a3a39). Frontend tests under ``__tests__/`` still use the legacy names; they verify the (now-removed) compat shim and need to be updated to ``libraryRoot``. |
+| ``library_root`` (Py) | ``libraryRoot``, ``project_root``, ``projectRoot`` | Aliases removed in Phase 6. Frontend and backend now use ``library_root`` / ``libraryRoot`` exclusively; legacy tests were updated. |
 | ``libraryRoot`` (TS) | ``projectRoot``, ``project_root`` | Frontend sweep completed in Phase 1.2 (commit 1578854). |
 
 **Do not introduce new ``projectRoot`` / ``project_root`` call sites
@@ -331,7 +331,7 @@ Gated on 'one release cycle of no migration failures' (per the plan):
 
 | File | Role |
 |---|---|
-| `src/mbforge/app.py` | App entry — registers all 19 routers, exception handlers, lifespan |
+| `src/mbforge/app.py` | App entry — registers all 18 routers, exception handlers, lifespan |
 | `src/mbforge/server.py` | Dev uvicorn target (lazy prewarm) |
 | `src/mbforge/__main__.py` | `python -m mbforge` → uvicorn on 18792 |
 | `src/mbforge/agent/graph.py` | LangGraph agent graph definition |

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -235,11 +236,14 @@ class MolDetv2FTDetector:
 # ---- 单例便捷访问 ----
 
 _detector_singleton: MolDetv2FTDetector | None = None
+_detector_lock = threading.Lock()
 
 
 def get_moldet_ft() -> MolDetv2FTDetector:
-    """获取全局 MolDetv2-FT 检测器单例。"""
+    """获取全局 MolDetv2-FT 检测器单例（线程安全）。"""
     global _detector_singleton
     if _detector_singleton is None:
-        _detector_singleton = MolDetv2FTDetector()
+        with _detector_lock:
+            if _detector_singleton is None:
+                _detector_singleton = MolDetv2FTDetector()
     return _detector_singleton

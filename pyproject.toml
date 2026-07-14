@@ -73,7 +73,7 @@ dependencies = [
     "pymupdf>=1.27.0",
     # Molecular image detection & recognition pipeline
     "ultralytics>=8.3.0",
-    "opencv-python-headless>=4.10.0",
+    "opencv-python>=4.10.0",
     "matplotlib>=3.7.0",
     "python-multipart>=0.0.29",
     # MolScribe dependencies (timm 版本通过 uv.sources 锁定)

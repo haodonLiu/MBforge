@@ -9,11 +9,16 @@ from unittest.mock import patch
 import pytest
 
 from mbforge.core.database import DatabaseManager
+from mbforge.models.pipeline import (
+    PipelineEnqueueRequest,
+    PipelineQueueRequest,
+)
 from mbforge.routers.pipeline import (
     pipeline_enqueue,
     pipeline_queue,
     pipeline_queue_stats,
 )
+from mbforge.utils import config
 
 
 def _capture_to_thread(monkeypatch: pytest.MonkeyPatch):
@@ -28,6 +33,18 @@ def _capture_to_thread(monkeypatch: pytest.MonkeyPatch):
     return calls
 
 
+def _patch_config_root(monkeypatch: pytest.MonkeyPatch, root: str) -> None:
+    """Point load_global_config at ``root`` so path validation succeeds."""
+    original_load = config.load_global_config
+
+    def _patched_load():
+        cfg = original_load()
+        cfg.library_root = root
+        return cfg
+
+    monkeypatch.setattr(config, "load_global_config", _patched_load)
+
+
 def test_pipeline_queue_offloads_sqlite_to_thread(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -36,12 +53,14 @@ def test_pipeline_queue_offloads_sqlite_to_thread(
 
     root = str(tmp_path / "library")
     Path(root).mkdir(parents=True, exist_ok=True)
+    _patch_config_root(monkeypatch, root)
     db = DatabaseManager.get(root)
     db.initialize()
 
-    result = asyncio.run(pipeline_queue({"library_root": root}))
+    result = asyncio.run(pipeline_queue(PipelineQueueRequest(library_root=root)))
 
-    assert result == {"success": True, "tasks": []}
+    assert result.success is True
+    assert result.tasks == []
     assert len(calls) == 1
 
 
@@ -53,12 +72,14 @@ def test_pipeline_queue_stats_offloads_sqlite_to_thread(
 
     root = str(tmp_path / "library")
     Path(root).mkdir(parents=True, exist_ok=True)
+    _patch_config_root(monkeypatch, root)
     db = DatabaseManager.get(root)
     db.initialize()
 
-    result = asyncio.run(pipeline_queue_stats({"library_root": root}))
+    result = asyncio.run(pipeline_queue_stats(PipelineQueueRequest(library_root=root)))
 
-    assert result == {"success": True, "stats": []}
+    assert result.success is True
+    assert result.stats == {}
     assert len(calls) == 1
 
 
@@ -79,14 +100,18 @@ def test_pipeline_enqueue_unresolved_offloads_scan_and_sqlite(
 
     root = str(tmp_path / "library")
     Path(root).mkdir(parents=True, exist_ok=True)
+    _patch_config_root(monkeypatch, root)
     db = DatabaseManager.get(root)
     db.initialize()
 
     with patch("mbforge.routers.pipeline._background_futures", {}):
         result = asyncio.run(
-            pipeline_enqueue({"library_root": root, "action": "enqueue_unresolved"})
+            pipeline_enqueue(
+                PipelineEnqueueRequest(library_root=root, action="enqueue_unresolved")
+            )
         )
 
-    assert result == {"success": True, "enqueued": 0}
+    assert result.success is True
+    assert result.enqueued == 0
     # First to_thread call is scan_library_files, second is the DB enqueue batch.
     assert len(calls) == 2

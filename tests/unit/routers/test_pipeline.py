@@ -12,13 +12,15 @@ from mbforge.core.database import DatabaseManager
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> TestClient:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Create a TestClient for the FastAPI app.
 
     Startup pre-warming is patched to avoid slow model downloads during tests.
+    Global config is pointed at a temp library so path validation succeeds.
     """
     import mbforge.server as _server
     import mbforge.utils.helpers as _helpers
+    from mbforge.utils import config
 
     _orig_prewarm = getattr(_server, "_prewarm", lambda: None)
     _orig_check_environment = getattr(_helpers, "check_environment", lambda: None)
@@ -29,6 +31,21 @@ def client(tmp_path: Path) -> TestClient:
     _server._prewarm = _noop
     _helpers.check_environment = _noop
 
+    lib = tmp_path / "library"
+    lib.mkdir(parents=True, exist_ok=True)
+    original_load = config.load_global_config
+
+    class _PatchedLoad:
+        def __call__(self):
+            cfg = original_load()
+            cfg.library_root = str(lib)
+            return cfg
+
+        def cache_clear(self):
+            original_load.cache_clear()
+
+    monkeypatch.setattr(config, "load_global_config", _PatchedLoad())
+
     try:
         from mbforge.app import create_app
 
@@ -36,7 +53,8 @@ def client(tmp_path: Path) -> TestClient:
         c = TestClient(app)
         yield c
     finally:
-        c.close()
+        if "c" in locals():
+            c.close()
         _server._prewarm = _orig_prewarm
         _helpers.check_environment = _orig_check_environment
 

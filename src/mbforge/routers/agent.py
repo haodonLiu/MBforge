@@ -17,9 +17,12 @@ from ..models.agent import (
     AgentHistoryResponse,
     AgentInitResponse,
     AgentSessionOkResponse,
+    AgentSessionProjectRequest,
+    AgentSessionProjectResponse,
     AgentSessionRequest,
     AgentSessionResponse,
 )
+from ..routers._path_utils import resolve_library_root
 from ..utils.config import load_global_config
 from ..utils.logger import get_logger
 
@@ -117,6 +120,27 @@ async def agent_create_session(body: AgentSessionRequest) -> AgentSessionRespons
         return AgentSessionResponse(session_id=sid)
     except Exception as e:
         logger.error("Session create error: %s", e)
+        return AgentErrorResponse(error=str(e))
+
+
+@router.put("/session/{session_id}/project")
+async def agent_update_session_project(
+    session_id: str, body: AgentSessionProjectRequest
+) -> AgentSessionProjectResponse | AgentErrorResponse:
+    """Update the library_root associated with an existing session."""
+    try:
+        from ..agent.sessions import session_store
+
+        session = session_store.get(session_id)
+        if not session:
+            return AgentErrorResponse(error="session not found")
+        root = resolve_library_root(body.library_root)
+        session.library_root = str(root)
+        return AgentSessionProjectResponse(
+            session_id=session_id, library_root=session.library_root
+        )
+    except Exception as e:
+        logger.error("Session project update error: %s", e)
         return AgentErrorResponse(error=str(e))
 
 

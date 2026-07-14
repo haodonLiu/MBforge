@@ -47,3 +47,13 @@ class AgentErrorResponse(BaseModel):
 class AgentChatResponse(BaseModel):
     success: bool = True
     reply: str = ""
+
+
+class AgentSessionProjectRequest(BaseModel):
+    library_root: str = Field(..., description="New library root for the session")
+
+
+class AgentSessionProjectResponse(BaseModel):
+    success: bool = True
+    session_id: str
+    library_root: str

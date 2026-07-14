@@ -7,10 +7,21 @@ import json
 import uuid
 from concurrent.futures import Future
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from sse_starlette.sse import EventSourceResponse
 
-from ..utils.helpers import resolve_root
+from ..models.pipeline import (
+    PipelineEnqueueRequest,
+    PipelineEnqueueResponse,
+    PipelineProcessRequest,
+    PipelineProcessResponse,
+    PipelineQueueRequest,
+    PipelineQueueResponse,
+    PipelineQueueStatsResponse,
+    PipelineTaskActionResponse,
+)
+from ..routers._path_utils import resolve_library_root
+from ..utils.helpers import ValidationError
 from ..utils.logger import get_logger
 
 logger = get_logger("mbforge.pipeline_router")
@@ -22,27 +33,26 @@ _background_futures: dict[str, Future] = {}
 
 
 @router.post("/enqueue")
-async def pipeline_enqueue(body: dict) -> dict:
-    root = resolve_root(body)
-    action = body.get("action", "")
+async def pipeline_enqueue(body: PipelineEnqueueRequest) -> PipelineEnqueueResponse:
+    root = resolve_library_root(body.library_root)
+    root_str = str(root)
+    action = body.action or ""
 
     if action == "enqueue_unresolved":
-        if not root:
-            return {"success": False, "error": "library_root required"}
-        enqueued = await _enqueue_all_unresolved(root)
-        return {"success": True, "enqueued": enqueued}
+        enqueued = await _enqueue_all_unresolved(root_str)
+        return PipelineEnqueueResponse(enqueued=enqueued)
 
-    file_path = body.get("file_path", "")
-    if not root or not file_path:
-        return {"success": False, "error": "library_root and file_path required"}
+    file_path = body.file_path or ""
+    if not file_path:
+        raise ValidationError("file_path is required")
     task_id = str(uuid.uuid4())
-    doc_id = body.get("doc_id", "")
+    doc_id = body.doc_id or ""
     future = asyncio.get_running_loop().run_in_executor(
-        None, _run_pipeline_sync, file_path, root, doc_id, task_id
+        None, _run_pipeline_sync, file_path, root_str, doc_id, task_id
     )
     _background_futures[task_id] = future
     future.add_done_callback(lambda f: _background_futures.pop(task_id, None))
-    return {"success": True, "task_id": task_id}
+    return PipelineEnqueueResponse(task_id=task_id)
 
 
 async def _enqueue_all_unresolved(root: str) -> int:
@@ -119,45 +129,40 @@ def _run_pipeline_sync(pdf_path: str, library_root: str, doc_id: str, task_id: s
 
 
 @router.post("/process")
-async def pipeline_process(body: dict) -> dict:
+async def pipeline_process(body: PipelineProcessRequest) -> PipelineProcessResponse:
     """Synchronous pipeline execution (blocks until complete)."""
-    root = resolve_root(body)
-    file_path = body.get("file_path", "")
-    doc_id = body.get("doc_id", "")
-    if not root or not file_path:
-        return {"success": False, "error": "library_root and file_path required"}
+    root = resolve_library_root(body.library_root)
+    root_str = str(root)
+    file_path = body.file_path
+    doc_id = body.doc_id or ""
+    if not file_path:
+        raise ValidationError("file_path is required")
     task_id = str(uuid.uuid4())
-    try:
-        from ..pipeline.runner import run_pipeline
+    from ..pipeline.runner import run_pipeline
 
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: run_pipeline(file_path, root, doc_id=doc_id, task_id=task_id),
-        )
-        return {
-            "success": True,
-            "task_id": task_id,
-            "doc_id": result.doc_id,
-            "page_count": result.page_count,
-            "indexed_count": result.indexed_count,
-            "parser": result.parser,
-            "title": result.title,
-            "duration_ms": result.duration_ms,
-        }
-    except Exception as e:
-        logger.error("Pipeline failed: %s", e)
-        return {"success": False, "task_id": task_id, "error": str(e)}
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: run_pipeline(file_path, root_str, doc_id=doc_id, task_id=task_id),
+    )
+    return PipelineProcessResponse(
+        task_id=task_id,
+        doc_id=result.doc_id,
+        page_count=result.page_count,
+        indexed_count=result.indexed_count,
+        parser=result.parser,
+        title=result.title,
+        duration_ms=result.duration_ms,
+    )
 
 
 @router.post("/queue")
-async def pipeline_queue(body: dict) -> dict:
-    root = resolve_root(body)
-    if not root:
-        return {"success": True, "tasks": []}
+async def pipeline_queue(body: PipelineQueueRequest) -> PipelineQueueResponse:
+    root = resolve_library_root(body.library_root)
+    root_str = str(root)
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager.get(root)
+    db = DatabaseManager.get(root_str)
 
     def _fetch() -> list[dict]:
         with db.kb_conn() as conn:
@@ -166,10 +171,10 @@ async def pipeline_queue(body: dict) -> dict:
 
     try:
         tasks = await asyncio.to_thread(_fetch)
-        return {"success": True, "tasks": tasks}
+        return PipelineQueueResponse(tasks=tasks)
     except Exception as e:
         logger.warning("Failed to fetch queue: %s", e)
-        return {"success": True, "tasks": []}
+        return PipelineQueueResponse()
 
 
 @router.get("/worker/status")
@@ -180,13 +185,12 @@ async def worker_status() -> dict:
 
 
 @router.post("/queue/stats")
-async def pipeline_queue_stats(body: dict) -> dict:
-    root = body.get("library_root", "")
-    if not root:
-        return {"success": True, "stats": {}}
+async def pipeline_queue_stats(body: PipelineQueueRequest) -> PipelineQueueStatsResponse:
+    root = resolve_library_root(body.library_root)
+    root_str = str(root)
     from ..core.database import DatabaseManager
 
-    db = DatabaseManager.get(root)
+    db = DatabaseManager.get(root_str)
 
     def _fetch() -> dict:
         with db.kb_conn() as conn:
@@ -198,15 +202,17 @@ async def pipeline_queue_stats(body: dict) -> dict:
 
     try:
         stats = await asyncio.to_thread(_fetch)
-        return {"success": True, "stats": stats}
+        return PipelineQueueStatsResponse(stats=stats)
     except Exception as e:
         logger.warning("Failed to fetch queue stats: %s", e)
-        return {"success": True, "stats": {"total": 0, "by_status": {}}}
+        return PipelineQueueStatsResponse()
 
 
 @router.get("/events/{task_id}")
 async def pipeline_events(
-    task_id: str, request: Request, library_root: str
+    task_id: str,
+    request: Request,
+    library_root: str = Query(..., description="Library root path"),
 ) -> EventSourceResponse:
     """Server-sent events stream for a single pipeline task.
 
@@ -216,6 +222,9 @@ async def pipeline_events(
     """
     from ..core.database import DatabaseManager
 
+    root = resolve_library_root(library_root)
+    root_str = str(root)
+
     async def event_generator():
         last_seen_id = 0
         empty_iterations = 0
@@ -223,7 +232,7 @@ async def pipeline_events(
             if await request.is_disconnected():
                 break
 
-            db = DatabaseManager.get(library_root)
+            db = DatabaseManager.get(root_str)
             try:
                 rows = await asyncio.to_thread(
                     _fetch_logs_since,
@@ -275,34 +284,34 @@ def _fetch_logs_since(db, task_id: str, last_seen_id: int) -> list:
 
 
 @router.post("/queue/{task_id}/cancel")
-async def pipeline_cancel(task_id: str) -> dict:
-    return {"success": True}
+async def pipeline_cancel(task_id: str) -> PipelineTaskActionResponse:
+    return PipelineTaskActionResponse()
 
 
 @router.post("/queue/{task_id}/retry")
-async def pipeline_retry(task_id: str) -> dict:
-    return {"success": True}
+async def pipeline_retry(task_id: str) -> PipelineTaskActionResponse:
+    return PipelineTaskActionResponse()
 
 
 @router.post("/queue/{task_id}/delete")
-async def pipeline_delete_task(task_id: str, body: dict) -> dict:
+async def pipeline_delete_task(task_id: str, body: dict) -> PipelineTaskActionResponse:
     """Delete a task from the queue stub."""
-    return {"success": True}
+    return PipelineTaskActionResponse()
 
 
 @router.post("/queue/{task_id}/priority")
-async def pipeline_set_priority(task_id: str, body: dict) -> dict:
+async def pipeline_set_priority(task_id: str, body: dict) -> PipelineTaskActionResponse:
     """Set task priority stub."""
-    return {"success": True}
+    return PipelineTaskActionResponse()
 
 
 @router.post("/queue/cleanup")
-async def pipeline_cleanup(body: dict) -> dict:
+async def pipeline_cleanup(body: dict) -> PipelineTaskActionResponse:
     """Cleanup old completed tasks stub."""
-    return {"success": True, "cleaned": 0}
+    return PipelineTaskActionResponse(cleaned=0)
 
 
 @router.post("/queue/logs")
-async def pipeline_logs(body: dict) -> dict:
+async def pipeline_logs(body: dict) -> PipelineTaskActionResponse:
     """Get ingest logs for a document stub."""
-    return {"success": True, "logs": []}
+    return PipelineTaskActionResponse(logs=[])

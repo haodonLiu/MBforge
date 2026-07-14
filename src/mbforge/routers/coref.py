@@ -35,7 +35,12 @@ from ..core.database import DatabaseManager
 from ..parsers.molecule.coref_alt import detect_coref_via_ft_detector
 from ..utils.helpers import ValidationError
 from ..utils.logger import get_logger
-from ._path_utils import DocumentNotFoundError, resolve_pdf_path
+from ._path_utils import (
+    DocumentNotFoundError,
+    resolve_library_root,
+    resolve_pdf_path,
+    validate_doc_id,
+)
 
 logger = get_logger("mbforge.coref_router")
 
@@ -328,6 +333,8 @@ def _parse_page_body(body: dict) -> tuple[str, str, int]:
     page = body.get("page")
     if not library_root or not doc_id or not isinstance(page, int):
         raise ValidationError("libraryRoot, docId, and integer page are required")
+    resolve_library_root(library_root)
+    validate_doc_id(doc_id)
     return library_root, doc_id, page
 
 

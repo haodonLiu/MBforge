@@ -16,7 +16,6 @@ from mbforge.utils.config import (
     OCRConfig,
     PdfParseConfig,
     PopoConfig,
-    RecentProject,
     VLMConfig,
     reset_config_cache,
     update_settings,
@@ -91,7 +90,6 @@ class TestDefaultValues:
         cfg = AppConfig()
         assert cfg.theme == "dark"
         assert cfg.language == "zh-CN"
-        assert cfg.auto_open_project is True
         assert isinstance(cfg.ocr, OCRConfig)
         assert isinstance(cfg.moldet, MoldetConfig)
         assert isinstance(cfg.ingest, IngestConfig)
@@ -202,8 +200,14 @@ class TestSecretRedaction:
         assert redacted["ocr"]["paddleocr_api_key"] == "***"
 
 
-class TestRecentProject:
-    def test_recent_project_schema(self) -> None:
-        rp = RecentProject(root="/tmp/lib", name="Test")
-        assert rp.root == "/tmp/lib"
-        assert rp.name == "Test"
+def test_app_config_ignores_retired_project_settings() -> None:
+    """Existing settings.json files must remain loadable after the cleanup."""
+    cfg = AppConfig.model_validate(
+        {
+            "auto_open_project": True,
+            "recent_projects": [{"root": "/tmp/library", "name": "Old library"}],
+        }
+    )
+
+    assert "auto_open_project" not in cfg.model_dump()
+    assert "recent_projects" not in cfg.model_dump()

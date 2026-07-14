@@ -30,15 +30,6 @@ from .helpers import load_json, save_json
 from .paths import GLOBAL_APP_DIR
 
 
-class RecentProject(BaseModel):
-    """最近打开的项目 — Web + DPG 共享 schema,通过 /api/v1/settings 持久化."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    root: str
-    name: str
-
-
 class LLMConfig(BaseModel):
     """LLM for OpenKB indexing + query (LiteLLM format)."""
 
@@ -165,12 +156,10 @@ class AppConfig(BaseModel):
     model_cache_dir: str = ""
     theme: str = "dark"
     language: str = "zh-CN"
-    auto_open_project: bool = True
     vlm: VLMConfig = Field(default_factory=VLMConfig)
     ocr: OCRConfig = Field(default_factory=OCRConfig)
     pageindex: PageIndexConfig = Field(default_factory=PageIndexConfig)
     model_server: ModelServerConfig = Field(default_factory=ModelServerConfig)
-    recent_projects: list[RecentProject] = Field(default_factory=list)
     library_root: str | None = Field(
         default=None, description="Unified library data directory (Zotero-style)"
     )
@@ -223,27 +212,14 @@ def _migrate_legacy_configs() -> None:
             merged.update(data)
             break
 
-    # 2. 合并旧 config.json / gui_state.json(如果存在)
+    # 2. 合并旧 config.json；gui_state.json 仅包含已移除的项目选择状态。
     for legacy in _LEGACY_PATHS:
         if not legacy.exists():
             continue
         data = load_json(legacy)
         if data is None:
             continue
-        if legacy.name == "gui_state.json":
-            # 老格式: recent_projects: list[{root,name}]
-            items = data.get("recent_projects", [])
-            existing = merged.setdefault("recent_projects", [])
-            seen = {p.get("root") for p in existing if isinstance(p, dict)}
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                root = item.get("root")
-                if not root or root in seen:
-                    continue
-                seen.add(root)
-                existing.append({"root": root, "name": item.get("name", root)})
-        else:
+        if legacy.name != "gui_state.json":
             # config.json: 浅合并顶层
             for k, v in data.items():
                 merged.setdefault(k, v)

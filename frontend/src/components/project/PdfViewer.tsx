@@ -72,6 +72,9 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
   const v = usePdfViewer(doc, libraryRoot)
   const pipeline = useIngestPipeline(doc.doc_id, libraryRoot)
   const [corefMenu, setCorefMenu] = useState<CorefContextMenu | null>(null)
+  const visibleDetections = v.currentDetections.filter(
+    detection => detection.composite_conf >= v.confidenceThreshold,
+  )
 
   useImperativeHandle(ref, () => ({
     setCurrentPage: (page: number) => v.setCurrentPage(page),
@@ -170,7 +173,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
         canDetect={v.canDetect}
         onDetect={() => v.handleDetectPage(true)}
         onClearDetectionCache={v.handleClearDetectionCache}
-        currentDetectionsCount={v.currentDetections.length}
+        currentDetectionsCount={visibleDetections.length}
         confidenceThreshold={v.confidenceThreshold}
         onConfidenceThresholdChange={v.setConfidenceThreshold}
         isLoadingCoref={v.isLoadingCoref}
@@ -214,9 +217,9 @@ const PdfViewer = forwardRef<PdfViewerHandle, Props>(function PdfViewer(
                   style={{ background: '#fff', boxShadow: '0 2px 12px rgba(0,0,0,0.15)' }}
                 />
               )}
-              {v.pageInfo && v.currentDetections.length > 0 && (
+              {v.pageInfo && visibleDetections.length > 0 && (
                 <MoleculeOverlay
-                  detections={v.currentDetections}
+                  detections={visibleDetections}
                   renderWidth={v.pageInfo.width}
                   renderHeight={v.pageInfo.height}
                   originalHeight={v.pageInfo.originalHeight}

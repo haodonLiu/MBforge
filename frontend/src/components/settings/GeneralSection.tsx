@@ -1,8 +1,8 @@
-// 常规栏目 — 语言、主题、启动行为。
+// 常规栏目 — 语言和主题。
 
 import { useTranslation } from 'react-i18next'
 import SettingSection, { SettingGroup } from '@/components/ui/SettingSection'
-import { SelectField, ToggleField } from './SettingRow'
+import { SelectField } from './SettingRow'
 import type { SettingsState } from './types'
 
 interface Props {
@@ -37,16 +37,6 @@ export default function GeneralSection({ settings, setSettings }: Props) {
           ]}
         />
       </SettingGroup>
-
-      <SettingGroup title={t('settings.startup')}>
-        <ToggleField
-          label={t('settings.autoOpenProject')}
-          description={t('settings.autoOpenProjectDesc')}
-          value={settings.auto_open_project}
-          onChange={v => setSettings(s => ({ ...s, auto_open_project: v }))}
-        />
-      </SettingGroup>
     </SettingSection>
-
   )
 }

@@ -228,10 +228,28 @@ export default function PdfResultPane({
     [ocrBlocks, currentPage],
   )
 
-  const contentBlocks = useMemo(
-    () => buildContentStream(currentTextItems, filteredDetections, currentPageOcrTextBlocks),
-    [currentTextItems, filteredDetections, currentPageOcrTextBlocks],
+  // Scanned PDFs have no native text items. Use OCR blocks as the visible
+  // text source while keeping native PDF text as the preferred path.
+  const visibleTextItems = useMemo<TextItem[]>(
+    () => currentTextItems.length > 0
+      ? currentTextItems
+      : currentPageOcrTextBlocks.flatMap((block) => {
+        const text = block.content?.trim()
+        if (!text) return []
+        const [x1, y1, x2, y2] = block.bbox
+        return [{ str: text, x: x1, y: y1, width: x2 - x1, height: y2 - y1 }]
+      }),
+    [currentPageOcrTextBlocks, currentTextItems],
   )
+
+  const contentBlocks = useMemo(
+    () => buildContentStream(visibleTextItems, filteredDetections, currentPageOcrTextBlocks),
+    [filteredDetections, currentPageOcrTextBlocks, visibleTextItems],
+  )
+
+  const visibleTextTotal = currentTextTotal > 0
+    ? currentTextTotal
+    : visibleTextItems.reduce((total, item) => total + item.str.length, 0)
 
   // 预计算每个 block 的累计高度
   const blockOffsets = useMemo(() => {
@@ -287,8 +305,8 @@ export default function PdfResultPane({
             <span className="pdf-result-page">第 {currentPage} 页</span>
           </div>
           <div className="pdf-result-stats">
-            {currentTextTotal > 0 && (
-              <span className="pdf-result-stat">{currentTextTotal} 字符</span>
+            {visibleTextTotal > 0 && (
+              <span className="pdf-result-stat">{visibleTextTotal} 字符</span>
             )}
             {filteredDetections.length > 0 && (
               <span className="pdf-result-stat pdf-result-stat-mol">{filteredDetections.length} 分子</span>

@@ -290,6 +290,21 @@ export async function chemTanimotoBatchFilter(
 // MoleCode 转换 / 化学描述符
 // ============================================================================
 
+// Chem endpoints (here: /chem/properties and /chem/smiles-to-molecode) return
+// `{success, result}` envelopes; unwrap locally so callers receive the bare
+// value. See frontend/src/api/http/chem.ts for the shared convention.
+type ChemEnvelope = { success: boolean; error?: string } & Record<string, unknown>
+function unwrapChem<T>(raw: unknown, extract: (e: ChemEnvelope) => T): T {
+  const env = raw as Record<string, unknown> | null
+  if (env && typeof env === 'object' && env.success === true) {
+    return extract(env as ChemEnvelope)
+  }
+  if (env && typeof env === 'object' && env.success === false) {
+    throw new Error(typeof env.error === 'string' ? env.error : 'chem request failed')
+  }
+  return raw as T
+}
+
 export interface ChemDescriptors {
   molecular_weight: number
   logp: number
@@ -301,17 +316,19 @@ export interface ChemDescriptors {
 }
 
 export async function chemDescriptors(smiles: string): Promise<ChemDescriptors> {
-  return invokeWithError(
-    () => httpPost<ChemDescriptors>('/api/v1/chem/properties', { smiles }),
+  const raw = await invokeWithError(
+    () => httpPost<unknown>('/api/v1/chem/properties', { smiles }),
     ErrorCode.ApiError,
   )
+  return unwrapChem(raw, e => e.properties as ChemDescriptors)
 }
 
 export async function esmilesToMolecode(esmiles: string, name: string): Promise<string> {
-  return invokeWithError(
-    () => httpPost<string>('/api/v1/chem/smiles-to-molecode', { smiles: esmiles, name }),
+  const raw = await invokeWithError(
+    () => httpPost<unknown>('/api/v1/chem/smiles-to-molecode', { smiles: esmiles, name }),
     ErrorCode.ApiError,
   )
+  return unwrapChem(raw, e => e.result as string)
 }
 
 // ============================================================================

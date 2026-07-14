@@ -1,12 +1,13 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { motion } from 'framer-motion'
 import { fadeUp } from '@/hooks/useAnimations'
 import { useAppContext } from '@/context/AppContext'
-import { useDocuments, useImportDocument } from '@/api/query/hooks'
+import { useDeleteDocument, useDocuments, useImportDocument } from '@/api/query/hooks'
 import { showToast } from '@/hooks/useToast'
 import { useTranslation } from 'react-i18next'
-import { PdfIcon, PlusIcon } from '@/components/icons'
+import { PdfIcon, PlusIcon, TrashIcon } from '@/components/icons'
 import PageTitle from '@/components/ui/PageTitle'
+import Skeleton from '@/components/ui/Skeleton'
 import type { DocumentInfo } from '@/api/http/library'
 
 export default function Workspace() {
@@ -14,7 +15,22 @@ export default function Workspace() {
   const { libraryRoot, activeCollectionId, openTab } = useAppContext()
   const { data, isLoading, isError } = useDocuments(activeCollectionId ?? undefined)
   const importMutation = useImportDocument()
+  const deleteMutation = useDeleteDocument()
   const documents = data?.documents ?? []
+  const [isDraggingFile, setIsDraggingFile] = useState(false)
+
+  const handleImportFile = useCallback(async (file: File) => {
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      showToast(t('library.importError', { error: 'PDF files only' }), 'error')
+      return
+    }
+    try {
+      await importMutation.mutateAsync({ file })
+      showToast(t('library.importSuccess'), 'success')
+    } catch (e) {
+      showToast(t('library.importError', { error: e instanceof Error ? e.message : String(e) }), 'error')
+    }
+  }, [importMutation, t])
 
   const handleImport = useCallback(() => {
     const input = document.createElement('input')
@@ -23,15 +39,17 @@ export default function Workspace() {
     input.onchange = async () => {
       const file = input.files?.[0]
       if (!file) return
-      try {
-        await importMutation.mutateAsync({ file })
-        showToast(t('library.importSuccess'), 'success')
-      } catch (e) {
-        showToast(t('library.importError', { error: e instanceof Error ? e.message : String(e) }), 'error')
-      }
+      await handleImportFile(file)
     }
     input.click()
-  }, [importMutation, t])
+  }, [handleImportFile])
+
+  const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setIsDraggingFile(false)
+    const file = event.dataTransfer.files[0]
+    void handleImportFile(file)
+  }, [handleImportFile])
 
   const handleOpenDocument = (doc: DocumentInfo) => {
     openTab({
@@ -47,6 +65,17 @@ export default function Workspace() {
       libraryRoot,
     })
   }
+
+  const handleDeleteDocument = useCallback(async (doc: DocumentInfo) => {
+    if (!window.confirm(t('doc.deleteConfirm', { filename: doc.file_name }))) return
+
+    try {
+      await deleteMutation.mutateAsync(doc.doc_id)
+      showToast(t('doc.deleteSuccess', { filename: doc.file_name }), 'success')
+    } catch (e) {
+      showToast(t('doc.deleteError', { error: e instanceof Error ? e.message : String(e) }), 'error')
+    }
+  }, [deleteMutation, t])
 
   const statusBadge = (status: string) => {
     const cls = status === 'ready' ? 'badge-ready' :
@@ -72,7 +101,18 @@ export default function Workspace() {
 
       <div className="workspace-content">
         {isLoading ? (
-          <div className="workspace-loading">Loading...</div>
+          <div className="workspace-skeleton" data-testid="workspace-skeleton" aria-busy="true">
+            <div className="workspace-skeleton__title" />
+            <div className="doc-grid">
+              {Array.from({ length: 6 }, (_, index) => (
+                <div key={index} className="workspace-skeleton__card">
+                  <Skeleton variant="text" height={16} style={{ width: '72%' }} />
+                  <Skeleton variant="text" height={12} style={{ width: '48%' }} />
+                  <Skeleton variant="text" height={20} style={{ width: '28%', marginTop: 'auto' }} />
+                </div>
+              ))}
+            </div>
+          </div>
         ) : isError ? (
           <div className="workspace-empty">
             <div className="workspace-empty-title">Error</div>
@@ -91,10 +131,23 @@ export default function Workspace() {
                 : t('library.emptyImportHint')}
             </div>
             {!activeCollectionId && (
-              <button className="workspace-import-btn" onClick={handleImport}>
-                <PlusIcon size={16} />
-                {t('library.importPdf')}
-              </button>
+              <div
+                className={`workspace-drop-zone${isDraggingFile ? ' is-dragging' : ''}`}
+                onDragEnter={(event) => {
+                  event.preventDefault()
+                  setIsDraggingFile(true)
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDragLeave={() => setIsDraggingFile(false)}
+                onDrop={handleDrop}
+              >
+                <PdfIcon size={28} aria-hidden="true" />
+                <span>{t('library.emptyImportHint')}</span>
+                <button className="workspace-import-btn" onClick={handleImport}>
+                  <PlusIcon size={16} />
+                  {t('library.importPdf')}
+                </button>
+              </div>
             )}
           </div>
         ) : (
@@ -105,6 +158,19 @@ export default function Workspace() {
                 className="doc-card"
                 onClick={() => handleOpenDocument(doc)}
               >
+                <button
+                  className="doc-card-delete"
+                  type="button"
+                  aria-label={t('doc.delete')}
+                  title={t('doc.delete')}
+                  disabled={deleteMutation.isPending}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void handleDeleteDocument(doc)
+                  }}
+                >
+                  <TrashIcon size={16} />
+                </button>
                 <div className="doc-card-icon">
                   <PdfIcon size={32} />
                 </div>

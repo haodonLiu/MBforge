@@ -57,11 +57,13 @@ export default function PdfToolbar(props: Props) {
 
       <div className="pdf-toolbar-right">
         {/* 文本层 & 面板切换 */}
-        <button className={`pdf-tool-btn ${showTextLayer ? 'active' : ''}`} onClick={onToggleTextLayer} disabled={!hasTextLayer}
-          title={hasTextLayer ? (showTextLayer ? '隐藏文本层' : '显示文本层') : '此页无文本内容'}>
-          {showTextLayer && hasTextLayer ? <CheckIcon size={11} /> : null}
-          <span>T</span>
-        </button>
+        {hasTextLayer && (
+          <button className={`pdf-tool-btn ${showTextLayer ? 'active' : ''}`} onClick={onToggleTextLayer}
+            title={showTextLayer ? '隐藏文本层' : '显示文本层'}>
+            {showTextLayer ? <CheckIcon size={11} /> : null}
+            <span>T</span>
+          </button>
+        )}
         {hasTextLayer && (
           <button className={`pdf-tool-btn ${showTextPanel ? 'active' : ''}`} onClick={onToggleTextPanel} title={showTextPanel ? '关闭文本侧栏' : '打开文本侧栏'}>
             ¶

@@ -241,6 +241,7 @@
 }
 
 .doc-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -255,6 +256,54 @@
 .doc-card:hover {
   border-color: var(--accent);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.doc-card-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease, background-color 150ms ease, color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.doc-card:hover .doc-card-delete,
+.doc-card:focus-within .doc-card-delete {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.doc-card-delete:hover {
+  border-color: rgba(220, 38, 38, 0.3);
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+.doc-card-delete:active {
+  transform: scale(0.96);
+}
+
+.doc-card-delete:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+@media (hover: none) {
+  .doc-card-delete {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .doc-card-icon {
@@ -362,6 +411,32 @@
   gap: 16px;
 }
 
+.workspace-skeleton {
+  min-height: 300px;
+  padding: 16px;
+}
+
+.workspace-skeleton__title {
+  width: min(240px, 45%);
+  height: 22px;
+  margin: 8px 0 4px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-surface) 50%, var(--bg-hover) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.workspace-skeleton__card {
+  display: flex;
+  min-height: 148px;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
 .workspace-empty-icon {
   opacity: 0.3;
 }
@@ -378,6 +453,33 @@
   text-align: center;
   max-width: 360px;
   line-height: 1.5;
+}
+
+.workspace-drop-zone {
+  display: flex;
+  width: min(100%, 420px);
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 28px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  text-align: center;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+}
+
+.workspace-drop-zone:hover,
+.workspace-drop-zone.is-dragging {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.workspace-drop-zone.is-dragging {
+  transform: scale(1.02);
 }
 
 /* Welcome config form */

@@ -3,6 +3,7 @@ import { kbListWiki, kbGetWikiSummary, kbGetWikiConcept, kbGetWikiEntity, type W
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Spinner from '../ui/Spinner'
+import { cleanMoleculePlaceholders } from './markdownUtils'
 
 type WikiKind = 'summary' | 'concept' | 'entity'
 
@@ -43,7 +44,7 @@ export default function WikiDrawer({ docId, libraryRoot, collapsed, onToggle }: 
       setLoadingBody(true)
       void kbGetWikiSummary(docId, libraryRoot).then(t => {
         if (cancelled) return
-        setBody(t)
+        setBody(t ? cleanMoleculePlaceholders(t) : null)
         setLoadingBody(false)
       })
     } else if (kind === 'concept' && selectedName) {
@@ -200,7 +201,7 @@ export default function WikiDrawer({ docId, libraryRoot, collapsed, onToggle }: 
           </div>
         ) : (
           <div className="markdown-preview" style={{ fontSize: 13 }}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleanMoleculePlaceholders(body)}</ReactMarkdown>
           </div>
         )}
       </div>

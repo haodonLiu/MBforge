@@ -54,3 +54,40 @@
   overflow: hidden;
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
+
+@media (max-width: 767px) {
+  .app-shell,
+  .app-shell--collapsed {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .app-shell__header,
+  .app-shell__tab-bar,
+  .app-shell__content {
+    grid-column: 2;
+  }
+
+  .app-shell__library-panel {
+    position: fixed;
+    z-index: 100;
+    top: 0;
+    bottom: 0;
+    left: 56px;
+    width: min(320px, calc(100vw - 56px));
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-elevated);
+    transition: transform 200ms ease;
+  }
+
+  .app-shell--mobile-library-open .app-shell__library-panel {
+    transform: translateX(0);
+  }
+
+  .app-shell__mobile-overlay {
+    position: fixed;
+    z-index: 90;
+    inset: 0;
+    border: 0;
+    background: rgba(0, 0, 0, 0.32);
+  }
+}

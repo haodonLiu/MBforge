@@ -32,6 +32,46 @@ export interface DetectionResponse {
   cachePath?: string
 }
 
+function normalizeDetection(raw: Record<string, unknown>, page: number, index: number): ExtractionResult {
+  const rawBbox = raw.bbox_pdf ?? raw.bbox
+  const bbox = Array.isArray(rawBbox)
+    ? rawBbox.map(Number) as [number, number, number, number]
+    : rawBbox && typeof rawBbox === 'object'
+      ? [
+        Number((rawBbox as Record<string, unknown>).x1),
+        Number((rawBbox as Record<string, unknown>).y1),
+        Number((rawBbox as Record<string, unknown>).x2),
+        Number((rawBbox as Record<string, unknown>).y2),
+      ] as [number, number, number, number]
+      : null
+  const confidence = Number(raw.composite_conf ?? raw.confidence ?? raw.moldet_conf ?? 0)
+  const esmiles = typeof raw.esmiles === 'string'
+    ? raw.esmiles
+    : typeof raw.smiles === 'string' ? raw.smiles : ''
+  const name = typeof raw.name === 'string'
+    ? raw.name
+    : `Mol_${String(index + 1).padStart(3, '0')}`
+  const contextText = typeof raw.context_text === 'string' ? raw.context_text : ''
+
+  return {
+    esmiles,
+    smiles: esmiles,
+    name,
+    source: 'image',
+    moldet_conf: confidence,
+    scribe_conf: Number(raw.scribe_conf ?? confidence),
+    composite_conf: confidence,
+    bbox_pdf: bbox,
+    page_idx: Number.isFinite(Number(raw.page_idx)) ? Number(raw.page_idx) : page - 1,
+    context_text: contextText,
+    mol_img_path: typeof raw.mol_img_path === 'string' ? raw.mol_img_path : null,
+    status: 'pending',
+    properties: raw.properties && typeof raw.properties === 'object'
+      ? raw.properties as Record<string, unknown>
+      : {},
+  }
+}
+
 export interface CacheStats {
   diskUsageBytes: number
   cachedPageCount: number
@@ -104,7 +144,7 @@ export async function detectPageMolecules(params: {
     return {
       success: true,
       data: {
-        results: resp.molecules,
+        results: resp.molecules.map((raw, index) => normalizeDetection(raw as Record<string, unknown>, params.page, index)),
         count: resp.count,
         source: 'sidecar',
       },

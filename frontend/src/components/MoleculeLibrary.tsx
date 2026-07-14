@@ -12,8 +12,10 @@ import MoleculeTable from '@/components/molecule/MoleculeTable'
 import MoleculeCardGrid from '@/components/molecule/MoleculeCardGrid'
 import MoleculeAnalysisPanel from '@/components/molecule/MoleculeAnalysisPanel'
 import MoleculeDetailDrawer from '@/components/molecule/MoleculeDetailDrawer'
+import { SparklesIcon } from '@/components/icons'
 import type { MoleculeRecord } from '@/types'
 import type { MoleculeSortField } from '@/hooks/useMoleculeLibrary'
+import './molecule/MoleculeLibrary.css'
 
 export default function MoleculeLibrary() {
   const { libraryRoot } = useAppContext()
@@ -55,6 +57,7 @@ export default function MoleculeLibrary() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [lastClickedId, setLastClickedId] = useState<string | null>(null)
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [isAnalysisOpen, setIsAnalysisOpen] = useState(false)
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(totalCount / pagination.pageSize)),
@@ -94,228 +97,171 @@ export default function MoleculeLibrary() {
 
   return (
     <PageContainer>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '16px',
-        }}
-      >
-        <PageTitle>{t('mol.title')}</PageTitle>
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          gap: '16px',
-          height: 'calc(100vh - 180px)',
-          minHeight: 0,
-        }}
-      >
-        {/* Left column */}
-        <div
-          style={{
-            width: '40%',
-            minWidth: '360px',
-            maxWidth: '50%',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px',
-            minHeight: 0,
-          }}
-        >
-          <MoleculeFiltersComponent
-            query={query}
-            onQueryChange={setQuery}
-            filters={filters}
-            onFiltersChange={setFilters}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-            onSearch={refresh}
-            sourceTypeOptions={sourceTypeOptions}
-            sourceDocOptions={sourceDocOptions}
-            disabled={loading}
-          />
-
-          <div
-            style={{
-              flex: 1,
-              overflow: 'auto',
-              minHeight: 0,
-            }}
-          >
-            {info && (
-              <div
-                style={{
-                  padding: '12px 16px',
-                  marginBottom: '12px',
-                  color: 'var(--warning)',
-                  background: 'rgba(from var(--warning) r g b / 0.1)',
-                  border: '1px solid rgba(from var(--warning) r g b / 0.3)',
-                  borderRadius: '8px',
-                  fontSize: '13px',
-                }}
-              >
-                {info ? t(info, { limit: 10000 }) : null}
-              </div>
-            )}
-            {error ? (
-              <div
-                style={{
-                  padding: '16px',
-                  color: 'var(--danger)',
-                  background: 'var(--danger-muted)',
-                  borderRadius: '8px',
-                }}
-              >
-                {error}
-              </div>
-            ) : viewMode === 'table' ? (
-              <MoleculeTable
-                molecules={molecules}
-                loading={loading}
-                selectedIds={selectedIds}
-                sort={sort}
-                onSort={handleSort}
-                onToggleSelect={toggleSelection}
-                onSelectRange={selectRange}
-                onRowClick={handleRowClick}
-                lastClickedId={lastClickedId}
-                setLastClickedId={setLastClickedId}
-              />
-            ) : (
-              <MoleculeCardGrid
-                molecules={molecules}
-                loading={loading}
-                selectedIds={selectedIds}
-                onToggleSelect={toggleSelection}
-                onCardClick={handleRowClick}
-              />
-            )}
+      <section className="molecule-library-page">
+        <header className="molecule-library-page__header">
+          <div className="molecule-library-page__heading">
+            <PageTitle>{t('mol.title')}</PageTitle>
+            <span className="molecule-library-page__count">{totalCount.toLocaleString()}</span>
           </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px',
-              padding: '10px 16px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border)',
-              borderRadius: '10px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setPagination((p) => ({ ...p, page: p.page - 1 }))}
-                disabled={loading || pagination.page <= 1}
-              >
-                {t('mol.previous')}
-              </Button>
-              <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                {t('mol.pageInfo', { current: pagination.page, total: totalPages })}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setPagination((p) => ({ ...p, page: p.page + 1 }))}
-                disabled={loading || pagination.page >= totalPages}
-              >
-                {t('mol.next')}
-              </Button>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '13px',
-                color: 'var(--text-secondary)',
-              }}
+          <div className="molecule-library-page__header-actions">
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<SparklesIcon size={15} />}
+              onClick={() => setIsAnalysisOpen((open) => !open)}
+              disabled={!isAnalysisOpen && selectedIds.size === 0}
             >
-              <label htmlFor="page-size">{t('mol.pageSize')}</label>
-              <select
-                id="page-size"
-                value={pagination.pageSize}
-                onChange={(e) =>
-                  setPagination({ ...pagination, pageSize: Number(e.target.value) })
-                }
+              {isAnalysisOpen ? 'Hide analysis' : 'Analyze selection'}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowAddDialog(true)}
+              disabled={!libraryRoot}
+            >
+              {t('mol.add')}
+            </Button>
+          </div>
+        </header>
+
+        <div className={`molecule-library-workbench${isAnalysisOpen ? ' has-analysis' : ''}`}>
+          <main className="molecule-library-results">
+            <section className="molecule-library-filters">
+              <MoleculeFiltersComponent
+                query={query}
+                onQueryChange={setQuery}
+                filters={filters}
+                onFiltersChange={setFilters}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+                onSearch={refresh}
+                sourceTypeOptions={sourceTypeOptions}
+                sourceDocOptions={sourceDocOptions}
                 disabled={loading}
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  border: '1px solid var(--border)',
-                  background: 'var(--bg-base)',
-                  color: 'var(--text-primary)',
-                  fontSize: 13,
-                }}
-              >
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value={200}>200</option>
-              </select>
-            </div>
-          </div>
+              />
+            </section>
 
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px',
-              padding: '12px 16px',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border)',
-              borderRadius: '10px',
-            }}
-          >
-            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-              {t('mol.selectionSummary', {
-                selected: selectedIds.size,
-                total: totalCount,
-              })}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Button variant="secondary" size="sm" onClick={selectAll} disabled={loading}>
-                {t('mol.selectAll')}
-              </Button>
-              <Button variant="secondary" size="sm" onClick={clearSelection} disabled={selectedIds.size === 0}>
-                {t('mol.clearSelection')}
-              </Button>
-              <Button variant="primary" size="sm" onClick={() => setShowAddDialog(true)} disabled={!libraryRoot}>
-                {t('mol.add')}
-              </Button>
-            </div>
-          </div>
-        </div>
+            <section className="molecule-library-results__body">
+              <div className="molecule-library-results__summary">
+                <span>{totalCount.toLocaleString()}</span>
+                <span className="molecule-library-results__summary-label">results</span>
+                {selectedIds.size > 0 && (
+                  <span className="molecule-library-results__selection-count">
+                    {selectedIds.size} selected
+                  </span>
+                )}
+              </div>
 
-        {/* Right column */}
-        <div
-          style={{
-            flex: 1,
-            minWidth: 0,
-            minHeight: 0,
-            overflow: 'auto',
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border)',
-            borderRadius: '10px',
-            padding: '16px',
-          }}
-        >
-          <MoleculeAnalysisPanel
-            analysisInput={analysisInput}
-            sarSession={sarSession}
-            activeTab={activeTab}
-            onTabChange={(tab) => setActiveTab(tab)}
-            libraryRoot={libraryRoot}
-            onRefresh={refresh}
-          />
+              <div className="molecule-library-results__scroll-area">
+                {info && (
+                  <div className="molecule-library-notice" role="status">
+                    {t(info, { limit: 10000 })}
+                  </div>
+                )}
+                {error ? (
+                  <div className="molecule-library-error" role="alert">{error}</div>
+                ) : viewMode === 'table' ? (
+                  <MoleculeTable
+                    molecules={molecules}
+                    loading={loading}
+                    selectedIds={selectedIds}
+                    sort={sort}
+                    onSort={handleSort}
+                    onToggleSelect={toggleSelection}
+                    onSelectRange={selectRange}
+                    onRowClick={handleRowClick}
+                    lastClickedId={lastClickedId}
+                    setLastClickedId={setLastClickedId}
+                  />
+                ) : (
+                  <MoleculeCardGrid
+                    molecules={molecules}
+                    loading={loading}
+                    selectedIds={selectedIds}
+                    onToggleSelect={toggleSelection}
+                    onCardClick={handleRowClick}
+                  />
+                )}
+              </div>
+            </section>
+
+            <footer className="molecule-library-results__footer">
+              <div className="molecule-library-pagination">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setPagination((page) => ({ ...page, page: page.page - 1 }))}
+                  disabled={loading || pagination.page <= 1}
+                >
+                  {t('mol.previous')}
+                </Button>
+                <span className="molecule-library-pagination__summary">
+                  {t('mol.pageInfo', { current: pagination.page, total: totalPages })}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setPagination((page) => ({ ...page, page: page.page + 1 }))}
+                  disabled={loading || pagination.page >= totalPages}
+                >
+                  {t('mol.next')}
+                </Button>
+                <label className="molecule-library-page-size" htmlFor="page-size">
+                  <span>{t('mol.pageSize')}</span>
+                  <select
+                    id="page-size"
+                    value={pagination.pageSize}
+                    onChange={(event) =>
+                      setPagination({ ...pagination, pageSize: Number(event.target.value) })
+                    }
+                    disabled={loading}
+                  >
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="molecule-library-selection-actions">
+                <span className="molecule-library-selection-actions__summary">
+                  {t('mol.selectionSummary', { selected: selectedIds.size, total: totalCount })}
+                </span>
+                <Button variant="ghost" size="sm" onClick={selectAll} disabled={loading}>
+                  {t('mol.selectAll')}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={clearSelection} disabled={selectedIds.size === 0}>
+                  {t('mol.clearSelection')}
+                </Button>
+              </div>
+            </footer>
+          </main>
+
+          {isAnalysisOpen && (
+            <aside className="molecule-library-analysis" aria-label="Molecule analysis">
+              <div className="molecule-library-analysis__header">
+                <div>
+                  <span className="molecule-library-analysis__eyebrow">Selection workspace</span>
+                  <h2>Analysis</h2>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => setIsAnalysisOpen(false)}>
+                  Close
+                </Button>
+              </div>
+              <div className="molecule-library-analysis__content">
+                <MoleculeAnalysisPanel
+                  analysisInput={analysisInput}
+                  sarSession={sarSession}
+                  activeTab={activeTab}
+                  onTabChange={(tab) => setActiveTab(tab)}
+                  libraryRoot={libraryRoot}
+                  onRefresh={refresh}
+                />
+              </div>
+            </aside>
+          )}
         </div>
-      </div>
+      </section>
 
       {libraryRoot && (
         <AddMoleculeDialog

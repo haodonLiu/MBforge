@@ -5,6 +5,7 @@ import { render, screen } from '@testing-library/react'
 vi.mock('@/api/query/hooks', () => ({
   useDocuments: vi.fn(),
   useImportDocument: vi.fn(),
+  useDeleteDocument: vi.fn(),
 }))
 
 vi.mock('@/context/AppContext', () => ({
@@ -21,6 +22,7 @@ vi.mock('react-i18next', () => ({
 }))
 
 import { useDocuments, useImportDocument } from '@/api/query/hooks'
+import { useDeleteDocument } from '@/api/query/hooks'
 import { useAppContext } from '@/context/AppContext'
 import Workspace from '../Workspace'
 
@@ -43,6 +45,13 @@ function mockDocuments(docs: { doc_id: string; title: string; status: string }[]
   } as unknown as ReturnType<typeof useDocuments>)
 }
 
+function mockDeleteDocument() {
+  vi.mocked(useDeleteDocument).mockReturnValue({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  } as unknown as ReturnType<typeof useDeleteDocument>)
+}
+
 function renderWorkspace() {
   return render(<Workspace />)
 }
@@ -61,11 +70,12 @@ describe('Workspace', () => {
     vi.mocked(useImportDocument).mockReturnValue({
       mutateAsync: vi.fn(),
     } as unknown as ReturnType<typeof useImportDocument>)
+    mockDeleteDocument()
   })
 
   it('shows loading state', () => {
     renderWorkspace()
-    expect(screen.getByText('Loading...')).toBeInTheDocument()
+    expect(screen.getByTestId('workspace-skeleton')).toHaveAttribute('aria-busy', 'true')
   })
 
   it('shows empty state when no documents', () => {
@@ -113,5 +123,38 @@ describe('Workspace', () => {
     expect(openTab).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'document', title: 'Clickable Doc' }),
     )
+  })
+
+  it('deletes a document after confirmation without opening it', () => {
+    const deleteDocument = vi.fn().mockResolvedValue({ success: true })
+    vi.mocked(useDeleteDocument).mockReturnValue({
+      mutateAsync: deleteDocument,
+      isPending: false,
+    } as unknown as ReturnType<typeof useDeleteDocument>)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockDocuments([{ doc_id: 'doc1', title: 'Deletable Doc', status: 'pending' }])
+    renderWorkspace()
+
+    const deleteButton = screen.getByRole('button', { name: 'doc.delete' })
+    deleteButton.click()
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('doc.deleteConfirm'))
+    expect(deleteDocument).toHaveBeenCalledWith('doc1')
+  })
+
+  it('keeps the document when deletion is cancelled', () => {
+    const deleteDocument = vi.fn()
+    vi.mocked(useDeleteDocument).mockReturnValue({
+      mutateAsync: deleteDocument,
+      isPending: false,
+    } as unknown as ReturnType<typeof useDeleteDocument>)
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    mockDocuments([{ doc_id: 'doc1', title: 'Kept Doc', status: 'pending' }])
+    renderWorkspace()
+
+    screen.getByRole('button', { name: 'doc.delete' }).click()
+
+    expect(deleteDocument).not.toHaveBeenCalled()
+    expect(screen.getByText('Kept Doc')).toBeInTheDocument()
   })
 })

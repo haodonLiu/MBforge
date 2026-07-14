@@ -8,7 +8,7 @@
   --accent-muted: rgba(99, 102, 241, 0.10);
   --text-primary: #1a1a1a;
   --text-secondary: #666666;
-  --text-muted: #999999;
+  --text-muted: #737373;
   --border: #e0e0e0;
   --border-light: #d0d0d0; /* legacy naming: actually stronger than --border */
   --border-strong: #c0c0c0;
@@ -57,18 +57,18 @@
 }
 
 [data-theme="dark"] {
-  --bg-base: #0f0f14;
-  --bg-surface: #1a1a1e;
-  --bg-elevated: #252529;
-  --bg-hover: #2a2a2e;
+  --bg-base: #0a0a0f;
+  --bg-surface: #1a1a20;
+  --bg-elevated: #252530;
+  --bg-hover: #30303a;
   --accent: #818cf8;
   --accent-hover: #a5b4fc;
   --accent-muted: rgba(129, 140, 248, 0.12);
   --text-primary: #e8e8e8;
-  --text-secondary: #a0a0a0;
-  --text-muted: #666666;
-  --border: #2a2a2e;
-  --border-light: #333333; /* legacy naming: actually stronger than --border */
+  --text-secondary: #d4d4d4;
+  --text-muted: #a3a3a3;
+  --border: #2a2a35;
+  --border-light: #3a3a45; /* legacy naming: actually stronger than --border */
   --border-strong: #3f3f46;
   --success: #22c55e;
   --danger: #ef4444;
@@ -76,9 +76,8 @@
   --success-muted: rgba(34, 197, 94, 0.12);
   --warning-muted: rgba(234, 179, 8, 0.12);
   --danger-muted: rgba(239, 68, 68, 0.12);
-  /* Cards rely on border elevation in dark mode */
-  --shadow-card: none;
-  --shadow-elevated: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
   /* MoleculeOverlay 状态色 */
   --status-text: #38bdf8;
   --status-text-bg: rgba(14, 165, 233, 0.12);

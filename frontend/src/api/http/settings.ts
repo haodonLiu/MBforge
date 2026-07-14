@@ -58,14 +58,12 @@ export interface ModelServerConfig {
 export interface AppSettings {
   theme?: string
   language?: string
-  auto_open_project?: boolean
   llm?: LlmConfig
   vlm?: VlmConfig
   ocr?: OcrConfig
   pageindex?: PageIndexConfig
   model_server?: ModelServerConfig
   model_cache_dir?: string
-  recent_projects?: string[]
   pdf_parse?: PdfParseConfig
   moldet?: MoldetConfig
   ingest?: IngestConfig

@@ -249,7 +249,8 @@ export default function ModelConfigCard({
           )}
         </SettingGroup>
 
-        {modelType === 'llm' && (<>
+        {modelType === 'llm' && (
+          <>
           <SettingGroup title={t('settings.llmSampling')}>
             <NumberField
               label={t('settings.maxTokens')}
@@ -318,7 +319,8 @@ export default function ModelConfigCard({
               dirty={dirtyFields.llm_reorganize_model}
             />
           </SettingGroup>
-        </>)}
+          </>
+        )}
 
         {modelType === 'ocr' && (
           <>

@@ -56,12 +56,21 @@ export default function Button({
     fontWeight: 500,
     cursor: isDisabled ? 'not-allowed' : 'pointer',
     opacity: isDisabled ? 0.6 : 1,
-    transition: 'all 0.15s',
+    transition: 'background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease',
     lineHeight: 1,
     ...variantStyles[variant],
     ...sizeStyles[size],
     ...style,
   }
+  const hoverEffect = isDisabled
+    ? undefined
+    : variant === 'primary'
+      ? { scale: 1.02, boxShadow: '0 8px 20px rgba(79, 70, 229, 0.28)' }
+      : variant === 'success'
+        ? { scale: 1.02, boxShadow: '0 8px 20px rgba(22, 163, 74, 0.24)' }
+      : variant === 'secondary'
+        ? { backgroundColor: 'var(--bg-hover)' }
+        : { backgroundColor: 'var(--bg-hover)' }
 
   return (
     <motion.button
@@ -71,9 +80,9 @@ export default function Button({
       onClick={isDisabled ? undefined : onClick}
       disabled={isDisabled}
       style={base}
-      whileHover={isDisabled ? undefined : { scale: 1.03 }}
-      whileTap={isDisabled ? undefined : { scale: 0.97 }}
-      transition={{ duration: 0.15 }}
+      whileHover={hoverEffect}
+      whileTap={isDisabled ? undefined : { scale: 0.96 }}
+      transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
     >
       {loading && (
         <span style={{

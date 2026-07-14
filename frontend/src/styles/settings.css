@@ -1236,43 +1236,6 @@
   margin-left: auto;
 }
 
-/* ---- RecentProjectsSection ---- */
-.recent-projects-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.recent-projects-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.recent-projects-path {
-  flex: 1;
-  min-width: 0;
-  font-family: monospace;
-  font-size: 11px;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  user-select: text;
-}
-.recent-projects-actions {
-  display: flex;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.recent-projects-footer {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 4px;
-}
-
 @keyframes settings-shake {
   0%, 100% { transform: translateX(0); }
   20% { transform: translateX(-4px); }

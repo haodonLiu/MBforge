@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   detectPageMolecules,
-  getCachedDetections,
   clearDocumentDetections,
   extractPdfImages,
   type ImageRef,
@@ -132,25 +131,6 @@ export function usePdfViewer(doc: DocumentEntry, libraryRoot: string) {
     })
   }, [pageTextItems])
 
-  const loadCachedDetections = useCallback(async (pageNum: number): Promise<boolean> => {
-    if (!libraryRoot) return false
-    try {
-      const result = await getCachedDetections({
-        libraryRoot,
-        docId: doc.doc_id,
-        page: pageNum,
-      })
-      if (result.success && result.data && result.data.count > 0) {
-        const enriched = enrichResults(result.data.results, pageNum)
-        setPageDetections(prev => { const next = new Map(prev); next.set(pageNum, enriched); return next })
-        return true
-      }
-    } catch (e) {
-      console.warn('Failed to load cached detections:', e)
-    }
-    return false
-  }, [libraryRoot, doc.doc_id, enrichResults])
-
   const handleDetectPage = useCallback(async (force = false) => {
     if (!currentPageDataUrl || !pageInfo) { showToast('页面尚未渲染完成，请稍候', 'info'); return }
     // 验证 pageInfo 和 currentPageDataUrl 属于当前页
@@ -160,11 +140,6 @@ export function usePdfViewer(doc: DocumentEntry, libraryRoot: string) {
       return
     }
     if (!force && pageDetections.has(currentPage)) { showToast(`第 ${currentPage} 页已检测`, 'info'); return }
-    // First try cache-only lookup (quick scan may have populated bboxes).
-    if (!force) {
-      const cached = await loadCachedDetections(currentPage)
-      if (cached) return
-    }
     setIsDetecting(true)
     setSelectedDetection(null)
     try {
@@ -206,7 +181,7 @@ export function usePdfViewer(doc: DocumentEntry, libraryRoot: string) {
       console.error('Detection failed:', e)
       showToast('检测失败: ' + (e instanceof Error ? e.message : String(e)), 'error')
     } finally { setIsDetecting(false) }
-  }, [currentPageDataUrl, pageInfo, currentPage, pageDetections, libraryRoot, doc.doc_id, enrichResults, loadCachedDetections])
+  }, [currentPageDataUrl, pageInfo, currentPage, pageDetections, libraryRoot, doc.doc_id, enrichResults])
 
   const handleRecognizePage = useCallback(async () => {
     if (!currentPageDataUrl || !pageInfo) { showToast('页面尚未渲染完成，请稍候', 'info'); return }
@@ -339,8 +314,10 @@ export function usePdfViewer(doc: DocumentEntry, libraryRoot: string) {
         getFigureLabels(libraryRoot, doc.doc_id, pageNum),
         getCorefPredictions(libraryRoot, doc.doc_id, pageNum),
       ])
-      setCorefLabelsByPage(prev => { const next = new Map(prev); next.set(pageNum, labels); return next })
-      setCorefPredictionsByPage(prev => { const next = new Map(prev); next.set(pageNum, preds); return next })
+      const safeLabels = Array.isArray(labels) ? labels : []
+      const safePredictions = Array.isArray(preds) ? preds : []
+      setCorefLabelsByPage(prev => { const next = new Map(prev); next.set(pageNum, safeLabels); return next })
+      setCorefPredictionsByPage(prev => { const next = new Map(prev); next.set(pageNum, safePredictions); return next })
     } catch (e) {
       console.warn('Failed to load coref annotations:', e)
       showToast('Coref 数据加载失败', 'error')

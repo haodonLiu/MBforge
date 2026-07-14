@@ -39,8 +39,8 @@ describe('DocumentViewer', () => {
     expect(screen.getByTestId('wiki-drawer')).toBeInTheDocument()
   })
 
-  it('shows document ID in toolbar', () => {
+  it('does not render a duplicate document layout toolbar', () => {
     render(<DocumentViewer doc={mockDoc} libraryRoot="/tmp/lib" onClose={vi.fn()} />)
-    expect(screen.getByText('test-doc-1')).toBeInTheDocument()
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
   })
 })

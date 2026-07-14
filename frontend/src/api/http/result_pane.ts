@@ -134,17 +134,32 @@ export interface EnsureCorefResult {
   error: string | null
 }
 
+interface FigureLabelsResponse {
+  labels: FigureLabel[]
+}
+
+interface CorefPredictionsResponse {
+  predictions: CorefPrediction[]
+}
+
+function unwrapCollection<T>(response: unknown, key: string): T[] {
+  if (!response || typeof response !== 'object') return []
+  const collection = (response as Record<string, unknown>)[key]
+  return Array.isArray(collection) ? collection as T[] : []
+}
+
 /** 查 (doc, page) 所有 label 标注 */
 export async function getFigureLabels(
   libraryRoot: string,
   docId: string,
   page: number,
 ): Promise<FigureLabel[]> {
-  return httpPost<FigureLabel[]>('/api/v1/coref/figure-labels', {
+  const response = await httpPost<FigureLabelsResponse>('/api/v1/coref/figure-labels', {
     libraryRoot,
     docId,
     page,
   })
+  return unwrapCollection<FigureLabel>(response, 'labels')
 }
 
 /** 查 (doc, page) 所有 coref 配对预测 */
@@ -153,11 +168,12 @@ export async function getCorefPredictions(
   docId: string,
   page: number,
 ): Promise<CorefPrediction[]> {
-  return httpPost<CorefPrediction[]>('/api/v1/coref/predictions', {
+  const response = await httpPost<CorefPredictionsResponse>('/api/v1/coref/predictions', {
     libraryRoot,
     docId,
     page,
   })
+  return unwrapCollection<CorefPrediction>(response, 'predictions')
 }
 
 /** 确保 (doc, page) 的 coref 标注存在（懒迁移） */

@@ -1,10 +1,9 @@
 /**
- * General tab — UI preferences (theme, language, recent projects).
+ * General tab — UI preferences (theme and language).
  * PDF processing was carved out into its own tab; see PdfProcessingTab.
  */
 
 import GeneralSection from '@/components/settings/GeneralSection'
-import RecentProjectsSection from '@/components/settings/RecentProjectsSection'
 import type { SettingsState } from '@/components/settings/types'
 
 interface Props {
@@ -13,10 +12,5 @@ interface Props {
 }
 
 export default function GeneralTab({ settings, setSettings }: Props) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      <GeneralSection settings={settings} setSettings={setSettings} />
-      <RecentProjectsSection />
-    </div>
-  )
+  return <GeneralSection settings={settings} setSettings={setSettings} />
 }

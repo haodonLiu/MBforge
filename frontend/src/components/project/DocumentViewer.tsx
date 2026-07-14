@@ -2,8 +2,6 @@ import { useCallback, useRef, useState, useMemo } from 'react'
 import PdfViewer, { type PdfViewerHandle } from './PdfViewer'
 import ReorganizedPane from './ReorganizedPane'
 import WikiDrawer from './WikiDrawer'
-import IconButton from '@/components/ui/IconButton'
-import { ArrowLeftIcon } from '@/components/icons'
 import { useIsMobile } from '@/styles/responsive'
 import type { DocumentEntry } from '@/types'
 
@@ -12,6 +10,8 @@ interface Props {
   libraryRoot: string
   onClose: () => void
 }
+
+type MobilePane = 'pdf' | 'markdown' | 'wiki'
 
 /**
  * Composite document viewer: PDF on the left, reorganized markdown on the right,
@@ -27,6 +27,7 @@ interface Props {
 export default function DocumentViewer({ doc, libraryRoot, onClose }: Props) {
   const pdfRef = useRef<PdfViewerHandle>(null)
   const [wikiCollapsed, setWikiCollapsed] = useState(false)
+  const [mobilePane, setMobilePane] = useState<MobilePane>('pdf')
   const isMobile = useIsMobile()
 
   const handleMoleculeClick = useCallback((info: { page: number }) => {
@@ -36,22 +37,32 @@ export default function DocumentViewer({ doc, libraryRoot, onClose }: Props) {
   // Responsive grid columns.
   const gridTemplateColumns = useMemo(() => {
     if (isMobile) return '1fr' // single column
-    return wikiCollapsed ? '1fr 1fr auto' : '1fr 1fr 320px'
+    return wikiCollapsed
+      ? 'minmax(0, 1.1fr) minmax(0, 1fr) auto'
+      : 'minmax(0, 1.1fr) minmax(0, 1fr) 320px'
   }, [isMobile, wikiCollapsed])
 
   // On mobile, only show the middle (wiki) pane below the PDF.
 
   return (
     <div className="document-viewer" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Top toolbar */}
-      <div className="document-viewer-toolbar">
-        <IconButton size={40} onClick={onClose} title="关闭">
-          <ArrowLeftIcon size={18} />
-        </IconButton>
-        <div className="document-viewer-title">{doc.doc_id}</div>
-      </div>
-
-      {/* Body: 3-column layout (responsive) */}
+      {isMobile && (
+        <div className="document-viewer-mobile-tabs" role="tablist" aria-label="Document panes">
+          {(['pdf', 'markdown', 'wiki'] as const).map((pane) => (
+            <button
+              key={pane}
+              type="button"
+              role="tab"
+              aria-selected={mobilePane === pane}
+              className={mobilePane === pane ? 'is-active' : ''}
+              onClick={() => setMobilePane(pane)}
+            >
+              {pane === 'pdf' ? 'PDF' : pane === 'markdown' ? 'Markdown' : 'Wiki'}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* Body: PDF, reorganized markdown, and Wiki panes. */}
       <div
         className="document-viewer-body"
         style={{
@@ -62,28 +73,27 @@ export default function DocumentViewer({ doc, libraryRoot, onClose }: Props) {
           overflow: 'hidden',
         }}
       >
-        {/* Left: PDF viewer */}
-        <div className="document-viewer-pane" style={isMobile ? {} : { borderRight: '1px solid var(--border)' }}>
-          <PdfViewer ref={pdfRef} doc={doc} libraryRoot={libraryRoot} onClose={onClose} />
-        </div>
+        {(!isMobile || mobilePane === 'pdf') && (
+          <div className="document-viewer-pane" style={isMobile ? {} : { borderRight: '1px solid var(--border)' }}>
+            <PdfViewer ref={pdfRef} doc={doc} libraryRoot={libraryRoot} onClose={onClose} />
+          </div>
+        )}
 
-        {!isMobile && (
-          <>
-            {/* Middle: Reorganized markdown with MoleCode */}
-            <ReorganizedPane
-              docId={doc.doc_id}
-              libraryRoot={libraryRoot}
-              onMoleculeClick={handleMoleculeClick}
-            />
+        {(!isMobile || mobilePane === 'markdown') && (
+          <ReorganizedPane
+            docId={doc.doc_id}
+            libraryRoot={libraryRoot}
+            onMoleculeClick={handleMoleculeClick}
+          />
+        )}
 
-            {/* Right: Wiki drawer (collapsible) */}
-            <WikiDrawer
-              docId={doc.doc_id}
-              libraryRoot={libraryRoot}
-              collapsed={wikiCollapsed}
-              onToggle={() => setWikiCollapsed(v => !v)}
-            />
-          </>
+        {(!isMobile || mobilePane === 'wiki') && (
+          <WikiDrawer
+            docId={doc.doc_id}
+            libraryRoot={libraryRoot}
+            collapsed={wikiCollapsed}
+            onToggle={() => setWikiCollapsed(v => !v)}
+          />
         )}
       </div>
     </div>

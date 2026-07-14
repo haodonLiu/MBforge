@@ -17,6 +17,7 @@ import { useAppContext } from '@/context/AppContext'
 interface Props {
   current: string
   onNavigate: (page: string) => void
+  onMobileLibraryToggle?: () => void
 }
 
 const PRIMARY_ITEMS = [
@@ -63,7 +64,7 @@ function NavButton({ active, onClick, label, icon: Icon }: NavButtonProps) {
   )
 }
 
-export default function Sidebar({ current, onNavigate }: Props) {
+export default function Sidebar({ current, onNavigate, onMobileLibraryToggle }: Props) {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const { libraryPanelCollapsed, setLibraryPanelCollapsed } = useAppContext()
@@ -92,7 +93,13 @@ export default function Sidebar({ current, onNavigate }: Props) {
     >
       <Tooltip text={toggleLabel}>
         <motion.button
-          onClick={() => setLibraryPanelCollapsed(!libraryPanelCollapsed)}
+          onClick={() => {
+            if (onMobileLibraryToggle) {
+              onMobileLibraryToggle()
+              return
+            }
+            setLibraryPanelCollapsed(!libraryPanelCollapsed)
+          }}
           aria-label={toggleLabel}
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}

@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { fetchReorganizedMarkdown } from '@/api/http/library'
 import { MermaidAwareCodeBlock } from '@/components/chat/markdownExtensions'
 import Spinner from '@/components/ui/Spinner'
+import { cleanMoleculePlaceholders } from './markdownUtils'
 
 interface ReorganizedPaneProps {
   docId: string
@@ -69,7 +70,7 @@ export default function ReorganizedPane({
           ),
         }}
       >
-        {md}
+        {cleanMoleculePlaceholders(md)}
       </ReactMarkdown>
     </div>
   )

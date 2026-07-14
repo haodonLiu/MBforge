@@ -254,7 +254,8 @@ export default function ProcessingQueue() {
     return c
   }, [tasks])
 
-  const avgTotalMs = stats?.avg_stage_durations_ms.reduce((a: number, b: number) => a + b, 0) ?? 0
+  const avgTotalMs =
+    stats?.avg_stage_durations_ms?.reduce((a: number, b: number) => a + b, 0) ?? 0
 
   if (isLoading) {
     return (
@@ -307,39 +308,39 @@ export default function ProcessingQueue() {
                 tone="neutral"
                 icon={<QueueIcon size={14} />}
               />
-              {stats.processing > 0 && (
+              {stats.processing !== undefined && stats.processing > 0 && (
                 <StatPill
                   label={t('queue.processing')}
-                  value={stats.processing}
+                  value={stats.processing ?? 0}
                   tone="info"
                   pulse
                 />
               )}
-              {stats.pending > 0 && (
+              {((stats.pending ?? 0) > 0) && (
                 <StatPill
                   label={t('queue.pending')}
-                  value={stats.pending}
+                  value={stats.pending ?? 0}
                   tone="warning"
                 />
               )}
-              {stats.failed > 0 && (
+              {((stats.failed ?? 0) > 0) && (
                 <StatPill
                   label={t('queue.failed')}
-                  value={stats.failed}
+                  value={stats.failed ?? 0}
                   tone="danger"
                 />
               )}
-              {stats.done > 0 && (
+              {((stats.done ?? 0) > 0) && (
                 <StatPill
                   label={t('queue.done')}
-                  value={stats.done}
+                  value={stats.done ?? 0}
                   tone="success"
                 />
               )}
-              {stats.cancelled > 0 && (
+              {((stats.cancelled ?? 0) > 0) && (
                 <StatPill
                   label={t('queue.cancelled')}
-                  value={stats.cancelled}
+                  value={stats.cancelled ?? 0}
                   tone="neutral"
                 />
               )}

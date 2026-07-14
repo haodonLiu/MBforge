@@ -1,8 +1,4 @@
-import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { HelpIcon } from './icons'
-import IconButton from '@/components/ui/IconButton'
-import HelpPopover from './HelpPopover'
 
 interface HeaderProps {
   gridColumn: string
@@ -11,8 +7,6 @@ interface HeaderProps {
 
 export default function Header({ gridColumn, currentPage }: HeaderProps) {
   const { t } = useTranslation()
-  const [helpOpen, setHelpOpen] = useState(false)
-  const helpBtnRef = useRef<HTMLButtonElement | null>(null)
   const pageTitle: Record<string, string> = {
     workspace: t('nav.workspace'),
     discover: t('nav.discover'),
@@ -81,20 +75,6 @@ export default function Header({ gridColumn, currentPage }: HeaderProps) {
           }}
         />
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <span ref={helpBtnRef} style={{ display: 'inline-flex' }}>
-          <IconButton
-            title={t('header.projectFolderRules')}
-            onClick={() => setHelpOpen((v) => !v)}
-            active={helpOpen}
-          >
-            <HelpIcon size={18} />
-          </IconButton>
-        </span>
-      </div>
-      {helpOpen && (
-        <HelpPopover anchorRef={helpBtnRef} onClose={() => setHelpOpen(false)} />
-      )}
     </header>
   )
 }

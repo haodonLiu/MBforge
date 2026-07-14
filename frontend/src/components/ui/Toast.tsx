@@ -182,7 +182,7 @@ const positionStyle: Record<NonNullable<ToastContainerProps['position']>, React.
   'bottom-left':  { bottom: 16, left: 16, alignItems: 'flex-start', flexDirection: 'column-reverse' },
 }
 
-export function ToastContainer({ position = 'top-right', maxCount = 5 }: ToastContainerProps = {}) {
+export function ToastContainer({ position = 'bottom-right', maxCount = 5 }: ToastContainerProps = {}) {
   const { toasts, dismiss } = useToast()
   const visible = toasts.slice(-maxCount)
 
@@ -208,17 +208,18 @@ export function ToastContainer({ position = 'top-right', maxCount = 5 }: ToastCo
             alignItems: 'center',
             gap: 10,
             padding: '12px 16px',
-            background: 'var(--bg-surface)',
+            background: 'var(--bg-elevated)',
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
             border: isFatal ? '2px solid #7f1d1d' : '1px solid var(--border)',
+            borderLeft: `4px solid ${accent}`,
             borderRadius: 12,
             boxShadow: isFatal
               ? '0 12px 40px rgba(127,29,29,0.28), 0 4px 12px rgba(127,29,29,0.18)'
               : '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
             fontSize: 13,
             color: 'var(--text-primary)',
-            minWidth: 240,
+            minWidth: 280,
             maxWidth: 420,
           }
           return (

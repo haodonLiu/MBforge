@@ -25,12 +25,13 @@ export interface IngestTask {
 
 export interface QueueStats {
   total: number
-  pending: number
-  processing: number
-  done: number
-  failed: number
-  cancelled: number
-  avg_stage_durations_ms: number[]
+  pending?: number
+  processing?: number
+  done?: number
+  failed?: number
+  cancelled?: number
+  avg_stage_durations_ms?: number[]
+  by_status?: Record<string, number>
 }
 
 export interface IngestProgressEvent {

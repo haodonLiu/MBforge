@@ -55,18 +55,8 @@ export default function MoleculeFilters({
   }
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        padding: '12px 16px',
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 10,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <div className="molecule-filters">
+      <div className="molecule-filters__search-row">
         <SearchIcon size={18} />
         <input
           type="text"
@@ -74,35 +64,20 @@ export default function MoleculeFilters({
           onChange={(e) => setLocalQuery(e.target.value)}
           placeholder={t('mol.search')}
           disabled={disabled}
-          style={{
-            flex: 1,
-            background: 'transparent',
-            border: 'none',
-            outline: 'none',
-            fontSize: 14,
-            color: 'var(--text-primary)',
-            fontFamily: 'inherit',
-          }}
+          className="molecule-filters__search-input"
         />
         <Button variant="primary" size="sm" onClick={onSearch} disabled={disabled}>
           {t('mol.searchBtn')}
         </Button>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div className="molecule-filters__controls">
         <FilterIcon size={14} />
         <select
           value={filters.status}
           onChange={(e) => handleStatusChange(e.target.value as MoleculeFiltersType['status'])}
           disabled={disabled}
-          style={{
-            fontSize: 13,
-            padding: '6px 10px',
-            borderRadius: 6,
-            border: '1px solid var(--border)',
-            background: 'var(--bg-base)',
-            color: 'var(--text-primary)',
-          }}
+          className="molecule-filters__select"
         >
           <option value="all">{t('mol.status.all')}</option>
           <option value="confirmed">{t('mol.status.confirmed')}</option>
@@ -117,14 +92,7 @@ export default function MoleculeFilters({
             onFiltersChange((prev) => ({ ...prev, sourceType: e.target.value }))
           }
           disabled={disabled}
-          style={{
-            fontSize: 13,
-            padding: '6px 10px',
-            borderRadius: 6,
-            border: '1px solid var(--border)',
-            background: 'var(--bg-base)',
-            color: 'var(--text-primary)',
-          }}
+          className="molecule-filters__select"
         >
           <option value="all">{t('mol.sourceType.all')}</option>
           {sourceTypeOptions.map((st) => (
@@ -138,14 +106,7 @@ export default function MoleculeFilters({
             onFiltersChange((prev) => ({ ...prev, sourceDoc: e.target.value }))
           }
           disabled={disabled}
-          style={{
-            fontSize: 13,
-            padding: '6px 10px',
-            borderRadius: 6,
-            border: '1px solid var(--border)',
-            background: 'var(--bg-base)',
-            color: 'var(--text-primary)',
-          }}
+          className="molecule-filters__select"
         >
           <option value="all">{t('mol.sourceDoc.all')}</option>
           {sourceDocOptions.map((doc) => (
@@ -153,7 +114,7 @@ export default function MoleculeFilters({
           ))}
         </select>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="molecule-filters__range">
           <input
             type="number"
             placeholder="Min activity"
@@ -165,17 +126,9 @@ export default function MoleculeFilters({
               }))
             }
             disabled={disabled}
-            style={{
-              width: 90,
-              fontSize: 13,
-              padding: '6px 10px',
-              borderRadius: 6,
-              border: '1px solid var(--border)',
-              background: 'var(--bg-base)',
-              color: 'var(--text-primary)',
-            }}
+            className="molecule-filters__range-input"
           />
-          <span style={{ color: 'var(--text-muted)' }}>-</span>
+          <span className="molecule-filters__range-separator">-</span>
           <input
             type="number"
             placeholder="Max activity"
@@ -187,32 +140,18 @@ export default function MoleculeFilters({
               }))
             }
             disabled={disabled}
-            style={{
-              width: 90,
-              fontSize: 13,
-              padding: '6px 10px',
-              borderRadius: 6,
-              border: '1px solid var(--border)',
-              background: 'var(--bg-base)',
-              color: 'var(--text-primary)',
-            }}
+            className="molecule-filters__range-input"
           />
         </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div className="molecule-filters__view-toggle" role="group" aria-label="View mode">
           <button
             type="button"
             onClick={() => onViewModeChange('table')}
             disabled={disabled}
-            style={{
-              padding: 6,
-              borderRadius: 6,
-              border: 'none',
-              background: viewMode === 'table' ? 'var(--accent-muted)' : 'transparent',
-              color: viewMode === 'table' ? 'var(--accent)' : 'var(--text-secondary)',
-              cursor: 'pointer',
-            }}
+            className={`molecule-filters__view-button${viewMode === 'table' ? ' is-active' : ''}`}
             aria-label="Table view"
+            aria-pressed={viewMode === 'table'}
           >
             <TableIcon size={16} />
           </button>
@@ -220,15 +159,9 @@ export default function MoleculeFilters({
             type="button"
             onClick={() => onViewModeChange('card')}
             disabled={disabled}
-            style={{
-              padding: 6,
-              borderRadius: 6,
-              border: 'none',
-              background: viewMode === 'card' ? 'var(--accent-muted)' : 'transparent',
-              color: viewMode === 'card' ? 'var(--accent)' : 'var(--text-secondary)',
-              cursor: 'pointer',
-            }}
+            className={`molecule-filters__view-button${viewMode === 'card' ? ' is-active' : ''}`}
             aria-label="Card view"
+            aria-pressed={viewMode === 'card'}
           >
             <GridIcon size={16} />
           </button>
@@ -236,18 +169,7 @@ export default function MoleculeFilters({
       </div>
 
       {filters.status === 'pending' && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '8px 12px',
-            background: 'var(--warning-muted)',
-            color: 'var(--warning)',
-            borderRadius: 6,
-            fontSize: 13,
-          }}
-        >
+        <div className="molecule-filters__correction">
           <SparklesIcon size={14} />
           {t('mol.correctionMode')}
         </div>

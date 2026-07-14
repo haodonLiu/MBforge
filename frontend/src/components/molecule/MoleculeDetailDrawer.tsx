@@ -64,10 +64,12 @@ export default function MoleculeDetailDrawer({
       return
     }
     // Build a minimal DocumentEntry so openTab accepts it. The PDF viewer
-    // resolves the doc by doc_id; title is best-effort.
+    // resolves the canonical source artifact from the library root.
+    const sourcePath = `storage/${docId}/source.pdf`
     const stub: DocumentEntry = {
       doc_id: docId,
-      path: '',
+      path: sourcePath,
+      source_path: sourcePath,
       doc_type: 'pdf',
       title: docId,
       indexed: true,
@@ -75,7 +77,7 @@ export default function MoleculeDetailDrawer({
       hash: '',
     }
     openTab({
-      type: 'pdf',
+      type: 'document',
       title: docId,
       doc: stub,
       libraryRoot,
@@ -143,8 +145,8 @@ export default function MoleculeDetailDrawer({
           top: 0,
           right: 0,
           bottom: 0,
-          width: '480px',
-          maxWidth: '90vw',
+          width: '100vw',
+          maxWidth: '100vw',
           background: 'var(--bg-surface)',
           borderLeft: '1px solid var(--border)',
           zIndex: 50,

@@ -271,7 +271,7 @@ export default function ProcessingQueue() {
     return c
   }, [tasks])
 
-  const avgTotalMs = stats?.avg_stage_durations_ms.reduce((a: number, b: number) => a + b, 0) ?? 0
+  const avgTotalMs = stats?.avg_stage_durations_ms?.reduce((a: number, b: number) => a + b, 0) ?? 0
 
   if (isLoading) {
     return (
@@ -324,7 +324,7 @@ export default function ProcessingQueue() {
                 tone="neutral"
                 icon={<QueueIcon size={14} />}
               />
-              {stats.processing > 0 && (
+              {stats.processing !== undefined && stats.processing > 0 && (
                 <StatPill
                   label={t('queue.processing')}
                   value={stats.processing}
@@ -332,28 +332,28 @@ export default function ProcessingQueue() {
                   pulse
                 />
               )}
-              {stats.pending > 0 && (
+              {stats.pending !== undefined && stats.pending > 0 && (
                 <StatPill
                   label={t('queue.pending')}
                   value={stats.pending}
                   tone="warning"
                 />
               )}
-              {stats.failed > 0 && (
+              {stats.failed !== undefined && stats.failed > 0 && (
                 <StatPill
                   label={t('queue.failed')}
                   value={stats.failed}
                   tone="danger"
                 />
               )}
-              {stats.done > 0 && (
+              {stats.done !== undefined && stats.done > 0 && (
                 <StatPill
                   label={t('queue.done')}
                   value={stats.done}
                   tone="success"
                 />
               )}
-              {stats.cancelled > 0 && (
+              {stats.cancelled !== undefined && stats.cancelled > 0 && (
                 <StatPill
                   label={t('queue.cancelled')}
                   value={stats.cancelled}

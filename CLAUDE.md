@@ -2,20 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> **Last sync**: 2026-07-11. Evidence-Linked Molecular Infrastructure Phase 1
-> complete: `evidence` table added (schema v3→v4 migration), `ArtifactResolver`
-> for unified path management (`storage/{doc_id}/crops/` replaces legacy
-> `.mbforge/crops/`), frontend `EvidencePanel` shows molecule provenance with
-> "打开原文" button. Migration script `scripts/migrate_artifact_paths.py` moves
-> legacy crops to canonical location. **Pipeline refactored to 7 modular stages**
-> (`pipeline/context.py` + `pipeline/stages/*.py` + `StageExecutor` protocol);
-> `pipeline/runner.py` now only orchestrates. 19 routers total.
-> **Frontend Phases 2–6 complete**: @tanstack/react-query for server state,
-> AppShell/LibraryBootstrap split from App.tsx, Workspace/ProcessingQueue/
-> DocumentViewer optimized, Panel/LoadingState/ErrorState UI primitives,
-> 202 tests (31 files). If reality drifts from this file, **the code wins**;
-> update this file in the same PR. Detailed conventions live in
-> [AGENTS.md](./AGENTS.md) — don't duplicate them here.
+> **Last sync**: 2026-07-14. Refresh against live tree: routers registered
+> in `app.py` via `include_router` only (**no** nested model_server Mount —
+> molscribe/models/pdf-render hang on main app with correct prefixes).
+> Unified storage `{library_root}/.mbforge/library.db`. Entry:
+> `python -m mbforge` or uvicorn. Pipeline: **7 modular stages**. Frontend:
+> React 19 + Vite 8 + React Query. If reality drifts, **the code wins**.
+> Detailed conventions: [AGENTS.md](./AGENTS.md).
 
 ---
 
@@ -31,7 +24,9 @@ PDF → pipeline (7 modular stages) → knowledge base (SQLite + OpenKB) → age
 
 Frontend:
 
-- **Web** (`frontend/`) — React 19 + Vite 8 + TS 6, dev server `:5173`, proxies `/api/*` → `127.0.0.1:18792`. This is the only official UI; the legacy Dear PyGui shell was removed on 2026-07-10.
+- **Web** (`frontend/`) — React 19 + Vite 8 + TS 6, dev server `:5173`, proxies `/api/*` → `127.0.0.1:18792`. Only official UI (Dear PyGui / Tauri removed).
+
+Stack pins: **Python 3.12 only** (`requires-python = ">=3.12,<3.13"`), **uv** (not pip), **npm** (not pnpm/yarn/bun), Node ≥20.19/22.12 (Vite 8).
 
 ---
 
@@ -39,13 +34,14 @@ Frontend:
 
 ```bash
 # Install
-uv sync --dev                          # Python deps
+uv sync --dev                          # Python deps (+ dev group)
 npm --prefix frontend install          # Frontend deps
 
 # Run — pick one
 uv run uvicorn mbforge.app:app --host 127.0.0.1 --port 18792   # backend only
-python start.py                                                    # backend + frontend (auto-open browser)
-cd frontend && npm run dev                                         # frontend only
+python -m mbforge --dev                # same, optional auto-open browser
+cd frontend && npm run dev             # frontend only (:5173 → proxy /api)
+cd frontend && npm run dev:all         # backend + frontend via concurrently
 
 # Single Python test (by name substring)
 uv run pytest tests/ -v -k "<substring>"
@@ -59,15 +55,22 @@ uv run ruff check src/
 uv run ruff format src/ --check
 cd frontend && npx tsc --noEmit
 cd frontend && npm run lint
-cd frontend && npm run test                                # vitest run
+cd frontend && npm run test            # vitest run (not watch)
 
 # Production build
-cd frontend && npm run build                              # → frontend/dist (mounted by FastAPI)
+cd frontend && npm run build           # → frontend/dist (mounted by FastAPI if present)
 ```
 
-RTK-friendly equivalents: prefix dev commands with `rtk` when possible (e.g. `rtk pytest`); for git use `rtk git status` etc.
+Migrations / ops (when needed):
 
-Tooling pins (see `pyproject.toml`): **uv** (not pip), **npm** (not pnpm/yarn/bun), ruff (E/F/I/N/W/UP/B/C4/SIM, width 88), Node ≥20.19/22.12 (Vite 8 baseline).
+```bash
+uv run python -m mbforge.migrate-library <library_root>
+uv run python scripts/migrate_artifact_paths.py
+```
+
+RTK-friendly: prefix with `rtk` when available (`rtk pytest`, `rtk git status`).
+
+Port hygiene: default backend `18792`, Vite `5173`. AI assistants must free these ports after verification — prefer ephemeral ports for temp runs.
 
 ---
 
@@ -75,18 +78,20 @@ Tooling pins (see `pyproject.toml`): **uv** (not pip), **npm** (not pnpm/yarn/bu
 
 | Path | Purpose |
 |---|---|
-| `src/mbforge/` | Python backend package (FastAPI app, routers, agent, pipeline, core, backends, parsers, chem, models, utils, openkb) |
-| `src/mbforge/app.py` | FastAPI factory — registers **19 routers** under `/api/v1/*`, mounts `frontend/dist/` if present |
-| `src/mbforge/core/artifact.py` | `ArtifactResolver` — single authority for paths under `{library_root}/storage/` (prevents path traversal) |
-| `src/mbforge/server.py` | Dev uvicorn target for the local-model sidecar (mounted at `/api/v1/models`) |
-| `frontend/` | React 19 + Vite 8 web frontend — the only official UI. Server state via @tanstack/react-query (`api/query/`); `AppShell`/`LibraryBootstrap` layout; `Panel`/`LoadingState`/`ErrorState` UI primitives; 202 tests (31 files). |
-| `tests/` | pytest (`tests/unit/`, `tests/integration/`) + vitest (`frontend/src/**/*.test.ts*`) |
+| `src/mbforge/` | Python backend (FastAPI app, routers, agent, pipeline, core, backends, parsers, chem, models, utils, openkb) |
+| `src/mbforge/app.py` | FastAPI factory — all `/api/v1/*` routers + optional `frontend/dist/` |
+| `src/mbforge/core/artifact.py` | `ArtifactResolver` — sole authority for paths under `{library_root}/storage/` |
+| `src/mbforge/core/layout.py` | `LibraryLayout` — library-level path helpers |
+| `src/mbforge/server.py` | Optional standalone model sidecar (`uvicorn mbforge.server:app`) — not mounted into main app |
+| `frontend/` | React 19 + Vite 8 UI. Server state via `@tanstack/react-query` (`api/query/`); HTTP in `api/http/`; SSE in `api/sse.ts` + `api/http/sse.ts` |
+| `tests/` | pytest: `tests/unit/` (agent, backends, core, openkb, parsers, pipeline, routers) + `tests/integration/` |
+| `scripts/` | install/docker helpers, path/openkb migrations, smoke scripts |
 | `docs/specs/` | Architecture conventions, code style, E-SMILES, MoleCode, molecule representation |
-| `configs/` | YAML configs (constants, OCR) |
+| `docs/architecture/` | Error/logging, pipeline stage reference |
 | `assets/{icon,models}/` | Icon sources; dev model fixtures (gitignored) |
 | `TODO/INDEX.md` | Master task board (P0–P3) — the only TODO file |
 
-For deeper module breakdown of `src/mbforge/`, see [AGENTS.md § Key Directories](./AGENTS.md#key-directories).
+Deeper module map: [AGENTS.md § Key Directories](./AGENTS.md#key-directories).
 
 ---
 
@@ -96,42 +101,70 @@ For deeper module breakdown of `src/mbforge/`, see [AGENTS.md § Key Directories
 
 ```
 Frontend (React 19 + Vite)
-    ↓ HTTP / SSE          (httpFetch / sse.ts)
-Routers (FastAPI, 19 files in src/mbforge/routers/)
+    ↓ HTTP / SSE          (api/http/* + React Query hooks; SSE via sse clients)
+Routers (FastAPI include_router only — no nested model_server Mount)
     ↓
-Core + Agent + Pipeline  (src/mbforge/{core,agent,pipeline}/)
+Core + Agent + Pipeline  (src/mbforge/{core,agent,pipeline,openkb}/)
     ↓
 Backends (src/mbforge/backends/)  ←── lazy-loaded ML models
     ↓
-SQLite + OpenKB + filesystem   (per-project .mbforge/)
+SQLite + OpenKB + filesystem   (per-library .mbforge/ + storage/)
 ```
+
+**Routers registered in `app.py`** (all `include_router`, correct prefixes):
+
+`library`, `documents`, `pipeline`, `kb`, `molecule`, `agent`, `chem`, `coref`,
+`detection-cache`, `notes`, `settings`, `text`/`health`/`resource` (prefix
+`/api/v1`), `events`, `pdf`, `sar`, `ocr`, `diagnostics`, `moldet`,
+`molscribe` (`/api/v1/molscribe`), `models` (`/api/v1/models` — test +
+`mol/render`), `pdf_render` (`/api/v1/pdf/render-pages`, …).
+Standalone sidecar: `mbforge.server:app` only when run alone.
 
 **Central data flow (PDF in → answer out):**
 
 1. Frontend uploads PDF via `POST /api/v1/documents/upload` → library-local storage.
-2. `pipeline/runner.py` orchestrates **7 modular stages** defined in
-   `pipeline/stages/*.py` and sharing state through `pipeline/context.py:PipelineContext`:
-   - **Extract** (`ExtractStage`) — PDF text + OCR fallback
-   - **Density** (`DensityStage`) — classify text/mixed/image
-   - **Markdown** (`MarkdownStage`) — rough_md + detect molecules (MolDetv2-FT +
-     MolScribe) + insert MoleCode blocks
-   - **Reorganize** (`ReorganizeStage`) — LLM semantic reorg + optional MinerU-Popo
-   - **Activity** (`ActivityStage`) — extract IC50/Ki/EC50/Kd from tables
-   - **Index** (`IndexStage`) — PageIndex tree + Wiki compilation
-   - **Persist** (`PersistStage`) — persist_mols + register_links + persist_doc in one
-     cross-database transaction
-   Each stage implements the `StageExecutor` protocol and writes intermediate state
-   to the SQLite business tables (`core/database.py`) plus the OpenKB index.
-3. Frontend queries via `GET /api/v1/kb/search` (PageIndex tree reasoning + dense rerank).
-4. Agent chat streams via `GET /api/v1/agent/chat` (SSE; LangGraph nodes invoke tools in `agent/tools.py`).
+2. `pipeline/runner.py` orchestrates **7 modular stages** in `pipeline/stages/*.py`,
+   state in `pipeline/context.py:PipelineContext`, contract
+   `pipeline/stages/base.py:StageExecutor` → `StageResult`:
+   - **Extract** — PDF text + OCR fallback chain
+   - **Density** — classify text / mixed / image
+   - **Markdown** — rough_md + MolDetv2-FT + MolScribe + MoleCode blocks
+     (`pipeline/extract_molecules.py`; HTTP twin: `routers/moldet_api.py`)
+   - **Reorganize** — LLM semantic reorg + optional MinerU-Popo
+   - **Activity** — IC50 / Ki / EC50 / Kd from tables
+   - **Index** — PageIndex tree + Wiki compilation (OpenKB)
+   - **Persist** — persist_mols + register_links + persist_doc (cross-DB txn)
+3. Query via `GET /api/v1/kb/search` (PageIndex tree + dense rerank).
+4. Agent chat streams via agent router SSE (LangGraph + `agent/tools.py`).
 
-**Lazy-loaded model backends** (no prewarm except OpenKB): `moldet` (YOLO26n), `molscribe` (Swin + TR), OCR cloud chain (MinerU → PaddleOCR → GLMOCR → RapidOCR). First request per backend pays 5–30 s load cost — see `TODO/INDEX.md` C-4.
+**Active model stack** (lazy-loaded; first hit 5–30 s):
 
-**Storage locations:**
-- Per-project canonical: `{root}/storage/{doc_id}/` (source.pdf, reorganized.md, crops/, pages/) — managed by `core/artifact.py:ArtifactResolver`
-- Per-project legacy: `{root}/.mbforge/crops/{doc_id}/` (read-only fallback until `scripts/migrate_artifact_paths.py` runs)
-- Per-project DB: `{root}/.mbforge/knowledge_base.db` + OpenKB + PageIndex collection under `openkb/`
-- Global business config: `~/MBForge/settings.json` on every platform. Precedence: `settings.json` > defaults. `MBFORGE_*` is reserved for infrastructure controls such as host, logging, and force-CPU; it does not override business settings. This directory holds settings, logs, and the default library.
+- Detector: `backends/moldet_v2_ft.py` (YOLO26n FT — joint molecule + coref label bboxes).
+  `backends/moldet.py` is a **compat shim only** — do not import for new code.
+- Recognizer: MolScribe (Swin + TR).
+- OCR chain: MinerU → PaddleOCR → GLMOCR → RapidOCR (`backends/ocr/chain.py`).
+  Crop OCR for coref labels: `rapidocr_adapter` (`use_det=False`).
+
+**Storage** (`library_root` defaults to `~/MBForge`; settings/logs stay there even
+if library root is moved):
+
+- `{root}/.mbforge/library.db` — unified SQLite (docs, molecules, evidence, coref, queue, FTS5, …)
+- `{root}/.mbforge/openkb/` — OpenKB + PageIndex collection
+- `{root}/storage/{doc_id}/` — `source.pdf`, `reorganized.md`, `crops/`, `pages/` via `ArtifactResolver`
+- Legacy crops `{root}/.mbforge/crops/` — read-only fallback until `scripts/migrate_artifact_paths.py`
+- Global config: `~/MBForge/settings.json` only for business settings.
+  `MBFORGE_*` = infra (host, log level, force-CPU) — does **not** override `AppConfig`.
+
+**Config entry points** (only these): `load_global_config` / `save_global_config` /
+`update_settings` / `reset_settings` in `mbforge.utils.config`. Field name is
+`library_root` / `libraryRoot` — no `project_root` aliases.
+
+**Frontend shape (high level):**
+
+- Layout: `components/app/AppShell.tsx` + `LibraryBootstrap.tsx`
+- Server state: `api/query/hooks/*` + `useIngestSSE` into React Query cache
+- HTTP: always through `api/http/*` (`httpFetch`); prefer query hooks over raw calls
+- Global UI state: `context/AppContext.tsx`; errors: `utils/errors.ts` + `ErrorBoundary`
 
 ---
 
@@ -139,20 +172,24 @@ SQLite + OpenKB + filesystem   (per-project .mbforge/)
 
 | Need | Doc |
 |---|---|
-| Conventions (Python, TS, error types, naming) | [AGENTS.md](./AGENTS.md) |
-| Prioritized work, known gaps | [TODO/INDEX.md](./TODO/INDEX.md) |
-| Human-facing quick start / architecture diagram | [README.md](./README.md) |
-| Module boundaries, layering rules | [docs/specs/architecture-conventions.md](./docs/specs/architecture-conventions.md) |
-| SMILES / E-SMILES / MoleCode layering | [docs/specs/molecular-representation.md](./docs/specs/molecular-representation.md) |
-| Code style (full) | [docs/specs/code-style.md](./docs/specs/code-style.md) |
-| Error & logging architecture (severity ladder, diagnostics endpoint, JSON schema) | [docs/architecture/error-logging.md](./docs/architecture/error-logging.md) |
+| Doc map (living vs historical) | [docs/README.md](./docs/README.md) |
+| Conventions (Python, TS, config, paths) | [AGENTS.md](./AGENTS.md) |
+| Prioritized work | [TODO/INDEX.md](./TODO/INDEX.md) |
+| Human quick start | [README.md](./README.md) |
+| Contrib flow | [CONTRIBUTING.md](./CONTRIBUTING.md) |
+| Module boundaries | [docs/specs/architecture-conventions.md](./docs/specs/architecture-conventions.md) |
+| Pipeline stages | [docs/architecture/pipeline-stages.md](./docs/architecture/pipeline-stages.md) |
+| SMILES / E-SMILES / MoleCode | [docs/specs/molecular-representation.md](./docs/specs/molecular-representation.md) |
+| Code style | [docs/specs/code-style.md](./docs/specs/code-style.md) |
+| Error & logging | [docs/architecture/error-logging.md](./docs/architecture/error-logging.md) |
+| Doc refresh rules | [.claude/documentation-governance.md](./.claude/documentation-governance.md) |
+| Branches / SemVer | [docs/VERSION_CONTROL.md](./docs/VERSION_CONTROL.md) |
 
-**Before touching code, consult AGENTS.md.** It is the canonical manual for AI
-contributors and covers: dev commands, conventions, REST/agent-tool workflows,
-testing rules, and the testing-intent criterion (tests verify *why*, not just
-*what*).
+**Before touching code, consult AGENTS.md.** Canonical for AI contributors:
+commands, REST/agent-tool workflows, testing-intent (tests verify *why*, not
+just *what*), worktree hygiene, port hygiene.
 
-Commit convention (from README, also used in CI scopes):
+Commit convention:
 
 ```
 <type>(<scope>): <subject>
@@ -163,27 +200,24 @@ scopes:  frontend | python | api | router | pipeline | agent | backend | deps
 ### Commit Granularity — 一主题 = 一 commit
 
 **不要按文件拆 commit，按主题拆。** 一个 feature / refactor / bug fix
-即使横跨 15 个文件，仍然作为**一个原子 commit** 提交；其内部的子
-步骤写在 commit body 中（用 Markdown `- [ ]` 清单），而不是拆成多个
-小 commit。
+即使横跨 15 个文件，仍作为一个原子 commit；子步骤写在 body（Markdown `- [ ]`），
+不拆成多个小 commit。
 
-提交 body 用 Markdown 详细描述：
+Body 写清：
 
 - **Why** — 背景、动机、影响范围
-- **What** — 文件分组 + 子任务清单（`- [ ]`）
+- **What** — 文件分组 + 子任务清单
 - **Breaking changes** — API/字段重命名、迁移步骤
-- **Verify** — 验证方法（命令、测试名）
-- **Rollback** — 回滚方法（revert commit hash、注意事项）
+- **Verify** — 命令、测试名
+- **Rollback** — revert 方式
 
-**应该拆 commit**：不相关的 chore、独立 feature、版本 bump、独立 bug 修复。
-**应该合并 commit**：单个 refactor 涉及的所有文件、单个 feature 的
-前后端 + 文档、一次清理活动的所有步骤。
+**应拆**：无关 chore、独立 feature、版本 bump、独立 bug 修复。
+**应合**：单次 refactor 全文件、单 feature 前后端 + 文档、一次清理活动。
 
 反例：
 ```
 chore: rename project_root → library_root in app.py
 chore: rename project_root → library_root in pipeline.py
-chore: rename project_root → library_root in knowledge_base.py
 ```
 
 正例：
@@ -192,7 +226,6 @@ refactor(core): migrate project management to unified library
 
 - [ ] backend: app.py swap project router → library router
 - [ ] backend: rename project_root → library_root across callers
-- [ ] backend: replace index.json scan with LibraryStore queries
 - [ ] frontend: GroupsPanel + RecentProjectsSection update
 - [ ] delete dead project router / core.project / models.project
 ```

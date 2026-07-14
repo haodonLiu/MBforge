@@ -1,5 +1,7 @@
 # MBForge 前端设计分析与优化建议
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [../README.md](../README.md) · pipeline: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md).
+
 > 分析日期：2026-07-13  
 > 范围：React 19 + Vite 8 + TypeScript 6 + @tanstack/react-query  
 > 当前状态：Phases 2–6 完成，202 tests (31 files)

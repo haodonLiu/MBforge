@@ -1,5 +1,7 @@
 # MBForge Pipeline Review — 2026-06-25
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [../README.md](../README.md) · pipeline: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md).
+
 **Scope**: `src-tauri/crates/mbforge-pipeline/` 全量 (~7145 LOC) — pipeline runner / 5 stages / services / models / writers / chem / pdf / ocr / structure + `ingest_worker/`。
 
 **Method**: 4 parallel `cavecrew-reviewer` agents (core / ingest_worker / leaf / services) + my own reads of services + writers + 入口。Reviewer #4 (services) ran out of budget mid-way; its findings are supplemented by my own reads of services/{ocr,cache,images,quick_moldet,merge,molecules}. Total raw findings: ~150; consolidated below to 60+ actionable items.

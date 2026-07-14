@@ -1,5 +1,7 @@
 # MBForge 关键问题行动计划
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [../README.md](../README.md) · pipeline: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md).
+
 > **发起日期**: 2026-07-09  
 > **优先级**: P0 (Critical)  
 > **预期完成**: 2026-07-16 (1 周内)

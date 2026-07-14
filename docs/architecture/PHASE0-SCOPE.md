@@ -1,5 +1,7 @@
 # Phase 0 Scope: What We Build vs. What We Skip
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [../README.md](../README.md) · pipeline: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md).
+
 > **Version**: 1.0  
 > **Date**: 2026-07-10  
 > **Context**: MBForge 定位调整——从"AI co-pilot"降级为"open-source research baseline"

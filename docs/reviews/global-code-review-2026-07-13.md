@@ -1,5 +1,7 @@
 # MBForge 全局代码审查报告
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [../README.md](../README.md) · pipeline: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md).
+
 ## 1. 执行摘要
 
 - **审查范围**：9 个并行审查子代理分别覆盖了 Backend routers/API contracts、Pipeline orchestration & stages、Core persistence & data layer、ML/AI backends & OCR chain、Agent & LLM integration、OpenKB & molecule parsers、Frontend architecture/state/HTTP bridge、Frontend components & UI/UX、Tests/QA & project tooling。

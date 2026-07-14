@@ -1,5 +1,7 @@
 # Frontend Visual Optimization Execution Record
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [../README.md](../README.md) · pipeline: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md).
+
 Date: 2026-07-13
 
 Implemented visual improvements from the visual experience review:

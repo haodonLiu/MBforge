@@ -1,569 +1,66 @@
 # Repository Guidelines
 
-> Practical guide for AI assistants working on MBForge. Covers architecture,
-> conventions, and the day-to-day commands needed to add a feature, fix a bug,
-> or run tests.
+## Project Structure & Module Organization
 
-> **Snapshot**: 2026-07-09 → refreshed 2026-07-10 — Python-only backend
-> (no Tauri / Rust shell; the legacy `src-tauri/` directory was removed,
-> see `git log -- src-tauri/`). The legacy Dear PyGui shell
-> (`src/mbforge/gui/`) was **removed on 2026-07-10** — `frontend/`
-> (React 19 + Vite 8) is the only official UI. **Pipeline is 7 modular stages**
-> (`pipeline/context.py` + `pipeline/stages/*.py` + `StageExecutor` protocol);
-> OCR cloud-first fallback chain (MinerU → PaddleOCR → GLMOCR → RapidOCR).
-> **2026-07-08 MolDetv2-FT migration**: legacy Doc+General MolDet pair replaced by
-> a single fine-tuned YOLO26n model that jointly detects molecules
-> and coref identifier bboxes in one inference. `backends/moldet.py`
-> survives as a **compat shim** (raises `AttributeError` with a
-> friendly pointer to `moldet_v2_ft` for all removed symbols; only
-> `default_model_dir()` is still functional, used by
-> `legacy_models.py`). See `docs/superpowers/plans/2026-07-08-text-reorg-molecode.md`
-> for the migration plan and `routers/coref.py` for the FT-driven
-> coref bridge.
+The FastAPI backend lives in `src/mbforge/`: HTTP handlers are in `routers/`,
+business and storage logic in `core/`, the seven-stage workflow in `pipeline/`,
+model wrappers in `backends/`, and Pydantic schemas in `models/`. The React 19
+and TypeScript 6 frontend is under `frontend/src/`; keep REST clients in
+`api/http/`, React Query hooks in `api/query/`, and UI code in `components/`.
+Tests are split between `tests/unit/` and `tests/integration/`; frontend tests
+are colocated as `*.test.ts` or `*.test.tsx`. Documentation belongs in `docs/`
+(see [docs/README.md](docs/README.md)); development assets in `assets/`.
+Business config is `~/MBForge/settings.json` via `mbforge.utils.config` — there
+is no runtime `configs/` directory.
 
-## Project Overview
+## Build, Test, and Development Commands
 
-**MBForge** is a desktop knowledge-work platform for molecular science and drug
-discovery. It ingests scientific PDFs, extracts molecules and activities,
-indexes them into a searchable knowledge base, and exposes an AI agent for
-cross-document reasoning.
-
-Pipeline: `PDF → extract → density → markdown → reorganize → activity → index → persist → query` (7 logical stages; `markdown` = rough_md + detect + insert_molecode, `index` = pageindex + wiki, `persist` = persist_mols + register_links + persist_doc).
-
-Stack:
-
-- **Frontend**: React 19 + Vite 8 + TypeScript 6. Runs in the browser only.
-  No Tauri shell.
-- **Backend**: FastAPI on `127.0.0.1:18792`. Single Python process. `uvicorn
-  mbforge.app:app`. 19 routers registered.
-- **Models**: MolDetv2-FT (YOLO26n, fine-tuned for joint molecule + coref
-  identifier detection in one inference), MolScribe, OCR fallback chain
-  (MinerU → PaddleOCR → GLMOCR → RapidOCR, cloud-first with local
-  fallback). All lazy-loaded on first call. The legacy Doc + General
-  MolDet pair is **no longer used in the pipeline**; the active detector
-  is `backends/moldet_v2_ft.py:MolDetv2FTDetector` + `routers/moldet_api.py:/extract-pdf-page`
-  (PDF → FT detect → coref pair → MolScribe → SMILES + bbox + pairs).
-  `backends/moldet.py` is a **compat shim only** — every removed symbol
-  raises `AttributeError` pointing at the FT replacement; do not import
-  from it in new code.
-
-| Layer | Path | Responsibility |
-|---|---|---|
-| Frontend | `frontend/src/` | React components, routing, `AppContext` global state, `httpFetch` bridge |
-| HTTP routers | `src/mbforge/routers/` | FastAPI route handlers; one file per resource |
-| Core | `src/mbforge/core/` + `pipeline/` + `agent/` | Business logic, persistence, embeddings, pipeline stages |
-| Backends | `src/mbforge/backends/` | Local model wrappers (moldet_v2_ft, molscribe, ocr) |
-| Utils | `src/mbforge/utils/` + `models/` | Logger, config, helpers, Pydantic schemas |
-
-**Data flow** (PDF in → query out):
-
-1. Frontend uploads PDF via `POST /api/v1/documents/upload` → stored under `{library_root}/`.
-2. `pipeline/runner.py` orchestrates 7 modular stages sharing state via `pipeline/context.py:PipelineContext` and implementing the `pipeline/stages/base.py:StageExecutor` protocol: Extract (PDF text + OCR fallback) → Density → Markdown (rough_md + MolDetv2-FT/MolScribe detection + insert_molecode) → Reorganize (LLM semantic reorg + optional MinerU-Popo) → Activity (IC50/Ki/EC50/Kd table extraction) → Index (PageIndex tree + Wiki) → Persist (persist_mols + register_links + persist_doc in one cross-database transaction). The molecule-detection part of Markdown uses `pipeline/extract_molecules.py:extract_molecules_from_pdf` which runs FT detection + coref pairing + MolScribe per-mol-bbox OCR (see `routers/moldet_api.py:/extract-pdf-page` for the equivalent HTTP endpoint).
-3. Stage outputs feed `core/knowledge_base.py` (SQLite business tables) and the OpenKB + PageIndex collection (vectorless tree reasoning + dense rerank).
-4. Frontend queries via `GET /api/v1/kb/search` (PageIndex tree reasoning).
-5. Agent chat streams via `GET /api/v1/agent/chat` (SSE, LangGraph nodes invoke `agent/tools.py`).
-
-**Cross-boundary types**: `Document`, `Chunk`, `Molecule`, `AgentMessage` — all
-serialized as JSON via Pydantic over HTTP. No IPC, no shared memory.
-
-## Key Directories
-
-```
-MBForge/
-├── frontend/                          React + Vite app
-│   ├── src/
-│   │   ├── api/
-│   │   │   ├── http/                  HTTP bridge (httpFetch, isOnline)
-│   │   │   ├── query/                 @tanstack/react-query hooks (keys, client, useDocuments, useIngestQueue, …)
-│   │   │   └── sse.ts                 SSE streaming client
-│   │   ├── components/                Page-level + ui/ atoms
-│   │   ├── context/AppContext.tsx     Global state
-│   │   ├── hooks/                     useTheme, useAnimations, useToast
-│   │   └── utils/errors.ts            AppError + ErrorCode
-│   └── index.html
-├── src/mbforge/                       Python backend
-│   ├── app.py                         App entry — 18 routers
-│   ├── server.py                      Dev uvicorn target
-│   ├── __main__.py                    `python -m mbforge`
-│   ├── routers/                       18 FastAPI routers
-│   ├── agent/                         LangGraph agent
-│   ├── core/                          database, library, knowledge_base, semantic_cache, resource_manager, artifact (ArtifactResolver)
-│   ├── pipeline/                      runner (orchestrator), context (shared state), stage_result, stages/ (Extract/Density/Markdown/Reorganize/Activity/Index/Persist), plus extract_text, extract_molecules, extract_activities, organizer, normalize, persist_molecules
-│   ├── backends/                      molscribe, moldet_v2_ft, ocr/ (chain, mineru, paddleocr, glmocr, rapidocr_adapter), popo
-│   ├── parsers/molecule/              coords, coref_alt
-│   ├── chem/                          Cheminformatics utils
-│   ├── models/                        Pydantic models (common, library, molecule, agent, documents, pipeline)
-│   └── utils/                         logger, config, helpers, constants
-├── tests/                             Python tests (unit/, integration/)
-├── docs/                              Specs, plans, references (see § Documentation)
-├── TODO/INDEX.md                      Master task board
-├── pyproject.toml                     uv + ruff + pytest
-├── uv.lock
-├── LICENSE                            CC BY-NC-SA 4.0
-├── configs/                           YAML configs (constants, OCR)
-├── assets/icon/                       Icon source files
-└── assets/models/                     Dev model fixtures (gitignored)
-```
-
-## Development Commands
-
-Run from `MBForge/`.
-
-### Install
+Use Python 3.12, `uv`, and Node 20.19 or newer.
 
 ```bash
-uv sync --dev                  # Python deps (uv, not pip)
-npm --prefix frontend install   # Frontend deps
-```
-
-### Run (2 terminals)
-
-```bash
-# 1. Python backend (FastAPI on 127.0.0.1:18792)
+uv sync --dev                         # update .venv
+npm --prefix frontend install         # install frontend dependencies
 uv run uvicorn mbforge.app:app --host 127.0.0.1 --port 18792
-
-# 2. Frontend dev server (Vite proxies /api → 18792)
-cd frontend && npm run dev
+npm --prefix frontend run dev         # Vite on :5173; proxies /api
+uv run ruff check src tests            # Python lint
+uv run ruff format src tests --check   # Python formatting check
+npm --prefix frontend run lint         # ESLint
+npm --prefix frontend run build        # type-check and production build
 ```
 
-The Vite dev server runs on `:5173`. All `/api/*` calls proxy to the Python
-backend — no CORS, no separate port in the frontend code.
+Do not leave verification servers running on the default ports.
 
-### Compile / typecheck / lint
+## Coding Style & Naming Conventions
 
-```bash
-uv run ruff check src/                       # Python lint
-uv run ruff format src/ --check              # Python format
-cd frontend && npx tsc --noEmit              # TS strict mode
-```
+Python uses four spaces, complete public type hints, `snake_case` functions,
+`PascalCase` classes, and Ruff's 88-column format. Use `get_logger(__name__)`,
+never `print()` or bare `except`. API boundaries use Pydantic models. Offload
+blocking work from async handlers with `asyncio.to_thread()` or an executor.
 
-### Production build
+TypeScript is strict. Use `PascalCase` components, `useCamelCase` hooks, and
+`import type` for type-only imports. Cross-directory imports use `@/`. Route
+HTTP through `api/http`, prefer React Query for server state, and reuse shared
+CSS variables and animation hooks.
 
-```bash
-cd frontend && npm run build                 # outputs frontend/dist
-```
+## Testing Guidelines
 
-No desktop bundle step — the app is a web frontend + Python backend. Deploy
-`frontend/dist/` and `src/mbforge/` together (or run both behind a reverse
-proxy).
+Run `uv run pytest tests/ -q` and `npm --prefix frontend run test`. Add focused
+regression tests named `test_<behavior>_<scenario>`; use `tmp_path` and real
+SQLite where practical. Check coverage with
+`uv run pytest tests/ --cov=src/mbforge --cov-report=term-missing`.
 
-## Worktree & Branch Hygiene
+## Commit & Pull Request Guidelines
 
-Worktrees keep long-running or experimental work isolated, but stale worktrees
-and abandoned branches quickly become a maintenance burden. Follow these rules
-to avoid the "dozens of divergent worktrees" trap.
+Use Conventional Commits, for example `fix(coref): reject traversal doc ids`.
+One logical change equals one commit and one PR. PRs must link the Issue/TODO,
+explain scope, record verification results, and state risks, migrations, and
+rollback steps. Include screenshots for UI changes, update relevant docs and
+`CHANGELOG.md` for user-visible behavior, and avoid unrelated churn.
 
-### Creating a worktree
+## Security & Configuration
 
-- Use worktrees only for **short-lived, focused work** (a single feature or
-  refactor).
-- Prefer a descriptive name: `.worktrees/<feature-or-refactor>`.
-- Before creating one, check for existing worktrees and clean up dead ones:
-  ```bash
-  git worktree list
-  git worktree prune
-  ```
-
-### While the worktree is alive
-
-- Keep the branch rebased on `main` at least daily if `main` is moving.
-- Run tests in the worktree before declaring the branch ready.
-- Do **not** let a branch diverge by hundreds of commits or tens of thousands of
-  lines — that is a signal the work should be split, merged, or abandoned.
-
-### Finishing a worktree
-
-1. Decide the fate of the branch **before** removing the worktree:
-   - **Merge back**: open/merge a PR, then delete the branch.
-   - **Abandon**: if the branch is fully superseded by `main`, delete it.
-   - **Preserve**: only keep branches that represent genuinely unfinished work
-     you intend to resume soon.
-2. Remove the worktree from the main repo directory (Windows long paths may
-   require `cmd /c rmdir /s /q .worktrees/<name>`):
-   ```bash
-   git worktree remove .worktrees/<name> --force   # if dirty
-   git worktree prune
-   ```
-3. Delete the branch:
-   ```bash
-   git branch -D <branch-name>
-   ```
-4. Verify cleanup:
-   ```bash
-   git worktree list
-   git branch -a
-   ```
-
-### What to avoid
-
-- Leaving a worktree around after the branch is merged or abandoned.
-- Creating a new worktree for every experimental idea and never deleting them.
-- Letting a feature branch live so long that it deletes or rewrites files that
-  have since moved forward on `main`.
-- Force-pushing a rewritten `main` without first confirming all worktrees and
-  local branches are accounted for.
-
-## Code Conventions & Common Patterns
-
-### Python
-
-- **Logger**: every module starts with `logger = get_logger(__name__)`. Never `print()`.
-- **Errors**: inherit from `MBForgeError` (`src/mbforge/utils/helpers.py`) with `status_code` + `error_code` class attrs. FastAPI handler maps to `{success: false, error, error_code}`. No bare `except:`.
-- **Async I/O**: wrap blocking calls with `await loop.run_in_executor(None, lambda: ...)` — `app.py` and `server.py` do this for model calls.
-- **Type hints**: use `from __future__ import annotations` to avoid runtime forward refs. Public functions must be fully annotated.
-- **Lint/format**: ruff (select E/F/I/N/W/UP/B/C4/SIM), `ruff format` at line-width 88.
-- **Pydantic**: request/response models live in `src/mbforge/models/` (shared) or next to the router (local). Never use raw `dict` for API boundaries.
-- **Naming**: `snake_case` for functions/vars, `PascalCase` for classes, `SCREAMING_SNAKE_CASE` for module constants. Booleans prefixed `is_`/`has_`/`can_`.
-
-### TypeScript / React
-
-- **Components**: `export default function ComponentName()` for page-level; `function SubComponent()` for local UI. Hooks prefixed `use`.
-- **State**: local → `useState`; cross-component → props; server state (REST) → `@tanstack/react-query` hooks (see `api/query/hooks/`); global → `useAppContext()`. Persistent settings use `localStorage` with `mbforge_` prefix.
-- **HTTP**: every backend call goes through `api/http/*.ts`. Pattern: `await httpFetch<T>('/api/v1/...', { method, body })` wrapped in shared error handling (see `_utils.ts`). Server-state consumers SHOULD use the React Query hooks in `api/query/hooks/` instead of calling `api/http/*` directly. SSE via `api/sse.ts`; real-time pipeline updates are bridged into the query cache via `useIngestSSE`.
-- **Animations**: import variants from `hooks/useAnimations.ts` (`fadeUp`, `scaleIn`, `staggerContainer`, …). Do not redefine `initial/animate/exit/transition` inline.
-- **Imports**: `@/` alias for `frontend/src/`. Cross-directory imports MUST use `@/` (e.g. `from '@/hooks/useToast'`, never `'../../hooks/useToast'`). Same-directory imports MAY use `./` (e.g. `from './_utils'`). This makes files position-independent — moving a file never breaks its imports. `import type` for type-only imports; three groups (std → third-party → project) separated by blank lines.
-- **Style**: prefer CSS variables (`var(--accent)`, `var(--bg-surface)`); inline `style` ≤ 3 props, otherwise extract. Verify dark mode for new styles.
-- **TS strict**: `strict`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch` all on.
-
-### Common patterns
-
-- **Adding a REST endpoint**: define Pydantic request/response → handler in `routers/{name}.py` → wire into `app.py` (router list at top of file) → add `httpFetch` wrapper in `frontend/src/api/http/{name}.ts`.
-- **Adding a Pydantic model**: place in `src/mbforge/models/` if shared, or inline if router-local. Re-export from `models/__init__.py`.
-- **Adding an agent tool**: subclass `BaseTool` in `agent/tools.py` → register in tool list → update `agent/graph.py` system prompt if the tool needs discovery hints.
-
-## Settings & Configuration
-
-**Single source**: `mbforge.utils.config` exports the four allowed entry
-points. Any code that reads or writes global config without going through
-them is a bug.
-
-### Calling settings from Python
-
-```python
-from mbforge.utils.config import (
-    load_global_config,    # lru_cache, single read
-    save_global_config,    # single write
-    update_settings,       # partial update + validate + persist
-    reset_settings,        # back to defaults
-)
-```
-
-`load_global_config()` returns the cached `AppConfig`. Treat as read-only
-— mutations won't persist unless routed through `update_settings()`.
-`update_settings(partial)` does deep-merge → Pydantic validation →
-persist; on `ValidationError` the router maps it to HTTP 422.
-
-### Calling settings from a router
-
-```python
-from ..utils.config import update_settings, reset_settings
-
-@router.put("")
-async def settings_update(body: dict[str, Any]) -> dict:
-    try:
-        new_cfg = update_settings(body)
-    except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors()) from exc
-    return {"success": True, "settings": new_cfg.model_dump()}
-```
-
-Never inline `deep_merge` + `model_validate` + `save_global_config` —
-the helpers handle cache invalidation and Pydantic error mapping.
-
-### Adding a new field
-
-1. Add to `AppConfig` (or a nested `BaseModel` like `LLMConfig`).
-2. Provide a default — Pydantic 2 with `extra="ignore"` tolerates
-   missing/extra fields, so existing `settings.json` files won't crash
-   on first load.
-3. If env-overridable, use `Field(..., validation_alias=...)` or rely on
-   the existing `env_prefix="MBFORGE_"` wiring on `AppConfig`.
-4. Add a test in `tests/unit/test_config.py`.
-
-### Adding a new endpoint
-
-`POST /api/v1/settings/reset` is the template: thin router, helper does
-the work. Never write to disk from a router.
-
-### Frontend
-
-`@/api/http/settings` exports `getSettings()` / `saveSettings(partial)`.
-The `RecentProject` type must match the backend Pydantic schema
-(`{root, name}`). Use `root`, never `path`.
-
-### Migration gotchas
-
-If you change a field name or type, existing `settings.json` files on
-disk may fail to deserialize. Either (a) keep a default that the old
-value maps onto, or (b) extend `_migrate_legacy_configs()` with a
-one-shot transform.
-
-## Field name deprecations (Phase 6: backend cleanup landed 2026-07-10)
-
-The library-root field rename is **complete** on the backend. The
-compat layer in ``resolve_root()`` is gone: only ``library_root`` is
-accepted in the request body. Any legacy client sending
-``libraryRoot`` / ``project_root`` / ``projectRoot`` will silently
-fall through to the global config (an operational signal: the
-request lands on the wrong library).
-
-| Canonical (use this) | Deprecated aliases | Status |
-|---|---|---|
-| ``library_root`` (Py) | ``libraryRoot``, ``project_root``, ``projectRoot`` | Aliases removed in Phase 6. Frontend and backend now use ``library_root`` / ``libraryRoot`` exclusively; legacy tests were updated. |
-| ``libraryRoot`` (TS) | ``projectRoot``, ``project_root`` | Frontend sweep completed in Phase 1.2 (commit 1578854). |
-
-**Do not introduce new ``projectRoot`` / ``project_root`` call sites
-in frontend or backend.** They are gone from the runtime; the
-compat-shim tests are the only place that still uses them.
-
-Gated on 'one release cycle of no migration failures' (per the plan):
-- Remove ``.mbforge/crops/`` read fallback in
-  ``ArtifactResolver.legacy_crop`` (still used by libraries that
-  haven't run ``scripts/migrate_artifact_paths.py``).
-- Remove ``index/*.db`` runtime fallback in ``DatabaseManager``
-  (the unified ``.mbforge/library.db`` path is the only target
-  after ``python -m mbforge.migrate-library`` has run; 14+ pipeline
-  tests still create legacy v3 data and need a sweep before
-  the fallback is safe to remove).
-
-
-## Important Files
-
-| File | Role |
-|---|---|
-| `src/mbforge/app.py` | App entry — registers all 18 routers, exception handlers, lifespan |
-| `src/mbforge/server.py` | Dev uvicorn target (lazy prewarm) |
-| `src/mbforge/__main__.py` | `python -m mbforge` → uvicorn on 18792 |
-| `src/mbforge/agent/graph.py` | LangGraph agent graph definition |
-| `src/mbforge/agent/tools.py` | 5 agent tools (KB search, molecule search, doc fetch, notes, settings) |
-| `src/mbforge/pipeline/runner.py` | 7-stage pipeline orchestrator (extract → density → markdown → reorganize → activity → index → persist). Dispatches `pipeline/stages/*.py` executors against `pipeline/context.py:PipelineContext` |
-| `src/mbforge/pipeline/context.py` | `PipelineContext` — shared state container passed between stage executors |
-| `src/mbforge/pipeline/stage_result.py` | `StageResult` + `PipelineErrorCode` — structured per-stage outcomes |
-| `src/mbforge/pipeline/stages/base.py` | `StageExecutor` protocol — every stage implements `execute(ctx) -> StageResult` |
-| `src/mbforge/core/database.py` | SQLite business tables + connection pool |
-| `src/mbforge/core/knowledge_base.py` | KB CRUD + RRF fusion logic |
-| `src/mbforge/openkb/` | OpenKB + PageIndex adapter (vectorless tree reasoning + dense rerank) |
-| `src/mbforge/backends/moldet_v2_ft.py` | **The** MolDet backend (FT detector). YOLO26n fine-tuned for joint molecule + coref identifier detection in one inference. |
-| `src/mbforge/backends/ocr/rapidocr_adapter.py` | Crop-level RapidOCR adapter with `ThreadPoolExecutor` batch recognition. Used by `routers/coref.py` to OCR the FT-detected label bboxes. Uses `use_det=False` to skip detection (crops are pre-bounded by FT). |
-| `src/mbforge/parsers/molecule/coref_alt.py` | Coref KB-shape bridge: `CorefBbox` / `CorefResult` dataclasses, `_pair_corefs` (geometry-based pairing), `coref_to_rust_dict` (Rust vlm_chem bridge), `detect_coref_via_ft_detector` (single entry point for the FT pipeline). |
-| `src/mbforge/routers/coref.py` | Coref HTTP bridge: `POST /api/v1/coref/figure-labels` + `POST /api/v1/coref/predictions`. Renders the page, runs FT detect, batch-OCR's label bboxes, returns KB-shaped `FigureLabel[]` / `CorefPrediction[]` with real text (or synthetic fallback). 30s per-page cache. |
-| `src/mbforge/backends/ocr/__init__.py` | OCR backend registry — lazy import + factory |
-| `src/mbforge/backends/ocr/chain.py` | Fallback chain: MinerU → PaddleOCR → GLMOCR → RapidOCR |
-| `src/mbforge/backends/ocr/mineru.py` | MinerU OCR wrapper (cloud), tried first |
-| `src/mbforge/backends/ocr/paddleocr.py` | PaddleOCR wrapper |
-| `src/mbforge/backends/ocr/glmocr.py` | GLMOCR wrapper |
-| `src/mbforge/routers/ocr.py` | OCR config + status endpoints |
-| `src/mbforge/utils/helpers.py` | `MBForgeError` + 8 subclasses + `run_sync` + `http_status_to_severity` |
-| `src/mbforge/utils/logger.py` | `get_logger` + `setup_logging(json_mode=)` + `JsonFormatter` + `DiagnosticRingHandler` + ring-buffer helpers |
-| `src/mbforge/routers/diagnostics.py` | `/api/v1/diagnostics/{errors,stats}` — unified error ring buffer + front-end error ingestion |
-| `frontend/src/api/http/_utils.ts` | `httpFetch` (extracts `error_code`/`severity`/`category` from backend JSON body) + `invokeWithError` + `registerGlobalErrorHandlers` |
-| `frontend/src/api/sse.ts` | SSE streaming client |
-| `frontend/src/utils/errors.ts` | `AppError` + `ErrorCode` + `Severity` enums + `severityFromHttpStatus` + `toAppError` |
-| `frontend/src/hooks/useErrorReport.ts` | Debounced (1.5 s) `keepalive` POST of `ErrorBoundary` caught errors to `/api/v1/diagnostics/errors` |
-| `frontend/src/components/ErrorBoundary.tsx` | Wraps `<AppRoutes />`; `componentDidCatch` reports to backend + retains copy/refesh UX |
-| `frontend/src/main.tsx` | React 19 root, BrowserRouter, App |
-| `frontend/src/context/AppContext.tsx` | Global state |
-| `pyproject.toml` | uv + ruff + pytest config, langchain/langgraph deps |
-| `uv.lock` | Python lock |
-
-**Business configuration precedence** (highest → lowest):
-1. `~/MBForge/settings.json` (Settings UI writes here)
-2. Built-in defaults
-
-`MBFORGE_HOST`, `MBFORGE_LOG_LEVEL`, `MBFORGE_FORCE_CPU`, Docker/browser
-switches, and third-party cache variables (`HF_HOME`, `MODELSCOPE_CACHE`,
-`TORCH_HOME`, `HF_ENDPOINT`) remain runtime or infrastructure settings; they
-do not override `AppConfig` fields.
-
-**Unified application directory** (`~/MBForge`):
-
-All runtime state — global config, logs, and the default library — lives under
-one directory:
-
-```
-~/MBForge/
-├── settings.json              global app config
-├── logs/                      application logs
-├── .mbforge/
-│   ├── library.db             unified business + molecule database
-│   ├── openkb/                OpenKB / PageIndex + dense-rerank cache
-│   └── migrations/            archived legacy layouts
-├── notes/                     user-editable notes
-├── storage/{doc_id}/          document artifacts
-└── models/                    default model cache
-```
-
-`library_root` defaults to `~/MBForge`. Advanced users may set a separate
-library root via the Settings UI; in that case only the library-level paths
-(`.mbforge/`, `storage/`, `notes/`) move, while `settings.json` and `logs/`
-stay in `~/MBForge`.
-
-**Storage locations** (per `library_root`):
-- `{root}/.mbforge/library.db` — unified SQLite database. Contains documents,
-  collections, tasks (LibraryStore), plus figure labels, coref predictions,
-  ingest queue/logs, semantic cache, sections, molecules, molecule images,
-  relations, detections, text-molecule links, evidence, and FTS5 index.
-- `{root}/storage/{doc_id}/` — canonical document artifacts, managed by
-  `src/mbforge/core/artifact.py:ArtifactResolver`:
-  - `source.pdf` — original uploaded PDF
-  - `reorganized.md` — LLM-reorganized markdown
-  - `indexed.md` — PageIndex input
-  - `report.json` — pipeline summary
-  - `crops/{filename}.png` — molecule crop images
-  - `pages/{n:04d}.txt` — per-page text extracts
-- `{root}/.mbforge/openkb/` — OpenKB + PageIndex collection (vectorless tree
-  reasoning + dense rerank).
-- `{root}/notes/` — user-editable notes.
-
-> **Historical layouts**:
-> - Pre-2026-07-10: databases under `{root}/.mbforge/` and crops under
->   `{root}/.mbforge/crops/{doc_id}/`.
-> - 2026-07-10 → 2026-07-11: databases split into `{root}/index/knowledge_base.db`
->   + `{root}/index/molecules.db`, root `{root}/library.db` for LibraryStore.
-> - Current: everything unified into `{root}/.mbforge/library.db`. Run
->   `uv run python -m mbforge.migrate-library <library_root>` to migrate old
->   libraries.
-
-**Artifact path management**: All file I/O under `{root}/storage/` MUST go
-through `ArtifactResolver` (imported from `core.artifact`). Library-level paths
-MUST go through `LibraryLayout`. Direct path construction is prohibited. See
-`routers/library.py` and `core/layout.py` for usage examples.
-
-## Runtime & Tooling Preferences
-
-| Tool | Choice | Notes |
-|---|---|---|
-| Python package manager | **uv** (NOT pip) | `uv sync --dev`, `uv run` for execution |
-| Python venv | `.venv` at project root | `uv venv` |
-| Frontend | **npm** (NOT pnpm/bun/yarn) | `package-lock.json` is the lock |
-| Node version | >=20.19 or >=22.12 (Vite 8 baseline) | No `.nvmrc` |
-| Lint/format (Python) | ruff (E/F/I/N/W/UP/B/C4/SIM) | `ruff format` at width 88 |
-| Lint/format (TS) | eslint + typescript-eslint `strictTypeChecked` | Run via `npm run lint` |
-| GPU | CUDA 12.8 (PyTorch wheel index `pytorch-cu128`) | Required only for `moldet`/`molscribe`; LLM/embed run on CPU |
-| HTTP timeouts | `httpx.AsyncClient` per backend, configured in `backends/*.py` | No shared singleton needed |
-
-**Runtime environment variables**: use only for infrastructure concerns:
-`MBFORGE_HOST`, `MBFORGE_LOG_LEVEL`, `MBFORGE_FORCE_CPU`, `HF_HOME`,
-`MODELSCOPE_CACHE`, and `TORCH_HOME`. LLM, OCR, PageIndex, model-cache, and
-MolDet settings must be written through the Settings UI to `settings.json`.
-
-
-### Port hygiene for AI assistants
-
-AI assistants must not leave long-running background servers on the project's
-default dev ports (`18792` for the Python backend, `5173` for the Vite frontend)
-after verification is complete. These ports belong to the user's normal dev
-workflow.
-
-- Before starting any server, check whether the target port is already in use.
-- Prefer ephemeral or non-default ports (e.g. `18793`, `5174`) for temporary
-  test instances.
-- Stop every background server/task as soon as the test or fix is verified;
-  do not assume the user will clean it up.
-- If a port conflict is discovered, stop the assistant-owned process rather
-  than asking the user to stop theirs.
-
-## Testing & QA
-
-### Frameworks
-
-- **Python**: pytest. `pyproject.toml` sets `testpaths = ["tests"]`. Layout:
-  `tests/unit/` for unit tests. After 2026-07-08 the active unit test
-  files include `tests/unit/test_rapidocr_adapter.py` (14 tests,
-  crop-level RapidOCR with ThreadPoolExecutor batch) and
-  `tests/unit/test_coref_ocr_integration.py` (7 tests, FT →
-  coref → OCR KB-shape bridge) for the coref path, plus the legacy
-  smoke tests under `tests/unit/test_routers_smoke.py` and friends.
-  Note: `tests/unit/parsers/test_coref_alt.py` and
-  `tests/unit/parsers/test_molecule_parsers.py` were removed in the
-  2026-07-08 FT migration (they tested removed MolDetv2DocDetector).
-  `tests/integration/` for end-to-end.
-- **Frontend**: vitest 4 + jsdom + `@testing-library/jest-dom`
-  (via `frontend/src/test/setup.ts`). Tests live alongside source as
-  `*.test.{ts,tsx}`. Coverage via `@vitest/coverage-v8`.
-
-### Running tests
-
-```bash
-# Python
-uv run pytest tests/ -v
-
-# Python with coverage
-uv run pytest tests/ --cov=src/mbforge --cov-report=term-missing
-
-# Frontend
-cd frontend && npm run test                     # vitest run
-cd frontend && npm run test:ui                  # vitest with UI
-cd frontend && npm run test -- --coverage       # v8 coverage
-```
-
-### Conventions
-
-- **Test names**: `test_{feature}_{scenario}` (e.g. `test_classify_pdf_returns_paper`).
-- **Test intent**: assertions express *why* the behavior matters, not just *what* it does. Tests that pass when business logic is wrong are design failures.
-- **No mocks of real systems**: use `tmp_path` for FS, real SQLite in `:memory:`, real OpenKB test collection.
-- **Coverage goal**: ≥70% on core logic per `TODO/INDEX.md` P1 items.
-
-## Documentation
-
-| Doc | Location | Audience |
-|---|---|---|
-| Project entry | [README.md](README.md) | Human users — quick start, features, architecture |
-| Contribution guide | [CONTRIBUTING.md](CONTRIBUTING.md) | Development, tests, review, definition of done |
-| Project governance | [docs/PROJECT_MANAGEMENT.md](docs/PROJECT_MANAGEMENT.md) | Work items, priorities, milestones, decisions |
-| Version control | [docs/VERSION_CONTROL.md](docs/VERSION_CONTROL.md) | Branches, commits, SemVer, releases |
-| Changelog | [CHANGELOG.md](CHANGELOG.md) | User-visible changes by release |
-| Repo guidelines | [AGENTS.md](AGENTS.md) | AI coding assistants |
-| AI quick-ref | [CLAUDE.md](CLAUDE.md) | Repository-level AI context |
-| Task board | [TODO/INDEX.md](TODO/INDEX.md) | Prioritized work (P0–P3) |
-| Specs | [docs/specs/](docs/specs/) | Architecture, code style, molecule representation |
-| References | [docs/REFERENCES.md](docs/REFERENCES.md) | Open-source attribution |
-
----
-
-## Commit Granularity — 一主题 = 一 commit
-
-The canonical branch, commit, merge, version, and release rules live in
-[`docs/VERSION_CONTROL.md`](docs/VERSION_CONTROL.md). The following rule is the
-repository-specific summary.
-
-**Don't split commits by file — split by logical change.** A single
-feature/refactor/bug fix commits as one atomic unit even if it spans
-15 files; sub-tasks are described in the commit body, not broken into
-separate commits.
-
-Use the commit body (Markdown) to:
-
-- State the **why** (background, motivation, scope)
-- List **what changed** (file groups, sub-tasks as `- [ ]` checklists)
-- Note **breaking changes** and **migration steps**
-- Describe **how to verify** and **how to roll back**
-
-**Split into separate commits**: unrelated chores, distinct features,
-version bumps, independent bug fixes.
-**Merge into one commit**: every file involved in a single refactor,
-every layer (backend + frontend + docs) of one feature, every step of
-one cleanup campaign.
-
-Anti-pattern:
-```
-chore: rename project_root → library_root in app.py
-chore: rename project_root → library_root in pipeline.py
-chore: rename project_root → library_root in knowledge_base.py
-```
-
-Correct:
-```
-refactor(core): migrate project management to unified library
-
-- [ ] backend: app.py swap project router → library router
-- [ ] backend: rename project_root → library_root across callers
-- [ ] backend: replace index.json scan with LibraryStore queries
-- [ ] frontend: GroupsPanel + RecentProjectsSection update
-- [ ] delete dead project router / core.project / models.project
-```
-
----
-
-**Don't see what you need?** Check `TODO/INDEX.md` for known gaps, or grep the
-codebase — it's a small, well-organized Python project.
+Never commit secrets, PDFs, model weights, logs, or real library data. Access
+global settings only through `mbforge.utils.config`; use `library_root` (Python)
+and `libraryRoot` (TypeScript), never deprecated project-root aliases. Resolve
+library paths through `LibraryLayout` and document artifacts through
+`ArtifactResolver`; do not construct storage paths directly.

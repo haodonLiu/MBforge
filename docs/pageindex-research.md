@@ -1,5 +1,7 @@
 # PageIndex 调研报告：无向量、基于推理的 RAG 系统
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [README.md](README.md) · pipeline: [architecture/pipeline-stages.md](architecture/pipeline-stages.md).
+
 > 调研日期：2026-06-14
 > 调研人：MiMo Code Agent
 

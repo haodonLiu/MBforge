@@ -1,5 +1,7 @@
 # MBForge 项目缺陷总结（精简版）
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [../README.md](../README.md) · pipeline: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md).
+
 > **分析日期**: 2026-07-09  
 > **缺陷总数**: 33 项 (P0: 3 | P1: 7 | P2: 15 | P3: 8)
 

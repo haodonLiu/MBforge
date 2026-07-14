@@ -1,5 +1,7 @@
 ## 项目缺陷分析完成
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [../README.md](../README.md) · pipeline: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md).
+
 我已完成对 **MBForge 项目的全面缺陷分析**，生成了 4 份文档（总计 ~40 KB）：
 
 ---

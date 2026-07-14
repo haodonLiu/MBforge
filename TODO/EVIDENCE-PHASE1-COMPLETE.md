@@ -1,5 +1,7 @@
 # Evidence-Linked Molecular Infrastructure — Phase 1 Complete
 
+> **COMPLETION RECORD** — historical sign-off (2026-07-11). For open work see [INDEX.md](INDEX.md). Paths/field names may lag current code.
+
 > **Date**: 2026-07-11  
 > **Status**: ✅ All 6 plan steps landed and verified  
 > **Next**: bbox highlight on PDF viewer (follow-up)

@@ -19,13 +19,17 @@
 
 ## Snapshot
 
-- **Last drift-sync**: 2026-07-11
+- **Last drift-sync**: 2026-07-14
 - **Phase**: Phase 0 (Research Baseline) — see `TODO/PHASE0-ROADMAP.md`
-- **Codebase**: Python-only backend, OpenKB + PageIndex (KB), 19 FastAPI routers, Tauri fully removed
-- **Coverage**: Python ~5% (only `tests/unit/parsers/test_coref_alt.py` populated)
-- **Tech debt theme**: tests + frontend→backend contract drift; need structured data quality improvements (Activity Extraction, confidence transparency)
-- **Priority shift (2026-07-10)**: Evidence Links降级P0→P2; 测试覆盖+数据质量提升为P0
-- **Recent work (2026-07-11)**: Evidence-Linked Molecular Infrastructure Phase 1 complete — `evidence` table, `ArtifactResolver`, migration script, frontend `EvidencePanel`
+- **Codebase**: Python-only FastAPI + React UI; OpenKB + PageIndex; 7-stage
+  pipeline; unified `{library_root}/.mbforge/library.db`; Tauri/Dear PyGui gone
+- **Tests**: expanding under `tests/unit/{agent,backends,core,openkb,pipeline,routers}/`
+  + frontend vitest colocated tests — do not treat older “only coref_alt”
+  snapshots as current
+- **Tech debt theme**: remaining coverage gaps on critical paths; confidence /
+  stage-error UX; legacy path fallbacks still gated for removal
+- **Recent notes**: Evidence Phase 1 (2026-07-11); docs hygiene pass 2026-07-14
+  (README / CLAUDE / pipeline-stages / architecture-conventions aligned to code)
 
 ---
 

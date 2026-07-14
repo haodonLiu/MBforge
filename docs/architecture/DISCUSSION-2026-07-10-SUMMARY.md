@@ -1,5 +1,7 @@
 # MBForge 产品定位讨论总结
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [../README.md](../README.md) · pipeline: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md).
+
 > **日期**: 2026-07-10  
 > **参与者**: 项目负责人 + Claude (Opus 4.8)  
 > **议题**: MBForge 当前定位是否正确？后续开发重心应该在什么方向？

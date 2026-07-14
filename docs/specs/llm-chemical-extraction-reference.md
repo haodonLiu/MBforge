@@ -1,10 +1,10 @@
 # LLM 化学数据抽取参考规范（基于 Schilling-Wilhelmi et al., Chem. Soc. Rev. 2025）
 
-> 版本: 1.0 · 日期: 2026-06-22
-> 主参考论文: *Chem. Soc. Rev.* 2025, **54**, 1125–1150（DOI: [10.1039/d4cs00913d](https://doi.org/10.1039/d4cs00913d)）
-> 配套资源: [matextract.pub](https://matextract.pub) · [lamalab-org/matextract-book](https://github.com/lamalab-org/matextract-book)
-> 适用范围: MBForge 抽取与问答管线全部代码
-> 同步关系: 路线图条目同步写入 `TODO/INDEX.md`
+> 版本: 1.0 · 日期: 2026-06-22  
+> **性质**: 外部论文锚点 / 设计参考，**不是**现行代码 API 文档。文中 `src-tauri/` 等路径为迁移前快照。  
+> 主参考论文: *Chem. Soc. Rev.* 2025, **54**, 1125–1150（DOI: [10.1039/d4cs00913d](https://doi.org/10.1039/d4cs00913d)）  
+> 配套资源: [matextract.pub](https://matextract.pub) · [lamalab-org/matextract-book](https://github.com/lamalab-org/matextract-book)  
+> 现行管线: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md)
 
 ---
 

@@ -1,5 +1,7 @@
 # MBForge 项目缺陷分析 - 索引
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [../README.md](../README.md) · pipeline: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md).
+
 > **生成日期**: 2026-07-09  
 > **分析工具**: Claude Opus 4.8 + 静态代码扫描  
 > **代码库版本**: commit 36cfe4d

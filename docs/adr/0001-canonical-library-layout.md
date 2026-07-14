@@ -1,61 +1,61 @@
 # ADR 0001: Canonical library layout and root terminology
 
-- **Status**: Accepted
+- **Status**: Accepted (Phases 0–4 largely landed; Phase 6 cleanup still open for
+  legacy fallbacks — see § Migration timeline)
 - **Date**: 2026-07-10
+- **Last note**: 2026-07-14 — runtime uses `library_root` / `libraryRoot` only;
+  unified DB is `{root}/.mbforge/library.db`. Context below is historical
+  motivation; **current layout** is §2 as amended by the 2026-07 note.
 - **Deciders**: MBForge core team
 - **Supersedes**: ad-hoc project/library dual naming
 
-## Context
+## Context (as of decision date 2026-07-10)
 
-MBForge has accumulated two parallel naming conventions for the same concept
+> Snapshot of the problem space when this ADR was written. Several items below
+> are **already resolved** in code (compat aliases removed; Dear PyGui gone;
+> single DB under `.mbforge/library.db`). Do not re-implement the dual-name
+> world described here.
+
+MBForge had accumulated two parallel naming conventions for the same concept
 — the on-disk directory a user opens to ingest documents:
 
-- **Backend (Python)**: both `project_root` and `library_root` are accepted
-  in HTTP request bodies, in Pydantic request models, in pipeline runner
-  arguments, and in agent tool arguments. The single source of truth is
-  `mbforge.utils.helpers.resolve_root()`, which checks `library_root`,
-  `libraryRoot`, `project_root`, `projectRoot` in priority order and falls
-  back to `load_global_config().library_root`.
-- **Frontend (TypeScript)**: the canonical name in `AppContext.tsx` is
-  `libraryRoot`, but ≈300 call sites still use `projectRoot` / `project_root`.
-  These legacy names work because the backend compat layer accepts both,
-  but the divergence is a footgun (different call sites reading the same
-  context can see different field names).
-- **Disk layout**: the storage layer is also bifurcated:
-  - `src/mbforge/core/artifact.py:ArtifactResolver` writes canonical artifacts
-    to `{root}/storage/{doc_id}/` (source PDF, reorganized markdown, indexed
-    markdown, report.json, page texts, crops).
-  - Older code wrote crops to `{root}/.mbforge/crops/{doc_id}/`. The
-    `scripts/migrate_artifact_paths.py` migration moves them and rewrites
-    the `crop_relpath` columns in SQLite.
+- **Backend (Python)**: historically both `project_root` and `library_root`
+  appeared in request bodies and pipeline args. Canonical name is now
+  **`library_root` only**.
+- **Frontend (TypeScript)**: canonical **`libraryRoot`**; do not reintroduce
+  `projectRoot`.
+- **Disk layout**:
+  - Canonical artifacts: `{root}/storage/{doc_id}/` via `ArtifactResolver`.
+  - Crops: `{root}/storage/{doc_id}/crops/`; legacy `{root}/.mbforge/crops/`
+    is read-only fallback until `scripts/migrate_artifact_paths.py`.
+  - DB: **`{root}/.mbforge/library.db`** (unified). Pre-migration libraries may
+    still have `index/*.db` until `python -m mbforge.migrate-library`.
 
-In addition, MBForge previously offered a Dear PyGui desktop shell
-(`src/mbforge/gui/`) in parallel with the React frontend. That shell is
-zero-importer dead code as of 2026-07-08 and confuses the architecture story.
+Dear PyGui (`src/mbforge/gui/`) was removed; React `frontend/` is the only UI.
 
 ## Decision
 
 ### 1. Canonical terms (single source of truth)
 
-| Concept | Canonical | Deprecated (allowed only as compat input) |
+| Concept | Canonical | Deprecated (do not use in new code) |
 |---|---|---|
 | User's library directory (Python) | `library_root` | `libraryRoot`, `project_root`, `projectRoot` |
 | User's library directory (TS/JSON wire) | `libraryRoot` | `projectRoot`, `project_root` |
-| A document inside a library | `doc_id` | (none — already canonical) |
-| Document's on-disk artifact directory | `storage/{doc_id}/` | `.mbforge/crops/{doc_id}/` (legacy crops) |
+| A document inside a library | `doc_id` | — |
+| Document artifact directory | `storage/{doc_id}/` | `.mbforge/crops/{doc_id}/` (legacy crops read fallback) |
 
-All new code MUST use the canonical names. New call sites that introduce
-deprecated names will be rejected in code review.
+All new code MUST use the canonical names. Review must reject new deprecated aliases.
 
-### 2. Layout ownership
+### 2. Layout ownership (current)
 
 | Path | Owned by | Contents |
 |---|---|---|
-| `{root}/index/*.db` | `src/mbforge/core/database.py` (current) | `knowledge_base.db`, `molecules.db` (FTS5 + evidence + relations) |
-| `{root}/.mbforge/` | internal metadata dir | reserved for library-internal state; users do not edit this directly |
-| `{root}/storage/{doc_id}/` | `src/mbforge/core/artifact.py:ArtifactResolver` | `source.pdf`, `reorganized.md`, `indexed.md`, `report.json`, `pages/{n:04d}.txt`, `crops/{filename}.png` |
-| `{root}/openkb/` | OpenKB + PageIndex (third-party) | vectorless tree + dense rerank index |
-| `{root}/notes/` | user-editable notes dir | user-authored notes (Phase 5 work) |
+| `{root}/.mbforge/library.db` | `core/database.py` + `LibraryLayout.database_path` | unified business + molecule DB |
+| `{root}/.mbforge/` | internal metadata | library-internal state; not user-edited |
+| `{root}/.mbforge/openkb/` | OpenKB + PageIndex | tree index + wiki + dense-rerank cache |
+| `{root}/storage/{doc_id}/` | `ArtifactResolver` | `source.pdf`, `reorganized.md`, `indexed.md`, `report.json`, `pages/`, `crops/` |
+| `{root}/notes/` | notes feature | user-authored notes |
+| `{root}/index/*.db` | **legacy only** | pre-unification DBs; migrate via `python -m mbforge.migrate-library` |
 
 `.mbforge/` is internal metadata only — never visible to the user, never
 referenced from request payloads, never the source of a "primary artifact".
@@ -155,11 +155,12 @@ workload.
 
 ## References
 
-- `src/mbforge/utils/helpers.py:resolve_root()` — current compat layer
+- `src/mbforge/core/layout.py:LibraryLayout` — library-level paths (current)
 - `src/mbforge/core/artifact.py:ArtifactResolver` — document-level paths
-- `src/mbforge/core/database.py:DatabaseManager` — index/*.db layout
-- `scripts/migrate_artifact_paths.py` — pre-canonical crops migration
-- `AGENTS.md` — "Field name deprecations" section (this ADR is the
-  authoritative expansion of that table)
+- `src/mbforge/core/database.py:DatabaseManager` — unified `.mbforge/library.db`
+  (+ legacy `index/*.db` fallback until migration)
+- `scripts/migrate_artifact_paths.py` — crops path migration
+- `python -m mbforge.migrate-library` — library DB unification
 - `docs/specs/architecture-conventions.md` — architecture overview
-- The 6-phase path-migration plan (user attachment, 2026-07-10)
+- `docs/architecture/pipeline-stages.md` — pipeline + storage summary
+- `AGENTS.md` / `CLAUDE.md` — AI-facing summaries of canonical names

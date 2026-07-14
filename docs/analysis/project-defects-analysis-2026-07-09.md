@@ -1,5 +1,7 @@
 # MBForge 项目缺陷分析报告
 
+> **ARCHIVED / HISTORICAL** — point-in-time snapshot. Numbers, paths, and stage/router counts may be **wrong today**. Do not treat as current API. Canonical: [../README.md](../README.md) · pipeline: [../architecture/pipeline-stages.md](../architecture/pipeline-stages.md).
+
 > **分析日期**: 2026-07-09  
 > **分析范围**: 代码库全量静态分析 + TODO/INDEX.md 已知问题  
 > **代码库快照**: commit 36cfe4d (Python-only backend, 19 routers, 9-stage pipeline)

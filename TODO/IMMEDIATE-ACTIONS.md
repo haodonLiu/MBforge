@@ -1,5 +1,7 @@
 # MBForge 立即行动清单（本周开始）
 
+> **DATED ACTION LIST** — not the live board. Use [INDEX.md](INDEX.md) as source of truth; verify items against current code before acting.
+
 > **创建日期**: 2026-07-10  
 > **适用对象**: 核心开发者、贡献者  
 > **目标**: Phase 0 第一周（2026-07-10 ~ 07-17）立即启动的任务

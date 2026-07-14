@@ -1,8 +1,10 @@
 # 数据质量阶段设计方案
 
-> **Status**: 设计完成，待实施  
+> **Status**: 设计文档（部分能力已落地，以代码与 `TODO/INDEX.md` 为准）  
 > **Target**: Phase 0 Week 3-4 (2026-07-24 ~ 08-07)  
-> **Goal**: 在现有模型能力下，最大化输出数据的可用性和可验证性
+> **Goal**: 在现有模型能力下，最大化输出数据的可用性和可验证性  
+> **Note (2026-07-14)**: 文中「9-stage」指旧子步骤展开；现行顶层为 **7 logical stages**
+> （见 [pipeline-stages.md](../architecture/pipeline-stages.md)）。
 
 ---
 
@@ -109,14 +111,13 @@ CREATE INDEX idx_activities_conf ON activities(confidence);
 
 ### 3.1 Stage 插入点
 
-**当前 9-stage pipeline：**
+**逻辑展开（设计时子步骤；现行顶层为 7 stages，Activity 已是独立阶段）：**
 ```
-1. extract → 2. density → 3a. rough_md → 3b. detect → 3c. insert_molecode
-→ 3d. reorganize → 3e. pageindex → 4. wiki → 5. persist_mols
-→ 6. register_links → 7. persist_document
+Extract → Density → Markdown(rough_md+detect+molecode) → Reorganize
+→ Activity → Index(pageindex+wiki) → Persist(mols+links+doc)
 ```
 
-**新增 Stage 7.5: extract_activities（在 persist_document 之前）**
+**历史草案曾写「Stage 7.5 extract_activities」——已并入 `ActivityStage`，以下伪代码仅作设计痕迹：**
 
 ```python
 # runner.py STAGE_PCT 更新

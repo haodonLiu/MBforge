@@ -210,6 +210,44 @@ class TestSecretRedaction:
         assert redacted["llm"]["api_key"] == "***"
         assert redacted["llm"]["model"] == "m"
         assert redacted["ocr"]["paddleocr_api_key"] == "***"
+    def test_redacted_roundtrip_preserves_real_secret(self, monkeypatch, tmp_path) -> None:
+        """Boot a config with a real api_key, simulate the redacted GET path
+        returning '***', then PUT that redacted payload back — the real
+        secret on disk must survive (B1 regression)."""
+        from mbforge.utils import config
+
+        settings_path = tmp_path / "settings.json"
+        monkeypatch.setattr(config, "_SETTINGS_PATH", settings_path)
+        monkeypatch.setattr(config, "GLOBAL_APP_DIR", tmp_path)
+
+        # Seed with a real key on disk.
+        initial = AppConfig()
+        initial.library_root = str(tmp_path)
+        initial = initial.model_copy(update={"llm": initial.llm.model_copy(update={"api_key": "real-secret-abc"})})
+        config.save_global_config(initial)
+
+        # Roundtrip a redacted payload (mimicking what the UI sends after
+        # reading the GET response + not changing the field).
+        new_cfg = update_settings(
+            {
+                "llm": {"api_key": "***", "model": "gpt-4o"},
+                "ocr": {"mineru_api_key": "***", "glmocr_base_url": "***"},
+            }
+        )
+        assert new_cfg.llm.api_key == "real-secret-abc", (
+            "*** marker must preserve the disk value, but got "
+            f"{new_cfg.llm.api_key!r}"
+        )
+        assert new_cfg.llm.model == "gpt-4o"
+        # OCR keys were empty on disk → *** marker preserves that empty state
+        assert new_cfg.ocr.mineru_api_key == ""
+        assert new_cfg.ocr.glmocr_base_url == ""
+        # Real PUT (e.g. user typing a new key, or empty to clear) still works.
+        cleared = update_settings({"llm": {"api_key": ""}})
+        assert cleared.llm.api_key == ""
+
+        cleared2 = update_settings({"llm": {"api_key": "new-key-xyz"}})
+        assert cleared2.llm.api_key == "new-key-xyz"
 
 
 def test_app_config_ignores_retired_project_settings() -> None:

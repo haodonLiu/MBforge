@@ -261,12 +261,35 @@ def save_global_config(config: AppConfig) -> None:
     save_json(_SETTINGS_PATH, config.model_dump())
 
 
+_REDACTED_SENTINEL = "***"
+
+
+def _strip_redacted_markers(partial: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
+    """Recursively replace "***" leaves in `partial` with the corresponding
+    value from `base`. Lets clients roundtrip a redacted GET payload
+    back through PUT without overwriting the real secret on disk.
+    """
+    out: dict[str, Any] = {}
+    for k, v in partial.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            out[k] = _strip_redacted_markers(v, base[k])
+        elif v == _REDACTED_SENTINEL and k in base:
+            out[k] = base[k]
+        else:
+            out[k] = v
+    return out
+
+
 def update_settings(partial: dict[str, Any]) -> AppConfig:
     """Deep-merge `partial` 到当前配置 → 校验 → 持久化.
 
     Returns 新 AppConfig.输入不合法时抛 pydantic.ValidationError.
+
+    字符串值等于 ``"***"`` 的叶子会被替换为磁盘上现有的值,这样经过
+    ``_redact_secrets`` 的 GET 响应再原样 PUT 回来不会清掉真实密钥.
     """
     current = load_global_config().model_dump()
+    safe_partial = _strip_redacted_markers(partial, current)
 
     def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
         for k, v in override.items():
@@ -276,11 +299,10 @@ def update_settings(partial: dict[str, Any]) -> AppConfig:
                 base[k] = v
         return base
 
-    _deep_merge(current, partial)
+    _deep_merge(current, safe_partial)
     new_cfg = AppConfig.model_validate(current)
     save_global_config(new_cfg)
     return new_cfg
-
 
 def reset_settings() -> AppConfig:
     """回到默认配置并持久化."""

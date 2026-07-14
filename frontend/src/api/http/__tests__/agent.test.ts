@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('../_utils', () => ({
   httpPost: vi.fn(),
   httpGet: vi.fn(),
-  httpPut: vi.fn(),
   httpDelete: vi.fn(),
   invokeWithError: vi.fn((_fn: () => Promise<unknown>) => _fn()),
   API_BASE: '/api/v1',
@@ -23,13 +22,12 @@ class MockEventSource {
 }
 Object.defineProperty(globalThis, 'EventSource', { value: MockEventSource, writable: true })
 
-import { httpPost, httpGet, httpPut, httpDelete } from '../_utils'
+import { httpPost, httpGet, httpDelete } from '../_utils'
 import {
   agentInit,
   agentCreateSession,
   agentChat,
   agentChatStream,
-  agentSwitchProject,
   agentClear,
   agentDestroySession,
   agentGetHistory,
@@ -39,7 +37,6 @@ import {
 
 const mockHttpPost = vi.mocked(httpPost)
 const mockHttpGet = vi.mocked(httpGet)
-const mockHttpPut = vi.mocked(httpPut)
 const mockHttpDelete = vi.mocked(httpDelete)
 
 describe('agent API', () => {
@@ -155,18 +152,6 @@ describe('agent API', () => {
       expect(MockEventSource.instances[0].url).toBe(
         '/api/v1/agent/session/session-1/chat/stream?user_input=Hi+there',
       )
-    })
-  })
-
-  describe('agentSwitchProject', () => {
-    it('calls httpPut with project info', async () => {
-      mockHttpPut.mockResolvedValue(undefined)
-
-      await agentSwitchProject('session-1', '/project', 'MyProject')
-
-      expect(httpPut).toHaveBeenCalledWith('/api/v1/agent/session/session-1/project', {
-        library_root: '/project',
-      })
     })
   })
 

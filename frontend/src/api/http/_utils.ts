@@ -17,6 +17,15 @@ const _env = (typeof import.meta !== 'undefined' ? import.meta.env : undefined) 
 
 export const API_BASE = _env?.VITE_API_BASE ?? '/api/v1'
 
+function apiUrl(path: string): string {
+  const base = API_BASE.replace(/\/$/, '')
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  if (normalizedPath === base || normalizedPath.startsWith(`${base}/`)) {
+    return normalizedPath
+  }
+  return `${base}${normalizedPath}`
+}
+
 const NETWORK_KEYWORDS = ['network', 'connection', 'timeout', 'refused'] as const
 
 function safeString(val: unknown, fallback = ''): string {
@@ -82,7 +91,7 @@ function backendCodeToErrorCode(backendCode?: string): ErrorCode {
 }
 
 export async function httpFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE}${path}`
+  const url = apiUrl(path)
   try {
     const { headers: extraHeaders, ...rest } = options
     const headers = new Headers(extraHeaders)
@@ -152,7 +161,7 @@ export async function httpGet<T>(path: string): Promise<T> {
 }
 
 export async function httpGetText(path: string): Promise<string> {
-  const url = `${API_BASE}${path}`
+  const url = apiUrl(path)
   const resp = await fetch(url, { method: 'GET' })
   if (!resp.ok) {
     const body = await resp.text().catch(() => '')

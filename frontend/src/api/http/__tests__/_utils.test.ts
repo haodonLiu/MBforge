@@ -197,6 +197,11 @@ describe('httpFetch request construction', () => {
     expect(API_BASE).toBe('/api/v1')
   })
 
+  it('does not duplicate API_BASE when callers pass a full API path', async () => {
+    await httpFetch('/api/v1/sidecar/status', { method: 'GET' })
+    expect(globalThis.fetch).toHaveBeenCalledWith('/api/v1/sidecar/status', expect.any(Object))
+  })
+
   it('uses VITE_API_BASE from import.meta.env when present', async () => {
     const previous = import.meta.env.VITE_API_BASE
     import.meta.env.VITE_API_BASE = '/custom/api'

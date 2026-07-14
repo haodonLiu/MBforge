@@ -27,11 +27,6 @@ export async function notesList(root: string): Promise<Note[]> {
   return resp.notes
 }
 
-export function notesGet(_root: string, _id: string): Note | null {
-  // The list endpoint is used; get is stubbed in the backend.
-  return null
-}
-
 export async function notesSave(root: string, note: Note): Promise<Note> {
   const resp = await invokeWithError(
     () => httpPost<{ success: boolean; note: Note }>('/api/v1/notes/save', { library_root: root, note }),

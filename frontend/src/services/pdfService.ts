@@ -164,7 +164,7 @@ export async function getCachedDetections(params: {
       results: unknown[]
       count: number
       source: string
-    }>('/api/v1/models/extract/cached-detections', {
+    }>('/api/v1/detection-cache/get', {
       library_root: params.libraryRoot,
       doc_id: params.docId,
       page: params.page,
@@ -188,7 +188,7 @@ export async function clearDocumentDetections(
   docId: string,
 ): Promise<ServiceResult<void>> {
   try {
-    await httpPost('/api/v1/models/extract/clear-cache-doc', { library_root: libraryRoot, doc_id: docId })
+    await httpPost('/api/v1/detection-cache/clear-doc', { library_root: libraryRoot, doc_id: docId })
     return { success: true }
   } catch (e) {
     return { success: false, error: String(e) }
@@ -204,7 +204,7 @@ export async function getDetectionStats(
       cached_page_count: number
       cached_doc_count: number
       schema_version: number
-    }>('/api/v1/models/extract/cache-stats', { library_root: libraryRoot })
+    }>('/api/v1/detection-cache/stats', { library_root: libraryRoot })
 
     return {
       success: true,
@@ -236,7 +236,7 @@ export async function getPageParseResult(params: {
       structured_text: Array<{ kind: string; content: string; bbox: [number, number, number, number] }>
       molecules: unknown[]
       findings: Array<{ kind: string; text: string; bbox: [number, number, number, number] }>
-    }>('/api/v1/models/parse/page', {
+    }>('/api/v1/coref/page-parse-result', {
       library_root: params.libraryRoot,
       doc_id: params.docId,
       page: params.page,
@@ -278,7 +278,7 @@ export async function getMoleculeCorefChain(
         esmiles: string
       }>
       aliases: string[]
-    }>('/api/v1/models/coref/chain', { library_root: libraryRoot, mol_id: molId })
+    }>('/api/v1/coref/molecule-chain', { library_root: libraryRoot, mol_id: molId })
 
     return {
       success: true,
@@ -340,7 +340,7 @@ export async function getOcrLayout(
         angle: number
       }>
       from_cache: boolean
-    }>('/api/v1/models/ocr/layout', { path, doc_id: docId })
+    }>('/api/v1/pdf/ocr-layout', { path, doc_id: docId })
 
     return {
       success: true,
@@ -392,7 +392,7 @@ export async function classifyPdf(
       has_complex_layout: boolean
       has_encoding_issues: boolean
       title: string | null
-    }>('/api/v1/models/pdf/classify', { path })
+    }>('/api/v1/pdf/classify', { path })
 
     return {
       success: true,
@@ -484,7 +484,7 @@ export async function batchQuickScan(
       processed: number
       total: number
       errors: string[]
-    }>('/api/v1/models/moldet/batch-scan', {
+    }>('/api/v1/detection-cache/batch-scan', {
       library_root: libraryRoot,
       doc_ids: docIds ?? [],
     })
@@ -522,9 +522,14 @@ export async function extractPdfImages(
   overlap?: number,
   parser?: string,
 ): Promise<ServiceResult<ImageRef[]>> {
+  // /pdf/parse is still a lightweight stub (no embedded-image extraction).
+  // Fail closed so the image panel does not pretend success with empty data
+  // after a silent 404 on the retired /models/pdf/parse path.
   try {
     const resp = await httpPost<{
-      images: Array<{
+      success?: boolean
+      error?: string
+      images?: Array<{
         filename: string
         page: number
         region: string | null
@@ -532,16 +537,25 @@ export async function extractPdfImages(
         esmiles: string | null
         rel_path: string | null
       }>
-    }>('/api/v1/models/pdf/parse', {
+    }>('/api/v1/pdf/parse', {
       path,
       chunk_size: chunkSize ?? 512,
       overlap: overlap ?? 128,
       parser: parser ?? 'pdf_inspector',
     })
 
+    const images = resp.images ?? []
+    if (!images.length) {
+      return {
+        success: false,
+        error: resp.error
+          ?? 'PDF image extraction not available yet (pdf/parse stub)',
+      }
+    }
+
     return {
       success: true,
-      data: resp.images.map(img => ({
+      data: images.map(img => ({
         filename: img.filename,
         page: img.page,
         region: img.region,

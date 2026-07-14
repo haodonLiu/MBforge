@@ -1,6 +1,6 @@
 /** Agent session management + post-process PDF reporting via HTTP. */
 
-import { httpPost, httpGet, httpPut, httpDelete, invokeWithError, API_BASE } from './_utils'
+import { httpPost, httpGet, httpDelete, invokeWithError, API_BASE } from './_utils'
 import { ErrorCode } from '@/utils/errors'
 
 // ---- agent (session-based, per-conversation isolation) ----
@@ -137,13 +137,6 @@ export function agentChatStream(
   }
 
   return Promise.resolve(() => es.close())
-}
-
-export async function agentSwitchProject(sessionId: string, libraryRoot: string, _projectName: string): Promise<void> {
-  await invokeWithError(
-    () => httpPut(`/api/v1/agent/session/${sessionId}/project`, { library_root: libraryRoot }),
-    ErrorCode.Network,
-  )
 }
 
 export async function agentClear(sessionId: string): Promise<void> {

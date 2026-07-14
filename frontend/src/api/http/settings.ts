@@ -1,6 +1,6 @@
 /** Settings HTTP API wrappers. */
 
-import { httpGet, httpPut } from './_utils'
+import { httpGet, httpPut, httpPost } from './_utils'
 
 export interface LlmConfig {
   provider?: string
@@ -149,7 +149,7 @@ export async function exportSettings(_targetPath: string): Promise<void> {
 }
 
 export async function resetSettings(): Promise<void> {
-  await httpPut('/api/v1/settings', {})
+  await httpPost('/api/v1/settings/reset', {})
 }
 
 export function getConfigDir(): Promise<string> {

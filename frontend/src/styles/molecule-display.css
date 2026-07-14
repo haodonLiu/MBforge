@@ -169,6 +169,19 @@
   width: 100%;
   padding: 8px;
 }
+.mol-molecode-text {
+  width: 100%;
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  color: var(--text-primary);
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .mol-molecode-loading {
   text-align: center;
   padding: 24px;
@@ -213,6 +226,7 @@
   gap: 6px;
 }
 .mol-toolbar-btn {
+  min-height: 40px;
   padding: 6px 10px;
   background: var(--bg-elevated);
   color: var(--text-secondary);
@@ -224,6 +238,10 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
+  transition: transform 150ms cubic-bezier(0.2, 0, 0, 1), border-color 150ms ease;
+}
+.mol-toolbar-btn:active {
+  transform: scale(0.96);
 }
 .mol-toolbar-btn--active {
   background: var(--accent);

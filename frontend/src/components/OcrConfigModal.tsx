@@ -14,14 +14,20 @@
  * via `saveSettings`.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import Modal from '@/components/ui/Modal'
 import Button from '@/components/ui/Button'
 import ApiKeyInput from './settings/ApiKeyInput'
 import { saveSettings } from '@/api/http/settings'
 import { openExternalUrl } from '@/api/http/_utils'
-import { testOcrMineru, testOcrPaddleocr, testOcrGlmocr, type OcrTestResult } from '@/api/http/text'
+import {
+  testOcrMineru,
+  testOcrPaddleocr,
+  testOcrGlmocr,
+  getOcrChainStatus,
+  type OcrTestResult,
+} from '@/api/http/text'
 
 type Backend = 'mineru' | 'paddleocr-online' | 'paddleocr-local'
 
@@ -71,6 +77,22 @@ export default function OcrConfigModal() {
     paddleocr: OcrTestResult | null
     glmocr: OcrTestResult | null
   }>({ mineru: null, paddleocr: null, glmocr: null })
+  const [chainBackends, setChainBackends] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    getOcrChainStatus()
+      .then(s => {
+        if (!cancelled) setChainBackends(s.backends ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setChainBackends([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   const dismissForever = useCallback(() => {
     if (missingBackend) {
@@ -155,6 +177,22 @@ export default function OcrConfigModal() {
       <p style={{ margin: '0 0 16px', color: 'var(--text-secondary)', fontSize: 13 }}>
         {t('ocr.config.description')}
       </p>
+
+      {chainBackends.length > 0 && (
+        <div
+          style={{
+            margin: '0 0 12px',
+            padding: '8px 10px',
+            fontSize: 12,
+            color: 'var(--text-muted)',
+            background: 'var(--bg-base)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+          }}
+        >
+          OCR chain: {chainBackends.join(' → ')}
+        </div>
+      )}
 
       {error && (
         <div style={{ color: '#dc2626', fontSize: 12, marginBottom: 12 }}>

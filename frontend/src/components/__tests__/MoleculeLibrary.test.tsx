@@ -38,7 +38,14 @@ vi.mock('@/components/ui/AddMoleculeDialog', () => ({
 }))
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, params?: Record<string, number>) => {
+      if (key === 'mol.selectionSummary') {
+        return `Selected ${params?.count} / ${params?.total}`
+      }
+      return key
+    },
+  }),
 }))
 
 import { useAppContext } from '@/context/AppContext'
@@ -64,7 +71,6 @@ describe('MoleculeLibrary', () => {
       pagination: { page: 1, pageSize: 50 },
       viewMode: 'table',
       selectedIds: new Set(['molecule-1']),
-      isCorrectionMode: false,
       setQuery: vi.fn(),
       setFilters: vi.fn(),
       setSort: vi.fn(),
@@ -90,6 +96,7 @@ describe('MoleculeLibrary', () => {
     render(<MoleculeLibrary />)
 
     expect(screen.getByTestId('molecule-table')).toBeInTheDocument()
+    expect(screen.getByText('Selected 1 / 12')).toBeInTheDocument()
     expect(screen.queryByTestId('molecule-analysis-panel')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByText('Analyze selection'))

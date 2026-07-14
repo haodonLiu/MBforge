@@ -33,7 +33,6 @@ export default function MoleculeLibrary() {
     pagination,
     viewMode,
     selectedIds,
-    isCorrectionMode,
     setQuery,
     setFilters,
     setSort,
@@ -225,7 +224,7 @@ export default function MoleculeLibrary() {
 
               <div className="molecule-library-selection-actions">
                 <span className="molecule-library-selection-actions__summary">
-                  {t('mol.selectionSummary', { selected: selectedIds.size, total: totalCount })}
+                  {t('mol.selectionSummary', { count: selectedIds.size, total: totalCount })}
                 </span>
                 <Button variant="ghost" size="sm" onClick={selectAll} disabled={loading}>
                   {t('mol.selectAll')}
@@ -275,7 +274,6 @@ export default function MoleculeLibrary() {
       <MoleculeDetailDrawer
         molecule={selectedMolecule}
         open={drawerOpen}
-        isCorrectionMode={isCorrectionMode}
         libraryRoot={libraryRoot}
         onClose={handleDrawerClose}
         onSaved={handleSaved}

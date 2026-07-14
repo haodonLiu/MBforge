@@ -1,13 +1,12 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { esmilesToMolecode, chemDescriptors } from '@/api/http/molecule'
 import { molAdminUpdate } from '@/api/http/molecule_admin'
 import { toast } from '@/hooks/useToast'
+import Button from '@/components/ui/Button'
+import { EditIcon } from '@/components/icons'
 import type { EvidenceItem, ExtractionResult, MoleculeRecord } from '@/types'
 import MoleculeEditorDialog from './MoleculeEditorDialog'
 import EvidencePanel from './EvidencePanel'
-const MermaidCode = lazy(() =>
-  import('@/components/ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
-)
 
 interface ChemDescriptors {
   molecular_weight: number
@@ -99,13 +98,29 @@ export default function MoleculeDetailPanel(props: MoleculeDetailPanelProps) {
       .finally(() => setDescLoading(false))
   }, [displayEsmiles])
 
-  // Detection 模式：结构编辑器保存回调
-  const handleEditorSave = useCallback((newSmiles: string) => {
+  const handleEditorSave = useCallback(async (newSmiles: string) => {
     if (detection) {
       ;(props).onSave(newSmiles)
       setShowEditor(false)
+      return
     }
-  }, [detection, props])
+
+    if (!libraryRoot || !edited) {
+      toast.error('未指定项目根目录，无法保存')
+      throw new Error('Missing library root or molecule record')
+    }
+
+    const updated = { ...edited, esmiles: newSmiles, status: 'corrected' }
+    const success = await molAdminUpdate(libraryRoot, updated)
+    if (!success) {
+      toast.error('结构保存失败')
+      throw new Error('Failed to save molecule structure')
+    }
+    setEdited(updated)
+    toast.success('分子结构已修正')
+    ;(props as MoleculeProps).onSaved?.()
+    setShowEditor(false)
+  }, [detection, edited, libraryRoot, props])
 
   // MoleculeRecord 模式：保存编辑后的记录
   const handleSaveRecord = async () => {
@@ -157,6 +172,7 @@ export default function MoleculeDetailPanel(props: MoleculeDetailPanelProps) {
             saving={saving}
             onChange={handleFieldChange}
             onSave={handleSaveRecord}
+            onEditStructure={() => setShowEditor(true)}
           />
         ) : detection ? (
           <DetectionHeader
@@ -166,62 +182,37 @@ export default function MoleculeDetailPanel(props: MoleculeDetailPanelProps) {
           />
         ) : null}
 
-        {/* MoleCode 图（优先显示） */}
+        {/* MoleCode is a textual interchange format, not a second structure view. */}
         <div>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>
-            MoleCode
+            MoleCode 文本
           </div>
-          <div
+          <pre
             style={{
+              margin: 0,
               background: 'var(--bg-base)',
               border: '1px solid var(--border)',
               borderRadius: 6,
-              padding: 8,
+              padding: '8px 10px',
               maxHeight: 150,
               overflow: 'auto',
+              color: 'var(--text-secondary)',
+              fontFamily: 'monospace',
+              fontSize: 10,
+              lineHeight: 1.5,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
             }}
           >
             {moleCodeLoading ? (
-              <div style={{ textAlign: 'center', padding: 16, color: 'var(--text-muted)', fontSize: 11 }}>
-                Loading MoleCode...
-              </div>
+              'Loading MoleCode...'
             ) : moleCodeText ? (
-              <Suspense fallback={<div>Loading...</div>}>
-                <MermaidCode code={moleCodeText} />
-              </Suspense>
+              moleCodeText
             ) : (
-              <div style={{ textAlign: 'center', padding: 16, color: 'var(--text-muted)', fontSize: 11 }}>
-                无法生成 MoleCode
-              </div>
+              '无法生成 MoleCode'
             )}
-          </div>
+          </pre>
         </div>
-
-        {/* MoleCode 文本 */}
-        {moleCodeText && (
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>
-              MoleCode 文本
-            </div>
-            <pre
-              style={{
-                fontFamily: 'monospace',
-                fontSize: 10,
-                color: 'var(--text-secondary)',
-                background: 'var(--bg-base)',
-                padding: '6px 8px',
-                borderRadius: 4,
-                maxHeight: 100,
-                overflow: 'auto',
-                margin: 0,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-              }}
-            >
-              {moleCodeText}
-            </pre>
-          </div>
-        )}
 
         {/* 理化性质 */}
         <div>
@@ -319,11 +310,10 @@ export default function MoleculeDetailPanel(props: MoleculeDetailPanelProps) {
         )}
       </div>
 
-      {/* 编辑器浮窗（仅 Detection 模式） */}
-      {showEditor && detection && (
+      {showEditor && (detection || edited) && (
         <MoleculeEditorDialog
-          smiles={detection.esmiles}
-          name={detection.name}
+          smiles={detection?.esmiles ?? edited?.esmiles ?? ''}
+          name={detection?.name ?? edited?.name}
           onSave={handleEditorSave}
           onClose={() => setShowEditor(false)}
         />
@@ -384,32 +374,35 @@ interface MoleculeRecordFormProps {
   saving: boolean
   onChange: <K extends keyof MoleculeRecord>(field: K, value: MoleculeRecord[K]) => void
   onSave: () => void
+  onEditStructure: () => void
 }
 
-function MoleculeRecordForm({ record, saving, onChange, onSave }: MoleculeRecordFormProps) {
+function MoleculeRecordForm({
+  record,
+  saving,
+  onChange,
+  onSave,
+  onEditStructure,
+}: MoleculeRecordFormProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontSize: '13px', fontWeight: 600 }}>
           {record.name || record.mol_id}
         </div>
-        <button
-          onClick={onSave}
-          disabled={saving}
-          style={{
-            padding: '5px 14px',
-            background: 'var(--accent)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 6,
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: saving ? 'not-allowed' : 'pointer',
-            opacity: saving ? 0.7 : 1,
-          }}
-        >
-          {saving ? '保存中...' : '保存'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<EditIcon size={13} />}
+            onClick={onEditStructure}
+          >
+            编辑结构
+          </Button>
+          <Button variant="primary" size="sm" onClick={onSave} disabled={saving}>
+            {saving ? '保存中...' : '保存'}
+          </Button>
+        </div>
       </div>
 
       <FormField label="名称">

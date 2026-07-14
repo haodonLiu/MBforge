@@ -6,7 +6,6 @@ import {
   FilterIcon,
   TableIcon,
   GridIcon,
-  SparklesIcon,
 } from '../icons'
 import type {
   MoleculeFilters as MoleculeFiltersType,
@@ -167,13 +166,6 @@ export default function MoleculeFilters({
           </button>
         </div>
       </div>
-
-      {filters.status === 'pending' && (
-        <div className="molecule-filters__correction">
-          <SparklesIcon size={14} />
-          {t('mol.correctionMode')}
-        </div>
-      )}
     </div>
   )
 }

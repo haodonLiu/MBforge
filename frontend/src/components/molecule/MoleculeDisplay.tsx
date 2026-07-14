@@ -1,13 +1,9 @@
-import { useRef, lazy, Suspense } from 'react'
+import { useRef } from 'react'
 import { motion } from 'framer-motion'
-import { CheckIcon, AlertIcon, InfoIcon } from '../icons'
+import { CheckIcon, AlertIcon, FileTextIcon, InfoIcon } from '../icons'
 import { smilesToImgUrl, basicValidate } from './moleculeUtils'
 import ConfidenceBadge from './ConfidenceBadge'
 import { useMoleculeDisplay } from '@/hooks/useMoleculeDisplay'
-
-const MermaidCode = lazy(() =>
-  import('@/components/ui/MermaidCode').then(m => ({ default: m.MermaidCode }))
-)
 
 export interface MoleculeDisplayProps {
   smiles: string
@@ -126,9 +122,7 @@ export default function MoleculeDisplay({
             ) : moleCodeError ? (
               <div className="mol-molecode-error">{moleCodeError}</div>
             ) : moleCodeText ? (
-              <Suspense fallback={<div>Loading...</div>}>
-                <MermaidCode code={moleCodeText} />
-              </Suspense>
+              <pre className="mol-molecode-text">{moleCodeText}</pre>
             ) : null}
           </div>
         ) : imgError ? (
@@ -189,15 +183,11 @@ export default function MoleculeDisplay({
       <div className="mol-display-toolbar">
         <button
           onClick={toggleMoleCode}
-          title="MoleCode 图视图"
+          title="查看 MoleCode 文本"
           className={`mol-toolbar-btn ${showMoleCode ? 'mol-toolbar-btn--active' : ''}`}
         >
-          <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-            <circle cx="12" cy="12" r="10" />
-            <path d="M8 12h8" />
-            <path d="M12 8v8" />
-          </svg>
-          MoleCode
+          <FileTextIcon size={13} />
+          MoleCode 文本
         </button>
 
         {mode === 'edit' && !isEditing && (

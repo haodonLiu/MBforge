@@ -37,7 +37,6 @@ export interface UseMoleculeLibraryResult {
   pagination: MoleculePagination
   viewMode: MoleculeViewMode
   selectedIds: Set<string>
-  isCorrectionMode: boolean
 
   setQuery: (q: string) => void
   setFilters: React.Dispatch<React.SetStateAction<MoleculeFilters>>
@@ -75,8 +74,6 @@ export function useMoleculeLibrary(libraryRoot: string | null): UseMoleculeLibra
     return saved === 'card' ? 'card' : 'table'
   })
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-
-  const isCorrectionMode = filters.status === 'pending'
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 250)
@@ -234,7 +231,6 @@ export function useMoleculeLibrary(libraryRoot: string | null): UseMoleculeLibra
     pagination,
     viewMode,
     selectedIds,
-    isCorrectionMode,
     setQuery,
     setFilters,
     setSort,

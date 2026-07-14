@@ -148,7 +148,7 @@ export default function MoleculeTable({
                   : '-'}
               </td>
               <td className="molecule-table-cell">
-                <StatusBadge status={mol.status} />
+                <StatusBadge status={mol.status} label={t(`mol.status.${mol.status}`)} />
               </td>
               <td className="molecule-table-cell molecule-table-muted-cell">
                 {new Date(mol.created_at).toLocaleDateString()}
@@ -164,7 +164,7 @@ export default function MoleculeTable({
   )
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, label }: { status: string; label: string }) {
   const colorClass: Record<string, string> = {
     confirmed: 'status-badge-confirmed',
     pending: 'status-badge-pending',
@@ -173,8 +173,11 @@ function StatusBadge({ status }: { status: string }) {
   }
   const badgeClass = colorClass[status] || 'status-badge-default'
   return (
-    <span className={`status-badge ${badgeClass}`}>
-      {status}
+    <span
+      className={`status-badge ${badgeClass}`}
+      title={status === 'pending' ? '模型自动识别结果，尚未人工修正' : undefined}
+    >
+      {label}
     </span>
   )
 }

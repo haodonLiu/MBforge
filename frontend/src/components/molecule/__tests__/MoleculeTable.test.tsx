@@ -60,4 +60,18 @@ describe('MoleculeTable', () => {
     expect(checkboxes).toHaveLength(2)
     expect(screen.getByRole('checkbox', { name: 'Select A' })).toBeInTheDocument()
   })
+
+  it('uses the translated label for auto-detected records', () => {
+    render(
+      <MoleculeTable
+        {...defaultProps}
+        molecules={[{ ...mockMolecules[0], status: 'pending' }]}
+      />,
+    )
+
+    expect(screen.getByText('mol.status.pending')).toHaveAttribute(
+      'title',
+      '模型自动识别结果，尚未人工修正',
+    )
+  })
 })

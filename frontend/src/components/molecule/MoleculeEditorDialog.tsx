@@ -11,7 +11,7 @@ const structServiceProvider = new StandaloneStructServiceProvider()
 interface MoleculeEditorDialogProps {
   smiles: string
   name?: string
-  onSave: (newSmiles: string) => void
+  onSave: (newSmiles: string) => void | Promise<void>
   onClose: () => void
 }
 
@@ -81,7 +81,7 @@ interface KetcherInstance {
     try {
       const newSmiles = await ketcherRef.current.getSmiles()
       if (newSmiles) {
-        onSave(newSmiles)
+        await onSave(newSmiles)
       }
       onClose()
     } catch (err) {

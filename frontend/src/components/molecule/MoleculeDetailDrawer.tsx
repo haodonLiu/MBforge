@@ -1,7 +1,5 @@
 import Button from '@/components/ui/Button'
-import CorrectionPanel, { type CorrectionItem } from './CorrectionPanel'
 import MoleculeDetailPanel from './MoleculeDetailPanel'
-import { molAdminUpdate } from '@/api/http/molecule_admin'
 import { showToast } from '@/hooks/useToast'
 import { useAppContext } from '@/context/AppContext'
 import type { EvidenceItem, MoleculeRecord } from '@/types'
@@ -10,7 +8,6 @@ import type { DocumentEntry } from '@/types'
 interface MoleculeDetailDrawerProps {
   molecule: MoleculeRecord | null
   open: boolean
-  isCorrectionMode: boolean
   libraryRoot: string | null
   onClose: () => void
   onSaved?: () => void
@@ -25,29 +22,9 @@ function CloseIcon({ size = 18 }: { size?: number }) {
   )
 }
 
-function buildCorrectionItem(molecule: MoleculeRecord): CorrectionItem {
-  const status = (['pending', 'confirmed', 'rejected', 'corrected'].includes(molecule.status)
-    ? molecule.status
-    : 'pending') as CorrectionItem['status']
-
-  return {
-    id: molecule.mol_id,
-    ocrSmiles: molecule.esmiles,
-    ocrConfidence: 0.5,
-    name: molecule.name || undefined,
-    sourceDoc: molecule.source_doc || undefined,
-    context: molecule.notes || undefined,
-    sourceImage: typeof molecule.properties.mol_img_path === 'string'
-      ? molecule.properties.mol_img_path
-      : undefined,
-    status,
-  }
-}
-
 export default function MoleculeDetailDrawer({
   molecule,
   open,
-  isCorrectionMode,
   libraryRoot,
   onClose,
   onSaved,
@@ -85,47 +62,9 @@ export default function MoleculeDetailDrawer({
     onClose()
   }
 
-   if (!open || !molecule) return null
+  if (!open || !molecule) return null
 
-  const title = isCorrectionMode ? 'OCR 矫正' : (molecule.name || molecule.mol_id)
-
-  const handleCorrectionComplete = async (
-    results: Array<{ id: string; finalSmiles: string; status: 'confirmed' | 'rejected' | 'corrected' }>,
-  ) => {
-    if (!libraryRoot) {
-      showToast('未指定项目根目录，无法保存', 'error')
-      return
-    }
-    const updates = results
-      .filter((r) => r.id === molecule.mol_id)
-      .map((r) => ({
-        ...molecule,
-        esmiles: r.finalSmiles,
-        status: r.status,
-      }))
-    if (updates.length === 0) {
-      onSaved?.()
-      onClose()
-      return
-    }
-    try {
-      const settled = await Promise.allSettled(
-        updates.map((record) => molAdminUpdate(libraryRoot, record)),
-      )
-      const failures = settled.filter(
-        (s) => s.status === 'rejected' || !s.value,
-      )
-      if (failures.length > 0) {
-        showToast(`保存失败：${failures.length} 条记录未更新`, 'error')
-      } else {
-        showToast('矫正结果已保存', 'success')
-      }
-      onSaved?.()
-      onClose()
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : '保存矫正结果失败', 'error')
-    }
-  }
+  const title = molecule.name || molecule.mol_id
 
   return (
     <>
@@ -197,20 +136,12 @@ export default function MoleculeDetailDrawer({
             padding: '16px',
           }}
         >
-          {isCorrectionMode ? (
-            <CorrectionPanel
-              items={[buildCorrectionItem(molecule)]}
-              onComplete={handleCorrectionComplete}
-              showSourceImage
-            />
-          ) : (
-            <MoleculeDetailPanel
-              molecule={molecule}
-              libraryRoot={libraryRoot}
-              onSaved={onSaved}
-              onOpenPdf={handleOpenPdf}
-            />
-          )}
+          <MoleculeDetailPanel
+            molecule={molecule}
+            libraryRoot={libraryRoot}
+            onSaved={onSaved}
+            onOpenPdf={handleOpenPdf}
+          />
         </div>
       </div>
     </>

@@ -76,6 +76,15 @@ export default function RGroupMatrixView({
     )
       .then(resp => {
         if (cancelled) return
+        // Backend may fail-closed with success:false while still returning shape.
+        if ((resp as { success?: boolean; error?: string }).success === false) {
+          setError(
+            (resp as { error?: string }).error
+              ?? 'SAR 分析尚未实现（实验性功能）',
+          )
+          setMatrix(null)
+          return
+        }
         if (!resp.core_smiles) {
           setError('未找到共同骨架')
           setMatrix(null)
@@ -85,7 +94,7 @@ export default function RGroupMatrixView({
       })
       .catch((_: unknown) => {
         if (cancelled) return
-        setError('请求失败')
+        setError('请求失败（SAR 可能尚未实现）')
         setMatrix(null)
       })
       .finally(() => {

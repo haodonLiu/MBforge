@@ -124,71 +124,119 @@ async def canonicalize(body: dict) -> dict:
 
 @router.post("/core-smiles")
 async def core_smiles(body: dict) -> dict:
-    """Extract core SMILES from E-SMILES stub."""
-    return {"success": True, "result": body.get("input", "")}
+    """Extract core SMILES from E-SMILES — not implemented."""
+    return {
+        "success": False,
+        "error": "core-smiles not implemented",
+        "result": "",
+    }
 
 
 @router.post("/smiles-to-molecode")
 async def smiles_to_molecode(body: dict) -> dict:
-    """SMILES to MoleCode stub."""
-    return {"success": True, "result": ""}
+    """SMILES to MoleCode — not implemented."""
+    return {"success": False, "error": "smiles-to-molecode not implemented", "result": ""}
 
 
 @router.post("/smiles-to-esmiles")
 async def smiles_to_esmiles(body: dict) -> dict:
-    """SMILES to E-SMILES stub."""
-    return {"success": True, "result": body.get("smiles", "")}
+    """SMILES to E-SMILES — not implemented (passthrough would lie)."""
+    return {
+        "success": False,
+        "error": "smiles-to-esmiles not implemented",
+        "result": "",
+    }
 
 
 @router.post("/parse-esmiles-tags")
 async def parse_esmiles_tags(body: dict) -> dict:
-    """Parse E-SMILES tags stub."""
-    return {"success": True, "smiles": body.get("input", ""), "tags": []}
+    """Parse E-SMILES tags — not implemented."""
+    return {
+        "success": False,
+        "error": "parse-esmiles-tags not implemented",
+        "smiles": "",
+        "tags": [],
+    }
 
 
 @router.post("/sanitize-esmiles")
 async def sanitize_esmiles(body: dict) -> dict:
-    """Sanitize E-SMILES stub."""
-    return {"success": True, "result": body.get("raw", "")}
+    """Sanitize E-SMILES — not implemented."""
+    return {"success": False, "error": "sanitize-esmiles not implemented", "result": ""}
 
 
 @router.post("/separate-esmiles-layers")
 async def separate_esmiles_layers(body: dict) -> dict:
-    """Separate E-SMILES layers stub."""
-    return {"success": True, "smiles": body.get("input", ""), "esmiles": None, "tags": None}
+    """Separate E-SMILES layers — not implemented."""
+    return {
+        "success": False,
+        "error": "separate-esmiles-layers not implemented",
+        "smiles": "",
+        "esmiles": None,
+        "tags": None,
+    }
 
 
 @router.post("/preprocess-smiles")
 async def preprocess_smiles(body: dict) -> dict:
-    """Preprocess SMILES stub."""
-    return {"success": True, "result": body.get("smiles", "")}
+    """Preprocess SMILES — not implemented."""
+    return {"success": False, "error": "preprocess-smiles not implemented", "result": ""}
 
 
 @router.post("/preprocess-rgroup-name")
 async def preprocess_rgroup_name(body: dict) -> dict:
-    """Preprocess R-group name stub."""
-    return {"success": True, "result": body.get("name", "")}
+    """Preprocess R-group name — not implemented."""
+    return {
+        "success": False,
+        "error": "preprocess-rgroup-name not implemented",
+        "result": "",
+    }
 
 
 @router.post("/markush-parse")
 async def markush_parse(body: dict) -> dict:
-    """Markush parse stub."""
-    return {"success": True, "core_smiles": "", "r_groups": [], "abstract_rings": [], "raw": ""}
+    """Markush parse — not implemented."""
+    return {
+        "success": False,
+        "error": "markush-parse not implemented",
+        "core_smiles": "",
+        "r_groups": [],
+        "abstract_rings": [],
+        "raw": "",
+    }
 
 
 @router.post("/markush-check")
 async def markush_check(body: dict) -> dict:
-    """Markush overlap check stub."""
-    return {"success": True, "match_level": "NoOverlap", "core_overlap_ratio": 0.0, "matched_core_atoms": 0, "total_core_atoms": 0, "r_group_results": [], "details": []}
+    """Markush overlap check — not implemented."""
+    return {
+        "success": False,
+        "error": "markush-check not implemented",
+        "match_level": "NoOverlap",
+        "core_overlap_ratio": 0.0,
+        "matched_core_atoms": 0,
+        "total_core_atoms": 0,
+        "r_group_results": [],
+        "details": [],
+    }
 
 
 @router.post("/substructure-search")
 async def substructure_search(body: dict) -> dict:
-    """Substructure search stub."""
-    return {"success": True, "results": []}
+    """Substructure search — not implemented."""
+    return {
+        "success": False,
+        "error": "substructure-search not implemented",
+        "results": [],
+    }
 
 
 @router.post("/gesim-atom-mapping")
 async def gesim_atom_mapping(body: dict) -> dict:
-    """GESim atom mapping stub."""
-    return {"success": True, "mapping_a": [], "mapping_b": []}
+    """GESim atom mapping — not implemented."""
+    return {
+        "success": False,
+        "error": "gesim-atom-mapping not implemented",
+        "mapping_a": [],
+        "mapping_b": [],
+    }

@@ -73,13 +73,16 @@ export async function sarDecompose(smiles: string, coreSmiles: string): Promise<
   )
 }
 
-/** 构建 R-group 矩阵 */
+/** 构建 R-group 矩阵（Phase 0 后端可能 fail-closed） */
 export async function sarBuildMatrix(
   compounds: CompoundInput[],
   coreSmiles?: string,
-): Promise<RGroupMatrix> {
+): Promise<RGroupMatrix & { success?: boolean; error?: string }> {
   return invokeWithError(
-    () => httpPost<RGroupMatrix>('/api/v1/sar/build-matrix', { compounds, coreSmiles: coreSmiles ?? null }),
+    () => httpPost<RGroupMatrix & { success?: boolean; error?: string }>(
+      '/api/v1/sar/build-matrix',
+      { compounds, coreSmiles: coreSmiles ?? null },
+    ),
     ErrorCode.ApiError,
   )
 }

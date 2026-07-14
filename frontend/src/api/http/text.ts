@@ -1,6 +1,6 @@
 /** Text utilities — chunking, page classification, structured extraction. */
 
-import { httpPost, invokeWithError } from './_utils'
+import { httpPost, httpGet, invokeWithError } from './_utils'
 import { ErrorCode } from '@/utils/errors'
 
 // ---- text_ops ----
@@ -39,6 +39,19 @@ export async function testOcrPaddleocr(
 
 export async function testOcrGlmocr(apiKey: string, model?: string): Promise<OcrTestResult> {
   return httpPost<OcrTestResult>('/api/v1/ocr/test-glmocr', { apiKey, model: model ?? null })
+}
+
+export interface OcrChainStatus {
+  backends: string[]
+  priority: string[]
+}
+
+/** Which OCR backends the chain would try under current settings. */
+export async function getOcrChainStatus(): Promise<OcrChainStatus> {
+  return invokeWithError(
+    () => httpGet<OcrChainStatus>('/api/v1/ocr/chain-status'),
+    ErrorCode.ApiError,
+  )
 }
 
 // ---- classifier ----

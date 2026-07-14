@@ -713,7 +713,7 @@ def _download_model_from_modelscope(
         except ImportError:
             pass
         except Exception as e:  # noqa: BLE001 — ModelScope SDK can raise anything (HTTP, FS, Auth). Log + fall through to direct-HTTP path.
-            logger.warning("modelscope SDK 失败: %s", e)
+            logger.warning("ModelScope SDK failed: %s", e)
 
         # 直接 HTTP 下载
         import fnmatch as _fnmatch

@@ -67,6 +67,27 @@ class GuardedStreamHandler(logging.StreamHandler):
             # Stream is closed / unwritable / torn down. Drop the
             # record on the floor for THIS handler. Other handlers
             # (file, diagnostic ring) are independent and unaffected.
+
+
+class UvicornAccessLogFilter(logging.Filter):
+    """Keep non-success access records while suppressing routine 2xx noise."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        status_code = getattr(record, "status_code", None)
+        return not (
+            isinstance(status_code, int) and 200 <= status_code < 300
+        )
+
+
+def configure_uvicorn_access_logging() -> None:
+    """Suppress successful Uvicorn access logs without hiding request failures."""
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(
+        isinstance(item, UvicornAccessLogFilter) for item in access_logger.filters
+    ):
+        access_logger.addFilter(UvicornAccessLogFilter())
+
+
 _logger_initialized = False
 _log_level: int = logging.INFO
 
@@ -180,7 +201,7 @@ def setup_logging(
                 logging.Formatter(_CONSOLE_FORMAT, datefmt=_DATE_FORMAT)
             )
             root_logger.addHandler(fallback)
-            root_logger.error(f"文件日志初始化失败: {e}")
+            root_logger.error(f"Failed to initialize file logging: {e}")
 
     # 诊断环形缓冲始终挂到 root logger;记录所有 DEBUG+ 信息,
     # 但只有被 mbforge_exception_handler 显式提升的 LogRecord 会带
@@ -189,7 +210,8 @@ def setup_logging(
 
     _logger_initialized = True
     root_logger.info(
-        f"日志系统初始化完成 | 级别={logging.getLevelName(level)} | 目录={log_dir} | json={json_mode}"
+        f"Logging initialized | level={logging.getLevelName(level)} | "
+        f"directory={log_dir} | json={json_mode}"
     )
 
 
@@ -275,7 +297,7 @@ def log_exception(logger: logging.Logger, msg: str = "") -> None:
     """
     exc_text = traceback.format_exc()
     prefix = f"{msg} | " if msg else ""
-    logger.error(f"{prefix}异常详情:\n{exc_text}")
+    logger.error(f"{prefix}Exception details:\n{exc_text}")
 
 
 # ---------- 诊断：JSON 格式化器 + 内存环形缓冲 ----------

@@ -64,6 +64,12 @@ def test_library_get_document_file(app_client: TestClient) -> None:
     assert resp.status_code == 200
     assert resp.content == pdf_bytes
 
+    resp = app_client.head(f"/api/v1/library/documents/{doc_id}/file")
+    assert resp.status_code == 200
+    assert resp.content == b""
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.headers["content-length"] == str(len(pdf_bytes))
+
 
 def test_library_get_document_reorganized(app_client: TestClient, tmp_library: Path) -> None:
     pdf_bytes = b"%PDF-1.4 fake pdf"

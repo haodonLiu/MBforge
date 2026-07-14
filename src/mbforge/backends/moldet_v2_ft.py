@@ -116,13 +116,13 @@ class MolDetv2FTDetector:
         """加载 YOLO 模型。"""
         if not self.model_path.exists():
             logger.warning(
-                "MolDetv2-FT 模型未找到：%s（联合检测功能不可用）",
+                "MolDetv2-FT model not found: %s (joint detection unavailable)",
                 self.model_path,
             )
             self.model = None
             return
 
-        logger.info("正在加载 MolDetv2-FT 模型：%s", self.model_path)
+        logger.info("Loading MolDetv2-FT model: %s", self.model_path)
         start = time.perf_counter()
         from ultralytics import YOLO
 
@@ -134,7 +134,7 @@ class MolDetv2FTDetector:
             verbose=False,
             device=self.device if self.device != "auto" else None,
         )
-        logger.info("MolDetv2-FT 加载完成，耗时 %.2fs", time.perf_counter() - start)
+        logger.info("MolDetv2-FT model loaded in %.2fs", time.perf_counter() - start)
 
     def is_available(self) -> bool:
         """检测器是否可用。"""

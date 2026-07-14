@@ -201,7 +201,7 @@ async def library_delete_document(body: LibraryDeleteDocumentRequest) -> Library
     return LibrarySuccessResponse()
 
 
-@router.get("/documents/{doc_id}/file")
+@router.api_route("/documents/{doc_id}/file", methods=["GET", "HEAD"])
 async def library_get_document_file(doc_id: str, library_root: str | None = None) -> FileResponse:
     """Stream the original PDF bytes for a library document.
 

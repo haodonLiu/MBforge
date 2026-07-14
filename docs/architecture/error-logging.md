@@ -130,6 +130,7 @@ are not interchangeable.
 | Knob | Source | Default | Notes |
 |---|---|---|---|
 | Log level | `MBFORGE_LOG_LEVEL` env (read by `get_logger`) | `INFO` | Not a global-config field; runtime override only. |
+| Successful HTTP access logs | `UvicornAccessLogFilter` | `2xx` omitted | Routine successful requests are omitted from Uvicorn access output; `3xx` and error responses remain visible. |
 | JSON file output | `setup_logging(json_mode=True)` | `False` | Called by app factory when an env flag requests it (future). |
 | Ring buffer cap | `_RING_CAPACITY` in `utils/logger.py` | `500` | Hard-coded; no env knob. |
 | Front-end flush delay | `FLUSH_DELAY_MS` in `useErrorReport.ts` | `1500` | Coalesces burst errors into one POST. |

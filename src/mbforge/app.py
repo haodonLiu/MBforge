@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .utils.helpers import MBForgeError
 from .utils.logger import (
+    configure_uvicorn_access_logging,
     get_logger,
     push_diagnostic,
     reset_request_path,
@@ -189,6 +190,7 @@ async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResp
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    configure_uvicorn_access_logging()
     app = FastAPI(
         title="MBForge",
         description="Molecular Knowledge Base & AI Workbench",
